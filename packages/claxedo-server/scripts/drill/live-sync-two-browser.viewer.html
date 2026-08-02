@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>live-sync drill viewer</title>
+    <style>
+      :root { color-scheme: dark }
+      body {
+        margin: 0;
+        font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+        background: #0b0d10;
+        color: #e6e9ef;
+        padding: 20px 24px;
+      }
+      h1 { font-size: 15px; margin: 0 0 4px; letter-spacing: .02em }
+      #who { color: #7dd3fc; font-size: 22px; margin: 0 0 14px; font-weight: 600 }
+      dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 0 0 18px }
+      dt { color: #8b95a5 }
+      dd { margin: 0 }
+      #status[data-status="open"] { color: #4ade80 }
+      #status[data-status="closed"], #status[data-status="error"] { color: #f87171 }
+      #status[data-status="connecting"] { color: #fbbf24 }
+      ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px }
+      li {
+        padding: 7px 11px;
+        border-radius: 6px;
+        background: #151a21;
+        border-left: 3px solid #334155;
+        overflow-wrap: anywhere;
+      }
+      li[data-type="document.changed"] { border-left-color: #4ade80 }
+      li[data-type="workgraph.changed"] { border-left-color: #a78bfa }
+      li[data-type="stream.replay-gap"] { border-left-color: #f87171; background: #241417 }
+      li[data-type="heartbeat"] { border-left-color: #334155; color: #64748b }
+      .id { color: #fbbf24; margin-right: 8px }
+      .type { color: #7dd3fc; margin-right: 8px }
+      .body { color: #94a3b8 }
+      /* Newest frames first, so the arriving nudge is always on camera. */
+      #frames { flex-direction: column-reverse }
+    </style>
+  </head>
+  <body>
+    <h1>live-sync two-browser drill</h1>
+    <p id="who">…</p>
+    <dl>
+      <dt>stream</dt><dd id="status" data-status="idle">idle</dd>
+      <dt>Last-Event-ID</dt><dd id="cursor">–</dd>
+      <dt>connects</dt><dd id="connects">0</dd>
+      <dt>data frames</dt><dd id="count">0</dd>
+    </dl>
+    <ul id="frames"></ul>
+
+    <script type="module">
+      // The client contract under test. This deliberately mirrors
+      // claxedo-app/src/app/integrations/claxedo-events.tsx (`connect()`,
+      // lines ~436-519) rather than using `EventSource`: the production client
+      // is fetch + a manual ReadableStream reader precisely BECAUSE it must
+      // attach `Authorization: Bearer`, which EventSource cannot do. A drill
+      // built on EventSource would only ever exercise the 401 branch.
+      const params = new URLSearchParams(location.search)
+      const token = params.get("as") ?? "alice"
+      const label = params.get("label") ?? token
+
+      const el = {
+        who: document.getElementById("who"),
+        status: document.getElementById("status"),
+        cursor: document.getElementById("cursor"),
+        connects: document.getElementById("connects"),
+        count: document.getElementById("count"),
+        frames: document.getElementById("frames"),
+      }
+      el.who.textContent = label
+
+      const state = {
+        /** Advanced ONLY by `id:` lines, exactly as the app does. */
+        lastEventId: undefined,
+        connects: 0,
+        status: "idle",
+        /** Every `data:` frame received, in arrival order. */
+        frames: [],
+        abort: undefined,
+      }
+      // The Playwright driver reads this; nothing in the page polls it.
+      window.__drill = { state }
+
+      const setStatus = (status) => {
+        state.status = status
+        el.status.textContent = status
+        el.status.dataset.status = status
+      }
+
+      const render = (frame) => {
+        const li = document.createElement("li")
+        li.dataset.type = frame.type ?? "unknown"
+        const id = document.createElement("span")
+        id.className = "id"
+        id.textContent = frame.id ? `#${frame.id}` : "#–"
+        const type = document.createElement("span")
+        type.className = "type"
+        type.textContent = frame.type ?? "unknown"
+        const body = document.createElement("span")
+        body.className = "body"
+        body.textContent = frame.summary ?? ""
+        li.append(id, type, body)
+        el.frames.append(li)
+        el.count.textContent = String(state.frames.filter((f) => f.type !== "heartbeat").length)
+        el.cursor.textContent = state.lastEventId ?? "–"
+      }
+
+      const summarize = (payload) => {
+        if (payload?.type === "document.changed") return `${payload.documentId} · org=${payload.orgId}`
+        if (payload?.type === "workgraph.changed") return `owner=${payload.ownerUserId}`
+        if (payload?.type === "stream.replay-gap") return `from=${payload.lastEventId} through=${payload.throughId}`
+        return ""
+      }
+
+      async function connectOnce() {
+        state.abort = new AbortController()
+        state.connects += 1
+        el.connects.textContent = String(state.connects)
+        setStatus("connecting")
+
+        const headers = new Headers({
+          Accept: "text/event-stream",
+          Authorization: `Bearer ${token}`,
+        })
+        // Resume rather than re-read the log from the start. The room is the
+        // only party that can turn a cursor-less connection into a resume
+        // point, so a first connect deliberately sends no header at all.
+        if (state.lastEventId) headers.set("Last-Event-ID", state.lastEventId)
+
+        const res = await fetch("/api/wr/events", { headers, signal: state.abort.signal })
+        if (!res.ok || !res.body) throw new Error(`events stream failed: ${res.status}`)
+        setStatus("open")
+
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ""
+        while (true) {
+          const next = await reader.read()
+          if (next.done) break
+          buffer += decoder.decode(next.value, { stream: true })
+          const chunks = buffer.split("\n\n")
+          buffer = chunks.pop() ?? ""
+          for (const chunk of chunks) {
+            const lines = chunk.split("\n").map((line) => line.trim())
+            // Captured BEFORE deciding whether the payload is interesting, so
+            // an unhandled frame still advances the cursor correctly.
+            const id = lines.find((line) => line.startsWith("id:"))?.slice("id:".length).trim()
+            if (id) state.lastEventId = id
+            const data = lines
+              .filter((line) => line.startsWith("data:"))
+              .map((line) => line.slice("data:".length).trim())
+              .join("\n")
+            if (!data) continue
+            let payload
+            try {
+              payload = JSON.parse(data)
+            } catch {
+              payload = { type: "unparseable", raw: data }
+            }
+            const frame = {
+              type: payload?.type ?? "unknown",
+              id,
+              payload,
+              summary: summarize(payload),
+              at: Date.now(),
+            }
+            state.frames.push(frame)
+            render(frame)
+          }
+        }
+        throw new Error("events stream closed")
+      }
+
+      let stopped = false
+      async function loop() {
+        while (!stopped) {
+          try {
+            await connectOnce()
+          } catch (error) {
+            if (error?.name === "AbortError") {
+              setStatus("closed")
+              // A deliberate drop: wait to be told to reconnect.
+              return
+            }
+            setStatus("error")
+            await new Promise((resolve) => setTimeout(resolve, 200))
+          }
+        }
+      }
+
+      window.__drill.start = () => {
+        stopped = false
+        void loop()
+      }
+      /** Drops the real TCP stream — the reconnect-gap scenario's disconnect. */
+      window.__drill.stop = () => {
+        stopped = true
+        state.abort?.abort()
+      }
+      window.__drill.start()
+    </script>
+  </body>
+</html>

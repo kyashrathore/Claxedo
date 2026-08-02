@@ -1,0 +1,371 @@
+/* Documents index.
+ *
+ * A single centred reading column with quiet project headers borrowed from the
+ * WorkGraph home (`workgraph-project-row`), and each document rendered as a
+ * card in the same quiet raised-plane language as the WorkGraph stream cards
+ * and the Marketplace items: a translucent wash one step above the canvas,
+ * ringed by the theme's hairline shadow, brightening on hover. Rows still hold
+ * their status control back until you point at them. */
+
+.documents-canvas {
+  /* One centred column. The list is a reading surface, not a dashboard table:
+     full-bleed rows put the title and its status a screen apart. */
+  max-width: 46rem;
+  margin-inline: auto;
+}
+
+.documents-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--border-weak-base);
+}
+
+.documents-title {
+  font-size: 1.0625rem;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+}
+
+.documents-lede {
+  margin-top: 0.15rem;
+  font-size: 0.6875rem;
+}
+
+.documents-head-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ---- filter chips ------------------------------------------------------- */
+
+.documents-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.7rem 0 0.2rem;
+}
+
+/* Ghost until it carries a value, then it reads as a set filter. The 28px box
+   and hover fill match `.workgraph-chip-trigger` so chips are one language
+   across the app. */
+.documents-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 28px;
+  padding: 0 0.35rem 0 0.6rem;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-weak);
+  font-size: 0.75rem;
+  line-height: 1;
+  white-space: nowrap;
+  outline: none;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.documents-chip:hover,
+.documents-chip:focus-visible,
+.documents-chip[data-expanded] {
+  background: var(--surface-raised-base-hover);
+  color: var(--text-strong);
+}
+
+.documents-chip--active {
+  border-color: var(--border-base);
+  color: var(--text-strong);
+}
+
+.documents-chip-label {
+  color: var(--text-weak);
+}
+
+/* `Project` while empty, `Project: alpha` once set — the colon only earns its
+   place when there is a value after it. */
+.documents-chip--active .documents-chip-label::after {
+  content: ":";
+}
+
+.documents-chip-value {
+  max-width: 9rem;
+  overflow: hidden;
+  color: var(--text-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.documents-chip-caret {
+  flex-shrink: 0;
+  color: var(--text-weaker);
+}
+
+.documents-chip-clear {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-weaker);
+  outline: none;
+}
+
+.documents-chip-clear:hover,
+.documents-chip-clear:focus-visible {
+  color: var(--text-strong);
+}
+
+.documents-filter-popover {
+  width: 14rem;
+}
+
+.documents-menu {
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+}
+
+.documents-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-base);
+  font-size: 0.75rem;
+  text-align: left;
+  outline: none;
+  transition: background 100ms ease;
+}
+
+.documents-menu-item:hover,
+.documents-menu-item:focus-visible {
+  background: var(--surface-raised-base-hover);
+}
+
+.documents-menu-item[aria-checked="true"] {
+  color: var(--text-strong);
+}
+
+.documents-menu-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.documents-menu-check {
+  flex-shrink: 0;
+  color: var(--icon-weak-base);
+}
+
+/* ---- project groups ----------------------------------------------------- */
+
+/* Deliberately the same quiet header as the WorkGraph home: a folder glyph, a
+   name, and the path only as supporting detail. No disclosure chevron and no
+   count — a collapsible project title was rejected there and this surface is
+   not the place to re-open it. */
+.documents-project-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.15rem 0.1rem 0.5rem;
+}
+
+.documents-project-icon {
+  flex-shrink: 0;
+  color: var(--icon-weak-base);
+}
+
+.documents-project-name {
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.documents-project-path {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-family-mono);
+  font-size: 0.625rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- rows --------------------------------------------------------------- */
+
+/* Each document is a card in the shared quiet raised-plane language: the same
+   20% wash and hairline shadow as the WorkGraph stream cards and Marketplace
+   items, brightening to 50% on hover. */
+.documents-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.4rem;
+  padding-inline: 0.9rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-raised-base) 20%, transparent);
+  box-shadow: var(--shadow-xxs-border);
+  transition:
+    background 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.documents-row:hover,
+.documents-row:focus-within {
+  background: color-mix(in srgb, var(--surface-raised-base) 50%, transparent);
+  box-shadow: var(--shadow-xs-border-base);
+}
+
+.documents-open {
+  display: block;
+  min-width: 0;
+  flex: 1;
+  padding: 0.65rem 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  outline: none;
+}
+
+.documents-name {
+  display: block;
+  overflow: hidden;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.documents-meta {
+  display: block;
+  margin-top: 0.1rem;
+  overflow: hidden;
+  font-size: 0.6875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Repository documents name a real file, so the path earns mono; a managed
+   document has no path to show and says so in prose. */
+.documents-meta[data-origin="repository"] {
+  font-family: var(--font-family-mono);
+  font-size: 0.625rem;
+}
+
+/* ---- status dot --------------------------------------------------------- */
+
+/* The per-row status control was removed — status now lives only in the top
+   filter. This dot is what remains: it marks each option in the Status filter
+   menu. */
+.documents-status-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  /* Falls back to the weak icon colour when a status carries no colour of its
+     own — never a fabricated hue. */
+  background: var(--current-status-color, var(--icon-weak-base));
+}
+
+/* ---- new-document menu -------------------------------------------------- */
+
+/* The solid action button on the index. Clicking it opens the project menu
+   (`documents-menu`); it never creates anything on its own. */
+.documents-new-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.35rem 0.5rem 0.35rem 0.75rem;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--surface-raised-base);
+  color: var(--text-strong);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  outline: none;
+  transition: opacity 120ms ease;
+}
+
+.documents-new-trigger:hover:not(:disabled),
+.documents-new-trigger[data-expanded] {
+  opacity: 0.9;
+}
+
+.documents-new-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.documents-new-caret {
+  flex-shrink: 0;
+  color: var(--text-weaker);
+}
+
+/* The searchable project picker. Reuses the shared `List` (search box + keyed
+   rows) exactly as WorkGraph's revision picker does, so its chrome matches; only
+   the host sizing and the per-row layout are ours. */
+.documents-new-popover {
+  width: 16rem;
+}
+
+.documents-new-popover [data-slot="popover-body"] {
+  padding: 8px;
+}
+
+.documents-new-list-host {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.documents-new-list {
+  flex: 1;
+  min-height: 0;
+}
+
+/* The project inventory can be long — keep the list bounded and scrollable. */
+.documents-new-list [data-slot="list-scroll"] {
+  max-height: 16rem;
+}
+
+.documents-new-option {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.documents-new-option-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- states ------------------------------------------------------------- */
+
+.documents-empty {
+  padding: 3rem 0;
+  text-align: center;
+  font-size: 0.8125rem;
+}
+
+.documents-note {
+  padding: 0.5rem 0 0;
+  font-size: 0.6875rem;
+}

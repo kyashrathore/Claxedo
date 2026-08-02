@@ -1,0 +1,16 @@
+{
+  "extends": "@tsconfig/node-lts/tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "noUncheckedIndexedAccess": false,
+    "types": ["bun"],
+    // DOM.Iterable for `Headers.entries()` and friends, which this package
+    // iterates. Matches @claxedo/connections.
+    "lib": ["ESNext", "DOM", "DOM.Iterable"]
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.vitest.ts", "src/**/*.typecheck.ts"]
+}

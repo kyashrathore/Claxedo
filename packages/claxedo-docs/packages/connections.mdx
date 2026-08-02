@@ -1,0 +1,69 @@
+---
+title: "@claxedo/connections"
+description: "Connections kit: integration registry, credential/connection store ports, OAuth attempt machine, and a token service for linking external accounts to a host application."
+---
+
+`@claxedo/connections` lets a host link external accounts (Notion, Atlassian, GitHub, Google) once and let features consume them by **capability** (`docs`, `work-source`, `channel`, `code-host`) instead of building their own auth. One registry, one credential seam, one token path. It is a **kit, not a service**: it reads no environment variables, holds no module-global state, and implements no auth policy — hosts supply storage (two small ports), HTTP gates, and configuration.
+
+## Install
+
+```sh
+npm install @claxedo/connections
+```
+
+## Quickstart
+
+Register reference integrations, wire the service to in-memory stores, mount routes behind your own gates, and consume tokens by capability:
+
+```ts
+import { Hono, type Context } from "hono"
+import {
+  createIntegrationRegistry, createConnectionsService, createIntegrationsRoutes,
+  createMemoryCredentialStore, createMemoryConnectionStore,
+  notionIntegration, atlassianIntegration, githubIntegration,
+} from "@claxedo/connections"
+
+// Your host's auth check — resolves whether this request may touch integrations.
+declare const myAuth: (c: Context) => Promise<boolean>
+
+const app = new Hono()
+
+const registry = createIntegrationRegistry()
+for (const ref of [notionIntegration(), atlassianIntegration(), githubIntegration()]) {
+  registry.register(ref.decl, ref.impl)
+}
+
+const service = createConnectionsService({
+  registry,
+  credentials: createMemoryCredentialStore(), // implement CredentialStorePort for real storage
+  connections: createMemoryConnectionStore(),  // implement ConnectionStorePort for real storage
+})
+
+// Mount under your app with YOUR gates — the kit enforces no auth policy.
+app.route("/api/integrations", createIntegrationsRoutes(service, {
+  gate: async (c) => (await myAuth(c)) ? null : c.json({ error: "forbidden" }, 403),
+  tokenGate: async (c) => c.req.header("x-my-app") ? null : c.json({ error: "forbidden" }, 403),
+}))
+
+// Consumers ask by capability — never by provider, never touching secrets:
+for (const conn of await service.resolveForCapability("docs")) {
+  const { token, tokenType, fields } = await conn.getToken()
+}
+```
+
+OAuth (Google) is host-configured — the kit reads no env; pass your own `clientId`/`clientSecret`/`redirectUri`/`scopes` into `googleIntegration({...})`.
+
+## Key capabilities
+
+- **Capability model** — consumers request by `docs` / `work-source` / `channel` / `code-host`; capabilities are granted at connect time from what the credential actually covers (no toggle API).
+- **Frozen token shape** — `{ token, tokenType: "bearer" | "basic", fields? }`; consumers request per operation and never cache.
+- **Ports** — hosts implement `CredentialStorePort` and `ConnectionStorePort`; credential ids are namespaced `integration:{id}` and secrets live server-side only.
+- **Reference integrations only** — Notion, Atlassian, GitHub (key-paste + verify), Google (OAuth). Additional providers belong in host code via `registry.register(decl, impl)`.
+
+## Non-goals
+
+No MCP/tool gateway, no API middleware in the token path, no webhook management, no UI, and no multi-account per integration (yet).
+
+## Full API
+
+See the [README on GitHub](https://github.com/kyashrathore/Claxedo/tree/dev/packages/claxedo-connections) for the full model, failure semantics, port contracts, and extension policy.

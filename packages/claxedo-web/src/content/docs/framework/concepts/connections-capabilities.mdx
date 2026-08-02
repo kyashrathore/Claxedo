@@ -1,0 +1,148 @@
+---
+title: "Connections & capabilities"
+description: "Link external accounts; consume by capability."
+---
+
+import Note from "../../../../components/framework/compat/Note.astro"
+import Warning from "../../../../components/framework/compat/Warning.astro"
+import Card from "../../../../components/framework/compat/Card.astro"
+
+
+`@claxedo/connections` is the connections kit: link an external account (Notion,
+Atlassian, GitHub, Google) to a host application once, and let features consume
+it by **capability** instead of building their own auth. One registry, one
+credential seam, one token path.
+
+<Note>
+`@claxedo/connections` is a **kit, not a service**: it reads no environment
+variables, holds no module-global state, and implements no auth policy. Hosts
+supply storage (two small ports), HTTP gates, and configuration.
+</Note>
+
+## Model: connection vs capability
+
+- A **connection** is an authenticated link to an external account — a Google
+  account, a Notion workspace, an Atlassian site, a GitHub org. It owns auth
+  methods, the identity link, and token lifecycle. There is one connection per
+  integration per host (an explicit replace flow handles re-linking).
+- **Capabilities** are what a connection powers: `docs`, `work-source`,
+  `channel`, `code-host`. One Atlassian connection can power Confluence `docs`
+  **and** Jira `work-source` on the same token; one GitHub connection can power
+  work-source + channel + code-host.
+
+Consumers ask for "a connection with capability X for integration Y" — they
+never own auth and never touch secrets.
+
+<Warning>
+**Capabilities are granted at connect time, not toggled.** The integration
+declaration lists what it *can* power (routing data for `forCapability`); the
+connection records what its credential *actually* covers. Changing grants means
+reconnecting with broader consent — there is no toggle API, endpoint, or
+semantics.
+</Warning>
+
+## The token wire shape
+
+The token shape is frozen: `{ token, tokenType: "bearer" | "basic", fields? }`.
+Consumers request a token **per operation** and never cache it.
+
+Failure semantics: a definitive provider rejection (`invalid_grant`-class) marks
+the credential `error`, and the connection stops serving tokens until the user
+reconnects or re-verifies. Transient failures change nothing and the next call
+retries. Refresh is single-flight per credential, per process.
+
+## Quickstart (in-memory host)
+
+```ts
+import { Hono } from "hono"
+import {
+  createIntegrationRegistry, createConnectionsService, createIntegrationsRoutes,
+  createMemoryCredentialStore, createMemoryConnectionStore,
+  notionIntegration, atlassianIntegration, githubIntegration,
+} from "@claxedo/connections"
+
+const app = new Hono()
+// myAuth: your host's own request-auth check — the kit ships none.
+const myAuth = async (c: unknown) => true // replace with your real gate
+
+const registry = createIntegrationRegistry()
+for (const ref of [notionIntegration(), atlassianIntegration(), githubIntegration()]) {
+  registry.register(ref.decl, ref.impl)
+}
+
+const service = createConnectionsService({
+  registry,
+  credentials: createMemoryCredentialStore(),   // implement CredentialStorePort for real storage
+  connections: createMemoryConnectionStore(),   // implement ConnectionStorePort for real storage
+})
+
+// Mount under your app with YOUR gates — the kit enforces no auth policy.
+app.route("/api/integrations", createIntegrationsRoutes(service, {
+  gate: async (c) => (await myAuth(c)) ? null : c.json({ error: "forbidden" }, 403),
+  tokenGate: async (c) => c.req.header("x-my-app") ? null : c.json({ error: "forbidden" }, 403),
+}))
+
+// Consumers ask by capability — never by provider, never touching secrets:
+for (const conn of await service.forCapability("docs")) {
+  const { token, tokenType, fields } = await conn.getToken()
+  // ... call the provider API; on a definitive 401/403:
+  // await conn.reportAuthFailure("401 from provider")
+}
+```
+
+OAuth (Google) is host-configured — the kit reads no env:
+
+```ts
+import { googleIntegration } from "@claxedo/connections"
+
+const google = googleIntegration({
+  clientId: process.env.GOOGLE_CLIENT_ID!,        // YOUR app registration
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+  redirectUri: "https://your-host.example/api/integrations/callback",
+  scopes: ["https://www.googleapis.com/auth/drive.file"],
+})
+registry.register(google.decl, google.impl)
+```
+
+## Reference integrations & extension policy
+
+The package ships **reference implementations only**: Notion, Atlassian, GitHub
+(key-paste + verify), and Google (OAuth via a small vendored, MIT OAuth client).
+
+Additional providers belong in **your** code, registered via
+`registry.register(decl, impl)` — an impl is at most four small functions
+(`verify` / `authorize` / `callback` / `refresh`). The package does not accept
+provider-implementation PRs as a maintenance commitment.
+
+## Non-goals (load-bearing)
+
+- **No MCP/tool gateway.** Agent exposure belongs to host domain tools.
+- **No API middleware in the token path** — no retries, rate limiting, request
+  proxying, or provider API wrappers. Tokens out; nothing else.
+- **No webhook subscription management. No UI.** Hosts own both.
+- **No multi-account per integration** yet.
+
+## Ports
+
+Hosts implement two storage ports. Credential ids are always namespaced
+`integration:{id}` so they never collide with a host's other credentials.
+Secrets must live server-side; the routes never echo them.
+
+```ts
+type CredentialStorePort = {
+  put({ providerId, kind, secret, expiresAt? }): Promise<void>
+  get(providerId): Promise<{ kind; status; expiresAt? } | undefined>
+  resolveSecret(providerId): Promise<string | null>   // available-status only
+  readSecret(providerId): Promise<string | null>      // any status (re-verify)
+  setStatus(providerId, "available" | "error", lastError?): Promise<void>
+  deleteByProvider(providerId): Promise<void>
+}
+type ConnectionStorePort = {
+  upsert(row); get(id); list(); delete(id)
+}
+```
+
+<Card title="Connections API reference" href="/framework/api/connections" icon="plug">
+  The HTTP routes `createIntegrationsRoutes` mounts, and their request/response
+  shapes.
+</Card>

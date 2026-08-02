@@ -1,0 +1,107 @@
+{
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "processes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "command": {
+            "type": "string"
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "autoStart": {
+            "type": "boolean",
+            "default": false
+          },
+          "restartPolicy": {
+            "type": "string",
+            "enum": [
+              "never",
+              "on-failure",
+              "always"
+            ],
+            "default": "never"
+          },
+          "maxRestarts": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 3
+          },
+          "color": {
+            "type": "string"
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "port": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z0-9._-]+$"
+              },
+              "inject": {
+                "type": "string"
+              },
+              "preferred": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "onConflict": {
+                "type": "string",
+                "enum": [
+                  "pick-new",
+                  "kill-existing"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "inject"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "name",
+          "command"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "processes"
+  ],
+  "additionalProperties": false,
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}

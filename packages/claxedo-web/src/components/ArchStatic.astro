@@ -1,0 +1,77 @@
+---
+import ArchitectureMap from "./ArchitectureMap.astro"
+import { archStages, archEdges } from "./arch-stages"
+---
+<section class="section arch">
+  <div class="section-inner">
+    <p class="eyebrow">Architecture</p>
+    <div class="split-copy">
+      <h2 class="section-title">One session, four owners.</h2>
+      <p class="section-copy">A request flows from the client you're using, through the control plane that decides where work runs, across the connection layer, to a workspace host sitting next to your files. Every layer is a separate package you can read, deploy, or replace.</p>
+    </div>
+
+    <div class="arch-panel">
+      <ArchitectureMap />
+    </div>
+
+    <div class="arch-cards">
+      {archStages.map((s) => (
+        <article class="arch-card">
+          <span class="ac-idx">{s.index}</span>
+          <h3>{s.title}</h3>
+          <p>{s.blurb}</p>
+          {s.note && <p class="ac-note">{s.note}</p>}
+          <div class="ac-pkgs">
+            {s.packages.map((p) => (
+              <code class:list={["ac-pkg", p.repo && "repo"]}>{p.name}</code>
+            ))}
+          </div>
+          <a class="ac-link" href={s.href}>Reference <span aria-hidden="true">→</span></a>
+        </article>
+      ))}
+    </div>
+
+    <div class="arch-edges">
+      {archEdges.map((e) => (
+        <a class="arch-edge" href={e.href}>
+          <span class="ae-label">{e.label}</span>
+          <span class="ae-items">{e.items.join(" · ")}</span>
+          <span class="ae-blurb">{e.blurb}</span>
+          <code class="ae-pkg">{e.pkg}</code>
+        </a>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .arch .split-copy { margin-bottom: 2.25rem; }
+  .arch-panel { position: relative; margin: 0 0 1.75rem; padding: clamp(1rem, 2vw, 1.75rem); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: #0e0e0e; box-shadow: 0 0 0 1px var(--line), 0 24px 56px -28px rgb(0 0 0 / .55); }
+  @media (prefers-color-scheme: light) { .arch-panel { background: var(--bg-deep); } }
+  .arch-panel :global(.oa-scroll) { overflow: visible; }
+  .arch-panel :global(.oa-diagram) { min-width: 0; }
+  .arch-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .7rem; }
+  .arch-card { display: flex; flex-direction: column; gap: .55rem; padding: 1.25rem; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); transition: border-color .18s ease, transform .18s ease; }
+  .arch-card:hover { border-color: var(--line-strong); transform: translateY(-2px); }
+  .ac-idx { color: var(--ink-faint); font: 500 .68rem var(--font-mono); letter-spacing: .08em; }
+  .arch-card h3 { margin: 0; font: 500 1.15rem var(--font-sans); letter-spacing: -.02em; }
+  .arch-card p { margin: 0; color: var(--ink-soft); font-size: .82rem; line-height: 1.5; }
+  .ac-note { color: var(--ink-faint) !important; font-size: .76rem !important; padding-top: .1rem; border-top: 1px solid var(--line); margin-top: .2rem !important; padding-top: .55rem; }
+  .ac-pkgs { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: auto; padding-top: .3rem; }
+  .ac-pkg { padding: .2rem .45rem; border-radius: .35rem; background: var(--accent-soft); color: var(--accent-text); font: .62rem var(--font-mono); }
+  .ac-pkg.repo { background: var(--surface-hover); color: var(--ink-faint); }
+  .ac-link { margin-top: .5rem; color: var(--ink); font: 500 .72rem var(--font-mono); text-decoration: none; }
+  .ac-link span { display: inline-block; transition: transform .18s ease; }
+  .ac-link:hover span { transform: translateX(3px); }
+
+  .arch-edges { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; margin-top: .7rem; }
+  .arch-edge { display: grid; grid-template-columns: auto 1fr; grid-template-areas: "label items" "label blurb" "label pkg"; align-items: baseline; gap: .15rem .9rem; padding: .9rem 1.15rem; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); text-decoration: none; transition: border-color .18s ease; }
+  .arch-edge:hover { border-color: var(--line-strong); }
+  .ae-label { grid-area: label; align-self: center; color: var(--ink-faint); font: 500 .6rem var(--font-mono); letter-spacing: .12em; text-transform: uppercase; writing-mode: vertical-rl; transform: rotate(180deg); }
+  .ae-items { grid-area: items; color: var(--ink); font: 500 .92rem var(--font-sans); letter-spacing: -.01em; }
+  .ae-blurb { grid-area: blurb; color: var(--ink-soft); font-size: .78rem; }
+  .ae-pkg { grid-area: pkg; margin-top: .3rem; color: var(--accent-text); font: .62rem var(--font-mono); }
+
+  @media (max-width: 62rem) { .arch-cards { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 38rem) { .arch-cards, .arch-edges { grid-template-columns: 1fr; } }
+</style>

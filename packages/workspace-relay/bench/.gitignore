@@ -1,0 +1,7 @@
+# Bench run artifacts — raw rows are kept locally and linked from reports, not
+# committed (they contain timing data specific to each run/environment).
+reports/
+
+# Boot secrets written by cf-dev-smoke.ts for `wrangler dev` (also removed on
+# teardown; ignored here as a belt-and-braces guard).
+.dev.vars

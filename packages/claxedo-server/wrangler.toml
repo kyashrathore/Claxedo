@@ -1,0 +1,235 @@
+# Cloudflare Worker config for the hosted Claxedo control plane.
+#
+# This deploys ONLY the Worker-safe hosted control plane (src/worker.ts →
+# src/hosted-app.ts). The local Node server (src/server.ts) is unaffected and is
+# never bundled here.
+#
+# Build / verify (no Cloudflare account needed):
+#   npx wrangler deploy --dry-run --outdir dist-worker
+# Deploy to staging (needs CLOUDFLARE_API_TOKEN + account):
+#   npx wrangler deploy --env staging
+#
+# `nodejs_compat` is required for Worker-compatible npm SDKs such as Daytona's
+# TypeScript SDK and also populates `process.env` from text bindings/secrets.
+# Control-plane signing/JWKS use global Web Crypto, not node:crypto — enforced
+# by src/worker.import-graph.test.ts.
+
+name = "claxedo-control-plane"
+main = "src/worker.ts"
+# HELD at 2025-05-01 deliberately (D3, 2026-07-27) — do not bulk-bump.
+# Nothing here needs a newer default, and the ~60 flags that turned on between
+# 2025-05-01 and today include several this Worker cannot verify locally:
+#   2025-09-01 remove_nodejs_compat_eol{,_v23} — DELETES Node APIs from the
+#     runtime; any bundled dep still using one starts failing at runtime only.
+#   2025-09-15 enable_nodejs_process_v2 — replaces the `process` object this
+#     Worker reads bindings through (control-plane/worker-credentials.ts
+#     defaults its env argument to process.env).
+#   2025-09-01 strip_authorization_on_cross_origin_redirect — outbound calls to
+#     Convex/Clerk/Polar/Daytona lose Authorization across a cross-origin hop.
+#   2026-02-24 delete_all_deletes_alarm — DO deleteAll() also clears alarms,
+#     which WorkGraphSettler / ClaxedoWakeLane schedule.
+# A `wrangler deploy --dry-run` only bundles; it exercises none of these, and
+# a staging deploy is the only real test. See the harder-edged note in
+# packages/workspace-relay/wrangler.toml: >= 2026-03-17 provably breaks the
+# relay's binary WebSocket path, so the two Workers should not be split.
+# Move this date only alongside a supervised staging deploy + smoke.
+compatibility_date = "2025-05-01"
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
+
+[observability]
+enabled = true
+
+# D13 sandbox lease reaper: drives the
+# driver-side reconciliation sweep — the `scheduled` handler in src/worker.ts
+# calls sandbox GC and the bounded WorkGraph reconciler. Operators and the
+# deployment smoke can invoke that same reconciler through the rate-limited,
+# selector-free `/internal/workgraph/reconcile` route with
+# CLAXEDO_RUNTIME_ADMIN_TOKEN. Every 15 minutes per the 10–15 minute
+# truth-keeper band, offset from the Convex lease-table sweep (10 minutes,
+# convex/crons.ts) so the lease-side marks generally land before the
+# driver-side destroy pass. Cron Triggers are NOT inherited by environments,
+# hence the explicit [env.staging.triggers] below.
+[triggers]
+crons = ["* * * * *", "*/15 * * * *"]
+
+# Public (non-secret) configuration. Secrets are set with `wrangler secret put`:
+#   CLAXEDO_WORKSPACE_AUTHORITY_URL (or set as a var below), CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN,
+#   CLAXEDO_WORKSPACE_RELAY_URL, CLAXEDO_RELAY_RESOLVER_TOKEN,
+#   CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM,
+#   CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM (+ optional _NEXT_*),
+#   CLERK_JWT_ISSUER, CLERK_JWKS_URL (+ optional CLERK_JWT_AUDIENCE).
+#
+# Observability (D12) — one vendor carries product analytics AND error
+# tracking, so one key configures both planes. Sending takes TWO opt-ins and
+# both are required; any other combination registers no sink at all (no events,
+# no exceptions, no network), which is the default everywhere.
+# Public var:
+#   CLAXEDO_TELEMETRY_MODE — `on` is the only value that permits sending
+#     (case-insensitive). Checked BEFORE the key, so `off`/unset silences the
+#     Worker whatever secrets it holds. Cloud deploys set it explicitly.
+# Secret:
+#   CLAXEDO_POSTHOG_KEY — PostHog project key for the Worker. Inert on its own
+#     while the mode is anything but `on`.
+# Public var (optional):
+#   CLAXEDO_POSTHOG_HOST — ingest host override for the EU region or a
+#     self-hosted PostHog. Defaults to https://us.i.posthog.com.
+# Release tagging (D12): CLAXEDO_RELEASE = git SHA, passed AT DEPLOY TIME by
+# the D11 deploy workflow rather than pinned here:
+#   wrangler deploy --var CLAXEDO_RELEASE:$GITHUB_SHA
+#
+# WP-BILLING (D4–D6; ADR 2026-07-11-014 + addendum) — Polar
+# config, consumed ONLY by src/billing/** (confinement enforced by
+# src/billing/billing-architecture.test.ts). ABSENT = billing routes fail
+# closed (503), the reconciliation sweep no-ops, and entitlement resolves
+# every org to the free tier (I-4).
+# Secrets (`wrangler secret put`):
+#   CLAXEDO_POLAR_ACCESS_TOKEN   — Polar org access token (checkout sessions,
+#     customer portal sessions, reconciliation customer-state fetches).
+#   CLAXEDO_POLAR_WEBHOOK_SECRET — Standard-Webhooks signing secret for
+#     POST /api/billing/polar/webhook.
+# Vars:
+#   CLAXEDO_POLAR_SERVER — "sandbox" for Polar test mode (the S2 spike);
+#     unset/anything else = production api.polar.sh.
+#   CLAXEDO_POLAR_PRODUCT_MONTHLY / CLAXEDO_POLAR_PRODUCT_YEARLY — the $9/mo
+#     and $89/yr per-seat product ids; subscriptions for any other product are
+#     ignored by the state mirror.
+#   CLAXEDO_POLAR_CHECKOUT_SUCCESS_URL — optional post-checkout redirect.
+#   CLAXEDO_BILLING_PAST_DUE_GRACE_DAYS — past_due grace window in days
+#     (default 7, plan OQ-4): past_due orgs stay entitled this long after the
+#     dunning state lands on the mirror, then fall to free.
+[vars]
+CLAXEDO_SIGNED_CLOUD_AUTH = "1"
+# D9 rollout requirement: hosted deployments declare their mode EXPLICITLY —
+# the Worker fail-closes at boot without it (control-plane/deployment-mode.ts).
+# Never set this for self-host; absent mode = self-host by design.
+CLAXEDO_DEPLOYMENT_MODE = "hosted"
+# D12 observability (see the comment block above [vars]): declared explicitly
+# per this file's own contract, rather than left implicit-via-absence. "off"
+# is behaviorally identical to unset (config.ts telemetryEnabled) — this is
+# not a functional change. Remaining launch step (owner, not this file):
+# `wrangler secret put CLAXEDO_POSTHOG_KEY` for production, then flip this
+# line to "on".
+CLAXEDO_TELEMETRY_MODE = "off"
+
+# W3.1 cross-isolate abuse limiter for the default request guard
+# (src/control-plane/request-guard.ts). Before this, every limiter in the control
+# plane counted in a per-isolate Map, so the effective budget was
+# `configured x live isolates` — it loosened exactly under load.
+#
+# `[[ratelimits]]` is the CURRENT config shape (verified against the Cloudflare
+# docs 2026-07-30 and against this package's wrangler 4.114.0 config schema); the
+# older `[[unsafe.bindings]]` form is the beta spelling and is not used here.
+# `simple.period` accepts ONLY 10 or 60 seconds — 60 is chosen to match
+# CLAXEDO_DEFAULT_REQUEST_RATE_LIMIT_WINDOW_MS (hosted-services.ts safetyLimits)
+# so the local fuse and the shared store mean the same minute.
+#
+# The counters are per-Cloudflare-location and eventually consistent, which is
+# the documented trade and the right one for an ABUSE limiter (see the W3.1
+# decision comment in src/control-plane/rate-limit.ts). `namespace_id` is an
+# account-unique positive integer as a string; bindings that share it share
+# counters, so staging deliberately uses a DIFFERENT id to keep a staging load
+# test from spending production's budget.
+#
+# Rate-limit bindings are NOT inherited by named environments — the same
+# wrangler trap behind the relay `[vars]` defect — so the block is mirrored
+# under [env.staging] below and rate-limit-config-drift.test.ts asserts both.
+[[ratelimits]]
+name = "CLAXEDO_REQUEST_LIMITER"
+namespace_id = "2001"
+[ratelimits.simple]
+limit = 600
+period = 60
+
+[[r2_buckets]]
+binding = "CLAXEDO_DOCUMENTS"
+bucket_name = "claxedo-documents"
+
+[[durable_objects.bindings]]
+name = "WORKGRAPH_SETTLER"
+class_name = "WorkGraphSettler"
+
+# Wakes-v2 per-lane driver. The binding exists on every deploy; behavior is
+# opt-in via CLAXEDO_WAKES_SETTLEMENT=1 (worker.ts), so the namespace can
+# bootstrap dark and staging can flip/roll back freely.
+[[durable_objects.bindings]]
+name = "WAKE_LANE"
+class_name = "ClaxedoWakeLane"
+
+# W5.1 per-owner live-sync fan-out DO. Holds hibernatable internal WebSockets,
+# bridges them to the public SSE route, and fans nudges POSTed from any isolate.
+[[durable_objects.bindings]]
+name = "LIVE_SYNC_ROOM"
+class_name = "LiveSyncRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["WorkGraphSettler"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["ClaxedoWakeLane"]
+
+# CF no longer allows KV-backed DO namespaces on this account (err 10099), so
+# LiveSyncRoom is declared SQLite-backed even though the SSE room keeps no
+# storage — the sqlite backing is simply unused.
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["LiveSyncRoom"]
+
+[env.staging]
+name = "claxedo-control-plane-staging"
+
+[env.staging.triggers]
+# The 15-minute sweep remains the bounded truth keeper for sandbox GC,
+# billing, and WorkGraph reconciliation.
+crons = ["* * * * *", "*/15 * * * *"]
+
+[env.staging.vars]
+CLAXEDO_SIGNED_CLOUD_AUTH = "1"
+CLAXEDO_DEPLOYMENT_MODE = "hosted"
+# wakes-v2 U9: staging proves settlement through the wakes path (durable
+# dirty-flag wake + WakeLane DO). Production stays on WorkGraphSettler until
+# the latency budgets hold here. Rollback = delete this line and redeploy.
+CLAXEDO_WAKES_SETTLEMENT = "1"
+# D12 observability — see [vars] above. Same "off" is a no-op default; owner
+# flips to "on" for staging after `wrangler secret put CLAXEDO_POSTHOG_KEY --env staging`.
+CLAXEDO_TELEMETRY_MODE = "off"
+
+# W3.1 shared abuse limiter (staging). Rate-limit bindings are NOT inherited by
+# environments, so this mirrors the top-level [[ratelimits]] block — the same
+# reason [env.staging.triggers] and the DO bindings are duplicated above.
+# `namespace_id` differs from production ON PURPOSE: shared ids share counters
+# even across Workers, so one id would let a staging load test consume
+# production's budget.
+[[env.staging.ratelimits]]
+name = "CLAXEDO_REQUEST_LIMITER"
+namespace_id = "2002"
+[env.staging.ratelimits.simple]
+limit = 600
+period = 60
+
+[[env.staging.r2_buckets]]
+binding = "CLAXEDO_DOCUMENTS"
+bucket_name = "claxedo-documents-staging"
+
+[[env.staging.durable_objects.bindings]]
+name = "WORKGRAPH_SETTLER"
+class_name = "WorkGraphSettler"
+
+[[env.staging.durable_objects.bindings]]
+name = "WAKE_LANE"
+class_name = "ClaxedoWakeLane"
+
+# W5.1 live-sync fan-out DO (staging). DO bindings are NOT inherited by
+# environments, so mirror the top-level binding here. Migrations ARE inherited
+# from the top-level [[migrations]] blocks, matching how WorkGraphSettler /
+# ClaxedoWakeLane are declared (bindings duplicated, migrations top-level only).
+[[env.staging.durable_objects.bindings]]
+name = "LIVE_SYNC_ROOM"
+class_name = "LiveSyncRoom"
+
+# KV namespace for the Cloudflare credential backend (only needed once the hosted
+# surface manages provider credentials; the first surface does not).
+# [[kv_namespaces]]
+# binding = "CLAXEDO_CREDENTIALS"
+# id = "<staging-namespace-id>"

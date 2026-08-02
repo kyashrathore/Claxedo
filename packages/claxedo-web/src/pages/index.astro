@@ -1,0 +1,223 @@
+---
+import Layout from "../layouts/Layout.astro"
+import Nav from "../components/Nav.astro"
+import Footer from "../components/Footer.astro"
+import ArchitectureExplorer from "../components/ArchitectureExplorer.astro"
+import RuntimePlacements from "../components/RuntimePlacements.astro"
+import DeploymentPrompt from "../components/DeploymentPrompt.astro"
+import TrackedLink from "../components/TrackedLink.astro"
+import { requireClaim } from "../content/claims"
+import { marketingActions } from "../content/routes"
+import { site } from "../content/site"
+import claudeIcon from "../../../ui/src/assets/icons/file-types/claude.svg"
+import codexIcon from "../../../ui/src/assets/icons/provider/openai.svg"
+import geminiIcon from "../../../ui/src/assets/icons/file-types/gemini-ai.svg"
+import opencodeIcon from "../../../ui/src/assets/icons/provider/opencode.svg"
+
+const agentCliAccess = requireClaim("agent-cli-access")
+const connectedPlacement = requireClaim("connected-placement")
+const sessionsAndTerminals = requireClaim("sessions-and-terminals")
+const workgraph = requireClaim("workgraph-local")
+---
+
+<Layout title="Claxedo — The open cloud workspace for coding agents" description={site.description}>
+  <div class="shell">
+    <Nav active="home" />
+    <main id="main-content">
+      <section class="hero-home">
+        <div class="hero-copy">
+          <p class="eyebrow">Open cloud workspace for coding agents</p>
+          <h1 class="display">The open cloud workspace for coding agents.</h1>
+          <p class="hero-lead">Start on Claxedo Cloud, or deploy the open control plane to your Cloudflare account with a coding agent. Bring your harnesses, AI provider, and workspace infrastructure.</p>
+          <div class="actions">
+            <TrackedLink class="btn-primary" href={marketingActions.cloud.href} event={marketingActions.cloud.event} placement="hero">Open Claxedo <span aria-hidden="true">↗</span></TrackedLink>
+            <DeploymentPrompt class="btn-secondary" placement="hero" />
+          </div>
+          <a class="architecture-link" href="#architecture">Explore the open architecture <span aria-hidden="true">↓</span></a>
+          <div class="status-line" aria-label="Open platform details"><span>MIT licensed from client to runtime</span><span>Bring your own AI and sandbox providers</span></div>
+        </div>
+        <div class="product-shot hero-shot">
+          <a class="zoomable-image" href="/screenshots/marketing-workspace.png" target="_blank" rel="noopener" aria-label="Open the Claxedo workspace screenshot full size">
+            <img src="/screenshots/marketing-workspace.png" width="3024" height="1964" alt="Claxedo showing a coding-agent chat beside a split-diff review and the project file tree" loading="eager" fetchpriority="high" />
+          </a>
+        </div>
+      </section>
+
+      <ArchitectureExplorer />
+      <RuntimePlacements />
+
+      <section class="section continuity" id="product">
+        <div class="section-inner">
+          <div class="split-copy"><div><p class="eyebrow">01 · Continuity</p><h2 class="section-title">Move between desktop, browser, and mobile web.</h2></div><p class="section-copy">{connectedPlacement.publicWording} The machine doing the work stays under your control while you follow the same workspace from the client in front of you.</p></div>
+          <div class="continuity-grid" aria-label="Ways to access the same Claxedo workspace">
+            <article><span>01</span><strong>Desktop</strong><p>Start beside your local files, tools, and agent CLIs.</p></article>
+            <article><span>02</span><strong>Browser</strong><p>Open the same running workspace from another computer.</p></article>
+            <article><span>03</span><strong>Mobile web</strong><p>Check progress and respond when you are away from your desk.</p></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section harness-section dark-band">
+        <div class="section-inner">
+          <p class="eyebrow">02 · Harness neutral</p>
+          <div class="split-copy"><h2 class="section-title">Keep the harnesses you already use.</h2><p class="section-copy">Choose the harness that fits each session. Claxedo keeps its models, tools, permissions, and behavior intact instead of turning every harness into the same generic assistant.</p></div>
+          <div class="harness-grid" aria-label="Supported agent paths">
+            <article><img src={claudeIcon.src} alt="" /><span><b>Claude Code</b><small>Chat UI + terminal</small></span></article>
+            <article><img src={codexIcon.src} alt="" /><span><b>Codex</b><small>Chat UI + terminal</small></span></article>
+            <article><img src={geminiIcon.src} alt="" /><span><b>Gemini CLI</b><small>Terminal</small></span></article>
+            <article><img src={opencodeIcon.src} alt="" /><span><b>OpenCode</b><small>Chat UI + terminal</small></span></article>
+            <article class="agent-any"><span class="terminal-glyph" aria-hidden="true">›_</span><span><b>Any agent CLI</b><small>First-class terminal</small></span></article>
+            <article class="agent-more"><span class="plus-glyph" aria-hidden="true">+</span><span><b>More through ACP</b><small>Bring a compatible agent</small></span></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section session-section" id="how-it-works">
+        <div class="section-inner feature-block feature-block-session">
+          <div class="feature-copy"><p class="eyebrow">03 · Chat + terminal</p><h2 class="section-title">Use the chat UI. Or use the terminal.</h2><p class="section-copy">{agentCliAccess.publicWording} {sessionsAndTerminals.publicWording}</p><p class="support-line">One workspace. Two first-class ways to work.</p></div>
+          <div class="feature-visual feature-visual-session">
+            <a class="zoomable-image" href="/screenshots/marketing-session-terminal.png" target="_blank" rel="noopener" aria-label="Open the chat and terminal screenshot full size">
+              <img src="/screenshots/marketing-session-terminal.png" width="3024" height="1964" alt="An OpenAI Codex terminal session and a chat session open side by side in the same Claxedo workspace" loading="lazy" />
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section workgraph-section" id="workgraph">
+        <div class="section-inner feature-block feature-block-workgraph">
+          <div class="feature-copy"><p class="eyebrow">04 · WorkGraph</p><h2 class="section-title">Work that outlives the session.</h2><p class="section-copy">{workgraph.publicWording} See what is ready, waiting, running, done, or waiting for your decision without reconstructing the story from chat history.</p></div>
+          <div class="feature-visual feature-visual-workgraph">
+            <a class="zoomable-image" href="/screenshots/marketing-workgraph.png" target="_blank" rel="noopener" aria-label="Open the WorkGraph Stream screenshot full size">
+              <img src="/screenshots/marketing-workgraph.png" width="891" height="843" alt="A single populated Claxedo WorkGraph Stream for shipping Claxedo Cloud" loading="lazy" />
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section extensions-section">
+        <div class="section-inner feature-block extension-block">
+          <div class="feature-copy"><p class="eyebrow">05 · Agent Extensions</p><h2 class="section-title">Sync your tools automatically.</h2><p class="section-copy">Set up skills, MCP servers, plugins, and instructions once. Claxedo syncs them into each workspace or sandbox, ready for the harness you choose.</p><a class="feature-link" href="/framework/concepts/extensions">How Agent Extensions work <span aria-hidden="true">→</span></a></div>
+          <div class="extension-map" role="img" aria-label="Claxedo syncs skills, MCP servers, plugins, and instructions into a workspace or sandbox for compatible coding harnesses">
+            <div class="extension-source"><small>YOUR TOOLKIT</small><strong>One setup</strong><span>Skills</span><span>MCP servers</span><span>Plugins</span><span>Instructions</span></div>
+            <svg class="extension-flow" viewBox="0 0 160 80" aria-hidden="true"><path d="M8 40h118" /><path d="m116 24 18 16-18 16" /><circle cx="58" cy="40" r="4" /><circle cx="88" cy="40" r="4" /></svg>
+            <div class="extension-target"><small>SYNCED</small><strong>Workspace / sandbox</strong><div><img src={claudeIcon.src} alt="" /><img src={codexIcon.src} alt="" /><img src={opencodeIcon.src} alt="" /></div><span>Ready for your harnesses</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section thesis dark-band" id="principles">
+        <div class="section-inner thesis-grid"><p class="eyebrow">06 · Why Claxedo exists</p><h2>We do not train models.<br />We do not replace harnesses.<br />We do not resell tokens or sandbox minutes.<br /><em>We build the open system that connects them.</em></h2><p>Models, agents, and infrastructure will keep changing. The interface around them should remain open, portable, and under your control.</p></div>
+      </section>
+
+      <section class="section closing">
+        <div class="section-inner"><p class="eyebrow">07 · Choose your cloud</p><h2 class="section-title">Use our cloud. Or make it yours with a prompt.</h2><p class="section-copy">One open workspace for your coding harnesses, models, and infrastructure.</p><div class="actions"><TrackedLink class="btn-primary" href={marketingActions.cloud.href} event={marketingActions.cloud.event} placement="closing">Open Claxedo <span aria-hidden="true">↗</span></TrackedLink><DeploymentPrompt class="btn-secondary" placement="closing" /></div></div>
+      </section>
+    </main>
+    <Footer />
+  </div>
+</Layout>
+
+<style>
+  .hero-home { padding: clamp(3.5rem, 8vw, 7rem) var(--gutter) clamp(2rem, 4vw, 3.5rem); overflow: hidden; }
+  .hero-copy, .hero-home > .hero-shot { max-width: 72rem; margin-inline: auto; }
+  /* Linear-sized headline: smaller type, wider wrap so it reads on ~2 lines */
+  .hero-copy .display { max-width: 28ch; font-size: clamp(2.35rem, 4.4vw, 3.4rem); letter-spacing: -.04em; }
+  .hero-lead { max-width: 42rem; margin-bottom: 2rem; color: #c4c4c4; font-size: clamp(1rem, 1.2vw, 1.12rem); line-height: 1.6; text-wrap: pretty; }
+  @media (prefers-color-scheme: light) { .hero-lead { color: var(--ink-soft); } }
+  .architecture-link { display: inline-flex; align-items: center; gap: .45rem; margin-top: 1.15rem; color: var(--ink-soft); font: 500 .78rem var(--font-sans); text-decoration: none; }
+  .architecture-link:hover { color: var(--ink); }
+  .architecture-link span { transition: transform .18s ease; }
+  .architecture-link:hover span { transform: translateY(3px); }
+  .hero-shot { position: relative; margin-top: clamp(3rem, 6vw, 5rem); }
+  .hero-shot::before { content: ""; position: absolute; inset: -16% -8% -24%; z-index: -1; background: radial-gradient(56% 56% at 50% 38%, color-mix(in srgb, var(--brand) 24%, transparent), transparent 72%); filter: blur(64px); pointer-events: none; }
+  .split-copy { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: clamp(2rem, 7vw, 7rem); align-items: start; }
+  .product-shot { position: relative; margin-top: 3.5rem; border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: #101010; box-shadow: 0 0 0 1px var(--line), 0 32px 64px -24px rgb(0 0 0 / .7), 0 12px 28px -14px rgb(0 0 0 / .5); overflow: hidden; }
+  .product-shot::after, .feature-visual::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 1px 0 rgb(255 255 255 / .09); pointer-events: none; }
+  .product-shot img { display: block; width: 100%; height: auto; }
+  .zoomable-image { display: block; width: 100%; height: 100%; cursor: zoom-in; }
+  .zoomable-image:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+  .continuity-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .85rem; margin-top: 3.5rem; }
+  .continuity-grid article { min-height: 15rem; display: grid; grid-template-rows: auto 1fr auto; padding: 1.35rem; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); }
+  .continuity-grid article > span { color: var(--ink-soft); font: .67rem var(--font-mono); }
+  .continuity-grid strong { align-self: center; font: 500 clamp(1.45rem, 2.5vw, 2rem) var(--font-sans); letter-spacing: -.025em; }
+  .continuity-grid p { max-width: 26ch; margin: 0; color: var(--ink-soft); font-size: .9rem; line-height: 1.55; }
+  .harness-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; margin-top: 4rem; }
+  .harness-grid article { min-height: 7.25rem; display: flex; align-items: center; gap: 1.2rem; padding: 1.3rem 1.5rem; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); }
+  .harness-grid img { width: 2rem; height: 2rem; flex: 0 0 auto; object-fit: contain; filter: grayscale(1) brightness(0) invert(1); opacity: .92; }
+  .harness-grid article > span:last-child { display: grid; gap: .3rem; }
+  .harness-grid b { font-size: .95rem; font-weight: 500; }
+  .harness-grid small { color: var(--ink-faint); font: .62rem/1.4 var(--font-mono); }
+  .terminal-glyph, .plus-glyph { width: 2rem; flex: 0 0 auto; color: var(--ink-soft); font: 500 1.45rem/1 var(--font-mono); text-align: center; }
+  .agent-more { border-style: dashed !important; }
+  .agent-more .plus-glyph, .agent-more b { color: var(--ink-soft); }
+  .feature-block { display: grid; grid-template-columns: minmax(17rem, .72fr) minmax(0, 1.28fr); gap: clamp(2rem, 5vw, 5rem); align-items: stretch; padding: clamp(1.4rem, 3vw, 2.5rem); border: 1px solid var(--line); border-radius: calc(var(--radius-lg) * 1.4); background: var(--surface); overflow: hidden; }
+  .feature-copy { display: flex; flex-direction: column; justify-content: center; padding: clamp(.5rem, 2vw, 1.5rem); }
+  .feature-copy .section-copy { margin-top: 1.6rem; }
+  .feature-visual { position: relative; min-width: 0; border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: #0e0e0e; box-shadow: 0 0 0 1px var(--line), 0 24px 56px -28px rgb(0 0 0 / .65); overflow: hidden; }
+  .feature-visual img { width: 100%; height: 100%; display: block; object-fit: cover; }
+  .feature-visual-session { aspect-ratio: 1.54; background: #0b0b0b; }
+  .feature-visual-session img { object-fit: contain; }
+  .feature-visual-workgraph { align-self: center; min-height: 0; display: grid; align-items: center; justify-items: end; padding: 0; border: 0; background: transparent; box-shadow: none; overflow: visible; }
+  .feature-visual-workgraph::after { content: none; }
+  .feature-visual-workgraph img { width: min(100%, 28rem); height: auto; max-height: 34rem; object-fit: contain; border: 1px solid #343434; border-radius: .7rem; box-shadow: 0 1.5rem 4rem rgb(0 0 0 / .45); }
+  .feature-block-session { background: linear-gradient(145deg, var(--surface) 0%, var(--surface) 54%, color-mix(in srgb, var(--brand) 7%, var(--surface)) 100%); }
+  .feature-block-workgraph { grid-template-columns: minmax(17rem, .78fr) minmax(0, 1.22fr); background: linear-gradient(145deg, var(--surface) 0%, var(--surface) 50%, color-mix(in srgb, #65a9ff 8%, var(--surface)) 100%); }
+  .support-line { margin: 1.5rem 0 0; color: var(--ink-faint); font: .7rem var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+  .extension-block { background: linear-gradient(145deg, var(--surface) 0%, var(--surface) 55%, color-mix(in srgb, #f3a13b 7%, var(--surface)) 100%); }
+  .extension-map { min-height: 28rem; display: grid; grid-template-columns: minmax(10rem, 1fr) minmax(5rem, .55fr) minmax(10rem, 1fr); align-items: center; padding: clamp(1.25rem, 3vw, 2.5rem); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--brand) 10%, #111) 0%, #101010 56%, #0b0b0b 100%); box-shadow: var(--shadow-panel); overflow: hidden; }
+  .extension-source, .extension-target { min-height: 18rem; display: grid; align-content: start; gap: .75rem; padding: 1.2rem; border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: #151515; box-shadow: var(--shadow-panel); }
+  .extension-source small, .extension-target small { color: #a0a09b; font: .62rem var(--font-mono); letter-spacing: .06em; }
+  .extension-source strong, .extension-target strong { margin-bottom: .6rem; color: #efefec; font-size: 1.05rem; font-weight: 500; }
+  .extension-source > span { padding: .65rem .75rem; border: 1px solid var(--line); border-radius: .45rem; color: #b8b8b2; font: .7rem var(--font-mono); }
+  .extension-flow { width: 100%; overflow: visible; }
+  .extension-flow path, .extension-flow circle { fill: none; stroke: var(--brand); stroke-width: 2; vector-effect: non-scaling-stroke; }
+  .extension-flow circle { fill: #111; }
+  .extension-target > div { display: flex; gap: .65rem; margin: 1rem 0; }
+  .extension-target img { width: 2.15rem; height: 2.15rem; padding: .42rem; border: 1px solid var(--line); border-radius: .5rem; filter: grayscale(1) brightness(0) invert(1); }
+  .extension-target > span { margin-top: auto; color: #a0a09b; font: .67rem/1.5 var(--font-mono); }
+  .feature-link { width: fit-content; margin-top: 1.5rem; color: var(--ink); font: .72rem var(--font-mono); text-decoration: none; border-bottom: 1px solid var(--line-strong); padding-bottom: .25rem; }
+  .feature-link:hover { color: var(--brand); border-color: currentColor; }
+  .thesis-grid h2 { max-width: 30ch; margin: 2rem 0 2.5rem; font: 500 clamp(1.9rem, 4.2vw, 3.4rem)/1.1 var(--font-sans); letter-spacing: -.035em; }
+  .thesis-grid h2 em { color: var(--brand); font-style: normal; }
+  .thesis-grid > p:last-child { max-width: 42rem; font-size: 1.05rem; }
+  .closing .section-copy { margin-bottom: 2rem; }
+
+  /* Hover life: cards lift + border brightens, arrows track */
+  .continuity-grid article, .harness-grid article { transition: transform .18s ease, border-color .18s ease, background .18s ease; }
+  .continuity-grid article:hover, .harness-grid article:hover { transform: translateY(-2px); border-color: var(--line-strong); }
+  .actions .btn-secondary span, .feature-link span { display: inline-block; transition: transform .18s ease; }
+  .actions .btn-secondary:hover span { transform: translate(2px, -2px); }
+  .feature-link:hover span { transform: translateX(3px); }
+
+  /* Orchestrated page-load reveal (motion-safe only) */
+  @media (prefers-reduced-motion: no-preference) {
+    .hero-copy > *, .hero-shot { opacity: 0; animation: heroRise .7s cubic-bezier(.2, .7, .2, 1) both; }
+    .hero-copy > .eyebrow { animation-delay: .04s; }
+    .hero-copy > .display { animation-delay: .12s; }
+    .hero-copy > .hero-lead { animation-delay: .2s; }
+    .hero-copy > .actions { animation-delay: .28s; }
+    .hero-copy > .status-line { animation-delay: .34s; }
+    .hero-shot { animation-delay: .42s; animation-duration: .9s; }
+  }
+  @keyframes heroRise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+  @media (max-width: 60rem) {
+    .split-copy, .feature-block, .feature-block-workgraph { grid-template-columns: 1fr; gap: 2rem; }
+    .harness-grid { grid-template-columns: repeat(2, 1fr); }
+    .feature-copy { padding: .5rem; }
+    .feature-visual-workgraph { min-height: 0; }
+    .extension-map { min-height: 26rem; }
+  }
+  @media (max-width: 42rem) {
+    .continuity-grid, .harness-grid { grid-template-columns: 1fr; }
+    .continuity-grid article { min-height: 12rem; }
+    .harness-grid article { min-height: 6.5rem; }
+    .feature-block { padding: .8rem; }
+    .feature-copy { padding: 1rem .5rem; }
+    .feature-visual-workgraph { min-height: 0; padding: 1rem; }
+    .extension-map { min-height: 0; grid-template-columns: 1fr; gap: 1rem; }
+    .extension-flow { width: 5rem; margin-inline: auto; transform: rotate(90deg); }
+    .extension-source, .extension-target { min-height: 15rem; }
+    .zoomable-image { -webkit-tap-highlight-color: transparent; }
+  }
+</style>

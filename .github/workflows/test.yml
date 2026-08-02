@@ -1,0 +1,667 @@
+name: test
+
+on:
+  push:
+    branches:
+      - dev
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # Keep every run on dev so cancelled checks do not pollute the default branch
+  # commit history. PRs and other branches still share a group and cancel stale runs.
+  group: ${{ github.ref == 'refs/heads/dev' && format('{0}-{1}', github.workflow, github.run_id) || format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref) }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  checks: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  diagnostics:
+    name: local diagnostics release gate
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Build diagnostics package dependencies
+        run: >-
+          bun turbo build
+          --filter=@claxedo/agent-event-runtime
+          --filter=@claxedo/agent-extensions
+          --filter=@claxedo/agent-sdk-runtime
+          --filter=@claxedo/channels
+          --filter=@claxedo/connections
+          --filter=@claxedo/mcp
+          --filter=@claxedo/sandbox-manager
+          --filter=@claxedo/wakes
+          --filter=@claxedo/workgraph
+          --filter=@claxedo/workspace-relay-protocol
+          --filter=@claxedo/workspace-relay
+          --filter=@claxedo/workspace-runtime
+
+      - name: Build desktop diagnostics
+        working-directory: packages/claxedo-desktop
+        run: bun run build
+
+      - name: Verify exact diagnostics dependencies
+        working-directory: packages/claxedo-desktop
+        env:
+          CLAXEDO_DIAGNOSTICS_VERIFY_ADVISORIES: "1"
+        run: bun run verify:diagnostics-dependencies
+
+      - name: Verify diagnostics privacy boundary
+        working-directory: packages/claxedo-desktop
+        run: bun run verify:diagnostics-privacy
+
+      - name: Run diagnostics contract and safety suite
+        working-directory: packages/claxedo-desktop
+        run: bun run test:diagnostics-release
+
+      - name: Run rendered diagnostics task evaluator
+        working-directory: packages/claxedo-app
+        run: bun run test:diagnostics-release
+
+      - name: Run diagnostics performance gates
+        working-directory: packages/claxedo-app/perf-harness
+        run: bun test
+
+      - name: Build real app performance target
+        working-directory: packages/claxedo-app
+        run: bun run build
+
+      - name: Install performance browser
+        working-directory: packages/claxedo-app/perf-harness
+        run: bunx playwright install chromium
+
+      - name: Run paired disabled and profiler-enabled app flows
+        working-directory: packages/claxedo-app/perf-harness
+        env:
+          CLAXEDO_PERF_APP_SCRIPT: serve
+          CLAXEDO_PERF_HEADROOM: "1.0"
+        run: bun run run:all
+
+      - name: Run real-child diagnostics overhead smoke
+        working-directory: packages/claxedo-desktop
+        env:
+          CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT: .artifacts/diagnostics-source-linux.json
+        run: |
+          mkdir -p .artifacts
+          # The smoke's probe tree (bun child + metrics worker + pidusage) runs
+          # against the runner's default 1024-fd soft limit and has hit EMFILE
+          # at Bun.spawn; raise to the hard limit for this step only.
+          ulimit -n "$(ulimit -Hn)" || true
+          echo "fd soft limit: $(ulimit -n)"
+          bun run smoke:diagnostics
+
+      - name: Upload diagnostics evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: diagnostics-source-linux-${{ github.run_attempt }}
+          path: packages/claxedo-desktop/.artifacts/diagnostics-source-linux.json
+          if-no-files-found: error
+          retention-days: 14
+
+  unit:
+    name: unit (${{ matrix.settings.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - name: linux
+            host: ubuntu-latest
+          - name: windows
+            host: windows-latest
+    runs-on: ${{ matrix.settings.host }}
+    # Windows legs are visible-but-nonblocking: Bun on Windows re-applies a
+    # patched dependency once PER PEER VARIANT and collides on its own cache
+    # entry, so `bun install` dies before any test runs:
+    #   error: renaming changes to cache dir: ENOTEMPTY:
+    #   effect@4.0.0-<hash>@@@1_patch_hash=<hash> (NtSetInformationFile)
+    # (the `@@@1` suffix is the peer variant). That is
+    # https://github.com/oven-sh/bun/issues/28147, which was FIXED UPSTREAM on
+    # 2026-07-08 — but the newest released Bun (1.3.14, our pin) shipped
+    # 2026-05-13, two months BEFORE the fix, so no released Bun contains it.
+    # `--linker hoisted` (see .github/actions/setup-bun) dodges the isolated
+    # linker but not the peer-variant re-application. Nothing to fix on our
+    # side: re-check when a Bun > 1.3.14 ships, then bump the `packageManager`
+    # pin, confirm this leg goes green, and delete this block + the
+    # Windows branch of the install step. Linux stays blocking.
+    continue-on-error: ${{ matrix.settings.host == 'windows-latest' }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      # Consumed by the Linux-only mermaid verification steps below; inert on the
+      # Windows leg, which skips them.
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Configure git identity
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+      - name: Cache Turbo
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: node_modules/.cache/turbo
+          key: turbo-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json') }}-
+            turbo-${{ runner.os }}-
+
+      # Repo-root guard, not a package suite, so it has no turbo task. Linux
+      # only: it reads Markdown off disk and is OS-independent, so running it
+      # again on the (non-blocking) Windows leg buys nothing.
+      - name: Check documentation links
+        if: runner.os == 'Linux'
+        run: bun run docs:check-links
+
+      # session-ui's mermaid path CANNOT be unit tested, so it rides here rather
+      # than in `bun turbo test`: `bun test` has no DOM, happy-dom's HTML parser
+      # drops every child of an <svg> while its XML parser makes DOMPurify a
+      # no-op (see the header of markdown-svg-sanitize.test.ts -- both failure
+      # modes produce a GREEN test that checked nothing), and markdown.tsx only
+      # loads inside a Vite graph at all, because markdown-worker.ts imports
+      # `./markdown-shiki.worker.ts?worker&url`. So these are real-Chromium
+      # scripts. They run before the build and the 35-minute test step so a
+      # mermaid regression fails fast, and Linux-only for the same reason as the
+      # docs check above. Roughly 2-3 minutes with a warm browser cache.
+      #
+      # The pair is deliberate and neither half covers the other: the sanitizer
+      # script proves mermaid's SVG is filtered, the wiring script proves the
+      # renderer is reached at all. `renderMermaidBlocks` was dead code for its
+      # entire life -- no diagram ever rendered -- and the sanitizer suite stayed
+      # green the whole time, because a sanitizer cannot notice that nothing
+      # calls it.
+      - name: Read Playwright version
+        if: runner.os == 'Linux'
+        id: playwright-version
+        run: |
+          version=$(node -e 'console.log(require("./package.json").workspaces.catalog["@playwright/test"])')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Same key as the e2e jobs below, so this shares their cache entry.
+      - name: Cache Playwright browsers
+        if: runner.os == 'Linux'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ github.workspace }}/.playwright-browsers
+          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}-chromium
+
+      - name: Install Playwright Chromium
+        if: runner.os == 'Linux'
+        working-directory: packages/claxedo-app
+        run: npx playwright install chromium
+
+      # No `bun turbo build` needed: everything these two import
+      # (@opencode-ai/ui, /core, /sdk) is exported from source, not dist.
+      - name: Verify mermaid rendering (sanitizer + wiring)
+        if: runner.os == 'Linux'
+        timeout-minutes: 15
+        working-directory: packages/session-ui
+        run: bun run verify:mermaid
+
+      # packages/*/dist is gitignored and several @claxedo packages resolve each
+      # other through their dist exports, so the suites that import them need
+      # these built first. turbo.json's generic `test` task deliberately does
+      # NOT use `dependsOn: ["^build"]` to get this -- that edge reaches the
+      # repo-wide-broken `opencode#build` (see the comment in turbo.json) -- so
+      # the build is scoped explicitly here instead. Same list the diagnostics
+      # and e2e jobs below use, plus typecheck.yml and release-claxedo.yml --
+      # `grep -rn 'filter=@claxedo/agent-event-runtime' .github/workflows/`
+      # finds every copy; keep them in sync.
+      - name: Build dist-resolved workspace packages
+        run: >-
+          bun turbo build
+          --filter=@claxedo/agent-event-runtime
+          --filter=@claxedo/agent-extensions
+          --filter=@claxedo/agent-sdk-runtime
+          --filter=@claxedo/channels
+          --filter=@claxedo/connections
+          --filter=@claxedo/mcp
+          --filter=@claxedo/sandbox-manager
+          --filter=@claxedo/wakes
+          --filter=@claxedo/workgraph
+          --filter=@claxedo/workspace-relay-protocol
+          --filter=@claxedo/workspace-relay
+          --filter=@claxedo/workspace-runtime
+
+      # `bun turbo test` used to be a near-no-op: turbo.json declared only five
+      # package-scoped `#test` entries, and turbo runs nothing for a package it
+      # has no entry for, so 22 packages with real suites -- claxedo-server's
+      # 236 files / 2386 tests among them -- never gated a PR. turbo.json now
+      # declares ONE generic `test` task, so this command runs every package
+      # that has a `test` script, including ones added later.
+      #
+      # 35 min, up from 20: claxedo-server alone is ~4.5 min wall clock on a
+      # fast dev machine with `fileParallelism: false` (236 files serialized),
+      # and a 2-core runner is materially slower. If the observed wall clock
+      # ever crowds this ceiling, split claxedo-server into its own job rather
+      # than raising the number again -- but that job must then be added to
+      # branch protection, or it runs without gating anything.
+      #
+      # `--concurrency=2` matches the runner's core count and is load-bearing,
+      # not tuning. Turbo defaults to 10 parallel tasks; several newly-wired
+      # suites assert on wall-clock behaviour (wakes' timer coalescing,
+      # workgraph's single-concurrent-winner effect lease, workspace-runtime's
+      # PTY byte forwarding) and fail their 5s timeouts when starved of CPU.
+      # Measured: at 21-way parallelism on a fast many-core dev machine those
+      # three went red; serialized on the same machine, all three pass. A
+      # 2-core runner at concurrency 10 is strictly worse, and oversubscribing
+      # two cores buys no wall clock anyway.
+      - name: Run unit tests
+        timeout-minutes: 35
+        run: bun turbo test --concurrency=2
+        env:
+          OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
+
+      - name: Publish unit reports
+        if: always()
+        uses: mikepenz/action-junit-report@bccf2e31636835cf0874589931c4116687171386 # v6.4.0
+        with:
+          # Second glob catches the nested workspace package (packages/sdk/js).
+          report_paths: |
+            packages/*/.artifacts/unit/junit.xml
+            packages/*/*/.artifacts/unit/junit.xml
+          check_name: "unit results (${{ matrix.settings.name }})"
+          detailed_summary: true
+          include_time_in_summary: true
+          fail_on_failure: false
+
+      - name: Upload unit artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: unit-${{ matrix.settings.name }}-${{ github.run_attempt }}
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            packages/*/.artifacts/unit/junit.xml
+            packages/*/*/.artifacts/unit/junit.xml
+
+  e2e:
+    # 12-way sharding: serialized (workers=1) the core suite runs ~50 min on a
+    # 2-core runner; each shard takes ~1/12 of the tests, so the wall clock is
+    # setup + build + a few minutes of tests. The @workgraph-real leg runs as
+    # its own job below (it boots a real workgraph API and builds with a baked
+    # VITE_ server URL, so it cannot share a shard's app build).
+    name: e2e (linux ${{ matrix.shard }}/12)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          # Playwright 1.59 hangs while extracting Chromium with Node 24.16.
+          node-version: "24.15"
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Read Playwright version
+        id: playwright-version
+        run: |
+          version=$(node -e 'console.log(require("./package.json").workspaces.catalog["@playwright/test"])')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ github.workspace }}/.playwright-browsers
+          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}-chromium
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # packages/*/dist is gitignored; the app (and the workgraph-real e2e
+      # suite) resolve @claxedo/* workspace packages through their dist
+      # exports (vite fails on @claxedo/workgraph/contracts otherwise), so
+      # build them before starting the Playwright web server. Same scoped
+      # list as typecheck.yml — keeps heavy app/binary builds out.
+      - name: Build dist-resolved workspace packages
+        run: >-
+          bun turbo build
+          --filter=@claxedo/agent-event-runtime
+          --filter=@claxedo/agent-extensions
+          --filter=@claxedo/agent-sdk-runtime
+          --filter=@claxedo/channels
+          --filter=@claxedo/connections
+          --filter=@claxedo/mcp
+          --filter=@claxedo/sandbox-manager
+          --filter=@claxedo/wakes
+          --filter=@claxedo/workgraph
+          --filter=@claxedo/workspace-relay-protocol
+          --filter=@claxedo/workspace-relay
+          --filter=@claxedo/workspace-runtime
+
+      - name: Install Playwright Chromium
+        working-directory: packages/claxedo-app
+        run: npx playwright install chromium
+
+      # claxedo-app's Playwright suite (packages/claxedo-app/e2e/playwright): the
+      # @core-tagged specs run on every PR in these shards. Tier R (real backend +
+      # real harness binaries against a scripted model endpoint) runs as the
+      # separate `e2e-tier-real` job below. Tier L (live real-credential specs)
+      # runs in NO CI lane — it is local/manual only, by design: it needs real
+      # provider credentials. Do not describe it as "nightly" here unless a
+      # scheduled workflow actually exists.
+      - name: Run claxedo-app e2e core suite (shard ${{ matrix.shard }}/12)
+        working-directory: packages/claxedo-app
+        timeout-minutes: 30
+        run: bun run test:e2e:core:base -- --shard=${{ matrix.shard }}/12
+        env:
+          # Serve a production build via vite preview: cold on-demand dev
+          # transforms on 2-core runners push first navigations past the expect
+          # timeouts (188 toBeVisible timeouts / 2.5h under dev serving).
+          CLAXEDO_E2E_PREBUILT: "1"
+          # Videos of passing tests bloat shard artifacts; failures keep theirs.
+          PLAYWRIGHT_VIDEO: "0"
+          # The spec harness bakes these at build time (core-settings-auth.spec
+          # HARNESS NOTES): auth/sandbox surfaces only exist in the bundle when
+          # the flags are set, and the server URL mirrors the repo's .env.local
+          # assumption. Locally vite reads .env.local; CI must set them.
+          VITE_AUTH_ENABLED: "true"
+          VITE_CLAXEDO_SERVER_URL: "http://127.0.0.1:3001"
+          # Keep the e2e-only harness seams (test-auth bypass, /__e2e/* routes,
+          # the server-URL override) alive in the production bundle. Tree-shaken
+          # out of any build that does not set this flag, so production is
+          # unaffected. Without it, the prebuilt bundle strips the synthetic
+          # signed-in principal and every auth-dependent spec goes anonymous.
+          VITE_CLAXEDO_E2E: "1"
+
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-linux-shard${{ matrix.shard }}-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            packages/claxedo-app/e2e/junit-*.xml
+            packages/claxedo-app/e2e/playwright/test-results
+            packages/claxedo-app/e2e/playwright/report
+
+  e2e-workgraph:
+    name: e2e (workgraph-real)
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          # Playwright 1.59 hangs while extracting Chromium with Node 24.16.
+          node-version: "24.15"
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Read Playwright version
+        id: playwright-version
+        run: |
+          version=$(node -e 'console.log(require("./package.json").workspaces.catalog["@playwright/test"])')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ github.workspace }}/.playwright-browsers
+          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}-chromium
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build dist-resolved workspace packages
+        run: >-
+          bun turbo build
+          --filter=@claxedo/agent-event-runtime
+          --filter=@claxedo/agent-extensions
+          --filter=@claxedo/agent-sdk-runtime
+          --filter=@claxedo/channels
+          --filter=@claxedo/connections
+          --filter=@claxedo/mcp
+          --filter=@claxedo/sandbox-manager
+          --filter=@claxedo/wakes
+          --filter=@claxedo/workgraph
+          --filter=@claxedo/workspace-relay-protocol
+          --filter=@claxedo/workspace-relay
+          --filter=@claxedo/workspace-runtime
+
+      - name: Install Playwright Chromium
+        working-directory: packages/claxedo-app
+        run: npx playwright install chromium
+
+      - name: Run workgraph-real e2e
+        working-directory: packages/claxedo-app
+        timeout-minutes: 30
+        run: bun run test:e2e:workgraph
+        env:
+          CLAXEDO_E2E_PREBUILT: "1"
+
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-workgraph-real-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            packages/claxedo-app/e2e/playwright/test-results
+            packages/claxedo-app/e2e/playwright/report
+
+  # Tier R: real claxedo-server + real embedded engine + real harness binaries,
+  # with ONLY the model endpoint scripted (e2e/helpers/scripted-model-server.ts).
+  # Its own job for the same reason as e2e-workgraph: the app build bakes
+  # VITE_CLAXEDO_SERVER_URL for this lane's backend port (4317), so it cannot
+  # share a shard's build. Hermetic — the harness CLIs are installed but never
+  # authenticate; the scripted endpoint is the only network the model path sees.
+  e2e-tier-real:
+    name: e2e (tier-real)
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          # Playwright 1.59 hangs while extracting Chromium with Node 24.16.
+          node-version: "24.15"
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Read Playwright version
+        id: playwright-version
+        run: |
+          version=$(node -e 'console.log(require("./package.json").workspaces.catalog["@playwright/test"])')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ github.workspace }}/.playwright-browsers
+          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}-chromium
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # The claude/codex CLIs the native-SDK scenarios spawn. No credentials —
+      # the scripted endpoint answers everything, so these never authenticate.
+      # The ACP scenarios use the workspace's own @agentclientprotocol wrapper
+      # packages (already installed by bun install above).
+      - name: Install harness CLIs
+        run: npm install -g @anthropic-ai/claude-code @openai/codex
+
+      - name: Build dist-resolved workspace packages
+        run: >-
+          bun turbo build
+          --filter=@claxedo/agent-event-runtime
+          --filter=@claxedo/agent-extensions
+          --filter=@claxedo/agent-sdk-runtime
+          --filter=@claxedo/channels
+          --filter=@claxedo/connections
+          --filter=@claxedo/mcp
+          --filter=@claxedo/sandbox-manager
+          --filter=@claxedo/wakes
+          --filter=@claxedo/workgraph
+          --filter=@claxedo/workspace-relay-protocol
+          --filter=@claxedo/workspace-relay
+          --filter=@claxedo/workspace-runtime
+
+      - name: Install Playwright Chromium
+        working-directory: packages/claxedo-app
+        run: npx playwright install chromium
+
+      # One Playwright invocation PER SCENARIO. The cross-scenario coupling is
+      # FIXED (seedDefaultHarness makes hydration and the UI switch agree; full
+      # runs are reproducible), but per-scenario isolation stays: it is the
+      # configuration every scenario was verified under, and it means one red
+      # scenario names itself instead of poisoning the run.
+      #
+      # ALL SIX SCENARIOS ARE ON THE GATE. There is no known-red list any more:
+      # every defect the tier surfaced has been fixed and its scenario
+      # graduated, which was always the point — a blocking job that is red on
+      # every PR for known reasons trains people to ignore it, so a defect
+      # graduating to the gate is the definition of fixed.
+      #
+      # What the tier caught, in the order the scenarios graduated:
+      #   codex-acp    — the scripted endpoint now streams the full output_text
+      #                  delta sequence, the only shape that makes `codex
+      #                  app-server` emit the `item/agentMessage/delta` the ACP
+      #                  wrapper converts to assistant text.
+      #   opencode     — a reply arriving under two ids rendered as two
+      #                  messages (client store, `assistantTurnIndex`), and the
+      #                  scenario had been silently running on the anthropic
+      #                  default rather than the scripted model — caught only by
+      #                  the per-dialect counters.
+      #   claude-sdk   — the session busy lock was released when the drain
+      #                  finished rather than when the turn settled, so a prompt
+      #                  arriving inside that ~515ms tail was refused with
+      #                  "Session is already processing a message". One run
+      #                  missed the release by a millisecond.
+      #
+      # Per-scenario invocation stays regardless: it is the configuration every
+      # scenario was verified under, and it means one red scenario names itself
+      # instead of poisoning the run.
+      - name: Run tier-real e2e (gate — all scenarios)
+        working-directory: packages/claxedo-app
+        timeout-minutes: 30
+        env:
+          CLAXEDO_E2E_PREBUILT: "1"
+          PLAYWRIGHT_VIDEO: "0"
+        run: |
+          set -euo pipefail
+          # Build once; each scenario run reuses the preview via the webServer.
+          for scenario in "behaviors 1,6,9" "behaviors 2,6,8,9" "behaviors 3,6,8,9" "behaviors 4,6,8,9" "behaviors 5,6,8,9" "behavior 7"; do
+            echo "=== Tier R gate scenario: ${scenario} ==="
+            bun run test:e2e:real -- --grep "${scenario}"
+          done
+
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-tier-real-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            packages/claxedo-app/e2e/playwright/test-results
+            packages/claxedo-app/e2e/playwright/report
+
+  e2e-workgraph-journey:
+    name: e2e (workgraph-journey)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24.15"
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build dist-resolved workspace packages
+        run: >-
+          bun turbo build
+          --filter=@claxedo/agent-event-runtime
+          --filter=@claxedo/agent-extensions
+          --filter=@claxedo/agent-sdk-runtime
+          --filter=@claxedo/channels
+          --filter=@claxedo/connections
+          --filter=@claxedo/mcp
+          --filter=@claxedo/sandbox-manager
+          --filter=@claxedo/wakes
+          --filter=@claxedo/workgraph
+          --filter=@claxedo/workspace-relay-protocol
+          --filter=@claxedo/workspace-relay
+          --filter=@claxedo/workspace-runtime
+
+      - name: Run headless WorkGraph journey
+        working-directory: packages/claxedo-app
+        timeout-minutes: 30
+        run: bun run test:e2e:journey

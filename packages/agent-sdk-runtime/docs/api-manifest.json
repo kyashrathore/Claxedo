@@ -1,0 +1,160 @@
+{
+  "package": "@claxedo/agent-sdk-runtime",
+  "version": "0.5.1",
+  "rootPolicy": "stable AgentRuntime facade and shared runtime types",
+  "stabilityLabels": {
+    "stable": "Intended public API for external hosts.",
+    "integration": "Public harness/transport adapter API. Import from explicit subpaths.",
+    "compatibility": "Bridge for OpenCode or legacy Claxedo shapes.",
+    "experimental": "Public but may change before 1.0.",
+    "advanced": "Public advanced API for host integrations that need lower-level runtime surfaces.",
+    "deprecated": "Kept temporarily to avoid abrupt ecosystem breaks."
+  },
+  "entrypoints": {
+    "@claxedo/agent-sdk-runtime": {
+      "status": "stable",
+      "purpose": "AgentRuntime facade and shared runtime types."
+    },
+    "@claxedo/agent-sdk-runtime/harnesses": {
+      "status": "stable",
+      "purpose": "Public harness factory functions."
+    },
+    "@claxedo/agent-sdk-runtime/stores/memory": {
+      "status": "stable",
+      "purpose": "In-memory runtime store for tests, demos, and ephemeral hosts."
+    },
+    "@claxedo/agent-sdk-runtime/stores/sqlite": {
+      "status": "stable",
+      "purpose": "Local durable runtime store."
+    },
+    "@claxedo/agent-sdk-runtime/stores/convex": {
+      "status": "integration",
+      "purpose": "Dependency-isolated first-party Convex runtime store adapter."
+    },
+    "@claxedo/agent-sdk-runtime/capabilities": {
+      "status": "stable",
+      "purpose": "Harness and adapter capability types and helpers."
+    },
+    "@claxedo/agent-sdk-runtime/adapters": {
+      "status": "advanced",
+      "purpose": "Public advanced adapter contracts and adapter helper types."
+    },
+    "@claxedo/agent-sdk-runtime/session-env": {
+      "status": "integration",
+      "purpose": "Host-provided filesystem/process environment contract."
+    },
+    "@claxedo/agent-sdk-runtime/virtual-session-env": {
+      "status": "integration",
+      "purpose": "Virtual in-memory session environment."
+    },
+    "@claxedo/agent-sdk-runtime/compat-events": {
+      "status": "compatibility",
+      "purpose": "OpenCode-compatible event bridge."
+    },
+    "@claxedo/agent-sdk-runtime/runtime-event-hub": {
+      "status": "integration",
+      "purpose": "In-process runtime event fanout."
+    },
+    "@claxedo/agent-sdk-runtime/sse": {
+      "status": "integration",
+      "purpose": "Local SSE fanout and replay helpers."
+    },
+    "@claxedo/agent-sdk-runtime/mcp-resolver": {
+      "status": "integration",
+      "purpose": "MCP config resolution helpers."
+    }
+  },
+  "docs": {
+    "start": "docs/agent.md",
+    "mentalModel": "docs/concepts.md",
+    "stableApi": "docs/api.md",
+    "boundaries": "docs/boundaries.md",
+    "recipes": "docs/recipes.md"
+  },
+  "symbols": {
+    "createAgentRuntime": {
+      "status": "stable",
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "function",
+      "purpose": "Create the public resource-namespace runtime facade."
+    },
+    "createMemoryRuntimeStore": {
+      "status": "stable",
+      "import": "@claxedo/agent-sdk-runtime/stores/memory",
+      "kind": "function",
+      "purpose": "Create an ephemeral runtime store."
+    },
+    "createSqliteRuntimeStore": {
+      "status": "stable",
+      "import": "@claxedo/agent-sdk-runtime/stores/sqlite",
+      "kind": "function",
+      "purpose": "Create a local durable runtime store."
+    },
+    "createConvexRuntimeStore": {
+      "status": "integration",
+      "import": "@claxedo/agent-sdk-runtime/stores/convex",
+      "kind": "function",
+      "purpose": "Create a dependency-isolated Convex-backed runtime store adapter."
+    },
+    "PromptInput": {
+      "status": "stable",
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "type",
+      "purpose": "Normalized message submission shape."
+    },
+    "SessionConfig": {
+      "status": "stable",
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "type",
+      "purpose": "Host-visible harness/model/agent selection state."
+    },
+    "SessionConfigUpdate": {
+      "status": "stable",
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "type",
+      "purpose": "Partial session config update; undefined leaves fields unchanged, null clears nullable fields, values replace fields."
+    },
+    "AgentSession": {
+      "status": "stable",
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "type",
+      "purpose": "Normalized host-visible session shape."
+    },
+    "HarnessCapabilities": {
+      "status": "stable",
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "type",
+      "purpose": "Per-harness user/session feature matrix."
+    },
+    "claude": {
+      "status": "stable",
+      "import": "@claxedo/agent-sdk-runtime/harnesses",
+      "kind": "function",
+      "purpose": "Register Claude as a native or ACP harness."
+    },
+    "codex": {
+      "status": "stable",
+      "import": "@claxedo/agent-sdk-runtime/harnesses",
+      "kind": "function",
+      "purpose": "Register Codex as a native or ACP harness."
+    },
+    "pi": {
+      "status": "stable",
+      "import": "@claxedo/agent-sdk-runtime/harnesses",
+      "kind": "function",
+      "purpose": "Register the built-in native Pi harness."
+    },
+    "CompatEvent": {
+      "status": "compatibility",
+      "import": "@claxedo/agent-sdk-runtime/compat-events",
+      "kind": "type",
+      "purpose": "OpenCode-compatible event bridge."
+    },
+    "createVirtualSessionEnv": {
+      "status": "integration",
+      "import": "@claxedo/agent-sdk-runtime/virtual-session-env",
+      "kind": "function",
+      "purpose": "Create an in-memory virtual session environment."
+    }
+  }
+}

@@ -1,0 +1,104 @@
+{
+  "package": "@claxedo/agent-event-runtime",
+  "version": "0.5.2",
+  "rootPolicy": "stable canonical event contracts and harness-agnostic runtime primitives only",
+  "stabilityLabels": {
+    "stable": "Intended public API for external hosts.",
+    "integration": "Public harness-adapter/projection API. Import from explicit subpaths.",
+    "compatibility": "Bridge for OpenCode or legacy Claxedo shapes.",
+    "experimental": "Public but may change before 1.0.",
+    "internal": "Not a supported public import.",
+    "deprecated": "Old API kept temporarily."
+  },
+  "entrypoints": {
+    "@claxedo/agent-event-runtime": {
+      "status": "stable",
+      "purpose": "Canonical event contract and harness-agnostic runtime/projection primitives."
+    },
+    "@claxedo/agent-event-runtime/contracts": {
+      "status": "stable",
+      "purpose": "Canonical event, raw harness event, diagnostics, and deterministic helper contracts."
+    },
+    "@claxedo/agent-event-runtime/harnesses/acp": {
+      "status": "integration",
+      "purpose": "ACP harness event translation."
+    },
+    "@claxedo/agent-event-runtime/harnesses/claude": {
+      "status": "integration",
+      "purpose": "Claude Agent SDK event translation."
+    },
+    "@claxedo/agent-event-runtime/harnesses/codex": {
+      "status": "integration",
+      "purpose": "Codex app-server protocol event translation."
+    },
+    "@claxedo/agent-event-runtime/harnesses/cursor": {
+      "status": "integration",
+      "purpose": "Cursor SDK event translation."
+    },
+    "@claxedo/agent-event-runtime/projections/debug-trace": {
+      "status": "integration",
+      "purpose": "Debug trace projection from canonical events."
+    },
+    "@claxedo/agent-event-runtime/projections/opencode-compat": {
+      "status": "compatibility",
+      "purpose": "OpenCode-compatible projection from canonical events."
+    }
+  },
+  "docs": {
+    "start": "docs/agent.md",
+    "mentalModel": "docs/concepts.md",
+    "stableApi": "docs/api.md",
+    "boundaries": "docs/boundaries.md",
+    "recipes": "docs/recipes.md"
+  },
+  "symbols": {
+    "AgentRuntimeEvent": {
+      "status": "stable",
+      "import": "@claxedo/agent-event-runtime",
+      "kind": "type",
+      "purpose": "Canonical cross-harness event union."
+    },
+    "agentRuntimeEvent": {
+      "status": "stable",
+      "import": "@claxedo/agent-event-runtime",
+      "kind": "value",
+      "purpose": "Factory object for canonical runtime events."
+    },
+    "RawHarnessEvent": {
+      "status": "stable",
+      "import": "@claxedo/agent-event-runtime",
+      "kind": "type",
+      "purpose": "Ingress envelope for harness-native event frames."
+    },
+    "HarnessEventAdapter": {
+      "status": "stable",
+      "import": "@claxedo/agent-event-runtime",
+      "kind": "type",
+      "purpose": "Harness event translation boundary."
+    },
+    "createAgentEventRuntime": {
+      "status": "stable",
+      "import": "@claxedo/agent-event-runtime",
+      "kind": "function",
+      "purpose": "Stateful event runtime for one harness/thread pair."
+    },
+    "RuntimeProjection": {
+      "status": "stable",
+      "import": "@claxedo/agent-event-runtime",
+      "kind": "type",
+      "purpose": "Projection boundary from canonical events to output views."
+    },
+    "claudeSdkAdapter": {
+      "status": "integration",
+      "import": "@claxedo/agent-event-runtime/harnesses/claude",
+      "kind": "function",
+      "purpose": "Claude Agent SDK harness event adapter."
+    },
+    "createOpencodeCompatProjection": {
+      "status": "compatibility",
+      "import": "@claxedo/agent-event-runtime/projections/opencode-compat",
+      "kind": "function",
+      "purpose": "Project canonical events to OpenCode-compatible events."
+    }
+  }
+}

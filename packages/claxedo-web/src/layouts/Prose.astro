@@ -1,0 +1,120 @@
+---
+import Layout from "./Layout.astro"
+import Nav from "../components/Nav.astro"
+import Footer from "../components/Footer.astro"
+
+interface Props {
+  frontmatter: {
+    title: string
+    description?: string
+    noindex?: boolean
+  }
+}
+
+const { frontmatter } = Astro.props
+const { title, description, noindex } = frontmatter
+---
+
+<Layout title={title} description={description} noindex={noindex}>
+  <div class="page-frame">
+    <Nav />
+    <main id="main-content" class="section prose">
+      <div class="container">
+        <slot />
+      </div>
+    </main>
+    <Footer />
+  </div>
+</Layout>
+
+<style is:global>
+  .prose .container { max-width: 60rem; }
+
+  .prose h1 {
+    font-family: var(--font-sans);
+    font-size: clamp(1.9rem, 4vw, 2.6rem);
+    line-height: 1.08;
+    font-weight: 500;
+    letter-spacing: -0.035em;
+    color: var(--ink);
+    text-wrap: balance;
+    margin-bottom: 1rem;
+  }
+
+  .prose h2 {
+    font-family: var(--font-sans);
+    font-size: clamp(1.25rem, 2.6vw, 1.6rem);
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    margin: 2.5rem 0 1rem;
+    text-wrap: balance;
+  }
+
+  .prose p {
+    color: var(--ink-soft);
+    line-height: 1.7;
+    margin: 0.75rem 0;
+    text-wrap: pretty;
+  }
+
+  .prose blockquote {
+    margin: 1.25rem 0;
+    padding: 0.75rem 1.1rem;
+    border-left: 2px solid var(--accent);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    background: var(--surface);
+    color: var(--ink-soft);
+    font-family: var(--font-mono);
+    font-size: 0.86rem;
+    line-height: 1.6;
+  }
+
+  .prose blockquote p { margin: 0.2rem 0; }
+
+  .prose hr {
+    border: none;
+    border-top: 1px solid var(--line);
+    margin: 2.25rem 0;
+  }
+
+  .prose strong { color: var(--ink); }
+
+  .prose a {
+    color: var(--accent-text);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  /* Wide comparison tables scroll horizontally instead of blowing out the page. */
+  .prose table {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 12.5px;
+    scrollbar-width: thin;
+  }
+
+  .prose th,
+  .prose td {
+    border: 1px solid var(--line);
+    padding: 6px 10px;
+    text-align: left;
+    white-space: nowrap;
+    vertical-align: top;
+  }
+
+  .prose thead th {
+    background: var(--surface-raised);
+    color: var(--ink);
+    font-weight: 500;
+    position: sticky;
+    top: 0;
+  }
+
+  .prose tbody td:first-child,
+  .prose tbody td strong { color: var(--ink); }
+</style>

@@ -1,0 +1,12 @@
+{
+  "entrypointHosts": [
+    "app/entry/app.tsx:ClaxedoAppShellHost"
+  ],
+  "layoutLazyImports": [
+    "app/entry/app.tsx:@/app/app-shell"
+  ],
+  "pagesLayoutImports": [],
+  "claxedoLayoutContextImports": [],
+  "railLayoutInnerMounts": [],
+  "heavyShowWrappedPanels": []
+}

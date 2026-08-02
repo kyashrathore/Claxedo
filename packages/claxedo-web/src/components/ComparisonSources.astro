@@ -1,0 +1,23 @@
+---
+import type { Competitor } from "../content/competitors"
+interface Props { competitor: Competitor }
+const { competitor } = Astro.props
+---
+
+<section class="sources" aria-labelledby="comparison-sources">
+  <h2 id="comparison-sources">First-party sources</h2>
+  <ul>{competitor.sources.map((source) => <li><a href={source.href}>{source.label} <span aria-hidden="true">↗</span></a></li>)}</ul>
+  <dl><div><dt>Content owner</dt><dd>{competitor.owner}</dd></div><div><dt>Last reviewed</dt><dd><time datetime={competitor.lastReviewed}>{competitor.lastReviewed}</time></dd></div><div><dt>Review due</dt><dd><time datetime={competitor.nextReview}>{competitor.nextReview}</time></dd></div></dl>
+</section>
+
+<style>
+  .sources { padding: 1.8rem; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); }
+  .sources h2 { font: 500 1.3rem/1.25 var(--font-sans); letter-spacing: -.02em; }
+  .sources ul { padding-left: 1.2rem; color: var(--ink-soft); }
+  .sources a { color: var(--accent-text); text-decoration: none; } .sources a:hover { text-decoration: underline; }
+  .sources dl { display: grid; grid-template-columns: repeat(3, 1fr); margin: 1.8rem 0 0; border-top: 1px solid var(--line); }
+  .sources dl div { padding-top: 1rem; }
+  .sources dt { color: var(--ink-faint); font: .64rem var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+  .sources dd { margin: .35rem 0 0; font-size: .85rem; }
+  @media (max-width: 42rem) { .sources dl { grid-template-columns: 1fr; gap: 1rem; } }
+</style>

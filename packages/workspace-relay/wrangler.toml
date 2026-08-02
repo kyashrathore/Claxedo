@@ -1,0 +1,97 @@
+# Cloudflare Worker config for the Claxedo Workspace Relay.
+#
+# This deploys the Worker-safe Durable Object relay (src/worker.ts) used by the
+# Cloudflare-first deployment shape. The Bun relay remains available for local
+# development and non-Cloudflare regional container deployments.
+#
+# Build / verify (no Cloudflare account needed):
+#   npx wrangler deploy --dry-run --outdir dist-worker
+# Deploy to staging (needs CLOUDFLARE_API_TOKEN + account):
+#   npx wrangler deploy --env staging
+#
+# Secrets expected before staging/prod deploy:
+#   CLAXEDO_RELAY_RESOLVER_TOKEN
+#   CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM
+#   CLAXEDO_CONTROL_PLANE_JWKS_URL
+# Optional:
+#   CLAXEDO_RELAY_RESOLVER_URL or CLAXEDO_CENTRAL_URL
+#   CLAXEDO_RELAY_HOST_PUBLIC_KEY_PEM
+#   CLAXEDO_RELAY_HOST_NEXT_PUBLIC_KEY_PEM
+#   CLAXEDO_RELAY_HOST_KID
+#   CLAXEDO_RELAY_HOST_NEXT_KID
+
+name = "claxedo-workspace-relay"
+main = "src/worker.ts"
+# HELD at 2025-05-01 deliberately (D3, 2026-07-27) — do not bulk-bump.
+# Cloudflare's `websocket_standard_binary_type` flag becomes default at
+# compatibility_date 2026-03-17: server-side WebSockets then default to
+# binaryType "blob" instead of "arraybuffer".
+#
+# The silent-drop hazard this comment used to warn about is FIXED (W6.1,
+# 2026-07-30): socketFrame()/socketPayload() in src/cloudflare.ts now await
+# Blob.arrayBuffer() and handle DataView/typed arrays symmetrically, and
+# src/relay-workerd-binary.test.ts proves the round-trip on REAL workerd at
+# 2026-03-16 / 2026-03-17 / 2026-07-22.
+#
+# That test also CORRECTED the measurement this comment used to carry. The flip
+# is per-DELIVERY-PATH, not global (miniflare 4.20260722.0, 6-byte binary frame):
+#   addEventListener("message")     2026-03-16 -> ArrayBuffer  2026-03-17+ -> Blob
+#   webSocketMessage (hibernation)  2026-03-16 -> ArrayBuffer  2026-03-17+ -> ArrayBuffer
+# The hibernatable DO socket does NOT flip — the old comment said it did. So the
+# real exposure was the CLOUD client/upstream sockets, which use listeners, not
+# the hibernating user-hosted channels.
+#
+# The date is still held: the fix removes the blocker, but bumping is a separate
+# change that deserves its own verification. relay-config-drift.test.ts asserts
+# both this file and wrangler-h2.toml stay below 2026-03-17, so moving the date
+# means deliberately updating that guard too.
+compatibility_date = "2025-05-01"
+
+[observability]
+enabled = true
+
+# Both values below are DELIBERATE and must stay explicit — an omitted var here
+# silently falls back to a code default that is wrong for production, and the
+# fallback is invisible until a user hits it. `relay-config-drift.test.ts`
+# fails if either key disappears from this block.
+[vars]
+# Concurrent WebSocket channels per user-hosted workspace tunnel. The code
+# default (TUNNEL_CHANNEL_CAP_DEFAULT = 16, src/cloudflare.ts) is below what one
+# real workspace opens — terminal tabs plus agent event streams plus documents —
+# and the 17th is rejected with a 503 `too_many_channels`. 256 clears realistic
+# usage by an order of magnitude while staying a real abuse bound; staging's
+# 32768 equals Cloudflare's own per-DO socket ceiling, i.e. no cap at all, which
+# is fine for a load target and wrong for production.
+CLAXEDO_RELAY_TUNNEL_CHANNEL_CAP = "256"
+# Where new relay Durable Objects are placed. A DO's location is fixed at FIRST
+# CREATION and never migrates, so this is effectively permanent per workspace.
+# "apac" matches the current India/South-Asia user base (see
+# DEFAULT_RELAY_LOCATION_HINT in src/cloudflare.ts). Revisit when the user base
+# is no longer APAC-centric: every non-APAC user crosses an ocean twice per
+# frame, forever. The real fix is a per-workspace hint derived from the user's
+# region at create time; this var is the deployment-wide floor until then.
+CLAXEDO_RELAY_LOCATION_HINT = "apac"
+
+[[durable_objects.bindings]]
+name = "WORKSPACE_RELAY_ROOM"
+class_name = "WorkspaceRelayRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["WorkspaceRelayRoom"]
+
+[env.staging]
+name = "claxedo-workspace-relay-staging"
+
+# `vars` is NOT inherited from the top level by named environments — wrangler
+# requires each environment to restate every key it needs, and an omitted key
+# falls back to the code default rather than to the top-level value.
+[env.staging.vars]
+# Deliberately uncapped: staging is where the relay load benches run, and
+# 32768 is Cloudflare's own per-DO socket ceiling. Production uses 256.
+CLAXEDO_RELAY_TUNNEL_CHANNEL_CAP = "32768"
+CLAXEDO_RELAY_LOCATION_HINT = "apac"
+
+[[env.staging.durable_objects.bindings]]
+name = "WORKSPACE_RELAY_ROOM"
+class_name = "WorkspaceRelayRoom"

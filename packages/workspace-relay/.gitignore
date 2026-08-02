@@ -1,0 +1,6 @@
+# Boot secrets written by bench/cf-dev-smoke.ts for `wrangler dev` (removed on
+# teardown; ignored as a guard against a crashed run leaving it behind).
+.dev.vars
+
+# wrangler dev / Miniflare local build + state cache.
+.wrangler/

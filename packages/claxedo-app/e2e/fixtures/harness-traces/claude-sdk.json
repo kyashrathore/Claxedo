@@ -1,0 +1,268 @@
+{
+  "envelopes": [
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-sdk",
+      "payload": {
+        "id": "message.part.updated:msg_assistant_1:000000_msg_assistant_1-text",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-sdk",
+          "part": {
+            "id": "000000_msg_assistant_1-text",
+            "sessionID": "ses_harness_matrix_claude-sdk",
+            "messageID": "msg_assistant_1",
+            "type": "text",
+            "text": ""
+          },
+          "time": 1010
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-sdk",
+      "payload": {
+        "id": "message.part.delta:msg_assistant_1:000000_msg_assistant_1-text",
+        "type": "message.part.delta",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-sdk",
+          "messageID": "msg_assistant_1",
+          "partID": "000000_msg_assistant_1-text",
+          "field": "text",
+          "delta": "Searching the repo."
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-sdk",
+      "payload": {
+        "id": "message.part.updated:msg_assistant_1:000001_msg_assistant_1-reasoning",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-sdk",
+          "part": {
+            "id": "000001_msg_assistant_1-reasoning",
+            "sessionID": "ses_harness_matrix_claude-sdk",
+            "messageID": "msg_assistant_1",
+            "type": "reasoning",
+            "text": "",
+            "time": {
+              "start": 1020
+            }
+          },
+          "time": 1030
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-sdk",
+      "payload": {
+        "id": "message.part.delta:msg_assistant_1:000001_msg_assistant_1-reasoning",
+        "type": "message.part.delta",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-sdk",
+          "messageID": "msg_assistant_1",
+          "partID": "000001_msg_assistant_1-reasoning",
+          "field": "text",
+          "delta": "Let me check the grep results."
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-sdk",
+      "payload": {
+        "id": "message.part.updated:msg_assistant_1:000002_tool-grep-1",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-sdk",
+          "part": {
+            "id": "000002_tool-grep-1",
+            "sessionID": "ses_harness_matrix_claude-sdk",
+            "messageID": "msg_assistant_1",
+            "type": "tool",
+            "callID": "tool-grep-1",
+            "tool": "Grep",
+            "state": {
+              "status": "running",
+              "input": {
+                "intent": "search",
+                "kind": "file_read"
+              },
+              "metadata": {
+                "claude": {
+                  "itemType": "file_read"
+                }
+              },
+              "time": {
+                "start": 1040
+              }
+            },
+            "metadata": {
+              "claude": {
+                "itemType": "file_read"
+              }
+            }
+          },
+          "time": 1040
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-sdk",
+      "payload": {
+        "id": "message.part.updated:msg_assistant_1:000002_tool-grep-1",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-sdk",
+          "part": {
+            "id": "000002_tool-grep-1",
+            "sessionID": "ses_harness_matrix_claude-sdk",
+            "messageID": "msg_assistant_1",
+            "type": "tool",
+            "callID": "tool-grep-1",
+            "tool": "Grep",
+            "state": {
+              "status": "running",
+              "input": {
+                "intent": "search",
+                "kind": "file_read",
+                "path": "src",
+                "pattern": "TODO"
+              },
+              "metadata": {
+                "claude": {
+                  "itemType": "file_read"
+                }
+              },
+              "time": {
+                "start": 1050
+              }
+            },
+            "metadata": {
+              "claude": {
+                "itemType": "file_read"
+              }
+            }
+          },
+          "time": 1050
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-sdk",
+      "payload": {
+        "id": "message.part.updated:msg_assistant_1:000002_tool-grep-1",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-sdk",
+          "part": {
+            "id": "000002_tool-grep-1",
+            "sessionID": "ses_harness_matrix_claude-sdk",
+            "messageID": "msg_assistant_1",
+            "type": "tool",
+            "callID": "tool-grep-1",
+            "tool": "Grep",
+            "state": {
+              "status": "completed",
+              "input": {
+                "intent": "search",
+                "kind": "file_read",
+                "path": "src",
+                "pattern": "TODO"
+              },
+              "output": "src/example.ts:1:TODO",
+              "title": "Grep",
+              "metadata": {
+                "claude": {
+                  "itemType": "file_read"
+                }
+              },
+              "time": {
+                "start": 1060,
+                "end": 1060
+              }
+            },
+            "metadata": {
+              "claude": {
+                "itemType": "file_read"
+              }
+            }
+          },
+          "time": 1060
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-sdk",
+      "payload": {
+        "id": "todo.updated:ses_harness_matrix_claude-sdk",
+        "type": "todo.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-sdk",
+          "todos": [
+            {
+              "content": "Ship it",
+              "status": "completed",
+              "priority": "medium"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-sdk",
+      "payload": {
+        "id": "runtime.diagnostic:ses_harness_matrix_claude-sdk:claude_sdk.unmapped_event",
+        "type": "runtime.diagnostic",
+        "properties": {
+          "sessionID": "ses_harness_matrix_claude-sdk",
+          "harness": "claude-sdk",
+          "threadId": "thread-1",
+          "code": "claude_sdk.unmapped_event",
+          "message": "SDKPartialAssistantMessage.content_block_delta(citations_delta): delta type has no dedicated AgentRuntimeEvent equivalent",
+          "severity": "info",
+          "diagnostic": {
+            "code": "claude_sdk.unmapped_event",
+            "message": "SDKPartialAssistantMessage.content_block_delta(citations_delta): delta type has no dedicated AgentRuntimeEvent equivalent",
+            "severity": "info",
+            "source": "claude.sdk.message",
+            "raw": {
+              "type": "stream_event",
+              "event": {
+                "type": "content_block_delta",
+                "index": 4,
+                "delta": {
+                  "type": "citations_delta",
+                  "citation": {
+                    "type": "webpage",
+                    "url": "https://example.com"
+                  }
+                }
+              }
+            },
+            "details": {
+              "sdkEvent": "SDKPartialAssistantMessage.content_block_delta(citations_delta)",
+              "reason": "delta type has no dedicated AgentRuntimeEvent equivalent"
+            }
+          },
+          "raw": {
+            "source": "claude.sdk.message",
+            "payload": {
+              "type": "stream_event",
+              "event": {
+                "type": "content_block_delta",
+                "index": 4,
+                "delta": {
+                  "type": "citations_delta",
+                  "citation": {
+                    "type": "webpage",
+                    "url": "https://example.com"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

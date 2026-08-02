@@ -1,0 +1,111 @@
+name: deploy-cloudflare-sandbox-worker
+
+# Builds the Cloudflare Sandbox worker's container image AND pushes it to
+# Cloudflare's registry from a CI runner with fast uplink — so the ~4.5GB image
+# never has to be pushed from a laptop. `wrangler deploy` does the whole thing
+# (local docker build in the runner -> push to registry.cloudflare.com -> deploy
+# the worker). Cloudflare has no server-side Dockerfile build, so this is the
+# "let the cloud build+push it" path.
+#
+# Required repo secrets:
+#   CLOUDFLARE_API_TOKEN  — token with Workers Scripts:Edit + Workers (Containers)
+#                           write on the target account. Create at
+#                           dash.cloudflare.com/profile/api-tokens.
+#   CLOUDFLARE_ACCOUNT_ID — the account to deploy into.
+#
+# The runner set baked into the image is the Dockerfile default
+# (CLAXEDO_NPM_AGENTS) — wrangler cannot inject a --build-arg, so edit the
+# Dockerfile default to change which agent CLIs ship.
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_worker:
+        description: "Deploy the Cloudflare sandbox Worker image"
+        required: false
+        type: boolean
+        default: true
+  # Uncomment to auto-deploy on worker changes merged to dev:
+  # push:
+  #   branches: [dev]
+  #   paths:
+  #     - packages/claxedo-server/scripts/sandbox/cloudflare-worker/**
+  #     - .github/workflows/deploy-cloudflare-sandbox-worker.yml
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: ${{ inputs.deploy_worker }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/claxedo-server/scripts/sandbox/cloudflare-worker
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Install worker dependencies
+        run: npm install
+
+      - name: Build sandbox manager
+        run: bun run --cwd ../../../../sandbox-manager build
+
+      # The image ships the in-repo workspace-runtime host bundle (COPY .build/)
+      # instead of npm-installing @claxedo/workspace-runtime — publishing is a
+      # separate release concern and no longer gates image builds.
+      - name: Bundle workspace-runtime host into the wrangler build context
+        run: npx tsx ../build-sandbox-image.ts --bundle-only --out=.build
+
+      # The bundle step also writes scripts/sandbox/.build/build-info.json with
+      # the content build-id / snapshot name. Surface it so operators can wire
+      # CLAXEDO_SANDBOX_BUILD_ID (or CLAXEDO_SNAPSHOT_NAME) onto the control
+      # plane — otherwise a rebuilt bundle at the same version never reaches
+      # sandboxes (ensureSnapshot returns early for an existing name).
+      - name: Surface sandbox build identity
+        if: always()
+        run: |
+          INFO=../.build/build-info.json
+          if [ -f "$INFO" ]; then
+            echo "### Sandbox build identity" >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            cat "$INFO" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "Pin the control plane: set CLAXEDO_SANDBOX_BUILD_ID (or CLAXEDO_SNAPSHOT_NAME / CLAXEDO_SANDBOX_IMAGE) to the value above." >> "$GITHUB_STEP_SUMMARY"
+            cat "$INFO"
+          else
+            echo "no build-info.json emitted"
+          fi
+
+      - name: Deploy (build image in CI -> push to Cloudflare registry -> deploy worker)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npm run deploy
+
+  synchronize-control-token:
+    needs: deploy
+    if: ${{ always() && needs.deploy.result != 'cancelled' }}
+    runs-on: ubuntu-latest
+    environment: staging
+    defaults:
+      run:
+        working-directory: packages/claxedo-server/scripts/sandbox/cloudflare-worker
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # The native driver and this Worker read the same staging credential even
+      # though the container deployment uses a repository-scoped token with
+      # broader image permissions. This job also supports a fast sync-only
+      # dispatch when deploy_worker is false.
+      - name: Synchronize sandbox control token
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SANDBOX_CONTROL_TOKEN: ${{ secrets.CLAXEDO_RUNTIME_ADMIN_TOKEN }}
+        run: printf '%s' "$SANDBOX_CONTROL_TOKEN" | npx --yes wrangler@4.50.0 secret put API_TOKEN

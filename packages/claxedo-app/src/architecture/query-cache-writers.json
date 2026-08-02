@@ -1,0 +1,88 @@
+{
+  "families": [
+    {
+      "family": "session/workspace query cache",
+      "writer": "features/session/data/sync/writers.ts",
+      "status": "live"
+    },
+    {
+      "family": "conversation messages",
+      "writer": "features/session/conversation/conversation-chat-client.ts",
+      "status": "live"
+    },
+    {
+      "family": "session.status-meta",
+      "writer": "features/session/store/session-status-dispatcher.ts",
+      "status": "live"
+    },
+    {
+      "family": "session.inventory",
+      "writer": "features/session/data/sync/inventory-writers.ts",
+      "status": "live"
+    },
+    {
+      "family": "directory.sessionCache",
+      "writer": "features/session/data/sync/directory-session-cache.ts",
+      "status": "live"
+    },
+    {
+      "family": "harness-config query cache",
+      "writer": "features/session/harness/harness-query-cache.ts",
+      "status": "live"
+    },
+    {
+      "family": "saved session config signature",
+      "writer": "features/session/composer/ui/submit-transport.ts",
+      "status": "live"
+    },
+    {
+      "family": "saved views cache",
+      "writer": "features/session/data/sync/views-writers.ts",
+      "status": "planned"
+    },
+    {
+      "family": "usage-limits snapshot",
+      "writer": "app/workbench/controls/usage-limits-cache.ts",
+      "status": "live"
+    },
+    {
+      "family": "terminal-scoped fetch cache",
+      "writer": "features/terminal/lib/terminal-scoped-cache.ts",
+      "status": "live"
+    },
+    {
+      "family": "switcher surface status",
+      "writer": "app/workbench/rail/rail-header-surfaces.ts",
+      "status": "live"
+    }
+  ],
+  "grandfathered": [
+    "features/workspaces/actions/project-actions.tsx",
+    "features/review/ui/review-vcs-cache.ts",
+    "features/terminal/workbench/pane-terminal-recovery.ts",
+    "app/dialogs/provider-connect-form.tsx",
+    "app/dialogs/custom-provider.tsx",
+    "features/settings/ui/providers.tsx",
+    "app/providers/global-sync/provider.tsx",
+    "platform/sync/global-sync/queue.ts",
+    "features/session/providers/session-selection.tsx",
+    "features/session/providers/permission-auto-response-cache.ts",
+    "app/providers/sdk/runtime-request.ts",
+    "app/connection/server.tsx",
+    "features/session/ui/composer/session-question-cache.ts",
+    "features/session/ui/prompt-preview-handoff.ts",
+    "features/session/store/session-status-telemetry.ts",
+    "features/session/submit/rolled-back-drafts.ts",
+    "features/workspaces/data/query/project-meta.ts",
+    "features/session/data/query/session-list.ts",
+    "app/boot/data/bootstrap.ts",
+    "platform/sync/directory-cache-manager.ts",
+    "platform/sync/global-sync-sdk-client-cache.ts",
+    "platform/sync/session-prefetch.ts",
+    "features/session/store/local-selection-handoff.ts",
+    "app/connection/server-health.ts",
+    "platform/runtime/agent/workspace-relay-connection.ts",
+    "platform/runtime/agent/workspace-runtime-request.ts",
+    "platform/sync/worktree.ts"
+  ]
+}

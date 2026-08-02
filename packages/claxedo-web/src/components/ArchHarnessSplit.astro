@@ -1,0 +1,121 @@
+---
+// Two placements for a harness relative to its host:
+//  - unified: the whole harness runs in one workspace (host == toolSandbox)
+//  - split:   the "hand" (tools) runs in a remote sandbox while the "brain"
+//             (session, harness, events) stays by the control plane (host != toolSandbox)
+const harnessModes = [
+  {
+    id: "unified",
+    label: "In one workspace",
+    caption:
+      "The whole harness runs in a single workspace host — the agent's brain (session, harness, events) and its hands (terminals, files, processes) share one place. host = toolSandbox.",
+  },
+  {
+    id: "split",
+    label: "Hand–brain split",
+    caption:
+      "In a hybrid split, the brain — the agent loop, session, and events — stays next to the control plane, while the hand — where terminals, files, and processes actually execute — runs in a remote sandbox. host ≠ toolSandbox.",
+  },
+]
+---
+
+<div class="arch-hs" data-active="unified">
+  <div class="hs-switch" role="tablist">
+    {harnessModes.map((m, i) => (
+      <button class:list={["hs-tab", i === 0 && "is-active"]} data-mode={m.id} role="tab" type="button">{m.label}</button>
+    ))}
+  </div>
+
+  <div class="hs-panels">
+    {harnessModes.map((m, i) => (
+      <div class:list={["hs-panel", i === 0 && "is-active"]} data-mode={m.id}>
+        <div class="hs-viz">
+          {m.id === "unified" && (
+            <svg viewBox="0 0 760 168" xmlns="http://www.w3.org/2000/svg" class="hs-svg" role="img" aria-label="Unified: one workspace host contains both the agent brain and its tool execution. host equals toolSandbox.">
+              <rect class="hs-zone" x="176" y="34" width="408" height="104" rx="14"/>
+              <text class="hs-tag" x="196" y="56">WORKSPACE HOST</text>
+              <text class="hs-eq" x="564" y="56" text-anchor="end">host = toolSandbox</text>
+              <path class="hs-flow" d="M328 88 H432" marker-start="url(#hsAr)" marker-end="url(#hsAr)"/>
+              <text class="hs-mini" x="380" y="82" text-anchor="middle">tool calls</text>
+              <g transform="translate(288,88)"><rect class="hs-tile hs-brain" x="-24" y="-24" width="48" height="48" rx="12"/><g class="hs-ic" transform="scale(.78)"><circle cx="0" cy="0" r="3.4"/><circle cx="-10" cy="-7" r="2.4"/><circle cx="10" cy="-7" r="2.4"/><circle cx="0" cy="11" r="2.4"/><path d="M-2.6 -1.8 L-8 -5.6 M2.6 -1.8 L8 -5.6 M0 3.4 L0 8.6"/></g></g>
+              <text class="hs-name" x="288" y="130" text-anchor="middle">Brain</text>
+              <g transform="translate(472,88)"><rect class="hs-tile" x="-24" y="-24" width="48" height="48" rx="12"/><g class="hs-ic" transform="scale(.78)"><rect x="-14" y="-11" width="28" height="22" rx="2.5"/><path d="M-8 -3 L-3 1 L-8 5 M-1 5 h7"/></g></g>
+              <text class="hs-name" x="472" y="130" text-anchor="middle">Hand</text>
+            </svg>
+          )}
+          {m.id === "split" && (
+            <svg viewBox="0 0 760 168" xmlns="http://www.w3.org/2000/svg" class="hs-svg" role="img" aria-label="Split: the brain runs by the control plane while the hand runs in a remote sandbox across a network boundary. host is not toolSandbox.">
+              <rect class="hs-zone" x="30" y="34" width="316" height="104" rx="14"/>
+              <text class="hs-tag" x="46" y="56">CONTROL PLANE · <tspan class="hs-mono">host</tspan></text>
+              <rect class="hs-zone-ext" x="470" y="34" width="260" height="104" rx="14"/>
+              <text class="hs-tag" x="486" y="56">REMOTE SANDBOX · <tspan class="hs-mono">toolSandbox</tspan></text>
+
+              <line class="hs-bound" x1="408" y1="30" x2="408" y2="142"/>
+              <path class="hs-flow" d="M214 76 H556" marker-end="url(#hsAr)"/>
+              <path class="hs-flow hs-flow-dash" d="M556 100 H214" marker-end="url(#hsAr)"/>
+              <g><rect class="hs-mbg" x="372" y="60" width="72" height="14" rx="3"/><text class="hs-mini" x="408" y="71" text-anchor="middle">tool calls</text></g>
+              <g><rect class="hs-mbg" x="380" y="104" width="56" height="14" rx="3"/><text class="hs-mini" x="408" y="115" text-anchor="middle">results</text></g>
+
+              <g transform="translate(188,88)"><rect class="hs-tile hs-brain" x="-24" y="-24" width="48" height="48" rx="12"/><g class="hs-ic" transform="scale(.78)"><circle cx="0" cy="0" r="3.4"/><circle cx="-10" cy="-7" r="2.4"/><circle cx="10" cy="-7" r="2.4"/><circle cx="0" cy="11" r="2.4"/><path d="M-2.6 -1.8 L-8 -5.6 M2.6 -1.8 L8 -5.6 M0 3.4 L0 8.6"/></g></g>
+              <text class="hs-name" x="188" y="130" text-anchor="middle">Brain</text>
+              <text class="hs-sub" x="188" y="145" text-anchor="middle">session · harness · events</text>
+
+              <g transform="translate(600,88)"><rect class="hs-tile" x="-24" y="-24" width="48" height="48" rx="12"/><g class="hs-ic" transform="scale(.78)"><rect x="-14" y="-11" width="28" height="22" rx="2.5"/><path d="M-8 -3 L-3 1 L-8 5 M-1 5 h7"/></g></g>
+              <text class="hs-name" x="600" y="130" text-anchor="middle">Hand</text>
+              <text class="hs-sub" x="600" y="145" text-anchor="middle">terminals · files · processes</text>
+            </svg>
+          )}
+        </div>
+        <p class="hs-caption">{m.caption}</p>
+      </div>
+    ))}
+  </div>
+
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+    <marker id="hsAr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker>
+  </defs></svg>
+</div>
+
+<style>
+  .hs-switch { display: inline-flex; gap: .2rem; padding: .25rem; margin-bottom: 1.25rem; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
+  .hs-tab { padding: .4rem .95rem; border: 0; border-radius: 999px; background: transparent; color: var(--ink-faint); font: 500 .78rem var(--font-sans); letter-spacing: -.01em; cursor: pointer; transition: color .15s ease, background .15s ease; }
+  .hs-tab:hover { color: var(--ink); }
+  .hs-tab.is-active { background: var(--surface-hover); color: var(--ink); }
+
+  .hs-panel { display: none; }
+  .hs-panel.is-active { display: block; }
+  .hs-viz { padding: clamp(.75rem, 2vw, 1.4rem) clamp(1rem, 3vw, 2rem); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: #0e0e0e; }
+  @media (prefers-color-scheme: light) { .hs-viz { background: var(--bg-deep); } }
+  .hs-svg { width: 100%; height: auto; display: block; }
+  .hs-caption { max-width: 46rem; margin: 1rem 0 0; color: var(--ink-soft); font-size: .92rem; line-height: 1.55; }
+
+  .hs-tile { fill: var(--surface); stroke: var(--line); stroke-width: 1; }
+  .hs-brain { stroke: color-mix(in srgb, var(--accent) 50%, var(--line-strong)); stroke-width: 1.5; }
+  .hs-zone { fill: color-mix(in srgb, var(--surface) 40%, var(--bg-deep)); stroke: var(--line-strong); stroke-width: 1; }
+  .hs-zone-ext { fill: none; stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 4 4; }
+  .hs-ic { fill: none; stroke: var(--ink-soft); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .hs-name { fill: var(--ink); font: 600 13px var(--font-sans); letter-spacing: -.01em; }
+  .hs-sub { fill: var(--ink-faint); font: 400 9.5px var(--font-mono); }
+  .hs-tag { fill: var(--ink-weakest); font: 600 9px var(--font-mono); letter-spacing: .12em; }
+  .hs-mono { fill: var(--accent-text); letter-spacing: 0; }
+  .hs-eq { fill: var(--ink-faint); font: 500 10px var(--font-mono); }
+  .hs-mini { fill: var(--ink-soft); font: 500 9.5px var(--font-mono); }
+  .hs-mbg { fill: var(--bg-deep); }
+  .hs-flow { fill: none; stroke: var(--line-strong); stroke-width: 1.5; }
+  .hs-flow-dash { stroke-dasharray: 5 4; }
+  .hs-bound { stroke: color-mix(in srgb, var(--success) 42%, var(--line-strong)); stroke-width: 1; stroke-dasharray: 2 5; }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLElement>(".arch-hs").forEach((root) => {
+    const tabs = root.querySelectorAll<HTMLElement>(".hs-tab")
+    const panels = root.querySelectorAll<HTMLElement>(".hs-panel")
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        const mode = tab.getAttribute("data-mode")
+        tabs.forEach((t) => t.classList.toggle("is-active", t === tab))
+        panels.forEach((p) => p.classList.toggle("is-active", p.getAttribute("data-mode") === mode))
+      })
+    })
+  })
+</script>

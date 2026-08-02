@@ -1,0 +1,70 @@
+name: deploy-worker-migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "Branch containing one Worker-only Durable Object migration commit"
+        required: true
+        type: string
+
+concurrency:
+  group: claxedo-cloud-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-staging:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.source_ref }}
+          fetch-depth: 2
+
+      - name: Verify migration-only commit
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git diff --name-only HEAD^ HEAD)
+          expected=(
+            packages/claxedo-server/src/worker.ts
+            packages/claxedo-server/src/workgraph-host/workgraph-settler-migration.ts
+            packages/claxedo-server/wrangler.toml
+          )
+          [ "${#changed[@]}" -eq "${#expected[@]}" ]
+          for path in "${expected[@]}"; do
+            printf '%s\n' "${changed[@]}" | grep -Fxq "$path"
+          done
+          grep -Fq 'new_sqlite_classes = ["WorkGraphSettler"]' packages/claxedo-server/wrangler.toml
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Build control-plane workspace packages
+        run: |
+          bun run --cwd packages/workspace-relay-protocol build
+          bun run --cwd packages/workspace-relay build
+          bun run --cwd packages/claxedo-connections build
+          bun run --cwd packages/sandbox-manager build
+          bun run --cwd packages/workgraph build
+
+      - name: Verify Worker bundle
+        working-directory: packages/claxedo-server
+        run: timeout 5m bunx wrangler deploy --env staging --dry-run --outdir dist-worker
+
+      - name: Deploy migration-only control-plane Worker
+        working-directory: packages/claxedo-server
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CONTROL_PLANE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+          WORKSPACE_RELAY_URL: ${{ vars.CLAXEDO_WORKSPACE_RELAY_URL }}
+          SANDBOX_BUILD_ID: ${{ vars.CLAXEDO_SANDBOX_BUILD_ID }}
+        run: >-
+          bunx wrangler deploy --env staging
+          --var "CLAXEDO_RELEASE:${GITHUB_SHA}"
+          --var "CLAXEDO_PUBLIC_URL:${CONTROL_PLANE_URL}"
+          --var "CLAXEDO_WORKSPACE_RELAY_URL:${WORKSPACE_RELAY_URL}"
+          --var "CLAXEDO_SANDBOX_BUILD_ID:${SANDBOX_BUILD_ID}"

@@ -1,0 +1,111 @@
+import { app, BrowserWindow, Menu, shell } from "electron"
+
+import { UPDATER_ENABLED } from "./constants"
+
+type Deps = {
+  trigger: (id: string) => void
+  checkForUpdates: () => void
+  reload: () => void
+  relaunch: () => void
+}
+
+export function createMenu(deps: Deps) {
+  if (process.platform !== "darwin") return
+
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: app.getName(),
+      submenu: [
+        { role: "about" },
+        {
+          label: "Check for Updates...",
+          enabled: UPDATER_ENABLED,
+          click: () => deps.checkForUpdates(),
+        },
+        {
+          label: "Reload Webview",
+          click: () => deps.reload(),
+        },
+        {
+          label: "Restart",
+          click: () => deps.relaunch(),
+        },
+        { type: "separator" },
+        { role: "hide" },
+        { role: "hideOthers" },
+        { role: "unhide" },
+        { type: "separator" },
+        { role: "quit" },
+      ],
+    },
+    {
+      label: "File",
+      submenu: [
+        { label: "New Session", accelerator: "Shift+Cmd+S", click: () => deps.trigger("session.new") },
+        { label: "Open Project...", accelerator: "Cmd+O", click: () => deps.trigger("project.open") },
+        { type: "separator" },
+        { label: "Toggle Split View", accelerator: "Cmd+\\", click: () => deps.trigger("claxedo.split.toggle") },
+        { label: "Close Tab", accelerator: "Cmd+W", click: () => deps.trigger("claxedo.tab.close") },
+        { type: "separator" },
+        { label: "Close Window", click: () => BrowserWindow.getFocusedWindow()?.close() },
+      ],
+    },
+    {
+      label: "Edit",
+      submenu: [
+        { role: "undo" },
+        { role: "redo" },
+        { type: "separator" },
+        { role: "cut" },
+        { role: "copy" },
+        { role: "paste" },
+        { role: "selectAll" },
+      ],
+    },
+    {
+      label: "View",
+      submenu: [
+        { label: "Toggle Sidebar", accelerator: "Cmd+B", click: () => deps.trigger("sidebar.toggle") },
+        { label: "Toggle Terminal", accelerator: "Ctrl+`", click: () => deps.trigger("terminal.toggle") },
+        { label: "Toggle File Tree", click: () => deps.trigger("fileTree.toggle") },
+        { type: "separator" },
+        { label: "Back", click: () => deps.trigger("common.goBack") },
+        { label: "Forward", click: () => deps.trigger("common.goForward") },
+        { type: "separator" },
+        {
+          label: "Previous Session",
+          accelerator: "Option+ArrowUp",
+          click: () => deps.trigger("session.previous"),
+        },
+        {
+          label: "Next Session",
+          accelerator: "Option+ArrowDown",
+          click: () => deps.trigger("session.next"),
+        },
+        { type: "separator" },
+        {
+          label: "Toggle Developer Tools",
+          accelerator: "Alt+Cmd+I",
+          click: () => BrowserWindow.getFocusedWindow()?.webContents.toggleDevTools(),
+        },
+      ],
+    },
+    {
+      label: "Help",
+      submenu: [
+        { label: "Claxedo Documentation", click: () => shell.openExternal("https://claxedo.ai/docs") },
+        { type: "separator" },
+        {
+          label: "Share Feedback",
+          click: () => shell.openExternal("https://github.com/kyashrathore/Claxedo/issues/new"),
+        },
+        {
+          label: "Report a Bug",
+          click: () => shell.openExternal("https://github.com/kyashrathore/Claxedo/issues/new"),
+        },
+      ],
+    },
+  ]
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}

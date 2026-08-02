@@ -1,0 +1,14 @@
+{
+  "name": "claxedo-sandbox-proxy",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@cloudflare/sandbox": "0.8.9"
+  },
+  "devDependencies": {
+    "wrangler": "4.50.0"
+  }
+}

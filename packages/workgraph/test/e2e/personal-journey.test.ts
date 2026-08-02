@@ -1,0 +1,394 @@
+import { createHash } from "node:crypto"
+import BetterSqlite3 from "better-sqlite3"
+import { afterEach, describe, expect, it } from "vitest"
+import {
+  createIntakeService,
+  createSourceViewService,
+  createSqliteIntakeStores,
+  createSqliteSourcePlanningRuntime,
+  createSqliteWorkGraphService,
+  listSqliteReconcilableRuns,
+  recordSemanticRunResult,
+  renewSqliteRunLease,
+  type ConnectionsPort,
+  type WorkspaceExecutionPort,
+} from "../../src"
+import type { SourceIssueConnector } from "../../src/connectors/interface"
+import type {
+  AdmissionAgentPlan,
+  CompletionContract,
+  ConnectionID,
+  OperationID,
+  StreamID,
+  WorkGraphContext,
+  WorkGraphPublicRecord,
+  WorkSourceRevisionRef,
+} from "../../src/contracts"
+
+const databases: BetterSqlite3.Database[] = []
+
+afterEach(() => databases.splice(0).forEach((database) => database.close()))
+
+describe("canonical personal WorkGraph journey", () => {
+  it("keeps one owner journey coherent through admission, concurrent execution, decisions, evidence, intake, and lifecycle cleanup", async () => {
+    const fixture = setup()
+
+    const source = await fixture.execute("create_work_source", {
+      title: "Launch plan",
+      content: "Ship Claxedo Cloud, verify it, and preserve every consequential decision.",
+    })
+    const sourceRef = {
+      workSourceId: resultId(source, "workSourceId"),
+      revisionId: resultId(source, "revisionId"),
+      contentHash: createHash("sha256").update("Ship Claxedo Cloud, verify it, and preserve every consequential decision.").digest("hex"),
+    } as WorkSourceRevisionRef
+    const proposal = await fixture.execute("propose_admission", { source: sourceRef, execution: streamTarget })
+    await fixture.planAdmission({
+      source: sourceRef,
+      suggestedPlacement: { mode: "new_stream", streamTitle: "Ship Claxedo Cloud" },
+      placementMatches: [],
+      proposedOutcomes: [{ key: "launch", title: "Cloud is launched", successCriteria: ["Core journey passes"], execution: {} }],
+      proposedWorkItems: [
+        { key: "backend", outcomeKey: "launch", title: "Ship backend", dependencyKeys: [], completionContract: completion("backend-proof"), execution: {} },
+        { key: "frontend", outcomeKey: "launch", title: "Ship frontend", dependencyKeys: [], completionContract: completion("frontend-proof"), execution: {} },
+        { key: "announce", outcomeKey: "launch", title: "Announce launch", dependencyKeys: ["backend"], completionContract: completion("announce-proof"), execution: {} },
+      ],
+      duplicateMatches: [],
+    })
+    const admitted = await fixture.execute("confirm_admission", {
+      proposalId: resultId(proposal, "proposalId"),
+      expectedVersion: 3,
+      source: sourceRef,
+      selection: { mode: "create", streamTitle: "Ship Claxedo Cloud" },
+      outcomes: [{ proposalKey: "launch", title: "Cloud is launched", successCriteria: ["Core journey passes"] }],
+      workItems: [
+        { proposalKey: "backend", outcomeProposalKey: "launch", title: "Ship backend", completionContract: completion("backend-proof") },
+        { proposalKey: "frontend", outcomeProposalKey: "launch", title: "Ship frontend", completionContract: completion("frontend-proof") },
+        { proposalKey: "announce", outcomeProposalKey: "launch", title: "Announce launch", dependencyProposalKeys: ["backend"], completionContract: completion("announce-proof") },
+      ],
+    })
+    const streamId = resultId(admitted, "streamId") as StreamID
+    const initial = await fixture.snapshot()
+    const outcome = record(initial, "outcome", (candidate) => candidate.streamId === streamId)
+    const backend = record(initial, "work_item", (candidate) => candidate.title === "Ship backend")
+    const frontend = record(initial, "work_item", (candidate) => candidate.title === "Ship frontend")
+    const announce = record(initial, "work_item", (candidate) => candidate.title === "Announce launch")
+    expect(announce.dependencyIds).toEqual([backend.id])
+
+    expect(await fixture.execute("update_stream", {
+      streamId,
+      expectedVersion: 1,
+      execution: profile,
+    })).toMatchObject({ ok: true })
+    // Setting the execution profile admits one ready item. The other independent
+    // item waits for the Stream's running Run to settle.
+    expect((fixture.database.prepare("SELECT COUNT(*) AS count FROM wg_v2_runs").get() as { count: number }).count).toBe(1)
+    expect(fixture.runtime.provisioned).toEqual([streamId])
+    expect(new Set(fixture.runtime.envelopes)).toEqual(new Set([`envelope:${streamId}`]))
+
+    const decision = await fixture.execute("propose_decision", {
+      streamId,
+      question: "Which rollout should the backend use?",
+      options: [{ id: "gradual", label: "Gradual" }, { id: "instant", label: "Instant" }],
+      recommendationOptionId: "gradual",
+      affectedWorkItemIds: [backend.id],
+    })
+    const running = await fixture.snapshot()
+    expect(running.records.filter((candidate) => candidate.recordType === "run").map((run) => run.state)).toEqual(["running"])
+    expect(record(running, "decision", (candidate) => candidate.id === resultId(decision, "decisionId"))).toMatchObject({ state: "pending", affectedWorkItemIds: [backend.id] })
+    expect(record(running, "work_item", (candidate) => candidate.id === frontend.id).state).toBe("pending")
+
+    expect(await fixture.execute("answer_decision", {
+      decisionId: resultId(decision, "decisionId"),
+      expectedVersion: 1,
+      optionId: "gradual",
+    })).toMatchObject({ ok: true })
+    fixture.runtime.succeedAll()
+    await fixture.reconcile()
+    expect((await fixture.snapshot()).records.filter((candidate) => candidate.recordType === "run").map((run) => run.state))
+      .toEqual(["running"])
+    await fixture.completeRun(backend.id, "backend-proof")
+    expect(record(await fixture.snapshot(), "work_item", (candidate) => candidate.id === frontend.id).state).toBe("active")
+    await fixture.completeRun(frontend.id, "frontend-proof")
+    const settled = await fixture.snapshot()
+    expect(settled.records.filter((candidate) => candidate.recordType === "run")).toEqual(expect.arrayContaining([
+      expect.objectContaining({ state: "result", result: expect.objectContaining({ artifactRefs: expect.arrayContaining(["commit:e2e"]) }) }),
+      expect.objectContaining({ state: "result", result: expect.objectContaining({ artifactRefs: expect.arrayContaining(["commit:e2e"]) }) }),
+    ]))
+    expect(record(settled, "work_item", (candidate) => candidate.id === backend.id).state).toBe("result_ready")
+    expect(record(settled, "work_item", (candidate) => candidate.id === frontend.id).state).toBe("result_ready")
+
+    for (const [workItemId, requirementId] of [[backend.id, "backend-proof"], [frontend.id, "frontend-proof"]] as const) {
+      expect(await fixture.execute("record_evidence", {
+        subject: { type: "work_item", workItemId },
+        requirementId,
+        evidence: { kind: "test_result", summary: `${requirementId} passed`, passed: true, command: "bun test" },
+      })).toMatchObject({ ok: true })
+      await expect(fixture.adapter.service.query(owner(), "workItems", "read", { workItemId })).resolves.toMatchObject({ completionSatisfied: true })
+    }
+
+    const intakeStores = createSqliteIntakeStores(fixture.database)
+    const sourceViews = createSourceViewService({ store: intakeStores.sourceViews, connections, ids: sequence("view"), clock: fixture.clock })
+    const sourceView = await sourceViews.create(owner(), {
+      teamConnectionId,
+      provider: "github",
+      providerUserId: "owner-gh",
+      filters: { repo: "claxedo/claxedo" },
+    })
+    const intake = createIntakeService({
+      ...intakeStores,
+      commands: { execute: (context, request) => fixture.adapter.service.execute(context, request) },
+      connections,
+      connectors: { get: () => sourceConnector },
+      ids: sequence("candidate"),
+      clock: fixture.clock,
+    })
+    const refreshed = await intake.refresh(owner(), sourceView.id)
+    expect(refreshed.candidates).toHaveLength(1)
+    await expect(intake.stage(owner(), refreshed.candidates[0]!.id)).resolves.toMatchObject({ state: "staged", title: "Discovered follow-up" })
+
+    const disposable = await fixture.execute("create_stream", { title: "Disposable spike", execution: streamTarget })
+    const disposableId = resultId(disposable, "streamId")
+    expect(await fixture.execute("delete_stream", { streamId: disposableId, expectedVersion: 1, reason: "Spike is no longer useful" })).toMatchObject({ ok: true })
+    expect((await fixture.snapshot()).records.some((candidate) => candidate.recordType === "stream" && candidate.id === disposableId)).toBe(false)
+
+    expect(await fixture.execute("record_evidence", {
+      subject: { type: "work_item", workItemId: backend.id },
+      evidence: { kind: "integration", summary: "Preview published", effect: "published", reference: "https://preview.example/e2e" },
+    })).toMatchObject({ ok: true })
+    expect(await fixture.execute("delete_stream", { streamId, expectedVersion: 2, reason: "Try destructive cleanup" })).toMatchObject({ ok: false, error: { code: "close_required" } })
+    expect(await fixture.execute("close_stream", { streamId, expectedVersion: 2, reason: "Launch record retained" })).toMatchObject({ ok: true })
+    const closed = await fixture.snapshot()
+    expect(record(closed, "stream", (candidate) => candidate.id === streamId)).toMatchObject({ lifecycleState: "closed", durableEffectCount: 1 })
+    expect(record(closed, "work_item", (candidate) => candidate.id === announce.id)).toMatchObject({ state: "abandoned", abandonReason: "Launch record retained" })
+    expect(outcome.id).toBeTruthy()
+  })
+
+  it("promotes evidence-satisfied result_ready work into completed semantic work before closing its Outcome", async () => {
+    const fixture = setup()
+    const streamId = resultId(await fixture.execute("create_stream", {
+      title: "Completion contract",
+      execution: streamTarget,
+    }), "streamId")
+    const outcomeId = resultId(await fixture.execute("create_outcome", { streamId, title: "Shipped", successCriteria: ["Verified"] }), "outcomeId")
+    const workItemId = resultId(await fixture.execute("create_work_item", {
+      streamId,
+      outcomeId,
+      title: "Verify",
+      completionContract: completion("proof"),
+      execution: profile,
+    }), "workItemId")
+    // The approved item auto-admits on creation (Stream active with a complete profile).
+    fixture.runtime.succeedAll()
+    await fixture.reconcile()
+    expect(record(await fixture.snapshot(), "work_item", (candidate) => candidate.id === workItemId).state).toBe("active")
+    await fixture.completeRun(workItemId, "proof")
+    await fixture.execute("record_evidence", {
+      subject: { type: "work_item", workItemId },
+      requirementId: "proof",
+      evidence: { kind: "test_result", summary: "Verified", passed: true },
+    })
+    expect(record(await fixture.snapshot(), "work_item", (candidate) => candidate.id === workItemId).state).toBe("completed")
+    await fixture.execute("record_evidence", {
+      subject: { type: "outcome", outcomeId },
+      evidence: { kind: "owner_confirmation", summary: "Accepted", confirmed: true },
+    })
+    expect(record(await fixture.snapshot(), "outcome", (candidate) => candidate.id === outcomeId).state).toBe("ready_to_close")
+    expect(await fixture.execute("close_outcome", { outcomeId, expectedVersion: 2, reason: "All work verified" })).toMatchObject({ ok: true })
+  })
+
+})
+
+function setup() {
+  const database = new BetterSqlite3(":memory:")
+  databases.push(database)
+  let now = 1_000
+  let id = 0
+  let operation = 0
+  let generationConfigured = false
+  const runtime = controlledExecution()
+  const adapter = createSqliteWorkGraphService({ database, executionCapabilities: testExecutionCapabilities, execution: runtime.port, clock: { now: () => now++ }, ids: { next: (kind) => `${kind}_${++id}` } })
+  const execute = (type: string, command: Record<string, unknown>) => adapter.service.execute(owner(), {
+    operationId: branded<OperationID>(`operation_${++operation}`),
+    command: { version: 1, type, ...command },
+  } as never)
+  const configureGeneration = async () => {
+    if (generationConfigured) return
+    const result = await execute("update_workgraph_defaults", {
+      expectedVersion: 1,
+      defaults: {
+        execution: runtimeDefaults,
+      },
+    })
+    if (!result.ok) throw new Error(`Expected explicit WorkGraph generation configuration: ${result.error.message}`)
+    generationConfigured = true
+  }
+  return {
+    database,
+    adapter,
+    runtime,
+    execute,
+    clock: { now: () => now },
+    planAdmission: async (plan: AdmissionAgentPlan) => {
+      await configureGeneration()
+      const runtime = createSqliteSourcePlanningRuntime({
+        database,
+        clock: { now: () => now },
+        workerId: "e2e-source-planner",
+        sessionDirectory: "/repo",
+        sessions: {
+          async admit(input) { return String(input.sessionId) },
+          async result() { return { state: "succeeded", summary: JSON.stringify(plan), artifacts: [] } },
+        },
+      })
+      const result = await runtime.runDue(owner())
+      if (result.state !== "completed") throw new Error(JSON.stringify(result))
+    },
+    snapshot: () => adapter.service.query(owner(), "snapshot", "page", { limit: 500 }),
+    completeRun: async (workItemId: string, requirementId: string) => {
+      const run = database.prepare(`
+        SELECT runs.id, runs.session_id, runs.generation, bindings.project_id
+        FROM wg_v2_runs runs
+        JOIN wg_v2_session_bindings bindings
+          ON bindings.organization_id = runs.organization_id
+          AND bindings.owner_user_id = runs.owner_user_id
+          AND bindings.session_id = runs.session_id
+          AND bindings.current_run_id = runs.id
+          AND bindings.state = 'active'
+        WHERE runs.organization_id = ? AND runs.owner_user_id = ?
+          AND runs.work_item_id = ? AND runs.lifecycle = 'running'
+      `).get(owner().organizationId, owner().ownerUserId, workItemId) as
+        | { id: string; session_id: string; generation: number; project_id: string }
+        | undefined
+      if (!run) throw new Error("Expected a running Run binding")
+      return execute("complete_run", {
+        runId: run.id,
+        sessionId: run.session_id,
+        workspaceId: run.project_id,
+        generation: run.generation,
+        summary: "Execution completed",
+        artifacts: ["commit:e2e"],
+        evidence: [{
+          requirementId,
+          evidence: { kind: "test_result", summary: "Awaiting independent verification", passed: false },
+        }],
+      })
+    },
+    reconcile: async () => Promise.all(listSqliteReconcilableRuns(database, owner()).map(async (run) => {
+      const renewal = renewSqliteRunLease(database, owner(), {
+        runId: run.runId,
+        expectedLeaseEpoch: run.leaseEpoch,
+        occurredAt: now++,
+        durationMs: 300_000,
+      })
+      if (!renewal) return
+      const result = await runtime.port.result(owner(), { runId: run.runId, sessionId: run.sessionId })
+      if (result.state !== "succeeded") return
+      return recordSemanticRunResult(
+        owner(),
+        { ...run, leaseEpoch: renewal.leaseEpoch },
+        result,
+        adapter.runResults,
+      )
+    })),
+  }
+}
+
+function controlledExecution() {
+  const results = new Map<string, "running" | "succeeded">()
+  const provisioned: string[] = []
+  const envelopes: string[] = []
+  const port: WorkspaceExecutionPort = {
+    provisionOrAdopt: async (_context, input) => {
+      provisioned.push(input.streamId)
+      const id = `envelope:${input.streamId}` as never
+      envelopes.push(id)
+      return { id, streamId: input.streamId, environment: input.environment, repository: input.repository, workspaceId: `/tmp/${id}` }
+    },
+    launch: async (_context, input) => {
+      const sessionId = `session:${input.runId}` as never
+      results.set(sessionId, "running")
+      return { sessionId, envelopeId: input.envelopeId, projectId: "/tmp/workgraph-e2e" }
+    },
+    cancel: async (_context, input) => { results.delete(input.sessionId) },
+    result: async (_context, input) => results.get(input.sessionId) === "succeeded"
+      ? { state: "succeeded", summary: "Execution completed", artifacts: ["commit:e2e"] }
+      : { state: "running" },
+    cleanup: async () => undefined,
+  }
+  return { port, provisioned, envelopes, succeedAll: () => results.forEach((_value, key) => results.set(key, "succeeded")) }
+}
+
+const streamTarget = {
+  environment: { kind: "local_worktree" as const, placement: "shared" as const, directory: "/repo" },
+  repository: { baseRevision: "HEAD" },
+}
+
+const runtimeDefaults = {
+  harness: "claxedo-v2",
+  agent: "build",
+  model: { providerId: "openai", modelId: "gpt-5" },
+  effort: "high",
+  tools: [],
+  connectionIds: [],
+}
+
+const profile = { ...streamTarget, ...runtimeDefaults }
+
+function completion(id: string): CompletionContract {
+  return { version: 1, mode: "all", requirements: [{ id: branded(id), kind: "test", description: "The focused test passes" }] }
+}
+
+function resultId(result: Awaited<ReturnType<ReturnType<typeof setup>["execute"]>>, key: string) {
+  if (!result.ok || !result.value || typeof result.value !== "object" || Array.isArray(result.value)) throw new Error(`Expected ${key}`)
+  const value = result.value[key]
+  if (typeof value !== "string") throw new Error(`Expected ${key}`)
+  return value
+}
+
+function resultIds(result: Awaited<ReturnType<ReturnType<typeof setup>["execute"]>>, key: string) {
+  if (!result.ok || !result.value || typeof result.value !== "object" || Array.isArray(result.value)) throw new Error(`Expected ${key}`)
+  const value = result.value[key]
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) throw new Error(`Expected ${key}`)
+  return value as string[]
+}
+
+function record<Type extends WorkGraphPublicRecord["recordType"]>(
+  snapshot: { records: WorkGraphPublicRecord[] },
+  type: Type,
+  predicate: (candidate: Extract<WorkGraphPublicRecord, { recordType: Type }>) => boolean,
+) {
+  const candidate = snapshot.records.find((entry): entry is Extract<WorkGraphPublicRecord, { recordType: Type }> => entry.recordType === type && predicate(entry as never))
+  if (!candidate) throw new Error(`Expected ${type} record`)
+  return candidate
+}
+
+const teamConnectionId = branded<ConnectionID>("team-github")
+const connections: ConnectionsPort = {
+  resolveCapabilities: async () => [{
+    id: teamConnectionId,
+    integrationId: "github",
+    capability: "work-source",
+    scope: "team",
+    withAuthorization: async (use) => use({ token: "live-only", tokenType: "bearer" }),
+    reportAuthFailure: async () => undefined,
+  }],
+}
+const sourceConnector: SourceIssueConnector = {
+  provider: "github",
+  list: async () => ({ issues: [{ externalId: "42", externalKey: "CLA-42", title: "Discovered follow-up", body: "Found while an agent was executing", status: "open", updatedAt: 2_000, revision: "rev-1" }] }),
+  comment: async () => undefined,
+  update: async () => undefined,
+}
+
+function sequence(prefix: string) {
+  let id = 0
+  return { next: () => `${prefix}_${++id}` }
+}
+
+function owner(): WorkGraphContext {
+  return { organizationId: "organization" as never, ownerUserId: branded("owner"), actor: { type: "user", id: branded("owner") }, requestId: branded("request"), access: { mode: "owner" } }
+}
+
+function branded<Type = string>(value: string) { return value as Type }
+import { testExecutionCapabilities } from "../test-execution-capabilities"

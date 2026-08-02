@@ -1,0 +1,38 @@
+---
+import config from "virtual:starlight/user-config"
+import LanguageSelect from "@astrojs/starlight/components/LanguageSelect.astro"
+import Search from "@astrojs/starlight/components/Search.astro"
+import SiteTitle from "@astrojs/starlight/components/SiteTitle.astro"
+import SocialIcons from "@astrojs/starlight/components/SocialIcons.astro"
+import ThemeSelect from "@astrojs/starlight/components/ThemeSelect.astro"
+import { marketingActions } from "../../content/routes"
+
+const shouldRenderSearch = config.pagefind || config.components.Search !== "@astrojs/starlight/components/Search.astro"
+---
+
+<div class="framework-header">
+  <div class="title"><SiteTitle /><span>Framework</span></div>
+  <div class="search">{shouldRenderSearch && <Search />}</div>
+  <div class="right">
+    <a href="/framework/guides/introduction">Guide</a>
+    <a href="/framework/api/overview">Reference</a>
+    <a class="download" href={marketingActions.cloud.href} data-analytics-event={marketingActions.cloud.event} data-analytics-placement="framework-header">Open Claxedo</a>
+    <div class="social"><SocialIcons /></div><ThemeSelect /><LanguageSelect />
+  </div>
+</div>
+
+<style>
+  @layer starlight.core {
+    .framework-header { display: grid; grid-template-columns: minmax(12rem, auto) minmax(12rem, 1fr) auto; align-items: center; gap: 1rem; height: 100%; }
+    .title, .right, .social { display: flex; align-items: center; gap: 1rem; }
+    .title { min-width: 0; overflow: hidden; padding: .25rem; margin: -.25rem; }
+    .title > span { padding-left: 1rem; border-left: 1px solid var(--sl-color-gray-5); color: var(--sl-color-gray-3); font: 500 .66rem var(--sl-font-mono); letter-spacing: .06em; text-transform: uppercase; }
+    .right > a { color: var(--sl-color-gray-2); font: 500 .78rem var(--sl-font); letter-spacing: -.01em; text-decoration: none; }
+    .download { padding: .5rem .8rem; border-radius: .4rem; background: var(--sl-color-text-accent); color: var(--sl-color-black) !important; }
+    .social { padding-left: .2rem; }
+    @media (max-width: 72rem) { .right > a:not(.download), .social { display: none; } }
+    @media (max-width: 50rem) { .framework-header { grid-template-columns: 1fr auto; } .search { display: none; } .right { gap: .45rem; } .title > span { display: none; } }
+  }
+</style>
+
+<script>import "../../scripts/analytics"</script>

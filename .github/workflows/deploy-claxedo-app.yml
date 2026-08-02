@@ -1,0 +1,165 @@
+name: deploy-claxedo-app
+
+on:
+  workflow_call:
+    inputs:
+      target_environment:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_environment }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Verify deployment configuration
+        env:
+          CONTROL_PLANE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+          APP_URL: ${{ vars.CLAXEDO_APP_URL }}
+          PAGES_PROJECT: ${{ vars.CLAXEDO_PAGES_PROJECT }}
+          PAGES_BRANCH: ${{ vars.CLAXEDO_PAGES_BRANCH }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          WORKGRAPH_SMOKE_USER_A_ID: ${{ vars.WORKGRAPH_SMOKE_USER_A_ID }}
+          WORKGRAPH_SMOKE_USER_A_EMAIL: ${{ vars.WORKGRAPH_SMOKE_USER_A_EMAIL }}
+          WORKGRAPH_SMOKE_ORGANIZATION_A_ID: ${{ vars.WORKGRAPH_SMOKE_ORGANIZATION_A_ID }}
+          CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          for name in CONTROL_PLANE_URL APP_URL PAGES_PROJECT PAGES_BRANCH CLERK_PUBLISHABLE_KEY CLERK_SECRET_KEY WORKGRAPH_SMOKE_USER_A_ID WORKGRAPH_SMOKE_USER_A_EMAIL WORKGRAPH_SMOKE_ORGANIZATION_A_ID CONVEX_URL CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            [ -n "${!name}" ] || { echo "::error::$name is not configured in the protected environment"; exit 1; }
+          done
+
+      - name: Verify the target control plane
+        env:
+          BASE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+        run: |
+          set -euo pipefail
+          BASE="${BASE_URL%/}"
+          curl -fsS --max-time 15 "$BASE/api/claxedo/health" | jq -e '.ok == true' > /dev/null
+          curl -fsS --max-time 15 "$BASE/api/claxedo/mode" | jq -e '.signedAuth == true' > /dev/null
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+            -H "Authorization: Bearer app-deploy-garbage-${GITHUB_RUN_ID}" \
+            "$BASE/api/workgraph/snapshot?limit=1")
+          [ "$code" = "401" ] || { echo "::error::target WorkGraph auth probe returned $code, expected 401"; exit 1; }
+
+      - name: Build WorkGraph package for app
+        run: bun run --cwd packages/workgraph build
+
+      - name: Build app for the verified control plane
+        working-directory: packages/claxedo-app
+        env:
+          VITE_CLAXEDO_SERVER_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+          VITE_AUTH_ENABLED: "true"
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          VITE_CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
+          # Public by design: VITE_ vars ship in the client bundle — this is
+          # the PostHog PROJECT key (capture-only), never a personal API
+          # key. Empty key leaves analytics.ts uninitialized: no client,
+          # no network call, the same "no keys configured => nothing sent"
+          # contract self-host builds rely on. Mode defaults to "on" here
+          # because a Claxedo Cloud deploy is the intended-on case, so an
+          # unpopulated repo var can't silently leave production dark; the
+          # repo var still overrides it to "off" without a code change.
+          VITE_POSTHOG_KEY: ${{ vars.VITE_POSTHOG_KEY }}
+          VITE_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST }}
+          VITE_CLAXEDO_TELEMETRY_MODE: ${{ vars.VITE_CLAXEDO_TELEMETRY_MODE || 'on' }}
+        run: bun run build
+
+      # A source-map upload token is optional config: its absence must
+      # degrade to "no upload, deploy still green," never a failed step.
+      # secrets.* is not usable directly in `if:`, hence the bridge through
+      # a step output.
+      - name: Check for PostHog source map token
+        id: posthog_cli_check
+        env:
+          POSTHOG_CLI_TOKEN: ${{ secrets.POSTHOG_CLI_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "$POSTHOG_CLI_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # POSTHOG_CLI_API_KEY / POSTHOG_CLI_PROJECT_ID are the CLI's own env
+      # var names (verified with `bunx @posthog/cli --help`; deliberately
+      # different from the GH secret/var names on the left of each line).
+      # --host has no env-var form in this CLI version, hence the explicit
+      # flag. release-version reuses the repo's CLAXEDO_RELEASE = git SHA
+      # convention (D12) so uploaded maps line up with the deployed build.
+      - name: Inject and upload PostHog source maps
+        if: steps.posthog_cli_check.outputs.enabled == 'true'
+        working-directory: packages/claxedo-app
+        env:
+          POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_TOKEN }}
+          POSTHOG_CLI_PROJECT_ID: ${{ vars.POSTHOG_CLI_PROJECT_ID }}
+          POSTHOG_CLI_HOST: ${{ vars.POSTHOG_CLI_HOST || 'https://us.posthog.com' }}
+        run: |
+          set -euo pipefail
+          bunx @posthog/cli@0.9.1 --host "$POSTHOG_CLI_HOST" sourcemap inject --directory dist --release-version "$GITHUB_SHA"
+          bunx @posthog/cli@0.9.1 --host "$POSTHOG_CLI_HOST" sourcemap upload --directory dist --release-version "$GITHUB_SHA"
+
+      # Unconditional: build.sourcemap is "hidden" (vite.cloud.config.ts),
+      # so *.map files exist on disk whenever the build ran, upload token
+      # present or not. Cloudflare Pages must never serve raw source maps.
+      - name: Strip source maps from the publish directory
+        working-directory: packages/claxedo-app
+        run: find dist -type f -name '*.map' -delete
+
+      - name: Deploy app
+        working-directory: packages/claxedo-app
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLAXEDO_PAGES_PROJECT: ${{ vars.CLAXEDO_PAGES_PROJECT }}
+          CLAXEDO_PAGES_BRANCH: ${{ vars.CLAXEDO_PAGES_BRANCH }}
+        run: bunx wrangler pages deploy dist --project-name "$CLAXEDO_PAGES_PROJECT" --branch "$CLAXEDO_PAGES_BRANCH"
+
+      - name: Verify deployed WorkGraph route
+        env:
+          APP_URL: ${{ vars.CLAXEDO_APP_URL }}
+        run: |
+          set -euo pipefail
+          body=$(curl -fsS --max-time 15 "${APP_URL%/}/workgraph")
+          printf '%s' "$body" | grep -F '<div id="root"' > /dev/null \
+            || { echo "::error::deployed /workgraph did not return the Claxedo app shell"; exit 1; }
+
+      - name: Install Playwright Chromium
+        working-directory: packages/claxedo-app
+        run: bunx playwright install --with-deps chromium
+
+      - name: Authenticated deployed WorkGraph browser gate
+        working-directory: packages/claxedo-app
+        timeout-minutes: 10
+        env:
+          CLAXEDO_APP_URL: ${{ vars.CLAXEDO_APP_URL }}
+          CLAXEDO_CONTROL_PLANE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+          CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          WORKGRAPH_SMOKE_USER_A_ID: ${{ vars.WORKGRAPH_SMOKE_USER_A_ID }}
+          WORKGRAPH_SMOKE_USER_A_EMAIL: ${{ vars.WORKGRAPH_SMOKE_USER_A_EMAIL }}
+          WORKGRAPH_SMOKE_ORGANIZATION_A_ID: ${{ vars.WORKGRAPH_SMOKE_ORGANIZATION_A_ID }}
+          WORKGRAPH_SMOKE_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          WORKGRAPH_SMOKE_BASE_REVISION: ${{ github.sha }}
+        run: bun run test:e2e:deployed-workgraph
+
+      - name: Upload deployed WorkGraph browser artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: deployed-workgraph-${{ inputs.target_environment }}-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            packages/claxedo-app/e2e/playwright/test-results/deployed-workgraph
+            packages/claxedo-app/e2e/playwright/report/deployed-workgraph

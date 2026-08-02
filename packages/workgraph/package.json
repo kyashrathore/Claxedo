@@ -1,0 +1,105 @@
+{
+  "name": "@claxedo/workgraph",
+  "version": "0.4.0",
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kyashrathore/Claxedo.git",
+    "directory": "packages/workgraph"
+  },
+  "keywords": [
+    "workgraph",
+    "ai-agents",
+    "task-management",
+    "event-sourcing",
+    "claxedo"
+  ],
+  "homepage": "https://github.com/kyashrathore/Claxedo/tree/dev/packages/workgraph",
+  "bugs": "https://github.com/kyashrathore/Claxedo/issues",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "bun run scripts/build.ts",
+    "prepublishOnly": "bun run build",
+    "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit.xml",
+    "typecheck": "bun x tsc --noEmit -p tsconfig.src.json",
+    "typecheck:src": "bun x tsc --noEmit -p tsconfig.src.json",
+    "typecheck:test": "bun x tsc --noEmit -p tsconfig.test.json"
+  },
+  "dependencies": {
+    "@noble/hashes": "2.2.0",
+    "better-sqlite3": "13.0.1",
+    "hono": "4.10.7",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@claxedo/connections": "workspace:*",
+    "@types/better-sqlite3": "7.6.13",
+    "typescript": "catalog:",
+    "vitest": "2.1.9",
+    "@types/bun": "catalog:"
+  },
+  "description": "A personal operating system for organizing, executing, and remembering AI-assisted work.",
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
+    },
+    "./connectors": {
+      "types": "./dist/connectors/index.d.ts",
+      "import": "./dist/connectors/index.mjs",
+      "default": "./dist/connectors/index.mjs"
+    },
+    "./contracts": {
+      "types": "./dist/contracts/index.d.ts",
+      "browser": "./dist/contracts/index.mjs",
+      "import": "./dist/contracts/index.mjs",
+      "default": "./dist/contracts/index.mjs"
+    },
+    "./domain": {
+      "types": "./dist/domain/index.d.ts",
+      "browser": "./dist/domain/index.mjs",
+      "import": "./dist/domain/index.mjs",
+      "default": "./dist/domain/index.mjs"
+    },
+    "./hosted": {
+      "types": "./dist/hosted.d.ts",
+      "browser": "./dist/hosted.mjs",
+      "import": "./dist/hosted.mjs",
+      "default": "./dist/hosted.mjs"
+    },
+    "./matching": {
+      "types": "./dist/matching.d.ts",
+      "browser": "./dist/matching.mjs",
+      "import": "./dist/matching.mjs",
+      "default": "./dist/matching.mjs"
+    },
+    "./ports": {
+      "types": "./dist/ports/index.d.ts",
+      "browser": "./dist/ports/index.mjs",
+      "import": "./dist/ports/index.mjs",
+      "default": "./dist/ports/index.mjs"
+    },
+    "./conformance": {
+      "types": "./dist/conformance/index.d.ts",
+      "browser": "./dist/conformance/index.mjs",
+      "import": "./dist/conformance/index.mjs",
+      "default": "./dist/conformance/index.mjs"
+    }
+  },
+  "files": [
+    "README.md",
+    "COMPATIBILITY.md",
+    "ARCHITECTURE.md",
+    "SPEC.md",
+    "PRD.md",
+    "TASKS.md",
+    "LICENSE",
+    "dist"
+  ]
+}

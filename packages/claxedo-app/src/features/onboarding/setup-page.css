@@ -1,0 +1,276 @@
+/*
+ * Setup is the app with one job on screen — not a guest modal sitting on top of
+ * it. The whole visual argument is restraint and scale contrast: a 28px step
+ * title against 13px body copy, hairlines instead of nested boxes, and exactly
+ * one accent moment (a verified credential). Nothing here decorates.
+ */
+
+.setup-page {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100%;
+  min-height: 0;
+  background: var(--background-base);
+}
+
+/* ── Header ───────────────────────────────────────────────────────────── */
+
+.setup-header {
+  border-bottom: 1px solid var(--border-weak-base);
+}
+
+.setup-header-inner {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  width: var(--setup-measure);
+  margin-inline: auto;
+  padding-block: 1.15rem 0.85rem;
+}
+
+.setup-page {
+  --setup-measure: min(44rem, 100% - 3rem);
+}
+
+.setup-counter {
+  /* Tabular figures keep "Step 2 of 4" from jittering as the step changes. */
+  font-variant-numeric: tabular-nums;
+  color: var(--text-weaker);
+}
+
+/* ── Progress rail ────────────────────────────────────────────────────── */
+
+.setup-rail {
+  display: flex;
+  gap: 0.25rem;
+  width: var(--setup-measure);
+  margin-inline: auto;
+  padding-bottom: 0.9rem;
+  list-style: none;
+}
+
+.setup-rail-segment {
+  flex: 1;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--border-weak-base);
+  transition: background-color 220ms ease-out;
+}
+
+.setup-rail-segment[data-state="done"] {
+  background: var(--text-strong);
+}
+
+/* Real, upcoming, not yet reachable — present but visibly not now. */
+.setup-rail-segment[data-state="locked"] {
+  opacity: 0.5;
+}
+
+/*
+ * The current segment fills rather than swapping colour, so forward motion reads
+ * as progress across the rail instead of a light flicking on.
+ */
+.setup-rail-segment[data-state="current"] {
+  position: relative;
+  overflow: hidden;
+}
+
+.setup-rail-segment[data-state="current"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--text-base);
+  transform-origin: left center;
+  animation: setup-rail-fill 220ms ease-out both;
+}
+
+@keyframes setup-rail-fill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+/* ── Body — the only scroll container ─────────────────────────────────── */
+
+.setup-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.setup-body-inner {
+  width: var(--setup-measure);
+  margin-inline: auto;
+  padding-block: 2.5rem 4rem;
+}
+
+/*
+ * Keyed on the step id so each screen replays the entrance. Only the body
+ * moves — the header and action bar are fixed points the eye can hold.
+ */
+.setup-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+  animation: setup-screen-enter 160ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@keyframes setup-screen-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+.setup-eyebrow {
+  display: block;
+  margin-bottom: 0.75rem;
+  color: var(--text-weaker);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.setup-title {
+  font-size: 1.75rem;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: var(--text-strong);
+}
+
+.setup-lede {
+  margin-top: 0.75rem;
+  max-width: 34rem;
+  color: var(--text-weak);
+}
+
+.setup-block {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* ── Option rows — hairline separated, never cards ────────────────────── */
+
+.setup-rows {
+  border-block: 1px solid var(--border-weak-base);
+}
+
+.setup-row + .setup-row {
+  border-top: 1px solid var(--border-weak-base);
+}
+
+.setup-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  padding: 1rem 0.25rem;
+  text-align: left;
+  transition: background-color 90ms ease-out;
+}
+
+button.setup-row:hover:not(:disabled) {
+  background: var(--surface-base-hover);
+}
+
+button.setup-row:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.setup-row-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.setup-row-consequence {
+  color: var(--text-weak);
+}
+
+.setup-row-chevron {
+  flex: 0 0 auto;
+  color: var(--text-weaker);
+}
+
+/* The single accent in the whole flow: a credential that actually works. */
+.setup-verified {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--icon-success-base);
+}
+
+.setup-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+  color: var(--text-weak);
+}
+
+/* ── Action bar ───────────────────────────────────────────────────────── */
+
+.setup-actions {
+  border-top: 1px solid var(--border-weak-base);
+}
+
+.setup-actions-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: var(--setup-measure);
+  margin-inline: auto;
+  padding-block: 1rem;
+}
+
+.setup-actions-end {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* ── Responsive ───────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .setup-rail-labels {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .setup-page {
+    --setup-measure: calc(100% - 2rem);
+  }
+
+  .setup-title {
+    font-size: 1.5rem;
+  }
+
+  /* Primary action first in DOM order and full-width on narrow screens. */
+  .setup-actions-inner {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .setup-actions-end {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .setup-screen,
+  .setup-rail-segment[data-state="current"]::after {
+    animation: none;
+  }
+
+  .setup-rail-segment,
+  .setup-row {
+    transition: none;
+  }
+}

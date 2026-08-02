@@ -1,0 +1,445 @@
+import { z } from "zod"
+import { AdmissionProposalIDSchema, ChangeCursorSchema } from "./commands"
+import { SnapshotResumeCursorSchema } from "./snapshot-cursor"
+import { CompletionContractSchema } from "./completion"
+import { WorkGraphActorSchema } from "./context"
+import {
+  ExecutionProfileDefaultsSchema,
+  ResolvedExecutionProfileSchema,
+  StreamSpendSchema,
+  WorkGraphDefaultsSchema,
+} from "./execution"
+import {
+  RunIDSchema,
+  DecisionIDSchema,
+  EvidenceIDSchema,
+  OperationIDSchema,
+  OutcomeIDSchema,
+  OwnerUserIDSchema,
+  StreamIDSchema,
+  WorkGraphIDSchema,
+  WorkItemIDSchema,
+} from "./ids"
+import {
+  RunStateSchema,
+  DecisionStateSchema,
+  OutcomeStateSchema,
+  StreamLifecycleStateSchema,
+  StreamVisibilitySchema,
+  WorkItemStateSchema,
+} from "./lifecycle"
+import { WorkSourceRevisionRefSchema } from "./work-source"
+import { DEFAULT_STREAM_ACTIVITY_GRANULARITY, StreamActivityGranularitySchema } from "./activity"
+import { StreamCharterSchema } from "./charter"
+
+const text = z.string().trim().min(1)
+const timestamp = z.number().int().nonnegative()
+const version = z.number().int().positive()
+
+export const RecordProvenanceSchema = z.strictObject({
+  actor: WorkGraphActorSchema,
+  operationId: OperationIDSchema.optional(),
+})
+export type RecordProvenance = z.infer<typeof RecordProvenanceSchema>
+
+const ownerRecordShape = {
+  schemaVersion: z.literal(1),
+  ownerUserId: OwnerUserIDSchema,
+  version,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+  provenance: RecordProvenanceSchema,
+}
+
+export const WorkGraphDefaultsDtoSchema = z.strictObject({
+  recordType: z.literal("workgraph"),
+  ...ownerRecordShape,
+  id: WorkGraphIDSchema,
+  defaults: WorkGraphDefaultsSchema,
+})
+export type WorkGraphDefaultsDto = z.infer<typeof WorkGraphDefaultsDtoSchema>
+
+export const StreamActivitySchema = z.strictObject({
+  lastActivityAt: timestamp,
+})
+export type StreamActivity = z.infer<typeof StreamActivitySchema>
+
+export const StreamEnvelopeSchema = z.strictObject({
+  kind: z.enum(["local_worktree", "hosted_workspace"]),
+  workspaceId: text,
+  status: z.enum(["provisioning", "ready", "attention", "cleaning", "destroyed"]),
+})
+export type StreamEnvelope = z.infer<typeof StreamEnvelopeSchema>
+
+export const StreamReplacementResetSchema = z.strictObject({
+  state: z.enum(["pending", "attention", "completed"]),
+  proposalId: AdmissionProposalIDSchema,
+  previousSource: WorkSourceRevisionRefSchema,
+  source: WorkSourceRevisionRefSchema,
+  requestedAt: timestamp,
+  completedAt: timestamp.optional(),
+})
+export type StreamReplacementReset = z.infer<typeof StreamReplacementResetSchema>
+
+const streamMasterStatusShape = {
+  state: z.enum(["hibernating", "pending", "acting", "retrying", "attention"]),
+  /** Typed escalation discriminant — surfaces dispatch on this, never prose. */
+  escalation: z.enum(["public_pr_confirmation", "failure_halt", "budget_exhausted"]).optional(),
+  sessionId: z.string().trim().min(1).max(512).optional(),
+  turnId: z.string().trim().min(1).max(512).optional(),
+  historyAfter: z.number().int().nonnegative().optional(),
+  admissionConfirmed: z.boolean().optional(),
+  failureCount: z.number().int().nonnegative().optional(),
+  message: z.string().trim().min(1).max(1_000),
+  receiptRefs: z.array(z.string().trim().min(1).max(2_048)).max(100).default([]),
+  charterHash: z.string().regex(/^[a-f0-9]{64}$/i).optional(),
+  updatedAt: timestamp,
+}
+const StreamMasterStatusSnapshotSchema = z.strictObject(streamMasterStatusShape)
+export const StreamMasterStatusSchema = z.strictObject({
+  ...streamMasterStatusShape,
+  budgetPriorStatus: StreamMasterStatusSnapshotSchema.optional(),
+})
+export type StreamMasterStatus = z.infer<typeof StreamMasterStatusSchema>
+
+export const StreamDtoSchema = z.strictObject({
+  recordType: z.literal("stream"),
+  ...ownerRecordShape,
+  id: StreamIDSchema,
+  parentStreamId: StreamIDSchema.optional(),
+  title: text,
+  description: z.string().optional(),
+  charter: StreamCharterSchema.optional(),
+  lifecycleState: StreamLifecycleStateSchema,
+  visibility: StreamVisibilitySchema,
+  pinned: z.boolean(),
+  executionDefaults: ExecutionProfileDefaultsSchema,
+  spend: StreamSpendSchema.optional(),
+  activityGranularity: StreamActivityGranularitySchema.default(DEFAULT_STREAM_ACTIVITY_GRANULARITY),
+  activity: StreamActivitySchema,
+  envelope: StreamEnvelopeSchema.optional(),
+  replacementReset: StreamReplacementResetSchema.optional(),
+  masterStatus: StreamMasterStatusSchema.optional(),
+  notesSource: WorkSourceRevisionRefSchema.optional(),
+  publicPrConfirmedAt: timestamp.optional(),
+  durableEffectCount: z.number().int().nonnegative(),
+  sourceRevisionRefs: z.array(WorkSourceRevisionRefSchema),
+})
+export type StreamDto = z.infer<typeof StreamDtoSchema>
+
+export const OutcomeDtoSchema = z.strictObject({
+  recordType: z.literal("outcome"),
+  ...ownerRecordShape,
+  id: OutcomeIDSchema,
+  streamId: StreamIDSchema,
+  title: text,
+  description: z.string().optional(),
+  state: OutcomeStateSchema,
+  successCriteria: z.array(text).min(1),
+  evidenceIds: z.array(EvidenceIDSchema),
+  executionDefaults: ExecutionProfileDefaultsSchema.optional(),
+  sourceRevisionRefs: z.array(WorkSourceRevisionRefSchema),
+  closedAt: timestamp.optional(),
+  closedBy: WorkGraphActorSchema.optional(),
+  closeReason: text.optional(),
+  reopenedAt: timestamp.optional(),
+  reopenReason: text.optional(),
+})
+export type OutcomeDto = z.infer<typeof OutcomeDtoSchema>
+
+export const WorkItemDtoSchema = z.strictObject({
+  recordType: z.literal("work_item"),
+  ...ownerRecordShape,
+  id: WorkItemIDSchema,
+  streamId: StreamIDSchema,
+  parentTaskId: WorkItemIDSchema.optional(),
+  outcomeId: OutcomeIDSchema.optional(),
+  title: text,
+  description: z.string().optional(),
+  state: WorkItemStateSchema,
+  priority: z.number().int().nonnegative(),
+  dependencyIds: z.array(WorkItemIDSchema),
+  sourceRevisionRefs: z.array(WorkSourceRevisionRefSchema),
+  completionContract: CompletionContractSchema,
+  evidenceIds: z.array(EvidenceIDSchema),
+  executionDefaults: ExecutionProfileDefaultsSchema.optional(),
+  createdByActorType: z.enum(["user", "agent", "system"]).optional(),
+  createdByActorId: text.optional(),
+  originRunId: RunIDSchema.optional(),
+  autoAdmitted: z.boolean().optional(),
+  abandonedAt: timestamp.optional(),
+  abandonReason: text.optional(),
+})
+export type WorkItemDto = z.infer<typeof WorkItemDtoSchema>
+
+export const RunResultSchema = z.strictObject({
+  summary: text,
+  artifactRefs: z.array(text),
+  finishedAt: timestamp,
+})
+export type RunResult = z.infer<typeof RunResultSchema>
+
+export const RunCompletionRetrySchema = z.strictObject({
+  terminalSeq: z.number().int().nonnegative(),
+  requestedAt: timestamp,
+})
+export type RunCompletionRetry = z.infer<typeof RunCompletionRetrySchema>
+
+const runtimeReference = z.string().trim().min(1).max(512)
+export const RunExecutionReferencesSchema = z.strictObject({
+  sessionId: runtimeReference.optional(),
+  workspaceId: runtimeReference.optional(),
+  childWorkspaceId: runtimeReference.optional(),
+}).refine((references) => references.sessionId || references.workspaceId || references.childWorkspaceId, {
+  message: "Run execution references cannot be empty",
+})
+export type RunExecutionReferences = z.infer<typeof RunExecutionReferencesSchema>
+
+export const RunDtoSchema = z
+  .strictObject({
+    recordType: z.literal("run"),
+    ...ownerRecordShape,
+    id: RunIDSchema,
+    streamId: StreamIDSchema,
+    workItemId: WorkItemIDSchema,
+    runNumber: z.number().int().positive(),
+    generation: z.number().int().positive(),
+    state: RunStateSchema,
+    resolvedExecution: ResolvedExecutionProfileSchema,
+    admittedAt: timestamp,
+    startedAt: timestamp.optional(),
+    finishedAt: timestamp.optional(),
+    result: RunResultSchema.optional(),
+    parkedReason: text.optional(),
+    resumeAttempts: z.number().int().nonnegative().default(0),
+    completionRetry: RunCompletionRetrySchema.optional(),
+    sourceRevisionRefs: z.array(WorkSourceRevisionRefSchema),
+    executionKind: z.enum(["managed", "attached"]).default("managed"),
+    executionReferences: RunExecutionReferencesSchema.optional(),
+  })
+  .transform(deepFreeze)
+export type RunDto = z.infer<typeof RunDtoSchema>
+
+export const DecisionOptionSchema = z.strictObject({
+  id: text,
+  label: text,
+  description: z.string().optional(),
+})
+export type DecisionOption = z.infer<typeof DecisionOptionSchema>
+
+export const DecisionAnswerSchema = z.strictObject({
+  optionId: text.optional(),
+  answer: text.optional(),
+  answeredAt: timestamp,
+  answeredBy: WorkGraphActorSchema,
+}).refine((answer) => answer.optionId || answer.answer, "A Decision answer requires an option or free-form answer")
+export type DecisionAnswer = z.infer<typeof DecisionAnswerSchema>
+
+export const DecisionDtoSchema = z
+  .strictObject({
+    recordType: z.literal("decision"),
+    ...ownerRecordShape,
+    id: DecisionIDSchema,
+    streamId: StreamIDSchema,
+    state: DecisionStateSchema,
+    question: text,
+    options: z.array(DecisionOptionSchema).min(1),
+    recommendationOptionId: text.optional(),
+    rationale: z.string().optional(),
+    affectedWorkItemIds: z.array(WorkItemIDSchema).min(1),
+    sourceRevisionRefs: z.array(WorkSourceRevisionRefSchema),
+    answer: DecisionAnswerSchema.optional(),
+    dismissedAt: timestamp.optional(),
+    dismissReason: text.optional(),
+  })
+  .superRefine((decision, context) => {
+    const optionIds = new Set(decision.options.map((option) => option.id))
+    if (optionIds.size !== decision.options.length) {
+      context.addIssue({ code: "custom", path: ["options"], message: "Decision option IDs must be unique" })
+    }
+    if (!decision.recommendationOptionId || optionIds.has(decision.recommendationOptionId)) return
+    context.addIssue({ code: "custom", path: ["recommendationOptionId"], message: "Recommendation must reference an option" })
+  })
+export type DecisionDto = z.infer<typeof DecisionDtoSchema>
+
+export const WorkGraphRecordReferenceSchema = z.discriminatedUnion("type", [
+  z.strictObject({ type: z.literal("workgraph"), id: WorkGraphIDSchema }),
+  z.strictObject({ type: z.literal("stream"), id: StreamIDSchema }),
+  z.strictObject({ type: z.literal("outcome"), id: OutcomeIDSchema }),
+  z.strictObject({ type: z.literal("work_item"), id: WorkItemIDSchema }),
+  z.strictObject({ type: z.literal("run"), id: RunIDSchema }),
+  z.strictObject({ type: z.literal("decision"), id: DecisionIDSchema }),
+  z.strictObject({ type: z.literal("admission_proposal"), id: AdmissionProposalIDSchema }),
+])
+export type WorkGraphRecordReference = z.infer<typeof WorkGraphRecordReferenceSchema>
+
+export const AdmissionProposalStateSchema = z.enum(["planning", "planning_failed", "proposed", "confirmed", "dismissed"])
+export type AdmissionProposalState = z.infer<typeof AdmissionProposalStateSchema>
+
+export const AdmissionSuggestedPlacementSchema = z.discriminatedUnion("mode", [
+  z.strictObject({ mode: z.literal("new_stream"), streamTitle: text }),
+  z.strictObject({ mode: z.literal("existing"), streamId: StreamIDSchema }),
+])
+export type AdmissionSuggestedPlacement = z.infer<typeof AdmissionSuggestedPlacementSchema>
+
+export const AdmissionPlacementMatchSchema = z.strictObject({
+  streamId: StreamIDSchema,
+  confidence: z.enum(["high", "medium", "low"]),
+  score: z.number().min(0).max(1),
+  reason: text,
+  evidence: z.array(text),
+})
+
+export const AdmissionDuplicateMatchSchema = z.strictObject({
+  subject: z.discriminatedUnion("type", [
+    z.strictObject({ type: z.literal("outcome"), outcomeId: OutcomeIDSchema }),
+    z.strictObject({ type: z.literal("work_item"), workItemId: WorkItemIDSchema }),
+  ]),
+  streamId: StreamIDSchema,
+  title: text,
+  state: text,
+  score: z.number().min(0).max(1),
+  reason: text,
+  evidence: z.array(text).min(1),
+})
+
+export const AdmissionProposalGenerationSchema = z.discriminatedUnion("method", [
+  z.strictObject({
+    method: z.literal("planning"),
+    tryNumber: z.number().int().nonnegative(),
+    queuedAt: timestamp,
+    startedAt: timestamp.optional(),
+  }),
+  z.strictObject({
+    method: z.literal("planning_failed"),
+    tryNumber: z.number().int().nonnegative(),
+    reason: text,
+    failedAt: timestamp.optional(),
+    invalidatedAt: timestamp.optional(),
+    retryable: z.boolean(),
+  }).refine((generation) => generation.failedAt !== undefined || generation.invalidatedAt !== undefined, {
+    message: "Admission planning failure requires a failure or invalidation timestamp",
+  }),
+  z.strictObject({ method: z.literal("agent_session"), sessionId: text, generatedAt: timestamp }),
+])
+export type AdmissionProposalGeneration = z.infer<typeof AdmissionProposalGenerationSchema>
+
+export const AdmissionProposedOutcomeSchema = z.strictObject({
+  key: text,
+  title: text,
+  description: z.string().optional(),
+  successCriteria: z.array(text).min(1),
+  execution: ExecutionProfileDefaultsSchema,
+})
+
+export const AdmissionProposedWorkItemSchema = z.strictObject({
+  key: text,
+  outcomeKey: text.optional(),
+  title: text,
+  description: z.string().optional(),
+  dependencyKeys: z.array(text),
+  completionContract: CompletionContractSchema,
+  execution: ExecutionProfileDefaultsSchema,
+})
+
+export const AdmissionAgentPlanSchema = z.strictObject({
+  source: WorkSourceRevisionRefSchema,
+  suggestedPlacement: AdmissionSuggestedPlacementSchema,
+  placementMatches: z.array(AdmissionPlacementMatchSchema).max(4),
+  proposedOutcomes: z.array(AdmissionProposedOutcomeSchema),
+  proposedWorkItems: z.array(AdmissionProposedWorkItemSchema),
+  duplicateMatches: z.array(AdmissionDuplicateMatchSchema),
+})
+export type AdmissionAgentPlan = z.infer<typeof AdmissionAgentPlanSchema>
+
+const admissionProposalShape = {
+  recordType: z.literal("admission_proposal"),
+  ...ownerRecordShape,
+  id: AdmissionProposalIDSchema,
+  source: WorkSourceRevisionRefSchema,
+  previousSource: WorkSourceRevisionRefSchema.optional(),
+  diffSummary: z.string().optional(),
+}
+
+const AdmissionPlanningProposalDtoSchema = z.strictObject({
+  ...admissionProposalShape,
+  state: z.literal("planning"),
+  generation: z.strictObject({
+    method: z.literal("planning"),
+    tryNumber: z.number().int().nonnegative(),
+    queuedAt: timestamp,
+    startedAt: timestamp.optional(),
+  }),
+})
+
+const AdmissionPlanningFailedProposalDtoSchema = z.strictObject({
+  ...admissionProposalShape,
+  state: z.literal("planning_failed"),
+  generation: z.strictObject({
+    method: z.literal("planning_failed"),
+    tryNumber: z.number().int().nonnegative(),
+    reason: text,
+    failedAt: timestamp.optional(),
+    invalidatedAt: timestamp.optional(),
+    retryable: z.boolean(),
+  }).refine((generation) => generation.failedAt !== undefined || generation.invalidatedAt !== undefined, {
+    message: "Admission planning failure requires a failure or invalidation timestamp",
+  }),
+})
+
+const admissionReviewableProposalShape = {
+  ...admissionProposalShape,
+  generation: z.strictObject({ method: z.literal("agent_session"), sessionId: text, generatedAt: timestamp }),
+  suggestedPlacement: AdmissionSuggestedPlacementSchema,
+  placementMatches: z.array(AdmissionPlacementMatchSchema),
+  proposedOutcomes: z.array(AdmissionProposedOutcomeSchema),
+  proposedWorkItems: z.array(AdmissionProposedWorkItemSchema),
+  duplicateMatches: z.array(AdmissionDuplicateMatchSchema),
+}
+
+const AdmissionReviewableProposalDtoSchema = z.union([
+  z.strictObject({ ...admissionReviewableProposalShape, state: z.literal("proposed") }),
+  z.strictObject({ ...admissionReviewableProposalShape, state: z.literal("confirmed") }),
+  z.strictObject({ ...admissionReviewableProposalShape, state: z.literal("dismissed") }),
+])
+
+export const AdmissionProposalDtoSchema = z.union([
+  AdmissionPlanningProposalDtoSchema,
+  AdmissionPlanningFailedProposalDtoSchema,
+  AdmissionReviewableProposalDtoSchema,
+])
+export type AdmissionProposalDto = z.infer<typeof AdmissionProposalDtoSchema>
+
+export const OrderedSnapshotReferenceSchema = z.strictObject({
+  sequence: z.number().int().positive(),
+  resource: WorkGraphRecordReferenceSchema,
+  version,
+})
+export type OrderedSnapshotReference = z.infer<typeof OrderedSnapshotReferenceSchema>
+
+export const WorkGraphPublicRecordSchema = z.union([
+  WorkGraphDefaultsDtoSchema,
+  StreamDtoSchema,
+  OutcomeDtoSchema,
+  WorkItemDtoSchema,
+  RunDtoSchema,
+  DecisionDtoSchema,
+  AdmissionProposalDtoSchema,
+])
+export type WorkGraphPublicRecord = z.infer<typeof WorkGraphPublicRecordSchema>
+
+export const WorkGraphSnapshotPageSchema = z.strictObject({
+  snapshotCursor: ChangeCursorSchema,
+  records: z.array(WorkGraphPublicRecordSchema),
+  references: z.array(OrderedSnapshotReferenceSchema),
+  hasMore: z.boolean(),
+  nextCursor: SnapshotResumeCursorSchema.optional(),
+  capturedAt: timestamp,
+})
+export type WorkGraphSnapshotPage = z.infer<typeof WorkGraphSnapshotPageSchema>
+
+function deepFreeze<T>(value: T): T {
+  if (value === null || typeof value !== "object") return value
+  Object.values(value).forEach(deepFreeze)
+  return Object.freeze(value) as T
+}

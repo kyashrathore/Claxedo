@@ -1,0 +1,177 @@
+---
+title: "Self-host on Fly.io"
+description: "claxedo deploy — self-host the whole control plane on Fly.io end to end, from a clone of the monorepo."
+---
+
+import Note from "../../../../components/framework/compat/Note.astro"
+import Warning from "../../../../components/framework/compat/Warning.astro"
+import Card from "../../../../components/framework/compat/Card.astro"
+
+
+`claxedo deploy` self-hosts the control plane on Fly.io: it asks the few real
+questions (harness, tool placement, region), derives everything else, drives
+`flyctl` (never reimplements its API), and only reports success once the
+deployed instance answers its own health check.
+
+<Note>
+v1 expects to run from a clone of the Claxedo monorepo (self-host-from-source)
+— it walks upward from your current directory looking for
+`packages/claxedo-server/Dockerfile`. A prebuilt-image path lands with the
+GHCR publish.
+</Note>
+
+## Prerequisites
+
+- A clone of the Claxedo monorepo.
+- [`flyctl`](https://fly.io/docs/flyctl/install/) installed and logged in
+  (`fly auth login`) — `claxedo deploy` checks both before touching anything.
+- Only Fly.io is wired in v1. Railway and Render are listed as the same model
+  but their adapters aren't shipped yet; Cloudflare and Vercel are rejected
+  outright — Cloudflare's isolates have no disk or long-lived process to host
+  the embedded engine, and Vercel functions get cut on a runtime timer.
+
+## Run the wizard
+
+```sh
+claxedo deploy
+```
+
+It asks, in order:
+
+1. **Which harness will you run?** — `pi`, `opencode`, or `claude-code`
+   (default `pi`).
+2. **Where should tools execute?** — only asked for `pi`, since it's the only
+   harness with a split tools-only session-env seam; other harnesses run
+   brain+hands as one piece on the server. Choices: `this-server` (default —
+   simplest, no extra accounts, agent workloads share the machine),
+   `daytona` (fresh isolated container per session, needs a Daytona API key),
+   or `cloudflare` (containers on your CF account, needs a CF API token +
+   sandbox worker URL).
+3. **Deploy where?** — `fly` (default; the only available choice in v1).
+4. **App name** (default `claxedo-selfhost`) and **Fly region** (default
+   `sin`).
+
+If you picked `daytona` or `cloudflare` tool placement, it then asks for the
+matching secret(s) (`DAYTONA_API_KEY`, or `CLOUDFLARE_API_TOKEN` +
+`CLOUDFLARE_SANDBOX_WORKER_URL`) and refuses to continue without them —
+model API keys are deliberately **not** asked here; those are configured
+in-app after first login.
+
+### Flags
+
+```sh
+claxedo deploy [--generate-only] [--app <name>] [--region <code>] [--yes]
+```
+
+`--yes` accepts every default non-interactively (harness `pi`, tools
+`this-server`, platform `fly`, app `claxedo-selfhost`, region `sin`) and skips
+straight to deploying. `--generate-only` writes the Fly config and prints the
+equivalent manual `flyctl` commands without touching your Fly account.
+`--harness` and `--tools` can also be passed to skip those two prompts
+non-interactively.
+
+## What it does
+
+1. **Writes `<app>.fly.toml`** at the monorepo root — build context is the
+   monorepo root, Dockerfile is `packages/claxedo-server/Dockerfile`, the
+   volume is mounted at `/data`, and the health check polls
+   `GET /api/claxedo/health`.
+2. **Verifies `flyctl` is installed and authenticated** (`fly auth whoami`).
+3. **Creates the Fly app and volume** — idempotent; an "already exists"
+   response from `flyctl apps create` is treated as success, and
+   `claxedo_data` is only created if `flyctl volumes list` doesn't already
+   show it.
+4. **Stages the tool-placement secret(s)** via `flyctl secrets set --stage`
+   (only if you picked Daytona or Cloudflare tools).
+5. **Deploys** with `flyctl deploy --remote-only` — no local Docker needed,
+   Fly's remote builder does the build.
+6. **Polls health** at `https://<app>.fly.dev/api/claxedo/health` (every 5s,
+   up to 36 attempts / 3 minutes) before declaring success. A finished deploy
+   with health that never goes green is reported as a failure, with
+   `fly logs --app <app>` as the next step.
+
+<Warning>
+The deployed instance runs **without authentication** — built-in accounts
+aren't shipped yet. Anyone with the URL can use it. The CLI prints this
+warning after every successful deploy: keep the app on Fly private networking
+or destroy it after testing, and don't treat it as production until sign-in
+ships.
+</Warning>
+
+## Memory: bump the generated config to 4GB
+
+<Warning>
+The config `claxedo deploy` writes defaults to `memory = "2gb"` on a
+`shared-cpu-2x` VM. The repository's own `packages/claxedo-server/fly.toml`
+(used for `fly launch --copy-config`) instead sets **`memory = "4gb"`**, with
+an explicit comment: *"4GB: the embedded engine (node-embed) OOMs a 2GB
+machine on first load."* Before your first real deploy, edit the generated
+`<app>.fly.toml` and raise `[[vm]] memory` to `"4gb"` — otherwise expect the
+machine to OOM the first time a session boots the embedded engine.
+</Warning>
+
+```toml
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "4gb"
+```
+
+## Manual path (`--generate-only`, or the packaged `fly.toml` directly)
+
+`--generate-only` prints the equivalent explicit steps instead of running
+them:
+
+```sh
+fly apps create <app>
+fly volumes create claxedo_data --app <app> --region <region> --size 10 --yes
+fly secrets set KEY=... --app <app> --stage   # per staged secret, if any
+fly deploy -c <app>.fly.toml --remote-only
+open https://<app>.fly.dev
+```
+
+The repository also ships a ready `packages/claxedo-server/fly.toml` you can
+use directly instead of the generated one — it already sets `memory = "4gb"`:
+
+```sh
+# From the monorepo root:
+fly launch --copy-config --no-deploy -c packages/claxedo-server/fly.toml
+fly volumes create claxedo_data --size 10 -a <app>
+fly deploy -c packages/claxedo-server/fly.toml
+```
+
+## Configuration after first deploy
+
+Unsigned single-user mode (the default the wizard deploys) needs no extra
+secrets — the SQLite authority is the default and every process boots on its
+own defaults. For signed/hosted mode, set the Clerk/Convex/relay secrets with
+`fly secrets set` — see `packages/claxedo-server/.env.example` for the full
+variable list, including `CLAXEDO_WORKGRAPH_REPOSITORY` (the absolute
+repository directory local WorkGraph execution and background Sessions use)
+and `CLAXEDO_DATA_DIR` (already set to `/data` by the generated config, backed
+by the `claxedo_data` volume).
+
+## Telemetry
+
+A self-hosted instance sends **no telemetry by default**. PostHog is Claxedo's
+only telemetry vendor — product analytics and error tracking both — so there
+is exactly one integration to leave off or turn on.
+
+Opting in is a mode switch plus your PostHog credentials, set like any other
+secret (`fly secrets set NAME=value --app <app>`):
+
+| Variable                                      | Effect                                                                                                                                                |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CLAXEDO_TELEMETRY_MODE`                      | `on` or `off`. Checked before key presence — while it is unset or `off` (the self-host default), nothing is sent regardless of what keys exist.        |
+| `CLAXEDO_POSTHOG_KEY`, `CLAXEDO_POSTHOG_HOST` | Your PostHog project key and host. Inert until the mode switch is `on`.                                                                                |
+
+With telemetry on, the instance sends feature-usage events and exception
+reports, tagged with your user and organization identifiers. It never sends
+prompts, source text, credentials, repository contents, or literal file paths
+— a path is reduced to its extension plus a one-way hash before it leaves the
+machine. The [privacy policy](https://claxedo.com/privacy) states the full
+data posture.
+
+<Card title="Hosted control plane (Cloudflare)" href="/framework/deploy/hosted-control-plane" icon="tower-control">
+  The alternative hosted path — deploy the control plane as a Cloudflare
+  Worker instead of a long-lived Fly machine.
+</Card>

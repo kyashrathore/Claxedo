@@ -1,0 +1,1135 @@
+import { createHash } from "node:crypto"
+import { sqlite, type SqliteInput } from "../../sqlite"
+import { AdmissionAgentPlanSchema, createChangeCursor } from "../../contracts"
+
+export const WORKGRAPH_SQLITE_SCHEMA_VERSION = 2
+const WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION = 1
+
+export function initializeWorkGraphSqliteSchema(input: SqliteInput) {
+  const db = sqlite(input)
+  rejectAmbiguousOwnerOnlySchema(db)
+  migrateRunVocabulary(db)
+  db.exec(`
+    PRAGMA foreign_keys = ON;
+
+    CREATE TABLE IF NOT EXISTS wg_v2_workgraphs (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      defaults_json TEXT NOT NULL DEFAULT '{}',
+      recap_defaults_json TEXT NOT NULL DEFAULT '{}',
+      row_version INTEGER NOT NULL DEFAULT 1,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at INTEGER NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, id)
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_work_sources (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      workgraph_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      source_kind TEXT NOT NULL DEFAULT 'manual',
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      latest_revision_number INTEGER NOT NULL DEFAULT 0,
+      row_version INTEGER NOT NULL DEFAULT 1,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at INTEGER NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      FOREIGN KEY (organization_id, owner_user_id, workgraph_id) REFERENCES wg_v2_workgraphs(organization_id, owner_user_id, id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_work_source_revisions (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      work_source_id TEXT NOT NULL,
+      revision_number INTEGER NOT NULL,
+      content TEXT NOT NULL,
+      content_hash TEXT NOT NULL,
+      origin_kind TEXT NOT NULL DEFAULT 'manual',
+      origin_reference_json TEXT,
+      created_by_json TEXT,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      UNIQUE (organization_id, owner_user_id, work_source_id, revision_number),
+      UNIQUE (organization_id, owner_user_id, work_source_id, id),
+      FOREIGN KEY (organization_id, owner_user_id, work_source_id) REFERENCES wg_v2_work_sources(organization_id, owner_user_id, id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_source_views (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      workgraph_id TEXT NOT NULL,
+      team_connection_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      provider_user_id TEXT NOT NULL,
+      filters_json TEXT NOT NULL,
+      target_json TEXT,
+      refresh_policy_json TEXT NOT NULL DEFAULT '{}',
+      sync_policy TEXT NOT NULL DEFAULT 'announce',
+      status TEXT NOT NULL DEFAULT 'active',
+      row_version INTEGER NOT NULL DEFAULT 1,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      FOREIGN KEY (organization_id, owner_user_id, workgraph_id) REFERENCES wg_v2_workgraphs(organization_id, owner_user_id, id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_webhook_deliveries (
+      organization_id TEXT NOT NULL,
+      connection_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      delivery_id TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      claimed_by TEXT,
+      claim_expires_at TEXT,
+      attempt_count INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, connection_id, provider, delivery_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_intake_candidates (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      workgraph_id TEXT NOT NULL,
+      source_view_id TEXT,
+      candidate_kind TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      normalized_json TEXT NOT NULL DEFAULT '{}',
+      status TEXT NOT NULL DEFAULT 'unorganized',
+      observed_revision TEXT,
+      row_version INTEGER NOT NULL DEFAULT 1,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      FOREIGN KEY (organization_id, owner_user_id, workgraph_id) REFERENCES wg_v2_workgraphs(organization_id, owner_user_id, id) ON DELETE CASCADE,
+      FOREIGN KEY (organization_id, owner_user_id, source_view_id) REFERENCES wg_v2_source_views(organization_id, owner_user_id, id) ON DELETE RESTRICT
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_external_identities (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      intake_candidate_id TEXT,
+      provider TEXT NOT NULL,
+      team_connection_id TEXT NOT NULL,
+      external_id TEXT NOT NULL,
+      external_key TEXT,
+      external_url TEXT,
+      observed_revision TEXT,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      UNIQUE (organization_id, owner_user_id, provider, team_connection_id, external_id),
+      FOREIGN KEY (organization_id, owner_user_id, intake_candidate_id) REFERENCES wg_v2_intake_candidates(organization_id, owner_user_id, id) ON DELETE RESTRICT
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_streams (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      workgraph_id TEXT NOT NULL,
+      parent_stream_id TEXT,
+      title TEXT NOT NULL,
+      purpose TEXT NOT NULL,
+      charter_json TEXT,
+      master_status_json TEXT,
+      notes_source_json TEXT,
+      public_pr_confirmed_at TEXT,
+      stream_kind TEXT NOT NULL DEFAULT 'finite',
+      lifecycle TEXT NOT NULL,
+      visibility TEXT NOT NULL DEFAULT 'visible',
+      pinned INTEGER NOT NULL DEFAULT 0,
+      execution_defaults_json TEXT NOT NULL DEFAULT '{}',
+      spend_json TEXT,
+      recap_defaults_json TEXT NOT NULL DEFAULT '{}',
+      activity_granularity TEXT NOT NULL DEFAULT 'progress' CHECK (activity_granularity IN ('milestones', 'progress', 'detailed')),
+      memory_card_json TEXT NOT NULL DEFAULT '{}',
+      base_repository TEXT,
+      base_revision TEXT,
+      envelope_intent_json TEXT NOT NULL DEFAULT '{}',
+      envelope_identity_json TEXT,
+      replacement_reset_json TEXT,
+      last_activity_at TEXT,
+      quiet_since TEXT,
+      row_version INTEGER NOT NULL DEFAULT 1,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      closed_at TEXT,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      FOREIGN KEY (organization_id, owner_user_id, workgraph_id) REFERENCES wg_v2_workgraphs(organization_id, owner_user_id, id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_llm_usage_events (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      stream_id TEXT,
+      run_id TEXT,
+      work_item_id TEXT,
+      provider_id TEXT NOT NULL,
+      model_id TEXT NOT NULL,
+      input_tokens INTEGER NOT NULL,
+      output_tokens INTEGER NOT NULL,
+      reasoning_tokens INTEGER NOT NULL,
+      cache_read_tokens INTEGER NOT NULL,
+      cache_write_tokens INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      PRIMARY KEY (organization_id, owner_user_id, id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_wg_v2_usage_stream_created
+      ON wg_v2_llm_usage_events(organization_id, owner_user_id, stream_id, created_at, id);
+
+    CREATE TABLE IF NOT EXISTS wg_v2_outcomes (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      stream_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      lifecycle TEXT NOT NULL,
+      success_criteria_json TEXT NOT NULL,
+      execution_defaults_json TEXT NOT NULL DEFAULT '{}',
+      ready_to_close_at TEXT,
+      completed_at TEXT,
+      closed_by_json TEXT,
+      close_reason TEXT,
+      reopened_at TEXT,
+      reopen_reason TEXT,
+      row_version INTEGER NOT NULL DEFAULT 1,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      UNIQUE (organization_id, owner_user_id, stream_id, id),
+      FOREIGN KEY (organization_id, owner_user_id, stream_id) REFERENCES wg_v2_streams(organization_id, owner_user_id, id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_work_items (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      stream_id TEXT NOT NULL,
+      parent_task_id TEXT,
+      outcome_id TEXT,
+      source_revision_id TEXT,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      lifecycle TEXT NOT NULL,
+      priority INTEGER NOT NULL DEFAULT 0,
+      execution_overrides_json TEXT NOT NULL DEFAULT '{}',
+      completion_contract_json TEXT NOT NULL DEFAULT '{}',
+      created_by_actor_type TEXT,
+      created_by_actor_id TEXT,
+      origin_run_id TEXT,
+      auto_admitted INTEGER CHECK (auto_admitted IN (0, 1)),
+      abandoned_reason TEXT,
+      abandoned_at TEXT,
+      row_version INTEGER NOT NULL DEFAULT 1,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      completed_at TEXT,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      UNIQUE (organization_id, owner_user_id, stream_id, id),
+      FOREIGN KEY (organization_id, owner_user_id, stream_id) REFERENCES wg_v2_streams(organization_id, owner_user_id, id) ON DELETE CASCADE,
+      FOREIGN KEY (organization_id, owner_user_id, stream_id, outcome_id) REFERENCES wg_v2_outcomes(organization_id, owner_user_id, stream_id, id) ON DELETE CASCADE,
+      FOREIGN KEY (organization_id, owner_user_id, source_revision_id) REFERENCES wg_v2_work_source_revisions(organization_id, owner_user_id, id) ON DELETE RESTRICT
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_work_item_dependencies (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      work_item_id TEXT NOT NULL,
+      depends_on_work_item_id TEXT NOT NULL,
+      dependency_kind TEXT NOT NULL DEFAULT 'blocks',
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      UNIQUE (organization_id, owner_user_id, work_item_id, depends_on_work_item_id),
+      CHECK (work_item_id <> depends_on_work_item_id),
+      FOREIGN KEY (organization_id, owner_user_id, work_item_id) REFERENCES wg_v2_work_items(organization_id, owner_user_id, id) ON DELETE CASCADE,
+      FOREIGN KEY (organization_id, owner_user_id, depends_on_work_item_id) REFERENCES wg_v2_work_items(organization_id, owner_user_id, id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_runs (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      stream_id TEXT NOT NULL,
+      work_item_id TEXT NOT NULL,
+      run_number INTEGER NOT NULL,
+      lifecycle TEXT NOT NULL,
+      execution_kind TEXT NOT NULL DEFAULT 'managed' CHECK (execution_kind IN ('managed', 'attached')),
+      resolved_execution_profile_json TEXT NOT NULL,
+      envelope_id TEXT,
+      child_workspace_id TEXT,
+      session_id TEXT,
+      terminal_result_json TEXT,
+      parked_reason TEXT,
+      resume_attempts INTEGER NOT NULL DEFAULT 0,
+      resume_available_at TEXT,
+      completion_retry_json TEXT,
+      generation INTEGER NOT NULL DEFAULT 1,
+      row_version INTEGER NOT NULL DEFAULT 1,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      started_at TEXT,
+      finished_at TEXT,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      UNIQUE (organization_id, owner_user_id, work_item_id, run_number),
+      FOREIGN KEY (organization_id, owner_user_id, stream_id) REFERENCES wg_v2_streams(organization_id, owner_user_id, id) ON DELETE CASCADE,
+      FOREIGN KEY (organization_id, owner_user_id, stream_id, work_item_id) REFERENCES wg_v2_work_items(organization_id, owner_user_id, stream_id, id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_session_bindings (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      stream_id TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      current_work_item_id TEXT,
+      current_run_id TEXT,
+      state TEXT NOT NULL CHECK (state IN ('active', 'released')),
+      bound_at TEXT NOT NULL,
+      released_at TEXT,
+      provenance_json TEXT NOT NULL,
+      row_version INTEGER NOT NULL DEFAULT 1,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      FOREIGN KEY (organization_id, owner_user_id, stream_id) REFERENCES wg_v2_streams(organization_id, owner_user_id, id) ON DELETE CASCADE,
+      FOREIGN KEY (organization_id, owner_user_id, stream_id, current_work_item_id) REFERENCES wg_v2_work_items(organization_id, owner_user_id, stream_id, id) ON DELETE RESTRICT,
+      FOREIGN KEY (organization_id, owner_user_id, current_run_id) REFERENCES wg_v2_runs(organization_id, owner_user_id, id) ON DELETE RESTRICT
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_agent_checkpoints (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      stream_id TEXT NOT NULL,
+      work_item_id TEXT NOT NULL,
+      run_id TEXT NOT NULL,
+      session_binding_id TEXT NOT NULL,
+      level TEXT NOT NULL CHECK (level IN ('milestone', 'progress', 'detail')),
+      summary TEXT NOT NULL,
+      evidence_ids_json TEXT NOT NULL DEFAULT '[]',
+      occurred_at TEXT NOT NULL,
+      provenance_json TEXT NOT NULL,
+      operation_id TEXT NOT NULL,
+      row_version INTEGER NOT NULL DEFAULT 1,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      UNIQUE (organization_id, owner_user_id, operation_id),
+      FOREIGN KEY (organization_id, owner_user_id, stream_id, work_item_id) REFERENCES wg_v2_work_items(organization_id, owner_user_id, stream_id, id) ON DELETE CASCADE,
+      FOREIGN KEY (organization_id, owner_user_id, run_id) REFERENCES wg_v2_runs(organization_id, owner_user_id, id) ON DELETE CASCADE,
+      FOREIGN KEY (organization_id, owner_user_id, session_binding_id) REFERENCES wg_v2_session_bindings(organization_id, owner_user_id, id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_leases (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      resource_type TEXT NOT NULL,
+      resource_id TEXT NOT NULL,
+      holder_id TEXT NOT NULL,
+      epoch INTEGER NOT NULL DEFAULT 1,
+      expires_at TEXT NOT NULL,
+      row_version INTEGER NOT NULL DEFAULT 1,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      UNIQUE (organization_id, owner_user_id, resource_type, resource_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_runtime_effects (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      effect_kind TEXT NOT NULL,
+      resource_type TEXT NOT NULL,
+      resource_id TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      state TEXT NOT NULL DEFAULT 'pending',
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      completed_at TEXT,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      UNIQUE (organization_id, owner_user_id, idempotency_key)
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_stream_cleanup_reservations (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      stream_id TEXT NOT NULL,
+      operation_id TEXT NOT NULL,
+      expected_version INTEGER NOT NULL,
+      cleanup_mode TEXT NOT NULL,
+      state TEXT NOT NULL DEFAULT 'reserved',
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, stream_id),
+      UNIQUE (organization_id, owner_user_id, operation_id),
+      FOREIGN KEY (organization_id, owner_user_id, stream_id) REFERENCES wg_v2_streams(organization_id, owner_user_id, id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_decisions (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      stream_id TEXT NOT NULL,
+      question TEXT NOT NULL,
+      options_json TEXT NOT NULL,
+      recommendation_json TEXT,
+      rationale TEXT,
+      answer_json TEXT,
+      lifecycle TEXT NOT NULL,
+      proposed_by_json TEXT NOT NULL,
+      answered_by_json TEXT,
+      row_version INTEGER NOT NULL DEFAULT 1,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      answered_at TEXT,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      FOREIGN KEY (organization_id, owner_user_id, stream_id) REFERENCES wg_v2_streams(organization_id, owner_user_id, id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_decision_work_items (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      decision_id TEXT NOT NULL,
+      work_item_id TEXT NOT NULL,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      UNIQUE (organization_id, owner_user_id, decision_id, work_item_id),
+      FOREIGN KEY (organization_id, owner_user_id, decision_id) REFERENCES wg_v2_decisions(organization_id, owner_user_id, id) ON DELETE CASCADE,
+      FOREIGN KEY (organization_id, owner_user_id, work_item_id) REFERENCES wg_v2_work_items(organization_id, owner_user_id, id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_evidence (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      stream_id TEXT NOT NULL,
+      subject_type TEXT NOT NULL,
+      subject_id TEXT NOT NULL,
+      requirement_id TEXT,
+      source_run_id TEXT,
+      evidence_kind TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      reference_json TEXT NOT NULL DEFAULT '{}',
+      provenance_json TEXT NOT NULL,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      FOREIGN KEY (organization_id, owner_user_id, stream_id) REFERENCES wg_v2_streams(organization_id, owner_user_id, id) ON DELETE CASCADE,
+      FOREIGN KEY (organization_id, owner_user_id, source_run_id) REFERENCES wg_v2_runs(organization_id, owner_user_id, id) ON DELETE RESTRICT
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_durable_effect_receipts (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      stream_id TEXT NOT NULL,
+      run_id TEXT,
+      effect_kind TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      external_reference_json TEXT NOT NULL,
+      provenance_json TEXT NOT NULL,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      UNIQUE (organization_id, owner_user_id, idempotency_key),
+      FOREIGN KEY (organization_id, owner_user_id, stream_id) REFERENCES wg_v2_streams(organization_id, owner_user_id, id) ON DELETE RESTRICT,
+      FOREIGN KEY (organization_id, owner_user_id, run_id) REFERENCES wg_v2_runs(organization_id, owner_user_id, id) ON DELETE RESTRICT
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_attention_acknowledgements (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      read_through_at INTEGER NOT NULL,
+      cleared_through_at INTEGER,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      PRIMARY KEY (organization_id, owner_user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_record_source_revisions (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      record_type TEXT NOT NULL,
+      record_id TEXT NOT NULL,
+      work_source_id TEXT NOT NULL,
+      source_revision_id TEXT NOT NULL,
+      ordinal INTEGER NOT NULL DEFAULT 0,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      UNIQUE (organization_id, owner_user_id, record_type, record_id, source_revision_id),
+      UNIQUE (organization_id, owner_user_id, record_type, record_id, ordinal),
+      CHECK (ordinal >= 0),
+      FOREIGN KEY (organization_id, owner_user_id, work_source_id, source_revision_id) REFERENCES wg_v2_work_source_revisions(organization_id, owner_user_id, work_source_id, id) ON DELETE RESTRICT
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_admission_proposals (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      workgraph_id TEXT NOT NULL,
+      source_revision_id TEXT,
+      previous_source_revision_id TEXT,
+      intake_candidate_id TEXT,
+      proposal_kind TEXT NOT NULL,
+      lifecycle TEXT NOT NULL,
+      proposed_work_json TEXT NOT NULL,
+      duplicate_matches_json TEXT NOT NULL DEFAULT '[]',
+      disposition_json TEXT,
+      confirmed_change_cursor INTEGER,
+      row_version INTEGER NOT NULL DEFAULT 1,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      confirmed_at TEXT,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      FOREIGN KEY (organization_id, owner_user_id, workgraph_id) REFERENCES wg_v2_workgraphs(organization_id, owner_user_id, id) ON DELETE CASCADE,
+      FOREIGN KEY (organization_id, owner_user_id, source_revision_id) REFERENCES wg_v2_work_source_revisions(organization_id, owner_user_id, id) ON DELETE RESTRICT,
+      FOREIGN KEY (organization_id, owner_user_id, previous_source_revision_id) REFERENCES wg_v2_work_source_revisions(organization_id, owner_user_id, id) ON DELETE RESTRICT,
+      FOREIGN KEY (organization_id, owner_user_id, intake_candidate_id) REFERENCES wg_v2_intake_candidates(organization_id, owner_user_id, id) ON DELETE RESTRICT
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_operation_results (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      command_type TEXT NOT NULL,
+      request_hash TEXT NOT NULL,
+      result_status INTEGER NOT NULL,
+      result_json TEXT NOT NULL,
+      change_cursor INTEGER,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, id)
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_stream_sequences (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      stream_id TEXT NOT NULL,
+      next_sequence INTEGER NOT NULL DEFAULT 1,
+      row_version INTEGER NOT NULL DEFAULT 1,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, stream_id),
+      CHECK (next_sequence >= 1)
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_change_cursors (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      next_cursor INTEGER NOT NULL DEFAULT 1,
+      row_version INTEGER NOT NULL DEFAULT 1,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id),
+      CHECK (next_cursor >= 1)
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_events (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      stream_id TEXT,
+      sequence INTEGER NOT NULL,
+      schema_version INTEGER NOT NULL,
+      operation_id TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      actor_type TEXT NOT NULL,
+      actor_id TEXT NOT NULL,
+      request_id TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      correlation_id TEXT,
+      causation_id TEXT,
+      occurred_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      UNIQUE (organization_id, owner_user_id, stream_id, sequence),
+      FOREIGN KEY (organization_id, owner_user_id, operation_id) REFERENCES wg_v2_operation_results(organization_id, owner_user_id, id) ON DELETE RESTRICT
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_changes (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      cursor INTEGER NOT NULL,
+      id TEXT NOT NULL,
+      stream_id TEXT,
+      operation_id TEXT NOT NULL,
+      resource_type TEXT NOT NULL,
+      resource_id TEXT NOT NULL,
+      change_type TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      snapshot_relevant INTEGER NOT NULL DEFAULT 1 CHECK (snapshot_relevant IN (0, 1)),
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, cursor),
+      UNIQUE (organization_id, owner_user_id, id),
+      FOREIGN KEY (organization_id, owner_user_id, operation_id) REFERENCES wg_v2_operation_results(organization_id, owner_user_id, id) ON DELETE RESTRICT
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_outbox (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      operation_id TEXT NOT NULL,
+      effect_type TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      available_at TEXT NOT NULL,
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      claimed_by TEXT,
+      claim_expires_at TEXT,
+      last_error TEXT,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      UNIQUE (organization_id, owner_user_id, idempotency_key),
+      FOREIGN KEY (organization_id, owner_user_id, operation_id) REFERENCES wg_v2_operation_results(organization_id, owner_user_id, id) ON DELETE RESTRICT
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_due_jobs (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      stream_id TEXT,
+      job_type TEXT NOT NULL,
+      subject_id TEXT NOT NULL,
+      due_at TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      payload_json TEXT NOT NULL DEFAULT '{}',
+      lease_epoch INTEGER NOT NULL DEFAULT 0,
+      claimed_by TEXT,
+      claim_expires_at TEXT,
+      last_error TEXT,
+      row_version INTEGER NOT NULL DEFAULT 1,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      UNIQUE (organization_id, owner_user_id, job_type, subject_id),
+      FOREIGN KEY (organization_id, owner_user_id, stream_id) REFERENCES wg_v2_streams(organization_id, owner_user_id, id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_master_mailbox (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      stream_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      message TEXT NOT NULL,
+      provenance_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'claimed', 'consumed')),
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      FOREIGN KEY (organization_id, owner_user_id, stream_id) REFERENCES wg_v2_streams(organization_id, owner_user_id, id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_migration_intake (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      legacy_table TEXT NOT NULL,
+      legacy_record_id TEXT NOT NULL,
+      intake_kind TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      raw_reference_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending_review',
+      resolution_json TEXT,
+      row_version INTEGER NOT NULL DEFAULT 1,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, id),
+      UNIQUE (organization_id, owner_user_id, legacy_table, legacy_record_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS wg_v2_archive_restores (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      operation_id TEXT NOT NULL,
+      archive_hash TEXT NOT NULL,
+      result_json TEXT NOT NULL,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (organization_id, owner_user_id, operation_id)
+    );
+
+    -- Control-plane receipt only: it retains no owner identifier or WorkGraph content.
+    CREATE TABLE IF NOT EXISTS wg_owner_deletion_receipts (
+      owner_subject_hash TEXT NOT NULL,
+      operation_hash TEXT NOT NULL,
+      state TEXT NOT NULL,
+      target_snapshot_hash TEXT NOT NULL,
+      result_json TEXT,
+      lease_expires_at INTEGER NOT NULL,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_SCHEMA_VERSION},
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (owner_subject_hash, operation_hash)
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS wg_owner_deletion_active_idx
+      ON wg_owner_deletion_receipts (owner_subject_hash) WHERE state = 'cleaning';
+
+    CREATE INDEX IF NOT EXISTS wg_v2_work_sources_workgraph_idx ON wg_v2_work_sources(organization_id, owner_user_id, workgraph_id, updated_at);
+    CREATE INDEX IF NOT EXISTS wg_v2_source_revisions_source_idx ON wg_v2_work_source_revisions(organization_id, owner_user_id, work_source_id, revision_number);
+    CREATE INDEX IF NOT EXISTS wg_v2_source_views_provider_idx ON wg_v2_source_views(organization_id, owner_user_id, provider, status);
+    CREATE INDEX IF NOT EXISTS wg_v2_intake_status_idx ON wg_v2_intake_candidates(organization_id, owner_user_id, status, updated_at);
+    CREATE INDEX IF NOT EXISTS wg_v2_external_identity_lookup_idx ON wg_v2_external_identities(organization_id, owner_user_id, provider, team_connection_id, external_id);
+    CREATE INDEX IF NOT EXISTS wg_v2_streams_lifecycle_idx ON wg_v2_streams(organization_id, owner_user_id, lifecycle, pinned, updated_at);
+    CREATE INDEX IF NOT EXISTS wg_v2_streams_parent_idx ON wg_v2_streams(organization_id, owner_user_id, parent_stream_id);
+    CREATE INDEX IF NOT EXISTS wg_v2_outcomes_stream_idx ON wg_v2_outcomes(organization_id, owner_user_id, stream_id, lifecycle, updated_at);
+    CREATE INDEX IF NOT EXISTS wg_v2_work_items_outcome_idx ON wg_v2_work_items(organization_id, owner_user_id, outcome_id, lifecycle, priority);
+    CREATE INDEX IF NOT EXISTS wg_v2_work_items_stream_idx ON wg_v2_work_items(organization_id, owner_user_id, stream_id, lifecycle, updated_at);
+    CREATE INDEX IF NOT EXISTS wg_v2_work_items_parent_idx ON wg_v2_work_items(organization_id, owner_user_id, parent_task_id);
+    CREATE INDEX IF NOT EXISTS wg_v2_dependencies_item_idx ON wg_v2_work_item_dependencies(organization_id, owner_user_id, work_item_id);
+    CREATE INDEX IF NOT EXISTS wg_v2_dependencies_target_idx ON wg_v2_work_item_dependencies(organization_id, owner_user_id, depends_on_work_item_id);
+    CREATE INDEX IF NOT EXISTS wg_v2_runs_item_idx ON wg_v2_runs(organization_id, owner_user_id, work_item_id, run_number);
+    CREATE INDEX IF NOT EXISTS wg_v2_runs_stream_state_idx ON wg_v2_runs(organization_id, owner_user_id, stream_id, lifecycle, updated_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS wg_v2_session_bindings_active_session_idx
+      ON wg_v2_session_bindings(organization_id, owner_user_id, session_id) WHERE state = 'active';
+    CREATE INDEX IF NOT EXISTS wg_v2_session_bindings_stream_idx ON wg_v2_session_bindings(organization_id, owner_user_id, stream_id, updated_at);
+    CREATE INDEX IF NOT EXISTS wg_v2_agent_checkpoints_item_idx ON wg_v2_agent_checkpoints(organization_id, owner_user_id, work_item_id, occurred_at, id);
+    CREATE INDEX IF NOT EXISTS wg_v2_leases_expiry_idx ON wg_v2_leases(organization_id, owner_user_id, expires_at);
+    CREATE INDEX IF NOT EXISTS wg_v2_decisions_stream_state_idx ON wg_v2_decisions(organization_id, owner_user_id, stream_id, lifecycle, updated_at);
+    CREATE INDEX IF NOT EXISTS wg_v2_decision_items_item_idx ON wg_v2_decision_work_items(organization_id, owner_user_id, work_item_id);
+    CREATE INDEX IF NOT EXISTS wg_v2_evidence_subject_idx ON wg_v2_evidence(organization_id, owner_user_id, subject_type, subject_id, requirement_id, created_at);
+    CREATE INDEX IF NOT EXISTS wg_v2_evidence_subject_created_id_idx ON wg_v2_evidence(organization_id, owner_user_id, subject_type, subject_id, created_at, id);
+    CREATE INDEX IF NOT EXISTS wg_v2_evidence_run_idx ON wg_v2_evidence(organization_id, owner_user_id, source_run_id, created_at);
+    CREATE INDEX IF NOT EXISTS wg_v2_receipts_stream_idx ON wg_v2_durable_effect_receipts(organization_id, owner_user_id, stream_id, created_at);
+    CREATE INDEX IF NOT EXISTS wg_v2_record_source_revisions_record_idx ON wg_v2_record_source_revisions(organization_id, owner_user_id, record_type, record_id, ordinal);
+    CREATE INDEX IF NOT EXISTS wg_v2_proposals_state_idx ON wg_v2_admission_proposals(organization_id, owner_user_id, lifecycle, updated_at);
+    CREATE INDEX IF NOT EXISTS wg_v2_proposals_source_idx ON wg_v2_admission_proposals(organization_id, owner_user_id, source_revision_id);
+    CREATE INDEX IF NOT EXISTS wg_v2_events_stream_sequence_idx ON wg_v2_events(organization_id, owner_user_id, stream_id, sequence);
+    CREATE INDEX IF NOT EXISTS wg_v2_events_operation_idx ON wg_v2_events(organization_id, owner_user_id, operation_id);
+    CREATE INDEX IF NOT EXISTS wg_v2_changes_resource_idx ON wg_v2_changes(organization_id, owner_user_id, resource_type, resource_id, cursor);
+    CREATE INDEX IF NOT EXISTS wg_v2_changes_stream_idx ON wg_v2_changes(organization_id, owner_user_id, stream_id, cursor);
+    CREATE INDEX IF NOT EXISTS wg_v2_outbox_due_idx ON wg_v2_outbox(organization_id, owner_user_id, status, available_at);
+    CREATE INDEX IF NOT EXISTS wg_v2_due_jobs_due_idx ON wg_v2_due_jobs(organization_id, owner_user_id, status, due_at);
+    CREATE INDEX IF NOT EXISTS wg_v2_master_mailbox_pending_idx ON wg_v2_master_mailbox(organization_id, owner_user_id, stream_id, status, created_at);
+    CREATE INDEX IF NOT EXISTS wg_v2_migration_intake_status_idx ON wg_v2_migration_intake(organization_id, owner_user_id, status, created_at);
+  `)
+
+  reconcileUsageEventCreatedAt(db)
+  const usageEventColumns = db.query("PRAGMA table_info(wg_v2_llm_usage_events)").all() as Array<{ name: string }>
+  if (!usageEventColumns.some((column) => column.name === "schema_version")) {
+    db.exec(`ALTER TABLE wg_v2_llm_usage_events ADD COLUMN schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION}`)
+  }
+  const runColumns = db.query("PRAGMA table_info(wg_v2_runs)").all() as Array<{ name: string }>
+  if (!runColumns.some((column) => column.name === "generation")) {
+    db.exec("ALTER TABLE wg_v2_runs ADD COLUMN generation INTEGER NOT NULL DEFAULT 1")
+  }
+  if (!runColumns.some((column) => column.name === "execution_kind")) {
+    db.exec("ALTER TABLE wg_v2_runs ADD COLUMN execution_kind TEXT NOT NULL DEFAULT 'managed'")
+  }
+  if (!runColumns.some((column) => column.name === "resume_attempts")) {
+    db.exec("ALTER TABLE wg_v2_runs ADD COLUMN resume_attempts INTEGER NOT NULL DEFAULT 0")
+  }
+  if (!runColumns.some((column) => column.name === "resume_available_at")) {
+    db.exec("ALTER TABLE wg_v2_runs ADD COLUMN resume_available_at TEXT")
+  }
+  if (!runColumns.some((column) => column.name === "completion_retry_json")) {
+    db.exec("ALTER TABLE wg_v2_runs ADD COLUMN completion_retry_json TEXT")
+  }
+
+  const sourceRevisionColumns = db.query("PRAGMA table_info(wg_v2_work_source_revisions)").all() as Array<{ name: string }>
+  if (!sourceRevisionColumns.some((column) => column.name === "created_by_json")) {
+    db.exec("ALTER TABLE wg_v2_work_source_revisions ADD COLUMN created_by_json TEXT")
+  }
+
+  const streamColumns = db.query("PRAGMA table_info(wg_v2_streams)").all() as Array<{ name: string }>
+  if (!streamColumns.some((column) => column.name === "replacement_reset_json")) {
+    db.exec("ALTER TABLE wg_v2_streams ADD COLUMN replacement_reset_json TEXT")
+  }
+  if (!streamColumns.some((column) => column.name === "activity_granularity")) {
+    db.exec("ALTER TABLE wg_v2_streams ADD COLUMN activity_granularity TEXT NOT NULL DEFAULT 'progress'")
+  }
+  if (!streamColumns.some((column) => column.name === "charter_json")) {
+    db.exec("ALTER TABLE wg_v2_streams ADD COLUMN charter_json TEXT")
+  }
+  if (!streamColumns.some((column) => column.name === "master_status_json")) {
+    db.exec("ALTER TABLE wg_v2_streams ADD COLUMN master_status_json TEXT")
+  }
+  if (!streamColumns.some((column) => column.name === "notes_source_json")) {
+    db.exec("ALTER TABLE wg_v2_streams ADD COLUMN notes_source_json TEXT")
+  }
+  if (!streamColumns.some((column) => column.name === "public_pr_confirmed_at")) {
+    db.exec("ALTER TABLE wg_v2_streams ADD COLUMN public_pr_confirmed_at TEXT")
+  }
+  if (!streamColumns.some((column) => column.name === "spend_json")) {
+    db.exec("ALTER TABLE wg_v2_streams ADD COLUMN spend_json TEXT")
+  }
+  const workItemColumns = db.query("PRAGMA table_info(wg_v2_work_items)").all() as Array<{ name: string }>
+  if (!workItemColumns.some((column) => column.name === "created_by_actor_type")) {
+    db.exec("ALTER TABLE wg_v2_work_items ADD COLUMN created_by_actor_type TEXT")
+  }
+  if (!workItemColumns.some((column) => column.name === "created_by_actor_id")) {
+    db.exec("ALTER TABLE wg_v2_work_items ADD COLUMN created_by_actor_id TEXT")
+  }
+  if (!workItemColumns.some((column) => column.name === "origin_run_id")) {
+    db.exec("ALTER TABLE wg_v2_work_items ADD COLUMN origin_run_id TEXT")
+  }
+  if (!workItemColumns.some((column) => column.name === "auto_admitted")) {
+    db.exec("ALTER TABLE wg_v2_work_items ADD COLUMN auto_admitted INTEGER CHECK (auto_admitted IN (0, 1))")
+  }
+  const masterMailboxColumns = db.query("PRAGMA table_info(wg_v2_master_mailbox)").all() as Array<{ name: string }>
+  if (!masterMailboxColumns.some((column) => column.name === "schema_version")) {
+    db.exec(`ALTER TABLE wg_v2_master_mailbox ADD COLUMN schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION}`)
+  }
+  const sourceViewColumns = db.query("PRAGMA table_info(wg_v2_source_views)").all() as Array<{ name: string }>
+  if (!sourceViewColumns.some((column) => column.name === "target_json")) {
+    db.exec("ALTER TABLE wg_v2_source_views ADD COLUMN target_json TEXT")
+  }
+  const changeColumns = db.query("PRAGMA table_info(wg_v2_changes)").all() as Array<{ name: string }>
+  if (!changeColumns.some((column) => column.name === "snapshot_relevant")) {
+    db.exec("ALTER TABLE wg_v2_changes ADD COLUMN snapshot_relevant INTEGER NOT NULL DEFAULT 1 CHECK (snapshot_relevant IN (0, 1))")
+  }
+  reconcileAndDropExecutionModeColumns(db, streamColumns, runColumns)
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS wg_v2_changes_snapshot_relevant_idx
+      ON wg_v2_changes(organization_id, owner_user_id, snapshot_relevant, cursor);
+  `)
+
+  invalidateLegacyAdmissionFallbacks(db)
+  repairLegacySourcePlanPublications(db)
+
+  return db
+}
+
+function migrateRunVocabulary(db: ReturnType<typeof sqlite>) {
+  const hasOldRuns = hasTable(db, "wg_v2_attempts")
+  if (hasOldRuns && hasTable(db, "wg_v2_runs")) {
+    const oldRows = Number((db.query("SELECT COUNT(*) AS count FROM wg_v2_attempts").get() as { count: number }).count)
+    const newRows = Number((db.query("SELECT COUNT(*) AS count FROM wg_v2_runs").get() as { count: number }).count)
+    if (oldRows > 0 && newRows > 0) {
+      throw new Error("WorkGraph SQLite contains both populated wg_v2_attempts and wg_v2_runs tables; resolve the conflicting execution history before startup")
+    }
+    if (oldRows > 0) db.exec("DROP TABLE wg_v2_runs")
+    if (oldRows === 0) db.exec("DROP TABLE wg_v2_attempts")
+  }
+  if (hasTable(db, "wg_v2_attempts")) {
+    db.exec("ALTER TABLE wg_v2_attempts RENAME TO wg_v2_runs")
+  }
+  const renames = [
+    ["wg_v2_runs", "attempt_number", "run_number"],
+    ["wg_v2_runs", "lease_epoch", "generation"],
+    ["wg_v2_work_items", "origin_attempt_id", "origin_run_id"],
+    ["wg_v2_session_bindings", "current_attempt_id", "current_run_id"],
+    ["wg_v2_agent_checkpoints", "attempt_id", "run_id"],
+    ["wg_v2_evidence", "source_attempt_id", "source_run_id"],
+    ["wg_v2_durable_effect_receipts", "attempt_id", "run_id"],
+  ] as const
+  renames.forEach(([table, oldColumn, newColumn]) => {
+    if (!hasTable(db, table) || !hasColumn(db, table, oldColumn) || hasColumn(db, table, newColumn)) return
+    db.exec(`ALTER TABLE ${table} RENAME COLUMN ${oldColumn} TO ${newColumn}`)
+  })
+  db.exec(`
+    DROP INDEX IF EXISTS wg_v2_attempts_item_idx;
+    DROP INDEX IF EXISTS wg_v2_attempts_stream_state_idx;
+    DROP INDEX IF EXISTS wg_v2_evidence_attempt_idx;
+  `)
+}
+
+function reconcileUsageEventCreatedAt(db: ReturnType<typeof sqlite>) {
+  const createdAt = (db.query("PRAGMA table_info(wg_v2_llm_usage_events)").all() as Array<{
+    name: string
+    type: string
+  }>).find((column) => column.name === "created_at")
+  if (createdAt?.type.toUpperCase() === "INTEGER") return
+  db.exec(`
+    DROP INDEX IF EXISTS idx_wg_v2_usage_stream_created;
+    ALTER TABLE wg_v2_llm_usage_events RENAME TO wg_v2_llm_usage_events_text_created_at;
+    CREATE TABLE wg_v2_llm_usage_events (
+      organization_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      stream_id TEXT,
+      run_id TEXT,
+      work_item_id TEXT,
+      provider_id TEXT NOT NULL,
+      model_id TEXT NOT NULL,
+      input_tokens INTEGER NOT NULL,
+      output_tokens INTEGER NOT NULL,
+      reasoning_tokens INTEGER NOT NULL,
+      cache_read_tokens INTEGER NOT NULL,
+      cache_write_tokens INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      schema_version INTEGER NOT NULL DEFAULT ${WORKGRAPH_SQLITE_RECORD_SCHEMA_VERSION},
+      PRIMARY KEY (organization_id, owner_user_id, id)
+    );
+    INSERT INTO wg_v2_llm_usage_events
+      (organization_id, owner_user_id, id, session_id, stream_id, run_id, work_item_id, provider_id, model_id,
+       input_tokens, output_tokens, reasoning_tokens, cache_read_tokens, cache_write_tokens, created_at)
+    SELECT organization_id, owner_user_id, id, session_id, stream_id, run_id, work_item_id, provider_id, model_id,
+      input_tokens, output_tokens, reasoning_tokens, cache_read_tokens, cache_write_tokens, CAST(created_at AS INTEGER)
+    FROM wg_v2_llm_usage_events_text_created_at;
+    DROP TABLE wg_v2_llm_usage_events_text_created_at;
+    CREATE INDEX idx_wg_v2_usage_stream_created
+      ON wg_v2_llm_usage_events(organization_id, owner_user_id, stream_id, created_at, id);
+  `)
+}
+
+/**
+ * Approval-gate migration (idempotent, guarded). Execution modes were removed;
+ * Stream pause/resume is the launch gate. On upgrade of an existing database:
+ * 1. Pause every Stream that was `active` but NOT actively running autonomous
+ *    execution — including never-executed Streams whose `execution_state` is
+ *    NULL (`create_stream` never wrote it) — so nothing auto-launches by
+ *    surprise. Only live autonomous Streams (`execution_state = 'active'`)
+ *    keep running seamlessly.
+ * 2. Drop the retired mode columns (index first, then columns).
+ * Fresh databases never carry these columns, so every step is a no-op there.
+ */
+function reconcileAndDropExecutionModeColumns(
+  db: ReturnType<typeof sqlite>,
+  streamColumns: Array<{ name: string }>,
+  runColumns: Array<{ name: string }>,
+) {
+  const streamHasExecutionState = streamColumns.some((column) => column.name === "execution_state")
+  if (streamHasExecutionState) {
+    db.exec(`
+      UPDATE wg_v2_streams SET lifecycle = 'paused'
+      WHERE lifecycle = 'active' AND (execution_state IS NULL OR execution_state <> 'active')
+    `)
+  }
+  db.exec("DROP INDEX IF EXISTS wg_v2_streams_execution_idx")
+  if (streamColumns.some((column) => column.name === "execution_mode")) {
+    db.exec("ALTER TABLE wg_v2_streams DROP COLUMN execution_mode")
+  }
+  if (streamHasExecutionState) {
+    db.exec("ALTER TABLE wg_v2_streams DROP COLUMN execution_state")
+  }
+  if (runColumns.some((column) => column.name === "execution_mode")) {
+    db.exec("ALTER TABLE wg_v2_runs DROP COLUMN execution_mode")
+  }
+}
+
+function rejectAmbiguousOwnerOnlySchema(db: ReturnType<typeof sqlite>) {
+  const tables = db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'wg_v2_%'").all() as Array<{ name: string }>
+  const ambiguous = tables.find((table) => {
+    if (table.name === "wg_v2_webhook_deliveries") return !hasColumn(db, table.name, "organization_id")
+    const columns = db.query(`PRAGMA table_info(${table.name})`).all() as Array<{ name: string }>
+    return columns.some((column) => column.name === "owner_user_id") && !columns.some((column) => column.name === "organization_id")
+  })
+  if (ambiguous) {
+    throw new Error(`WorkGraph SQLite schema ${ambiguous.name} has owner-only tenancy; a trusted organization mapping is required before migration`)
+  }
+  const receiptTable = db.query("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'wg_owner_deletion_receipts'").get()
+  if (!receiptTable) return
+  if (!hasColumn(db, "wg_owner_deletion_receipts", "schema_version") ||
+    db.query(`SELECT 1 AS present FROM wg_owner_deletion_receipts WHERE schema_version < ${WORKGRAPH_SQLITE_SCHEMA_VERSION} LIMIT 1`).get()) {
+    throw new Error("WorkGraph SQLite owner-deletion receipts use an owner-only subject hash; a trusted organization mapping is required before migration")
+  }
+}
+
+function hasColumn(db: ReturnType<typeof sqlite>, table: string, column: string) {
+  return (db.query(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).some((candidate) => candidate.name === column)
+}
+
+function hasTable(db: ReturnType<typeof sqlite>, table: string) {
+  return Boolean(db.query("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = ?").get(table))
+}
+
+function invalidateLegacyAdmissionFallbacks(db: ReturnType<typeof sqlite>) {
+  const now = Date.now()
+  const rows = db.query(`
+    SELECT organization_id, owner_user_id, id, source_revision_id, proposed_work_json, created_at
+    FROM wg_v2_admission_proposals WHERE lifecycle = 'proposed'
+  `).all() as Array<{
+    organization_id: string
+    owner_user_id: string
+    id: string
+    source_revision_id: string | null
+    proposed_work_json: string
+    created_at: string | number
+  }>
+  rows.forEach((row) => {
+    const value = parseObject(row.proposed_work_json)
+    if (completeAgentAdmission(value)) return
+    const source = parseObject(value.source)
+    const retryable = typeof source.workSourceId === "string" && typeof source.revisionId === "string" && typeof source.contentHash === "string"
+    const invalidated = {
+      ...(retryable ? { source } : {}),
+      planningEvidence: {
+        ...(typeof value.targetStreamId === "string" ? { targetStreamId: value.targetStreamId } : {}),
+        placementMatches: Array.isArray(value.placementMatches) ? value.placementMatches : [],
+        duplicateMatches: Array.isArray(value.duplicateMatches) ? value.duplicateMatches : [],
+      },
+      generation: {
+        method: "planning_failed",
+        tryNumber: 0,
+        reason: "Retired deterministic or incomplete admission plan is non-authoritative",
+        invalidatedAt: now,
+        retryable,
+      },
+    }
+    db.run(`
+      UPDATE wg_v2_admission_proposals SET lifecycle = 'planning_failed', proposed_work_json = ?,
+        row_version = row_version + 1, updated_at = ? WHERE organization_id = ? AND owner_user_id = ? AND id = ? AND lifecycle = 'proposed'
+    `, [JSON.stringify(invalidated), now, row.organization_id, row.owner_user_id, row.id])
+    if (!retryable) return
+    db.run(`
+      INSERT INTO wg_v2_due_jobs
+        (organization_id, owner_user_id, id, job_type, subject_id, due_at, status, payload_json, created_at, updated_at)
+      VALUES (?, ?, ?, 'source_plan', ?, ?, 'pending', ?, ?, ?)
+      ON CONFLICT(organization_id, owner_user_id, job_type, subject_id) DO UPDATE SET
+        due_at = excluded.due_at, status = 'pending', payload_json = excluded.payload_json,
+        claimed_by = NULL, claim_expires_at = NULL, last_error = NULL,
+        row_version = wg_v2_due_jobs.row_version + 1, updated_at = excluded.updated_at
+    `, [
+      row.organization_id,
+      row.owner_user_id,
+      `source_plan_job_${row.id}`,
+      row.id,
+      now,
+      JSON.stringify({ proposalId: row.id, source, automaticFailureCount: 0 }),
+      Number(row.created_at),
+      now,
+    ])
+  })
+}
+
+function repairLegacySourcePlanPublications(db: ReturnType<typeof sqlite>) {
+  const rows = db.query(`
+    SELECT operations.organization_id, operations.owner_user_id, operations.id, operations.change_cursor, events.payload_json
+    FROM wg_v2_operation_results operations
+    JOIN wg_v2_events events
+      ON events.organization_id = operations.organization_id AND events.owner_user_id = operations.owner_user_id
+      AND events.operation_id = operations.id
+    JOIN wg_v2_changes changes
+      ON changes.organization_id = operations.organization_id AND changes.owner_user_id = operations.owner_user_id
+      AND changes.operation_id = operations.id AND changes.cursor = operations.change_cursor
+    WHERE operations.command_type = 'source_plan_publication'
+      AND operations.request_hash = operations.id AND operations.result_json = '{}'
+      AND operations.change_cursor IS NOT NULL
+      AND (SELECT COUNT(*) FROM wg_v2_events matching_events
+        WHERE matching_events.organization_id = operations.organization_id
+          AND matching_events.owner_user_id = operations.owner_user_id
+          AND matching_events.operation_id = operations.id) = 1
+      AND (SELECT COUNT(*) FROM wg_v2_changes matching_changes
+        WHERE matching_changes.organization_id = operations.organization_id
+          AND matching_changes.owner_user_id = operations.owner_user_id
+          AND matching_changes.operation_id = operations.id) = 1
+  `).all() as Array<{
+    organization_id: string
+    owner_user_id: string
+    id: string
+    change_cursor: number
+    payload_json: string
+  }>
+  rows.forEach((row) => {
+    const value = parseObject(row.payload_json)
+    if (typeof value.proposalId !== "string" || typeof value.workSourceId !== "string" ||
+      typeof value.version !== "number" || !value.generation || typeof value.generation !== "object") return
+    db.run(`
+      UPDATE wg_v2_operation_results SET request_hash = ?, result_json = ?
+      WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+        AND command_type = 'source_plan_publication' AND request_hash = id AND result_json = '{}'
+    `, [
+      createHash("sha256").update(row.id).digest("hex"),
+      JSON.stringify({
+        ok: true,
+        operationId: row.id,
+        cursor: createChangeCursor({
+          organizationId: row.organization_id,
+          ownerUserId: row.owner_user_id,
+          position: row.change_cursor,
+        }),
+        value,
+      }),
+      row.organization_id,
+      row.owner_user_id,
+      row.id,
+    ])
+  })
+}
+
+function parseObject(value: unknown): Record<string, unknown> {
+  if (typeof value === "string") {
+    try {
+      return parseObject(JSON.parse(value))
+    } catch {
+      return {}
+    }
+  }
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function completeAgentAdmission(value: Record<string, unknown>) {
+  const generation = parseObject(value.generation)
+  if (generation.method !== "agent_session" || typeof generation.sessionId !== "string" ||
+    typeof generation.generatedAt !== "number" || !Array.isArray(value.outcomes) || !Array.isArray(value.workItems)) return false
+  return AdmissionAgentPlanSchema.safeParse({
+    source: value.source,
+    suggestedPlacement: value.suggestedPlacement,
+    placementMatches: value.placementMatches,
+    proposedOutcomes: value.outcomes.map((outcome) => {
+      const row = parseObject(outcome)
+      return {
+        key: row.proposalKey,
+        title: row.title,
+        ...(typeof row.description === "string" ? { description: row.description } : {}),
+        successCriteria: row.successCriteria,
+        execution: row.execution,
+      }
+    }),
+    proposedWorkItems: value.workItems.map((item) => {
+      const row = parseObject(item)
+      return {
+        key: row.proposalKey,
+        ...(typeof row.outcomeProposalKey === "string" ? { outcomeKey: row.outcomeProposalKey } : {}),
+        title: row.title,
+        ...(typeof row.description === "string" ? { description: row.description } : {}),
+        dependencyKeys: row.dependencyProposalKeys,
+        completionContract: row.completionContract,
+        execution: row.execution,
+      }
+    }),
+    duplicateMatches: value.duplicateMatches,
+  }).success
+}

@@ -1,0 +1,22 @@
+{
+  "action": "created",
+  "installation": {
+    "id": 4242
+  },
+  "sender": {
+    "login": "octocat"
+  },
+  "repository": {
+    "name": "infra",
+    "owner": {
+      "login": "acme"
+    }
+  },
+  "issue": {
+    "number": 17,
+    "title": "Deploy is stuck"
+  },
+  "comment": {
+    "body": "@claxedo investigate the deployment failure"
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    // "bun": several e2e helpers import claxedo-server source directly
+    // (workgraph-connection-browser-use-server.ts → src/server-workgraph, …), which
+    // transitively reaches `src/storage/db.ts`'s `typeof import("bun:sqlite")`.
+    // claxedo-server's own tsconfig declares `types: ["bun", "node"]` for exactly
+    // this reason; the e2e project needs it too or that import cannot resolve.
+    "types": ["vite/client", "node", "bun", "vitest/globals", "@testing-library/jest-dom"],
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
+    "allowJs": true,
+    "resolveJsonModule": true,
+    "strict": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "paths": {
+      "#terminal-backend": ["./src/features/terminal/core/backend/xterm"],
+      "@opencode-ai/app-shared": ["./src/features/extensions/data/index.ts"],
+      "@/*": ["./src/*"],
+      "@claxedo/agent-event-runtime": ["../agent-event-runtime/src/index.ts"],
+      "@claxedo/agent-event-runtime/contracts": ["../agent-event-runtime/src/contracts/index.ts"],
+      "@claxedo/agent-event-runtime/opencode-compat": ["../agent-event-runtime/src/projections/opencode-compat/index.ts"],
+      // Type-only, for e2e/helpers/contracts/*: `SessionConfigUpdate` is the shape
+      // `POST /session` actually consumes, but it is imported-not-re-exported by
+      // `@claxedo/workspace-runtime/routes`, and agent-sdk-runtime is not a direct
+      // dependency of this package. Same source-alias convention as the three
+      // agent-event-runtime entries above.
+      "@claxedo/agent-sdk-runtime": ["../agent-sdk-runtime/src/index.ts"],
+      // Point at SOURCE, not `dist`. These subpaths resolve to `dist/*.d.ts` by
+      // package exports, and `dist` is gitignored — so a clean tree (or anyone who
+      // has not run a build) gets `TS2307: Cannot find module`, which is exactly
+      // what happened here once `packages/workspace-runtime/dist` was wiped. CI
+      // builds these before typecheck so it never noticed; local runs did.
+      // Aliasing to src makes the contract bindings independent of a build artifact.
+      "@claxedo/workspace-runtime/routes": ["../workspace-runtime/src/routes.ts"],
+      "@claxedo/workspace-runtime/config": ["../workspace-runtime/src/config.ts"],
+      "@claxedo/workspace-runtime/host": ["../workspace-runtime/src/host.ts"]
+    }
+  },
+  // No source exclusions: every authored file under e2e/ is typechecked.
+  // `e2e/bun/**` and `real-provider-preflight.test.ts` used to be excluded because
+  // they rely on `bun:test` globals that this project did not pull in; adding "bun"
+  // to `types` above resolves them, and both now compile clean.
+  //
+  // The two excluded directories are Playwright OUTPUT (playwright.config.ts's
+  // `outputDir` and the html reporter's `outputFolder`), both gitignored. With
+  // `allowJs: true` the generated report bundle (report/trace/sw.bundle.js)
+  // otherwise fails the gate on any tree that has ever run e2e locally — the gate
+  // must judge authored code, not artifacts of having run it.
+  "include": ["e2e"],
+  "exclude": [
+    "e2e/playwright/report",
+    "e2e/playwright/test-results"
+  ]
+}

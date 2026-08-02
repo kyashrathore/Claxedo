@@ -1,0 +1,73 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "storybook",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "storybook", "--", "--no-open"],
+      "cwd": "packages/storybook",
+      "port": 6006
+    },
+    {
+      "name": "claxedo-app",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "packages/claxedo-app",
+      "port": 4444
+    },
+    {
+      "name": "claxedo-app-verify",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["PORT=4446", "bun", "run", "dev"],
+      "cwd": "packages/claxedo-app",
+      "port": 4446,
+      "autoPort": false
+    },
+    {
+      "name": "claxedo-server",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["CLAXEDO_WORKGRAPH_REPOSITORY=/Users/yashvardhansingh/test/opencode", "npm", "run", "dev"],
+      "cwd": "packages/claxedo-server",
+      "port": 3001,
+      "autoPort": false
+    },
+    {
+      "name": "claxedo-server-attach",
+      "url": "http://localhost:3001",
+      "port": 3001
+    },
+    {
+      "name": "claxedo-web-local",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "web:dev:local"],
+      "port": 4444
+    },
+    {
+      "name": "opencode-engine",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "dev"],
+      "port": 4096
+    },
+    {
+      "name": "claxedo-web-astro",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["astro", "dev", "--port", "4610"],
+      "cwd": "packages/claxedo-web",
+      "port": 4610
+    },
+    {
+      "name": "claxedo-web-verify",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["astro", "dev", "--port", "4612"],
+      "cwd": "packages/claxedo-web",
+      "port": 4612
+    },
+    {
+      "name": "claxedo-docs",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "mintlify@latest", "dev", "--port", "3333"],
+      "cwd": "packages/claxedo-docs",
+      "port": 3333
+    }
+  ]
+}

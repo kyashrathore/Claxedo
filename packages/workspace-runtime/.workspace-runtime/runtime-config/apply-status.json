@@ -1,0 +1,10 @@
+{
+  "state": "applied",
+  "revision": 1,
+  "acceptedAt": "2026-07-25T15:59:53.495Z",
+  "updatedAt": "2026-07-25T15:59:53.496Z",
+  "harness": {
+    "id": "opencode",
+    "access": "native"
+  }
+}

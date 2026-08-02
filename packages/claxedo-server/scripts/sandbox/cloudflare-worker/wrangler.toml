@@ -1,0 +1,81 @@
+name = "claxedo-sandbox-proxy"
+main = "src/index.ts"
+# HELD at 2025-04-01 deliberately (D3, 2026-07-27) — do not bulk-bump.
+# This Worker is the @cloudflare/sandbox container host, and its SDK is pinned
+# at 0.8.9 (0.12.4 is current). Container semantics are exactly what moved in
+# the gap — e.g. containers_pid_namespace defaults on at 2026-04-01 — and the
+# only way to exercise them is a real `wrangler deploy`, which builds and pushes
+# a ~4.5GB image. There is no dry-run that proves anything here.
+#
+# For the same reason this worker's `wrangler` stays pinned at 4.50.0 in its
+# package.json (and at `wrangler@4.50.0` in
+# .github/workflows/deploy-cloudflare-sandbox-worker.yml) while the two Worker
+# packages moved to 4.114.0 in D3. This whole container unit — compatibility
+# date, @cloudflare/sandbox SDK, and wrangler — is frozen together and should
+# move as ONE supervised change with a real deploy behind it.
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+# The runtime is reached through the worker's own /sandbox/:id/proxy route
+# (containerFetch), NOT exposePort preview subdomains — so NO wildcard route or
+# wildcard ACM cert is required. Served at the workers.dev URL below; for a
+# branded host add `routes = [{ pattern = "sandbox.claxedo.com/*", zone_name =
+# "claxedo.com" }]` on an account that owns the zone.
+workers_dev = true
+
+[observability]
+enabled = true
+
+[[containers]]
+class_name = "Sandbox"
+image = "./Dockerfile"
+# The runnable image includes the workspace runtime plus every supported agent
+# harness and currently needs about 5.3GB. standard-1 provides an 8GB disk.
+instance_type = "standard-1"
+max_instances = 3
+
+[containers.constraints]
+regions = ["APAC"]
+
+[containers.configuration.observability.logs]
+enabled = true
+
+[[durable_objects.bindings]]
+class_name = "Sandbox"
+name = "Sandbox"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Sandbox"]
+
+# Workspace checkpoints use the Sandbox SDK backup API. Provision this bucket
+# before deploy (`wrangler r2 bucket create claxedo-sandbox-backups`) and set
+# CLOUDFLARE_ACCOUNT_ID, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY as Worker
+# secrets so production containers can use presigned R2 URLs.
+#
+# BACKUP_BUCKET is ALSO the sandbox registry (W1.2, 2026-07-30), under the
+# `sandbox-registry/` key prefix: one object per live sandbox, labels in
+# customMetadata, written on ensure-runtime and deleted on destroy. This is what
+# makes `GET /sandboxes` — and therefore the control plane's sandbox GC — work at
+# all, because a Durable Object namespace cannot be enumerated (`idFromName` is
+# one-way, so the account-level REST API returns only opaque hex ids).
+#
+# REQUIRED for GC visibility. Without this binding the Worker answers
+# `GET /sandboxes` with 501 `supported: false`, the driver raises a listing-
+# unsupported signal, and `garbageCollect()` reports `listingUnsupported` rather
+# than a false clean sweep — loud and safe, but blind to orphans.
+[vars]
+BACKUP_BUCKET_NAME = "claxedo-sandbox-backups"
+
+[[r2_buckets]]
+binding = "BACKUP_BUCKET"
+bucket_name = "claxedo-sandbox-backups"
+
+# Egress credential broker (Cloudflare Worker-proxy pattern). Brokered secrets
+# are stored here keyed by sandbox id — never inside the container. Create the
+# namespace (`wrangler kv namespace create EGRESS_SECRETS`) and set the signing
+# secret (`wrangler secret put EGRESS_SIGNING_SECRET`). Brokering stays off
+# until both are configured.
+# Add an EGRESS_SECRETS KV binding here only after creating a real namespace.
+# The Worker keeps credential brokering disabled when this optional binding or
+# EGRESS_SIGNING_SECRET is absent.

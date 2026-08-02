@@ -1,0 +1,58 @@
+---
+import { github } from "../config"
+import { commercialNavigation } from "../content/site"
+import DownloadMenu from "./DownloadMenu.astro"
+
+interface Props {
+  active?: "home" | "pricing" | "download" | "compare" | "framework"
+}
+
+const { active } = Astro.props
+---
+
+<nav class="nav" aria-label="Primary" data-open="false">
+  <div class="nav-inner">
+    <a href="/" class="nav-logo" aria-label="Claxedo home">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span>Claxedo</span>
+    </a>
+
+    <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="site-menu">Menu</button>
+
+    <div class="nav-menu" id="site-menu">
+      <div class="nav-links">
+        {commercialNavigation.map((item) => <a href={item.href}>{item.label}</a>)}
+        <a href="/compare" aria-current={active === "compare" ? "page" : undefined}>Compare</a>
+        <a href={github}>GitHub</a>
+      </div>
+
+      <div class="nav-actions">
+        <DownloadMenu variant="primary" placement="header" />
+      </div>
+    </div>
+  </div>
+</nav>
+
+<script>
+  const nav = document.querySelector<HTMLElement>(".nav")
+  const toggle = nav?.querySelector<HTMLButtonElement>(".menu-toggle")
+
+  toggle?.addEventListener("click", () => {
+    const open = nav?.dataset.open !== "true"
+    if (nav) nav.dataset.open = String(open)
+    toggle.setAttribute("aria-expanded", String(open))
+  })
+
+  const close = () => {
+    if (!nav || !toggle) return
+    nav.dataset.open = "false"
+    toggle.setAttribute("aria-expanded", "false")
+  }
+
+  nav?.querySelectorAll<HTMLElement>("a, button[data-copy-deployment-prompt]").forEach((item) => item.addEventListener("click", close))
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || nav?.dataset.open !== "true") return
+    close()
+    toggle?.focus()
+  })
+</script>

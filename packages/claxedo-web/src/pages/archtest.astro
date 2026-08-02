@@ -1,0 +1,26 @@
+---
+import Layout from "../layouts/Layout.astro"
+import ArchStatic from "../components/ArchStatic.astro"
+import ArchModes from "../components/ArchModes.astro"
+import ArchHarnessSplit from "../components/ArchHarnessSplit.astro"
+---
+<Layout title="Architecture studies — Claxedo" description="Internal architecture diagram studies." noindex={true}>
+  <main id="main-content">
+    <ArchStatic />
+    <section class="section"><div class="section-inner">
+      <p class="opt-tag">MODES · VARIANT A — INTERACTIVE TOGGLE</p>
+      <ArchModes variant="toggle" />
+    </div></section>
+    <section class="section"><div class="section-inner">
+      <p class="opt-tag">MODES · VARIANT B — STATIC ROW</p>
+      <ArchModes variant="row" />
+    </div></section>
+    <section class="section"><div class="section-inner">
+      <p class="opt-tag">HARNESS PLACEMENT — UNIFIED vs HAND–BRAIN SPLIT</p>
+      <ArchHarnessSplit />
+    </div></section>
+  </main>
+</Layout>
+<style>
+  .opt-tag { color: var(--accent-text); font: 600 .68rem var(--font-mono); letter-spacing: .16em; margin-bottom: 1.5rem; }
+</style>

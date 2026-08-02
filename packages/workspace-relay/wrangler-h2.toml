@@ -1,0 +1,43 @@
+# Cloudflare Worker config for the H2 opener-sharding EXPERIMENT variant of the
+# Claxedo Workspace Relay (src/worker-h2.ts). Separate entry + separate worker
+# name so the stock relay (wrangler.toml / src/worker.ts) is untouched. Used
+# only by the Cloudflare-relay re-evaluation's hypothesis H2. Tear down after
+# the run — this is not a production deployment.
+#
+# Local-first gate (never deploy to discover a failure):
+#   npx wrangler dev -c wrangler-h2.toml            # boots under Miniflare/workerd
+#   npx wrangler deploy --dry-run -c wrangler-h2.toml
+# Deploy for the H2 rows (Row 5), distinct -reeval name, no prod DNS/routes:
+#   npx wrangler deploy -c wrangler-h2.toml
+#
+# Secrets expected before a real deploy (same as the stock relay):
+#   CLAXEDO_RELAY_RESOLVER_TOKEN
+#   CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM
+#   CLAXEDO_CONTROL_PLANE_JWKS_URL (or CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM)
+# Optional:
+#   CLAXEDO_RELAY_RESOLVER_URL or CLAXEDO_CENTRAL_URL
+
+name = "claxedo-workspace-relay-h2-reeval"
+main = "src/worker-h2.ts"
+# Same deliberate hold as wrangler.toml — see the long comment there for the
+# measured per-delivery-path binaryType flip at 2026-03-17. This file was
+# previously outside every drift guard; relay-config-drift.test.ts now asserts
+# BOTH configs stay below that date.
+compatibility_date = "2025-05-01"
+
+[observability]
+enabled = true
+
+[vars]
+# Opener shards per workspace: cloud WS opens fan out ~OPENER_COUNT×6 concurrent
+# upstream handshakes. Row 5 sweeps 8 then 32 (override via `wrangler deploy
+# --var OPENER_COUNT:32` or edit here).
+OPENER_COUNT = "8"
+
+[[durable_objects.bindings]]
+name = "WORKSPACE_RELAY_ROOM"
+class_name = "WorkspaceRelayRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["WorkspaceRelayRoom"]

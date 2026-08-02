@@ -1,0 +1,180 @@
+/*
+ * ActivityRow — the muted activity-row primitive (Codex timeline design T0.1).
+ * The "muted ladder": verb reads at --text-base, brightens to --text-strong on hover;
+ * tail whispers at --text-weak; deepest detail at --text-weaker. Chevron and hover
+ * brighten are mouse-gated (@media hover:hover) so touch devices never reveal chrome.
+ * All colors resolve through legacy tokens so the light theme stays correct.
+ */
+
+.activity-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  max-width: 100%;
+  min-width: 0;
+  cursor: pointer;
+  /* One dim tone for the whole row; hover lifts the text only. */
+  color: var(--text-weak);
+}
+
+.activity-row__hit {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: inherit;
+  border-radius: 4px;
+}
+
+@media (hover: hover) {
+  .activity-row__hit {
+    cursor: pointer;
+  }
+}
+
+.activity-row__hit:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--border-focus, var(--border-weak-base));
+}
+
+/* Content sits above the overlay hit target but stays click-through except real links/buttons. */
+/* Icon inherits the row's dim tone (see .activity-row) so icon + text match exactly. */
+.activity-row__icon {
+  position: relative;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: inherit;
+  pointer-events: none;
+}
+
+.activity-row__icon [data-component="icon"] {
+  width: 14px;
+  height: 14px;
+  color: inherit;
+}
+
+.activity-row__summary {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.activity-row__verb {
+  flex-shrink: 0;
+  font-family: var(--font-family-sans);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: var(--line-height-large);
+  color: var(--text-weak);
+  transition: color 0.15s ease;
+}
+
+.activity-row__tail {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-family-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-large);
+  color: var(--text-weak);
+  transition: color 0.15s ease;
+}
+
+.activity-row__accessory {
+  position: relative;
+  flex-shrink: 0;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-row__chevron {
+  position: relative;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--icon-base);
+  opacity: 0;
+  transition:
+    opacity 0.15s ease,
+    transform 0.3s ease;
+  pointer-events: none;
+}
+
+/* Real interactive descendants opt back into pointer events. */
+.activity-row__summary a,
+.activity-row__summary button,
+.activity-row__accessory a,
+.activity-row__accessory button {
+  pointer-events: auto;
+}
+
+/* Hover gate — mouse-capable devices only. */
+@media (hover: hover) {
+  .activity-row:hover .activity-row__verb,
+  .activity-row:hover .activity-row__tail {
+    color: var(--text-strong);
+  }
+
+  .activity-row:hover .activity-row__chevron {
+    opacity: 1;
+  }
+}
+
+/* Keyboard focus mirrors hover for the brighten + chevron reveal. */
+.activity-row:focus-within .activity-row__verb {
+  color: var(--text-strong);
+}
+
+.activity-row__hit:focus-visible ~ .activity-row__chevron,
+.activity-row[data-expanded="true"] .activity-row__chevron {
+  opacity: 1;
+}
+
+.activity-row[data-expanded="true"] .activity-row__chevron {
+  transform: rotate(90deg);
+}
+
+/* Nested rows inside a WorkGroup: dimmer, icon-less, depth by dimming (D§8 rule 6). */
+.activity-row[data-nested="true"] {
+  padding-left: 8px;
+}
+
+.activity-row[data-nested="true"] .activity-row__icon {
+  display: none;
+}
+
+.activity-row[data-nested="true"] .activity-row__verb {
+  color: var(--text-weak);
+}
+
+.activity-row[data-nested="true"] .activity-row__tail {
+  color: var(--text-weaker);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-row__verb,
+  .activity-row__tail,
+  .activity-row__chevron {
+    transition: none;
+  }
+}

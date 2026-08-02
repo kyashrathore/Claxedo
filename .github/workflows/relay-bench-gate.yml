@@ -1,0 +1,121 @@
+# W7.2 — the relay's credential-free bench gate, enforced in CI.
+#
+# WHY THIS EXISTS. The relay benches were never wired to CI: the package had no
+# bench script, `test` was `bun test src` so even `bench/lib/stats.test.ts` never
+# ran, `typecheck` covered `src` only, and no workflow named a bench. So every
+# relay latency claim in the reliability review was a number from one laptop,
+# unreproducible off that machine — which is exactly the "green tests are claims"
+# failure the repo's own rules warn about.
+#
+# WHAT RUNS HERE. Only the gate that needs NO credentials. `local-dry-run.ts`
+# boots a real echo target, a real in-process resolver, and the real shipping
+# relay (`bun src/main.ts`) as a child process, then drives the loadgen through
+# it. Nothing is mocked and nothing is cloud. The cloud rows (`W7.1`) need
+# Daytona + Cloudflare keys and stay owner-triggered; they are deliberately NOT
+# here, because a workflow that needs secrets does not run on a fork PR.
+#
+# The gate FAILS the job. `local-dry-run.ts` exits 1 on a gate breach and 2 on a
+# harness error, and nothing swallows that exit code — this is a gate, not a
+# report.
+#
+# ── Runner-variance budget ────────────────────────────────────────────────────
+# A latency gate on a shared CI runner can flake on noise that says nothing about
+# the relay, so the headroom was measured rather than assumed. Six local runs at
+# this exact `c20/load20` default shape (2026-07-17 and 2026-07-30):
+#
+#   HTTP p99 overhead:  7.58 – 9.96 ms   vs a 100 ms gate  → ~10x headroom
+#   WS-message p99:     1.73 – 2.18 ms   vs a 100 ms gate  → ~46x headroom
+#
+# WS keeps the strict RUNBOOK gate: 46x is far outside any plausible runner
+# jitter. HTTP sits at only ~10x, and a GitHub-hosted runner sharing a host can
+# add tens of milliseconds to a request percentile, so the HTTP gate — and ONLY
+# the HTTP gate — is raised to 250 ms for the CI copy. That is still ~25x the
+# observed local worst case, so it catches a real regression (a 10x slowdown)
+# while ignoring scheduling noise.
+#
+# The override is per-gate on purpose: one shared knob would have relaxed the
+# 46x-headroom gate to accommodate the 10x one. The RUNBOOK gates themselves are
+# untouched — `bench/lib/stats.ts` defaults to 100/100 and a local `bun run
+# bench:gate` is unaffected by anything here. Message-loss gates have no override
+# at all: "zero loss" does not degrade with runner noise.
+#
+# If this job flakes on the HTTP gate, the fix is to investigate the runner or
+# raise THIS number with a new measurement in this comment — never to touch the
+# defaults in stats.ts.
+
+name: relay-bench-gate
+
+on:
+  pull_request:
+    paths:
+      - "packages/workspace-relay/**"
+      - ".github/workflows/relay-bench-gate.yml"
+  push:
+    branches: [dev]
+    paths:
+      - "packages/workspace-relay/**"
+      - ".github/workflows/relay-bench-gate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: relay-bench-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    # The gate row itself takes seconds; the budget is for install + boot. Well
+    # under workgraph-stress's 30 because nothing here provisions cloud state.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: ./.github/actions/setup-bun
+
+      # bench/ + src typecheck resolve @claxedo/workspace-relay-protocol and
+      # @claxedo/sandbox-manager through their dist entrypoints, which a fresh
+      # checkout does not have (dists are gitignored). Build exactly those.
+      - name: Build dist-resolved workspace dependencies
+        run: |
+          bun run --cwd packages/workspace-relay-protocol build
+          bun run --cwd packages/sandbox-manager build
+
+      # `bench/` had drifted out of every typecheck. Running it here is half the
+      # value of this workflow: it stops the gate's own harness from rotting.
+      - name: Typecheck bench harness
+        working-directory: packages/workspace-relay
+        run: bun run typecheck:bench
+
+      # `bench/lib/stats.test.ts` is the gate-evaluation logic — the code that
+      # decides PASS/FAIL, including the `latencyMeasurable` guard written after
+      # a run reported a physically impossible -8972 ms and PASSED its latency
+      # gate. It existed for two weeks without CI ever executing it.
+      - name: Unit tests (src + bench)
+        working-directory: packages/workspace-relay
+        run: bun run test
+
+      # No build step: the gate runs `bun src/main.ts` directly, so there is no
+      # dist to stale out.
+      - name: Relay bench gate (credential-free)
+        working-directory: packages/workspace-relay
+        env:
+          # See the runner-variance budget above. HTTP only; WS stays strict.
+          CLAXEDO_BENCH_HTTP_P99_GATE_MS: "250"
+        run: bun run bench:gate
+
+      # `bench/reports/` is gitignored, so the artifact is the only way to read
+      # the numbers after the fact. `if: always()` because a FAILING run is the
+      # one whose report matters most.
+      - name: Upload bench report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: relay-bench-gate-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            packages/workspace-relay/bench/reports/local-dry-run-*.json
+            packages/workspace-relay/bench/reports/local-dry-run-*.md

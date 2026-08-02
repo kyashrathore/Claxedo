@@ -1,0 +1,23 @@
+---
+import { marketingActions } from "../content/routes"
+import TrackedLink from "./TrackedLink.astro"
+
+interface Props {
+  label?: string
+  extraClass?: string
+  placement?: string
+  variant?: "primary" | "secondary"
+}
+
+const { label = marketingActions.download.label, extraClass = "", placement = "inline", variant = "primary" } = Astro.props
+---
+
+<TrackedLink
+  class={`btn-${variant} ${extraClass}`}
+  href={marketingActions.download.href}
+  event={marketingActions.download.event}
+  placement={placement}
+>
+  {label}
+  <span aria-hidden="true">↓</span>
+</TrackedLink>

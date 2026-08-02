@@ -1,0 +1,9 @@
+interface:
+  display_name: "Claxedo Documents"
+  short_description: "Find and open Claxedo documents"
+  default_prompt: "Use $claxedo-documents to find and open the referenced Claxedo document."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "claxedo"
+      description: "Discover and open session-scoped Claxedo documents"

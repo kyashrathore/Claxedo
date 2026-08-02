@@ -1,0 +1,66 @@
+{
+  "name": "@claxedo/wakes",
+  "version": "0.3.0",
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "bun run scripts/build.ts",
+    "prepublishOnly": "bun run build",
+    "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit.xml",
+    "typecheck": "bun x tsc --noEmit -p tsconfig.src.json",
+    "typecheck:src": "bun x tsc --noEmit -p tsconfig.src.json",
+    "typecheck:test": "bun x tsc --noEmit -p tsconfig.test.json"
+  },
+  "dependencies": {
+    "better-sqlite3": "13.0.1",
+    "ms": "2.1.3",
+    "ulid": "3.0.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.13",
+    "@types/bun": "catalog:",
+    "@types/ms": "2.1.0",
+    "typescript": "catalog:",
+    "vitest": "2.1.9"
+  },
+  "description": "Resume an idle agent session from an out-of-band trigger — a durable wake fired by time, an external event, or an authorized approval.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kyashrathore/Claxedo.git",
+    "directory": "packages/wakes"
+  },
+  "homepage": "https://github.com/kyashrathore/Claxedo/tree/dev/packages/wakes",
+  "bugs": "https://github.com/kyashrathore/Claxedo/issues",
+  "keywords": [
+    "claxedo",
+    "wakes",
+    "scheduler",
+    "durable",
+    "agent",
+    "cron",
+    "webhooks"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
+    },
+    "./sqlite": {
+      "types": "./dist/sqlite.d.ts",
+      "import": "./dist/sqlite.mjs",
+      "default": "./dist/sqlite.mjs"
+    }
+  },
+  "files": [
+    "README.md",
+    "docs",
+    "LICENSE",
+    "dist"
+  ]
+}

@@ -1,0 +1,207 @@
+---
+title: "See it in action"
+description: "The packages composed into a full coding-agent app."
+---
+
+This page shows the Claxedo package family as one composable app stack: run
+terminal coding agents, expose them to users or teams, and keep the product
+surface stable while swapping harness, workspace, deployment, and extension
+backends underneath.
+
+## Full app in a few pieces
+
+| Piece | Responsibility |
+| --- | --- |
+| Product UI | Workspace/session/process/file/browser experience. |
+| Product control plane | Auth, org policy, credentials, workspace routing, extension policy, audit, team access. |
+| Workspace Runtime | Per-workspace execution host. |
+| Agent Extensions | Package discovery, desired/lock state, policy, materialization, runtime replay. |
+| Agent SDK Runtime | Runtime facade, harness factories, stores, turns, events, capability checks. |
+| Agent Event Runtime | Canonical event model and projections. |
+| Workspace Relay | Remote access to cloud or user-hosted runtime hosts. |
+| Claxedo MCP | Tool layer for MCP clients to orchestrate runtime/server APIs. |
+
+## Compose a local runtime
+
+<Steps>
+  <Step title="Install the published packages">
+    ```sh
+    npm install @claxedo/workspace-runtime @claxedo/agent-sdk-runtime @hono/node-server
+    ```
+
+    `@hono/node-server` serves the runtime's Hono app on a Node socket — the
+    quickstart imports it directly.
+  </Step>
+
+  <Step title="Start and configure a Workspace Host">
+    Save this as `host.ts` next to the project directory the agent should work
+    on. It boots the host, then applies the harness, model, auth, MCP config,
+    and Agent Extension desired state in code via `runtime.host.apply()`:
+
+    ```ts host.ts
+    import { createWorkspaceRuntimeApp, loopbackWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime"
+    import { serve } from "@hono/node-server"
+
+    const runtime = createWorkspaceRuntimeApp({
+      exposure: loopbackWorkspaceRuntimeExposure(),
+    })
+
+    const server = serve({ fetch: runtime.app.fetch, port: 4096, hostname: "127.0.0.1" })
+    runtime.injectWebSocket(server)
+
+    await runtime.host.apply({
+      version: 2,
+      harnesses: [{ id: "codex", access: "native" }],
+      model: "default",
+      auth: { "codex-app-server": process.env.OPENAI_API_KEY! },
+      mcp: {},
+      agent_extensions: { version: 1, installs: [] },
+      workspaceHarnessEnabled: true,
+    })
+
+    console.log("workspace-runtime ready on http://127.0.0.1:4096")
+    ```
+
+    <Note>
+    This example drives the **Codex** harness, so it needs `OPENAI_API_KEY`. To
+    drive Claude over ACP instead, swap in
+    `harnesses: [{ id: "claude", access: "acp" }]` and
+    `auth: { anthropic: process.env.ANTHROPIC_API_KEY!, "claude-acp": process.env.ANTHROPIC_API_KEY! }`.
+    </Note>
+
+    <Note>
+    A control plane can push the same snapshot to a remote host over HTTP
+    (`POST /api/wr/config`), but that route is authorized only by a
+    workspace-runtime **management-auth adapter**. The kit ships a JWT verifier
+    (`createWorkspaceRuntimeJwtManagementAuth`), which
+    `workspaceRelayRuntimeOptionsFromEnv` wires from
+    `WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL` or
+    `WORKSPACE_RUNTIME_MANAGEMENT_VERIFY_PEM` plus
+    `WORKSPACE_RUNTIME_MANAGEMENT_ISSUER` and
+    `WORKSPACE_RUNTIME_MANAGEMENT_AUDIENCE`. Without an adapter configured, the
+    route returns `401 runtime_config_auth_required`.
+    </Note>
+  </Step>
+
+  <Step title="Run it and verify">
+    ```sh
+    npx tsx host.ts
+    ```
+
+    Then, in a second terminal, hit the health route:
+
+    ```sh
+    curl http://127.0.0.1:4096/api/wr/health
+    ```
+
+    ```json
+    {"ok":true,"status":"ready","service":"workspace-runtime","routeAuthBoundary":"loopback-only","serviceExposure":{"source":"loopback","access":"private"},"exposure":{"kind":"loopback"}}
+    ```
+  </Step>
+
+  <Step title="Create a session and send a prompt">
+    Your UI calls one session surface. The host starts a turn through the
+    `AgentRuntime` facade and streams normalized events back. Run these from
+    any HTTP client or a second script (e.g. `npx tsx session.ts`):
+
+    ```ts session.ts
+    const session = await fetch("http://127.0.0.1:4096/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "Fix the failing tests" }),
+    }).then((res) => res.json())
+
+    await fetch(`http://127.0.0.1:4096/session/${session.id}/message`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ type: "text", text: "Find and fix the failing tests." }],
+      }),
+    })
+    ```
+  </Step>
+
+  <Step title="Use the same host for processes, files, and events">
+    ```ts
+    await fetch("http://127.0.0.1:4096/api/wr/process/start-all", { method: "POST" })
+
+    const files = await fetch("http://127.0.0.1:4096/file/all").then((res) => res.json())
+
+    const events = new EventSource("http://127.0.0.1:4096/global/event")
+    events.onmessage = (event) => console.log(JSON.parse(event.data))
+    ```
+  </Step>
+</Steps>
+
+Your UI does not need a separate streaming implementation for Claude ACP, Codex
+ACP, Cursor ACP, Claude SDK, Codex app-server, and OpenCode. When the harness
+config changes, the runtime disposes the old adapter and creates the matching
+one.
+
+## Add runtime tools over MCP
+
+Add Claxedo runtime tools to any MCP client. The JSON below is **MCP-client
+config** — put it in the client's server configuration, not a terminal.
+
+```json
+{
+  "command": "npx",
+  "args": ["-y", "@claxedo/mcp"],
+  "env": {
+    "CLAXEDO_SERVER_URL": "http://127.0.0.1:3001"
+  }
+}
+```
+
+`CLAXEDO_SERVER_URL` points at the Claxedo **control-plane server**
+(claxedo-server, `:3001` in local dev), not the workspace-runtime — the
+runtime's own API lives on `:4096` under `/api/wr/*`.
+
+`@claxedo/mcp` is a small tool bridge from "MCP tool call" to "Claxedo HTTP API
+call" — it does not run the agent or own the workspace. It registers these
+tools:
+
+| MCP tool | What it does |
+| --- | --- |
+| `process` | Lists, adds, updates, starts, stops, restarts, and removes managed process configs such as dev servers and watchers. |
+| `get_logs` | Reads terminal or managed-process output by `process_id`, `name`, `pty_id`, or `terminal_id`. |
+| `session_messages` | Reads structured agent session messages, or resolves the current terminal/tab agent session inside Claxedo. |
+| `summarize_logs` | Fetches (or accepts raw) logs, creates a temporary session, and asks the harness to summarize the output. |
+| Browser tools | List tabs, capture screenshots, read console logs, evaluate JavaScript, and navigate browser panes. |
+
+## Attach through Relay
+
+When the runtime runs in a cloud VM or on a user's machine behind a tunnel,
+attach it to Relay with env-driven options:
+
+```ts
+import { startServer } from "@claxedo/workspace-runtime"
+import { workspaceRelayRuntimeOptionsFromEnv } from "@claxedo/workspace-runtime/relay"
+
+const port = Number(process.env.WORKSPACE_RUNTIME_PORT ?? 3002)
+
+startServer(port, await workspaceRelayRuntimeOptionsFromEnv(process.env, port))
+```
+
+See [Relay-attached](/deploy/relay-attached) for the full env contract.
+
+## Run the cookbook
+
+The **claxedo-cookbook** is a ladder of eight single-file recipes — one
+capability each, from a ~15-line hello-agent to relay-attached workspace
+placement. Every recipe runs or prints a clean `SKIP` with the reason.
+
+```bash
+cd claxedo-cookbook
+bun install
+bun run recipe:01-hello-agent
+```
+
+<Note>
+`bun install` runs a postinstall (`scripts/link-local.mjs`) that links the
+`@claxedo/*` packages from the monorepo. It expects to run inside the repo
+checkout; outside it, set `CLAXEDO_PACKAGES_ROOT` to a checkout root.
+</Note>
+
+Each recipe has its own page — with the full source and the expected output —
+under the [Cookbook tab](/cookbook/overview).

@@ -1,0 +1,42 @@
+---
+import { capabilityRows, claxedoCapabilities, type Competitor } from "../content/competitors"
+
+interface Props { competitor: Competitor }
+const { competitor } = Astro.props
+---
+
+<div class="cmp-table" role="table" aria-label={`Claxedo and ${competitor.name} capability comparison`}>
+  <div class="cmp-row cmp-head" role="row">
+    <span role="columnheader">Capability</span>
+    <span role="columnheader">{competitor.name}</span>
+    <span role="columnheader" class="cmp-claxedo">Claxedo</span>
+  </div>
+  {capabilityRows.map(({ key, label }) => (
+    <div class="cmp-row" role="row">
+      <strong role="rowheader">{label}</strong>
+      <span data-col={competitor.name}>{competitor.capabilities[key]}</span>
+      <span class="cmp-claxedo" data-col="Claxedo">{claxedoCapabilities[key]}</span>
+    </div>
+  ))}
+</div>
+
+<style>
+  .cmp-table { margin-top: 3rem; border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; }
+  .cmp-row { display: grid; grid-template-columns: minmax(0, .6fr) minmax(0, 1fr) minmax(0, 1fr); background: var(--surface); }
+  .cmp-row + .cmp-row { border-top: 1px solid var(--line); }
+  .cmp-row > * { min-width: 0; padding: 1rem 1.15rem; font-size: .88rem; line-height: 1.5; }
+  .cmp-row > * + * { border-left: 1px solid var(--line); }
+  .cmp-row strong { color: var(--ink-faint); font: 500 .66rem/1.4 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+  .cmp-row span { color: var(--ink-soft); }
+  .cmp-row .cmp-claxedo { color: var(--ink); background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+  .cmp-head { background: var(--surface-raised); }
+  .cmp-head span, .cmp-head .cmp-claxedo { color: var(--ink); font: 500 .82rem/1 var(--font-sans); letter-spacing: -.01em; }
+  .cmp-head span[role="columnheader"]:first-child { color: var(--ink-faint); font: 500 .66rem/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+  @media (max-width: 46rem) {
+    .cmp-row { grid-template-columns: 1fr; }
+    .cmp-row > * + * { border-left: 0; border-top: 1px solid var(--line); }
+    .cmp-row strong { background: var(--surface-raised); }
+    .cmp-head { display: none; }
+    .cmp-row span::before { content: attr(data-col); display: block; margin-bottom: .3rem; color: var(--ink-faint); font: 500 .6rem var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+  }
+</style>

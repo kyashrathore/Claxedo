@@ -1,0 +1,11 @@
+{
+  "mode": "fresh-browser-disabled-and-real-process-tree-profiler-pair",
+  "production_profiler_enabled": true,
+  "comparison_flows": [
+    "launch-project",
+    "session-switch",
+    "live-terminal-switch",
+    "workspace-switch",
+    "large-diff-toggle"
+  ]
+}

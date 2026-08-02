@@ -1,0 +1,85 @@
+---
+title: "MCP tools"
+description: "Reference for the @claxedo/mcp stdio server: look up every runtime tool it registers, which survive read-only mode, its environment variables, and client config."
+---
+
+import Warning from "../../../../components/framework/compat/Warning.astro"
+
+
+`@claxedo/mcp` is a standalone stdio MCP server exposing Claxedo runtime
+operations: process config and lifecycle management, process/terminal log
+retrieval, session-message retrieval, log summarization, and browser pane tools
+through the Claxedo desktop bridge.
+
+<Warning>
+  This MCP is a **local operator tool**. Run it on the same machine as the
+  Claxedo desktop/server loopback endpoint, or against an intentionally
+  configured signed remote server. Do not expose it as a shared remote MCP
+  endpoint. `CLAXEDO_SERVER_URL` should be a loopback URL such as
+  `http://127.0.0.1:3001`.
+</Warning>
+
+## Tools
+
+Full-control mode (the default) registers every tool. Read-only mode
+(`CLAXEDO_MCP_MODE=read-only` or `CLAXEDO_MCP_READ_ONLY=1`) drops the mutating
+tools — the `Read-only` column marks which survive.
+
+| Tool | Purpose | Read-only |
+| --- | --- | :---: |
+| `process` | Manage dev servers, watchers, and long-running processes. Actions: `list`, `start`, `stop`, `restart`, `add`, `update`, `remove`, `start_all`, `stop_all`. Creates/updates/removes entries in `.claxedo/processes.jsonc`. | — |
+| `get_logs` | Get terminal output from a managed process or PTY session. Accepts `process_id`, `name`, `pty_id`, or `terminal_id`; `lines` returns only the tail. | ✅ |
+| `session_messages` | Get structured messages for an agent session. Pass `session_id` for a normal chat, or `terminal_id` / `tab_id` to resolve the currently running terminal agent. | ✅ |
+| `summarize_logs` | Summarize terminal output into a short title and 2–5 sentence summary using the configured agent model. Creates a temporary Claxedo session and sends log text to the runtime/model. | — |
+| `browser_list_tabs` | List browser pane tabs through the Claxedo desktop bridge. | ✅ |
+| `browser_screenshot` | Capture a screenshot of a browser pane. | ✅ |
+| `browser_get_console_logs` | Read console logs from a browser pane. | ✅ |
+| `browser_evaluate_js` | Evaluate JavaScript in a browser pane. Only runs when the user has explicitly enabled agent JavaScript for that tab; the bridge denies otherwise. | — |
+| `browser_navigate` | Navigate a browser pane to a new page. | — |
+
+<Warning>
+  Full-control risks: `process` can alter developer workflow state or run
+  commands that bind ports and access local files. `summarize_logs` sends log
+  text (which can contain secrets or customer data) to the configured
+  runtime/model. `browser_evaluate_js` and `browser_navigate` are active
+  browser-control permissions. Run the MCP through a client that shows tool
+  calls before execution.
+</Warning>
+
+## Environment
+
+Local use needs none of these — the server URL defaults to loopback
+(`http://127.0.0.1:3001`). These knobs exist for non-default directories,
+workspaces, and signed remote servers.
+
+| Env var | Purpose |
+| --- | --- |
+| `CLAXEDO_SERVER_URL` | Claxedo server URL. Defaults to `http://127.0.0.1:3001`. |
+| `OPENCODE_API_DIR` | Default local project directory. |
+| `CLAXEDO_WORKSPACE_ID` | Default Docker/cloud workspace id. |
+| `CLAXEDO_AUTH_TOKEN` | Optional bearer token for a signed remote server. Configure only when intentionally pointing at a signed remote Claxedo server. |
+| `CLAXEDO_MCP_MODE=read-only` / `CLAXEDO_MCP_READ_ONLY=1` | Omit mutating tools (`process`, `summarize_logs`, `browser_evaluate_js`, `browser_navigate`). |
+
+## Client config
+
+The default config launches the published package with `npx -y @claxedo/mcp`
+and points it at the local server.
+
+```json
+{
+  "mcpServers": {
+    "claxedo": {
+      "command": "npx",
+      "args": ["-y", "@claxedo/mcp"],
+      "env": {
+        "CLAXEDO_SERVER_URL": "http://127.0.0.1:3001"
+      }
+    }
+  }
+}
+```
+
+---
+
+For the package layout, publishing status, and architecture, see the
+[mcp package page](/framework/packages/mcp).

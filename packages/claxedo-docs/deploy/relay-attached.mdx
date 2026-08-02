@@ -1,0 +1,140 @@
+---
+title: "Relay-attached"
+description: "Reach a user-hosted workspace through the relay."
+---
+
+When the runtime runs on a cloud VM or a user's machine behind a tunnel, attach
+it to `@claxedo/workspace-relay`. Traffic flows:
+
+```text
+Product UI → control plane / gateway → workspace-relay
+           → workspace-runtime host tunnel → project directory
+```
+
+## Attach the runtime
+
+Tunnel and auth options come from the environment:
+
+```ts
+import { startServer } from "@claxedo/workspace-runtime"
+import { workspaceRelayRuntimeOptionsFromEnv } from "@claxedo/workspace-runtime/relay"
+
+const port = Number(process.env.WORKSPACE_RUNTIME_PORT ?? 3002)
+
+startServer(port, await workspaceRelayRuntimeOptionsFromEnv(process.env, port))
+```
+
+`workspaceRelayRuntimeOptionsFromEnv` returns `relayHostAuth`, `hostTunnel`, and
+`configToken` — plus `managementAuth` and `managementTarget` when the
+`WORKSPACE_RUNTIME_MANAGEMENT_*` env vars are set, which is what authorizes
+`POST /api/wr/config` on the attached runtime. A relay-attached runtime has two
+independent pieces:
+
+1. **Relay-host auth verification** — protects inbound requests the relay
+   forwards to the runtime.
+2. **Host tunnel attachment** — opens the outbound connection from the runtime
+   to the relay.
+
+## Environment variables
+
+Local development needs none of these — a loopback runtime boots with zero
+environment variables. These knobs exist for the relay-attached production
+shape.
+
+### Identity and host tunnel (outbound)
+
+| Env var | Purpose |
+| --- | --- |
+| `WORKSPACE_RUNTIME_WORKSPACE_ID` | Workspace id for the runtime. |
+| `WORKSPACE_RUNTIME_HOST_ID` | Host id. Defaults to workspace id when omitted. |
+| `WORKSPACE_RUNTIME_RELAY_URL` | Relay base URL. Enables host tunnel options; if unset, no tunnel opens. |
+| `WORKSPACE_RUNTIME_RELAY_WORKSPACE_IDS` | Comma-separated workspace ids advertised by this host tunnel. Defaults to the current workspace id. |
+| `WORKSPACE_RUNTIME_RELAY_TUNNEL_TOKEN` | Bearer token for the runtime-to-relay tunnel connection. |
+| `WORKSPACE_RUNTIME_LOCAL_BASE_URL` | Local runtime URL forwarded by the tunnel. Defaults to `http://127.0.0.1:<port>`. |
+
+### Auth and verification (inbound)
+
+| Env var | Purpose |
+| --- | --- |
+| `WORKSPACE_RUNTIME_RELAY_JWKS_URL` | Preferred JWKS source for verifying relay-minted Relay Host Tokens (supports key rotation). |
+| `WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM` | Static PEM fallback for RHT verification. |
+| `WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL` / `WORKSPACE_RUNTIME_MANAGEMENT_VERIFY_PEM` + `WORKSPACE_RUNTIME_MANAGEMENT_ISSUER` + `WORKSPACE_RUNTIME_MANAGEMENT_AUDIENCE` | Enable the JWT management-auth adapter that authorizes `POST /api/wr/config`. Issuer and audience are required alongside a key source. |
+| `WORKSPACE_RUNTIME_CONFIG_TOKEN` | Trusted direct token for relay-host middleware and the health check (`GET /api/wr/health`). Not config-mutation auth. |
+| `WORKSPACE_RUNTIME_TRUSTED_DIRECT_TOKEN` | Whole-host direct token accepted without an RHT. Use only for trusted supervisor/control-plane traffic. Also acts as the config token when `WORKSPACE_RUNTIME_CONFIG_TOKEN` is unset. |
+
+Additional tuning knobs (tunnel ping cadence, a full `Authorization`-header
+override for the tunnel token, drain timeout, PTY backpressure watermarks)
+exist with sensible defaults — see the package source if you need them.
+
+<Note>
+Relay-issued RHT requests must include `x-forwarded-by: workspace-relay`.
+`workspace-relay` sets that marker after stripping client-supplied
+`x-forwarded-*` headers. Direct trusted-token calls bypass the marker because
+they do not originate from the public relay.
+</Note>
+
+## Auth semantics
+
+Runtime access tokens are validated on every new HTTP request and WebSocket
+upgrade: decoded into relay-domain claims, bound to the requested workspace id
+and host id, checked for revocation, and role-checked by allowlist. Missing,
+unknown, or malformed roles deny.
+
+<Warning>
+Established long-lived relayed sockets are **not** reauthorized mid-stream in
+v1. Revocation applies to new requests and connections; existing
+WebSocket/SSE/PTY sessions may continue until they close, reconnect, or drain.
+</Warning>
+
+## Production relay shape
+
+Workspace Relay production v1 is a **single-instance** deployment for
+user-hosted traffic. The relay stores host presence and active host-tunnel
+sockets in process memory, so one `hostId` has exactly one active inbound host
+tunnel in one relay process. A new tunnel for the same `hostId` replaces the
+previous one.
+
+<Warning>
+Do not run multiple active relay instances for the same user-hosted fleet unless
+a multi-instance routing milestone has added sticky host routing, split-brain
+prevention, and failover ownership. Private cloud-VM targets can be forwarded
+directly by the relay, but user-hosted tunnels are process-local. The relay
+process/VM/region is a single point of failure for user-hosted traffic.
+</Warning>
+
+During planned drain, the relay reports `/health` as unhealthy, rejects new
+workspace requests and tunnel registrations with `503 relay_draining`, closes
+active host tunnels so hosts reconnect promptly, waits for pending work up to
+the drain timeout, then exits.
+
+## Metrics
+
+`/metrics` is ops-only. In production, configure `CLAXEDO_RELAY_METRICS_TOKEN`
+or run through the Bun adapter's trusted remote-address resolver so the endpoint
+is limited to loopback. Without either signal, metrics **fail closed**.
+
+## The protocol package
+
+`@claxedo/workspace-relay-protocol` carries the tunnel message types and token
+verifier helpers shared by both sides of the tunnel, without depending on Hono
+or the relay server. It exports `TUNNEL_PROTOCOL_VERSION`, `TunnelMessage` and
+frame types, `isTunnelMessage`, `makeTunnelPong`, `TokenVerifier`,
+`TokenVerifierError`, `createHttpTokenVerifier`, and `createStaticTokenVerifier`:
+
+```ts
+import { createStaticTokenVerifier } from "@claxedo/workspace-relay-protocol"
+
+const verifier = createStaticTokenVerifier({
+  tokens: {
+    "tok-1": {
+      subject: "u1",
+      scopes: ["workspace:write"],
+      claims: {},
+    },
+  },
+})
+```
+
+<Card title="Hosted control plane" href="/deploy/hosted-control-plane" icon="cloudflare">
+  Run the control plane as a Cloudflare Worker in front of the relay.
+</Card>

@@ -1,0 +1,28 @@
+/* Staggered reveal for the launcher rows.
+   The creator replaces what used to be an instant spawn, so the card carries a
+   short entrance to explain the extra step rather than appearing as a wall. The
+   delay is driven by --terminal-launcher-index (set per row in JSX) so the
+   stagger survives a changing roster without hardcoded nth-child rules.
+   `backwards` matters: without it the row paints at full opacity for one frame
+   before the delay elapses, which reads as a flicker. */
+@keyframes terminal-launcher-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+[data-component="terminal-new-launchers"] [data-slot="terminal-launcher"] {
+  animation: terminal-launcher-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+  animation-delay: calc(var(--terminal-launcher-index, 0) * 28ms + 40ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-component="terminal-new-launchers"] [data-slot="terminal-launcher"] {
+    animation: none;
+  }
+}

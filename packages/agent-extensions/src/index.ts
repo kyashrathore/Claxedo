@@ -1,0 +1,172 @@
+export {
+  createAgentExtensions,
+  parseHarnessTargets,
+  type AgentExtensionsDoctorIssue,
+  type AgentExtensionsDoctorResult,
+  type AgentExtensionsListResult,
+  type AgentExtensionsOptions,
+} from "./facade"
+export {
+  AgentExtensionConflictError,
+  allAgentExtensionTargets,
+  disableAgentExtension,
+  enableAgentExtension,
+  installCachedAgentExtension,
+  installFetchedAgentExtension,
+  installGitHubAgentExtension,
+  uninstallAgentExtension,
+  updateAgentExtension,
+  type AgentExtensionLifecycleInput,
+  type AgentExtensionLifecycleResult,
+  type InstallCachedAgentExtensionInput,
+  type InstallFetchedAgentExtensionInput,
+  type InstallGitHubAgentExtensionInput,
+} from "./install"
+export {
+  getRuntimeAgentExtensionsSnapshot,
+  resolveEffectiveAgentExtensionPolicy,
+  type AgentExtensionPolicyOverride,
+  type EffectiveAgentExtensionPolicy,
+  type RuntimeAgentExtensionsSnapshotInput,
+  type RuntimeAgentExtensionsSnapshotOptions,
+  type RuntimeAgentExtensionsSnapshot,
+} from "./runtime-config"
+export {
+  mirrorWorkspaceAgentExtensionRecord,
+  readMirroredWorkspaceAgentExtensions,
+  removeMirroredWorkspaceAgentExtension,
+  resolveGitHubWorkspaceAgentExtension,
+  setMirroredWorkspaceAgentExtensionEnabled,
+  workspaceAgentExtensionRecords,
+  type WorkspaceAgentExtensionRecord,
+} from "./workspace"
+export {
+  AgentExtensionManifestError,
+  discoverAgentExtensionPackage,
+  type AgentExtensionPackage,
+  type CatalogPackageEntry,
+  type NativePluginManifest,
+} from "./manifest"
+export {
+  AgentExtensionSourceError,
+  parsePackageSource,
+  safeRelativePath,
+  sameSource,
+  type GitHubPackageSource,
+  type PackageInstallSource,
+  type ProjectPackageSource,
+} from "./source"
+export {
+  AgentExtensionCacheError,
+  agentExtensionCacheRoot,
+  cachePackageRoot,
+  copyPackageToCache,
+  digestDirectory,
+} from "./cache"
+export {
+  AgentExtensionFetchError,
+  fetchGitHubPackageToCache,
+  githubRepoUrl,
+  resolveGitHubSource,
+  type ExecFile,
+} from "./fetch"
+export {
+  AgentExtensionStateError,
+  agentExtensionStateRoot,
+  encodeDesiredState,
+  installedStatePath,
+  readDesiredExtensionState,
+  removeDesiredExtensionInstall,
+  setDesiredExtensionEnabled,
+  upsertDesiredExtensionInstall,
+  writeDesiredExtensionState,
+  type DesiredExtensionInstall,
+  type DesiredExtensionState,
+} from "./state"
+export {
+  encodeLock,
+  lockStatePath,
+  readExtensionLock,
+  sortedLock,
+  writeExtensionLock,
+  type ExtensionLock,
+  type LockedExtensionPackage,
+} from "./lock"
+export {
+  agentExtensionFiles,
+  materializedAgentExtensionFiles,
+  workspaceAgentExtensionFiles,
+  type AgentExtensionFiles,
+} from "./storage"
+export {
+  discoverAgentExtensionComponents,
+  type DiscoveredAgentExtensionComponent,
+} from "./discovery"
+
+export {
+  applyRuntimeAgentExtensions,
+  type ReplayOptions,
+  type RuntimeAgentExtensions,
+} from "./replay"
+
+export {
+  AgentExtensionIntegrityError,
+  isRemotePackageSource,
+  lockedPackageDigest,
+  samePackageSourceIdentity,
+  verifyPackageIntegrity,
+  type AgentExtensionIntegrityCode,
+  type PackageIntegrityLock,
+} from "./integrity"
+
+export {
+  materializeAgentExtensionSnapshot,
+  removeStaleMaterializedComponents,
+  uninstallOwnedComponents,
+  type AgentExtensionMaterializationInstall,
+  type AgentExtensionMaterializeOptions,
+} from "./materialize"
+
+export {
+  AgentExtensionMaterializationError,
+  componentOwnedBy,
+  linkOrCopyOwnedDirectory,
+  materializedRecordPath,
+  readMaterializedRuntimeRecord,
+  writeMaterializedRuntimeRecord,
+  type MaterializedComponent,
+  type MaterializedExtensionPackage,
+  type MaterializedRuntimeRecord,
+} from "./materialization"
+
+export {
+  materializeStandaloneMcp,
+  mcpTargetPath,
+  normalizeStandaloneMcpConfig,
+  removeStandaloneMcpEntries,
+  type StandaloneMcpConfig,
+  type StandaloneMcpServerConfig,
+} from "./materializers/mcp"
+export {
+  getClaudeManagedHookCommand,
+  materializeAgentHooks,
+  type AgentHookMaterializationResult,
+  type AgentHookRunner,
+  type MaterializeAgentHooksOptions,
+} from "./materializers/hooks"
+export {
+  generateOpenCodeDocAgentMarkdown,
+  materializeOpenCodeDocAgent,
+  OPENCODE_DOC_AGENT_FILE,
+} from "./materializers/opencode-agent"
+export { cursorLocalPluginDir, materializeCursorLocalPlugin } from "./materializers/cursor"
+export { materializeStandaloneSkill, skillTargetDir } from "./materializers/skills"
+export {
+  allHarnessTargets,
+  FIRST_PARTY_AGENT_EXTENSION_ID,
+  FIRST_PARTY_AGENT_EXTENSION_PACKAGE_NAME,
+  FIRST_PARTY_AGENT_EXTENSIONS_DIR,
+  isHarnessTarget,
+  HARNESS_TARGETS,
+} from "./types"
+export type { AgentExtensionScope, MaterializedAgentExtensionScope, PackageSource, HarnessTarget } from "./types"

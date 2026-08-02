@@ -1,0 +1,116 @@
+/*
+ * WorkGroup (T4) — collapsed run of bash/edit/write/apply_patch/web tools folded to
+ * one muted line. Header follows the activity-row voice; expanded body scrolls at 224px
+ * with edge fades when it overflows and dims its member rows (depth by dimming, D§8 #6).
+ */
+[data-component="work-group-trigger"] {
+  width: 100%;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  cursor: default;
+
+  /* Same uniform dim + 14px icon as the tool rows, so a group header and a tool row
+     read as the same voice rather than two different greys. */
+  color: var(--text-weak);
+
+  [data-slot="work-group-icon"] {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    color: inherit;
+  }
+
+  [data-slot="work-group-icon"] [data-component="icon"] {
+    width: 14px;
+    height: 14px;
+    color: inherit;
+  }
+
+  [data-slot="work-group-summary"] {
+    min-width: 0;
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-family-sans);
+    font-size: 14px;
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-large);
+    color: var(--text-weak);
+    transition: color 0.15s ease;
+  }
+
+  [data-slot="collapsible-arrow"] {
+    color: var(--icon-weaker);
+    cursor: pointer;
+  }
+}
+
+@media (hover: hover) {
+  [data-slot="collapsible-trigger"]:hover
+    [data-component="work-group-trigger"]
+    [data-slot="work-group-summary"] {
+    color: var(--text-strong);
+  }
+}
+
+[data-slot="collapsible-trigger"]:focus-visible
+  [data-component="work-group-trigger"]
+  [data-slot="work-group-summary"] {
+  color: var(--text-strong);
+}
+
+[data-component="work-group-list"] {
+  padding-left: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 224px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+/* Edge fades only when the body actually overflows (data-overflowing). */
+[data-component="work-group-list"][data-overflowing="true"] {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black 24px,
+    black calc(100% - 24px),
+    transparent
+  );
+}
+
+@media (hover: hover) {
+  [data-component="work-group-list"]:hover {
+    scrollbar-color: var(--border-weak-base) transparent;
+  }
+}
+
+/* Nested member rows: dimmer, icon-less. */
+[data-component="work-group-list"] [data-slot="basic-tool-tool-leading-icon"],
+[data-component="work-group-list"] [data-slot="context-tool-group-title"] [data-slot="collapsible-arrow"] {
+  display: none;
+}
+
+body:not([data-new-layout]) {
+  [data-component="work-group-list"] {
+    [data-slot="basic-tool-tool-title"],
+    [data-slot="message-part-title-text"] {
+      color: var(--text-weak);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-component="work-group-trigger"] [data-slot="work-group-summary"] {
+    transition: none;
+  }
+}

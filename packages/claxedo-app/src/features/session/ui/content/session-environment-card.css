@@ -1,0 +1,233 @@
+/* Placement + tokens for the session Environment card — Codex's "pinned
+   summary" model. The card's LOOK lives in the shared `@/ui/context-card`
+   shell (`variant="floating"` supplies the raised bounded-card surface).
+
+   Placement here is gutter-in-scroller: the timeline's scroll viewport keeps
+   the FULL pane width (so its scrollbar stays on the pane's right edge) and
+   reserves a right gutter via padding while the card is mounted; the card sits
+   absolutely INSIDE that gutter. Inline — never floating over content, never a
+   full-height rail. Class namespace is `session-envcard-*` — never reuse
+   `workgraph-card*` or generic names. */
+
+.session-envcard-shell {
+  position: relative;
+  display: flex;
+  min-height: 0;
+}
+
+.session-envcard-primary {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Bounded card, top-aligned inside the reserved gutter, content-sized. */
+.session-envcard {
+  position: absolute;
+  top: 0.85rem;
+  right: 0.85rem;
+  z-index: 30;
+  width: 15rem;
+  max-height: calc(100% - 1.7rem);
+  overflow-y: auto;
+}
+
+/* Collapsed: the same gutter spot holds the shell's vertical icon rail. */
+.session-envcard.is-collapsed {
+  width: 2.5rem;
+  overflow-y: visible;
+}
+
+/* The squeeze animates: the gutter padding transitions on the elements that
+   carry it, so chat and composer slide smoothly instead of jumping. */
+.session-envcard-shell [data-session-timeline-root] .scroll-view__viewport,
+.session-envcard-shell [data-session-timeline-loading],
+.session-envcard-shell [data-component="session-prompt-dock"] {
+  transition: padding-right 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-envcard-shell [data-session-timeline-root] .scroll-view__viewport,
+  .session-envcard-shell [data-session-timeline-loading],
+  .session-envcard-shell [data-component="session-prompt-dock"] {
+    transition: none;
+  }
+}
+
+/* Reserve the gutter inside the timeline's scroll viewport so chat content
+   squeezes left while the scrollbar remains on the pane edge. Keyed off the
+   card actually being mounted (`:has`) so visibility has one source of truth;
+   the collapsed rail only needs a sliver. The composer dock gets the SAME
+   inset so it stays centered on the squeezed chat column — never on the full
+   pane. So does the loading placeholder that stands in for the timeline before
+   messages land (`[data-session-timeline-loading]`, session-timeline-skeleton.tsx):
+   it replaces the scroll viewport rather than living inside it, so without its
+   own rule it centres on the full pane and the column visibly jumps left the
+   moment the real messages arrive. */
+@media (min-width: 769px) {
+  .session-envcard-shell:has(.session-envcard) [data-session-timeline-root] .scroll-view__viewport,
+  .session-envcard-shell:has(.session-envcard) [data-session-timeline-loading],
+  .session-envcard-shell:has(.session-envcard) [data-component="session-prompt-dock"] {
+    padding-right: 16.4rem;
+  }
+
+  .session-envcard-shell:has(.session-envcard.is-collapsed) [data-session-timeline-root] .scroll-view__viewport,
+  .session-envcard-shell:has(.session-envcard.is-collapsed) [data-session-timeline-loading],
+  .session-envcard-shell:has(.session-envcard.is-collapsed) [data-component="session-prompt-dock"] {
+    padding-right: 3.6rem;
+  }
+}
+
+/* Below desktop width the reading column needs the full width; drop the card
+   (the gutter rule above is already scoped to desktop widths). */
+@media (max-width: 768px) {
+  .session-envcard {
+    display: none;
+  }
+}
+
+/* This card sits over the live timeline, so it reads a touch brighter than the
+   shared shell's quiet defaults. Everything below is scoped to .session-envcard
+   so the shared ContextCard (WorkGraph "Needs you") keeps its quieter look. */
+
+/* Surface lift: a translucent white layered over the opaque raised surface.
+   In dark themes this nudges #1c1c1c up to ~#242424; over the light theme's
+   white surface it is a no-op, so the lift never dims light mode. */
+.session-envcard.is-floating {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.04)), var(--surface-raised-stronger-non-alpha);
+}
+
+/* Framing labels stay visibly subordinate to both metadata and actions. */
+.session-envcard .ui-context-card-label,
+.session-envcard .ui-context-card-section-label {
+  color: var(--text-weaker);
+  font-weight: 400;
+}
+
+/* Clickable rows are the card's primary foreground. */
+.session-envcard .ui-context-card-row.is-selectable .ui-context-card-row-label {
+  color: var(--text-strong);
+}
+
+/* Information rows are intentionally quieter than navigation controls. */
+.session-envcard .ui-context-card-row:not(.is-selectable) .ui-context-card-row-label,
+.session-envcard-value {
+  color: var(--text-base);
+}
+
+/* The Repository row's trailing "opens externally" glyph is a quiet affordance,
+   so it sits at the muted meta weight rather than the full icon color. */
+.session-envcard-extglyph {
+  color: var(--icon-weak-base);
+  opacity: 0.75;
+}
+
+.session-envcard-quiet {
+  color: var(--text-weaker);
+}
+
+.session-envcard-metric {
+  font-variant-numeric: tabular-nums;
+}
+
+.session-envcard-add {
+  color: var(--icon-diff-add-base);
+}
+
+.session-envcard-del {
+  margin-left: 0.35rem;
+  color: var(--icon-diff-delete-base);
+}
+
+/* ── Processes row: running badge + quick-actions popover ──────────── */
+
+/* Green variant of the shell's status dot (default is the red unread dot). */
+.session-envcard-dot-running {
+  background: var(--surface-success-strong);
+}
+
+/* Green dot + running count, the Processes row's trailing meta. */
+.session-envcard-running {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.session-envcard-running-count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The quick-actions popover portals out of the card; the shared popover shell
+   already supplies the surface/border/shadow, so only size + tighten here. */
+.session-envcard-proc-popover {
+  width: 15rem;
+}
+
+.session-envcard-proc-popover [data-slot="popover-body"] {
+  padding: 0.35rem;
+}
+
+.session-envcard-proc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.session-envcard-proc-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 1.9rem;
+  padding: 0.2rem 0.35rem;
+  border-radius: var(--radius-md);
+}
+
+.session-envcard-proc-name {
+  overflow: hidden;
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-envcard-proc-port {
+  flex-shrink: 0;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-weaker);
+}
+
+.session-envcard-proc-action {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: var(--radius-md);
+  color: var(--icon-weak-base);
+  transition:
+    background 110ms ease,
+    color 110ms ease;
+}
+
+.session-envcard-proc-action:hover,
+.session-envcard-proc-action:focus-visible {
+  background: var(--surface-base-hover);
+  color: var(--icon-base);
+}
+
+/* Footer link to the full panel, under a hairline. */
+.session-envcard-proc-openpanel {
+  margin-top: 0.15rem;
+  padding: 0.35rem;
+  border-top: 1px solid var(--border-weak-base);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  font-size: 0.75rem;
+  text-align: left;
+  color: var(--text-weak);
+  transition: color 110ms ease;
+}
+
+.session-envcard-proc-openpanel:hover,
+.session-envcard-proc-openpanel:focus-visible {
+  color: var(--text-base);
+}

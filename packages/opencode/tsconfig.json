@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "@tsconfig/bun/tsconfig.json",
+  "compilerOptions": {
+    "jsx": "preserve",
+    "jsxImportSource": "@opentui/solid",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": [],
+    "noUncheckedIndexedAccess": false,
+    "customConditions": ["browser"],
+    "paths": {
+      "@/*": ["./src/*"],
+      "@test/*": ["./test/*"]
+    }
+  },
+  "exclude": [
+    // Standalone dev utility that uses the classic TS compiler API
+    // (isImportDeclaration/createSourceFile/SyntaxKind/forEachChild), which the
+    // TS7 native port removed from the default export (now under
+    // typescript/unstable/*). Unreferenced by src/build; excluded from typecheck
+    // until migrated to the unstable AST API. Pinning opencode to typescript 5.x
+    // is NOT an option here — tsgo would then resolve the older lib and break the
+    // @opentui TUI types. See the codemode pin for the sibling case.
+    "script/trace-imports.ts"
+  ]
+}

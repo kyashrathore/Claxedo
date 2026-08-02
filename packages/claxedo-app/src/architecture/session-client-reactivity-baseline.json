@@ -1,0 +1,6 @@
+[
+  { "metric": "effectStateWrites", "file": "features/session/composer/composer.tsx", "count": 1 },
+  { "metric": "effectStateWrites", "file": "features/session/composer/ui/lifecycle.ts", "count": 2 },
+  { "metric": "effectStateWrites", "file": "features/session/composer/ui/submit-control.tsx", "count": 1 },
+  { "metric": "effectStateWrites", "file": "features/session/composer/ui/submit-ui-state.ts", "count": 2 }
+]

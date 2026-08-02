@@ -1,0 +1,70 @@
+import type { Navigator, Params } from "@solidjs/router"
+
+import { createClaxedoLayoutActions } from "./workbench/actions/index"
+import { useClaxedoEventsOptional } from "./integrations/claxedo-events"
+import { useCommand } from "@/app/providers/command"
+import { ADD_PROJECT_COMMAND_ID } from "@/features/session/ui/components/session-add-project-action"
+import { useLanguage } from "@/platform/i18n/provider"
+import { marketplaceRoute, workGraphRoute } from "@/platform/identity/route"
+import type { AppShellState } from "./app-shell-state"
+
+export function useAppShellActions(input: {
+  shell: AppShellState
+  params: Params
+  navigate: Navigator
+}) {
+  const events = useClaxedoEventsOptional()
+  const handleOpenMarketplace = () => {
+    input.shell.state.layout.openMarketplace()
+    input.navigate(marketplaceRoute())
+  }
+  const handleOpenWorkGraph = () => {
+    input.shell.state.layout.openWorkGraph()
+    input.navigate(workGraphRoute())
+  }
+
+  const actions = createClaxedoLayoutActions({
+    params: input.params,
+    navigate: (path) => input.navigate(path),
+    state: input.shell.state,
+    dialog: input.shell.dialog,
+    directorySessionCacheActions: input.shell.directorySessionCacheActions,
+    globalBootstrapActions: input.shell.globalBootstrapActions,
+    projectInventoryActions: input.shell.projectInventoryActions,
+    globalSDK: input.shell.globalSDK,
+    layout: input.shell.layout,
+    platform: input.shell.platform,
+    config: input.shell.config,
+    events,
+    projects: input.shell.projects,
+    routeDirectory: input.shell.routeDirectory,
+    activeDirectory: input.shell.activeDirectory,
+    activeProjectId: input.shell.activeProjectId,
+    canUseDocuments: input.shell.canUseDocuments,
+    flowLog: input.shell.flowLog,
+  })
+
+  // `handleNewProject` (directory picker -> ensureLocalProject -> open project ->
+  // open a session surface on it) is only reachable from here, but two surfaces
+  // outside the rail want it: the desktop menu's "Open Project..." entry, which
+  // already declares `project.open` (app/entry/desktop-menu.ts) and was
+  // permanently disabled because nothing registered that id, and the new-session
+  // project chip's "Add project" footer row. Registering it once here is what
+  // makes both real -- see features/session/ui/components/session-add-project-action.ts.
+  const command = useCommand()
+  const language = useLanguage()
+  command.register("claxedo-project", () => [
+    {
+      id: ADD_PROJECT_COMMAND_ID,
+      title: language.t("command.project.open"),
+      category: language.t("command.category.project"),
+      onSelect: () => actions.handleNewProject(),
+    },
+  ])
+
+  return {
+    ...actions,
+    handleOpenMarketplace,
+    handleOpenWorkGraph,
+  }
+}

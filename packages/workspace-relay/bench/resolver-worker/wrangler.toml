@@ -1,0 +1,8 @@
+name = "claxedo-relay-resolver-reeval"
+main = "worker.js"
+# HELD at 2025-05-01 deliberately (D3, 2026-07-27). This is the throwaway
+# resolver-latency benchmark worker from the 2026-06 Cloudflare re-evaluation,
+# not a product surface. Its whole value is comparability with the numbers
+# already recorded against this date; changing the runtime silently invalidates
+# them. Deliberately kept in lockstep with ../../wrangler.toml.
+compatibility_date = "2025-05-01"

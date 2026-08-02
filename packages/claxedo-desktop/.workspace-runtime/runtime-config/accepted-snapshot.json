@@ -1,0 +1,22 @@
+{
+  "revision": 1,
+  "acceptedAt": "2026-07-25T04:17:27.602Z",
+  "snapshot": {
+    "version": 1,
+    "harness": {
+      "id": "opencode",
+      "access": "native"
+    },
+    "mcp": {
+      "keys": []
+    },
+    "auth": {
+      "keys": []
+    },
+    "agent_extensions": {
+      "version": 1,
+      "installCount": 0,
+      "installIds": []
+    }
+  }
+}

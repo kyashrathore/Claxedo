@@ -1,0 +1,2334 @@
+/**
+ * Canonical WorkGraph browser contract.
+ *
+ * Every test owns a fresh file-backed SQLite database and the real embedded
+ * WorkGraph HTTP router. Playwright never intercepts a route, and fixture setup
+ * uses only public commands plus the same source-planning background
+ * runtimes used by the product.
+ *
+ * LANE — tagged `@core @workgraph-real`. The extra `@workgraph-real` tag is how this
+ * file is deliberately carved OUT of the 12-way sharded core lane:
+ * `test:e2e:core:base` passes `--grep-invert @workgraph-real`, and this spec instead
+ * runs as its own `e2e (workgraph-real)` CI job via `test:e2e:workgraph`. Reason: it
+ * boots a real WorkGraph API and needs an app build with a baked
+ * `VITE_CLAXEDO_SERVER_URL`, so it cannot share a shard's app build. It is still
+ * `@core` — the workgraph job selects it with `CLAXEDO_E2E_SUITE=core`.
+ */
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test"
+import { AxeBuilder } from "@axe-core/playwright"
+import type {
+  AdmissionProposalDto,
+  CommandResult,
+  CompletionRequirementID,
+  ConnectionID,
+  DecisionDto,
+  WorkGraphCommandRequest,
+} from "@claxedo/workgraph/contracts"
+import fs from "node:fs"
+import path from "node:path"
+import { createRealWorkGraphHarness, type RealWorkGraphHarness } from "../helpers/real-workgraph-harness"
+import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
+
+const apiPort = Number(process.env.CLAXEDO_WORKGRAPH_E2E_API_PORT ?? 4311)
+const repositoryDirectory = path.resolve(import.meta.dirname, "../../../..")
+let harness: RealWorkGraphHarness
+
+test.describe.serial("@core @workgraph-real personal WorkGraph real local journey", () => {
+  test.beforeEach(async ({}, testInfo) => {
+    const realMasters = testInfo.title.includes("real master")
+    const realSessions = realMasters || testInfo.title.includes("real Session V2")
+    // This one journey boots a separate production OpenCode process and native
+    // SQLite runtime. Give that test-infrastructure cold start its own budget;
+    // user-visible WorkGraph and Session readiness retain their strict assertions.
+    if (realSessions) testInfo.setTimeout(240_000)
+    harness = await createRealWorkGraphHarness({
+      port: apiPort,
+      realSessions,
+      realMasters,
+    })
+  })
+
+  test.afterEach(async ({ page }) => {
+    // Closing the page aborts WorkGraph's in-flight bounded /changes long-poll.
+    // The embedded HTTP server can then shut down without waiting for another
+    // poll window; this exercises the production unmount/navigation cleanup.
+    await test.step("close the WorkGraph page", () => page.close())
+    if (harness) await test.step("close the real WorkGraph harness", () => harness.close())
+  })
+
+  test("uses one WorkspacePanel and supports manual streams, tasks, and tabless settings", async ({
+    page,
+    request,
+  }) => {
+    await configureGeneration(request)
+    await page.goto("/workgraph")
+    await expect(page.getByRole("main", { name: "WorkGraph" })).toBeVisible()
+    await expectNoSeriousAxeViolations(page, 'main[aria-label="WorkGraph"]')
+
+    await page.getByRole("button", { name: "Needs you", exact: true }).click()
+    const panel = page.getByRole("complementary", { name: "Workspace panel" })
+    await expect(panel).toBeVisible()
+    await expect(panel.getByRole("tab", { name: "Needs you" })).toHaveAttribute("aria-selected", "true")
+    await expect(panel.getByRole("tab", { name: "Settings" })).toBeVisible()
+    await expect(panel.getByText("Nothing needs you right now", { exact: true })).toBeVisible()
+    await expect(page.getByRole("dialog", { name: "Waiting on you" })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Close workspace panel" })).toHaveCount(1)
+    await panel.getByRole("button", { name: "Close workspace panel" }).click()
+
+    await page.getByRole("button", { name: "New stream" }).click()
+    const create = page.getByRole("dialog", { name: "New stream" })
+    await create.getByRole("textbox", { name: "What are you trying to ship?" }).fill("Ship the browser contract")
+    await create.getByRole("textbox", { name: "Description" }).fill("Keep the WorkGraph state visible and organized.")
+    // The project directory is now a chip-style Select and the base revision is a
+    // chip popover; both portal out of the modal dialog (aria-hidden by Kobalte's
+    // focus scope), so open the chip then act on the portaled option/field.
+    await create.getByRole("button", { name: "Project directory" }).click()
+    await page.getByRole("option", { name: path.basename(repositoryDirectory), exact: true, includeHidden: true }).click()
+    await create.getByRole("button", { name: "Base revision" }).click()
+    const baseRevisionField = page.getByRole("textbox", { name: "Base revision", includeHidden: true })
+    await baseRevisionField.fill("HEAD")
+    await baseRevisionField.press("Enter")
+    await create.getByRole("button", { name: "Create" }).click()
+    await expect(create).toBeHidden()
+
+    await page.getByRole("article", { name: "Stream Ship the browser contract" }).hover()
+    await page.getByRole("button", { name: "Add task" }).click()
+    const taskTitle = page.getByRole("textbox", { name: "Add task to Ship the browser contract" })
+    await taskTitle.fill("Verify the real SQLite journey")
+    await taskTitle.press("Enter")
+    await expect(page.getByText("Verify the real SQLite journey", { exact: true })).toBeVisible()
+
+    await page.getByRole("button", { name: "WorkGraph settings" }).click()
+    await expect(panel).toBeVisible()
+    await expect(panel.getByRole("tab", { name: "Settings" })).toHaveAttribute("aria-selected", "true")
+    await expect(panel.getByRole("heading", { name: "WorkGraph settings" })).toBeVisible()
+    await expectNoSeriousAxeViolations(page, 'aside[aria-label="Workspace panel"]')
+    await expect(panel.getByRole("tablist", { name: "WorkGraph panel" })).toHaveCount(1)
+    await panel.getByLabel("Harness").selectOption("opencode")
+    await panel.getByLabel("Agent").selectOption("build")
+    await panel.getByLabel("Provider", { exact: true }).selectOption("openai")
+    await panel.getByLabel("Model", { exact: true }).selectOption("openai/gpt-5")
+    await panel.getByLabel("Effort", { exact: true }).selectOption("high")
+    await panel.getByRole("button", { name: "Save" }).click()
+    await expect
+      .poll(async () => (await readJson<DefaultsResponse>(request, "/api/workgraph/defaults")).defaults.execution)
+      .toMatchObject({
+        harness: "opencode",
+        agent: "build",
+        model: { providerId: "openai", modelId: "gpt-5" },
+        effort: "high",
+      })
+    await panel.getByRole("button", { name: "Close workspace panel" }).click()
+
+    await page.getByRole("button", { name: "Stream settings for Ship the browser contract" }).click()
+    const streamSettings = panel
+    await expect(streamSettings.getByRole("heading", { name: "Stream settings" })).toBeVisible()
+    await expect(page.getByRole("dialog", { name: "Stream settings" })).toHaveCount(0)
+    await expect(streamSettings.getByRole("tab", { name: "Settings" })).toHaveAttribute("aria-selected", "true")
+    await streamSettings.getByLabel("Environment").selectOption("local_worktree")
+    // Project directory is a chip-style Select whose option list portals; open the
+    // chip, then click the basename-labeled option. (Base revision here stays the
+    // panel's native free-text field.)
+    await streamSettings.getByRole("button", { name: "Project directory" }).click()
+    await page.getByRole("option", { name: path.basename(repositoryDirectory), exact: true, includeHidden: true }).click()
+    await streamSettings.getByLabel("Base revision").fill("HEAD")
+    await streamSettings.getByLabel("Harness").selectOption("opencode")
+    await expect(streamSettings.getByText("Blank charter defaults", { exact: true })).toBeVisible()
+    await streamSettings.getByRole("textbox", { name: "Stream charter" }).fill(
+      "Open draft pull requests and ask before the first externally visible action.",
+    )
+    await streamSettings.getByRole("button", { name: "Save" }).click()
+    await expect(panel).toBeHidden()
+
+    const streamId = await streamIdByTitle(request, "Ship the browser contract")
+    await expect
+      .poll(async () => readJson<StreamResponse>(request, `/api/workgraph/streams/${encodeURIComponent(streamId)}`))
+      .toMatchObject({
+        executionDefaults: {
+          environment: { kind: "local_worktree", directory: repositoryDirectory },
+          repository: { baseRevision: "HEAD" },
+        },
+        charter: {
+          text: "Open draft pull requests and ask before the first externally visible action.",
+          hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        },
+      })
+    harness.assertHealthy()
+  })
+
+  test("creates a profiled draft in the Task Composer, arms it, and keeps project pages scoped", async ({
+    page,
+    request,
+  }) => {
+    await configureGeneration(request)
+    const profiles = [
+      {
+        name: "Full build",
+        brief: "Build with the full editing toolset.",
+        generation: {
+          harness: "opencode",
+          agent: "build",
+          model: { providerId: "openai", modelId: "gpt-5" },
+          effort: "high",
+          tools: ["read", "edit"],
+          connectionIds: [],
+        },
+      },
+      {
+        name: "Read only",
+        brief: "Inspect the task without editing.",
+        generation: {
+          harness: "opencode",
+          agent: "build",
+          model: { providerId: "openai", modelId: "gpt-5" },
+          effort: "high",
+          tools: ["read"],
+          connectionIds: [],
+        },
+      },
+    ]
+    const projectStream = await command(request, {
+      version: 1,
+      type: "create_stream",
+      title: "Composer project stream",
+      execution: {
+        ...streamExecution(),
+        agents: profiles,
+        assignments: { execution: "Full build" },
+      },
+    })
+    await command(request, {
+      version: 1,
+      type: "create_stream",
+      title: "Other project stream",
+      execution: {
+        ...generationDefaults.execution,
+        environment: { kind: "local_worktree", placement: "shared", directory: harness.directory },
+        repository: { baseRevision: "HEAD" },
+      },
+    })
+
+    await page.goto(`/w/${encodeURIComponent(repositoryDirectory)}/task/new`)
+    await expect(page.getByRole("tablist", { name: "Task composer" })).toBeVisible()
+    await page.getByRole("tab", { name: "Streams" }).click()
+    await expect(page.getByText("Composer project stream", { exact: true })).toBeVisible()
+    await expect(page.getByText("Other project stream", { exact: true })).toHaveCount(0)
+    await page.getByText("Composer project stream", { exact: true }).click()
+    await page.getByRole("textbox", { name: "Task intent" }).fill(
+      "Inspect the composer profile\nProve the selected profile reaches the admitted Run.",
+    )
+    await page.getByRole("combobox", { name: "Agent profile" }).selectOption("Read only")
+    await page.getByRole("checkbox", { name: "Save as Draft" }).check()
+    await page.getByRole("button", { name: "Save draft" }).click()
+    await expect(page.getByRole("status")).toHaveText("Draft task saved.")
+
+    const snapshot = await readJson<SnapshotResponse>(request, "/api/workgraph/snapshot")
+    const task = snapshot.records.find((record) =>
+      record.recordType === "work_item" && record.title === "Inspect the composer profile"
+    )
+    expect(task).toMatchObject({
+      state: "draft",
+      streamId: String(projectStream.value.streamId),
+    })
+
+    await page.goto(`/w/${encodeURIComponent(repositoryDirectory)}/workgraph`)
+    await expect(page.getByRole("article", { name: "Stream Composer project stream" })).toBeVisible()
+    await expect(page.getByRole("article", { name: "Stream Other project stream" })).toHaveCount(0)
+    await expect(page.getByText("Draft", { exact: true })).toBeVisible()
+    harness.queueExecutionResults("running")
+    await page.getByRole("button", { name: "Arm draft task Inspect the composer profile" }).click()
+    await expect
+      .poll(async () =>
+        readJson<WorkItemResponse>(request, `/api/workgraph/work-items/${encodeURIComponent(task!.id)}`),
+      )
+      .toMatchObject({ state: "active" })
+
+    await expect.poll(async () => (
+      await readJson<RunPageResponse>(
+        request,
+        `/api/workgraph/work-items/${encodeURIComponent(task!.id)}/runs?limit=100`,
+      )
+    ).runs[0]?.run.resolvedExecution).toMatchObject({
+      environment: { placement: "shared" },
+      tools: ["read"],
+    })
+
+    await page.goto("/workgraph")
+    await expect(page.getByRole("article", { name: "Stream Composer project stream" })).toBeVisible()
+    await expect(page.getByRole("article", { name: "Stream Other project stream" })).toBeVisible()
+    harness.assertHealthy()
+  })
+
+  test("reviews and confirms a real background-planned source proposal in Needs you", async ({ page, request }) => {
+    await configureGeneration(request)
+    const source = await command(request, {
+      version: 1,
+      type: "create_work_source",
+      title: "Launch brief",
+      content: "Ship Claxedo Cloud and verify launch readiness.",
+    })
+    const revision = await readJson<SourceRevisionResponse>(
+      request,
+      `/api/workgraph/sources/${encodeURIComponent(String(source.value.workSourceId))}/revisions/${encodeURIComponent(String(source.value.revisionId))}`,
+    )
+    const proposed = await command(request, {
+      version: 1,
+      type: "propose_admission",
+      source: {
+        workSourceId: String(source.value.workSourceId) as never,
+        revisionId: String(source.value.revisionId) as never,
+        contentHash: revision.contentHash as never,
+      },
+    })
+    const planning = await harness.runSourcePlanning()
+    expect(
+      planning,
+      JSON.stringify({ ...planning, ...("error" in planning ? { error: String(planning.error) } : {}) }),
+    ).toMatchObject({ state: "completed" })
+
+    await page.goto("/workgraph")
+    const card = page.getByRole("complementary", { name: "Waiting on you" })
+    await expect(card).toBeVisible()
+    const proposal = card.getByRole("button", { name: /Review proposed work/ })
+    await proposal.click()
+    const dialog = page.getByRole("dialog", { name: "Review proposed work" })
+    await expect(dialog).toBeVisible()
+    await expectNoSeriousAxeViolations(page, '[role="dialog"]')
+    await expect(dialog.getByText("New stream · Planned from AI context", { exact: true })).toBeVisible()
+    await expect(dialog.getByRole("heading", { name: "Outcomes (1)" })).toBeVisible()
+    await expect(dialog.getByRole("heading", { name: "Tasks (1)" })).toBeVisible()
+    await dialog.getByRole("button", { name: "Confirm" }).click()
+    await expect(dialog).toBeHidden()
+    await expect(proposal).toBeHidden()
+    await expect
+      .poll(async () =>
+        readJson<ProposalResponse>(
+          request,
+          `/api/workgraph/proposals/${encodeURIComponent(String(proposed.value.proposalId))}`,
+        ),
+      )
+      .toMatchObject({ state: "confirmed" })
+    // Confirmation is durable before the overview projection refreshes. A real
+    // navigation reload proves the confirmed plan is materialized from SQLite;
+    // no route interception or client-side substitute is involved.
+    await page.reload()
+    await expect(page.getByRole("article", { name: "Stream Planned from AI context" })).toBeVisible()
+    harness.assertHealthy()
+  })
+
+  test("keeps exact source-revision provenance through the review dialog and records its disposition", async ({
+    page,
+    request,
+  }) => {
+    await configureGeneration(request)
+    const created = await command(request, {
+      version: 1,
+      type: "create_work_source",
+      title: "Cloud launch plan",
+      content: "Ship the initial cloud launch checklist.",
+    })
+    const firstRef = await sourceRevisionReference(
+      request,
+      String(created.value.workSourceId),
+      String(created.value.revisionId),
+    )
+    const firstAdmission = await command(request, { version: 1, type: "propose_admission", source: firstRef as never })
+    expect(await harness.runSourcePlanning()).toMatchObject({ state: "completed" })
+    const firstProposal = await readJson<ReviewableProposalResponse>(
+      request,
+      `/api/workgraph/proposals/${encodeURIComponent(String(firstAdmission.value.proposalId))}`,
+    )
+    const firstConfirmation = await command(
+      request,
+      confirmProposalCommand(firstProposal, { mode: "create", streamTitle: "Cloud launch" }),
+    )
+    const streamId = String(firstConfirmation.value.streamId)
+
+    const revised = await command(request, {
+      version: 1,
+      type: "revise_work_source",
+      workSourceId: String(created.value.workSourceId) as never,
+      expectedRevisionId: String(created.value.revisionId) as never,
+      content: "Ship the cloud launch checklist and preserve the existing Stream while adding readiness work.",
+    })
+    const secondRef = await sourceRevisionReference(
+      request,
+      String(created.value.workSourceId),
+      String(revised.value.revisionId),
+    )
+    const secondAdmission = await command(request, {
+      version: 1,
+      type: "propose_admission",
+      source: secondRef as never,
+      targetStreamId: streamId as never,
+    })
+    expect(await harness.runSourcePlanning()).toMatchObject({ state: "completed" })
+    const secondProposal = await readJson<ReviewableProposalResponse>(
+      request,
+      `/api/workgraph/proposals/${encodeURIComponent(String(secondAdmission.value.proposalId))}`,
+    )
+    expect(secondProposal.source).toEqual(secondRef)
+    expect(secondProposal.previousSource).toEqual(firstRef)
+    expect(secondProposal.diffSummary).toEqual(expect.any(String))
+
+    await page.goto("/workgraph")
+    const panel = await openWaitingItemPanel(page, /Review proposed work/)
+    await panel.getByRole("button", { name: /Review proposed work/ }).click()
+    const dialog = page.getByRole("dialog", { name: "Review proposed work" })
+    await expect(dialog.getByText(firstRef.revisionId, { exact: true })).toBeVisible()
+    await expect(dialog.getByText(secondRef.revisionId, { exact: true })).toBeVisible()
+    await expect(dialog.getByText(String(secondProposal.diffSummary), { exact: true })).toBeVisible()
+    await expect(dialog.getByRole("button", { name: "Keep" })).toBeVisible()
+    await expect(dialog.getByRole("button", { name: "Replace" })).toBeVisible()
+    await expect(dialog.getByRole("button", { name: "Fork" })).toBeVisible()
+    await dialog.getByRole("button", { name: "Keep" }).click()
+    await expect(dialog).toBeHidden()
+
+    const stream = await readJson<StreamWithSourcesResponse>(
+      request,
+      `/api/workgraph/streams/${encodeURIComponent(streamId)}`,
+    )
+    expect(stream.sourceRevisionRefs).toEqual(expect.arrayContaining([firstRef, secondRef]))
+    await expect
+      .poll(async () =>
+        readJson<ProposalResponse>(
+          request,
+          `/api/workgraph/proposals/${encodeURIComponent(String(secondAdmission.value.proposalId))}`,
+        ),
+      )
+      .toMatchObject({ state: "confirmed" })
+    const archive = await readJson<ArchiveResponse>(request, "/api/workgraph/archive")
+    const archived = archive.records.find(
+      (record) => record.kind === "admission_proposal" && record.id === String(secondAdmission.value.proposalId),
+    )
+    expect(archived?.value).toMatchObject({
+      state: "confirmed",
+      source: secondRef,
+      previousSource: firstRef,
+      disposition: { selection: { mode: "keep", streamId }, streamId },
+    })
+    harness.assertHealthy()
+  })
+
+  test("executes GitHub, Linear, and Jira issues through real Session V2 Connections end to end", async ({
+    page,
+    request,
+  }) => {
+    await configureRealGeneration(request)
+    const connection = harness.connectionEvidence()
+    const issues = [
+      {
+        integration: "github",
+        provider: "github" as const,
+        identity: "octocat",
+        filterLabel: /Repository/,
+        filterValue: "claxedo/claxedo",
+        externalId: "101",
+        externalKey: "#101",
+        title: "Connection-filtered launch issue",
+      },
+      {
+        integration: "linear",
+        provider: "linear" as const,
+        identity: "linear-user",
+        filterLabel: /Team/,
+        filterValue: "ENG",
+        externalId: "linear-101",
+        externalKey: "LIN-101",
+        title: "Linear launch issue",
+      },
+      {
+        integration: "atlassian",
+        provider: "jira" as const,
+        identity: "jira-user",
+        filterLabel: /JQL/,
+        filterValue: "project = CLX AND status != Done",
+        externalId: "jira-101",
+        externalKey: "CLX-101",
+        title: "Jira launch issue",
+      },
+    ]
+
+    await page.goto("/workgraph")
+    const settings = await openConnectionsSettings(page)
+    for (const issue of issues) {
+      const integration = settings.locator(`[data-integration="${issue.integration}"]`)
+      await integration.getByRole("button", { name: "Add issue source" }).click()
+      const form = settings.locator('[data-component="source-view-form"]')
+      await form.getByLabel(/Your provider identity/).fill(issue.identity)
+      await form.getByLabel(issue.filterLabel).fill(issue.filterValue)
+      await form.getByLabel(/Project/).selectOption(repositoryDirectory)
+      await form.getByLabel(/Base revision/).fill("HEAD")
+      await form.getByLabel(/Result sync/).selectOption("announce")
+      await form.getByRole("button", { name: "Save source" }).click()
+      await expect(form).toHaveCount(0)
+      await integration.getByRole("button", { name: "Refresh" }).click()
+      await expect(integration.getByText(/1 new · 0 updated/)).toBeVisible()
+    }
+
+    const sourceViews = (await readJson<SourceViewsResponse>(request, "/api/workgraph/source-views")).sourceViews
+    expect(sourceViews).toHaveLength(3)
+    for (const issue of issues) {
+      const sourceView = sourceViews.find((view) => view.provider === issue.provider)
+      if (!sourceView) throw new Error(`${issue.provider} Source View did not persist through Settings`)
+      expect(sourceView.teamConnectionId).toBe(connection.connectionIds[issue.provider])
+    }
+    await expect
+      .poll(() => harness.connectionEvidence().requests)
+      .toEqual([
+        {
+          provider: "github",
+          providerUserId: "octocat",
+          filters: { repo: "claxedo/claxedo", state: "open" },
+          authorized: true,
+        },
+        {
+          provider: "linear",
+          providerUserId: "linear-user",
+          filters: { team: "ENG" },
+          authorized: true,
+        },
+        {
+          provider: "jira",
+          providerUserId: "jira-user",
+          filters: { jql: "project = CLX AND status != Done" },
+          authorized: true,
+        },
+      ])
+
+    await page.keyboard.press("Escape")
+    await expect(settings).toBeHidden()
+    const discoveredCandidates = (await readJson<CandidatePageResponse>(request, "/api/workgraph/intake?limit=50")).candidates
+      .filter((candidate) => candidate.candidateKind === "external_issue")
+    expect(discoveredCandidates).toHaveLength(3)
+    // Connections discovery happens inside the global Settings dialog, an overlay
+    // that leaves the WorkGraph surface mounted — so unlike the sibling attention
+    // journeys (which each navigate fresh), this one has to re-read Attention on
+    // the already-mounted surface. In production the `workgraph.changed` doorbell
+    // pushes that reload; the real-workgraph harness serves only the WorkGraph
+    // router (no central events SSE), so reload the surface here exactly as a
+    // returning user — or the 60s poll — would.
+    await page.reload()
+    const panel = await openWaitingItemPanel(page, /Unorganized AI work/)
+    await panel.getByRole("button", { name: /Unorganized AI work/ }).click()
+    const dialog = page.getByRole("dialog", { name: "Unorganized AI work" })
+    for (const issue of issues) {
+      const row = dialog.locator(".workgraph-detail-candidate").filter({ hasText: `${issue.externalKey} · ${issue.title}` })
+      await expect(row.getByText(`${issue.provider} · open · unorganized`, { exact: true })).toBeVisible()
+      await row.getByRole("button", { name: "Add to WorkGraph" }).click()
+      const candidateId = discoveredCandidates.find((candidate) => candidate.externalId === issue.externalId)?.id
+      if (!candidateId) throw new Error(`${issue.provider} refresh did not persist its external issue candidate`)
+      await expect.poll(async () =>
+        (await readJson<CandidateResponse>(request, `/api/workgraph/intake/${encodeURIComponent(candidateId)}`)).state,
+      ).toBe("staged")
+    }
+
+    const staged = await Promise.all(discoveredCandidates.map((candidate) =>
+      readJson<CandidateResponse>(request, `/api/workgraph/intake/${encodeURIComponent(candidate.id)}`)))
+    expect(staged).toHaveLength(3)
+    expect(staged.every((candidate) => candidate.state === "staged" && candidate.admissionProposalId)).toBe(true)
+    for (let index = 0; index < issues.length; index++) {
+      expect(await harness.runSourcePlanning()).toMatchObject({ state: "completed" })
+    }
+
+    await page.keyboard.press("Escape")
+    await page.reload()
+    const proposalsPanel = page.locator('aside[aria-label="Workspace panel"]:visible')
+    await expect(proposalsPanel).toBeVisible()
+    await expect(proposalsPanel.getByRole("tab", { name: "Needs you" })).toHaveAttribute("aria-selected", "true")
+    for (let index = 0; index < issues.length; index++) {
+      await proposalsPanel.getByRole("button", { name: /Review proposed work/ }).first().click()
+      const proposal = page.getByRole("dialog", { name: "Review proposed work" })
+      await expect(proposal.getByText(/New stream/)).toBeVisible()
+      await proposal.getByRole("button", { name: "Confirm" }).click()
+      await expect(proposal).toBeHidden()
+    }
+
+    await page.reload()
+    for (const issue of issues) {
+      const streamTitle = `${issue.externalKey} · ${issue.title}`
+      const taskTitle = `Resolve ${issue.externalKey}`
+      await expect(page.getByRole("article", { name: `Stream ${streamTitle}` })).toBeVisible()
+      // Launch is automatic and continuous: a confirmed (owner-authored) task is
+      // born approved and the active stream's drain admits it — no execute step.
+      const workItemId = await workItemIdByTitle(request, taskTitle)
+      await expect.poll(async () => {
+        await harness.runReconcile()
+        return (await readJson<WorkItemResponse>(request, `/api/workgraph/work-items/${encodeURIComponent(workItemId)}`)).state
+      }, { timeout: 30_000 }).toBe("completed").catch(async (error) => {
+        const workItem = await readJson<WorkItemResponse>(request, `/api/workgraph/work-items/${encodeURIComponent(workItemId)}`)
+        const runs = await readJson<RunPageResponse>(
+          request,
+          `/api/workgraph/work-items/${encodeURIComponent(workItemId)}/runs?limit=10`,
+        )
+        throw new Error(`${String(error)}\nWork item diagnostics: ${JSON.stringify(workItem)}\nRun diagnostics: ${JSON.stringify(runs)}\nExecution diagnostics: ${JSON.stringify(harness.controlledExecutionDiagnostics())}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
+      })
+
+      const session = harness.realSessionEvidence().find((record) => record.title === taskTitle)
+      if (!session) throw new Error(`${issue.provider} execution did not create its real project Session`)
+      await page.reload()
+      await expect(page.getByRole("article", { name: `Stream ${streamTitle}` })).toBeVisible()
+      await page.getByRole("button", { name: `Open task ${taskTitle}` }).click()
+      await page.getByRole("dialog", { name: "Task" })
+        .getByRole("button", { name: `Open session ${session.sessionId}` })
+        .click()
+      await expect(page).toHaveURL(`/s/${session.sessionId}`)
+      await expect(page.locator("[data-session-title]").getByText(taskTitle, { exact: true }))
+        .toBeVisible({ timeout: 30_000 })
+      await expect(page.getByText("Completed the WorkGraph Task in the real project Session.", { exact: true })).toBeVisible()
+      await expect.poll(() => harness.connectionEvidence().effects.filter((effect) =>
+        effect.provider === issue.provider && effect.externalId === issue.externalId,
+      )).toEqual([{
+        provider: issue.provider,
+        action: "comment",
+        externalId: issue.externalId,
+        body: `Claxedo completed the requested work for ${issue.externalId} in a project-scoped autonomous Session.`,
+        idempotencyKey: `workgraph-e2e:${issue.externalId}:result`,
+        authorized: true,
+      }]).catch((error) => {
+        throw new Error(`${String(error)}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
+      })
+      await expect(page.getByText("Thread not found", { exact: false })).toHaveCount(0)
+      await expect(page.getByText("Session unavailable", { exact: false })).toHaveCount(0)
+      await page.goto("/workgraph")
+    }
+
+    await expect.poll(() => harness.connectionEvidence().effects
+      .toSorted((left, right) => left.externalId.localeCompare(right.externalId))).toEqual(issues.map((issue) => ({
+      provider: issue.provider,
+      action: "comment",
+      externalId: issue.externalId,
+      body: `Claxedo completed the requested work for ${issue.externalId} in a project-scoped autonomous Session.`,
+      idempotencyKey: `workgraph-e2e:${issue.externalId}:result`,
+      authorized: true,
+    })).toSorted((left, right) => left.externalId.localeCompare(right.externalId)))
+    const confirmed = await Promise.all(discoveredCandidates.map((candidate) =>
+      readJson<CandidateResponse>(request, `/api/workgraph/intake/${encodeURIComponent(candidate.id)}`)))
+    expect(confirmed.every((candidate) => candidate.state === "confirmed")).toBe(true)
+
+    await page.reload()
+    for (const issue of issues) {
+      const streamTitle = `${issue.externalKey} · ${issue.title}`
+      const streamId = await streamIdByTitle(request, streamTitle)
+      const detail = await readJson<StreamResponse>(request, `/api/workgraph/streams/${encodeURIComponent(streamId)}`)
+      expect(detail.durableEffectCount).toBe(1)
+      const closeTrigger = page.getByRole("button", { name: `Close stream ${streamTitle}` })
+      await closeTrigger.click()
+      const closePopoverId = await closeTrigger.getAttribute("aria-controls")
+      if (!closePopoverId) throw new Error(`${streamTitle} close action did not open its confirmation`)
+      await page.locator(`#${closePopoverId}`).getByRole("button", { name: "Close stream", exact: true }).click()
+      await expect.poll(async () =>
+        (await readJson<StreamDetailResponse>(request, `/api/workgraph/streams/${encodeURIComponent(streamId)}`)).lifecycleState,
+      ).toBe("closed")
+    }
+    harness.assertHealthy()
+  })
+
+  /**
+   * Connection ESTABLISHMENT against a real service, driven through the real UI.
+   *
+   * The sibling Connections journey above starts from Connections that the harness
+   * seeded by calling `connections.connect()` directly before the browser existed,
+   * so `POST /api/claxedo/integrations/:id/connect` had no browser coverage against
+   * a real service anywhere in the suite: the mocked establishment specs
+   * (`core-settings-auth.spec.ts` behaviors 16-18) terminate at a `page.route`
+   * fixture, with no `createConnectionsService`, no store write, and no `verify()`.
+   * This test closes that half of gap G6 in
+   * `docs/plans/2026-07-29-002-connections-workgraph-e2e-findings.md`.
+   *
+   * Everything below the browser is the production code path — the same
+   * `createIntegrationsRoutes` + `createConnectionsService` + credential/connection
+   * stores the harness serves at `/api/claxedo/integrations*`, and the same
+   * WorkGraph source-view service. The ONLY replaced boundary is the external
+   * provider itself: the harness's registered integration declares a canned
+   * `verify()` and the controlled source connector checks the live token it is
+   * handed, which is what makes "the pasted secret really reached the provider"
+   * assertable at all.
+   *
+   * The Connection this test claims to establish is NOT pre-seeded: the pre-seeded
+   * Linear Connection is first replaced (proving the real 409 `connection_exists`
+   * path) and then disconnected through the real UI, so the establishment that
+   * follows mints a brand-new connection id from the real service — asserted to
+   * differ from the seeded one.
+   */
+  test("connects Linear through the real connect dialog and binds a WorkGraph Source View to it", async ({
+    page,
+    request,
+  }) => {
+    await configureGeneration(request)
+    // The controlled Linear provider only authorizes this exact bearer secret, so
+    // pasting it through the browser is what makes the final connector assertion
+    // ("the token WorkGraph presented is the secret the owner typed") meaningful.
+    const secret = "browser-e2e-linear-secret"
+    const seededConnectionId = harness.connectionEvidence().connectionIds.linear
+
+    await page.goto("/workgraph")
+    const seeded = await openConnectionsSettings(page)
+    const seededRow = seeded.locator('[data-integration="linear"]')
+    await expect(seededRow.getByText("Connected", { exact: true })).toBeVisible()
+    await expect(seededRow.getByText("Claxedo Engineering", { exact: true })).toBeVisible()
+
+    // ── Replacement: the REAL service answers 409 connection_exists ────────────
+    // `dialog.show()` replaces the dialog stack, so opening the connect dialog
+    // unmounts the Settings dialog; each step below re-opens Settings the way a
+    // returning user would.
+    await seededRow.getByRole("button", { name: "Add connection" }).click()
+    const replaceDialog = page.getByRole("dialog", { name: "Connect Linear" })
+    await expect(replaceDialog).toBeVisible()
+    // The harness resolves a signed owner AND a team partition key, so the real
+    // route reports personal scope as available and the write below is an
+    // explicit team-scope write, not an owner-absent fallback.
+    await expect(replaceDialog.getByRole("radiogroup", { name: "Connection scope" })).toBeVisible()
+    await replaceDialog.getByLabel("Token", { exact: true }).fill(secret)
+    await replaceDialog.getByRole("button", { name: "Connect", exact: true }).click()
+    await expect(replaceDialog.getByText(/already exists\. Replace the existing connection\?/)).toBeVisible()
+    await replaceDialog.getByRole("button", { name: "Replace", exact: true }).click()
+    await expect(page.getByText("Linear connected", { exact: true })).toBeVisible()
+    await expect(replaceDialog).toBeHidden()
+    // Replacement is a replacement, not a second row: the real service reuses the
+    // stored connection id and re-verifies the new secret.
+    const replaced = (await readConnections(request)).payload.connections.filter(
+      (connection) => connection.integrationId === "linear",
+    )
+    expect(replaced).toHaveLength(1)
+    expect(replaced[0]).toMatchObject({
+      id: seededConnectionId,
+      scope: "team",
+      status: "connected",
+      accountLabel: "Claxedo Engineering",
+    })
+
+    // ── Disconnect: remove the seeded Connection so nothing is pre-seeded ──────
+    // Disconnect stays inside the Settings dialog (it only reloads the store), so
+    // this hop and the establishment below share one open dialog. Re-opening
+    // Settings here would deadlock on its own modal overlay.
+    const settings = await openConnectionsSettings(page)
+    const linear = settings.locator('[data-integration="linear"]')
+    await linear.getByRole("button", { name: "Disconnect", exact: true }).click()
+    await linear.getByRole("button", { name: "Confirm", exact: true }).click()
+    await expect(page.getByText("Linear disconnected", { exact: true })).toBeVisible()
+    await expect(linear.getByText("Connected", { exact: true })).toHaveCount(0)
+    await expect
+      .poll(async () =>
+        (await readConnections(request)).payload.connections.filter((connection) => connection.integrationId === "linear"),
+      )
+      .toEqual([])
+
+    // ── Establishment: the journey this test exists for ───────────────────────
+    await linear.getByRole("button", { name: "Connect", exact: true }).click()
+    const connect = page.getByRole("dialog", { name: "Connect Linear" })
+    await expect(connect).toBeVisible()
+    await connect.getByLabel("Token", { exact: true }).fill(secret)
+    await connect.getByRole("button", { name: "Connect", exact: true }).click()
+    // The connect dialog closes only from the flow's success branch, so a hidden
+    // dialog IS the UI's success signal. (The success toast is asserted on the
+    // replace hop above; re-asserting the same string here would be ambiguous
+    // while that earlier toast can still be on screen.)
+    await expect(connect).toBeHidden()
+
+    // Durable outcome, read back through the real route the app itself reads.
+    const established = await readConnections(request)
+    const connections = established.payload.connections.filter((connection) => connection.integrationId === "linear")
+    expect(connections).toHaveLength(1)
+    const connection = connections[0]!
+    expect(connection).toMatchObject({
+      scope: "team",
+      status: "connected",
+      // Produced by the integration's `verify()` — proof the secret was really
+      // verified rather than blindly stored.
+      accountLabel: "Claxedo Engineering",
+    })
+    expect(connection.grantedCapabilities).toContain("work-source")
+    expect(connection.id).not.toBe(seededConnectionId)
+    // Secret hygiene: the pasted secret must never come back out of the service
+    // or reach the document. Asserted as ABSENCE on both surfaces.
+    expect(established.body).not.toContain(secret)
+    expect(await page.content()).not.toContain(secret)
+
+    // ── WorkGraph really resolves the newly established Connection ────────────
+    const bindSettings = await openConnectionsSettings(page)
+    const bindRow = bindSettings.locator('[data-integration="linear"]')
+    await bindRow.getByRole("button", { name: "Add issue source" }).click()
+    const form = bindSettings.locator('[data-component="source-view-form"]')
+    await form.getByLabel(/Your provider identity/).fill("linear-user")
+    await form.getByLabel(/Team/).fill("ENG")
+    await form.getByLabel(/Project/).selectOption(repositoryDirectory)
+    await form.getByLabel(/Base revision/).fill("HEAD")
+    await form.getByLabel(/Result sync/).selectOption("announce")
+    await form.getByRole("button", { name: "Save source" }).click()
+    await expect(form).toHaveCount(0)
+
+    // WorkGraph's source-view service refuses any connection it cannot resolve as
+    // a team `work-source` handle, so a persisted view bound to this id IS the
+    // proof that WorkGraph resolved the Connection the browser just established.
+    const sourceViews = (await readJson<SourceViewsResponse>(request, "/api/workgraph/source-views")).sourceViews
+    expect(sourceViews).toHaveLength(1)
+    expect(sourceViews[0]).toMatchObject({ provider: "linear", teamConnectionId: connection.id })
+
+    // …and the credential behind it is usable: refresh mints a live token from the
+    // stored secret and hands it to the provider, which only answers when the
+    // bearer token equals the secret typed in the dialog.
+    await bindRow.getByRole("button", { name: "Refresh", exact: true }).click()
+    await expect(bindRow.getByText(/1 new · 0 updated/)).toBeVisible()
+    await expect
+      .poll(() => harness.connectionEvidence().requests)
+      .toEqual([{ provider: "linear", providerUserId: "linear-user", filters: { team: "ENG" }, authorized: true }])
+    expect((await readConnections(request)).body).not.toContain(secret)
+    expect(await page.content()).not.toContain(secret)
+    harness.assertHealthy()
+  })
+
+  test("organizes and dismisses meaningful independent AI Sessions through Needs you", async ({ page, request }) => {
+    await configureGeneration(request)
+    expect(
+      await harness.projectIndependentSession({
+        sessionId: "session_launch_brainstorm",
+        title: "Launch architecture brainstorm",
+        summary: "The cloud launch needs a deployment-readiness checklist.",
+      }),
+    ).toBe("created")
+    const sessionCandidateId = (
+      await readJson<CandidatePageResponse>(request, "/api/workgraph/intake?limit=50")
+    ).candidates.find(
+      (candidate) => candidate.candidateKind === "session" && candidate.sessionId === "session_launch_brainstorm",
+    )?.id
+    expect(sessionCandidateId).toBeTruthy()
+
+    await page.goto("/workgraph")
+    const panel = await openWaitingItemPanel(page, /Unorganized AI work/)
+    await panel.getByRole("button", { name: /Unorganized AI work/ }).click()
+    const candidates = page.getByRole("dialog", { name: "Unorganized AI work" })
+    await expect(candidates.getByText("Launch architecture brainstorm", { exact: true })).toBeVisible()
+    await candidates.getByRole("button", { name: "Add to WorkGraph" }).click()
+    const staged = await readJson<CandidateResponse>(
+      request,
+      `/api/workgraph/intake/${encodeURIComponent(String(sessionCandidateId))}`,
+    )
+    expect(staged).toMatchObject({ state: "staged", admissionProposalId: expect.any(String) })
+
+    expect(await harness.runSourcePlanning()).toMatchObject({ state: "completed" })
+    await page.reload()
+    await openWaitingItemPanel(page, /Review proposed work/)
+    await panel.getByRole("button", { name: /Review proposed work/ }).click()
+    const proposal = page.getByRole("dialog", { name: "Review proposed work" })
+    await proposal.getByRole("button", { name: "Confirm" }).click()
+    await page.reload()
+    await expect(page.getByRole("article", { name: "Stream Planned from AI context" })).toBeVisible()
+
+    expect(
+      await harness.projectIndependentSession({
+        sessionId: "session_discarded_note",
+        title: "Discarded AI note",
+        summary: "This exploration is not part of current work.",
+      }),
+    ).toBe("created")
+    const dismissedCandidateId = (
+      await readJson<CandidatePageResponse>(request, "/api/workgraph/intake?limit=50")
+    ).candidates.find(
+      (candidate) => candidate.candidateKind === "session" && candidate.sessionId === "session_discarded_note",
+    )?.id
+    expect(dismissedCandidateId).toBeTruthy()
+    await page.reload()
+    await openWaitingItemPanel(page, /Unorganized AI work/)
+    await panel.getByRole("button", { name: /Unorganized AI work/ }).click()
+    await expect(candidates.getByText("Discarded AI note", { exact: true })).toBeVisible()
+    await candidates.getByRole("button", { name: "Dismiss" }).click()
+    const dismissed = await readJson<CandidateResponse>(
+      request,
+      `/api/workgraph/intake/${encodeURIComponent(String(dismissedCandidateId))}`,
+    )
+    expect(dismissed).toMatchObject({ state: "dismissed" })
+    harness.assertHealthy()
+  })
+
+  test("persists Attention mark-read and clear acknowledgements across reloads", async ({ page }) => {
+    expect(
+      await harness.projectIndependentSession({
+        sessionId: "session_attention_acknowledgement",
+        title: "Review the durable Attention acknowledgement",
+        summary: "This meaningful Session should remain visible until the owner clears Attention.",
+      }),
+    ).toBe("created")
+
+    await page.goto("/workgraph")
+    let panel = await openWaitingItemPanel(page, /Unorganized AI work/)
+    const markAllRead = panel.getByRole("button", { name: "Mark all read" })
+    await expect(markAllRead).toBeEnabled()
+    await markAllRead.click()
+    await expect(markAllRead).toBeDisabled()
+
+    await page.reload()
+    panel = await openNeedsYouPanel(page)
+    await expect(panel.getByRole("button", { name: "Mark all read" })).toBeDisabled()
+    await expect(panel.getByRole("button", { name: /Unorganized AI work/ })).toBeVisible()
+    await panel.getByRole("button", { name: "Clear" }).click()
+    await expect(panel.getByText("Nothing needs you right now", { exact: true })).toBeVisible()
+
+    await page.reload()
+    panel = await openNeedsYouPanel(page)
+    await expect(panel.getByText("Nothing needs you right now", { exact: true })).toBeVisible()
+    await expect(page.getByRole("complementary", { name: "Waiting on you" })).toHaveCount(0)
+    harness.assertHealthy()
+  })
+
+  test("executes and retries a Task in a real worktree, then inspects the true latest result from Attention", async ({
+    page,
+    request,
+  }) => {
+    await configureGeneration(request)
+    const stream = await command(request, {
+      version: 1,
+      type: "create_stream",
+      title: "Execution inspection",
+      execution: streamExecution(),
+    })
+    const streamId = String(stream.value.streamId)
+    harness.queueExecutionResults({ state: "failed", message: "Controlled first run failed" })
+    const task = await command(request, {
+      version: 1,
+      type: "create_work_item",
+      streamId: streamId as never,
+      title: "Execute and inspect the launch",
+      completionContract: ownerConfirmation("Inspect the real execution result"),
+    })
+    const workItemId = String(task.value.workItemId)
+    await page.goto("/workgraph")
+    // The owner-authored task is approved on creation; the active stream's drain
+    // launches it automatically (reconcile drives the first run).
+    await expect(page.getByRole("article", { name: "Stream Execution inspection" })).toBeVisible()
+    await expect
+      .poll(async () => {
+        await harness.runReconcile()
+        return (
+          await readJson<WorkItemResponse>(request, `/api/workgraph/work-items/${encodeURIComponent(workItemId)}`)
+        ).state
+      })
+      .toBe("failed")
+    expect(fs.existsSync(path.join(harness.worktreeDirectory(streamId), ".git"))).toBe(true)
+    await expect
+      .poll(async () => {
+        const attention = await readJson<AttentionResponse>(request, "/api/workgraph/attention?limit=50")
+        return attention.items.map((item) => ({ id: item.id, kind: item.kind, state: item.record?.state }))
+      })
+      .toContainEqual({ id: workItemId, kind: "work_item", state: "failed" })
+
+    const panel = await openWaitingItemPanel(page, /Execute and inspect the launch/)
+    await panel.getByRole("button", { name: /Execute and inspect the launch/ }).click()
+    const dialog = page.getByRole("dialog", { name: "Task" })
+    await expect(dialog).toBeVisible()
+    await expectNoSeriousAxeViolations(page, '[role="dialog"]')
+    await expect(dialog.getByText("#1 · failed", { exact: true })).toBeVisible()
+    await expect(dialog.getByText("Controlled first run failed", { exact: true })).toBeVisible()
+
+    harness.queueExecutionResults({
+      state: "succeeded",
+      summary: "Retry completed in the retained worktree",
+      artifacts: ["commit:retry-e2e"],
+    })
+    await dialog.getByRole("button", { name: "Run again" }).click()
+    await expect
+      .poll(async () => {
+        const runs = await readJson<RunPageResponse>(
+          request,
+          `/api/workgraph/work-items/${encodeURIComponent(workItemId)}/runs?limit=10`,
+        )
+        return runs.runs.at(-1)?.run.state
+      })
+      .toBe("running")
+    await expect(harness.runReconcile()).resolves.toContainEqual({
+      settled: false,
+      awaitingExplicitCompletion: true,
+    })
+    await expect(
+      harness.completeControlledRun(
+        workItemId,
+        "Retry completed in the retained worktree",
+        ["commit:retry-e2e"],
+      ),
+    ).resolves.toMatchObject({ ok: true })
+    await expect
+      .poll(async () => {
+        return (
+          await readJson<WorkItemResponse>(request, `/api/workgraph/work-items/${encodeURIComponent(workItemId)}`)
+        ).state
+      })
+      .toBe("result_ready")
+      .catch(async (error) => {
+        const runs = await readJson<unknown>(
+          request,
+          `/api/workgraph/work-items/${encodeURIComponent(workItemId)}/runs?limit=10`,
+        )
+        throw new Error(
+          `${String(error)}\nRuns: ${JSON.stringify(runs)}\nControlled runtime: ${JSON.stringify(harness.controlledExecutionDiagnostics())}`,
+        )
+      })
+    await expect
+      .poll(async () => {
+        const attention = await readJson<AttentionResponse>(request, "/api/workgraph/attention?limit=50")
+        return attention.items.map((item) => ({ id: item.id, kind: item.kind, state: item.record?.state }))
+      })
+      .toContainEqual({ id: workItemId, kind: "work_item", state: "result_ready" })
+
+    await page.reload()
+    await openWaitingItemPanel(page, /Execute and inspect the launch/)
+    await panel.getByRole("button", { name: /Execute and inspect the launch/ }).click()
+    await expect(dialog.getByText("#2 · result", { exact: true })).toBeVisible()
+    await expect(dialog.getByText("Retry completed in the retained worktree", { exact: true })).toBeVisible()
+    await expect(dialog.getByText("commit:retry-e2e", { exact: true })).toBeVisible()
+    await expect(dialog.getByText("ses_wgrun_", { exact: false })).toBeVisible()
+    harness.assertHealthy()
+  })
+
+  test("executes through a real Session V2 and renders its project transcript", async ({ page, request }) => {
+    const stream = await command(request, {
+      version: 1,
+      type: "create_stream",
+      title: "Real Session execution",
+      execution: {
+        ...streamTarget(),
+        harness: "opencode",
+        agent: "build",
+        model: { providerId: "workgraph-e2e", modelId: "workgraph-model" },
+        effort: "high",
+        tools: ["read", "edit"],
+        connectionIds: [],
+      },
+    })
+    const streamId = String(stream.value.streamId)
+    const task = await command(request, {
+      version: 1,
+      type: "create_work_item",
+      streamId: streamId as never,
+      title: "Prove the real Session transcript",
+      completionContract: {
+        version: 1,
+        mode: "all",
+        requirements: [{
+          id: requirementId("real-session-proof"),
+          kind: "test",
+          description: "The project Session completes through its scoped WorkGraph tool",
+        }],
+      },
+    })
+    const workItemId = String(task.value.workItemId)
+
+    await page.goto("/workgraph")
+    // Approved on creation; the active stream's drain launches it automatically.
+    await expect(page.getByRole("article", { name: "Stream Real Session execution" })).toBeVisible()
+    await expect.poll(async () => {
+      await harness.runReconcile()
+      return (await readJson<WorkItemResponse>(request, `/api/workgraph/work-items/${encodeURIComponent(workItemId)}`)).state
+    }, { timeout: 10_000 }).toBe("completed").catch(async (error) => {
+      const runs = await readJson<unknown>(request, `/api/workgraph/work-items/${encodeURIComponent(workItemId)}/runs?limit=10`)
+      throw new Error(`${String(error)}\nRuns: ${JSON.stringify(runs)}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
+    })
+
+    const session = harness.realSessionEvidence()[0]
+    expect(session).toBeDefined()
+    expect(session?.directory).toBe(harness.worktreeDirectory(streamId))
+    const durableSession = await readJson<{ title: string }>(
+      request,
+      `/session/${encodeURIComponent(session!.sessionId)}?directory=${encodeURIComponent(session!.directory)}`,
+    )
+    expect(durableSession.title, JSON.stringify(harness.realSessionDiagnostics())).toBe("Prove the real Session transcript")
+    await page.reload()
+    await page.getByRole("button", { name: "Open task Prove the real Session transcript" }).click()
+    await page.getByRole("dialog", { name: "Task" })
+      .getByRole("button", { name: `Open session ${session!.sessionId}` })
+      .click()
+    await expect(page).toHaveURL(`/s/${session!.sessionId}`)
+    await expect(page.getByText("Completed the WorkGraph Task in the real project Session.", { exact: true }))
+      .toBeVisible({ timeout: 30_000 })
+      .catch((error) => {
+        throw new Error(`${String(error)}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
+      })
+    const project = page.locator('[data-testid="project-header"]').filter({ hasText: "Claxedo" })
+    await expect(project).toBeVisible()
+    const projectDisclosure = project.locator('[role="button"][aria-label$="project"]')
+    if (await projectDisclosure.getAttribute("aria-expanded") !== "true") await projectDisclosure.click()
+    const sessionRow = page.locator(
+      `[data-testid="rail-sidebar-session-row"][data-session-id="${session!.sessionId}"]`,
+    )
+    await expect(sessionRow).toBeVisible()
+    await expect(sessionRow).toContainText("Prove the real Session transcript")
+    await expect(page.getByText("Thread not found", { exact: false })).toHaveCount(0)
+    await expect(page.getByText("Session unavailable", { exact: false })).toHaveCount(0)
+    harness.assertHealthy()
+  })
+
+  test("runs a real master Session V2 after two serialized Tasks and records its audit", async ({ page, request }) => {
+    const stream = await command(request, {
+      version: 1,
+      type: "create_stream",
+      title: "Real master serialization",
+      execution: {
+        ...realGenerationDefaults.execution,
+        ...streamTarget(),
+      },
+    })
+    const streamId = String(stream.value.streamId)
+    const first = await command(request, {
+      version: 1,
+      type: "create_work_item",
+      streamId: streamId as never,
+      title: "Prepare the master candidate",
+      completionContract: testCompletion("real-session-proof", "The first serialized Task completes"),
+    })
+    const second = await command(request, {
+      version: 1,
+      type: "create_work_item",
+      streamId: streamId as never,
+      title: "Verify the master landing",
+      dependencyIds: [String(first.value.workItemId) as never],
+      completionContract: testCompletion("real-session-proof", "The dependent serialized Task completes"),
+    })
+    const workItemIds = [String(first.value.workItemId), String(second.value.workItemId)]
+
+    await page.goto("/workgraph")
+    await expect(page.getByRole("article", { name: "Stream Real master serialization" })).toBeVisible({ timeout: 30_000 })
+    await expect.poll(async () => {
+      await harness.runReconcile()
+      return Promise.all(workItemIds.map(async (workItemId) =>
+        (await readJson<WorkItemResponse>(request, `/api/workgraph/work-items/${encodeURIComponent(workItemId)}`)).state))
+    }, { timeout: 20_000 }).toEqual(["completed", "completed"]).catch(async (error) => {
+      const runs = harness.embedded.database.prepare(
+        "SELECT id, work_item_id, lifecycle, session_id FROM wg_v2_runs ORDER BY created_at",
+      ).all()
+      const due = harness.embedded.database.prepare(
+        "SELECT id, job_type, status, last_error, lease_epoch, due_at FROM wg_v2_due_jobs",
+      ).all()
+      const status = harness.embedded.database.prepare(
+        "SELECT master_status_json FROM wg_v2_streams WHERE id = ?",
+      ).get(streamId)
+      throw new Error(`${String(error)}\nRuns: ${JSON.stringify(runs)}\nDue jobs: ${JSON.stringify(due)}\nMaster status: ${JSON.stringify(status)}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
+    })
+    await expect.poll(async () => {
+      await harness.runReconcile()
+      const auditCount = (harness.embedded.database.prepare(
+        "SELECT COUNT(*) AS count FROM wg_v2_events WHERE event_type = 'master_audit_recorded'",
+      ).get() as { count: number }).count
+      const row = harness.embedded.database.prepare(
+        "SELECT master_status_json FROM wg_v2_streams WHERE id = ?",
+      ).get(streamId) as { master_status_json: string | null }
+      const status = row.master_status_json
+        ? JSON.parse(row.master_status_json) as { state?: string; receiptRefs?: string[] }
+        : undefined
+      return auditCount > 0 && status?.state === "hibernating" &&
+        JSON.stringify(status.receiptRefs) === JSON.stringify(["diff:master-landing", "diff:master-candidate"])
+    }, { timeout: 20_000 }).toBe(true).catch((error) => {
+      const due = harness.embedded.database.prepare(
+        "SELECT id, status, last_error, lease_epoch, due_at, row_version, payload_json FROM wg_v2_due_jobs WHERE job_type = 'master_wake'",
+      ).all()
+      const status = harness.embedded.database.prepare(
+        "SELECT master_status_json FROM wg_v2_streams WHERE id = ?",
+      ).get(streamId)
+      const auditRows = harness.embedded.database.prepare(
+        "SELECT payload_json, occurred_at FROM wg_v2_events WHERE event_type = 'master_audit_recorded' ORDER BY sequence",
+      ).all()
+      const auditOps = harness.embedded.database.prepare(
+        "SELECT id, result_status, created_at FROM wg_v2_operation_results WHERE command_type = 'record_master_audit'",
+      ).all()
+      throw new Error(`${String(error)}\nMaster jobs: ${JSON.stringify(due)}\nMaster status: ${JSON.stringify(status)}\nAudit events: ${JSON.stringify(auditRows)}\nAudit ops: ${JSON.stringify(auditOps)}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
+    })
+
+    const audits = harness.embedded.database.prepare(
+      "SELECT payload_json FROM wg_v2_events WHERE event_type = 'master_audit_recorded' ORDER BY sequence",
+    ).all() as Array<{ payload_json: string }>
+    expect(audits.length).toBeGreaterThan(0)
+    const auditPayloads = audits.map((audit) => JSON.parse(audit.payload_json) as {
+      resultingDiffs: string[]
+      evidenceIds: string[]
+    })
+    auditPayloads.forEach((audit) => expect(audit).toMatchObject({
+        streamId,
+        sessionId: `ses_master_${streamId}`,
+        wakeTrigger: "task_settled",
+        charterHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        citedCharterClause: "Open draft pull requests by default.",
+        modelVersion: "workgraph-e2e/workgraph-model",
+        reasoningSummary: "Processed the serialized master duty and preserved its durable receipts.",
+        resultingDiffs: expect.arrayContaining([expect.stringMatching(/^diff:master-/)]),
+        evidenceIds: expect.arrayContaining([expect.any(String)]),
+        outcome: "succeeded",
+      }))
+    expect([...new Set(auditPayloads.flatMap((audit) => audit.resultingDiffs))].sort()).toEqual([
+      "diff:master-candidate",
+      "diff:master-landing",
+    ])
+    await expect.poll(async () =>
+      (await readJson<StreamResponse>(request, `/api/workgraph/streams/${encodeURIComponent(streamId)}`)).masterStatus,
+    ).toMatchObject({
+      state: "hibernating",
+      sessionId: `ses_master_${streamId}`,
+      message: "Master is up to date",
+      receiptRefs: ["diff:master-landing", "diff:master-candidate"],
+    })
+
+    await page.reload()
+    const card = page.getByRole("article", { name: "Stream Real master serialization" })
+    await expect(card.getByText("Master · up to date · 2 receipts", { exact: true })).toBeVisible()
+    await expect(card.getByRole("button", { name: "Open master receipt diff:master-candidate" })).toBeVisible()
+    await expect(card.getByRole("button", { name: "Open master receipt diff:master-landing" })).toBeVisible()
+    await page.getByRole("button", { name: "Open task Prepare the master candidate" }).click()
+    const dialog = page.getByRole("dialog", { name: "Task" })
+    await expect(dialog.getByText("Master activity", { exact: true })).toBeVisible()
+    await expect(dialog.getByRole("button", { name: "Open master receipt diff:master-candidate" })).toBeVisible()
+    await expect(dialog.getByRole("button", { name: "Open master receipt diff:master-landing" })).toBeVisible()
+    harness.assertHealthy()
+  })
+
+  test("holds and confirms the first public PR through a real master Session V2", async ({ page, request }) => {
+    // Branded in the contracts; the harness reports it as a plain string.
+    const connectionId = harness.connectionEvidence().connectionId as ConnectionID
+    const stream = await command(request, {
+      version: 1,
+      type: "create_stream",
+      title: "Public release delivery",
+      execution: {
+        ...realGenerationDefaults.execution,
+        ...streamTarget(),
+        tools: ["connection_code_host_open_pr"],
+        connectionIds: [connectionId],
+      },
+    })
+    const streamId = String(stream.value.streamId)
+    await command(request, {
+      version: 1,
+      type: "call_master",
+      streamId: streamId as never,
+      expectedVersion: 1,
+      message: "Open the first public non-draft PR for the browser release.",
+    })
+
+    await page.goto("/workgraph")
+    await expect(page.getByRole("article", { name: "Stream Public release delivery" })).toBeVisible({ timeout: 30_000 })
+    await expect.poll(async () => {
+      await harness.runReconcile()
+      return (await readJson<AttentionResponse>(request, "/api/workgraph/attention?limit=50")).items.map((item) => item.kind)
+    }, { timeout: 20_000 }).toEqual(["master_escalation"])
+    expect((harness.embedded.database.prepare(
+      "SELECT COUNT(*) AS count FROM wg_v2_outbox WHERE effect_type = 'open_pull_request'",
+    ).get() as { count: number }).count).toBe(0)
+    expect(harness.connectionEvidence().pullRequests).toEqual([])
+
+    const panel = await openWaitingItemPanel(page, /Master needs your help/)
+    await panel.getByRole("button", { name: /Master needs your help/ }).click()
+    const dialog = page.getByRole("dialog", { name: "Master needs your help" })
+    await expect(dialog.getByText(
+      "Confirm the first non-draft pull request to public repository claxedo/app: Release WorkGraph V2",
+      { exact: true },
+    )).toBeVisible()
+    await dialog.getByRole("button", { name: "Confirm public PR" }).click()
+    await expect(dialog).toBeHidden()
+
+    await expect.poll(async () => {
+      await harness.runReconcile()
+      const outbox = harness.embedded.database.prepare(
+        "SELECT status FROM wg_v2_outbox WHERE effect_type = 'open_pull_request'",
+      ).get() as { status: string } | undefined
+      const receipts = (harness.embedded.database.prepare(
+        "SELECT COUNT(*) AS count FROM wg_v2_durable_effect_receipts WHERE stream_id = ?",
+      ).get(streamId) as { count: number }).count
+      return { status: outbox?.status, receipts }
+    }, { timeout: 20_000 }).toEqual({ status: "completed", receipts: 1 })
+    await expect.poll(async () =>
+      (await readJson<StreamResponse>(request, `/api/workgraph/streams/${encodeURIComponent(streamId)}`)).publicPrConfirmedAt,
+    ).toEqual(expect.any(Number))
+    expect(harness.connectionEvidence().pullRequests).toEqual([{
+      repository: "claxedo/app",
+      head: "workgraph/v2",
+      base: "dev",
+      title: "Release WorkGraph V2",
+      draft: false,
+      idempotencyKey: "workgraph-e2e:public-release",
+      authorized: true,
+    }])
+    const receipt = harness.embedded.database.prepare(
+      "SELECT effect_kind, external_reference_json FROM wg_v2_durable_effect_receipts WHERE stream_id = ?",
+    ).get(streamId) as { effect_kind: string; external_reference_json: string }
+    expect({
+      effect: receipt.effect_kind,
+      reference: JSON.parse(receipt.external_reference_json),
+    }).toEqual({
+      effect: "published",
+      reference: { reference: "https://github.example/claxedo/app/pull/482" },
+    })
+    harness.assertHealthy()
+  })
+
+  test("creates dependent work from project chat through real Claxedo MCP and executes every Task in real Session V2", async ({
+    page,
+    request,
+  }) => {
+    await page.goto("/workgraph")
+    await page.getByRole("button", { name: "WorkGraph settings" }).click()
+    const settings = page.getByRole("complementary", { name: "Workspace panel" })
+    await settings.getByLabel("Harness").selectOption("opencode")
+    await settings.getByLabel("Agent").selectOption("build")
+    await settings.getByLabel("Provider", { exact: true }).selectOption("workgraph-e2e")
+    await settings.getByLabel("Model", { exact: true }).selectOption("workgraph-e2e/workgraph-model")
+    await settings.getByLabel("Effort", { exact: true }).selectOption("high")
+    await settings.getByRole("button", { name: "Save" }).click()
+    await settings.getByRole("button", { name: "Close workspace panel" }).click()
+
+    const project = page.locator('[data-testid="project-header"]').filter({ hasText: "Claxedo" })
+    await project.click()
+    await project.hover()
+    await project.getByRole("button", { name: /New session in/ }).click()
+    const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
+    await expect(input).toHaveAttribute("contenteditable", "true")
+    const prompt = "Use Claxedo MCP to create the WorkGraph stream MCP review pipeline with three dependent tasks."
+    await input.click()
+    await input.fill(prompt)
+    await expect(input).toContainText(prompt)
+    const submit = page.locator(SELECTORS.submitControl).last()
+    await expect(submit).toBeEnabled()
+    await submit.click()
+    await expect(page).toHaveURL(/(?:\/s\/[^/]+|\/w\/[^/]+\/session\/[^/]+)$/, { timeout: 30_000 })
+      .catch((error) => {
+        throw new Error(`${String(error)}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
+      })
+    await expectAssistantReplyVisible(page, "Created MCP review pipeline with three dependency-ordered Tasks.")
+
+    await page.goto("/workgraph")
+    const streamCard = page.getByRole("article", { name: "Stream MCP review pipeline" })
+    await expect(streamCard).toBeVisible()
+    const taskTitles = [
+      "Review the WorkGraph implementation",
+      "Exercise the WorkGraph user journeys",
+      "Summarize the WorkGraph verification",
+    ]
+    for (const title of taskTitles) await expect(streamCard.getByText(title, { exact: true })).toBeVisible()
+
+    const snapshot = await readJson<SnapshotResponse>(request, "/api/workgraph/snapshot")
+    const stream = snapshot.records.find((candidate) =>
+      candidate.recordType === "stream" && candidate.title === "MCP review pipeline")
+    if (!stream) throw new Error("Claxedo MCP did not persist the requested Stream")
+    expect(stream.executionDefaults).toMatchObject({
+      environment: { kind: "local_worktree", directory: repositoryDirectory },
+      repository: { baseRevision: "HEAD" },
+    })
+    const tasks = taskTitles.map((title) => snapshot.records.find((candidate) =>
+      candidate.recordType === "work_item" && candidate.streamId === stream.id && candidate.title === title))
+    if (tasks.some((task) => !task)) throw new Error("Claxedo MCP did not persist all three requested Tasks")
+    expect(tasks.map((task) => task?.dependencyIds)).toEqual([[], [tasks[0]?.id], [tasks[1]?.id]])
+
+    // An explicit create request from an unbound owner Session is owner-directed,
+    // so its Tasks enter the continuous drain immediately. Discovered follow-up
+    // work and work created from an already-bound autonomous Session remain staged.
+    expect(tasks.map((task) => task?.createdByActorType)).toEqual(["user", "user", "user"])
+    await expect.poll(async () => {
+      await harness.runReconcile()
+      const current = await readJson<SnapshotResponse>(request, "/api/workgraph/snapshot")
+      return taskTitles.map((title) => current.records.find((candidate) =>
+        candidate.recordType === "work_item" && candidate.streamId === stream.id && candidate.title === title)?.state)
+    }, { timeout: 45_000 }).toEqual(["completed", "completed", "completed"])
+
+    const sessions = harness.realSessionEvidence().filter((session) => taskTitles.includes(session.title))
+    expect(sessions.map((session) => session.title)).toEqual(taskTitles)
+    for (const session of sessions) {
+      await page.reload()
+      await expect(page.getByRole("article", { name: "Stream MCP review pipeline" })).toBeVisible()
+      await page.getByRole("button", { name: `Open task ${session.title}` }).click()
+      await page.getByRole("dialog", { name: "Task" })
+        .getByRole("button", { name: `Open session ${session.sessionId}` })
+        .click()
+      await expect(page).toHaveURL(`/s/${session.sessionId}`)
+      await expectAssistantReplyVisible(page, "Completed the WorkGraph Task in the real project Session.")
+      const project = page.locator('[data-testid="project-header"]').filter({ hasText: "Claxedo" })
+      await expect(project).toBeVisible()
+      const disclosure = project.locator('[role="button"][aria-label$="project"]')
+      if (await disclosure.getAttribute("aria-expanded") !== "true") await disclosure.click()
+      await expect(page.locator(
+        `[data-testid="rail-sidebar-session-row"][data-session-id="${session.sessionId}"]`,
+      )).toContainText(session.title)
+      await expect(page.getByText("Thread not found", { exact: false })).toHaveCount(0)
+      await expect(page.getByText("Session unavailable", { exact: false })).toHaveCount(0)
+      await page.goto("/workgraph")
+    }
+    harness.assertHealthy()
+  })
+
+  test("files owner-directed and discovered work through one real Session V2 ledger call each", async ({
+    page,
+    request,
+  }) => {
+    const stream = await command(request, {
+      version: 1,
+      type: "create_stream",
+      title: "Plain Session ledger",
+      execution: { ...realGenerationDefaults.execution, ...streamTarget() },
+    })
+    const streamId = String(stream.value.streamId)
+    await command(request, {
+      version: 1,
+      type: "set_stream_lifecycle",
+      streamId: streamId as never,
+      expectedVersion: 1,
+      state: "paused",
+      reason: "Keep ledger writes visible without launching them",
+    })
+
+    await page.goto("/workgraph")
+    const project = page.locator('[data-testid="project-header"]').filter({ hasText: "Claxedo" })
+    await project.click()
+    await project.hover()
+    await project.getByRole("button", { name: /New session in/ }).click()
+    const directPrompt = `Use one WorkGraph ledger call to add the owner-directed Task "Capture launch checklist" to Stream ${streamId}.`
+    const directInput = page.getByRole("textbox", { name: /Ask anything/i }).last()
+    await directInput.fill(directPrompt)
+    await page.locator(SELECTORS.submitControl).last().click()
+    await expectAssistantReplyVisible(page, "Filed the owner-directed Task with one WorkGraph ledger call.")
+
+    const discoveredPrompt = `Use one WorkGraph ledger call to file the discovered Task "Document rollout caveat" into Stream ${streamId}.`
+    const discoveredInput = page.getByRole("textbox", { name: /Ask anything/i }).last()
+    await discoveredInput.click()
+    await page.keyboard.insertText(discoveredPrompt)
+    await expect(discoveredInput).toContainText(discoveredPrompt)
+    const discoveredSubmit = page.locator(SELECTORS.submitControl).last()
+    await expect(discoveredSubmit).toBeEnabled()
+    await discoveredSubmit.click()
+    await expectAssistantReplyVisible(page, "Filed the discovered Task as Staged with one WorkGraph ledger call.")
+      .catch((error) => {
+        throw new Error(`${String(error)}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
+      })
+
+    await page.goto("/workgraph")
+    const streamCard = page.getByRole("article", { name: "Stream Plain Session ledger" })
+    await expect(streamCard.getByText("Capture launch checklist", { exact: true })).toBeVisible()
+    await expect(streamCard.getByText("Document rollout caveat", { exact: true })).toBeVisible()
+    const panel = await openWaitingItemPanel(page, /Document rollout caveat/)
+    await expect(panel.getByText("Staged · 1 awaiting approval", { exact: true })).toBeVisible()
+    await expect(panel.getByRole("button", { name: "Approve", exact: true })).toBeVisible()
+    const snapshot = await readJson<SnapshotResponse>(request, "/api/workgraph/snapshot")
+    const direct = snapshot.records.find((record) =>
+      record.recordType === "work_item" && record.streamId === streamId && record.title === "Capture launch checklist")
+    const discovered = snapshot.records.find((record) =>
+      record.recordType === "work_item" && record.streamId === streamId && record.title === "Document rollout caveat")
+    expect(direct).toMatchObject({ state: "pending", createdByActorType: "user" })
+    expect(discovered).toMatchObject({ state: "pending_approval", createdByActorType: "agent" })
+    harness.assertHealthy()
+  })
+
+  test("keeps one long-running real Session V2 across a bounded WorkGraph ledger checkpoint and Task handoff", async ({
+    page,
+    request,
+  }) => {
+    await page.goto("/workgraph")
+    await page.getByRole("button", { name: "WorkGraph settings" }).click()
+    const settings = page.getByRole("complementary", { name: "Workspace panel" })
+    await settings.getByLabel("Harness").selectOption("opencode")
+    await settings.getByLabel("Agent").selectOption("build")
+    await settings.getByLabel("Provider", { exact: true }).selectOption("workgraph-e2e")
+    await settings.getByLabel("Model", { exact: true }).selectOption("workgraph-e2e/workgraph-model")
+    await settings.getByLabel("Effort", { exact: true }).selectOption("high")
+    await settings.getByRole("button", { name: "Save" }).click()
+    await settings.getByRole("button", { name: "Close workspace panel" }).click()
+    const project = page.locator('[data-testid="project-header"]').filter({ hasText: "Claxedo" })
+    await project.click()
+    await project.hover()
+    await project.getByRole("button", { name: /New session in/ }).click()
+
+    const firstPrompt = "Maintain a bounded WorkGraph ledger in this Session and checkpoint the first Task."
+    const firstInput = page.getByRole("textbox", { name: /Ask anything/i }).last()
+    await firstInput.fill(firstPrompt)
+    await page.locator(SELECTORS.submitControl).last().click()
+    await expect(page).toHaveURL(/(?:\/s\/|\/session\/)[^/]+$/, { timeout: 30_000 })
+    await expectAssistantReplyVisible(page, "Bound this Session to the ledger and recorded the first meaningful checkpoint.")
+      .catch((error) => {
+        throw new Error(`${String(error)}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
+      })
+    const sessionId = page.url().match(/(?:\/s\/|\/session\/)([^/]+)$/)?.[1]
+    if (!sessionId) throw new Error("Long-running ledger did not create a project Session")
+
+    const secondPrompt = "Refresh the WorkGraph ledger, complete the first Task with evidence, and select the next ready Task."
+    const secondInput = page.getByRole("textbox", { name: /Ask anything/i }).last()
+    await secondInput.click()
+    await secondInput.fill(secondPrompt)
+    await expect(secondInput).toContainText(secondPrompt)
+    const secondSubmit = page.locator(SELECTORS.submitControl).last()
+    await expect(secondSubmit).toBeEnabled()
+    await secondSubmit.click()
+    await expectAssistantReplyVisible(page, "Completed the first ledger Task and selected the next ready Task in this same Session.")
+      .catch((error) => {
+        throw new Error(`${String(error)}\nReal Session diagnostics: ${JSON.stringify(harness.realSessionDiagnostics())}`)
+      })
+    await expect(page).toHaveURL(new RegExp(`(?:/s/|/session/)${sessionId}$`))
+
+    await page.getByRole("button", { name: "Open WorkGraph" }).click()
+    await expect(page.getByRole("main", { name: "WorkGraph" })).toBeVisible()
+    await expect(page.getByRole("article", { name: "Stream Long-running Session ledger" })).toBeVisible()
+    const snapshot = await readJson<SnapshotResponse>(request, "/api/workgraph/snapshot")
+    const stream = snapshot.records.find((candidate) =>
+      candidate.recordType === "stream" && candidate.title === "Long-running Session ledger")
+    if (!stream) throw new Error("Long-running Session did not persist its ledger Stream")
+    const first = snapshot.records.find((candidate) =>
+      candidate.recordType === "work_item" && candidate.streamId === stream.id && candidate.title === "Verify the first ledger boundary")
+    const second = snapshot.records.find((candidate) =>
+      candidate.recordType === "work_item" && candidate.streamId === stream.id && candidate.title === "Verify the second ledger boundary")
+    expect(first).toMatchObject({ state: "completed", dependencyIds: [] })
+    expect(second).toMatchObject({ state: "active", dependencyIds: [first?.id] })
+
+    await page.getByRole("button", { name: "Open task Verify the first ledger boundary" }).click()
+    const dialog = page.getByRole("dialog", { name: "Task" })
+    await expect(dialog.getByText("First logical boundary verified", { exact: true })).toBeVisible()
+    await expect(dialog.getByText("The first logical boundary passed its focused verification", { exact: true })).toBeVisible()
+    await dialog.getByRole("button", { name: `Open session ${sessionId}` }).click()
+    await expect(page).toHaveURL(`/s/${sessionId}`)
+    await expectAssistantReplyVisible(page, "Completed the first ledger Task and selected the next ready Task in this same Session.")
+    expect(harness.realSessionEvidence().filter((session) => session.sessionId === sessionId)).toHaveLength(1)
+    harness.assertHealthy()
+  })
+
+  test("serializes a Stream and stops running Tasks from the card and Tasks panel", async ({ page, request }) => {
+    await configureGeneration(request)
+    const stream = await command(request, {
+      version: 1,
+      type: "create_stream",
+      title: "Serialized delivery",
+      execution: streamExecution(),
+    })
+    const streamId = String(stream.value.streamId)
+    const taskTitles = [
+      "First serialized task",
+      "Second serialized task",
+      "Third serialized task",
+      "Fourth serialized task",
+      "Fifth serialized task",
+    ]
+    harness.queueExecutionResults("running", "running", "running", "running", "running")
+    const workItemIds = await Promise.all(taskTitles.map(async (title) => String((await command(request, {
+      version: 1,
+      type: "create_work_item",
+      streamId: streamId as never,
+      title,
+      completionContract: ownerConfirmation(`${title} is reviewed`),
+    })).value.workItemId)))
+    await page.goto("/workgraph")
+    await expect(page.getByRole("article", { name: "Stream Serialized delivery" })).toBeVisible()
+    await expect(page.getByText("worktree · from HEAD", { exact: true })).toBeVisible()
+    await expect.poll(async () => {
+      await harness.runReconcile()
+      const pages = await Promise.all(workItemIds.map((workItemId) => readJson<RunPageResponse>(
+        request,
+        `/api/workgraph/work-items/${encodeURIComponent(workItemId)}/runs?limit=10`,
+      )))
+      return pages.flatMap((entry) => entry.runs).map((entry) => entry.run.state)
+    }).toEqual(["running"])
+    await expect(page.getByRole("button", { name: /Approve/ })).toHaveCount(0)
+
+    await page.getByRole("button", { name: `Stop task ${taskTitles[0]}` }).click()
+    await expect.poll(async () => {
+      await harness.runReconcile()
+      const runs = await readJson<RunPageResponse>(
+        request,
+        `/api/workgraph/work-items/${encodeURIComponent(workItemIds[0]!)}/runs?limit=10`,
+      )
+      return runs.runs.at(-1)?.run.state
+    }).toBe("cancelled")
+    await page.getByRole("button", { name: `Open task ${taskTitles[0]}` }).hover()
+    await expect(page.getByText("Stopped · Retry", { exact: true })).toBeVisible()
+    await page.getByRole("button", { name: `Retry task ${taskTitles[0]}` }).click()
+    await expect.poll(async () => {
+      await harness.runReconcile()
+      const runs = await readJson<RunPageResponse>(
+        request,
+        `/api/workgraph/work-items/${encodeURIComponent(workItemIds[0]!)}/runs?limit=10`,
+      )
+      return runs.runs.length === 2 ? runs.runs.at(-1)?.run.state : undefined
+    }).toBe("running")
+    await expect(harness.completeControlledRun(
+      workItemIds[0]!,
+      "Stopped task resumed and reached its review boundary",
+      ["commit:serialized-first"],
+    )).resolves.toMatchObject({ ok: true })
+    await expect.poll(async () => {
+      await harness.runReconcile()
+      const runs = await readJson<RunPageResponse>(
+        request,
+        `/api/workgraph/work-items/${encodeURIComponent(workItemIds[1]!)}/runs?limit=10`,
+      )
+      return runs.runs.at(-1)?.run.state
+    }).toBe("running")
+
+    // Re-enter from the durable snapshot after the controlled completion. The
+    // backend transition can settle between bounded /changes polls, and this
+    // journey is specifically proving the Tasks-panel control for the next Task.
+    await page.reload()
+    await expect(page.getByRole("article", { name: "Stream Serialized delivery" })).toBeVisible()
+    await page.getByRole("button", { name: "All tasks for Serialized delivery" }).click()
+    const panel = page.getByRole("complementary", { name: "Workspace panel" })
+    await expect(panel.getByRole("tab", { name: "Tasks" })).toHaveAttribute("aria-selected", "true")
+    await panel.getByRole("button", { name: `Stop task ${taskTitles[1]}` }).click()
+    await expect.poll(async () => {
+      await harness.runReconcile()
+      const runs = await readJson<RunPageResponse>(
+        request,
+        `/api/workgraph/work-items/${encodeURIComponent(workItemIds[1]!)}/runs?limit=10`,
+      )
+      return runs.runs.at(-1)?.run.state
+    }).toBe("cancelled")
+    await expect(panel.getByText("Stopped · Retry", { exact: true })).toBeVisible()
+    harness.assertHealthy()
+  })
+
+  test("destroys a disposable Stream worktree but explicitly closes durable-effect work", async ({ page, request }) => {
+    await configureGeneration(request)
+    const disposable = await command(request, {
+      version: 1,
+      type: "create_stream",
+      title: "Disposable implementation",
+      execution: streamExecution(),
+    })
+    const disposableStreamId = String(disposable.value.streamId)
+    harness.queueExecutionResults({ state: "failed", message: "Partial disposable implementation" })
+    const disposableTask = await command(request, {
+      version: 1,
+      type: "create_work_item",
+      streamId: disposableStreamId as never,
+      title: "Try the disposable implementation",
+      completionContract: ownerConfirmation("Owner reviews the disposable implementation"),
+    })
+    // Owner-authored task is approved on creation; the active stream's drain
+    // launches it — a reconcile pass admits it deterministically.
+    await harness.runReconcile()
+    await expect
+      .poll(async () => {
+        await harness.runReconcile()
+        return (
+          await readJson<WorkItemResponse>(
+            request,
+            `/api/workgraph/work-items/${encodeURIComponent(String(disposableTask.value.workItemId))}`,
+          )
+        ).state
+      })
+      .toBe("failed")
+    expect(fs.existsSync(path.join(harness.worktreeDirectory(disposableStreamId), ".git"))).toBe(true)
+
+    await page.goto("/workgraph")
+    await page.getByRole("button", { name: "Delete stream Disposable implementation" }).click()
+    await page.getByRole("button", { name: "Delete stream", exact: true }).click()
+    await expect
+      .poll(async () =>
+        (
+          await request.get(`${harness.apiUrl}/api/workgraph/streams/${encodeURIComponent(disposableStreamId)}`)
+        ).status(),
+      )
+      .toBe(404)
+    await expect.poll(() => fs.existsSync(harness.worktreeDirectory(disposableStreamId))).toBe(false)
+
+    const durable = await command(request, {
+      version: 1,
+      type: "create_stream",
+      title: "Merged durable implementation",
+      execution: streamExecution(),
+    })
+    const durableStreamId = String(durable.value.streamId)
+    harness.queueExecutionResults({
+      state: "succeeded",
+      summary: "Merged through the real retained worktree",
+      artifacts: ["pr:482"],
+    }, "running")
+    const shippedTask = await command(request, {
+      version: 1,
+      type: "create_work_item",
+      streamId: durableStreamId as never,
+      title: "Merge the durable change",
+      completionContract: {
+        version: 1,
+        mode: "all",
+        requirements: [
+          {
+            id: "merged-pr" as never,
+            kind: "integration",
+            description: "The pull request is merged",
+            target: "pull_request",
+          },
+        ],
+      },
+    })
+    const remainingTask = await command(request, {
+      version: 1,
+      type: "create_work_item",
+      streamId: durableStreamId as never,
+      title: "Follow-up work that will be abandoned",
+      completionContract: ownerConfirmation("Owner confirms the follow-up"),
+    })
+    // Approved on creation; the active stream's drain launches it.
+    await harness.runReconcile()
+    await expect
+      .poll(async () => {
+        const runs = await readJson<RunPageResponse>(
+          request,
+          `/api/workgraph/work-items/${encodeURIComponent(String(shippedTask.value.workItemId))}/runs?limit=10`,
+        )
+        return runs.runs.at(-1)?.run.state
+      })
+      .toBe("running")
+    await expect(harness.runReconcile()).resolves.toContainEqual({
+      settled: false,
+      awaitingExplicitCompletion: true,
+    })
+    await expect(
+      harness.completeControlledRun(
+        String(shippedTask.value.workItemId),
+        "Merged through the real retained worktree",
+        ["pr:482"],
+      ),
+    ).resolves.toMatchObject({ ok: true })
+    await expect
+      .poll(async () => {
+        return (
+          await readJson<WorkItemResponse>(
+            request,
+            `/api/workgraph/work-items/${encodeURIComponent(String(shippedTask.value.workItemId))}`,
+          )
+        ).state
+      })
+      .toBe("result_ready")
+    await command(request, {
+      version: 1,
+      type: "record_evidence",
+      subject: { type: "work_item", workItemId: String(shippedTask.value.workItemId) as never },
+      requirementId: "merged-pr",
+      evidence: { kind: "integration", summary: "PR #482 merged", effect: "merged", reference: "pr:482" },
+    })
+    const durableBeforeClose = await readJson<StreamDetailResponse>(
+      request,
+      `/api/workgraph/streams/${encodeURIComponent(durableStreamId)}`,
+    )
+    const rejectedDelete = await rawCommand(request, {
+      version: 1,
+      type: "delete_stream",
+      streamId: durableStreamId as never,
+      expectedVersion: durableBeforeClose.version,
+      reason: "Delete durable Stream",
+    })
+    expect(rejectedDelete).toMatchObject({ ok: false, error: { code: "close_required" } })
+    await command(request, {
+      version: 1,
+      type: "close_stream",
+      streamId: durableStreamId as never,
+      expectedVersion: durableBeforeClose.version,
+      reason: "Close after durable merge",
+    })
+    await expect
+      .poll(async () =>
+        readJson<StreamDetailResponse>(request, `/api/workgraph/streams/${encodeURIComponent(durableStreamId)}`),
+      )
+      .toMatchObject({ lifecycleState: "closed" })
+    await expect
+      .poll(async () =>
+        readJson<WorkItemResponse>(
+          request,
+          `/api/workgraph/work-items/${encodeURIComponent(String(remainingTask.value.workItemId))}`,
+        ),
+      )
+      .toMatchObject({ state: "abandoned" })
+    harness.assertHealthy()
+  })
+
+  test("inspects a Decision, restores focus on close, and removes it from Attention only after answering", async ({
+    page,
+    request,
+  }) => {
+    const stream = await command(request, {
+      version: 1,
+      type: "create_stream",
+      title: "Decision focus",
+    })
+    const streamId = String(stream.value.streamId)
+    const task = await command(request, {
+      version: 1,
+      type: "create_work_item",
+      streamId: streamId as never,
+      title: "Implement authentication",
+      completionContract: ownerConfirmation("Confirm authentication is implemented"),
+    })
+    const workItemId = String(task.value.workItemId)
+    const proposed = await command(request, {
+      version: 1,
+      type: "propose_decision",
+      streamId: streamId as never,
+      question: "Which authentication strategy should we ship?",
+      options: [
+        { id: "oauth", label: "Use OAuth", description: "Delegate authentication to the provider." },
+        { id: "passkeys", label: "Use passkeys", description: "Use WebAuthn credentials." },
+      ],
+      recommendationOptionId: "oauth",
+      rationale: "OAuth fits the launch window.",
+      affectedWorkItemIds: [workItemId as never],
+    })
+    const decisionId = String(proposed.value.decisionId)
+
+    await page.goto("/workgraph")
+    const panel = await openWaitingItemPanel(page, /Which authentication strategy should we ship\?/)
+    const row = panel.getByRole("button", { name: /Which authentication strategy should we ship\?/ })
+    await row.focus()
+    await expect(row).toBeFocused()
+    await row.click()
+    const dialog = page.getByRole("dialog", { name: "Decision" })
+    await expect(dialog).toBeVisible()
+    await expectNoSeriousAxeViolations(page, '[role="dialog"]')
+    await expect(dialog.getByText("OAuth fits the launch window.", { exact: true })).toBeVisible()
+    expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true)
+    await page.keyboard.press("Escape")
+    await expect(dialog).toBeHidden()
+    await expect(row).toBeFocused()
+
+    await row.click()
+    await dialog.getByRole("button", { name: /Use OAuth/ }).click()
+    await expect(dialog).toBeHidden()
+    await expect(row).toBeHidden()
+    await expect
+      .poll(async () => {
+        const decision = await readJson<DecisionDto>(
+          request,
+          `/api/workgraph/decisions/${encodeURIComponent(decisionId)}`,
+        )
+        const attention = await readJson<AttentionResponse>(request, "/api/workgraph/attention?limit=50")
+        return { state: decision.state, answer: decision.answer, attention: attention.total }
+      })
+      .toMatchObject({
+        state: "answered",
+        answer: {
+          optionId: "oauth",
+          answeredAt: expect.any(Number),
+          answeredBy: { type: "user", id: "local" },
+        },
+        attention: 0,
+      })
+    harness.assertHealthy()
+  })
+
+  test("continues an unrelated branch, shares one Stream envelope, and requires evidence beyond successful Runs", async ({
+    page,
+    request,
+  }) => {
+    await configureGeneration(request)
+    const stream = await command(request, {
+      version: 1,
+      type: "create_stream",
+      title: "Parallel launch branches",
+      execution: streamExecution(),
+    })
+    const streamId = String(stream.value.streamId)
+    await command(request, {
+      version: 1,
+      type: "set_stream_lifecycle",
+      streamId: streamId as never,
+      expectedVersion: 1,
+      state: "paused",
+      reason: "Prepare the decision branches",
+    })
+    const affected = await command(request, {
+      version: 1,
+      type: "create_work_item",
+      streamId: streamId as never,
+      title: "Choose and implement authentication",
+      completionContract: testCompletion("auth-test", "Authentication tests pass"),
+    })
+    const affectedId = String(affected.value.workItemId)
+    const unrelated = await command(request, {
+      version: 1,
+      type: "create_work_item",
+      streamId: streamId as never,
+      title: "Prepare unrelated deployment manifest",
+      completionContract: testCompletion("manifest-test", "Deployment manifest validates"),
+    })
+    const unrelatedId = String(unrelated.value.workItemId)
+    await command(request, {
+      version: 1,
+      type: "propose_decision",
+      streamId: streamId as never,
+      question: "Which authentication strategy unblocks the affected branch?",
+      options: [
+        { id: "oauth", label: "Use OAuth" },
+        { id: "passkeys", label: "Use passkeys" },
+      ],
+      recommendationOptionId: "oauth",
+      affectedWorkItemIds: [affectedId as never],
+    })
+
+    harness.queueExecutionResults({
+      state: "succeeded",
+      summary: "Manifest branch executed",
+      artifacts: ["manifest.yaml"],
+    })
+    await command(request, {
+      version: 1,
+      type: "set_stream_lifecycle",
+      streamId: streamId as never,
+      expectedVersion: 2,
+      state: "active",
+      reason: "Run the unblocked branch",
+    })
+    // Approved on creation; the drain admits the ready branch on reconcile.
+    await harness.runReconcile()
+    await completeControlledExecution(request, unrelatedId, "Manifest branch executed", ["manifest.yaml"])
+    await expect
+      .poll(async () => {
+        return (
+          await readJson<WorkItemResponse>(request, `/api/workgraph/work-items/${encodeURIComponent(unrelatedId)}`)
+        ).state
+      })
+      .toBe("result_ready")
+    await expect
+      .poll(async () =>
+        readJson<WorkItemResponse>(request, `/api/workgraph/work-items/${encodeURIComponent(affectedId)}`),
+      )
+      .toMatchObject({ state: "pending" })
+
+    await page.goto("/workgraph")
+    const panel = await openWaitingItemPanel(page, /Which authentication strategy unblocks the affected branch/)
+    await panel.getByRole("button", { name: /Which authentication strategy unblocks the affected branch/ }).click()
+    harness.queueExecutionResults({
+      state: "succeeded",
+      summary: "Authentication branch executed",
+      artifacts: ["auth.ts"],
+    })
+    await page
+      .getByRole("dialog", { name: "Decision" })
+      .getByRole("button", { name: /Use OAuth/ })
+      .click()
+    // Answering the decision unblocks the affected branch; the drain launches it
+    // automatically once its blocker is resolved — a reconcile admits it.
+    await harness.runReconcile()
+    await completeControlledExecution(request, affectedId, "Authentication branch executed", ["auth.ts"])
+    await expect
+      .poll(async () => {
+        return (
+          await readJson<WorkItemResponse>(request, `/api/workgraph/work-items/${encodeURIComponent(affectedId)}`)
+        ).state
+      })
+      .toBe("result_ready")
+
+    const unrelatedRuns = await readJson<RunPageResponse>(
+      request,
+      `/api/workgraph/work-items/${encodeURIComponent(unrelatedId)}/runs?limit=100`,
+    )
+    const affectedRuns = await readJson<RunPageResponse>(
+      request,
+      `/api/workgraph/work-items/${encodeURIComponent(affectedId)}/runs?limit=100`,
+    )
+    expect(unrelatedRuns.runs).toHaveLength(1)
+    expect(affectedRuns.runs).toHaveLength(1)
+    expect(unrelatedRuns.runs[0]?.executionReferences?.workspaceId).toBe(harness.worktreeDirectory(streamId))
+    expect(affectedRuns.runs[0]?.executionReferences?.workspaceId).toBe(
+      unrelatedRuns.runs[0]?.executionReferences?.workspaceId,
+    )
+    expect(fs.existsSync(path.join(harness.worktreeDirectory(streamId), ".git"))).toBe(true)
+
+    await command(request, {
+      version: 1,
+      type: "record_evidence",
+      subject: { type: "work_item", workItemId: unrelatedId as never },
+      requirementId: "manifest-test",
+      sourceRunId: unrelatedRuns.runs[0]!.run.id as never,
+      evidence: {
+        kind: "test_result",
+        summary: "Manifest validation passed",
+        passed: true,
+        command: "validate-manifest",
+      },
+    })
+    await expect
+      .poll(async () =>
+        readJson<WorkItemResponse>(request, `/api/workgraph/work-items/${encodeURIComponent(unrelatedId)}`),
+      )
+      .toMatchObject({ state: "completed" })
+    await expect
+      .poll(async () =>
+        readJson<WorkItemResponse>(request, `/api/workgraph/work-items/${encodeURIComponent(affectedId)}`),
+      )
+      .toMatchObject({ state: "result_ready" })
+    harness.assertHealthy()
+  })
+
+  test("persists the single WorkGraph surface and shared WorkspacePanel across a fresh narrow page", async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto("/workgraph")
+    await page.getByRole("button", { name: "New stream" }).click()
+    const create = page.getByRole("dialog", { name: "New stream" })
+    await create.getByRole("textbox", { name: "What are you trying to ship?" }).fill("Persist the narrow surface")
+    await create.getByRole("button", { name: "Project directory" }).click()
+    await page.getByRole("option", { name: path.basename(repositoryDirectory), exact: true, includeHidden: true }).click()
+    await create.getByRole("button", { name: "Base revision" }).click()
+    const baseRevisionField = page.getByRole("textbox", { name: "Base revision", includeHidden: true })
+    await baseRevisionField.fill("HEAD")
+    await baseRevisionField.press("Enter")
+    await create.getByRole("button", { name: "Create" }).click()
+    await expect(create).toBeHidden()
+
+    await page.close()
+    const fresh = await context.newPage()
+    await fresh.setViewportSize({ width: 390, height: 844 })
+    await fresh.goto("/workgraph")
+    await expect(fresh.getByRole("main", { name: "WorkGraph" })).toBeVisible()
+    await expect(fresh.getByText("Persist the narrow surface", { exact: true })).toBeVisible()
+    await fresh.getByRole("button", { name: "Needs you", exact: true }).click()
+    await expect(fresh.getByRole("complementary", { name: "Workspace panel" })).toBeVisible()
+    await expect(fresh.getByRole("button", { name: "Close workspace panel" })).toHaveCount(1)
+    await expect(fresh.getByRole("dialog", { name: "Waiting on you" })).toHaveCount(0)
+    await expectNoSeriousAxeViolations(fresh, 'main[aria-label="WorkGraph"]')
+    await expectNoSeriousAxeViolations(fresh, 'aside[aria-label="Workspace panel"]')
+    harness.assertHealthy()
+  })
+})
+
+const generationDefaults = {
+  execution: {
+    harness: "opencode",
+    agent: "build",
+    model: { providerId: "openai", modelId: "gpt-5" },
+    effort: "high",
+    tools: ["read", "edit"],
+    connectionIds: [],
+  },
+}
+
+const realGenerationDefaults = {
+  execution: {
+    ...generationDefaults.execution,
+    model: { providerId: "workgraph-e2e", modelId: "workgraph-model" },
+  },
+}
+
+function streamTarget() {
+  return {
+    environment: { kind: "local_worktree" as const, placement: "shared" as const, directory: repositoryDirectory },
+    repository: { baseRevision: "HEAD" },
+  }
+}
+
+function streamExecution() {
+  return { ...generationDefaults.execution, ...streamTarget() }
+}
+
+async function configureGeneration(request: APIRequestContext) {
+  await command(request, {
+    version: 1,
+    type: "update_workgraph_defaults",
+    expectedVersion: 1,
+    defaults: generationDefaults,
+  })
+}
+
+async function configureRealGeneration(request: APIRequestContext) {
+  await command(request, {
+    version: 1,
+    type: "update_workgraph_defaults",
+    expectedVersion: 1,
+    defaults: realGenerationDefaults,
+  })
+}
+
+async function completeControlledExecution(
+  request: APIRequestContext,
+  workItemId: string,
+  summary: string,
+  artifacts: readonly string[],
+) {
+  await expect
+    .poll(async () => {
+      const runs = await readJson<RunPageResponse>(
+        request,
+        `/api/workgraph/work-items/${encodeURIComponent(workItemId)}/runs?limit=10`,
+      )
+      return runs.runs.at(-1)?.run.state
+    })
+    .toBe("running")
+  await expect(harness.runReconcile()).resolves.toContainEqual({
+    settled: false,
+    awaitingExplicitCompletion: true,
+  })
+  const result = await harness.completeControlledRun(workItemId, summary, artifacts)
+  expect(result, JSON.stringify(result)).toMatchObject({ ok: true })
+}
+
+async function openWaitingItemPanel(page: Page, name: RegExp) {
+  const card = page.getByRole("complementary", { name: "Waiting on you" })
+  const panel = page.getByRole("complementary", { name: "Workspace panel" })
+  await expect.poll(async () => await card.isVisible() || await panel.isVisible()).toBe(true)
+  if (!(await card.isVisible())) {
+    await page.getByRole("button", { name: /Needs you/ }).click()
+    await expect(card).toBeVisible()
+  }
+  await card.getByRole("button", { name: "Needs you", exact: true }).click()
+  await expect(panel).toBeVisible()
+  await expect(panel.getByRole("button", { name })).toBeVisible()
+  return panel
+}
+
+async function openNeedsYouPanel(page: Page) {
+  const panel = page.getByRole("complementary", { name: "Workspace panel" })
+  const trigger = page.getByRole("button", { name: "Needs you", exact: true })
+  await expect(page.getByRole("main", { name: "WorkGraph" })).toBeVisible()
+  await expect.poll(async () => await panel.isVisible() || await trigger.isVisible()).toBe(true)
+  if (!(await panel.isVisible())) await trigger.click()
+  await expect(panel).toBeVisible()
+  await expect(panel.getByRole("tab", { name: "Needs you" })).toHaveAttribute("aria-selected", "true")
+  return panel
+}
+
+async function openConnectionsSettings(page: Page) {
+  await page.getByTestId("rail-account-trigger").click()
+  await page.getByRole("menuitem", { name: "Settings", exact: true }).click()
+  const dialog = page.locator('[data-slot="dialog-container"]').last()
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole("tab", { name: "Connections", exact: true }).click()
+  await expect(dialog.getByRole("heading", { name: "Connections", exact: true })).toBeVisible()
+  return dialog
+}
+
+/**
+ * The server types a successful command's `value` as `z.json()`
+ * (`packages/workgraph/src/contracts/commands.ts:584`), i.e. `string | number |
+ * boolean | null | JSONType[] | Record<string, JSONType>`. Every command this spec
+ * issues returns an OBJECT (`{ streamId }`, `{ workItemId }`, `{ proposalId }`, …),
+ * so this narrows to a record ONCE, with a real runtime check, instead of ~96
+ * unchecked property accesses on a possibly-null union.
+ *
+ * The check is not ceremony: a command that starts returning a scalar (or null)
+ * would otherwise surface as `undefined` silently flowing into a URL segment as the
+ * string "undefined" — a green test asserting against a nonsense id.
+ */
+function commandValue(value: unknown, input: WorkGraphCommandRequest["command"]): Readonly<Record<string, unknown>> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(
+      `WorkGraph command "${input.type}" returned a non-object value (${JSON.stringify(value)}); `
+        + `every command in this spec is expected to return an object payload.`,
+    )
+  }
+  return value as Readonly<Record<string, unknown>>
+}
+
+async function command(request: APIRequestContext, input: WorkGraphCommandRequest["command"]) {
+  const result = await rawCommand(request, input)
+  if (!result.ok) throw new Error(result.error.message)
+  return { ...result, value: commandValue(result.value, input) }
+}
+
+async function rawCommand(request: APIRequestContext, input: WorkGraphCommandRequest["command"]) {
+  const response = await request.post(`${harness.apiUrl}/api/workgraph/commands`, {
+    data: { operationId: crypto.randomUUID(), command: input },
+  })
+  const result = (await response.json()) as CommandResult
+  if (!response.ok() && result.ok) throw new Error(`WorkGraph command returned HTTP ${response.status()}`)
+  return result
+}
+
+async function readJson<Value>(request: APIRequestContext, pathname: string) {
+  const response = await request.get(`${harness.apiUrl}${pathname}`)
+  if (!response.ok())
+    throw new Error(`WorkGraph read failed (${response.status()}): ${pathname}: ${await response.text()}`)
+  return (await response.json()) as Value
+}
+
+/**
+ * Reads the real Connections list route the app itself reads (the harness proxies
+ * `/api/claxedo/integrations*` straight to the production
+ * `createIntegrationsRoutes`). Returns the RAW body alongside the parsed payload
+ * because the secret-hygiene assertions must inspect exactly the bytes the service
+ * emitted, not a re-serialization of the parsed object.
+ */
+async function readConnections(request: APIRequestContext) {
+  const response = await request.get(`${harness.apiUrl}/api/claxedo/integrations`)
+  const body = await response.text()
+  if (!response.ok()) throw new Error(`Connections read failed (${response.status()}): ${body}`)
+  return { body, payload: JSON.parse(body) as ConnectionsListResponse }
+}
+
+async function streamIdByTitle(request: APIRequestContext, title: string) {
+  await expect
+    .poll(
+      async () =>
+        (await readJson<SnapshotResponse>(request, "/api/workgraph/snapshot")).records.find(
+          (record) => record.recordType === "stream" && record.title === title,
+        )?.id,
+    )
+    .toBeTruthy()
+  const records = (await readJson<SnapshotResponse>(request, "/api/workgraph/snapshot")).records
+  const stream = records.find((record) => record.recordType === "stream" && record.title === title)
+  if (!stream) throw new Error(`Stream was not found: ${title}`)
+  return stream.id
+}
+
+async function workItemIdByTitle(request: APIRequestContext, title: string) {
+  await expect.poll(async () =>
+    (await readJson<SnapshotResponse>(request, "/api/workgraph/snapshot")).records.find(
+      (record) => record.recordType === "work_item" && record.title === title,
+    )?.id,
+  ).toBeTruthy()
+  const workItem = (await readJson<SnapshotResponse>(request, "/api/workgraph/snapshot")).records.find(
+    (record) => record.recordType === "work_item" && record.title === title,
+  )
+  if (!workItem) throw new Error(`Task was not found: ${title}`)
+  return workItem.id
+}
+
+async function sourceRevisionReference(request: APIRequestContext, workSourceId: string, revisionId: string) {
+  const revision = await readJson<SourceRevisionResponse>(
+    request,
+    `/api/workgraph/sources/${encodeURIComponent(workSourceId)}/revisions/${encodeURIComponent(revisionId)}`,
+  )
+  return { workSourceId, revisionId, contentHash: revision.contentHash }
+}
+
+function confirmProposalCommand(
+  proposal: ReviewableProposalResponse,
+  selection: { mode: "create"; streamTitle: string } | { mode: "keep"; streamId: never },
+) {
+  return {
+    version: 1 as const,
+    type: "confirm_admission" as const,
+    proposalId: proposal.id as never,
+    expectedVersion: proposal.version,
+    source: proposal.source as never,
+    selection,
+    outcomes: proposal.proposedOutcomes.map((outcome) => ({
+      proposalKey: outcome.key,
+      title: outcome.title,
+      successCriteria: outcome.successCriteria,
+      execution: outcome.execution,
+    })),
+    workItems: proposal.proposedWorkItems.map((workItem) => ({
+      proposalKey: workItem.key,
+      ...(workItem.outcomeKey ? { outcomeProposalKey: workItem.outcomeKey } : {}),
+      title: workItem.title,
+      dependencyProposalKeys: workItem.dependencyKeys,
+      completionContract: workItem.completionContract,
+      execution: workItem.execution,
+    })),
+  }
+}
+
+/**
+ * Requirement ids are branded (`string & $brand<"CompletionRequirementID">`) in the
+ * WorkGraph contracts, so a bare string does not satisfy the command type. These
+ * helpers are the single place that mints one, which is why the cast lives here and
+ * not at ~9 call sites.
+ */
+function requirementId(value: string) {
+  return value as CompletionRequirementID
+}
+
+function ownerConfirmation(description: string) {
+  return {
+    version: 1 as const,
+    mode: "all" as const,
+    requirements: [{ id: requirementId(crypto.randomUUID()), kind: "owner_confirmation" as const, description }],
+  }
+}
+
+function testCompletion(id: string, description: string) {
+  return {
+    version: 1 as const,
+    mode: "all" as const,
+    requirements: [{ id: requirementId(id), kind: "test" as const, description }],
+  }
+}
+
+async function expectNoSeriousAxeViolations(page: import("@playwright/test").Page, selector: string) {
+  const results = await new AxeBuilder({ page }).include(selector).analyze()
+  const violations = results.violations
+    .filter((violation) => violation.impact === "serious" || violation.impact === "critical")
+    .map((violation) => ({
+      id: violation.id,
+      impact: violation.impact,
+      nodes: violation.nodes.map((node) => node.target),
+    }))
+  expect(violations, `Serious accessibility violations in ${selector}`).toEqual([])
+}
+
+type DefaultsResponse = Readonly<{
+  defaults: Readonly<{ execution: Record<string, unknown> }>
+}>
+type SnapshotResponse = Readonly<{
+  records: Array<Readonly<{
+    recordType: string
+    id: string
+    title?: string
+    streamId?: string
+    state?: string
+    dependencyIds?: string[]
+    executionDefaults?: Record<string, unknown>
+    createdByActorType?: "user" | "agent" | "system"
+  }>>
+}>
+type StreamResponse = Readonly<{
+  executionDefaults: Record<string, unknown>
+  charter?: Readonly<{ text: string; hash: string }>
+  publicPrConfirmedAt?: number
+  masterStatus?: Readonly<{
+    state: string
+    sessionId?: string
+    message: string
+    receiptRefs: string[]
+  }>
+  durableEffectCount: number
+}>
+type StreamDetailResponse = Readonly<{ version: number; lifecycleState: string }>
+type StreamWithSourcesResponse = Readonly<{
+  sourceRevisionRefs: Array<Readonly<{ workSourceId: string; revisionId: string; contentHash: string }>>
+}>
+type SourceRevisionResponse = Readonly<{ contentHash: string }>
+type ProposalResponse = Readonly<{ state: string }>
+type ReviewableProposalResponse = Extract<AdmissionProposalDto, { state: "proposed" }>
+type SourceViewsResponse = Readonly<{
+  sourceViews: Array<Readonly<{ id: string; teamConnectionId: string; provider: "github" | "linear" | "jira" }>>
+}>
+type ConnectionsListResponse = Readonly<{
+  integrations: Array<Readonly<{ id: string; name: string; methods: string[]; capabilities: string[] }>>
+  connections: Array<
+    Readonly<{
+      id: string
+      integrationId: string
+      scope: "team" | "personal"
+      status: "connected" | "degraded" | "broken"
+      accountLabel?: string
+      grantedCapabilities: string[]
+    }>
+  >
+  personalScopeEnabled: boolean
+}>
+type CandidatePageResponse = Readonly<{
+  candidates: Array<
+    Readonly<{
+      id: string
+      candidateKind: "external_issue" | "session"
+      state: string
+      admissionProposalId?: string
+      sourceViewId?: string
+      externalId?: string
+      sessionId?: string
+    }>
+  >
+}>
+type CandidateResponse = CandidatePageResponse["candidates"][number]
+type WorkItemResponse = Readonly<{ version: number; state: string }>
+type RunPageResponse = Readonly<{
+  runs: Array<
+    Readonly<{
+      run: Readonly<{
+        id: string
+        state: string
+        resolvedExecution?: Readonly<{
+          environment?: Readonly<{ placement?: string }>
+          tools?: string[]
+        }>
+      }>
+      executionReferences?: Readonly<{ workspaceId?: string }>
+    }>
+  >
+}>
+type AttentionResponse = Readonly<{
+  total: number
+  items: Array<Readonly<{ id: string; kind: string; record?: Readonly<{ state: string }> }>>
+}>
+type ArchiveResponse = Readonly<{
+  records: Array<Readonly<{ kind: string; id: string; value: Record<string, unknown> }>>
+}>

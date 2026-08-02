@@ -1,0 +1,525 @@
+import {
+  buildAssistantMessage,
+  buildUserMessage,
+  messageUpdated,
+  sessionStatus,
+  type CompatEvent,
+} from "../compat-events"
+import { chunk } from "../status"
+import { firstTurnErrorData } from "../first-turn-error"
+import type { AgentTurnOutcome, SessionConfig, SessionConfigUpdate } from "../index"
+import type { AgentRuntimeStore } from "../runtime"
+import type {
+  AgentRuntimeCommittedCompatOutput,
+  AgentRuntimeTurnFinishInput,
+  AgentRuntimeSessionBinding,
+  AgentRuntimeStoreWithRecovery,
+  AgentRuntimeTurnStartOutput,
+} from "../harnesses/shared/runtime-store"
+
+type SessionRow = {
+  id: string
+  directory: string
+  title?: string | null
+  agentSessionId?: string | null
+  ownerKey?: string | null
+  time: { created: number; updated: number; archived?: number }
+  status?: string | null
+  recoveryError?: string | null
+  activeTurn?: { assistantMessageId: string }
+  lastTurn?: AgentTurnOutcome
+}
+
+type MessageRow = {
+  info: Record<string, unknown>
+  parts: unknown[]
+}
+
+type PermissionRow = { id: string; sessionID: string } & Record<string, unknown>
+type QuestionRow = { id: string; sessionID: string; questions: unknown[] } & Record<string, unknown>
+
+export type MemoryRuntimeStoreSnapshot = {
+  sessions: SessionRow[]
+  configs: Array<{ sessionId: string; config: SessionConfig }>
+  messages: Array<{ sessionId: string; messages: MessageRow[] }>
+  permissions: Array<{ directory: string; rows: PermissionRow[] }>
+  questions: Array<{ directory: string; rows: QuestionRow[] }>
+  todos: Array<{ sessionId: string; rows: Array<{ content: string; status: string; priority: string }> }>
+  recoveryErrors: Array<{ sessionId: string; message: string }>
+  seq: Array<{ sessionId: string; seq: number }>
+}
+
+/** @internal */
+export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
+  private sessions = new Map<string, SessionRow>()
+  private configs = new Map<string, SessionConfig>()
+  private messages = new Map<string, MessageRow[]>()
+  private permissions = new Map<string, Map<string, PermissionRow>>()
+  private questions = new Map<string, Map<string, QuestionRow>>()
+  private todos = new Map<string, Array<{ content: string; status: string; priority: string }>>()
+  private recoveryErrors = new Map<string, string>()
+  private seq = new Map<string, number>()
+
+  listSessions(directory: string) {
+    return [...this.sessions.values()]
+      .filter((session) => session.directory === directory)
+      .sort((a, b) => a.time.created - b.time.created)
+      .map((session) => this.sessionRow(session))
+  }
+
+  getSession(id: string) {
+    const session = this.sessions.get(id)
+    return session ? this.sessionRow(session) : null
+  }
+
+  bindSession(input: AgentRuntimeSessionBinding) {
+    const now = Date.now()
+    const prev = this.sessions.get(input.sessionId)
+    this.sessions.set(input.sessionId, {
+      id: input.sessionId,
+      directory: input.directory,
+      title: input.title ?? prev?.title ?? null,
+      agentSessionId: input.agentSessionId,
+      ownerKey: input.ownerKey ?? prev?.ownerKey ?? null,
+      time: {
+        created: prev?.time.created ?? now,
+        updated: now,
+        ...(prev?.time.archived !== undefined ? { archived: prev.time.archived } : {}),
+      },
+      status: prev?.status ?? null,
+      recoveryError: prev?.recoveryError ?? null,
+      activeTurn: prev?.activeTurn,
+      lastTurn: prev?.lastTurn,
+    })
+    this.afterChange()
+  }
+
+  updateSessionConfig(id: string, update: SessionConfigUpdate) {
+    const prev = this.configs.get(id)
+    if (!prev && !update.harness) return null
+    const next: SessionConfig = {
+      harness: update.harness ?? prev!.harness,
+      ...(update.model === undefined
+        ? prev?.model ? { model: prev.model } : {}
+        : update.model ? { model: update.model } : {}),
+      variant: update.variant === undefined ? prev?.variant ?? null : update.variant,
+      agent: update.agent === undefined ? prev?.agent ?? null : update.agent,
+    }
+    this.configs.set(id, next)
+    this.touch(id)
+    this.afterChange()
+    return next
+  }
+
+  updateSession(id: string, updates: { title?: string; time?: { archived?: number } }) {
+    const prev = this.sessions.get(id)
+    if (!prev) return null
+    this.sessions.set(id, {
+      ...prev,
+      title: updates.title ?? prev.title,
+      time: {
+        ...prev.time,
+        updated: Date.now(),
+        ...(updates.time?.archived !== undefined ? { archived: updates.time.archived } : {}),
+      },
+    })
+    this.afterChange()
+    return this.getSession(id)
+  }
+
+  getSessionConfig(id: string) {
+    return this.configs.get(id) ?? null
+  }
+
+  deleteSession(id: string) {
+    this.sessions.delete(id)
+    this.configs.delete(id)
+    this.messages.delete(id)
+    this.todos.delete(id)
+    this.recoveryErrors.delete(id)
+    this.seq.delete(id)
+    this.deleteSessionInteractions(id)
+    this.afterChange()
+  }
+
+  getAgentSessionId(id: string) {
+    return this.sessions.get(id)?.agentSessionId ?? null
+  }
+
+  startTurn(input: {
+    sessionId: string
+    agentSessionId?: string
+    userMessageId?: string
+    assistantMessageId: string
+    agent: string
+    model: { providerID: string; modelID: string }
+    parts: unknown[]
+    tools?: Record<string, boolean>
+    format?: unknown
+    system?: string
+    variant?: string
+  }): AgentRuntimeTurnStartOutput {
+    const createdAt = Date.now()
+    const session = this.sessions.get(input.sessionId)
+    const events: CompatEvent[] = [
+      sessionStatus(input.sessionId, { type: "busy" }),
+      ...(input.userMessageId
+        ? [
+            messageUpdated(buildUserMessage({
+              id: input.userMessageId,
+              sessionID: input.sessionId,
+              agent: input.agent,
+              model: input.model,
+              created: createdAt,
+              ...(input.tools ? { tools: input.tools } : {}),
+              ...(input.format ? { format: input.format as never } : {}),
+              ...(input.system ? { system: input.system } : {}),
+              ...(input.variant ? { variant: input.variant } : {}),
+            })),
+          ]
+        : []),
+      messageUpdated(buildAssistantMessage({
+        id: input.assistantMessageId,
+        sessionID: input.sessionId,
+        parentID: input.userMessageId ?? input.sessionId,
+        agent: input.agent,
+        model: input.model,
+        directory: session?.directory ?? "",
+        created: createdAt,
+        ...(input.variant ? { variant: input.variant } : {}),
+      })),
+    ]
+    for (const event of events) this.applyEvent(input.sessionId, event)
+    this.touch(input.sessionId, "busy")
+    const row = this.sessions.get(input.sessionId)
+    if (row) {
+      this.sessions.set(input.sessionId, {
+        ...row,
+        activeTurn: { assistantMessageId: input.assistantMessageId },
+      })
+    }
+    this.afterChange()
+    return {
+      sessionId: input.sessionId,
+      seq: this.next(input.sessionId),
+      createdAt,
+      ...(input.agentSessionId ? { agentSessionId: input.agentSessionId } : {}),
+      events,
+    }
+  }
+
+  finishTurn(input: AgentRuntimeTurnFinishInput) {
+    const prev = this.sessions.get(input.sessionId)
+    if (!prev?.activeTurn) return
+    if (input.assistantMessageId && prev.activeTurn.assistantMessageId !== input.assistantMessageId) return
+    const assistantMessageId = input.assistantMessageId ?? prev.activeTurn.assistantMessageId
+    const status = input.outcome.status === "failed" ? "error" : null
+    if (input.outcome.status === "failed") {
+      const message = this.ensureMessage(input.sessionId, assistantMessageId)
+      const time = message.info.time && typeof message.info.time === "object" ? message.info.time : {}
+      this.upsertMessage(input.sessionId, {
+        ...message,
+        info: {
+          ...message.info,
+          time: { ...time, completed: input.outcome.completedAt },
+          error: { name: "UnknownError", data: firstTurnErrorData(input.outcome.error ?? "turn failed") },
+        },
+      })
+    }
+    this.sessions.set(input.sessionId, {
+      ...prev,
+      activeTurn: undefined,
+      status,
+      recoveryError: input.outcome.status === "failed" ? input.outcome.error : null,
+      lastTurn: { ...input.outcome, assistantMessageId },
+      time: { ...prev.time, updated: Date.now() },
+    })
+    this.afterChange()
+  }
+
+  appendEvent(input: {
+    sessionId: string
+    agentSessionId?: string
+    payload: CompatEvent
+    source?: unknown
+  }): AgentRuntimeCommittedCompatOutput {
+    this.applyEvent(input.sessionId, input.payload)
+    this.afterChange()
+    return {
+      sessionId: input.sessionId,
+      seq: this.next(input.sessionId),
+      createdAt: Date.now(),
+      ...(input.agentSessionId ? { agentSessionId: input.agentSessionId } : {}),
+      payload: input.payload,
+      ...(input.source ? { source: input.source as never } : {}),
+    }
+  }
+
+  getMessages(id: string) {
+    return this.messages.get(id) ?? []
+  }
+
+  getTodos(sessionId: string) {
+    return this.todos.get(sessionId) ?? []
+  }
+
+  listPermissions(directory: string) {
+    return [...(this.permissions.get(directory)?.values() ?? [])]
+  }
+
+  listQuestions(directory: string) {
+    return [...(this.questions.get(directory)?.values() ?? [])]
+  }
+
+  stalePermission(id: string) {
+    for (const rows of this.permissions.values()) rows.delete(id)
+    this.afterChange()
+  }
+
+  markRecovering(sessionId: string, message = "Agent session is recovering") {
+    this.recoveryErrors.set(sessionId, message)
+    this.touch(sessionId, "recovering", message)
+    this.afterChange()
+  }
+
+  markSessionInterrupted(sessionId: string, message = "Agent session was interrupted") {
+    this.markRecovering(sessionId, message)
+  }
+
+  consumeRecoveryError(sessionId: string) {
+    const message = this.recoveryErrors.get(sessionId)
+    this.recoveryErrors.delete(sessionId)
+    this.afterChange()
+    return message
+  }
+
+  markSessionsInterruptedByOwner(ownerKey: string, message?: string) {
+    for (const session of this.sessions.values()) {
+      if (session.ownerKey === ownerKey) this.markSessionInterrupted(session.id, message)
+    }
+  }
+
+  getSessionOwnerKey(id: string) {
+    return this.sessions.get(id)?.ownerKey ?? null
+  }
+
+  listSessionsByOwnerKey(ownerKey: string) {
+    return [...this.sessions.values()]
+      .filter((session) => session.ownerKey === ownerKey)
+      .sort((a, b) => a.time.created - b.time.created)
+      .map((session) => session.id)
+  }
+
+  close() {}
+
+  exportSnapshot(): MemoryRuntimeStoreSnapshot {
+    return {
+      sessions: [...this.sessions.values()],
+      configs: [...this.configs.entries()].map(([sessionId, config]) => ({ sessionId, config })),
+      messages: [...this.messages.entries()].map(([sessionId, messages]) => ({ sessionId, messages })),
+      permissions: [...this.permissions.entries()].map(([directory, rows]) => ({ directory, rows: [...rows.values()] })),
+      questions: [...this.questions.entries()].map(([directory, rows]) => ({ directory, rows: [...rows.values()] })),
+      todos: [...this.todos.entries()].map(([sessionId, rows]) => ({ sessionId, rows })),
+      recoveryErrors: [...this.recoveryErrors.entries()].map(([sessionId, message]) => ({ sessionId, message })),
+      seq: [...this.seq.entries()].map(([sessionId, seq]) => ({ sessionId, seq })),
+    }
+  }
+
+  importSnapshot(snapshot: Partial<MemoryRuntimeStoreSnapshot>) {
+    this.sessions = new Map((snapshot.sessions ?? []).map((session) => [session.id, session]))
+    this.configs = new Map((snapshot.configs ?? []).map((row) => [row.sessionId, row.config]))
+    this.messages = new Map((snapshot.messages ?? []).map((row) => [row.sessionId, row.messages]))
+    this.permissions = new Map((snapshot.permissions ?? []).map((row) => [
+      row.directory,
+      new Map(row.rows.map((item) => [String(item.id), item])),
+    ]))
+    this.questions = new Map((snapshot.questions ?? []).map((row) => [
+      row.directory,
+      new Map(row.rows.map((item) => [String(item.id), item])),
+    ]))
+    this.todos = new Map((snapshot.todos ?? []).map((row) => [row.sessionId, row.rows]))
+    this.recoveryErrors = new Map((snapshot.recoveryErrors ?? []).map((row) => [row.sessionId, row.message]))
+    this.seq = new Map((snapshot.seq ?? []).map((row) => [row.sessionId, row.seq]))
+  }
+
+  protected afterChange() {}
+
+  private sessionRow(session: SessionRow) {
+    return {
+      id: session.id,
+      slug: session.id,
+      directory: session.directory,
+      title: session.title,
+      time: session.time,
+      created_at: session.time.created,
+      archived_at: session.time.archived ?? null,
+      status: session.status,
+      recovery_error: session.recoveryError,
+      agent_session_id: session.agentSessionId,
+      lastTurn: session.lastTurn,
+    }
+  }
+
+  private touch(id: string, status?: string | null, recoveryError?: string | null, lastTurn?: AgentTurnOutcome) {
+    const prev = this.sessions.get(id)
+    if (!prev) return
+    this.sessions.set(id, {
+      ...prev,
+      time: { ...prev.time, updated: Date.now() },
+      ...(status !== undefined ? { status } : {}),
+      ...(recoveryError !== undefined ? { recoveryError } : {}),
+      ...(lastTurn ? { lastTurn } : {}),
+    })
+  }
+
+  private next(sessionId: string) {
+    const seq = (this.seq.get(sessionId) ?? 0) + 1
+    this.seq.set(sessionId, seq)
+    return seq
+  }
+
+  private applyEvent(sessionId: string, event: CompatEvent) {
+    if (event.type === "session.updated") {
+      const info = event.properties.info as unknown as {
+        id?: string
+        directory?: string
+        title?: string | null
+        time?: { created?: number; updated?: number; archived?: number }
+      }
+      const prev = this.sessions.get(info.id ?? sessionId)
+      if (!prev) return
+      this.sessions.set(prev.id, {
+        ...prev,
+        ...(typeof info.directory === "string" ? { directory: info.directory } : {}),
+        ...(info.title !== undefined ? { title: info.title } : {}),
+        time: {
+          created: info.time?.created ?? prev.time.created,
+          updated: info.time?.updated ?? Date.now(),
+          ...(info.time?.archived !== undefined ? { archived: info.time.archived } : prev.time.archived !== undefined ? { archived: prev.time.archived } : {}),
+        },
+      })
+      return
+    }
+    if (event.type === "message.updated") {
+      const info = event.properties.info as unknown as Record<string, unknown>
+      const messageId = typeof info.id === "string" ? info.id : undefined
+      const previous = messageId ? this.ensureMessage(sessionId, messageId) : undefined
+      this.upsertMessage(sessionId, {
+        info,
+        parts: previous?.parts ?? [],
+      })
+      return
+    }
+    if (event.type === "message.part.updated") {
+      const part = event.properties.part as { id?: string; messageID?: string; text?: string; sessionID?: string }
+      const messageId = part.messageID
+      if (!messageId) return
+      const message = this.ensureMessage(sessionId, messageId)
+      const parts = message.parts.filter((item) => (item as { id?: string }).id !== part.id)
+      message.parts = [...parts, part]
+      this.upsertMessage(sessionId, message)
+      return
+    }
+    if (event.type === "message.part.delta") {
+      const messageId = event.properties.messageID
+      const partId = event.properties.partID
+      const message = this.ensureMessage(sessionId, messageId)
+      const parts = message.parts.filter((item) => (item as { id?: string }).id !== partId)
+      const prev = message.parts.find((item) => (item as { id?: string }).id === partId) as { text?: string } | undefined
+      message.parts = [...parts, {
+        id: partId,
+        sessionID: sessionId,
+        messageID: messageId,
+        type: "text",
+        text: `${prev?.text ?? ""}${event.properties.delta}`,
+      }]
+      this.upsertMessage(sessionId, message)
+      return
+    }
+    if (event.type === "permission.asked") {
+      const directory = this.sessions.get(sessionId)?.directory ?? ""
+      const rows = this.permissions.get(directory) ?? new Map()
+      rows.set(event.properties.id, event.properties as unknown as PermissionRow)
+      this.permissions.set(directory, rows)
+      return
+    }
+    if (event.type === "permission.replied") {
+      for (const rows of this.permissions.values()) rows.delete(event.properties.requestID)
+      return
+    }
+    if (event.type === "question.asked") {
+      const directory = this.sessions.get(sessionId)?.directory ?? ""
+      const rows = this.questions.get(directory) ?? new Map()
+      rows.set(event.properties.id, event.properties as unknown as QuestionRow)
+      this.questions.set(directory, rows)
+      return
+    }
+    if (event.type === "question.replied" || event.type === "question.rejected") {
+      for (const rows of this.questions.values()) rows.delete(event.properties.requestID)
+      return
+    }
+    if (event.type === "todo.updated") {
+      this.todos.set(sessionId, event.properties.todos as Array<{ content: string; status: string; priority: string }>)
+      return
+    }
+    if (event.type === "session.status") {
+      const status = chunk(event.properties.status)
+      this.touch(sessionId, status === "idle" ? null : status, status === "error" ? "session error" : undefined)
+      return
+    }
+    if (event.type === "session.idle") {
+      this.touch(sessionId, null, null)
+      return
+    }
+    if (event.type === "session.error") {
+      const message = errorMessage(event.properties.error)
+      this.touch(sessionId, "error", message)
+      return
+    }
+  }
+
+  private ensureMessage(sessionId: string, messageId: string): MessageRow {
+    return this.messages.get(sessionId)?.find((row) => row.info.id === messageId) ?? {
+      info: { id: messageId, role: "assistant", sessionID: sessionId },
+      parts: [],
+    }
+  }
+
+  private upsertMessage(sessionId: string, message: MessageRow) {
+    const rows = this.messages.get(sessionId) ?? []
+    this.messages.set(sessionId, [
+      ...rows.filter((row) => row.info.id !== message.info.id),
+      message,
+    ])
+  }
+
+  private deleteSessionInteractions(sessionId: string) {
+    for (const [directory, rows] of this.permissions) {
+      for (const [id, row] of rows) {
+        if (row.sessionID === sessionId) rows.delete(id)
+      }
+      if (rows.size === 0) this.permissions.delete(directory)
+    }
+    for (const [directory, rows] of this.questions) {
+      for (const [id, row] of rows) {
+        if (row.sessionID === sessionId) rows.delete(id)
+      }
+      if (rows.size === 0) this.questions.delete(directory)
+    }
+  }
+}
+
+function errorMessage(input: unknown) {
+  if (!input || typeof input !== "object") return "session error"
+  const row = input as { data?: unknown; message?: unknown }
+  const data = row.data && typeof row.data === "object" ? row.data as { message?: unknown } : undefined
+  return typeof data?.message === "string"
+    ? data.message
+    : typeof row.message === "string"
+    ? row.message
+    : "session error"
+}
+
+export function createMemoryRuntimeStore(): AgentRuntimeStore {
+  return new MemoryRuntimeStore() as unknown as AgentRuntimeStore
+}
