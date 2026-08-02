@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto"
-import { type RuntimeConfigSnapshot, loadUserConfig, sandboxDriverConfig } from "./agent-config"
+import { type RuntimeConfigSnapshot, loadUserConfig, sandboxDriverConfig } from "../../agent-config"
 import {
   createSandboxManager,
   type SandboxBootSource,
@@ -23,23 +23,23 @@ import {
   type SandboxDecision,
   type SandboxDriverPlacement,
 } from "@claxedo/sandbox-manager/lease-policy"
-import { emitProvision } from "./sandbox-manager-adapters/provision-events"
-import { sandboxDriverAuthAsync } from "./sandbox-manager-adapters/driver-auth"
+import { emitProvision } from "../../sandbox-manager-adapters/provision-events"
+import { sandboxDriverAuthAsync } from "../../sandbox-manager-adapters/driver-auth"
 import { defaultSandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
 import type { SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
-import { Log } from "./lib/log"
-import { defaultHomeRegion } from "./region"
-import { listPolicies } from "./network/policy"
-import { resolveSandboxNetworkPolicy } from "./network/resolve"
-import { insertSnapshot } from "./storage/prepared-image.sql"
-import { updateWorkspace } from "./workspace-store"
+import { Log } from "../../lib/log"
+import { defaultHomeRegion } from "../../region"
+import { listPolicies } from "../../network/policy"
+import { resolveSandboxNetworkPolicy } from "../../network/resolve"
+import { insertSnapshot } from "../../storage/prepared-image.sql"
+import { updateWorkspace } from "../store/store"
 import {
   configToken,
   configTokenHeaders,
   stateConfigToken,
   supervisorBackplaneHeaders,
-} from "./workspace-supervisor-control-token"
-import { pushRuntimeConfig } from "./workspace-supervisor-config-sync"
+} from "./control-token"
+import { pushRuntimeConfig } from "./config-sync"
 import {
   createSupervisorSandboxLeaseStore,
   getSupervisorSandboxLease,
@@ -49,17 +49,17 @@ import {
   recordSupervisorSandboxStartFailure,
   updateSupervisorSandboxLease,
   sandboxLeaseUrl,
-} from "./sandbox-manager-adapters/stores/sqlite-supervisor-state"
-import { needWorkspaceSupervisorOptions } from "./workspace-supervisor-options"
+} from "../../sandbox-manager-adapters/stores/sqlite-supervisor-state"
+import { needWorkspaceSupervisorOptions } from "./options"
 import {
   controlPlaneVerificationEnv,
   relayHostVerificationEnv,
   runtimeDirectAuthEnv,
   sandboxLeaseEnv,
   sandboxControlPlaneUrl,
-} from "./workspace-supervisor-runtime-env"
-import { now, runtimeBackoffMs, sleep } from "./workspace-supervisor-clock"
-import type { WorkspaceRuntimeState } from "./workspace-supervisor-store"
+} from "./runtime-env"
+import { now, runtimeBackoffMs, sleep } from "./clock"
+import type { WorkspaceRuntimeState } from "./store"
 
 const log = Log.create({ service: "workspace-supervisor" })
 

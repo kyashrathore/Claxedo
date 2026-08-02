@@ -1,12 +1,12 @@
-import type { RuntimeConfigSnapshot } from "./agent-config"
-import { createClaxedoRuntimeConfig } from "./workspace-runtime-integration/runtime-config"
+import type { RuntimeConfigSnapshot } from "../../agent-config"
+import { createClaxedoRuntimeConfig } from "../../workspace-runtime-integration/runtime-config"
 import {
   configTokenHeaders,
   stateConfigToken,
   supervisorBackplaneHeaders,
-} from "./workspace-supervisor-control-token"
-import { runtimeWorkspaceDir } from "./workspace-supervisor-state"
-import type { WorkspaceRuntimeState } from "./workspace-supervisor-store"
+} from "./control-token"
+import { runtimeWorkspaceDir } from "./state"
+import type { WorkspaceRuntimeState } from "./store"
 
 export async function runtimeConfigSnapshot(state?: WorkspaceRuntimeState) {
   if (!state?.remote && state?.ws.kind !== "cloud") return createClaxedoRuntimeConfig()

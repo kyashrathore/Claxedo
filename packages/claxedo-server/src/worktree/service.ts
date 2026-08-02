@@ -1,7 +1,7 @@
 import path from "node:path"
 import fs from "node:fs/promises"
 import { createHash } from "node:crypto"
-import { deleteWorkspaceByDirectory, ensureWorkspace } from "../workspace-store"
+import { deleteWorkspaceByDirectory, ensureWorkspace } from "../workspace/store/store"
 import { gitRun } from "../routes/opencode-compat-git"
 
 export type RegisteredWorktreeProvision = Readonly<{

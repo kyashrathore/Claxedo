@@ -1,4 +1,4 @@
-import type { Workspace } from "./workspace-store"
+import type { Workspace } from "./store"
 import type { SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
 
 /**

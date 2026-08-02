@@ -10,7 +10,7 @@ import {
 } from "../../src/documents/session-hydration"
 import { releaseEmbeddedWorkspaceRuntime } from "../../src/embedded-workspace-runtime"
 import { createClaxedoSessionEnvFactory } from "../../src/workspace-runtime-integration/session-env"
-import type { Workspace } from "../../src/workspace-store"
+import type { Workspace } from "../../src/workspace/store/store"
 
 export async function runDocumentsSessionRoundtripSmoke() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "document-session-real-runtime-"))

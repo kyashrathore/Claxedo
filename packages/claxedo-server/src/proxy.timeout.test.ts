@@ -23,7 +23,7 @@ const mocks = {
   opencodeHeaders: vi.fn((headers?: HeadersInit) => new Headers(headers)),
 }
 
-vi.mock("./workspace-supervisor", () => ({
+vi.mock("./workspace/supervisor/supervisor", () => ({
   ensureSupervisorSandbox: mocks.ensureSupervisorSandbox,
   holdSupervisorSandbox: mocks.holdSupervisorSandbox,
   markSupervisorSandboxUse: mocks.markSupervisorSandboxUse,
@@ -42,7 +42,7 @@ vi.mock("./workspace-supervisor", () => ({
   listSupervisorSandboxs: mocks.listSupervisorSandboxs,
 }))
 
-vi.mock("./workspace-store", () => ({
+vi.mock("./workspace/store/store", () => ({
   resolveWorkspace: mocks.resolveWorkspace,
   ensureWorkspace: vi.fn(async (input: { workspaceId?: string; directory?: string; kind?: string; repo_url?: string; status?: string }) => {
     const row = {

@@ -33,7 +33,7 @@ import type { ControlPlaneServices } from "../control-plane/services"
 import type { ProjectAction } from "../control-plane/authority"
 import { isLoopbackLocalRequest } from "../routes/local-only-projection"
 import { errorBody } from "../routes/http"
-import { resolveWorkspace, resolveWorkspaceByRepo, type Workspace } from "../workspace-store"
+import { resolveWorkspace, resolveWorkspaceByRepo, type Workspace } from "../workspace/store/store"
 import { createCredentialWhatsAppBaileysAuthStateStore } from "./whatsapp-baileys-auth-state"
 
 type CentralRuntime = ReturnType<typeof createCentralControlApp>["runtime"]

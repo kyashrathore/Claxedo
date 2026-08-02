@@ -5,7 +5,7 @@ import { putCredential, deleteCredentialsByProvider } from "../credentials/regis
 import { fanOutConfig } from "../config-fanout"
 import { syncOpencodeMcpConfig } from "../opencode/mcp-sync"
 import { sandboxFetch } from "../sandbox-target-fetch"
-import { listProjects, resolveWorkspace } from "../workspace-store"
+import { listProjects, resolveWorkspace } from "../workspace/store/store"
 import { controlPlaneRouteAuth } from "./control-plane-route-auth"
 import { errorBody } from "./http"
 import { bootPath, queryHarnessId, requestHarnessId, runner, workspaceInput } from "./opencode-compat-context"

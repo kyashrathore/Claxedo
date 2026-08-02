@@ -12,10 +12,10 @@ import {
   mintHostTunnelToken,
   mintRuntimeAccessToken,
 } from "@claxedo/workspace-relay"
-import { configureWorkspaceSupervisor, shutdownWorkspaceSupervisor } from "./workspace-supervisor"
+import { configureWorkspaceSupervisor, shutdownWorkspaceSupervisor } from "./workspace/supervisor/supervisor"
 import { configureEmbeddedWorkspaceRuntime } from "./embedded-workspace-runtime"
 import { configureOpenCodeEngine, opencodeRequest } from "./opencode/engine"
-import { ensureWorkspace } from "./workspace-store"
+import { ensureWorkspace } from "./workspace/store/store"
 import { startUserHostedWorkspaceTunnel, stopAllUserHostedWorkspaceTunnels } from "./user-hosted-tunnel"
 import { createApp } from "./server"
 import { createControlPlaneServices } from "./control-plane/services"

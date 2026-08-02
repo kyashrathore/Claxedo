@@ -212,7 +212,7 @@ describe("architecture boundaries", () => {
       "CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN",
       "storage/workspace-lease.sql",
       "better-sqlite",
-      "workspace-store",
+      "workspace/store/store",
       "workspaceStore",
       "process.env",
       "Bun.file",
@@ -285,7 +285,7 @@ describe("architecture boundaries", () => {
       "storage.ts",
       "workspace.ts",
     ]
-    const forbidden = ["../paths", "config-fanout", "workspace-supervisor", "ControlPlane", "Convex", "Hono"]
+    const forbidden = ["../paths", "config-fanout", "workspace/supervisor/supervisor", "ControlPlane", "Convex", "Hono"]
     const leaks = lifecycleFiles.flatMap((file) => {
       const text = fs.readFileSync(path.join(root, file), "utf-8")
       return forbidden.flatMap((term) => (text.includes(term) ? [`${file}:${term}`] : []))

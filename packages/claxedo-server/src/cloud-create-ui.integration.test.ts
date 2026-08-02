@@ -7,10 +7,10 @@ import { randomUUID } from "crypto"
 import { execSync } from "child_process"
 import { createServer } from "node:net"
 
-vi.mock("./workspace-supervisor", async () => {
+vi.mock("./workspace/supervisor/supervisor", async () => {
   const ensureMockSandbox = async (workspaceId: string) => {
     const bus = await import("./lib/bus")
-    const store = await import("./workspace-store")
+    const store = await import("./workspace/store/store")
     bus.claxedoBus.publish({
       type: "provision",
       workspaceId,
@@ -198,7 +198,7 @@ process.env.POSTHOG_KEY = ""
 
 const [serverMod, store, agent] = await Promise.all([
   import("./server"),
-  import("./workspace-store"),
+  import("./workspace/store/store"),
   import("./agent-config"),
 ])
 

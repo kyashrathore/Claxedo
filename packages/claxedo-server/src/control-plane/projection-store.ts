@@ -1,4 +1,4 @@
-import type { Workspace } from "../workspace-store"
+import type { Workspace } from "../workspace/store/store"
 import type { SessionAttachment, SessionMeta, SessionMetaNavigationListInput, SessionToolSandbox } from "../session/meta/meta"
 import type { ChannelDeliveryClaimInput, ChannelDeliveryDecision } from "../channels/delivery"
 import type { ChannelRunAuditInput, ChannelRunAuditRecord } from "../channels/run-audit"

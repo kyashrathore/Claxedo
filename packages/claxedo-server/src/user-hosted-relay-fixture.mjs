@@ -1,7 +1,7 @@
 import { importJWK } from "jose"
 import { createWorkspaceRelayBun, createWorkspaceRelayDirectory } from "@claxedo/workspace-relay"
 import { getLease } from "./storage/workspace-lease.sql.ts"
-import { resolveWorkspace } from "./workspace-store.ts"
+import { resolveWorkspace } from "./workspace/store/store.ts"
 import { sandboxLeaseUrl } from "./sandbox-manager-adapters/stores/sqlite-supervisor-state.ts"
 
 function required(name) {

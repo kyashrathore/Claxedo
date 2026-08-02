@@ -1,4 +1,4 @@
-import type { WorkspaceSupervisorOptions } from "./workspace-supervisor-runtime-env"
+import type { WorkspaceSupervisorOptions } from "./runtime-env"
 
 let options: WorkspaceSupervisorOptions | undefined
 

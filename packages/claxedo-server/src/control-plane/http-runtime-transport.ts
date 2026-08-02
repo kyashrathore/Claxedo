@@ -1,5 +1,5 @@
 import { defaultHomeRegion, normalizeClaxedoRegion } from "../region"
-import type { Workspace } from "../workspace-store"
+import type { Workspace } from "../workspace/store/store"
 import type { ControlPlaneAuthContext } from "./auth"
 import type { ControlPlaneServices } from "./services"
 import { ControlPlaneProtocolError, txt, type ControlPlaneHttpOptions } from "./http-protocol"

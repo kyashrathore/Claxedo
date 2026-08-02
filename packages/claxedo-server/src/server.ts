@@ -46,7 +46,7 @@ import {
   configureWorkspaceSupervisor,
   createWorkspaceSupervisorSandboxManager,
   shutdownWorkspaceSupervisor,
-} from "./workspace-supervisor"
+} from "./workspace/supervisor/supervisor"
 import {
   configureEmbeddedWorkspaceRuntime,
   ensureEmbeddedWorkspaceRuntime,
@@ -99,7 +99,7 @@ import {
   listWorkspaces,
   resolveWorkspace,
   subscribeLocalWorkspaceChanges,
-} from "./workspace-store"
+} from "./workspace/store/store"
 import { defaultHomeRegion, relayEndpointsFromEnv } from "./region"
 import { createControlPlaneChannels, mountControlPlaneChannels } from "./channels/control-plane"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "./server-workspace-pty-proxy"

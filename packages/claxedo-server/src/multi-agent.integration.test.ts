@@ -85,8 +85,8 @@ delete process.env.CURSOR_API_KEY
 
 const [serverMod, supervisor, store, agent, embedded] = await Promise.all([
   import("./server"),
-  import("./workspace-supervisor"),
-  import("./workspace-store"),
+  import("./workspace/supervisor/supervisor"),
+  import("./workspace/store/store"),
   import("./agent-config"),
   import("./embedded-workspace-runtime"),
 ])

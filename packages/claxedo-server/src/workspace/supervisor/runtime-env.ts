@@ -3,7 +3,7 @@ import {
   workspaceRuntimeDirectAuthEnv,
   sandboxLeaseEnv as sandboxLeaseVariables,
   workspaceRuntimeRelayVerificationEnv,
-} from "./workspace-runtime-integration/env"
+} from "../../workspace-runtime-integration/env"
 
 export type WorkspaceSupervisorOptions = {
   server_url: string

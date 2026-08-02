@@ -27,7 +27,7 @@ import {
   sessionMetaMapByRef,
   sessionMetaMapBySessionId,
 } from "./read"
-import type { Workspace } from "../../workspace-store"
+import type { Workspace } from "../../workspace/store/store"
 
 export { GLOBAL_TAG, GLOBAL_SHOW_TAG } from "./types"
 export type {

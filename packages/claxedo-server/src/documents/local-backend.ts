@@ -3,7 +3,7 @@ import path from "node:path"
 import { createHash, randomUUID } from "node:crypto"
 import type { ErrorReportContext } from "../observability/report"
 import type { SessionMeta } from "../session/meta/types"
-import type { Workspace } from "../workspace-store"
+import type { Workspace } from "../workspace/store/store"
 import { DocumentAgentOpenError, type DocumentsBackend } from "./backend"
 import { DocumentNotFoundError, DocumentStorageError } from "./errors"
 import {

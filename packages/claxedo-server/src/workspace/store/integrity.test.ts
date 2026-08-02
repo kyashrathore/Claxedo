@@ -13,7 +13,7 @@
  *  5. Sandbox naming must not reduce to a misleading basename
  */
 import { describe, expect, test, beforeEach, afterAll } from "vitest"
-import { defined } from "./fixtures/assert-helpers"
+import { defined } from "../../fixtures/assert-helpers"
 import { execSync } from "child_process"
 import { realpathSync } from "fs"
 import fs from "fs/promises"
@@ -26,7 +26,7 @@ const root = path.join(realpathSync(os.tmpdir()), `ws-integrity-${randomUUID().s
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
-const mod = await import("./workspace-store")
+const mod = await import("./store")
 
 /** Read the persisted workspaces.json from disk */
 function sh(cmd: string) { execSync(cmd, { stdio: "ignore" }) }

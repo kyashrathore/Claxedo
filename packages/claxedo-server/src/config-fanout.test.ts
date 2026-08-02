@@ -9,7 +9,7 @@ const mocks = {
   },
 }
 
-vi.mock("./workspace-supervisor", () => ({
+vi.mock("./workspace/supervisor/supervisor", () => ({
   broadcastRuntimeConfig: mocks.broadcastRuntimeConfig,
 }))
 

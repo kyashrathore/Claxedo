@@ -8,8 +8,8 @@ import {
   type ControlPlaneAuthConfig,
   type ControlPlaneAuthContext,
 } from "./auth"
-import type { Workspace } from "../workspace-store"
-import { verifyWorkspaceRuntimeControlToken } from "../workspace-supervisor"
+import type { Workspace } from "../workspace/store/store"
+import { verifyWorkspaceRuntimeControlToken } from "../workspace/supervisor/supervisor"
 import {
   IdempotencyCapacityError,
   IdempotencyConflictError,

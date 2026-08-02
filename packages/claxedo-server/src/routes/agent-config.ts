@@ -4,7 +4,7 @@ import {
   getEffectiveConfig,
   loadUserConfig,
 } from "../agent-config"
-import { resolveWorkspace } from "../workspace-store"
+import { resolveWorkspace } from "../workspace/store/store"
 import { agentConfigCommandRoutes } from "./agent-config-command-routes"
 import { agentConfigExtensionRoutes } from "./agent-config-extension-routes"
 import { agentConfigHarnessRoutes } from "./agent-config-harness-routes"

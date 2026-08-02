@@ -94,7 +94,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     canonicalReplacement: "../../sandbox-manager/src/index.ts plus sandbox-manager/stores/sqlite.ts",
     reason: "Keeps local workspace-supervisor row and hold compatibility under the SandboxManager storage boundary instead of a second top-level lease authority.",
     removalCondition: "Delete when the local supervisor consumes only SandboxManager and SandboxLeaseStore operations.",
-    tests: ["workspace-supervisor-cloud.test.ts", "workspace-store.test.ts"],
+    tests: ["workspace/supervisor/cloud.test.ts", "workspace/store/store.test.ts"],
   },
   {
     area: "host",
@@ -106,12 +106,12 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "host",
-    module: "workspace-supervisor-sandbox.ts",
+    module: "workspace/supervisor/sandbox.ts",
     status: OwnershipStatus.Canonical,
     owner: "local supervisor SandboxManager composer",
     reason: "The local Claxedo product path dogfoods SandboxManager and SandboxDriver directly for cloud workspaces.",
     tests: [
-      "workspace-supervisor-cloud.test.ts",
+      "workspace/supervisor/cloud.test.ts",
       "control-plane/services.test.ts",
     ],
   },

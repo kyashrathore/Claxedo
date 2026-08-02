@@ -23,7 +23,7 @@ process.env.CLAXEDO_DATA_DIR = root
 
 // Import route builder after env is set
 const { OpenCodeCompatRoutes } = await import("../routes/opencode-compat")
-const { ensureWorkspace } = await import("../workspace-store")
+const { ensureWorkspace } = await import("../workspace/store/store")
 
 // Build a minimal Hono app with compat routes + SSE event handler
 const { Hono } = await import("hono")

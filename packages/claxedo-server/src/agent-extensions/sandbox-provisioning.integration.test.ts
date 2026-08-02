@@ -30,8 +30,8 @@ import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { applyRuntimeAgentExtensions, digestDirectory } from "@claxedo/agent-extensions"
 import type { SignedControlPlaneAuth } from "../control-plane/auth"
 import { createSqliteWorkspaceAuthority } from "../control-plane/adapters/sqlite/workspace-authority"
-import { pushRuntimeConfig } from "../workspace-supervisor-config-sync"
-import { __registerReadyRuntimeForTest, __unregisterRuntimeForTest } from "../workspace-supervisor.test-helper"
+import { pushRuntimeConfig } from "../workspace/supervisor/config-sync"
+import { __registerReadyRuntimeForTest, __unregisterRuntimeForTest } from "../workspace/supervisor/test-helper"
 import { mirrorWorkspaceAgentExtensionRecord } from "./workspace"
 
 type RecordedRequest = { method: string; url: string; body: unknown }

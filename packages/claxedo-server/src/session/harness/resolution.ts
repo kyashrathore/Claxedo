@@ -2,7 +2,7 @@ import type { HarnessHost } from "../../architecture"
 import { defaultHarness, loadUserConfig } from "../../agent-config"
 import { sessionMeta } from "../meta/meta"
 import { getSessionConfig, normalize, type SessionHarness } from "./harness"
-import { resolveWorkspace } from "../../workspace-store"
+import { resolveWorkspace } from "../../workspace/store/store"
 import { normalizeHarnessIdentity } from "@claxedo/agent-sdk-runtime"
 
 type Input = {

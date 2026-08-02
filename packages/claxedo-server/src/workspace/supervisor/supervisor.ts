@@ -1,21 +1,21 @@
-import type { AgentExtensionPolicyOverride } from "./agent-extensions/runtime-config"
-import type { WorkspaceAgentExtensionRecord } from "./agent-extensions/workspace"
-import { Log } from "./lib/log"
-import { updateWorkspace, getWorkspace, type Workspace } from "./workspace-store"
-import { createClaxedoRuntimeConfig } from "./workspace-runtime-integration/runtime-config"
-import { IDLE_MS, now } from "./workspace-supervisor-clock"
+import type { AgentExtensionPolicyOverride } from "../../agent-extensions/runtime-config"
+import type { WorkspaceAgentExtensionRecord } from "../../agent-extensions/workspace"
+import { Log } from "../../lib/log"
+import { updateWorkspace, getWorkspace, type Workspace } from "../store/store"
+import { createClaxedoRuntimeConfig } from "../../workspace-runtime-integration/runtime-config"
+import { IDLE_MS, now } from "./clock"
 import {
   pushRuntimeConfig,
   runtimeConfigSnapshot,
   runtimeHasActiveWork,
-} from "./workspace-supervisor-config-sync"
+} from "./config-sync"
 import {
   captureSupervisorSandboxCheckpoint,
   restoreSupervisorSandboxCheckpoint,
   startSandbox,
   stopSandbox,
   touchSandbox,
-} from "./workspace-supervisor-sandbox"
+} from "./sandbox"
 import {
   acquireSupervisorSandboxHold,
   cleanExpiredSupervisorSandboxHolds,
@@ -29,13 +29,13 @@ import {
   sandboxLeaseStatus,
   sandboxLeaseUrl,
   sandboxTargetFromLease,
-} from "./sandbox-manager-adapters/stores/sqlite-supervisor-state"
+} from "../../sandbox-manager-adapters/stores/sqlite-supervisor-state"
 import {
   clearRuntimeStop,
   runtimeState,
   runtimeWorkspaceDir,
-} from "./workspace-supervisor-state"
-import { runtimes, type WorkspaceRuntimeState } from "./workspace-supervisor-store"
+} from "./state"
+import { runtimes, type WorkspaceRuntimeState } from "./store"
 import type {
   SandboxEnsureResult,
   SandboxLease,
@@ -48,10 +48,10 @@ import type { SandboxLeaseRow } from "@claxedo/sandbox-manager/lease-types"
 import {
   configureWorkspaceSupervisorOptions,
   workspaceSupervisorServerUrl,
-} from "./workspace-supervisor-options"
-import type { WorkspaceSupervisorOptions } from "./workspace-supervisor-runtime-env"
+} from "./options"
+import type { WorkspaceSupervisorOptions } from "./runtime-env"
 
-export { verifyWorkspaceRuntimeControlToken } from "./workspace-supervisor-control-token"
+export { verifyWorkspaceRuntimeControlToken } from "./control-token"
 export { workspaceSupervisorServerUrl }
 
 const log = Log.create({ service: "workspace-supervisor" })

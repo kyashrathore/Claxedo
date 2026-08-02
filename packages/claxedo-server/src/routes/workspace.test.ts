@@ -117,7 +117,7 @@ vi.mock("../network/policy", () => ({
   ensureHostForRepo: mocks.ensureHostForRepo,
 }))
 
-vi.mock("../workspace-store", () => ({
+vi.mock("../workspace/store/store", () => ({
   resolveWorkspace: mocks.resolveWorkspace,
   workspaceIdFromDirectoryRef: (input: string | undefined) => {
     const value = input?.trim()
@@ -140,7 +140,7 @@ vi.mock("../workspace-store", () => ({
   deleteWorkspaceByDirectory: vi.fn(async (directory: string) => mocks.workspaceRows.delete(directory)),
 }))
 
-vi.mock("../workspace-supervisor", () => ({
+vi.mock("../workspace/supervisor/supervisor", () => ({
   discardSupervisorSandbox: mocks.discardSupervisorSandbox,
   ensureSupervisorSandbox: mocks.ensureSupervisorSandbox,
   getSupervisorSandboxStatus: mocks.getSupervisorSandboxStatus,

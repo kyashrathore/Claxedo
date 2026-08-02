@@ -46,8 +46,8 @@ const FORBIDDEN_BARE = [
 
 // Local-only source modules that must never reach the Worker bundle.
 const FORBIDDEN_LOCAL = [
-  "workspace-store",
-  "workspace-supervisor",
+  "workspace/store/store",
+  "workspace/supervisor/supervisor",
   "embedded-workspace-runtime",
   "user-hosted-tunnel",
   "credentials/store",
@@ -61,11 +61,11 @@ const FORBIDDEN_LOCAL = [
   "central-runtime",
   "central-session-runtime",
   "workspace-runtime-integration/session-env",
-  "channels-control-plane",
-  "channels-dedup",
-  "channel-delivery",
-  "channel-run-audit",
-  "whatsapp-baileys-auth-state",
+  "channels/control-plane",
+  "channels/dedup",
+  "channels/delivery",
+  "channels/run-audit",
+  "channels/whatsapp-baileys-auth-state",
   "control-plane/adapters/sqlite/central-store",
   "control-plane/adapters/sqlite/workspace-authority",
 ]

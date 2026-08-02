@@ -29,7 +29,7 @@ const sandboxEnsure = vi.fn(async (workspaceId: string) => ({
 }))
 const runtimeFetches: string[] = []
 
-vi.mock("./workspace-supervisor", () => ({
+vi.mock("./workspace/supervisor/supervisor", () => ({
   ensureSupervisorSandbox,
   holdSupervisorSandbox: vi.fn(),
   releaseSupervisorSandbox: vi.fn(),
@@ -61,7 +61,7 @@ vi.mock("./workspace-supervisor", () => ({
   })),
 }))
 
-vi.mock("./workspace-store", () => ({
+vi.mock("./workspace/store/store", () => ({
   resolveWorkspace: vi.fn(async (input: { workspaceId?: string; directory?: string }) =>
     workspaceRows.get(input.workspaceId ?? "") ?? workspaceRows.get(input.directory ?? "")),
   resolveWorkspaceByRepo: vi.fn(async () => undefined),

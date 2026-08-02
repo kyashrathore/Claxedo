@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
   updateWorkspace: vi.fn(async () => undefined),
 }))
 
-vi.mock("../workspace-store", () => ({
+vi.mock("../workspace/store/store", () => ({
   resolveWorkspace: mocks.resolveWorkspace,
   updateWorkspace: mocks.updateWorkspace,
 }))

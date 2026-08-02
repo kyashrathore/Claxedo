@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
-import { workspaceBacking } from "./workspace-backing"
-import type { Workspace } from "./workspace-store"
+import { workspaceBacking } from "./backing"
+import type { Workspace } from "./store"
 
 function ws(input: Partial<Workspace>): Workspace {
   return {

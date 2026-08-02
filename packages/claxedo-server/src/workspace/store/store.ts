@@ -4,10 +4,10 @@ import { randomUUID } from "crypto"
 import { realpathSync } from "node:fs"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
-import { dataDir } from "./lib/paths"
-import { Log } from "./lib/log"
+import { dataDir } from "../../lib/paths"
+import { Log } from "../../lib/log"
 import { dockerSandboxDriverEnabled, type SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
-import { getSupervisorSandboxLease } from "./sandbox-manager-adapters/stores/sqlite-supervisor-state"
+import { getSupervisorSandboxLease } from "../../sandbox-manager-adapters/stores/sqlite-supervisor-state"
 
 const execFileAsync = promisify(execFile)
 

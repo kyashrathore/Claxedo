@@ -15,7 +15,7 @@
 import { describe, expect, test, beforeAll, beforeEach, afterEach, vi } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import type { SandboxHoldRow, SandboxLeaseRow } from "@claxedo/sandbox-manager/lease-types"
-import { claxedoBus, type ClaxedoEvent } from "./lib/bus"
+import { claxedoBus, type ClaxedoEvent } from "../../lib/bus"
 
 let driverId = "daytona"
 const previousRelayHostPublicKey = process.env.CLAXEDO_RELAY_HOST_PUBLIC_KEY_JWK
@@ -303,20 +303,20 @@ function lease(workspaceId: string, driverId = "daytona"): SandboxLeaseRow {
 
 // ── Module mocks (must be before import) ─────────────────────────────────
 
-vi.mock("./workspace-store", () => ({
+vi.mock("../store/store", () => ({
   getWorkspace: (...args: unknown[]) => (mockGetWorkspace as any)(...args),
   updateWorkspace: (...args: unknown[]) => (mockUpdateWorkspace as any)(...args),
 }))
 
-vi.mock("./network/policy", () => ({
+vi.mock("../../network/policy", () => ({
   listPolicies: vi.fn(() => []),
 }))
 
-vi.mock("./network/resolve", () => ({
+vi.mock("../../network/resolve", () => ({
   resolveSandboxNetworkPolicy: vi.fn(() => Promise.resolve(undefined)),
 }))
 
-vi.mock("./sandbox-manager-adapters/stores/sqlite-supervisor-state", () => {
+vi.mock("../../sandbox-manager-adapters/stores/sqlite-supervisor-state", () => {
   const status = (input: SandboxLeaseRow["status"]) => {
     if (input === "ready" || input === "stopped") return input
     if (input === "backoff" || input === "failed" || input === "unhealthy") return "unavailable"
@@ -547,7 +547,7 @@ vi.mock("./sandbox-manager-adapters/stores/sqlite-supervisor-state", () => {
   }
 })
 
-vi.mock("./sandbox-manager-adapters/driver-auth", () => ({
+vi.mock("../../sandbox-manager-adapters/driver-auth", () => ({
   sandboxDriverAuthAsync: (...args: unknown[]) => (mockSandboxDriverAuthAsync as any)(...args),
 }))
 
@@ -575,14 +575,14 @@ vi.mock("@claxedo/sandbox-manager/drivers/docker", () => ({
   createDockerSandboxDriver: (...args: unknown[]) => (mockCreateDockerSandboxDriver as any)(...args),
 }))
 
-vi.mock("./agent-config", () => ({
+vi.mock("../../agent-config", () => ({
   loadUserConfig: (...args: unknown[]) => (mockLoadUserConfig as any)(...args),
   sandboxDriverConfig: vi.fn((config?: { sandbox_driver?: unknown }) => config?.sandbox_driver ?? {}),
   defaultHarness: vi.fn(() => ({})),
   getRuntimeConfigSnapshot: (...args: unknown[]) => (mockGetRuntimeConfigSnapshot as any)(...args),
 }))
 
-vi.mock("./storage/prepared-image.sql", () => ({
+vi.mock("../../storage/prepared-image.sql", () => ({
   ClaxedoPreparedImageTable: {},
   ClaxedoRuntimeSnapshotTable: {},
   getPreparedImage: vi.fn(() => undefined),
@@ -634,8 +634,8 @@ globalThis.fetch = vi.fn((url: string | URL | Request) => {
 
 // ── Import module under test (after mocks) ───────────────────────────────
 
-const supervisor = await import("./workspace-supervisor")
-const testSupervisor = await import("./workspace-supervisor.test-helper")
+const supervisor = await import("./supervisor")
+const testSupervisor = await import("./test-helper")
 
 // ── Tests ────────────────────────────────────────────────────────────────
 
@@ -805,8 +805,8 @@ describe("workspace-supervisor", () => {
     })
 
     test("passes resolved Daytona network policy CIDRs into SandboxManager", async () => {
-      const policy = await import("./network/policy")
-      const resolve = await import("./network/resolve")
+      const policy = await import("../../network/policy")
+      const resolve = await import("../../network/resolve")
       ;(policy.listPolicies as any).mockReturnValueOnce([
         { target: "api.example.test", kind: "host" },
       ])

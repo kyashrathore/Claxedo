@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { resolveWorkspace, updateWorkspace } from "../workspace-store"
+import { resolveWorkspace, updateWorkspace } from "../workspace/store/store"
 import type { ControlPlaneServices } from "./services"
 import { ControlPlaneProtocolError, runtimeSnapshotInput } from "./http-protocol"
 

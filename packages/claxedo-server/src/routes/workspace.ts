@@ -11,7 +11,7 @@ import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import { loadUserConfig, sandboxDriverConfig } from "../agent-config"
 import { type ControlPlaneServices } from "../control-plane/services"
 import { requireAuthority } from "../control-plane/authority"
-import { workspaceBacking } from "../workspace-backing"
+import { workspaceBacking } from "../workspace/store/backing"
 import { ensureHostForRepo } from "../network/policy"
 import {
   deleteWorkspace,
@@ -21,8 +21,8 @@ import {
   resolveWorkspace,
   workspaceIdFromDirectoryRef,
   type Workspace,
-} from "../workspace-store"
-import { discardSupervisorSandbox, getSupervisorSandboxStatus } from "../workspace-supervisor"
+} from "../workspace/store/store"
+import { discardSupervisorSandbox, getSupervisorSandboxStatus } from "../workspace/supervisor/supervisor"
 import { Log } from "../lib/log"
 import { ControlPlaneAuthError, bearerToken, controlPlaneAuthErrorBody } from "../control-plane/auth"
 import { createFixedWindowConnectionRateLimiter } from "../control-plane/rate-limit"

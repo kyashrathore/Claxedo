@@ -45,7 +45,7 @@ const mocks = {
   },
 }
 
-vi.mock("./workspace-supervisor", () => ({
+vi.mock("./workspace/supervisor/supervisor", () => ({
   createWorkspaceSupervisorSandboxManager: vi.fn(() => ({
     ensure: mocks.sandboxManagerEnsure,
   })),
@@ -71,7 +71,7 @@ vi.mock("@claxedo/workspace-runtime/relay", () => ({
   hostTunnelPreOpenQueueFromEnv: () => ({}),
 }))
 
-vi.mock("./workspace-store", () => ({
+vi.mock("./workspace/store/store", () => ({
   getWorkspace: mocks.getWorkspace,
 }))
 

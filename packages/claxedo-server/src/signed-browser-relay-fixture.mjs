@@ -14,12 +14,12 @@ import {
 import { createWorkspaceRuntimeApp } from "../../workspace-runtime/src/server.ts"
 import { relayWorkspaceRuntimeExposure } from "../../workspace-runtime/src/exposure.ts"
 import { createApp } from "./server.ts"
-import { opencodeRequest } from "./opencode-engine.ts"
+import { opencodeRequest } from "./opencode/engine.ts"
 import { createControlPlaneServices } from "./control-plane/services.ts"
 import { createSqliteCentralStore } from "./control-plane/adapters/sqlite/central-store.ts"
-import { configureWorkspaceSupervisor, createWorkspaceSupervisorSandboxManager, injectRuntime, shutdownWorkspaceSupervisor } from "./workspace-supervisor.ts"
+import { configureWorkspaceSupervisor, createWorkspaceSupervisorSandboxManager, injectRuntime, shutdownWorkspaceSupervisor } from "./workspace/supervisor/supervisor.ts"
 import { recordSupervisorSandboxLeaseReady } from "./sandbox-manager-adapters/stores/sqlite-supervisor-state.ts"
-import { ensureWorkspace, updateWorkspace } from "./workspace-store.ts"
+import { ensureWorkspace, updateWorkspace } from "./workspace/store/store.ts"
 import { startUserHostedWorkspaceTunnel, stopAllUserHostedWorkspaceTunnels, stopUserHostedWorkspaceTunnel } from "./user-hosted-tunnel.ts"
 
 const execFileAsync = promisify(execFile)

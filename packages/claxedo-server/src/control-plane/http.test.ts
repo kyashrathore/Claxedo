@@ -21,7 +21,7 @@ function errorShape(err: unknown) {
     : err
 }
 
-vi.mock("../workspace-store", () => ({
+vi.mock("../workspace/store/store", () => ({
   resolveWorkspace: mocks.resolveWorkspace,
   updateWorkspace: mocks.updateWorkspace,
 }))

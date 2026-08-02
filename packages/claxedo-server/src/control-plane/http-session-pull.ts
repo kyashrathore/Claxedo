@@ -1,5 +1,5 @@
 import { resolveHarnessHostForRequest } from "../session/harness/resolution"
-import { resolveWorkspace, type Workspace } from "../workspace-store"
+import { resolveWorkspace, type Workspace } from "../workspace/store/store"
 import type { ControlPlaneAuthContext, SignedControlPlaneAuth } from "./auth"
 import { requireAuthority } from "./authority"
 import type { ControlPlaneServices } from "./services"

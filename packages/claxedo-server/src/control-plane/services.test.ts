@@ -516,9 +516,9 @@ describe("control-plane services", () => {
   })
 
   test("sandbox launch injects neutral workspace-runtime auth env", () => {
-    const file = path.resolve(import.meta.dirname, "../workspace-supervisor-sandbox.ts")
+    const file = path.resolve(import.meta.dirname, "../workspace/supervisor/sandbox.ts")
     const text = fs.readFileSync(file, "utf8")
-    const runtimeEnv = fs.readFileSync(path.resolve(import.meta.dirname, "../workspace-supervisor-runtime-env.ts"), "utf8")
+    const runtimeEnv = fs.readFileSync(path.resolve(import.meta.dirname, "../workspace/supervisor/runtime-env.ts"), "utf8")
 
     expect(text).toContain("const controlPlaneUrl = sandboxControlPlaneUrl")
     expect(text).toContain("...controlPlaneVerificationEnv(driverId, controlPlaneUrl, { options })")
@@ -904,8 +904,8 @@ describe("control-plane services", () => {
   })
 
   test("workspace supervisor accepts an explicit default sandbox driver override", async () => {
-    const supervisor = await import("../workspace-supervisor")
-    const supervisorOptions = await import("../workspace-supervisor-options")
+    const supervisor = await import("../workspace/supervisor/supervisor")
+    const supervisorOptions = await import("../workspace/supervisor/options")
     supervisor.configureWorkspaceSupervisor({
       server_url: "http://127.0.0.1:0",
       opencode_url: "http://127.0.0.1:0",
