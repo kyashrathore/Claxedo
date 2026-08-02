@@ -29,6 +29,65 @@ Counter-finding worth stating: **DB access is already fine.** `ClaxedoDB.use`
 directly**. The layering the owner asked for already exists for persistence; it
 is auth that lacks it. Do not "fix" the DB layer.
 
+### The other cross-cutting concerns, measured
+
+The owner named errors, rate limit, retries, telemetry, version and file storage
+as belonging at top level rather than inside domains. Measured:
+
+| concern | state | verdict |
+|---|---|---|
+| **retries** | **7 hand-rolled loops**, no shared helper: `workspace/supervisor/sandbox.ts`, 3× `adapters/sandbox/stores/*`, 2× `hosts/workgraph/*`, `authority/adapters/convex/retry.ts` | **Same class as auth.** A backoff-policy change has 7 landing sites. → `platform/runtime/retry.ts` |
+| **errors** | 68 custom classes; **61 extend raw `Error`** with no shared base. Only `DocumentWorkspaceError` has descendants (11) | No common shape for status / code / retryability. → `platform/errors/` with one base |
+| **rate limit** | 10 files, but already centred on `platform/auth/rate-limit.ts` | Mostly fine; the 4 in `workspace/routes` are call sites, not reimplementations |
+| **telemetry** | already `platform/telemetry/{errors,product}/` | Fine — except `worker-telemetry.ts` sits in `platform/auth/` (W11.4) |
+| **file storage** | concentrated in `documents/` (4 files) + 1 each elsewhere | Domain-owned and coherent. **Not** a scatter — leave it |
+| **version** | 23 references in `documents/` | Document versioning is that domain's core concept, not a cross-cutting concern. Leave it |
+
+So: **retries and errors need extraction; rate limit and telemetry are already
+placed; file storage and version are correctly domain-owned.** Two of six.
+
+### Cloudflare-specific code
+
+`platform/` is **already CF-clean** — zero `cloudflare:workers` / `DurableObject`
+/ `KVNamespace` / `R2Bucket` references. The `.cf.ts` convention holds there.
+
+Two gaps outside it: `documents/hosted-managed.ts` and `documents/hosted-backend.ts`
+use `R2Bucket` without the `.cf.ts` marker. Narrower than feared, but real — the
+R2 object-store code should be extracted to a marked file (it is already the
+subject of `documents/r2-conditional-object-store.miniflare.test.ts`, a test with
+no matching source file).
+
+### `workspace/http/proxy.ts` — the name is right, the location is wrong
+
+The owner's read was that this is misnamed because nothing forwards requests.
+**Checked, and it does forward:** line 214 `const res = await fetch(req)`, after
+reconstructing the request against `hit.url` (a remote sandbox) or
+`http://embedded-workspace-runtime.local`, minting an owner token, and setting
+`x-forwarded-by`. It streams the response back. It is a genuine HTTP reverse
+proxy and `proxy` is the honest word for it.
+
+What IS wrong is where it lives. `workspace/http/` is imported by 5+ other
+domains, so it is not the workspace domain's HTTP — it is shared runtime-proxy
+infra parked inside a domain. → `platform/http/runtime-proxy/` (it is
+domain-agnostic transport once `resolveWorkspaceRuntimeHit` is passed in), or
+keep it domain-side and rename to `workspace/runtime-proxy/` so the name stops
+competing with `workspace/routes/`.
+
+### Core business logic vs utils
+
+The owner asked what the rule is. Proposed and enforceable:
+
+- **`platform/runtime/lib/`** — no domain vocabulary in the signature. `bus.ts`,
+  `paths.ts`, `strings.ts`, `lazy.ts` qualify. A function taking a `Workspace` or
+  returning a `CredentialMetadata` does **not**, however generic it looks.
+- **domain root** — the domain's own rules and vocabulary.
+- Test: could this move to another product unchanged? If yes, it is a util.
+
+Today `platform/runtime/lib/` holds 10 files and all pass. The failures are the
+reverse case — domain dirs holding utils, e.g.
+`adapters/credentials/operations/verification-error.ts` (11 lines of error types
+in an operations dir).
+
 ## Naming rule this plan enforces
 
 > A directory name is a **falsifiable claim about every file in it**, and each
@@ -139,6 +198,21 @@ Steps:
 
 Do NOT touch the DB layer in this wave. It is already correct.
 
+## W11.1b — One retry seam, one error base
+
+Same shape as W11.1, smaller and lower risk. Do it in the same stretch.
+
+- **Retries.** 7 hand-rolled loops → `platform/runtime/retry.ts` exposing one
+  `withRetry(fn, policy)`. Convert call sites one commit at a time; each keeps
+  its own policy VALUES (a Convex mutation and a sandbox boot should not share
+  a backoff curve) but stops re-implementing the loop.
+- **Errors.** 61 classes extend raw `Error` → one `platform/errors/base.ts`
+  carrying `code`, `status`, `retryable`. Migrate by domain. This is what lets
+  `errorBody` stop guessing at status codes per route.
+
+Guard: no `for (let attempt` / `while (attempt` outside `platform/runtime/retry.ts`;
+no `extends Error` outside `platform/errors/`. Fault-inject both.
+
 ## W11.2 — Make `routes/` mean one thing
 
 25 of 49 files are not routes. Move the non-Hono files out by kind:
@@ -214,6 +288,24 @@ Deferred to last because it is the widest diff and the least functional risk.
 - `store` means 5 things. Rule: `<domain>/store.ts` = own persistence;
   `-adapter` only for external-port implementations;
   `adapters/credentials/store.ts` (a backend selector) → `backend-registry.ts`.
+- `workspace/http/` → `workspace/runtime-proxy/` (or `platform/http/runtime-proxy/`).
+  The dir name currently competes with `workspace/routes/` while holding neither
+  routes nor workspace-specific transport.
+
+## W11.9 — Extend the `.cf.ts` convention
+
+`platform/` is already CF-clean, so this is small: extract the R2 object-store
+code out of `documents/hosted-managed.ts` (it is buried at lines ~530-609 and
+already imported by `hosted-backend.ts` and `hosted-index.ts` as general infra)
+into `documents/r2-object-store.cf.ts`.
+
+Two things fall out: the `R2Bucket` reference gets its runtime marker, and
+`documents/r2-conditional-object-store.miniflare.test.ts` — which today tests
+code with no matching source file — gets a subject that matches its name.
+
+Then extend `worker.import-graph.test.ts`'s bidirectional check: any file
+referencing `R2Bucket` / `KVNamespace` / `DurableObject` / `cloudflare:workers`
+must be `.cf.ts`. Fault-inject.
 
 ## W11.8 — Docs, and a guard for them
 
