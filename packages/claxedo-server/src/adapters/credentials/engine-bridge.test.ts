@@ -80,7 +80,7 @@ afterEach(() => {
  * mocked rather than driven in URL mode so no socket is involved.
  */
 async function loadBridge() {
-  vi.doMock("../opencode/engine", () => ({
+  vi.doMock("../../opencode/engine", () => ({
     OPENCODE_INTERNAL_BASE: "http://opencode.internal",
     opencodeRequest: (request: Request) => stubEngineFetch(request),
   }))

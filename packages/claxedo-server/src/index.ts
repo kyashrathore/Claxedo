@@ -49,7 +49,7 @@ export {
   type RelayTarget,
   type RelayToken,
   type RelayTokenInput,
-} from "./relay-provider"
+} from "./adapters/relay"
 export {
   DEFAULT_WORKSPACE_RUNTIME_PORT,
   createSandboxManager,
@@ -80,7 +80,7 @@ export {
   type SandboxTouchResult,
 } from "@claxedo/sandbox-manager"
 export { createMemoryLeaseStore, sandboxLease } from "@claxedo/sandbox-manager/stores/memory"
-export { createSqliteLeaseStore } from "./sandbox-manager-adapters/stores/sqlite"
+export { createSqliteLeaseStore } from "./adapters/sandbox/stores/sqlite"
 export { createCloudflareSandboxDriver, type CloudflareSandboxDriverOptions } from "@claxedo/sandbox-manager/drivers/cloudflare"
 export { createDaytonaSandboxDriver, type DaytonaSandboxDriverOptions } from "@claxedo/sandbox-manager/drivers/daytona"
 export { createDockerSandboxDriver, type DockerSandboxDriverOptions } from "@claxedo/sandbox-manager/drivers/docker"
@@ -147,5 +147,5 @@ export { initPostHog, shutdownPostHog, capture, getPostHog } from "./posthog"
 export { claxedoBus } from "./lib/bus"
 export type { ClaxedoEvent, PtyInfo } from "./lib/bus"
 export { Pty, Process, createProcessClient, ProcessManager } from "@claxedo/workspace-runtime/host"
-export { ClaxedoDB } from "./storage/db"
+export { ClaxedoDB } from "./adapters/storage/db"
 export { dataDir, stateDir } from "./lib/paths"

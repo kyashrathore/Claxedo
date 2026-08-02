@@ -12,8 +12,8 @@ import {
   type IntegrationCapability,
 } from "@claxedo/connections"
 import type { ControlPlaneCredentials } from "../../control-plane/services"
-import { ClaxedoDB } from "../../storage/db"
-import { ClaxedoConnectionTable } from "../../storage/connection.sql"
+import { ClaxedoDB } from "../../adapters/storage/db"
+import { ClaxedoConnectionTable } from "../../adapters/storage/connection.sql"
 
 export function createCredentialStoreAdapter(credentials: ControlPlaneCredentials): CredentialStorePort {
   const credentialFor = async (providerId: string) => {

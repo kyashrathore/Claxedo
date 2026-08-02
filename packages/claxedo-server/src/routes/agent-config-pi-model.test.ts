@@ -20,7 +20,7 @@ const [{ createAgentConfigRoutes }, { putSessionMeta, sessionMeta }, { piProvide
   import("./agent-config"),
   import("../session/meta/meta"),
   import("../pi-provider-catalog"),
-  import("../storage/db"),
+  import("../adapters/storage/db"),
 ])
 
 afterEach(async () => {

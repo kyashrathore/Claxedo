@@ -29,7 +29,7 @@ const {
 
 // Force DB initialization
 const { ClaxedoDB } = await import("../storage/db")
-const { piCredentialProviderIDs, piRegistryCredentialProvider, piRegistryProviderConnected } = await import("../pi-credentials")
+const { piCredentialProviderIDs, piRegistryCredentialProvider, piRegistryProviderConnected } = await import("../../pi-credentials")
 ClaxedoDB.Drizzle() // ensure initialized
 
 describe("credential registry", () => {
@@ -376,7 +376,7 @@ describe("credential registry", () => {
   // ── Auto-sync: credential → network policy ───────────────────────────
 
   test("putCredential auto-creates network preset for known providers", async () => {
-    const { listPolicies } = await import("../network/policy")
+    const { listPolicies } = await import("../../network/policy")
 
     await putCredential({
       provider_id: "claude-acp",
@@ -394,7 +394,7 @@ describe("credential registry", () => {
   })
 
   test("putCredential is idempotent for network presets", async () => {
-    const { listPolicies } = await import("../network/policy")
+    const { listPolicies } = await import("../../network/policy")
 
     await putCredential({
       provider_id: "claude-acp",
@@ -412,7 +412,7 @@ describe("credential registry", () => {
   })
 
   test("deleteCredential removes auto-created network preset", async () => {
-    const { listPolicies } = await import("../network/policy")
+    const { listPolicies } = await import("../../network/policy")
 
     const cred = await putCredential({
       provider_id: "codex-acp",
@@ -437,7 +437,7 @@ describe("credential registry", () => {
   })
 
   test("putCredential does not create preset for unknown providers", async () => {
-    const { listPolicies } = await import("../network/policy")
+    const { listPolicies } = await import("../../network/policy")
     const before = listPolicies().length
 
     await putCredential({

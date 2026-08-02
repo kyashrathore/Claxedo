@@ -1,14 +1,14 @@
-import type { ClaxedoRegion } from "../region"
-import { regionValue } from "../region"
+import type { ClaxedoRegion } from "../../region"
+import { regionValue } from "../../region"
 import {
   clampTtlSeconds,
   HOST_TUNNEL_TOKEN_TTL_BOUNDS_SECONDS,
   RUNTIME_ACCESS_TOKEN_TTL_BOUNDS_SECONDS,
   type HostTunnelTokenSigner,
   type RuntimeAccessTokenSigner,
-} from "../control-plane/runtime-access-token"
+} from "../../control-plane/runtime-access-token"
 import type { RelayRole } from "@claxedo/workspace-relay"
-import type { RelayTargetLookup } from "../routes/internal-relay"
+import type { RelayTargetLookup } from "../../routes/internal-relay"
 
 export type RelayProvider = {
   getRelayEndpoint: (workspaceId: string, homeRegion: ClaxedoRegion) => string | Promise<string>

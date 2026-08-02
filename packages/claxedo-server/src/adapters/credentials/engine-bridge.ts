@@ -48,9 +48,9 @@
 
 import fs from "node:fs"
 import path from "node:path"
-import { OPENCODE_INTERNAL_BASE, opencodeRequest } from "../opencode/engine"
-import { dataDir } from "../lib/paths"
-import { Log } from "../lib/log"
+import { OPENCODE_INTERNAL_BASE, opencodeRequest } from "../../opencode/engine"
+import { dataDir } from "../../lib/paths"
+import { Log } from "../../lib/log"
 import { listCredentials, resolveSecret, SINGLE_TENANT_ORG, type CredentialOrgScope } from "./registry"
 import type { CredentialMetadata } from "./types"
 

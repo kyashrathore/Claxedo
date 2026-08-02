@@ -316,7 +316,7 @@ vi.mock("../../network/resolve", () => ({
   resolveSandboxNetworkPolicy: vi.fn(() => Promise.resolve(undefined)),
 }))
 
-vi.mock("../../sandbox-manager-adapters/stores/sqlite-supervisor-state", () => {
+vi.mock("../../adapters/sandbox/stores/sqlite-supervisor-state", () => {
   const status = (input: SandboxLeaseRow["status"]) => {
     if (input === "ready" || input === "stopped") return input
     if (input === "backoff" || input === "failed" || input === "unhealthy") return "unavailable"
@@ -547,7 +547,7 @@ vi.mock("../../sandbox-manager-adapters/stores/sqlite-supervisor-state", () => {
   }
 })
 
-vi.mock("../../sandbox-manager-adapters/driver-auth", () => ({
+vi.mock("../../adapters/sandbox/driver-auth", () => ({
   sandboxDriverAuthAsync: (...args: unknown[]) => (mockSandboxDriverAuthAsync as any)(...args),
 }))
 
@@ -582,7 +582,7 @@ vi.mock("../../agent-config", () => ({
   getRuntimeConfigSnapshot: (...args: unknown[]) => (mockGetRuntimeConfigSnapshot as any)(...args),
 }))
 
-vi.mock("../../storage/prepared-image.sql", () => ({
+vi.mock("../../adapters/storage/prepared-image.sql", () => ({
   ClaxedoPreparedImageTable: {},
   ClaxedoRuntimeSnapshotTable: {},
   getPreparedImage: vi.fn(() => undefined),

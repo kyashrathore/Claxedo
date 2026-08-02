@@ -8,9 +8,9 @@
  * on GET /session/:id/message, not from the adapter.
  */
 
-import { ClaxedoDB, and, desc, eq, gt } from "../storage/db"
-import { ClaxedoCloudMessageEventTable, ClaxedoCloudMessageTable, ClaxedoCloudSessionTable } from "../storage/cloud-session.sql"
-import { ClaxedoSessionMetaTable } from "../storage/session-meta.sql"
+import { ClaxedoDB, and, desc, eq, gt } from "../adapters/storage/db"
+import { ClaxedoCloudMessageEventTable, ClaxedoCloudMessageTable, ClaxedoCloudSessionTable } from "../adapters/storage/cloud-session.sql"
+import { ClaxedoSessionMetaTable } from "../adapters/storage/session-meta.sql"
 
 function rec(input: unknown): Record<string, unknown> | undefined {
   return input && typeof input === "object" ? (input as Record<string, unknown>) : undefined

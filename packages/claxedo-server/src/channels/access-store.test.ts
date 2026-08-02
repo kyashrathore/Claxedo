@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
-import { ClaxedoDB } from "../storage/db"
+import { ClaxedoDB } from "../adapters/storage/db"
 import {
   boundAccountId,
   createSqliteChannelAccessStore,

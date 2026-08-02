@@ -1,7 +1,7 @@
 import { Hono } from "hono"
 import path from "path"
 import { defaultHarness, listCommands, loadUserConfig, saveUserConfig } from "../agent-config"
-import { putCredential, deleteCredentialsByProvider } from "../credentials/registry"
+import { putCredential, deleteCredentialsByProvider } from "../adapters/credentials/registry"
 import { fanOutConfig } from "../config-fanout"
 import { syncOpencodeMcpConfig } from "../opencode/mcp-sync"
 import { sandboxFetch } from "../sandbox-target-fetch"

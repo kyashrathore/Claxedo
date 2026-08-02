@@ -13,7 +13,7 @@ vi.mock("fs", () => ({
     writeFileSync: vi.fn(),
   },
 }))
-vi.mock("../agent-config", () => ({
+vi.mock("../../agent-config", () => ({
   loadUserConfig: vi.fn(async () => mocks.config),
   saveUserConfig: mocks.saveUserConfig,
   sandboxDriverConfig: vi.fn(() => ({})),
@@ -21,9 +21,9 @@ vi.mock("../agent-config", () => ({
 }))
 vi.mock("./registry", () => ({ putCredential: mocks.putCredential }))
 vi.mock("./store", () => ({ getBackend: () => ({ probe: async () => true }) }))
-vi.mock("../lib/paths", () => ({ dataDir: () => "/tmp/claxedo-migrate-test" }))
-vi.mock("../network/policy", () => ({ syncMcpHosts: vi.fn() }))
-vi.mock("../lib/log", () => ({
+vi.mock("../../lib/paths", () => ({ dataDir: () => "/tmp/claxedo-migrate-test" }))
+vi.mock("../../network/policy", () => ({ syncMcpHosts: vi.fn() }))
+vi.mock("../../lib/log", () => ({
   Log: {
     create: () => ({
       info: vi.fn(),

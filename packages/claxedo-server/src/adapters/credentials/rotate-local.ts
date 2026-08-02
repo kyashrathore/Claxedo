@@ -42,7 +42,7 @@ import {
   type EnvelopeRotationEntry,
   type EnvelopeRotationReport,
 } from "./rotate"
-import { Log } from "../lib/log"
+import { Log } from "../../lib/log"
 
 const log = Log.create({ service: "credentials-rotate-local" })
 

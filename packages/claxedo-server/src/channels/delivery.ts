@@ -1,4 +1,4 @@
-import { ClaxedoDB } from "../storage/db"
+import { ClaxedoDB } from "../adapters/storage/db"
 
 export type ChannelDeliveryDecision =
   | { ok: true; duplicate: false }

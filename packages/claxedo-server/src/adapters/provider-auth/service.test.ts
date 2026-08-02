@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest"
-import type { ControlPlaneCredentials, ControlPlaneServices } from "../control-plane/services"
+import type { ControlPlaneCredentials, ControlPlaneServices } from "../../control-plane/services"
 import type { CredentialWrite } from "../credentials/types"
 import { SINGLE_TENANT_ORG } from "../storage/provider-credential.sql"
 import { createProviderAuthService, ProviderAuthError } from "./service"
-import { ProviderAuthRoutes } from "../routes/provider-auth"
+import { ProviderAuthRoutes } from "../../routes/provider-auth"
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })

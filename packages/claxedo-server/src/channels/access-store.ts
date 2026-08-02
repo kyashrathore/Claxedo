@@ -15,7 +15,7 @@ import type {
   ChannelIdentityBindingStore,
   PairingRequest,
 } from "@claxedo/channels"
-import { ClaxedoDB } from "../storage/db"
+import { ClaxedoDB } from "../adapters/storage/db"
 
 function pairingRow(input: unknown): PairingRequest | undefined {
   if (!input || typeof input !== "object") return

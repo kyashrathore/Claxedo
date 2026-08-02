@@ -7,7 +7,7 @@ import {
 import { ExecutionCapabilitiesUnavailableError } from "@claxedo/workgraph/ports"
 import type { SignedControlPlaneAuth } from "../../control-plane/auth"
 import type { WorkspaceAuthority } from "../../control-plane/authority"
-import type { RelayProvider } from "../../relay-provider"
+import type { RelayProvider } from "../../adapters/relay"
 import type { ClaxedoRegion } from "../../region"
 import { createExecutionCapabilitiesPort } from "./execution-capabilities"
 

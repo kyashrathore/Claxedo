@@ -16,7 +16,7 @@ process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 
 const [{ applySessionMeta, syncSessionMetas }, { ClaxedoDB }] = await Promise.all([
   import("./meta"),
-  import("../../storage/db"),
+  import("../../adapters/storage/db"),
 ])
 
 afterEach(async () => {

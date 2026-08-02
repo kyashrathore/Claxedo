@@ -1,4 +1,4 @@
-import { requireCredentialRegistryLookup } from "./credentials/registry"
+import { requireCredentialRegistryLookup } from "./adapters/credentials/registry"
 
 export const PI_LAUNCH_PROVIDERS = ["openai-codex", "anthropic", "openai"] as const
 

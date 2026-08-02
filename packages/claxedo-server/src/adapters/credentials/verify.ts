@@ -1,4 +1,4 @@
-import { Log } from "../lib/log"
+import { Log } from "../../lib/log"
 import { CredentialVerificationError } from "./verification-error"
 import {
   credentialRefreshToken,

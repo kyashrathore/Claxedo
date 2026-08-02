@@ -2,7 +2,7 @@ import { defaultHarness, loadUserConfig } from "../agent-config"
 import { OPENCODE_INTERNAL_BASE, opencodeRequest } from "../opencode/engine"
 import { opencodeCompatDisabled, type OpenCodeCompatRouteOptions } from "./opencode-compat-proxy"
 import { piProviderCatalog } from "../pi-provider-catalog"
-import { providerAuthMethods } from "../provider-auth/service"
+import { providerAuthMethods } from "../adapters/provider-auth/service"
 
 export async function resolveHarnessId(override?: string) {
   if (override) return override

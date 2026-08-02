@@ -23,15 +23,15 @@ import {
   type SandboxDecision,
   type SandboxDriverPlacement,
 } from "@claxedo/sandbox-manager/lease-policy"
-import { emitProvision } from "../../sandbox-manager-adapters/provision-events"
-import { sandboxDriverAuthAsync } from "../../sandbox-manager-adapters/driver-auth"
+import { emitProvision } from "../../adapters/sandbox/provision-events"
+import { sandboxDriverAuthAsync } from "../../adapters/sandbox/driver-auth"
 import { defaultSandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
 import type { SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
 import { Log } from "../../lib/log"
 import { defaultHomeRegion } from "../../region"
 import { listPolicies } from "../../network/policy"
 import { resolveSandboxNetworkPolicy } from "../../network/resolve"
-import { insertSnapshot } from "../../storage/prepared-image.sql"
+import { insertSnapshot } from "../../adapters/storage/prepared-image.sql"
 import { updateWorkspace } from "../store/store"
 import {
   configToken,
@@ -49,7 +49,7 @@ import {
   recordSupervisorSandboxStartFailure,
   updateSupervisorSandboxLease,
   sandboxLeaseUrl,
-} from "../../sandbox-manager-adapters/stores/sqlite-supervisor-state"
+} from "../../adapters/sandbox/stores/sqlite-supervisor-state"
 import { needWorkspaceSupervisorOptions } from "./options"
 import {
   controlPlaneVerificationEnv,

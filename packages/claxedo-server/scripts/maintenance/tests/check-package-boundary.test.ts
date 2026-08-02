@@ -32,7 +32,7 @@ describe("check-package-boundary", () => {
 
   test("allows normal source files and env examples", () => {
     expect(forbiddenPackagePath(".env.example")).toBe(false)
-    expect(forbiddenPackagePath("src/sandbox-manager-adapters/provision-events.ts")).toBe(false)
+    expect(forbiddenPackagePath("src/adapters/sandbox/provision-events.ts")).toBe(false)
     expect(forbiddenPackagePath("scripts/sandbox/build-sandbox-image.ts")).toBe(false)
   })
 })

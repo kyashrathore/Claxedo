@@ -5,11 +5,11 @@ import {
   createProviderAuthService,
   ProviderAuthError,
   type ProviderAuthService,
-} from "../provider-auth/service"
+} from "../adapters/provider-auth/service"
 import { controlPlaneRouteAuth, type ControlPlaneRouteAuthOptions } from "./control-plane-route-auth"
 import { requestOrg } from "./credential"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "../control-plane/auth"
-import { SINGLE_TENANT_ORG } from "../storage/provider-credential.sql"
+import { SINGLE_TENANT_ORG } from "../adapters/storage/provider-credential.sql"
 import { errorBody } from "./http"
 
 const authorizeBody = z.object({

@@ -13,7 +13,7 @@
  */
 
 import type { SecretBackend } from "./types"
-import { Log } from "../lib/log"
+import { Log } from "../../lib/log"
 import {
   encryptedSecretBackend,
   envelopeKeyProviderFromEnv,

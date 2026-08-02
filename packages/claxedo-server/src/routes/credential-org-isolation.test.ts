@@ -31,12 +31,12 @@ process.env.CLAXEDO_DATA_DIR = root
 // from the ambient environment.
 delete process.env.CLAXEDO_SIGNED_CLOUD_AUTH
 
-const { createTestBackend, setBackendOverride } = await import("../credentials/store")
-const registry = await import("../credentials/registry")
+const { createTestBackend, setBackendOverride } = await import("../adapters/credentials/store")
+const registry = await import("../adapters/credentials/registry")
 const { defaultControlPlaneCredentials } = await import("../control-plane/services")
 const { CredentialRoutes } = await import("./credential")
-const { ClaxedoDB } = await import("../storage/db")
-const { SINGLE_TENANT_ORG } = await import("../storage/provider-credential.sql")
+const { ClaxedoDB } = await import("../adapters/storage/db")
+const { SINGLE_TENANT_ORG } = await import("../adapters/storage/provider-credential.sql")
 
 const ORG_A = "org_a"
 const ORG_B = "org_b"
@@ -320,7 +320,7 @@ describe("single-tenant self-host still works end to end", () => {
    * credential table must reach its terminator through the org predicate.
    */
   test("every statement against the credential table carries the org predicate", async () => {
-    const source = await fs.readFile(path.resolve(import.meta.dirname, "../credentials/registry.ts"), "utf8")
+    const source = await fs.readFile(path.resolve(import.meta.dirname, "../adapters/credentials/registry.ts"), "utf8")
     const heads = [...source.matchAll(/\.(from|update|delete)\(ClaxedoProviderCredentialTable\)/g)]
     expect(heads.length).toBeGreaterThan(10)
 

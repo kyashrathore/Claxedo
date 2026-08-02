@@ -10,11 +10,11 @@ mkdirSync(root, { recursive: true })
 const previous = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
-const { createTestBackend, setBackendOverride } = await import("../credentials/store")
-const { putCredential, getCredential, resolveSecretById } = await import("../credentials/registry")
+const { createTestBackend, setBackendOverride } = await import("../adapters/credentials/store")
+const { putCredential, getCredential, resolveSecretById } = await import("../adapters/credentials/registry")
 const { defaultControlPlaneCredentials } = await import("../control-plane/services")
 const { CredentialRoutes } = await import("./credential")
-const { ClaxedoDB } = await import("../storage/db")
+const { ClaxedoDB } = await import("../adapters/storage/db")
 
 const TOKEN_URL = "https://auth.openai.com/oauth/token"
 

@@ -20,7 +20,7 @@ import {
   type PiModelBackendResolver,
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { Type } from "@sinclair/typebox"
-import { putCredential, resolveSecret } from "./credentials/registry"
+import { putCredential, resolveSecret } from "./adapters/credentials/registry"
 import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
 import { createRuntimeEventHub } from "@claxedo/agent-sdk-runtime/runtime-event-hub"
 import { eventSessionId } from "@claxedo/agent-sdk-runtime/compat-events"

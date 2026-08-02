@@ -1,10 +1,10 @@
 import { describe, expect, test, vi } from "vitest"
 import { CredentialRoutes } from "./credential"
 import type { ControlPlaneCredentials } from "../control-plane/services"
-import type { CredentialHealth, CredentialMetadata } from "../credentials/types"
-import { CredentialDiscoveryError } from "../credentials/discovery"
+import type { CredentialHealth, CredentialMetadata } from "../adapters/credentials/types"
+import { CredentialDiscoveryError } from "../adapters/credentials/discovery"
 import { ControlPlaneAuthError } from "../control-plane/auth"
-import { SINGLE_TENANT_ORG } from "../storage/provider-credential.sql"
+import { SINGLE_TENANT_ORG } from "../adapters/storage/provider-credential.sql"
 
 function providerFetch(response: () => Response) {
   return vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => response())

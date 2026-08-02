@@ -3,7 +3,7 @@ import { mkdirSync, realpathSync, rmSync, symlinkSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { afterAll, beforeEach, describe, expect, test } from "vitest"
-import { ClaxedoDB } from "../storage/db"
+import { ClaxedoDB } from "../adapters/storage/db"
 import { createHostedDocumentIndex } from "./hosted-index"
 import { objectListing } from "./hosted-managed"
 import {

@@ -22,7 +22,7 @@
 
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import type { EnvelopeRotationReport } from "../../src/credentials/rotate"
+import type { EnvelopeRotationReport } from "../../src/adapters/credentials/rotate"
 
 type Target = "hosted" | "local"
 
@@ -67,10 +67,10 @@ async function main() {
   if (hosted === local) usage()
 
   if (hosted) {
-    const { rotateHostedCredentialKeys } = await import("../../src/credentials/rotate")
+    const { rotateHostedCredentialKeys } = await import("../../src/adapters/credentials/rotate")
     process.exit(summarize("hosted", await rotateHostedCredentialKeys({ dryRun })))
   }
-  const { rotateLocalCredentialKeys } = await import("../../src/credentials/rotate-local")
+  const { rotateLocalCredentialKeys } = await import("../../src/adapters/credentials/rotate-local")
   process.exit(summarize("local", await rotateLocalCredentialKeys({ dryRun })))
 }
 

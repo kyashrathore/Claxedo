@@ -7,8 +7,8 @@
 
 import { randomUUID } from "crypto"
 import { eq } from "drizzle-orm"
-import { ClaxedoDB } from "../storage/db"
-import { ClaxedoNetworkPolicyTable } from "../storage/network-policy.sql"
+import { ClaxedoDB } from "../adapters/storage/db"
+import { ClaxedoNetworkPolicyTable } from "../adapters/storage/network-policy.sql"
 import { CONTROL_PLANE_HOSTS, DEFAULT_ALLOWLIST, PROVIDER_TO_GROUP, flattenDefaultAllowlist, type NetworkPolicyEntry, type PolicyConstraints, type PolicyKind, type PolicyWrite } from "./types"
 import { Log } from "../lib/log"
 

@@ -3,12 +3,12 @@ import { realpathSync } from "node:fs"
 import path from "node:path"
 import { z } from "zod"
 import { and, desc, eq, isNotNull, isNull } from "drizzle-orm"
-import { ClaxedoDB } from "../storage/db"
+import { ClaxedoDB } from "../adapters/storage/db"
 import {
   ClaxedoDocumentIndexTable,
   ClaxedoDocumentStatusTable,
   ClaxedoLocalProjectTable,
-} from "../storage/document-index.sql"
+} from "../adapters/storage/document-index.sql"
 import {
   defaultDocumentStatuses,
   DocumentIndexEntrySchema,

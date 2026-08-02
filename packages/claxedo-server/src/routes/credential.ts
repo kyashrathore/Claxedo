@@ -13,8 +13,8 @@ import {
 } from "../control-plane/services"
 import { errorBody } from "./http"
 import { timingSafeEqualStrings } from "../control-plane/web-crypto"
-import { CredentialVerificationError, verifyCredential } from "../credentials/verify"
-import { CredentialDiscoveryError } from "../credentials/discovery"
+import { CredentialVerificationError, verifyCredential } from "../adapters/credentials/verify"
+import { CredentialDiscoveryError } from "../adapters/credentials/discovery"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,
@@ -23,7 +23,7 @@ import {
   type ControlPlaneAuthConfig,
   type ControlPlaneAuthContext,
 } from "../control-plane/auth"
-import { SINGLE_TENANT_ORG } from "../storage/provider-credential.sql"
+import { SINGLE_TENANT_ORG } from "../adapters/storage/provider-credential.sql"
 
 const putBody = z.object({
   provider_id: z.string().min(1),

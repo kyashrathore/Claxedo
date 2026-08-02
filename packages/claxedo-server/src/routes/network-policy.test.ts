@@ -13,7 +13,7 @@ mkdirSync(root, { recursive: true })
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
-const { ClaxedoDB } = await import("../storage/db")
+const { ClaxedoDB } = await import("../adapters/storage/db")
 ClaxedoDB.Drizzle()
 const { NetworkPolicyRoutes } = await import("./network-policy")
 

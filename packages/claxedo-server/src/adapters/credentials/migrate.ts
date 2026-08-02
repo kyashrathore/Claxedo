@@ -12,12 +12,12 @@ import {
   sandboxDriverConfig,
   saveUserConfig,
   setSandboxDriverConfig,
-} from "../agent-config"
+} from "../../agent-config"
 import { putCredential } from "./registry"
 import { getBackend } from "./store"
-import { dataDir } from "../lib/paths"
-import { Log } from "../lib/log"
-import { syncMcpHosts } from "../network/policy"
+import { dataDir } from "../../lib/paths"
+import { Log } from "../../lib/log"
+import { syncMcpHosts } from "../../network/policy"
 import type { CredentialKind } from "./types"
 import { sandboxDriverIds } from "@claxedo/sandbox-manager/driver-catalog"
 

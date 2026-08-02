@@ -1,7 +1,7 @@
 import { deleteLease, getLease, leaseTransaction, listLeases, upsertLease } from "../../storage/workspace-lease.sql"
 import { applySandboxLeasePatch } from "@claxedo/sandbox-manager"
 import type { SandboxLeaseAcquireInput, SandboxLeaseAcquireResult, SandboxLeasePatch, SandboxLeaseStore, SandboxLease } from "@claxedo/sandbox-manager"
-import { normalizeClaxedoRegion } from "../../region"
+import { normalizeClaxedoRegion } from "../../../region"
 
 type StoredLeaseStatus =
   | "pending"

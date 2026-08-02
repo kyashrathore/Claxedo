@@ -56,7 +56,7 @@ import {
 import { configureOpenCodeAuth, opencodeHeaders } from "../../opencode/auth"
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "../../governance/architecture"
 import { createSqliteCentralStore } from "../../control-plane/adapters/sqlite/central-store"
-import { migrateCredentials } from "../../credentials/migrate"
+import { migrateCredentials } from "../../adapters/credentials/migrate"
 import { CredentialRoutes } from "../../routes/credential"
 import { ProviderAuthRoutes } from "../../routes/provider-auth"
 import { NetworkPolicyRoutes } from "../../routes/network-policy"
@@ -89,7 +89,7 @@ import { InternalRelayResolverRoutes } from "../../routes/internal-relay"
 import { localRelayTargetExists, localRelayTargetLookup } from "../../routes/internal-relay-local"
 import { BootstrapRoutes } from "../../routes/bootstrap"
 import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "../../control-plane/runtime-access-token"
-import { createControlPlaneRelayProvider } from "../../relay-provider"
+import { createControlPlaneRelayProvider } from "../../adapters/relay"
 import { sandboxFetch } from "../../sandbox-target-fetch"
 import { WorkspaceCheckpointRoutes } from "../../routes/workspace-checkpoints"
 import {
@@ -129,7 +129,7 @@ import { StreamIDSchema, masterRunId, masterSessionId } from "@claxedo/workgraph
 import type { CommandResult, WorkGraphRunOperationRequest, WorkGraphContext } from "@claxedo/workgraph/contracts"
 import { sessionMeta } from "../../session/meta/meta"
 import { llmTurnRecord, workGraphSessionAttribution } from "../../telemetry/metering"
-import { ClaxedoDB } from "../../storage/db"
+import { ClaxedoDB } from "../../adapters/storage/db"
 import { RemoteAccessRoutes } from "../../routes/remote-access"
 import { createRemoteAccessService, unavailableRemoteAccessService } from "../../remote-access-service"
 import { localHostIdentity, registrationPayload, signHostPayload } from "../../routes/workspace-local-host"
@@ -1141,7 +1141,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     // the first turn — mutations after this keep the two in step (see
     // credentials/engine-bridge.ts). Deferred and non-blocking: it boots the
     // engine lazily and must not gate server startup.
-    void import("../../credentials/engine-bridge")
+    void import("../../adapters/credentials/engine-bridge")
       .then((bridge) => bridge.syncCredentialsToEngine())
       .catch(() => {})
   }

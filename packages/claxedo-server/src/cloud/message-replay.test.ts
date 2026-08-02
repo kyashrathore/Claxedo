@@ -33,10 +33,10 @@ const [
   { ClaxedoSessionMetaTable },
 ] = await Promise.all([
   import("./message-replay"),
-  import("../storage/db"),
+  import("../adapters/storage/db"),
   import("../lib/bus"),
-  import("../storage/cloud-session.sql"),
-  import("../storage/session-meta.sql"),
+  import("../adapters/storage/cloud-session.sql"),
+  import("../adapters/storage/session-meta.sql"),
 ])
 
 beforeEach(async () => {

@@ -45,7 +45,7 @@
 import { credentialIdFromRef, type EnvelopeAdmin } from "./envelope"
 import { listCloudflareCredentialRefs, createEncryptedCloudflareBackend } from "./cloudflare"
 import type { SecretBackend } from "./types"
-import { Log } from "../lib/log"
+import { Log } from "../../lib/log"
 
 const log = Log.create({ service: "credentials-rotate" })
 

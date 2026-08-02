@@ -34,7 +34,7 @@ process.env.CLAXEDO_DATA_DIR = root
 const { createTestBackend, setBackendOverride } = await import("./store")
 const { putCredential, resolveSecret, deleteCredentialsByProvider, getCredentialByProvider } = await import("./registry")
 const { collectLocalCredentialItems, syncLocalCredentials } = await import("./sync")
-const { saveUserConfig } = await import("../agent-config")
+const { saveUserConfig } = await import("../../agent-config")
 const { ClaxedoDB } = await import("../storage/db")
 ClaxedoDB.Drizzle()
 

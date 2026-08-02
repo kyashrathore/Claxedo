@@ -1,7 +1,7 @@
 import fs from "fs"
 import os from "os"
 import path from "path"
-import { Log } from "../lib/log"
+import { Log } from "../../lib/log"
 
 const log = Log.create({ service: "credentials-codex-auth-file" })
 
