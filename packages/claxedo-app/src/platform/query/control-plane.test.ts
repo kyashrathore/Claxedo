@@ -135,7 +135,12 @@ describe("control-plane query helpers", () => {
     expect((await query.queryFn()).openai?.[0]?.authenticated).toBe(true)
   })
 
-  test("Pi provider queries use a harness- and scope-qualified cache key and raw route", async () => {
+  // The scope travels in the REQUEST (`?directory=`) but never in the cache
+  // key: one server serves one catalog per harness, and both bootstraps warm
+  // the scope-less key. Keying reads by scope stranded each pane on a private
+  // entry nothing warms, which is what reverted a picked model to
+  // "Select model" — see `global-sync/provider-cache-scope.test.ts`.
+  test("Pi provider queries use a harness-qualified cache key and a scope-qualified raw route", async () => {
     const calls: string[] = []
     const query = providerListQuery({
       baseUrl: "http://example.test",
@@ -148,7 +153,7 @@ describe("control-plane query helpers", () => {
       client: { provider: { list: async () => { throw new Error("SDK route must not be used") } } },
     })
 
-    expect(query.queryKey).toEqual(["controlPlane", "http://example.test", "providers", "workspace:ws_1", "pi"])
+    expect(query.queryKey).toEqual(["controlPlane", "http://example.test", "providers", "", "pi"])
     await query.queryFn()
     expect(calls).toEqual(["http://example.test/provider?harness=pi&directory=workspace%3Aws_1"])
   })

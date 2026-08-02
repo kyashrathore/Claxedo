@@ -7,8 +7,15 @@ function normalized(url: string | undefined) {
 export const queryKeys = {
   controlPlane: {
     projects: (baseUrl?: string) => ["controlPlane", normalized(baseUrl), "projects"] as const,
-    providers: (baseUrl?: string, scope?: string, harnessType?: string) => scope || harnessType
-      ? ["controlPlane", normalized(baseUrl), "providers", scope ?? "", harnessType ?? ""] as const
+    // The catalog is keyed by BASE URL and HARNESS only. `scope` is accepted so
+    // call sites can pass the directory/workspace they route for, but it is
+    // deliberately NOT a cache dimension: one server serves one catalog per
+    // harness, and every writer (both bootstraps) warms the scope-less key.
+    // Keying reads by scope put each pane on a private entry nothing warms, so
+    // a session's `connected()` was empty, `models.find()` resolved nothing,
+    // and the composer reverted a just-picked model to "Select model".
+    providers: (baseUrl?: string, _scope?: string, harnessType?: string) => harnessType
+      ? ["controlPlane", normalized(baseUrl), "providers", "", harnessType] as const
       : ["controlPlane", normalized(baseUrl), "providers"] as const,
     providerAuth: (baseUrl?: string, harnessType?: string) => harnessType
       ? ["controlPlane", normalized(baseUrl), "providerAuth", harnessType] as const
