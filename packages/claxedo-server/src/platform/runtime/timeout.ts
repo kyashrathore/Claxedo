@@ -1,5 +1,3 @@
-export type ControlPlaneTimeoutKind = "read" | "mutation"
-
 export class ControlPlaneRequestTimeoutError extends Error {
   readonly status = 503 as const
   readonly code = "control_plane_request_timeout" as const
@@ -10,18 +8,18 @@ export class ControlPlaneRequestTimeoutError extends Error {
   }
 }
 
-export function controlPlaneTimeoutMs(
-  kind: ControlPlaneTimeoutKind,
+/**
+ * Reads a positive-integer millisecond bound from `name`, falling back to
+ * `fallbackMs`. Zero and negative values fall back rather than disabling the
+ * bound: an unbounded wait is never what an operator means by "0".
+ */
+export function timeoutMsFromEnv(
+  name: string,
+  fallbackMs: number,
   env: Record<string, string | undefined> = process.env,
 ) {
-  // Env names keep their historical store-adapter spelling (deployed config
-  // exists); assembled from chars so this transport-generic file carries no
-  // adapter token for the R8 architecture guard to flag.
-  const adapter = ["C", "ONVEX"].join("")
-  const configured = Number(env[["CLAXEDO", adapter, kind === "read" ? "READ_TIMEOUT_MS" : "MUTATION_TIMEOUT_MS"].join("_")])
-  return Number.isFinite(configured) && configured > 0
-    ? configured
-    : kind === "read" ? 5_000 : 10_000
+  const configured = Number(env[name])
+  return Number.isFinite(configured) && configured > 0 ? configured : fallbackMs
 }
 
 /**

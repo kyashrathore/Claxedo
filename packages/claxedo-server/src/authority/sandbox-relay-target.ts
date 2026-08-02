@@ -2,7 +2,7 @@ import type { SandboxManager, SandboxTarget } from "@claxedo/sandbox-manager"
 import type { RelayTargetLookup } from "../deployments/shared-routes/internal-relay"
 import type { ControlPlaneTelemetry } from "./services"
 import { emitSandboxLeaseClosed } from "../platform/telemetry/product/metering"
-import { controlPlaneTimeoutMs, withTimeout } from "../platform/auth/request-timeout"
+import { timeoutMsFromEnv, withTimeout } from "../platform/runtime/timeout"
 
 /**
  * Neutral resolver contract for a workspace's current user-hosted host. The
@@ -106,7 +106,7 @@ export function sandboxRelayTargetLookup(input: {
     if (input.sandboxManager) {
       const target = await withTimeout(
         input.sandboxManager.target(args.workspaceId),
-        controlPlaneTimeoutMs("read", input.env),
+        timeoutMsFromEnv("CLAXEDO_SANDBOX_TARGET_TIMEOUT_MS", 5_000, input.env),
       )
       if (target.status === "ready" && target.hostId === args.hostId) {
         const headers = upstreamHeaders(target)

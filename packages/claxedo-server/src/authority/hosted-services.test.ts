@@ -451,7 +451,7 @@ describe("sandbox relay target lookup (single shared implementation)", () => {
     expect(sandboxManager.touch).not.toHaveBeenCalled()
   })
 
-  test("bounds a stalled sandbox lease lookup with the shared read timeout", async () => {
+  test("bounds a stalled sandbox lease lookup so a hung driver cannot hold the relay request open", async () => {
     vi.useFakeTimers()
     try {
       const sandboxManager = {
@@ -459,7 +459,7 @@ describe("sandbox relay target lookup (single shared implementation)", () => {
       } as unknown as SandboxManager
       const lookup = sandboxRelayTargetLookup({
         sandboxManager,
-        env: { CLAXEDO_CONVEX_READ_TIMEOUT_MS: "25" },
+        env: { CLAXEDO_SANDBOX_TARGET_TIMEOUT_MS: "25" },
       })
       const pending = lookup({ workspaceId: "ws_1", hostId: "host_1" })
       const rejected = expect(pending).rejects.toMatchObject({

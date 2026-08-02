@@ -3,7 +3,7 @@ import { ControlPlaneAuthError } from "../../../platform/auth/auth"
 import { ControlPlaneRequestTimeoutError, controlPlaneTimeoutMs, withTimeout } from "./timeout"
 
 describe("control-plane Convex timeouts", () => {
-  test("uses bounded defaults and positive environment overrides", () => {
+  test("gives writes the longer bound, and never lets a non-positive override disable the bound entirely", () => {
     expect(controlPlaneTimeoutMs("read", {})).toBe(5_000)
     expect(controlPlaneTimeoutMs("mutation", {})).toBe(10_000)
     expect(controlPlaneTimeoutMs("read", { CLAXEDO_CONVEX_READ_TIMEOUT_MS: "125" })).toBe(125)
