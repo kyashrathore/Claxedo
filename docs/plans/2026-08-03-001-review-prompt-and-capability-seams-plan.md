@@ -267,6 +267,30 @@ no `extends Error` outside `platform/errors/`. Fault-inject both.
 
 Then guard: every file under a `routes/` directory exports a Hono app.
 
+## W11.2b — Split `proxy.ts` by entrypoint, and close its test gap
+
+Not a rename — the file is two entrypoints serving three transports, and the
+owner's rule is that the name must state exactly what it does.
+
+  workspace/runtime-dispatch/middleware.ts
+    the global fall-through (`workspaceRuntimeProxy`), with `embedded` and
+    `forward` as named strategies rather than an if/else on `ws.kind`
+
+  workspace/runtime-dispatch/shared-workspace-endpoint.ts
+    the `/workspaces/:id/*` surface (`localWorkspaceRelayProxy`). Renamed
+    because the current name says the opposite of what it does: it is not
+    proxying TO a relay, it IS the relay-shaped surface for a shared local
+    workspace (user-hosted).
+
+Both leave `workspace/http/` — 5+ other domains import it, so it was never the
+workspace domain's own HTTP.
+
+**Test gap to close in the same wave.** No test asserts a SUCCESSFUL relay
+forward through either entrypoint; the only relay assertion in `proxy.test.ts`
+is the loopback REFUSAL. Since user-hosted is a live product surface, add a
+test that drives a successful shared-workspace request end to end. Do this
+BEFORE the split, so the split is verified by something other than typecheck.
+
 ## W11.3 — Separate test-only from production
 
 - `integration/` → `tests/integration/` (0 non-test files today).
@@ -323,17 +347,31 @@ SQLite-ness is incidental to ~80% of the file."
 Deferred to last because it is the widest diff and the least functional risk.
 - `hosted-` → `cloud-` (the codebase already says `cloud`:
   `connections/routes/cloud-connection.ts`, `access === "cloud"`).
-- `user-hosted-` → `tunnel-`. Not `self-hosted`, which already means a third
-  thing (see `deployment-mode.ts`'s own warning).
-- **Caveat:** `access === "user-hosted"` is a persisted DB/API string. That needs
-  a migration, not a rename. File and symbol renames only.
+- `user-hosted-` **stays.** Reversed after the owner confirmed it is the
+  product's own term for a real capability: a user shares a local workspace for
+  remote access. It is not a synonym for anything else, `access` is a genuine
+  three-way (`cloud` | `user-hosted` | `local`, `workspace/routes/index.ts:85`),
+  and it is a persisted DB/API string besides. An earlier draft proposed
+  `tunnel-`; that would have renamed a correct domain term to match a naming
+  rule, which is the rule serving itself.
 - `store` means 5 things. Rule: `<domain>/store.ts` = own persistence;
   `-adapter` only for external-port implementations;
   `adapters/credentials/store.ts` (a backend selector) → `backend-registry.ts`.
-- `workspace/http/proxy.ts` → `workspace/runtime-dispatch/`. Two renames in one:
-  the dir stops competing with `workspace/routes/`, and the file stops naming
-  only its cloud branch (the local branch dispatches in-process and proxies
-  nothing). See the analysis above.
+- `workspace/http/proxy.ts` → split into `workspace/runtime-dispatch/`
+  (`middleware.ts` + `shared-workspace-endpoint.ts`). Promoted OUT of this wave
+  into W11.2b — it is a real split with a test gap, not a rename. See the
+  analysis above.
+
+## W11.8 — Docs, and a guard for them
+
+**7 stale path references across 3 READMEs**, including ones written during this
+reorg: `authority/README.md` cites 4 files that moved to `platform/auth/` in
+W10.1; `src/README.md` cites `governance/architecture.test.ts`.
+
+Fix them, then guard: every path in a `.md` under `src/` must resolve. Docs that
+describe structure decay silently through exactly these moves.
+
+---
 
 ## W11.9 — Extend the `.cf.ts` convention
 
@@ -350,16 +388,36 @@ Then extend `worker.import-graph.test.ts`'s bidirectional check: any file
 referencing `R2Bucket` / `KVNamespace` / `DurableObject` / `cloudflare:workers`
 must be `.cf.ts`. Fault-inject.
 
-## W11.8 — Docs, and a guard for them
+## Corrections made while writing this plan
 
-**7 stale path references across 3 READMEs**, including ones written during this
-reorg: `authority/README.md` cites 4 files that moved to `platform/auth/` in
-W10.1; `src/README.md` cites `governance/architecture.test.ts`.
+Recorded because each was a confident wrong reading, and the method that caught
+it is reusable.
 
-Fix them, then guard: every path in a `.md` under `src/` must resolve. Docs that
-describe structure decay silently through exactly these moves.
+1. **"`proxy.ts` is well named, just misplaced."** Wrong. I found
+   `await fetch(req)` and stopped, without checking which branch reaches it.
+   *Method:* trace from the mount point (`app.use` at server.ts:723) forward,
+   not from a suggestive line backward.
 
----
+2. **"The relay branch looks unexercised."** Wrong. The only relay assertion in
+   `proxy.test.ts` is a REFUSAL (`workspace_relay_local_loopback_required`), and
+   I read a refusal as evidence of a dead path. It is a live guard defending the
+   user-hosted surface. *Method:* a firing guard is evidence the surface is
+   real, not that it is dead.
+
+3. **"Rename `user-hosted-` to `tunnel-`."** Wrong. It is the product's own term
+   for a real capability, a genuine third value of `access`, and a persisted DB
+   string. *Method:* before renaming a term, check whether it names a product
+   concept the owner uses. A naming rule that renames correct domain vocabulary
+   is serving itself.
+
+4. **"57 importers of `routes/hosted/workspace.ts`."** Wrong — a bare-word grep.
+   It has one. *Method:* grep the import specifier, not the basename.
+
+The common thread: four of four errors came from pattern-matching on a filename
+or a single line instead of following the call graph. That is also the failure
+this codebase has hit repeatedly during the moves (three directory-path
+corruptions, two disarmed guards). Hence the review prompt's rule — evidence is
+an import list, an export list, a caller count, or a quoted header. Never a name.
 
 ## Known landmine, not scheduled
 
