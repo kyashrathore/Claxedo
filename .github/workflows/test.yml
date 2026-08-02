@@ -562,6 +562,19 @@ jobs:
           --filter=@claxedo/workspace-relay
           --filter=@claxedo/workspace-runtime
 
+      # The embedded engine is a BUILT artifact: claxedo-server loads it via
+      # opencode/node-embed -> packages/opencode/dist/node/node.js, which is
+      # gitignored — a fresh runner has no engine, the server's engine surface
+      # never comes up, and the opencode scenario dies at its first
+      # engine-dependent assertion (the scripted model absent from the picker,
+      # because the model catalog is served by the engine). Local runs never
+      # hit this because a dev machine has a dist/node from earlier work.
+      # build:node, never bare `build`: the full build target deletes
+      # dist/node and strips node-pty from package.json as a side effect.
+      - name: Build embedded engine (node)
+        working-directory: packages/opencode
+        run: bun run build:node
+
       - name: Install Playwright Chromium
         working-directory: packages/claxedo-app
         run: npx playwright install chromium
