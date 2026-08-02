@@ -264,10 +264,10 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "routes/local-only-projection.ts",
+    module: "platform/http/routes/local-only-projection.ts",
     status: OwnershipStatus.Canonical,
     owner: "local-only route guard",
-    tests: ["routes/local-only-projection.test.ts"],
+    tests: ["platform/http/routes/local-only-projection.test.ts"],
     routeSamples: ["/api/workgraph"],
   },
   {
@@ -306,13 +306,13 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "projection",
-    module: "routes/local-only-projection.ts",
+    module: "platform/http/routes/local-only-projection.ts",
     status: OwnershipStatus.Compatibility,
     owner: "local-only projection route compatibility",
     canonicalReplacement: "ControlPlaneAuthAdapter-gated route factories",
     reason: "Local server still exposes loopback-only projections for WorkGraph and related local surfaces.",
     removalCondition: "Local-only route surfaces are either removed or compose the same route factories with explicit auth policies.",
-    tests: ["routes/local-only-projection.test.ts"],
+    tests: ["platform/http/routes/local-only-projection.test.ts"],
   },
   // --- Unit 5: control-plane-owned route reorganization ---
   // MOVE: generic control-plane route modules whose import graph is
@@ -373,21 +373,21 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "routes/events.ts",
+    module: "platform/http/routes/events.ts",
     status: OwnershipStatus.Canonical,
     owner: "local control-plane events SSE route (Claxedo local adapter)",
     reason:
       "Unit 5 verdict flipped VERIFY→WRAP→DOCUMENT: imports claxedoBus from ../bus → @claxedo/workspace-runtime/host (FORBIDDEN_BARE, process-local). Process-local + Worker-forbidden, so it stays in place with no barrel.",
-    tests: ["routes/events.test.ts"],
+    tests: ["platform/http/routes/events.test.ts"],
   },
   {
     area: "route",
-    module: "routes/bootstrap.ts",
+    module: "deployments/shared-routes/bootstrap.ts",
     status: OwnershipStatus.Canonical,
     owner: "local bootstrap route (Claxedo local adapter)",
     reason:
       "Unit 5 verdict DOCUMENT: imports listProjects from ../workspace-store (FORBIDDEN_LOCAL), ../paths, ../opencode-auth, and node os. env + local provider catalog + opencode-compat coupling, so it stays in place.",
-    tests: ["routes/bootstrap.test.ts"],
+    tests: ["deployments/shared-routes/bootstrap.test.ts"],
     routeSamples: ["/api/claxedo/bootstrap"],
   },
   {

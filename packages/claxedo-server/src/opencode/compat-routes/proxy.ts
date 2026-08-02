@@ -1,8 +1,8 @@
 import type { ControlPlaneServices } from "../../authority/services"
 import { OPENCODE_INTERNAL_BASE, opencodeRequest } from "../../opencode/engine"
 import { resolveWorkspace } from "../../workspace/store"
-import type { ControlPlaneRouteAuthOptions } from "../../routes/control-plane-route-auth"
-import { errorBody } from "../../routes/http"
+import type { ControlPlaneRouteAuthOptions } from "../../platform/http/routes/control-plane-route-auth"
+import { errorBody } from "../../platform/http/routes/http"
 import { requestHarnessId, workspaceInput, type OpenCodeCompatRequestContext } from "./context"
 
 // `ControlPlaneRouteAuthOptions` (`authConfig` + `verifier`) is part of the

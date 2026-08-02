@@ -40,7 +40,7 @@ import {
 } from "../../hosts/agent-extensions/runtime-config"
 import { syncWorkspaceRuntimeAgentExtensions } from "../../workspace/supervisor"
 import { syncEmbeddedWorkspaceRuntimeAgentExtensions } from "../../deployments/local/embedded-workspace-runtime"
-import { errorBody } from "../../routes/http"
+import { errorBody } from "../../platform/http/routes/http"
 
 type WorkspaceExtensionScope = {
   id: ""

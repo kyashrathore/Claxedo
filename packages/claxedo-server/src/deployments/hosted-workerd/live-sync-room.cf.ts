@@ -46,8 +46,8 @@
  */
 
 import { createSseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
-import { eventVisibleTo, type EventScopePrincipal } from "../../routes/event-visibility"
-import { isTerminalClaxedoEvent } from "../../routes/event-retention"
+import { eventVisibleTo, type EventScopePrincipal } from "../../platform/http/routes/event-visibility"
+import { isTerminalClaxedoEvent } from "../../platform/http/routes/event-retention"
 import type { ClaxedoEvent } from "../../platform/runtime/lib/bus"
 import type { ControlPlaneAuthContext } from "../../platform/auth/auth"
 

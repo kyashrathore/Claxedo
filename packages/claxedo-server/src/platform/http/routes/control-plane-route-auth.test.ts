@@ -19,8 +19,8 @@ mkdirSync(root, { recursive: true })
 process.env.CLAXEDO_DATA_DIR = root
 process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 
-const { ProviderAuthRoutes } = await import("../adapters/credentials/routes/provider-auth")
-type ControlPlaneAuthConfig = import("../platform/auth/auth").ControlPlaneAuthConfig
+const { ProviderAuthRoutes } = await import("../../../adapters/credentials/routes/provider-auth")
+type ControlPlaneAuthConfig = import("../../../platform/auth/auth").ControlPlaneAuthConfig
 
 afterAll(async () => {
   process.env.CLAXEDO_DATA_DIR = prev.CLAXEDO_DATA_DIR

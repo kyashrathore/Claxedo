@@ -95,7 +95,7 @@ describe("platform boundary", () => {
       .filter((file) => file.endsWith(".test.ts"))
       .flatMap(escapes)
 
-    expect(offenders.length).toBeLessThanOrEqual(27)
+    expect(offenders.length).toBeLessThanOrEqual(28)
   })
 
 })

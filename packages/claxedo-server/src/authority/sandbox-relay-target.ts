@@ -1,5 +1,5 @@
 import type { SandboxManager, SandboxTarget } from "@claxedo/sandbox-manager"
-import type { RelayTargetLookup } from "../routes/internal-relay"
+import type { RelayTargetLookup } from "../deployments/shared-routes/internal-relay"
 import type { ControlPlaneTelemetry } from "./services"
 import { emitSandboxLeaseClosed } from "../platform/telemetry/product/metering"
 import { controlPlaneTimeoutMs, withTimeout } from "../platform/auth/request-timeout"

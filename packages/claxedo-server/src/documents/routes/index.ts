@@ -20,7 +20,7 @@ import type { DocumentIndexEntry } from "../index-store"
 import { DocumentVersionConflictError, DocumentWorkspaceError } from "../errors"
 import type { DocumentHandle, DocumentVersion, SnapshotID } from "../port"
 import { createDocumentsService, DocumentsServiceError, type DocumentsServiceScope } from "../../documents/service"
-import { isLoopbackLocalRequest } from "../../routes/local-only-projection"
+import { isLoopbackLocalRequest } from "../../platform/http/routes/peer-address"
 
 export { DocumentAgentOpenError } from "../backend"
 export type { DocumentsBackend as DocumentsRouteBackend } from "../backend"

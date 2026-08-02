@@ -4,7 +4,7 @@ import { withTimeout } from "../../authority/adapters/convex/timeout"
 import {
   InternalRelayResolverRoutes,
   type RelayTargetLookup,
-} from "../internal-relay"
+} from "../../deployments/shared-routes/internal-relay"
 
 /**
  * Hosted (Worker) relay-resolver behaviour. The hosted deployment injects a

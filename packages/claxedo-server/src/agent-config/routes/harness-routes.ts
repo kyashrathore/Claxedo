@@ -15,7 +15,7 @@ import { getSessionConfig, getSessionHarness, normalize, setSessionConfig, setSe
 import { resolveWorkspace } from "../../workspace/store"
 import { resolveHarnessForRequest } from "../../session/harness/resolution"
 import { sessionMeta } from "../../session/meta"
-import { errorBody } from "../../routes/http"
+import { errorBody } from "../../platform/http/routes/http"
 import {
   cloudRuntimeSessionHarness,
   harnessBinary,
@@ -33,7 +33,7 @@ import {
 import { localAgentConfigAllowed } from "./local-auth"
 import type { AgentConfigRouteOptions } from "./extension-support"
 import type { SandboxFetchOptions } from "../../workspace/http/sandbox-target-fetch"
-import { isLoopbackLocalRequest } from "../../routes/local-only-projection"
+import { isLoopbackLocalRequest } from "../../platform/http/routes/peer-address"
 import { validatePiPromptModel } from "../../adapters/credentials/pi-provider-catalog"
 
 export function agentConfigHarnessRoutes(options: AgentConfigRouteOptions = {}) {

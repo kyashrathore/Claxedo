@@ -6,7 +6,7 @@ import {
   resolveWorkspaceRuntimeHitForWorkspaceId,
   type RuntimeProxyOptions,
 } from "../../workspace/http/proxy"
-import { isLoopbackLocalRequest } from "../../routes/local-only-projection"
+import { isLoopbackLocalRequest } from "../../platform/http/routes/peer-address"
 import { resolveWorkspace, type Workspace } from "../../workspace/store"
 
 type UpgradeWebSocket = ReturnType<typeof createNodeWebSocket>["upgradeWebSocket"]

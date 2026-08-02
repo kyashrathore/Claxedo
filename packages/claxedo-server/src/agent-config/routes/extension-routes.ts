@@ -22,7 +22,7 @@ import {
   workspaceAgentExtensionRecords,
 } from "../../hosts/agent-extensions/workspace"
 import { syncWorkspaceRuntimeAgentExtensions } from "../../workspace/supervisor"
-import { errorBody } from "../../routes/http"
+import { errorBody } from "../../platform/http/routes/http"
 import { localAgentConfigAllowed } from "./local-auth"
 import {
   agentExtensionPolicyOverrides,

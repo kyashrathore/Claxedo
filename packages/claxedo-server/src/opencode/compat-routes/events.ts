@@ -3,7 +3,7 @@ import type { Context } from "hono"
 import { streamSSE } from "hono/streaming"
 import { attachSseFanout, createSseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
 import { claxedoBus, createBus, globalBus, type ClaxedoEvent, type GlobalEvent } from "../../platform/runtime/lib/bus"
-import { isTerminalClaxedoEvent } from "../../routes/event-retention"
+import { isTerminalClaxedoEvent } from "../../platform/http/routes/event-retention"
 
 /** A `globalBus` envelope after `normalizeGlobalEvent` has filled in its defaults. */
 type NormalizedGlobalEvent = {

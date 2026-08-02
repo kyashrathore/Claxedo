@@ -1,14 +1,9 @@
 import { Hono } from "hono"
 import { serve } from "@hono/node-server"
 import { describe, expect, test } from "vitest"
-import type { ClerkVerifier, ControlPlaneAuthConfig } from "../platform/auth/auth"
-import {
-  isLoopbackLocalRequest,
-  localOnlyProjection,
-  peerAddressStamp,
-  requestPeerAddress,
-  stampRequestPeerAddress,
-} from "./local-only-projection"
+import type { ClerkVerifier, ControlPlaneAuthConfig } from "../../auth/auth"
+import { localOnlyProjection } from "./local-only-projection"
+import { isLoopbackLocalRequest, peerAddressStamp, requestPeerAddress, stampRequestPeerAddress } from "./peer-address"
 
 const signed = {
   enabled: true,

@@ -36,7 +36,7 @@ import { defaultHomeRegion, relayEndpointsFromEnv } from "../platform/runtime/re
 import type { HostedDeviceAuthProvider } from "../routes/hosted/device-auth"
 import { createControlPlaneRelayProvider } from "../adapters/relay"
 import { sandboxRelayTargetLookup } from "./sandbox-relay-target"
-import type { RelayTargetLookup } from "../routes/internal-relay"
+import type { RelayTargetLookup } from "../deployments/shared-routes/internal-relay"
 import type { SandboxDriver, SandboxEgressUnenforcedEvent } from "@claxedo/sandbox-manager"
 import type { CliSessionTokenRegistry } from "../platform/auth/cli-session-registry"
 import {

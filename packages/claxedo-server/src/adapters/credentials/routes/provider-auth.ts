@@ -6,11 +6,11 @@ import {
   ProviderAuthError,
   type ProviderAuthService,
 } from "../../../adapters/provider-auth/service"
-import { controlPlaneRouteAuth, type ControlPlaneRouteAuthOptions } from "../../../routes/control-plane-route-auth"
+import { controlPlaneRouteAuth, type ControlPlaneRouteAuthOptions } from "../../../platform/http/routes/control-plane-route-auth"
 import { requestOrg } from "./credential"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "../../../platform/auth/auth"
 import { SINGLE_TENANT_ORG } from "../provider-credential.sql"
-import { errorBody } from "../../../routes/http"
+import { errorBody } from "../../../platform/http/routes/http"
 
 const authorizeBody = z.object({
   method: z.number().optional(),

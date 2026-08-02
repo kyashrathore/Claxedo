@@ -8,7 +8,7 @@ import {
   type RuntimeAccessTokenSigner,
 } from "../../platform/auth/runtime-access-token"
 import type { RelayRole } from "@claxedo/workspace-relay"
-import type { RelayTargetLookup } from "../../routes/internal-relay"
+import type { RelayTargetLookup } from "../../deployments/shared-routes/internal-relay"
 
 export type RelayProvider = {
   getRelayEndpoint: (workspaceId: string, homeRegion: ClaxedoRegion) => string | Promise<string>

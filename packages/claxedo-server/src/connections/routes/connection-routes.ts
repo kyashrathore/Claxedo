@@ -7,7 +7,7 @@ import {
 } from "../../platform/auth/auth"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { resolveWorkspace } from "../../workspace/store"
-import { isLoopbackLocalRequest } from "../../routes/local-only-projection"
+import { isLoopbackLocalRequest } from "../../platform/http/routes/peer-address"
 import { cloudConnectionInfo, localLoopbackCloudConnectionInfo } from "./cloud-connection"
 import {
   connectionRateLimitError,

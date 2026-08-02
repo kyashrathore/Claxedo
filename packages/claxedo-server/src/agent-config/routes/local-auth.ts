@@ -2,7 +2,7 @@ import type {
   ClerkVerifier,
   ControlPlaneAuthConfig,
 } from "../../platform/auth/auth"
-import { localOnlyProjectionResponse } from "../../routes/local-only-projection"
+import { localOnlyProjectionResponse } from "../../platform/http/routes/local-only-projection"
 
 export async function localAgentConfigAllowed(input: {
   request: Request

@@ -3,7 +3,7 @@ import os from "node:os"
 import path from "node:path"
 import { afterAll, describe, expect, test } from "vitest"
 import { BootstrapRoutes } from "./bootstrap"
-import { configureOpenCodeEngine } from "../opencode/engine"
+import { configureOpenCodeEngine } from "../../opencode/engine"
 
 // External-URL mode so the injected opencode transport routes to the test's
 // fake upstream (intercepted via globalThis.fetch below). Bootstrap no longer
