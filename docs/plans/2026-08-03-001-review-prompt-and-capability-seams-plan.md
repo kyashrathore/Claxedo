@@ -5,14 +5,15 @@ through W10.3. Written after the owner reviewed the result and named what is
 still wrong. Every claim below is verified against the tree, with the command
 that verified it.
 
-## The eight themes
+## The twelve themes
 
 Every ask in this thread reduces to one sentence:
 
 > **A name or a location is a claim. Where the claim is false, fix it. Where it
 > is true but unenforced, guard it.**
 
-Eight themes, each with the asks that produced it. Waves in Part 2 are tagged
+Twelve themes, each with the asks that produced it. T9-T12 come from the
+opening messages of the thread and were missed in the first draft of this doc. Waves in Part 2 are tagged
 with the theme they serve, so nothing is fixed without knowing which invariant
 it defends.
 
@@ -120,6 +121,62 @@ relaying.
 
 Measured: 106 comment lines added across the W10 waves; the worst is a 14-line
 block documenting a check that is not in the file. See W11.2c.
+
+### T9 — A guard must justify itself or be deleted
+
+> "what the fuck is this doing architecture.test.ts? is there any real value,
+> why it even fucking asserting what should not exist, i think entire
+> architecture/ dir for this useless kind of assertion, i feel so anti pattern
+> and limiting, i need high value concrete reason for it to exist or it need to
+> go"
+
+The opening challenge of the thread, and the one that set the standard for
+everything after. It produced `architecture.test.ts` going **1263 -> 309 lines,
+43 -> 13 tests** — everything that could not name a concrete defect it prevents
+was deleted.
+
+Rule: every guard states the defect it prevents, in one sentence, in its own
+test name. Absence-assertions (`expect(existsSync(x)).toBe(false)`) are the
+most suspect form and must name the regression they pin — 2 remain in
+`platform/governance/` and each needs that justification or removal.
+
+Corollary applied throughout: a guard that cannot be fault-injected RED is not
+a guard. Two were found silently disarmed during the W10 moves.
+
+### T10 — A directory has a size budget
+
+> "claxedo-server feels really unorganized, root dir has 100s of files" ·
+> "i mean src/ dir not root sorry, and that is huge" · "still src/ has huge
+> number for files in root. why, categorized every file"
+
+`src/` root went 152 -> 10 loose files across W10. Remaining offenders:
+`documents/` (47 flat files, the only domain never subdivided),
+`hosts/workgraph/` (60+ files, one inconsistent `composition/` subdir).
+
+Rule: a directory whose file count exceeds roughly 20 must justify itself or
+subdivide. Size is not cosmetic — it is the first thing a newcomer sees, and it
+is what prompted this entire effort.
+
+### T11 — Delegate the review, per directory
+
+> "use sonnet as subagent and for every dir see if they can be better organized"
+
+An owner instruction from the first message, not a technique chosen later. The
+review is per-directory and delegated; the lead verifies and commits. See the
+execution model below.
+
+### T12 — Research the source before choosing
+
+> "can you search convex's official docs around this" · "why not use
+> edge-runtime?"
+
+Both corrected an approach I had already justified. The first replaced 33
+hand-written `db` doubles with `convex-test`; the second replaced "node
+environment, edge-runtime is not installed" with installing it — "not
+installed" being a reason to install, not a reason to avoid.
+
+Rule: when adopting a library or runtime, read its official guidance first.
+A justification built on what is currently convenient is not a justification.
 
 ## The owner's findings, measured
 
@@ -297,7 +354,11 @@ the filename; that error has already been made in this codebase twice.
        LOCAL_ONLY | SIGNED_USER | SERVICE_TOKEN | INTERNAL_ADMIN | PUBLIC
      If it does not fit exactly one, that is a finding — say why.
 
-  5. ARE ITS COMMENTS ABOUT THE CODE? Flag any comment that narrates history
+  5. (Guards only.) WHAT DEFECT DOES IT PREVENT? One sentence. If it cannot be
+     stated, the guard is a candidate for deletion — that standard already cut
+     `architecture.test.ts` from 43 tests to 13. Absence-assertions must name
+     the regression they pin.
+  6. ARE ITS COMMENTS ABOUT THE CODE? Flag any comment that narrates history
      (a wave number, a prior attempt, a rejected alternative), restates the
      line below it, or documents something not in the file. Comments earn their
      place by stating a constraint a reader cannot see.
@@ -323,7 +384,8 @@ Waves are ordered by *value per unit of risk*, not by size. Each wave: typecheck
 
 ## Execution model — subagents, and the one thing that cannot be parallel
 
-**Use many subagents. Fan them out per area, not per wave.**
+**Use many subagents. Fan them out per area, not per wave.** (T11 — an owner
+instruction from the thread's first message, not a technique chosen later.)
 
 Areas (one agent each, 10-14 total): `hosts/`, `authority/`, `platform/`,
 `adapters/`, `deployments/`, and one per domain — `workspace`, `documents`,
@@ -487,6 +549,20 @@ Rules to apply:
 Sweep every file touched between `4435449ac` and HEAD. Mechanical and low risk;
 run it after the structural waves so it only passes over the tree once.
 
+## W11.2d — Audit every guard against T9  · T9
+
+Each of the ~30 governance/guard tests states, in one sentence in its own test
+name, the defect it prevents. Any that cannot is deleted. The two remaining
+absence-assertions in `platform/governance/` either name the regression they
+pin or go.
+
+Then fault-inject every survivor. A guard that cannot be made RED is not a
+guard — two were found silently disarmed during the W10 moves, and both only
+failed loudly because they happened to assert a positive.
+
+Precedent: `architecture.test.ts` already went 1263 -> 309 lines / 43 -> 13
+tests on exactly this basis.
+
 ## W11.3 — Separate test-only from production  · T6
 
 - `integration/` → `tests/integration/` (0 non-test files today).
@@ -501,6 +577,18 @@ run it after the structural waves so it only passes over the tree once.
 - Rename `architecture.test.ts` → `codebase-shape.test.ts`. It is not
   `architecture.ts`'s unit test — 1 of its 15 tests touches that module.
   Same for `billing/architecture.test.ts` → `billing/invariants.test.ts`.
+
+## W11.3b — Subdivide oversized directories  · T10
+
+`documents/` is 47 flat files — the only domain never subdivided. Its own names
+give the split: 6 `hosted-*`, 3 `local-*`, 3 `repository-*` ->
+`backends/{hosted,local}/` and `repository/`.
+
+`hosts/workgraph/` is 60+ files with one inconsistent `composition/` subdir.
+
+Budget: roughly 20 files per directory before it must justify itself. This is
+where the thread started ("root dir has 100s of files") and it is still the
+most visible defect to a newcomer.
 
 ## W11.4 — Fix directory names that lie  · T1, T3
 
