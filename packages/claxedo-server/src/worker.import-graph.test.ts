@@ -1,6 +1,9 @@
 import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
+// Recursive file listing. Aliased because this module already has a local
+// `walk()` that walks the IMPORT graph rather than the filesystem.
+import { walk as walkAll } from "./test-helpers/guards"
 
 /**
  * Worker import-graph guard.
@@ -181,5 +184,67 @@ describe("worker import-graph", () => {
     // imports the local credential registry (fs). The hosted composition uses
     // only `import type` from services.ts, so it must not appear in the graph.
     expect(visitedRel).not.toContain("control-plane/services.ts")
+  })
+
+  // The `.cf.ts` suffix marks a module that CANNOT run outside the Cloudflare
+  // runtime (Durable Object classes, `cloudflare:workers`, KV/R2 bindings).
+  // Without the two tests below the suffix is only a comment, free to drift
+  // from reality. With them it is a checked invariant in BOTH directions:
+  // nothing workerd-only escapes the marker, and nothing marked escapes the
+  // Worker graph.
+  //
+  // Deliberately NOT marked: the ~57 `hosted-*` files. "hosted" is a trust
+  // posture (signed multi-tenant), not a runtime — hosted-app.ts is mounted by
+  // hosted-node.ts on Node as well as by worker.ts on workerd.
+
+  test("every workerd-only module carries the .cf.ts marker", () => {
+    const workerdOnly = walkAll(SRC)
+      .filter((file) => file.endsWith(".ts"))
+      .filter((file) => !file.endsWith(".test.ts") && !file.endsWith(".d.ts"))
+      .filter((file) => {
+        const text = fs.readFileSync(file, "utf8")
+        return (
+          /from\s+["']cloudflare:workers["']/.test(text) ||
+          /\bDurableObjectState\b/.test(text) ||
+          /\bextends\s+DurableObject\b/.test(text)
+        )
+      })
+      .map((file) => path.relative(SRC, file))
+      .filter((rel) => !rel.endsWith(".cf.ts"))
+      .sort()
+
+    expect(
+      workerdOnly,
+      `workerd-only modules missing the .cf.ts marker: ${workerdOnly.join(", ")}`,
+    ).toEqual([])
+  })
+
+  test("a .cf.ts module is only reachable from the Worker entrypoints", () => {
+    // Every .cf.ts file on disk...
+    const marked = walkAll(SRC)
+      .filter((file) => file.endsWith(".cf.ts"))
+      .map((file) => path.relative(SRC, file))
+      .sort()
+    expect(marked.length, "expected at least one .cf.ts module").toBeGreaterThan(0)
+
+    // ...must not be imported by any module OUTSIDE the Worker graph. A local
+    // (Node) composition reaching into workerd-only code would only fail at
+    // deploy time, which is exactly the class of break this guard exists for.
+    const workerGraph = new Set(visitedRel)
+    const offenders: string[] = []
+    for (const file of walkAll(SRC).filter((f) => f.endsWith(".ts"))) {
+      const rel = path.relative(SRC, file)
+      if (rel.endsWith(".test.ts") || rel.endsWith(".cf.ts") || workerGraph.has(rel)) continue
+      for (const ref of parseImports(fs.readFileSync(file, "utf8"))) {
+        if (ref.typeOnly) continue
+        if (!ref.spec.startsWith(".")) continue
+        const resolved = resolveRelative(file, ref.spec)
+        if (resolved?.endsWith(".cf.ts")) {
+          offenders.push(`${rel} -> ${path.relative(SRC, resolved)}`)
+        }
+      }
+    }
+
+    expect(offenders, `non-Worker modules importing .cf.ts: ${offenders.join(", ")}`).toEqual([])
   })
 })
