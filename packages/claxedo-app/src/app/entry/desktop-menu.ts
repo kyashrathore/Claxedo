@@ -35,6 +35,12 @@ export type DesktopMenuItem = {
   accelerator?: Partial<Record<DesktopMenuPlatform, string>>
   enabled?: "updater"
   platforms?: DesktopMenuPlatform[]
+  /**
+   * Label to show when the app is running unpackaged, for items whose behaviour
+   * genuinely differs between a development run and a shipped build. Only
+   * "Restart" needs this today — see `desktopMenuItemLabel`.
+   */
+  unpackagedLabel?: string
 }
 
 export type DesktopMenuSeparator = {
@@ -62,7 +68,7 @@ export const DESKTOP_MENU: DesktopMenu[] = [
       { type: "item", label: "Check for Updates...", action: "app.checkForUpdates", enabled: "updater" },
       { type: "item", label: "Settings", command: "settings.open", accelerator: { macos: "Cmd+," } },
       { type: "item", label: "Reload Webview", action: "view.reload" },
-      { type: "item", label: "Restart", action: "app.relaunch" },
+      { type: "item", label: "Restart", unpackagedLabel: "Reload Window", action: "app.relaunch" },
       { type: "item", label: "Export Logs...", command: "logs.export" },
       { type: "separator" },
       { type: "item", role: "hide" },
@@ -206,4 +212,15 @@ export const DESKTOP_MENU: DesktopMenu[] = [
 
 export function desktopMenuVisible(item: { platforms?: DesktopMenuPlatform[] }, platform: DesktopMenuPlatform) {
   return !item.platforms || item.platforms.includes(platform)
+}
+
+/**
+ * "Restart" is a promise the app can only keep when it owns its own process
+ * tree. Run unpackaged, it is a child of `electron-vite dev` and relaunching
+ * tears down the renderer's dev server along with it, so the action falls back
+ * to reloading the window — and the label has to say so.
+ */
+export function desktopMenuItemLabel(item: DesktopMenuItem, packaged: boolean) {
+  if (!packaged && item.unpackagedLabel) return item.unpackagedLabel
+  return item.label ?? ""
 }

@@ -45,6 +45,7 @@ import { ensureWorkGraphRepository } from "./workgraph-repository"
 import type { BrowserRegistry } from "./browser/registry"
 import { setupBrowserTab } from "./browser/setup"
 import { CHANNEL, IS_PACKAGED, UPDATER_ENABLED } from "./constants"
+import { runRestart } from "../shared/restart-policy"
 import type { DiagnosticsWebContents } from "./diagnostics/ipc"
 import { createElectronSource } from "./diagnostics/electron-source"
 import { createProcessMetricsSource } from "./diagnostics/process-metrics-source"
@@ -453,6 +454,7 @@ async function initialize() {
 
   const globals = {
     updaterEnabled: UPDATER_ENABLED,
+    packaged: IS_PACKAGED,
     wsl: getWslConfig().enabled,
     deepLinks: pendingDeepLinks,
     ...(process.env.CLAXEDO_PERF_STAGE ? { startupIsolationStage: process.env.CLAXEDO_PERF_STAGE } : {}),
@@ -508,10 +510,13 @@ function wireMenu() {
       void checkForUpdates(true)
     },
     reload: () => mainWindow?.reload(),
-    relaunch: () => {
-      app.relaunch()
-      app.quit()
-    },
+    restart: () =>
+      runRestart({
+        packaged: IS_PACKAGED,
+        relaunch: () => app.relaunch(),
+        quit: () => app.quit(),
+        reload: () => mainWindow?.webContents.reloadIgnoringCache(),
+      }),
   })
 }
 

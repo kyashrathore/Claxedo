@@ -28,6 +28,7 @@ import { configureApiRuntime } from "@/platform/api/api"
 import type { LinuxDisplayBackend, ServerReadyData } from "../preload/types"
 import pkg from "../../package.json"
 import { initI18n, t } from "./i18n"
+import { restartApp } from "./restart"
 import { UPDATER_ENABLED } from "./updater"
 import { webviewZoom } from "./webview-zoom"
 import { isResizeObserverDeliveryError } from "./window-error"
@@ -314,12 +315,7 @@ function bootstrapDesktop() {
         return desktopApi().showItemInFolder(path)
       },
 
-      restart: async () => {
-        await desktopApi()
-          .killSidecar()
-          .catch(() => undefined)
-        desktopApi().relaunch()
-      },
+      restart: restartApp,
 
       quit: async () => {
         desktopApi().quit()
@@ -512,13 +508,6 @@ function ServerGate(props: { children: (data: Accessor<ServerReadyData>) => JSX.
     if (typeof error === "string") return error
     if (error instanceof Error) return error.message
     return String(error)
-  }
-
-  const restartApp = async () => {
-    await desktopApi()
-      .killSidecar()
-      .catch(() => undefined)
-    desktopApi().relaunch()
   }
 
   return (

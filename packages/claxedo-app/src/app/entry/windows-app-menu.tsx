@@ -5,7 +5,13 @@ import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-butt
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 
 import { useCommand } from "@/app/providers/command"
-import { DESKTOP_MENU, desktopMenuVisible, type DesktopMenuAction, type DesktopMenuEntry } from "@/app/entry/desktop-menu"
+import {
+  DESKTOP_MENU,
+  desktopMenuItemLabel,
+  desktopMenuVisible,
+  type DesktopMenuAction,
+  type DesktopMenuEntry,
+} from "@/app/entry/desktop-menu"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 
 export function WindowsAppMenu(props: {
@@ -14,6 +20,11 @@ export function WindowsAppMenu(props: {
   variant?: "legacy" | "v2"
 }) {
   let lastFocused: HTMLElement | undefined
+
+  // Injected by the desktop main process on dom-ready. Absent in the browser
+  // harness and before injection lands; "not packaged" is the safe read,
+  // because the unpackaged branch is the one that never quits the app.
+  const packaged = () => window.__OPENCODE__?.packaged ?? false
 
   const rememberFocus = () => {
     const active = document.activeElement
@@ -86,7 +97,7 @@ export function WindowsAppMenu(props: {
                       <DropdownMenu.Separator />
                     ) : (
                       <DesktopMenuItem
-                        label={entry.label ?? ""}
+                        label={desktopMenuItemLabel(entry, packaged())}
                         keybind={entry.command ? props.command.keybind(entry.command) : entry.accelerator?.windows}
                         disabled={entry.command ? commandDisabled(entry.command) : false}
                         onSelect={() => runEntry(entry)}

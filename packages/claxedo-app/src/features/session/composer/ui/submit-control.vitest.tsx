@@ -18,6 +18,7 @@ const block = (reason: SubmitBlock["reason"], copy: string): SubmitBlock => ({
 
 function renderControl(input: {
   block?: SubmitBlock | null
+  booting?: boolean
   onChooseModel?: () => void
   onConnectAI?: () => void
 }) {
@@ -29,7 +30,7 @@ function renderControl(input: {
         busy={() => false}
         onCancel={() => {}}
         onRetry={() => undefined}
-        booting={() => false}
+        booting={() => input.booting ?? false}
         working={() => false}
         blank={() => false}
         tip={() => "Send"}
@@ -89,5 +90,25 @@ describe("PromptSubmitControl", () => {
     expect(submit).toHaveAttribute("data-variant", "primary")
     expect(submit.className).toContain("text-v2-icon-icon-inverse")
     expect(submit.querySelector('[data-icon="send"] use')).toHaveAttribute("href", "#claxedo-icon-send")
+  })
+
+  // Booting lives inside the send button, not as a chip beside it: the spinner
+  // overlays the circle, the arrow fades out underneath, and the words move to
+  // the accessible name. No standalone booting text may render in the toolbar.
+  test("booting is the send button spinning, not a chip beside it", () => {
+    const view = renderControl({ booting: true })
+    const submit = view.getByRole("button", { name: "Starting" })
+
+    expect(submit).toHaveAttribute("data-booting")
+    expect(submit.parentElement?.querySelector('[data-component="spinner"], svg.animate-spin, [class*="animate"]')).toBeTruthy()
+    expect(view.queryByText("Starting")).toBeNull()
+  })
+
+  test("the spinner leaves and the arrow returns once boot completes", () => {
+    const view = renderControl({ booting: false })
+    const submit = view.getByRole("button", { name: "Send" })
+
+    expect(submit).not.toHaveAttribute("data-booting")
+    expect(view.queryByText("Starting")).toBeNull()
   })
 })

@@ -1081,8 +1081,23 @@ test.describe("core harness rendering matrix @core", () => {
 
     // behavior 16: the fixture's `part.tool: "bash"` (Cursor's raw "Terminal" title was
     // normalized upstream — see FIXTURE PRE-BAKING) hits the bash renderer. A LONE work
-    // tool -> standalone row, command visible.
-    await expect(content.getByText("ls", { exact: true })).toBeVisible()
+    // tool -> standalone row, command visible. Converged, not asserted once:
+    // revealTurn's own header documents that late part updates can re-collapse the
+    // fold AFTER the converge returns, and this lone-row assertion sits exactly in
+    // that window — it flaked ~1/3 under load (CI shard 4, and locally under
+    // --repeat-each). Re-converge until the row is visible, same pattern as the
+    // helper itself.
+    await expect
+      .poll(
+        async () => {
+          const visible = await content.getByText("ls", { exact: true }).isVisible().catch(() => false)
+          if (visible) return true
+          await revealTurn(page)
+          return content.getByText("ls", { exact: true }).isVisible().catch(() => false)
+        },
+        { timeout: 20_000, intervals: [250, 500, 1_000] },
+      )
+      .toBe(true)
 
     // behavior 15: "Task: Subagent task" -> task, child-linked.
     const taskCard = content.locator('[data-component="task-tool-card"]').filter({ hasText: "Investigate flaky test" })

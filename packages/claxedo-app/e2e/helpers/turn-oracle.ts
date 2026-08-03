@@ -102,7 +102,25 @@ async function submitControlReady(page: Page) {
  */
 async function geometricTruth(page: Page, locator: Locator) {
   await locator.scrollIntoViewIfNeeded()
-  const box = await locator.boundingBox()
+  // Converged, not sampled once: between domTruth resolving this locator and the
+  // measurement here, a live timeline can re-render the row (part updates,
+  // supersession collapsing a provisional, virtualizer regrouping) — and a
+  // boundingBox taken in that instant is null for an element that is fully
+  // visible a frame later. Seen exactly once, on a loaded CI runner, as
+  // "no bounding box (detached or display:none)" for a reply the screenshot
+  // showed on screen. The poll's exit is the box existing; an element that
+  // NEVER gets a box still fails with the same message, so the oracle's claim
+  // is unchanged — only its tolerance for mid-measurement re-renders.
+  const box = await (async () => {
+    const deadline = Date.now() + 10_000
+    for (;;) {
+      const candidate = await locator.boundingBox().catch(() => null)
+      if (candidate) return candidate
+      if (Date.now() > deadline) return null
+      await page.waitForTimeout(250)
+      await locator.scrollIntoViewIfNeeded().catch(() => {})
+    }
+  })()
   expect(box, "assistant reply element has no bounding box (detached or display:none)").not.toBeNull()
   if (!box) return
   expect(box.width, "assistant reply element has zero width").toBeGreaterThan(0)

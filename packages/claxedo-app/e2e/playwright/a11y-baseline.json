@@ -1,7 +1,5 @@
 {
-  "home": [
-    "color-contrast"
-  ],
+  "home": [],
   "session-page": [
     "button-name",
     "color-contrast"

@@ -13,7 +13,9 @@ import type {
   WslConfig,
 } from "../preload/types"
 import type { BrowserRegistry } from "./browser/registry"
+import { IS_PACKAGED } from "./constants"
 import { isSafeExternalUrl } from "./navigation-guard"
+import { runRestart } from "../shared/restart-policy"
 import {
   registerProcessDiagnosticsIpc,
   type DiagnosticsIpcRouter,
@@ -203,9 +205,17 @@ export function registerIpcHandlers(deps: Deps) {
     win?.show()
   })
 
-  ipcMain.on("relaunch", () => {
-    app.relaunch()
-    app.exit(0)
+  // Every caller of this channel means "restart the app", so it gets the same
+  // dev-aware treatment as the menu item: relaunching out of `electron-vite
+  // dev` takes the renderer's dev server down with it. The reload targets the
+  // window that asked, so a diagnostics window can't reload the main one.
+  ipcMain.on("relaunch", (event: IpcMainEvent) => {
+    runRestart({
+      packaged: IS_PACKAGED,
+      relaunch: () => app.relaunch(),
+      quit: () => app.exit(0),
+      reload: () => event.sender.reloadIgnoringCache(),
+    })
   })
 
   ipcMain.on("quit", () => {

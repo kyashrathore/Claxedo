@@ -160,6 +160,7 @@ declare global {
     __NOSYNC__?: boolean
     __OPENCODE__?: {
       updaterEnabled?: boolean
+      packaged?: boolean
       serverPassword?: string
       serverUrl?: string
       activeDirectory?: string

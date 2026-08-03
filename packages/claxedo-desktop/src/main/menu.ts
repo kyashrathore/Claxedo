@@ -1,12 +1,14 @@
 import { app, BrowserWindow, Menu, shell } from "electron"
 
-import { UPDATER_ENABLED } from "./constants"
+import { IS_PACKAGED, UPDATER_ENABLED } from "./constants"
+import { restartMenuLabel } from "../shared/restart-policy"
 
 type Deps = {
   trigger: (id: string) => void
   checkForUpdates: () => void
   reload: () => void
-  relaunch: () => void
+  /** Dev-aware: reloads the window unpackaged, relaunches the app packaged. */
+  restart: () => void
 }
 
 export function createMenu(deps: Deps) {
@@ -27,8 +29,8 @@ export function createMenu(deps: Deps) {
           click: () => deps.reload(),
         },
         {
-          label: "Restart",
-          click: () => deps.relaunch(),
+          label: restartMenuLabel(IS_PACKAGED),
+          click: () => deps.restart(),
         },
         { type: "separator" },
         { role: "hide" },
