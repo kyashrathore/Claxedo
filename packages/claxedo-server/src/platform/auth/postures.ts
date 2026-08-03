@@ -24,8 +24,8 @@ import { isLoopbackLocalRequest } from "../http/peer-address"
  *
  * `Public` is in the list for the same reason `requireSigned` is not a default:
  * an unauthenticated route has to be typed out to exist, so it shows up in
- * review and in `routePostures()` rather than being the thing that happens when
- * a mount site forgets its options.
+ * review rather than being the thing that happens when a mount site forgets
+ * its options.
  */
 export const RoutePosture = {
   /** Loopback only. The desktop/self-host surface; no bearer is consulted. */

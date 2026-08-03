@@ -31,13 +31,19 @@ export class DocumentWorkspaceError extends ClaxedoError {
   }
 }
 
+/**
+ * The status each code surfaces as. These MIRROR the ladder in
+ * `documents/routes/index.ts` — that router is what actually answers, so a
+ * value here that disagrees with it gives one error object two different
+ * statuses depending on which layer reads it.
+ */
 const DOCUMENT_ERROR_STATUS: Record<DocumentErrorCode, number> = {
   document_already_exists: 409,
-  document_invalid_entry: 400,
-  document_lock_timeout: 503,
+  document_invalid_entry: 422,
+  document_lock_timeout: 500,
   document_not_found: 404,
   document_not_text: 415,
-  document_path_outside_root: 400,
+  document_path_outside_root: 422,
   document_permission_denied: 403,
   document_snapshot_corrupt: 500,
   document_snapshot_not_found: 404,
