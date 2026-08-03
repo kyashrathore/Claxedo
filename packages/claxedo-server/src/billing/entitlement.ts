@@ -154,19 +154,39 @@ export type EntitlementDenial = {
 }
 
 /**
+ * Launch posture (pricing decision 2026-07-12): LAUNCH FREE. The billing spine
+ * ships built but DORMANT — enforcement is an explicit opt-in, so free→paid is
+ * a config flip (set the flag + create Polar products), not engineering.
+ * Anything other than exactly "1" leaves every org entitled.
+ *
+ * This is deliberately a positive ENFORCE flag rather than a bypass flag: an
+ * unconfigured deployment (self-host, staging without billing vars) behaves
+ * like the free launch, and turning billing ON is the deliberate act.
+ */
+export function billingEnforced(env: EntitlementGateEnv): boolean {
+  return env.CLAXEDO_BILLING_ENFORCE?.trim() === "1"
+}
+
+/**
  * Composition helper for the two choke points (hosted-workspace create;
  * connections-host gate): a checker that returns a ready-to-serve denial
  * instead of throwing, so the call sites stay one-liners. Store config
  * missing → 503 fail-closed (hosted boot should have refused already).
+ *
+ * With enforcement off (the launch-free default) the gate grants without
+ * reading the mirror at all — a deployment with no billing store configured
+ * must not 503 its way into blocking free users.
  */
 export function createEntitlementGate(input: {
   env: EntitlementGateEnv
   store?: BillingStore
   now?: () => number
 }) {
-  const store = input.store ?? createBillingStore(input.env)
+  const enforced = billingEnforced(input.env)
+  const store = input.store ?? (enforced ? createBillingStore(input.env) : undefined)
   const graceDays = pastDueGraceDays(input.env)
   return async (ref: EntitlementStateRef, capability: EntitlementCapability): Promise<EntitlementDenial | undefined> => {
+    if (!enforced || !store) return undefined
     try {
       await requireEntitlement(ref, capability, {
         reader: (r) => store.entitlementState(r),

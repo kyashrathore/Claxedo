@@ -82,6 +82,13 @@ crons = ["* * * * *", "*/15 * * * *"]
 # src/billing/billing-architecture.test.ts). ABSENT = billing routes fail
 # closed (503), the reconciliation sweep no-ops, and entitlement resolves
 # every org to the free tier (I-4).
+#
+# LAUNCH FREE (pricing decision 2026-07-12): entitlement ENFORCEMENT is a
+# separate opt-in — CLAXEDO_BILLING_ENFORCE=1. Unset (the launch posture),
+# the entitlement gate grants every org both hosted capabilities without
+# reading the billing mirror; the spine above stays deployed but dormant.
+# Flipping free→paid = set this var + create the Polar products. I-4's
+# fail-closed rules apply only once enforcement is on.
 # Secrets (`wrangler secret put`):
 #   CLAXEDO_POLAR_ACCESS_TOKEN   — Polar org access token (checkout sessions,
 #     customer portal sessions, reconciliation customer-state fetches).

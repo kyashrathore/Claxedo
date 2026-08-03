@@ -20,6 +20,13 @@ const NOW = 1_800_000_000_000
 const DAY = 24 * 60 * 60 * 1000
 const now = () => NOW
 
+/**
+ * Launch posture: enforcement is opt-in (CLAXEDO_BILLING_ENFORCE=1). The gate
+ * tests below exercise the ENFORCED path; the launch-free default has its own
+ * describe at the bottom.
+ */
+const ENFORCED = { CLAXEDO_BILLING_ENFORCE: "1" }
+
 const CAPABILITIES: EntitlementCapability[] = ["cloud-workspace", "hosted-connections"]
 
 function proState(status: string, appliedAt: number = NOW): EntitlementState {
@@ -145,7 +152,7 @@ describe("entitlement matrix", () => {
 
     test("the gate surfaces seat_over_capacity as a 402 typed denial", async () => {
       const gate = createEntitlementGate({
-        env: {},
+        env: ENFORCED,
         store: {
           entitlementState: async () => overSeat(),
           applyPolarState: async () => ({ results: [], unresolved: [] }),
@@ -179,7 +186,7 @@ describe("entitlement matrix", () => {
 describe("entitlement gate composition (choke-point adapter)", () => {
   test("entitled → undefined; free tier → 402 typed denial", async () => {
     const gate = createEntitlementGate({
-      env: {},
+      env: ENFORCED,
       store: {
         entitlementState: async (ref) => (ref.orgId === "org_paid" ? proState("active") : { found: false }),
         applyPolarState: async () => ({ results: [], unresolved: [] }),
@@ -196,7 +203,7 @@ describe("entitlement gate composition (choke-point adapter)", () => {
 
   test("mirror unreadable → 503 fail-closed denial, never a grant", async () => {
     const gate = createEntitlementGate({
-      env: {},
+      env: ENFORCED,
       store: {
         entitlementState: async () => {
           throw new Error("convex down")
@@ -213,8 +220,60 @@ describe("entitlement gate composition (choke-point adapter)", () => {
   })
 
   test("missing store config (no env) fails closed with 503", async () => {
-    const gate = createEntitlementGate({ env: {}, now })
+    const gate = createEntitlementGate({ env: ENFORCED, now })
     const denied = await gate({ orgId: "org_paid" }, "cloud-workspace")
     expect(denied).toMatchObject({ status: 503 })
+  })
+})
+
+describe("launch-free default (enforcement off)", () => {
+  test("no flag → every org is entitled, and the mirror is never read", async () => {
+    // The pre-flag behavior — free org 402'd, no store config 503'd — is
+    // exactly what broke the staging interactive smoke ("An active Claxedo
+    // Cloud subscription is required for cloud-workspace (free_tier)"): the
+    // gate enforced a plan the launch posture says nobody has to buy yet.
+    let reads = 0
+    const gate = createEntitlementGate({
+      env: {},
+      store: {
+        entitlementState: async () => {
+          reads++
+          return { found: false }
+        },
+        applyPolarState: async () => ({ results: [], unresolved: [] }),
+        checkoutContext: async () => ({ org_id: "x", member_count: 1 }),
+        listReconcileFlagged: async () => [],
+        listDeletedWithSubscription: async () => [],
+      },
+      now,
+    })
+    expect(await gate({ orgId: "org_free" }, "cloud-workspace")).toBeUndefined()
+    expect(await gate({ orgId: "org_free" }, "hosted-connections")).toBeUndefined()
+    expect(reads).toBe(0)
+  })
+
+  test("no flag and no store config → still entitled, not 503", async () => {
+    const gate = createEntitlementGate({ env: {}, now })
+    expect(await gate({ orgId: "org_any" }, "cloud-workspace")).toBeUndefined()
+  })
+
+  test("only exactly '1' turns enforcement on", async () => {
+    for (const value of ["0", "true", "yes", "", "  "]) {
+      const gate = createEntitlementGate({ env: { CLAXEDO_BILLING_ENFORCE: value }, now })
+      expect(await gate({ orgId: "org_free" }, "cloud-workspace")).toBeUndefined()
+    }
+    const enforced = createEntitlementGate({
+      env: { CLAXEDO_BILLING_ENFORCE: " 1 " },
+      store: {
+        entitlementState: async () => ({ found: false }),
+        applyPolarState: async () => ({ results: [], unresolved: [] }),
+        checkoutContext: async () => ({ org_id: "x", member_count: 1 }),
+        listReconcileFlagged: async () => [],
+        listDeletedWithSubscription: async () => [],
+      },
+      now,
+    })
+    const denied = await enforced({ orgId: "org_free" }, "cloud-workspace")
+    expect(denied).toMatchObject({ status: 402 })
   })
 })

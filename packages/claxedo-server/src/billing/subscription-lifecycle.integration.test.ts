@@ -108,6 +108,9 @@ const ENV = {
   CLAXEDO_POLAR_ACCESS_TOKEN: "polar_at_test",
   CLAXEDO_POLAR_PRODUCT_MONTHLY: "prod_monthly",
   CLAXEDO_POLAR_PRODUCT_YEARLY: "prod_yearly",
+  // This suite rehearses the PAID lifecycle; the launch-free default would
+  // grant everything and assert nothing.
+  CLAXEDO_BILLING_ENFORCE: "1",
 }
 
 const authConfig: ControlPlaneAuthConfig = {
