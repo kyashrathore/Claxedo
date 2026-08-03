@@ -760,6 +760,22 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     }
   }
 
+  // The boot path this lease is on, derived from the lease row alone. Used by
+  // the early-return provisioning branches (in-flight backoff, lost acquire
+  // race) that answer BEFORE provision() runs — i.e. most polls after the
+  // first — so the connect UI keeps its honest label across the whole wait.
+  // Mirrors the predicates provision() uses when no caller bootSource is set:
+  // ensureHostInput's driver-snapshot default and provision()'s `resuming`.
+  function leaseBootMode(lease: SandboxLease): SandboxBootMode {
+    const restoring =
+      Boolean(lease.checkpoint)
+      && lease.status !== "ready"
+      && options.driver.metadata.persistence.resume === "replacement-restore"
+    if (restoring) return "restore"
+    if (lease.sandboxId && options.driver.resumeHost) return "resume"
+    return "cold-start"
+  }
+
   // Runs driver ensure/resume for an owned lease epoch and records the
   // outcome. Shared by the fresh-acquire path, the ready-lease resume path,
   // and the in-flight provisioning re-poll path.
@@ -896,6 +912,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
             retryAfterMs: existing.nextRetryAt - now(),
             epoch: existing.epoch,
             homeRegion: existing.homeRegion,
+            bootMode: leaseBootMode(existing),
           }
         }
         return {
@@ -948,6 +965,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
           retryAfterMs: acquired.retryAfterMs,
           epoch: acquired.lease.epoch,
           homeRegion: acquired.lease.homeRegion,
+          bootMode: leaseBootMode(acquired.lease),
         }
       }
       return provision(workspaceId, acquired.lease, input.homeRegion, input)

@@ -266,6 +266,9 @@ describe("sandbox manager", () => {
       retryAfterMs: 1_500,
       epoch: 1,
       homeRegion: "eu-west",
+      // The still-waiting branch answers from the lease row without touching
+      // the driver, and must keep the same honest label as the first poll.
+      bootMode: "cold-start",
     })
     expect(driver.ensureHost).toHaveBeenCalledTimes(1)
   })
@@ -294,9 +297,9 @@ describe("sandbox manager", () => {
     const manager = createSandboxManager({ leaseStore: store, driver, staleAfterMs: 60_000 })
     // Seed a lease that carries a checkpoint but is not ready — the shape a
     // stopped-and-snapshotted workspace wakes from. `nextRetryAt` in the past
-    // keeps it on the in-flight-provision path (which re-runs the driver)
-    // rather than the still-waiting path (which answers from the lease alone
-    // and cannot know the boot mode).
+    // puts this poll on the in-flight-provision path (which re-runs the
+    // driver); the follow-up poll below lands on the still-waiting path, which
+    // derives the same mode from the lease row alone.
     await manager.ensure("ws_1", { homeRegion: "eu-west" })
     await store.update("ws_1", 1, {
       status: "acquiring",
@@ -315,6 +318,13 @@ describe("sandbox manager", () => {
     expect(driver.ensureHost).toHaveBeenLastCalledWith(
       expect.objectContaining({ bootSource: { kind: "driver-snapshot", snapshotId: "snap_1" } }),
     )
+
+    // The ensure above pushed nextRetryAt into the future, so this poll takes
+    // the still-waiting early return — most of what a connecting client sees.
+    // It must NOT drop back to an unlabeled (or cold-start) provisioning body.
+    const waiting = await manager.ensure("ws_1", { homeRegion: "eu-west" })
+    expect(waiting).toMatchObject({ status: "provisioning", bootMode: "restore" })
+    expect(driver.ensureHost).toHaveBeenCalledTimes(2)
   })
 
   test("ready lease still re-ensures with the driver so auto-stopped runtimes resume on the same epoch", async () => {
