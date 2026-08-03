@@ -8,8 +8,7 @@
  * shape without importing `credentials/store.ts` or `credentials/registry.ts`,
  * which statically pull in the local encrypted file backend (`fs`).
  *
- * D10: the
- * hosted credential byte path is envelope-encrypted Cloudflare KV —
+ * The hosted credential byte path is envelope-encrypted Cloudflare KV —
  * `createHostedOrgSecretBackend(orgId)` composes the mandatory encryption
  * wrapper (per-org HKDF subkeys, key-id-prefixed AES-256-GCM, Web Crypto
  * only) over the KV byte store. The raw KV backend is not exported anywhere,
@@ -22,7 +21,7 @@
  * (CLAXEDO_CF_KV_URL / CLAXEDO_CF_KV_TOKEN) are all present — a hosted
  * deployment that cannot encrypt must be down, not open.
  *
- * D7: the org-partitioned credential surface is
+ * The org-partitioned credential surface is
  * `hostedOrgCredentials(orgId, env)` — a per-org `ControlPlaneCredentials`
  * composed over `createHostedOrgSecretBackend(orgId)`. It exists ONLY for a
  * request whose org resolution succeeded (the caller passes the verified
@@ -128,7 +127,7 @@ export function workerCredentials(env: WorkerCredentialEnv = process.env): Contr
 }
 
 /**
- * D7: the org-partitioned hosted credential surface. One instance serves ONE
+ * The org-partitioned hosted credential surface. One instance serves ONE
  * org; construct it per request (or cache per org) only after the caller's
  * org resolution succeeded — the verified `org_id` claim, never a
  * client-supplied value.

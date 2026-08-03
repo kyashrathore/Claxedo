@@ -101,7 +101,7 @@ function subscriptionState(subscription: Rec, source: "customer_state" | "subscr
     // incomplete, unknown): free tier, status recorded for supportability.
     return { plan: "free", subscription_status: status }
   }
-  // S2-PENDING (ADR 014 §6.3 Q4): SDK 0.48.1 models carry `seats` (Polar
+  // S2-PENDING (ADR 014 §6.3): SDK 0.48.1 models carry `seats` (Polar
   // seat-based pricing) and NO plain `quantity` field anywhere — the ADR's
   // pre-decided fallback ladder (plain quantity → seats feature count) lands
   // on seats. `customer.state_changed` subscription entries omit seats

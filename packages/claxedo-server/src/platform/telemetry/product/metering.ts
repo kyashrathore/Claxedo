@@ -82,7 +82,7 @@ export type LlmTurnRecord = {
 }
 
 /**
- * The authoritative write (D1). PostHog capture is best-effort by design, so
+ * The authoritative write. PostHog capture is best-effort by design, so
  * the number a paid plan may later be gated on lands in Convex as well.
  * `activated` reports the idempotent first-ok-turn check-and-set, which is what
  * lets `user_activated` fire exactly once per user for all time.

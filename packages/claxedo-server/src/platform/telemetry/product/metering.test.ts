@@ -173,7 +173,7 @@ describe("llm_turn_completed carries the provider's usage object verbatim", () =
       $groups: { org: "org_1" },
     })
 
-    // Dual-write (D1): the authoritative row carries the same numbers.
+    // Dual-write: the authoritative row carries the same numbers.
     expect(recorded[0]).toMatchObject({
       org_id: "org_1",
       user_id: "user_sub_1",

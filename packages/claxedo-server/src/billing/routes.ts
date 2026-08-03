@@ -8,7 +8,7 @@
  *   POST /api/billing/checkout       — Polar checkout session (admin/owner)
  *   POST /api/billing/portal         — Polar customer portal session (admin/owner)
  *
- * Customer linkage (ADR addendum + F9): NO customer pre-creation — Polar
+ * Customer linkage (ADR addendum): NO customer pre-creation — Polar
  * creates the customer lazily at first checkout with `external_customer_id` =
  * a STABLE ORG-scoped id (`org_{orgId}`), NOT the purchasing admin's Clerk
  * subject. Keying on the org (not the human) means any admin of the org reaches
@@ -98,7 +98,7 @@ export type PolarClientLike = {
   subscriptions: {
     /**
      * Immediate cancellation (MoR revoke). Used by the F4 deleted-org sweep:
-     * a deleted org is gone, so billing must stop now — not at period end.
+     * A deleted org is gone, so billing must stop now — not at period end.
      * S2/SDK note: @polar-sh/sdk 0.48.1 exposes `subscriptions.revoke({ id })`
      * for immediate termination; the reconciliation sweep tolerates a failure
      * (leaves the org listed, retries next sweep) so an SDK-shape surprise
@@ -128,7 +128,7 @@ function webhookClientKey(request: Request) {
 }
 
 /**
- * F9: the stable, org-scoped Polar `external_customer_id`. Both checkout and
+ * The stable, org-scoped Polar `external_customer_id`. Both checkout and
  * portal derive the customer from the org (never the purchasing admin's Clerk
  * subject), so every admin of the org resolves the SAME Polar customer.
  */
@@ -195,7 +195,7 @@ export const POLAR_WEBHOOK_MAX_BODY_BYTES = 512 * 1024
  *
  * Declared HERE rather than in `authority/request-guard.ts` because the
  * reason names the payment vendor, and `billing-architecture.test.ts` keeps the
- * vendor-agnostic control-plane core free of Polar tokens (R8). `hosted-app.ts`
+ * vendor-agnostic control-plane core free of Polar tokens. `hosted-app.ts`
  * merges it in through `hostedRouteGuardExemptions()`, so the exemption still
  * lives in exactly one place and is still auditable by the inventory test — it
  * just lives next to the code that enforces the replacement.
@@ -303,7 +303,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
   const polar = () => options.polar ?? polarClientFromEnv(env)
   const products = polarProductConfig(env)
   // Same fixed-window pattern the workspace routes use (control-plane class):
-  // checkout/portal mint external requests; keep floods off Polar and Convex.
+  // Checkout/portal mint external requests; keep floods off Polar and Convex.
   // Keys on auth.user.subject, so it reaches ONLY /checkout and /portal — the
   // webhook has no principal and gets its own IP-keyed limiter below.
   const rateLimiter = options.rateLimiter ?? createFixedWindowConnectionRateLimiter({ limit: 20, windowMs: 60_000 })
@@ -521,7 +521,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
           // A billing-relevant event we could not translate to an org (missing
           // metadata.org_id / customer id) means a charge may exist with no
           // entitlement — page. A retry cannot fix attribution, so still ack
-          // (202) to protect Polar's 10-delivery budget (F7). Harmless event
+          // (202) to protect Polar's 10-delivery budget. Harmless event
           // types (order.*, benefit.*) ack silently.
           if (isBillingRelevantEventType(typedEvent)) {
             reportPaymentError(new Error("Unattributable Polar billing event — acked without applying"), {
@@ -590,7 +590,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
         if ("error" in admin) return c.json(admin.error.body as never, admin.error.status)
         const context = admin.context
 
-        // F2: refuse a SECOND checkout when the org already holds a live Polar
+        // Refuse a SECOND checkout when the org already holds a live Polar
         // subscription (active/trialing/past_due) — a second checkout mints a
         // second subscription for the same org and double-bills. The mirrored
         // status (D5 single writer) is authoritative here; direct the caller to
@@ -600,7 +600,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
         // subscription-UPDATE that changes the licensed seat count on the
         // existing subscription) is deliberately NOT implemented here — it
         // depends on confirming Polar's seat-update semantics against the
-        // sandbox (S2). Until then "buy more seats" routes through the portal,
+        // sandbox. Until then "buy more seats" routes through the portal,
         // never through a fresh /checkout.
         if (context.subscription_status && LIVE_SUBSCRIPTION_STATUSES.has(context.subscription_status)) {
           return c.json(
@@ -632,11 +632,11 @@ export function BillingRoutes(options: BillingRouteOptions) {
         try {
           const session = await client.checkouts.create({
             products: [product],
-            // S2-PENDING (ADR 014 §6.3 Q4): SDK 0.48.1 has NO plain quantity
+            // S2-PENDING (ADR 014 §6.3): SDK 0.48.1 has NO plain quantity
             // on checkout — `seats` (Polar seat-based pricing) is the
             // pre-decided fallback and the only per-seat lever the API offers.
             seats,
-            // F9: org-scoped customer id (stable across admins), not the
+            // org-scoped customer id (stable across admins), not the
             // purchasing admin's subject.
             externalCustomerId: orgExternalCustomerId(context.org_id),
             metadata: { org_id: context.org_id },
@@ -677,7 +677,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
         if ("error" in admin) return c.json(admin.error.body as never, admin.error.status)
 
         try {
-          // F9: resolve the portal from the ORG-scoped customer, so a
+          // resolve the portal from the ORG-scoped customer, so a
           // non-purchasing admin reaches the same Polar customer as whoever
           // first checked out (previously this used auth.user.subject → 502 for
           // every admin but the original purchaser).

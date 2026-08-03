@@ -20,7 +20,7 @@
  * the 503 the underlying request may still be in flight and may still commit.
  * The last test asserts the consequence: an unguarded mutation is NOT retried
  * after a timeout, because a retry would be a second concurrent execution rather
- * than a second attempt. That is what makes durable idempotency (W4.2) the
+ * than a second attempt. That is what makes durable idempotency the
  * partner of this timeout rather than an alternative to it.
  */
 

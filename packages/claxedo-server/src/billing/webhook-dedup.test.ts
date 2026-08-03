@@ -1,5 +1,5 @@
 /**
- * W4.3: the Polar webhook is deduplicated on `webhook-id`.
+ * The Polar webhook is deduplicated on `webhook-id`.
  *
  * ## What was missing
  *
@@ -16,8 +16,8 @@
  * ## Two isolates
  *
  * Two `BillingRoutes(...)` instances sharing ONE fake store — the same
- * construction as `rate-limit.shared-store.test.ts` (W3) and
- * `http-idempotency.durable.test.ts` (W4.2). Each test carries its positive
+ * construction as `rate-limit.shared-store.test.ts` and
+ * `http-idempotency.durable.test.ts`. Each test carries its positive
  * control: the same redelivery with NO store, asserted to apply twice.
  */
 

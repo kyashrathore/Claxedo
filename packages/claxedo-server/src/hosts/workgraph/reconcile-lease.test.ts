@@ -15,8 +15,7 @@
  * `skipOverlappingReconcile(...)` wrappers are two isolates by construction.
  * Both are fenced by the SAME fake lease store, which is what one Convex
  * deployment is across isolates. Same construction as
- * `rate-limit.shared-store.test.ts` (W3) and `http-idempotency.durable.test.ts`
- * (W4.2).
+ * `rate-limit.shared-store.test.ts` and `http-idempotency.durable.test.ts`.
  *
  * ## Positive control
  *

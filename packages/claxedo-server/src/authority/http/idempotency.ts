@@ -1,7 +1,7 @@
 /**
  * Control-plane idempotency for register/checkpoint/repair.
  *
- * ## Two layers, one guarantee (W4.2)
+ * ## Two layers, one guarantee
  *
  * 1. A per-isolate `Map` — the FAST path. A retry that lands on the same isolate
  *    (the common case) is answered without a durable round trip, and concurrent

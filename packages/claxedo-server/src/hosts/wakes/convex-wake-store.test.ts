@@ -9,7 +9,7 @@ import { ConvexWakeStore, type ConvexWakeExecutor } from "./convex-wake-store"
 // service-token-guarded snake_case args, and (2) the whole engine runs
 // against this adapter when the executor faithfully mirrors the semantics
 // convex/wakes.ts implements (insert dedup, lane-aware claim, CAS guard).
-// The real-deployment proof rides the staging smoke (plan U9).
+// The real-deployment proof rides the staging smoke.
 
 const TOKEN = "svc-token"
 

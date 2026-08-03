@@ -17,7 +17,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest"
 const appFetch = vi.fn(async () => new Response("ok"))
 const runBillingSweep = vi.fn(async (_env: unknown) => {})
 
-// F17: the billing reconciliation sweep is mocked so the test can assert it
+// The billing reconciliation sweep is mocked so the test can assert it
 // runs (or not) independently of the sandbox GC pass. Env lacks a Polar token
 // anyway, so the real sweep is a no-op — this just makes the call observable.
 vi.mock("../../billing/reconcile", () => ({
@@ -136,7 +136,7 @@ describe("worker scheduled error reporting", () => {
     await expect(
       worker.scheduled(
         controller,
-        // Sending takes both opt-ins (W3): the mode plus the key.
+        // Sending takes both opt-ins: the mode plus the key.
         { CLAXEDO_RUNTIME_ADMIN_TOKEN: "admin_secret", CLAXEDO_TELEMETRY_MODE: "on", CLAXEDO_POSTHOG_KEY: "phc_worker" },
         ctx,
       ),

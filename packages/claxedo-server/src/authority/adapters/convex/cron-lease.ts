@@ -1,5 +1,5 @@
 /**
- * W4.4 — the Convex adapter behind `CronLease` (`convex/cronLease.ts`).
+ * The Convex adapter behind `CronLease` (`convex/cronLease.ts`).
  *
  * Same convention as this directory's other adapters: service-token mutations
  * over `ConvexHttpClient`, each wrapped in `withTimeout`, with `now` passed in

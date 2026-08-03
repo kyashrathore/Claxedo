@@ -24,7 +24,7 @@ const previous = {
 
 function env(overrides: Record<string, string | undefined> = {}) {
   return {
-    // D9: hosted compositions must declare the deployment mode explicitly.
+    // hosted compositions must declare the deployment mode explicitly.
     CLAXEDO_DEPLOYMENT_MODE: "hosted",
     CLAXEDO_SIGNED_CLOUD_AUTH: "true",
     CLERK_JWT_ISSUER: "https://clerk.test",

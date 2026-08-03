@@ -1,5 +1,5 @@
 /**
- * W4.1 — bounded retry for control-plane Convex calls.
+ * Bounded retry for control-plane Convex calls.
  *
  * ## The rule this module exists to enforce
  *
@@ -73,7 +73,7 @@ export function convexRetryDelayMs(attempt: number, random: () => number = Math.
 
 /**
  * True for the failures where a second attempt can plausibly do better:
- * request timeouts and server-side 5xx. Everything else — including every 4xx
+ * Request timeouts and server-side 5xx. Everything else — including every 4xx
  * and any error we cannot classify — is treated as terminal.
  *
  * Unclassifiable defaults to NOT retryable on purpose. Guessing "probably

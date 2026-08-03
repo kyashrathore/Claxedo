@@ -45,7 +45,7 @@ export type OpenCodeEngineMode = "embedded" | "external-url"
 type EngineConfig = { mode: "external-url"; url: string; headers?: HeadersInit } | { mode: "embedded" }
 
 // Composition-root state. Defaults to embedded so a fresh `bun run dev` with no
-// external engine and no config serves sessions in-process (R5). Only a
+// external engine and no config serves sessions in-process. Only a
 // composition root ever writes this.
 let config: EngineConfig = { mode: "embedded" }
 let applicationTools: (() => Promise<Readonly<Record<string, OpenCodeApplicationToolRegistration>>>) | undefined
@@ -53,7 +53,7 @@ let applicationTools: (() => Promise<Readonly<Record<string, OpenCodeApplication
 /**
  * Structured, actionable failure surfaced to consumers when the embedded engine
  * artifact cannot be loaded (e.g. absent on a fresh checkout). Consumers turn
- * this into a clear HTTP error instead of a bare 500 (R5).
+ * this into a clear HTTP error instead of a bare 500.
  */
 export class OpenCodeEngineUnavailableError extends Error {
   readonly code = "opencode_engine_unavailable"

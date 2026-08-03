@@ -332,7 +332,7 @@ export const SELF_HOST_DOCUMENT_FRAME_ANCESTORS = "frame-ancestors 'self'"
  *
  * VALIDATED, by serving the real `packages/claxedo-app/dist` from this server
  * with these exact headers and driving it in a browser against a live backend:
- * the SPA boots and renders (project list, not a white screen), the module
+ * The SPA boots and renders (project list, not a white screen), the module
  * entry + Clerk vendor bundle + CSS load, the inline <style> and the inline
  * style attribute on <html> apply, WASM compiles on the main thread, two blob
  * workers and `assets/markdown-shiki.worker-*.js` (a same-origin MODULE
@@ -469,7 +469,7 @@ export function createApp(
   // @hono/node-ws upgrades, whose Requests lack the node-server internals)
   // so loopback gates verify the socket, not the spoofable Host header.
   app.use(peerAddressStamp())
-  // D12: top-level error handler. Hono's
+  // top-level error handler. Hono's
   // default onError swallows route exceptions into bare 500s; this keeps that
   // exact response behavior (HTTPException responses pass through) while
   // reporting server exceptions through the observability seam — a no-op
@@ -542,7 +542,7 @@ export function createApp(
     }),
   )
 
-  // D9: the ONE global unsigned-local gate. In unsigned self-host mode this
+  // The ONE global unsigned-local gate. In unsigned self-host mode this
   // is the PRIMARY gate — non-loopback requests are denied by default with an
   // explicit allowlist of machine-token/callback exceptions (see
   // authority/deployment-mode.ts). The per-route loopback checks further
@@ -580,7 +580,7 @@ export function createApp(
   )
   if (embeddedAuthEnabled(process.env)) {
     // Embedded Better Auth issuer (self-host signed mode, no Convex/Clerk).
-    // better-auth's default basePath is exactly /api/auth; the same instance
+    // Better-auth's default basePath is exactly /api/auth; the same instance
     // backs the control-plane bearer verifier (see
     // createDefaultLocalControlPlaneServices), so tokens minted here are the
     // ones the signed control-plane routes accept.
@@ -674,7 +674,7 @@ export function createApp(
   // control plane is the source of truth for the session list on local
   // workspaces — with no dependence on querying the opencode server. Cloud
   // workspaces are owned by the workspace authority and skipped here. Best-effort:
-  // recording never blocks or alters the proxied response. Registered before
+  // Recording never blocks or alters the proxied response. Registered before
   // workspaceRuntimeProxy so it taps the proxied `/session` response.
   app.use(async (c, next) => {
     await next()
@@ -744,7 +744,7 @@ export function createApp(
     // workspace-runtime host by workspaceRuntimeProxy above.
   }
   // Claxedo events SSE — auth-gated via the same control-plane bearer used
-  // by /api/control/* and /api/workspace/* (rubric S1). authFetch on the
+  // by /api/control/* and /api/workspace/*. authFetch on the
   // frontend already attaches the token because the consumer uses fetch+
   // ReadableStream, not raw EventSource. Signed subscribers resolve their
   // AUTHORITY-INTERNAL org id at connect so org-scoped events
@@ -872,7 +872,7 @@ export function createApp(
     injectWebSocket,
     channels: controlPlaneChannels,
     /** @claxedo/connections service — the one connections layer. Thread this
-     * into consumers that need capability-handle token resolution (workgraph). */
+     * Into consumers that need capability-handle token resolution (workgraph). */
     connections: connectionsHost.service,
   }
 }
@@ -929,7 +929,7 @@ export function createDefaultLocalControlPlaneServices() {
   }
   if (signedCloudAuthRequested(process.env) && !authorityUrl && !embeddedAuth) {
     // Fail closed at BOOT (mirror of the hosted requiredHostedDependency rule):
-    // signed auth without a workspace authority would otherwise answer 503 on
+    // Signed auth without a workspace authority would otherwise answer 503 on
     // every request instead of telling the deployer what is missing.
     // Exception: CLAXEDO_EMBEDDED_AUTH=1 is a valid signed config WITHOUT a
     // remote authority URL — the local SQLite workspace authority plus the
@@ -1544,7 +1544,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
       // confirmation is a success no-op), so every call gets a fresh
       // operation id — a fixed id plus a version-varying payload would turn
       // retries into idempotency conflicts. Any command failure denies:
-      // an unconfirmed public PR never proceeds on an error path.
+      // An unconfirmed public PR never proceeds on an error path.
       const result = await embedded.service.execute(context, {
         operationId: `public_pr_confirmation_${input.streamId}_${crypto.randomUUID()}` as never,
         command: {

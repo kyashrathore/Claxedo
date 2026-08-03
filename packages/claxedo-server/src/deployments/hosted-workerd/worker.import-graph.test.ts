@@ -165,7 +165,7 @@ describe("worker import-graph", () => {
   })
 
   test("the sqlite central-store adapter is a forbidden local module absent from the Worker graph", () => {
-    // Plan provenance: unit1-pin. Unit 6 (R8b) renamed sync-db.ts to
+    // Plan provenance: unit1-pin. Unit 6 renamed sync-db.ts to
     // authority/adapters/sqlite/central-store.ts; the FORBIDDEN_LOCAL
     // entry followed the rename (never deleted), keeping the Worker boundary
     // closed around local sqlite-backed central persistence.

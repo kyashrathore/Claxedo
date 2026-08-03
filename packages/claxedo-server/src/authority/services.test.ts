@@ -147,7 +147,7 @@ describe("control-plane services", () => {
   })
 
   test("central-store ports are accepted as the composition input and delegate to the backend", () => {
-    // Plan provenance: unit1-pin, updated by Unit 6 (R8b) when the seam became
+    // Plan provenance: unit1-pin, updated by Unit 6 when the seam became
     // ports-in — callers pass the ports and the injected bag disappeared.
     const sync = fakeSync()
     const services = createControlPlaneServices(fakePorts(sync))
@@ -574,7 +574,7 @@ describe("control-plane services", () => {
         error: { code: "relay_resolver_unauthorized" },
       })
 
-      // D9: the global unsigned-local guard is now the PRIMARY gate for
+      // The global unsigned-local guard is now the PRIMARY gate for
       // non-loopback unsigned requests; the per-route local-only projection
       // (previously `local_only_projection_route` here) is demoted to
       // defense-in-depth behind it.
@@ -803,7 +803,7 @@ describe("control-plane services", () => {
     const { createApp } = await import("../deployments/local/server")
     const built = createApp(createControlPlaneServices(fakePorts(), { authority: null }))
 
-    // D9: in an unsigned-local deployment a REMOTE caller is now denied by
+    // In an unsigned-local deployment a REMOTE caller is now denied by
     // the global unsigned-local guard before the per-route bearer gate
     // (previously 401 missing_bearer_token from the route) — the per-route
     // gate remains as defense-in-depth behind it.
@@ -876,7 +876,7 @@ describe("control-plane services", () => {
     const file = path.resolve(import.meta.dirname, "../deployments/local/server.ts")
     const text = fs.readFileSync(file, "utf8")
 
-    // startServer configures local service defaults, then delegates to
+    // StartServer configures local service defaults, then delegates to
     // the lower-level injected-service startup path.
     expect(text).toContain("export function startServer(")
     expect(text).toContain("return startControlPlaneStack({")

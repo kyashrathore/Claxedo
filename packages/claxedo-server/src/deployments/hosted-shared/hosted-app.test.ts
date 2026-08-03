@@ -137,7 +137,7 @@ function fakePlane(
     }),
     cliSessionTokenRegistry: input.cliSessionTokenRegistry ?? durableCliSessionTokenRegistry().registry,
     ...(input.deviceAuthProvider ? { deviceAuthProvider: input.deviceAuthProvider } : {}),
-    // D9: hosted apps must declare their mode explicitly. No JWKS keys
+    // hosted apps must declare their mode explicitly. No JWKS keys
     // configured → /.well-known/jwks.json returns 503.
     env: {
       CLAXEDO_DEPLOYMENT_MODE: "hosted",
@@ -1606,7 +1606,7 @@ describe("hosted shell boot surface", () => {
 
     test("unset leaves the reviewed baseline exactly as it is", async () => {
       // The assertion that fails if the wiring ever defaults to something:
-      // absent config must not widen the allowlist by a single host.
+      // Absent config must not widen the allowlist by a single host.
       const { plane, seen } = egressPlane()
       const withNothing = egressPlane({ CLAXEDO_SANDBOX_EGRESS_EXTRA_HOSTS: "  , ," })
 
@@ -1643,7 +1643,7 @@ describe("hosted shell boot surface", () => {
 // ─── Live-sync org identity — end-to-end delivery ───────────────────────────
 //
 // The event plane's canonical org identity is the AUTHORITY-INTERNAL org id:
-// events are stamped with it (documents routes via `authority.resolveOrgId`,
+// Events are stamped with it (documents routes via `authority.resolveOrgId`,
 // runtime-token claims via the launch tenant) and the hosted events route
 // resolves the SAME id at connect to key the subscriber's room and visibility.
 // These tests pin the two deliveries the earlier Clerk-claims room keying made

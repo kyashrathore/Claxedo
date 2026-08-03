@@ -78,7 +78,7 @@ export function createConnectionsHost(options: ConnectionsHostOptions) {
   })
 
   // Every route: control-plane auth, with unsigned-local accepted ONLY from
-  // loopback. D9 NOTE: the PRIMARY unsigned-local gate is now the global
+  // loopback. NOTE: the PRIMARY unsigned-local gate is now the global
   // `unsignedLocalRequestGuard` mounted at the app-composition root
   // (authority/deployment-mode.ts) — it rejects non-loopback unsigned
   // requests before any route handler runs. The loopback check below is

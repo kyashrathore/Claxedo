@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { localOnlyAuthAdapter } from "../platform/auth/auth"
 import type { ControlPlaneServices } from "./services"
 
-// Unit 6 (R4) characterization pins for the CENTRAL storage boundary: the two
+// Unit 6 characterization pins for the CENTRAL storage boundary: the two
 // session-pull flows (`http-session-pull.ts` local-cloud + `hosted-session-pull.ts`
 // Worker) write pulled runtime state through the `ProjectionStore` port, and the
 // "only update when newer" ordinal/snapshot skip rules are pinned exactly as the

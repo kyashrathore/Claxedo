@@ -43,7 +43,7 @@ export function createBus<T>(options: BusOptions<T> = {}) {
 
 export type { PtyInfo }
 
-// Canonical session.lifecycle envelope (rubric D4). The frontend re-exports
+// Canonical session.lifecycle envelope. The frontend re-exports
 // this from `shared/claxedo-client` so consumers (event reducer, the create
 // wrapper, the ClaxedoEvents provider) share one type definition.
 export type SessionLifecycleEvent = {

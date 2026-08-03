@@ -5,7 +5,7 @@ import { signStandardWebhook } from "./standard-webhooks"
 
 /**
  * Worker billing routes (D4; ADR 014 addendum — Option B):
- * webhook signature accept/reject, checkout auth + seat floor + lazy customer
+ * Webhook signature accept/reject, checkout auth + seat floor + lazy customer
  * linkage, portal. Polar is a structural fake (no live Polar, per S2 gating);
  * the Convex store is a fake of the billing-store port.
  */
@@ -222,7 +222,7 @@ describe("POST /checkout", () => {
         externalCustomerId: "org_org_doc_1",
         metadata: { org_id: "org_doc_1" },
       }),
-      // W4.5: checkout is user-facing, so it carries the interactive deadline.
+      // checkout is user-facing, so it carries the interactive deadline.
       { timeoutMs: POLAR_INTERACTIVE_TIMEOUT_MS },
     )
   })
@@ -329,7 +329,7 @@ describe("POST /portal", () => {
     expect(res.status).toBe(200)
     expect(polar.customerSessions.create).toHaveBeenCalledWith(
       { externalCustomerId: "org_org_doc_1" },
-      // W4.5: the portal redirect is user-facing too.
+      // the portal redirect is user-facing too.
       { timeoutMs: POLAR_INTERACTIVE_TIMEOUT_MS },
     )
   })

@@ -66,7 +66,7 @@ export { WorkGraphSettler }
 export { LiveSyncRoom }
 
 /**
- * The concrete per-lane Durable Object (wakes-v2 U6): binds the generic
+ * The concrete per-lane Durable Object (wakes-v2): binds the generic
  * WakeLane to the hosted wakes composition (Convex store + workgraph_settle
  * sink). Cloudflare instantiates DO classes itself, hence the subclass.
  */

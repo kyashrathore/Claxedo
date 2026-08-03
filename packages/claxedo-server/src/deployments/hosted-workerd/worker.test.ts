@@ -272,7 +272,7 @@ describe("worker error reporting", () => {
         new Request("http://cp.test/api/claxedo/health"),
         {
           CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
-          // Sending takes both opt-ins (W3): the mode plus the key.
+          // Sending takes both opt-ins: the mode plus the key.
           CLAXEDO_TELEMETRY_MODE: "on",
           CLAXEDO_POSTHOG_KEY: "phc_worker",
           CLAXEDO_DEPLOYMENT_MODE: "hosted",

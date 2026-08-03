@@ -1,5 +1,5 @@
 /**
- * W4.3 — the Polar webhook's key space in the durable idempotency table.
+ * The Polar webhook's key space in the durable idempotency table.
  *
  * Lives here, not next to the store adapter, because "Polar" is a billing
  * vendor decision and the control-plane core (and its storage adapters) stay

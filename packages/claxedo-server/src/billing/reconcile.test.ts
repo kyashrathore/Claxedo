@@ -109,7 +109,7 @@ describe("cancelDeletedOrgSubscriptions (F4: deleted org billed forever)", () =>
     const result = await cancelDeletedOrgSubscriptions({ env: ENV, store, polar })
     expect(result).toEqual({ deleted: 1, canceled: 1, failed: 0 })
     expect((polar as unknown as { subscriptions: { revoke: ReturnType<typeof vi.fn> } }).subscriptions.revoke)
-      // W4.5: cron sweeps iterate serially, so they carry the sweep deadline —
+      // cron sweeps iterate serially, so they carry the sweep deadline —
       // one untimed revoke would stall every org behind it.
       .toHaveBeenCalledWith({ id: "sub_1" }, { timeoutMs: POLAR_SWEEP_TIMEOUT_MS })
     // Local subscription id cleared through the single writer, targeting ONLY

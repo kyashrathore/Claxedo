@@ -61,7 +61,7 @@ describe("worker scheduled billing sweep", () => {
     const worker = (await import("../deployments/hosted-workerd/worker")).default as unknown as ScheduledWorker
     appFetch.mockImplementation(async () => new Response("nope", { status: 501 }))
 
-    // F17: a persistently-failing sandbox GC must NOT starve the billing
+    // A persistently-failing sandbox GC must NOT starve the billing
     // downgrade-recovery path — the two sweeps are isolated. The GC failure is
     // still re-thrown so the cron run records as failed (and becomes an issue).
     await expect(

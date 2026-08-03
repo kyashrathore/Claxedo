@@ -1,7 +1,7 @@
 /**
- * requireEntitlement — the ONE entitlement predicate (D6/B4;
+ * RequireEntitlement — the ONE entitlement predicate (D6/B4;
  * ADR 014 §3/§5). Entitlement is a pure function of the mirrored org row:
- * no Polar call ever happens at request time, so a Polar outage cannot lock
+ * No Polar call ever happens at request time, so a Polar outage cannot lock
  * a paying customer out (ADR §3 "why not query-at-request-time").
  *
  * Capabilities are the hosted deltas (free = self-host-equivalent, ADR §5):
@@ -11,10 +11,10 @@
  * Fail-closed (I-4): unknown org, absent fields, unknown status → free tier →
  * not entitled. `active` and `trialing` entitle; `past_due` entitles within
  * the grace window (CLAXEDO_BILLING_PAST_DUE_GRACE_DAYS, default 7 — plan OQ-4),
- * anchored on the FIRST past_due transition (past_due_since, F11) — not
+ * anchored on the FIRST past_due transition (past_due_since) — not
  * re-anchored per dunning webhook.
  *
- * Seat over-capacity (F1): even an otherwise-entitling subscription does NOT
+ * Seat over-capacity: even an otherwise-entitling subscription does NOT
  * grant hosted access to an org that has MORE members than it has licensed
  * seats. The Clerk webhook mirror no longer hard-blocks a join (that 500'd the
  * whole Svix mirror), so this is where the seat ceiling is enforced: an
@@ -61,7 +61,7 @@ export type EntitlementDecision =
  * Pure decision over the mirrored state. Every hosted capability maps to
  * "the org pays" today (one flat plan); the capability parameter exists so a
  * future plan split changes THIS function only. The seat over-capacity gate
- * (F1) applies to every hosted capability identically.
+ * applies to every hosted capability identically.
  */
 export function entitlementDecision(
   state: EntitlementState,
@@ -75,7 +75,7 @@ export function entitlementDecision(
     if (status === "active" || status === "trialing") return { entitled: true, status }
     if (status === "past_due") {
       const graceDays = options.graceDays ?? DEFAULT_PAST_DUE_GRACE_DAYS
-      // F11: grace anchors on the FIRST past_due transition (past_due_since),
+      // grace anchors on the FIRST past_due transition (past_due_since),
       // which applyPolarState stamps once and preserves across dunning retries —
       // NOT on polar_state_modified_at / billing_synced_at, which each dunning
       // webhook refreshes (that would re-extend grace for the whole dunning
@@ -129,7 +129,7 @@ export async function requireEntitlement(
   const decision = entitlementDecision(state, capability, options)
   if (decision.entitled) return
   if (decision.reason === "seat_over_capacity") {
-    // F1: distinct typed error carrying the counts, so the app can render the
+    // distinct typed error carrying the counts, so the app can render the
     // "you have N members but M seats — buy more or remove members" surface.
     throw new BillingEntitlementError(
       "seat_over_capacity",
@@ -179,7 +179,7 @@ export function createEntitlementGate(input: {
       }
       // Mirror unreadable (missing config, storage error): fail CLOSED with a
       // 503 — a billing hiccup must never open a paid capability (I-4). This
-      // is a paying-customer-facing failure → payment page class (D12).
+      // is a paying-customer-facing failure → payment page class.
       reportPaymentError(err, {
         tags: { source: "billing_entitlement_gate" },
         extra: { capability },

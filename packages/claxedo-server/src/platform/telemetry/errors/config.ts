@@ -60,7 +60,7 @@ export function resolveRelease(env: ObservabilityEnv): string | undefined {
 }
 
 /**
- * Deployment trust tag (D9). Absent env = "local", mirroring
+ * Deployment trust tag. Absent env = "local", mirroring
  * authority/deployment-mode.ts's default — the tag must never throw, so
  * unlike deploymentMode() an unrecognized value is passed through verbatim
  * rather than rejected (observability reports posture, it does not enforce it).

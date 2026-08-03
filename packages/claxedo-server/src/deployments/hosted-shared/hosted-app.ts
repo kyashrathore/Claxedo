@@ -178,7 +178,7 @@ function guardedExecutionWaitUntil(context: Context): ((promise: Promise<unknown
 
 // Hosted CORS reflects ONLY deployment-configured origins. There is
 // deliberately no built-in `http://localhost:*` / `http://127.0.0.1:*` branch:
-// this middleware runs on the internet-facing Worker, where a blanket loopback
+// This middleware runs on the internet-facing Worker, where a blanket loopback
 // grant hands every port on a visitor's machine a same-origin read of the
 // hosted control plane, and buys nothing the config cannot express. A
 // deployment that genuinely wants a local app to talk to it (staging, a
@@ -384,7 +384,7 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
     ),
   )
 
-  // D9: global unsigned-local gate, defense-in-depth here — the boot
+  // Global unsigned-local gate, defense-in-depth here — the boot
   // assertion above guarantees signed auth, so this only fires if a hosted
   // composition somehow reaches serving unsigned (then: down, not open).
   app.use(
@@ -417,7 +417,7 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
     }),
   )
 
-  // D6/B4 — the ONE entitlement predicate behind the hosted choke points
+  // The ONE entitlement predicate behind the hosted choke points
   // (src/billing/entitlement.ts). The org whose subscription matters is the
   // caller's ACTIVE org (Clerk org claim if a member, else the personal org),
   // resolved through the same authority call the rest of the control plane

@@ -1,5 +1,5 @@
 /**
- * W4.2/W4.3 — the Convex adapter behind `DurableIdempotencyStore`.
+ * The Convex adapter behind `DurableIdempotencyStore`.
  *
  * Same calling convention as the rest of this directory: service-token mutations
  * over `ConvexHttpClient`, each wrapped in `withTimeout`. `now` is passed from

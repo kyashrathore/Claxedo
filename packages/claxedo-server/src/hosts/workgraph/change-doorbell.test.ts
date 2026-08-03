@@ -286,7 +286,7 @@ describe("WorkGraph doorbell publish points", () => {
   // stored was org-scoped, so one owner in two organizations shared a baseline.
   // With the orgs at different tips the baseline ping-pongs, and every tick one
   // observation reads as an advance — nudging forever with nothing changed. That
-  // breaks the zero-idle-cost property this watcher exists to preserve (plan R3).
+  // breaks the zero-idle-cost property this watcher exists to preserve.
   it("stays silent for an idle owner who exists in two organizations", async () => {
     const published: WorkgraphChangedEvent[] = []
     const embedded = await composeWorkGraph(published)

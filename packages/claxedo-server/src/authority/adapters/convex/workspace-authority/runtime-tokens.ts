@@ -43,7 +43,7 @@ export function runtimeTokenAuthority(input: ConvexAuthorityInput) {
       hostId: string
     }) {
       // Machine path with no end-user JWT: the executor stays unsigned, and the
-      // verified principal is the control-plane service token (D8). Convex
+      // verified principal is the control-plane service token. Convex
       // rejects the call without it.
       return requireExecutor(input, undefined, { allowUnsigned: true }).query(convexApi.runtimeAccessTokens.active, {
         service_token: requireServiceToken(input),

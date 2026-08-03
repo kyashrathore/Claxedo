@@ -138,7 +138,7 @@ type CentralSessionRuntimeOptions = {
     baseCommit?: string
   }) => Promise<{ directory: string; worktree: string; baseCommit: string; leaseEpoch: number }>
   /**
-   * W5 (plan D1): the authoritative destination for completed-turn token
+   * The authoritative destination for completed-turn token
    * counts, dual-written beside the best-effort PostHog capture. Absent = the
    * analytics event still goes out and nothing is recorded, which is the
    * correct posture for a self-host box with no control plane.
@@ -571,7 +571,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
 
   /**
    * The single ingress every compat event crosses on its way out of a turn:
-   * the live event hub, W5 turn metering, session-title persistence, and the
+   * The live event hub, W5 turn metering, session-title persistence, and the
    * durable message log. Named and returned on the runtime handle because it is
    * the one place that observes a completed turn — the signed request is
    * several layers above and there is no request context left by the time a
