@@ -180,7 +180,27 @@ const layer = Layer.effect(
       }
       yield* Effect.logInfo("creating session", { id, cmd: command, args, cwd })
       const { spawn } = yield* Effect.promise(() => pty())
-      const proc = yield* Effect.sync(() => spawn(command, args, { name: "xterm-256color", cwd, env }))
+      // Subscribe to exit in the SAME synchronous turn as spawn.
+      //
+      // node-pty's EventEmitter2.fire() walks only the listeners present when
+      // it fires and never replays, so a listener attached later simply misses
+      // the event. The real `onExit` wiring below runs ~40 lines and several
+      // await points after this, which a fast command (`sh -c "exit 4"`) beats
+      // — the session then reports `running` forever, its exit code is lost,
+      // and the exited-session retention contract silently does not hold.
+      //
+      // Recording the outcome here closes that window: whichever listener the
+      // process reaches, the code is captured, and the handler below applies it
+      // immediately if the exit already happened.
+      const early: { exited: boolean; exitCode: number } = { exited: false, exitCode: 0 }
+      const proc = yield* Effect.sync(() => {
+        const spawned = spawn(command, args, { name: "xterm-256color", cwd, env })
+        spawned.onExit(({ exitCode }) => {
+          early.exited = true
+          early.exitCode = exitCode
+        })
+        return spawned
+      })
       const info: Info = {
         id,
         title: input.title || `Terminal ${id.slice(-4)}`,
@@ -220,27 +240,31 @@ const layer = Layer.effect(
           session.buffer = session.buffer.slice(excess)
           session.bufferCursor += excess
         }),
-        proc.onExit(({ exitCode }) => {
-          if (session.info.status === "exited") return
-          session.info.status = "exited"
-          session.info.exitCode = exitCode
-          notifyEnd(session, { exitCode })
-          exitOrder.push(id)
-          runFork(
-            Effect.gen(function* () {
-              yield* Effect.logInfo("session exited", { id, exitCode })
-              yield* events.publish(Event.Exited, { id, exitCode })
-              while (exitOrder.length > EXITED_LIMIT) {
-                const oldest = exitOrder[0]
-                if (!oldest) break
-                yield* removeSession(oldest)
-              }
-            }),
-          )
-        }),
+        proc.onExit(({ exitCode }) => markExited(exitCode)),
       )
+      // The process may already be gone; `early` holds its code if so.
+      if (early.exited) markExited(early.exitCode)
       yield* events.publish(Event.Created, { info })
       return info
+
+      function markExited(exitCode: number) {
+        if (session.info.status === "exited") return
+        session.info.status = "exited"
+        session.info.exitCode = exitCode
+        notifyEnd(session, { exitCode })
+        exitOrder.push(id)
+        runFork(
+          Effect.gen(function* () {
+            yield* Effect.logInfo("session exited", { id, exitCode })
+            yield* events.publish(Event.Exited, { id, exitCode })
+            while (exitOrder.length > EXITED_LIMIT) {
+              const oldest = exitOrder[0]
+              if (!oldest) break
+              yield* removeSession(oldest)
+            }
+          }),
+        )
+      }
     })
 
     const update = Effect.fn("Pty.update")(function* (id: PtyID, input: UpdateInput) {
