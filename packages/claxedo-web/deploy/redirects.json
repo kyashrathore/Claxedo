@@ -76,31 +76,11 @@
     },
     {
       "host": "docs.claxedo.com",
-      "from": "/cli",
+      "from": "/concepts/credentials",
       "aliases": [
-        "/cli/"
+        "/concepts/credentials/"
       ],
-      "to": "https://claxedo.com/framework/cli",
-      "status": 301,
-      "preserveQuery": false
-    },
-    {
-      "host": "docs.claxedo.com",
-      "from": "/concepts/connections-capabilities",
-      "aliases": [
-        "/concepts/connections-capabilities/"
-      ],
-      "to": "https://claxedo.com/framework/concepts/connections-capabilities",
-      "status": 301,
-      "preserveQuery": false
-    },
-    {
-      "host": "docs.claxedo.com",
-      "from": "/concepts/credentials-sandbox",
-      "aliases": [
-        "/concepts/credentials-sandbox/"
-      ],
-      "to": "https://claxedo.com/framework/concepts/credentials-sandbox",
+      "to": "https://claxedo.com/framework/concepts/credentials",
       "status": 301,
       "preserveQuery": false
     },
@@ -126,171 +106,31 @@
     },
     {
       "host": "docs.claxedo.com",
-      "from": "/concepts/sessions-hosts",
+      "from": "/concepts/sessions-turns-events",
       "aliases": [
-        "/concepts/sessions-hosts/"
+        "/concepts/sessions-turns-events/"
       ],
-      "to": "https://claxedo.com/framework/concepts/sessions-hosts",
+      "to": "https://claxedo.com/framework/concepts/sessions-turns-events",
       "status": 301,
       "preserveQuery": false
     },
     {
       "host": "docs.claxedo.com",
-      "from": "/cookbook/01-hello-agent",
+      "from": "/concepts/workspace-host",
       "aliases": [
-        "/cookbook/01-hello-agent/"
+        "/concepts/workspace-host/"
       ],
-      "to": "https://claxedo.com/framework/cookbook/01-hello-agent",
+      "to": "https://claxedo.com/framework/concepts/workspace-host",
       "status": 301,
       "preserveQuery": false
     },
     {
       "host": "docs.claxedo.com",
-      "from": "/cookbook/02-harness-swap",
+      "from": "/deploy/cloudflare-full-stack",
       "aliases": [
-        "/cookbook/02-harness-swap/"
+        "/deploy/cloudflare-full-stack/"
       ],
-      "to": "https://claxedo.com/framework/cookbook/02-harness-swap",
-      "status": 301,
-      "preserveQuery": false
-    },
-    {
-      "host": "docs.claxedo.com",
-      "from": "/cookbook/03-one-event-shape",
-      "aliases": [
-        "/cookbook/03-one-event-shape/"
-      ],
-      "to": "https://claxedo.com/framework/cookbook/03-one-event-shape",
-      "status": 301,
-      "preserveQuery": false
-    },
-    {
-      "host": "docs.claxedo.com",
-      "from": "/cookbook/04-kill-and-resume",
-      "aliases": [
-        "/cookbook/04-kill-and-resume/"
-      ],
-      "to": "https://claxedo.com/framework/cookbook/04-kill-and-resume",
-      "status": 301,
-      "preserveQuery": false
-    },
-    {
-      "host": "docs.claxedo.com",
-      "from": "/cookbook/05-workspace-host",
-      "aliases": [
-        "/cookbook/05-workspace-host/"
-      ],
-      "to": "https://claxedo.com/framework/cookbook/05-workspace-host",
-      "status": 301,
-      "preserveQuery": false
-    },
-    {
-      "host": "docs.claxedo.com",
-      "from": "/cookbook/06-extensions-once",
-      "aliases": [
-        "/cookbook/06-extensions-once/"
-      ],
-      "to": "https://claxedo.com/framework/cookbook/06-extensions-once",
-      "status": 301,
-      "preserveQuery": false
-    },
-    {
-      "host": "docs.claxedo.com",
-      "from": "/cookbook/07-sandbox-secrets",
-      "aliases": [
-        "/cookbook/07-sandbox-secrets/"
-      ],
-      "to": "https://claxedo.com/framework/cookbook/07-sandbox-secrets",
-      "status": 301,
-      "preserveQuery": false
-    },
-    {
-      "host": "docs.claxedo.com",
-      "from": "/cookbook/08-place-anywhere",
-      "aliases": [
-        "/cookbook/08-place-anywhere/"
-      ],
-      "to": "https://claxedo.com/framework/cookbook/08-place-anywhere",
-      "status": 301,
-      "preserveQuery": false
-    },
-    {
-      "host": "docs.claxedo.com",
-      "from": "/cookbook/overview",
-      "aliases": [
-        "/cookbook/overview/"
-      ],
-      "to": "https://claxedo.com/framework/cookbook/overview",
-      "status": 301,
-      "preserveQuery": false
-    },
-    {
-      "host": "docs.claxedo.com",
-      "from": "/deploy/hosted-control-plane",
-      "aliases": [
-        "/deploy/hosted-control-plane/"
-      ],
-      "to": "https://claxedo.com/framework/deploy/hosted-control-plane",
-      "status": 301,
-      "preserveQuery": false
-    },
-    {
-      "host": "docs.claxedo.com",
-      "from": "/deploy/local",
-      "aliases": [
-        "/deploy/local/"
-      ],
-      "to": "https://claxedo.com/framework/deploy/local",
-      "status": 301,
-      "preserveQuery": false
-    },
-    {
-      "host": "docs.claxedo.com",
-      "from": "/deploy/private-vm",
-      "aliases": [
-        "/deploy/private-vm/"
-      ],
-      "to": "https://claxedo.com/framework/deploy/private-vm",
-      "status": 301,
-      "preserveQuery": false
-    },
-    {
-      "host": "docs.claxedo.com",
-      "from": "/deploy/relay-attached",
-      "aliases": [
-        "/deploy/relay-attached/"
-      ],
-      "to": "https://claxedo.com/framework/deploy/relay-attached",
-      "status": 301,
-      "preserveQuery": false
-    },
-    {
-      "host": "docs.claxedo.com",
-      "from": "/deploy/sandbox-drivers-secrets",
-      "aliases": [
-        "/deploy/sandbox-drivers-secrets/"
-      ],
-      "to": "https://claxedo.com/framework/deploy/sandbox-drivers-secrets",
-      "status": 301,
-      "preserveQuery": false
-    },
-    {
-      "host": "docs.claxedo.com",
-      "from": "/deploy/self-host-fly",
-      "aliases": [
-        "/deploy/self-host-fly/"
-      ],
-      "to": "https://claxedo.com/framework/deploy/self-host-fly",
-      "status": 301,
-      "preserveQuery": false
-    },
-    {
-      "host": "docs.claxedo.com",
-      "from": "/ecosystem",
-      "aliases": [
-        "/ecosystem/"
-      ],
-      "to": "https://claxedo.com/framework/ecosystem",
+      "to": "https://claxedo.com/framework/deploy/cloudflare-full-stack",
       "status": 301,
       "preserveQuery": false
     },

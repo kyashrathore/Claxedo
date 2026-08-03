@@ -10,7 +10,9 @@ describe("framework routes", () => {
     expect(await Bun.file(new URL("src/pages/framework.astro", root)).exists()).toBe(true)
     expect(generated).toContain("guides/install.mdx")
     expect(generated).toContain("api/workspace-runtime.mdx")
-    expect(generated).toContain("cookbook/01-hello-agent.mdx")
+    // The docs refocus (84480e0c6) deleted the cookbook section; the spot-check
+    // now pins a page from the surviving concepts set instead.
+    expect(generated).toContain("concepts/workspace-host.mdx")
   })
 
 })

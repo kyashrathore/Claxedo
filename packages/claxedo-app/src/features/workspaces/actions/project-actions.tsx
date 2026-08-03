@@ -19,6 +19,7 @@ import { capture as phCapture, identityProps } from "@/platform/telemetry/analyt
 import { workspaceSessionRoute } from "@/platform/identity/route"
 import { createLocalWorkspace, type LocalWorkspaceProps } from "./workspace-recovery"
 import { DialogCreateCloudProject } from "../ui/dialogs/create-cloud-project"
+import { centralTransportForServer } from "@/platform/runtime/agent/workspace-runtime-request"
 import type { ClaxedoEvent } from "../../../app/integrations/claxedo-events"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
@@ -140,12 +141,15 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
       props.dialog.close()
     }
 
-    // On hosted web there is no local filesystem behind the directory picker —
-    // it routes through the loopback bridge and dead-ends. The web path is the
-    // cloud create flow: pick a connected GitHub repository (or paste a URL,
-    // with a connect-GitHub path inside the dialog), provision a sandbox, and
-    // open the resulting workspace directory like any other selection.
-    if (props.platform.platform === "web") {
+    // On HOSTED web there is no local filesystem behind the directory picker —
+    // it routes through the loopback bridge and dead-ends. The hosted-web path
+    // is the cloud create flow: pick a connected GitHub repository (or paste a
+    // URL, with a connect-GitHub path inside the dialog), provision a sandbox,
+    // and open the resulting workspace directory like any other selection.
+    // Web against a LOOPBACK server (self-host localhost) keeps the directory
+    // picker — the local filesystem is right there, same discriminator the
+    // home route uses.
+    if (props.platform.platform === "web" && centralTransportForServer(props.globalSDK.url) !== "loopback") {
       void props.dialog.show(() => (
         <DialogCreateCloudProject
           onSelect={(result) => {
