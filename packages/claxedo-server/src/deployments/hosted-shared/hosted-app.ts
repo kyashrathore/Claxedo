@@ -123,7 +123,7 @@ export type HostedAppOverrides = {
   /** D11 supplies hosted document index/blob storage through this Worker-safe seam. */
   documentsBackend?: DocumentsRouteBackend
   /**
-   * W5.2: per-owner live-sync fan-out Durable Object namespace. Present on the
+   * Per-owner live-sync fan-out Durable Object namespace. Present on the
    * Cloudflare Worker (bound as LIVE_SYNC_ROOM); when present the hosted events
    * route holds the client SSE stream in the caller's room. Absent in
    * Node/self-host/test compositions, the route provides heartbeat fallback.
@@ -277,7 +277,7 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   const app = new Hono()
   const liveSyncRoom = overrides.liveSyncRoom
   const settlementDispatcherByRequest = new WeakMap<Request, SettlementDispatcher>()
-  // W5.3: per-request `waitUntil`, captured in `forwardWorkGraph` from the active
+  // Per-request `waitUntil`, captured in `forwardWorkGraph` from the active
   // ExecutionContext, so the internal WorkGraph service can ring the live-sync
   // room past the mutation response without blocking it.
   const liveSyncWaitUntilByRequest = new WeakMap<Request, (promise: Promise<unknown>) => void>()
@@ -357,7 +357,7 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
     if (!overrides.workgraph) {
       const waitUntil = guardedExecutionWaitUntil(context)
       if (waitUntil) {
-        // W5.3: the internal WorkGraph service reads this to ring the live-sync
+        // The internal WorkGraph service reads this to ring the live-sync
         // room after the response (it has no ExecutionContext of its own).
         liveSyncWaitUntilByRequest.set(request, waitUntil)
         if (overrides.workGraphSettlementDispatcherForRequest) {
@@ -394,7 +394,7 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
     }),
   )
 
-  // W3.2 — the DEFAULT body cap + abuse rate limit for every mounted route.
+  // The DEFAULT body cap + abuse rate limit for every mounted route.
   // Registered here (after the auth-posture gate, before any route mounts) so a
   // route cannot ship without one: escaping the default requires a named entry
   // exemption (core list + each feature's own), which route-guard-inventory.test.ts reads.

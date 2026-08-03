@@ -2,7 +2,7 @@
  * Control-plane abuse limiting: a per-isolate fixed-window fuse plus an
  * optional CROSS-ISOLATE shared store.
  *
- * ## Why a shared store at all (W3.1)
+ * ## Why a shared store at all
  *
  * `createFixedWindowConnectionRateLimiter` keeps buckets in a per-isolate
  * `Map`. Cloudflare runs many isolates per deployment, so the effective budget
@@ -10,7 +10,7 @@
  * it exists to bound. `createLayeredRateLimiter` closes that by consulting a
  * shared store after the local fuse.
  *
- * ## W3.1 DECISION: Cloudflare's native rate-limiting binding, not a counter DO
+ * ## DECISION: Cloudflare's native rate-limiting binding, not a counter DO
  *
  * Chosen: the native binding (`[[ratelimits]]` in wrangler.toml, `RateLimit`
  * API, `env.<NAME>.limit({ key })`).
@@ -54,7 +54,7 @@
  * that topology rather than merely tolerable. Multi-instance Node is a known
  * gap (see `docs/plans/2026-07-18-001`); it would need a real shared store.
  *
- * ## Relationship to `@claxedo/channels`' limiter (W3.5)
+ * ## Relationship to `@claxedo/channels`' limiter
  *
  * `claxedo-channels/src/core/rate-limit.ts` has a SECOND, independent
  * implementation: `createSlidingWindowRateLimiter`, keyed by an opaque string
@@ -185,7 +185,7 @@ export function createFixedWindowConnectionRateLimiter(options: {
  * Adapt Cloudflare's `[[ratelimits]]` binding to `SharedRateLimitStore`.
  *
  * Fails OPEN on a thrown `limit()`. The binding is an availability dependency of
- * every request once the default middleware is app-wide (W3.2); turning a
+ * every request once the default middleware is app-wide; turning a
  * limiter blip into a 429 storm across the whole control plane trades a bounded
  * abuse window for a total outage. The in-memory fuse still holds the
  * per-isolate ceiling while the store is unavailable, so failing open degrades
@@ -212,7 +212,7 @@ export function cloudflareRateLimitStore(
 
 /**
  * The async limiter the default middleware uses: local fuse FIRST, shared store
- * second (W3.4).
+ * second.
  *
  * Ordering is the point. The local `Map` check is free and catches the common
  * case (one isolate absorbing a flood), so the shared store — a real call, even

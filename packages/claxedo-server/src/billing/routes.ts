@@ -51,7 +51,7 @@ export type BillingEnv = Record<string, string | undefined>
  * any object satisfying this shape.
  */
 /**
- * W4.5 — per-call deadline for every Polar request.
+ * Per-call deadline for every Polar request.
  *
  * `@polar-sh/sdk` 0.48.1 takes `{ timeoutMs }` as each method's second argument
  * and turns it into a real `AbortSignal.timeout` on the underlying fetch
@@ -180,7 +180,7 @@ export type BillingRouteOptions = {
 }
 
 /**
- * Hard cap on the Polar webhook body (W3.3).
+ * Hard cap on the Polar webhook body.
  *
  * 512 KiB. Polar's largest documented billing event — a subscription with full
  * customer + product + price expansion — is single-digit KiB, so this is ~100x
@@ -285,7 +285,7 @@ function providerError() {
 }
 
 /**
- * W4.3 — a concurrent delivery of the same `webhook-id` is already being applied
+ * A concurrent delivery of the same `webhook-id` is already being applied
  * in another isolate. Raised so the webhook's existing catch turns it into a 500
  * and Polar retries: the in-flight attempt may still fail, and a 2xx here would
  * consume the only delivery that could have applied the event.
@@ -308,7 +308,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
   // webhook has no principal and gets its own IP-keyed limiter below.
   const rateLimiter = options.rateLimiter ?? createFixedWindowConnectionRateLimiter({ limit: 20, windowMs: 60_000 })
   /**
-   * W3.3: the webhook's own limiter, keyed on the CALLER'S IP.
+   * The webhook's own limiter, keyed on the CALLER'S IP.
    *
    * The route is unauthenticated by construction — Polar proves itself with a
    * Standard-Webhooks signature, not a bearer token — so there is no principal
@@ -325,7 +325,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
     options.webhookRateLimiter ?? createFixedWindowConnectionRateLimiter({ limit: 120, windowMs: 60_000 })
 
   /**
-   * W4.3: run `apply` at most once per Polar delivery id.
+   * Run `apply` at most once per Polar delivery id.
    *
    * Rides the SAME durable store as control-route idempotency
    * (`convex/idempotency.ts`) under a `polar-webhook:` key prefix, rather than a
@@ -435,7 +435,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
     new Hono()
       // ── Webhook intake (D5 single-writer path) ─────────────────────────────
       .post("/polar/webhook", async (c) => {
-        // W3.3 — limiter FIRST, before the secret lookup, the body read, and the
+        // Limiter FIRST, before the secret lookup, the body read, and the
         // signature HMAC. Every step after this point costs something an
         // unauthenticated caller should not be able to spend without bound.
         const webhookLimit = webhookRateLimiter.check({
@@ -454,7 +454,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
             429,
           )
         }
-        // W3.3 — cap the body BEFORE buffering it, and before the secret lookup.
+        // Cap the body BEFORE buffering it, and before the secret lookup.
         // Previously this was a bare `c.req.text()` further down, so an
         // unauthenticated caller decided how much memory the Worker allocated,
         // ahead of signature verification.
@@ -485,7 +485,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
           return c.json(unavailable("Webhook secret is not configured"), 503)
         }
         const payload = body.payload
-        // W4.3: the same header the signature is computed over, kept for dedup.
+        // The same header the signature is computed over, kept for dedup.
         // Read once so verification and dedup cannot disagree about which
         // delivery this is.
         const webhookId = clean(c.req.header("webhook-id"))
@@ -533,7 +533,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
         }
 
         try {
-          // W4.3 — dedup on `webhook-id`. Until now that header was read only as
+          // Dedup on `webhook-id`. Until now that header was read only as
           // signature input (`standard-webhooks.ts`), so a redelivery of the same
           // event re-applied it. The existing protection is the single writer's
           // `source_ts` guard (convex/billing.ts), which is last-write-wins on a
@@ -643,7 +643,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
             ...(clean(env.CLAXEDO_POLAR_CHECKOUT_SUCCESS_URL)
               ? { successUrl: clean(env.CLAXEDO_POLAR_CHECKOUT_SUCCESS_URL)! }
               : {}),
-            // W4.5: a person is waiting on a redirect. Without a deadline this
+            // A person is waiting on a redirect. Without a deadline this
             // held the request open for as long as Polar took to answer, which
             // on Workers means holding the isolate too.
           }, { timeoutMs: POLAR_INTERACTIVE_TIMEOUT_MS })

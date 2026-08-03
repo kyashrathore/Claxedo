@@ -1,5 +1,5 @@
 /**
- * Sandbox provisioning × agent-extensions integration test (W4).
+ * Sandbox provisioning × agent-extensions integration test.
  *
  * The in-sandbox workspace-runtime already replays `agent_extensions` from
  * every `POST /api/wr/config` push into its OWN filesystem

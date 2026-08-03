@@ -50,7 +50,7 @@ export async function reconcileBillingState(input: {
   // newer state — idempotent by source_ts.
   for (const org of flagged) {
     try {
-      // W4.5: bound EVERY Polar call on this path. The loop is serial, so one
+      // Bound EVERY Polar call on this path. The loop is serial, so one
       // untimed call stalls not just this org but every org behind it — the
       // sweep silently stops making progress with nobody watching. The SDK
       // turns `timeoutMs` into a real AbortSignal, so a timed-out call is
@@ -121,7 +121,7 @@ export async function cancelDeletedOrgSubscriptions(input: {
   let failed = 0
   for (const org of deleted) {
     try {
-      // W4.5: same serial-loop hazard as reconcileBillingState above.
+      // Same serial-loop hazard as reconcileBillingState above.
       await polar.subscriptions.revoke(
         { id: org.polar_subscription_id },
         { timeoutMs: POLAR_SWEEP_TIMEOUT_MS },

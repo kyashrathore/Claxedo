@@ -125,7 +125,7 @@ function fakePlane(
       connectionRateLimitWindowMs: 60_000,
       controlPlaneRateLimit: 120,
       controlPlaneRateLimitWindowMs: 60_000,
-      // W3.2: the default guard's coarse ceiling. Kept high in tests so it never
+      // The default guard's coarse ceiling. Kept high in tests so it never
       // becomes the reason an unrelated assertion sees a 429.
       defaultRequestRateLimit: 10_000,
       defaultRequestRateLimitWindowMs: 60_000,

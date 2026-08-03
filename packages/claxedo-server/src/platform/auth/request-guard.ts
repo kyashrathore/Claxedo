@@ -1,7 +1,7 @@
 /**
  * The hosted control plane's DEFAULT request guard: one Hono middleware that
  * gives every mounted route a body cap and an abuse rate limit unless the route
- * is explicitly, namedly exempted (W3.2).
+ * is explicitly, namedly exempted.
  *
  * ## Why default-on rather than per-route
  *

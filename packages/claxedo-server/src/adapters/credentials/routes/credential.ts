@@ -86,7 +86,7 @@ export type CredentialRoutesOptions = {
   /**
    * When set, EVERY credential route requires `Authorization: Bearer <token>`.
    * Deployed/public instances must set this (CLAXEDO_CREDENTIALS_TOKEN) until
-   * real accounts land (W1): without it an unsigned public box would accept
+   * real accounts land: without it an unsigned public box would accept
    * anonymous credential writes/deletes and sync-local trigger.
    */
   token?: string

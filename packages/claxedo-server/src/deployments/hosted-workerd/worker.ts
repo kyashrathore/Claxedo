@@ -59,7 +59,7 @@ import type { DocumentIndexEntry } from "../../documents/index-store"
 
 export { WorkGraphSettler }
 
-// W5.1: the per-owner live-sync fan-out Durable Object. Cloudflare instantiates
+// The per-owner live-sync fan-out Durable Object. Cloudflare instantiates
 // DO classes itself, so it must be exported from the Worker entry module and
 // bound (LIVE_SYNC_ROOM) + migrated in wrangler.toml. It holds hosted client
 // SSE streams and fans nudges POSTed from any isolate; see src/deployments/hosted-workerd/live-sync-room.cf.ts.
@@ -146,7 +146,7 @@ function buildApp(env: WorkerEnv): Hono {
   // Every trigger path (cron, admin route, smoke cycles) shares one per-isolate
   // guard: overlapping reconciles have hung the Workers runtime.
   //
-  // W4.4: that guard is per-isolate — this closure lives in the `cached` memo
+  // That guard is per-isolate — this closure lives in the `cached` memo
   // below — so it cannot see a reconcile running in ANOTHER isolate, and
   // Cloudflare runs many. Wrapping the local guard in a Convex-held fenced
   // lease closes that. Composed here rather than at either guard because
@@ -159,7 +159,7 @@ function buildApp(env: WorkerEnv): Hono {
   // a Convex round trip.
   const cronLeaseUrl = clean(hostedEnv.CLAXEDO_WORKSPACE_AUTHORITY_URL)
   const cronLeaseToken = clean(hostedEnv.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN)
-  // W4.2: promote control-route idempotency from per-isolate to durable. Same
+  // Promote control-route idempotency from per-isolate to durable. Same
   // credentials as the lease above, and installed HERE (the hosted Worker entry)
   // rather than inside `createControlPlaneServices`, because only the hosted
   // composition runs many isolates. `server.ts`'s self-host path is one process,
@@ -196,11 +196,11 @@ function buildApp(env: WorkerEnv): Hono {
   const documentsBucket = (env as unknown as { CLAXEDO_DOCUMENTS?: R2BucketBinding }).CLAXEDO_DOCUMENTS
   const app = createHostedApp(plane, {
     ...(workGraphReconcile ? { workGraphReconcile } : {}),
-    // W5.2: hand the live-sync fan-out DO namespace to the hosted shell so
+    // Hand the live-sync fan-out DO namespace to the hosted shell so
     // GET /api/claxedo/events (and aliases) hold their client SSE stream in the
     // caller's LiveSyncRoom.
     ...(env.LIVE_SYNC_ROOM ? { liveSyncRoom: env.LIVE_SYNC_ROOM } : {}),
-    // W3.1: the cross-isolate ceiling for the default request guard. The
+    // The cross-isolate ceiling for the default request guard. The
     // binding's period is fixed at 60s in wrangler.toml, matching
     // defaultRequestRateLimitWindowMs so both layers mean the same minute.
     ...(env.CLAXEDO_REQUEST_LIMITER
@@ -446,7 +446,7 @@ async function runScheduled(controller: ScheduledController, env: WorkerEnv, ctx
     )
     if (!response.ok) {
       const detail = await response.text().catch(() => "")
-      // W1.3: a driver that cannot enumerate provider state is a STANDING
+      // A driver that cannot enumerate provider state is a STANDING
       // capability gap, not a per-run failure. It is reported (warning +
       // telemetry, both emitted by the route) but not thrown: a cron that is red
       // on every single invocation for a condition no run can change trains

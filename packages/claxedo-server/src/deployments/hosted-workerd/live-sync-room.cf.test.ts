@@ -631,7 +631,7 @@ describe("LiveSyncRoom — Last-Event-ID replay", () => {
 })
 
 /**
- * The held-connection cap (W2.1) — previously enforced at two sites with zero
+ * The held-connection cap — previously enforced at two sites with zero
  * coverage, so nothing caught that the two counters were independent budgets:
  * a room at the WS limit would still admit a full second population on the SSE
  * path. These tests pin the 503 on both paths AND the shared budget.

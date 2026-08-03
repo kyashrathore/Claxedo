@@ -43,7 +43,7 @@ export function HostedSandboxAdminRoutes(options: HostedSandboxAdminOptions = {}
       failed: result.failed.length,
       ...(result.listingUnsupported ? { listingUnsupported: true, driver: result.driver } : {}),
     })
-    // W1.3: a driver that cannot enumerate provider state did not sweep — it
+    // A driver that cannot enumerate provider state did not sweep — it
     // failed to look. Four empty arrays behind a 200 is the silent success
     // finding B1 names, so this path is loud in both channels: a warning the
     // cron surfaces, and a non-2xx the caller (including the cron's own

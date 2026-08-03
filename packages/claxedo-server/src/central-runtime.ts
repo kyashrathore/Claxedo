@@ -120,7 +120,7 @@ async function centralRuntimeAccess(
       )
     }
     await authorizeSignedCentralRuntimeSession(services, auth, sessionId)
-    // W5: the org travels with the subject so a completed turn can be keyed to
+    // The org travels with the subject so a completed turn can be keyed to
     // a tenant. Both come from the same verified token, and the org claim is
     // absent on personal-account sign-ins — the metering path treats that as
     // "no tenant" rather than substituting one.

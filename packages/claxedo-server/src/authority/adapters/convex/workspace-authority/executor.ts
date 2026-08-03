@@ -58,7 +58,7 @@ function serviceToken(env: NodeJS.ProcessEnv = process.env) {
 }
 
 /**
- * W4.1 — the argument names that make a Convex mutation safe to replay.
+ * The argument names that make a Convex mutation safe to replay.
  *
  * A mutation is retryable only if the SERVER can recognize the second delivery
  * as the same operation. That recognition always rides an argument the caller

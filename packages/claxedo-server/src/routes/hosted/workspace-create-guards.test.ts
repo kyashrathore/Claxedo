@@ -577,7 +577,7 @@ function handler(fn: unknown) {
 }
 
 /**
- * W5: `countActiveForOrg` reads scoped `by_org_status` / `by_owner_subject_status`
+ * `countActiveForOrg` reads scoped `by_org_status` / `by_owner_subject_status`
  * index ranges instead of scanning `runtime_leases`, so this double resolves
  * index names against the real convex/schema.ts (`convex-index-harness.ts`).
  * A wrong index name or an out-of-order comparison throws rather than quietly

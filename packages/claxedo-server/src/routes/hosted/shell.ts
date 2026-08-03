@@ -51,7 +51,7 @@ export type HostedShellRouteOptions = {
   /** Heartbeat cadence for the events stream (tests shrink this). */
   heartbeatMs?: number
   /**
-   * W5.2: per-owner live-sync fan-out Durable Object namespace (Cloudflare
+   * Per-owner live-sync fan-out Durable Object namespace (Cloudflare
    * Worker only). The public SSE route is bridged to a hibernatable socket held
    * by the caller's LiveSyncRoom. Absent → heartbeat fallback.
    */

@@ -120,7 +120,7 @@ export function createHostedWorkGraph(
     settlementDispatcher?: SettlementDispatcher
     settlementDispatcherForRequest?: (request: Request) => SettlementDispatcher | undefined
     /**
-     * W5.3: per-owner/org live-sync fan-out Durable Object namespace (Cloudflare
+     * Per-owner/org live-sync fan-out Durable Object namespace (Cloudflare
      * Worker only). When present, every successful WorkGraph command rings the
      * caller's `LiveSyncRoom` with a `workgraph.changed` doorbell so a client
      * whose SSE stream is held by another isolate reloads. Absent (Node/self-host
@@ -195,7 +195,7 @@ export function createHostedWorkGraph(
     : rawService
   const settlementDispatcher = input.settlementDispatcher ?? noopSettlementDispatcher
   const now = input.now ?? Date.now
-  // W5.3: ring the caller's live-sync room after a successful command so a
+  // Ring the caller's live-sync room after a successful command so a
   // client whose SSE stream is held by another Worker isolate reloads. The room
   // NAME is derived from the AUTHORITY-INTERNAL org id already resolved for
   // this context (`trustedOrganizationId` → the settlement tenant), identical

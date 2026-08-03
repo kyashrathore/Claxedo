@@ -841,7 +841,7 @@ export function createApp(
     channels: controlPlaneChannels,
   })
 
-  // Web UI parity (W2): serve a built claxedo-app bundle from the box when
+  // Web UI parity: serve a built claxedo-app bundle from the box when
   // CLAXEDO_APP_DIST_DIR points at one (self-host single-process deploys).
   // Mounted LAST so every API route wins; unmatched GETs fall through to the
   // bundle, and unknown html paths get the SPA index (client-side routing,

@@ -1,5 +1,5 @@
 /**
- * W3.3: the Polar webhook's body cap and IP-keyed rate limit.
+ * The Polar webhook's body cap and IP-keyed rate limit.
  *
  * This was the sharpest gap in the whole finding. `POST /api/billing/polar/webhook`
  * is unauthenticated by construction (Polar proves itself with a

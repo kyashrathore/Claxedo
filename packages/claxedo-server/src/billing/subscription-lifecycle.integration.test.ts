@@ -313,7 +313,7 @@ describe("cloud subscription lifecycle (integration rehearsal)", () => {
         externalCustomerId: `org_${orgDocId}`, // F9: keyed on the ORG, not the admin
         metadata: { org_id: orgDocId },
       }),
-      // W4.5: the interactive deadline rides every user-facing Polar call.
+      // The interactive deadline rides every user-facing Polar call.
       { timeoutMs: POLAR_INTERACTIVE_TIMEOUT_MS },
     )
 
