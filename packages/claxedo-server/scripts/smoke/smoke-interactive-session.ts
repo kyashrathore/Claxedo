@@ -341,6 +341,17 @@ export async function interactiveSessionSmoke(env: SmokeEnvironment = process.en
           headers: { ...authorization(cleanupToken), "content-type": "application/json" },
           body: JSON.stringify({ approved: true }),
         })
+        // Teardown has TWO layers and destroy is only the first: it reclaims
+        // the sandbox VM, while the Convex workspace ROW survives — correct for
+        // a real user's project awaiting its next wake, but for a smoke that is
+        // done forever it left one "Interactive session smoke …" corpse in the
+        // app's project inventory per deploy (and a per-project /documents 404
+        // on every index load). DELETE /api/workspace/:id is the row
+        // soft-delete.
+        await jsonRequest(request, `${base}/api/workspace/${encodeURIComponent(workspaceId)}?access=cloud`, {
+          method: "DELETE",
+          headers: authorization(cleanupToken),
+        })
         progress(`destroyed smoke Workspace ${workspaceId}`)
       } catch (error) {
         console.warn(`Interactive smoke Workspace cleanup failed: ${errorMessage(error)}`)

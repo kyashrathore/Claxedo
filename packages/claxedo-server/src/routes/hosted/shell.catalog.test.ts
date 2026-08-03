@@ -78,3 +78,32 @@ describe("hosted shell marketplace routes", () => {
     }
   })
 })
+
+describe("signed shell projects", () => {
+  const cloudRow = (workspaceId: string, name = workspaceId) => ({
+    workspace_id: workspaceId,
+    display_name: name,
+    project_id: workspaceId,
+    backing: "cloud-vm",
+    access: "cloud",
+    remote_directory: "/workspace",
+    created_at: 1_000,
+    updated_at: 2_000,
+  })
+
+  test("WorkGraph execution scopes (wg-*) never surface as projects", async () => {
+    const { signedShellProjects } = await import("./shell")
+    const projects = signedShellProjects(
+      [
+        cloudRow("ws_real_1", "My repo"),
+        // The `wg-<sha>` shape workGraphWorkspaceId mints per stream — a
+        // managed-run internal with no interactive sandbox. Surfacing it gave
+        // the rail a "WorkGraph · …" pseudo-project that hung on "Preparing
+        // workspace" and 404'd the documents fan-out.
+        cloudRow("wg-0973c9dc90d8abeb2d860ebd", "WorkGraph · Confirm the hosted no-op path"),
+      ],
+      3_000,
+    )
+    expect(projects.map((project) => project.id)).toEqual(["ws_real_1"])
+  })
+})

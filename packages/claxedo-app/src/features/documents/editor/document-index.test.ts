@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createDocumentIndexController, documentProjectIdentity, resolveDocumentProjectScope } from "./document-index"
-import type { DocumentSummary, DocumentsApi } from "../data/documents-api"
+import { DocumentApiError, type DocumentSummary, type DocumentsApi } from "../data/documents-api"
 import type { DocumentChangedEvent } from "../data/document-changed-event"
 
 // The central-bus doorbell envelope: camelCase and identity-only. This is the
@@ -290,6 +290,78 @@ describe("multi-project fan-out", () => {
 
     expect(listCalls).toBe(2)
     controller.stop()
+  })
+
+  // A 404 is `authorizeProject` fail-closed: the project is gone or not ours,
+  // and no doorbell or reconnect changes that — only a new inventory (which
+  // rebuilds the controller). Staging demonstrated the alternative: leaked
+  // smoke workspaces made every revalidation edge re-fire one guaranteed 404
+  // per corpse, forever.
+  test("quarantines a project after a 404 — later refreshes stop asking for it", async () => {
+    const listed: (string | undefined)[] = []
+    const controller = createDocumentIndexController({
+      queries: [{ projectId: "p1" }, { projectId: "p-dead" }],
+      api: {
+        list: async (query: { projectId?: string }) => {
+          listed.push(query.projectId)
+          if (query.projectId === "p-dead") throw new DocumentApiError("document_not_found", 404, "not found")
+          return [summary]
+        },
+      } as DocumentsApi,
+      onChange: () => undefined,
+      onError: () => undefined,
+    })
+    await controller.load()
+    expect(controller.snapshot().unavailable).toEqual(["p-dead"])
+
+    await controller.load(false)
+    await controller.load(false)
+
+    // p-dead was asked exactly once; p1 keeps refreshing. The quarantined
+    // project stays visibly unavailable rather than silently vanishing.
+    expect(listed.filter((id) => id === "p-dead")).toHaveLength(1)
+    expect(listed.filter((id) => id === "p1")).toHaveLength(3)
+    expect(controller.snapshot().unavailable).toEqual(["p-dead"])
+    expect(controller.snapshot().error).toBeUndefined()
+  })
+
+  test("a transient failure is NOT quarantined — the next refresh retries it", async () => {
+    let attempts = 0
+    const controller = createDocumentIndexController({
+      queries: [{ projectId: "p1" }],
+      api: {
+        list: async () => {
+          attempts++
+          if (attempts === 1) throw new DocumentApiError("document_request_failed", 503, "upstream down")
+          return [summary]
+        },
+      } as DocumentsApi,
+      onChange: () => undefined,
+      onError: () => undefined,
+    })
+    await controller.load()
+    expect(controller.snapshot().unavailable).toEqual(["p1"])
+
+    await controller.load(false)
+    expect(attempts).toBe(2)
+    expect(controller.snapshot().groups).toEqual([{ projectId: "p1", documents: [summary] }])
+    expect(controller.snapshot().unavailable).toEqual([])
+  })
+
+  test("all live projects 404ing still raises the error banner once", async () => {
+    const controller = createDocumentIndexController({
+      queries: [{ projectId: "p1" }],
+      api: {
+        list: async () => {
+          throw new DocumentApiError("document_not_found", 404, "not found")
+        },
+      } as DocumentsApi,
+      onChange: () => undefined,
+      onError: () => undefined,
+    })
+    await controller.load()
+    expect(controller.snapshot().error).toBe("not found")
+    expect(controller.snapshot().unavailable).toEqual(["p1"])
   })
 })
 

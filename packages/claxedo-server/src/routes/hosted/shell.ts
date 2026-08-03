@@ -161,7 +161,7 @@ function num(input: unknown) {
   return typeof input === "number" && Number.isFinite(input) ? input : undefined
 }
 
-function signedShellProjects(workspaces: unknown[], now: number) {
+export function signedShellProjects(workspaces: unknown[], now: number) {
   const groups = new Map<string, {
     id: string
     name: string
@@ -174,6 +174,15 @@ function signedShellProjects(workspaces: unknown[], now: number) {
     const row = rec(workspace)
     const workspaceId = txt(row?.workspace_id) ?? txt(row?.workspaceId)
     if (!workspaceId) continue
+    // WorkGraph execution scopes (`workGraphWorkspaceId` in
+    // hosts/workgraph/hosted/runtime.ts mints `wg-<sha>` per stream) are
+    // managed-run internals, not user projects. Surfacing them here put one
+    // "WorkGraph · <charter title>" pseudo-project in the rail per smoke/run —
+    // each with no interactive sandbox behind it, so opening one hung on
+    // "Preparing workspace" and its documents fan-out 404'd. WorkGraph work is
+    // presented by the WorkGraph surface; the projects rail is for workspaces
+    // a user can actually open.
+    if (workspaceId.startsWith("wg-")) continue
     const directory = txt(row?.remote_directory) ?? txt(row?.remoteDirectory) ?? "/workspace"
     const projectId = txt(row?.project_id) ?? txt(row?.projectID) ?? workspaceId
     const workspaceName = txt(row?.workspace_name) ?? txt(row?.workspaceName) ?? txt(row?.display_name) ?? txt(row?.displayName) ?? workspaceId

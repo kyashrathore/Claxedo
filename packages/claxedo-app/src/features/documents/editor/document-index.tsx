@@ -5,6 +5,7 @@ import { For, Show, createEffect, createResource, createSignal, onCleanup } from
 import { SemanticIcon } from "@/ui/semantic-icon"
 import { claxedoEventsPort } from "../app-ports"
 import {
+  DocumentApiError,
   documentsApi,
   type DocumentQuery,
   type DocumentStatus,
@@ -91,6 +92,15 @@ export function createDocumentIndexController(input: {
   let loadSequence = 0
   let refreshing = false
   let refreshAgain = false
+  // Projects the server answered 404 for. A 404 here is `authorizeProject`
+  // fail-closed — the project is gone or not ours — and that verdict does not
+  // change on a doorbell or a stream reconnect, only when the INVENTORY
+  // changes (which rebuilds this controller with fresh queries). Without the
+  // quarantine, every revalidation edge re-fired one guaranteed-404 request
+  // per dead project forever: staging's leaked smoke workspaces turned the
+  // index into a visible 404 storm. Transient failures (network, 5xx) stay
+  // out of this set and keep retrying on the next refresh.
+  const gone = new Set<string>()
 
   const load = async (loading = true) => {
     if (stopped) return
@@ -98,29 +108,36 @@ export function createDocumentIndexController(input: {
     if (loading) state.loading = true
     state.error = undefined
     emit()
+    const queries = input.queries.filter((query) => !query.projectId || !gone.has(query.projectId))
     // `allSettled`, not `all`: a rejected project costs its own documents, not
     // the whole index.
-    const results = await Promise.allSettled(input.queries.map((query) => input.api.list(query)))
+    const results = await Promise.allSettled(queries.map((query) => input.api.list(query)))
     if (stopped || request !== loadSequence) return
     const groups: DocumentIndexGroup[] = []
-    const unavailable: string[] = []
+    const unavailable: string[] = [...gone]
     let failure: unknown
     results.forEach((result, index) => {
-      const projectId = input.queries[index]?.projectId
+      const projectId = queries[index]?.projectId
       if (result.status === "fulfilled") {
         if (projectId) groups.push({ projectId, documents: result.value })
         return
       }
       failure = result.reason
-      if (projectId) unavailable.push(projectId)
+      if (projectId) {
+        unavailable.push(projectId)
+        if (result.reason instanceof DocumentApiError && result.reason.status === 404) gone.add(projectId)
+      }
       input.onError(result.reason)
     })
     state.groups = groups
     state.unavailable = unavailable
     // Only a total wipeout is an error banner: a partial failure still leaves a
     // usable index, and `unavailable` already names what is missing from it.
+    // "Total" is measured against the queries actually SENT this load —
+    // quarantined projects are already counted unavailable and must not dilute
+    // the ratio.
     state.error =
-      failure !== undefined && results.length > 0 && unavailable.length === results.length
+      failure !== undefined && results.length > 0 && groups.length === 0
         ? failure instanceof Error
           ? failure.message
           : String(failure)
@@ -164,8 +181,11 @@ export function createDocumentIndexController(input: {
     if (!projectId) return true
     if (requestedProjects.has(projectId)) return true
     if (state.groups.some((group) => group.documents.some((document) => document.project_id === projectId))) return true
+    // Quarantined projects count as resolved: their absence from `groups` is a
+    // settled 404, not an unmapped local id an unfamiliar nudge might belong to.
     return (
-      state.groups.length < input.queries.length || state.groups.some((group) => group.documents.length === 0)
+      state.groups.length + gone.size < input.queries.length ||
+      state.groups.some((group) => group.documents.length === 0)
     )
   }
 

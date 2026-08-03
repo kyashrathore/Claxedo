@@ -109,9 +109,14 @@ describe("interactive hosted Session smoke", () => {
     expect(harness.calls.some((call) => call.url.endsWith("/api/session/active"))).toBe(true)
     expect(harness.calls.some((call) => call.url.includes("/history?"))).toBe(true)
     // Cleanup released everything the smoke created. The session is reclaimed
-    // with the workspace — Session V2 has no DELETE, only interrupt.
+    // with the workspace — Session V2 has no DELETE, only interrupt. BOTH
+    // teardown layers must run: lifecycle/destroy reclaims the sandbox VM, and
+    // the row DELETE removes the Convex workspace row — without it every
+    // deploy left one "Interactive session smoke …" corpse in the app's
+    // project inventory (and a per-project /documents 404 on every index load).
     expect(harness.interrupted).toBe(true)
     expect(harness.destroyedWorkspace).toBe(true)
+    expect(harness.deletedWorkspaceRow).toBe(true)
     expect(harness.revokedClerkSession).toBe(true)
   })
 
@@ -119,6 +124,7 @@ describe("interactive hosted Session smoke", () => {
     const harness = fakeStaging({ reply: "I would rather not." })
     await expect(interactiveSessionSmoke(harness.env, harness.request)).rejects.toThrow(/settled without the marker/)
     expect(harness.destroyedWorkspace).toBe(true)
+    expect(harness.deletedWorkspaceRow).toBe(true)
     expect(harness.revokedClerkSession).toBe(true)
   })
 
@@ -223,6 +229,7 @@ function fakeStaging(
     prompted: false,
     interrupted: false,
     destroyedWorkspace: false,
+    deletedWorkspaceRow: false,
     revokedClerkSession: false,
     request: null as unknown as typeof fetch,
   }
@@ -278,6 +285,10 @@ function fakeStaging(
     if (url.pathname === "/api/workspace/ws_1/lifecycle/destroy") {
       state.destroyedWorkspace = true
       return Response.json({ ok: true })
+    }
+    if (url.pathname === "/api/workspace/ws_1" && method === "DELETE") {
+      state.deletedWorkspaceRow = true
+      return Response.json({ deleted: true })
     }
 
     const relayPrefix = "/workspaces/ws_1"
