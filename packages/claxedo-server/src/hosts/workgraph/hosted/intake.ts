@@ -25,7 +25,7 @@ import {
   type WorkGraphContext,
   type WorkSourceRevisionRef,
 } from "@claxedo/workgraph/contracts"
-import { hostedOrgCredentials } from "../../../adapters/credentials/worker/index"
+import { hostedOrgCredentials } from "../../../credentials/worker/index"
 import type { HostedWorkerEnv } from "../../../authority/adapters/worker/hosted-compose"
 import { createHostedWorkGraphConnectionsPort, type HostedConnectionMetadata } from "./connections"
 import { workGraphConvexApi } from "../convex/api"

@@ -18,7 +18,7 @@ import { opencodeRequest } from "./opencode/engine.ts"
 import { createControlPlaneServices } from "./authority/services.ts"
 import { createSqliteCentralStore } from "./authority/adapters/sqlite/central-store.ts"
 import { configureWorkspaceSupervisor, createWorkspaceSupervisorSandboxManager, injectRuntime, shutdownWorkspaceSupervisor } from "./workspace/supervisor/supervisor.ts"
-import { recordSupervisorSandboxLeaseReady } from "./adapters/sandbox/stores/sqlite-supervisor-state.ts"
+import { recordSupervisorSandboxLeaseReady } from "./sandbox/stores/sqlite-supervisor-state.ts"
 import { ensureWorkspace, updateWorkspace } from "./workspace/store/index.ts"
 import { startUserHostedWorkspaceTunnel, stopAllUserHostedWorkspaceTunnels, stopUserHostedWorkspaceTunnel } from "./user-hosted-tunnel.ts"
 

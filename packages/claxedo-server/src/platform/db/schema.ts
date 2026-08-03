@@ -6,9 +6,9 @@ export {
   ClaxedoSessionAttachmentTable,
   ClaxedoSessionTagTable,
 } from "../../session/meta.sql"
-export { ClaxedoProviderCredentialTable } from "../../adapters/credentials/provider-credential.sql"
-export { ClaxedoNetworkPolicyTable } from "../../adapters/sandbox/network/policy.sql"
-export { ClaxedoWorkspaceLeaseTable, ClaxedoWorkspaceHoldTable } from "../../adapters/sandbox/stores/lease.sql"
+export { ClaxedoProviderCredentialTable } from "../../credentials/provider-credential.sql"
+export { ClaxedoNetworkPolicyTable } from "../../sandbox/network/policy.sql"
+export { ClaxedoWorkspaceLeaseTable, ClaxedoWorkspaceHoldTable } from "../../sandbox/stores/lease.sql"
 export { ClaxedoPreparedImageTable, ClaxedoRuntimeSnapshotTable } from "../../workspace/supervisor/prepared-image.sql"
 export { ClaxedoChannelDeliveryTable, ClaxedoChannelStateTable } from "../../channels/delivery.sql"
 export { ClaxedoChannelRunAuditTable } from "../../channels/run-audit.sql"

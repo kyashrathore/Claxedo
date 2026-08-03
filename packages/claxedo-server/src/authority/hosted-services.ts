@@ -24,7 +24,7 @@ import {
   runtimeAccessTokenSigner,
 } from "../platform/auth/runtime-access-token"
 import { workerTelemetry } from "../platform/auth/worker-telemetry"
-import { workerCredentials } from "../adapters/credentials/worker/index"
+import { workerCredentials } from "../credentials/worker/index"
 import type { ControlPlaneServices, ControlPlaneTelemetry } from "./services"
 import type { ProjectionStore } from "./projection-store"
 import type { DurableSessionLog } from "../platform/auth/durable-session-log"

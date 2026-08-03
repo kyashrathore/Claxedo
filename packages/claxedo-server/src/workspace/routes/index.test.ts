@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError } from "../../platform/auth/auth"
 import type { ClerkVerifier } from "../../platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
-import type { CredentialMetadata } from "../../adapters/credentials/types"
+import type { CredentialMetadata } from "../../credentials/types"
 
 type WorkspaceTestRow = Record<string, unknown> & {
   id: string
@@ -107,13 +107,13 @@ vi.mock("../../agent-config", () => ({
   getEffectiveConfig: vi.fn(async () => ({})),
 }))
 
-vi.mock("../../adapters/credentials/registry", () => ({
+vi.mock("../../credentials/registry", () => ({
   getCredentialByProvider: mocks.getCredentialByProvider,
   putCredential: mocks.putCredential,
   deleteCredentialsByProvider: mocks.deleteCredentialsByProvider,
 }))
 
-vi.mock("../../adapters/sandbox/network/policy", () => ({
+vi.mock("../../sandbox/network/policy", () => ({
   ensureHostForRepo: mocks.ensureHostForRepo,
 }))
 

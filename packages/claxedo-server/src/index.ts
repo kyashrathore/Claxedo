@@ -80,7 +80,7 @@ export {
   type SandboxTouchResult,
 } from "@claxedo/sandbox-manager"
 export { createMemoryLeaseStore, sandboxLease } from "@claxedo/sandbox-manager/stores/memory"
-export { createSqliteLeaseStore } from "./adapters/sandbox/stores/sqlite"
+export { createSqliteLeaseStore } from "./sandbox/stores/sqlite"
 export { createCloudflareSandboxDriver, type CloudflareSandboxDriverOptions } from "@claxedo/sandbox-manager/drivers/cloudflare"
 export { createDaytonaSandboxDriver, type DaytonaSandboxDriverOptions } from "@claxedo/sandbox-manager/drivers/daytona"
 export { createDockerSandboxDriver, type DockerSandboxDriverOptions } from "@claxedo/sandbox-manager/drivers/docker"

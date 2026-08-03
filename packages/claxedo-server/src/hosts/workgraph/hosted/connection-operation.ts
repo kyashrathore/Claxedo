@@ -20,7 +20,7 @@ import {
   CodeHostUnauthorizedError,
 } from "@claxedo/workgraph/connectors"
 import { clean, type HostedWorkerEnv } from "../../../authority/adapters/worker/hosted-compose"
-import { hostedOrgCredentials } from "../../../adapters/credentials/worker/index"
+import { hostedOrgCredentials } from "../../../credentials/worker/index"
 import {
   ConnectionOperationDeniedError,
   createConnectionOperationBroker,

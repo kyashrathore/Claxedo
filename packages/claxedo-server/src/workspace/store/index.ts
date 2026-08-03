@@ -7,7 +7,7 @@ import { promisify } from "node:util"
 import { dataDir } from "../../platform/runtime/lib/paths"
 import { Log } from "../../platform/runtime/lib/log"
 import { dockerSandboxDriverEnabled, type SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
-import { getSupervisorSandboxLease } from "../../adapters/sandbox/stores/sqlite-supervisor-state"
+import { getSupervisorSandboxLease } from "../../sandbox/stores/sqlite-supervisor-state"
 
 const execFileAsync = promisify(execFile)
 

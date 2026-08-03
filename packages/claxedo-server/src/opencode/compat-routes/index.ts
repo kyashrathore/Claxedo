@@ -1,7 +1,7 @@
 import { Hono } from "hono"
 import path from "path"
 import { defaultHarness, listCommands, loadUserConfig, saveUserConfig } from "../../agent-config"
-import { putCredential, deleteCredentialsByProvider } from "../../adapters/credentials/registry"
+import { putCredential, deleteCredentialsByProvider } from "../../credentials/registry"
 import { fanOutConfig } from "../../agent-config/fanout"
 import { syncOpencodeMcpConfig } from "../../opencode/mcp-sync"
 import { sandboxFetch } from "../../workspace/http/sandbox-target-fetch"
@@ -14,7 +14,7 @@ import { allFilesBody, directoryEntriesBody, fileContentBody, fileStatusBody, fi
 import { configBody, configProvidersBody, globalConfigBody, providerAuthBody, providerBody, resolveHarnessId } from "./provider-config"
 import { maybeProxy, opencodeCompatDisabled, proxyUpstream, type OpenCodeCompatRouteOptions } from "./proxy"
 import { createWorktree, deleteWorktree, listWorktreeDirectories, resetWorktree } from "./worktree-routes"
-import { PI_LAUNCH_PROVIDERS } from "../../adapters/credentials/pi-credentials"
+import { PI_LAUNCH_PROVIDERS } from "../../credentials/pi-credentials"
 
 function version(options: OpenCodeCompatRouteOptions) {
   return options.env?.npm_package_version || "1.0.0"

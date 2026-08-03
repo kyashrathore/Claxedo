@@ -57,10 +57,10 @@ import {
 import { configureOpenCodeAuth, opencodeHeaders } from "../../opencode/auth"
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "../../platform/runtime/profile"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
-import { migrateCredentials } from "../../adapters/credentials/operations/migrate"
-import { CredentialRoutes } from "../../adapters/credentials/routes/credential"
-import { ProviderAuthRoutes } from "../../adapters/credentials/routes/provider-auth"
-import { NetworkPolicyRoutes } from "../../adapters/sandbox/network/network-policy-routes"
+import { migrateCredentials } from "../../credentials/operations/migrate"
+import { CredentialRoutes } from "../../credentials/routes/credential"
+import { ProviderAuthRoutes } from "../../credentials/routes/provider-auth"
+import { NetworkPolicyRoutes } from "../../sandbox/network/network-policy-routes"
 import { ProjectRemoteRoutes } from "../../workspace/routes/project-remote"
 import {
   ControlPlaneCompositionError,
@@ -1142,7 +1142,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     // the first turn — mutations after this keep the two in step (see
     // credentials/engine-bridge.ts). Deferred and non-blocking: it boots the
     // engine lazily and must not gate server startup.
-    void import("../../adapters/credentials/engine-bridge")
+    void import("../../credentials/engine-bridge")
       .then((bridge) => bridge.syncCredentialsToEngine())
       .catch(() => {})
   }

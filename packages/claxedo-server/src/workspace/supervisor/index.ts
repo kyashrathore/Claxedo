@@ -29,7 +29,7 @@ import {
   sandboxLeaseStatus,
   sandboxLeaseUrl,
   sandboxTargetFromLease,
-} from "../../adapters/sandbox/stores/sqlite-supervisor-state"
+} from "../../sandbox/stores/sqlite-supervisor-state"
 import {
   clearRuntimeStop,
   runtimeState,

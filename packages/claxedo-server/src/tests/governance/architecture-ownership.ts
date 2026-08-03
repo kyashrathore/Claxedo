@@ -76,18 +76,18 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "lease",
-    module: "adapters/sandbox/stores/sqlite.ts",
+    module: "sandbox/stores/sqlite.ts",
     status: OwnershipStatus.Canonical,
     owner: "SandboxLeaseStore local durable driver",
-    tests: ["adapters/sandbox/stores/lease-store-equivalence.test.ts"],
+    tests: ["sandbox/stores/lease-store-equivalence.test.ts"],
   },
   {
     area: "lease",
-    module: "adapters/sandbox/stores/convex.ts",
+    module: "sandbox/stores/convex.ts",
     status: OwnershipStatus.Canonical,
     owner: "SandboxLeaseStore hosted durable driver",
     tests: [
-      "adapters/sandbox/stores/lease-store-equivalence.test.ts",
+      "sandbox/stores/lease-store-equivalence.test.ts",
       // Convex-side lease policy the hosted store depends on. Lives in
       // convex/ per Convex's testing layout, not under src/.
       "../../../convex/sandbox-leases.policy.test.ts",
@@ -95,7 +95,7 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "lease",
-    module: "adapters/sandbox/stores/sqlite-supervisor-state.ts",
+    module: "sandbox/stores/sqlite-supervisor-state.ts",
     status: OwnershipStatus.Compatibility,
     owner: "local supervisor SQLite row-state adapter",
     canonicalReplacement: "../../sandbox-manager/src/index.ts plus sandbox-manager/stores/sqlite.ts",
@@ -105,11 +105,11 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "host",
-    module: "adapters/sandbox/provision-events.ts",
+    module: "sandbox/provision-events.ts",
     status: OwnershipStatus.Canonical,
     owner: "sandbox provision event publisher",
     reason: "Production host lifecycle code emits provision events without depending on manual live sandbox probes.",
-    tests: ["adapters/sandbox/provision-events.test.ts"],
+    tests: ["sandbox/provision-events.test.ts"],
   },
   {
     area: "host",
@@ -157,17 +157,17 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "registry",
-    module: "adapters/credentials/registry.ts",
+    module: "credentials/registry.ts",
     status: OwnershipStatus.Canonical,
     owner: "local credential registry",
     tests: [
-      "adapters/credentials/registry.test.ts",
-      "adapters/credentials/operations/sync.test.ts",
+      "credentials/registry.test.ts",
+      "credentials/operations/sync.test.ts",
     ],
   },
   {
     area: "registry",
-    module: "adapters/credentials/worker/index.ts",
+    module: "credentials/worker/index.ts",
     status: OwnershipStatus.Canonical,
     owner: "hosted credential registry adapter",
     tests: ["authority/hosted-services.test.ts"],
@@ -359,12 +359,12 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "adapters/sandbox/network/network-policy-routes.ts",
+    module: "sandbox/network/network-policy-routes.ts",
     status: OwnershipStatus.Canonical,
     owner: "local network-policy routes (Claxedo local adapter)",
     reason:
       "Unit 5 verdict flipped MOVE→DOCUMENT: transitively imports ../network/policy → ../adapters/storage/db (better-sqlite3 + fs). SQLite-coupled, so it stays a local control-plane route adapter under routes/.",
-    tests: ["adapters/sandbox/network/network-policy-routes.test.ts"],
+    tests: ["sandbox/network/network-policy-routes.test.ts"],
     routeSamples: ["/api/claxedo/network-policy"],
   },
   {
@@ -407,12 +407,12 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "registry",
-    module: "adapters/provider-auth/service.ts",
+    module: "credentials/provider-auth/service.ts",
     status: OwnershipStatus.Canonical,
     owner: "provider auth method service (Claxedo local adapter)",
     reason:
       "Unit 5 verdict WRAP→DOCUMENT: the implementation is portable (only node:timers + a type import) but it is a service, not a route, so there is no authority/routes/ home; with 2 non-test importers (routes/provider-auth.ts, routes/bootstrap.ts) a barrel is not warranted. Left in place and documented.",
-    tests: ["adapters/credentials/routes/provider-auth.test.ts"],
+    tests: ["credentials/routes/provider-auth.test.ts"],
   },
   {
     area: "registry",
@@ -425,12 +425,12 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "registry",
-    module: "adapters/credentials/backends/local.ts",
+    module: "credentials/backends/local.ts",
     status: OwnershipStatus.Canonical,
     owner: "local credential secret backend",
     reason:
       "Unit 5 verdict DOCUMENT: local registry file backend (fs + crypto). The neutral port is services.credentials; this is a Worker-forbidden local adapter that stays in place.",
-    tests: ["adapters/credentials/registry.test.ts"],
+    tests: ["credentials/registry.test.ts"],
   },
 ] as const satisfies readonly ArchitectureOwnershipEntry[]
 

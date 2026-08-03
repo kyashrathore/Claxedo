@@ -7,7 +7,7 @@ import { createVirtualSessionEnv, type SessionEnv, type SessionEnvFactoryInput }
 import { createCentralSessionRuntime } from "./runtime"
 import { createCentralControlApp } from "../central-runtime"
 import { createConnectionTurnCredentials } from "../connections/turn-credentials"
-import { piProviderCatalog } from "../adapters/credentials/pi-provider-catalog"
+import { piProviderCatalog } from "../credentials/pi-provider-catalog"
 
 function services(): ControlPlaneServices {
   return {

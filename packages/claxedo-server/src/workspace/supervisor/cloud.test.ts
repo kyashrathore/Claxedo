@@ -308,15 +308,15 @@ vi.mock("../store", () => ({
   updateWorkspace: (...args: unknown[]) => (mockUpdateWorkspace as any)(...args),
 }))
 
-vi.mock("../../adapters/sandbox/network/policy", () => ({
+vi.mock("../../sandbox/network/policy", () => ({
   listPolicies: vi.fn(() => []),
 }))
 
-vi.mock("../../adapters/sandbox/network/resolve", () => ({
+vi.mock("../../sandbox/network/resolve", () => ({
   resolveSandboxNetworkPolicy: vi.fn(() => Promise.resolve(undefined)),
 }))
 
-vi.mock("../../adapters/sandbox/stores/sqlite-supervisor-state", () => {
+vi.mock("../../sandbox/stores/sqlite-supervisor-state", () => {
   const status = (input: SandboxLeaseRow["status"]) => {
     if (input === "ready" || input === "stopped") return input
     if (input === "backoff" || input === "failed" || input === "unhealthy") return "unavailable"
@@ -547,7 +547,7 @@ vi.mock("../../adapters/sandbox/stores/sqlite-supervisor-state", () => {
   }
 })
 
-vi.mock("../../adapters/sandbox/driver-auth", () => ({
+vi.mock("../../sandbox/driver-auth", () => ({
   sandboxDriverAuthAsync: (...args: unknown[]) => (mockSandboxDriverAuthAsync as any)(...args),
 }))
 
@@ -804,8 +804,8 @@ describe("workspace-supervisor", () => {
     })
 
     test("passes resolved Daytona network policy CIDRs into SandboxManager", async () => {
-      const policy = await import("../../adapters/sandbox/network/policy")
-      const resolve = await import("../../adapters/sandbox/network/resolve")
+      const policy = await import("../../sandbox/network/policy")
+      const resolve = await import("../../sandbox/network/resolve")
       ;(policy.listPolicies as any).mockReturnValueOnce([
         { target: "api.example.test", kind: "host" },
       ])

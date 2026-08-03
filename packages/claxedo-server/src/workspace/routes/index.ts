@@ -12,7 +12,7 @@ import { loadUserConfig, sandboxDriverConfig } from "../../agent-config"
 import { type ControlPlaneServices } from "../../authority/services"
 import { requireAuthority } from "../../platform/auth/authority"
 import { workspaceBacking } from "../../workspace/store/backing"
-import { ensureHostForRepo } from "../../adapters/sandbox/network/policy"
+import { ensureHostForRepo } from "../../sandbox/network/policy"
 import {
   deleteWorkspace,
   ensureWorkspace,
@@ -33,7 +33,7 @@ import { addWorktree, cloneRepo, repoNameFromUrl } from "../git"
 import { heartbeatLocalHostLink, pauseLocalHostLink, registerLocalHostLink } from "../local-host-link"
 import { openSignedWorkspaceByDirectory, openSignedWorkspaceJson } from "../signed-access"
 import { workspaceConnectionRoutes } from "../../connections/routes/connection-routes"
-import { sandboxDriverCredentials, sandboxDriverRoutes } from "../../adapters/sandbox/routes/sandbox-driver-routes"
+import { sandboxDriverCredentials, sandboxDriverRoutes } from "../../sandbox/routes/sandbox-driver-routes"
 import { workspaceShareRoutes } from "./share-routes"
 import { authenticatedGitHubCloneSource } from "../repository-clone"
 

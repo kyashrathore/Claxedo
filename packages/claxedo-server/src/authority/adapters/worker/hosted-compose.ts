@@ -14,7 +14,7 @@
 
 import { DEFAULT_WORKSPACE_RUNTIME_PORT, createSandboxManager } from "@claxedo/sandbox-manager"
 import type { SandboxDriver, SandboxEgressUnenforcedEvent, SandboxManager } from "@claxedo/sandbox-manager"
-import { createConvexLeaseStore } from "../../../adapters/sandbox/stores/convex"
+import { createConvexLeaseStore } from "../../../sandbox/stores/convex"
 import { convexAuthorityUrlFromEnv, createConvexAuthority } from "../convex/workspace-authority"
 import { cliSessionTokenAuthority } from "../convex/cli-session-tokens"
 import { createUserHostedTargetResolver } from "../convex/user-hosted-relay-target"

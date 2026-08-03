@@ -1,8 +1,8 @@
 import { importJWK } from "jose"
 import { createWorkspaceRelayBun, createWorkspaceRelayDirectory } from "@claxedo/workspace-relay"
-import { getLease } from "./adapters/sandbox/stores/lease.sql"
+import { getLease } from "./sandbox/stores/lease.sql"
 import { resolveWorkspace } from "./workspace/store/index.ts"
-import { sandboxLeaseUrl } from "./adapters/sandbox/stores/sqlite-supervisor-state.ts"
+import { sandboxLeaseUrl } from "./sandbox/stores/sqlite-supervisor-state.ts"
 
 function required(name) {
   const value = process.env[name]?.trim()

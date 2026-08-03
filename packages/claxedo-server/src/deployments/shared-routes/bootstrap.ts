@@ -5,7 +5,7 @@ import {
   defaultHarness,
   loadUserConfig,
 } from "../../agent-config"
-import { providerAuthMethods } from "../../adapters/provider-auth/service"
+import { providerAuthMethods } from "../../credentials/provider-auth/service"
 import { listProjects } from "../../workspace/store"
 import { dataDir, stateDir } from "../../platform/runtime/lib/paths"
 import { OPENCODE_INTERNAL_BASE, opencodeEngineMode, opencodeRequest } from "../../opencode/engine"

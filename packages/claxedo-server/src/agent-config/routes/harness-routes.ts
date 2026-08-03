@@ -34,7 +34,7 @@ import { localAgentConfigAllowed } from "../local-auth"
 import type { AgentConfigRouteOptions } from "../extension-support"
 import type { SandboxFetchOptions } from "../../workspace/http/sandbox-target-fetch"
 import { isLoopbackLocalRequest } from "../../platform/http/peer-address"
-import { validatePiPromptModel } from "../../adapters/credentials/pi-provider-catalog"
+import { validatePiPromptModel } from "../../credentials/pi-provider-catalog"
 
 export function agentConfigHarnessRoutes(options: AgentConfigRouteOptions = {}) {
   return new Hono()
