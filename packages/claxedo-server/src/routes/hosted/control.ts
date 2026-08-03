@@ -14,8 +14,7 @@ import {
   parseIdempotencyKey,
   serialized,
 } from "../../authority/http/idempotency"
-import { rec, signedOrError, txt } from "../../workspace/routes/user-hosted"
-
+import { rec, signedOrError, txt } from "../../workspace/route-support"
 type Options = {
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier

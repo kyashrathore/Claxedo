@@ -1,11 +1,11 @@
-import { workspaceAgentExtensionRecords } from "../../hosts/agent-extensions/workspace"
+import { workspaceAgentExtensionRecords } from "../hosts/agent-extensions/workspace"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
-import type { SignedControlPlaneAuth } from "../../platform/auth/auth"
-import type { ConnectionRateLimiter } from "../../platform/auth/rate-limit"
-import type { ControlPlaneServices } from "../../authority/services"
-import { requireAuthority } from "../../platform/auth/authority"
-import { controlPlaneRateLimitError, rec, txt } from "./user-hosted"
-
+import type { SignedControlPlaneAuth } from "../platform/auth/auth"
+import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
+import type { ControlPlaneServices } from "../authority/services"
+import { requireAuthority } from "../platform/auth/authority"
+import { rec, txt } from "./route-support"
+import { controlPlaneRateLimitError } from "./runtime-token-guards"
 export function signedWorkspaceJson(result: unknown, workspaceId: string) {
   const workspace = rec(rec(result)?.workspace)
   const resolvedWorkspaceId = txt(workspace?.workspace_id) ?? txt(workspace?.workspaceId) ?? workspaceId
@@ -98,10 +98,15 @@ export async function syncWorkspaceAgentExtensionsForSignedUser(
       ? authority.listAgentExtensionPolicyOverrides(auth, { workspaceId })
       : [],
   ])
-  const overrides = policyOverrides as import("../../hosts/agent-extensions/runtime-config").AgentExtensionPolicyOverride[]
+  const overrides = policyOverrides as import("../hosts/agent-extensions/runtime-config").AgentExtensionPolicyOverride[]
   const records = workspaceAgentExtensionRecords(installs)
-  const supervisorMod = "../../workspace/supervisor"
-  const embeddedMod = "../../deployments/local/embedded-workspace-runtime"
+  // Held in variables so the bundler cannot follow them: these pull in the
+  // Node-only supervisor and embedded runtime, which must not land in a Worker
+  // build. That also makes them invisible to tsc and to import rewriters, so a
+  // move of THIS file has to update them by hand — `workspace/routes/index.test.ts`
+  // mocks both specifiers and silently stops mocking if they drift.
+  const supervisorMod = "./supervisor"
+  const embeddedMod = "../deployments/local/embedded-workspace-runtime"
   const [{ syncWorkspaceRuntimeAgentExtensions }, { syncEmbeddedWorkspaceRuntimeAgentExtensions }] = await Promise.all([
     import(/* @vite-ignore */ supervisorMod),
     import(/* @vite-ignore */ embeddedMod),

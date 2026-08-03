@@ -1,21 +1,13 @@
 import type { Context } from "hono"
 import { z } from "zod"
-import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPlaneAuth } from "../../platform/auth/auth"
-import type { ConnectionRateLimiter } from "../../platform/auth/rate-limit"
-import type { ControlPlaneServices } from "../../authority/services"
-import { requireAuthority } from "../../platform/auth/authority"
-import { resolveWorkspace } from "../../workspace/store"
-import { startUserHostedWorkspaceTunnel, stopUserHostedWorkspaceTunnel } from "../../user-hosted-tunnel"
-import {
-  apiError,
-  captureWorkspaceTelemetry,
-  configuredRelayUrl,
-  controlPlaneRateLimitError,
-  hostTunnelCredential,
-  rec,
-  signedOrError,
-  type WorkspaceRouteOptions,
-} from "./user-hosted"
+import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPlaneAuth } from "../platform/auth/auth"
+import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
+import type { ControlPlaneServices } from "../authority/services"
+import { requireAuthority } from "../platform/auth/authority"
+import { resolveWorkspace } from "./store"
+import { startUserHostedWorkspaceTunnel, stopUserHostedWorkspaceTunnel } from "../user-hosted-tunnel"
+import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, hostTunnelCredential, rec, signedOrError, type WorkspaceRouteOptions } from "./route-support"
+import { controlPlaneRateLimitError } from "./runtime-token-guards"
 import { heartbeatPayload, localHostIdentity, registrationPayload, signHostPayload } from "./local-host"
 import { syncWorkspaceAgentExtensionsForSignedUser } from "./signed-access"
 

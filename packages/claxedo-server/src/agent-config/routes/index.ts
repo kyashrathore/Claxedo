@@ -8,10 +8,10 @@ import { resolveWorkspace } from "../../workspace/store"
 import { agentConfigCommandRoutes } from "./command-routes"
 import { agentConfigExtensionRoutes } from "./extension-routes"
 import { agentConfigHarnessRoutes } from "./harness-routes"
-import { requestedHarness, sandboxJson } from "./harness"
-import { localAgentConfigAllowed } from "./local-auth"
+import { requestedHarness, sandboxJson } from "../harness"
+import { localAgentConfigAllowed } from "../local-auth"
 import { agentConfigMcpRoutes } from "./mcp-routes"
-import type { AgentConfigRouteOptions } from "./extension-support"
+import type { AgentConfigRouteOptions } from "../extension-support"
 
 export function createAgentConfigRoutes(options: AgentConfigRouteOptions = {}) {
   return new Hono()

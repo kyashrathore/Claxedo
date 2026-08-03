@@ -6,12 +6,7 @@ import {
   ControlPlaneAuthError,
   controlPlaneAuthErrorBody,
 } from "../../platform/auth/auth"
-import {
-  apiError,
-  signedOrError,
-  type WorkspaceRouteOptions,
-} from "./user-hosted"
-
+import { apiError, signedOrError, type WorkspaceRouteOptions } from "../route-support"
 const shareBody = z.object({
   role: z.union([z.literal("viewer"), z.literal("editor"), z.literal("admin")]),
   grantedToTokenIdentifier: z.string().optional(),

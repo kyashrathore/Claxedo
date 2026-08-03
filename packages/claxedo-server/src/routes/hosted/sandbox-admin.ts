@@ -1,9 +1,9 @@
 import { cleanString as clean } from "../../platform/runtime/lib/strings"
 import { Hono } from "hono"
-import { errorBody } from "../../platform/http/routes/http"
+import { errorBody } from "../../platform/http/http"
 import type { ControlPlaneTelemetry } from "../../authority/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
-import { internalAdminAuthorized } from "../../platform/http/routes/internal-admin-auth"
+import { internalAdminAuthorized } from "../../platform/http/internal-admin-auth"
 import { emitSandboxLeaseClosed } from "../../platform/telemetry/product/metering"
 
 export type HostedSandboxAdminOptions = {

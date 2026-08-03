@@ -27,22 +27,15 @@ import { Log } from "../../platform/runtime/lib/log"
 import { ControlPlaneAuthError, bearerToken, controlPlaneAuthErrorBody } from "../../platform/auth/auth"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
-import {
-  apiError,
-  captureWorkspaceTelemetry,
-  controlPlaneRateLimitError,
-  parsedBody,
-  rec,
-  signedOrError,
-  type WorkspaceRouteOptions,
-} from "./user-hosted"
-import { addWorktree, cloneRepo, repoNameFromUrl } from "./git"
-import { heartbeatLocalHostLink, pauseLocalHostLink, registerLocalHostLink } from "./local-host-link-routes"
-import { openSignedWorkspaceByDirectory, openSignedWorkspaceJson } from "./signed-access"
+import { apiError, captureWorkspaceTelemetry, parsedBody, rec, signedOrError, type WorkspaceRouteOptions } from "../route-support"
+import { controlPlaneRateLimitError } from "../runtime-token-guards"
+import { addWorktree, cloneRepo, repoNameFromUrl } from "../git"
+import { heartbeatLocalHostLink, pauseLocalHostLink, registerLocalHostLink } from "../local-host-link"
+import { openSignedWorkspaceByDirectory, openSignedWorkspaceJson } from "../signed-access"
 import { workspaceConnectionRoutes } from "../../connections/routes/connection-routes"
 import { sandboxDriverCredentials, sandboxDriverRoutes } from "../../adapters/sandbox/routes/sandbox-driver-routes"
 import { workspaceShareRoutes } from "./share-routes"
-import { authenticatedGitHubCloneSource } from "./repository-clone"
+import { authenticatedGitHubCloneSource } from "../repository-clone"
 
 const createBody = z
   .object({

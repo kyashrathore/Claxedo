@@ -26,7 +26,7 @@ import {
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "../platform/auth/auth"
-import { isLoopbackLocalRequest, stampRequestPeerAddress } from "../platform/http/routes/peer-address"
+import { isLoopbackLocalRequest, stampRequestPeerAddress } from "../platform/http/peer-address"
 import type { ControlPlaneCredentials } from "../authority/services"
 import { githubIntegrationForEnv } from "./github-oauth"
 import { createConnectionStoreAdapter, createCredentialStoreAdapter } from "./store-adapter"

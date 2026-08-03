@@ -45,7 +45,7 @@
 
 import type { MiddlewareHandler } from "hono"
 import type { ControlPlaneAuthConfig } from "../platform/auth/auth"
-import { isLoopbackLocalRequest } from "../platform/http/routes/peer-address"
+import { isLoopbackLocalRequest } from "../platform/http/peer-address"
 
 export const DEPLOYMENT_MODE_ENV = "CLAXEDO_DEPLOYMENT_MODE"
 

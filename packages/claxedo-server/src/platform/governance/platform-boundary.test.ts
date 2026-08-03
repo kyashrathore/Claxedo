@@ -99,9 +99,9 @@ describe("platform boundary", () => {
     // hosted app to drive anonymous requests at every mounted route. Reaching
     // for domains is the point — a posture guard that asserted against a mock
     // route table would prove nothing about the app that ships.
-    // 32 -> 34 (W11.1b): timeout-seam.test.ts and error-base.test.ts each take
-    // `walk` from test-support/, the shared helper every shape test uses.
-    expect(offenders.length).toBeLessThanOrEqual(34)
+    // 32 -> 35 (W11.1b, W11.2): three new guard tests take `walk` from
+    // test-support/, the shared helper every codebase-shape test uses.
+    expect(offenders.length).toBeLessThanOrEqual(35)
   })
 
 })

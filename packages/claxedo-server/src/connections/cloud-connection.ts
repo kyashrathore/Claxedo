@@ -1,20 +1,11 @@
-import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../platform/auth/auth"
-import type { ControlPlaneServices } from "../../authority/services"
-import { requireAuthority } from "../../platform/auth/authority"
-import type { ClaxedoRegion } from "../../platform/runtime/region"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../platform/auth/auth"
+import type { ControlPlaneServices } from "../authority/services"
+import { requireAuthority } from "../platform/auth/authority"
+import type { ClaxedoRegion } from "../platform/runtime/region"
 import type { SandboxEnsureResult } from "@claxedo/sandbox-manager"
-import { resolveWorkspace, type Workspace } from "../../workspace/store"
-import {
-  apiError,
-  captureWorkspaceTelemetry,
-  configuredRelayUrl,
-  configuredRuntimeAccessTokenSigner,
-  previousRuntimeAccessTokenError,
-  relayRole,
-  workspaceOpenAuthorizationError,
-  type WorkspaceRouteOptions,
-} from "../../workspace/routes/user-hosted"
-
+import { resolveWorkspace, type Workspace } from "../workspace/store"
+import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, configuredRuntimeAccessTokenSigner, relayRole, type WorkspaceRouteOptions } from "../workspace/route-support"
+import { previousRuntimeAccessTokenError, workspaceOpenAuthorizationError } from "../workspace/runtime-token-guards"
 export async function cloudConnectionInfo(
   services: ControlPlaneServices | undefined,
   options: WorkspaceRouteOptions,

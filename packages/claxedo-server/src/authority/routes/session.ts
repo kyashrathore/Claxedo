@@ -12,7 +12,7 @@ import {
   type ControlPlaneAuthConfig,
 } from "../../platform/auth/auth"
 import { requireAuthority } from "../../platform/auth/authority"
-import { isLoopbackLocalRequest } from "../../platform/http/routes/peer-address"
+import { isLoopbackLocalRequest } from "../../platform/http/peer-address"
 import {
   buildSessionListResponse,
   parseSessionListQuery,

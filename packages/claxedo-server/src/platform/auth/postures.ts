@@ -8,8 +8,8 @@ import {
   type SignedControlPlaneAuth,
 } from "./auth"
 import { ClaxedoError } from "../errors/base"
-import { internalAdminAuthorized } from "../http/routes/internal-admin-auth"
-import { isLoopbackLocalRequest } from "../http/routes/peer-address"
+import { internalAdminAuthorized } from "../http/internal-admin-auth"
+import { isLoopbackLocalRequest } from "../http/peer-address"
 
 /**
  * The five ways a request is allowed to reach a handler. Every route picks

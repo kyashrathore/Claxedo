@@ -26,7 +26,7 @@ import {
   isTargetAllowed,
 } from "./policy"
 import { DEFAULT_ALLOWLIST } from "../../../adapters/sandbox/network/types"
-import { errorBody } from "../../../platform/http/routes/http"
+import { errorBody } from "../../../platform/http/http"
 
 const createBody = z.object({
   workspace_id: z.string().optional(),

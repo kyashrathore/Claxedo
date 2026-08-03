@@ -11,7 +11,7 @@ import {
   defaultControlPlaneCredentials,
   type ControlPlaneCredentials,
 } from "../../../authority/services"
-import { errorBody } from "../../../platform/http/routes/http"
+import { errorBody } from "../../../platform/http/http"
 import { timingSafeEqualStrings } from "../../../platform/auth/web-crypto"
 import { CredentialVerificationError, verifyCredential } from "../operations/verify"
 import { CredentialDiscoveryError } from "../operations/discovery"

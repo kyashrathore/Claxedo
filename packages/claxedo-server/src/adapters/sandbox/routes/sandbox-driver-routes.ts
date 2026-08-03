@@ -24,8 +24,8 @@ import {
   saveUserConfig,
   setSandboxDriverConfig,
 } from "../../../agent-config"
-import { isLoopbackLocalRequest } from "../../../platform/http/routes/peer-address"
-import { apiError, type WorkspaceRouteOptions } from "../../../workspace/routes/user-hosted"
+import { isLoopbackLocalRequest } from "../../../platform/http/peer-address"
+import { apiError, type WorkspaceRouteOptions } from "../../../workspace/route-support"
 import { sandboxDriverVerifiable, verifySandboxDriverAuth } from "../../credentials/operations/sandbox-verify"
 import { CredentialVerificationError } from "../../credentials/operations/verification-error"
 import type { CredentialProbe } from "../../credentials/operations/discovery"

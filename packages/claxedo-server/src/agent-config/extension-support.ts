@@ -10,9 +10,9 @@ import {
   readMaterializedRuntimeRecord,
   sameSource,
 } from "@claxedo/agent-extensions"
-import { loadAgentExtensionsCatalog } from "../../hosts/agent-extensions/catalog"
-import type { ControlPlaneServices } from "../../authority/services"
-import { requireAuthority } from "../../platform/auth/authority"
+import { loadAgentExtensionsCatalog } from "../hosts/agent-extensions/catalog"
+import type { ControlPlaneServices } from "../authority/services"
+import { requireAuthority } from "../platform/auth/authority"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,
@@ -20,27 +20,27 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../../platform/auth/auth"
-import { dataDir } from "../../platform/runtime/lib/paths"
+} from "../platform/auth/auth"
+import { dataDir } from "../platform/runtime/lib/paths"
 import {
   AgentExtensionConflictError,
   installGitHubAgentExtension,
   updateAgentExtension,
   type AgentExtensionLifecycleInput,
-} from "../../hosts/agent-extensions/install"
+} from "../hosts/agent-extensions/install"
 import {
   readMirroredWorkspaceAgentExtensions,
   resolveGitHubWorkspaceAgentExtension,
   workspaceAgentExtensionRecords,
   type WorkspaceAgentExtensionRecord,
-} from "../../hosts/agent-extensions/workspace"
+} from "../hosts/agent-extensions/workspace"
 import {
   resolveEffectiveAgentExtensionPolicy,
   type AgentExtensionPolicyOverride,
-} from "../../hosts/agent-extensions/runtime-config"
-import { syncWorkspaceRuntimeAgentExtensions } from "../../workspace/supervisor"
-import { syncEmbeddedWorkspaceRuntimeAgentExtensions } from "../../deployments/local/embedded-workspace-runtime"
-import { errorBody } from "../../platform/http/routes/http"
+} from "../hosts/agent-extensions/runtime-config"
+import { syncWorkspaceRuntimeAgentExtensions } from "../workspace/supervisor"
+import { syncEmbeddedWorkspaceRuntimeAgentExtensions } from "../deployments/local/embedded-workspace-runtime"
+import { errorBody } from "../platform/http/http"
 
 type WorkspaceExtensionScope = {
   id: ""

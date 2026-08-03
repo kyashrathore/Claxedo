@@ -1,8 +1,8 @@
 import { Hono } from "hono"
 import { deleteCommand, getCommand, listCommands, saveCommand } from "../../agent-config"
-import { errorBody } from "../../platform/http/routes/http"
-import { localAgentConfigAllowed } from "./local-auth"
-import type { AgentConfigRouteOptions } from "./extension-support"
+import { errorBody } from "../../platform/http/http"
+import { localAgentConfigAllowed } from "../local-auth"
+import type { AgentConfigRouteOptions } from "../extension-support"
 
 export function agentConfigCommandRoutes(options: AgentConfigRouteOptions = {}) {
   return new Hono()

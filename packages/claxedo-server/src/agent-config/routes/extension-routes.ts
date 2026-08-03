@@ -22,8 +22,8 @@ import {
   workspaceAgentExtensionRecords,
 } from "../../hosts/agent-extensions/workspace"
 import { syncWorkspaceRuntimeAgentExtensions } from "../../workspace/supervisor"
-import { errorBody } from "../../platform/http/routes/http"
-import { localAgentConfigAllowed } from "./local-auth"
+import { errorBody } from "../../platform/http/http"
+import { localAgentConfigAllowed } from "../local-auth"
 import {
   agentExtensionPolicyOverrides,
   captureAgentExtensionMutation,
@@ -42,7 +42,7 @@ import {
   workspaceExtensionError,
   workspaceExtensionScope,
   type AgentConfigRouteOptions,
-} from "./extension-support"
+} from "../extension-support"
 
 function agentExtensionNotFound(err: unknown) {
   return err instanceof Error && err.message === "Agent Extension not found"

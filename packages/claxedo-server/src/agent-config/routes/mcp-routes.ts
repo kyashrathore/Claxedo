@@ -2,9 +2,9 @@ import { Hono } from "hono"
 import { loadUserConfig, saveUserConfig } from "../../agent-config"
 import { fanOutConfig } from "../fanout"
 import { ensureHostForUrl, removeAutoHostsForSource } from "../../adapters/sandbox/network/policy"
-import { errorBody } from "../../platform/http/routes/http"
-import { localAgentConfigAllowed } from "./local-auth"
-import type { AgentConfigRouteOptions } from "./extension-support"
+import { errorBody } from "../../platform/http/http"
+import { localAgentConfigAllowed } from "../local-auth"
+import type { AgentConfigRouteOptions } from "../extension-support"
 
 export function agentConfigMcpRoutes(options: AgentConfigRouteOptions = {}) {
   return new Hono()

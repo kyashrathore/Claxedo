@@ -38,21 +38,10 @@ import {
   requireExecutor,
   requireServiceToken,
 } from "../../authority/adapters/convex/workspace-authority/executor"
-import {
-  apiError,
-  captureWorkspaceTelemetry,
-  connectionRateLimitError,
-  controlPlaneRateLimitError,
-  configuredRelayUrl,
-  hostTunnelCredential,
-  hostedConnectionInfo,
-  parsedBody,
-  rec,
-  signedOrError,
-  txt,
-  type WorkspaceRouteOptions,
-} from "../../workspace/routes/user-hosted"
-import { sandboxLeaseCapError, type ActiveSandboxLeaseCounter } from "../../workspace/routes/runtime-token-guards"
+import { hostedConnectionInfo } from "../../connections/hosted-connection-info"
+import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, hostTunnelCredential, parsedBody, rec, signedOrError, txt, type WorkspaceRouteOptions } from "../../workspace/route-support"
+import { connectionRateLimitError, controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
+import { sandboxLeaseCapError, type ActiveSandboxLeaseCounter } from "../../workspace/runtime-token-guards"
 import { normalizeClaxedoRegion } from "../../platform/runtime/region"
 import { emitSandboxLeaseOpened } from "../../platform/telemetry/product/metering"
 import { recordSandboxLeaseTenant } from "../../authority/adapters/convex/usage-ledger"

@@ -1,6 +1,6 @@
 import { z } from "zod"
 import type { RelayRole } from "@claxedo/workspace-relay"
-import type { RepositoryAccessResult } from "../../connections"
+import type { RepositoryAccessResult } from "../connections"
 import {
   ControlPlaneAuthError,
   bearerToken,
@@ -9,11 +9,11 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../../platform/auth/auth"
-import type { ControlPlaneCredentials, ControlPlaneServices } from "../../authority/services"
-import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "../../platform/auth/runtime-access-token"
-import type { ConnectionRateLimiter } from "../../platform/auth/rate-limit"
-import { regionValue, type ClaxedoRegion, type ClaxedoRegionMap } from "../../platform/runtime/region"
+} from "../platform/auth/auth"
+import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
+import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "../platform/auth/runtime-access-token"
+import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
+import { regionValue, type ClaxedoRegion, type ClaxedoRegionMap } from "../platform/runtime/region"
 
 export type WorkspaceRouteOptions = {
   authConfig?: ControlPlaneAuthConfig

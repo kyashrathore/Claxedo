@@ -5,8 +5,7 @@ import { ControlPlaneAuthError, controlPlaneAuthConfig, controlPlaneAuthErrorBod
 import { requireAuthority } from "../../platform/auth/authority"
 import { sandboxFetch } from "../../workspace/http/sandbox-target-fetch"
 import { createWorkspaceCheckpointService } from "../../workspace/checkpoints"
-import { signedOrError } from "./user-hosted"
-
+import { signedOrError } from "../route-support"
 export function WorkspaceCheckpointRoutes(
   services?: ControlPlaneServices,
   options: { loopbackRelayUrl?: string; defaultHomeRegion?: string; allowUnsignedLocal?: boolean } = {},

@@ -1,8 +1,8 @@
 import { Hono } from "hono"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import type { ControlPlaneTelemetry } from "../../authority/services"
-import { errorBody } from "../../platform/http/routes/http"
-import { internalAdminAuthorized } from "../../platform/http/routes/internal-admin-auth"
+import { errorBody } from "../../platform/http/http"
+import { internalAdminAuthorized } from "../../platform/http/internal-admin-auth"
 
 export type WorkGraphReconcileResult = Readonly<{
   launched: readonly unknown[]

@@ -1,7 +1,7 @@
-import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../platform/auth/auth"
-import type { ControlPlaneServices } from "../../authority/services"
-import { requireAuthority } from "../../platform/auth/authority"
-import { normalizeClaxedoRegion } from "../../platform/runtime/region"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../platform/auth/auth"
+import type { ControlPlaneServices } from "../authority/services"
+import { requireAuthority } from "../platform/auth/authority"
+import { normalizeClaxedoRegion } from "../platform/runtime/region"
 import {
   apiError,
   captureWorkspaceTelemetry,
@@ -9,12 +9,12 @@ import {
   configuredRuntimeAccessTokenSigner,
   relayRole,
   type WorkspaceRouteOptions,
-} from "../../workspace/routes/route-support"
+} from "../workspace/route-support"
 import {
   previousRuntimeAccessTokenError,
   runtimeTokenOrgId,
   workspaceOpenAuthorizationError,
-} from "../../workspace/routes/runtime-token-guards"
+} from "../workspace/runtime-token-guards"
 
 export async function userHostedConnectionInfo(
   services: ControlPlaneServices | undefined,
