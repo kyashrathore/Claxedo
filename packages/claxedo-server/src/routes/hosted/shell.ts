@@ -28,7 +28,7 @@
 import { Hono } from "hono"
 import type { Context } from "hono"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
-import { loadAgentExtensionsCatalog } from "../../hosts/agent-extensions/catalog"
+import { loadAgentExtensionsCatalog } from "../../agent-config/extensions/catalog"
 import {
   ControlPlaneAuthError,
   bearerToken,

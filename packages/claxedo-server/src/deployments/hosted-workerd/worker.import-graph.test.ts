@@ -52,7 +52,7 @@ const FORBIDDEN_LOCAL = [
   "user-hosted-tunnel",
   "adapters/credentials/store",
   "adapters/credentials/registry",
-  "adapters/credentials/local",
+  "credentials/backends/local",
   "cloud/sandbox",
   "server.ts",
   "server-usage-limits",

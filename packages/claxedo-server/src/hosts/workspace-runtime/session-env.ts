@@ -10,7 +10,6 @@ import type {
 import { createVirtualSessionEnv } from "@claxedo/agent-sdk-runtime"
 import type { SandboxFetchOptions } from "../../workspace/http/sandbox-target-fetch"
 import { sandboxFetch } from "../../workspace/http/sandbox-target-fetch"
-import { ensureEmbeddedWorkspaceRuntime } from "../../deployments/local/embedded-workspace-runtime"
 import { normalizeClaxedoRegion } from "../../platform/runtime/region"
 import { resolveWorkspace } from "../../workspace/store"
 import type { Workspace } from "../../workspace/store"
@@ -195,6 +194,13 @@ function createEmbeddedSandboxRequester(
 ): SandboxRequester {
   return {
     async send(requestPath, init) {
+      // Imported lazily, by a specifier the bundler cannot follow: the
+      // embedded runtime is a LOCAL deployment module, and `hosts/` must not
+      // depend statically on a deployment (worker.import-graph.test.ts also
+      // bans it from the Worker graph). This branch only ever runs on the local
+      // server, where the module is present.
+      const embeddedModule = "../../deployments/local/embedded-workspace-runtime"
+      const { ensureEmbeddedWorkspaceRuntime } = await import(/* @vite-ignore */ embeddedModule)
       const runtime = await ensureEmbeddedWorkspaceRuntime(ws)
       const headers = new Headers(init?.headers)
       if (directory) headers.set("x-opencode-directory", directory)

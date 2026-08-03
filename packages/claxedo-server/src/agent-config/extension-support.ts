@@ -10,7 +10,7 @@ import {
   readMaterializedRuntimeRecord,
   sameSource,
 } from "@claxedo/agent-extensions"
-import { loadAgentExtensionsCatalog } from "../hosts/agent-extensions/catalog"
+import { loadAgentExtensionsCatalog } from "./extensions/catalog"
 import type { ControlPlaneServices } from "../authority/services"
 import { requireAuthority } from "../platform/auth/authority"
 import {

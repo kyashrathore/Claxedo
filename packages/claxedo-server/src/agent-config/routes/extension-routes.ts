@@ -14,7 +14,7 @@ import {
   detachDiscoveredAgentExtensionConfig,
   scanExistingAgentExtensionConfig,
   setDiscoveredAgentExtensionConfigState,
-} from "../../hosts/agent-extensions/scan"
+} from "../extensions/scan"
 import {
   mirrorWorkspaceAgentExtensionRecord,
   readMirroredWorkspaceAgentExtensions,
@@ -54,12 +54,12 @@ export function agentConfigExtensionRoutes(options: AgentConfigRouteOptions = {}
   const resolveWorkspaceExtension = options.resolveGitHubWorkspaceAgentExtension ?? resolveGitHubWorkspaceAgentExtension
   return new Hono()
     .get("/extensions/catalog", async (c) => {
-      const { loadAgentExtensionsCatalog } = await import("../../hosts/agent-extensions/catalog")
+      const { loadAgentExtensionsCatalog } = await import("../extensions/catalog")
       return c.json(loadAgentExtensionsCatalog())
     })
 
     .get("/extensions/machine-scan", async (c) => {
-      const { scanMachineInstalledExtensions } = await import("../../hosts/agent-extensions/machine-scan")
+      const { scanMachineInstalledExtensions } = await import("../extensions/machine-scan")
       return c.json(await scanMachineInstalledExtensions())
     })
 

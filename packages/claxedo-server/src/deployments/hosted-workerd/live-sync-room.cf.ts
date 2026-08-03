@@ -49,6 +49,7 @@ import { createSseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
 import { eventVisibleTo, type EventScopePrincipal } from "../../platform/http/event-visibility"
 import { isTerminalClaxedoEvent } from "../../platform/http/event-retention"
 import type { ClaxedoEvent } from "../../platform/runtime/lib/bus"
+import { liveSyncRoomNameForPrincipal, type LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
 import type { ControlPlaneAuthContext } from "../../platform/auth/auth"
 
 const DEFAULT_HEARTBEAT_MS = 30_000
@@ -286,20 +287,6 @@ export function liveSyncRoomName(subscriber: LiveSyncSubscriber): string {
  * publisher fails loudly at the publish site instead of quietly dropping the
  * frame.
  */
-export function liveSyncRoomNameForPrincipal(
-  principal: Readonly<{ ownerUserId?: string | undefined; orgId?: string | undefined }>,
-): string {
-  if (principal.orgId !== undefined) return `org:${requireRoomSegment(principal.orgId, "org id")}`
-  return `owner:${requireRoomSegment(principal.ownerUserId, "owner subject")}`
-}
-
-function requireRoomSegment(value: string | undefined, description: string): string {
-  const segment = value?.trim()
-  if (!segment || segment === "undefined" || segment === "null") {
-    throw new Error(`live-sync room ${description} is invalid: ${JSON.stringify(value)}`)
-  }
-  return segment
-}
 
 /** Serialize the resolved identity into the trusted internal-fetch headers. */
 export function liveSyncRoomConnectHeaders(
@@ -685,14 +672,6 @@ export class LiveSyncRoom {
 }
 
 /** Worker-safe structural type of the `LIVE_SYNC_ROOM` DO namespace binding. */
-export interface LiveSyncRoomStub {
-  fetch(request: Request): Promise<Response>
-}
-
-export interface LiveSyncRoomNamespace {
-  idFromName(name: string): unknown
-  get(id: unknown): LiveSyncRoomStub
-}
 
 /**
  * Route a resolved subscriber's client connection to their room. Production
@@ -821,41 +800,12 @@ export function connectLiveSyncRoom(
     })
 }
 
-const LIVE_SYNC_ROOM_NAME_PATTERN = /^(?:org|owner):(.*)$/
-
-/**
- * Publishers build room names from runtime identity, and a template over a
- * missing field yields `org:undefined` — syntactically a fine DO name that
- * silently instantiates an empty room and swallows the event. Reject those
- * before the fetch so the mistake is an error at the publish site, not a
- * quiet delivery gap. Prefer deriving the name via `liveSyncRoomName` /
- * `liveSyncRoomNameForPrincipal` over composing it by hand.
- */
-function assertLiveSyncRoomName(roomName: string): void {
-  const segment = LIVE_SYNC_ROOM_NAME_PATTERN.exec(roomName)?.[1]?.trim()
-  if (!segment || segment === "undefined" || segment === "null") {
-    throw new Error(`live-sync room name is invalid: ${JSON.stringify(roomName)}`)
-  }
-}
-
-/** POST a nudge to the room that owns `roomName`, fanning it to held clients. */
-export async function nudgeLiveSyncRoom(
-  namespace: LiveSyncRoomNamespace,
-  roomName: string,
-  event: ClaxedoEvent,
-): Promise<{ delivered: number; held: number }> {
-  assertLiveSyncRoomName(roomName)
-  const response = await namespace
-    .get(namespace.idFromName(roomName))
-    .fetch(
-      new Request("https://live-sync-room.internal/nudge", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(event),
-      }),
-    )
-  if (!response.ok) {
-    throw new Error(`live-sync-room nudge failed: ${response.status} ${await response.text()}`.trim())
-  }
-  return (await response.json()) as { delivered: number; held: number }
-}
+// The publisher-side helpers live in platform/ so hosts and domains can ring
+// the doorbell without importing a deployment. Re-exported here because this
+// module is where the room itself is defined.
+export {
+  liveSyncRoomNameForPrincipal,
+  nudgeLiveSyncRoom,
+  type LiveSyncRoomNamespace,
+  type LiveSyncRoomStub,
+} from "../../platform/http/live-sync-publish"

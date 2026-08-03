@@ -13,7 +13,7 @@ import { anyApi, type FunctionReference } from "convex/server"
 import { reportError } from "../../platform/telemetry/errors/report"
 import { controlPlaneTimeoutMs, withTimeout } from "../../authority/adapters/convex/timeout"
 import type { SettlementDispatcher } from "../workgraph/settlement-dispatcher"
-import { dispatchWakeLaneNudge, type WakeLaneNamespace } from "../../deployments/hosted-workerd/wake-lane.cf"
+import { dispatchWakeLaneNudge, type WakeLaneNamespace } from "../../platform/http/wake-lane-publish"
 import { workGraphControlWake, workGraphSettleWake } from "./hosted-wakes"
 
 type Mutation = FunctionReference<"mutation">

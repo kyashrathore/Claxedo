@@ -56,7 +56,7 @@ import {
   type SettlementDispatcher,
   type SettlementTenant,
 } from "../settlement-dispatcher"
-import { liveSyncRoomNameForPrincipal, nudgeLiveSyncRoom, type LiveSyncRoomNamespace } from "../../../deployments/hosted-workerd/live-sync-room.cf"
+import { liveSyncRoomNameForPrincipal, nudgeLiveSyncRoom, type LiveSyncRoomNamespace } from "../../../platform/http/live-sync-publish"
 import type { WorkgraphChangedEvent } from "../../../platform/runtime/lib/bus"
 
 // Command types whose successful application enqueues a control-effect outbox
