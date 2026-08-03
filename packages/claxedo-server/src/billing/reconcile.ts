@@ -1,10 +1,9 @@
 /**
- * D5 billing reconciliation sweep — Worker half (D5/D13;
- * ADR 014 §3 "the failure mode webhooks alone can't cover"): Polar disables a
+ * Billing reconciliation sweep — Worker half (ADR 014 §3 "the failure mode webhooks alone can't cover"): Polar disables a
  * webhook endpoint after 10 consecutive failed deliveries, silently stopping
  * all future events. The Convex cron (convex/crons.ts) FLAGS orgs whose
  * mirror is stale; this sweep — driven by the same Cloudflare Cron Trigger as
- * the D13 reaper via worker.ts `scheduled` — fetches each flagged org's
+ * the sandbox reaper via worker.ts `scheduled` — fetches each flagged org's
  * current customer state from Polar and re-applies it through the single
  * writer (billing.applyPolarState), which clears the flag.
  *
@@ -92,7 +91,7 @@ export type CancelDeletedResult = {
 }
 
 /**
- * F4 (adversarial-review): an org deleted while it still holds a live Polar
+ * Adversarial review: an org deleted while it still holds a live Polar
  * subscription is billed forever — org delete cannot reach Polar (Convex holds
  * no Polar credentials), and the stale-sync sweep excludes deleted orgs. This
  * sweep closes that hole: for each deleted-but-subscribed org, cancel in Polar,

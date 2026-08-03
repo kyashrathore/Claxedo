@@ -1,6 +1,6 @@
 /**
- * Polar billing routes for the hosted control plane (D4 +
- * ADR 014 addendum: Option B — raw `@polar-sh/sdk`, our own webhook route,
+ * Polar billing routes for the hosted control plane (ADR 014 addendum:
+ * Option B — raw `@polar-sh/sdk`, our own webhook route,
  * everything Polar confined to src/billing/**).
  *
  * Mounted by hosted-app.ts at /api/billing:
@@ -17,7 +17,7 @@
  * rides the checkout onto the subscription and is how webhook state re-attaches
  * to the org.
  *
- * Every failure path reports through reportPaymentError (D12 payment page
+ * Every failure path reports through reportPaymentError (payment page
  * class). Fail-closed everywhere: missing secret/config → 503, bad signature
  * → 401 and the state is never applied.
  */
@@ -97,9 +97,9 @@ export type PolarClientLike = {
   }
   subscriptions: {
     /**
-     * Immediate cancellation (MoR revoke). Used by the F4 deleted-org sweep:
+     * Immediate cancellation (MoR revoke). Used by the deleted-org sweep:
      * A deleted org is gone, so billing must stop now — not at period end.
-     * S2/SDK note: @polar-sh/sdk 0.48.1 exposes `subscriptions.revoke({ id })`
+     * SDK note: @polar-sh/sdk 0.48.1 exposes `subscriptions.revoke({ id })`
      * for immediate termination; the reconciliation sweep tolerates a failure
      * (leaves the org listed, retries next sweep) so an SDK-shape surprise
      * degrades to bounded retry, never a lost cancel.
@@ -154,7 +154,7 @@ export function polarClientFromEnv(env: BillingEnv): PolarClientLike | undefined
   if (!accessToken) return undefined
   return new Polar({
     accessToken,
-    // Polar test mode rides the sandbox server (S2 runs there).
+    // Polar test mode rides the sandbox server.
     ...(clean(env.CLAXEDO_POLAR_SERVER) === "sandbox" ? { server: "sandbox" as const } : {}),
   }) as unknown as PolarClientLike
 }
@@ -172,7 +172,7 @@ export type BillingRouteOptions = {
   /** W3.3 override for the webhook body cap, in bytes. Tests shrink it. */
   webhookMaxBodyBytes?: number
   /**
-   * W4.3 test seam for the webhook dedup store. Production reads the
+   * Test seam for the webhook dedup store. Production reads the
    * process-wide store installed at hosted composition (`worker.ts`).
    */
   idempotencyStore?: DurableIdempotencyStore
@@ -191,7 +191,7 @@ export type BillingRouteOptions = {
 export const POLAR_WEBHOOK_MAX_BODY_BYTES = 512 * 1024
 
 /**
- * This surface's W3.2 exemption from the app-wide default guard.
+ * This surface's exemption from the app-wide default guard.
  *
  * Declared HERE rather than in `authority/request-guard.ts` because the
  * reason names the payment vendor, and `billing-architecture.test.ts` keeps the
@@ -433,7 +433,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
 
   return (
     new Hono()
-      // ── Webhook intake (D5 single-writer path) ─────────────────────────────
+      // ── Webhook intake (single-writer path) ────────────────────────────────
       .post("/polar/webhook", async (c) => {
         // Limiter FIRST, before the secret lookup, the body read, and the
         // signature HMAC. Every step after this point costs something an
@@ -542,7 +542,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
           // retries up to 10 times.
           //
           // Both layers stay. `source_ts` is the ordering invariant; this is the
-          // delivery-identity one, and it composes with the W3.3 body cap and IP
+          // delivery-identity one, and it composes with the body cap and IP
           // limiter above rather than replacing either.
           const result = await dedupedWebhook(webhookId, () => store().applyPolarState(applyArgs))
           if (result.unresolved.length > 0) {
@@ -593,10 +593,10 @@ export function BillingRoutes(options: BillingRouteOptions) {
         // Refuse a SECOND checkout when the org already holds a live Polar
         // subscription (active/trialing/past_due) — a second checkout mints a
         // second subscription for the same org and double-bills. The mirrored
-        // status (D5 single writer) is authoritative here; direct the caller to
+        // status (single writer) is authoritative here; direct the caller to
         // the customer portal / seat management instead.
         //
-        // S2-PENDING: the mid-cycle SEAT-INCREASE path (a Polar
+        // PENDING: the mid-cycle SEAT-INCREASE path (a Polar
         // subscription-UPDATE that changes the licensed seat count on the
         // existing subscription) is deliberately NOT implemented here — it
         // depends on confirming Polar's seat-update semantics against the
@@ -632,7 +632,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
         try {
           const session = await client.checkouts.create({
             products: [product],
-            // S2-PENDING (ADR 014 §6.3): SDK 0.48.1 has NO plain quantity
+            // PENDING (ADR 014 §6.3): SDK 0.48.1 has NO plain quantity
             // on checkout — `seats` (Polar seat-based pricing) is the
             // pre-decided fallback and the only per-seat lever the API offers.
             seats,

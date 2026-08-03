@@ -1,5 +1,5 @@
 /**
- * Envelope encryption above the `SecretBackend` seam (launch-plan D10, I-5).
+ * Envelope encryption above the `SecretBackend` seam.
  *
  * The Cloudflare KV byte store (and any future hosted byte store) holds
  * OPAQUE CIPHERTEXT ONLY. This module supplies the mandatory wrapper that
@@ -24,7 +24,7 @@
  *   - iv        12 random bytes
  *   - tag       16 bytes, appended to the ciphertext by AES-GCM
  *
- * Additional authenticated data (F16, adversarial review): the GCM tag also
+ * Additional authenticated data (adversarial review): the GCM tag also
  * covers `<key-id>:<credential-id>` — the credential's storage identity — as
  * AAD (NOT stored in the value; re-derived on read). The credential-id is the
  * segment of the backend ref after its `<scheme>:` prefix (backends store under
@@ -32,7 +32,7 @@
  * full ref). This BINDS each ciphertext to its slot: a within-org relocation or
  * rollback of a blob to a different credential id fails GCM authentication even
  * though it decrypts under the same per-org key — closing the "leaked KV token
- * can shuffle blobs between slots" gap D10 names.
+ * can shuffle blobs between slots" gap.
  *
  * Reads FAIL CLOSED: a stored value that is not a well-formed envelope, uses
  * an unknown key-id, or fails GCM authentication (tamper, wrong org
@@ -102,8 +102,8 @@ export type StoredEnvelopeState =
  * Deliberately minimal: it reveals the KEY-ID a slot was written under (public
  * metadata that is already the ciphertext's plaintext prefix) and nothing else.
  * It does NOT expose the raw byte store, the ciphertext, or the KEK, so it
- * cannot be used to reopen the "reach the bytes unencrypted" hole that D10
- * closes — `credentials/rotate.ts` re-encrypts through the ordinary
+ * cannot be used to reopen the "reach the bytes unencrypted" hole this
+ * module closes — `credentials/rotate.ts` re-encrypts through the ordinary
  * `get`/`put` pair, which never lets plaintext touch the inner store.
  */
 export interface EnvelopeAdmin {

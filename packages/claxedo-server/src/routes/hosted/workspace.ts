@@ -47,7 +47,7 @@ import { emitSandboxLeaseOpened } from "../../platform/telemetry/product/meterin
 import { recordSandboxLeaseTenant } from "../../authority/adapters/convex/usage-ledger"
 import { productIdentity } from "../../platform/telemetry/product/product"
 
-// `requireCloudWorkspaceEntitlement` (the D6/B4 paid-capability gate for both
+// `requireCloudWorkspaceEntitlement` (the paid-capability gate for both
 // create and wake) now lives on the shared WorkspaceRouteOptions so the wake
 // choke point (workspace-hosted-connection-info.ts) reads the same hook.
 //
@@ -417,7 +417,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           )
         }
 
-        // D6/B4 entitlement gate — BEFORE any workspace doc exists. Fail-closed:
+        // Entitlement gate — BEFORE any workspace doc exists. Fail-closed:
         // free tier → 402 (typed billing_entitlement_required), billing mirror
         // unreadable → 503; either way nothing is created.
         if (options.requireCloudWorkspaceEntitlement) {
@@ -479,7 +479,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           throw err
         }
 
-        // W5 sandbox-compute metering (metric spec §4.2): the create path is the
+        // Sandbox-compute metering (metric spec §4.2): the create path is the
         // one lease-open site that holds a signed tenant, so the opening event is
         // emitted here rather than inside the manager. `started_at` is stamped
         // before `ensure` so the interval covers the cold start the user is
@@ -595,7 +595,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             //    used to be gated behind `leaseIdentity`, so a personal-account
             //    create stamped nothing, its lease was unattributed, and the
             //    cap could not bind for it — the hole this closes.
-            //  - the W5 metering pair only when a signed org claim produced a
+            //  - the metering pair only when a signed org claim produced a
             //    `leaseIdentity`. A usage fact keyed on a fabricated org (say
             //    `personal:<subject>`) would corrupt every per-org aggregate
             //    downstream, which is why the owner is a separate column rather

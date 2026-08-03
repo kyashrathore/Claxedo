@@ -20,7 +20,7 @@
  * for cron failures. Options come from env bindings via observabilityOptions:
  * absent CLAXEDO_POSTHOG_KEY → no sink is registered at all and the seam stays
  * a clean no-op (no network). Release = git SHA (CLAXEDO_RELEASE, passed by the
- * D11 deploy workflow); events carry unit=worker + deployment_mode.
+ * deploy workflow); events carry unit=worker + deployment_mode.
  */
 
 import type { ExecutionContext, Hono } from "hono"
@@ -84,7 +84,7 @@ type WorkerEnv = Record<string, unknown> & {
   LIVE_SYNC_ROOM?: LiveSyncRoomNamespace
   CLAXEDO_WAKES_SETTLEMENT?: string
   /**
-   * W3.1 cross-isolate abuse limiter, from the `[[ratelimits]]` block in
+   * Cross-isolate abuse limiter, from the `[[ratelimits]]` block in
    * wrangler.toml (mirrored under `[env.staging]` — rate-limit bindings are NOT
    * inherited by named environments; `rate-limit-config-drift.test.ts` asserts
    * both blocks exist). Optional so a deploy that lost the binding degrades to
@@ -132,7 +132,7 @@ let cached: {
   workGraphReconcile?: () => Promise<WorkGraphReconcileResult>
 } | undefined
 
-// D9 fail-closed hosted boot: `composeHostedControlPlane` asserts every
+// Fail-closed hosted boot: `composeHostedControlPlane` asserts every
 // hosted dependency/secret per-piece, and `createHostedApp` asserts the
 // explicit deployment mode (CLAXEDO_DEPLOYMENT_MODE=hosted is REQUIRED) plus
 // signed-auth/authority presence. Both throw HostedWorkerCompositionError,
@@ -376,7 +376,7 @@ const handler = {
   },
 }
 
-// D13 reaper, driver-side half (ops floor ADR 016 §4 Decision 3): the Cron
+// Sandbox reaper, driver-side half (ops floor ADR 016 §4 Decision 3): the Cron
 // Trigger in wrangler.toml drives the EXISTING sandbox GC path — a synthetic
 // request to the admin route, authorized with the same admin token — so the
 // scheduled sweep and the manual break-glass curl exercise the exact same code
@@ -422,7 +422,7 @@ async function runScheduled(controller: ScheduledController, env: WorkerEnv, ctx
     throw new Error(`Unsupported scheduled cron: ${controller?.cron ?? "missing"}`)
   }
   const hostedEnv = env as unknown as HostedWorkerEnv
-  // F17 (adversarial review): the sandbox GC sweep and the billing
+  // Adversarial review: the sandbox GC sweep and the billing
   // reconciliation sweep are ISOLATED — a throwing/failing GC pass must not
   // starve the billing sweep (the downgrade-recovery + deleted-org "bills
   // forever" paths). Each runs under its own try/catch; the GC failure is
@@ -464,7 +464,7 @@ async function runScheduled(controller: ScheduledController, env: WorkerEnv, ctx
     gcError = err
   }
 
-  // D5 billing reconciliation sweep (ADR 014 §3): re-fetch Polar customer
+  // Billing reconciliation sweep (ADR 014 §3): re-fetch Polar customer
   // state for orgs the Convex cron flagged as stale and re-apply it through
   // the single writer. Runs INDEPENDENTLY of the GC outcome above. Already
   // throw-free (a billing hiccup pages via reportPaymentError and the Convex

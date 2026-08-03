@@ -1,6 +1,5 @@
 /**
- * applyPolarState — D5's single translation module (D5,
- * ADR 014 §3 + addendum): turns a Polar payload (webhook event or
+ * applyPolarState — the single translation module (ADR 014 §3 + addendum): turns a Polar payload (webhook event or
  * reconciliation fetch) into org-field writes through the ONE builder-gated
  * Convex service mutation (convex/billing.ts `applyPolarState`). Nothing else
  * anywhere writes the mirrored billing fields — enforced grep-style by
@@ -101,7 +100,7 @@ function subscriptionState(subscription: Rec, source: "customer_state" | "subscr
     // incomplete, unknown): free tier, status recorded for supportability.
     return { plan: "free", subscription_status: status }
   }
-  // S2-PENDING (ADR 014 §6.3): SDK 0.48.1 models carry `seats` (Polar
+  // PENDING (ADR 014 §6.3): SDK 0.48.1 models carry `seats` (Polar
   // seat-based pricing) and NO plain `quantity` field anywhere — the ADR's
   // pre-decided fallback ladder (plain quantity → seats feature count) lands
   // on seats. `customer.state_changed` subscription entries omit seats
@@ -159,7 +158,7 @@ export function customerStateToApplyArgs(
     const existing = byOrg.get(orgId)
     if (!existing || statusRank(next) > statusRank(existing)) byOrg.set(orgId, next)
   }
-  // F19 (adversarial review): a customer-state payload with NO usable source
+  // Adversarial review: a customer-state payload with NO usable source
   // timestamp (no customer modified_at and no subscription modified_at/
   // created_at) must NOT be stamped with Date.now() — doing so defeats the
   // last-write-wins replay/stale guard (every such payload would read as the
@@ -207,7 +206,7 @@ export type PolarWebhookEvent = { type?: unknown; data?: unknown }
 /**
  * True when the event type is one we DO translate into billing state. Lets the
  * route distinguish a harmless order/benefit event (silent ack) from a
- * subscription or customer-state event we failed to attribute to an org (F7:
+ * subscription or customer-state event we failed to attribute to an org (
  * ack so Polar stops retrying, but page — a charge may have no entitlement).
  */
 export function isBillingRelevantEventType(event: PolarWebhookEvent): boolean {
