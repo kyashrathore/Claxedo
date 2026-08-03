@@ -14,7 +14,7 @@ import {
   setSandboxDriverConfig,
 } from "../../agent-config"
 import { putCredential } from "../registry"
-import { getBackend } from "../store"
+import { getBackend } from "../backend-registry"
 import { dataDir } from "../../platform/runtime/lib/paths"
 import { Log } from "../../platform/runtime/lib/log"
 import { syncMcpHosts } from "../../sandbox/network/policy"

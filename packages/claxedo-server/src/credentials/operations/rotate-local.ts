@@ -34,7 +34,7 @@
 
 import { ClaxedoDB } from "../../platform/db/db"
 import { ClaxedoProviderCredentialTable } from "../provider-credential.sql"
-import { getBackend } from "../store"
+import { getBackend } from "../backend-registry"
 import { isEnvelopeBackend } from "../envelope"
 import { listCloudflareCredentialRefs } from "../backends/cloudflare"
 import {

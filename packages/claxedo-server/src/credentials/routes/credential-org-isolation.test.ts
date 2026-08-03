@@ -31,7 +31,7 @@ process.env.CLAXEDO_DATA_DIR = root
 // from the ambient environment.
 delete process.env.CLAXEDO_SIGNED_CLOUD_AUTH
 
-const { createTestBackend, setBackendOverride } = await import("../store")
+const { createTestBackend, setBackendOverride } = await import("../backend-registry")
 const registry = await import("../registry")
 const { defaultControlPlaneCredentials } = await import("../../authority/services")
 const { CredentialRoutes } = await import("./credential")

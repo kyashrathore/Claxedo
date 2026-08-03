@@ -11,7 +11,7 @@ mkdirSync(root, { recursive: true })
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
-const { createTestBackend, setBackendOverride } = await import("../credentials/store")
+const { createTestBackend, setBackendOverride } = await import("../credentials/backend-registry")
 const registry = await import("../credentials/registry")
 const { ClaxedoDB } = await import("../platform/db/db")
 ClaxedoDB.Drizzle()

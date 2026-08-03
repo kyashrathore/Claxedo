@@ -24,7 +24,7 @@ process.env.CLAXEDO_DATA_DIR = root
 delete process.env.CLAXEDO_CREDENTIALS_ORG_ID
 
 const { dataDir } = await import("../../platform/runtime/lib/paths")
-const { setBackendOverride } = await import("../store")
+const { setBackendOverride } = await import("../backend-registry")
 const { putCredential, listCredentials, deleteCredential } = await import("../registry")
 const { createStaticKeyProvider, encryptedSecretBackend, envelopeKeyId } = await import("../envelope")
 const { rotateLocalCredentialKeys, localEnvelopePartition } = await import("./rotate-local")

@@ -20,7 +20,7 @@ vi.mock("../../agent-config", () => ({
   setSandboxDriverConfig: vi.fn(),
 }))
 vi.mock("../registry", () => ({ putCredential: mocks.putCredential }))
-vi.mock("../store", () => ({ getBackend: () => ({ probe: async () => true }) }))
+vi.mock("../backend-registry", () => ({ getBackend: () => ({ probe: async () => true }) }))
 vi.mock("../../platform/runtime/lib/paths", () => ({ dataDir: () => "/tmp/claxedo-migrate-test" }))
 vi.mock("../../sandbox/network/policy", () => ({ syncMcpHosts: vi.fn() }))
 vi.mock("../../platform/runtime/lib/log", () => ({

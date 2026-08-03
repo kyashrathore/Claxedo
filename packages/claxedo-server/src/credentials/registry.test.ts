@@ -11,7 +11,7 @@ const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
 // Import after setting env
-const { createTestBackend, setBackendOverride } = await import("./store")
+const { createTestBackend, setBackendOverride } = await import("./backend-registry")
 const {
   putCredential,
   listCredentials,

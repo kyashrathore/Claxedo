@@ -10,7 +10,7 @@ mkdirSync(root, { recursive: true })
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
-const { createTestBackend, setBackendOverride } = await import("./store")
+const { createTestBackend, setBackendOverride } = await import("./backend-registry")
 const {
   putCredential,
   resolveAllSecrets,
