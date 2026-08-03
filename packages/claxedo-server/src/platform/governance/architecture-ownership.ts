@@ -1,7 +1,12 @@
 export const OwnershipStatus = {
   Canonical: "canonical",
   Compatibility: "compatibility",
-  TestOnly: "test-only",
+  /**
+   * A module that was removed and must not come back. The entry pins the
+   * deletion — `architecture.test.ts` asserts the path does NOT exist and that
+   * a `canonicalReplacement` names what supersedes it, so a revert or a
+   * same-named reintroduction fails rather than silently restoring the module.
+   */
   Deleted: "deleted",
 } as const
 

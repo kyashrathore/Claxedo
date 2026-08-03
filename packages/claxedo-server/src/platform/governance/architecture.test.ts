@@ -47,6 +47,41 @@ describe("architecture boundaries", () => {
     }
   })
 
+  test("POSITIVE CONTROL: a Deleted entry whose module came back is caught", () => {
+    // No registry entry currently carries `Deleted`, so the branch above runs
+    // zero times and would keep passing if it were broken. This runs the same
+    // rule over a synthetic entry to prove it still rejects: a module marked
+    // deleted that exists again must fail, so a revert cannot silently restore
+    // something the registry says is gone.
+    const check = (entry: { status: OwnershipStatus; module: string; canonicalReplacement?: string }) => {
+      if (entry.status !== OwnershipStatus.Deleted) return "not-deleted"
+      const target = path.resolve(import.meta.dirname, "../..", entry.module)
+      if (fs.existsSync(target)) return "module still exists"
+      if (!entry.canonicalReplacement) return "missing canonicalReplacement"
+      return "ok"
+    }
+
+    expect(
+      check({
+        status: OwnershipStatus.Deleted,
+        module: "platform/governance/architecture-ownership.ts",
+        canonicalReplacement: "n/a",
+      }),
+    ).toBe("module still exists")
+
+    expect(
+      check({ status: OwnershipStatus.Deleted, module: "platform/governance/never-existed.ts" }),
+    ).toBe("missing canonicalReplacement")
+
+    expect(
+      check({
+        status: OwnershipStatus.Deleted,
+        module: "platform/governance/never-existed.ts",
+        canonicalReplacement: "platform/governance/architecture-ownership.ts",
+      }),
+    ).toBe("ok")
+  })
+
 
   test("keeps the server host bridge out of harness adapter execution", () => {
     const files = ["deployments/local/embedded-workspace-runtime.ts", "workspace/http/sandbox-target-fetch.ts", "workspace/runtime-dispatch/internals.ts", "agent-config/fanout.ts"]
