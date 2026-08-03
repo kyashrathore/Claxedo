@@ -44,6 +44,9 @@ export type WorkspaceOfflineReason =
   | "forbidden"
   // relay/runtime unreachable (502/509/network/timeout)
   | "unreachable"
+  // the sandbox is still provisioning but the client's poll budget ran out —
+  // the workspace did NOT fail; retrying resumes the wait
+  | "still-provisioning"
   // generic mint/provision failure (4xx/5xx not above)
   | "failed"
 
@@ -201,6 +204,10 @@ function roleFromPlacementState(state: ConnectionPlacementState): RelayRole | un
 function classifyOffline(input: { offline?: boolean; message?: string }): WorkspaceOfflineReason {
   if (isForbiddenConnectionError(input.message)) return "forbidden"
   if (input.offline) return "no-host"
+  // The connection poll gave up while the server still said "provisioning"
+  // (workspace-relay-connection.ts's attempt cap). The sandbox is still being
+  // prepared server-side — presenting this as a failure would be a lie.
+  if (input.message && /still provisioning/i.test(input.message)) return "still-provisioning"
   if (input.message && /\b(502|503|509)\b/.test(input.message)) return "unreachable"
   if (input.message && /timeout|unreachable|network|aborted|ECONN/i.test(input.message)) return "unreachable"
   return "failed"

@@ -38,6 +38,11 @@ const OFFLINE_COPY: Record<WorkspaceOfflineReason, { title: string; detail: stri
     title: "Can't reach the workspace runtime",
     detail: "The relay or runtime is temporarily unreachable. This usually clears on its own.",
   },
+  "still-provisioning": {
+    title: "Workspace is still starting",
+    detail:
+      "The sandbox is taking longer than usual to prepare. Nothing failed — retry to keep waiting.",
+  },
   failed: {
     title: "Workspace failed to start",
     detail: "Something went wrong preparing the workspace runtime. Review the details and retry.",

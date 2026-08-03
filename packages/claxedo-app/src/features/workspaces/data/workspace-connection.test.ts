@@ -187,11 +187,18 @@ describe("workspace connection authority", () => {
     expect(internals.classifyOffline({ message: "Runtime health check failed: 502" })).toBe("unreachable")
     expect(internals.classifyOffline({ message: "network timeout" })).toBe("unreachable")
     expect(internals.classifyOffline({ message: "Workspace connection failed: 500" })).toBe("failed")
+    // The relay poll's give-up throw ("Workspace runtime is still provisioning",
+    // workspace-relay-connection.ts) is a client-side wait cap, not a server
+    // failure — it must NOT read as "Workspace failed to start".
+    expect(internals.classifyOffline({ message: "Workspace runtime is still provisioning" })).toBe(
+      "still-provisioning",
+    )
 
     expect(internals.isTerminalReason("forbidden")).toBe(true)
     expect(internals.isTerminalReason("no-host")).toBe(false)
     expect(internals.isTerminalReason("unreachable")).toBe(false)
     expect(internals.isTerminalReason("failed")).toBe(false)
+    expect(internals.isTerminalReason("still-provisioning")).toBe(false)
   })
 
   test("workspaceOffline reads the offline reason; predicates ignore unknown ids", () => {
