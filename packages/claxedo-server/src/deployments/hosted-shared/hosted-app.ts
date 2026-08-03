@@ -78,7 +78,7 @@ import {
   createHostedRunOperationHandler,
 } from "../../hosts/workgraph/hosted/run-operation"
 import { createHostedSessionTranscriptRetention } from "../../hosts/workgraph/hosted/runtime"
-import { createHostedConnectionsSetup } from "../../hosts/workgraph/hosted/connections-setup"
+import { createHostedConnectionsSetup, createHostedRepositoryAccess } from "../../hosts/workgraph/hosted/connections-setup"
 import { DocumentsRoutes, type DocumentsRouteBackend } from "../../documents/routes/index"
 import { workGraphHttpTelemetry } from "../../hosts/workgraph/operational-telemetry"
 import { captureProduct, productIdentity } from "../../platform/telemetry/product/product"
@@ -423,14 +423,18 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   // resolved through the same authority call the rest of the control plane
   // uses. Gate errors resolve to fail-closed denials inside the gate.
   const entitlementGate = overrides.entitlementGate ?? createEntitlementGate({ env: plane.env })
-  const connectionsSetup = createHostedConnectionsSetup({
+  const connectionsSetupInput = {
     env: plane.env,
     authConfig: services.auth.config,
     executor: workgraph.executor,
     serviceToken: workgraph.serviceToken,
     ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
-    requireEntitlement: (clerkOrgId) => entitlementGate({ clerkOrgId }, "hosted-connections"),
-  })
+    requireEntitlement: (clerkOrgId: string) => entitlementGate({ clerkOrgId }, "hosted-connections"),
+  }
+  const connectionsSetup = createHostedConnectionsSetup(connectionsSetupInput)
+  // The workspace-create route resolves connected private repositories through
+  // the same org-scoped connections the integrations surface serves.
+  const hostedRepositoryForAuth = createHostedRepositoryAccess(connectionsSetupInput)
   const requireCloudWorkspaceEntitlement = async (
     auth: Parameters<NonNullable<HostedWorkspaceRouteOptions["requireCloudWorkspaceEntitlement"]>>[0],
   ) => {
@@ -457,6 +461,7 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   const egressExtraHosts = sandboxEgressExtraHosts(plane.env)
   const workspaceOptions: HostedWorkspaceRouteOptions = {
     requireCloudWorkspaceEntitlement,
+    connections: { repositoryForAuth: hostedRepositoryForAuth },
     // Omitted when empty rather than passed as `[]`: the route option is
     // optional, and an absent key is the shape that means "the baseline stands".
     ...(egressExtraHosts.length ? { sandboxEgressExtraHosts: egressExtraHosts } : {}),

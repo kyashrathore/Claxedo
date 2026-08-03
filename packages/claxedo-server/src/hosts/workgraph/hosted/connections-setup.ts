@@ -86,6 +86,50 @@ export function createHostedConnectionsSetup(input: Readonly<{
   return app
 }
 
+/**
+ * Hosted counterpart of the local `repositoryForAuth` (connections/index.ts):
+ * proves the signed caller can read `fullName` through their org's GitHub
+ * connection and mints the clone token. Used by the hosted workspace-create
+ * route so connected private repositories provision exactly like they do on
+ * the local control plane. A fresh per-request service, like `handle` above —
+ * connection metadata and credentials are org-scoped reads, not process state.
+ */
+export function createHostedRepositoryAccess(input: Parameters<typeof createHostedConnectionsSetup>[0]) {
+  return async (
+    auth: { user: { orgId?: string; subject: string } } | undefined,
+    connectionId: string,
+    fullName: string,
+  ) => {
+    if (!auth?.user.orgId) return { ok: false as const, status: 403 as const, code: "connections_org_required" }
+    const membership = await input.executor.query(api.orgs.membershipByClerkIds, {
+      service_token: input.serviceToken,
+      clerk_org_id: auth.user.orgId,
+      clerk_subject: auth.user.subject,
+    }) as { member?: boolean; org_id?: string; user_id?: string } | null
+    if (!membership?.member || !membership.org_id || !membership.user_id) {
+      return { ok: false as const, status: 403 as const, code: "connections_org_membership_required" }
+    }
+    const service = hostedConnectionsService(input, membership.user_id, membership.org_id)
+    try {
+      const visible = (await service.list({ owner: `org:${membership.org_id}` }))
+        .some((connection) => connection.id === connectionId)
+      if (!visible) return { ok: false as const, status: 404 as const, code: "connection_not_found" }
+      const listed = await service.listRepositories(connectionId)
+      if (!listed.ok) return listed
+      const repository = listed.repositories.find((item) => item.fullName === fullName)
+      if (!repository) return { ok: false as const, status: 404 as const, code: "repository_not_found" }
+      if (!repository.permissions.read) {
+        return { ok: false as const, status: 403 as const, code: "repository_read_required" }
+      }
+      const token = await service.getToken(connectionId, "code-host")
+      if (!token.ok) return token
+      return { ok: true as const, repository, token: token.response.token }
+    } finally {
+      service.dispose()
+    }
+  }
+}
+
 function hostedConnectionsService(
   input: Parameters<typeof createHostedConnectionsSetup>[0],
   ownerUserId: string,

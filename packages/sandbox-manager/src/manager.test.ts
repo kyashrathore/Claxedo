@@ -300,7 +300,13 @@ describe("sandbox manager", () => {
     await manager.ensure("ws_1", { homeRegion: "eu-west" })
     await store.update("ws_1", 1, {
       status: "acquiring",
-      checkpoint: { providerReference: "snap_1", sourceEpoch: 1 },
+      checkpoint: {
+        id: "chk_1",
+        providerReference: "snap_1",
+        sourceEpoch: 1,
+        capturedAt: 1,
+        metadata: { scope: "filesystem", sourceBehavior: "preserved", restoreMount: "new-resource" },
+      },
       nextRetryAt: 1,
     })
 

@@ -42,6 +42,7 @@ import { hostedConnectionInfo } from "../../connections/hosted-connection-info"
 import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, hostTunnelCredential, parsedBody, rec, signedOrError, txt, type WorkspaceRouteOptions } from "../../workspace/route-support"
 import { connectionRateLimitError, controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
 import { sandboxLeaseCapError, type ActiveSandboxLeaseCounter } from "../../workspace/runtime-token-guards"
+import { authenticatedGitHubCloneSource } from "../../workspace/repository-clone"
 import { normalizeClaxedoRegion } from "../../platform/runtime/region"
 import { emitSandboxLeaseOpened } from "../../platform/telemetry/product/metering"
 import { recordSandboxLeaseTenant } from "../../authority/adapters/convex/usage-ledger"
@@ -189,8 +190,20 @@ const createCloudBody = z
     repoName: z.string().optional(),
     gitBranch: z.string().optional(),
     remoteDirectory: z.string().optional(),
+    // Connected-repository source (same contract as the local create route):
+    // resolve the clone URL + a brokered token through the caller's GitHub
+    // connection instead of requiring a public repoUrl. Both or neither.
+    connectionId: z.string().optional(),
+    repo: z.object({ fullName: z.string() }).optional(),
+    // The app's create dialog sends its sandbox-provider choice. The hosted
+    // control plane composes ONE driver from env, so the field is accepted and
+    // ignored rather than 400ing the shared client on a strict body.
+    driver: z.string().optional(),
   })
   .strict()
+  .refine((body) => Boolean(body.connectionId) === Boolean(body.repo), {
+    message: "connectionId and repo must be provided together",
+  })
 
 const heartbeatBody = z
   .object({
@@ -409,8 +422,28 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             503,
           )
         }
-        const repoUrl = body.repoUrl?.trim()
-        if (!repoUrl) {
+        let repoUrl = body.repoUrl?.trim()
+        let provisionRepoUrl = repoUrl
+        let provisionSecrets: Array<{ name: string; value: string; hosts: string[]; header?: string }> | undefined
+        if (body.connectionId && body.repo) {
+          // Same resolution the local create route performs: the connection
+          // proves the caller can read the repository and mints the clone
+          // token, which rides to the sandbox as a brokered secret — never in
+          // the workspace row or the clone URL Convex stores.
+          if (!options.connections) {
+            return c.json(
+              { error: apiError("repository_connections_unavailable", "Repository connections are unavailable") },
+              501,
+            )
+          }
+          const access = await options.connections.repositoryForAuth(auth, body.connectionId, body.repo.fullName)
+          if (!access.ok) return c.json({ error: apiError(access.code, "Repository connection is not available") }, access.status)
+          repoUrl = access.repository.cloneUrl
+          const source = authenticatedGitHubCloneSource(access.repository.cloneUrl, access.token)
+          provisionRepoUrl = source.repoUrl
+          provisionSecrets = [source.secret]
+        }
+        if (!repoUrl || !provisionRepoUrl) {
           return c.json(
             { error: apiError("cloud_workspace_source_required", "repoUrl is required for hosted cloud workspaces") },
             400,
@@ -501,7 +534,9 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
 
         const source = {
           kind: "git" as const,
-          repoUrl,
+          // The PROVISION url (token via brokered secret for connected repos);
+          // the plain `repoUrl` is what the workspace row records.
+          repoUrl: provisionRepoUrl,
           ...(body.gitBranch?.trim() ? { branch: body.gitBranch.trim() } : {}),
         }
 
@@ -516,6 +551,10 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             },
             workspaceRoot: directory,
             source,
+            // Clone token for connected private repos — rides the brokered
+            // secret channel (fail-closed in the manager for drivers that
+            // cannot broker), never labels or env.
+            ...(provisionSecrets?.length ? { secrets: provisionSecrets } : {}),
             // Security review 2026-07-27 §6.14 — this is the hosted, multi-tenant
             // create path, so the sandbox it provisions runs agent-authored code
             // over someone's private checkout. `net` was omitted here, and an

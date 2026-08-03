@@ -18,6 +18,7 @@ import type { ActionProps, Nav } from "../../../app/workbench/actions/shared"
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 import { workspaceSessionRoute } from "@/platform/identity/route"
 import { createLocalWorkspace, type LocalWorkspaceProps } from "./workspace-recovery"
+import { DialogCreateCloudProject } from "../ui/dialogs/create-cloud-project"
 import type { ClaxedoEvent } from "../../../app/integrations/claxedo-events"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
@@ -95,7 +96,7 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
     return props.state.layout.openSession(workspaceDir, "new", "New Session")
   }
   const handleNewProject = () => {
-    const handleProjectSelected = async (workspaceDir: string) => {
+    async function handleProjectSelected(workspaceDir: string) {
       props.flowLog("new project selected", {
         workspaceDir,
         routeDir: props.activeDirectory(),
@@ -137,6 +138,25 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
           surfaceId: id,
         })
       props.dialog.close()
+    }
+
+    // On hosted web there is no local filesystem behind the directory picker —
+    // it routes through the loopback bridge and dead-ends. The web path is the
+    // cloud create flow: pick a connected GitHub repository (or paste a URL,
+    // with a connect-GitHub path inside the dialog), provision a sandbox, and
+    // open the resulting workspace directory like any other selection.
+    if (props.platform.platform === "web") {
+      void props.dialog.show(() => (
+        <DialogCreateCloudProject
+          onSelect={(result) => {
+            const directory = Array.isArray(result) ? result[0] : result
+            if (typeof directory === "string" && directory) {
+              void handleProjectSelected(directory)
+            }
+          }}
+        />
+      ))
+      return
     }
 
     void props.dialog.show(() => (
