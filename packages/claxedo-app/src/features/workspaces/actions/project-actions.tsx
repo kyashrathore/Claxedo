@@ -19,7 +19,7 @@ import { capture as phCapture, identityProps } from "@/platform/telemetry/analyt
 import { workspaceSessionRoute } from "@/platform/identity/route"
 import { createLocalWorkspace, type LocalWorkspaceProps } from "./workspace-recovery"
 import { DialogCreateCloudProject } from "../ui/dialogs/create-cloud-project"
-import { centralTransportForServer } from "@/platform/runtime/agent/workspace-runtime-request"
+import { centralTransportForServer } from "@/platform/runtime/transport"
 import type { ClaxedoEvent } from "../../../app/integrations/claxedo-events"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
