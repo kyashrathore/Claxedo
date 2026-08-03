@@ -40,23 +40,6 @@ control-plane concerns.
 
 ## Runnable Examples In This Repo
 
-The runnable examples live in [`claxedo-cookbook/`](../claxedo-cookbook/) at the
-repo root, not under an `examples/` directory. It is an eight-recipe ladder,
-each recipe a single liftable file under `claxedo-cookbook/src/recipes/` that
-either completes with printed proof or prints `SKIP: <reason>` — never a stack
-trace:
-
-| # | Recipe | Capability |
-| --- | --- | --- |
-| 01 | `recipe:01-hello-agent` | `@claxedo/agent-sdk-runtime` facade: runtime → session → message → real model reply |
-| 02 | `recipe:02-harness-swap` | Same `runOnce()` runs claude/codex/cursor — only the harness id string changes |
-| 03 | `recipe:03-one-event-shape` | `@claxedo/agent-event-runtime` normalizes harness-specific streams into one event envelope |
-| 04 | `recipe:04-kill-and-resume` | SQLite store durability across a killed and resumed process |
-| 05 | `recipe:05-workspace-host` | `@claxedo/workspace-runtime` loopback host: files, search, git, diffs, processes, events |
-| 06 | `recipe:06-extensions-once` | `@claxedo/agent-extensions` materialized natively for opencode, claude, codex, and cursor |
-| 07 | `recipe:07-sandbox-secrets` | `@claxedo/sandbox-manager` fail-closed secret brokering |
-| 08 | `recipe:08-place-anywhere` | `@claxedo/workspace-relay` serving the same route locally and through an authenticated tunnel |
-
-Run `bun install` (links the `@claxedo/*` packages from this monorepo
-checkout) then `bun run recipe:01-hello-agent`, or `bun run recipes:all` for
-the whole ladder. See `claxedo-cookbook/README.md` for per-recipe requirements.
+There is no `examples/` or cookbook directory in this repo. For runnable
+demonstrations of each package surface, see the per-package READMEs and the
+quickstart in [See It All In Action](./see-it-all-in-action.md).

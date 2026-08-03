@@ -1,112 +1,133 @@
 ---
 title: "Introduction"
-description: "Claxedo gives your product a multi-harness coding-agent runtime: one session surface over OpenCode, Claude, Codex, Cursor, and Pi, from local worktrees to relayed cloud hosts."
+description: "What Claxedo Framework is, the problem it exists to solve, and how it differs from agent SDKs and single-vendor wrappers."
 ---
 
-Claxedo is a set of composable packages for building coding-agent products. The
-packages let you normalize agent events, drive multiple agent harnesses through
-one runtime facade, run a per-workspace host, attach that host through a relay,
-expose runtime tools over MCP, and materialize reusable Agent Extensions.
+## What is it?
 
-Reach for Claxedo when you want to:
+Claxedo Framework is a set of MIT-licensed npm packages for building products on
+top of **coding agents that already exist** — Claude Code, Codex, Cursor,
+OpenCode, and Pi. It gives you one programmable surface over all of them:
+sessions, turns, a single normalized event stream, workspace file/terminal/git
+access, and deployment plumbing to run it all locally, on a VM, or behind a
+relay.
 
-- Talk to OpenCode, ACP harnesses, native SDK harnesses, and Pi through one
-  session/runtime surface.
-- Build infrastructure for terminal coding agents: sessions, PTYs, processes,
-  files, diffs, events, and harness config.
-- Let users discover a skill/MCP/plugin package, install it into workspace
-  desired state, and materialize it for multiple harness targets.
-- Host a team app on your own system, backed by local worktrees, containers, or
-  cloud VMs.
-- Let authorized teammates reach a user-hosted local workspace through Relay.
+This is a working agent backend:
+
+```ts
+import { createAgentRuntime } from "@claxedo/agent-sdk-runtime"
+import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
+import { claude } from "@claxedo/agent-sdk-runtime/harnesses"
+
+const runtime = createAgentRuntime({
+  store: createMemoryRuntimeStore(),
+  harnesses: [claude()],
+})
+
+const session = await runtime.sessions.create({
+  directory: "/path/to/project",
+  harness: { id: "claude", access: "native" },
+  model: { providerID: "claude", modelID: "default" },
+  title: "hello agent",
+})
+
+await runtime.turns.start({
+  sessionId: session.id,
+  agent: "",
+  text: "Reply with exactly: HELLO FROM CLAXEDO",
+})
+```
+
+Swap `claude()` for `codex()` or `cursor()` and nothing else changes — the
+harness is data, not architecture.
+
+## Why does it exist?
+
+Coding agents became the way software gets written — but each one is a
+**closed, vendor-shaped CLI**. If you build a product, a team workflow, or
+internal tooling around them, you hit the same four walls:
+
+1. **Every harness speaks its own dialect.** Claude Code, Codex, and Cursor
+   each have their own session model, event stream, and wire protocol. Code
+   written against one is a rewrite away from the next.
+2. **Configuration doesn't travel.** Skills, MCP servers, and agent config live
+   in per-harness dotfiles (`.mcp.json`, `.codex/config.toml`,
+   `.cursor/mcp.json`, …). Set up one machine for one agent, and you start over
+   for every other machine, teammate, and cloud sandbox.
+3. **Agent state dies with the process.** The CLIs assume an interactive
+   terminal. Products need sessions that survive a crash, stream to a browser,
+   and resume from disk.
+4. **"Where does it run?" is decided for you.** Local-only tools can't reach a
+   cloud sandbox; cloud products won't run on your laptop against your
+   worktree. You should be able to choose per session — and change your mind.
+
+Claxedo exists to be the layer that solves those four problems once, as
+ordinary open-source packages, so every product built on coding agents doesn't
+have to solve them again privately.
+
+## How is it different?
+
+**It's not an agent SDK.** Frameworks like LangGraph or Mastra help you build
+*an agent* — you write the loop, pick the model, define the tools. Claxedo
+assumes the agent already exists and is very good. It drives the released
+Claude Code, Codex, and Cursor binaries as **harnesses**, with their own
+models, tools, and behaviors intact — and gives you the runtime around them.
+
+**It's not a wrapper around one vendor.** The same session code runs against
+every agent installed on the machine, and every harness's raw events normalize
+into one `AgentRuntimeEvent` envelope. Supporting a new harness means writing
+one event adapter, not forking your product.
+
+**Extensions are written once, materialized everywhere.** An Agent Extension
+package (skills, MCP servers, agent config) is authored once and materialized
+into each harness's *native* format — `.mcp.json` for Claude,
+`.codex/config.toml` for Codex, `.cursor/mcp.json` for Cursor,
+`opencode.jsonc` for OpenCode — in one call. No other stack does this across
+harnesses.
+
+**Placement is your choice, per session.** A session's loop and its tools can
+run on your laptop over loopback, in a cloud sandbox, or split between the two
+— and authorized teammates can reach a laptop-hosted workspace through the
+relay without any inbound port.
+
+**It's MIT and composable, all the way down.** Ten ordinary npm packages. Each
+layer works standalone: use `@claxedo/agent-event-runtime` just to normalize
+events, or `@claxedo/agent-extensions` just to sync config, without adopting
+the rest.
+
+<Note>
+  The packages ship execution primitives. Auth, org policy, credential storage,
+  and workspace routing live in **your** control plane — your server decides who
+  can reach a workspace host. See
+  [code-supported vs product-owned](/api/overview#code-supported-vs-product-owned).
+</Note>
 
 ## The stack in one picture
 
 ```text
 your product
-   |
-   v
-@claxedo/workgraph
-@claxedo/mcp
-@claxedo/workspace-relay
-@claxedo/workspace-relay-protocol
-@claxedo/workspace-runtime
-@claxedo/agent-extensions
-@claxedo/agent-sdk-runtime
-@claxedo/agent-event-runtime
+   │
+   ├─ @claxedo/workspace-relay ──── reach a workspace from anywhere
+   │    @claxedo/workspace-relay-protocol
+   │
+   ├─ @claxedo/workspace-runtime ── the per-workspace host: sessions,
+   │                                terminals, files, diffs, events
+   │
+   ├─ @claxedo/agent-extensions ─── one extension package → every harness
+   │
+   ├─ @claxedo/agent-sdk-runtime ── one facade over Claude, Codex,
+   │                                Cursor, OpenCode, Pi
+   │
+   └─ @claxedo/agent-event-runtime ─ every harness → one event shape
 ```
 
-Each layer can be used independently. Full workspace products usually start with
-`@claxedo/workspace-runtime`, because it creates the host that owns harness
-lifecycle, sessions, terminals, managed processes, files, diff routes, runtime
-events, and Agent Extension replay for one workspace. Products that only need
-extension package discovery, install state, lock state, policy, or
-materialization can use `@claxedo/agent-extensions` directly.
-
-<Card title="The layer stack, explained" href="/concepts/layer-stack" icon="layer-group">
-  How events flow from harness up through the runtime, relay, and control plane.
-</Card>
-
-## The packages
-
-
-
-Plus `@claxedo/sandbox-manager` (sandbox placement/leases and provider
-drivers), `@claxedo/connections` (external-account connections consumed by
-capability), and `@claxedo/channels` (chat-channel ingress) — all on npm; see
-[Install](/guides/install). The
-[control plane](/packages/control-plane) is Claxedo's own gateway server and is
-private, not a published package.
-
-## What's supported vs product-owned
-
-Claxedo draws a hard line between the code-supported package surfaces and the
-concerns a product's control plane owns. This keeps the packages honest about
-what they do and don't ship.
-
-<Note>
-  The packages ship execution primitives. Auth, org policy, credential storage, marketplace policy, and workspace
-  routing live in **your** control plane — the Workspace Host stays the execution boundary, and your server decides who
-  can reach it.
-</Note>
-
-**Supported today** (code-backed package surfaces):
-
-- Standalone and embedded workspace runtime (`startServer`,
-  `createWorkspaceRuntimeApp`).
-- Harness adapters for OpenCode, ACP harnesses, and native Claude, Codex,
-  Cursor, and Pi — swapped live when harness id, access, or connection changes.
-- Agent event normalization and projections.
-- Agent Extension discovery, lifecycle, policy, materialization, and replay.
-- Relay-attached runtime options and the MCP runtime-tools CLI.
-
-**Product-owned boundaries** (not in the packages):
-
-- Agent Extension **catalog policy** and marketplace UX.
-- Agent Extension **auth and org UX** (workspace/user/org authorization,
-  team-wide activation).
-- Agent Extension **fan-out** — which connected runtimes receive a snapshot.
-
-**Active delivery:** `@claxedo/workgraph` is the personal operating system for
-AI-assisted work. Each graph is physically scoped by the trusted organization
-and user derived by its host. `claxedo-server` embeds the application service;
-SQLite is the local and default single-node OSS adapter, Convex is the Claxedo
-Cloud adapter, and custom deployments can provide a conforming port
-implementation. Organization Connections supply team credentials while each
-user owns provider mapping, filters, candidates, and execution state.
-
-The public adapter contract is certified by core conformance v5. Collection
-cursors are opaque and bound to tenant and filter, execution capability
-catalogs are versioned and expire within five minutes, and placement cleanup is
-durably compensated across process restart. Local embedded agent tools invoke
-the service directly; standalone stdio MCP tools use authenticated HTTP;
-hosted embedded tools require durable Session tenant provenance.
-
-Exact Work Source revisions support reviewable planning and later-revision
-keep, replace, or fork actions. The current legacy Pages surface does not yet
-provide the durable Docs v2 revision action that triggers this flow. Real Cloud
-release acceptance is also pending the configured staging deployment and its
-signed browser journey.
+Full workspace products usually start with `@claxedo/workspace-runtime` — it
+creates the host that owns harness lifecycle, sessions, terminals, managed
+processes, files, diffs, and events for one workspace. Plus
+`@claxedo/sandbox-manager` (sandbox placement and provider drivers),
+`@claxedo/connections` (external-account connections), `@claxedo/channels`
+(chat-channel ingress), and `@claxedo/workgraph` (durable work ledger) — all on
+npm.
 
 ## Where to go next
 
@@ -115,12 +136,9 @@ signed browser journey.
     The packages composed into a full coding-agent app, end to end.
   </Card>
   <Card title="Install" href="/guides/install" icon="download">
-    Per-package install — all ten framework packages are on npm.
+    All ten framework packages are on npm.
   </Card>
-  <Card title="Sessions & hosts" href="/concepts/sessions-hosts" icon="server">
-    Where a session runs: `host` and `toolSandbox`.
-  </Card>
-  <Card title="Deploy locally" href="/deploy/local" icon="laptop">
-    Run the whole stack on your own machine over loopback.
+  <Card title="The layer stack" href="/concepts/layer-stack" icon="layer-group">
+    How events flow from harness up through runtime, relay, and control plane.
   </Card>
 </CardGroup>

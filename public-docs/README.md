@@ -82,9 +82,6 @@ materializer helpers live only in `@claxedo/agent-extensions`;
 
 - [See It All In Action](./see-it-all-in-action.md): how the packages compose
   into a full coding-agent app.
-- [Runnable cookbook](../claxedo-cookbook/README.md): a ladder of eight
-  single-file recipes — one capability each, from a ~15-line hello-agent to
-  relay-attached workspace placement.
 - [Workspace Runtime](./workspace-runtime.md): what the Workspace Host is,
   what it owns, how to run it, and how to embed it.
 - [Agent SDK Runtime](./agent-sdk-runtime.md): the `createAgentRuntime()`

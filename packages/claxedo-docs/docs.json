@@ -3,26 +3,26 @@
   "theme": "mint",
   "name": "Claxedo",
   "colors": {
-    "primary": "#201d1d",
-    "light": "#fdffcc",
-    "dark": "#201d1d"
+    "primary": "#171717",
+    "light": "#ededed",
+    "dark": "#171717"
   },
   "appearance": {
     "default": "system"
   },
   "background": {
     "color": {
-      "light": "#fdfcfc",
-      "dark": "#131010"
+      "light": "#f8f8f8",
+      "dark": "#101010"
     }
   },
   "fonts": {
     "heading": {
-      "family": "Fraunces",
+      "family": "Bricolage Grotesque",
       "weight": 600
     },
     "body": {
-      "family": "IBM Plex Sans"
+      "family": "Geist"
     }
   },
   "favicon": "/favicon.svg",
@@ -45,21 +45,16 @@
         "group": "Concepts",
         "pages": [
           "concepts/layer-stack",
-          "concepts/sessions-hosts",
-          "concepts/connections-capabilities",
-          "concepts/credentials-sandbox",
-          "concepts/extensions"
+          "concepts/sessions-turns-events",
+          "concepts/workspace-host",
+          "concepts/extensions",
+          "concepts/credentials"
         ]
       },
       {
         "group": "Deploy",
         "pages": [
-          "deploy/local",
-          "deploy/private-vm",
-          "deploy/relay-attached",
-          "deploy/hosted-control-plane",
-          "deploy/self-host-fly",
-          "deploy/sandbox-drivers-secrets"
+          "deploy/cloudflare-full-stack"
         ]
       },
       {
@@ -123,26 +118,10 @@
         ]
       },
       {
-        "group": "CLI & SDK",
+        "group": "SDK",
         "pages": [
-          "cli/index",
           "sdk/index",
-          "ecosystem/index",
           "integrations/index"
-        ]
-      },
-      {
-        "group": "Cookbook",
-        "pages": [
-          "cookbook/overview",
-          "cookbook/01-hello-agent",
-          "cookbook/02-harness-swap",
-          "cookbook/03-one-event-shape",
-          "cookbook/04-kill-and-resume",
-          "cookbook/05-workspace-host",
-          "cookbook/06-extensions-once",
-          "cookbook/07-sandbox-secrets",
-          "cookbook/08-place-anywhere"
         ]
       }
     ]
