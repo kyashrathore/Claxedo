@@ -183,7 +183,23 @@ export const OpencodePlugin = define<HttpClient.HttpClient | EventV2.Service | S
       Stream.runForEach(refresh),
       Effect.forkScoped({ startImmediately: true }),
     )
-    yield* refresh().pipe(Effect.forkScoped)
+    // The initial refresh runs INLINE when no OpenCode connection exists:
+    // this plugin's credential-less catalog contribution (apiKey="public" on
+    // the zen provider; paid models disabled) is what makes model selection
+    // safe at boot, and the session runner gates its first catalog read on
+    // this plugin having loaded. Forking it made that gate meaningless — the
+    // plugin reported loaded while zen still looked unusable, so the
+    // default-model pick landed on a provider that could only 401 (the
+    // staging first-prompt death). With no credential, load() makes no
+    // network call, so inline costs nothing. WITH a connection the refresh
+    // stays forked: load() then fetches the remote provider config, and
+    // plugin load must never block on the network (provider-opencode.test.ts
+    // pins that with a gated server).
+    if (yield* ctx.integration.connection.active("opencode")) {
+      yield* refresh().pipe(Effect.forkScoped)
+    } else {
+      yield* refresh()
+    }
   }),
 })
 
