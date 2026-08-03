@@ -876,7 +876,7 @@ describe("control-plane services", () => {
     const file = path.resolve(import.meta.dirname, "../deployments/local/server.ts")
     const text = fs.readFileSync(file, "utf8")
 
-    // StartServer configures local service defaults, then delegates to
+    // startServer configures local service defaults, then delegates to
     // the lower-level injected-service startup path.
     expect(text).toContain("export function startServer(")
     expect(text).toContain("return startControlPlaneStack({")
