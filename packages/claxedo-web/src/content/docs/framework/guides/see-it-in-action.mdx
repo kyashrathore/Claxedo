@@ -4,6 +4,8 @@ description: "The packages composed into a full coding-agent app."
 ---
 
 import Note from "../../../../components/framework/compat/Note.astro"
+import Card from "../../../../components/framework/compat/Card.astro"
+import CardGroup from "../../../../components/framework/compat/CardGroup.astro"
 import Steps from "../../../../components/framework/compat/Steps.astro"
 import Step from "../../../../components/framework/compat/Step.astro"
 
@@ -58,7 +60,7 @@ backends underneath.
       version: 2,
       harnesses: [{ id: "codex", access: "native" }],
       model: "default",
-      auth: { "codex-app-server": process.env.OPENAI_API_KEY! },
+      auth: {},
       mcp: {},
       agent_extensions: { version: 1, installs: [] },
       workspaceHarnessEnabled: true,
@@ -68,23 +70,13 @@ backends underneath.
     ```
 
     <Note>
-    This example drives the **Codex** harness, so it needs `OPENAI_API_KEY`. To
-    drive Claude over ACP instead, swap in
-    `harnesses: [{ id: "claude", access: "acp" }]` and
-    `auth: { anthropic: process.env.ANTHROPIC_API_KEY!, "claude-acp": process.env.ANTHROPIC_API_KEY! }`.
-    </Note>
-
-    <Note>
-    A control plane can push the same snapshot to a remote host over HTTP
-    (`POST /api/wr/config`), but that route is authorized only by a
-    workspace-runtime **management-auth adapter**. The kit ships a JWT verifier
-    (`createWorkspaceRuntimeJwtManagementAuth`), which
-    `workspaceRelayRuntimeOptionsFromEnv` wires from
-    `WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL` or
-    `WORKSPACE_RUNTIME_MANAGEMENT_VERIFY_PEM` plus
-    `WORKSPACE_RUNTIME_MANAGEMENT_ISSUER` and
-    `WORKSPACE_RUNTIME_MANAGEMENT_AUDIENCE`. Without an adapter configured, the
-    route returns `401 runtime_config_auth_required`.
+    The host runs the **coding-agent CLIs already installed on this machine**.
+    This example spawns `codex`; if you're logged in (`codex login`), it just
+    works — `auth: {}` means the CLI uses its own credentials. To drive Claude
+    instead, install and log into `claude` and swap in
+    `harnesses: [{ id: "claude", access: "native" }]`. The `auth` map is only
+    for injecting explicit API keys (e.g. on a fresh cloud VM with no CLI
+    login).
     </Note>
   </Step>
 
@@ -143,37 +135,6 @@ ACP, Cursor ACP, Claude SDK, Codex app-server, and OpenCode. When the harness
 config changes, the runtime disposes the old adapter and creates the matching
 one.
 
-## Add runtime tools over MCP
-
-Add Claxedo runtime tools to any MCP client. The JSON below is **MCP-client
-config** — put it in the client's server configuration, not a terminal.
-
-```json
-{
-  "command": "npx",
-  "args": ["-y", "@claxedo/mcp"],
-  "env": {
-    "CLAXEDO_SERVER_URL": "http://127.0.0.1:3001"
-  }
-}
-```
-
-`CLAXEDO_SERVER_URL` points at the Claxedo **control-plane server**
-(claxedo-server, `:3001` in local dev), not the workspace-runtime — the
-runtime's own API lives on `:4096` under `/api/wr/*`.
-
-`@claxedo/mcp` is a small tool bridge from "MCP tool call" to "Claxedo HTTP API
-call" — it does not run the agent or own the workspace. It registers these
-tools:
-
-| MCP tool | What it does |
-| --- | --- |
-| `process` | Lists, adds, updates, starts, stops, restarts, and removes managed process configs such as dev servers and watchers. |
-| `get_logs` | Reads terminal or managed-process output by `process_id`, `name`, `pty_id`, or `terminal_id`. |
-| `session_messages` | Reads structured agent session messages, or resolves the current terminal/tab agent session inside Claxedo. |
-| `summarize_logs` | Fetches (or accepts raw) logs, creates a temporary session, and asks the harness to summarize the output. |
-| Browser tools | List tabs, capture screenshots, read console logs, evaluate JavaScript, and navigate browser panes. |
-
 ## Attach through Relay
 
 When the runtime runs in a cloud VM or on a user's machine behind a tunnel,
@@ -188,25 +149,16 @@ const port = Number(process.env.WORKSPACE_RUNTIME_PORT ?? 3002)
 startServer(port, await workspaceRelayRuntimeOptionsFromEnv(process.env, port))
 ```
 
-See [Relay-attached](/framework/deploy/relay-attached) for the full env contract.
+See [`@claxedo/workspace-runtime`](/framework/packages/workspace-runtime) for the full
+relay-attachment env contract.
 
-## Run the cookbook
+## Go deeper
 
-The **claxedo-cookbook** is a ladder of eight single-file recipes — one
-capability each, from a ~15-line hello-agent to relay-attached workspace
-placement. Every recipe runs or prints a clean `SKIP` with the reason.
-
-```bash
-cd claxedo-cookbook
-bun install
-bun run recipe:01-hello-agent
-```
-
-<Note>
-`bun install` runs a postinstall (`scripts/link-local.mjs`) that links the
-`@claxedo/*` packages from the monorepo. It expects to run inside the repo
-checkout; outside it, set `CLAXEDO_PACKAGES_ROOT` to a checkout root.
-</Note>
-
-Each recipe has its own page — with the full source and the expected output —
-under the [Cookbook tab](/framework/cookbook/overview).
+<CardGroup cols={2}>
+  <Card title="Deploy the stack" href="/framework/deploy/cloudflare-full-stack" icon="cloud">
+    The full Claxedo stack on Cloudflare, the same shape hosted Claxedo runs.
+  </Card>
+  <Card title="Package reference" href="/framework/packages/index" icon="box">
+    Every published package, its API surface, and its boundaries.
+  </Card>
+</CardGroup>

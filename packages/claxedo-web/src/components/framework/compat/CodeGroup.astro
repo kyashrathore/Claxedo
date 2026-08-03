@@ -1,1 +1,51 @@
-<div class="sl-code-group"><slot /></div>
+<div class="sl-code-group" data-code-group><slot /></div>
+
+<script>
+  // Mintlify's <CodeGroup> renders one horizontal tab per code block. The
+  // synced MDX carries the tab label as the fence meta (```sh npm), which
+  // Expressive Code drops, so recover it from the block title when present and
+  // otherwise from the first word of the command.
+  for (const group of document.querySelectorAll("[data-code-group]")) {
+    const blocks = [...group.querySelectorAll(":scope > .expressive-code")] as HTMLElement[]
+    if (blocks.length < 2) continue
+
+    const labels = blocks.map((block, index) => {
+      const title = block.querySelector("figcaption .title")?.textContent?.trim()
+      if (title) return title
+      const firstWord = block.querySelector("pre code")?.textContent?.trim().split(/\s+/)[0]
+      return firstWord || `Tab ${index + 1}`
+    })
+
+    const tablist = document.createElement("div")
+    tablist.className = "sl-code-group-tabs"
+    tablist.setAttribute("role", "tablist")
+
+    const select = (active: number) => {
+      blocks.forEach((block, index) => {
+        block.hidden = index !== active
+        const tab = tablist.children[index] as HTMLButtonElement
+        tab.setAttribute("aria-selected", String(index === active))
+        tab.tabIndex = index === active ? 0 : -1
+      })
+    }
+
+    labels.forEach((label, index) => {
+      const tab = document.createElement("button")
+      tab.type = "button"
+      tab.setAttribute("role", "tab")
+      tab.textContent = label
+      tab.addEventListener("click", () => select(index))
+      tab.addEventListener("keydown", (event) => {
+        const delta = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0
+        if (!delta) return
+        const next = (index + delta + labels.length) % labels.length
+        select(next)
+        ;(tablist.children[next] as HTMLButtonElement).focus()
+      })
+      tablist.append(tab)
+    })
+
+    group.prepend(tablist)
+    select(0)
+  }
+</script>

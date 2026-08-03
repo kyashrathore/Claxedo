@@ -1,0 +1,89 @@
+---
+title: "Sessions, turns & events"
+description: "The core vocabulary: what a session is, what a turn settles to, and why every harness's output becomes one event envelope."
+---
+
+import Note from "../../../../components/framework/compat/Note.astro"
+import Card from "../../../../components/framework/compat/Card.astro"
+
+
+Everything you build with Claxedo is made of four things: a **session** (an
+agent working in a directory), **turns** (one prompt through to a settled
+outcome), **events** (the normalized stream you render), and a **store** (where
+all of it survives a crash). This page defines each one.
+
+## A session is three separate choices
+
+Creating a session picks *which agent*, *how to reach it*, and *which model* —
+three orthogonal knobs, not one vendor-shaped blob:
+
+| Choice | Meaning |
+| --- | --- |
+| `harness.id` | Which agent harness executes the turn: `claude`, `codex`, `cursor`, `opencode`, or `pi`. |
+| `harness.access` | How the host talks to it: `acp` (Agent Client Protocol) or `native` (the harness's own API/runtime). |
+| `model` | The model to request — separate, because a model provider is not the same thing as a harness. |
+
+Only `claude`, `codex`, and `cursor` support `access: "acp"`; `opencode` and
+`pi` are native-only. Because the harness is just data, swapping agents means
+changing one string — and a session's harness can even change mid-flight: when
+a config change alters harness id, access, or connection, the runtime disposes
+the old adapter and creates the matching one.
+
+<Note>
+In Claxedo vocabulary, `provider` always means a model, credential, or sandbox
+provider — never the harness that owns a turn.
+</Note>
+
+## A turn settles; a session is just busy
+
+The two status fields answer different questions, and confusing them is the
+most common UI bug:
+
+| Field | Question it answers |
+| --- | --- |
+| `session.status` | Is the runtime doing something *right now*? (`busy`, `recovering`, `error`, or idle). It is never "done". |
+| `session.lastTurn.status` | How did the most recent turn *end*? (`completed`, `failed`, or `cancelled`) — durable, recorded after the harness's own terminal signal settles. |
+
+Render Done / Failed / Cancelled from `lastTurn`, never from
+`message.time.completed` — message completion is about one assistant row,
+while turn outcome is the runtime's settled verdict for the whole exchange.
+
+## Every harness becomes one event stream
+
+Claude SDK messages, Codex app-server JSON-RPC, and ACP frames are all
+different dialects. `@claxedo/agent-event-runtime` translates each of them into
+one canonical `AgentRuntimeEvent` envelope, so UI and replay code never branch
+per harness. Two properties matter:
+
+- **Errors become events, not exceptions.** Garbage input from a harness
+  produces a canonical diagnostic event; the stream never throws.
+- **Translation and projection are separate, independently resumable
+  boundaries.** Raw frames → `AgentRuntimeEvent` is *translation* (checkpointed
+  by a `RuntimeSnapshot`); `AgentRuntimeEvent` → an output view such as the
+  OpenCode-compat format is *projection* (checkpointed by a
+  `ProjectionSnapshot`). A host can resume either without replaying every
+  previous frame.
+
+Supporting a new harness means writing one event adapter — the rest of the
+stack is untouched.
+
+## The store makes sessions survive the process
+
+Sessions, turns, and events are written through a store (`memory`, `sqlite`, or
+your own). With a durable store, the process owning a live session can be
+killed outright and a fresh process recovers the session from disk — session
+identity belongs to the store, not to the process that happens to be running
+it.
+
+## Where each piece lives
+
+| Piece | Package |
+| --- | --- |
+| Session/turn facade, harness factories, stores | [`@claxedo/agent-sdk-runtime`](/framework/packages/agent-sdk-runtime) |
+| Event envelope, adapters, projections, snapshots | [`@claxedo/agent-event-runtime`](/framework/packages/agent-event-runtime) |
+| Sessions as part of a full workspace host | [`@claxedo/workspace-runtime`](/framework/packages/workspace-runtime) |
+
+<Card title="Next: the workspace host" href="/framework/concepts/workspace-host" icon="server">
+  The per-workspace process that owns sessions — plus terminals, files, diffs,
+  and processes.
+</Card>

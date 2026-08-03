@@ -21,7 +21,7 @@ export const capabilityRows: readonly { key: CapabilityKey; label: string }[] = 
   { key: "interfaces", label: "Interfaces" },
   { key: "platforms", label: "Platforms" },
   { key: "remote", label: "Remote access" },
-  { key: "ledger", label: "Durable task ledger" },
+  { key: "ledger", label: "Durable work ledger" },
   { key: "selfHost", label: "Self-host" },
   { key: "license", label: "License" },
   { key: "backing", label: "Backing" },
@@ -36,20 +36,40 @@ export type FeatureKey =
   | "openSource"
   | "selfHost"
   | "harnessNeutral"
+  | "terminalFirstClass"
+  | "splitPanes"
+  | "layoutModes"
+  | "managedProcesses"
   | "remote"
-  | "ledger"
+  | "workLedger"
+  | "agentExtensions"
+  | "channels"
+  | "connections"
+  | "documents"
+  | "inAppBrowser"
+  | "byokSandboxes"
   | "crossPlatform"
   | "nativeMobile"
 
-export const featureRows: readonly { key: FeatureKey; label: string }[] = [
-  { key: "team", label: "Multi-user / teams" },
-  { key: "openSource", label: "Open source" },
-  { key: "selfHost", label: "Self-hostable" },
-  { key: "harnessNeutral", label: "Harness-neutral" },
-  { key: "remote", label: "Remote access" },
-  { key: "ledger", label: "Durable task ledger" },
-  { key: "crossPlatform", label: "Cross-platform (not Mac-only)" },
-  { key: "nativeMobile", label: "Native mobile apps" },
+export const featureRows: readonly { key: FeatureKey; label: string; description: string }[] = [
+  { key: "team", label: "Multi-user / teams", description: "Real accounts and org scoping — teammates share workspaces, not one operator's machine." },
+  { key: "openSource", label: "Open source", description: "OSI-approved license on the code you actually run — not source-available, not partial." },
+  { key: "selfHost", label: "Self-hostable", description: "Run the whole product on infrastructure you control, including the control plane." },
+  { key: "harnessNeutral", label: "Harness-neutral", description: "Claude Code, Codex, Gemini CLI, and more through one surface — no single-vendor lock." },
+  { key: "terminalFirstClass", label: "Terminal coding agents, first class", description: "The real CLIs run as themselves — full terminal fidelity, not a chat wrapper imitating them." },
+  { key: "splitPanes", label: "Split panes", description: "Chat, terminal, diffs, and files side by side in one workspace window." },
+  { key: "layoutModes", label: "Configurable layout", description: "Switch the workspace between horizontal tabs and a vertical sidebar — your layout, not a fixed shell." },
+  { key: "managedProcesses", label: "Managed processes", description: "Dev servers and watchers the workspace starts, restarts, and streams logs from — agents can read them too." },
+  { key: "remote", label: "Remote access", description: "Reach the same live session from another device — browser or phone — not just start a new one." },
+  { key: "workLedger", label: "Durable work ledger", description: "Work items, attempts, and approvals persist outside any single session — kill the app, the work state survives." },
+  { key: "agentExtensions", label: "Agent extensions", description: "Author skills and MCP config once; synced into every harness's native format on every workspace." },
+  { key: "channels", label: "Channels", description: "Drive sessions from Slack, Telegram, or WhatsApp — messages route into agent work." },
+  { key: "connections", label: "Connections", description: "Link GitHub, Jira, or Linear once; features consume the account by capability without re-auth." },
+  { key: "documents", label: "Document authoring", description: "First-class rich documents authored alongside the code — not just markdown preview." },
+  { key: "inAppBrowser", label: "In-app browser", description: "A real browser inside the workspace — preview the app, and agents can drive it." },
+  { key: "byokSandboxes", label: "BYOK sandboxes", description: "Bring your own sandbox provider and keys for cloud execution — not locked to the vendor's compute." },
+  { key: "crossPlatform", label: "Cross-platform (not Mac-only)", description: "Desktop on macOS, Windows, and Linux." },
+  { key: "nativeMobile", label: "Native mobile apps", description: "A real iOS/Android app, not a mobile web view." },
 ]
 
 export const claxedoFeatures: Record<FeatureKey, FeatureState> = {
@@ -57,8 +77,18 @@ export const claxedoFeatures: Record<FeatureKey, FeatureState> = {
   openSource: "yes",
   selfHost: "yes",
   harnessNeutral: "yes",
+  terminalFirstClass: "yes",
+  splitPanes: "yes",
+  layoutModes: "yes",
+  managedProcesses: "yes",
   remote: "yes",
-  ledger: "yes",
+  workLedger: "yes",
+  agentExtensions: "yes",
+  channels: "yes",
+  connections: "yes",
+  documents: "yes",
+  inAppBrowser: "yes",
+  byokSandboxes: "yes",
   crossPlatform: "yes",
   nativeMobile: "no",
 }
@@ -71,7 +101,7 @@ export const claxedoCapabilities: Record<CapabilityKey, string> = {
   interfaces: "Chat UI + first-class terminal",
   platforms: "Desktop (Mac/Win/Linux) + web + mobile web",
   remote: "Relay — reach the same session from any device",
-  ledger: "WorkGraph — durable Streams, Tasks, Attempts + approval gates",
+  ledger: "WorkGraph — every task, attempt, and approval is a durable record that outlives sessions and restarts",
   selfHost: "Yes — single node, or Clerk+Convex on your own Cloudflare",
   license: "Open source",
   backing: "Independent · open source",
@@ -111,7 +141,7 @@ export const competitors: readonly Competitor[] = [
     tagline: "A self-hosted daemon for driving your own machine's coding agents from your phone, desktop, or web.",
     verdict:
       "The closest rival, and a genuine self-host peer — Paseo drives your own machine's agents from anywhere, with real native mobile apps. Claxedo differs on a permissive license, durable coordination, and being a multi-user platform rather than a single-operator daemon.",
-    features: { team: "no", openSource: "yes", selfHost: "yes", harnessNeutral: "yes", remote: "yes", ledger: "no", crossPlatform: "yes", nativeMobile: "yes" },
+    features: { team: "no", openSource: "yes", selfHost: "yes", harnessNeutral: "yes", terminalFirstClass: "yes", splitPanes: "no", layoutModes: "no", managedProcesses: "no", remote: "yes", workLedger: "no", agentExtensions: "no", channels: "no", connections: "no", documents: "no", inAppBrowser: "yes", byokSandboxes: "no", crossPlatform: "yes", nativeMobile: "yes" },
     capabilities: {
       what: "Self-hosted personal remote-access daemon",
       team: "None — no auth or accounts; a team means everyone runs their own daemon",
@@ -155,7 +185,7 @@ export const competitors: readonly Competitor[] = [
     tagline: "A local-first desktop GUI that unifies the AI coding subscriptions you already pay for.",
     verdict:
       "Synara nails 'one window for the subscriptions you already pay for' — local-first and MIT. Claxedo takes the same wrap-your-harnesses idea and adds remote access, a durable ledger, and a multi-user platform you self-host.",
-    features: { team: "no", openSource: "yes", selfHost: "no", harnessNeutral: "yes", remote: "no", ledger: "no", crossPlatform: "yes", nativeMobile: "no" },
+    features: { team: "no", openSource: "yes", selfHost: "no", harnessNeutral: "yes", terminalFirstClass: "yes", splitPanes: "yes", layoutModes: "no", managedProcesses: "no", remote: "no", workLedger: "no", agentExtensions: "no", channels: "no", connections: "no", documents: "no", inAppBrowser: "yes", byokSandboxes: "no", crossPlatform: "yes", nativeMobile: "no" },
     capabilities: {
       what: "Local-first desktop GUI (personal)",
       team: "None — a per-developer desktop app",
@@ -197,7 +227,7 @@ export const competitors: readonly Competitor[] = [
     tagline: "A polished macOS app for running parallel Claude Code, Codex, and Cursor agents in isolated worktrees.",
     verdict:
       "The slickest fan-out-and-review experience on a Mac, well-funded and shipping fast. Claxedo trades native polish for harness-neutral, cross-platform, remote, open source, and multi-user.",
-    features: { team: "no", openSource: "no", selfHost: "no", harnessNeutral: "yes", remote: "no", ledger: "no", crossPlatform: "no", nativeMobile: "no" },
+    features: { team: "no", openSource: "no", selfHost: "no", harnessNeutral: "yes", terminalFirstClass: "no", splitPanes: "no", layoutModes: "no", managedProcesses: "no", remote: "no", workLedger: "no", agentExtensions: "no", channels: "no", connections: "no", documents: "no", inAppBrowser: "no", byokSandboxes: "no", crossPlatform: "no", nativeMobile: "no" },
     capabilities: {
       what: "Proprietary macOS parallel-agent app",
       team: "None — a per-developer Mac app",
@@ -241,7 +271,7 @@ export const competitors: readonly Competitor[] = [
     tagline: "A macOS 'code editor for the AI agents era' built to orchestrate 100+ coding agents in parallel.",
     verdict:
       "Built to run an army of agents on a Mac, with the broadest agent list and an SDK. Claxedo is fully open, cross-platform, and a multi-user platform you self-host — where Superset gates remote and teams behind a paid hosted tier and ships under a restrictive license.",
-    features: { team: "partial", openSource: "partial", selfHost: "partial", harnessNeutral: "yes", remote: "partial", ledger: "no", crossPlatform: "no", nativeMobile: "no" },
+    features: { team: "partial", openSource: "partial", selfHost: "partial", harnessNeutral: "yes", terminalFirstClass: "yes", splitPanes: "yes", layoutModes: "no", managedProcesses: "no", remote: "partial", workLedger: "no", agentExtensions: "no", channels: "no", connections: "no", documents: "no", inAppBrowser: "yes", byokSandboxes: "no", crossPlatform: "no", nativeMobile: "no" },
     featureNotes: {
       team: "Multi-user only via the paid, hosted remote tier.",
       openSource: "Elastic License 2.0 — source-available, not OSI-approved open source.",
@@ -291,7 +321,7 @@ export const competitors: readonly Competitor[] = [
     tagline: "A minimal desktop + local-web GUI over your agent CLIs from the T3 / ping.gg team — very early.",
     verdict:
       "A clean, minimal, MIT GUI over your agent CLIs with great one-click PR ergonomics — and very early. Claxedo is the broader, connected, durable, multi-user version with remote shipping today.",
-    features: { team: "no", openSource: "yes", selfHost: "no", harnessNeutral: "yes", remote: "no", ledger: "no", crossPlatform: "yes", nativeMobile: "no" },
+    features: { team: "no", openSource: "yes", selfHost: "no", harnessNeutral: "yes", terminalFirstClass: "no", splitPanes: "no", layoutModes: "no", managedProcesses: "no", remote: "no", workLedger: "no", agentExtensions: "no", channels: "no", connections: "no", documents: "no", inAppBrowser: "no", byokSandboxes: "no", crossPlatform: "yes", nativeMobile: "no" },
     capabilities: {
       what: "Local desktop + web GUI (personal, early)",
       team: "None — a per-developer app",
@@ -333,7 +363,7 @@ export const competitors: readonly Competitor[] = [
     tagline: "The open-source, provider-agnostic terminal coding agent — and one of the harnesses Claxedo runs.",
     verdict:
       "OpenCode is a superb open terminal engine — and one of the harnesses Claxedo supports. Claxedo is the multi-user workspace around that class of engine: reach it from any device, coordinate durably, and self-host it for your team.",
-    features: { team: "no", openSource: "yes", selfHost: "partial", harnessNeutral: "no", remote: "no", ledger: "no", crossPlatform: "yes", nativeMobile: "no" },
+    features: { team: "no", openSource: "yes", selfHost: "partial", harnessNeutral: "no", terminalFirstClass: "yes", splitPanes: "no", layoutModes: "no", managedProcesses: "no", remote: "no", workLedger: "no", agentExtensions: "no", channels: "no", connections: "no", documents: "no", inAppBrowser: "no", byokSandboxes: "no", crossPlatform: "yes", nativeMobile: "no" },
     featureNotes: { selfHost: "Self-hostable server, but local-only — no relay to reach it remotely." },
     capabilities: {
       what: "Open-source terminal coding agent (engine)",

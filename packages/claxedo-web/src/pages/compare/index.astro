@@ -2,8 +2,7 @@
 import Layout from "../../layouts/Layout.astro"
 import Nav from "../../components/Nav.astro"
 import Footer from "../../components/Footer.astro"
-import DeploymentPrompt from "../../components/DeploymentPrompt.astro"
-import TrackedLink from "../../components/TrackedLink.astro"
+import DownloadDropdown from "../../components/DownloadDropdown.astro"
 import {
   claxedoFeatures,
   currentComparisons,
@@ -12,7 +11,6 @@ import {
   type FeatureKey,
   type FeatureState,
 } from "../../content/competitors"
-import { marketingActions } from "../../content/routes"
 
 const rows = [...currentComparisons].sort((a, b) => a.priority - b.priority)
 
@@ -59,9 +57,9 @@ for (const { key, label } of featureRows) {
                 </tr>
               </thead>
               <tbody>
-                {featureRows.map(({ key, label }) => (
+                {featureRows.map(({ key, label, description }) => (
                   <tr>
-                    <th scope="row">{label}</th>
+                    <th scope="row"><span class="feature-label">{label}</span><span class="feature-desc">{description}</span></th>
                     {columns.map((col) => (
                       <td class={col.us ? "matrix-us" : undefined}>
                         {col.features[key] === "yes" && <span class="tick tick-yes" title="Yes" aria-label="Yes">✓</span>}
@@ -110,7 +108,7 @@ for (const { key, label } of featureRows) {
         <div class="section-inner cmp-final">
           <p class="eyebrow">Get started</p>
           <h2 class="section-title">The fastest comparison is running both.</h2>
-          <div class="actions"><TrackedLink class="btn-primary" href={marketingActions.cloud.href} event={marketingActions.cloud.event} placement="compare-index">Open Claxedo <span aria-hidden="true">↗</span></TrackedLink><DeploymentPrompt class="btn-secondary" placement="compare-index" /></div>
+          <div class="actions"><DownloadDropdown placement="compare-index" /></div>
         </div>
       </section>
     </main>
@@ -126,19 +124,21 @@ for (const { key, label } of featureRows) {
 
   .matrix-scroll { margin-top: 3rem; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius-lg); }
   .matrix { width: 100%; min-width: 50rem; border-collapse: collapse; background: var(--surface); }
-  .matrix th, .matrix td { padding: .85rem 1rem; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); }
-  .matrix tr > *:last-child { border-right: 0; }
+  .matrix th, .matrix td { padding: .85rem 1rem; border-bottom: 1px solid var(--line); }
   .matrix tbody tr:last-child > * { border-bottom: 0; }
   .matrix thead th { position: sticky; top: 0; background: var(--surface-raised); color: var(--ink); font: 500 .82rem/1.2 var(--font-sans); letter-spacing: -.01em; text-align: center; vertical-align: bottom; }
   .matrix thead th:first-child { text-align: left; color: var(--ink-faint); font: 500 .66rem/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
   .matrix thead th a { color: inherit; text-decoration: none; }
   .matrix thead th a:hover { color: var(--accent-text); text-decoration: underline; }
-  .matrix tbody th { text-align: left; color: var(--ink); font: 500 .88rem/1.3 var(--font-sans); letter-spacing: -.01em; }
+  .matrix tbody th { text-align: left; color: var(--ink); font: 500 .88rem/1.3 var(--font-sans); letter-spacing: -.01em; min-width: 17rem; }
+  .feature-label { display: block; }
+  .feature-desc { display: block; margin-top: .3rem; color: var(--ink-faint); font: 400 .76rem/1.45 var(--font-sans); letter-spacing: 0; text-wrap: pretty; }
   .matrix tbody td { text-align: center; vertical-align: middle; }
   .matrix-us { background: color-mix(in srgb, var(--accent) 9%, var(--surface)); }
-  .tick { display: inline-flex; width: 1.5rem; height: 1.5rem; align-items: center; justify-content: center; border-radius: 50%; font: 600 .9rem/1 var(--font-sans); }
-  .tick-yes { color: var(--success); background: var(--success-soft); }
-  .tick-no { color: var(--ink-faint); background: transparent; font-weight: 400; }
+  /* Superset-style ticks: a plain glyph, no badge circle. */
+  .tick { display: inline-flex; align-items: center; justify-content: center; font: 500 .95rem/1 var(--font-sans); }
+  .tick-yes { color: var(--ink); }
+  .tick-no { color: var(--ink-faint); font-weight: 400; }
   .tick-partial, .lg-partial { display: inline-flex; align-items: flex-start; }
   .fn { margin: .05rem 0 0 .1rem; color: var(--accent-text); font: 700 .74rem/1 var(--font-sans); }
   .matrix-legend { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1.1rem; margin-top: 1.3rem; color: var(--ink-faint); font: 500 .74rem/1.6 var(--font-mono); }

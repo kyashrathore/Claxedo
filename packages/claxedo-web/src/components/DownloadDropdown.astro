@@ -1,0 +1,107 @@
+---
+import { downloads, version } from "../config"
+
+interface Props {
+  placement?: string
+}
+
+const { placement = "hero" } = Astro.props
+const shown = ["macos-arm64", "windows-x64", "linux-deb"]
+const targets = shown
+  .map((platform) => downloads.find((d) => d.platform === platform))
+  .filter((d) => d !== undefined)
+  .map((d) => ({
+    ...d,
+    label: d.platform === "linux-deb" ? "Linux" : d.label,
+  }))
+---
+
+<div class="download-dropdown" data-download-dropdown>
+  <button
+    class="btn-primary"
+    type="button"
+    aria-haspopup="menu"
+    aria-expanded="false"
+    data-download-toggle
+    data-analytics-event="download_app"
+    data-analytics-placement={placement}
+  >
+    Download app <span aria-hidden="true">↓</span>
+  </button>
+  <div class="download-menu" role="menu" hidden>
+    {targets.map((download) => (
+      <a
+        role="menuitem"
+        href={download.href}
+        data-analytics-event="download_app"
+        data-analytics-placement={`${placement}-menu`}
+        data-analytics-platform={download.platform}
+        data-analytics-version={version}
+      >
+        <span>{download.label}</span>
+        <small>{download.format}</small>
+      </a>
+    ))}
+    <a role="menuitem" class="all-platforms" href="/download">All platforms <span aria-hidden="true">→</span></a>
+  </div>
+</div>
+
+<script>
+  for (const root of document.querySelectorAll("[data-download-dropdown]")) {
+    const toggle = root.querySelector("[data-download-toggle]") as HTMLButtonElement
+    const menu = root.querySelector(".download-menu") as HTMLElement
+    const setOpen = (open: boolean) => {
+      toggle.setAttribute("aria-expanded", String(open))
+      menu.hidden = !open
+    }
+    toggle.addEventListener("click", () => setOpen(menu.hidden))
+    document.addEventListener("click", (event) => {
+      if (!menu.hidden && !root.contains(event.target as Node)) setOpen(false)
+    })
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !menu.hidden) {
+        setOpen(false)
+        toggle.focus()
+      }
+    })
+  }
+</script>
+
+<style>
+  .download-dropdown { position: relative; display: inline-flex; }
+  /* The hero .actions row animates with a transform, which creates a stacking
+     context that would paint later in-flow text above the menu. */
+  :global(.actions:has([data-download-dropdown])) { position: relative; z-index: 40; }
+  .download-dropdown > button { cursor: pointer; }
+  .download-menu {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    left: 0;
+    z-index: 40;
+    min-width: 14rem;
+    padding: 0.4rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-lg);
+    background: var(--surface-raised);
+    box-shadow: var(--shadow-panel);
+  }
+  .download-menu a {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.55rem 0.7rem;
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+    font-size: 0.92rem;
+  }
+  .download-menu a:hover, .download-menu a:focus-visible { background: var(--surface-hover); }
+  .download-menu a small { color: var(--ink-faint); font-size: 0.78rem; }
+  .download-menu .all-platforms {
+    margin-top: 0.25rem;
+    border-top: 1px solid var(--line);
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+    color: var(--ink-soft);
+    font-size: 0.82rem;
+  }
+</style>

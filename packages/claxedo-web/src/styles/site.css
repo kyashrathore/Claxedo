@@ -20,10 +20,10 @@
   --ink-weakest: #888888;
   --line: #282828;
   --line-strong: #3a3a3a;
-  --accent: #3b5cf6;
-  --accent-hover: #7698fd;
-  --accent-text: #9dbefe;
-  --accent-soft: rgba(59, 92, 246, 0.14);
+  --accent: #ededed;
+  --accent-hover: #ffffff;
+  --accent-text: #ededed;
+  --accent-soft: rgba(255, 255, 255, 0.1);
   --brand: #fab283;
   --brand-ink: #171311;
   --success: #6bd586;
@@ -58,10 +58,10 @@
     --ink-weakest: #6f6f6f;
     --line: #e8e8e8;
     --line-strong: #dbdbdb;
-    --accent: #3b5cf6;
-    --accent-hover: #3250df;
-    --accent-text: #2c47c8;
-    --accent-soft: #ecf1fe;
+    --accent: #171717;
+    --accent-hover: #0a0a0a;
+    --accent-text: #171717;
+    --accent-soft: rgba(0, 0, 0, 0.06);
     --brand: #dcde8d;
     --brand-ink: #3a3d17;
     --success: #147d3a;
@@ -83,7 +83,7 @@ button { color: inherit; }
 img, svg { display: block; max-width: 100%; }
 code, pre, .mono { font-family: var(--font-mono); }
 :focus-visible { outline: 2px solid var(--accent-hover); outline-offset: 2px; }
-.skip-link { position: fixed; top: .75rem; left: .75rem; z-index: 200; padding: .75rem 1rem; border-radius: var(--radius-sm); background: var(--accent); color: #fff; transform: translateY(-200%); }
+.skip-link { position: fixed; top: .75rem; left: .75rem; z-index: 200; padding: .75rem 1rem; border-radius: var(--radius-sm); background: var(--accent); color: var(--bg); transform: translateY(-200%); }
 .skip-link:focus { transform: none; }
 
 .shell { width: 100%; }
@@ -103,7 +103,7 @@ h1, h2, h3 { color: var(--ink); }
 /* Buttons follow the app's contrast/neutral treatments: 6px radius, medium 13–14px sans. */
 .btn-primary, .btn-secondary { display: inline-flex; min-height: 2.75rem; align-items: center; justify-content: center; gap: .5rem; padding: .72rem 1.15rem; border: 1px solid transparent; border-radius: var(--radius-sm); font: 500 .86rem/1 var(--font-sans); letter-spacing: -.01em; text-decoration: none; transition: background .15s ease, border-color .15s ease, color .15s ease; }
 .btn-primary { background: var(--ink); color: var(--bg); }
-.btn-primary:hover { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-hover); color: var(--bg); }
 .btn-secondary { background: var(--surface-raised); border-color: var(--line-strong); color: var(--ink); }
 .btn-secondary:hover { background: var(--surface-hover); }
 .text-link { color: var(--accent-text); font: 500 .84rem/1.5 var(--font-sans); text-decoration: none; }
@@ -117,9 +117,12 @@ h1, h2, h3 { color: var(--ink); }
 .nav-inner { display: grid; grid-template-columns: auto 1fr auto; align-items: center; min-height: 3.75rem; gap: 1rem; max-width: 72rem; margin-inline: auto; padding-block: .6rem; }
 .nav-logo { display: inline-flex; align-items: center; gap: .6rem; color: var(--ink); font: 500 .95rem/1 var(--font-sans); letter-spacing: -.02em; text-decoration: none; }
 .brand-mark { width: 1.4rem; height: 1.4rem; background: currentColor; -webkit-mask: url("/brand/claxedo-mark.svg") center / contain no-repeat; mask: url("/brand/claxedo-mark.svg") center / contain no-repeat; }
-.nav-links { display: flex; justify-content: center; gap: clamp(.9rem, 2vw, 1.7rem); }
+.nav-links { display: flex; justify-content: flex-end; gap: clamp(.9rem, 2vw, 1.7rem); }
 .nav-links a { color: var(--ink-soft); font: 500 .8rem/1 var(--font-sans); letter-spacing: -.01em; text-decoration: none; }
-.nav-links a:hover, .nav-links a[aria-current="page"] { color: var(--ink); }
+.nav-links a:hover { color: var(--ink); }
+.nav-links a[aria-current="page"] { color: var(--ink); font-weight: 600; }
+.nav-github { display: inline-flex; align-items: center; justify-content: center; width: 2.25rem; height: 2.25rem; border-radius: var(--radius-sm); color: var(--ink-soft); }
+.nav-github:hover { color: var(--ink); background: var(--surface-hover); }
 .nav-menu { display: contents; }
 .nav-actions { display: flex; align-items: center; gap: .5rem; }
 .nav-actions .deployment-copy-action { display: inline-flex; }
@@ -153,7 +156,7 @@ h1, h2, h3 { color: var(--ink); }
   --ink: #ededed; --ink-soft: #a0a0a0; --ink-faint: #8f8f8f; --ink-weakest: #888888;
   --line: #282828; --line-strong: #3a3a3a;
   --surface: #161616; --surface-raised: #1c1c1c; --surface-hover: #232323;
-  --accent-text: #9dbefe; --brand: #fab283;
+  --accent-text: #ededed; --brand: #fab283;
   --success: #6bd586; --danger: #f17471;
 }
 .dark-band .section-title, .dark-band h2, .dark-band h3, .dark-band strong { color: var(--ink); }

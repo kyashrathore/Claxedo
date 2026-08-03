@@ -24,12 +24,10 @@ export const site = {
 } as const
 
 export const commercialNavigation = [
-  { label: "Product", href: "/#product" },
-  { label: "Architecture", href: "/#architecture" },
-  { label: "WorkGraph", href: "/#workgraph" },
-  { label: "Pricing", href: routes.pricing },
-  { label: "Framework", href: routes.framework },
-  { label: "Download", href: routes.download },
+  { label: "Pricing", href: routes.pricing, key: "pricing" },
+  { label: "Framework", href: routes.framework, key: "framework" },
+  { label: "Download", href: routes.download, key: "download" },
+  { label: "Compare", href: routes.compare, key: "compare" },
 ] as const
 
 export const approvedMarketingActions = [marketingActions.cloud, marketingActions.deploy]

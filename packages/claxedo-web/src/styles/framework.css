@@ -10,9 +10,9 @@
 :root {
   --sl-font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --sl-font-mono: "Claxedo Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --sl-color-accent-low: #1b2852;
-  --sl-color-accent: #7698fd;
-  --sl-color-accent-high: #c3d4fd;
+  --sl-color-accent-low: #282828;
+  --sl-color-accent: #ededed;
+  --sl-color-accent-high: #ffffff;
   --sl-color-white: #ededed;
   --sl-color-gray-1: #a0a0a0;
   --sl-color-gray-2: #8f8f8f;
@@ -28,9 +28,9 @@
 }
 
 :root[data-theme="light"] {
-  --sl-color-accent-low: #ecf1fe;
-  --sl-color-accent: #3b5cf6;
-  --sl-color-accent-high: #263fa9;
+  --sl-color-accent-low: #e8e8e8;
+  --sl-color-accent: #171717;
+  --sl-color-accent-high: #0a0a0a;
   --sl-color-white: #171717;
   --sl-color-gray-1: #3a3a3a;
   --sl-color-gray-2: #5c5c5c;
@@ -73,6 +73,8 @@
 }
 
 .site-title { letter-spacing: -.02em; }
+/* Match the main site's nav lockup height (22px), not Starlight's 40px default. */
+.site-title img { height: 22px; width: auto; }
 .content-panel h1, .content-panel h2, .content-panel h3 { letter-spacing: -.03em; }
 .sl-markdown-content h1 { font-size: clamp(2.2rem, 5vw, 3.4rem); line-height: 1.05; }
 .sl-markdown-content h2 { margin-top: 3rem; font-size: 1.7rem; }
@@ -85,7 +87,34 @@
 .sl-note, .sl-warning { margin-block: 1.5rem; padding: 1rem 1.2rem; border-inline-start: 2px solid var(--sl-color-accent); border-radius: 0 .4rem .4rem 0; background: var(--sl-color-gray-6); }
 .sl-warning { border-color: #cb9f34; }
 .sl-steps > li { padding-bottom: 2rem; }
-.sl-code-group { padding: .4rem; border: 1px solid var(--sl-color-gray-5); border-radius: .6rem; }
+/* Mintlify-style tabbed code group. Radius is concentric: 8px panel = 7px pre + 1px border. */
+.sl-code-group { border: 1px solid var(--sl-color-gray-5); border-radius: .5rem; overflow: hidden; }
+.sl-code-group-tabs { display: flex; align-items: stretch; gap: .25rem; margin: 0; padding: 0 .5rem; border-bottom: 1px solid var(--sl-color-gray-5); background: var(--sl-color-gray-6); }
+.sl-code-group-tabs [role="tab"] {
+  margin: 0; /* defeat Starlight's sibling margin-top, which staggered the tabs */
+  padding: .8rem .6rem; /* 13px label + 2×12.8px = 40px hit area */
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--sl-color-gray-2);
+  font: inherit;
+  font-size: .8125rem;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition-property: color, border-color;
+  transition-duration: .15s;
+}
+.sl-code-group-tabs [role="tab"]:hover { color: var(--sl-color-white); }
+.sl-code-group-tabs [role="tab"][aria-selected="true"] { border-bottom-color: var(--sl-color-white); color: var(--sl-color-white); }
+.sl-code-group .expressive-code { margin: 0; }
+.sl-code-group .expressive-code .frame { border-radius: 0; box-shadow: none; }
+.sl-code-group .expressive-code .frame.is-terminal .header { display: none; }
+/* The hidden header leaves EC's --button-spacing pointing 1.9rem+ down; re-anchor so
+   the 32px button is centered on the first code line (pre block padding + half a
+   line-height - half the button). */
+.sl-code-group .expressive-code .frame.is-terminal { --button-spacing: calc(var(--ec-codePadBlk) + 0.5 * var(--ec-codeLineHt) * var(--ec-codeFontSize) - 16px); }
+.sl-code-group .expressive-code pre { border: 0; border-radius: 0; }
 .sl-api-field { margin-block: 1rem; padding: 1rem; border: 1px solid var(--sl-color-gray-5); border-radius: .6rem; background: var(--sl-color-gray-7); }
 .sl-api-field > div:first-child { display: flex; flex-wrap: wrap; gap: .7rem; align-items: center; }
 .sl-api-field span, .sl-api-field b { color: var(--sl-color-gray-3); font: 500 .65rem var(--sl-font-mono); }

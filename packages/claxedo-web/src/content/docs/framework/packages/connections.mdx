@@ -46,7 +46,7 @@ app.route("/api/integrations", createIntegrationsRoutes(service, {
 }))
 
 // Consumers ask by capability — never by provider, never touching secrets:
-for (const conn of await service.forCapability("docs")) {
+for (const conn of await service.resolveForCapability("docs")) {
   const { token, tokenType, fields } = await conn.getToken()
 }
 ```

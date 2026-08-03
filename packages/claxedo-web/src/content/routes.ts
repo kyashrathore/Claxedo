@@ -6,7 +6,7 @@ export const routes = {
   pricing: "/pricing",
   download: "/download",
   framework: "/framework",
-  deploy: "/framework/deploy/hosted-control-plane#agent-deploy",
+  deploy: "/framework/deploy/cloudflare-full-stack",
   compare: "/compare",
   privacy: "/privacy",
   terms: "/terms",
@@ -27,7 +27,7 @@ export const marketingActions = {
   },
   download: {
     label: "Download app",
-    href: routes.download,
+    href: `${routes.download}#releases`,
     event: "download_app",
   },
   framework: {

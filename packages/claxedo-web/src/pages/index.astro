@@ -5,6 +5,7 @@ import Footer from "../components/Footer.astro"
 import ArchitectureExplorer from "../components/ArchitectureExplorer.astro"
 import RuntimePlacements from "../components/RuntimePlacements.astro"
 import DeploymentPrompt from "../components/DeploymentPrompt.astro"
+import DownloadDropdown from "../components/DownloadDropdown.astro"
 import TrackedLink from "../components/TrackedLink.astro"
 import { requireClaim } from "../content/claims"
 import { marketingActions } from "../content/routes"
@@ -30,10 +31,8 @@ const workgraph = requireClaim("workgraph-local")
           <h1 class="display">The open cloud workspace for coding agents.</h1>
           <p class="hero-lead">Start on Claxedo Cloud, or deploy the open control plane to your Cloudflare account with a coding agent. Bring your harnesses, AI provider, and workspace infrastructure.</p>
           <div class="actions">
-            <TrackedLink class="btn-primary" href={marketingActions.cloud.href} event={marketingActions.cloud.event} placement="hero">Open Claxedo <span aria-hidden="true">↗</span></TrackedLink>
-            <DeploymentPrompt class="btn-secondary" placement="hero" />
+            <DownloadDropdown placement="hero" />
           </div>
-          <a class="architecture-link" href="#architecture">Explore the open architecture <span aria-hidden="true">↓</span></a>
           <div class="status-line" aria-label="Open platform details"><span>MIT licensed from client to runtime</span><span>Bring your own AI and sandbox providers</span></div>
         </div>
         <div class="product-shot hero-shot">

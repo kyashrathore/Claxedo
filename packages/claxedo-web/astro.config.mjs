@@ -40,6 +40,11 @@ export default defineConfig({
     }),
     starlight({
       title: 'Claxedo Framework',
+      logo: {
+        light: './public/brand/claxedo-lockup-light.svg',
+        dark: './public/brand/claxedo-lockup-dark.svg',
+        replacesTitle: true,
+      },
       description: 'The open-source workspace and integration foundation behind Claxedo.',
       favicon: '/favicon.svg',
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/kyashrathore/Claxedo' }],
@@ -49,14 +54,25 @@ export default defineConfig({
       lastUpdated: true,
       sidebar: [
         { label: 'Framework overview', link: '/framework' },
-        { label: 'Guide', autogenerate: { directory: 'framework/guides' } },
-        { label: 'Concepts', autogenerate: { directory: 'framework/concepts', collapsed: true } },
+        {
+          label: 'Guide',
+          items: ['framework/guides/introduction', 'framework/guides/install', 'framework/guides/see-it-in-action'],
+        },
+        {
+          label: 'Concepts',
+          collapsed: true,
+          items: [
+            'framework/concepts/layer-stack',
+            'framework/concepts/sessions-turns-events',
+            'framework/concepts/workspace-host',
+            'framework/concepts/extensions',
+            'framework/concepts/credentials',
+          ],
+        },
         { label: 'Deploy', autogenerate: { directory: 'framework/deploy', collapsed: true } },
         { label: 'SDK / Packages', autogenerate: { directory: 'framework/packages', collapsed: true } },
         { label: 'Reference', autogenerate: { directory: 'framework/api', collapsed: true } },
-        { label: 'Cookbook', autogenerate: { directory: 'framework/cookbook', collapsed: true } },
-        { label: 'Ecosystem', slug: 'framework/ecosystem' },
-        { label: 'CLI', slug: 'framework/cli' },
+        { label: 'Integrations', slug: 'framework/integrations' },
       ],
     }),
   ],

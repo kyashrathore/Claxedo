@@ -1,6 +1,5 @@
 ---
 import { Code } from "astro:components"
-import CopyPrompt from "./CopyPrompt.astro"
 import { requireClaim } from "../../content/claims"
 import { marketingActions } from "../../content/routes"
 import claudeIcon from "../../../../ui/src/assets/icons/file-types/claude.svg"
@@ -14,7 +13,7 @@ const harnesses = [
   { label: "Gemini CLI", note: "Terminal", icon: geminiIcon.src },
   { label: "OpenCode", note: "Chat UI + terminal", icon: opencodeIcon.src },
 ]
-const cookbookSource = `const runtime = createAgentRuntime({
+const essentialPathSource = `const runtime = createAgentRuntime({
   store: createMemoryRuntimeStore(),
   harnesses: [harnessFactory(pick)],
 })
@@ -43,10 +42,8 @@ const ecosystem = ["More agents via ACP", "MCP servers", "Skills", "Your AI prov
 const handoff = [
   ["Guide", "Start with the product model", "/framework/guides/introduction"],
   ["Reference", "Routes, tools, and events", "/framework/api/overview"],
-  ["CLI", "Commands and operational paths", "/framework/cli"],
   ["Packages", "Composable TypeScript modules", "/framework/packages"],
-  ["Cookbook", "Runnable examples", "/framework/cookbook/overview"],
-  ["Ecosystem", "Harnesses and integrations", "/framework/ecosystem"],
+  ["Integrations", "Harness and capability boundaries", "/framework/integrations"],
 ]
 ---
 
@@ -57,8 +54,7 @@ const handoff = [
     <h1 class="display">The open-source foundation behind Claxedo.</h1>
     <p class="fw-lead">A TypeScript workspace and integration layer around existing coding-agent harnesses: runtime, normalized events, extensions, relay, connections, WorkGraph, and deployment contracts.</p>
     <div class="actions">
-      <a class="btn-primary" href="/framework/guides/introduction">Start the guide</a>
-      <a class="btn-secondary" href="https://github.com/kyashrathore/Claxedo">View source <span aria-hidden="true">↗</span></a>
+      <a class="btn-primary" href="/framework/guides/introduction">See docs</a>
     </div>
     <div class="status-line" aria-label="Framework principles"><span>Harness neutral</span><span>Explicit placement boundaries</span></div>
   </div>
@@ -67,18 +63,12 @@ const handoff = [
 <section class="section">
   <div class="section-inner fw-split">
     <div>
-      <p class="eyebrow">01 · Runnable cookbook</p>
+      <p class="eyebrow">01 · The essential path</p>
       <h2 class="section-title">Bring a harness into a real workspace.</h2>
-      <p class="section-copy">The tested cookbook discovers an authenticated harness, creates an Agent Runtime Session, subscribes to normalized events, and starts a provider turn. This essential-path excerpt uses the same public API as the complete runnable recipe.</p>
-      <a class="feature-link" href="https://github.com/kyashrathore/Claxedo/blob/dev/claxedo-cookbook/src/recipes/01-hello-agent.ts">Open the complete recipe <span aria-hidden="true">↗</span></a>
+      <p class="section-copy">Create an Agent Runtime, open a session against an authenticated harness, subscribe to normalized events, and start a turn — the whole essential path through the public API.</p>
+      <a class="feature-link" href="/framework/guides/see-it-in-action">See it in action <span aria-hidden="true">→</span></a>
     </div>
-    <div class="fw-code"><Code code={cookbookSource} lang="ts" theme="css-variables" /></div>
-  </div>
-</section>
-
-<section class="section">
-  <div class="section-inner">
-    <CopyPrompt />
+    <div class="fw-code"><Code code={essentialPathSource} lang="ts" theme="css-variables" /></div>
   </div>
 </section>
 

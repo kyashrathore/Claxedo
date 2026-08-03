@@ -13,7 +13,7 @@ import { downloads, github, version } from "../config"
         <div><p class="eyebrow">Claxedo Desktop · v{version}</p><h1 class="display">Start entirely local.</h1><p class="section-copy">Claxedo Desktop works locally without an account or subscription. Sign in when you want the connected Claxedo experience across browser, desktop, and remote workspaces.</p></div>
         <div class="local-card"><span>LOCAL MODE</span><strong>No account required</strong><p>Your work stays on the machine and uses the model and compute you configure.</p></div>
       </section>
-      <section class="section">
+      <section class="section" id="releases">
         <div class="section-inner"><p class="eyebrow">Choose a build</p><h2 class="section-title">Desktop releases</h2><div class="download-list">{downloads.map((download) => <a href={download.href} data-analytics-event="download_app" data-analytics-placement="download-page" data-analytics-platform={download.platform} data-analytics-version={version}><span>{download.label}</span><small>{download.format} · v{version}</small><b>Download ↗</b></a>)}</div><p class="provenance">Artifacts are served from the <a href={`${github}/releases/tag/claxedo-v${version}`}>Claxedo GitHub release</a>. Code signing and checksums are shown only when the release publishes them.</p></div>
       </section>
       <section class="section dark-band"><div class="section-inner mode-steps"><div><span>01</span><h2>Start local</h2><p>Open a workspace and run sessions or terminals without a Claxedo account.</p></div><div><span>02</span><h2>Connect when useful</h2><p>Sign in to reach connected product capabilities across supported clients and machines.</p></div><div><span>03</span><h2>Keep your providers</h2><p>Bring model credentials, compute, and sandboxes. Claxedo does not include usage credits.</p></div></div></section>
@@ -23,7 +23,9 @@ import { downloads, github, version } from "../config"
 </Layout>
 
 <style>
-  .download-hero { display: grid; grid-template-columns: 1.3fr .7fr; gap: 4rem; align-items: end; padding: var(--section) var(--gutter); }
+  /* Content box must land on the same 72rem line as .section > .section-inner:
+     those pad outside the 72rem box, this section pads inside it. */
+  .download-hero { display: grid; grid-template-columns: 1.3fr .7fr; gap: 4rem; align-items: end; max-width: calc(72rem + 2 * var(--gutter)); margin-inline: auto; padding: var(--section) var(--gutter); }
   .download-hero > div:first-child { max-width: 56rem; }
   .local-card { padding: 1.5rem; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); }
   .local-card span { display: inline-flex; align-items: center; gap: .45rem; color: var(--ink-faint); font: .66rem var(--font-mono); letter-spacing: .06em; }

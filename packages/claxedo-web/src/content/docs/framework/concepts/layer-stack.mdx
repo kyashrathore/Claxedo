@@ -9,7 +9,7 @@ import Steps from "../../../../components/framework/compat/Steps.astro"
 import Step from "../../../../components/framework/compat/Step.astro"
 
 
-Claxedo is layered so each concern has exactly one owner. An event starts at a
+Claxedo is layered around one owner per concern. An event starts at a
 harness, gets normalized, flows through the per-workspace host, and — for remote
 access — travels over the relay to whichever control plane routed the request.
 
@@ -43,9 +43,6 @@ access — travels over the relay to whichever control plane routed the request.
 </Steps>
 
 ## The picture
-
-Zoom, pan, or open the diagram fullscreen with the controls in its corner.
-Package nodes link to their reference pages.
 
 ```mermaid
 flowchart TB
@@ -111,10 +108,10 @@ Product UI → control plane / gateway → workspace-relay
 ```
 
 <CardGroup cols={2}>
-  <Card title="Sessions & hosts" href="/framework/concepts/sessions-hosts" icon="server">
-    Where a session runs, and the `host` / `toolSandbox` split.
+  <Card title="Sessions, turns & events" href="/framework/concepts/sessions-turns-events" icon="code">
+    The core vocabulary the whole stack is built from.
   </Card>
-  <Card title="Deploy" href="/framework/deploy/local" icon="cloud">
-    Local, private VM, relay-attached, and hosted control plane.
+  <Card title="The workspace host" href="/framework/concepts/workspace-host" icon="server">
+    Where a session runs, and the `host` / `toolSandbox` split.
   </Card>
 </CardGroup>
