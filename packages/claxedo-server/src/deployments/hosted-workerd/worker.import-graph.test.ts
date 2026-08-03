@@ -206,7 +206,14 @@ describe("worker import-graph", () => {
         return (
           /from\s+["']cloudflare:workers["']/.test(text) ||
           /\bDurableObjectState\b/.test(text) ||
-          /\bextends\s+DurableObject\b/.test(text)
+          /\bextends\s+DurableObject\b/.test(text) ||
+          // Storage bindings. A module written against R2's conditional-write
+          // semantics (`onlyIf.etagMatches` is what makes CAS work without a
+          // lock) or KV cannot be re-pointed at another blob store without
+          // re-deriving its concurrency argument, so it targets this runtime
+          // even when the binding type is declared structurally.
+          /\bR2Bucket\b/.test(text) ||
+          /\bKVNamespace\b/.test(text)
         )
       })
       .map((file) => path.relative(SRC, file))
