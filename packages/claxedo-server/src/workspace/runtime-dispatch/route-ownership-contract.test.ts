@@ -12,7 +12,8 @@
 
 import { Hono } from "hono"
 import { describe, expect, test } from "vitest"
-import { createLocalWorkspaceRelayProxy, runtimeProxyResponseHeaders } from "./proxy"
+import { runtimeProxyResponseHeaders } from "./internals"
+import { createLocalWorkspaceRelayProxy } from "./shared-workspace-endpoint"
 import { routeOwnership, routeRules, RouteDomain, RouteHandler } from "../../platform/governance/route-ownership"
 
 function classify(path: string) {

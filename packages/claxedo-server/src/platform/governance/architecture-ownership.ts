@@ -182,7 +182,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     reason: "Local workspaces are served by an in-process Workspace Runtime app; this module composes that host and applies pre-resolved runtime snapshots without implementing harness adapters itself.",
     tests: [
       "platform/governance/architecture.test.ts",
-      "workspace/http/proxy.timeout.test.ts",
+      "workspace/runtime-dispatch/runtime-wait.test.ts",
       "integration/control-plane.integration.test.ts",
     ],
   },
@@ -234,13 +234,13 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "workspace/http/proxy.ts",
+    module: "workspace/runtime-dispatch/internals.ts",
     status: OwnershipStatus.Canonical,
     owner: "Workspace Runtime proxy dispatcher",
     reason: "The local server dispatches runtime-owned routes to embedded or cloud Workspace Runtime hosts through this module.",
     tests: [
-      "workspace/http/proxy.test.ts",
-      "workspace/http/proxy.timeout.test.ts",
+      "workspace/runtime-dispatch/route-ownership-contract.test.ts",
+      "workspace/runtime-dispatch/runtime-wait.test.ts",
       "platform/governance/architecture.test.ts",
     ],
     routeSamples: [
@@ -252,7 +252,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     module: "platform/governance/route-ownership.ts",
     status: OwnershipStatus.Canonical,
     owner: "central route ownership classifier",
-    tests: ["workspace/http/proxy.test.ts"],
+    tests: ["workspace/runtime-dispatch/route-ownership-contract.test.ts"],
     routeSamples: [
       "/api/control",
       "/api/workspace",
@@ -279,7 +279,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     reason: "Existing local OpenCode-compatible clients still call these paths.",
     removalCondition: "All local app and CLI callers use canonical authority/workspace-runtime routes.",
     tests: [
-      "workspace/http/proxy.test.ts",
+      "workspace/runtime-dispatch/route-ownership-contract.test.ts",
       "platform/governance/architecture.test.ts",
     ],
     routeSamples: ["/command", "/mcp", "/agent"],

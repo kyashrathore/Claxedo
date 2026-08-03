@@ -30,7 +30,8 @@ import { WorkspaceRoutes } from "../../workspace/routes/index"
 import { OpenCodeCompatRoutes } from "../../opencode/compat-routes/index"
 import { resolveHarnessId } from "../../opencode/compat-routes/provider-config"
 import { normalizeHarnessIdentity } from "@claxedo/agent-sdk-runtime"
-import { createLocalWorkspaceRelayProxy, createWorkspaceRuntimeProxy } from "../../workspace/http/proxy"
+import { createWorkspaceRuntimeProxy } from "../../workspace/runtime-dispatch/middleware"
+import { createLocalWorkspaceRelayProxy } from "../../workspace/runtime-dispatch/shared-workspace-endpoint"
 import { configureOpencodeMcpSync } from "../../opencode/mcp-sync"
 import {
   configureOpenCodeApplicationTools,

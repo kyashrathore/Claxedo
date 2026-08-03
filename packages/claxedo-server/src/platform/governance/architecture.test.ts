@@ -49,7 +49,7 @@ describe("architecture boundaries", () => {
 
 
   test("keeps the server host bridge out of harness adapter execution", () => {
-    const files = ["deployments/local/embedded-workspace-runtime.ts", "workspace/http/sandbox-target-fetch.ts", "workspace/http/proxy.ts", "agent-config/fanout.ts"]
+    const files = ["deployments/local/embedded-workspace-runtime.ts", "workspace/http/sandbox-target-fetch.ts", "workspace/runtime-dispatch/internals.ts", "agent-config/fanout.ts"]
     const forbidden = [
       "@claxedo/agent-sdk-runtime",
       "AcpHarnessAdapter",
@@ -263,7 +263,7 @@ describe("architecture boundaries", () => {
   test("keeps API error response bodies structured", () => {
     const files = [
       path.resolve(import.meta.dirname, "../../deployments/local/server.ts"),
-      path.resolve(import.meta.dirname, "../../workspace/http/proxy.ts"),
+      path.resolve(import.meta.dirname, "../../workspace/runtime-dispatch/internals.ts"),
       ...walk(path.resolve(import.meta.dirname, "../../routes")).filter((file) => file.endsWith(".ts")),
     ]
     const rawScalarErrorBodies = files.flatMap((file) => {

@@ -81,7 +81,8 @@ vi.mock("../../opencode/auth", () => ({
   opencodeHeaders: mocks.opencodeHeaders,
 }))
 
-const { createWorkspaceRuntimeProxy, embeddedConfigModeForPath, workspaceRuntimeProxy } = await import("./proxy")
+const { createWorkspaceRuntimeProxy, workspaceRuntimeProxy } = await import("./middleware")
+const { embeddedConfigModeForPath } = await import("./internals")
 
 const {
   markSupervisorSandboxUse,

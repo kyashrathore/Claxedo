@@ -5,7 +5,7 @@ import {
   resolveWorkspaceRuntimeHit,
   resolveWorkspaceRuntimeHitForWorkspaceId,
   type RuntimeProxyOptions,
-} from "../../workspace/http/proxy"
+} from "../../workspace/runtime-dispatch/internals"
 import { isLoopbackLocalRequest } from "../../platform/http/peer-address"
 import { resolveWorkspace, type Workspace } from "../../workspace/store"
 

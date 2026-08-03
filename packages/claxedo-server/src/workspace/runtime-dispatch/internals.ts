@@ -1,7 +1,7 @@
 import type { Context, Next } from "hono"
-import { holdSupervisorSandbox, markSupervisorSandboxUse, releaseSupervisorSandbox, touchSupervisorSandbox } from "../../workspace/supervisor"
+import { holdSupervisorSandbox, markSupervisorSandboxUse, releaseSupervisorSandbox, touchSupervisorSandbox } from "../supervisor"
 import type { SandboxManager, SandboxEnsureResult } from "@claxedo/sandbox-manager"
-import { resolveWorkspace } from "../../workspace/store"
+import { resolveWorkspace } from "../store"
 import { opencodeHeaders } from "../../opencode/auth"
 import { isLoopbackLocalRequest } from "../../platform/http/peer-address"
 import { errorBody } from "../../platform/http/http"
@@ -12,7 +12,7 @@ import type { RelayProvider } from "../../adapters/relay"
 
 const WR_INTERNAL = ["/api/wr/health", "/api/wr/config", "/api/wr/harness-config-options", "/api/wr/capabilities"]
 
-type Hit = {
+export type Hit = {
   workspaceId: string
   workspaceName?: string
   directory: string
@@ -37,12 +37,12 @@ export type RuntimeProxyOptions = {
 const RUNTIME_WAIT_MS = 10 * 60_000
 const DEFAULT_REMOTE_DIRECTORY = "/workspace"
 
-function runtimeOwned(pathname: string) {
+export function runtimeOwned(pathname: string) {
   if (WR_INTERNAL.includes(pathname)) return true
   return routeOwnership(pathname).handler === RouteHandler.SandboxRuntime
 }
 
-function requestWorkspace(c: Context) {
+export function requestWorkspace(c: Context) {
   const dir = c.req.query("directory") || c.req.header("x-opencode-directory")
   return {
     workspaceId: c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id"),
@@ -66,7 +66,7 @@ export async function resolveWorkspaceRuntimeHitForWorkspaceId(
   return await resolveWorkspaceHit(await resolveWorkspace({ workspaceId }), options)
 }
 
-async function resolveWorkspaceHit(
+export async function resolveWorkspaceHit(
   ws: Awaited<ReturnType<typeof resolveWorkspace>>,
   options: RuntimeProxyOptions = {},
 ): Promise<Hit | undefined> {
@@ -91,7 +91,7 @@ async function resolveWorkspaceHit(
   }
 }
 
-async function ensureCloudRuntime(
+export async function ensureCloudRuntime(
   ws: NonNullable<Awaited<ReturnType<typeof resolveWorkspace>>>,
   options: RuntimeProxyOptions,
 ) {
@@ -119,7 +119,7 @@ function sandboxUnavailableDetail(result: Exclude<SandboxEnsureResult, { status:
   return result.error ?? "sandbox unavailable"
 }
 
-function noWr(c: Context, err?: unknown) {
+export function noWr(c: Context, err?: unknown) {
   const input = requestWorkspace(c)
   const msg = err instanceof Error ? err.message : undefined
   return c.json(
@@ -154,7 +154,7 @@ export function runtimeProxyResponseHeaders(headers: Headers) {
   return next
 }
 
-async function proxy(c: Context, hit: Hit, options?: {
+export async function proxy(c: Context, hit: Hit, options?: {
   pathname?: string
   forwardedBy?: string
   sandboxManager?: SandboxManager
@@ -307,7 +307,7 @@ export function embeddedConfigModeForPath(pathname: string): EmbeddedWorkspaceRu
   return "sync"
 }
 
-async function embedded(c: Context, ws: NonNullable<Awaited<ReturnType<typeof resolveWorkspace>>>, pathname?: string) {
+export async function embedded(c: Context, ws: NonNullable<Awaited<ReturnType<typeof resolveWorkspace>>>, pathname?: string) {
   const url = new URL(c.req.url)
   const targetPath = pathname ?? url.pathname
   const runtime = await ensureEmbeddedWorkspaceRuntime(ws, { config: embeddedConfigModeForPath(targetPath) })
@@ -330,93 +330,4 @@ async function embedded(c: Context, ws: NonNullable<Awaited<ReturnType<typeof re
     statusText: res.statusText,
     headers: runtimeProxyResponseHeaders(res.headers),
   })
-}
-
-export function createWorkspaceRuntimeProxy(options: RuntimeProxyOptions = {}) {
-  return (c: Context, next: Next) => workspaceRuntimeProxyWithOptions(c, next, options)
-}
-
-export async function workspaceRuntimeProxy(c: Context, next: Next): Promise<Response | void> {
-  return workspaceRuntimeProxyWithOptions(c, next)
-}
-
-async function workspaceRuntimeProxyWithOptions(
-  c: Context,
-  next: Next,
-  options: RuntimeProxyOptions = {},
-): Promise<Response | void> {
-  const pathname = new URL(c.req.url).pathname
-
-  if (!runtimeOwned(pathname)) return next()
-
-  try {
-    const input = requestWorkspace(c)
-    const ws = await resolveWorkspace({
-      workspaceId: input.workspaceId,
-      directory: input.directory,
-    })
-    if (!ws) return next()
-    if (ws.kind !== "cloud") return await embedded(c, ws)
-    const hit = await resolveWorkspaceHit(ws, options)
-    if (!hit) return next()
-    return await proxy(c, hit, {
-      sandboxManager: options.sandboxManager,
-      ...(options.relayProvider ? { relayProvider: options.relayProvider } : {}),
-      ...(options.defaultHomeRegion ? { defaultHomeRegion: options.defaultHomeRegion } : {}),
-    })
-  } catch (err) {
-    return noWr(c, err)
-  }
-}
-
-export function createLocalWorkspaceRelayProxy(options: RuntimeProxyOptions = {}) {
-  return (c: Context) => localWorkspaceRelayProxyWithOptions(c, options)
-}
-
-export async function localWorkspaceRelayProxy(c: Context): Promise<Response> {
-  return localWorkspaceRelayProxyWithOptions(c)
-}
-
-async function localWorkspaceRelayProxyWithOptions(c: Context, options: RuntimeProxyOptions = {}): Promise<Response> {
-  if (!isLoopbackLocalRequest(c.req.raw)) {
-    return c.json(errorBody("workspace_relay_local_loopback_required", "Local workspace relay proxy requires loopback access"), 401)
-  }
-  const workspaceId = c.req.param("workspaceId")
-  if (!workspaceId) return c.json(errorBody("workspace_relay_workspace_required", "workspaceId is required"), 400)
-  const ws = await resolveWorkspace({ workspaceId })
-  if (!ws) {
-    return c.json(errorBody("workspace_relay_workspace_not_found", "Workspace not found"), 404)
-  }
-  try {
-    const pathname = new URL(c.req.url).pathname.replace(/^\/workspaces\/[^/]+/, "") || "/"
-    if (ws.kind !== "cloud") return await embedded(c, ws, pathname)
-    const runtime = await ensureCloudRuntime(ws, options)
-    const current = await resolveWorkspace({ workspaceId: ws.id }) ?? ws
-    const hit = {
-      workspaceId: ws.id,
-      workspaceName: current.workspace_name || current.project_name || current.repo_name || undefined,
-      directory: current.remote_directory || DEFAULT_REMOTE_DIRECTORY,
-      url: runtime.url,
-      // `proxy()` mints the Relay Host Token this cloud runtime demands ONLY
-      // when the hit carries `relay` (see the mint branch there). Dropping it
-      // here — as this inline hit used to, unlike `resolveWorkspaceHit` which
-      // forwards it — meant every request the browser sent through this
-      // loopback proxy reached the runtime carrying the USER's bearer token
-      // instead of a relay token, and came back 401 `relay_host_token_required`
-      // / `invalid_relay_token`. On a loopback server URL this proxy is the
-      // path the app actually takes for a relay-backed workspace
-      // (`workspace-runtime-request.ts:223`), so a local cloud workspace could
-      // never finish connecting: the gate sat on "Preparing workspace" forever.
-      ...(runtime.relay ? { relay: runtime.relay } : {}),
-    }
-    return await proxy(c, hit, {
-      pathname,
-      forwardedBy: "workspace-relay",
-      sandboxManager: options.sandboxManager,
-      ...(options.relayProvider ? { relayProvider: options.relayProvider } : {}),
-      ...(options.defaultHomeRegion ? { defaultHomeRegion: options.defaultHomeRegion } : {}),
-    })
-  } catch (err) {
-    return noWr(c, err)
-  }
 }
