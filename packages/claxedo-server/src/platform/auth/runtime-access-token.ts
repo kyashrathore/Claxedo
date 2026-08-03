@@ -21,9 +21,14 @@ export type RuntimeAccessTokenConfigurationErrorCode =
   | "runtime_access_token_public_key_missing"
   | "runtime_access_token_key_pair_mismatch"
 
-export class RuntimeAccessTokenConfigurationError extends ClaxedoError {
-  declare readonly code: RuntimeAccessTokenConfigurationErrorCode
+// Narrows `code` to this class's union. Merged rather than written as a
+// `declare` class field: Playwright's babel transform rejects those unless
+// @babel/plugin-transform-typescript is configured, and it loads this file.
+export interface RuntimeAccessTokenConfigurationError {
+  readonly code: RuntimeAccessTokenConfigurationErrorCode
+}
 
+export class RuntimeAccessTokenConfigurationError extends ClaxedoError {
   constructor(code: RuntimeAccessTokenConfigurationErrorCode, message: string) {
     // Misconfiguration, not load: retrying cannot fix an absent or mismatched
     // key, so this fails closed at 503 and stays non-retryable.

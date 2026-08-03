@@ -274,7 +274,7 @@ list but misses a guardrail fails review.
 - **No concurrency guard inside a stream**: launchability blocks only same-item relaunch
   ([launch-readiness.ts:60](../../packages/workgraph/src/domain/launch-readiness.ts)); all
   attempts share one envelope worktree
-  ([local-execution.ts:100-165](../../packages/claxedo-server/src/workgraph-host/local-execution.ts)) —
+  ([execution.ts:100-165](../../packages/claxedo-server/src/hosts/workgraph/local/execution.ts)) —
   silent clobbering is possible today.
 - **No master exists**; the drain is mechanical. Wakes package implemented but unwired
   (project_wakes_package). Vestigial per-attempt child-worktree cleanup remains

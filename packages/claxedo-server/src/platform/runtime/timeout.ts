@@ -1,10 +1,16 @@
 import { ClaxedoError } from "../errors/base"
 
-export class ControlPlaneRequestTimeoutError extends ClaxedoError {
-  // Narrowed back to the literal the base widens to `number`: callers pass it
-  // straight to `c.json(body, status)`, which takes a status-code union.
-  declare readonly status: 503
+// Narrows `status` back to the literal the base widens to `number`: callers
+// pass it straight to `c.json(body, status)`, which takes a status-code union.
+// Declared by merging rather than as a `declare` class field because this file
+// is loaded through Playwright's babel transform, which rejects `declare`
+// fields unless @babel/plugin-transform-typescript is configured. Merging is
+// purely type-level, so it erases cleanly under any transform.
+export interface ControlPlaneRequestTimeoutError {
+  readonly status: 503
+}
 
+export class ControlPlaneRequestTimeoutError extends ClaxedoError {
   constructor() {
     // Retryable, but only jointly with the caller's own idempotency check: the
     // request was not cancelled and may still commit, so a store adapter must

@@ -59,9 +59,14 @@ export type CliSessionTokenErrorCode =
   | "cli_session_token_mismatch"
   | "cli_session_expired"
 
-export class CliSessionTokenError extends ClaxedoError {
-  declare readonly code: CliSessionTokenErrorCode
+// Narrows `code` to this class's union. Merged rather than written as a
+// `declare` class field: Playwright's babel transform rejects those unless
+// @babel/plugin-transform-typescript is configured, and it loads this file.
+export interface CliSessionTokenError {
+  readonly code: CliSessionTokenErrorCode
+}
 
+export class CliSessionTokenError extends ClaxedoError {
   constructor(code: CliSessionTokenErrorCode, message: string) {
     // Every case is a token the caller must replace, not one that becomes valid
     // on a second read — so 401, and never retryable.
