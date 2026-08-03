@@ -12,6 +12,7 @@ import { Catalog } from "../../catalog"
 import { Credential } from "../../credential"
 import { Integration } from "../../integration"
 import { ModelV2 } from "../../model"
+import { PluginV2 } from "../../plugin"
 import { ProviderV2 } from "../../provider"
 import { SessionSchema } from "../schema"
 
@@ -184,9 +185,27 @@ export const locationLayer = Layer.effect(
   Effect.gen(function* () {
     const catalog = yield* Catalog.Service
     const integrations = yield* Integration.Service
+    const plugins = yield* Effect.serviceOption(PluginV2.Service)
     return Service.of({
       resolve: Effect.fn("SessionRunnerModel.resolve")(function* (session) {
-        // Location plugins populate and filter the catalog asynchronously during layer startup.
+        // Location plugins populate and filter the catalog asynchronously during
+        // layer startup (PluginInternal.boot is forkScoped). A resolve racing
+        // that boot reads a HALF-POPULATED catalog: models-dev has not merged
+        // yet, `available()` is empty, and a perfectly valid session.model is
+        // reported "Model unavailable" — the first prompt into a fresh sandbox
+        // died this way while a prompt 60s later succeeded. Wait for the two
+        // catalog-defining plugins before reading. Absent plugin service (unit
+        // tests stub this layer directly) or a plugin that failed to load keeps
+        // the old immediate-read behavior rather than failing resolution.
+        if (plugins._tag === "Some") {
+          // Bounded: `wait` on a plugin id no composition ever adds would
+          // otherwise park resolution forever. On timeout, read what's there.
+          yield* Effect.forEach(
+            ["models-dev", "opencode"],
+            (id) => plugins.value.wait(PluginV2.ID.make(id)).pipe(Effect.timeout("15 seconds"), Effect.ignore),
+            { discard: true },
+          )
+        }
         const defaultModel = session.model ? undefined : yield* catalog.model.default()
         const selected = session.model
           ? (yield* catalog.model.available()).find(
@@ -215,4 +234,12 @@ export const locationLayer = Layer.effect(
   }),
 )
 
-export const node = makeLocationNode({ service: Service, layer: locationLayer, deps: [Catalog.node, Integration.node] })
+export const node = makeLocationNode({
+  service: Service,
+  layer: locationLayer,
+  // PluginV2 is a real dependency: resolve() waits for the catalog-defining
+  // plugins before its first read (see locationLayer). It stays optional in
+  // the LAYER (serviceOption) so tests that provide this layer directly,
+  // without the plugin graph, keep working.
+  deps: [Catalog.node, Integration.node, PluginV2.node],
+})
