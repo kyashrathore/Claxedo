@@ -217,12 +217,15 @@ export const locationLayer = Layer.effect(
             : defaultModel && supported(defaultModel)
               ? defaultModel
               : available.find(supported)
-          return { selected, populated: available.length > 0 }
+          // `all()`, not `available()`: a config-only catalog whose sole model
+          // is disabled is POPULATED and must fail fast (the location-layer
+          // test pins that); only a catalog with zero models of any kind is
+          // still mid-boot.
+          return { selected, populated: (yield* catalog.model.all()).length > 0 }
         })
         let { selected, populated } = yield* select
         // Retry ONLY while the catalog is visibly empty — a missing model in a
-        // populated catalog is a real absence and must fail immediately (tests
-        // assert that, and users deserve the fast error).
+        // populated catalog is a real absence and must fail immediately.
         for (let waited = 0; !selected && !populated && waited < 20_000; waited += 500) {
           yield* Effect.sleep("500 millis")
           ;({ selected, populated } = yield* select)
