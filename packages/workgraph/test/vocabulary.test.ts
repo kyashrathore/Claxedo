@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")
-const scopes = ["convex", "packages/workgraph", "packages/claxedo-server/src/workgraph-host", "packages/claxedo-mcp", "packages/claxedo-app/src/features/workgraph"]
+const scopes = ["convex", "packages/workgraph", "packages/claxedo-server/src/hosts/workgraph", "packages/claxedo-mcp", "packages/claxedo-app/src/features/workgraph"]
 
 // Stable content anchors preserve genuine retry language and persisted
 // pre-rename storage names without coupling the gate to line numbers.

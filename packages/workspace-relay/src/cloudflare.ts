@@ -71,7 +71,7 @@ const relayLocationHintSet = new Set<string>(RELAY_LOCATION_HINTS)
  * Maps a workspace home region to a Cloudflare location hint.
  *
  * The FIRST five keys are the product's canonical region vocabulary —
- * `DEFAULT_CLAXEDO_REGIONS` in `claxedo-server/src/region/index.ts:1`, mirrored
+ * `DEFAULT_CLAXEDO_REGIONS` in `claxedo-server/src/platform/runtime/region/index.ts:1`, mirrored
  * as `KNOWN_HOME_REGIONS` in `convex/workspaces.ts` and in the sqlite workspace
  * authority. Those are the values a real workspace's `homeRegion` can hold, and
  * this table must stay in step with that list.

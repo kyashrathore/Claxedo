@@ -122,7 +122,7 @@ describe("relay wrangler config", () => {
  * Ties the relay's region→location-hint table to the product's canonical region
  * vocabulary.
  *
- * `DEFAULT_CLAXEDO_REGIONS` (claxedo-server/src/region/index.ts) is the list a
+ * `DEFAULT_CLAXEDO_REGIONS` (claxedo-server/src/platform/runtime/region/index.ts) is the list a
  * workspace's `homeRegion` is validated against, mirrored as `KNOWN_HOME_REGIONS`
  * in convex/workspaces.ts and in the sqlite workspace authority. If someone adds
  * a sixth region there and not here, workspaces in that region silently get the
@@ -133,7 +133,7 @@ describe("relay wrangler config", () => {
 describe("relay region mapping", () => {
   test("every canonical Claxedo region maps to a Cloudflare location hint", async () => {
     const regionSource = await readFile(
-      new URL("../../claxedo-server/src/region/index.ts", import.meta.url),
+      new URL("../../claxedo-server/src/platform/runtime/region/index.ts", import.meta.url),
       "utf8",
     )
     const declared = regionSource.match(/export const DEFAULT_CLAXEDO_REGIONS = \[([^\]]*)\]/)?.[1]

@@ -626,7 +626,7 @@ async function installUserHostedRuntimeMock(
     // `/provider/auth`) that returns an EMPTY catalog for the default
     // (opencode) harness — the workspace's real provider/model list is a
     // RUNTIME-owned read routed through the relay (`/workspaces/:id/provider`
-    // above), exactly as `packages/claxedo-server/src/routes/hosted-shell.ts`
+    // above), exactly as `packages/claxedo-server/src/routes/hosted/shell.ts`
     // (`GET /provider` → `emptyProvider()`) does. The app fires this global
     // control-plane catalog query independent of any workspace's readiness, so
     // — like `/api/claxedo/bootstrap` and `/api/control/session-list` above —

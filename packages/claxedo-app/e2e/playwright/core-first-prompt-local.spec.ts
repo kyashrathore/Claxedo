@@ -282,7 +282,7 @@ test.describe("core first prompt (local) @core", () => {
     //   aborted the inventory bootstrap before route intent could resolve `"new"`.
     //   The workbench then never gained a content and `renderEmpty` won. The shared
     //   mock now serves that endpoint the way the real server does
-    //   (`{ sessions: [] }`, claxedo-server/src/hosted-app.ts:486-503), so the
+    //   (`{ sessions: [] }`, claxedo-server/src/deployments/hosted-shared/hosted-app.ts:486-503), so the
     //   bootstrap completes and the app reaches its genuine settled surface for this
     //   state. Found by `requests.unhandled`, which had never recorded anything until
     //   it was made real.

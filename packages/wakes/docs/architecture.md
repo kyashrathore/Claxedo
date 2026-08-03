@@ -163,7 +163,7 @@ Convex transaction, plus two extras the port doesn't have: `createWakeInTx`
 (create a wake atomically inside another mutation's transaction) and
 `createLaneWakeIfIdle` (state-aware "skip if a pending wake of this kind
 already holds the lane"). The thin client is
-`packages/claxedo-server/src/wakes-host/convex-wake-store.ts`.
+`packages/claxedo-server/src/hosts/wakes/convex-wake-store.ts`.
 
 ## Drivers — the push path (`types.ts` `WakeDriver`, `node-driver.ts`)
 
@@ -183,7 +183,7 @@ engine needs the driver at construction; `idle()` awaits quiescence for tests
 and shutdown.
 
 The Cloudflare driver lives in
-`packages/claxedo-server/src/wakes-host/wake-lane.ts`: one `WakeLane` Durable
+`packages/claxedo-server/src/deployments/hosted-workerd/wake-lane.cf.ts`: one `WakeLane` Durable
 Object per lane. Its `nudge` handler only arms the DO alarm (earliest wins);
 ALL work happens in `alarm()` — drain the lane, bounded self-retry with
 backoff on failure. DO alarms are platform-persisted (survive deploys and
@@ -238,13 +238,13 @@ Two entries, built by `scripts/build.ts` (bun bundles with
 
 ## Consumers today
 
-**Local Node server** (`packages/claxedo-server/src/central-session-runtime.ts`,
+**Local Node server** (`packages/claxedo-server/src/session/runtime.ts`,
 on by default under `bun run dev` via `CLAXEDO_WAKES`): SQLite store,
 `spawnTurn` = post an injected message into the session, scheduler started,
 the four tools exposed per-turn, `wakes` returned for the channels/webhook
 layer (`deliverEvent`/`resolve`).
 
-**Hosted WorkGraph settlement** (`packages/claxedo-server/src/wakes-host/`,
+**Hosted WorkGraph settlement** (`packages/claxedo-server/src/hosts/wakes/`,
 staging-only via `CLAXEDO_WAKES_SETTLEMENT=1`): wakes is the *doorbell*, the
 lease/epoch-fenced outbox in Convex stays the truth. Per command burst, one
 dirty-flag wake per tenant (`kind: workgraph_settle`, `serialKey` = tenant,

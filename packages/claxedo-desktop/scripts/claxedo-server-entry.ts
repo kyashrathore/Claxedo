@@ -1,4 +1,4 @@
-import { startServer } from "../../claxedo-server/src/server"
+import { startServer } from "../../claxedo-server/src/deployments/local/server"
 import type { DiagnosticsBinding } from "../src/shared/diagnostics-transport"
 import { claxedoServerStartup, watchDesktopParent } from "./claxedo-server-startup"
 import { createDiagnosticsChildTransport } from "./diagnostics-child-transport"

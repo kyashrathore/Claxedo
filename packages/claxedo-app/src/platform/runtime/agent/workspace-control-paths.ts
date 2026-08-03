@@ -10,7 +10,7 @@
 // that need `@/platform/api/api` in `workspace-control-routes.ts` instead.
 //
 // The server serves these under `/drivers` (see
-// `packages/claxedo-server/src/routes/sandbox-driver-routes.ts`), and
+// `packages/claxedo-server/src/sandbox/routes/sandbox-driver-routes.ts`), and
 // `architecture.test.ts` pins that naming. The client previously said
 // `/providers`, which 404'd against every one of these routes.
 

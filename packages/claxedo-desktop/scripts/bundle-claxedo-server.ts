@@ -57,7 +57,7 @@ export async function bundleClaxedoServer(source: string, destination: string) {
   // candidate dirnames (entry root and chunks/).
   const migrationsSource = path.resolve(
     import.meta.dirname,
-    "../../claxedo-server/src/storage/claxedo-migration",
+    "../../claxedo-server/src/platform/db/claxedo-migration",
   )
   if (!fs.existsSync(migrationsSource)) {
     throw new Error(`claxedo-server migration journal not found at ${migrationsSource}`)

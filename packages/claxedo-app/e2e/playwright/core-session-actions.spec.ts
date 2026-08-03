@@ -206,7 +206,7 @@
  *     auto-title event — that event is published over an SSE-only bus
  *     (`RuntimeEventHub.publishGlobal`), never an HTTP `PATCH /session/{id}`, and
  *     claxedo-server's response-sniffing session-meta bridge
- *     (`packages/claxedo-server/src/server.ts`, its `/session` create/update/delete tap)
+ *     (`packages/claxedo-server/src/deployments/local/server.ts`, its `/session` create/update/delete tap)
  *     only observes HTTP verbs. Filed as a finding, not fixed here (too large for a
  *     minimal fix — see PR notes).
  *   - The sidebar's archived/all/active radio filter UI itself and its persistence

@@ -411,7 +411,7 @@ export type MockRuntimeHandles = {
    * Manually inject an event onto the global SSE stream WITHOUT the
    * `{directory, payload}` envelope `emit()` always wraps events in. Real
    * `claxedoBus`-originated events (e.g. `session.lifecycle`, see
-   * `packages/claxedo-server/src/routes/opencode-compat-events.ts`) are
+   * `packages/claxedo-server/src/opencode/compat-routes/events.ts`) are
    * written to the wire flat/unwrapped — `ClaxedoEventsProvider`'s
    * `isClaxedoEvent` guard (`packages/claxedo-app/src/providers/
    * claxedo-events.tsx`) requires a top-level `.type` and silently drops
@@ -1490,7 +1490,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // HTML parse failure is swallowed into an empty inventory indistinguishable from a
   // workspace that genuinely has no sessions.
   //
-  // CONTRACT (claxedo-server/src/hosted-app.ts:486-503): `{ sessions: [...] }`. The
+  // CONTRACT (claxedo-server/src/deployments/hosted-shared/hosted-app.ts:486-503): `{ sessions: [...] }`. The
   // EMPTY body is not a stub here — it is the route's own answer on this exact request:
   // `fetchLocalControlSessions` sends no `workspaceId`, and the handler's first line is
   // `if (!workspaceId || !services.authority?.listSessions) return c.json({ sessions: [] })`.
@@ -1802,7 +1802,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // failure.
   //
   // CONTRACTS, all read from the routes the app actually talks to
-  // (claxedo-server/src/routes/opencode-compat.ts:67-89, which delegate to
+  // (claxedo-server/src/opencode/compat-routes/index.ts:67-89, which delegate to
   // opencode-compat-file-browser.ts; workspace-runtime/src/routes/file.ts:55-108 is
   // the same surface behind the relay and agrees on every shape):
   //   GET /find/file    -> string[] of workspace-RELATIVE paths (globSearch)

@@ -255,12 +255,12 @@ describe("cloudflare deploy prompt: fail-closed prerequisites", () => {
   // Each env var the prompt asserts must still be grep-findable in the file that
   // gives it meaning. If a var is renamed or its enforcement is deleted, this fails.
   const anchors: Record<string, string> = {
-    CLAXEDO_WORKSPACE_AUTHORITY_URL: "packages/claxedo-server/src/authority/adapters/convex/authority/index.ts",
-    CLERK_JWT_ISSUER: "packages/claxedo-server/src/authority/auth.ts",
-    CLERK_ISSUER_URL: "packages/claxedo-server/src/authority/auth.ts",
-    CLERK_JWKS_URL: "packages/claxedo-server/src/authority/auth.ts",
-    CLERK_JWT_AUDIENCE: "packages/claxedo-server/src/authority/auth.ts",
-    CLAXEDO_SIGNED_CLOUD_AUTH: "packages/claxedo-server/src/authority/auth.ts",
+    CLAXEDO_WORKSPACE_AUTHORITY_URL: "packages/claxedo-server/src/authority/adapters/convex/workspace-authority/index.ts",
+    CLERK_JWT_ISSUER: "packages/claxedo-server/src/platform/auth/auth.ts",
+    CLERK_ISSUER_URL: "packages/claxedo-server/src/platform/auth/auth.ts",
+    CLERK_JWKS_URL: "packages/claxedo-server/src/platform/auth/auth.ts",
+    CLERK_JWT_AUDIENCE: "packages/claxedo-server/src/platform/auth/auth.ts",
+    CLAXEDO_SIGNED_CLOUD_AUTH: "packages/claxedo-server/src/platform/auth/auth.ts",
     CLAXEDO_DEPLOYMENT_MODE: "packages/claxedo-server/src/authority/deployment-mode.ts",
     CLAXEDO_WORKSPACE_RELAY_URL: "packages/claxedo-server/src/authority/hosted-services.ts",
     CLAXEDO_RELAY_RESOLVER_TOKEN: "packages/claxedo-server/src/authority/hosted-services.ts",
@@ -270,9 +270,9 @@ describe("cloudflare deploy prompt: fail-closed prerequisites", () => {
     CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "packages/claxedo-server/src/authority/adapters/worker/hosted-compose.ts",
     CLERK_WEBHOOK_SECRET: "convex/http.ts",
     CONVEX_DEPLOY_KEY: ".github/workflows/deploy-control-plane.yml",
-    CLAXEDO_POSTHOG_KEY: "packages/claxedo-server/src/observability/config.ts",
-    CLAXEDO_POSTHOG_HOST: "packages/claxedo-server/src/observability/config.ts",
-    CLAXEDO_TELEMETRY_MODE: "packages/claxedo-server/src/observability/config.ts",
+    CLAXEDO_POSTHOG_KEY: "packages/claxedo-server/src/platform/telemetry/errors/config.ts",
+    CLAXEDO_POSTHOG_HOST: "packages/claxedo-server/src/platform/telemetry/errors/config.ts",
+    CLAXEDO_TELEMETRY_MODE: "packages/claxedo-server/src/platform/telemetry/errors/config.ts",
     CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM: "packages/workspace-relay/wrangler.toml",
     CLAXEDO_CONTROL_PLANE_JWKS_URL: "packages/workspace-relay/wrangler.toml",
     VITE_CLAXEDO_SERVER_URL: ".github/workflows/deploy-claxedo-app.yml",
@@ -297,7 +297,7 @@ describe("cloudflare deploy prompt: fail-closed prerequisites", () => {
     expect(prompt).not.toContain("SENTRY")
     expect(prompt).toContain("There is no Sentry integration anywhere in this repository")
     // The replacement claim: PostHog telemetry, hard double opt-in.
-    const config = await read("packages/claxedo-server/src/observability/config.ts")
+    const config = await read("packages/claxedo-server/src/platform/telemetry/errors/config.ts")
     for (const name of ["CLAXEDO_POSTHOG_KEY", "CLAXEDO_POSTHOG_HOST", "CLAXEDO_TELEMETRY_MODE"]) {
       expect(`${name} in observability config: ${config.includes(name)}`).toBe(`${name} in observability config: true`)
       expect(`${name} in prompt: ${prompt.includes(name)}`).toBe(`${name} in prompt: true`)

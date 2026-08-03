@@ -10,7 +10,7 @@
 //                packages/claxedo-server/.env, as a Fly secret on
 //                claxedo-selfhost-test, and in the local managed encrypted
 //                store). The production resolution path is
-//                packages/claxedo-server/src/sandbox-manager-adapters/driver-auth.ts
+//                packages/claxedo-server/src/sandbox/driver-auth.ts
 //                `sandboxDriverAuthManaged("daytona")`; the bench reads the same
 //                key from the environment (export it, or `source
 //                packages/claxedo-server/.env`, before running).

@@ -191,7 +191,7 @@
  *       `.post("/session")`) only ever publishes a `session.lifecycle` event
  *       on `claxedoBus` (aka `workspaceRuntimeBus`) — it never emits the
  *       native opencode `session.created` event that `globalBus` carries.
- *       `packages/claxedo-server/src/routes/opencode-compat-events.ts`'s
+ *       `packages/claxedo-server/src/opencode/compat-routes/events.ts`'s
  *       `streamGlobalEvents` — the handler behind BOTH `/global/event` and
  *       the local-mode `/api/wr/events` fallback, the ONLY stream a
  *       local/unsigned workspace ever opens
@@ -211,7 +211,7 @@
  *       already-correct frontend handling
  *       (`applySessionInventoryLifecycle`) surfaces the new row. The actual
  *       transport fix is pinned server-side by
- *       `packages/claxedo-server/src/routes/opencode-compat-events.test.ts`.
+ *       `packages/claxedo-server/src/opencode/compat-routes/events.test.ts`.
  *   16. The rail's account footer (`[data-testid="rail-account-trigger"]`) is
  *       keyboard-operable and focus-restoring: Enter opens the menu
  *       (`aria-expanded="true"`) exposing View options / Usage limits /
@@ -1001,7 +1001,7 @@ test.describe("core sidebar tree @core", () => {
     // The server's control-plane session-list already has the row the
     // instant `POST /session` returns (recorded by claxedo-server's
     // response-sniffing middleware regardless of harness — see
-    // `packages/claxedo-server/src/server.ts` around its `/session`
+    // `packages/claxedo-server/src/deployments/local/server.ts` around its `/session`
     // create/update/delete tap) — model that here by seeding the fixture's
     // list BEFORE the event arrives, exactly like the real backend.
     const now = Date.now()

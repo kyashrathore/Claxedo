@@ -134,7 +134,7 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     observation: "lifecycle-only",
     stop: "unsupported",
     kill: "unsupported",
-    source: { file: "packages/claxedo-server/src/credentials/sync.ts", callee: "execFileSync", calls: 1 },
+    source: { file: "packages/claxedo-server/src/credentials/operations/sync.ts", callee: "execFileSync", calls: 1 },
   }),
   product({
     id: "server-document-git",
@@ -144,7 +144,7 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     observation: "lifecycle-only",
     stop: "owner-dependent",
     kill: "unsupported",
-    source: { file: "packages/claxedo-server/src/server.ts", callee: "execFileAsync", calls: 1 },
+    source: { file: "packages/claxedo-server/src/deployments/local/server.ts", callee: "execFileAsync", calls: 1 },
   }),
   product({
     id: "server-workspace-git",
@@ -154,7 +154,7 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     observation: "lifecycle-only",
     stop: "owner-dependent",
     kill: "unsupported",
-    source: { file: "packages/claxedo-server/src/workspace-store.ts", callee: "execFileAsync", calls: 1 },
+    source: { file: "packages/claxedo-server/src/workspace/store/index.ts", callee: "execFileAsync", calls: 1 },
   }),
   product({
     id: "server-opencode-compat-git",
@@ -165,7 +165,7 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     stop: "owner-dependent",
     kill: "unsupported",
     source: {
-      file: "packages/claxedo-server/src/routes/opencode-compat-git.ts",
+      file: "packages/claxedo-server/src/opencode/compat-routes/git.ts",
       callee: "execFileAsync",
       calls: 3,
     },
@@ -179,7 +179,7 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     stop: "owner-dependent",
     kill: "unsupported",
     source: {
-      file: "packages/claxedo-server/src/routes/workspace-git.ts",
+      file: "packages/claxedo-server/src/workspace/git.ts",
       callee: "execFileAsync",
       calls: 2,
     },
@@ -193,7 +193,7 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     stop: "owner-dependent",
     kill: "unsupported",
     source: {
-      file: "packages/claxedo-server/src/workgraph-host/local-execution-capabilities.ts",
+      file: "packages/claxedo-server/src/hosts/workgraph/local/execution-capabilities.ts",
       callee: "run",
       calls: 3,
     },
@@ -207,7 +207,7 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     stop: "owner-dependent",
     kill: "unsupported",
     source: {
-      file: "packages/claxedo-server/src/workgraph-host/local-execution.ts",
+      file: "packages/claxedo-server/src/hosts/workgraph/local/execution.ts",
       callee: "run",
       calls: 15,
     },

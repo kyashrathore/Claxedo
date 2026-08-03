@@ -1,7 +1,7 @@
 /**
  * The UI half of the harness → provider-catalog contract.
  *
- * The server half (`packages/claxedo-server/src/routes/harness-provider-contract.test.ts`)
+ * The server half (`packages/claxedo-server/src/agent-config/harness-provider-contract.test.ts`)
  * pins what `/provider?harness=` RETURNS. This file pins what the UI RENDERS for
  * each of those catalogs, and — the part that was never pinned — that the
  * catalog a dialog asks for is the one its harness context implies.

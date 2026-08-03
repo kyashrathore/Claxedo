@@ -2,7 +2,7 @@
  * The harness → provider-catalog contract, app side.
  *
  * This is a deliberate MIRROR of
- * `packages/claxedo-server/src/routes/harness-provider-contract.ts`. The two
+ * `packages/claxedo-server/src/agent-config/harness-provider-contract.ts`. The two
  * packages share no import path, so the sets are re-stated here and
  * `harness-provider-contract.vitest.tsx` renders the real `ProviderList`
  * against fixtures built from them. The server copy is asserted against the

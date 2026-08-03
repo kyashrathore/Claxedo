@@ -8,7 +8,7 @@
  * a PostHog key — so a self-built, key-less, or simply un-opted-in desktop
  * run makes zero client construction and zero network calls. This matches the
  * contract the other runtimes' observability tests enforce
- * (packages/claxedo-server/src/observability/observability.test.ts); a
+ * (packages/claxedo-server/src/platform/telemetry/errors/observability.test.ts); a
  * Claxedo-distributed build turns telemetry on explicitly at package time.
  */
 import { PostHog } from "posthog-node"

@@ -27,24 +27,24 @@ import {
   type WorkGraphContext,
   type WorkSourceRevisionRef,
 } from "@claxedo/workgraph/contracts"
-import type { WorkspaceAuthority } from "../../../claxedo-server/src/control-plane/authority"
+import type { WorkspaceAuthority } from "../../../claxedo-server/src/platform/auth/authority.ts"
 import {
   createLocalEmbeddedWorkGraph,
   type LocalEmbeddedWorkGraph,
   type LocalWorkGraphAuthOptions,
-} from "../../../claxedo-server/src/server-workgraph"
-import { createExecutionCapabilitiesPort } from "../../../claxedo-server/src/workgraph-host/execution-capabilities"
-import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "../../../claxedo-server/src/workgraph-host/local-execution"
-import { createSessionV2WorkGraphGateway } from "../../../claxedo-server/src/workgraph-session-gateway"
-import { createSqlitePullRequestEffects } from "../../../claxedo-server/src/workgraph-host/sqlite-pull-request-effects"
-import { buildSessionListResponse, parseSessionListQuery } from "../../../claxedo-server/src/session-list"
+} from "../../../claxedo-server/src/hosts/workgraph/composition/server-workgraph.ts"
+import { createExecutionCapabilitiesPort } from "../../../claxedo-server/src/hosts/workgraph/execution-capabilities.ts"
+import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "../../../claxedo-server/src/hosts/workgraph/local/execution.ts"
+import { createSessionV2WorkGraphGateway } from "../../../claxedo-server/src/hosts/workgraph/composition/session-gateway.ts"
+import { createSqlitePullRequestEffects } from "../../../claxedo-server/src/hosts/workgraph/sqlite-pull-request-effects.ts"
+import { buildSessionListResponse, parseSessionListQuery } from "../../../claxedo-server/src/session/list.ts"
 import {
   createLocalWorkGraphAgentTools,
   localSessionContext,
   localSessionExecution,
   localSessionOwnerDirected,
-} from "../../../claxedo-server/src/workgraph-agent-tools"
-import type { OpenCodeApplicationToolRegistration } from "../../../claxedo-server/src/opencode-engine"
+} from "../../../claxedo-server/src/hosts/workgraph/composition/agent-tools.ts"
+import type { OpenCodeApplicationToolRegistration } from "../../../claxedo-server/src/opencode/engine.ts"
 
 const repository = path.resolve(import.meta.dirname, "../../../..")
 type WorkGraphDatabase = Parameters<typeof createLocalEmbeddedWorkGraph>[0]["database"]

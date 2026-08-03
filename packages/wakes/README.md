@@ -131,7 +131,7 @@ reconcile; unsettled results (sandbox still provisioning) schedule a durable
 retry wake on the same lane. The `WakeLane` DO gives per-tenant serialization
 that is physically guaranteed by the platform; the 15-minute reconcile cron
 remains the universal backstop. See
-`packages/claxedo-server/src/wakes-host/`.
+`packages/claxedo-server/src/hosts/wakes/`.
 
 Burst coalescing there is **state-aware** (skip creating when a *pending*
 settle wake already holds the lane — `createLaneWakeIfIdle` in

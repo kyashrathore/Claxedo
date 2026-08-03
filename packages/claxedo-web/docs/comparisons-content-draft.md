@@ -25,7 +25,7 @@ Near-term self-host ships as **two profiles** (owner scope, 2026-07-22): **singl
 - **WorkGraph** durable coordination — nobody else has it.
 - **Harness-neutral + BYO** provider/sandbox; doesn't resell tokens/compute.
 
-CF precision (still true, keep for the self-host story): on Cloudflare you deploy the **control plane** (pure-coordination Worker — `packages/claxedo-server/src/worker.ts`); **execution** runs where you place it (your machine / Fly / sandboxes). Always-on all-in-one = `claxedo deploy` → Fly today.
+CF precision (still true, keep for the self-host story): on Cloudflare you deploy the **control plane** (pure-coordination Worker — `packages/claxedo-server/src/deployments/hosted-workerd/worker.ts`); **execution** runs where you place it (your machine / Fly / sandboxes). Always-on all-in-one = `claxedo deploy` → Fly today.
 
 ## Claxedo's constant column (the spine)
 

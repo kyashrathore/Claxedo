@@ -4,9 +4,9 @@
 // header.
 //
 // Why this is needed (not a workaround, a real product code path): claxedo-server's
-// `/api/claxedo/bootstrap` route (packages/claxedo-server/src/routes/bootstrap.ts) takes
+// `/api/claxedo/bootstrap` route (packages/claxedo-server/src/deployments/shared-routes/bootstrap.ts) takes
 // the LOCAL, unsigned bootstrap path for ANY request whose real socket peer is loopback
-// (`isLoopbackLocalRequest`, packages/claxedo-server/src/routes/local-only-projection.ts)
+// (`isLoopbackLocalRequest`, packages/claxedo-server/src/platform/http/peer-address.ts)
 // REGARDLESS of a valid bearer token being present — this is deliberate (desktop/local
 // dev shortcut). A workspace's real `kind: "user-hosted"` value, however, is ONLY present
 // in the SIGNED bootstrap body (`signedBootstrapBody` -> `services.authority.

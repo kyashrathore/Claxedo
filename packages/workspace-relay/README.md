@@ -301,8 +301,8 @@ gateway pattern lives in `claxedo-server`:
 
 - The user's browser calls `/api/claxedo/...`.
 - `claxedo-server` mounts `workspaceRuntimeProxy` middleware
-  (`packages/claxedo-server/src/proxy.ts:205`) on its top-level Hono
-  app at `packages/claxedo-server/src/server.ts:93`.
+  (`packages/claxedo-server/src/workspace/runtime-dispatch/internals.ts:205`) on its top-level Hono
+  app at `packages/claxedo-server/src/deployments/local/server.ts:93`.
 - The proxy resolves the active workspace target via
   `internal-relay.ts` (control-plane auth — see "Seam: internal-relay
   vs workspace-relay" below), strips its own prefix, and forwards
@@ -315,7 +315,7 @@ checks that gate it.
 
 ## Seam: `internal-relay` vs `workspace-relay`
 
-| | `claxedo-server/src/routes/internal-relay.ts` | `@claxedo/workspace-relay` |
+| | `claxedo-server/src/deployments/shared-routes/internal-relay.ts` | `@claxedo/workspace-relay` |
 | --- | --- | --- |
 | Layer | Control-plane auth | Tunnel transport |
 | Trust | Authenticates the relay process itself (loopback or bearer) | Authenticates the user's runtime-access token |
