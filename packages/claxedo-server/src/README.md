@@ -23,13 +23,12 @@ public domain with signed auth is `trust=hosted, runtime=node`. See
 `authority/deployment-mode.ts`.
 
 **`.cf.ts` means workerd-only.** A file that cannot run outside the Cloudflare
-runtime (Durable Object classes, `cloudflare:workers`, KV/R2 bindings). The
-~57 `hosted-*` files are NOT marked, because hosted runs on Node too.
+runtime (Durable Object classes, `cloudflare:workers`, KV/R2 bindings). `hosted-*` files are NOT marked, because hosted runs on Node too.
 Enforced in both directions by `deployments/hosted-workerd/worker.import-graph.test.ts`.
 
 **`authority/` is the identity/authorization/tenancy layer**, not "the control
 plane" (that is the whole package). `authority/http/` is that layer's wire
-protocol; `authority/routes/` is the two routers it owns; top-level `http/` is
+protocol; `authority/routes/` holds the JWKS router; top-level `http/` is
 generic transport middleware shared by every deployment; `routes/` is the
 product HTTP surface.
 
@@ -38,7 +37,9 @@ product HTTP surface.
 These are enforced by tests, not convention — see `tests/governance/codebase-shape.test.ts`
 and `deployments/hosted-workerd/worker.import-graph.test.ts`:
 
-- **All SQL goes through drizzle tables in `adapters/storage/`.** Hand-written
+- **All SQL goes through drizzle tables.** Each domain owns its own
+  `*.sql.ts` table definitions; `platform/db/schema.ts` barrels them for the
+  migration generator. Hand-written
   `ClaxedoDB.raw().prepare(...)` in feature code fails the suite. One
   documented exception (`session/meta/index.ts`, a dynamic cursor query).
   `authority/adapters/sqlite/` is a *separate* Node-only database with its own
