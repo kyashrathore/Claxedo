@@ -121,6 +121,11 @@ export async function hostedConnectionInfo(
         runtimeKind: "cloud" as const,
         homeRegion,
         retryAfterMs: ensured.retryAfterMs,
+        // Which boot path this cycle is on (restore | resume | cold-start),
+        // when the manager knows it — the connect UI renders it instead of a
+        // generic "preparing" spinner. Absent while the lease is still queued
+        // behind a retry window or another caller.
+        ...(ensured.bootMode ? { bootMode: ensured.bootMode } : {}),
       },
     } as const
   }

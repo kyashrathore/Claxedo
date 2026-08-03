@@ -522,9 +522,18 @@ export type SandboxRegisterInput = {
 
 export type SandboxHeartbeatInput = SandboxRegisterInput
 
+/**
+ * What a provisioning cycle is actually doing, for honest progress UI.
+ * `restore` = booting a replacement restored from the workspace's snapshot
+ * (files come back), `resume` = restarting the same paused resource,
+ * `cold-start` = a fresh sandbox with no prior state to bring back (first
+ * boot, or nothing snapshot-able survived).
+ */
+export type SandboxBootMode = "restore" | "resume" | "cold-start"
+
 export type SandboxEnsureResult =
   | ({ status: "ready" } & SandboxTarget & { epoch: number; homeRegion: SandboxRegion })
-  | { status: "provisioning"; retryAfterMs: number; epoch: number; homeRegion: SandboxRegion }
+  | { status: "provisioning"; retryAfterMs: number; epoch: number; homeRegion: SandboxRegion; bootMode?: SandboxBootMode }
   | { status: "unavailable"; retryAfterMs?: number; error?: string; epoch?: number; homeRegion: SandboxRegion }
 
 export type SandboxTargetResult =
@@ -782,10 +791,10 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
           homeRegion,
         }
       }
-      const target =
-        lease.sandboxId && ensure.bootSource?.kind === "default" && options.driver.resumeHost
-          ? await options.driver.resumeHost({ lease, ensure })
-          : await options.driver.ensureHost(ensure)
+      const resuming = Boolean(lease.sandboxId && ensure.bootSource?.kind === "default" && options.driver.resumeHost)
+      const target = resuming
+        ? await options.driver.resumeHost!({ lease, ensure })
+        : await options.driver.ensureHost(ensure)
       if ("provisioning" in target) {
         await options.leaseStore.update(workspaceId, lease.epoch, {
           status: "acquiring",
@@ -796,6 +805,10 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
           retryAfterMs: target.retryAfterMs,
           epoch: lease.epoch,
           homeRegion,
+          // Honest progress for the connect UI: which of the three boot paths
+          // this cycle is on. Derived from the same inputs that CHOSE the path
+          // above, so it cannot drift from what actually ran.
+          bootMode: resuming ? "resume" : ensure.bootSource?.kind === "driver-snapshot" ? "restore" : "cold-start",
         }
       }
       const updated = await options.leaseStore.update(workspaceId, lease.epoch, {

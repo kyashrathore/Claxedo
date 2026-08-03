@@ -263,6 +263,14 @@ function applyWorkspaceConnectionInfo(info: WorkspaceConnectionInfo) {
 setWorkspaceConnectionObserver({
   onConnected: applyWorkspaceConnectionInfo,
   onFailed: (workspaceId) => applyPlacementEvent(workspaceId, { type: "lost" }),
+  // Provisioning polls now say WHAT the sandbox manager is doing. Mapped onto
+  // the existing phase vocabulary so CloudStartupView needs no new plumbing:
+  // restore/resume get their own honest steps; cold-start keeps the generic
+  // acquiring phase (the provision SSE stream then narrates cloning etc.).
+  onProvisioning: (workspaceId, bootMode) => {
+    if (bootMode === "restore") applyStatus(workspaceId, "restoring_snapshot")
+    else if (bootMode === "resume") applyStatus(workspaceId, "resuming_sandbox")
+  },
 })
 
 function applyStatus(workspaceId: string, phase: string) {

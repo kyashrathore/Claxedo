@@ -256,6 +256,9 @@ describe("sandbox manager", () => {
       retryAfterMs: 2_000,
       epoch: 1,
       homeRegion: "eu-west",
+      // A fresh lease with no snapshot and no resumable resource is honestly a
+      // cold start — the connect UI renders exactly this word.
+      bootMode: "cold-start",
     })
     now += 500
     await expect(manager.ensure("ws_1", { homeRegion: "eu-west" })).resolves.toMatchObject({
@@ -265,6 +268,47 @@ describe("sandbox manager", () => {
       homeRegion: "eu-west",
     })
     expect(driver.ensureHost).toHaveBeenCalledTimes(1)
+  })
+
+  test("provisioning from a lease checkpoint reports bootMode restore", async () => {
+    const store = createMemoryLeaseStore()
+    const driver = fakeDriver({
+      metadata: {
+        driverRunsIn: ["node"],
+        hostStopBehavior: "suspends-host",
+        hostResumeBehavior: "same-host",
+        targetAccess: "relay",
+        secretBrokering: "native",
+        egressControl: "hosts-and-cidrs",
+        persistence: {
+          resume: "replacement-restore",
+          capture: "filesystem",
+          clone: false,
+          captureSource: "preserved",
+          retention: "provider-managed",
+          restoreMount: "new-resource",
+        },
+      },
+      ensureHost: vi.fn(async () => ({ provisioning: true as const, retryAfterMs: 2_000 })),
+    })
+    const manager = createSandboxManager({ leaseStore: store, driver, staleAfterMs: 60_000 })
+    // Seed a lease that carries a checkpoint but is not ready — the shape a
+    // stopped-and-snapshotted workspace wakes from. `nextRetryAt` in the past
+    // keeps it on the in-flight-provision path (which re-runs the driver)
+    // rather than the still-waiting path (which answers from the lease alone
+    // and cannot know the boot mode).
+    await manager.ensure("ws_1", { homeRegion: "eu-west" })
+    await store.update("ws_1", 1, {
+      status: "acquiring",
+      checkpoint: { providerReference: "snap_1", sourceEpoch: 1 },
+      nextRetryAt: 1,
+    })
+
+    const ensured = await manager.ensure("ws_1", { homeRegion: "eu-west" })
+    expect(ensured).toMatchObject({ status: "provisioning", bootMode: "restore" })
+    expect(driver.ensureHost).toHaveBeenLastCalledWith(
+      expect.objectContaining({ bootSource: { kind: "driver-snapshot", snapshotId: "snap_1" } }),
+    )
   })
 
   test("ready lease still re-ensures with the driver so auto-stopped runtimes resume on the same epoch", async () => {

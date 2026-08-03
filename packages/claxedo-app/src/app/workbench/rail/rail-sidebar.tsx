@@ -58,7 +58,7 @@ import {
 } from "../../../features/session/data/sync/session-inventory"
 import { localWorkspaceShareTarget, registerUserHostedWorkspace, workspaceShareUrl } from "@/features/workspaces/data/share-workspace"
 import { Can, can } from "@/platform/auth/role"
-import { workspacePlacement } from "../../../features/workspaces/data/workspace-connection"
+import { isWorkspaceReady, workspacePlacement } from "../../../features/workspaces/data/workspace-connection"
 import { getSessionPrefetch, runSessionPrefetch, sameWorkspaceSessionPrefetchIds, SESSION_PREFETCH_TTL, setSessionPrefetch } from "@/platform/sync/session-prefetch"
 import { sessionRefForWorkspaceSession, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import type { PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
@@ -2216,6 +2216,18 @@ export function RailSidebar(props: RailSidebarProps) {
       return directories()[0] ?? section.project.worktree
     })
     const projectActionLabel = createMemo(() => workspaceName(projectActionDirectory(), section.project))
+    // Cloud workspaces are lazily connected: dim the entry until its runtime
+    // is ready so the rail honestly shows what is reachable NOW. Clicking
+    // still connects (the select handler drives the connection), and the
+    // connect surface then narrates restore/resume/cold-start. Local and
+    // user-hosted entries never dim — local has nothing to connect, and
+    // user-hosted readiness is the host machine's business, reported in-pane.
+    const dimmedCloud = createMemo(() => {
+      const directory = projectActionDirectory()
+      if (!sectionCloud(section.project, directory)) return false
+      const workspaceId = projectWorkspaceInfo(section.project, directory)?.workspaceId ?? directory
+      return !isWorkspaceReady(workspaceId)
+    })
     const more = createMemo(() => sessionListLoaded()
       ? !!sessionListNextCursor()
       : false)
@@ -2288,7 +2300,9 @@ export function RailSidebar(props: RailSidebarProps) {
           data-testid="project-header"
           data-slot="project-header"
           data-active={active() ? "true" : "false"}
-          class="flex items-center gap-2 min-h-8 pl-3 pr-2.5 py-1 mx-1 group/header cursor-pointer hover:bg-surface-base-hover/30 rounded-md transition-colors duration-100"
+          data-cloud-disconnected={dimmedCloud() ? "true" : undefined}
+          class="flex items-center gap-2 min-h-8 pl-3 pr-2.5 py-1 mx-1 group/header cursor-pointer hover:bg-surface-base-hover/30 rounded-md transition-[colors,opacity] duration-100"
+          classList={{ "opacity-60 hover:opacity-100": dimmedCloud() }}
           onClick={() => {
             setOpen(true)
             props.onWorkspaceSelect?.(section.project, projectActionDirectory())

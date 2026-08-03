@@ -31,6 +31,11 @@ export function startupPipeline(variant: StartupVariant) {
 const STEP_LABELS = {
   stopped: "Starting sandbox",
   acquiring_sandbox: "Acquiring sandbox",
+  // Honest boot modes from the sandbox manager (`bootMode` on the
+  // provisioning response): a returning workspace is restored or resumed, not
+  // "prepared" — say which.
+  restoring_snapshot: "Restoring workspace from snapshot",
+  resuming_sandbox: "Resuming sandbox",
   cloning: "Cloning repository",
   starting_runtime: "Starting runtime",
   waiting_health: "Waiting for health check",

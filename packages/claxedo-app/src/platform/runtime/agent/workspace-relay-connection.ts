@@ -4,6 +4,22 @@ import { queryClient } from "@/platform/query/query-client"
 export type WorkspaceConnectionObserver = {
   onConnected: (info: WorkspaceConnectionInfo) => void
   onFailed: (workspaceId: string) => void
+  /**
+   * A provisioning poll answered with what the sandbox manager is actually
+   * doing — `restore` (booting from the workspace's snapshot), `resume`
+   * (restarting the paused resource), or `cold-start`. Lets the connect UI say
+   * so instead of a generic spinner. Optional and best-effort: older servers
+   * omit `bootMode` and the poll behaves as before.
+   */
+  onProvisioning?: (workspaceId: string, bootMode: WorkspaceBootMode | undefined) => void
+}
+
+export type WorkspaceBootMode = "restore" | "resume" | "cold-start"
+
+function provisioningBootMode(input: { bootMode?: unknown }): WorkspaceBootMode | undefined {
+  return input.bootMode === "restore" || input.bootMode === "resume" || input.bootMode === "cold-start"
+    ? input.bootMode
+    : undefined
 }
 
 let observer: WorkspaceConnectionObserver | undefined
@@ -69,7 +85,7 @@ const PROVISIONING_RETRY_MIN_MS = 500
 const PROVISIONING_RETRY_MAX_MS = 30_000
 const PROVISIONING_RETRY_DEFAULT_MS = 2_000
 
-function isProvisioning(input: unknown): input is { status: "provisioning"; retryAfterMs?: number } {
+function isProvisioning(input: unknown): input is { status: "provisioning"; retryAfterMs?: number; bootMode?: unknown } {
   return !!input
     && typeof input === "object"
     && !Array.isArray(input)
@@ -256,7 +272,7 @@ export async function openWorkspaceConnection(workspaceId: string, options: Opti
   }
 
   const url = workspaceConnectionUrl({ serverUrl: options.serverUrl, workspaceId })
-  const pending: Promise<WorkspaceConnectionInfo> = workspaceConnectionWithRetry(url, options)
+  const pending: Promise<WorkspaceConnectionInfo> = workspaceConnectionWithRetry(url, options, undefined, workspaceId)
     .then((connection) => {
       observer?.onConnected(connection)
       const ttl = connection.tokenExpiresAt - (options.now ?? Date.now)()
@@ -290,7 +306,7 @@ export function forgetWorkspaceConnection(workspaceId: string, options: Options 
   })
 }
 
-async function workspaceConnectionWithRetry(url: URL, options: Options, init?: RequestInit) {
+async function workspaceConnectionWithRetry(url: URL, options: Options, init?: RequestInit, workspaceId?: string) {
   const attempts = options.provisioningMaxAttempts ?? DEFAULT_PROVISIONING_MAX_ATTEMPTS
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const body = await (options.request ?? authFetch)(url, controlPlaneInit(options, init)).then(responseJson)
@@ -299,6 +315,7 @@ async function workspaceConnectionWithRetry(url: URL, options: Options, init?: R
       continue
     }
     if (!isProvisioning(body)) return parseConnection(body)
+    if (workspaceId) observer?.onProvisioning?.(workspaceId, provisioningBootMode(body))
     await sleep(options, provisioningRetryDelay(body.retryAfterMs))
   }
   throw new Error("Workspace runtime is still provisioning")
