@@ -212,23 +212,32 @@ export const locationLayer = Layer.effect(
         const select = Effect.gen(function* () {
           const available = yield* catalog.model.available()
           const defaultModel = session.model ? undefined : yield* catalog.model.default()
-          const selected = session.model
+          return session.model
             ? available.find((model) => model.providerID === session.model?.providerID && model.id === session.model.id)
             : defaultModel && supported(defaultModel)
               ? defaultModel
               : available.find(supported)
-          // `all()`, not `available()`: a config-only catalog whose sole model
-          // is disabled is POPULATED and must fail fast (the location-layer
-          // test pins that); only a catalog with zero models of any kind is
-          // still mid-boot.
-          return { selected, populated: (yield* catalog.model.all()).length > 0 }
         })
-        let { selected, populated } = yield* select
-        // Retry ONLY while the catalog is visibly empty — a missing model in a
-        // populated catalog is a real absence and must fail immediately.
-        for (let waited = 0; !selected && !populated && waited < 20_000; waited += 500) {
+        // The named model existing but DISABLED is the one shape that is a
+        // real absence rather than boot-in-progress (a config'd model with
+        // `disabled: true` never becomes available) — fail that fast. Anything
+        // else that has not selected yet may just be a transform that has not
+        // applied: models-dev merges the full catalog before the opencode
+        // plugin's forked refresh marks the zen provider usable, so both
+        // "model not in the catalog yet" and "model present but its provider
+        // not yet available" occur transiently during a healthy boot.
+        const knownDisabled = Effect.gen(function* () {
+          if (!session.model) return false
+          const known = (yield* catalog.model.all()).find(
+            (model) => model.providerID === session.model?.providerID && model.id === session.model.id,
+          )
+          return known !== undefined && !known.enabled
+        })
+        let selected = yield* select
+        for (let waited = 0; !selected && waited < 20_000; waited += 500) {
+          if (yield* knownDisabled) break
           yield* Effect.sleep("500 millis")
-          ;({ selected, populated } = yield* select)
+          selected = yield* select
         }
         if (!selected && session.model)
           return yield* new ModelUnavailableError({
