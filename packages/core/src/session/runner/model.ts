@@ -13,6 +13,7 @@ import { Credential } from "../../credential"
 import { Integration } from "../../integration"
 import { ModelV2 } from "../../model"
 import { PluginV2 } from "../../plugin"
+import { PluginInternal } from "../../plugin/internal"
 import { ProviderV2 } from "../../provider"
 import { SessionSchema } from "../schema"
 
@@ -201,13 +202,19 @@ export const locationLayer = Layer.effect(
         // selection retries until a model materializes, bounded so a genuinely
         // absent model still fails, just late instead of wrong.
         if (plugins._tag === "Some") {
-          // Cheap first gate; `wait` on an id no composition adds must not
-          // park resolution, hence the timeout.
-          yield* Effect.forEach(
-            ["models-dev", "opencode"],
-            (id) => plugins.value.wait(PluginV2.ID.make(id)).pipe(Effect.timeout("15 seconds"), Effect.ignore),
-            { discard: true },
-          )
+          // The boot-complete sentinel (added after PluginInternal.boot's
+          // State.batch flushes) is the only wait that means "every internal
+          // plugin's catalog transform has APPLIED". Waiting on individual
+          // plugins is wrong in a subtle way: their waiters fire inside the
+          // batch, before any reload — with only models-dev merged, providers
+          // whose plugin sets `integrationID` (anthropic, openai, …) still
+          // look credential-free and AVAILABLE, so the no-model default path
+          // picks whichever paid model is newest and the turn dies on the
+          // provider's 401 — the staging smoke hit exactly that. The timeout
+          // keeps a composition without internal plugins from parking here.
+          yield* plugins.value
+            .wait(PluginV2.ID.make(PluginInternal.BOOT_COMPLETE_PLUGIN_ID))
+            .pipe(Effect.timeout("15 seconds"), Effect.ignore)
         }
         const select = Effect.gen(function* () {
           const available = yield* catalog.model.available()

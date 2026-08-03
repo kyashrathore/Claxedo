@@ -60,6 +60,16 @@ export function define<R>(plugin: Plugin<R>) {
   return plugin
 }
 
+/**
+ * Boot-completion sentinel. Added OUTSIDE the boot batch, so
+ * `Plugin.wait(BOOT_COMPLETE_PLUGIN_ID)` resolves only after every internal
+ * plugin's transforms have been applied to the materialized state — the
+ * per-plugin waits fire inside the batch, before any reload has run, and are
+ * therefore not catalog-readiness signals.
+ */
+export const BOOT_COMPLETE_PLUGIN_ID = "core/boot-complete"
+const BootCompletePlugin = define({ id: BOOT_COMPLETE_PLUGIN_ID, effect: () => Effect.void })
+
 const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const catalog = yield* Catalog.Service
@@ -105,29 +115,42 @@ const layer = Layer.effectDiscard(
       return plugin.add(PluginV2.ID.make(loaded.id), loaded.effect)
     }
 
-    // Deliberately NOT wrapped in one outer State.batch. Each add() batches
-    // its own transforms, so a plugin's state is APPLIED before its waiters
-    // wake. An outer batch deferred every reload to the end of boot while
-    // Plugin.wait() resolved per-plugin inside it — so a session-runner
-    // resolve gated on "variant" read a catalog where models-dev's models
-    // were half-visible and their integrations were not, picked a paid
-    // provider as available, and the first prompt of a fresh engine died on
-    // the provider's 401. Per-add reloads cost a handful of extra state
-    // rebuilds exactly once per location boot.
-    yield* Effect.gen(function* () {
-      yield* add(ConfigReferencePlugin.Plugin)
-      yield* add(AgentPlugin.Plugin)
-      yield* add(CommandPlugin.Plugin)
-      yield* add(SkillPlugin.Plugin)
-      yield* add(ModelsDevPlugin)
-      yield* add(ConfigAgentPlugin.Plugin)
-      yield* add(ConfigCommandPlugin.Plugin)
-      yield* add(ConfigSkillPlugin.Plugin)
-      for (const item of ProviderPlugins) yield* add(item)
-      yield* add(ConfigExternalPlugin.Plugin)
-      yield* add(ConfigProviderPlugin.Plugin)
-      yield* add(VariantPlugin.Plugin)
-    }).pipe(Effect.withSpan("PluginInternal.boot"), Effect.forkScoped({ startImmediately: true }))
+    // The batch is load-bearing for COST: without it every add() reloads the
+    // catalog/integration state, re-running every previously registered
+    // transform — O(N²) with the models-dev full-merge dominating each pass,
+    // which 2-core CI runners cannot absorb (the `opencode run` subprocess
+    // suite timed out wholesale when this ran unbatched). But the batch also
+    // means Plugin.wait() resolves per-plugin BEFORE any state has applied,
+    // so "wait for plugin X" is useless as a catalog-readiness gate: a
+    // session-runner resolve gated on the last plugin still read a catalog
+    // where models-dev's models were half-visible and their integrations were
+    // not, picked a paid provider as available, and the first prompt of a
+    // fresh engine died on the provider's 401.
+    //
+    // Hence the sentinel: State.batch flushes its reloads before returning,
+    // so a no-op plugin added AFTER the batch wakes its waiters only once
+    // every boot transform is applied and consistent. The session runner
+    // gates its first catalog read on it.
+    yield* State.batch(
+      Effect.gen(function* () {
+        yield* add(ConfigReferencePlugin.Plugin)
+        yield* add(AgentPlugin.Plugin)
+        yield* add(CommandPlugin.Plugin)
+        yield* add(SkillPlugin.Plugin)
+        yield* add(ModelsDevPlugin)
+        yield* add(ConfigAgentPlugin.Plugin)
+        yield* add(ConfigCommandPlugin.Plugin)
+        yield* add(ConfigSkillPlugin.Plugin)
+        for (const item of ProviderPlugins) yield* add(item)
+        yield* add(ConfigExternalPlugin.Plugin)
+        yield* add(ConfigProviderPlugin.Plugin)
+        yield* add(VariantPlugin.Plugin)
+      }),
+    ).pipe(
+      Effect.andThen(add(BootCompletePlugin)),
+      Effect.withSpan("PluginInternal.boot"),
+      Effect.forkScoped({ startImmediately: true }),
+    )
   }),
 )
 
