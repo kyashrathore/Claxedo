@@ -269,7 +269,8 @@ describe("owner_subject survives the whole lease lifecycle", () => {
       reason: "explicit_release",
     })
     // `owner_subject` is a cap key, not a metering column, and never leaks into
-    // the fact row.
-    expect(events[0]!.owner_subject).toBeUndefined()
+    // the fact row. `in` rather than property access: the schema type has no
+    // such field, which is the point — the check is against the raw row.
+    expect("owner_subject" in events[0]!).toBe(false)
   })
 })

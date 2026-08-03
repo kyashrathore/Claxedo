@@ -65,7 +65,7 @@
     "stress:workgraph": "node ./node_modules/vitest/vitest.mjs run --config vitest.stress.config.ts --reporter=default",
     "check:package-boundary": "bun run scripts/maintenance/check-package-boundary.ts",
     "maintenance:normalize-sandbox-leases": "bun run scripts/maintenance/normalize-convex-sandbox-leases.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.convex-tests.json",
     "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit.xml && bun run test:convex",
     "test:convex": "node ./node_modules/vitest/vitest.mjs run --config vitest.convex.config.ts --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit-convex.xml",
     "test:live-ui": "node --import tsx scripts/sandbox/live/live-ui-test.ts",

@@ -21,5 +21,12 @@
     "noEmit": true,
   },
   "include": ["./**/*"],
-  "exclude": ["./_generated"]
+  // *.test.ts is excluded because this project is what `convex deploy
+  // --typecheck enable` runs, and the deploy environment cannot resolve
+  // `vitest`/`convex-test` (they live in packages/claxedo-server, which owns
+  // the test runner — see its vitest.convex.config.ts). The bundler never
+  // deploys these files anyway (multi-dot names are skipped). The tests are
+  // still typechecked: packages/claxedo-server/tsconfig.convex-tests.json
+  // covers them as part of that package's `typecheck` script.
+  "exclude": ["./_generated", "./**/*.test.ts"]
 }

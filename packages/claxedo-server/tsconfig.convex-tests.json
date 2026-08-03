@@ -1,0 +1,33 @@
+{
+  // Typechecks the repo-root convex/*.test.ts suites, which convex/tsconfig.json
+  // deliberately excludes: that project is what `convex deploy --typecheck
+  // enable` runs, and the deploy environment cannot resolve vitest/convex-test.
+  // This package owns both deps (vitest.convex.config.ts is the runner), so the
+  // types resolve here. Wired into this package's `typecheck` script so a type
+  // error in a policy test still fails CI.
+  //
+  // Compiler options mirror convex/tsconfig.json (the environment the functions
+  // and their tests actually run in), not this package's Node config.
+  "compilerOptions": {
+    "allowJs": true,
+    "strict": true,
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ESNext",
+    "lib": ["ES2023", "dom"],
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "isolatedModules": true,
+    "noEmit": true,
+    // Resolution starts from the importing file (repo-root convex/), where
+    // neither dep is hoisted — point both at this package's copies, mirroring
+    // the resolve.alias in vitest.convex.config.ts.
+    "paths": {
+      "vitest": ["./node_modules/vitest"],
+      "convex-test": ["./node_modules/convex-test"]
+    }
+  },
+  "include": ["../../convex/**/*.test.ts"]
+}
