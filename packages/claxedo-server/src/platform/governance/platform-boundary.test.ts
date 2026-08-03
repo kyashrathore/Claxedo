@@ -74,10 +74,11 @@ describe("platform boundary", () => {
       .filter((file) => file.endsWith(".test.ts"))
       .flatMap(escapes)
 
-    // 37 -> 38 for governance/no-declare-class-fields.test.ts. The escape it
-    // adds is `test-support/guards`, the shared walker every guard in this
+    // 37 -> 38 for governance/no-declare-class-fields.test.ts, 38 -> 39 for
+    // governance/lazy-import-specifiers-resolve.test.ts. The escape each adds
+    // is `test-support/guards`, the shared walker every guard in this
     // directory imports — not a domain dependency, which is what the count is
     // watching for.
-    expect(offenders.length).toBeLessThanOrEqual(38)
+    expect(offenders.length).toBeLessThanOrEqual(39)
   })
 })
