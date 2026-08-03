@@ -501,7 +501,7 @@ describe("workspace runtime route audit", () => {
   test("workspace mutation UIs are gated by backend-derived role policy", async () => {
     const networkPolicy = await Bun.file(path.join(root, networkPolicySettings)).text()
     const serverPolicyTest = await Bun.file(
-      path.join(root, "..", "..", "convex/agent-extensions.policy.test.ts"),
+      path.join(root, "..", "..", "..", "convex/agent-extensions.policy.test.ts"),
     ).text()
     const serverRouteTest = await Bun.file(
       path.join(root, "..", "..", "claxedo-server/src/agent-config/routes/extensions.test.ts"),
