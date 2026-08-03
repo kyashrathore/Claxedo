@@ -124,7 +124,7 @@ export async function startSandbox(
     const result = await (
       await createSupervisorSandboxManager(state, driverId)
     ).ensure(state.ws.id, {
-      // Was hardcoded "us-east" (W6b.3). This is the sole non-test producer of a
+      // Was hardcoded "us-east". This is the sole non-test producer of a
       // workspace's home region, and the relay now derives its Durable Object
       // location hint from that region — a hint fixed at first DO creation and
       // never migrated. So a hardcoded "us-east" would permanently pin every

@@ -4,7 +4,7 @@
  * - Hosted/cloud: envelope-encrypted Cloudflare KV (when CLAXEDO_CF_KV_URL is
  *   set). MANDATORY encryption: constructing the KV backend without a KEK
  *   (CLAXEDO_CREDENTIALS_KEK) throws — a hosted deployment missing its
- *   encryption key must be down, not storing plaintext (launch-plan D10/I-5).
+ *   encryption key must be down, not storing plaintext (invariant I-5).
  *   The partition defaults to "deployment" for this single-tenant Node path;
  *   set CLAXEDO_CREDENTIALS_ORG_ID to name it explicitly.
  * - Local desktop: encrypted file store under ~/.claxedo/credentials/

@@ -519,7 +519,7 @@ describe("credential routes", () => {
    * `kind` is what tells the cloud-sharing step which credentials can legitimately
    * run in a sandbox: a discovered Claude subscription login is an 8-hour token
    * owned by another process, and offering it for materialization is the defect
-   * A1 closes. The client cannot make that distinction from `provider_id` alone,
+   * this closes. The client cannot make that distinction from `provider_id` alone,
    * so every credential the route serializes must carry its kind.
    */
   test("every serialized credential carries its kind, on the list and by-provider routes", async () => {

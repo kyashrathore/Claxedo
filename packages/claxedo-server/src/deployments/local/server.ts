@@ -920,7 +920,7 @@ export function createDefaultLocalControlPlaneServices() {
   const authorityUrl = convexAuthorityUrlFromEnv(process.env)
   const embeddedAuth = embeddedAuthEnabled(process.env)
   if (deploymentMode(process.env) === "hosted") {
-    // D9 fail-closed hosted boot: CLAXEDO_DEPLOYMENT_MODE=hosted REFUSES to
+    // Fail-closed hosted boot: CLAXEDO_DEPLOYMENT_MODE=hosted REFUSES to
     // start unless signed auth is fully configured and a workspace authority
     // is resolved — one thrown error naming every missing piece. A hosted
     // deployment that cannot authenticate must be down, not open; absent

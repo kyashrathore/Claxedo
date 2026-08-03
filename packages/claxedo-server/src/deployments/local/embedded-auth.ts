@@ -9,7 +9,7 @@ import { dataDir } from "../../platform/runtime/lib/paths"
 import type { BetterAuthVerifier } from "../../platform/auth/auth"
 
 /**
- * Embedded Better Auth for self-host boxes (W1 of the self-host/hosted-parity
+ * Embedded Better Auth for self-host boxes (part of the self-host/hosted-parity
  * plan): real signup/login (signed mode) with NO Convex/Clerk.
  *
  * - Users/sessions live in a dedicated SQLite file under `dataDir()`

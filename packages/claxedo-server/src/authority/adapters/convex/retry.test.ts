@@ -1,5 +1,5 @@
 /**
- * W4.1 acceptance: retries with jitter, on idempotent operations ONLY.
+ * Retries with jitter, on idempotent operations ONLY.
  *
  * The two claims that need teeth, and each carries its positive control in the
  * same test:
@@ -47,7 +47,7 @@ function serverError(status: 403 | 503) {
   return new ControlPlaneAuthError(status, "workspace_authority_unavailable", `upstream ${status}`)
 }
 
-describe("W4.1 Convex retry eligibility", () => {
+describe("Convex retry eligibility", () => {
   test("a read that 5xxs once then succeeds succeeds with exactly one retry", async () => {
     const attempt = vi.fn()
       .mockRejectedValueOnce(serverError(503))

@@ -1,5 +1,5 @@
 /**
- * W5 metering events — sandbox compute, AI tokens, activation.
+ * Metering events — sandbox compute, AI tokens, activation.
  *
  * These are the two cost questions ("how much sandbox compute does my average
  * user consume?", "how many AI tokens?") plus the activation moment that makes

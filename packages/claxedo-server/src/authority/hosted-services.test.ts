@@ -293,7 +293,7 @@ describe("hosted service composition", () => {
       CLAXEDO_CONNECTION_RATE_LIMIT_WINDOW_MS: "15000",
       CLAXEDO_CONTROL_PLANE_RATE_LIMIT: "17",
       CLAXEDO_CONTROL_PLANE_RATE_LIMIT_WINDOW_MS: "45000",
-      // W3.2 default request guard knobs. The window is parsed like any other
+      // Default request guard knobs. The window is parsed like any other
       // here; the operational requirement that PRODUCTION keep it at 60s (so the
       // local fuse and the Cloudflare binding's fixed period mean the same
       // minute) is a config invariant asserted by rate-limit-config-drift.test.ts,

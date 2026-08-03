@@ -170,7 +170,7 @@ describe("resolveRelease", () => {
 })
 
 describe("deploymentModeTag", () => {
-  test("absent mode = local (D9 default); hosted passes through lowercased", () => {
+  test("absent mode = local (default); hosted passes through lowercased", () => {
     expect(deploymentModeTag({})).toBe("local")
     expect(deploymentModeTag({ CLAXEDO_DEPLOYMENT_MODE: "HOSTED" })).toBe("hosted")
   })

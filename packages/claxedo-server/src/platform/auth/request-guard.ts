@@ -5,7 +5,7 @@
  *
  * ## Why default-on rather than per-route
  *
- * The pre-W3 posture was opt-in, and the result is the finding this fixes: nine
+ * The previous posture was opt-in, and the result is the finding this fixes: nine
  * routes threaded a limiter and roughly fifty did not — `/api/workgraph/*`, the
  * documents routes, and checkpoint/lifecycle (including destroy) had nothing at
  * all. Opt-in security is a per-route review item that fails silently the first

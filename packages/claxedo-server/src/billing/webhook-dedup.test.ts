@@ -124,7 +124,7 @@ function isolate(input: { store: BillingStore; idempotencyStore?: DurableIdempot
   })
 }
 
-describe("W4.3 Polar webhook dedup on webhook-id", () => {
+describe("Polar webhook dedup on webhook-id", () => {
   test("a redelivery of the same webhook-id applies ONCE across two isolates", async () => {
     const billing = fakeStore()
     const idempotency = fakeIdempotencyStore()

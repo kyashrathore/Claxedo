@@ -39,7 +39,7 @@ export function sandboxRelayTargetLookup(input: {
       // Touch telemetry is operational evidence; it must never break routing.
     }
   }
-  // W5 (metric spec §4.2): a touch that finds the lease no longer serving is
+  // Metric spec §4.2: a touch that finds the lease no longer serving is
   // the moment the relay LEARNS an interval ended without anyone asking for it
   // — the idle path. The relay resolves targets for a tunnel and holds no
   // session identity, so this lands on the ops plane; the authoritative

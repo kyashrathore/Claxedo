@@ -3,7 +3,7 @@ import { customerStateToApplyArgs, subscriptionEventToApplyArgs, webhookEventToA
 import { polarProductConfig } from "./routes"
 
 /**
- * D5 payload translation: Polar wire/SDK payloads → the normalized org-state
+ * Payload translation: Polar wire/SDK payloads → the normalized org-state
  * writes the single Convex writer applies. Wire fixtures use Polar's
  * snake_case JSON; SDK-shaped fixtures use camelCase + Date to prove the
  * reconciliation path shares the module.
@@ -119,7 +119,7 @@ describe("customer.state_changed translation", () => {
     })
   })
 
-  describe("F19: a payload with no usable source timestamp is rejected, never stamped now()", () => {
+  describe("A payload with no usable source timestamp is rejected, never stamped now()", () => {
     test("no customer modified_at AND no subscription timestamps → undefined (replay guard preserved)", () => {
       const args = customerStateToApplyArgs({ id: "cus_1", active_subscriptions: [] }, PRODUCTS)
       expect(args).toBeUndefined()

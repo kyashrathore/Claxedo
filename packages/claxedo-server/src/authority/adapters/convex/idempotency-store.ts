@@ -9,7 +9,7 @@
  *
  * These three mutations all carry an idempotency-shaped argument
  * (`cache_key` + `fingerprint`) and are safe to replay, so they inherit the
- * W4.1 executor retry when routed through `requireExecutor`. Here they are
+ * Executor retry when routed through `requireExecutor`. Here they are
  * called directly with a service token, so the retry is applied explicitly.
  */
 

@@ -152,7 +152,7 @@ describe("hosted sandbox admin routes", () => {
   })
 
   test("GC on a listing-incapable driver fails loudly instead of 200-ing an empty sweep", async () => {
-    // W1.3 positive control. `fakeDriver` has no `list()` — the shape of the
+    // Positive control. `fakeDriver` has no `list()` — the shape of the
     // real Cloudflare driver. Before the fix this returned 200 with four empty
     // arrays, which reads to an operator (and to the cron) as "swept, nothing
     // orphaned" when in fact nothing was ever looked at.

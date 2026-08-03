@@ -1,5 +1,5 @@
 /**
- * W4 acceptance: a hanging Convex fails FAST with a 503 instead of holding the
+ * A hanging Convex fails FAST with a 503 instead of holding the
  * request.
  *
  * ## Why this is worth its own test
@@ -45,7 +45,7 @@ function executor() {
   return requireExecutor({ url: "https://convex.test" }, undefined, { allowUnsigned: true })
 }
 
-describe("W4 fault injection: a hanging Convex", () => {
+describe("Fault injection: a hanging Convex", () => {
   afterEach(() => {
     globalThis.fetch = originalFetch
     vi.useRealTimers()
@@ -134,7 +134,7 @@ describe("W4 fault injection: a hanging Convex", () => {
     // Two attempts REACHED THE NETWORK, which is a stronger claim than "retry
     // was attempted" and is what this assertion is really for.
     //
-    // This test caught a live bug during W4.1: `ConvexHttpClient.mutation`
+    // This test caught a live bug: `ConvexHttpClient.mutation`
     // queues on the client instance and drains serially, and `withTimeout` does
     // not cancel the fetch — so a retry issued on the same client sat in the
     // queue behind the still-hung first request and `calls.count` stayed at 1.

@@ -88,7 +88,7 @@ function executor(url: string, token?: string, retryOptions?: ConvexRetryOptions
   //
   // setAuth mutates client state, so a URL-keyed shared client could send one
   // principal's bearer token on another request — that is why the client was
-  // already per-call. The per-ATTEMPT part is a W4.1 requirement on top:
+  // already per-call. The per-ATTEMPT part is a retry requirement on top:
   // `ConvexHttpClient.mutation` QUEUES on the client instance
   // (`convex/dist/.../http_client.js` `enqueueMutation`/`processMutationQueue`)
   // and drains it serially. Since `withTimeout` does not cancel the underlying

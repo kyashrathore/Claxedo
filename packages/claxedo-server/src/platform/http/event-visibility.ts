@@ -50,7 +50,7 @@ export function eventScopePrincipal(
   }
 }
 
-// Rubric S1 + per-event authorization: authenticating a subscriber is not
+// Per-event authorization: authenticating a subscriber is not
 // enough — the bus is server-global, so without a per-event filter any valid
 // bearer (any user, any org) would observe every other tenant's events.
 // Allowlist with default-deny: an event type is only delivered to a signed

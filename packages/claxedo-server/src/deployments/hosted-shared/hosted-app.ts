@@ -130,7 +130,7 @@ export type HostedAppOverrides = {
    */
   liveSyncRoom?: LiveSyncRoomNamespace
   /**
-   * W3.1 cross-isolate rate-limit store for the default request guard.
+   * Cross-isolate rate-limit store for the default request guard.
    *
    * Present on the Cloudflare Worker (adapted from the `[[ratelimits]]`
    * binding); ABSENT on Node/self-host and in tests, where the per-isolate fuse
@@ -201,7 +201,7 @@ function corsMiddleware(appOriginAllowed: (origin: string) => boolean, originPat
 }
 
 /**
- * D9 fail-closed hosted boot assertion (runs for BOTH hosted entrypoints —
+ * Fail-closed hosted boot assertion (runs for BOTH hosted entrypoints —
  * the Cloudflare Worker `worker.ts` and the Node container `hosted-node.ts`).
  * `composeHostedControlPlane` already fails closed per-piece on missing env
  * (auth, authority, relay, resolver, signing key); this asserts the parts the
@@ -596,7 +596,7 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
     })
   }
 
-  // WP-BILLING (D4, ADR 014 addendum): Polar webhook + checkout + portal live
+  // Billing (ADR 014 addendum): Polar webhook + checkout + portal live
   // on the CF Worker; all Polar code is confined to src/billing/** (enforced
   // by billing-architecture.test.ts). Unconfigured deployments keep the
   // routes mounted but every surface fails closed (503) at request time.

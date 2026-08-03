@@ -1,5 +1,5 @@
 /**
- * W3.2 default request guard behavior: the body cap, the IP-keyed rate limit,
+ * Default request guard behavior: the body cap, the IP-keyed rate limit,
  * the exemption registry, and the ordering between them.
  *
  * `route-guard-inventory.test.ts` asserts the guard reaches every mounted route;
@@ -35,7 +35,7 @@ function limiter(limit: number) {
 const post = (app: Hono, path: string, body: string, headers: Record<string, string> = {}) =>
   app.fetch(new Request(`http://cp.test${path}`, { method: "POST", body, headers }))
 
-describe("W3.2 default body cap", () => {
+describe("Default body cap", () => {
   test("a body over the cap is rejected 413 with a structured error", async () => {
     const app = guardedApp({ maxBodyBytes: 1_024 })
     const response = await post(app, "/echo", "x".repeat(1_025))
@@ -80,7 +80,7 @@ describe("W3.2 default body cap", () => {
   })
 })
 
-describe("W3.2 default rate limit", () => {
+describe("Default rate limit", () => {
   test("requests over the limit are rejected 429 with Retry-After", async () => {
     const app = guardedApp({ rateLimiter: limiter(2) })
     const send = () => app.fetch(new Request("http://cp.test/read", { headers: { "cf-connecting-ip": "198.51.100.9" } }))
@@ -159,7 +159,7 @@ describe("W3.2 default rate limit", () => {
   })
 })
 
-describe("W3.2 client key derivation", () => {
+describe("Client key derivation", () => {
   const keyFor = async (headers: Record<string, string>) => {
     let seen: string | undefined
     const app = new Hono()

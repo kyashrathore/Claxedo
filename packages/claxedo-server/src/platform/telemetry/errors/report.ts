@@ -1,5 +1,5 @@
 /**
- * Runtime-neutral error-reporting seam (D12, ops-floor decision: unattended
+ * Runtime-neutral error-reporting seam (ops-floor decision: unattended
  * detection and grouping is the binding requirement for a solo-operator
  * on-call).
  *

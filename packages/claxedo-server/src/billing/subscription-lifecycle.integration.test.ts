@@ -12,7 +12,7 @@ import { hostedConnectionInfo } from "../connections/hosted-connection-info"
 import type { ClerkVerifier, ControlPlaneAuthConfig, SignedControlPlaneAuth } from "../platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
-// REAL Convex billing + orgs handlers — the same in-memory harness the D5/D6
+// REAL Convex billing + orgs handlers — the same in-memory harness the billing
 // policy suite exercises (convex-billing-policy.test.ts). Nothing here re-mocks
 // billing logic: the store adapter below drives these against ONE shared db.
 import { applyPolarState, checkoutContext, entitlementState } from "../../../../convex/billing"
@@ -180,7 +180,7 @@ const store: BillingStore = {
 }
 
 // The Polar SDK client — MOCKED (network boundary #1). Reused across the whole
-// lifecycle so checkout call counts accumulate on ONE spy (F2 assertion).
+// lifecycle so checkout call counts accumulate on ONE spy.
 const polar = {
   checkouts: {
     create: vi.fn(async () => ({ id: "chk_life", url: "https://polar.sh/checkout/chk_life" })),
@@ -300,7 +300,7 @@ describe("cloud subscription lifecycle (integration rehearsal)", () => {
     expect(denied?.code).toBe("billing_entitlement_required")
   })
 
-  test("2. subscribe (trial): owner checkout keys org_{id} (F9); trialing webhook flips the mirror to pro", async () => {
+  test("2. subscribe (trial): owner checkout keys org_{id}; trialing webhook flips the mirror to pro", async () => {
     // ── /checkout: real route, real admin/seat context, mocked Polar ──────────
     const res = await billingApp().request(checkoutRequest("alice@org_a", { plan: "monthly" }))
     expect(res.status).toBe(200)
@@ -310,7 +310,7 @@ describe("cloud subscription lifecycle (integration rehearsal)", () => {
     expect(polar.checkouts.create).toHaveBeenCalledWith(
       expect.objectContaining({
         products: ["prod_monthly"],
-        externalCustomerId: `org_${orgDocId}`, // F9: keyed on the ORG, not the admin
+        externalCustomerId: `org_${orgDocId}`, // Keyed on the ORG, not the admin
         metadata: { org_id: orgDocId },
       }),
       // The interactive deadline rides every user-facing Polar call.
@@ -373,12 +373,12 @@ describe("cloud subscription lifecycle (integration rehearsal)", () => {
     expect(result).toMatchObject({ connection: { status: "provisioning" } })
   })
 
-  test("4. seat limit (F1): 2nd member syncs cleanly, then entitlement DENIES seat_over_capacity", async () => {
+  test("4. seat limit: 2nd member syncs cleanly, then entitlement DENIES seat_over_capacity", async () => {
     await handler(applyClerkWebhook)({ db }, {
       type: "user.created",
       data: { id: "bob", email_addresses: [{ email_address: "bob@acme.test" }], first_name: "Bob" },
     })
-    // The mirror must NOT throw on an over-seat join (F1 regression).
+    // The mirror must NOT throw on an over-seat join (regression).
     await expect(
       handler(applyClerkWebhook)({ db }, {
         type: "organizationMembership.created",
@@ -407,7 +407,7 @@ describe("cloud subscription lifecycle (integration rehearsal)", () => {
     expect(seatless).toEqual({ entitled: true, status: "active" })
   })
 
-  test("5. already-subscribed guard (F2): a 2nd checkout is 409 with NO new Polar call", async () => {
+  test("5. already-subscribed guard: a 2nd checkout is 409 with NO new Polar call", async () => {
     const callsBefore = polar.checkouts.create.mock.calls.length
     const res = await billingApp().request(checkoutRequest("alice@org_a", { plan: "monthly" }))
     expect(res.status).toBe(409)
@@ -435,7 +435,7 @@ describe("cloud subscription lifecycle (integration rehearsal)", () => {
     expect(state).toMatchObject({ found: true, plan: "free", subscription_status: "canceled" })
   })
 
-  test("7. revoke (F3): canceled org is DENIED at BOTH create-decision and wake route", async () => {
+  test("7. revoke: canceled org is DENIED at BOTH create-decision and wake route", async () => {
     // Create-side decision (choke point #1 predicate).
     const denied = await entitlementThrow({ orgId: orgDocId })
     expect(denied?.code).toBe("billing_entitlement_required")
@@ -457,7 +457,7 @@ describe("cloud subscription lifecycle (integration rehearsal)", () => {
     expect(ensure).not.toHaveBeenCalled()
   })
 
-  test("8. F6 sanity: a reconciliation confirming unchanged state clears the reconcile flag", async () => {
+  test("8. sanity: a reconciliation confirming unchanged state clears the reconcile flag", async () => {
     const orgRow = db.rows.orgs!.find((row) => row._id === orgDocId)!
     orgRow.billing_reconcile_flagged_at = 999_999
     const anchoredTs = orgRow.polar_state_modified_at as number

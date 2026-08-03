@@ -67,7 +67,7 @@ describe("hosted Node entrypoint", () => {
     })
   })
 
-  test("D9: refuses to compose when CLAXEDO_DEPLOYMENT_MODE=hosted is not declared", () => {
+  test("Refuses to compose when CLAXEDO_DEPLOYMENT_MODE=hosted is not declared", () => {
     expect(() => createHostedNodeApp(env({ CLAXEDO_DEPLOYMENT_MODE: undefined }))).toThrowError(
       /CLAXEDO_DEPLOYMENT_MODE=hosted/,
     )

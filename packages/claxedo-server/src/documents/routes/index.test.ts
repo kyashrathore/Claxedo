@@ -658,7 +658,7 @@ describe("DocumentsRoutes", () => {
     )).status).toBe(401)
   })
 
-  test("fails honestly when a hosted composition has not supplied D11 storage", async () => {
+  test("fails honestly when a hosted composition has not supplied storage", async () => {
     const unavailable = new Hono().route(
       "/documents",
       DocumentsRoutes({

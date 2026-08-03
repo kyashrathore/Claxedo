@@ -150,7 +150,7 @@ describe("user-hosted Workspace Relay tunnel manager", () => {
       workspaceIds: ["ws_local"],
       localBaseUrl: "http://127.0.0.1:3001/workspaces/ws_local",
       // Forwarded so the relay can place this workspace's Durable Object near its
-      // users rather than on the deployment-wide default hint (W6b.3). A local
+      // users rather than on the deployment-wide default hint. A local
       // workspace has no sandbox lease, so this is the configured default.
       region: "us-east",
       tokenProvider: expect.any(Function),

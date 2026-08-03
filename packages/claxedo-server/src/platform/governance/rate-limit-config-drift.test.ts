@@ -1,5 +1,5 @@
 /**
- * Config drift guard for the W3.1 shared rate-limit binding.
+ * Config drift guard for the shared rate-limit binding.
  *
  * Wrangler does NOT inherit bindings into named environments. Three config bugs
  * in the 2026-07-28 CF review were all "a value nobody noticed was missing", and

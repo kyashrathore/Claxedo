@@ -270,11 +270,11 @@ const HEARTBEAT_MS = 30_000
 // Its one live consumer is the Node hosted composition (`hosted-node.ts`), which
 // passes no `liveSyncRoom`. That composition is documented as multi-instance by
 // design and single-instance in practice (`docs/plans/
-// 2026-07-18-001-cf-deployment-hardening.md` W6.2 — per-instance live-sync via a
+// 2026-07-18-001-cf-deployment-hardening.md` — per-instance live-sync via a
 // Convex subscription — is unbuilt), so even once it HAS a publisher, a
 // module-singleton ring would be the wrong shape for it: with N instances the
 // ring an isolate fills is not the ring the next reconnect reads. Its resumable
-// story arrives with W6.2's cross-instance fan-out, not before.
+// story arrives with the cross-instance fan-out, not before.
 //
 // The bootstrap frame still echoes the caller's cursor so the wire contract
 // matches the Worker path and a reconnect cannot silently rewind a client's
@@ -355,7 +355,7 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
     }
   }
   return new Hono()
-    // Rubric S1 (mirrors routes/events.ts): every bus subscriber passes the
+    // Mirrors routes/events.ts: every bus subscriber passes the
     // same control-plane auth gate as the other claxedo routes. There is no
     // loopback bypass on a hosted central.
     .get("/api/claxedo/events", events)

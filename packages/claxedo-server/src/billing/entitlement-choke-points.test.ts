@@ -5,11 +5,11 @@ import type { ControlPlaneServices } from "../authority/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 
 /**
- * D6/B4 choke point #1: hosted cloud-workspace creation (ADR 014 §5 — the
+ * Choke point #1: hosted cloud-workspace creation (ADR 014 §5 — the
  * paid capability list). The route consults the composed entitlement hook
  * BEFORE any workspace doc or sandbox exists; a denial creates nothing.
  * (Choke point #2, the connections-host gate, is covered in
- * hosts/connections/index.test.ts alongside the D7 partition tests.)
+ * hosts/connections/index.test.ts alongside the partition tests.)
  */
 
 const authConfig = {

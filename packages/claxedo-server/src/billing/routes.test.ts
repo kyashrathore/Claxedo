@@ -4,9 +4,9 @@ import type { BillingStore } from "./store"
 import { signStandardWebhook } from "./standard-webhooks"
 
 /**
- * Worker billing routes (D4; ADR 014 addendum — Option B):
+ * Worker billing routes (ADR 014 addendum — Option B):
  * Webhook signature accept/reject, checkout auth + seat floor + lazy customer
- * linkage, portal. Polar is a structural fake (no live Polar, per S2 gating);
+ * linkage, portal. Polar is a structural fake (no live Polar);
  * the Convex store is a fake of the billing-store port.
  */
 
@@ -165,7 +165,7 @@ describe("POST /polar/webhook", () => {
     expect(store.applyPolarState).not.toHaveBeenCalled()
   })
 
-  test("F19: customer.state_changed with no usable source timestamp is acked 202 without a write", async () => {
+  test("Customer.state_changed with no usable source timestamp is acked 202 without a write", async () => {
     const store = fakeStore()
     // No customer modified_at and no subscription timestamps: the replay guard
     // cannot be anchored, so the state must NOT be stamped with now() and
@@ -210,7 +210,7 @@ describe("POST /checkout", () => {
     expect(await res.json()).toMatchObject({ error: { code: "billing_admin_required" } })
   })
 
-  test("F9: owner checkout keys external_customer_id on the ORG (org_{id}), not the admin subject; metadata.org_id rides", async () => {
+  test("Owner checkout keys external_customer_id on the ORG (org_{id}), not the admin subject; metadata.org_id rides", async () => {
     const polar = fakePolar()
     const res = await app({ polar }).request(post("alice@org_a", { plan: "yearly", seats: 5 }))
     expect(res.status).toBe(200)
@@ -227,7 +227,7 @@ describe("POST /checkout", () => {
     )
   })
 
-  test("F9: a second, different admin of the same org resolves the SAME org-scoped customer id", async () => {
+  test("A second, different admin of the same org resolves the SAME org-scoped customer id", async () => {
     const polar = fakePolar()
     // Both admins' checkoutContext resolves the same org_doc_1 (fakeStore), so
     // the external id must be identical regardless of which human checks out.
@@ -237,7 +237,7 @@ describe("POST /checkout", () => {
     expect(externalIds).toEqual(["org_org_doc_1", "org_org_doc_1"])
   })
 
-  test("F2: an org with a live subscription is blocked from a second checkout (409, no Polar call)", async () => {
+  test("An org with a live subscription is blocked from a second checkout (409, no Polar call)", async () => {
     for (const status of ["active", "trialing", "past_due"]) {
       const polar = fakePolar()
       const store = fakeStore({
@@ -257,7 +257,7 @@ describe("POST /checkout", () => {
     }
   })
 
-  test("F2: a free/canceled org still proceeds to checkout", async () => {
+  test("A free/canceled org still proceeds to checkout", async () => {
     const polar = fakePolar()
     const store = fakeStore({
       checkoutContext: vi.fn(async () => ({
@@ -323,7 +323,7 @@ describe("POST /portal", () => {
     expect(await res.json()).toEqual({ url: "https://polar.sh/portal/cs_1" })
   })
 
-  test("F9: portal resolves the ORG-scoped customer — a non-purchasing admin reaches the same customer", async () => {
+  test("Portal resolves the ORG-scoped customer — a non-purchasing admin reaches the same customer", async () => {
     const polar = fakePolar()
     const res = await app({ polar }).request(post("bob@org_a"))
     expect(res.status).toBe(200)

@@ -1,5 +1,5 @@
 /**
- * W4.4 acceptance: two concurrent `scheduled()` invocations run the reconcile
+ * Two concurrent `scheduled()` invocations run the reconcile
  * body ONCE, and a dead holder's lease expires so the next tick proceeds.
  *
  * ## Why this needs a lease at all
@@ -82,7 +82,7 @@ function isolate(input: {
   )
 }
 
-describe("W4.4 fenced cron lease", () => {
+describe("Fenced cron lease", () => {
   test("two concurrent scheduled() invocations run the reconcile body ONCE", async () => {
     const lease = fakeLeaseStore()
     const started = { count: 0 }

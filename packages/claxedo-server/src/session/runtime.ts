@@ -342,7 +342,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     const credential = turnCredentials.mint(input)
     return turnCredentials.run(credential, fn)
   }
-  // W5 turn metering (metric spec §4.3, §4.5).
+  // Turn metering (metric spec §4.3, §4.5).
   //
   // The turn credential is the only identity that reaches this far in: the
   // signed request is several layers above, and by the time a message
@@ -571,7 +571,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
 
   /**
    * The single ingress every compat event crosses on its way out of a turn:
-   * The live event hub, W5 turn metering, session-title persistence, and the
+   * The live event hub, turn metering, session-title persistence, and the
    * durable message log. Named and returned on the runtime handle because it is
    * the one place that observes a completed turn — the signed request is
    * several layers above and there is no request context left by the time a
@@ -754,7 +754,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       ...(model ? { model } : {}),
       ...(tags.length > 0 ? { tags } : {}),
     })
-    // W5 (metric spec §4.5): server-emitted and attributable, replacing a
+    // Metric spec §4.5: server-emitted and attributable, replacing a
     // client-side funnel step that self-host suppresses. Emitted only on the
     // fresh-create branch — the `existing` path above returns early, so
     // reconnecting to a session never counts as starting one.

@@ -23,7 +23,7 @@ import type { ControlPlaneTelemetry } from "../ports"
 
 /**
  * Where the deployment sits, as the product plane reports it. Distinct from
- * D9's `Trust`, which is a boot-time enforcement decision with only
+ * `Trust`, which is a boot-time enforcement decision with only
  * two values — desktop builds are hosted-code running locally and must be
  * separable from Cloud in the funnel.
  */

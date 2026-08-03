@@ -6,7 +6,7 @@ import type { ControlPlaneServices } from "./services"
 // session-pull flows (`http-session-pull.ts` local-cloud + `hosted-session-pull.ts`
 // Worker) write pulled runtime state through the `ProjectionStore` port, and the
 // "only update when newer" ordinal/snapshot skip rules are pinned exactly as the
-// code implements them today. These pins protect the seam while R8b dissolves the
+// code implements them today. These pins protect the seam while later work dissolves the
 // SyncDB bag into `createSqliteCentralStore()`.
 //
 // Authority is kept PRESENT (stubbed) or out of play (unsigned/undefined auth) so

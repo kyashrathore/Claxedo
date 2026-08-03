@@ -358,7 +358,7 @@ describe("hosted managed write cost", () => {
   })
 })
 
-describe("R2 listing bound", () => {
+describe("Listing bound", () => {
   function bucket(keys: readonly string[], pageSize = 1_000): R2BucketBinding {
     const sorted = [...keys].sort()
     return {

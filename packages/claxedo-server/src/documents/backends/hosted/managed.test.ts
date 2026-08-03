@@ -172,7 +172,7 @@ describe("hosted managed documents and session write-back", () => {
     await expect(value.workspace.resolve({ ...value.entry, orgId: undefined })).rejects.toThrow("org scope")
   })
 
-  test("R2 adapter maps ETags, create-only puts, conditional puts, and paginated lists", async () => {
+  test("Adapter maps ETags, create-only puts, conditional puts, and paginated lists", async () => {
     let value: { body: Uint8Array; etag: string; uploaded: Date } | undefined
     const bucket = {
       async get() {
@@ -214,7 +214,7 @@ describe("hosted managed documents and session write-back", () => {
     await expect(broken.list("")).rejects.toThrow("truncated without a cursor")
   })
 
-  test("R2 reads reject declared and streamed overflow without unbounded buffering", async () => {
+  test("Reads reject declared and streamed overflow without unbounded buffering", async () => {
     let oversizedBodyReads = 0
     const oversized = createR2ConditionalObjectStore(
       {

@@ -4,7 +4,7 @@ import type { ControlPlaneServices } from "../authority/services"
 import type { SignedControlPlaneAuth } from "../platform/auth/auth"
 
 /**
- * F3 (adversarial-review): the cloud-workspace entitlement is enforced at
+ * Adversarial review: the cloud-workspace entitlement is enforced at
  * wake/resume — the sandbox-lease acquisition choke point — not only at create.
  * A canceled subscription must not keep an existing cloud workspace wake-able.
  * The gate sits in `hostedConnectionInfo` (the hosted `/:id/connection` path
@@ -36,7 +36,7 @@ function services(ensure: ReturnType<typeof vi.fn>) {
 
 const options = { defaultHomeRegion: "us-east" as const, relayUrl: "wss://relay.test" }
 
-describe("F3: cloud-workspace entitlement at wake/resume", () => {
+describe("Cloud-workspace entitlement at wake/resume", () => {
   test("free org → 402 typed denial; the sandbox is NEVER woken", async () => {
     const ensure = vi.fn()
     const requireCloudWorkspaceEntitlement = vi.fn(async () => ({

@@ -3223,7 +3223,7 @@ describe("hosted WorkGraph runtime outbox", () => {
   test("folds hosted Stream spend once and holds launch at the hard token budget", async () => {
     const db = new RuntimeDb({
       users: [{ _id: "user-a", clerk_subject: "clerk-user-a" }],
-      // The usage table is keyed on the CLERK org id (the W5 metering id
+      // The usage table is keyed on the CLERK org id (the metering id
       // space), not the Convex document id — the fold must translate, so this
       // fixture keeps the two ids distinct on purpose.
       orgs: [{ _id: "org-a", owner_user_id: "user-a", kind: "clerk", clerk_org_id: "clerk_org_budget" }],

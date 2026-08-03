@@ -186,7 +186,7 @@ function promptModel(input: unknown) {
 /**
  * Harnesses dispatchable on the central hybrid route today. `pi` is the
  * model-backed central harness; codex-acp/opencode sandbox harnesses join
- * when sandbox-session dispatch lands (W5/Demo C).
+ * when sandbox-session dispatch lands.
  */
 const HYBRID_HARNESSES = new Set(["pi"])
 

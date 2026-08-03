@@ -776,7 +776,7 @@ describe("hosted app", () => {
         controlPlaneRateLimit: 120,
         controlPlaneRateLimitWindowMs: 60_000,
         // High so the 429 this test asserts provably comes from the
-        // connection limiter under test, not W3.2's default ceiling.
+        // connection limiter under test, not the default ceiling.
         defaultRequestRateLimit: 10_000,
         defaultRequestRateLimitWindowMs: 60_000,
         sandboxMaxRetryCount: 5,
@@ -1460,7 +1460,7 @@ describe("hosted shell boot surface", () => {
     await reader.cancel()
   })
 
-  // D9 fail-closed hosted boot: the hosted app refuses to compose unless the
+  // Fail-closed hosted boot: the hosted app refuses to compose unless the
   // deployment declares CLAXEDO_DEPLOYMENT_MODE=hosted AND signed auth plus a
   // workspace authority are composed. worker.ts maps the thrown
   // HostedWorkerCompositionError to a 503 for every request (down, not open).

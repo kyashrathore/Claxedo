@@ -1,5 +1,5 @@
 /**
- * W3 acceptance: the rate limit is enforced GLOBALLY across isolates, not
+ * The rate limit is enforced GLOBALLY across isolates, not
  * per-isolate.
  *
  * The bug this proves fixed: bucket state lived in a per-isolate `Map`, so N
@@ -71,7 +71,7 @@ async function drive(
   return { allowed, rejected }
 }
 
-describe("W3.1 shared-store rate limiting across isolates", () => {
+describe("Shared-store rate limiting across isolates", () => {
   test("two isolates sharing a store enforce the GLOBAL limit, not 2x", async () => {
     const GLOBAL_LIMIT = 20
     // Local fuse deliberately LOOSER than the global limit: this test must prove
@@ -89,7 +89,7 @@ describe("W3.1 shared-store rate limiting across isolates", () => {
     expect(shared.rejected).toBe(80)
 
     // ── POSITIVE CONTROL: same sequence, shared store disabled ───────────────
-    // This is the pre-W3 code path. If it did NOT leak, the assertion above
+    // This is the per-isolate-only code path. If it did NOT leak, the assertion above
     // would be proving nothing about the store.
     const leaked = await drive([isolate({ localLimit: GLOBAL_LIMIT }), isolate({ localLimit: GLOBAL_LIMIT })], {
       key: "203.0.113.7",
@@ -133,7 +133,7 @@ describe("W3.1 shared-store rate limiting across isolates", () => {
   })
 
   test("the local fuse short-circuits before the shared store is consulted", async () => {
-    // W3.4's whole point: the free per-isolate check absorbs a flood so the
+    // The whole point: the free per-isolate check absorbs a flood so the
     // shared call is only paid by traffic that already passed locally. If the
     // ordering inverted, every request in a flood would cost a store call.
     const store = fakeSharedStore(1_000)
@@ -172,7 +172,7 @@ describe("W3.1 shared-store rate limiting across isolates", () => {
   })
 })
 
-describe("W3.1 Node/self-host degradation", () => {
+describe("Node/self-host degradation", () => {
   test("with no shared store the limiter is the in-memory fuse and stays enforcing", async () => {
     // hosted-node.ts / server.ts have no Cloudflare bindings. Absent a store the
     // limiter must still LIMIT — degrading to "no limit" would turn the
@@ -186,7 +186,7 @@ describe("W3.1 Node/self-host degradation", () => {
   })
 })
 
-describe("W3.1 Cloudflare binding adapter", () => {
+describe("Cloudflare binding adapter", () => {
   test("maps the binding's success flag onto an allow/deny decision", async () => {
     const binding: CloudflareRateLimitBinding = {
       limit: vi.fn(async ({ key }) => ({ success: key === "good" })),
@@ -215,7 +215,7 @@ describe("W3.1 Cloudflare binding adapter", () => {
     expect(consoleError).toHaveBeenCalled()
 
     // And the fuse still bounds the request rate while the store is down, so
-    // failing open degrades to the pre-W3 ceiling, not to no ceiling.
+    // failing open degrades to the per-isolate ceiling, not to no ceiling.
     const limiter = isolate({ localLimit: 2, sharedStore: store })
     const result = await drive([limiter], { key: "k", total: 10 })
     expect(result.allowed).toBe(2)

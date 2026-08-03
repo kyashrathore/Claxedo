@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { createEmbeddedAuth, embeddedAuthEnabled, EMBEDDED_AUTH_ISSUER, type EmbeddedAuth } from "./embedded-auth"
 import { betterAuthAdapter, controlPlaneAuthContext } from "../../platform/auth/auth"
 
-// W1 (self-host/hosted parity): embedded Better Auth gives a self-host box
+// Self-host/hosted parity: embedded Better Auth gives a self-host box
 // real signup/login (signed mode) with NO Convex/Clerk. These tests exercise
 // the full loop against a real better-auth instance on a temp SQLite file:
 // sign-up over the mounted /api/auth/* handler -> bearer session token ->

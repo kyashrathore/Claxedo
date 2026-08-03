@@ -9,7 +9,7 @@ import {
 } from "../auth/auth"
 import { claxedoBus, createBus, type ClaxedoEvent } from "../runtime/lib/bus"
 
-// Rubric S1: /api/claxedo/events must reject unauthenticated requests when
+// /api/claxedo/events must reject unauthenticated requests when
 // signed cloud auth is enabled, and must remain a pass-through when running
 // in local/unsigned mode. The bus subscription should only attach AFTER auth
 // passes — anonymous connections must never observe events.
@@ -27,7 +27,7 @@ function mountHandler(options: Parameters<typeof eventsHandler>[0]) {
   return app
 }
 
-describe("eventsHandler — auth gate (rubric S1)", () => {
+describe("eventsHandler — auth gate", () => {
   test("returns 401 when signed cloud auth is enabled and no bearer token is present", async () => {
     const app = mountHandler({
       authConfig: baseConfig,

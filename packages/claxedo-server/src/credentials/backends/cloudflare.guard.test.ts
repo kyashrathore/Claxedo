@@ -3,7 +3,7 @@ import * as cloudflare from "./cloudflare"
 import { CREDENTIALS_KEK_ENV } from "../envelope"
 
 /**
- * D10 guard: the Cloudflare KV backend must be impossible to use unwrapped.
+ * The Cloudflare KV backend must be impossible to use unwrapped.
  * The raw byte store is module-internal; the only exported construction path
  * composes the envelope-encryption wrapper and fails closed without a KEK.
  */
@@ -27,7 +27,7 @@ describe("cloudflare KV backend guard", () => {
     // `listCloudflareCredentialRefs` is the KEK-rotation enumeration and is NOT
     // a byte-store escape hatch: it reads `/keys`, which returns NAMES only,
     // and exposes no path that returns a VALUE. Anything added here that can
-    // return a stored value reopens the D10 plaintext hole.
+    // return a stored value reopens the plaintext hole.
     expect(Object.keys(cloudflare).sort()).toEqual([
       "createEncryptedCloudflareBackend",
       "listCloudflareCredentialRefs",

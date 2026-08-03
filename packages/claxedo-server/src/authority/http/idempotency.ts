@@ -20,7 +20,7 @@
  * A local hit therefore short-circuits (that isolate already owns the
  * operation), and only a local MISS consults the durable layer.
  *
- * ## Two leaks fixed here (found 2026-07-30 during the W4 review)
+ * ## Two leaks fixed here (found 2026-07-30 in review)
  *
  * - In-flight `pullResults` entries had no `expiresAt`, so they were neither
  *   swept (the sweep skips undefined) nor evictable at capacity (eviction skips

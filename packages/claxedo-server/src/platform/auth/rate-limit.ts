@@ -31,7 +31,7 @@
  *     binding as "permissive, eventually consistent"; a flood still gets shut
  *     off, which is the whole requirement. Nobody is billed off these counters.
  *   - A DO adds a network round trip to EVERY request on the default
- *     middleware path (W3.2 applies this app-wide), plus a DO request charge
+ *     middleware path (applied app-wide), plus a DO request charge
  *     per check. The binding's `limit()` is an on-machine cached counter.
  *   - A single counter DO per principal is a serialization point an attacker
  *     can aim at: flooding one key means flooding one DO, and the limiter
@@ -189,7 +189,7 @@ export function createFixedWindowConnectionRateLimiter(options: {
  * limiter blip into a 429 storm across the whole control plane trades a bounded
  * abuse window for a total outage. The in-memory fuse still holds the
  * per-isolate ceiling while the store is unavailable, so failing open degrades
- * to exactly the pre-W3 behavior rather than to "no limit at all".
+ * to exactly the per-isolate behavior rather than to "no limit at all".
  */
 export function cloudflareRateLimitStore(
   binding: CloudflareRateLimitBinding,

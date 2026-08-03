@@ -1,6 +1,5 @@
 /**
- * Convex-backed `UsageLedger` — the authoritative half of the W5 dual-write
- * (plan D1).
+ * Convex-backed `UsageLedger` — the authoritative half of the dual-write.
  *
  * `usageMetering.recordLlmTurn` is a `serviceMutation`, so this calls it the
  * way the rest of the control plane calls Convex: through a `ConvexExecutor`
@@ -69,7 +68,7 @@ export function createConvexUsageLedger(input: ConvexUsageLedgerInput = {}): Usa
  *    subject, so there is no legitimate call that omits it. A lease that was
  *    never stamped is a lease `sandboxLeases.countActiveForOrg` cannot see,
  *    which is a cap that silently does not bind.
- *  - `metering` is the W5 org/user pair. It is ONE optional object rather than
+ *  - `metering` is the org/user pair. It is ONE optional object rather than
  *    two optional fields so "both or neither" is unrepresentable-otherwise
  *    rather than merely checked: a personal-account token has no org claim, and
  *    a fact keyed on half a tenant — or on an org synthesized to fill the gap —

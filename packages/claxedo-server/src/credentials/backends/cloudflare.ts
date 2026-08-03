@@ -4,7 +4,7 @@
  * Used for hosted or cloud-deployed Claxedo where secrets should not
  * live on disk. Requires CLAXEDO_CF_KV_URL and CLAXEDO_CF_KV_TOKEN env vars.
  *
- * SECURITY (launch-plan D10, invariant I-5): KV is a BYTE STORE ONLY. The raw
+ * SECURITY (invariant I-5): KV is a BYTE STORE ONLY. The raw
  * KV backend is deliberately NOT exported — every value that reaches KV must
  * pass through the envelope-encryption wrapper (`credentials/envelope.ts`),
  * so a leaked KV API token yields ciphertext, never plaintext. The only
@@ -140,7 +140,7 @@ export function createEncryptedCloudflareBackend(opts: {
  * completed at all: KV has no other directory, and `hostedOrgCredentials`
  * deliberately returns `[]` from `listCredentials`.
  *
- * This is NOT a hole in the D10 posture and must not grow into one: it reads
+ * This is NOT a hole in the encryption posture and must not grow into one: it reads
  * `/keys`, which returns names only, and has no path that returns a VALUE. A
  * key name is `cf:org/<orgId>/credential/<providerId>` — routing information
  * the KV token holder can already list; the secret stays behind the envelope.

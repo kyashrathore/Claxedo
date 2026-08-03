@@ -37,8 +37,8 @@ export type WorkspaceRouteOptions = {
   connectionRateLimiter?: ConnectionRateLimiter
   controlPlaneRateLimiter?: ConnectionRateLimiter
   /**
-   * D6/B4 entitlement choke point (ADR 014 §5;
-   * adversarial-review F3): hosted cloud-workspace capability is paid at BOTH
+   * Entitlement choke point (ADR 014 §5, adversarial review): hosted
+   * cloud-workspace capability is paid at BOTH
    * create AND wake/resume — a canceled subscription must not keep an existing
    * cloud workspace wake-able forever. The hosted app composes this from
    * src/billing/entitlement.ts (`createEntitlementGate` + authority org

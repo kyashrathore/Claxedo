@@ -57,7 +57,7 @@ const DEFAULT_HEARTBEAT_MS = 30_000
  * Held connections one room admits, across BOTH hold mechanisms.
  *
  * Measured 2026-07-30 rather than asserted (see
- * `docs/cf-reliability-scalability-review-2026-07-28.md`, finding A4, and the
+ * `docs/cf-reliability-scalability-review-2026-07-28.md`, and the
  * harness at `scripts/bench/live-sync-capacity.ts`). The previous 256 was a
  * guess. One room under workerd held 16,000 concurrent bridged connections at a
  * 100% connect rate, fanning an org-wide nudge to all of them with a p99

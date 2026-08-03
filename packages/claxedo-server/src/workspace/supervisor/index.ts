@@ -330,7 +330,7 @@ export function createWorkspaceSupervisorSandboxManager(): SandboxManager {
     // because listing failed, but because there is nothing independent to list,
     // so `kept` below is a lease inventory and NOT evidence that nothing is
     // orphaned. Without this flag the four arrays read as a clean sweep, which
-    // is the silent success W1 exists to remove.
+    // is the silent success this exists to remove.
     async garbageCollect() {
       return {
         destroyed: [],
@@ -364,7 +364,7 @@ export function injectRuntime(ws: Workspace, url: string) {
     holds: [],
     remote: true,
     sandbox_target: {
-      // WP-D5: the workspace row's `sandbox_id` column is NOT the runtime host
+      // The workspace row's `sandbox_id` column is NOT the runtime host
       // location authority (that lives on the lease, e.g. sandboxTargetFromLease).
       // `injectRuntime` is a direct-injection seam given the runtime URL outright,
       // so the workspace id is the synthetic host identity here.

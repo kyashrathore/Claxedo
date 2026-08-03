@@ -7,7 +7,7 @@
  *
  * `acquire` and `release` are both retry-safe — re-acquiring a lease this holder
  * already owns is a renewal, and a duplicate release is fence-checked into a
- * no-op — so they inherit the W4.1 retry. Which matters more here than on most
+ * no-op — so they inherit the bounded retry. Which matters more here than on most
  * paths: a lease call that fails on a transient blip would silently skip a cron
  * tick, and skipped cron ticks are exactly the class of failure nobody notices.
  */

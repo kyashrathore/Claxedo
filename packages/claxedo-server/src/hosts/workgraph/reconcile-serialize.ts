@@ -9,7 +9,7 @@ import type { WorkGraphReconcileResult } from "../../routes/hosted/workgraph-adm
  * model forbids. Callers poll (cron, smoke cycles), so a skipped run is retried
  * naturally by the next trigger.
  *
- * ## W4.4: the per-isolate guard was never sufficient
+ * ## The per-isolate guard was never sufficient
  *
  * `running` below is a closure variable, and the closure lives in `worker.ts`'s
  * memoized `buildApp`. That memo is PER ISOLATE. Cloudflare runs many isolates

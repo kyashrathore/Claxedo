@@ -18,7 +18,7 @@
  * - Polar's SDK treats the dashboard secret as raw UTF-8 key material
  *   (`validateEvent` base64-encodes it and `standardwebhooks` decodes it back);
  * - a spec-style `whsec_<base64>` secret is base64-decoded.
- * S2-PENDING: confirm against the Polar sandbox that dashboard secrets carry
+ * PENDING: confirm against the Polar sandbox that dashboard secrets carry
  * no `whsec_` prefix; either way both branches verify correctly here.
  */
 

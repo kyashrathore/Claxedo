@@ -1,5 +1,5 @@
 /**
- * W4.2 acceptance: a duplicate register/checkpoint across TWO isolates executes
+ * A duplicate register/checkpoint across TWO isolates executes
  * the operation ONCE.
  *
  * ## How two isolates are simulated
@@ -12,7 +12,7 @@
  * across isolates.
  *
  * This mirrors the two-isolate construction `rate-limit.shared-store.test.ts`
- * uses for W3.
+ * uses for the shared rate-limit store.
  *
  * ## Positive control
  *
@@ -106,7 +106,7 @@ function registerKey(mod: IdempotencyModule, key: string) {
   })
 }
 
-describe("W4.2 durable idempotency across isolates", () => {
+describe("Durable idempotency across isolates", () => {
   beforeEach(() => {
     vi.resetModules()
   })

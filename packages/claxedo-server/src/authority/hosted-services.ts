@@ -62,7 +62,7 @@ export type HostedSafetyLimits = {
   controlPlaneRateLimit: number
   controlPlaneRateLimitWindowMs: number
   /**
-   * W3.2 default per-client ceiling applied to EVERY hosted route by
+   * Default per-client ceiling applied to EVERY hosted route by
    * `defaultRequestGuard`. Coarse on purpose: it sits above the four tuned
    * per-surface budgets above, so it must not be tighter than the sum a
    * legitimate app session drives across them.
@@ -162,7 +162,7 @@ export function sandboxDriver(env: HostedWorkerEnv): SandboxDriver | undefined {
       // the system that would ever notice it.
       //
       // These are a backstop, not the reaper. The reaper itself now works:
-      // W1.1 (2026-07-30) implemented `list()` here, so `garbageCollect()`
+      // A later change implemented `list()` here, so `garbageCollect()`
       // enumerates real Daytona state and destroys a sandbox with no matching
       // lease.
       autoStopMinutes: lifecycleMinutes(env, "CLAXEDO_SANDBOX_AUTO_STOP_MS", 30 * 60_000),

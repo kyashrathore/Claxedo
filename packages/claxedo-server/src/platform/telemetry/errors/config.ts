@@ -51,7 +51,7 @@ export const DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com"
 
 
 /**
- * Release = git SHA from the D11 deploy pipeline ("this issue first appeared
+ * Release = git SHA from the deploy pipeline ("this issue first appeared
  * in SHA X" is the rollback trigger). CLAXEDO_RELEASE wins; GIT_SHA is the one
  * accepted alias — vendor-named release variables are deliberately not read.
  */

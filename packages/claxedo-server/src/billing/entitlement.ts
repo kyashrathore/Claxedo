@@ -1,5 +1,5 @@
 /**
- * RequireEntitlement — the ONE entitlement predicate (D6/B4;
+ * RequireEntitlement — the ONE entitlement predicate (
  * ADR 014 §3/§5). Entitlement is a pure function of the mirrored org row:
  * No Polar call ever happens at request time, so a Polar outage cannot lock
  * a paying customer out (ADR §3 "why not query-at-request-time").
@@ -37,7 +37,7 @@ export class BillingEntitlementError extends Error {
     public readonly code: "billing_entitlement_required" | "seat_over_capacity",
     public readonly capability: EntitlementCapability,
     message: string,
-    /** Present for `seat_over_capacity` (F1): the counts the owner needs to act on. */
+    /** Present for `seat_over_capacity`: the counts the owner needs to act on. */
     public readonly details?: { memberCount: number; seatsLicensed: number },
   ) {
     super(message)
@@ -91,10 +91,10 @@ export function entitlementDecision(
     return { entitled: false, reason: "not_entitling_status" }
   })()
   if (!statusDecision.entitled) return statusDecision
-  // F1 seat over-capacity: the subscription itself entitles, but an org with
+  // Seat over-capacity: the subscription itself entitles, but an org with
   // more members than licensed seats does not get hosted access for the
   // over-cap members. `seats_licensed` absent (personal org, or seats not yet
-  // re-derived after a missed subscription.* webhook — F10) means there is no
+  // re-derived after a missed subscription.* webhook) means there is no
   // cap to exceed, so it stays entitled rather than fail toward blocking a
   // paying customer.
   if (

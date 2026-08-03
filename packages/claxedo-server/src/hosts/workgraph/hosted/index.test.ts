@@ -760,7 +760,7 @@ describe("hosted WorkGraph composition", () => {
     expect(nudge).toHaveBeenCalledOnce()
   })
 
-  test("W5.3: rings the caller's live-sync room with a workgraph.changed doorbell after a successful command", async () => {
+  test("Rings the caller's live-sync room with a workgraph.changed doorbell after a successful command", async () => {
     const { namespace, nudges } = recordingLiveSyncNamespace()
     // Capture the per-request waitUntil work so the test can deterministically
     // await the nudge fetch (the real Worker gets this from its ExecutionContext).
@@ -796,7 +796,7 @@ describe("hosted WorkGraph composition", () => {
     ])
   })
 
-  test("W5.3: does not ring the live-sync room when a command fails", async () => {
+  test("Does not ring the live-sync room when a command fails", async () => {
     const { namespace, nudges } = recordingLiveSyncNamespace()
     const pending: Promise<unknown>[] = []
     const workgraph = composition([], undefined, undefined, undefined, undefined, undefined, {
@@ -823,7 +823,7 @@ describe("hosted WorkGraph composition", () => {
     expect(nudges).toEqual([])
   })
 
-  test("W5.3: a failing room nudge never fails the successful command", async () => {
+  test("A failing room nudge never fails the successful command", async () => {
     const failingNamespace: LiveSyncRoomNamespace = {
       idFromName: (name: string) => name,
       get: () => ({ fetch: async () => Response.json({ error: "room down" }, { status: 500 }) }),

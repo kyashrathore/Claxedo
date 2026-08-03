@@ -6,7 +6,7 @@
  * behaved like a plain field filter. That makes them blind to the two mistakes
  * an index conversion can actually make — naming an index that does not exist,
  * and comparing fields in an order the index cannot serve — which are precisely
- * the mistakes the W5 pass could introduce. A double that accepts any index
+ * the mistakes an index-migration pass could introduce. A double that accepts any index
  * name cannot verify a change from a scan to an index at all.
  *
  * So this module resolves index names against the REAL `convex/schema.ts` and
@@ -122,7 +122,7 @@ type Check = (row: Row) => boolean
  * Convex's total value order, enough of it for index ranges.
  *
  * `undefined` — a MISSING field — sorts below everything, which is what makes
- * `.gt(field, undefined)` mean "rows that have this field at all". Several W5
+ * `.gt(field, undefined)` mean "rows that have this field at all". Several
  * conversions depend on exactly that, so the double has to model it rather than
  * let a JS `>` comparison against undefined quietly return false for every row.
  */

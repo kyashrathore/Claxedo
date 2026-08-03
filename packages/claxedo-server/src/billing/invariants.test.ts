@@ -3,15 +3,15 @@ import fs from "node:fs"
 import path from "node:path"
 
 /**
- * WP-BILLING architecture guards (D4/D5, invariants I-1/I-3):
+ * Billing architecture guards (invariants I-1/I-3):
  *
  * 1. SINGLE WRITER (I-3, the grep-style guard the design doc calls for): the
  *    mirrored org billing fields are written by convex/billing.ts and nowhere
  *    else. Any other convex module naming them is either a new writer (bug)
  *    or a read that belongs behind the billing module's helpers.
- * 2. POLAR CONFINEMENT (D4 addendum): all Polar code lives in src/billing/**.
+ * 2. POLAR CONFINEMENT (ADR 014 addendum): all Polar code lives in src/billing/**.
  *    `@polar-sh/sdk` imports outside that directory — and any Polar token in
- *    the storage-agnostic control-plane core (R8's spirit) — are boundary
+ *    the storage-agnostic control-plane core — are boundary
  *    breaches.
  */
 
@@ -67,7 +67,7 @@ describe("billing single-writer guard (I-3)", () => {
   })
 })
 
-describe("Polar confinement (D4 addendum)", () => {
+describe("Polar confinement (ADR 014 addendum)", () => {
   test("@polar-sh/sdk is imported only under src/billing/**", () => {
     const offenders = walk(serverSrc)
       .filter((file) => file.endsWith(".ts") || file.endsWith(".mjs"))
@@ -77,7 +77,7 @@ describe("Polar confinement (D4 addendum)", () => {
     expect(offenders).toEqual([])
   })
 
-  test("the storage-agnostic control-plane core stays Polar-free (R8's vendor-token rule)", () => {
+  test("the storage-agnostic control-plane core stays Polar-free (the vendor-token rule)", () => {
     const controlPlaneSrc = path.join(serverSrc, "authority")
     const offenders = walk(controlPlaneSrc)
       .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))

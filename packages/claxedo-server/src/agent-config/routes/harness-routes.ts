@@ -111,7 +111,7 @@ async function harnessStatusResponse(c: Context, options: AgentConfigRouteOption
       agentType: body.agentType ?? saved.id,
       // The saved harness KEY (access-qualified, e.g. "claude-acp") stays
       // authoritative for `activeType`. `/api/wr/health` now forwards a live
-      // `agentType` (D1 fix), but that is the base harness id (e.g. "claude")
+      // `agentType`, but that is the base harness id (e.g. "claude")
       // and would drop the access qualifier the harness dropdown / decode rely
       // on — keep it as a last-resort fallback only.
       activeType: harnessKey(saved) ?? body.agentType ?? saved.id,

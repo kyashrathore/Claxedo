@@ -26,8 +26,8 @@
  * composed over `createHostedOrgSecretBackend(orgId)`. It exists ONLY for a
  * request whose org resolution succeeded (the caller passes the verified
  * orgId); the org-AGNOSTIC `workerCredentials` surface stays fail-closed
- * forever, because a credential without a tenant is exactly the bug D7
- * eliminates.
+ * forever, because a credential without a tenant is exactly the bug org
+ * partitioning eliminates.
  */
 
 import type { ControlPlaneCredentials } from "../../authority/services"
@@ -110,7 +110,7 @@ export function workerCredentials(env: WorkerCredentialEnv = process.env): Contr
 
   const gated = (): never => {
     throw new Error(
-      "Hosted credential management is org-partitioned (launch-plan D7 + D10); " +
+      "Hosted credential management is org-partitioned; " +
         "no org-agnostic credential surface exists by design — resolve the caller's org and use hostedOrgCredentials(orgId)",
     )
   }

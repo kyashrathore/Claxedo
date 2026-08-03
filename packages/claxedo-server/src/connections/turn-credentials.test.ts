@@ -20,7 +20,7 @@ describe("connection turn credentials", () => {
     credentials.dispose()
   })
 
-  test("carries the turn's org through mint/resolve (hosted D7 partition input)", () => {
+  test("carries the turn's org through mint/resolve (hosted partition input)", () => {
     let next = 0
     const credentials = createConnectionTurnCredentials({ random: () => `credential-${++next}` })
     const orgTurn = credentials.mint({ sessionId: "session-1", subject: "user-a", orgId: "org-a" })

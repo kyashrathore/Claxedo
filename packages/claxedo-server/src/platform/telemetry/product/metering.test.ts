@@ -1,5 +1,5 @@
 /**
- * W5 metering — the server-side emission contract.
+ * Metering — the server-side emission contract.
  *
  * The token test drives the REAL chain a completed turn travels inside this
  * package: `buildAssistantMessage` (the production compat-message builder) →

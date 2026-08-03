@@ -248,7 +248,7 @@ const provisionStep = (workspaceId: string, step: "cloning" | "ready"): ClaxedoE
   ts: Date.now(),
 })
 
-describe("LiveSyncRoom — fan-out core (W5.1)", () => {
+describe("LiveSyncRoom — fan-out core", () => {
   test("hibernatable sockets survive room reconstruction while the public response remains SSE", async () => {
     const namespace = createHibernatingNamespace()
     const response = await connectLiveSyncRoom(namespace, subscriber("alice", "org_internal_acme"), 60_000)
@@ -449,7 +449,7 @@ describe("LiveSyncRoom — fan-out core (W5.1)", () => {
   })
 })
 
-describe("live-sync room-name derivation — publisher/subscriber agreement (W5.4)", () => {
+describe("live-sync room-name derivation — publisher/subscriber agreement", () => {
   test("publisher helper agrees with the subscriber for a signed caller WITHOUT a resolved org", () => {
     // The regression this pins: a publisher hand-composing `org:${orgId}` for a
     // caller whose SSE stream is held in `owner:<subject>` strands the frame in
@@ -753,7 +753,7 @@ describe("LiveSyncRoom — held-connection cap", () => {
 
   test("the cap defaults to the measured value and clamps a nonsense override", async () => {
     // Pins the measurement's conclusion (see the constant's docblock and
-    // `docs/cf-reliability-scalability-review-2026-07-28.md` finding A4): a
+    // `docs/cf-reliability-scalability-review-2026-07-28.md`): a
     // silent revert to a guessed 256 should fail here, not in production.
     expect(DEFAULT_MAX_CONNECTIONS).toBe(2_000)
 

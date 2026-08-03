@@ -4,7 +4,7 @@ import type { BillingStore } from "./store"
 import { POLAR_SWEEP_TIMEOUT_MS, type PolarClientLike } from "./routes"
 
 /**
- * D5 reconciliation sweep, Worker half: fetch fresh Polar customer state for
+ * Reconciliation sweep, Worker half: fetch fresh Polar customer state for
  * flagged orgs and re-apply via the single writer. The load-bearing rule under
  * test: Polar-unreachable → report + leave state — NEVER a downgrade. Only a
  * successfully fetched fresh state writes anything.
@@ -99,7 +99,7 @@ describe("reconcileBillingState", () => {
   })
 })
 
-describe("cancelDeletedOrgSubscriptions (F4: deleted org billed forever)", () => {
+describe("cancelDeletedOrgSubscriptions (deleted org billed forever)", () => {
   test("deleted org with a live subscription is canceled in Polar and cleared locally", async () => {
     const store = fakeStore([], [
       { org_id: "org_doc_1", polar_customer_id: "cus_1", polar_subscription_id: "sub_1" },

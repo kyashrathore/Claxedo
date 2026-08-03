@@ -119,7 +119,7 @@ describe("envelope encryption wrapper", () => {
     await expect(backend.get(ref)).rejects.toThrow(/failed authentication/)
   })
 
-  test("F16: ciphertext is bound to its storage id — decrypting under a DIFFERENT id fails", async () => {
+  test("Ciphertext is bound to its storage id — decrypting under a DIFFERENT id fails", async () => {
     const inner = memoryBackend()
     const backend = encryptedSecretBackend(inner, createStaticKeyProvider({ current: kek(1) }), { orgId: "org-a" })
 

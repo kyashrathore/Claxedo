@@ -62,7 +62,7 @@ describe("control-plane HTTP idempotency", () => {
   })
 
   test("coalesces pending work within the in-flight window, then stops waiting on it", async () => {
-    // W4.2 changed this deliberately. In-flight entries used to carry NO
+    // This changed deliberately. In-flight entries used to carry NO
     // expiry, which made them unsweepable: one hung `run` held its slot until
     // the isolate died. They now carry a deadline like any other entry.
     //

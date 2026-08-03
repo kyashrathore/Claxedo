@@ -378,7 +378,7 @@ describe("POST /create lease attribution — what makes the cap countable", () =
     expect(recordSandboxLeaseTenant).toHaveBeenCalledTimes(1)
     const stamped = recordSandboxLeaseTenant.mock.calls[0]![0]!
     expect(stamped.owner_subject).toBe("noorg_personal")
-    // The W5 pair must stay absent rather than be filled with a synthesized org:
+    // The metering pair must stay absent rather than be filled with a synthesized org:
     // `sandbox_lease_events` and the per-org rollups are keyed on `org_id`, and a
     // fabricated one corrupts every aggregate downstream.
     expect(stamped.metering).toBeUndefined()

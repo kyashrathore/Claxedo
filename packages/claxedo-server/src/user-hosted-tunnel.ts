@@ -78,7 +78,7 @@ async function tunnelTarget(input: { workspaceId: string; hostId: string }) {
     }
   }
   const target = await sandboxManager.ensure(workspace.id, {
-    // Was hardcoded "us-east" (W6b.3). See the note in
+    // Was hardcoded "us-east". See the note in
     // workspace-supervisor-sandbox.ts: the relay derives its Durable Object
     // location hint from this region, and that placement is permanent.
     homeRegion: defaultHomeRegion(),

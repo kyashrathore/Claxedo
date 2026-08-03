@@ -10,7 +10,7 @@ import {
 } from "./entitlement"
 
 /**
- * D6/B4 entitlement matrix (I-4; ADR 014 §3/§5): entitlement
+ * Entitlement matrix (I-4; ADR 014 §3/§5): entitlement
  * is a pure function of the mirrored org row. active + trialing entitle;
  * past_due entitles within the grace window; absent/free/canceled/unknown
  * fail closed to the free tier — for BOTH capabilities.
@@ -58,7 +58,7 @@ describe("entitlement matrix", () => {
     }
   }
 
-  test("F11: grace anchors on past_due_since — a fresh dunning webhook does NOT re-extend it", () => {
+  test("Grace anchors on past_due_since — a fresh dunning webhook does NOT re-extend it", () => {
     // past_due FIRST landed 8 days ago (beyond the 7-day grace), but a dunning
     // retry just refreshed polar_state_modified_at/billing_synced_at to now.
     // Anchoring on the refreshed write time would wrongly grant access; the fix
@@ -98,7 +98,7 @@ describe("entitlement matrix", () => {
     expect(entitlementDecision(state, "cloud-workspace", { graceDays: 14, now }).entitled).toBe(true)
   })
 
-  describe("F1: seat over-capacity denies an entitling subscription", () => {
+  describe("Seat over-capacity denies an entitling subscription", () => {
     const overSeat = (extra: Partial<EntitlementState> = {}): EntitlementState => ({
       ...proState("active"),
       seats_licensed: 3,
@@ -118,7 +118,7 @@ describe("entitlement matrix", () => {
       expect(entitlementDecision(overSeat({ member_count: 3 }), "cloud-workspace", { now }).entitled).toBe(true)
     })
 
-    test("F10: pro+active with seats_licensed undefined (unrecovered) has no cap → entitled", () => {
+    test("Pro+active with seats_licensed undefined (unrecovered) has no cap → entitled", () => {
       const noSeats = { ...proState("active"), seats_licensed: undefined, member_count: 9 } as EntitlementState
       expect(entitlementDecision(noSeats, "cloud-workspace", { now }).entitled).toBe(true)
     })

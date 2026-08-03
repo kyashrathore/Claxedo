@@ -89,7 +89,7 @@ async function signedRequest(payload: string, headers: Record<string, string> = 
   })
 }
 
-describe("W3.3 Polar webhook body cap", () => {
+describe("Polar webhook body cap", () => {
   test("a body over the cap is rejected 413, and the state is never applied", async () => {
     const store = fakeStore()
     const routes = BillingRoutes({
@@ -218,7 +218,7 @@ describe("W3.3 Polar webhook body cap", () => {
   })
 })
 
-describe("W3.3 Polar webhook rate limit", () => {
+describe("Polar webhook rate limit", () => {
   test("a flood from one IP is limited, and other IPs are unaffected", async () => {
     const routes = app({ webhookRateLimiter: createFixedWindowConnectionRateLimiter({ limit: 3, windowMs: 60_000 }) })
     const send = (ip: string) =>

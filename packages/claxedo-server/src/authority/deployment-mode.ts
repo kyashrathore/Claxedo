@@ -174,7 +174,7 @@ export function hostedBootRequirementFailures(
   if (flagEnabled(env.CLAXEDO_HOSTED_CREDENTIALS_ENABLED)) {
     if (!clean(env.CLAXEDO_CF_KV_URL)) {
       failures.push(
-        "hosted credentials are enabled but no encrypted-KV backend (set CLAXEDO_CF_KV_URL; without it the credential store falls back to the local file store, bypassing D10 envelope encryption)",
+        "hosted credentials are enabled but no encrypted-KV backend (set CLAXEDO_CF_KV_URL; without it the credential store falls back to the local file store, bypassing envelope encryption)",
       )
     }
     if (!clean(env.CLAXEDO_CF_KV_TOKEN)) {

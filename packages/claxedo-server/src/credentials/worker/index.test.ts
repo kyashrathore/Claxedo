@@ -123,7 +123,7 @@ describe("createHostedOrgSecretBackend", () => {
   })
 })
 
-describe("hostedOrgCredentials (D7 org-partitioned CRUD)", () => {
+describe("hostedOrgCredentials (org-partitioned CRUD)", () => {
   const stubKv = () => {
     const kv = new Map<string, string>()
     vi.stubGlobal(

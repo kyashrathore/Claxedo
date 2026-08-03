@@ -1,5 +1,5 @@
 /**
- * W11.1 acceptance: every route the hosted app mounts either REFUSES an
+ * Every route the hosted app mounts either REFUSES an
  * anonymous remote caller, or is a named entry below explaining what it serves
  * one instead.
  *
@@ -227,7 +227,7 @@ async function refusesAnonymous(app: Hono, path: string, method: string) {
   return isRefusal(await anonymousStatus(app, path, method))
 }
 
-describe("W11.1 route posture inventory", () => {
+describe("Route posture inventory", () => {
   test("the hosted app mounts a non-trivial route table (the inventory is not vacuous)", () => {
     // A guard that silently enumerates zero routes passes forever.
     const paths = mountedRoutePaths(createHostedApp(inventoryPlane()))

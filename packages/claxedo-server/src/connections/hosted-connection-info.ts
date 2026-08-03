@@ -44,7 +44,7 @@ export async function hostedConnectionInfo(
       status: 400,
     } as const
   }
-  // F3 (adversarial-review): enforce the cloud-workspace entitlement at
+  // Adversarial review: enforce the cloud-workspace entitlement at
   // wake/resume, not only at create — otherwise a canceled subscription leaves
   // existing cloud workspaces wake-able forever. Reached ONLY for HOSTED cloud
   // workspaces (backing=cloud-vm / access=cloud, asserted above); the hook is

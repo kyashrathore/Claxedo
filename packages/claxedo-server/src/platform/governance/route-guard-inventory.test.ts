@@ -1,8 +1,8 @@
 /**
- * W3 acceptance: EVERY mounted hosted route inherits a body cap unless it is
+ * EVERY mounted hosted route inherits a body cap unless it is
  * explicitly, namedly exempted — and this test fails when a new route skips both.
  *
- * Why an inventory test and not review: the pre-W3 posture was opt-in and the
+ * Why an inventory test and not review: the previous posture was opt-in and the
  * result was ~50 routes with no limiter and no cap, including the WorkGraph
  * surface, the documents surface, and checkpoint/lifecycle destroy. Every one of
  * those was a review that did not happen. The failure mode of a forgotten cap is
@@ -131,7 +131,7 @@ async function capsOversizedBody(app: Hono, path: string) {
   return response.status === 413
 }
 
-describe("W3.2 hosted route guard inventory", () => {
+describe("Hosted route guard inventory", () => {
   test("the hosted app mounts a non-trivial route table (the inventory is not vacuous)", () => {
     // A guard test that silently enumerates zero routes passes forever. This is
     // the floor assertion that makes the rest meaningful.
@@ -197,7 +197,7 @@ describe("W3.2 hosted route guard inventory", () => {
 
   test("documents keeps its own 2 MiB cap rather than the 1 MiB default", async () => {
     // The strangler requirement: the documents surface had a working, reviewed
-    // cap before W3 and must be unchanged by it. A body between the two limits
+    // cap before the default guard and must be unchanged by it. A body between the two limits
     // proves the default is NOT being applied there.
     const app = createHostedApp(inventoryPlane())
     expect(guardExemptionFor("/documents", "bodyCap", EXEMPTIONS)).toBeDefined()
@@ -212,12 +212,12 @@ describe("W3.2 hosted route guard inventory", () => {
       }),
     )
     // Whatever documents answers (401/503/400 in this bare plane), it must not be
-    // the DEFAULT guard's 413 — that would mean W3 tightened a reviewed surface.
+    // the DEFAULT guard's 413 — that would mean it tightened a reviewed surface.
     expect(response.status).not.toBe(413)
   })
 })
 
-describe("W3.3 the webhook exemption is live in the composed app", () => {
+describe("The webhook exemption is live in the composed app", () => {
   test("a webhook body over the webhook's OWN cap is rejected by the webhook, not the default guard", async () => {
     // The exemption's purpose: the route's tighter 512 KiB cap governs. This
     // asserts the composed app actually honors it — a body between the two caps
@@ -254,7 +254,7 @@ describe("W3.3 the webhook exemption is live in the composed app", () => {
   })
 })
 
-describe("W3 acceptance: two hosted app instances share one global limit", () => {
+describe("Acceptance: two hosted app instances share one global limit", () => {
   /**
    * The plan's acceptance criterion, exercised through the REAL composed app
    * rather than the limiter in isolation.
@@ -314,7 +314,7 @@ describe("W3 acceptance: two hosted app instances share one global limit", () =>
   })
 
   test("POSITIVE CONTROL: with the shared store disabled the same drive leaks 2x", async () => {
-    // Pre-W3 behavior through the real app. Each isolate's fuse is set to the
+    // Per-isolate-only behavior through the real app. Each isolate's fuse is set to the
     // intended global limit, and the pair admits twice it — the finding exactly.
     const GLOBAL_LIMIT = 10
     const plane = () => {
@@ -340,7 +340,7 @@ describe("W3 acceptance: two hosted app instances share one global limit", () =>
   })
 })
 
-describe("W3.2 exemption matching", () => {
+describe("Exemption matching", () => {
   test("prefixes match on segment boundaries, so one exemption cannot widen to a sibling", () => {
     expect(pathMatchesPrefix("/documents", "/documents")).toBe(true)
     expect(pathMatchesPrefix("/documents/doc_1", "/documents")).toBe(true)

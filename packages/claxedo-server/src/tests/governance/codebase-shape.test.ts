@@ -267,7 +267,7 @@ describe("architecture boundaries", () => {
   })
 
 
-  test("keeps generic control-plane core free of Convex tokens (R8)", () => {
+  test("keeps generic control-plane core free of Convex tokens", () => {
     // Ownership-first: Convex is Claxedo's storage *decision*; only the Convex
     // (and the Worker composition) adapters under authority/adapters/* may
     // name it. Every other control-plane source file — imports, error codes,

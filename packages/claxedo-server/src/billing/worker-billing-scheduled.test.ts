@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest"
 
 /**
  * Worker `scheduled` handler × billing reconciliation wiring: the Cloudflare
- * Cron Trigger that drives the D13 sandbox GC also drives the D5 billing
+ * Cron Trigger that drives the sandbox GC also drives the billing
  * sweep. Contract: the sweep runs AFTER a successful GC with the Worker env,
  * and — being throw-free by design — can never fail the cron run itself
  * (that is reconcile.ts's own contract, tested in reconcile.test.ts).
@@ -57,7 +57,7 @@ describe("worker scheduled billing sweep", () => {
     expect(runScheduledBillingReconciliation).toHaveBeenCalledWith(env)
   })
 
-  test("a failed GC still records the cron failure AND still runs the billing sweep (F17: independent sweeps)", async () => {
+  test("a failed GC still records the cron failure AND still runs the billing sweep (independent sweeps)", async () => {
     const worker = (await import("../deployments/hosted-workerd/worker")).default as unknown as ScheduledWorker
     appFetch.mockImplementation(async () => new Response("nope", { status: 501 }))
 

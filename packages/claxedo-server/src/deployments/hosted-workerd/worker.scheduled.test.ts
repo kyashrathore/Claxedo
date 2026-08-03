@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest"
 
 /**
- * D13 reaper — Worker `scheduled` handler.
+ * Sandbox reaper — Worker `scheduled` handler.
  *
  * The Cloudflare Cron Trigger must drive the EXISTING sandbox GC path: a
  * synthetic POST to /internal/sandbox-manager/gc authorized with the admin
@@ -89,7 +89,7 @@ describe("worker scheduled handler", () => {
       .rejects.toThrow("501")
   })
 
-  test("F17: a failing sandbox GC still runs the billing sweep, and the GC failure still throws", async () => {
+  test("A failing sandbox GC still runs the billing sweep, and the GC failure still throws", async () => {
     const worker = (await import("./worker")).default as unknown as ScheduledWorker
     appFetch.mockImplementation(async () => new Response("sandbox down", { status: 500 }))
     const env = { CLAXEDO_RUNTIME_ADMIN_TOKEN: "admin_secret" }
@@ -101,7 +101,7 @@ describe("worker scheduled handler", () => {
     expect(runBillingSweep).toHaveBeenCalledWith(env)
   })
 
-  test("F17: a throwing billing sweep does not mask the GC failure, and does not run when GC succeeds cleanly the sweep still runs", async () => {
+  test("A throwing billing sweep does not mask the GC failure, and does not run when GC succeeds cleanly the sweep still runs", async () => {
     const worker = (await import("./worker")).default as unknown as ScheduledWorker
     // GC succeeds; a throwing billing sweep is swallowed (reported), handler resolves.
     runBillingSweep.mockImplementation(async () => {
