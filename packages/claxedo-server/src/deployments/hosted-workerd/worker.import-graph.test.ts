@@ -149,8 +149,8 @@ describe("worker import-graph", () => {
   test("entrypoints are actually reachable (sanity)", () => {
     expect(visitedRel).toContain("deployments/hosted-workerd/worker.ts")
     expect(visitedRel).toContain("deployments/hosted-shared/hosted-app.ts")
-    expect(visitedRel).toContain("hosts/workgraph/hosted.ts")
-    expect(visitedRel).toContain("hosts/workgraph/hosted-runtime.ts")
+    expect(visitedRel).toContain("hosts/workgraph/hosted/index.ts")
+    expect(visitedRel).toContain("hosts/workgraph/hosted/runtime.ts")
     expect(visitedRel).toContain("documents/routes/index.ts")
     expect(visitedRel).not.toContain("routes/docs.ts")
     expect(visitedRel).not.toContain("document-store.ts")

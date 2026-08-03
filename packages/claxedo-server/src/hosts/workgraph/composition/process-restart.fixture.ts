@@ -8,7 +8,7 @@ import { Hono } from "hono"
 import type { ExecutionCapabilitiesPort, ExecutionResult } from "@claxedo/workgraph"
 import { EXECUTION_CAPABILITY_CATALOG_MAX_AGE_MS, type WorkGraphContext } from "@claxedo/workgraph/contracts"
 import { createLocalEmbeddedWorkGraph, mountEmbeddedWorkGraph } from "./server-workgraph"
-import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "../local-execution"
+import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "../local/execution"
 
 const databasePath = requiredEnvironment("CLAXEDO_TEST_WORKGRAPH_DATABASE")
 const repositoryDirectory = requiredEnvironment("CLAXEDO_TEST_WORKGRAPH_REPOSITORY")

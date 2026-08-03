@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
-import { createR2ConditionalObjectStore, type R2BucketBinding } from "./hosted-managed"
+import { createR2ConditionalObjectStore, type R2BucketBinding } from "./backends/hosted/managed"
 
 describe("R2 conditional object store against Miniflare", () => {
   let miniflare: Miniflare

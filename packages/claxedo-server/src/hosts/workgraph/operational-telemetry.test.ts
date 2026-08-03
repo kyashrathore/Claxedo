@@ -7,7 +7,7 @@ import {
   workGraphHttpTelemetry,
   workGraphMonitorContract,
 } from "./operational-telemetry"
-import { createHostedWorkGraphRuntime } from "./hosted-runtime"
+import { createHostedWorkGraphRuntime } from "./hosted/runtime"
 import type { ControlPlaneServices } from "../../authority/services"
 
 describe("WorkGraph operational telemetry", () => {

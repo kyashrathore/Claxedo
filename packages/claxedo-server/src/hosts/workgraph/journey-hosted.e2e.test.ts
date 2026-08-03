@@ -6,8 +6,8 @@ import type { WorkspaceAuthority } from "../../platform/auth/authority"
 import { hostedOrgCredentials } from "../../adapters/credentials/worker/index"
 import schema from "../../../../../convex/schema"
 import { api } from "../../../../../convex/_generated/api"
-import { createHostedWorkGraph } from "./hosted"
-import { createHostedConnectionOperationExecutor } from "./hosted-connection-operation"
+import { createHostedWorkGraph } from "./hosted/index"
+import { createHostedConnectionOperationExecutor } from "./hosted/connection-operation"
 
 declare global {
   interface ImportMeta {

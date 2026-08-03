@@ -24,7 +24,7 @@ import {
   HostedWorkerCompositionError,
   type HostedWorkerEnv,
 } from "../../authority/hosted-services"
-import { createHostedWorkGraphRuntime } from "../workgraph/hosted-runtime"
+import { createHostedWorkGraphRuntime } from "../workgraph/hosted/runtime"
 import { settlementTenantKey, type SettlementTenant } from "../workgraph/settlement-dispatcher"
 import { ConvexWakeStore } from "./convex-wake-store"
 

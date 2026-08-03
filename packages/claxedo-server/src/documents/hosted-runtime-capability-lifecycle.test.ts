@@ -8,9 +8,9 @@ import { RuntimeDocumentHydrationRoutes } from "../../../workspace-runtime/src/r
 import type { SignedControlPlaneAuth } from "../platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
 import { mintDocumentSessionToken } from "../platform/auth/runtime-access-token"
-import { createHostedDocumentsBackend } from "./hosted-backend"
+import { createHostedDocumentsBackend } from "./backends/hosted/backend"
 import type { DocumentIndexEntry } from "./index-store"
-import { createHostedDocumentRuntimeBroker } from "./hosted-runtime-broker"
+import { createHostedDocumentRuntimeBroker } from "./backends/hosted/runtime-broker"
 
 const entry = {
   id: "document_1",

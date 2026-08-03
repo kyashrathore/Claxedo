@@ -9,14 +9,14 @@ import { promisify } from "node:util"
 import { Hono } from "hono"
 import { localOnlyAuthAdapter, type ClerkVerifier, type ControlPlaneAuthConfig } from "../../platform/auth/auth"
 import type { ProjectAction, WorkspaceAuthority } from "../../platform/auth/authority"
-import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from "../local-managed"
+import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from "../backends/local/managed"
 import {
   createLocalRepositoryFileAuthority,
   createLocalRepositoryGitAuthority,
   createRepositoryDocumentWorkspace,
   type RepositoryDocumentHandle,
-} from "../repository"
-import type { LocalManagedDocumentHandle } from "../local-managed"
+} from "../repository/index"
+import type { LocalManagedDocumentHandle } from "../backends/local/managed"
 import type { DocumentEntry } from "../port"
 import { DocumentStorageError } from "../errors"
 import {

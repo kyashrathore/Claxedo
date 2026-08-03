@@ -6,7 +6,7 @@ import type { RunRuntimePort } from "@claxedo/workgraph/ports"
 import { workGraphAdapterConformance } from "@claxedo/workgraph/conformance"
 import { api } from "../../../../../convex/_generated/api"
 import schema from "../../../../../convex/schema"
-import { createConvexWorkGraphService } from "./convex-store"
+import { createConvexWorkGraphService } from "./convex/store"
 
 declare global {
   interface ImportMeta {

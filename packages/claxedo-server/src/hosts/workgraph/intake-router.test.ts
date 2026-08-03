@@ -9,7 +9,7 @@ import {
 import {
   HostedConnectionCredentialUnavailableError,
   HostedConnectionReconnectRequiredError,
-} from "./hosted-connections"
+} from "./hosted/connections"
 import { IntakeStateError, SourceViewVersionConflictError } from "@claxedo/workgraph/hosted"
 import { IntakeCandidatePageCursorError, createIntakeCandidatePageCursor } from "@claxedo/workgraph/contracts"
 import { createWorkGraphIntakeRouter } from "./intake-router"

@@ -15,7 +15,7 @@ import {
 import { OPENCODE_INTERNAL_BASE } from "../../../opencode/engine"
 import { ConnectionOperationDeniedError, createConnectionOperationBroker } from "../connection-operation-broker"
 import { createWorkGraphConnectionsPort } from "../connections"
-import type { WorkGraphSessionGateway } from "../local-execution"
+import type { WorkGraphSessionGateway } from "../local/execution"
 import {
   registerWorkGraphSessionAttribution,
   unregisterWorkGraphSessionAttribution,

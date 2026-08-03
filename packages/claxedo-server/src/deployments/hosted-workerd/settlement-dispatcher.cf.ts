@@ -4,7 +4,7 @@ import {
   type HostedWorkerEnv,
 } from "../../authority/hosted-services"
 import { reportError } from "../../platform/telemetry/errors/report"
-import { createHostedWorkGraphRuntime } from "../../hosts/workgraph/hosted-runtime"
+import { createHostedWorkGraphRuntime } from "../../hosts/workgraph/hosted/runtime"
 import {
   settlementTenantKey,
   type SettlementDispatcher,

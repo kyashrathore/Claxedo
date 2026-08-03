@@ -3,7 +3,7 @@ import {
   createR2ConditionalObjectStore,
   hostedManagedRelativePath,
   type R2BucketBinding,
-} from "../../src/documents/hosted-managed"
+} from "../../src/documents/backends/hosted/managed"
 import { DocumentVersionConflictError } from "../../src/documents/errors"
 
 type Env = Readonly<{

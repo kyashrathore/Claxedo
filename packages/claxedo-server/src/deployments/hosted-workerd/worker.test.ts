@@ -61,7 +61,7 @@ vi.mock("../../billing/reconcile", () => ({
   runScheduledBillingReconciliation: runBillingSweep,
 }))
 
-vi.mock("../../hosts/workgraph/hosted-runtime", () => ({
+vi.mock("../../hosts/workgraph/hosted/runtime", () => ({
   createHostedWorkGraphRuntime: vi.fn(() => ({ listStaleTenants, reconcile })),
 }))
 

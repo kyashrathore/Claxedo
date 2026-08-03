@@ -68,22 +68,22 @@ import {
   createHostedWorkGraph,
   type HostedWorkGraph,
   type HostedWorkGraphOwnerActivation,
-} from "../../hosts/workgraph/hosted"
+} from "../../hosts/workgraph/hosted/index"
 import {
   createHostedConnectionOperationExecutor,
   createHostedConnectionOperationHandler,
-} from "../../hosts/workgraph/hosted-connection-operation"
+} from "../../hosts/workgraph/hosted/connection-operation"
 import {
   createHostedRunOperationExecutor,
   createHostedRunOperationHandler,
-} from "../../hosts/workgraph/hosted-run-operation"
-import { createHostedSessionTranscriptRetention } from "../../hosts/workgraph/hosted-runtime"
-import { createHostedConnectionsSetup } from "../../hosts/workgraph/hosted-connections-setup"
+} from "../../hosts/workgraph/hosted/run-operation"
+import { createHostedSessionTranscriptRetention } from "../../hosts/workgraph/hosted/runtime"
+import { createHostedConnectionsSetup } from "../../hosts/workgraph/hosted/connections-setup"
 import { DocumentsRoutes, type DocumentsRouteBackend } from "../../documents/routes/index"
 import { workGraphHttpTelemetry } from "../../hosts/workgraph/operational-telemetry"
 import { captureProduct, productIdentity } from "../../platform/telemetry/product/product"
 import type { SettlementDispatcher } from "../../hosts/workgraph/settlement-dispatcher"
-import type { WorkGraphConvexExecutor } from "../../hosts/workgraph/convex-store"
+import type { WorkGraphConvexExecutor } from "../../hosts/workgraph/convex/store"
 
 export type HostedAppOverrides = {
   /** Hosted relay target lookup. Omitted → the plane's composed lookup is used. */

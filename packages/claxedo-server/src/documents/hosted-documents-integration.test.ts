@@ -20,17 +20,17 @@ import {
 import { localOnlyAuthAdapter, type ClerkVerifier, type ControlPlaneAuthConfig, type SignedControlPlaneAuth } from "../platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
 import { DocumentsRoutes, type DocumentsRouteBackend } from "./routes/index"
-import { createHostedDocumentsBackend } from "./hosted-backend"
-import { createHostedLocalDocumentRelay } from "./hosted-local-relay"
-import { createHostedDocumentRuntimeBroker } from "./hosted-runtime-broker"
+import { createHostedDocumentsBackend } from "./backends/hosted/backend"
+import { createHostedLocalDocumentRelay } from "./backends/hosted/local-relay"
+import { createHostedDocumentRuntimeBroker } from "./backends/hosted/runtime-broker"
 import type { DocumentIndexEntry } from "./index-store"
-import { LocalInstallationDocumentBroker } from "./local-installation-broker"
-import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from "./local-managed"
+import { LocalInstallationDocumentBroker } from "./backends/local/installation-broker"
+import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from "./backends/local/managed"
 import {
   createLocalRepositoryFileAuthority,
   createLocalRepositoryGitAuthority,
   createRepositoryDocumentWorkspace,
-} from "./repository"
+} from "./repository/index"
 import type { DocumentEntry } from "./port"
 
 const exec = promisify(execFile)

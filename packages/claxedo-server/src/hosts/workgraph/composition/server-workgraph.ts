@@ -20,7 +20,7 @@ import {
   type ControlPlaneAuthConfig,
 } from "../../../platform/auth/auth"
 import type { WorkspaceAuthority } from "../../../platform/auth/authority"
-import type { WorkGraphSessionGateway } from "../local-execution"
+import type { WorkGraphSessionGateway } from "../local/execution"
 import type { ControlPlaneTelemetry } from "../../../authority/services"
 import {
   createWorkGraphOperationalReporter,
@@ -34,7 +34,7 @@ import {
   instrumentWorkGraphChangeDoorbell,
 } from "../change-doorbell"
 import { claxedoBus, type WorkgraphChangedEvent } from "../../../platform/runtime/lib/bus"
-import { createLocalWorkGraphMasterRuntime } from "../local-master-runtime"
+import { createLocalWorkGraphMasterRuntime } from "../local/master-runtime"
 
 export type LocalWorkGraphAuthOptions = Readonly<{
   authConfig: ControlPlaneAuthConfig

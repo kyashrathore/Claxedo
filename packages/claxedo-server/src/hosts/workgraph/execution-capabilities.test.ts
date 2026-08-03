@@ -11,8 +11,8 @@ import type { SignedControlPlaneAuth } from "../../platform/auth/auth"
 import type { WorkspaceAuthority } from "../../platform/auth/authority"
 import type { RelayProvider } from "../../adapters/relay"
 import { createExecutionCapabilitiesPort } from "./execution-capabilities"
-import { createHostedExecutionCapabilities } from "./hosted-execution-capabilities"
-import { createLocalExecutionCapabilities } from "./local-execution-capabilities"
+import { createHostedExecutionCapabilities } from "./hosted/execution-capabilities"
+import { createLocalExecutionCapabilities } from "./local/execution-capabilities"
 
 const context = {
   organizationId: "org_1",

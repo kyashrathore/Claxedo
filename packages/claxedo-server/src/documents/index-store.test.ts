@@ -4,8 +4,8 @@ import os from "node:os"
 import path from "node:path"
 import { afterAll, beforeEach, describe, expect, test } from "vitest"
 import { ClaxedoDB } from "../platform/db/db"
-import { createHostedDocumentIndex } from "./hosted-index"
-import { objectListing } from "./hosted-managed"
+import { createHostedDocumentIndex } from "./backends/hosted/index"
+import { objectListing } from "./backends/hosted/managed"
 import {
   archiveDocumentIndexEntry,
   createDocumentIndexEntry,
