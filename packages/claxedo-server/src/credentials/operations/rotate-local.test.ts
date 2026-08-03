@@ -222,7 +222,7 @@ describe("local credential store KEK rotation", () => {
     await deleteCredential(credential.id)
   })
 
-  test("the deployment partition is the one credentials/store.ts composes with", () => {
+  test("the deployment partition is the one credentials/backend-registry.ts composes with", () => {
     expect(localEnvelopePartition({})).toBe("deployment")
     expect(localEnvelopePartition({ CLAXEDO_CREDENTIALS_ORG_ID: "  acme  " })).toBe("acme")
   })

@@ -243,7 +243,7 @@ export function createHostedDocumentIndex(store: ConditionalObjectStore) {
    * set) regardless of document count, plus a GET for each object whose ETag the roll-up does not
    * already match. A warm cache over an unchanged project therefore does zero per-document work,
    * while a changed, corrupt, or poisoned object is always re-read from source. See the invariant in
-   * `hosted-project-index.ts`.
+   * `backends/hosted/project-index.ts`.
    */
   async function snapshot(scope: DocumentIndexScope): Promise<ProjectIndexSnapshot> {
     const rollup = await readProjectIndex(store, scope)

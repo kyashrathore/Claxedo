@@ -62,9 +62,10 @@ describe("control-plane HTTP idempotency", () => {
   })
 
   test("coalesces pending work within the in-flight window, then stops waiting on it", async () => {
-    // This changed deliberately. In-flight entries used to carry NO
-    // expiry, which made them unsweepable: one hung `run` held its slot until
-    // the isolate died. They now carry a deadline like any other entry.
+    // In-flight entries carry a deadline like any other entry. Without one they
+    // are unsweepable — the sweep and the capacity eviction both skip an
+    // undefined expiry — so a single hung `run` would hold its slot until the
+    // isolate died.
     //
     // The trade is the same one the cron lease makes: past the deadline the
     // holder is presumed dead, so a later caller may proceed. Cross-isolate

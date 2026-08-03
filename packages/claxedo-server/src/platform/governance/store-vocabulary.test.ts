@@ -10,8 +10,8 @@
  *   *-adapter / adapters/*   an EXTERNAL port implementation
  *
  * A module that selects between backends, or holds a process-global handle, is
- * a registry — not a store. `credentials/store.ts` exported `getBackend()` and
- * `setBackendOverride()` and persisted nothing; it is now `backend-registry.ts`.
+ * a registry — not a store. `credentials/backend-registry.ts` is the example:
+ * it exports `getBackend()` / `setBackendOverride()` and persists nothing.
  */
 
 import fs from "node:fs"

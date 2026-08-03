@@ -1,11 +1,12 @@
 /**
- * Billing reconciliation sweep — Worker half (ADR 014 §3 "the failure mode webhooks alone can't cover"): Polar disables a
- * webhook endpoint after 10 consecutive failed deliveries, silently stopping
- * all future events. The Convex cron (convex/crons.ts) FLAGS orgs whose
- * mirror is stale; this sweep — driven by the same Cloudflare Cron Trigger as
- * the sandbox reaper via worker.ts `scheduled` — fetches each flagged org's
- * current customer state from Polar and re-applies it through the single
- * writer (billing.applyPolarState), which clears the flag.
+ * Billing reconciliation sweep — Worker half (ADR 014 §3, "the failure mode
+ * webhooks alone can't cover"): Polar disables a webhook endpoint after 10
+ * consecutive failed deliveries, silently stopping all future events. The
+ * Convex cron (convex/crons.ts) FLAGS orgs whose mirror is stale; this sweep —
+ * driven by the same Cloudflare Cron Trigger as the sandbox reaper via
+ * worker.ts `scheduled` — fetches each flagged org's current customer state
+ * from Polar and re-applies it through the single writer
+ * (billing.applyPolarState), which clears the flag.
  *
  * Failure semantics (the load-bearing rule): Polar unreachable / errors →
  * reportPaymentError and LEAVE STATE AS IS. Only a successfully fetched FRESH

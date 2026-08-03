@@ -2,7 +2,7 @@
  * KEK rotation for the LOCAL / self-host process.
  *
  * Node-only on purpose (SQLite + the process-selected backend), which is why it
- * is split from the worker-safe core in `rotate.ts`: `credentials/store.ts` and
+ * is split from the worker-safe core in `rotate.ts`: `credentials/backend-registry.ts` and
  * `credentials/registry.ts` are both on the Worker's forbidden-import list.
  *
  * WHICH BACKEND THIS ACTUALLY SWEEPS. `getBackend()` picks the backend the
@@ -57,7 +57,7 @@ export type LocalEnvelopeRotationReport = EnvelopeRotationReport & {
   partition: string
 }
 
-/** The envelope partition `credentials/store.ts` composes its KV backend with. */
+/** The envelope partition `credentials/backend-registry.ts` composes its KV backend with. */
 export function localEnvelopePartition(env: Record<string, string | undefined> = process.env): string {
   return env.CLAXEDO_CREDENTIALS_ORG_ID?.trim() || "deployment"
 }

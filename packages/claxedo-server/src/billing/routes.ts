@@ -136,7 +136,7 @@ function orgExternalCustomerId(orgId: string) {
   return `org_${orgId}`
 }
 
-/** Statuses that mean a live Polar subscription already exists for the org (F2). */
+/** Statuses that mean a live Polar subscription already exists for the org. */
 const LIVE_SUBSCRIPTION_STATUSES = new Set(["active", "trialing", "past_due"])
 
 export function polarProductConfig(env: BillingEnv): PolarProductConfig {
@@ -169,7 +169,7 @@ export type BillingRouteOptions = {
   rateLimiter?: ConnectionRateLimiter
   /** W3.3 IP-keyed limiter for the unauthenticated webhook route. */
   webhookRateLimiter?: ConnectionRateLimiter
-  /** W3.3 override for the webhook body cap, in bytes. Tests shrink it. */
+  /** Override for the webhook body cap, in bytes. Tests shrink it. */
   webhookMaxBodyBytes?: number
   /**
    * Test seam for the webhook dedup store. Production reads the
@@ -194,7 +194,7 @@ export const POLAR_WEBHOOK_MAX_BODY_BYTES = 512 * 1024
  * This surface's exemption from the app-wide default guard.
  *
  * Declared HERE rather than in `authority/request-guard.ts` because the
- * reason names the payment vendor, and `billing-architecture.test.ts` keeps the
+ * reason names the payment vendor, and `billing/invariants.test.ts` keeps the
  * vendor-agnostic control-plane core free of Polar tokens. `hosted-app.ts`
  * merges it in through `hostedRouteGuardExemptions()`, so the exemption still
  * lives in exactly one place and is still auditable by the inventory test — it

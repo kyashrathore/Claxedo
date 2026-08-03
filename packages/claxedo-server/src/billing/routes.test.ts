@@ -222,7 +222,7 @@ describe("POST /checkout", () => {
         externalCustomerId: "org_org_doc_1",
         metadata: { org_id: "org_doc_1" },
       }),
-      // checkout is user-facing, so it carries the interactive deadline.
+      // Checkout is user-facing, so it carries the interactive deadline.
       { timeoutMs: POLAR_INTERACTIVE_TIMEOUT_MS },
     )
   })
@@ -329,7 +329,7 @@ describe("POST /portal", () => {
     expect(res.status).toBe(200)
     expect(polar.customerSessions.create).toHaveBeenCalledWith(
       { externalCustomerId: "org_org_doc_1" },
-      // the portal redirect is user-facing too.
+      // The portal redirect is user-facing too.
       { timeoutMs: POLAR_INTERACTIVE_TIMEOUT_MS },
     )
   })

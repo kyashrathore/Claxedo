@@ -4,7 +4,7 @@ import { clean, type HostedWorkerEnv } from "../../../authority/adapters/worker/
 
 /**
  * Runtime Access Token verification shared by the hosted operation handlers
- * (`hosted-run-operation.ts`, `hosted-connection-operation.ts`).
+ * (`hosted/run-operation.ts`, `hosted/connection-operation.ts`).
  *
  * Both handlers verify a relay-minted RAT the same way, and each carried its
  * own byte-identical copy of this error class plus `failure`, `pem`,

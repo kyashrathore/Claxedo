@@ -187,7 +187,7 @@ export async function createLocalEmbeddedWorkGraph(
   // already derives as `context.ownerUserId`.
   //
   // Hosted is unaffected: it mounts the connections routes with no personal
-  // owner resolver (`hosted-connections-setup.ts`), so every hosted row is
+  // owner resolver (`hosted/connections-setup.ts`), so every hosted row is
   // `org:{orgId}` and a subject-keyed cascade correctly matches nothing.
   const deletion: typeof workGraphDeletion = input.connections
     ? {

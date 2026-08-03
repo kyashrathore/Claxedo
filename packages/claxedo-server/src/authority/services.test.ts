@@ -147,8 +147,8 @@ describe("control-plane services", () => {
   })
 
   test("central-store ports are accepted as the composition input and delegate to the backend", () => {
-    // Plan provenance: unit1-pin, updated by Unit 6 when the seam became
-    // ports-in — callers pass the ports and the injected bag disappeared.
+    // The seam is ports-IN: callers pass the ports, and the composition holds
+    // no injected bag of its own.
     const sync = fakeSync()
     const services = createControlPlaneServices(fakePorts(sync))
 

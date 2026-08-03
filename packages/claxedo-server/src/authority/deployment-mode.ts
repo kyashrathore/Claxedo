@@ -164,7 +164,7 @@ export function hostedBootRequirementFailures(
   }
   // When hosted credential storage is turned on, the credential backend must resolve to
   // the envelope-encrypted Cloudflare KV path — the store selects KV only when
-  // CLAXEDO_CF_KV_URL is set (credentials/store.ts isHosted), and the encrypted
+  // CLAXEDO_CF_KV_URL is set (credentials/backend-registry.ts isHosted), and the encrypted
   // KV backend refuses to construct without the KV token and the envelope KEK
   // (credentials/cloudflare.ts + envelope.ts). If the flag is on but any piece
   // is missing, the store silently falls back to the LOCAL FILE backend —

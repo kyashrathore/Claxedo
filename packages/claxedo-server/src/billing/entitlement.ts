@@ -1,7 +1,8 @@
 /**
- * requireEntitlement — the ONE entitlement predicate (
- * ADR 014 §3/§5). Entitlement is a pure function of the mirrored org row:
- * No Polar call ever happens at request time, so a Polar outage cannot lock
+ * requireEntitlement — the ONE entitlement predicate (ADR 014 §3/§5).
+ *
+ * Entitlement is a pure function of the mirrored org row: no Polar call ever
+ * happens at request time, so a Polar outage cannot lock
  * a paying customer out (ADR §3 "why not query-at-request-time").
  *
  * Capabilities are the hosted deltas (free = self-host-equivalent, ADR §5):
@@ -75,7 +76,7 @@ export function entitlementDecision(
     if (status === "active" || status === "trialing") return { entitled: true, status }
     if (status === "past_due") {
       const graceDays = options.graceDays ?? DEFAULT_PAST_DUE_GRACE_DAYS
-      // grace anchors on the FIRST past_due transition (past_due_since),
+      // Grace anchors on the FIRST past_due transition (past_due_since),
       // which applyPolarState stamps once and preserves across dunning retries —
       // NOT on polar_state_modified_at / billing_synced_at, which each dunning
       // webhook refreshes (that would re-extend grace for the whole dunning
@@ -129,7 +130,7 @@ export async function requireEntitlement(
   const decision = entitlementDecision(state, capability, options)
   if (decision.entitled) return
   if (decision.reason === "seat_over_capacity") {
-    // distinct typed error carrying the counts, so the app can render the
+    // A distinct typed error carrying the counts, so the app can render the
     // "you have N members but M seats — buy more or remove members" surface.
     throw new BillingEntitlementError(
       "seat_over_capacity",

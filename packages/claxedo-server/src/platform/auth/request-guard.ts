@@ -22,7 +22,7 @@
  *
  * The registry is SPLIT rather than central, and that is deliberate. This module
  * lives in the storage- and vendor-agnostic control-plane core, which
- * `billing-architecture.test.ts` keeps free of payment-vendor tokens. A
+ * `billing/invariants.test.ts` keeps free of payment-vendor tokens. A
  * feature whose exemption requires naming a vendor therefore exports its own
  * entry from its own module (see `billing/billing-routes.ts`
  * `BILLING_WEBHOOK_GUARD_EXEMPTION`), and `hosted-app.ts` composes the full list

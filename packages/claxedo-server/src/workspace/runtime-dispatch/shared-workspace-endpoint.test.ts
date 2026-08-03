@@ -4,7 +4,7 @@
  * `localWorkspaceRelayProxy` answers `/workspaces/:id/*` on the local server —
  * the same URL shape the hosted relay serves — so a user can share a local
  * workspace for remote access. Before this file, every relay assertion in
- * `proxy.test.ts` was a REFUSAL: the loopback gate rejecting a spoofed request.
+ * `workspace/runtime-dispatch/route-ownership-contract.test.ts` was a REFUSAL: the loopback gate rejecting a spoofed request.
  * A refusal-only suite cannot tell "the guard works" from "the path is broken",
  * and a live product surface with no success test is one refactor away from
  * silently answering 500 to every request while the guard tests stay green.

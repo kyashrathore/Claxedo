@@ -5,7 +5,7 @@
  * device-login, workspace connection/register/heartbeat/pause,
  * relay resolver) does NOT manage provider credentials, so this stays
  * fail-closed by default. It exists to satisfy the `ControlPlaneServices`
- * shape without importing `credentials/store.ts` or `credentials/registry.ts`,
+ * shape without importing `credentials/backend-registry.ts` or `credentials/registry.ts`,
  * which statically pull in the local encrypted file backend (`fs`).
  *
  * The hosted credential byte path is envelope-encrypted Cloudflare KV —

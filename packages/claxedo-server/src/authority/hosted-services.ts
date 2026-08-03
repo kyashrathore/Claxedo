@@ -161,10 +161,9 @@ export function sandboxDriver(env: HostedWorkerEnv): SandboxDriver | undefined {
       // the standing cost floor, that is a slow storage leak with nothing in
       // the system that would ever notice it.
       //
-      // These are a backstop, not the reaper. The reaper itself now works:
-      // A later change implemented `list()` here, so `garbageCollect()`
-      // enumerates real Daytona state and destroys a sandbox with no matching
-      // lease.
+      // These are a backstop, not the reaper: the driver's `list()` lets
+      // `garbageCollect()` enumerate real Daytona state and destroy a sandbox
+      // with no matching lease.
       autoStopMinutes: lifecycleMinutes(env, "CLAXEDO_SANDBOX_AUTO_STOP_MS", 30 * 60_000),
       autoDeleteMinutes: lifecycleMinutes(env, "CLAXEDO_SANDBOX_AUTO_DELETE_MS", 24 * 60 * 60_000),
       ...(clean(env.DAYTONA_API_URL) ? { apiUrl: clean(env.DAYTONA_API_URL) } : {}),

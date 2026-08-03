@@ -1,6 +1,6 @@
 /**
- * applyPolarState — the single translation module (ADR 014 §3 + addendum): turns a Polar payload (webhook event or
- * reconciliation fetch) into org-field writes through the ONE builder-gated
+ * applyPolarState — the single translation module (ADR 014 §3 + addendum):
+ * turns a Polar payload (webhook event or reconciliation fetch) into org-field writes through the ONE builder-gated
  * Convex service mutation (convex/billing.ts `applyPolarState`). Nothing else
  * anywhere writes the mirrored billing fields — enforced grep-style by
  * billing-architecture.test.ts.
@@ -206,8 +206,8 @@ export type PolarWebhookEvent = { type?: unknown; data?: unknown }
 /**
  * True when the event type is one we DO translate into billing state. Lets the
  * route distinguish a harmless order/benefit event (silent ack) from a
- * subscription or customer-state event we failed to attribute to an org (
- * ack so Polar stops retrying, but page — a charge may have no entitlement).
+ * subscription or customer-state event we failed to attribute to an org (ack
+ * so Polar stops retrying, but page — a charge may have no entitlement).
  */
 export function isBillingRelevantEventType(event: PolarWebhookEvent): boolean {
   const type = str(event.type)
