@@ -4,9 +4,9 @@ import { createServer, type ServerResponse } from "node:http"
 import { createRequire } from "node:module"
 import path from "node:path"
 import type { ConnectionsService } from "../../../claxedo-connections/src/index"
-import { createLocalEmbeddedWorkGraph } from "../../../claxedo-server/src/hosts/workgraph/composition/server-workgraph.ts"
-import { createSessionV2WorkGraphGateway } from "../../../claxedo-server/src/hosts/workgraph/composition/session-gateway.ts"
-import { createLocalWorkspaceExecution } from "../../../claxedo-server/src/hosts/workgraph/local/execution.ts"
+import { createLocalEmbeddedWorkGraph } from "../../../claxedo-server/src/hosts/workgraph/composition/server-workgraph"
+import { createSessionV2WorkGraphGateway } from "../../../claxedo-server/src/hosts/workgraph/composition/session-gateway"
+import { createLocalWorkspaceExecution } from "../../../claxedo-server/src/hosts/workgraph/local/execution"
 import type { SourceIssueConnector } from "../../../workgraph/src/connectors/interface"
 
 const apiPort = Number(process.env.CLAXEDO_WORKGRAPH_CONNECTION_API_PORT ?? 4314)

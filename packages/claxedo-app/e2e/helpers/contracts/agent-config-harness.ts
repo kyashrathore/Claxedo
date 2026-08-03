@@ -71,7 +71,7 @@ import type { SessionHarness } from "@claxedo/agent-sdk-runtime"
 // `e2e/helpers/workgraph-connection-browser-use-server.ts:7`), and `tsconfig.e2e.json`
 // carries the `types: ["bun", …]` entry that exists specifically so those imports
 // resolve — so this costs nothing at runtime and adds no new build surface.
-import type { harnessFromRequest } from "../../../../claxedo-server/src/agent-config/harness.ts"
+import type { harnessFromRequest } from "../../../../claxedo-server/src/agent-config/harness"
 
 // ---------------------------------------------------------------------------
 // (1) Compile-time drift tripwires
