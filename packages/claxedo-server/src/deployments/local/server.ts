@@ -125,7 +125,7 @@ import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "../
 import { createLocalExecutionCapabilities } from "../../hosts/workgraph/local/execution-capabilities"
 import { createSqlitePullRequestEffects } from "../../hosts/workgraph/sqlite-pull-request-effects"
 import { createLocalWorkGraphAgentTools, localSessionContext, localSessionExecution, localSessionOwnerDirected } from "../../hosts/workgraph/composition/agent-tools"
-import { provisionRegisteredWorktree, releaseRegisteredWorktree, workGraphWorkspaceId } from "../../workspace/worktree"
+import { provisionRegisteredWorktree, releaseRegisteredWorktree, localWorktreeWorkGraphId } from "../../workspace/worktree"
 import { StreamIDSchema, masterRunId, masterSessionId } from "@claxedo/workgraph/contracts"
 import type { CommandResult, WorkGraphRunOperationRequest, WorkGraphContext } from "@claxedo/workgraph/contracts"
 import { sessionMeta } from "../../session/meta"
@@ -1257,7 +1257,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     if (hit) return hit
     const loading = (async () => {
       const workspace = await ensureWorkspace({
-        workspaceId: workGraphWorkspaceId(directory),
+        workspaceId: localWorktreeWorkGraphId(directory),
         workspace_name: "WorkGraph stream",
         directory,
       })
@@ -1362,7 +1362,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
         const workspace = await provisionRegisteredWorktree({
           repositoryDirectory: input.repositoryDirectory,
           directory: input.directory,
-          workspaceId: workGraphWorkspaceId(input.directory),
+          workspaceId: localWorktreeWorkGraphId(input.directory),
           workspaceName: `WorkGraph ${input.streamId}`,
           checkout: { kind: "detached", revision: input.baseRevision },
         })

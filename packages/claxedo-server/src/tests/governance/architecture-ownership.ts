@@ -324,12 +324,12 @@ export const ARCHITECTURE_OWNERSHIP = [
   // services/port-only and Worker-safe. Rehomed under authority/routes/.
   {
     area: "route",
-    module: "authority/routes/session.ts",
+    module: "session/routes/control-plane-session.ts",
     status: OwnershipStatus.Canonical,
     owner: "control-plane session routes",
     reason:
       "Unit 5 MOVE: imports only ControlPlaneServices, the authority port, authority/http, authority/auth, and type-only session-meta/session-list — no workspace-store, SQLite, or fs. Generic control-plane core, rehomed from routes/.",
-    tests: ["authority/routes/session.test.ts"],
+    tests: ["session/routes/control-plane-session.test.ts"],
     routeSamples: ["/api/control/sessions/s1/gateway"],
   },
   {

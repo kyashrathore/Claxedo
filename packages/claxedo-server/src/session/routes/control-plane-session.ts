@@ -1,9 +1,9 @@
 import { Hono } from "hono"
 import { randomUUID } from "node:crypto"
 import type { SandboxRef } from "@claxedo/agent-sdk-runtime"
-import type { ControlPlaneServices } from "../services"
-import type { SessionMeta } from "../../session/meta"
-import { resolveSessionGateway } from "../http"
+import type { ControlPlaneServices } from "../../authority/services"
+import type { SessionMeta } from "../meta"
+import { resolveSessionGateway } from "../../authority/http"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,
@@ -18,7 +18,7 @@ import {
   parseSessionListQuery,
   sessionListStoreFilter,
   sessionListStorePageFilter,
-} from "../../session/list"
+} from "../list"
 
 type Options = {
   authConfig?: ControlPlaneAuthConfig

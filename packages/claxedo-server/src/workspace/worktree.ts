@@ -20,7 +20,17 @@ export class WorktreeProvisionError extends Error {
   }
 }
 
-export function workGraphWorkspaceId(directory: string) {
+/**
+ * The WorkGraph id for a LOCAL worktree, derived from its directory.
+ *
+ * Named for the derivation because a second, unrelated
+ * `workGraphWorkspaceId(organizationId, ownerUserId, scopeId)` exists in
+ * `hosts/workgraph/hosted/runtime.ts` and produces a `wg-` id from tenant
+ * identity. Same old name, different arity, incompatible output: the two are
+ * imported from separate paths so nothing is broken today, but the collision is
+ * a trap for anyone reaching for "the workgraph id function".
+ */
+export function localWorktreeWorkGraphId(directory: string) {
   return `workgraph_${createHash("sha256").update(path.resolve(directory)).digest("hex").slice(0, 32)}`
 }
 

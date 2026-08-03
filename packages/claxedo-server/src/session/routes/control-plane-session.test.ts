@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError, localOnlyAuthAdapter } from "../../platform/auth/auth"
-import type { ControlPlaneServices } from "../services"
+import type { ControlPlaneServices } from "../../authority/services"
 
 const mocks = vi.hoisted(() => ({
   resolveWorkspace: vi.fn(),
@@ -11,11 +11,11 @@ vi.mock("../../workspace/store", () => ({
   resolveWorkspace: mocks.resolveWorkspace,
 }))
 
-vi.mock("../../session/harness/resolution", () => ({
+vi.mock("../harness/resolution", () => ({
   resolveHarnessHostForRequest: mocks.resolveHarnessHostForRequest,
 }))
 
-import { ControlPlaneSessionRoutes } from "./session"
+import { ControlPlaneSessionRoutes } from "./control-plane-session"
 
 function services(): ControlPlaneServices {
   return {
