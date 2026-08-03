@@ -5,13 +5,15 @@ become one running product. Three roles, three directories:
 
 | dir | role | contents |
 | --- | --- | --- |
-| `hosts/` | we **host** these packages | `workgraph/`, `connections/`, `wakes/`, `agent-extensions/`, `workspace-runtime/` — one dir per `@claxedo/<pkg>` |
-| `adapters/` | we **adapt** these backends | `storage/` (SQLite+drizzle), `credentials/`, `sandbox/`, `relay/`, `provider-auth/` |
-| `deployments/` | we **compose** these modes | `local/`, `hosted-node/`, `hosted-shared/`, `hosted-workerd/` |
+| `hosts/` | we **host** these packages | `workgraph/`, `wakes/`, `agent-extensions/`, `workspace-runtime/` — one dir per `@claxedo/<pkg>` |
+| `adapters/` | we **adapt** these backends | `relay/`, `central-store/` — each adapts exactly one external thing |
+| `platform/` | layer-organized shared machinery | `auth/`, `db/`, `errors/`, `http/`, `runtime/`, `telemetry/`, `governance/` |
+| `deployments/` | we **compose** these modes | `local/`, `hosted-node/`, `hosted-shared/`, `hosted-workerd/`, `shared-routes/` |
 
-Everything else is a feature area (`routes/`, `documents/`, `billing/`,
-`channels/`, `session/`, `workspace/`) or a cross-cutting concern
-(`authority/`, `governance/`, `http/`, `lib/`, `observability/`, `telemetry/`).
+Everything else is a feature domain, flat at `src/` root — `documents/`,
+`billing/`, `channels/`, `session/`, `workspace/`, `credentials/`, `sandbox/`,
+`connections/`, `agent-config/`, `opencode/` — plus `authority/`, the
+identity/authorization/tenancy layer.
 
 ## Vocabulary that is easy to get wrong
 
@@ -28,7 +30,7 @@ Enforced in both directions by `deployments/hosted-workerd/worker.import-graph.t
 
 **`authority/` is the identity/authorization/tenancy layer**, not "the control
 plane" (that is the whole package). `authority/http/` is that layer's wire
-protocol; `authority/routes/` holds the JWKS router; top-level `http/` is
+protocol; `authority/routes/` holds the JWKS router; `platform/http/` is
 generic transport middleware shared by every deployment; `routes/` is the
 product HTTP surface.
 

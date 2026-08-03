@@ -34,6 +34,36 @@ const SRC = path.resolve(import.meta.dirname, "../..")
 const HOLDS_STATE =
   /\b(?:db|database)\b|drizzle|\.prepare\(|SELECT |INSERT |UPDATE |\bquery\(|\bmutation\(|ClaxedoDB|new Map\b|new Set\b|\bsync_|\bput_|\bget_|Store = \{|Store = Readonly/
 
+/**
+ * Strip test-only in-memory doubles before asking whether a module holds state.
+ *
+ * Without this the guard cannot catch the defect its own docblock names: a copy
+ * of `credentials/backend-registry.ts` renamed to `*-store.ts` PASSES, because
+ * `createTestBackend()` contains `new Map()`. That Map is a test double, not the
+ * module's persistence, so a pure backend selector reads as a store.
+ */
+function productionBody(text: string) {
+  return text
+    .split("\n")
+    .reduce<{ out: string[]; skip: boolean; depth: number }>(
+      (acc, line) => {
+        if (!acc.skip && /^export function create(Test|InMemory|Fake)[A-Za-z]*\(/.test(line)) {
+          acc.skip = true
+          acc.depth = 0
+        }
+        if (acc.skip) {
+          acc.depth += (line.match(/\{/g) ?? []).length - (line.match(/\}/g) ?? []).length
+          if (acc.depth <= 0 && /\}/.test(line)) acc.skip = false
+          return acc
+        }
+        acc.out.push(line)
+        return acc
+      },
+      { out: [], skip: false, depth: 0 },
+    )
+    .out.join("\n")
+}
+
 function storeModules() {
   return walk(SRC)
     .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))
@@ -47,7 +77,7 @@ describe("store vocabulary", () => {
 
   test("every module named store actually persists something", () => {
     const offenders = storeModules()
-      .filter((file) => !HOLDS_STATE.test(fs.readFileSync(file, "utf8")))
+      .filter((file) => !HOLDS_STATE.test(productionBody(fs.readFileSync(file, "utf8"))))
       .map((file) => path.relative(SRC, file))
 
     // A file here holds a handle, selects a backend, or wraps config. Those are

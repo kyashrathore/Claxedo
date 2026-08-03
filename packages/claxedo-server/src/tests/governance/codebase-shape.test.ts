@@ -84,7 +84,18 @@ describe("architecture boundaries", () => {
 
 
   test("keeps the server host bridge out of harness adapter execution", () => {
-    const files = ["deployments/local/embedded-workspace-runtime.ts", "workspace/http/sandbox-target-fetch.ts", "workspace/runtime-dispatch/internals.ts", "agent-config/fanout.ts"]
+    // The runtime-dispatch directory is walked rather than listed: W11.2b split
+    // proxy.ts into internals + two entrypoints, and naming one file left the
+    // other 149 lines — including the endpoint that mints owner-role tokens —
+    // outside this ban.
+    const files = [
+      "deployments/local/embedded-workspace-runtime.ts",
+      "workspace/http/sandbox-target-fetch.ts",
+      "agent-config/fanout.ts",
+      ...walk(path.resolve(import.meta.dirname, "../../workspace/runtime-dispatch"))
+        .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))
+        .map((file) => path.relative(path.resolve(import.meta.dirname, "../.."), file)),
+    ]
     const forbidden = [
       "@claxedo/agent-sdk-runtime",
       "AcpHarnessAdapter",
@@ -298,7 +309,11 @@ describe("architecture boundaries", () => {
   test("keeps API error response bodies structured", () => {
     const files = [
       path.resolve(import.meta.dirname, "../../deployments/local/server.ts"),
-      path.resolve(import.meta.dirname, "../../workspace/runtime-dispatch/internals.ts"),
+      // Whole directory, not one file: the entrypoints hold the `errorBody`
+      // responses this guard pins, and they moved out of proxy.ts in W11.2b.
+      ...walk(path.resolve(import.meta.dirname, "../../workspace/runtime-dispatch")).filter((file) =>
+        file.endsWith(".ts"),
+      ),
       ...walk(path.resolve(import.meta.dirname, "../../routes")).filter((file) => file.endsWith(".ts")),
     ]
     const rawScalarErrorBodies = files.flatMap((file) => {

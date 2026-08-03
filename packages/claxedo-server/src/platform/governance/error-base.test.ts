@@ -8,7 +8,7 @@
  * dangerous case — a non-idempotent write replayed because an error "looked
  * transient".
  *
- * This is a RATCHET, not a clean assertion. 57 classes still extend raw `Error`
+ * This is a RATCHET, not a clean assertion. 52 classes still extend raw `Error`
  * and converting them all at once would be a single unreviewable diff across
  * every domain. The count may fall freely; raising it takes a deliberate edit
  * here, which is the point at which someone has to justify a new bespoke shape.
@@ -43,7 +43,10 @@ describe("error base", () => {
     // ClaxedoError itself is the one class that MUST extend Error.
     const offenders = raw.filter((entry) => !entry.endsWith(":ClaxedoError"))
 
-    expect(offenders.length).toBeLessThanOrEqual(56)
+    // Pinned to the EXACT current count, not a round number above it: a
+    // ceiling with slack is headroom a new bespoke class slips into without
+    // anyone reviewing it, which is the one thing this ratchet exists to stop.
+    expect(offenders.length).toBeLessThanOrEqual(52)
   })
 
   test("ClaxedoError is the only thing in platform/errors/ that extends raw Error", () => {

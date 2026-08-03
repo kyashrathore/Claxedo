@@ -169,6 +169,33 @@ function mountedRoutePaths(app: Hono) {
 }
 
 /**
+ * Every (method, path) pair the app actually serves.
+ *
+ * Probing a fixed GET/POST pair is not enough: a DELETE-only route answers 404
+ * to GET, `isRefusal(404)` is true, and the guard scores a refusal for a
+ * handler it never reached. Four paths in the hosted app are outside that pair
+ * today (`/auth/:providerID` PUT+DELETE, `/documents/:id/runtime-job` DELETE,
+ * `/documents/:id/runtime-writeback` PUT, `/documents/:id/session` PATCH), so
+ * an unguarded handler on any of them was invisible.
+ */
+function mountedRouteMethods(app: Hono) {
+  const pairs = new Map<string, Set<string>>()
+  for (const route of app.routes) {
+    if (route.path === "/*" || route.path === "*") continue
+    const method = route.method.toUpperCase()
+    // `ALL` registers every verb; probe the ones a caller would reach for.
+    const methods = method === "ALL" ? ["GET", "POST", "PUT", "PATCH", "DELETE"] : [method]
+    const path = normalise(route.path).replace(/\/\*$/, "/probe")
+    const set = pairs.get(path) ?? new Set<string>()
+    for (const m of methods) set.add(m)
+    pairs.set(path, set)
+  }
+  return [...pairs.entries()]
+    .map(([path, methods]) => ({ path, methods: [...methods].toSorted() }))
+    .toSorted((a, b) => a.path.localeCompare(b.path))
+}
+
+/**
  * A refusal is any non-2xx. The property under test is that an anonymous remote
  * caller does not get SERVICE — not that every route picked the same status, and
  * not that it refused for an auth reason specifically.
@@ -240,9 +267,9 @@ describe("Route posture inventory", () => {
     const app = createHostedApp(inventoryPlane())
     const served: string[] = []
 
-    for (const path of mountedRoutePaths(app)) {
+    for (const { path, methods } of mountedRouteMethods(app)) {
       if (ANONYMOUS_OK_PATHS.has(path)) continue
-      for (const method of ["GET", "POST"]) {
+      for (const method of methods) {
         if (!(await refusesAnonymous(app, path, method))) {
           served.push(`${method} ${path} -> ${await anonymousStatus(app, path, method)}`)
         }
