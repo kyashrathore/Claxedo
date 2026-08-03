@@ -3,6 +3,7 @@ import {
   CLOUD_STARTUP_PIPELINE,
   USER_HOSTED_STARTUP_PIPELINE,
   startupPipeline,
+  acquiringStepLabel,
   cleanCloudError,
   cloudStep,
   cloudSummary,
@@ -56,6 +57,24 @@ describe("cloudStep", () => {
     expect(cloudStep("starting_runtime")).toBe("Starting runtime")
     expect(cloudStep("ready")).toBe("Runtime ready")
     expect(cloudStep("sending_prompt")).toBe("Sending first message")
+  })
+})
+
+describe("acquiringStepLabel", () => {
+  test("boot-mode phases relabel the first pipeline row instead of adding rows", () => {
+    // restore/resume replace a fresh acquire — the "Acquiring sandbox" row is
+    // the one whose label must change; no phase is a pipeline key of its own.
+    expect(acquiringStepLabel("restoring_snapshot")).toBe("Restoring workspace from snapshot")
+    expect(acquiringStepLabel("resuming_sandbox")).toBe("Resuming sandbox")
+    expect(CLOUD_STARTUP_PIPELINE.map((s) => s.key)).not.toContain("restoring_snapshot")
+    expect(CLOUD_STARTUP_PIPELINE.map((s) => s.key)).not.toContain("resuming_sandbox")
+  })
+
+  test("every other status keeps the default row label", () => {
+    expect(acquiringStepLabel("acquiring_sandbox")).toBeUndefined()
+    expect(acquiringStepLabel("cloning")).toBeUndefined()
+    expect(acquiringStepLabel(undefined)).toBeUndefined()
+    expect(acquiringStepLabel(null)).toBeUndefined()
   })
 })
 

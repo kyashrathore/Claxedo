@@ -277,6 +277,11 @@ async function attachRecordedSandbox(
 ) {
   try {
     configToken(state)
+    // A recorded sandbox may be asleep or gone; the only way to know is this
+    // health probe (up to 20s). If it fails we fall through to a fresh
+    // acquire, which re-emits `acquiring_sandbox` — the pipeline handles the
+    // step moving backward.
+    emitProvision(state.ws, "waiting_health")
     await waitForRuntimeHealth(input.hostUrl)
     state.url = input.hostUrl
     state.remote = true
@@ -310,6 +315,10 @@ async function attachRecordedSandbox(
     if (ws) state.ws = ws
     callbacks.scheduleStop(state)
     startSandboxHealthMonitor(state)
+    // Settle the stream this path opened with `waiting_health` above —
+    // otherwise an attach leaves every provision subscriber waiting on a
+    // pipeline that already finished.
+    emitProvision(state.ws, "ready")
     log.info("sandbox attached to recorded url", {
       workspaceId: state.ws.id,
       driver: input.driverId,
@@ -565,6 +574,13 @@ async function markSandboxReady(
   callbacks: SandboxCallbacks,
   target: Extract<SandboxEnsureResult, { status: "ready" }>,
 ) {
+  // The driver has confirmed a live sandbox URL; what remains is starting the
+  // runtime handshake (config push). This is the ONLY post-acquire transition
+  // the supervisor can actually observe — the clone and boot happen inside the
+  // driver's sandbox and are invisible from here, which is why the pipeline
+  // has no separate "cloning" step (it would be a row nothing could ever
+  // advance).
+  emitProvision(state.ws, "starting_runtime")
   state.status = "ready"
   state.remote = true
   state.started_at = now()

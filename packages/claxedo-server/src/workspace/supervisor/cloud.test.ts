@@ -1257,7 +1257,10 @@ describe("workspace-supervisor", () => {
         )
         .map((e) => e.step)
 
-      expect(steps).toEqual(["acquiring_sandbox", "ready"])
+      // `starting_runtime` marks the driver handing back a live sandbox URL —
+      // the one post-acquire transition the supervisor can observe (the clone
+      // and boot happen inside the driver's sandbox, invisible from here).
+      expect(steps).toEqual(["acquiring_sandbox", "starting_runtime", "ready"])
 
       tracker.cleanup()
     })
@@ -1376,7 +1379,10 @@ describe("workspace-supervisor", () => {
         )
         .map((e) => e.step)
 
-      expect(steps).toEqual(["acquiring_sandbox", "ready"])
+      // `starting_runtime` marks the driver handing back a live sandbox URL —
+      // the one post-acquire transition the supervisor can observe (the clone
+      // and boot happen inside the driver's sandbox, invisible from here).
+      expect(steps).toEqual(["acquiring_sandbox", "starting_runtime", "ready"])
 
       tracker.cleanup()
     })

@@ -61,6 +61,17 @@ export function cloudStep(step?: string | null) {
   return step.replaceAll("_", " ")
 }
 
+// The boot-mode phases (provisioning-poll `bootMode`) are aliases of the
+// pipeline's first step, not extra rows: the sandbox manager restores or
+// resumes INSTEAD of acquiring fresh, so the "Acquiring sandbox" row itself
+// must say which path this boot is on. Rows are keyed off the provision log
+// stream, which these phases never enter as pipeline keys — the label swap
+// here is the only place the distinction can surface.
+export function acquiringStepLabel(status?: string | null) {
+  if (status === "restoring_snapshot" || status === "resuming_sandbox") return STEP_LABELS[status]
+  return undefined
+}
+
 export function cloudSummary(status: string | null | undefined, hasError: boolean, variant: StartupVariant = "cloud") {
   if (hasError) {
     return variant === "user-hosted"
@@ -347,6 +358,10 @@ export function CloudStartupView(props: {
               const state = () => stepState(i())
               const duration = () => stepDuration(step.key)
               const notLast = () => i() < pipeline().length - 1 || isReady()
+              const label = () =>
+                i() === 0 && step.key === "acquiring_sandbox"
+                  ? (acquiringStepLabel(props.status) ?? step.label)
+                  : step.label
               return (
                 <StepRow connector={notLast()} state={state()}>
                   <span
@@ -358,7 +373,7 @@ export function CloudStartupView(props: {
                       "text-text-strong": state() === "error",
                     }}
                   >
-                    {step.label}
+                    {label()}
                   </span>
                   <Show when={state() === "done" && duration()}>
                     <span class="text-[11px] tabular-nums text-text-weaker">{duration()}s</span>
