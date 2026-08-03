@@ -19,7 +19,7 @@
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
-import { defined } from "../test-support/assert-helpers"
+import { defined } from "../../test-support/assert-helpers"
 import { execSync } from "child_process"
 import { realpathSync } from "fs"
 import fs from "fs/promises"
@@ -76,7 +76,7 @@ const prev = {
 process.env.HOME = home
 process.env.CLAXEDO_DATA_DIR = data
 process.env.CLAXEDO_STATE_DIR = path.join(data, "state")
-process.env.CLAXEDO_WORKGRAPH_REPOSITORY = path.resolve(import.meta.dirname, "../../../..")
+process.env.CLAXEDO_WORKGRAPH_REPOSITORY = path.resolve(import.meta.dirname, "../../../../..")
 process.env.POSTHOG_KEY = ""
 // Clear env keys so tests control the connected state
 delete process.env.ANTHROPIC_API_KEY
@@ -84,11 +84,11 @@ delete process.env.OPENAI_API_KEY
 delete process.env.CURSOR_API_KEY
 
 const [serverMod, supervisor, store, agent, embedded] = await Promise.all([
-  import("../deployments/local/server"),
-  import("../workspace/supervisor"),
-  import("../workspace/store"),
-  import("../agent-config"),
-  import("../deployments/local/embedded-workspace-runtime"),
+  import("../../deployments/local/server"),
+  import("../../workspace/supervisor"),
+  import("../../workspace/store"),
+  import("../../agent-config"),
+  import("../../deployments/local/embedded-workspace-runtime"),
 ])
 
 const upstreamProvider = {
@@ -389,7 +389,7 @@ describe("multi-agent integration", () => {
 
     // Verify persisted via credential registry (not config file —
     // PUT /auth stores through putCredential, not plaintext config)
-    const { resolveSecret } = await import("../adapters/credentials/registry")
+    const { resolveSecret } = await import("../../adapters/credentials/registry")
     const secret = await resolveSecret("claude-acp")
     expect(secret).toBe("sk-ant-test-key")
 
@@ -944,7 +944,7 @@ describe("multi-agent integration", () => {
     })
 
     // Verify via credential registry (PUT /auth stores through putCredential)
-    const { resolveSecret } = await import("../adapters/credentials/registry")
+    const { resolveSecret } = await import("../../adapters/credentials/registry")
     expect(await resolveSecret("claude-acp")).toBe("sk-ant-key")
     expect(await resolveSecret("codex-acp")).toBe("sk-oai-key")
 
@@ -983,7 +983,7 @@ describe("multi-agent integration", () => {
     expect(cfg.mcp["toolx"]).toBeDefined()
 
     // Auth is stored in credential registry, verify there
-    const { resolveSecret } = await import("../adapters/credentials/registry")
+    const { resolveSecret } = await import("../../adapters/credentials/registry")
     expect(await resolveSecret("claude-acp")).toBe("sk-test")
 
     // Top-level keys should include at least mcp and harness.

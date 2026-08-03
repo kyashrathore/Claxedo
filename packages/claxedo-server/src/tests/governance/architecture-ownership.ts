@@ -137,7 +137,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     status: OwnershipStatus.Canonical,
     owner: "MirrorController",
     reason: "createMirrorController owns each mirror adapter, subscription, pending lease set, and flush timer.",
-    tests: ["integration/host-primitives.test.ts"],
+    tests: ["tests/integration/host-primitives.test.ts"],
   },
   {
     area: "projection",
@@ -186,9 +186,9 @@ export const ARCHITECTURE_OWNERSHIP = [
     owner: "embedded local Sandbox composer",
     reason: "Local workspaces are served by an in-process Workspace Runtime app; this module composes that host and applies pre-resolved runtime snapshots without implementing harness adapters itself.",
     tests: [
-      "platform/governance/architecture.test.ts",
+      "tests/governance/codebase-shape.test.ts",
       "workspace/runtime-dispatch/runtime-wait.test.ts",
-      "integration/control-plane.integration.test.ts",
+      "tests/integration/control-plane.integration.test.ts",
     ],
   },
   {
@@ -199,7 +199,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     reason: "Server routes use this bridge to fetch local embedded or cloud Workspace Runtime hosts without owning runner execution.",
     tests: [
       "documents/routes/index.test.ts",
-      "platform/governance/architecture.test.ts",
+      "tests/governance/codebase-shape.test.ts",
     ],
   },
   {
@@ -210,7 +210,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     reason: "Agent config changes broadcast already-resolved runtime snapshots to active sandboxs.",
     tests: [
       "agent-config/index.test.ts",
-      "platform/governance/architecture.test.ts",
+      "tests/governance/codebase-shape.test.ts",
     ],
   },
   {
@@ -246,7 +246,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     tests: [
       "workspace/runtime-dispatch/route-ownership-contract.test.ts",
       "workspace/runtime-dispatch/runtime-wait.test.ts",
-      "platform/governance/architecture.test.ts",
+      "tests/governance/codebase-shape.test.ts",
     ],
     routeSamples: [
       "/session/s1",
@@ -285,7 +285,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     removalCondition: "All local app and CLI callers use canonical authority/workspace-runtime routes.",
     tests: [
       "workspace/runtime-dispatch/route-ownership-contract.test.ts",
-      "platform/governance/architecture.test.ts",
+      "tests/governance/codebase-shape.test.ts",
     ],
     routeSamples: ["/command", "/mcp", "/agent"],
   },

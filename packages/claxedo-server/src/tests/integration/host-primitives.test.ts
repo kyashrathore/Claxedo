@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
-import type { SessionWriteMode } from "../platform/governance/architecture"
+import type { SessionWriteMode } from "../../platform/runtime/profile"
 import {
   claimChannelDelivery,
   createHostedControlPlaneServices,
@@ -17,7 +17,7 @@ import {
   type WorkspaceAuthority,
   type SandboxRowEvent,
   type SandboxLeaseRow,
-} from "../index"
+} from "../../index"
 
 function lease(input: Partial<SandboxLeaseRow> & { workspace_id: string }): SandboxLeaseRow {
   return {

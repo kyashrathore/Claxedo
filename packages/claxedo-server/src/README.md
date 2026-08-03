@@ -35,7 +35,7 @@ product HTTP surface.
 
 ## Rules with teeth
 
-These are enforced by tests, not convention — see `governance/architecture.test.ts`
+These are enforced by tests, not convention — see `tests/governance/codebase-shape.test.ts`
 and `deployments/hosted-workerd/worker.import-graph.test.ts`:
 
 - **All SQL goes through drizzle tables in `adapters/storage/`.** Hand-written

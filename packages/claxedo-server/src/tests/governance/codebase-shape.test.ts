@@ -1,9 +1,9 @@
 import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
-import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "./architecture"
+import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "../../platform/runtime/profile"
 import { architectureOwnershipEntries, OwnershipStatus } from "./architecture-ownership"
-import { routeOwnership, RouteHandler } from "./route-ownership"
+import { routeOwnership, RouteHandler } from "../../platform/governance/route-ownership"
 import { importPattern, walk } from "../../test-support/guards"
 
 describe("architecture boundaries", () => {
@@ -64,7 +64,7 @@ describe("architecture boundaries", () => {
     expect(
       check({
         status: OwnershipStatus.Deleted,
-        module: "platform/governance/architecture-ownership.ts",
+        module: "tests/governance/architecture-ownership.ts",
         canonicalReplacement: "n/a",
       }),
     ).toBe("module still exists")
@@ -77,7 +77,7 @@ describe("architecture boundaries", () => {
       check({
         status: OwnershipStatus.Deleted,
         module: "platform/governance/never-existed.ts",
-        canonicalReplacement: "platform/governance/architecture-ownership.ts",
+        canonicalReplacement: "tests/governance/architecture-ownership.ts",
       }),
     ).toBe("ok")
   })
@@ -280,7 +280,7 @@ describe("architecture boundaries", () => {
     // the hosted-* composition). Scanning only one would quietly shrink this
     // guard's footprint to whichever half happened to move.
     const roots = [
-      path.resolve(import.meta.dirname, "../auth"),
+      path.resolve(import.meta.dirname, "../../platform/auth"),
       path.resolve(import.meta.dirname, "../../authority"),
     ]
     const offenders = roots.flatMap((root) => walk(root)

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
-import { defined } from "../test-support/assert-helpers"
+import { defined } from "../../test-support/assert-helpers"
 import { realpathSync } from "fs"
 import fs from "fs/promises"
 import os from "os"
@@ -128,16 +128,16 @@ const prev = {
 process.env.HOME = home
 process.env.CLAXEDO_DATA_DIR = data
 process.env.CLAXEDO_STATE_DIR = path.join(data, "state")
-process.env.CLAXEDO_WORKGRAPH_REPOSITORY = path.resolve(import.meta.dirname, "../../../..")
+process.env.CLAXEDO_WORKGRAPH_REPOSITORY = path.resolve(import.meta.dirname, "../../../../..")
 process.env.POSTHOG_KEY = ""
 
 // Vitest can deadlock resolving this graph when these top-level imports run concurrently.
-const serverMod = await import("../deployments/local/server")
-const supervisor = await import("../workspace/supervisor")
-const store = await import("../workspace/store")
-const agent = await import("../agent-config")
-const embedded = await import("../deployments/local/embedded-workspace-runtime")
-const opauth = await import("../opencode/auth")
+const serverMod = await import("../../deployments/local/server")
+const supervisor = await import("../../workspace/supervisor")
+const store = await import("../../workspace/store")
+const agent = await import("../../agent-config")
+const embedded = await import("../../deployments/local/embedded-workspace-runtime")
+const opauth = await import("../../opencode/auth")
 
 const upstreamProvider = {
   all: [

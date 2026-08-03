@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest"
-import { createApp, isConnectionsCredentialPath } from "../deployments/local/server"
-import { createControlPlaneServices } from "../authority/services"
-import { createSqliteCentralStore } from "../authority/adapters/sqlite/central-store"
+import { createApp, isConnectionsCredentialPath } from "../../deployments/local/server"
+import { createControlPlaneServices } from "../../authority/services"
+import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
 
 // Regression guard for the connections token-reflection hardening.
 //

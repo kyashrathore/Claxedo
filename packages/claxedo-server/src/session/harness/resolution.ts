@@ -1,4 +1,4 @@
-import type { HarnessHost } from "../../platform/governance/architecture"
+import type { HarnessHost } from "../../platform/runtime/profile"
 import { defaultHarness, loadUserConfig } from "../../agent-config"
 import { sessionMeta } from "../meta"
 import { getSessionConfig, normalize, type SessionHarness } from "./index"
