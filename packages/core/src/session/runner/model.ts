@@ -218,24 +218,30 @@ export const locationLayer = Layer.effect(
               ? defaultModel
               : available.find(supported)
         })
-        // The named model existing but DISABLED is the one shape that is a
-        // real absence rather than boot-in-progress (a config'd model with
-        // `disabled: true` never becomes available) — fail that fast. Anything
-        // else that has not selected yet may just be a transform that has not
-        // applied: models-dev merges the full catalog before the opencode
-        // plugin's forked refresh marks the zen provider usable, so both
-        // "model not in the catalog yet" and "model present but its provider
-        // not yet available" occur transiently during a healthy boot.
-        const knownDisabled = Effect.gen(function* () {
+        // Which unselected states are boot-in-progress (retry) vs a real
+        // absence (fail fast)? Transient during a healthy boot: the catalog
+        // has NO models yet (models-dev not merged), a named model that is
+        // present+enabled but whose provider is not yet usable (the opencode
+        // plugin's forked refresh marks the zen provider public AFTER
+        // models-dev lands), and the no-model default path with nothing
+        // available yet (same provider-usability lag). Definitively final:
+        // a known model that is disabled (`disabled: true` never becomes
+        // available), and a NAMED model absent from an otherwise-populated
+        // catalog (a typo'd id — the sandbox image smoke asserts this fails
+        // within seconds, not after a 20s stall).
+        const settledAbsence = Effect.gen(function* () {
           if (!session.model) return false
-          const known = (yield* catalog.model.all()).find(
+          const all = yield* catalog.model.all()
+          if (all.length === 0) return false
+          const known = all.find(
             (model) => model.providerID === session.model?.providerID && model.id === session.model.id,
           )
-          return known !== undefined && !known.enabled
+          if (!known) return true
+          return !known.enabled
         })
         let selected = yield* select
         for (let waited = 0; !selected && waited < 20_000; waited += 500) {
-          if (yield* knownDisabled) break
+          if (yield* settledAbsence) break
           yield* Effect.sleep("500 millis")
           selected = yield* select
         }
