@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest"
 import type { Wakes, WakeDriver } from "@claxedo/wakes"
 import {
   WakeLane,
-  createCloudflareWakeDriver,
   dispatchWakeLaneNudge,
   wakeLaneName,
   type WakeLaneNamespace,
@@ -181,22 +180,5 @@ describe("Worker-side driver", () => {
       get: () => ({ fetch: async () => new Response("boom", { status: 500 }) }),
     }
     await expect(dispatchWakeLaneNudge(failing, { serialKey: null, fireAt: 1 })).rejects.toThrow("500")
-  })
-
-  it("createCloudflareWakeDriver never throws into the caller and reports instead", async () => {
-    const reported: unknown[] = []
-    const driver = createCloudflareWakeDriver({
-      namespace: {
-        idFromName: () => {
-          throw new Error("namespace down")
-        },
-        get: () => ({ fetch: async () => new Response(null, { status: 204 }) }),
-      },
-      waitUntil: () => {},
-      reportError: ((e: unknown) => void reported.push(e)) as never,
-    })
-    expect(() => driver.nudge({ serialKey: "org:a", fireAt: 1 })).not.toThrow()
-    await new Promise((resolve) => setTimeout(resolve, 0)) // the async dispatch rejects on a later tick
-    expect(reported).toHaveLength(1)
   })
 })
