@@ -108,3 +108,11 @@ packages/claxedo-server/scripts/sandbox/cloudflare-worker/.build/
 # Extracted renderer bundles used for icon spelunking — never commit these,
 # they are multi-megabyte third-party application code.
 app-initial-*.js
+
+# Materialized Agent Extension skill symlinks (absolute paths into ~/.claxedo;
+# committing one pins other checkouts to a nonexistent path and 503s every
+# workspace-runtime route — see memory reference_agent_extension_symlinks_break_sessions)
+.agents/skills/pdf
+.claude/skills/pdf
+.cursor/skills/pdf
+.opencode/skills/pdf
