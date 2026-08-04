@@ -161,13 +161,16 @@ export async function runSourceSmoke() {
   // verdict produced entirely by the harness outliving its own subject.
   // 300s covers the 150s ceiling with margin; the fixture is killed
   // explicitly at the end of the smoke, so this only bounds the abandoned
-  // case, and the memory-growth burst it drives still finishes in ~1.6s.
+  // case. Memory growth still caps at 64MB (the RSS-delta burst finishes in
+  // ~1.6s), but the CPU burn now runs for the WHOLE keepalive: on Windows
+  // the first CIM sample lands at 22–47s, after a 1.6s burst would have
+  // ended, and an idle fixture ranks no contributor.
   const FIXTURE_KEEPALIVE_MS = 300_000
   const fixture = Bun.spawn({
     cmd: [
       process.execPath,
       "-e",
-      `const memory=[];let ticks=0;const grow=setInterval(()=>{memory.push(Buffer.alloc(8*1024*1024,1));const end=Date.now()+120;while(Date.now()<end)Math.sqrt(Math.random()*1e9);if(++ticks===8)clearInterval(grow)},200);setTimeout(()=>memory[0]?.[0],${String(FIXTURE_KEEPALIVE_MS)})`,
+      `const memory=[];let ticks=0;const grow=setInterval(()=>{if(ticks<8){memory.push(Buffer.alloc(8*1024*1024,1));ticks++}const end=Date.now()+120;while(Date.now()<end)Math.sqrt(Math.random()*1e9)},200);setTimeout(()=>{clearInterval(grow);memory[0]?.[0]},${String(FIXTURE_KEEPALIVE_MS)})`,
     ],
     env: { ...process.env, CLAXEDO_DIAGNOSTICS_SECRET_SENTINEL: SECRET_SENTINEL },
     stdout: "ignore",
