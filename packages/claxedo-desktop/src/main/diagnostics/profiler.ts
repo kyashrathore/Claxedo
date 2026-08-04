@@ -733,9 +733,14 @@ export function aggregateInterval(input: {
   const timestamps = [...byTimestamp.keys()].sort((a, b) => a - b)
   const totalsByAt = timestamps.map((at) => {
     const atPoints = byTimestamp.get(at) ?? []
+    // Clamp the SUM: each process reading is individually ≤100, but the
+    // per-process samples are taken milliseconds apart, so a busy machine can
+    // sum to fractionally over 100 machine-percent — and the transport DTO
+    // (rightly) rejects >100. Observed 100.02 on the Linux release runner.
+    const cpu = sumAvailable(atPoints.map((sample) => sample.cpuMachinePercent))
     return {
       at,
-      cpu: sumAvailable(atPoints.map((sample) => sample.cpuMachinePercent)),
+      cpu: cpu.state === "available" ? { ...cpu, value: Math.min(100, cpu.value) } : cpu,
       rss: sumAvailable(atPoints.map((sample) => sample.rssBytes)),
     }
   })

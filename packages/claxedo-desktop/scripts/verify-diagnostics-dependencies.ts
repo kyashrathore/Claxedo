@@ -58,19 +58,18 @@ export async function verifyDiagnosticsDependencies(
       ...acceptedDiagnosticsTransitives,
     }).map(async ([name, accepted]) => {
       // An optionalDependency native module (windows-process-tree) may simply
-      // not be installed on foreign platforms — bun skips a failed optional
-      // build, so the manifest is legitimately absent on a mac/linux runner.
-      // The lockfile checks below still verify the reviewed version and
-      // integrity, which is the part that must never be skipped; only the
-      // installed-manifest reads degrade.
+      // not be installed — bun drops a failed/skipped optional build on ANY
+      // platform (observed absent on mac-intel AND the windows release
+      // runner). The lockfile checks below still verify the reviewed version
+      // and integrity, which is the part that must never be skipped; only the
+      // installed-manifest reads degrade. The runtime already treats the
+      // addon as best-effort (flag-free ancestry with saturation detection).
       const optional = name in ((await Bun.file(resolve(root, "packages/claxedo-desktop/package.json")).json())
         .optionalDependencies ?? {})
       const manifestFile = Bun.file(resolve(root, accepted.manifest))
-      const manifest = (await manifestFile.exists())
+      const manifest = (await manifestFile.exists()) || !optional
         ? await manifestFile.json()
-        : optional && process.platform !== "win32"
-          ? undefined
-          : await manifestFile.json()
+        : undefined
       const advisoryIds = options.advisories
         ? await queryAdvisories(name, accepted.version)
         : []
