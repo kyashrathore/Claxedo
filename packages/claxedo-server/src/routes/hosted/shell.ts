@@ -161,6 +161,37 @@ function num(input: unknown) {
   return typeof input === "number" && Number.isFinite(input) ? input : undefined
 }
 
+/**
+ * "owner/repo" from a git remote. Mirrors the app's
+ * `app/workbench/rail/rail-git-remote.ts` — the rail has always labelled
+ * projects this way; the composer could not because the grouping below dropped
+ * `repo_url` before it ever reached the client.
+ */
+function ownerRepo(remote: string | undefined) {
+  if (!remote) return undefined
+  return remote.match(/[:/]([^/]+\/[^/]+?)(?:\.git)?$/)?.[1]
+}
+
+/**
+ * The PROJECT's display name.
+ *
+ * `display_name` is deliberately LAST-but-one: it is the WORKSPACE name, and
+ * the hosted create dialog posts `workspaceName: "main"` for the first
+ * workspace, so preferring it labelled every hosted cloud project "main".
+ * There is no `project_name` column (convex/schema.ts workspaces) — the repo
+ * identity is the only project-scoped name the row actually carries.
+ */
+function projectDisplayName(row: Record<string, unknown> | undefined, projectId: string) {
+  return txt(row?.project_name) ??
+    txt(row?.projectName) ??
+    txt(row?.repo_name) ??
+    txt(row?.repoName) ??
+    ownerRepo(txt(row?.repo_url) ?? txt(row?.repoUrl)) ??
+    txt(row?.display_name) ??
+    txt(row?.displayName) ??
+    projectId
+}
+
 export function signedShellProjects(workspaces: unknown[], now: number) {
   const groups = new Map<string, {
     id: string
@@ -190,7 +221,7 @@ export function signedShellProjects(workspaces: unknown[], now: number) {
     const updated = num(row?.updated_at) ?? num(row?.updatedAt) ?? num(row?.last_seen_at) ?? created
     const group = groups.get(projectId) ?? {
       id: projectId,
-      name: txt(row?.project_name) ?? txt(row?.projectName) ?? txt(row?.display_name) ?? txt(row?.displayName) ?? projectId,
+      name: projectDisplayName(row, projectId),
       directories: [],
       workspaces: {},
       created,
@@ -198,12 +229,20 @@ export function signedShellProjects(workspaces: unknown[], now: number) {
     }
     group.created = Math.min(group.created, created)
     group.updated = Math.max(group.updated, updated)
+    // A project's rows are not uniform: only some carry repo identity. If this
+    // group was opened by a bare row its name is still the raw project id, so
+    // let a later row that DOES know the repo upgrade it.
+    if (group.name === projectId) group.name = projectDisplayName(row, projectId)
     group.directories.push(workspaceId)
     group.workspaces[workspaceId] = {
       id: workspaceId,
       kind: txt(row?.access) ?? txt(row?.backing) ?? "cloud",
       workspace_name: workspaceName,
       directory,
+      // Carried so the client can derive an owner/repo label of its own (the
+      // rail already does) without a second round-trip.
+      ...(txt(row?.repo_url) ?? txt(row?.repoUrl) ? { repo_url: txt(row?.repo_url) ?? txt(row?.repoUrl) } : {}),
+      ...(txt(row?.repo_name) ?? txt(row?.repoName) ? { repo_name: txt(row?.repo_name) ?? txt(row?.repoName) } : {}),
     }
     groups.set(projectId, group)
   }

@@ -557,4 +557,37 @@ describe("Claxedo session loaded-empty rendering", () => {
       fallbackRefKind: undefined,
     })).toBe("local")
   })
+
+  // The hosted web build has no local machine behind the renderer, so the
+  // unresolved fallback must not be an environment it can never run in.
+  test("draft workspace kind defaults to cloud on hosted web", () => {
+    expect(resolveDraftWorkspaceKind({
+      resolvedKind: undefined,
+      fallbackRefKind: undefined,
+      webOnlyCloud: true,
+    })).toBe("cloud")
+  })
+
+  // The web default must not override a REAL resolution — a user-hosted
+  // workspace opened in the browser is still user-hosted.
+  test("the hosted-web default never overrides a resolved kind", () => {
+    expect(resolveDraftWorkspaceKind({
+      resolvedKind: "user-hosted",
+      fallbackRefKind: undefined,
+      webOnlyCloud: true,
+    })).toBe("user-hosted")
+    expect(resolveDraftWorkspaceKind({
+      resolvedKind: undefined,
+      fallbackRefKind: "user-hosted",
+      webOnlyCloud: true,
+    })).toBe("user-hosted")
+  })
+
+  test("desktop keeps the local default", () => {
+    expect(resolveDraftWorkspaceKind({
+      resolvedKind: undefined,
+      fallbackRefKind: undefined,
+      webOnlyCloud: false,
+    })).toBe("local")
+  })
 })

@@ -106,4 +106,66 @@ describe("signed shell projects", () => {
     )
     expect(projects.map((project) => project.id)).toEqual(["ws_real_1"])
   })
+
+  // The composer's project chip showed "workspace" for every hosted cloud
+  // project: `display_name` is the WORKSPACE name and the hosted create dialog
+  // posts `workspaceName: "main"`, so preferring it named the PROJECT "main";
+  // with no name at all the client fell through to the directory basename, and
+  // every hosted cloud workspace lives in the literal directory "/workspace".
+  test("names a hosted cloud project after its repo, not the workspace name", async () => {
+    const { signedShellProjects } = await import("./shell")
+    const [project] = signedShellProjects(
+      [{
+        ...cloudRow("ws_1", "main"),
+        project_id: "proj_1",
+        repo_url: "https://github.com/claxedo/opencode.git",
+      }],
+      3_000,
+    )
+    expect(project?.name).toBe("claxedo/opencode")
+    // …and the repo identity reaches the client, so it can derive a label of
+    // its own without a second round-trip.
+    expect(project?.workspaces?.ws_1).toMatchObject({
+      repo_url: "https://github.com/claxedo/opencode.git",
+    })
+  })
+
+  test("prefers an explicit repo_name over the parsed remote", async () => {
+    const { signedShellProjects } = await import("./shell")
+    const [project] = signedShellProjects(
+      [{ ...cloudRow("ws_1", "main"), project_id: "proj_1", repo_name: "opencode", repo_url: "https://github.com/claxedo/opencode.git" }],
+      3_000,
+    )
+    expect(project?.name).toBe("opencode")
+  })
+
+  // A project's rows are not uniform — only some carry repo identity. The group
+  // is opened by whichever row is seen FIRST, so a bare row must not lock in
+  // the raw project id as the project's name forever.
+  test("a later row carrying repo identity upgrades a placeholder project name", async () => {
+    const { signedShellProjects } = await import("./shell")
+    const [project] = signedShellProjects(
+      [
+        { ...cloudRow("ws_bare", "main"), project_id: "proj_1", display_name: undefined },
+        { ...cloudRow("ws_repo", "main"), project_id: "proj_1", repo_url: "git@github.com:claxedo/opencode.git" },
+      ],
+      3_000,
+    )
+    expect(project?.name).toBe("claxedo/opencode")
+  })
+
+  // Both cloud workspaces of one project must survive grouping — this is the
+  // list the composer's third select offers as "pick an existing workspace".
+  test("keeps every cloud workspace of a project as a selectable sandbox", async () => {
+    const { signedShellProjects } = await import("./shell")
+    const [project] = signedShellProjects(
+      [
+        { ...cloudRow("ws_1", "main"), project_id: "proj_1", repo_url: "https://github.com/claxedo/opencode.git" },
+        { ...cloudRow("ws_2", "feature"), project_id: "proj_1", repo_url: "https://github.com/claxedo/opencode.git" },
+      ],
+      3_000,
+    )
+    expect(project?.sandboxes).toEqual(["ws_1", "ws_2"])
+    expect(Object.keys(project?.workspaces ?? {})).toEqual(["ws_1", "ws_2"])
+  })
 })

@@ -28,6 +28,14 @@ vi.mock("@solidjs/router", () => ({
   useNavigate: () => () => {},
 }))
 
+// The environment chip's options depend on the platform (web offers cloud
+// only — there is no local machine behind the renderer). These cases are about
+// the PROJECT chip, so pin desktop and let the hosted-composition cases live in
+// session-new-design-view-hosted.vitest.tsx.
+vi.mock("@/platform/runtime/platform-provider", () => ({
+  usePlatform: () => ({ platform: "desktop" }),
+}))
+
 // A pass-through `t` would be indistinguishable from the hardcoded English
 // string, so the fake echoes the key instead: the assertion then proves the
 // label really came out of the locale table.

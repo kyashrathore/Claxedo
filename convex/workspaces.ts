@@ -228,9 +228,18 @@ export const list = authedQuery({
           .filter((workspace) => !workspace.deleted_at)
           .map(async (workspace) => ({
             workspace_id: workspace.workspace_id,
+            // The project a workspace belongs to, plus the repo identity the
+            // row already stores. Without these the app can only group by
+            // workspace id and label a hosted cloud project by its directory
+            // basename ("workspace"), because `display_name` is the WORKSPACE
+            // name ("main"), not the project's. `open` above already returns
+            // all three; this is the list-shaped half of the same read.
+            project_id: workspace.project_id,
             display_name: workspace.display_name,
             backing: workspace.backing,
             access: workspace.access,
+            repo_url: workspace.repo_url,
+            repo_name: workspace.repo_name,
             remote_directory: workspace.remote_directory,
             role: await workspaceRole(ctx, workspace),
           })),

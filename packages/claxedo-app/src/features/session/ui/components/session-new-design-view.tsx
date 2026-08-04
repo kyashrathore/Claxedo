@@ -28,11 +28,15 @@ import { useServer } from "@/features/session/app-ports"
 import {
   CREATE_WORKTREE,
   createNewSessionWorkspaceState,
+  findProjectForDirectory,
   MAIN_WORKTREE,
+  newSessionEnvironmentOptions,
+  repoDerivedProjectLabel,
   type NewSessionWorkspaceKind,
   type ProjectWorkspace,
 } from "./session-new-workspace-options"
 import { useLanguage } from "@/platform/i18n/provider"
+import { usePlatform } from "@/platform/runtime/platform-provider"
 import { workspaceSessionRoute } from "@/platform/identity/route"
 
 export type { NewSessionWorkspaceKind } from "./session-new-workspace-options"
@@ -77,6 +81,14 @@ export function NewSessionDesignView(props: {
    * real flow through the `project.open` command the app shell registers.
    */
   onAddProject?: () => void
+  /**
+   * True when this pane talks to a signed, non-loopback control plane (the
+   * hosted composition). Combined with the web platform it means "there is no
+   * local machine to run on", which is what removes the Local environment
+   * option. Owned by session-screen (`signedControlPlane`) rather than
+   * re-derived here, so every surface agrees on one signal.
+   */
+  signedControlPlane?: boolean
   main?: JSX.Element
   children: JSX.Element
 }) {
@@ -86,19 +98,19 @@ export function NewSessionDesignView(props: {
   const navigate = useNavigate()
   const sdk = useSDK()
   const server = useServer()
+  const platform = usePlatform()
   const projectsQuery = useQuery(() => queryOptions.projects())
 
   const inventoryProjects = createMemo(() => (projectsQuery.data ?? []) as ProjectInventoryItem[])
+  // The inventory arrives in two shapes that key `workspaces` differently (by
+  // workspace id from the server bootstrap, by directory from the client
+  // snapshot). Matching only the KEY resolved one shape and missed the other,
+  // which left activeProject undefined — and every chip below derives from it,
+  // so the workspace picker collapsed to "create new" even for a project that
+  // already had cloud workspaces. `findProjectForDirectory` matches both.
   const activeProject = createMemo(() => {
     const selection = props.worktree === MAIN_WORKTREE || props.worktree === CREATE_WORKTREE ? sdk.directory : props.worktree
-    return inventoryProjects().find((project) =>
-      project.worktree === sdk.directory ||
-      project.sandboxes?.includes(sdk.directory) ||
-      sdk.directory in (project.workspaces ?? {}) ||
-      project.worktree === selection ||
-      project.sandboxes?.includes(selection) ||
-      selection in (project.workspaces ?? {}),
-    )
+    return findProjectForDirectory(inventoryProjects(), [sdk.directory, selection])
   })
   const projectRoot = createMemo(() => activeProject()?.worktree ?? sdk.directory)
   const workspaces = createMemo(() => activeProject()?.workspaces ?? {})
@@ -126,18 +138,26 @@ export function NewSessionDesignView(props: {
   // Prefer the enriched project name (the same one the sidebar shows) and
   // only fall back to the directory's basename when no name is available.
   const projectLabel = (value: string) => {
+    const project = findProjectForDirectory(inventoryProjects(), [value])
     // 1) Enriched layout list — the same name the sidebar renders.
-    const fromList = (layout.projects.list() ?? []).find((project) => project.worktree === value)?.name?.trim()
+    const fromList = (layout.projects.list() ?? []).find((item) => item.worktree === value)?.name?.trim()
     if (fromList) return fromList
     // 2) Global project metadata (if the cross-project list has loaded).
-    const fromGlobal = inventoryProjects().find((project) => project.worktree === value)?.name?.trim()
+    const fromGlobal = project?.name?.trim()
     if (fromGlobal) return fromGlobal
     // 3) The active project resolved from the workspace inventory.
     if (value === projectRoot()) {
       const active = activeProject()?.name?.trim()
       if (active) return active
     }
-    // 4) Last resort: the directory basename (a UUID for cloud workspaces).
+    // 4) The repo the project's workspaces point at — the same owner/repo
+    //    derivation the rail uses (`railProjectLabel`). A hosted cloud project
+    //    has no name of its own but always has a repo, and its directory is the
+    //    literal "/workspace", so this is what stands between the user and a
+    //    chip that reads "workspace".
+    const fromRepo = repoDerivedProjectLabel(project?.workspaces ?? (value === projectRoot() ? workspaces() : undefined))
+    if (fromRepo) return fromRepo
+    // 5) Last resort: the directory basename (a UUID for cloud workspaces).
     return getFilename(value)
   }
   // Same three-source cascade as `projectLabel`, for the icon rather than the name.
@@ -183,6 +203,15 @@ export function NewSessionDesignView(props: {
   const selfHostedWorkspace = createMemo(() => props.workspaceKind === "user-hosted")
 
   const environmentLabel = (kind: NewSessionWorkspaceKind) => (kind === "cloud" ? "Cloud" : "Local")
+  // On the hosted web build there is no local machine to run on, so "Local" is
+  // an option that can be picked but never resolves to a workspace. Desktop —
+  // and any loopback-backed composition — keeps both.
+  const environmentOptions = createMemo(() =>
+    newSessionEnvironmentOptions({
+      platform: platform.platform === "web" ? "web" : "desktop",
+      signedControlPlane: !!props.signedControlPlane,
+    })
+  )
   const createActionLabel = () =>
     props.workspaceKind === "cloud" ? "New cloud sandbox" : "New local worktree"
 
@@ -240,7 +269,7 @@ export function NewSessionDesignView(props: {
       ariaLabel: "Workspace environment",
       emptyMessage: "No environments",
       current: props.workspaceKind,
-      options: (["local", "cloud"] satisfies NewSessionWorkspaceKind[]).map<ContextChipOption>((kind) => ({
+      options: environmentOptions().map<ContextChipOption>((kind) => ({
         value: kind,
         label: environmentLabel(kind),
         detail: kind === "cloud" ? "Runs in a Claxedo sandbox" : "Runs on this machine",

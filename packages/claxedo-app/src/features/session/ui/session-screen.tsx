@@ -73,6 +73,7 @@ import { createSessionController } from "@/features/session/store/session-contro
 import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
+import { usePlatform } from "@/platform/runtime/platform-provider"
 import { placementFor } from "@/platform/runtime/placement"
 import { parseShellRoute, sessionRoute, shellRouteDirectory, workspaceSessionRoute } from "@/platform/identity/route"
 import { sessionViewKey, terminalScopeKey } from "@/platform/identity/session-view-key"
@@ -201,6 +202,7 @@ export default function SessionPage() {
   }
   const directorySessionCacheActions = useDirectorySessionCacheActions()
   const principal = usePrincipal()
+  const platform = usePlatform()
   const events = useClaxedoEventsOptional()
   const sameDirectory = (left?: string, right?: string) => {
     return sameWorkspaceDirectory(left, right)
@@ -288,6 +290,10 @@ export default function SessionPage() {
     return resolveDraftWorkspaceKind({
       resolvedKind: resolvedWorkspaceKind(),
       fallbackRefKind: sessionWorkspaceRuntimeRef({ directory: dir(), projects: projects() })?.kind,
+      // The hosted web build has no local machine behind it, so a draft that
+      // resolves nothing must still default to cloud rather than to an
+      // environment it can never run in.
+      webOnlyCloud: platform.platform === "web" && signedControlPlane(),
     })
   })
   // BUG-2: the new-session composer (NewSessionDesignView below) must NOT render
@@ -710,6 +716,10 @@ export default function SessionPage() {
     return newSessionWorkspaceState(kind).options
   }
   const setNewSessionWorkspaceKind = (value: NewSessionWorkspaceKind) => {
+    // The web composer never offers "local" (no local machine behind the
+    // renderer). Guard here too so a stale/deep-linked selection cannot route a
+    // hosted web draft into an environment it can never run in.
+    if (value === "local" && platform.platform === "web" && signedControlPlane()) return
     setStore("newSessionControlsTouched", true)
     setStore("newSessionWorkspaceKind", value)
     if (newSessionWorktree() === "create") {
@@ -1341,6 +1351,7 @@ export default function SessionPage() {
                   onWorktreeChange={changeNewSessionWorktree}
                   onWorkspaceKindChange={setNewSessionWorkspaceKind}
                   onAddProject={addProject()}
+                  signedControlPlane={signedControlPlane()}
                   main={
                     <div class="flex min-h-[280px] items-center justify-start px-2">
                       <CloudStartupView
@@ -1432,6 +1443,7 @@ export default function SessionPage() {
                   onWorktreeChange={changeNewSessionWorktree}
                   onWorkspaceKindChange={setNewSessionWorkspaceKind}
                   onAddProject={addProject()}
+                  signedControlPlane={signedControlPlane()}
                   onProjectChange={(target: string) => {
                     if (target === dir()) return
                     layout.projects.open(target)

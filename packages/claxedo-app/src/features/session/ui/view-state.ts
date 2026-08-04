@@ -120,12 +120,20 @@ export function shouldRenderNewSessionComposer(input: {
 export function resolveDraftWorkspaceKind(input: {
   resolvedKind: "cloud" | "user-hosted" | undefined
   fallbackRefKind: "cloud" | "user-hosted" | undefined
+  /**
+   * Hosted web composition (web platform + signed, non-loopback control plane).
+   * There is no local machine behind the renderer, so "local" is not a
+   * reachable default — falling back to it opened every fresh draft in an
+   * environment the web build can never run. Desktop and loopback keep the
+   * local default.
+   */
+  webOnlyCloud?: boolean
 }): "local" | "cloud" | "user-hosted" {
   if (input.resolvedKind === "user-hosted") return "user-hosted"
   if (input.resolvedKind === "cloud") return "cloud"
   if (input.fallbackRefKind === "user-hosted") return "user-hosted"
   if (input.fallbackRefKind === "cloud") return "cloud"
-  return "local"
+  return input.webOnlyCloud ? "cloud" : "local"
 }
 
 export function timelineInteractionPlan(input: {
