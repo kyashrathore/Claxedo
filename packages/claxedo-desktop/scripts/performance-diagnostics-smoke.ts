@@ -153,11 +153,21 @@ export async function runSourceSmoke() {
     }
     if (pairedCpuOverhead(cpuMeasurements) <= DIAGNOSTICS_CPU_OVERHEAD_BUDGET) break
   }
+  // The fixture must outlive the stop-grant wait, not just the sampling
+  // burst. Its keep-alive was 30s while the Windows CIM cold start measures
+  // 22-47s, so the fixture could self-exit BEFORE the grant was executed:
+  // `revalidate` then issues a live CIM probe for a dead pid, gets no row,
+  // and the smoke fails with `identity-mismatch` — a real-looking safety
+  // verdict produced entirely by the harness outliving its own subject.
+  // 300s covers the 150s ceiling with margin; the fixture is killed
+  // explicitly at the end of the smoke, so this only bounds the abandoned
+  // case, and the memory-growth burst it drives still finishes in ~1.6s.
+  const FIXTURE_KEEPALIVE_MS = 300_000
   const fixture = Bun.spawn({
     cmd: [
       process.execPath,
       "-e",
-      "const memory=[];let ticks=0;const grow=setInterval(()=>{memory.push(Buffer.alloc(8*1024*1024,1));const end=Date.now()+120;while(Date.now()<end)Math.sqrt(Math.random()*1e9);if(++ticks===8)clearInterval(grow)},200);setTimeout(()=>memory[0]?.[0],30000)",
+      `const memory=[];let ticks=0;const grow=setInterval(()=>{memory.push(Buffer.alloc(8*1024*1024,1));const end=Date.now()+120;while(Date.now()<end)Math.sqrt(Math.random()*1e9);if(++ticks===8)clearInterval(grow)},200);setTimeout(()=>memory[0]?.[0],${String(FIXTURE_KEEPALIVE_MS)})`,
     ],
     env: { ...process.env, CLAXEDO_DIAGNOSTICS_SECRET_SENTINEL: SECRET_SENTINEL },
     stdout: "ignore",
@@ -321,7 +331,20 @@ export async function runSourceSmoke() {
     const prepared = profiler.prepareAction({ action: "stop", token: stop.token })
     if (!prepared.ok) throw new Error(`Smoke stop token was rejected: ${prepared.result.code}`)
     const result = await profiler.executeAction(prepared.claim)
-    if (!result.ok) throw new Error(`Smoke stop failed: ${result.code}`)
+    if (!result.ok) {
+      // A bare code cost a round here too: `identity-mismatch` reads as a
+      // safety check working, when the actual cause was the harness's own
+      // fixture exiting before the grant could be spent. Whether the subject
+      // is still alive is the fact that separates the two.
+      throw new Error(
+        `Smoke stop failed: ${result.code} ${JSON.stringify({
+          fixturePid: fixture.pid,
+          fixtureAlive: fixture.exitCode === null && fixture.signalCode === null,
+          fixtureExitCode: fixture.exitCode,
+          waitedMs: Date.now() - startedAt,
+        })}`,
+      )
+    }
     const reused = profiler.prepareAction({ action: "stop", token: stop.token })
     if (reused.ok || reused.result.code !== "invalid-token") {
       throw new Error("Smoke action token was not single-use")
