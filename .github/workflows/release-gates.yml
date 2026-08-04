@@ -159,6 +159,9 @@ jobs:
         env:
           CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT: .artifacts/diagnostics-source-${{ matrix.target }}.json
           CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH: ${{ matrix.arch }}
+          # Surface the underlying collector error; the status enum alone
+          # cannot say WHY a source degraded.
+          CLAXEDO_DIAGNOSTICS_DEBUG: "1"
         shell: bash
         run: |
           mkdir -p .artifacts

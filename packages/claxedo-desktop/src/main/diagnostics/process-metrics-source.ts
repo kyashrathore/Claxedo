@@ -319,8 +319,18 @@ export function createProcessMetricsSource(options: {
           reconciliationFailed && !ancestryStatus
             ? { ...sourceStatusBase(), state: "degraded", reason: "source-failed", lastSuccessAt: at }
             : { ...sourceStatusBase(), state: "healthy", lastSuccessAt: at }
-      } catch {
+      } catch (error) {
         if (disposed) return
+        // The status enum ("source-failed") is the contract; the underlying
+        // error is not, and swallowing it entirely cost five release rounds
+        // of guessing at a Windows-only CIM failure. Diagnostics must never
+        // become the thing you cannot diagnose, so opt-in logging: the
+        // message only, behind an env flag, never in a snapshot.
+        if (process.env.CLAXEDO_DIAGNOSTICS_DEBUG === "1") {
+          console.error(
+            `[diagnostics] host collection failed: ${error instanceof Error ? error.message : String(error)}`,
+          )
+        }
         consecutiveHostFailures++
         hostRetryAt =
           at +
