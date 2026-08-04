@@ -182,7 +182,24 @@ export async function runSourceSmoke() {
   })
   const ownerGeneration = crypto.randomUUID()
   const ownerId = "diagnostics-smoke-harness"
+  const ownerLaunchId = crypto.randomUUID()
   const startedAt = Date.now()
+  // Register the fixture as a sampling ROOT. Without this `roots` is empty,
+  // the source never reconciles, nothing is ever sampled, and the owner is
+  // absent from every snapshot — which is what the Windows gate reported as
+  // {"found":false}. darwin/linux only got away with it because this smoke
+  // injects an isolated POSIX worker for them; Windows uses the real CIM
+  // path, which is root-driven, so the omission only ever showed up there.
+  // Same launchId as the descriptor below: action eligibility requires the
+  // sampled identity's launchId to match its owner's.
+  source.registerRoot({
+    pid: fixture.pid,
+    launchId: ownerLaunchId,
+    ownerId,
+    ownerKind: "harness",
+    role: "harness",
+    label: "Diagnostics smoke harness",
+  })
   profiler.recordOwnerEvent({
     type: "owner-registered",
     at: startedAt,
@@ -191,7 +208,7 @@ export async function runSourceSmoke() {
       ownerId,
       ownerGeneration,
       ownerOperationId: crypto.randomUUID(),
-      launchId: crypto.randomUUID(),
+      launchId: ownerLaunchId,
       kind: "harness",
       role: "harness",
       label: "Diagnostics smoke harness",
