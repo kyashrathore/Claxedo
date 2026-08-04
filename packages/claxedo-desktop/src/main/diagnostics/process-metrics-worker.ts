@@ -16,15 +16,17 @@ export const WINDOWS_SNAPSHOT_LIMIT = 1_024
 export const DIAGNOSTICS_COLLECTOR_TIMEOUT_MS = 5_000
 /**
  * Startup grace for a CIM PowerShell worker that has never answered. Measured
- * cold start on the Windows release runners is 22–32s per fresh powershell.exe
+ * cold start on the Windows release runners is 22–47s per fresh powershell.exe
  * (AMSI scan of the EncodedCommand + .NET warm-up, paid on EVERY spawn — the
- * windows-cim-probe workflow timed it three ways). Judging a cold child by the
- * 5s steady-state timeout is self-defeating: the kill throws away the warm-up,
- * the retry pays a fresh cold start, and no query ever succeeds. 60s is ~2x
- * the worst observed start; once the child produces its first line it is warm
- * and the normal timeout applies.
+ * windows-cim-probe workflow has now timed it four ways, worst 46.9s). Judging
+ * a cold child by the 5s steady-state timeout is self-defeating: the kill
+ * throws away the warm-up, the retry pays a fresh cold start, and no query
+ * ever succeeds. 90s keeps ~2x headroom over the worst OBSERVED start rather
+ * than 1.3x, which is inside this runner's own spread; once the child produces
+ * its first line it is warm (subsequent queries measured 2–23ms) and the
+ * normal timeout applies.
  */
-export const WINDOWS_CIM_COLD_START_TIMEOUT_MS = 60_000
+export const WINDOWS_CIM_COLD_START_TIMEOUT_MS = 90_000
 export const DIAGNOSTICS_SYSTEM_PATH =
   process.platform === "win32" ? String.raw`C:\Windows\System32;C:\Windows` : "/usr/bin:/bin"
 

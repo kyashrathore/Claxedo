@@ -59,6 +59,55 @@ describe("process metrics source", () => {
     expect(JSON.stringify(source.statuses?.())).not.toContain("TOP_SECRET")
   })
 
+  test("retries a degraded platform source on backoff and returns to healthy once it recovers", async () => {
+    // A source that fails a few times and is never retried looks identical,
+    // in a snapshot, to one that failed permanently — and the release gate
+    // reads exactly that: three failures in the first two seconds, then
+    // silence, then a stop grant that never arrives. The backoff must expire
+    // and the source must climb back to healthy on its own.
+    let failures = 0
+    const source = createProcessMetricsSource({
+      platform: "linux",
+      electron: electron(() => []),
+      random: () => 0,
+      worker: {
+        async reconcile() {
+          if (++failures <= 3) throw new Error("transient platform failure")
+          return { entries: [{ pid: 50, ppid: 1, rootPid: 50 }], truncated: false }
+        },
+        async sample(entries: Array<{ pid: number }>) {
+          return entries.map((entry) => ({
+            ...entry,
+            creation: { state: "available" as const, value: "c", source: "linux-proc" as const },
+            cpuMachinePercent: 1,
+            rssBytes: 1_000,
+          }))
+        },
+        clear() {},
+        dispose() {},
+      },
+    })
+    source.registerRoot(root(50))
+
+    // Drive past each backoff window. Attempts are only made when the clock
+    // passes hostRetryAt, so a fixed cadence that never advances would spin
+    // here without ever retrying.
+    let at = 0
+    for (let step = 0; step < 40 && failures < 4; step++) {
+      at += 2_000
+      source.collect(at)
+      await Bun.sleep(0)
+    }
+    expect(failures).toBeGreaterThanOrEqual(4)
+
+    at += 2_000
+    source.collect(at)
+    await Bun.sleep(0)
+    expect(source.statuses?.()).toEqual([
+      expect.objectContaining({ source: "linux-proc", state: "healthy" }),
+    ])
+  })
+
   test("merges duplicate PID fields with Electron precedence and no second contribution", () => {
     const preferred = observation(50, "electron", 10, 1_000)
     const fallback = observation(50, "electron", 90, 9_000)
