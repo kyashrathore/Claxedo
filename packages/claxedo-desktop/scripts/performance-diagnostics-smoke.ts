@@ -260,7 +260,21 @@ export async function runSourceSmoke() {
   const actionSafety = await (async (): Promise<DiagnosticsSmokeEvidence["actionSafety"]> => {
     if (!stop) {
       if (process.platform === "darwin") return "read-only-by-platform"
-      throw new Error("Identity-qualified smoke owner did not receive a stop grant")
+      // Name the blocking condition. "no grant" alone cost a release round of
+      // guessing: ineligibility has six distinct reasons and the identity one
+      // has four sub-causes, none of which the bare message distinguishes.
+      const eligibility = processRecord?.actionEligibility
+      const identity = processRecord?.identity
+      throw new Error(
+        `Identity-qualified smoke owner did not receive a stop grant: ${JSON.stringify({
+          found: Boolean(processRecord),
+          eligibility: eligibility?.state === "ineligible" ? eligibility.reason : eligibility?.state,
+          creation: identity?.creation.state === "available"
+            ? { state: "available", source: identity.creation.source }
+            : identity?.creation,
+          hasLaunchId: Boolean(identity?.launchId),
+        })}`,
+      )
     }
     const prepared = profiler.prepareAction({ action: "stop", token: stop.token })
     if (!prepared.ok) throw new Error(`Smoke stop token was rejected: ${prepared.result.code}`)
