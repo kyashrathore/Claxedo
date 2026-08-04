@@ -241,9 +241,17 @@ export function createWindowsProcessMetricsWorker(options: {
   return {
     async reconcile(rootPids) {
       if (disposed) return { entries: [], truncated: false }
-      // No addon → no ancestry sweep; truncated:true tells the caller the
-      // set is incomplete rather than claiming a clean empty tree.
-      if (!options.addon) return { entries: [], truncated: true }
+      // No addon → no DESCENDANT sweep, but still report the roots: `entries`
+      // is the set the caller samples, so returning nothing blinds the whole
+      // source (no process ever reaches a snapshot, and every owner looks
+      // unregistered). Roots-only with truncated:true is the honest degrade —
+      // the tree is incomplete, not absent.
+      if (!options.addon) {
+        return {
+          entries: rootPids.map((pid) => ({ pid, ppid: 0, rootPid: pid })),
+          truncated: true,
+        }
+      }
       return collectWindowsAncestry(options.addon, rootPids)
     },
     async sample(entries) {

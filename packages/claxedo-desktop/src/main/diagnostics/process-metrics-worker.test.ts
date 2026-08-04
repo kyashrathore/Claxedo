@@ -133,6 +133,31 @@ describe("process metrics worker", () => {
     expect(windows.args).not.toContain("-ExecutionPolicy")
   })
 
+  test("without the optional addon, reconcile still reports the roots so sampling is not blinded", async () => {
+    // The addon is an optionalDependency bun may skip. Returning NO entries
+    // here silently blinds the whole Windows source: `entries` is the set the
+    // caller samples, so no process reaches a snapshot and every owner looks
+    // unregistered — which is exactly how the release smoke failed with
+    // {"found":false} and no other signal.
+    const worker = createWindowsProcessMetricsWorker({
+      query: async (pids) => pids.map((pid) => ({
+        pid,
+        ppid: 1,
+        creationTicks: "10",
+        kernelTicks: "0",
+        userTicks: "0",
+        rssBytes: "1024",
+      })),
+    })
+
+    const reconciled = await worker.reconcile([42, 43])
+    expect(reconciled.entries.map((entry) => entry.pid)).toEqual([42, 43])
+    // Incomplete, not absent: descendants are missing without the addon.
+    expect(reconciled.truncated).toBe(true)
+    // And the roots are actually sampleable, which is the point.
+    expect((await worker.sample(reconciled.entries, 0)).map((sample) => sample.pid)).toEqual([42, 43])
+  })
+
   test("uses the Windows addon only for flag-free ancestry and detects its 1024 saturation", async () => {
     let flags = -1
     let cpuCalled = false
