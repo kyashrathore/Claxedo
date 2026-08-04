@@ -275,7 +275,10 @@ describe("process metrics worker", () => {
       "-Property ProcessId,ParentProcessId,CreationDate,KernelModeTime,UserModeTime,WorkingSetSize",
     )
     expect(script).toContain("rows = @($rows)")
-    expect(script).toContain('{"ok":false}')
+    expect(script).toContain("ok = $false; reason = $reason")
+    expect(script).toContain("$reason.Substring(0, 200)")
+    expect(script).not.toContain("$_.Exception.ToString()")
+    expect(script).not.toContain("$_.InvocationInfo")
     expect(script).not.toContain("ProcessId IN")
     expect(script).not.toContain("ExecutionPolicy")
   })
@@ -311,6 +314,40 @@ describe("process metrics worker", () => {
     // child is killed so the next query gets a fresh process.
     await expect(cim.query([8])).rejects.toThrow("timed out")
     expect(kills).toBe(1)
+    cim.dispose()
+  })
+
+  test("surfaces the worker's own failure reason, and stays bounded when it has none", async () => {
+    // A bare "response rejected" is what made the Windows release gate
+    // undiagnosable: a failing CIM query, a malformed envelope, and an
+    // over-long row set all read identically. The worker's reason is the
+    // only evidence available on a runner we cannot attach to.
+    const stdout = new PassThrough()
+    const child = Object.assign(new EventEmitter(), {
+      stdin: { writable: true, write: () => true },
+      stdout,
+      exitCode: null as number | null,
+      kill: () => {},
+    })
+    const cim = createWindowsCimQuery("reviewed-encoded-command", String.raw`C:\Windows`, 400, 400, () => child)
+
+    const reported = cim.query([7])
+    stdout.write('{"ok":false,"reason":"Access denied to Win32_Process"}\n')
+    await expect(reported).rejects.toThrow("rejected: Access denied to Win32_Process")
+
+    const unparsable = cim.query([7])
+    stdout.write("not json at all\n")
+    await expect(unparsable).rejects.toThrow("unparsable response")
+
+    // No reason field, and a reason too long to pass through whole: neither
+    // may widen what crosses the boundary.
+    const silent = cim.query([7])
+    stdout.write('{"ok":false}\n')
+    await expect(silent).rejects.toThrow(/rejected$/)
+
+    const flooded = cim.query([7])
+    stdout.write(`${JSON.stringify({ ok: false, reason: "x".repeat(5_000) })}\n`)
+    await expect(flooded).rejects.toThrow(new RegExp(`rejected: x{200}$`))
     cim.dispose()
   })
 

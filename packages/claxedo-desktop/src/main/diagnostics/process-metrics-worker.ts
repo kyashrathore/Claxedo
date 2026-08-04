@@ -413,14 +413,23 @@ export function createWindowsCimQuery(
       if (!request) return
       clearTimeout(request.timer)
       try {
-        const envelope = JSON.parse(line) as { ok?: unknown; rows?: unknown }
+        const envelope = JSON.parse(line) as { ok?: unknown; rows?: unknown; reason?: unknown }
         if (envelope.ok !== true || !Array.isArray(envelope.rows) || envelope.rows.length > MAX_DIAGNOSTICS_PIDS) {
-          request.reject(new Error("Windows metrics response rejected"))
+          // The worker's own reason when it sent one, so a CIM failure is
+          // distinguishable from a malformed envelope. Everything past the
+          // colon comes from the worker's capped message field.
+          request.reject(
+            new Error(
+              typeof envelope.reason === "string" && envelope.reason
+                ? `Windows metrics response rejected: ${envelope.reason.slice(0, 200)}`
+                : "Windows metrics response rejected",
+            ),
+          )
           return
         }
         request.resolve(envelope.rows)
       } catch {
-        request.reject(new Error("Windows metrics response rejected"))
+        request.reject(new Error("Windows metrics response rejected: unparsable response"))
       }
     })
     child.once("exit", recover)

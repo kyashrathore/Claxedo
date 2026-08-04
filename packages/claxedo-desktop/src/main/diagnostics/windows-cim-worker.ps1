@@ -41,6 +41,15 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
     )
     [Console]::Out.WriteLine(([ordered]@{ ok = $true; rows = @($rows) } | ConvertTo-Json -Compress -Depth 3))
   } catch {
-    [Console]::Out.WriteLine('{"ok":false}')
+    # The exception MESSAGE only, and only ever the message: a caught CIM
+    # error is the sole evidence of why a query failed on a machine we
+    # cannot attach to, but the exception's other members reach process
+    # state (command lines, environment) that must not cross the
+    # diagnostics contract. Newlines are stripped so one failure stays one
+    # protocol line, and the text is capped so a pathological message
+    # cannot become the response.
+    $reason = ([string]$_.Exception.Message) -replace '\s+', ' '
+    if ($reason.Length -gt 200) { $reason = $reason.Substring(0, 200) }
+    [Console]::Out.WriteLine(([ordered]@{ ok = $false; reason = $reason } | ConvertTo-Json -Compress -Depth 2))
   }
 }
