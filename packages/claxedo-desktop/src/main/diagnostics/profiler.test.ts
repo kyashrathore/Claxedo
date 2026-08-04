@@ -537,6 +537,40 @@ describe("bounded desktop profiler", () => {
     })
   })
 
+  test("ranks a contributor whose FIRST sample was still warming up", () => {
+    // Every CPU reading is a delta, so a process's first sample never has
+    // one. Windows makes this permanent rather than momentary: the CIM cold
+    // start is 22-47s, so that warming-up first sample sits in the retention
+    // window for the whole run. A peak that requires EVERY sample to be
+    // available therefore ranks nothing on Windows no matter how much CPU
+    // the process actually burns — the release gate reads this as "no
+    // measured logical contributor was ranked", and the product's own
+    // contributor list would be empty on that platform.
+    const warming = observation(0, 10, "main", 0, 2_000)
+    const measured = observation(1_000, 10, "main", 55, 3_000)
+    const summary = aggregateInterval({
+      startAt: 0,
+      endAt: 1_000,
+      samples: [
+        {
+          ...warming.point,
+          cpuMachinePercent: { state: "unavailable", reason: "not-sampled" },
+        },
+        measured.point,
+      ],
+      processes: [measured.process],
+      markers: [],
+    })
+
+    expect(summary.contributors[0]).toMatchObject({
+      processId: "host:10:main",
+      peakCpuMachinePercent: { state: "available", value: 55 },
+    })
+    // The RSS delta must still span the samples that HAVE readings, so
+    // growth measured across a warm-up boundary is not silently dropped.
+    expect(summary.contributors[0]?.rssChangeBytes).toEqual({ state: "available", value: 1_000 })
+  })
+
   test("keeps totals and shares unavailable when any contributing reading is missing", () => {
     const main = observation(0, 10, "main", 90, 2_000)
     const renderer = observation(0, 20, "renderer", 10, 1_000, "renderer", "owner-renderer")

@@ -749,20 +749,32 @@ export function aggregateInterval(input: {
   const grouped = Map.groupBy(filtered, (sample) => sample.processId)
   const contributors = [...grouped.entries()]
     .map(([processId, processPoints]) => {
-      const cpuValues = completeValues(processPoints.map((point) => point.cpuMachinePercent))
-      const rssValues = completeValues(processPoints.map((point) => point.rssBytes))
-      const processCpu = cpuValues?.reduce((sum, value) => sum + value, 0)
+      // A process's OWN peak and RSS delta use the readings that exist.
+      // Every CPU reading is a delta, so a process's first sample never has
+      // one, and on Windows the CIM cold start (22-47s) keeps that
+      // warming-up sample inside the retention window for the whole run —
+      // an all-or-nothing peak would rank nothing on that platform no
+      // matter how much CPU the process burned.
+      //
+      // SHARE stays all-or-nothing (below, via completeValues): a share is a
+      // fraction of a cross-process total, and computing one from a partial
+      // numerator over a total that excludes the same gaps would overstate
+      // it. Missing data must widen error bars, not invent precision.
+      const cpuValues = availableValues(processPoints.map((point) => point.cpuMachinePercent))
+      const rssValues = availableValues(processPoints.map((point) => point.rssBytes))
+      const completeCpuValues = completeValues(processPoints.map((point) => point.cpuMachinePercent))
+      const processCpu = completeCpuValues?.reduce((sum, value) => sum + value, 0)
       return {
         processId,
         ...(processById.get(processId)?.ownerId ? { ownerId: processById.get(processId)!.ownerId } : {}),
-        peakCpuMachinePercent: maxReading(cpuValues ?? []),
+        peakCpuMachinePercent: maxReading(cpuValues),
         cpuSharePercent:
           totalCpu !== undefined && totalCpu > 0 && processCpu !== undefined
             ? { state: "available" as const, value: Math.min(100, (processCpu / totalCpu) * 100) }
             : { state: "unavailable" as const, reason: "not-sampled" as const },
-        peakRssBytes: maxByteReading(rssValues ?? []),
+        peakRssBytes: maxByteReading(rssValues),
         rssChangeBytes:
-          rssValues && rssValues.length > 1
+          rssValues.length > 1
             ? { state: "available" as const, value: rssValues.at(-1)! - rssValues[0]! }
             : { state: "unavailable" as const, reason: "not-sampled" as const },
       }
@@ -810,6 +822,21 @@ function sumAvailable(
   const values = completeValues(readings)
   if (!values || values.length === 0) return { state: "unavailable", reason: "not-sampled" }
   return { state: "available", value: values.reduce((sum, value) => sum + value, 0) }
+}
+
+/**
+ * The readings that exist, however many that is. For a SINGLE series where a
+ * gap means "not measured yet" rather than "this datum is wrong" — a peak, or
+ * a delta across the samples that do have values. Use completeValues instead
+ * whenever the result combines series across processes, where a gap in one
+ * would silently bias the combination.
+ */
+function availableValues(
+  readings: Array<LocalDiagnostics.CpuMachinePercent | LocalDiagnostics.ByteReading>,
+) {
+  return readings
+    .filter((reading): reading is Extract<typeof reading, { state: "available" }> => reading.state === "available")
+    .map((reading) => reading.value)
 }
 
 function completeValues(
