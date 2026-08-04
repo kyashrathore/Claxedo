@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
+
 import type { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
 
 import type { ElectronDiagnosticsSource, ElectronRoot } from "./electron-source"
@@ -12,9 +15,33 @@ import {
 } from "./process-metrics-worker"
 import type { DiagnosticsObservation, DiagnosticsSource } from "./profiler"
 import type { WslDiagnosticsSource } from "./wsl-source"
-import windowsCimEncodedCommand from "./windows-cim-worker.ps1?encoded"
+import windowsCimEncodedModule from "./windows-cim-worker.ps1?encoded"
 
 const RECONCILE_INTERVAL_MS = 30_000
+
+/**
+ * The reviewed CIM script as a PowerShell -EncodedCommand payload.
+ *
+ * `?encoded` is an electron.vite plugin transform (encode-reviewed-windows-cim-
+ * worker), so it only produces base64 in a BUILT main bundle. Run straight from
+ * source — which the release smoke does — bun applies its own loader instead:
+ * on darwin/linux that yields the file PATH, and on Windows it tried to PARSE
+ * the .ps1 as JavaScript and the whole gate died on `[Console]::In`. So treat
+ * the import as either the encoded payload (built) or a path (source), and
+ * encode from disk in the latter case. Same bytes either way: CRLF-normalized,
+ * UTF-16LE, base64 — the shape PowerShell's -EncodedCommand requires.
+ */
+const windowsCimEncodedCommand: string = /^[A-Za-z0-9+/]+={0,2}$/.test(windowsCimEncodedModule)
+  ? windowsCimEncodedModule
+  : Buffer.from(
+      readFileSync(
+        windowsCimEncodedModule.startsWith("file:")
+          ? fileURLToPath(windowsCimEncodedModule)
+          : windowsCimEncodedModule,
+        "utf8",
+      ).replace(/\r?\n/g, "\r\n"),
+      "utf16le",
+    ).toString("base64")
 
 export type ProcessMetricsSource = DiagnosticsSource & {
   registerRoot(root: ElectronRoot): () => void
