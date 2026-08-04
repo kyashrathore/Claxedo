@@ -256,18 +256,18 @@ export async function runSourceSmoke() {
   }
   // Keep sampling until the owner's stop grant lands (or the ceiling): the
   // grant requires CREATION IDENTITY, which on Windows comes from the CIM
-  // PowerShell query — ~15s cold start on release runners, far beyond the
-  // 3.2s baseline loop above. The ceiling budgets the WORST recovery path,
-  // not the typical one: one cold child that hangs out its whole 30s startup
-  // window, the 1s recovery backoff, then a real ~15s cold start — ~46s.
-  // Typical is a single cold start (~15s) and the loop exits as soon as the
-  // grant lands. Darwin is read-only-by-platform and never becomes eligible,
-  // so it must not wait out the ceiling.
+  // PowerShell query — 22–32s measured cold start on release runners (probe
+  // workflow), far beyond the 3.2s baseline loop above. The ceiling budgets
+  // the WORST recovery path, not the typical one: one cold child that hangs
+  // out its whole 60s startup window, the 1s recovery backoff, then a real
+  // ~32s cold start — ~93s. Typical is a single cold start and the loop
+  // exits as soon as the grant lands. Darwin is read-only-by-platform and
+  // never becomes eligible, so it must not wait out the ceiling.
   let beforeAction = profiler.getSnapshot()
   let processRecord = beforeAction.processes.find((process) => process.ownerId === ownerId)
   for (
     let waited = 0;
-    process.platform !== "darwin" && processRecord?.actionEligibility.state !== "eligible" && waited < 75_000;
+    process.platform !== "darwin" && processRecord?.actionEligibility.state !== "eligible" && waited < 120_000;
     waited += 500
   ) {
     await Bun.sleep(500)
@@ -700,7 +700,11 @@ async function availablePort() {
 }
 
 async function waitForSnapshot(client: CdpClient) {
-  const deadline = Date.now() + 60_000
+  // 120s, not 60s: readiness requires the windows-cim source healthy, and
+  // the CIM worker's measured cold start is 22–32s on the release runners
+  // (paid once per app boot, overlapping it). The loop exits as soon as the
+  // snapshot is ready; the deadline only bounds the failure path.
+  const deadline = Date.now() + 120_000
   let last: LocalDiagnostics.RetainedSnapshot | undefined
   while (Date.now() < deadline) {
     const snapshot = await client.evaluate<LocalDiagnostics.RetainedSnapshot | undefined>(

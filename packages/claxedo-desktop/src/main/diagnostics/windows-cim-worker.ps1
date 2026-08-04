@@ -2,7 +2,14 @@ $ErrorActionPreference = "Stop"
 
 while ($null -ne ($line = [Console]::In.ReadLine())) {
   try {
-    $inputPids = @($line | ConvertFrom-Json)
+    # Assignment, never @(... $line | ConvertFrom-Json ...): on Windows
+    # PowerShell 5.1 ConvertFrom-Json emits the JSON array as ONE pipeline
+    # object, and wrapping it in @() nests it — @(@(pid)) — so the [int]
+    # cast below throws InvalidCast on every query. A bare assignment stays
+    # flat under both behaviors (5.1 single-object, 7 unrolled scalar); the
+    # trailing @() then normalizes scalar-vs-array without ever nesting.
+    $parsed = $line | ConvertFrom-Json
+    $inputPids = @($parsed)
     if ($inputPids.Count -gt 512) {
       throw "too many process identifiers"
     }
