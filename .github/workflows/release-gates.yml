@@ -120,25 +120,6 @@ jobs:
         if: runner.os == 'macOS' && (inputs.leg == 'all' || inputs.leg == matrix.leg || inputs.leg == matrix.platform)
         run: python3 -m pip install --break-system-packages setuptools || python3 -m pip install setuptools
 
-      # `bun install` is 8.5 of the ~11 minutes to first gate verdict, and it
-      # resolves the same graph every round (lockfile-keyed). Caching it is the
-      # single biggest lever on iteration speed. NOT used by `Release Claxedo`:
-      # a shipping build installs from scratch, by design.
-      #
-      # The DOWNLOAD cache only — never node_modules itself. Restoring a
-      # populated node_modules makes `bun install` treat native postinstalls as
-      # already done, and node-pty's gyp step then failed on a half-materialized
-      # tree ("Cannot find module './ranges/valid'"). Caching the tarball cache
-      # keeps the network out of the loop while every install still runs for
-      # real.
-      - name: Cache dependency downloads
-        if: inputs.leg == 'all' || inputs.leg == matrix.leg || inputs.leg == matrix.platform
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: ~/.bun/install/cache
-          key: gates-bun-cache-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
-          restore-keys: gates-bun-cache-${{ runner.os }}-${{ runner.arch }}-
-
       - name: Install dependencies
         if: inputs.leg == 'all' || inputs.leg == matrix.leg || inputs.leg == matrix.platform
         run: bun install --frozen-lockfile --minimum-release-age=0
