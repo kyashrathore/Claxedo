@@ -96,6 +96,74 @@ describe("WorkspaceGate", () => {
     expect(screen.queryByTestId("session-page-root")).toBeNull()
   })
 
+  // A dead CLOUD sandbox does not take its history with it: sessions sync back
+  // to the control plane, so the surface must still render and let the
+  // transcript load centrally. Blocking it behind the offline panel is the bug
+  // this branch fixes.
+  test.each(["no-host", "unreachable", "still-provisioning", "failed"] as const)(
+    "renders the surface for a dead cloud workspace (%s) so central history stays readable",
+    (reason) => {
+      calls.connection.mockReturnValue({ status: { offline: reason }, terminal: false })
+      calls.offline.mockReturnValue(reason)
+
+      render(() => (
+        <WorkspaceGate workspaceId="ws_dead" kind="cloud" sessionId="ses_stored">
+          <div data-testid="ready-session" />
+        </WorkspaceGate>
+      ))
+
+      expect(screen.getByTestId("ready-session")).toBeTruthy()
+      expect(screen.queryByTestId("workspace-offline")).toBeNull()
+    },
+  )
+
+  // A DRAFT has no stored history and its first send needs a live runtime, so
+  // the offline panel (with its Retry) stays the honest surface.
+  test.each([undefined, "new"])("a DRAFT (sessionId=%s) on a dead cloud workspace still shows the offline panel", (sessionId) => {
+    calls.connection.mockReturnValue({ status: { offline: "unreachable" }, terminal: false })
+    calls.offline.mockReturnValue("unreachable")
+
+    render(() => (
+      <WorkspaceGate workspaceId="ws_dead" kind="cloud" sessionId={sessionId}>
+        <div data-testid="ready-session" />
+      </WorkspaceGate>
+    ))
+
+    expect(screen.getByTestId("workspace-offline")).toBeTruthy()
+    expect(screen.queryByTestId("ready-session")).toBeNull()
+  })
+
+  test("a dead USER-HOSTED workspace still shows the offline panel — it has no central copy", () => {
+    calls.connection.mockReturnValue({ status: { offline: "no-host" }, terminal: false })
+    calls.offline.mockReturnValue("no-host")
+
+    render(() => (
+      <WorkspaceGate workspaceId="ws_uh" kind="user-hosted" sessionId="ses_stored">
+        <div data-testid="ready-session" />
+      </WorkspaceGate>
+    ))
+
+    expect(screen.getByTestId("workspace-offline")).toBeTruthy()
+    expect(screen.queryByTestId("ready-session")).toBeNull()
+  })
+
+  test("forbidden stays access-denied for cloud — no access means no read", () => {
+    calls.connection.mockReturnValue({ status: { offline: "forbidden" }, terminal: true })
+    calls.offline.mockReturnValue("forbidden")
+
+    render(() => (
+      <WorkspaceGate workspaceId="ws_forbidden" kind="cloud" sessionId="ses_stored">
+        <div data-testid="ready-session" />
+      </WorkspaceGate>
+    ))
+
+    // The children must NOT render. (This stub gives WorkspaceAccessDeniedView
+    // the same `workspace-offline` testid as the offline shell, so the
+    // meaningful assertion here is the absence of the gated surface.)
+    expect(screen.queryByTestId("ready-session")).toBeNull()
+    expect(screen.getByTestId("workspace-offline")).toBeTruthy()
+  })
+
   test("each mounted gate over the same workspace acquires its own ref-counted handle", () => {
     calls.connection.mockReturnValue({ status: "ready" })
     calls.offline.mockReturnValue(undefined)

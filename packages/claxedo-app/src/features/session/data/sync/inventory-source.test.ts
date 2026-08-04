@@ -8,8 +8,10 @@ import {
   mergeWorkspaceGroups,
   shouldUseSignedControlPlaneInventory,
   signedWorkspaceHosting,
+  signedWorkspaceStatus,
   toSessionInventoryRow,
   workspaceGroupKey,
+  workspaceRuntimeReachable,
 } from "./inventory-source"
 
 describe("global sync inventory source helpers", () => {
@@ -357,6 +359,225 @@ describe("global sync inventory source helpers", () => {
       directory: "workspace:ws_cloud",
       kind: "cloud",
     })).toEqual([{ session_id: "ses_runtime", created_at: 7, updated_at: 8 }])
+  })
+
+  test("workspace reachability defaults to reachable for unknown statuses", () => {
+    for (const status of ["ready", "acquiring", "provisioning", "", undefined, null]) {
+      expect(workspaceRuntimeReachable(status)).toBe(true)
+    }
+    for (const status of ["stopped", " Stopped ", "DESTROYED", "unavailable", "failed", "offline", "deleted"]) {
+      expect(workspaceRuntimeReachable(status)).toBe(false)
+    }
+  })
+
+  test("workspace status reads both snake_case and camelCase runtime fields", () => {
+    expect(signedWorkspaceStatus({ status: "stopped" })).toBe("stopped")
+    expect(signedWorkspaceStatus({ runtime_status: "ready" })).toBe("ready")
+    expect(signedWorkspaceStatus({ runtimeStatus: "failed" })).toBe("failed")
+    expect(signedWorkspaceStatus({})).toBeUndefined()
+    expect(signedWorkspaceStatus(undefined)).toBeUndefined()
+  })
+
+  test("a dead workspace makes the control plane authoritative instead of probing the runtime", async () => {
+    let runtimeCalls = 0
+    const source = createSignedInventorySource({
+      queryClient: immediateQueryClient(),
+      baseUrl: () => "https://app.test",
+      owner: () => "user_1",
+      authFetch: async () => jsonResponse({ sessions: [] }),
+      signedWorkspaceInfo: () => undefined,
+      resolveWorkspace: async () => undefined,
+      workspaceStatus: async () => "stopped",
+      runtimeSessions: async () => {
+        runtimeCalls++
+        return [{ session_id: "ses_runtime", created_at: 7, updated_at: 8 }]
+      },
+    })
+
+    // Convex genuinely has nothing for this workspace, and its sandbox is gone.
+    // The honest answer is the empty control-plane list — NOT a dead-end probe.
+    expect(await source.fetchSignedWorkspaceSessions({
+      workspaceId: "ws_dead",
+      directory: "workspace:ws_dead",
+      kind: "cloud",
+    })).toEqual([])
+    expect(runtimeCalls).toBe(0)
+  })
+
+  test.each(["stopped", "destroyed", "unavailable", "failed", "offline", "DELETED"])(
+    "treats %s as unreachable",
+    async (status) => {
+      let runtimeCalls = 0
+      const source = createSignedInventorySource({
+        queryClient: immediateQueryClient(),
+        baseUrl: () => "https://app.test",
+        owner: () => "user_1",
+        authFetch: async () => jsonResponse({ sessions: [] }),
+        signedWorkspaceInfo: () => undefined,
+        resolveWorkspace: async () => undefined,
+        workspaceStatus: async () => status,
+        runtimeSessions: async () => {
+          runtimeCalls++
+          return []
+        },
+      })
+
+      await source.fetchSignedWorkspaceSessions({
+        workspaceId: `ws_${status}`,
+        directory: `workspace:ws_${status}`,
+        kind: "cloud",
+      })
+      expect(runtimeCalls).toBe(0)
+    },
+  )
+
+  test("a reachable or unknown-status workspace still falls back to the runtime", async () => {
+    for (const status of ["ready", "acquiring", undefined]) {
+      let runtimeCalls = 0
+      const source = createSignedInventorySource({
+        queryClient: immediateQueryClient(),
+        baseUrl: () => "https://app.test",
+        owner: () => "user_1",
+        authFetch: async () => jsonResponse({ sessions: [] }),
+        signedWorkspaceInfo: () => undefined,
+        resolveWorkspace: async () => undefined,
+        workspaceStatus: async () => status,
+        runtimeSessions: async () => {
+          runtimeCalls++
+          return [{ session_id: "ses_runtime", created_at: 7, updated_at: 8 }]
+        },
+      })
+
+      expect(await source.fetchSignedWorkspaceSessions({
+        workspaceId: `ws_${status ?? "unknown"}`,
+        directory: "workspace:ws_live",
+        kind: "cloud",
+      })).toEqual([{ session_id: "ses_runtime", created_at: 7, updated_at: 8 }])
+      expect(runtimeCalls).toBe(1)
+    }
+  })
+
+  test("a dead workspace still renders whatever the control plane holds", async () => {
+    let runtimeCalls = 0
+    let statusCalls = 0
+    const source = createSignedInventorySource({
+      queryClient: immediateQueryClient(),
+      baseUrl: () => "https://app.test",
+      owner: () => "user_1",
+      authFetch: async () => jsonResponse({
+        sessions: [
+          { session_id: "ses_synced_old", created_at: 1, updated_at: 1 },
+          { session_id: "ses_synced_new", created_at: 2, updated_at: 3 },
+        ],
+      }),
+      signedWorkspaceInfo: () => undefined,
+      resolveWorkspace: async () => undefined,
+      workspaceStatus: async () => {
+        statusCalls++
+        return "stopped"
+      },
+      runtimeSessions: async () => {
+        runtimeCalls++
+        return []
+      },
+    })
+
+    expect(await source.fetchSignedWorkspaceSessions({
+      workspaceId: "ws_dead",
+      directory: "workspace:ws_dead",
+      kind: "cloud",
+    })).toEqual([
+      { session_id: "ses_synced_old", created_at: 1, updated_at: 1 },
+      { session_id: "ses_synced_new", created_at: 2, updated_at: 3 },
+    ])
+    // Sessions were present, so neither the runtime nor the status port was consulted.
+    expect(runtimeCalls).toBe(0)
+    expect(statusCalls).toBe(0)
+  })
+
+  test("user-hosted workspaces never consult the control plane or the status port", async () => {
+    let statusCalls = 0
+    let controlCalls = 0
+    const source = createSignedInventorySource({
+      queryClient: immediateQueryClient(),
+      baseUrl: () => "https://app.test",
+      owner: () => "user_1",
+      authFetch: async () => {
+        controlCalls++
+        return jsonResponse({ sessions: [] })
+      },
+      signedWorkspaceInfo: () => undefined,
+      resolveWorkspace: async () => undefined,
+      workspaceStatus: async () => {
+        statusCalls++
+        return "stopped"
+      },
+      runtimeSessions: async () => [{ session_id: "ses_user", created_at: 1, updated_at: 1 }],
+    })
+
+    expect(await source.fetchSignedWorkspaceSessions({
+      workspaceId: "ws_user",
+      directory: "workspace:ws_user",
+      kind: "user-hosted",
+    })).toEqual([{ session_id: "ses_user", created_at: 1, updated_at: 1 }])
+    expect(statusCalls).toBe(0)
+    expect(controlCalls).toBe(0)
+  })
+
+  test("a known workspace status wins over the status port", async () => {
+    let statusCalls = 0
+    let runtimeCalls = 0
+    const source = createSignedInventorySource({
+      queryClient: immediateQueryClient(),
+      baseUrl: () => "https://app.test",
+      owner: () => "user_1",
+      authFetch: async () => jsonResponse({ sessions: [] }),
+      signedWorkspaceInfo: () => undefined,
+      resolveWorkspace: async () => undefined,
+      workspaceStatus: async () => {
+        statusCalls++
+        return "ready"
+      },
+      runtimeSessions: async () => {
+        runtimeCalls++
+        return []
+      },
+    })
+
+    await source.fetchSignedWorkspaceSessions({
+      workspaceId: "ws_dead",
+      directory: "workspace:ws_dead",
+      kind: "cloud",
+      status: "stopped",
+    })
+    expect(statusCalls).toBe(0)
+    expect(runtimeCalls).toBe(0)
+  })
+
+  test("a throwing status port is treated as unknown, preserving the runtime fallback", async () => {
+    let runtimeCalls = 0
+    const source = createSignedInventorySource({
+      queryClient: immediateQueryClient(),
+      baseUrl: () => "https://app.test",
+      owner: () => "user_1",
+      authFetch: async () => jsonResponse({ sessions: [] }),
+      signedWorkspaceInfo: () => undefined,
+      resolveWorkspace: async () => undefined,
+      workspaceStatus: async () => {
+        throw new Error("resolve failed")
+      },
+      runtimeSessions: async () => {
+        runtimeCalls++
+        return [{ session_id: "ses_runtime", created_at: 7, updated_at: 8 }]
+      },
+    })
+
+    expect(await source.fetchSignedWorkspaceSessions({
+      workspaceId: "ws_unknown",
+      directory: "workspace:ws_unknown",
+      kind: "cloud",
+    })).toEqual([{ session_id: "ses_runtime", created_at: 7, updated_at: 8 }])
+    expect(runtimeCalls).toBe(1)
   })
 
   test("non-OK control-plane responses return empty arrays", async () => {

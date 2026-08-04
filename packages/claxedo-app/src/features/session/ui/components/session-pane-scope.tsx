@@ -130,6 +130,7 @@ export function SessionPaneScope(props: ParentProps<{
             <WorkspaceGate
               workspaceId={connection().workspaceId}
               kind={connection().kind}
+              sessionId={sessionId()}
               directory={props.directory}
               serverUrl={globalSDK.url}
               request={platform.fetch ?? authFetch}

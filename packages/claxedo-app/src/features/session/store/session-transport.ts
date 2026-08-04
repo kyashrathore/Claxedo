@@ -41,6 +41,12 @@ export async function fetchSessionMessagesByTransport(input: {
   signedControlPlane?: boolean
   workspaceId?: string
   workspaceKind?: "cloud" | "user-hosted"
+  /**
+   * Whether the workspace runtime can currently answer. A dead CLOUD workspace
+   * reads its transcript from the control plane instead of the relay — the
+   * history synced there outlives the sandbox.
+   */
+  workspaceReachable?: boolean
 }) {
   if (suppressedByFastSessionSwitch(input.sessionID)) {
     return { data: [], response: new Response(null) }
@@ -51,6 +57,7 @@ export async function fetchSessionMessagesByTransport(input: {
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,
     workspaceKind: input.workspaceKind,
+    workspaceReachable: input.workspaceReachable,
   }).listMessages(input)
 }
 

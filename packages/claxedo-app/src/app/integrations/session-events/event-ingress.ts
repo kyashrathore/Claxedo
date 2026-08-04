@@ -3,7 +3,11 @@ import { invalidateSessionListQueries } from "@/features/session/data/query/sess
 import type { DirectorySessionCacheValue } from "../../../features/session/data/sync/queries"
 import { applyGlobalProjectEvent } from "@/platform/sync/global-event-projector"
 import { routeDirectoryEvent, type RoutableEvent } from "./event-router"
-import { scheduleSessionProjectionPull } from "@/platform/runtime/agent/session-projection"
+import {
+  installSessionProjectionSelfHeal,
+  retryUnsettledSessionProjectionPulls,
+  scheduleSessionProjectionPull,
+} from "@/platform/runtime/agent/session-projection"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { applyDirectoryEventToShellQueries } from "../../../features/session/data/sync/directory-event-projector"
 import { applySessionStatusSseEvent } from "../../../features/session/store/session-status-dispatcher"
@@ -163,6 +167,10 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
   const unsubscribeClaxedoLifecycle = input.claxedoEvents?.on("session.lifecycle", (event) => {
     const lifecycleEvent = normalizeClaxedoSessionLifecycleEvent(event)
     if (!lifecycleEvent) return
+    // A lifecycle event proves the bus is live again — replay any sync-back
+    // that previously exhausted its retries so a missed session still reaches
+    // Convex (and therefore the sidebar) instead of being lost until reload.
+    void retryUnsettledSessionProjectionPulls()
     applyClaxedoSessionLifecycleToSync(input, lifecycleEvent)
   })
   const unsubscribeClaxedoDirectoryEvents = claxedoDirectoryEventTypes
@@ -170,11 +178,13 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
       applyClaxedoDirectoryEventToSync(input, event)
     }))
     .filter((cleanup): cleanup is () => void => !!cleanup)
+  const detachProjectionSelfHeal = installSessionProjectionSelfHeal()
 
   return () => {
     unsubscribeGlobal()
     unsubscribeClaxedoLifecycle?.()
     unsubscribeClaxedoDirectoryEvents.forEach((cleanup) => cleanup())
+    detachProjectionSelfHeal()
   }
 }
 

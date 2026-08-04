@@ -206,6 +206,10 @@ function createGlobalSync() {
         request: platform.fetch,
         directory,
       }) ?? undefined,
+    // Only consulted when the control plane returned no sessions, to decide
+    // whether probing that workspace's runtime can still help. Query-cached.
+    workspaceStatus: async (scope) =>
+      (await resolveWorkspaceRuntime({ baseUrl: globalSDK.url, request: platform.fetch, ...scope }))?.status,
     runtimeSessions: async (input) => {
       const client = createAgentRuntimeClient({
         serverUrl: globalSDK.url,

@@ -954,6 +954,65 @@ describe("control plane session routes", () => {
     })
   })
 
+  test("resolves a non-ws_ project id to its workspaces instead of rejecting", async () => {
+    const svc = services()
+    const convex = {
+      listWorkspaces: vi.fn(async () => [
+        { workspace_id: "ws_a", project_id: "proj_alpha" },
+        { workspace_id: "ws_b", project_id: "proj_alpha" },
+        { workspace_id: "ws_other", project_id: "proj_beta" },
+      ]),
+      listSessions: vi.fn(async (_auth: unknown, args: { workspaceId: string }) =>
+        args.workspaceId === "ws_a"
+          ? [{ session_id: "ses_a", title: "From A", created_at: 1, updated_at: 2 }]
+          : args.workspaceId === "ws_b"
+            ? [{ session_id: "ses_b", title: "From B", created_at: 1, updated_at: 3 }]
+            : [{ session_id: "ses_other", title: "Other project", created_at: 1, updated_at: 9 }],
+      ),
+    }
+    svc.authority = convex as never
+
+    const res = await ControlPlaneSessionRoutes(svc, signedOptions).request(
+      "https://control.example.test/session-list?scope=project&projectId=proj_alpha&limit=5",
+      { headers: { Authorization: "Bearer signed-token" } },
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as {
+      view: { scope: string }
+      items: Array<{ sessionId: string; workspaceId?: string; projectId?: string; sessionRef: string }>
+    }
+    expect(body.view.scope).toBe("project")
+    // Sorted updated_desc: ws_b's session (3) before ws_a's (2). The
+    // ws_other workspace belongs to another project and must not leak in.
+    expect(body.items.map((item) => item.sessionId)).toEqual(["ses_b", "ses_a"])
+    expect(body.items.map((item) => item.workspaceId)).toEqual(["ws_b", "ws_a"])
+    expect(body.items.every((item) => item.projectId === "proj_alpha")).toBe(true)
+    expect(body.items.map((item) => item.sessionRef)).toEqual([
+      "workspace:ws_b:session:ses_b",
+      "workspace:ws_a:session:ses_a",
+    ])
+    expect(convex.listSessions).not.toHaveBeenCalledWith(expect.anything(), { workspaceId: "ws_other" })
+  })
+
+  test("returns an empty project session-list when the project has no workspaces", async () => {
+    const svc = services()
+    const convex = {
+      listWorkspaces: vi.fn(async () => [{ workspace_id: "ws_a", project_id: "proj_other" }]),
+      listSessions: vi.fn(async () => []),
+    }
+    svc.authority = convex as never
+
+    const res = await ControlPlaneSessionRoutes(svc, signedOptions).request(
+      "https://control.example.test/session-list?scope=project&projectId=proj_missing&limit=5",
+      { headers: { Authorization: "Bearer signed-token" } },
+    )
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({ view: { scope: "project" }, items: [], totalKnown: 0 })
+    expect(convex.listSessions).not.toHaveBeenCalled()
+  })
+
   test("session-list matches prefixed environment and git filter values", async () => {
     const svc = services()
     const convex = {

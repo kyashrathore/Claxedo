@@ -103,6 +103,33 @@ export function WorkspaceOfflineView(props: {
   )
 }
 
+/**
+ * Should an unreachable workspace still render its surface, because the thing
+ * being viewed lives centrally rather than on the runtime?
+ *
+ * True only for an EXISTING cloud session. Those sync back to the central
+ * control plane (Convex `session_history`/`session_messages`), so a stopped or
+ * destroyed sandbox does not take the transcript with it — the reads route to
+ * the control plane. Blocking the surface hid history the server was still
+ * serving, which is the bug this branch fixes.
+ *
+ * Excluded, each because there is genuinely nothing to read centrally:
+ *  - a DRAFT (no sessionId, or the `"new"` route sentinel): it has no stored
+ *    history and its first send needs a live runtime, so the offline panel with
+ *    its Retry is the honest surface.
+ *  - user-hosted: the owner's machine is the only store.
+ *  - `forbidden`: no access means no read, for any kind.
+ */
+function hasCentralHistory(input: {
+  kind: WorkspaceConnectionKind
+  reason: WorkspaceOfflineReason
+  sessionId?: string
+}) {
+  if (input.reason === "forbidden") return false
+  if (!input.sessionId || input.sessionId === "new") return false
+  return input.kind === "cloud"
+}
+
 export function WorkspaceGate(
   props: ParentProps<{
     workspaceId: string | undefined
@@ -112,6 +139,12 @@ export function WorkspaceGate(
     request?: typeof fetch
     relayRequest?: typeof fetch
     connectingFallback?: JSX.Element
+    /**
+     * The EXISTING session this gate wraps, when there is one. Absent for a
+     * draft. Only an existing cloud session has central history worth rendering
+     * a dead workspace's surface for — see `hasCentralHistory`.
+     */
+    sessionId?: string
     /** Optional access-denied escape hatch (forbidden branch). */
     onGoToWorkspaces?: () => void
   }>,
@@ -144,6 +177,15 @@ export function WorkspaceGate(
         <Match when={conn()?.status === "ready"}>{props.children}</Match>
         <Match when={offline() === "forbidden"}>
           <WorkspaceAccessDeniedView onGoToWorkspaces={props.onGoToWorkspaces} />
+        </Match>
+        {/* An EXISTING cloud session's history lives in the control plane, so a
+            dead sandbox renders the surface instead of the offline panel: the
+            session reads resolve centrally and the transcript loads. Anything
+            needing the live runtime (sending a turn, the terminal) stays gated
+            by its own readiness checks, which still see this workspace as not
+            ready. Drafts and user-hosted keep the offline panel. */}
+        <Match when={offline() && hasCentralHistory({ kind: props.kind, reason: offline()!, sessionId: props.sessionId })}>
+          {props.children}
         </Match>
         <Match when={offline()}>
           {(reason) => (

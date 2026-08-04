@@ -243,13 +243,13 @@ export function createAgentRuntimeClient(options: {
   signedControlPlane?: boolean
   sessionRef?: SessionRef
   workspaceId?: string
-  // The workspace's REAL hosting kind (cloud vs user-hosted), resolved by the
-  // pane's connection authority from the signed inventory. Threaded down so
-  // `workspaceTarget` can label early-resolved targets — without it a
-  // user-hosted workspace whose `directory` is a filesystem path (the
-  // registration-stored remote_directory) is indistinguishable from the
-  // signed-cloud shape and session reads 404 on the central control plane.
-  workspaceKind?: "cloud" | "user-hosted"
+  // The workspace's REAL hosting kind (cloud vs user-hosted), resolved by the pane's
+  // connection authority from the signed inventory. Threaded down so `workspaceTarget`
+  // can label early-resolved targets — without it a user-hosted workspace whose
+  // `directory` is a filesystem path (the registration-stored remote_directory) is
+  // indistinguishable from signed-cloud and session reads 404 on the central control
+  // plane. `workspaceReachable` is its runtime liveness (resolveSessionResourceRoute).
+  workspaceKind?: "cloud" | "user-hosted"; workspaceReachable?: boolean
   opencodeClient?: AgentRuntimeOpenCodeClient
 } = {}) {
   const request = options.request ?? authFetch
@@ -390,6 +390,7 @@ export function createAgentRuntimeClient(options: {
       directoryWorkspaceId: directoryWorkspaceId ?? undefined,
       resource: input.resource,
       loopback: centralTransportForServer(agentRuntimeBaseUrl(serverUrl())) === "loopback",
+      targetReachable: options.workspaceReachable,
     })
     switch (route.via) {
       case "runtime-session-ref":

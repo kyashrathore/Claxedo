@@ -21,12 +21,14 @@ type SignedWorkspaceInfo = {
   directory?: ProjectDirectory
   workspaceName?: string
   kind?: string
+  status?: string
 }
 type ResolvedWorkspaceInfo = {
   workspaceId?: string
   directory?: ProjectDirectory
   workspaceName?: string
   kind?: string | null
+  status?: string | null
 }
 type InventorySourceProject = {
   worktree: ProjectDirectory
@@ -130,6 +132,43 @@ export function mergeWorkspaceGroups(localGroups: WorkspaceGroup[], signedGroups
     existing.nextCursor = existing.nextCursor ?? group.nextCursor
   }
   return [...byDirectory.values()]
+}
+
+/**
+ * Workspace runtime statuses that mean "the backing sandbox cannot answer a
+ * session list right now". Reported by `GET /api/workspace` from the supervisor
+ * lease (`SandboxLeaseStatus`) plus the workspace row's own status
+ * (claxedo-server/src/workspace/routes/index.ts:88).
+ */
+const UNREACHABLE_WORKSPACE_STATUS = [
+  "stopped",
+  "destroyed",
+  "unavailable",
+  "failed",
+  "offline",
+  "deleted",
+] as const
+
+export function signedWorkspaceStatus(input: unknown) {
+  const row = rec(input)
+  return txt(row?.status) ?? txt(row?.runtime_status) ?? txt(row?.runtimeStatus)
+}
+
+/**
+ * Is this workspace's runtime worth asking for a session list?
+ *
+ * Sessions sync back into the control plane (Convex `session_history`), so the
+ * control-plane list stands on its own when the sandbox is gone. Probing a dead
+ * runtime cannot add rows — it can only stall the sidebar behind a relay
+ * connect that will never succeed — so an unreachable status makes the
+ * control-plane answer authoritative, empty or not. An unknown/absent status is
+ * treated as reachable: that is the pre-existing behavior for a healthy
+ * workspace and we must not stop falling back for those.
+ */
+export function workspaceRuntimeReachable(status: string | null | undefined) {
+  if (!status) return true
+  const normalized = status.trim().toLowerCase()
+  return !UNREACHABLE_WORKSPACE_STATUS.some((value) => value === normalized)
 }
 
 export function signedWorkspaceHosting(input: unknown) {
@@ -270,6 +309,16 @@ export function createSignedInventorySource(input: {
   authFetch: typeof fetch
   signedWorkspaceInfo: (key: string) => SignedWorkspaceInfo | undefined
   resolveWorkspace: (input: { directory: ProjectDirectory }) => Promise<ResolvedWorkspaceInfo | undefined>
+  /**
+   * Live runtime status for a workspace, used to decide whether probing the
+   * runtime for sessions can possibly help. Called ONLY when the control plane
+   * returned no sessions. Omitted (or resolving undefined) means "unknown",
+   * which is treated as reachable so healthy workspaces keep their fallback.
+   */
+  workspaceStatus?: (input: {
+    workspaceId: string
+    directory: ProjectDirectory
+  }) => Promise<string | null | undefined>
   runtimeSessions: (input: {
     workspaceId: string
     directory: ProjectDirectory
@@ -298,11 +347,28 @@ export function createSignedInventorySource(input: {
     workspaceId: string
     directory: ProjectDirectory
     kind?: SignedWorkspaceKind
+    /** Known runtime status, when the caller already has it. */
+    status?: string | null
   }) {
-    if (sessionInput.kind === "user-hosted") return await fetchSignedRuntimeSessions(sessionInput)
+    const { status: knownStatus, ...runtimeInput } = sessionInput
+    // User-hosted workspaces have no central session copy — the owner's machine
+    // is the only store, so the runtime is the only possible answer. When that
+    // host is offline `runtimeSessions` already resolves to `[]` rather than
+    // hanging, which is the honest empty state for this kind.
+    if (sessionInput.kind === "user-hosted") return await fetchSignedRuntimeSessions(runtimeInput)
     const control = await fetchControlPlaneSessions(sessionInput.workspaceId)
     if (control.length > 0) return control
-    return await fetchSignedRuntimeSessions(sessionInput)
+    // Empty control-plane result: only a REACHABLE runtime can hold sessions the
+    // control plane has not seen yet. On a dead/stopped sandbox the control
+    // plane is authoritative and its empty answer is the truth — falling
+    // through would dead-end on a runtime that cannot respond, leaving the
+    // sidebar spinning on a workspace whose sessions Convex already has.
+    const status = knownStatus ?? await input.workspaceStatus?.({
+      workspaceId: sessionInput.workspaceId,
+      directory: sessionInput.directory,
+    }).catch(() => undefined)
+    if (!workspaceRuntimeReachable(status)) return control
+    return await fetchSignedRuntimeSessions(runtimeInput)
   }
 
   async function fetchControlPlaneSessions(workspaceId: string) {
@@ -329,6 +395,7 @@ export function createSignedInventorySource(input: {
           workspaceId: known.workspaceId,
           directory: known.directory,
           workspaceName: known.workspaceName,
+          status: known.status,
         }
       : await input.resolveWorkspace({ directory })
     if (!workspace?.workspaceId) return []
@@ -337,6 +404,7 @@ export function createSignedInventorySource(input: {
       workspaceId,
       directory: workspace.directory ?? directory,
       kind: workspace.kind === "cloud" || workspace.kind === "user-hosted" ? workspace.kind : undefined,
+      ...(workspace.status === undefined || workspace.status === null ? {} : { status: workspace.status }),
     })
     return sessions.flatMap((session) => {
       const item = controlPlaneSessionToItem({
@@ -382,13 +450,18 @@ export function createSignedInventorySource(input: {
       const row = rec(workspace)
       const workspaceId = txt(row?.workspace_id) ?? txt(row?.workspaceId)
       if (!workspaceId) return []
+      const directory = txt(row?.remote_directory) ??
+        txt(row?.remoteDirectory) ??
+        txt(row?.directory) ??
+        `workspace:${workspaceId}`
       return [fetchSignedWorkspaceSessions({
         workspaceId,
-        directory: txt(row?.remote_directory) ??
-          txt(row?.remoteDirectory) ??
-          txt(row?.directory) ??
-          `workspace:${workspaceId}`,
+        directory,
         kind: signedWorkspaceHosting(workspace),
+        // `GET /api/workspace` serves raw Convex workspace rows, which have no
+        // status column (convex/schema.ts:203-224); when absent the
+        // `workspaceStatus` port resolves the live supervisor status lazily.
+        ...(signedWorkspaceStatus(workspace) ? { status: signedWorkspaceStatus(workspace) } : {}),
       }).then((sessions) => [workspaceId, sessions] as const)]
     })))
     const items = signedInventoryItems({ workspaces, sessionsByWorkspace })

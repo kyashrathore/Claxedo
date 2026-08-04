@@ -61,6 +61,7 @@ import { Can, can } from "@/platform/auth/role"
 import { isWorkspaceReady, workspacePlacement } from "../../../features/workspaces/data/workspace-connection"
 import { getSessionPrefetch, runSessionPrefetch, sameWorkspaceSessionPrefetchIds, SESSION_PREFETCH_TTL, setSessionPrefetch } from "@/platform/sync/session-prefetch"
 import { sessionRefForWorkspaceSession, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+import { USER_HOSTED_WORKSPACE_KIND } from "@/platform/runtime/agent/workspace-kind"
 import type { PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { fetchSessionMessagesByTransport } from "../../../features/session/store/session-transport"
 import { normalizeMessageRows } from "../../../features/session/store/message-page"
@@ -491,7 +492,7 @@ export function RailSidebar(props: RailSidebarProps) {
   const prefetchSidebarSessionMessages = (
     directory: string,
     sessionID: string,
-    opts: { bypassQuiet?: boolean } = {},
+    opts: { bypassQuiet?: boolean; workspaceId?: string; workspaceKind?: "cloud" | "user-hosted" } = {},
   ) => {
     const key = JSON.stringify([directory, sessionID])
     if (messagePrefetchInFlight.has(key)) return
@@ -510,6 +511,15 @@ export function RailSidebar(props: RailSidebarProps) {
         sessionID,
         claxedoServerUrl: globalSDK.url,
         limit: 80,
+        // A CONFIRMED workspace kind is what routes this read correctly:
+        // placement-table.ts `resolveSessionResourceRoute` sends signed cloud
+        // sessions to the control plane (branch E) but diverts to the relay for
+        // user-hosted AND for any workspace whose kind is unresolved (branch C).
+        // Leaving the kind unset made a cloud transcript ride a runtime that may
+        // be dead, even though the control plane holds the synced copy.
+        ...(opts.workspaceKind
+          ? { signedControlPlane: true, workspaceKind: opts.workspaceKind, ...(opts.workspaceId ? { workspaceId: opts.workspaceId } : {}) }
+          : {}),
       })
       .then(async (messages) => {
         const normalized = normalizeMessageRows(messages.data)
@@ -2011,9 +2021,15 @@ export function RailSidebar(props: RailSidebarProps) {
       const rows = sectionRows()
       const activeSessionId = props.activeSessionId === "new" ? undefined : props.activeSessionId
       const ids = sameWorkspaceSessionPrefetchIds(rows, activeSessionId)
+      const item = workspaceItem()
+      const kind = workspaceRuntimeKind(section.project, section.workspaceDir, sectionCloud(section.project, section.workspaceDir))
       const timer = setTimeout(() => {
         for (const sessionID of ids) {
-          prefetchSidebarSessionMessages(section.workspaceDir, sessionID, { bypassQuiet: true })
+          prefetchSidebarSessionMessages(section.workspaceDir, sessionID, {
+            bypassQuiet: true,
+            ...(kind === "cloud" || kind === USER_HOSTED_WORKSPACE_KIND ? { workspaceKind: kind } : {}),
+            ...(item.workspaceId ? { workspaceId: item.workspaceId } : {}),
+          })
         }
       }, 120)
       onCleanup(() => clearTimeout(timer))

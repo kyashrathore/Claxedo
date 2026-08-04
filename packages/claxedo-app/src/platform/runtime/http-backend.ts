@@ -179,6 +179,8 @@ export function createHttpSessionBackend(input: {
   signedControlPlane?: boolean
   workspaceId?: string
   workspaceKind?: "cloud" | "user-hosted"
+  /** See `createAgentRuntimeClient`'s `workspaceReachable`. */
+  workspaceReachable?: boolean
 }): SessionBackend {
   const request = input.request ?? authFetch
   const runtimeFor = (sessionRef?: SessionRef) => createAgentRuntimeClient({
@@ -188,6 +190,7 @@ export function createHttpSessionBackend(input: {
     sessionRef: sessionRef ?? input.sessionRef,
     workspaceId: input.workspaceId,
     workspaceKind: input.workspaceKind,
+    workspaceReachable: input.workspaceReachable,
     opencodeClient: { session: input.client },
   })
   const runtime = runtimeFor()

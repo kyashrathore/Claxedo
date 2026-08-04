@@ -137,6 +137,12 @@ export function resolveSessionResourceRoute(input: {
   directoryWorkspaceId?: string
   resource?: string
   loopback: boolean
+  /**
+   * Is the target workspace's runtime able to answer right now? Only consulted
+   * for the loopback message divert (B). `undefined` means unknown, which keeps
+   * the pre-existing divert.
+   */
+  targetReachable?: boolean
 }): SessionResourceRoute {
   const { signed, hasSessionRef, targetWorkspaceId, targetKind, directoryWorkspaceId, resource, loopback } = input
 
@@ -145,9 +151,18 @@ export function resolveSessionResourceRoute(input: {
   if (!signed && hasSessionRef) return { via: "runtime-session-ref" }
 
   // B: signed loopback message reads divert to the workspace runtime so the
-  //    local relay serves durable history (the control store is empty on loopback).
+  //    local relay serves durable history (the control store is empty on
+  //    loopback).
+  //    NOT when that runtime is known-unreachable AND the workspace is
+  //    confirmed cloud: a cloud session's history is synced to the control
+  //    plane, so a dead sandbox must not take the transcript with it. Diverting
+  //    there would hang on a runtime that cannot answer. User-hosted and
+  //    unresolved-kind workspaces keep the divert — for those the runtime is
+  //    the only store, so an unreachable one means there is genuinely nothing
+  //    to read and the relay's own failure is the honest answer.
   if (signed && targetWorkspaceId && resource === "messages" && loopback) {
-    return { via: "runtime-workspace", workspaceId: targetWorkspaceId }
+    const centralHistory = targetKind === "cloud" && input.targetReachable === false
+    if (!centralHistory) return { via: "runtime-workspace", workspaceId: targetWorkspaceId }
   }
 
   // C: signed user-hosted — or an unresolved-kind legacy `ws_` directory ref,

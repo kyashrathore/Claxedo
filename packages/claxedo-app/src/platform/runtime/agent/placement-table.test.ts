@@ -125,6 +125,64 @@ describe("resolveSessionResourceRoute", () => {
     })).toEqual({ via: "runtime-workspace", workspaceId: "ws_1" })
   })
 
+  // A dead CLOUD sandbox does not hold the transcript hostage: that history is
+  // synced to the control plane, so the read goes there rather than hanging on
+  // a relay that cannot answer.
+  it("B does not divert a KNOWN-DEAD cloud workspace — its history is central", () => {
+    expect(resolveSessionResourceRoute({
+      signed: true,
+      hasSessionRef: false,
+      targetWorkspaceId: "ws_cloud_dead",
+      targetKind: "cloud",
+      resource: "messages",
+      loopback: true,
+      targetReachable: false,
+    })).toEqual({ via: "control-plane" })
+  })
+
+  it("B still diverts a reachable or unknown-reachability cloud workspace", () => {
+    for (const targetReachable of [true, undefined]) {
+      expect(resolveSessionResourceRoute({
+        signed: true,
+        hasSessionRef: false,
+        targetWorkspaceId: "ws_cloud",
+        targetKind: "cloud",
+        resource: "messages",
+        loopback: true,
+        ...(targetReachable === undefined ? {} : { targetReachable }),
+      })).toEqual({ via: "runtime-workspace", workspaceId: "ws_cloud" })
+    }
+  })
+
+  // User-hosted has no central copy — the owner's machine is the only store, so
+  // an unreachable one means there is nothing to read centrally either. Keep the
+  // divert so the failure surfaces as the relay's, not as a bogus 404.
+  it("B still diverts a dead USER-HOSTED workspace (no central copy to fall back to)", () => {
+    expect(resolveSessionResourceRoute({
+      signed: true,
+      hasSessionRef: false,
+      targetWorkspaceId: "ws_uh_dead",
+      targetKind: "user-hosted",
+      resource: "messages",
+      loopback: true,
+      targetReachable: false,
+    })).toEqual({ via: "runtime-workspace", workspaceId: "ws_uh_dead" })
+  })
+
+  it("B still diverts a dead UNRESOLVED-KIND workspace", () => {
+    expect(resolveSessionResourceRoute({
+      signed: true,
+      hasSessionRef: false,
+      targetWorkspaceId: "ws_legacy_dead",
+      directoryWorkspaceId: "ws_legacy_dead",
+      resource: "messages",
+      loopback: true,
+      targetReachable: false,
+      // B wins before C here, so no `preferRelayOnLoopback` — the read is
+      // already on loopback and B routes it to that workspace's runtime.
+    })).toEqual({ via: "runtime-workspace", workspaceId: "ws_legacy_dead" })
+  })
+
   it("B does not fire for non-message signed loopback reads", () => {
     expect(resolveSessionResourceRoute({
       signed: true,

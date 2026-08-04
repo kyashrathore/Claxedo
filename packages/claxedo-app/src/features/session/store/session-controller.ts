@@ -691,6 +691,9 @@ export function createSessionController(input: {
     const signedControlPlane = input.signedControlPlane?.() ?? false
     const workspaceId = signedControlPlane ? input.workspaceId?.() : undefined
     const workspaceKind = input.signedControlPlane?.() ? input.workspaceKind?.() : undefined
+    // A dead CLOUD workspace keeps its transcript centrally, so the message read
+    // must not divert to a relay that cannot answer (branch B of `resolveSessionResourceRoute`).
+    const workspaceReachable = workspaceId ? isWorkspaceReady(workspaceId) : undefined
     const key = sessionHistoryKey({ sessionID, directory })
     if (shouldDeferSessionTransportHydrate({ loading: historyMeta().loading[key], force: opts?.force })) return false
     const cachedSession = queryClient
@@ -734,6 +737,7 @@ export function createSessionController(input: {
         signedControlPlane,
         workspaceId,
         workspaceKind,
+        workspaceReachable,
       }),
     })
     return (opts?.force
