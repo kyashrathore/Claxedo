@@ -294,6 +294,19 @@ export async function runSourceSmoke() {
             ? { state: "available", source: identity.creation.source }
             : identity?.creation,
           hasLaunchId: Boolean(identity?.launchId),
+          // When the owner is ABSENT, the interesting facts are what the
+          // source did produce and whether it thinks it is healthy — that
+          // distinguishes "sampled the wrong pids" from "sampled nothing"
+          // from "source failed", which `found:false` alone cannot.
+          expectedPid: fixture.pid,
+          sampledPids: beforeAction.processes.map((item) => item.identity.pid).slice(0, 12),
+          sampledOwnerIds: beforeAction.processes.map((item) => item.ownerId).slice(0, 12),
+          sampleCount: beforeAction.samples.length,
+          sources: beforeAction.sources.map((source) => ({
+            source: source.source,
+            state: source.state,
+            ...(source.state === "healthy" ? {} : { reason: (source as { reason?: string }).reason }),
+          })),
         })}`,
       )
     }
