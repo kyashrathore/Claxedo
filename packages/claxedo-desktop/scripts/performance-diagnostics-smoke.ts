@@ -254,20 +254,28 @@ export async function runSourceSmoke() {
     await Bun.sleep(200)
     profiler.requestSample("manual")
   }
-  // Keep sampling until the owner's stop grant lands (or the ceiling): the
-  // grant requires CREATION IDENTITY, which on Windows comes from the CIM
-  // PowerShell query — 22–47s measured cold start on release runners (probe
-  // workflow), far beyond the 3.2s baseline loop above. The ceiling budgets
-  // the WORST recovery path, not the typical one: one cold child that hangs
-  // out its whole 90s startup window, the 1s recovery backoff, then a real
-  // ~47s cold start — ~138s. Typical is a single cold start and the loop
-  // exits as soon as the grant lands. Darwin is read-only-by-platform and
+  // Keep sampling until the owner's stop grant lands AND the interval has
+  // ranked a measured contributor (or the ceiling): the grant requires
+  // CREATION IDENTITY, which on Windows comes from the CIM PowerShell query —
+  // 22–47s measured cold start on release runners (probe workflow), far
+  // beyond the 3.2s baseline loop above. The ranking needs the SECOND
+  // successful sample (CPU deltas), and the evidence below reads
+  // `beforeAction` after the fixture is already stopped — exiting on the
+  // grant alone raced the delta sample and ranked nothing. The ceiling
+  // budgets the WORST recovery path, not the typical one: one cold child
+  // that hangs out its whole 90s startup window, the 1s recovery backoff,
+  // then a real ~47s cold start — ~138s. Typical is a single cold start
+  // plus one warm delta sample (~1s). Darwin is read-only-by-platform and
   // never becomes eligible, so it must not wait out the ceiling.
   let beforeAction = profiler.getSnapshot()
   let processRecord = beforeAction.processes.find((process) => process.ownerId === ownerId)
   for (
     let waited = 0;
-    process.platform !== "darwin" && processRecord?.actionEligibility.state !== "eligible" && waited < 150_000;
+    process.platform !== "darwin" && waited < 150_000 &&
+    (processRecord?.actionEligibility.state !== "eligible" ||
+      !beforeAction.interval.contributors.some(
+        (item) => item.ownerId && reading(item.peakCpuMachinePercent) > 0,
+      ));
     waited += 500
   ) {
     await Bun.sleep(500)
