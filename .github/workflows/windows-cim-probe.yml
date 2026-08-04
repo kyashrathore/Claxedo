@@ -72,6 +72,25 @@ jobs:
           $sw.Stop()
           Write-Host "empty-set WARM ($($sw.ElapsedMilliseconds)ms): $third"
 
+          # Forced failure: an uncastable payload takes the catch. This proves
+          # the catch block parses under 5.1 AND that a failure now names
+          # itself, which is what the release gate needs to be diagnosable.
+          $sw.Restart()
+          $p.StandardInput.WriteLine('"not-a-pid-array"')
+          $p.StandardInput.Flush()
+          $fourth = $p.StandardOutput.ReadLine()
+          $sw.Stop()
+          Write-Host "forced-failure WARM ($($sw.ElapsedMilliseconds)ms): $fourth"
+          if ($fourth -notmatch '"ok":false') { throw "forced failure did not return ok:false" }
+          if ($fourth -notmatch '"reason":"') { throw "forced failure did not name a reason" }
+
+          # The worker must still serve queries after a caught failure.
+          $p.StandardInput.WriteLine("[$PID]")
+          $p.StandardInput.Flush()
+          $fifth = $p.StandardOutput.ReadLine()
+          Write-Host "recovery AFTER FAILURE: $fifth"
+          if ($fifth -notmatch '"ok":true') { throw "worker did not recover after a caught failure" }
+
           Write-Host "alive at end: $(-not $p.HasExited)"
           if (-not $p.HasExited) { $p.Kill() }
           $errText = $stderr.GetAwaiter().GetResult()
