@@ -133,6 +133,11 @@ const getBase = (): Configuration => ({
     icon: "resources/icons",
     category: "Development",
     target: ["AppImage", "deb", "rpm"],
+    // Explicit, not defaulted: the default derives from package.json's name
+    // ("@claxedo/desktop") through a sanitizer, which produced a binary name
+    // no tooling predicted — the packaged diagnostics smoke spent two release
+    // rounds guessing at it. Pinning makes the binary path a contract.
+    executableName: "claxedo",
   },
 })
 

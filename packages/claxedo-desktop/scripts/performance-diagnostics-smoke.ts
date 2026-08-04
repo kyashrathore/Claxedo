@@ -765,14 +765,9 @@ async function discoverPackagedExecutable() {
       ? [join(dist, `mac${output}`, `${productName}.app`, "Contents", "MacOS", productName)]
       : process.platform === "win32"
         ? [join(dist, `win${output}-unpacked`, `${productName}.exe`)]
-        : [
-            // electron-builder's linux executableName defaults to the
-            // PRODUCT name ("Claxedo" on the prod release channel, "Claxedo
-            // Dev" locally) — the lowercase names cover older layouts.
-            join(dist, `linux${output}-unpacked`, productName),
-            join(dist, `linux${output}-unpacked`, "desktop"),
-            join(dist, `linux${output}-unpacked`, "claxedo"),
-          ]
+        : // Single candidate by contract: electron-builder.config.ts pins
+          // linux executableName to "claxedo" for every channel.
+          [join(dist, `linux${output}-unpacked`, "claxedo")]
   for (const file of candidates) {
     if (await Bun.file(file).exists()) return file
   }
@@ -994,7 +989,12 @@ async function runCpuProbe(enabled: boolean) {
     })
   }
   console.log("READY")
-  await Bun.sleep(8_000)
+  // Long lifetime, parent-terminated: the measuring parent kills this probe in
+  // its finally as soon as sampling ends, so the sleep is a backstop, not the
+  // duration. 8s was too tight for Windows — three cold-start PowerShell
+  // pidtree sweeps exceeded it, the probe exited ON SCHEDULE mid-sampling,
+  // and the parent misread that as a probe crash.
+  await Bun.sleep(60_000)
   profiler?.dispose()
   fixture.kill()
   await Promise.race([fixture.exited, Bun.sleep(2_000)])

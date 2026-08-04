@@ -57,15 +57,28 @@ export async function verifyDiagnosticsDependencies(
       ...acceptedDiagnosticsDependencies,
       ...acceptedDiagnosticsTransitives,
     }).map(async ([name, accepted]) => {
-      const manifest = await Bun.file(resolve(root, accepted.manifest)).json()
+      // An optionalDependency native module (windows-process-tree) may simply
+      // not be installed on foreign platforms — bun skips a failed optional
+      // build, so the manifest is legitimately absent on a mac/linux runner.
+      // The lockfile checks below still verify the reviewed version and
+      // integrity, which is the part that must never be skipped; only the
+      // installed-manifest reads degrade.
+      const optional = name in ((await Bun.file(resolve(root, "packages/claxedo-desktop/package.json")).json())
+        .optionalDependencies ?? {})
+      const manifestFile = Bun.file(resolve(root, accepted.manifest))
+      const manifest = (await manifestFile.exists())
+        ? await manifestFile.json()
+        : optional && process.platform !== "win32"
+          ? undefined
+          : await manifestFile.json()
       const advisoryIds = options.advisories
         ? await queryAdvisories(name, accepted.version)
         : []
       const failures = [
-        manifest.version !== accepted.version
+        manifest !== undefined && manifest.version !== accepted.version
           ? `${name} resolved ${String(manifest.version)} instead of ${accepted.version}`
           : undefined,
-        manifest.license !== accepted.license
+        manifest !== undefined && manifest.license !== accepted.license
           ? `${name} license changed from ${accepted.license} to ${String(manifest.license)}`
           : undefined,
         direct.has(name) &&
@@ -79,7 +92,7 @@ export async function verifyDiagnosticsDependencies(
           entry[3] === accepted.integrity)
           ? `${name} lock integrity does not match the reviewed tarball`
           : undefined,
-        ["preinstall", "install", "postinstall"].find((script) => manifest.scripts?.[script])
+        ["preinstall", "install", "postinstall"].find((script) => manifest?.scripts?.[script])
           ? `${name} added an unreviewed lifecycle install script`
           : undefined,
         accepted.native && !workspace.trustedDependencies?.includes(name)
