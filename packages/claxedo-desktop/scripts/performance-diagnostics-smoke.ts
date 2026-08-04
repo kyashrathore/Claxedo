@@ -224,8 +224,23 @@ export async function runSourceSmoke() {
     await Bun.sleep(200)
     profiler.requestSample("manual")
   }
-  const beforeAction = profiler.getSnapshot()
-  const processRecord = beforeAction.processes.find((process) => process.ownerId === ownerId)
+  // Keep sampling until the owner's stop grant lands (or the ceiling): the
+  // grant requires CREATION IDENTITY, which on Windows comes from the CIM
+  // PowerShell query — ~15s cold start on release runners, far beyond the
+  // 3.2s baseline loop above. Darwin is read-only-by-platform and never
+  // becomes eligible, so it must not wait out the ceiling.
+  let beforeAction = profiler.getSnapshot()
+  let processRecord = beforeAction.processes.find((process) => process.ownerId === ownerId)
+  for (
+    let waited = 0;
+    process.platform !== "darwin" && processRecord?.actionEligibility.state !== "eligible" && waited < 45_000;
+    waited += 500
+  ) {
+    await Bun.sleep(500)
+    profiler.requestSample("manual")
+    beforeAction = profiler.getSnapshot()
+    processRecord = beforeAction.processes.find((process) => process.ownerId === ownerId)
+  }
   const stop = processRecord?.actionEligibility.state === "eligible"
     ? processRecord.actionEligibility.actions.find((grant) => grant.action === "stop")
     : undefined
