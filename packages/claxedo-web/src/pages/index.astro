@@ -4,11 +4,9 @@ import Nav from "../components/Nav.astro"
 import Footer from "../components/Footer.astro"
 import ArchitectureExplorer from "../components/ArchitectureExplorer.astro"
 import RuntimePlacements from "../components/RuntimePlacements.astro"
-import DeploymentPrompt from "../components/DeploymentPrompt.astro"
 import DownloadDropdown from "../components/DownloadDropdown.astro"
-import TrackedLink from "../components/TrackedLink.astro"
+import DownloadMenu from "../components/DownloadMenu.astro"
 import { requireClaim } from "../content/claims"
-import { marketingActions } from "../content/routes"
 import { site } from "../content/site"
 import claudeIcon from "../../../ui/src/assets/icons/file-types/claude.svg"
 import codexIcon from "../../../ui/src/assets/icons/provider/openai.svg"
@@ -109,7 +107,7 @@ const workgraph = requireClaim("workgraph-local")
       </section>
 
       <section class="section closing">
-        <div class="section-inner"><p class="eyebrow">07 · Choose your cloud</p><h2 class="section-title">Use our cloud. Or make it yours with a prompt.</h2><p class="section-copy">One open workspace for your coding harnesses, models, and infrastructure.</p><div class="actions"><TrackedLink class="btn-primary" href={marketingActions.cloud.href} event={marketingActions.cloud.event} placement="closing">Open Claxedo <span aria-hidden="true">↗</span></TrackedLink><DeploymentPrompt class="btn-secondary" placement="closing" /></div></div>
+        <div class="section-inner"><p class="eyebrow">07 · Choose your cloud</p><h2 class="section-title">Use our cloud. Or make it yours with a prompt.</h2><p class="section-copy">One open workspace for your coding harnesses, models, and infrastructure.</p><div class="actions"><DownloadMenu placement="closing" /></div></div>
       </section>
     </main>
     <Footer />

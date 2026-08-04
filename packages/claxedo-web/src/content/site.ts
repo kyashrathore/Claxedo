@@ -30,4 +30,4 @@ export const commercialNavigation = [
   { label: "Compare", href: routes.compare, key: "compare" },
 ] as const
 
-export const approvedMarketingActions = [marketingActions.cloud, marketingActions.deploy]
+export const approvedMarketingActions = [marketingActions.download]

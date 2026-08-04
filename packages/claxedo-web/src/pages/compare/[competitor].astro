@@ -3,12 +3,10 @@ import type { GetStaticPaths } from "astro"
 import Layout from "../../layouts/Layout.astro"
 import Nav from "../../components/Nav.astro"
 import Footer from "../../components/Footer.astro"
-import DeploymentPrompt from "../../components/DeploymentPrompt.astro"
-import TrackedLink from "../../components/TrackedLink.astro"
+import DownloadMenu from "../../components/DownloadMenu.astro"
 import ComparisonTable from "../../components/ComparisonTable.astro"
 import ComparisonSources from "../../components/ComparisonSources.astro"
 import { comparisonIsExpired, publicComparisons, type Competitor } from "../../content/competitors"
-import { marketingActions } from "../../content/routes"
 
 export const getStaticPaths = (() =>
   publicComparisons.map((competitor) => ({ params: { competitor: competitor.slug }, props: { competitor } }))) satisfies GetStaticPaths
@@ -33,8 +31,7 @@ const expired = comparisonIsExpired(competitor)
           <h1 class="display">Claxedo vs. {competitor.name}</h1>
           <p class="cmp-verdict">{competitor.verdict}</p>
           <div class="actions">
-            <TrackedLink class="btn-primary" href={marketingActions.cloud.href} event={marketingActions.cloud.event} placement={`compare-${competitor.slug}`}>Open Claxedo <span aria-hidden="true">↗</span></TrackedLink>
-            <DeploymentPrompt class="btn-secondary" placement={`compare-${competitor.slug}`} />
+            <DownloadMenu placement={`compare-${competitor.slug}`} />
           </div>
           {expired && <p class="cmp-notice" role="status">This comparison is past its review date. It stays at its URL but is excluded from search until re-verified.</p>}
         </div>
@@ -78,7 +75,7 @@ const expired = comparisonIsExpired(competitor)
             <p class="eyebrow">05 · Make your own call</p>
             <h2 class="section-title">Use the workspace. Read the source.</h2>
             <p class="section-copy">Every claim here links to a first-party source. The fastest way to compare is to run both.</p>
-            <div class="actions"><TrackedLink class="btn-primary" href={marketingActions.cloud.href} event={marketingActions.cloud.event} placement={`compare-close-${competitor.slug}`}>Open Claxedo <span aria-hidden="true">↗</span></TrackedLink><a class="btn-secondary" href="/compare">See all comparisons</a></div>
+            <div class="actions"><DownloadMenu placement={`compare-close-${competitor.slug}`} /><a class="btn-secondary" href="/compare">See all comparisons</a></div>
           </div>
         </div>
       </section>
