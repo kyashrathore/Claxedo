@@ -2,14 +2,13 @@ name: Windows CIM probe (temporary)
 
 # TEMPORARY release diagnostics — delete once the Windows source smoke is green.
 #
-# The Windows gate keeps failing with {"found":false}: no process ever reaches
-# a snapshot, which means the CIM PowerShell worker never produced a row.
-# Every theory about WHY (cold start beyond the query timeout? AMSI scan of
-# the EncodedCommand? first-call WMI provider warm-up? stdin never read?)
-# costs a full ~25-minute gates round to test, nearly all of it bun install.
-# This probe measures the EXACT spawn policy the app uses (same executable,
-# same minimal env, same cwd, same EncodedCommand bytes) with NO install at
-# all: checkout, encode, spawn, time-to-first-response. Two minutes, one job.
+# Round 1 established: the REPL worker's FIRST response is {"ok":false} on
+# EVERY fresh child (22–32s cold start each), warm responses come back in 1ms
+# (fast = script-level failure, or the child EXITED), a CLIXML error record
+# appears on the child's stderr, and in-step Get-CimInstance is healthy
+# (116ms/17ms — WMI is fine). Round 2 captures the actual exception: redirect
+# the child's stderr to a file and dump the CLIXML payload, print FULL
+# response bodies, and record whether the child is still alive after a query.
 
 on:
   workflow_dispatch:
@@ -23,75 +22,72 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - name: Measure CIM worker time-to-first-response
+      - name: Capture the CIM worker's exception verbatim
         shell: pwsh
         run: |
           $ErrorActionPreference = "Continue"
-          $psVersionTable | Out-Host
-          [System.Environment]::OSVersion.Version | Out-Host
-
-          # Byte-for-byte the app's encoding: readFileSync utf8, CRLF-normalize,
-          # UTF-16LE, base64 (process-metrics-source.ts / the vite define).
           $text = [System.IO.File]::ReadAllText("$PWD\packages\claxedo-desktop\src\main\diagnostics\windows-cim-worker.ps1")
           $text = $text -replace "`r?`n", "`r`n"
           $enc = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($text))
           Write-Host "encoded length: $($enc.Length) chars"
 
-          function Measure-RoundTrip([string]$label, [string]$arguments) {
-            # Same spawn policy as spawnWindowsCimWorker: fixed v1.0
-            # powershell.exe, cwd C:\Windows\Temp, env = SystemRoot/WINDIR/
-            # PATH only, stdin+stdout piped, hidden window.
-            $psi = [System.Diagnostics.ProcessStartInfo]::new()
-            $psi.FileName = "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
-            $psi.Arguments = $arguments
-            $psi.WorkingDirectory = "C:\Windows\Temp"
-            $psi.RedirectStandardInput = $true
-            $psi.RedirectStandardOutput = $true
-            $psi.UseShellExecute = $false
-            $psi.CreateNoWindow = $true
-            $psi.EnvironmentVariables.Clear()
-            $psi.EnvironmentVariables["SystemRoot"] = "C:\Windows"
-            $psi.EnvironmentVariables["WINDIR"] = "C:\Windows"
-            $psi.EnvironmentVariables["PATH"] = "C:\Windows\System32;C:\Windows"
-            $sw = [System.Diagnostics.Stopwatch]::StartNew()
-            $p = [System.Diagnostics.Process]::Start($psi)
+          $psi = [System.Diagnostics.ProcessStartInfo]::new()
+          $psi.FileName = "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+          $psi.Arguments = "-NoLogo -NoProfile -NonInteractive -EncodedCommand $enc"
+          $psi.WorkingDirectory = "C:\Windows\Temp"
+          $psi.RedirectStandardInput = $true
+          $psi.RedirectStandardOutput = $true
+          $psi.RedirectStandardError = $true
+          $psi.UseShellExecute = $false
+          $psi.CreateNoWindow = $true
+          $psi.EnvironmentVariables.Clear()
+          $psi.EnvironmentVariables["SystemRoot"] = "C:\Windows"
+          $psi.EnvironmentVariables["WINDIR"] = "C:\Windows"
+          $psi.EnvironmentVariables["PATH"] = "C:\Windows\System32;C:\Windows"
+
+          $errFile = "$env:RUNNER_TEMP\cim-worker-stderr.txt"
+          $sw = [System.Diagnostics.Stopwatch]::StartNew()
+          $p = [System.Diagnostics.Process]::Start($psi)
+          $stderr = $p.StandardError.ReadToEndAsync()
+
+          $p.StandardInput.WriteLine("[$PID]")
+          $p.StandardInput.Flush()
+          $first = $p.StandardOutput.ReadLine()
+          $sw.Stop()
+          Write-Host "FIRST ($($sw.ElapsedMilliseconds)ms): $first"
+          Write-Host "alive after first query: $(-not $p.HasExited)"
+
+          if (-not $p.HasExited) {
+            $sw.Restart()
             $p.StandardInput.WriteLine("[$PID]")
             $p.StandardInput.Flush()
-            $line = $p.StandardOutput.ReadLine()
+            $second = $p.StandardOutput.ReadLine()
             $sw.Stop()
-            $preview = if ($line) { $line.Substring(0, [Math]::Min(160, $line.Length)) } else { "<null>" }
-            Write-Host "$label FIRST response: $($sw.ElapsedMilliseconds)ms -> $preview"
-            if ($null -ne $line) {
-              $sw2 = [System.Diagnostics.Stopwatch]::StartNew()
-              $p.StandardInput.WriteLine("[$PID]")
-              $p.StandardInput.Flush()
-              $null = $p.StandardOutput.ReadLine()
-              $sw2.Stop()
-              Write-Host "$label WARM response: $($sw2.ElapsedMilliseconds)ms"
-            }
-            if (-not $p.HasExited) { $p.Kill() }
+            Write-Host "SECOND ($($sw.ElapsedMilliseconds)ms): $second"
+            Write-Host "alive after second query: $(-not $p.HasExited)"
           }
 
-          # The reviewed REPL worker, three fresh processes: is the cost
-          # per-process (AMSI/script decode each spawn) or first-boot only
-          # (WMI provider warm-up, cached afterwards)?
-          Measure-RoundTrip "repl#1" "-NoLogo -NoProfile -NonInteractive -EncodedCommand $enc"
-          Measure-RoundTrip "repl#2" "-NoLogo -NoProfile -NonInteractive -EncodedCommand $enc"
-          Measure-RoundTrip "repl#3" "-NoLogo -NoProfile -NonInteractive -EncodedCommand $enc"
+          if ($p.HasExited) { Write-Host "exit code: $($p.ExitCode)" }
+          if (-not $p.HasExited) { $p.Kill() }
+          $stderrTask = $stderr
+          $stderrText = $stderrTask.GetAwaiter().GetResult()
+          Write-Host "----- child stderr begin -----"
+          Write-Host $stderrText
+          Write-Host "----- child stderr end -----"
 
-          # One-shot comparison: plain -Command with the CIM query inline, no
-          # base64 payload — separates EncodedCommand/AMSI cost from raw
-          # process-start + first-Get-CimInstance cost.
-          $oneShot = 'Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = ' + $PID + '" -Property ProcessId,CreationDate | ConvertTo-Json -Compress'
-          Measure-RoundTrip "oneshot" "-NoLogo -NoProfile -NonInteractive -Command $oneShot"
-
-          # In-step reference: this pwsh is already running, so this isolates
-          # first-call WMI warm-up from process start entirely.
-          $sw = [System.Diagnostics.Stopwatch]::StartNew()
-          $null = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $PID" -Property ProcessId,CreationDate
-          $sw.Stop()
-          Write-Host "in-step Get-CimInstance first call: $($sw.ElapsedMilliseconds)ms"
-          $sw.Restart()
-          $null = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $PID" -Property ProcessId,CreationDate
-          $sw.Stop()
-          Write-Host "in-step Get-CimInstance second call: $($sw.ElapsedMilliseconds)ms"
+          # Control: run the worker's EXACT query pipeline inline in this pwsh
+          # against a pid we know exists, to prove the row shape serializes.
+          $inline = @(
+            Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $PID" -Property ProcessId,ParentProcessId,CreationDate,KernelModeTime,UserModeTime,WorkingSetSize |
+              ForEach-Object {
+                [ordered]@{
+                  pid = [int]$_.ProcessId
+                  ppid = [int]$_.ParentProcessId
+                  creationTicks = $_.CreationDate.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
+                  kernelTicks = ([uint64]$_.KernelModeTime).ToString([Globalization.CultureInfo]::InvariantCulture)
+                  userTicks = ([uint64]$_.UserModeTime).ToString([Globalization.CultureInfo]::InvariantCulture)
+                  rssBytes = ([uint64]$_.WorkingSetSize).ToString([Globalization.CultureInfo]::InvariantCulture)
+                }
+              }
+          )
+          Write-Host "inline row: $(([ordered]@{ ok = $true; rows = @($inline) } | ConvertTo-Json -Compress -Depth 3))"
