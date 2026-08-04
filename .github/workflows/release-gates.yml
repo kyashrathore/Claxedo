@@ -1,0 +1,192 @@
+name: Release Gates (fast)
+
+# The release workflow's own quality gates, on all five platform legs, WITHOUT
+# packaging, signing, or notarization.
+#
+# Why this exists: cutting v0.0.64 took ten `Release Claxedo` dispatches because
+# every gate defect is platform-specific and only reproduces on its own runner —
+# but each round cost ~35 minutes, nearly all of it spent packaging (dmg/nsis/
+# AppImage/deb/rpm) and notarizing artifacts that a failing gate throws away.
+# The gates themselves finish ~11 minutes in. This workflow runs just those, so
+# a gate fix is validated on every platform in roughly a third of the time; the
+# full release runs once, at the end, when the gates are already known green.
+#
+# It is deliberately NOT a release: it uploads nothing, tags nothing, and needs
+# no Apple secrets. `Release Claxedo` remains the only thing that ships.
+
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Platforms to gate"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - macos
+          - windows
+          - linux
+
+env:
+  CLAXEDO_CHANNEL: prod
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    name: gates (${{ matrix.platform }}, ${{ matrix.arch }})
+    runs-on: ${{ matrix.host }}
+    strategy:
+      # Every leg reports independently: the point is to see ALL platform
+      # failures in one round instead of discovering them one release at a time.
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            host: macos-15
+            target: aarch64-apple-darwin
+            arch: arm64
+            cmd: package:mac
+          - platform: macos
+            host: macos-15-intel
+            target: x86_64-apple-darwin
+            arch: x64
+            cmd: package:mac
+          - platform: windows
+            host: windows-latest
+            target: x86_64-pc-windows-msvc
+            arch: x64
+            cmd: package:win
+          - platform: linux
+            host: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            arch: x64
+            cmd: package:linux
+          - platform: linux
+            host: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            arch: arm64
+            cmd: package:linux
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Skip unselected platform
+        if: inputs.platforms != 'all' && inputs.platforms != matrix.platform
+        run: echo "Skipping ${{ matrix.platform }}"
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux' && (inputs.platforms == 'all' || inputs.platforms == matrix.platform)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libnotify-dev \
+            libxtst-dev \
+            libnss3-dev \
+            libgdk-pixbuf2.0-dev \
+            libgtk-3-dev \
+            libxss-dev
+
+      - name: Setup Bun
+        if: inputs.platforms == 'all' || inputs.platforms == matrix.platform
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: latest
+
+      - name: Setup Node.js
+        if: inputs.platforms == 'all' || inputs.platforms == matrix.platform
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Ensure node-gyp can build (macOS)
+        if: runner.os == 'macOS' && (inputs.platforms == 'all' || inputs.platforms == matrix.platform)
+        run: python3 -m pip install --break-system-packages setuptools || python3 -m pip install setuptools
+
+      - name: Install dependencies
+        if: inputs.platforms == 'all' || inputs.platforms == matrix.platform
+        run: bun install --frozen-lockfile --minimum-release-age=0
+
+      - name: Build dist-resolved workspace packages
+        if: inputs.platforms == 'all' || inputs.platforms == matrix.platform
+        run: >-
+          bun turbo build
+          --filter=@claxedo/agent-event-runtime
+          --filter=@claxedo/agent-extensions
+          --filter=@claxedo/agent-sdk-runtime
+          --filter=@claxedo/channels
+          --filter=@claxedo/connections
+          --filter=@claxedo/mcp
+          --filter=@claxedo/sandbox-manager
+          --filter=@claxedo/wakes
+          --filter=@claxedo/workgraph
+          --filter=@claxedo/workspace-relay-protocol
+          --filter=@claxedo/workspace-relay
+          --filter=@claxedo/workspace-runtime
+
+      - name: Build desktop
+        if: inputs.platforms == 'all' || inputs.platforms == matrix.platform
+        env:
+          CLAXEDO_CHANNEL: prod
+          RUST_TARGET: ${{ matrix.target }}
+          VITE_AUTH_ENABLED: "true"
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          VITE_CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
+          VITE_CLAXEDO_SERVER_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+        working-directory: packages/claxedo-desktop
+        run: bun run build
+
+      - name: Run source diagnostics release gate
+        if: inputs.platforms == 'all' || inputs.platforms == matrix.platform
+        working-directory: packages/claxedo-desktop
+        env:
+          CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT: .artifacts/diagnostics-source-${{ matrix.target }}.json
+          CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH: ${{ matrix.arch }}
+        shell: bash
+        run: |
+          mkdir -p .artifacts
+          bun run test:diagnostics-release
+          bun run smoke:diagnostics
+
+      - name: Run rendered diagnostics task evaluator
+        if: inputs.platforms == 'all' || inputs.platforms == matrix.platform
+        working-directory: packages/claxedo-app
+        run: bun run test:diagnostics-release
+
+      # Unsigned, dir-only package: proves the electron-builder config, the
+      # native-module file sets and the packaged smoke — the three things that
+      # failed repeatedly — without dmg/nsis/AppImage/deb/rpm assembly or
+      # notarization, which is where the release's wall-clock actually goes.
+      - name: Package (unsigned, dir only)
+        if: inputs.platforms == 'all' || inputs.platforms == matrix.platform
+        env:
+          CLAXEDO_CHANNEL: prod
+          RUST_TARGET: ${{ matrix.target }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        working-directory: packages/claxedo-desktop
+        run: bun run ${{ matrix.cmd }} -- --${{ matrix.arch }} --dir --publish never
+
+      - name: Run packaged diagnostics smoke (macOS)
+        if: runner.os == 'macOS' && (inputs.platforms == 'all' || inputs.platforms == matrix.platform)
+        working-directory: packages/claxedo-desktop
+        env:
+          CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT: .artifacts/diagnostics-packaged-${{ matrix.target }}.json
+          CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH: ${{ matrix.arch }}
+        run: bun run smoke:diagnostics:packaged
+
+      - name: Run packaged diagnostics smoke (Linux)
+        if: runner.os == 'Linux' && (inputs.platforms == 'all' || inputs.platforms == matrix.platform)
+        working-directory: packages/claxedo-desktop
+        env:
+          CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT: .artifacts/diagnostics-packaged-${{ matrix.target }}.json
+          CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH: ${{ matrix.arch }}
+        run: xvfb-run -a bun run smoke:diagnostics:packaged
+
+      - name: Run packaged diagnostics smoke (Windows)
+        if: runner.os == 'Windows' && (inputs.platforms == 'all' || inputs.platforms == matrix.platform)
+        working-directory: packages/claxedo-desktop
+        env:
+          CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT: .artifacts/diagnostics-packaged-${{ matrix.target }}.json
+          CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH: ${{ matrix.arch }}
+        run: bun run smoke:diagnostics:packaged
