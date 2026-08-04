@@ -20,22 +20,22 @@ export default defineConfig(({ mode }) => {
     main: {
       define: {
         "import.meta.env.CLAXEDO_CHANNEL": JSON.stringify(channel),
+        // The reviewed CIM script, CRLF-normalized + UTF-16LE + base64 — the
+        // shape PowerShell's -EncodedCommand takes. A define rather than a
+        // module import so nothing ever has to PARSE the .ps1: bun runs
+        // process-metrics-source.ts straight from source for the release
+        // gates and choked reading the PowerShell as JavaScript.
+        CLAXEDO_WINDOWS_CIM_ENCODED: JSON.stringify(
+          Buffer.from(
+            readFileSync(
+              path.join(desktopDir, "src/main/diagnostics/windows-cim-worker.ps1"),
+              "utf8",
+            ).replace(/\r?\n/g, "\r\n"),
+            "utf16le",
+          ).toString("base64"),
+        ),
       },
       plugins: [
-        {
-          name: "encode-reviewed-windows-cim-worker",
-          enforce: "pre",
-          resolveId(source, importer) {
-            if (!source.endsWith("?encoded") || !importer) return
-            return `\0windows-cim-encoded:${path.resolve(path.dirname(importer), source.slice(0, -"?encoded".length))}`
-          },
-          load(id) {
-            const prefix = "\0windows-cim-encoded:"
-            if (!id.startsWith(prefix)) return
-            const script = readFileSync(id.slice(prefix.length), "utf8").replace(/\r?\n/g, "\r\n")
-            return `export default ${JSON.stringify(Buffer.from(script, "utf16le").toString("base64"))}`
-          },
-        },
         {
           name: "copy-claxedo-server",
           closeBundle() {

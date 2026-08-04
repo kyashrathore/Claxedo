@@ -15,33 +15,37 @@ import {
 } from "./process-metrics-worker"
 import type { DiagnosticsObservation, DiagnosticsSource } from "./profiler"
 import type { WslDiagnosticsSource } from "./wsl-source"
-import windowsCimEncodedModule from "./windows-cim-worker.ps1?encoded"
 
 const RECONCILE_INTERVAL_MS = 30_000
 
 /**
- * The reviewed CIM script as a PowerShell -EncodedCommand payload.
- *
- * `?encoded` is an electron.vite plugin transform (encode-reviewed-windows-cim-
- * worker), so it only produces base64 in a BUILT main bundle. Run straight from
- * source — which the release smoke does — bun applies its own loader instead:
- * on darwin/linux that yields the file PATH, and on Windows it tried to PARSE
- * the .ps1 as JavaScript and the whole gate died on `[Console]::In`. So treat
- * the import as either the encoded payload (built) or a path (source), and
- * encode from disk in the latter case. Same bytes either way: CRLF-normalized,
- * UTF-16LE, base64 — the shape PowerShell's -EncodedCommand requires.
+ * Base64 of the reviewed CIM script, injected at build time by
+ * electron.vite.config.ts's `encode-reviewed-windows-cim-worker` define.
+ * Declared, never imported: an `import ... from "./windows-cim-worker.ps1"`
+ * is resolved and PARSED by whatever loads this module, and bun — which runs
+ * this file straight from source for the release gates — parsed the
+ * PowerShell as JavaScript and died on `[Console]::In`. A define has no
+ * module edge, so a source run simply sees the identifier as undefined and
+ * falls back to reading the script off disk below.
  */
-const windowsCimEncodedCommand: string = /^[A-Za-z0-9+/]+={0,2}$/.test(windowsCimEncodedModule)
-  ? windowsCimEncodedModule
-  : Buffer.from(
-      readFileSync(
-        windowsCimEncodedModule.startsWith("file:")
-          ? fileURLToPath(windowsCimEncodedModule)
-          : windowsCimEncodedModule,
-        "utf8",
-      ).replace(/\r?\n/g, "\r\n"),
-      "utf16le",
-    ).toString("base64")
+declare const CLAXEDO_WINDOWS_CIM_ENCODED: string | undefined
+
+/**
+ * The reviewed CIM script as a PowerShell -EncodedCommand payload: built →
+ * the injected base64; from source → encoded from disk. Same bytes either
+ * way (CRLF-normalized, UTF-16LE, base64 — what -EncodedCommand requires),
+ * which `process-metrics-worker.test.ts` pins.
+ */
+const windowsCimEncodedCommand: string =
+  typeof CLAXEDO_WINDOWS_CIM_ENCODED === "string"
+    ? CLAXEDO_WINDOWS_CIM_ENCODED
+    : Buffer.from(
+        readFileSync(new URL("./windows-cim-worker.ps1", import.meta.url), "utf8").replace(
+          /\r?\n/g,
+          "\r\n",
+        ),
+        "utf16le",
+      ).toString("base64")
 
 export type ProcessMetricsSource = DiagnosticsSource & {
   registerRoot(root: ElectronRoot): () => void
