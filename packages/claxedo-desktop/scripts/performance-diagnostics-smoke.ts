@@ -766,6 +766,10 @@ async function discoverPackagedExecutable() {
       : process.platform === "win32"
         ? [join(dist, `win${output}-unpacked`, `${productName}.exe`)]
         : [
+            // electron-builder's linux executableName defaults to the
+            // PRODUCT name ("Claxedo" on the prod release channel, "Claxedo
+            // Dev" locally) — the lowercase names cover older layouts.
+            join(dist, `linux${output}-unpacked`, productName),
             join(dist, `linux${output}-unpacked`, "desktop"),
             join(dist, `linux${output}-unpacked`, "claxedo"),
           ]
@@ -869,23 +873,27 @@ async function measureDiagnosticsTreeCpu(enabled: boolean) {
       }
       return [...tree]
     }
+    // Callback form inside our own promise, never pidtree's promise API: its
+    // Windows PowerShell path can fire the callback with "No matching pid
+    // found" OUTSIDE the promise chain (a late second invocation), which
+    // surfaces as an UNCAUGHT error a try/catch around the await never sees —
+    // it killed the release smoke with the probe demonstrably alive. Here a
+    // duplicate callback is a no-op resolve, and an error resolves undefined.
+    const pidtreeOnce = (pid: number) =>
+      new Promise<number[] | undefined>((resolvePids) => {
+        pidtree(pid, { root: true }, (error, pids) => resolvePids(error ? undefined : pids))
+      })
     const sampleTree = async () => {
       if (process.platform === "linux") return procTree(child.pid)
-      let lastError: unknown
       for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          return await pidtree(child.pid, { root: true })
-        } catch (error) {
-          lastError = error
-          await Bun.sleep(250)
-        }
+        const pids = await pidtreeOnce(child.pid)
+        if (pids) return pids
+        await Bun.sleep(250)
       }
-      // pidtree's Windows PowerShell path throws "No matching pid found" when
-      // its Get-CimInstance sweep races process churn — observed on the
-      // release runner with the probe demonstrably alive. A dead probe is a
-      // real failure; a live one degrades to measuring just the root pid.
+      // The sweep raced process churn on every retry. A dead probe is a real
+      // failure; a live one degrades to measuring just the root pid.
       if (child.exitCode === null) return [child.pid]
-      throw lastError
+      throw new Error("Diagnostics CPU probe exited while sampling its process tree")
     }
     // Linux NEVER goes through pidusage: its procfile path is broken for
     // `maxage: 0` — history.set early-returns when maxage <= 0, so the cached
