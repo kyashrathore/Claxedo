@@ -499,12 +499,19 @@ function createLazyWindowsWorker(): ProcessMetricsWorker {
   const cim = createWindowsCimQuery(windowsCimEncodedCommand)
   let loaded: Promise<ProcessMetricsWorker> | undefined
   const get = () =>
-    (loaded ??= import("@vscode/windows-process-tree").then((addon) =>
-      createWindowsProcessMetricsWorker({
-        addon,
-        query: cim.query,
-      }),
-    ))
+    // The addon is an optionalDependency whose native build bun may skip
+    // (observed absent on the Windows release runner itself). It only serves
+    // flag-free ancestry; absent, the worker runs with the CIM query alone
+    // and ancestry degrades — the source-health machinery already reports
+    // that honestly rather than the whole windows worker dying at import.
+    (loaded ??= import("@vscode/windows-process-tree")
+      .catch(() => undefined)
+      .then((addon) =>
+        createWindowsProcessMetricsWorker({
+          ...(addon === undefined ? {} : { addon }),
+          query: cim.query,
+        }),
+      ))
   return {
     async reconcile(rootPids) {
       return (await get()).reconcile(rootPids)

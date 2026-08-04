@@ -35,16 +35,25 @@ verify()
 const cmd = extra.length
   ? ["bun", "run", script, "--", ...extra]
   : ["bun", "run", script]
-const proc = Bun.spawn({
-  cmd,
-  cwd: root,
-  env: Bun.env,
-  stdin: "inherit",
-  stdout: "inherit",
-  stderr: "inherit",
-})
-
-const code = await proc.exited
+// One retry: electron-builder's bun "file traversal" node-module collector
+// intermittently fails to resolve a workspace package's dependency across the
+// .bun-store symlinks ("Production dependency better-sqlite3 not found for
+// package @claxedo/workgraph") — observed on different release legs in
+// different runs with an identical tree that packaged fine elsewhere. The
+// step is idempotent; a deterministic failure fails twice.
+let code = 1
+for (let attempt = 0; attempt < 2 && code !== 0; attempt++) {
+  if (attempt > 0) console.error("[package] electron-builder failed; retrying once")
+  const proc = Bun.spawn({
+    cmd,
+    cwd: root,
+    env: Bun.env,
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  })
+  code = await proc.exited
+}
 if (code !== 0) process.exit(code)
 
 const { failures } = verifyPackageContents(root)

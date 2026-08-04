@@ -222,7 +222,13 @@ export async function collectWindowsAncestry(
 }
 
 export function createWindowsProcessMetricsWorker(options: {
-  addon: WindowsAncestryAddon
+  /**
+   * Optional: the @vscode/windows-process-tree native addon is an
+   * optionalDependency whose build bun may skip. Absent, `reconcile`
+   * reports an empty (truncated) ancestry and CPU/RSS sampling via the CIM
+   * query continues unaffected.
+   */
+  addon?: WindowsAncestryAddon
   query(rows: number[]): Promise<unknown[]>
   logicalProcessors?: number
   monotonicNow?: () => number
@@ -235,6 +241,9 @@ export function createWindowsProcessMetricsWorker(options: {
   return {
     async reconcile(rootPids) {
       if (disposed) return { entries: [], truncated: false }
+      // No addon → no ancestry sweep; truncated:true tells the caller the
+      // set is incomplete rather than claiming a clean empty tree.
+      if (!options.addon) return { entries: [], truncated: true }
       return collectWindowsAncestry(options.addon, rootPids)
     },
     async sample(entries) {
