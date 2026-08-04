@@ -880,6 +880,11 @@ async function measureDiagnosticsTreeCpu(enabled: boolean) {
           await Bun.sleep(250)
         }
       }
+      // pidtree's Windows PowerShell path throws "No matching pid found" when
+      // its Get-CimInstance sweep races process churn — observed on the
+      // release runner with the probe demonstrably alive. A dead probe is a
+      // real failure; a live one degrades to measuring just the root pid.
+      if (child.exitCode === null) return [child.pid]
       throw lastError
     }
     // Linux NEVER goes through pidusage: its procfile path is broken for

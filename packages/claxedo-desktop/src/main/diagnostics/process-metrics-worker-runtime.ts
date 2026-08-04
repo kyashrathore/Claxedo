@@ -1,8 +1,16 @@
 import { cpus } from "node:os"
-import { createRequire } from "node:module"
 import { readFile } from "node:fs/promises"
 
 import pidtree from "pidtree"
+// Static import, NOT createRequire: the worker entry is bundled with
+// externalizeDeps:false and the packaged app ships no node_modules beyond
+// native modules — a runtime require() is invisible to the bundler, stayed
+// external, and made every packaged POSIX metrics sample die with "Cannot
+// find module 'pidusage'" (macos-ps degraded source-failed in the packaged
+// diagnostics smoke). pidusage is pure JS, so bundling it is safe.
+// @ts-expect-error pidusage ships no types; the local Pidusage type below is
+// the reviewed contract for the slice of its API this worker uses.
+import packageUsageModule from "pidusage"
 
 import { linuxCreationIdentity } from "./process-identity"
 import {
@@ -14,8 +22,7 @@ import {
   uniqueEntries,
 } from "./process-metrics-worker"
 
-const require = createRequire(import.meta.url)
-const packageUsage = require("pidusage") as Pidusage
+const packageUsage = packageUsageModule as unknown as Pidusage
 
 type PidusageStats = {
   cpu: number
