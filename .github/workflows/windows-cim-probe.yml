@@ -2,13 +2,13 @@ name: Windows CIM probe (temporary)
 
 # TEMPORARY release diagnostics — delete once the Windows source smoke is green.
 #
-# Round 1 established: the REPL worker's FIRST response is {"ok":false} on
-# EVERY fresh child (22–32s cold start each), warm responses come back in 1ms
-# (fast = script-level failure, or the child EXITED), a CLIXML error record
-# appears on the child's stderr, and in-step Get-CimInstance is healthy
-# (116ms/17ms — WMI is fine). Round 2 captures the actual exception: redirect
-# the child's stderr to a file and dump the CLIXML payload, print FULL
-# response bodies, and record whether the child is still alive after a query.
+# Established so far: every query to the PS 5.1 REPL worker returns
+# {"ok":false} (first after a 22–32s cold start, warm in 1ms = script-level
+# failure), the child stays alive, its stderr holds only the CLIXML preamble
+# noise, WMI is healthy, and the EXACT row pipeline works in pwsh 7.6 in-step.
+# Round 3 names the exception: a byte-identical worker whose catch reports
+# instead of swallowing, plus one-shot Get-CimInstance under env variants
+# (minimal / +PSModulePath / full parent env) with stderr verbatim.
 
 on:
   workflow_dispatch:
@@ -22,72 +22,64 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - name: Capture the CIM worker's exception verbatim
+      - name: Name the swallowed exception
         shell: pwsh
         run: |
           $ErrorActionPreference = "Continue"
           $text = [System.IO.File]::ReadAllText("$PWD\packages\claxedo-desktop\src\main\diagnostics\windows-cim-worker.ps1")
           $text = $text -replace "`r?`n", "`r`n"
-          $enc = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($text))
-          Write-Host "encoded length: $($enc.Length) chars"
 
-          $psi = [System.Diagnostics.ProcessStartInfo]::new()
-          $psi.FileName = "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
-          $psi.Arguments = "-NoLogo -NoProfile -NonInteractive -EncodedCommand $enc"
-          $psi.WorkingDirectory = "C:\Windows\Temp"
-          $psi.RedirectStandardInput = $true
-          $psi.RedirectStandardOutput = $true
-          $psi.RedirectStandardError = $true
-          $psi.UseShellExecute = $false
-          $psi.CreateNoWindow = $true
-          $psi.EnvironmentVariables.Clear()
-          $psi.EnvironmentVariables["SystemRoot"] = "C:\Windows"
-          $psi.EnvironmentVariables["WINDIR"] = "C:\Windows"
-          $psi.EnvironmentVariables["PATH"] = "C:\Windows\System32;C:\Windows"
+          # Byte-identical EXCEPT the catch reports the exception it caught.
+          $needle = '[Console]::Out.WriteLine(''{"ok":false}'')'
+          if (-not $text.Contains($needle)) { throw "catch needle not found in worker script" }
+          $variant = $text.Replace($needle, '[Console]::Out.WriteLine(("ERR " + $_.Exception.GetType().FullName + ": " + $_.Exception.Message + " | " + $_.FullyQualifiedErrorId))')
+          $enc = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($variant))
 
-          $errFile = "$env:RUNNER_TEMP\cim-worker-stderr.txt"
+          function New-Child([string]$arguments, [hashtable]$extraEnv) {
+            $psi = [System.Diagnostics.ProcessStartInfo]::new()
+            $psi.FileName = "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+            $psi.Arguments = $arguments
+            $psi.WorkingDirectory = "C:\Windows\Temp"
+            $psi.RedirectStandardInput = $true
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            $psi.UseShellExecute = $false
+            $psi.CreateNoWindow = $true
+            if ($null -ne $extraEnv) {
+              $psi.EnvironmentVariables.Clear()
+              $psi.EnvironmentVariables["SystemRoot"] = "C:\Windows"
+              $psi.EnvironmentVariables["WINDIR"] = "C:\Windows"
+              $psi.EnvironmentVariables["PATH"] = "C:\Windows\System32;C:\Windows"
+              foreach ($key in $extraEnv.Keys) { $psi.EnvironmentVariables[$key] = $extraEnv[$key] }
+            }
+            return [System.Diagnostics.Process]::Start($psi)
+          }
+
+          # 1) The worker with a reporting catch, minimal env (exact app policy).
+          $p = New-Child "-NoLogo -NoProfile -NonInteractive -EncodedCommand $enc" @{}
+          $err = $p.StandardError.ReadToEndAsync()
           $sw = [System.Diagnostics.Stopwatch]::StartNew()
-          $p = [System.Diagnostics.Process]::Start($psi)
-          $stderr = $p.StandardError.ReadToEndAsync()
-
           $p.StandardInput.WriteLine("[$PID]")
           $p.StandardInput.Flush()
           $first = $p.StandardOutput.ReadLine()
           $sw.Stop()
-          Write-Host "FIRST ($($sw.ElapsedMilliseconds)ms): $first"
-          Write-Host "alive after first query: $(-not $p.HasExited)"
-
-          if (-not $p.HasExited) {
-            $sw.Restart()
-            $p.StandardInput.WriteLine("[$PID]")
-            $p.StandardInput.Flush()
-            $second = $p.StandardOutput.ReadLine()
-            $sw.Stop()
-            Write-Host "SECOND ($($sw.ElapsedMilliseconds)ms): $second"
-            Write-Host "alive after second query: $(-not $p.HasExited)"
-          }
-
-          if ($p.HasExited) { Write-Host "exit code: $($p.ExitCode)" }
+          Write-Host "worker-variant FIRST ($($sw.ElapsedMilliseconds)ms): $first"
           if (-not $p.HasExited) { $p.Kill() }
-          $stderrTask = $stderr
-          $stderrText = $stderrTask.GetAwaiter().GetResult()
-          Write-Host "----- child stderr begin -----"
-          Write-Host $stderrText
-          Write-Host "----- child stderr end -----"
+          $null = $err.GetAwaiter().GetResult()
 
-          # Control: run the worker's EXACT query pipeline inline in this pwsh
-          # against a pid we know exists, to prove the row shape serializes.
-          $inline = @(
-            Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $PID" -Property ProcessId,ParentProcessId,CreationDate,KernelModeTime,UserModeTime,WorkingSetSize |
-              ForEach-Object {
-                [ordered]@{
-                  pid = [int]$_.ProcessId
-                  ppid = [int]$_.ParentProcessId
-                  creationTicks = $_.CreationDate.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
-                  kernelTicks = ([uint64]$_.KernelModeTime).ToString([Globalization.CultureInfo]::InvariantCulture)
-                  userTicks = ([uint64]$_.UserModeTime).ToString([Globalization.CultureInfo]::InvariantCulture)
-                  rssBytes = ([uint64]$_.WorkingSetSize).ToString([Globalization.CultureInfo]::InvariantCulture)
-                }
-              }
-          )
-          Write-Host "inline row: $(([ordered]@{ ok = $true; rows = @($inline) } | ConvertTo-Json -Compress -Depth 3))"
+          # 2) One-shot CIM query under env variants — stderr verbatim.
+          $cmd = "-NoLogo -NoProfile -NonInteractive -Command `"Get-CimInstance Win32_Process -Filter 'ProcessId = $PID' -Property ProcessId,CreationDate | ConvertTo-Json -Compress`""
+          foreach ($case in @(
+            @{ label = "minimal-env"; env = @{} },
+            @{ label = "with-psmodulepath"; env = @{ PSModulePath = "C:\Windows\System32\WindowsPowerShell\v1.0\Modules" } },
+            @{ label = "with-temp"; env = @{ TEMP = "C:\Windows\Temp"; TMP = "C:\Windows\Temp" } },
+            @{ label = "full-parent-env"; env = $null }
+          )) {
+            $q = New-Child $cmd $case.env
+            $sw.Restart()
+            $out = $q.StandardOutput.ReadToEnd()
+            $qerr = $q.StandardError.ReadToEnd()
+            $sw.Stop()
+            Write-Host "oneshot $($case.label) ($($sw.ElapsedMilliseconds)ms): $out"
+            if ($qerr.Trim()) { Write-Host "oneshot $($case.label) STDERR: $($qerr.Trim().Substring(0, [Math]::Min(600, $qerr.Trim().Length)))" }
+          }
