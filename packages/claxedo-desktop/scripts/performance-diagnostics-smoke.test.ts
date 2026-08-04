@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
 
 import {
+  DIAGNOSTICS_CPU_OVERHEAD_BUDGET,
   DIAGNOSTICS_RETAINED_BYTES_BUDGET,
   evaluateDiagnosticsEvidence,
   pairedCpuOverhead,
@@ -42,7 +43,11 @@ describe("performance diagnostics release evidence", () => {
       stats: { retainedBytes: DIAGNOSTICS_RETAINED_BYTES_BUDGET + 1 },
       platform: "linux",
       actionSafety: "verified",
-      cpuOverheadPercentagePoints: 1.01,
+      // Relative to the budget, not a literal: the budget is environment-
+      // dependent (looser on CI's shared x64 runners), and a hardcoded 1.01
+      // stopped being a violation there — the test passed vacuously on one
+      // half of the failure list.
+      cpuOverheadPercentagePoints: DIAGNOSTICS_CPU_OVERHEAD_BUDGET + 0.01,
     })
 
     expect(result.failures).toEqual([
