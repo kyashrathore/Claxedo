@@ -26,12 +26,18 @@ describe("public site contract", () => {
   })
 
   test("has a complete release artifact contract", () => {
+    // Mirrors release-claxedo.yml's five build legs × electron-builder targets:
+    // mac arm64/x64 (dmg), win x64 (nsis), linux x64+arm64 (AppImage/deb/rpm).
     expect(downloads.map((download) => download.platform)).toEqual([
       "macos-arm64",
       "macos-x64",
       "windows-x64",
+      "linux-appimage",
       "linux-deb",
       "linux-rpm",
+      "linux-arm64-appimage",
+      "linux-arm64-deb",
+      "linux-arm64-rpm",
     ])
     expect(downloads.every((download) => download.href.startsWith("https://github.com/"))).toBe(true)
   })

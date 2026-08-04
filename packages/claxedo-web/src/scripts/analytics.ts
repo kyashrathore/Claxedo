@@ -33,7 +33,12 @@ export const buildConversionEvent = (input: EventInput): ConversionEvent | undef
   const placement = bounded(input.placement, /^[a-z0-9-]{1,64}$/)
   const route = conversionRoute(input.route.split("?")[0])
   if (!placement || !route) return
-  const platform = bounded(input.platform, /^(macos-arm64|macos-x64|windows-x64|linux-deb|linux-rpm)$/)
+  // Keep in sync with the `downloads` platform ids in src/config.ts — an id
+  // missing here is silently stripped from the conversion event, not rejected.
+  const platform = bounded(
+    input.platform,
+    /^(macos-arm64|macos-x64|windows-x64|linux-appimage|linux-deb|linux-rpm|linux-arm64-appimage|linux-arm64-deb|linux-arm64-rpm)$/,
+  )
   const version = bounded(input.version, /^\d+\.\d+\.\d+$/)
   return { name: input.name as ConversionEventName, route, placement, ...(platform && { platform }), ...(version && { version }) }
 }
