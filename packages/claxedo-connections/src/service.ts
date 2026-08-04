@@ -1,4 +1,4 @@
-import { createAttempts, type Attempts } from "./attempts.js"
+import { createAttempts, type Attempts, type MaybePromise } from "./attempts.js"
 import type { IntegrationRegistry } from "./registry.js"
 import { ConnectionTokenError, createTokenService } from "./tokens.js"
 import {
@@ -324,7 +324,7 @@ export function createConnectionsService(deps: {
       // desktop app and every self-hoster behind NAT actually run in.
       if (device) {
         const grant = await device.start()
-        const attempt = attempts.create({
+        const attempt = await attempts.create({
           integrationId: input.integrationId,
           ...(input.owner !== undefined ? { owner: input.owner } : {}),
           scope,
@@ -339,7 +339,7 @@ export function createConnectionsService(deps: {
         }
       }
 
-      const attempt = attempts.create({
+      const attempt = await attempts.create({
         integrationId: input.integrationId,
         ...(input.owner !== undefined ? { owner: input.owner } : {}),
         scope,
@@ -359,7 +359,7 @@ export function createConnectionsService(deps: {
      * stored status instead of spending another upstream request.
      */
     async pollAttempt(state: string): Promise<{ status: AttemptStatus; integrationId: string; scope: ConnectionScope; message?: string; intervalMs?: number } | undefined> {
-      const pending = attempts.peek(state)
+      const pending = await attempts.peek(state)
       if (!pending) return attempts.status(state)
       const device = deps.registry.byId(pending.integrationId)?.impl.device
       if (!device) return attempts.status(state)
@@ -374,38 +374,38 @@ export function createConnectionsService(deps: {
       }
 
       if (result.status === "pending") {
-        const status = attempts.status(state)
+        const status = await attempts.status(state)
         return status && result.intervalMs !== undefined ? { ...status, intervalMs: result.intervalMs } : status
       }
       if (result.status === "denied" || result.status === "expired") {
         // consume() flips `completing` so a concurrent poll cannot settle the
         // same attempt twice.
-        if (attempts.consume(state)) {
-          if (result.status === "expired") attempts.expire(state)
-          else attempts.settle(state, false, "device_denied")
+        if (await attempts.consume(state)) {
+          if (result.status === "expired") await attempts.expire(state)
+          else await attempts.settle(state, false, "device_denied")
         }
         return attempts.status(state)
       }
-      if (!attempts.consume(state)) return attempts.status(state)
+      if (!await attempts.consume(state)) return attempts.status(state)
       try {
         await storeDeviceGrant(pending, result.tokens)
-        attempts.settle(state, true)
+        await attempts.settle(state, true)
       } catch {
-        attempts.settle(state, false, "device_store_failed")
+        await attempts.settle(state, false, "device_store_failed")
       }
       return attempts.status(state)
     },
 
     async handleCallback(state: string, code: string | undefined): Promise<{ ok: boolean }> {
-      const pending = attempts.consume(state)
+      const pending = await attempts.consume(state)
       if (!pending) return { ok: false }
       if (code === undefined) {
-        attempts.settle(state, false, "callback_code_missing")
+        await attempts.settle(state, false, "callback_code_missing")
         return { ok: false }
       }
       const entry = deps.registry.byId(pending.integrationId)
       if (!entry?.impl.callback) {
-        attempts.settle(state, false, "callback_unsupported")
+        await attempts.settle(state, false, "callback_unsupported")
         return { ok: false }
       }
       try {
@@ -421,15 +421,15 @@ export function createConnectionsService(deps: {
           }),
           ...(oauthTokens.expiresAt !== undefined ? { expiresAt: oauthTokens.expiresAt } : {}),
         })
-        attempts.settle(state, true)
+        await attempts.settle(state, true)
         return { ok: true }
       } catch {
-        attempts.settle(state, false, "callback_failed")
+        await attempts.settle(state, false, "callback_failed")
         return { ok: false }
       }
     },
 
-    attemptStatus(state: string): { status: AttemptStatus; integrationId: string; scope: ConnectionScope; message?: string } | undefined {
+    attemptStatus(state: string): MaybePromise<{ status: AttemptStatus; integrationId: string; scope: ConnectionScope; message?: string } | undefined> {
       return attempts.status(state)
     },
 

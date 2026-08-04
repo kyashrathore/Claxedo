@@ -79,7 +79,7 @@ describe("device-flow connect", () => {
     if (!result.ok) throw new Error("expected ok")
 
     expect((await service.pollAttempt(result.attemptId))?.status).toBe("pending")
-    expect(service.attemptStatus(result.attemptId)?.status).toBe("pending")
+    expect((await service.attemptStatus(result.attemptId))?.status).toBe("pending")
     await service.dispose()
   })
 
@@ -122,7 +122,7 @@ describe("device-flow connect", () => {
     if (!result.ok) throw new Error("expected ok")
 
     expect((await service.pollAttempt(result.attemptId))?.status).toBe("failed")
-    expect(service.attemptStatus(result.attemptId)?.status).toBe("failed")
+    expect((await service.attemptStatus(result.attemptId))?.status).toBe("failed")
     expect(await connections.list()).toEqual([])
     await service.dispose()
   })

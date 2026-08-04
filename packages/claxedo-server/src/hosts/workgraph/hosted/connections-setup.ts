@@ -4,6 +4,7 @@ import {
   createIntegrationRegistry,
   createIntegrationsRoutes,
   linearIntegration,
+  type Attempts,
   type ConnectionRow,
   type ConnectionStorePort,
   type CredentialStorePort,
@@ -16,6 +17,7 @@ import { anyApi, type FunctionReference } from "convex/server"
 import { controlPlaneAuthContext, type ClerkVerifier, type ControlPlaneAuthConfig } from "../../../platform/auth/auth"
 import { hostedOrgCredentials } from "../../../credentials/worker/index"
 import { githubIntegrationForEnv } from "../../../connections/github-oauth"
+import { createConvexConnectionAttempts } from "../../../authority/adapters/convex/connection-attempts"
 import type { ControlPlaneCredentials } from "../../../authority/services"
 
 type Executor = Readonly<{
@@ -49,6 +51,8 @@ export function createHostedConnectionsSetup(input: Readonly<{
   verifier?: ClerkVerifier
   integrations?: ReadonlyArray<{ decl: IntegrationDeclaration; impl: IntegrationImpl }>
   credentials?: (orgId: string) => ControlPlaneCredentials
+  /** Test seam. Production composes the Convex-backed store from the executor below. */
+  attempts?: Attempts
   requireEntitlement?: (clerkOrgId: string) => Promise<{
     status: 402 | 503
     body: { error: { code: string; message: string } }
@@ -143,6 +147,16 @@ function hostedConnectionsService(
     registry,
     credentials: credentialStore(input.credentials?.(orgId) ?? hostedOrgCredentials(orgId, input.env)),
     connections: connectionStore(input.executor, input.serviceToken, ownerUserId, orgId),
+    // The service is built PER REQUEST, so the kit's default in-memory attempt
+    // store is empty on every call after the one that created the attempt:
+    // `POST /:id/connect` wrote into one isolate's Map and `GET /attempts/:state`
+    // read a different, empty one, so every hosted OAuth/device connect answered
+    // `attempt_not_found` and could never complete. A durable store is what makes
+    // an attempt outlive its request.
+    attempts: input.attempts ?? createConvexConnectionAttempts({
+      executor: input.executor,
+      serviceToken: input.serviceToken,
+    }),
     newId: () => crypto.randomUUID(),
   })
 }

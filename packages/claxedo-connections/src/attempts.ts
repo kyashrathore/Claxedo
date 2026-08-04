@@ -30,23 +30,63 @@ type TerminalEntry = {
 }
 type AttemptEntry = PendingEntry | TerminalEntry
 
+export type AttemptPending = { integrationId: string; owner?: string; scope: "team" | "personal"; verifier: string }
+export type AttemptDevicePending = { integrationId: string; owner?: string; scope: "team" | "personal"; deviceCode: string }
+export type AttemptSummary = { status: AttemptStatus; integrationId: string; scope: "team" | "personal"; message?: string }
+
+/**
+ * Every method may answer asynchronously.
+ *
+ * The in-memory store below is a `Map` and answers synchronously, which is why
+ * the port started out synchronous. That shape silently made the port
+ * un-implementable by any store that has to cross a network — and a hosted
+ * Worker control plane, which builds a fresh service per request, is exactly
+ * the deployment where the in-memory store CANNOT work: the request that
+ * creates an attempt and the request that polls it hold different Maps, so the
+ * poll always missed and every hosted OAuth/device connect 404'd as
+ * `attempt_not_found`. Widening to `MaybePromise` is what lets a durable store
+ * (see the Convex-backed one in claxedo-server) satisfy the same contract;
+ * the in-memory implementation is unchanged and still returns bare values.
+ */
+export type MaybePromise<T> = T | Promise<T>
+
 export type Attempts = {
-  create(input: { integrationId: string; owner?: string; scope: "team" | "personal"; deviceCode?: string }): { state: string; verifier: string }
+  create(input: { integrationId: string; owner?: string; scope: "team" | "personal"; deviceCode?: string }): MaybePromise<{ state: string; verifier: string }>
   // Atomic consume: returns the pending entry exactly once (flips
   // `completing`); unknown, expired, terminal, or already-consuming states
   // return undefined.
-  consume(state: string): { integrationId: string; owner?: string; scope: "team" | "personal"; verifier: string } | undefined
+  consume(state: string): MaybePromise<AttemptPending | undefined>
   // Non-consuming read for device grants, which poll the SAME attempt many
   // times before it settles. `consume` cannot serve this: it is single-use by
   // design, so the second poll would report a lost attempt.
-  peek(state: string): { integrationId: string; owner?: string; scope: "team" | "personal"; deviceCode: string } | undefined
-  settle(state: string, ok: boolean, message?: string): void
+  peek(state: string): MaybePromise<AttemptDevicePending | undefined>
+  settle(state: string, ok: boolean, message?: string): MaybePromise<void>
   // Settles an attempt the PROVIDER declared expired, as distinct from one
   // that failed. Only the former is worth restarting, and the two carry
   // different copy, so collapsing them into `settle(false)` would tell a user
   // who merely took too long that authorization was refused.
+  expire(state: string): MaybePromise<void>
+  status(state: string): MaybePromise<AttemptSummary | undefined>
+  sweep(): MaybePromise<void>
+  dispose(): void
+}
+
+/**
+ * The in-memory store's own, fully SYNCHRONOUS shape.
+ *
+ * `Attempts` is the widened port every store implements; this is what
+ * `createAttempts` actually returns. Keeping the concrete type sync means
+ * callers holding the in-memory store directly (its own tests, the local and
+ * self-host compositions) read a value, not a promise — the widening buys the
+ * durable store a seat without making every existing caller `await`.
+ */
+export type SyncAttempts = {
+  create(input: { integrationId: string; owner?: string; scope: "team" | "personal"; deviceCode?: string }): { state: string; verifier: string }
+  consume(state: string): AttemptPending | undefined
+  peek(state: string): AttemptDevicePending | undefined
+  settle(state: string, ok: boolean, message?: string): void
   expire(state: string): void
-  status(state: string): { status: AttemptStatus; integrationId: string; scope: "team" | "personal"; message?: string } | undefined
+  status(state: string): AttemptSummary | undefined
   sweep(): void
   dispose(): void
 }
@@ -56,7 +96,7 @@ export function createAttempts(options: {
   retentionMs?: number
   now?: () => number
   sweepIntervalMs?: number
-} = {}): Attempts {
+} = {}): SyncAttempts {
   const now = options.now ?? Date.now
   const ttlMs = options.ttlMs ?? 10 * 60_000
   const retentionMs = options.retentionMs ?? 5 * 60_000

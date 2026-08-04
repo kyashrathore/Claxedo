@@ -178,6 +178,7 @@ const workspacesThunks: Thunks<WorkspacesAppPorts> = {
   DialogDeleteWorkspace: lazy("@/app/dialogs", "DialogDeleteWorkspace"),
   DialogSettings: lazy("@/app/dialogs/settings", "DialogSettings"),
   DialogSelectDirectory: lazy("@/app/dialogs/select-directory", "DialogSelectDirectory"),
+  DialogConnectIntegration: lazy("@/app/dialogs/connect-integration", "DialogConnectIntegration"),
   ensureDirectorySessionCache: lazy("@/app/workbench/actions/shared", "ensureDirectorySessionCache"),
   findProjectForWorkspace: lazy("@/app/workbench/actions/shared", "findProjectForWorkspace"),
   message: lazy("@/app/workbench/actions/shared", "message"),

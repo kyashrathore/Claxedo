@@ -249,6 +249,18 @@ export type ConnectFlowState = {
   scope: "team" | "personal"
   /** Which submission the confirm-replace prompt would retry. */
   pendingMode: "key" | "oauth" | undefined
+  /**
+   * The device-flow code the user must type at the provider's verification page.
+   *
+   * A device grant is not a redirect: opening `url` lands the user on
+   * github.com/login/device, which asks for a code that ONLY this response
+   * carries. Dropping it — as this flow used to — left the UI spinning
+   * "Waiting for authorization…" next to a page the user could not get past,
+   * so the flow could never complete no matter how long it polled.
+   */
+  userCode: string | undefined
+  /** The verification page to open; kept so the user can re-open it. */
+  verificationUrl: string | undefined
 }
 
 export type ConnectFlowOptions = {
@@ -285,6 +297,8 @@ export function createConnectFlow(options: ConnectFlowOptions) {
     secret: "",
     scope: options.personalScopeEnabled ? options.initialScope ?? "team" : "team",
     pendingMode: undefined,
+    userCode: undefined,
+    verificationUrl: undefined,
   })
   // Bumped by reset(); in-flight oauth polling stops when its generation is stale.
   let generation = 0
@@ -297,15 +311,27 @@ export function createConnectFlow(options: ConnectFlowOptions) {
   }
 
   async function succeed() {
-    setState({ phase: "done", error: undefined, secret: "", pendingMode: undefined })
+    setState({
+      phase: "done",
+      error: undefined,
+      secret: "",
+      pendingMode: undefined,
+      userCode: undefined,
+      verificationUrl: undefined,
+    })
     await options.onConnected?.()
   }
 
-  async function pollAttempt(attemptId: string) {
+  async function pollAttempt(attemptId: string, initialIntervalMs?: number) {
     const myGeneration = generation
     setState({ phase: "oauth-waiting", error: undefined, pendingMode: undefined })
+    // The provider dictates the device-flow cadence and may raise it mid-flow
+    // (GitHub's `slow_down`), which the server relays as `intervalMs`. Polling
+    // faster than asked earns rate limiting, so the server's number wins
+    // whenever it gives one.
+    let interval = initialIntervalMs && initialIntervalMs > 0 ? initialIntervalMs : pollIntervalMs
     for (let i = 0; i < maxPolls; i++) {
-      await sleep(pollIntervalMs)
+      await sleep(interval)
       if (generation !== myGeneration) return
       let response: Response
       try {
@@ -319,7 +345,10 @@ export function createConnectFlow(options: ConnectFlowOptions) {
         return
       }
       const body = await jsonOf(response)
-      if (body.status === "pending") continue
+      if (body.status === "pending") {
+        if (typeof body.intervalMs === "number" && body.intervalMs > 0) interval = body.intervalMs
+        continue
+      }
       if (body.status === "complete") {
         await succeed()
         return
@@ -386,8 +415,13 @@ export function createConnectFlow(options: ConnectFlowOptions) {
         setState({ phase: "form", error: "The server did not return an authorization URL. Try again." })
         return
       }
+      // Present only for a device grant. The redirect flow leaves both
+      // undefined, and the dialog renders its plain "waiting" copy.
+      const userCode = typeof payload.userCode === "string" ? payload.userCode : undefined
+      const intervalMs = typeof payload.intervalMs === "number" ? payload.intervalMs : undefined
+      setState({ userCode, verificationUrl: url })
       options.openUrl?.(url)
-      await pollAttempt(attemptId)
+      await pollAttempt(attemptId, intervalMs)
       return
     }
 
@@ -427,6 +461,8 @@ export function createConnectFlow(options: ConnectFlowOptions) {
       secret: "",
       scope: options.personalScopeEnabled ? options.initialScope ?? "team" : "team",
       pendingMode: undefined,
+      userCode: undefined,
+      verificationUrl: undefined,
     })
   }
 

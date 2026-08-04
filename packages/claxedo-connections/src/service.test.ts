@@ -463,7 +463,7 @@ describe("connections service", () => {
     expect(await service.handleCallback(state, "code-1")).toEqual({ ok: true })
     expect(await credentials.readSecret("integration:connection-1")).toBe(JSON.stringify({ access: "at-code-1", refresh: "rt-1" }))
     expect(await connections.get("oauthy", "user-a")).toMatchObject({ id: "connection-1", owner: "user-a" })
-    expect(service.attemptStatus(state)).toMatchObject({ status: "complete" })
+    expect(await service.attemptStatus(state)).toMatchObject({ status: "complete" })
 
     // Replay: same state again must be rejected before the impl runs.
     expect(await service.handleCallback(state, "code-2")).toEqual({ ok: false })
@@ -492,14 +492,14 @@ describe("connections service", () => {
     const state = (started as { attemptId: string }).attemptId
 
     await expect(service.handleCallback(state, undefined)).resolves.toEqual({ ok: false })
-    expect(service.attemptStatus(state)).toMatchObject({
+    expect(await service.attemptStatus(state)).toMatchObject({
       status: "failed",
       message: "callback_code_missing",
     })
 
     now = 101
     attempts.sweep()
-    expect(service.attemptStatus(state)).toBeUndefined()
+    expect(await service.attemptStatus(state)).toBeUndefined()
   })
 
   test("teamOwner partitions the team scope by an opaque key (hosted org partition)", async () => {
@@ -553,6 +553,6 @@ describe("connections service", () => {
     const started = await service.connectOAuth({ integrationId: "oauthy", owner: "org:org-a", teamOwner: "org:org-a" })
     expect(started.ok).toBe(true)
     const state = (started as { attemptId: string }).attemptId
-    expect(service.attemptStatus(state)).toMatchObject({ scope: "team" })
+    expect(await service.attemptStatus(state)).toMatchObject({ scope: "team" })
   })
 })

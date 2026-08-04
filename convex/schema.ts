@@ -1635,6 +1635,56 @@ export default defineSchema({
     .index("by_state_expiry", ["state", "expires_at"]),
 
   /**
+   * Durable OAuth/device connect attempts (convex/connectionAttempts.ts).
+   *
+   * Same class of bug as `control_idempotency` above, in the Connections
+   * surface. `packages/claxedo-connections/src/attempts.ts` is an in-memory
+   * `Map`, and the hosted control plane builds a FRESH connections service per
+   * request (`hosts/workgraph/hosted/connections-setup.ts`). So
+   * `POST /github/connect` wrote the attempt into one isolate's Map and
+   * `GET /attempts/:state` read a different, empty one — every hosted OAuth and
+   * device connect answered `attempt_not_found`, which is why a hosted user
+   * could never finish connecting GitHub at all.
+   *
+   * ── What is and is not stored ──
+   * `state` and `verifier` are this flow's OWN random values (32 bytes each,
+   * minted per attempt and dead within the TTL), and `device_code` is the
+   * provider-issued handle the host polls with. None of them is a credential
+   * for anything: the access token a completed grant yields never touches this
+   * table — it goes to the envelope-encrypted credential store, exactly as on
+   * the local path. Everything here is short-lived by construction and
+   * collected by `sweepExpired`.
+   *
+   * `completing` is the atomic-consume flag, carried through so a durable
+   * attempt keeps the in-memory store's single-use semantics: a concurrent poll
+   * cannot settle the same attempt twice, and a mid-consume row is left pending
+   * past its TTL so a slow token exchange still reports its real outcome.
+   */
+  connection_attempts: defineTable({
+    /** The opaque per-attempt id the client polls with; never a credential. */
+    state: v.string(),
+    /** PKCE verifier for the redirect flow; absent-of-meaning once terminal. */
+    verifier: v.string(),
+    integration_id: v.string(),
+    /** Present only for device grants — the redirect flow gets its code on the callback. */
+    device_code: v.optional(v.string()),
+    owner: v.optional(v.string()),
+    scope: v.union(v.literal("team"), v.literal("personal")),
+    status: v.union(v.literal("pending"), v.literal("complete"), v.literal("failed"), v.literal("expired")),
+    /** Mid-consume fence: only `settle` may move a row holding it. */
+    completing: v.boolean(),
+    message: v.optional(v.string()),
+    /** TTL for a pending row; the sweep/retention deadline once terminal. */
+    expires_at: v.number(),
+    created_at: v.number(),
+    updated_at: v.number(),
+  })
+    .index("by_state", ["state"])
+    // Ranged by the sweep so its read set is bounded by expired rows rather
+    // than by table size (W5's no-unbounded-read invariant).
+    .index("by_status_expiry", ["status", "expires_at"]),
+
+  /**
    * W4.4 — fenced cron lease (convex/cronLease.ts).
    *
    * One row per serialized cron body. Both existing reconcile guards

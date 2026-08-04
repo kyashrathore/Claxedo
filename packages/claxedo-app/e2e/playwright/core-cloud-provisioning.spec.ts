@@ -904,3 +904,239 @@ test.describe("core cloud provisioning @core", () => {
     await expect(input).toContainText(promptText)
   })
 })
+
+/**
+ * BEHAVIOR 7 — the hosted "New Project" dialog, end to end.
+ *
+ * WHY THIS LIVES HERE and not in `core-workspace-lifecycle`: that spec owns the
+ * LOCAL `DialogSelectDirectory` branch of `handleNewProject`. The branch below is
+ * the OTHER one — `platform === "web"` AND a non-loopback central transport — and
+ * it was, in production on app.claxedo.com, completely unusable:
+ *
+ *   1. `DialogCreateCloudProject`'s onMount calls `GET /api/workspace/drivers`,
+ *      a route that exists ONLY on the local control plane
+ *      (`sandbox-driver-routes.ts`, mounted by the local `WorkspaceRoutes`). On
+ *      hosted it 404s, the `.catch` set `provider("")`, and the submit button
+ *      was gated on `provider()` — so "Clone & Open" was disabled forever and NO
+ *      cloud project could be created at all.
+ *   2. The repository picker rendered only when `repositories().length > 0` and
+ *      the dialog carried no "Connect GitHub" action, so a user with no
+ *      connection had no way forward from inside the flow.
+ *   3. Hosted device/OAuth connect could not complete server-side: the hosted
+ *      connections service is built PER REQUEST with no shared attempt store, so
+ *      `GET /attempts/:state` always answered `attempt_not_found` (fixed by
+ *      `convex/connectionAttempts.ts`; the mock below stands in for that route's
+ *      now-durable behavior).
+ *   4. The device `userCode` was dropped by the connect flow, leaving the user on
+ *      github.com/login/device with no code to type.
+ *
+ * TRANSPORT — `window.__CLAXEDO_E2E_SERVER_URL__` (read by `resolveDefaultUrl()`
+ * in `src/app/entry/app.tsx`, dev/e2e builds only) forces a NON-loopback default
+ * server, which is what makes `centralTransportForServer() !== "loopback"` and so
+ * routes `handleNewProject` down the cloud branch. Requests still resolve to this
+ * origin's mocks because every route glob below is origin-agnostic.
+ *
+ * INVARIANTS — no turn is sent here, so the assistant-reply oracle
+ * (`e2e/INVARIANTS.md` rule "every send uses expectAssistantReplyVisible") does
+ * not apply: this spec ends at workspace creation, and its proof obligation is the
+ * `POST /api/workspace/create` body plus the provisioning pipeline appearing.
+ */
+const HOSTED_SERVER_URL = "https://cloud.example.test"
+
+const GITHUB_INTEGRATION = {
+  id: "github",
+  name: "GitHub",
+  methods: ["oauth", "key"],
+  capabilities: ["code-host", "work-source"],
+}
+
+const CONNECTED_REPOSITORY = {
+  id: "repo_1",
+  name: "app",
+  fullName: "acme/app",
+  private: true,
+  permissions: { read: true, write: true },
+}
+
+/**
+ * The `/api/claxedo/integrations` family, as a hosted user walks it.
+ *
+ * Starts with NO connection. `POST /github/connect` answers a device grant
+ * carrying a `userCode`; the first `GET /attempts/:state` is `pending` and the
+ * second is `complete` — which is exactly the two-request sequence the old
+ * in-memory attempt store could not survive, since each hosted request built its
+ * own empty Map. After completion the listing reports a live connection and the
+ * repository list becomes non-empty.
+ */
+async function installIntegrationsMock(page: Page) {
+  const state = { connected: false, attemptPolls: 0, connectBodies: [] as unknown[] }
+
+  await page.route("**/api/claxedo/integrations**", async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    const path = url.pathname.replace(/^.*\/api\/claxedo\/integrations/, "")
+
+    if (path.endsWith("/connect") && request.method() === "POST") {
+      state.connectBodies.push(request.postDataJSON?.() ?? undefined)
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          url: "https://github.com/login/device",
+          attemptId: "attempt_1",
+          userCode: "WDJB-MJHT",
+          intervalMs: 100,
+        }),
+      })
+    }
+
+    if (path.startsWith("/attempts/")) {
+      state.attemptPolls += 1
+      // First poll pending, then complete — proves the attempt SURVIVED the
+      // request that created it, which is the whole point of the durable store.
+      const status = state.attemptPolls >= 2 ? "complete" : "pending"
+      if (status === "complete") state.connected = true
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status, integrationId: "github", scope: "team" }),
+      })
+    }
+
+    if (path.endsWith("/repositories")) {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ repositories: state.connected ? [CONNECTED_REPOSITORY] : [] }),
+      })
+    }
+
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        integrations: [GITHUB_INTEGRATION],
+        connections: state.connected
+          ? [{
+              id: "connection-1",
+              integrationId: "github",
+              scope: "team",
+              grantedCapabilities: ["code-host"],
+              fields: {},
+              status: "connected",
+              createdAt: 1,
+              updatedAt: 1,
+            }]
+          : [],
+        personalScopeEnabled: false,
+      }),
+    })
+  })
+
+  return state
+}
+
+test.describe("core cloud project creation on a hosted control plane @core", () => {
+  test(
+    "New Project connects GitHub with a visible device code, lists the repo, and creates the workspace — behavior 7",
+    async ({ page }) => {
+      test.setTimeout(120_000)
+      const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID })
+      const integrations = await installIntegrationsMock(page)
+
+      // The hosted control plane has no drivers route. This 404 is the exact
+      // production condition that used to disable submit forever.
+      await page.route("**/api/workspace/drivers**", (route) =>
+        route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { code: "not_found" } }) }),
+      )
+
+      const createBodies: unknown[] = []
+      await page.route("**/api/workspace/create", (route) => {
+        if (route.request().method() !== "POST") return route.fallback()
+        createBodies.push(route.request().postDataJSON?.() ?? undefined)
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            workspaceId: WORKSPACE_ID,
+            projectId: PROJECT_ID,
+            directory: `/workspaces/${WORKSPACE_ID}`,
+            kind: "cloud",
+            status: "acquiring_sandbox",
+          }),
+        })
+      })
+
+      await page.addInitScript((serverUrl: string) => {
+        localStorage.clear()
+        ;(window as typeof window & { __CLAXEDO_E2E_SERVER_URL__?: string }).__CLAXEDO_E2E_SERVER_URL__ = serverUrl
+      }, HOSTED_SERVER_URL)
+
+      await page.goto("/", { waitUntil: "domcontentloaded", timeout: 100_000 })
+      await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+
+      await page.getByRole("button", { name: "New Project", exact: true }).first().click()
+
+      // The cloud branch, not the local directory picker.
+      await expect(page.locator('[data-slot="dialog-title"]')).toHaveText("New Cloud Project", { timeout: 20_000 })
+
+      // Failure 1: with the drivers route absent the provider control is gone
+      // entirely rather than rendering an empty, unsatisfiable <select>.
+      await expect(page.getByText("Sandbox Provider")).toHaveCount(0)
+
+      // Failure 2: zero connections used to render nothing actionable at all.
+      const connect = page.getByRole("button", { name: "Connect GitHub" })
+      await expect(connect).toBeVisible({ timeout: 20_000 })
+      await page.screenshot({ path: "test-results/evidence/core-cloud-provisioning/connect-github-offer.png" })
+      await connect.click()
+
+      await expect(page.getByRole("button", { name: "Continue with OAuth" })).toBeVisible({ timeout: 20_000 })
+      await page.getByRole("button", { name: "Continue with OAuth" }).click()
+
+      // Failure 4: the code the user must type at github.com/login/device.
+      await expect(page.getByTestId("device-user-code")).toHaveText("WDJB-MJHT", { timeout: 20_000 })
+      // Evidence, per e2e/INVARIANTS.md: a passing text assertion does not prove
+      // the code is legibly ON SCREEN, which is the entire point of showing it.
+      await page.screenshot({ path: "test-results/evidence/core-cloud-provisioning/device-user-code.png" })
+
+      // Failure 3: the attempt is polled across MORE THAN ONE request and
+      // settles — the sequence the per-request in-memory store always 404'd.
+      await expect
+        .poll(() => integrations.attemptPolls, { timeout: 30_000 })
+        .toBeGreaterThanOrEqual(2)
+      await expect(page.getByTestId("device-user-code")).toHaveCount(0, { timeout: 20_000 })
+
+      // Back on the create dialog, refreshed in place: the repo the new
+      // connection exposes is now selectable.
+      await expect(page.getByText("Connected GitHub repository")).toBeVisible({ timeout: 20_000 })
+      const repoSelect = page.locator('[data-slot="dialog-title"]')
+        .locator("xpath=ancestor::*[@data-dialog-layer]")
+        .locator("select")
+        .last()
+      await repoSelect.selectOption("repo_1")
+
+      const submit = page.getByRole("button", { name: "Clone & Open" })
+      await expect(submit).toBeEnabled({ timeout: 20_000 })
+      await page.screenshot({ path: "test-results/evidence/core-cloud-provisioning/repo-selected-submit-enabled.png" })
+      await submit.click()
+
+      await expect.poll(() => createBodies.length, { timeout: 30_000 }).toBe(1)
+      const body = createBodies[0] as Record<string, unknown>
+      // No `driver`: the hosted plane composes one from env, so the client must
+      // not invent an empty string for it.
+      expect(Object.keys(body)).not.toContain("driver")
+      expect(body).toMatchObject({ connectionId: "connection-1", repo: { fullName: "acme/app" } })
+
+      // The dialog hands off to its provisioning phase rather than silently
+      // doing nothing — the user-visible proof the create actually landed.
+      await expect(page.getByText("Provisioning cloud workspace...")).toBeVisible({ timeout: 20_000 })
+
+      expect(integrations.connectBodies).toHaveLength(1)
+      // The ONLY tolerated bad response is the drivers 404 this test installs on
+      // purpose — that absent route IS the hosted condition under test. Anything
+      // else escaping as a 4xx/5xx is a real finding.
+      expect(mock.requests.badResponses.filter((entry) => !entry.includes("/api/workspace/drivers"))).toEqual([])
+    },
+  )
+})

@@ -93,9 +93,43 @@ export function DialogConnectIntegration(props: {
             </div>
           </Match>
           <Match when={flow.state.phase === "oauth-waiting"}>
-            <div class="flex items-center gap-2 text-14-regular text-text-base">
-              <Spinner />
-              <span>Waiting for authorization in your browser…</span>
+            <div class="flex flex-col gap-3">
+              {/*
+                A device grant sends the user to a page that ASKS for a code,
+                and this response is the only place that code exists. Showing
+                just the spinner left the user stuck on that page with nothing
+                to type, so the flow could never complete however long it
+                polled. Selectable and monospaced because it gets typed by hand.
+              */}
+              <Show when={flow.state.userCode}>
+                {(code) => (
+                  <div class="flex flex-col gap-1">
+                    <span class="text-13-medium text-text-strong">Enter this code to authorize</span>
+                    <span
+                      data-testid="device-user-code"
+                      class="select-all font-mono text-18-medium tracking-[0.2em] text-text-strong"
+                    >
+                      {code()}
+                    </span>
+                    <Show when={flow.state.verificationUrl}>
+                      {(url) => (
+                        <a
+                          class="text-13-regular text-text-interactive-base"
+                          href={url()}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Open {props.integration.name} to enter it
+                        </a>
+                      )}
+                    </Show>
+                  </div>
+                )}
+              </Show>
+              <div class="flex items-center gap-2 text-14-regular text-text-base">
+                <Spinner />
+                <span>Waiting for authorization in your browser…</span>
+              </div>
             </div>
           </Match>
           <Match when={oauthOnly()}>

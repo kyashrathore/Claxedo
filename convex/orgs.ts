@@ -711,6 +711,16 @@ export const ORG_RETAINED_TABLES: Readonly<Record<string, string>> = {
   // without this cascade — every row carries `expires_at` and the sweep collects
   // it by `by_state_expiry`.
   control_idempotency: "opaque untenanted cache keys; self-expiring via expires_at",
+  // In-flight OAuth/device connect attempts. `owner` is present only for the
+  // PERSONAL scope and is an opaque caller-resolved key, not an org id — a
+  // hosted team attempt carries no tenant column at all, so scoping a
+  // destructive sweep here would mean parsing owner-key structure, the same
+  // wrong-predicate hazard as `control_idempotency` above. Bounded without this
+  // cascade: every row carries `expires_at` (10 min pending, 5 min retention)
+  // and `connectionAttempts.sweepExpired` collects it hourly. Nothing survives
+  // as authority over the purged org — the resulting connection rows and their
+  // credentials ARE reaped, by `ORG_CONNECTION_CASCADE`.
+  connection_attempts: "short-lived, untenanted connect handshakes; self-expiring and reaped on a cron",
   // W4.4: infrastructure mutual exclusion, one row per cron LANE (a logical name
   // like "workgraph_reconcile"), never per tenant. `holder` is an
   // isolate/invocation identity. Purging a lane's lease because some org was

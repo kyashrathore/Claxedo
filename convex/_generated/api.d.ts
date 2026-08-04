@@ -16,6 +16,7 @@ import type * as channelIdentities from "../channelIdentities.js";
 import type * as clerkReconcile from "../clerkReconcile.js";
 import type * as clerkTombstones from "../clerkTombstones.js";
 import type * as cliSessionTokens from "../cliSessionTokens.js";
+import type * as connectionAttempts from "../connectionAttempts.js";
 import type * as cronLease from "../cronLease.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
@@ -62,6 +63,7 @@ declare const fullApi: ApiFromModules<{
   clerkReconcile: typeof clerkReconcile;
   clerkTombstones: typeof clerkTombstones;
   cliSessionTokens: typeof cliSessionTokens;
+  connectionAttempts: typeof connectionAttempts;
   cronLease: typeof cronLease;
   crons: typeof crons;
   http: typeof http;

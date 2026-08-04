@@ -459,3 +459,148 @@ describe("connect flow: oauth method", () => {
     expect(flow.state.error).toContain("authorization URL")
   })
 })
+
+describe("connect flow: device grant", () => {
+  test("the user code survives into flow state while the attempt is polled", async () => {
+    // A device grant sends the user to a page that ASKS for this code, and the
+    // connect response is the only place it exists. Dropping it — which this
+    // flow used to do — left the UI spinning next to a page the user could not
+    // get past, so the connect could never complete.
+    const { request } = scriptedRequest([
+      {
+        status: 200,
+        body: {
+          ok: true,
+          url: "https://github.com/login/device",
+          attemptId: "state-1",
+          userCode: "WDJB-MJHT",
+          intervalMs: 5_000,
+        },
+      },
+      { status: 200, body: { status: "pending", integrationId: "google" } },
+      { status: 200, body: { status: "complete", integrationId: "google" } },
+    ])
+    const codesWhileWaiting: Array<string | undefined> = []
+    const flow = createConnectFlow({
+      integration: google,
+      request,
+      openUrl: () => {},
+      sleep: () => {
+        codesWhileWaiting.push(flow.state.userCode)
+        return Promise.resolve()
+      },
+    })
+
+    await flow.startOAuth()
+
+    // Visible on EVERY poll, not merely set once and cleared — the user is
+    // typing it while these polls run.
+    expect(codesWhileWaiting).toEqual(["WDJB-MJHT", "WDJB-MJHT"])
+    expect(flow.state.phase).toBe("done")
+    // Cleared on success: a stale code shown after connecting is misleading.
+    expect(flow.state.userCode).toBeUndefined()
+  })
+
+  test("the verification url is kept so the user can re-open the page", async () => {
+    const { request } = scriptedRequest([
+      {
+        status: 200,
+        body: { ok: true, url: "https://github.com/login/device", attemptId: "state-1", userCode: "WDJB-MJHT" },
+      },
+      { status: 200, body: { status: "pending", integrationId: "google" } },
+      { status: 200, body: { status: "complete", integrationId: "google" } },
+    ])
+    const urls: Array<string | undefined> = []
+    const flow = createConnectFlow({
+      integration: google,
+      request,
+      openUrl: () => {},
+      sleep: () => {
+        urls.push(flow.state.verificationUrl)
+        return Promise.resolve()
+      },
+    })
+
+    await flow.startOAuth()
+
+    expect(urls).toEqual(["https://github.com/login/device", "https://github.com/login/device"])
+  })
+
+  test("the server's poll interval is honored, including a mid-flow slow_down", async () => {
+    // Polling faster than the provider asked earns rate limiting, and GitHub
+    // raises the interval mid-flow via `slow_down`, relayed as `intervalMs`.
+    const { request } = scriptedRequest([
+      {
+        status: 200,
+        body: { ok: true, url: "https://github.com/login/device", attemptId: "state-1", userCode: "X", intervalMs: 5_000 },
+      },
+      { status: 200, body: { status: "pending", integrationId: "google", intervalMs: 10_000 } },
+      { status: 200, body: { status: "pending", integrationId: "google" } },
+      { status: 200, body: { status: "complete", integrationId: "google" } },
+    ])
+    const waits: number[] = []
+    const flow = createConnectFlow({
+      integration: google,
+      request,
+      openUrl: () => {},
+      pollIntervalMs: 2_000,
+      sleep: (ms) => {
+        waits.push(ms)
+        return Promise.resolve()
+      },
+    })
+
+    await flow.startOAuth()
+
+    // First wait uses the grant's interval (not the 2s default); the raised
+    // interval then persists after the response that asked for it.
+    expect(waits).toEqual([5_000, 10_000, 10_000])
+    expect(flow.state.phase).toBe("done")
+  })
+
+  test("a redirect grant leaves the code absent and keeps the default cadence", async () => {
+    // The redirect flow has no user code by construction; the dialog must not
+    // invent one, and the default poll interval still applies.
+    const { request } = scriptedRequest([
+      { status: 200, body: { ok: true, url: "https://accounts.example/authorize", attemptId: "state-1" } },
+      { status: 200, body: { status: "complete", integrationId: "google" } },
+    ])
+    const waits: number[] = []
+    const codes: Array<string | undefined> = []
+    const flow = createConnectFlow({
+      integration: google,
+      request,
+      openUrl: () => {},
+      pollIntervalMs: 2_000,
+      sleep: (ms) => {
+        waits.push(ms)
+        codes.push(flow.state.userCode)
+        return Promise.resolve()
+      },
+    })
+
+    await flow.startOAuth()
+
+    expect(codes).toEqual([undefined])
+    expect(waits).toEqual([2_000])
+  })
+
+  test("reset clears the code so a reopened dialog never shows a dead one", async () => {
+    const { request } = scriptedRequest([
+      {
+        status: 200,
+        body: { ok: true, url: "https://github.com/login/device", attemptId: "state-1", userCode: "WDJB-MJHT" },
+      },
+      { status: 200, body: { status: "failed", integrationId: "google" } },
+    ])
+    const flow = createConnectFlow({ integration: google, request, openUrl: () => {}, sleep: () => Promise.resolve() })
+
+    await flow.startOAuth()
+    expect(flow.state.userCode).toBe("WDJB-MJHT")
+
+    flow.reset()
+
+    expect(flow.state.userCode).toBeUndefined()
+    expect(flow.state.verificationUrl).toBeUndefined()
+  })
+})

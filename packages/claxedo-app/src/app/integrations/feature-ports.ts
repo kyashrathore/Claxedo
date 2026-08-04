@@ -219,6 +219,7 @@ configureWorkspacesAppPorts({
   DialogDeleteWorkspace: Dialogs.DialogDeleteWorkspace,
   DialogSettings: DialogSettingsModule.DialogSettings,
   DialogSelectDirectory: DialogSelectDirectoryModule.DialogSelectDirectory,
+  DialogConnectIntegration: ConnectIntegration.DialogConnectIntegration,
   ensureDirectorySessionCache: LayoutActions.ensureDirectorySessionCache,
   findProjectForWorkspace: LayoutActions.findProjectForWorkspace,
   message: LayoutActions.message,

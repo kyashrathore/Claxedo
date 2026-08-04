@@ -148,4 +148,15 @@ crons.interval("sweep expired control-plane idempotency rows", { minutes: 15 }, 
   limit: 500,
 })
 
+// Durable connect-attempt GC, same shape and same reasoning as the idempotency
+// sweep above: rows are self-expiring (10 minutes pending, then 5 minutes of
+// retention so a late poll still learns why the attempt ended), so this only
+// reclaims storage and correctness never depends on it having run. Bounded per
+// tick and level-triggered, so a backlog drains across ticks. Every 15 minutes
+// rather than hourly because an attempt's whole lifetime is 15 minutes — an
+// hourly sweep would hold four generations of dead rows for no benefit.
+crons.interval("sweep expired connection attempts", { minutes: 15 }, internal.connectionAttempts.sweepExpired, {
+  limit: 500,
+})
+
 export default crons

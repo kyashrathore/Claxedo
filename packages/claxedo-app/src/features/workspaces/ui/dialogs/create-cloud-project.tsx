@@ -5,11 +5,11 @@ import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { api, authFetch, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
 import type { ClaxedoEvent } from "../../../../app/integrations/claxedo-events"
-import { useClaxedoEvents } from "@/features/workspaces/app-ports"
+import { DialogConnectIntegration, useClaxedoEvents } from "@/features/workspaces/app-ports"
 import { workspaceCreateUrl, workspaceSandboxDriversUrl, workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { classifyProvisionFailure, readyProvisionDirectory } from "./provision-failure"
 import { sandboxProviderFacts } from "./provider-facts"
-import { loadConnectedRepositories, type RepositoryChoice } from "./repository-picker"
+import { loadRepositoryPickerState, type IntegrationChoice, type RepositoryChoice } from "./repository-picker"
 
 type DialogCreateCloudProjectProps = {
   onSelect: (result: string | string[] | null) => void
@@ -38,7 +38,11 @@ async function createCloudProject(
   return api.post<CreateWorkspaceResult>(
     workspaceCreateUrl({ baseUrl }),
     {
-      driver: provider,
+      // Omitted rather than sent empty when this control plane exposes no
+      // driver choice: the hosted create route accepts `driver` and ignores it
+      // (it composes ONE driver from env), so an absent field is the honest
+      // shape for "the server picks".
+      ...(provider ? { driver: provider } : {}),
       projectName: name,
       workspaceName: "main",
       ...source,
@@ -98,8 +102,17 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
   const [repositorySearch, setRepositorySearch] = createSignal("")
   const [repositories, setRepositories] = createSignal<RepositoryChoice[]>([])
   const [repositoryLoadError, setRepositoryLoadError] = createSignal("")
+  const [connectGitHub, setConnectGitHub] = createSignal<IntegrationChoice>()
   const [provider, setProvider] = createSignal("")
   const [providers, setProviders] = createSignal<Driver[]>([])
+  // `GET /api/workspace/drivers` exists only on the LOCAL control plane
+  // (sandbox-driver-routes.ts, mounted by the local WorkspaceRoutes). The
+  // hosted plane composes one driver from env and has no such route, so the
+  // request 404s there — which used to leave `provider()` empty forever and
+  // disable "Clone & Open" permanently, making cloud project creation
+  // impossible on app.claxedo.com. "Absent" is therefore a normal hosted state,
+  // not a failure: the picker hides itself and the server picks the driver.
+  const [driversAvailable, setDriversAvailable] = createSignal(true)
   const [phase, setPhase] = createSignal<"form" | "provisioning">("form")
   const [logs, setLogs] = createSignal<ProvisionLog[]>([])
   const [error, setError] = createSignal("")
@@ -119,21 +132,46 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
       .then((data) => {
         setProviders(data.drivers)
         setProvider(data.default_driver)
+        setDriversAvailable(data.drivers.length > 0)
       })
       .catch(() => {
         setProviders([])
         setProvider("")
+        setDriversAvailable(false)
       })
-    void loadConnectedRepositories((path) => authFetch(
-      new URL(`/api/claxedo/integrations${path}`, controlPlaneBaseUrl(baseUrl)).toString(),
-    )).then((items) => {
-      setRepositories(items)
+    void loadRepositories()
+  })
+
+  const integrationsRequest = (path: string, init?: RequestInit) => authFetch(
+    new URL(`/api/claxedo/integrations${path}`, controlPlaneBaseUrl(baseUrl)).toString(),
+    init,
+  )
+
+  const loadRepositories = () => loadRepositoryPickerState(integrationsRequest)
+    .then((state) => {
+      setRepositories(state.repositories)
+      setConnectGitHub(() => state.connectGitHub)
       setRepositoryLoadError("")
-    }).catch((cause) => {
+    })
+    .catch((cause) => {
       setRepositories([])
+      setConnectGitHub(undefined)
       setRepositoryLoadError(cause instanceof Error ? cause.message : "GitHub repositories are unavailable.")
     })
-  })
+
+  // Opened with `push`, not `show`: `show` disposes the whole stack, which would
+  // unmount THIS dialog and lose whatever the user already typed. The connect
+  // dialog closes itself on success, revealing this one again with a freshly
+  // loaded repository list.
+  const startConnectGitHub = (integration: IntegrationChoice) => {
+    void dialog.push(() => (
+      <DialogConnectIntegration
+        integration={integration}
+        request={integrationsRequest}
+        onConnected={() => loadRepositories()}
+      />
+    ))
+  }
 
   const lastPipelineKey = () => {
     const all = logs()
@@ -175,9 +213,14 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
     return ((readyStep.ts - all[0].ts) / 1000).toFixed(1)
   }
 
+  // A provider is only REQUIRED where the user was offered a choice. Where the
+  // drivers endpoint is absent (hosted), demanding one is a gate on a field the
+  // user cannot possibly fill.
+  const canSubmit = () => Boolean(repoUrl() || repository()) && (!driversAvailable() || Boolean(provider()))
+
   const handleSubmit = async (e: Event) => {
     e.preventDefault()
-    if ((!repoUrl() && !repository()) || !provider()) return
+    if (!canSubmit()) return
 
     setPhase("provisioning")
     setLogs([])
@@ -265,6 +308,7 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
         <Switch>
           <Match when={phase() === "form"}>
             <form onSubmit={handleSubmit} class="space-y-4">
+              <Show when={driversAvailable()}>
               <div>
                 <label class="block text-sm text-text-weak mb-1">
                   Sandbox Provider
@@ -294,6 +338,7 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
                   </Show>
                 </div>
               </div>
+              </Show>
 
               <div>
                 <Show when={repositoryLoadError()}>
@@ -333,6 +378,18 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
                   </Show>
                   <div class="my-3 text-center text-11-regular text-text-weak">or use a public URL</div>
                 </Show>
+                <Show when={connectGitHub()}>
+                  {(integration) => (
+                    <div class="mb-3 flex flex-col items-start gap-2 rounded-lg border border-border-base p-3">
+                      <span class="text-sm text-text-weak">
+                        Connect GitHub to clone your own repositories, including private ones.
+                      </span>
+                      <Button variant="secondary" onClick={() => startConnectGitHub(integration())}>
+                        Connect GitHub
+                      </Button>
+                    </div>
+                  )}
+                </Show>
                 <label class="block text-sm text-text-weak mb-1">
                   Git Repository URL
                 </label>
@@ -363,7 +420,7 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
                 <span class="mr-auto self-center text-11-regular text-text-weak">
                   Sessions in this workspace open in isolated Git worktrees by default.
                 </span>
-                <Button type="submit" disabled={(!repoUrl() && !repository()) || !provider()}>
+                <Button type="submit" disabled={!canSubmit()}>
                   Clone & Open
                 </Button>
               </div>

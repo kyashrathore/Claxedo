@@ -37,6 +37,11 @@ describe("Convex generated API artifacts", () => {
       "clerkReconcile",
       "clerkTombstones",
       "cliSessionTokens",
+      // The durable OAuth/device connect attempt store. Same cross-isolate
+      // motive as `idempotency` below: the hosted control plane builds a fresh
+      // connections service per request, so the kit's in-memory attempt Map was
+      // always empty by the time the client polled.
+      "connectionAttempts",
       // W4.4: the fenced cron lease that serializes a cron body across isolates.
       "cronLease",
       "crons",
