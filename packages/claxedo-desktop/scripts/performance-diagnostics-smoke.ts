@@ -373,7 +373,32 @@ export async function runSourceSmoke() {
   profiler.dispose()
   fixture.kill()
   await Promise.race([fixture.exited, Bun.sleep(2_000)])
-  if (result.failures.length > 0) throw new Error(result.failures.join("\n"))
+  if (result.failures.length > 0) {
+    // A bare failure line costs a release round per layer: the verdict says
+    // WHAT is missing, not what the source actually measured. Dump the
+    // fixture's retained readings so the log distinguishes warming-up gaps
+    // from zero deltas from no rows at all.
+    const fixtureProcess = beforeAction.processes.find((process) => process.ownerId === ownerId)
+    const fixturePoints = beforeAction.samples
+      .filter((sample) => sample.processId === fixtureProcess?.identity.id)
+      .slice(-8)
+      .map((sample) => ({
+        at: sample.at,
+        cpu:
+          sample.cpuMachinePercent.state === "available"
+            ? sample.cpuMachinePercent.value
+            : sample.cpuMachinePercent.state,
+      }))
+    throw new Error(
+      `${result.failures.join("\n")} ${JSON.stringify({
+        waitedMs: Date.now() - startedAt,
+        sampleCount: beforeAction.samples.length,
+        fixturePoints,
+        contributors: beforeAction.interval.contributors.slice(0, 6),
+        sources: beforeAction.sources.map((source) => ({ source: source.source, state: source.state })),
+      })}`,
+    )
+  }
   return result.evidence
 }
 
