@@ -14,6 +14,16 @@ import {
 export const MAX_DIAGNOSTICS_PIDS = 512
 export const WINDOWS_SNAPSHOT_LIMIT = 1_024
 export const DIAGNOSTICS_COLLECTOR_TIMEOUT_MS = 5_000
+/**
+ * Startup grace for a CIM PowerShell worker that has never answered. Cold
+ * start on the Windows release runners is ~15s (AMSI scan of the encoded
+ * script, .NET + CIM provider warm-up) — three times the steady-state
+ * timeout. Judging a cold child by the steady-state timeout is self-defeating:
+ * the kill throws away the warm-up, the retry pays a fresh cold start, and no
+ * query ever succeeds (the release smoke's stop grant then never lands). Once
+ * the child produces its first line it is warm and the normal timeout applies.
+ */
+export const WINDOWS_CIM_COLD_START_TIMEOUT_MS = 30_000
 export const DIAGNOSTICS_SYSTEM_PATH =
   process.platform === "win32" ? String.raw`C:\Windows\System32;C:\Windows` : "/usr/bin:/bin"
 
@@ -336,12 +346,23 @@ export function spawnWindowsCimWorker(encodedCommand: string, systemRoot = Strin
   })
 }
 
+export type WindowsCimWorkerChild = {
+  stdin: { writable: boolean; write(chunk: string): unknown } | null
+  stdout: NodeJS.ReadableStream
+  exitCode: number | null
+  kill(signal?: string | number): unknown
+  once(event: "exit" | "error", listener: () => void): unknown
+}
+
 export function createWindowsCimQuery(
   encodedCommand: string,
   systemRoot = process.env.SystemRoot ?? String.raw`C:\Windows`,
   timeoutMs = DIAGNOSTICS_COLLECTOR_TIMEOUT_MS,
+  coldStartTimeoutMs = WINDOWS_CIM_COLD_START_TIMEOUT_MS,
+  spawnWorker: (encodedCommand: string, systemRoot: string) => WindowsCimWorkerChild = spawnWindowsCimWorker,
 ) {
-  let child: ReturnType<typeof spawnWindowsCimWorker> | undefined
+  let child: WindowsCimWorkerChild | undefined
+  let childWarmed = false
   let lines: ReturnType<typeof createInterface> | undefined
   let restartAfter = 0
   const pending: Array<{
@@ -356,7 +377,7 @@ export function createWindowsCimQuery(
       if (selected.length === 0) return Promise.resolve([])
       if (Date.now() < restartAfter) return Promise.reject(new Error("Windows metrics source is recovering"))
       ensureChild()
-      if (!child?.stdin.writable) return Promise.reject(new Error("Windows metrics source unavailable"))
+      if (!child?.stdin?.writable) return Promise.reject(new Error("Windows metrics source unavailable"))
       return new Promise<unknown[]>((resolve, reject) => {
         const request = {
           resolve,
@@ -367,10 +388,10 @@ export function createWindowsCimQuery(
             reject(new Error("Windows metrics source timed out"))
             child?.kill()
             recover()
-          }, timeoutMs),
+          }, childWarmed ? timeoutMs : coldStartTimeoutMs),
         }
         pending.push(request)
-        child!.stdin.write(`${JSON.stringify(selected)}\n`)
+        child!.stdin!.write(`${JSON.stringify(selected)}\n`)
       })
     },
     dispose() {
@@ -382,9 +403,11 @@ export function createWindowsCimQuery(
 
   function ensureChild() {
     if (child && child.exitCode === null) return
-    child = spawnWindowsCimWorker(encodedCommand, systemRoot)
+    child = spawnWorker(encodedCommand, systemRoot)
+    childWarmed = false
     lines = createInterface({ input: child.stdout, crlfDelay: Infinity })
     lines.on("line", (line) => {
+      childWarmed = true
       const request = pending.shift()
       if (!request) return
       clearTimeout(request.timer)

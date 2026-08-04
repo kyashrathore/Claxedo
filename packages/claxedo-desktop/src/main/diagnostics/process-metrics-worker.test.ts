@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test"
+import { EventEmitter } from "node:events"
 import { join } from "node:path"
+import { PassThrough } from "node:stream"
 
 import {
   collectWindowsAncestry,
+  createWindowsCimQuery,
   createWindowsProcessMetricsWorker,
   diagnosticsWorkerProcessOptions,
   lowerDiagnosticsWorkerPriority,
@@ -275,6 +278,40 @@ describe("process metrics worker", () => {
     expect(script).toContain('{"ok":false}')
     expect(script).not.toContain("ProcessId IN")
     expect(script).not.toContain("ExecutionPolicy")
+  })
+
+  test("a cold CIM worker gets the startup window; once warm, the steady timeout is enforced", async () => {
+    // Cold-start on the Windows release runners is ~15s, three times the 5s
+    // steady-state timeout. Judging a never-answered child by the steady
+    // timeout kills it mid-warm-up, the retry pays a fresh cold start, and no
+    // query ever succeeds — how the release smoke's stop grant kept timing
+    // out with {"found":false}.
+    const stdout = new PassThrough()
+    let kills = 0
+    const child = Object.assign(new EventEmitter(), {
+      stdin: { writable: true, write: () => true },
+      stdout,
+      exitCode: null as number | null,
+      kill: () => { kills++ },
+    })
+    const cim = createWindowsCimQuery("reviewed-encoded-command", String.raw`C:\Windows`, 40, 400, () => child)
+
+    // Cold: unanswered for 3x the steady timeout, the query must still be alive.
+    let settled = false
+    const cold = cim.query([7]).then((rows) => {
+      settled = true
+      return rows
+    })
+    await Bun.sleep(120)
+    expect(settled).toBe(false)
+    stdout.write('{"ok":true,"rows":[{"pid":7}]}\n')
+    await expect(cold).resolves.toEqual([{ pid: 7 }])
+
+    // Warm: an unanswered query times out on the steady clock and the hung
+    // child is killed so the next query gets a fresh process.
+    await expect(cim.query([8])).rejects.toThrow("timed out")
+    expect(kills).toBe(1)
+    cim.dispose()
   })
 
   test("propagates CIM protocol failure so source health cannot become healthy-empty", async () => {

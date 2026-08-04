@@ -240,13 +240,17 @@ export async function runSourceSmoke() {
   // Keep sampling until the owner's stop grant lands (or the ceiling): the
   // grant requires CREATION IDENTITY, which on Windows comes from the CIM
   // PowerShell query — ~15s cold start on release runners, far beyond the
-  // 3.2s baseline loop above. Darwin is read-only-by-platform and never
-  // becomes eligible, so it must not wait out the ceiling.
+  // 3.2s baseline loop above. The ceiling budgets the WORST recovery path,
+  // not the typical one: one cold child that hangs out its whole 30s startup
+  // window, the 1s recovery backoff, then a real ~15s cold start — ~46s.
+  // Typical is a single cold start (~15s) and the loop exits as soon as the
+  // grant lands. Darwin is read-only-by-platform and never becomes eligible,
+  // so it must not wait out the ceiling.
   let beforeAction = profiler.getSnapshot()
   let processRecord = beforeAction.processes.find((process) => process.ownerId === ownerId)
   for (
     let waited = 0;
-    process.platform !== "darwin" && processRecord?.actionEligibility.state !== "eligible" && waited < 45_000;
+    process.platform !== "darwin" && processRecord?.actionEligibility.state !== "eligible" && waited < 75_000;
     waited += 500
   ) {
     await Bun.sleep(500)
