@@ -43,6 +43,13 @@ const NATIVE_PLATFORM_FILES = [
 
 const getBase = (): Configuration => ({
   artifactName: "claxedo-desktop-${os}-${arch}.${ext}",
+  // Never node-gyp-rebuild the workspace's native deps against Electron's
+  // headers. Everything native that SHIPS is a prebuild selected by
+  // NATIVE_PLATFORM_FILES; the rebuild step only recompiles modules that are
+  // excluded from the bundle anyway — and it hard-fails on ones whose C++
+  // doesn't compile against Electron's V8 (node-liblzma, an optional dep of
+  // just-bash, killed both Linux release legs exactly this way).
+  npmRebuild: false,
   directories: {
     output: "dist",
     buildResources: "resources",

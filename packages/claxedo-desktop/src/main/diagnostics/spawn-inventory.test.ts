@@ -79,7 +79,9 @@ async function productionFiles() {
       Array.fromAsync(glob.scan({ cwd: join(root, directory), onlyFiles: true })).then((entries) =>
         entries
           .filter((file) => !/\.(test|spec|fixture)\./.test(file) && !file.endsWith("-fixture.mjs"))
-          .map((file) => `${directory}/${file}`),
+          // Glob.scan emits host separators; the inventory keys are declared
+          // with forward slashes, so normalize or no Windows path ever matches.
+          .map((file) => `${directory}/${file.replaceAll("\\", "/")}`),
       ),
     ),
   )

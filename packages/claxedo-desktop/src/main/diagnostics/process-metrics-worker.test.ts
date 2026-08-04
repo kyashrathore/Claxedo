@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { join } from "node:path"
 
 import {
   collectWindowsAncestry,
@@ -115,9 +116,13 @@ describe("process metrics worker", () => {
     expect(posix.executable).toBe("/usr/bin/ps")
     expect(posix.cwd).not.toContain(process.cwd())
     expect(JSON.stringify(posix)).not.toContain("TOP_SECRET")
+    // Composed with the same `join` the implementation uses: its separator is
+    // host-dependent (/ here, \ on the Windows release runner), and the policy
+    // under test is the PATH SHAPE (absolute, under systemRoot), not the
+    // separator flavor.
     expect(windows).toEqual({
-      executable: String.raw`D:\Windows/System32/WindowsPowerShell/v1.0/powershell.exe`,
-      cwd: String.raw`D:\Windows/Temp`,
+      executable: join(String.raw`D:\Windows`, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+      cwd: join(String.raw`D:\Windows`, "Temp"),
       env: {
         SystemRoot: String.raw`D:\Windows`,
         WINDIR: String.raw`D:\Windows`,

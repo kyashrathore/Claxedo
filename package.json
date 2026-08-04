@@ -146,7 +146,8 @@
     "@types/bun": "catalog:",
     "@types/node": "catalog:",
     "shiki": "catalog:",
-    "@shikijs/types": "4.2.0"
+    "@shikijs/types": "4.2.0",
+    "@shikijs/transformers": "4.2.0"
   },
   "patchedDependencies": {
     "@ff-labs/fff-bun@0.9.3": "patches/@ff-labs%2Ffff-bun@0.9.3.patch",
