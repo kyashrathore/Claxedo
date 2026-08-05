@@ -14,17 +14,14 @@ export const routes = {
   llms: "/llms.txt",
 } as const
 
+/**
+ * The CTAs the site actually renders. `cloud` ("Open Claxedo") and `deploy`
+ * ("Deploy to Cloudflare") used to live here and were removed once no page
+ * rendered them — an unused action keeps a conversion event name alive in
+ * `analytics.ts`, which then reads like a live CTA to anyone auditing what the
+ * site collects. Add one back only alongside the page that renders it.
+ */
 export const marketingActions = {
-  cloud: {
-    label: "Open Claxedo",
-    href: routes.app,
-    event: "open_claxedo",
-  },
-  deploy: {
-    label: "Deploy to Cloudflare",
-    href: routes.deploy,
-    event: "deploy_cloudflare",
-  },
   download: {
     label: "Download app",
     href: `${routes.download}#releases`,

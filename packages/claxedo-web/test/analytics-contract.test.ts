@@ -3,7 +3,12 @@ import { buildConversionEvent, conversionEventNames, conversionRoute } from "../
 
 describe("conversion analytics contract", () => {
   test("emits only the bounded conversion events", () => {
-    expect(conversionEventNames).toEqual(["open_claxedo", "deploy_cloudflare", "download_app", "explore_framework"])
+    expect(conversionEventNames).toEqual(["download_app", "explore_framework"])
+    // A rejected name proves the allowlist still bites after the prune: these
+    // two fired on no element and were removed, so they must now be refused
+    // rather than silently accepted by a stale list.
+    expect(buildConversionEvent({ name: "open_claxedo", route: "/", placement: "hero" })).toBeUndefined()
+    expect(buildConversionEvent({ name: "deploy_cloudflare", route: "/", placement: "hero" })).toBeUndefined()
     expect(buildConversionEvent({ name: "download_app", route: "/download?source=secret", placement: "download-page", platform: "linux-deb", version: "0.0.59" })).toEqual({
       name: "download_app", route: "/download", placement: "download-page", platform: "linux-deb", version: "0.0.59",
     })

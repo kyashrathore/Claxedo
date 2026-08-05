@@ -1,4 +1,12 @@
-export const conversionEventNames = ["open_claxedo", "deploy_cloudflare", "download_app", "explore_framework"] as const
+/**
+ * The complete set of conversion events the site can emit. This list is an
+ * allowlist, not a wish list: an entry with no element carrying the matching
+ * `data-analytics-event` is dead weight that reads, to anyone auditing what we
+ * collect, like a CTA that exists. `open_claxedo` and `deploy_cloudflare` were
+ * exactly that — kept here long after their buttons were removed — so the rule
+ * now is that a name lands here in the same change as the element that fires it.
+ */
+export const conversionEventNames = ["download_app", "explore_framework"] as const
 export type ConversionEventName = (typeof conversionEventNames)[number]
 
 export const conversionRoutes = ["/", "/app", "/compare", "/download", "/framework", "/pricing", "/404"] as const
