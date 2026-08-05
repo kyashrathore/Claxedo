@@ -205,3 +205,28 @@ describe("existing cloud workspaces in the workspace chip", () => {
     expect(workspaceChip()?.options).toEqual([])
   })
 })
+
+describe("project option detail", () => {
+  // A hosted project's option value is a workspace placeholder ("ws_1" on the
+  // bootstrap shape, "/workspace" on the snapshot shape) — showing it under the
+  // row would put a workspace identity on a project entry. The project id is
+  // the disambiguator.
+  test("hosted bootstrap rows show the project id, not the workspace placeholder", () => {
+    state.projects = [{ ...bootstrapProject, id: "prj_ws_1" }]
+    renderView()
+    expect(projectChip()?.options?.find((option) => option.value === "ws_1")?.detail).toBe("prj_ws_1")
+  })
+
+  test("hosted snapshot rows show the project id, not '/workspace'", () => {
+    state.projects = [{ ...snapshotProject, id: "prj_1" }]
+    renderView()
+    expect(projectChip()?.options?.find((option) => option.value === "/workspace")?.detail).toBe("prj_1")
+  })
+
+  test("local rows keep the path as the detail", () => {
+    state.directory = "/repo/thing"
+    state.projects = [{ worktree: "/repo/thing", workspaces: { "/repo/thing": { kind: "local" } } }]
+    renderView({ workspaceKind: "local" })
+    expect(projectChip()?.options?.find((option) => option.value === "/repo/thing")?.detail).toBe("/repo/thing")
+  })
+})

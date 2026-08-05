@@ -124,6 +124,25 @@ async function ensureWorkspaceMembership(ctx: any, workspaceId: unknown, ownerUs
   })
 }
 
+/**
+ * Canonical repo identity for project matching. The two creation paths store
+ * different strings for the SAME repository — connected repos persist GitHub's
+ * clone_url (always `.git`-suffixed) while the paste-a-URL path stores whatever
+ * was typed — so exact-string equality minted a duplicate project per URL
+ * spelling (`https://github.com/o/r` vs `git@github.com:o/r.git`). Compare
+ * canonical keys instead: protocol/credentials/port stripped, trailing slashes
+ * and a `.git` suffix dropped, host lowercased (DNS is case-insensitive; the
+ * path keeps its case — a false merge is worse than a missed one).
+ */
+function canonicalRepoKey(url: string) {
+  const trimmed = url.trim().replace(/\/+$/, "").replace(/\.git$/i, "")
+  const scp = trimmed.match(/^[^@/\s]+@([^:/\s]+):(.+)$/)
+  if (scp) return `${String(scp[1]).toLowerCase()}/${scp[2]}`
+  const parsed = trimmed.match(/^[a-z][a-z0-9+.-]*:\/\/(?:[^@/\s]+@)?([^/:\s]+)(?::\d+)?\/(.+)$/i)
+  if (parsed) return `${String(parsed[1]).toLowerCase()}/${parsed[2]}`
+  return trimmed
+}
+
 async function workGraphProject(
   ctx: any,
   input: {
@@ -133,13 +152,18 @@ async function workGraphProject(
     repoUrl?: string
   },
 ) {
-  const matchingWorkspace = input.repoUrl
+  const wanted = input.repoUrl ? canonicalRepoKey(input.repoUrl) : undefined
+  const matchingWorkspace = wanted
     ? (
         await ctx.db
           .query("workspaces")
           .withIndex("by_org", (query: any) => query.eq("org_id", input.organizationId))
           .collect()
-      ).find((workspace: any) => !workspace.deleted_at && workspace.repo_url === input.repoUrl && workspace.project_id)
+      ).find((workspace: any) =>
+        !workspace.deleted_at &&
+        workspace.project_id &&
+        typeof workspace.repo_url === "string" &&
+        canonicalRepoKey(workspace.repo_url) === wanted)
     : undefined
   return await ensureProject(ctx, {
     projectId: matchingWorkspace?.project_id ?? defaultProjectId(input.workspaceId),

@@ -44,6 +44,7 @@ export type { NewSessionWorkspaceKind } from "./session-new-workspace-options"
 type ProjectIconMeta = { url?: string; override?: string; color?: string }
 
 type ProjectInventoryItem = {
+  id?: string
   worktree: string
   name?: string
   icon?: ProjectIconMeta
@@ -160,6 +161,21 @@ export function NewSessionDesignView(props: {
     // 5) Last resort: the directory basename (a UUID for cloud workspaces).
     return getFilename(value)
   }
+  // Hosted cloud projects have no real directory — theirs resolves to the
+  // literal "/workspace", a "workspace:<id>" placeholder, or a bare workspace
+  // id, depending on the inventory shape — so showing the raw value would put
+  // a WORKSPACE identity under a PROJECT row. Hosted rows carry a non-local
+  // workspace kind; for them show the project id instead. Local projects keep
+  // the path, which is their real identity.
+  const projectDetail = (value: string) => {
+    const project = findProjectForDirectory(inventoryProjects(), [value])
+    const hosted = Object.values(project?.workspaces ?? {}).some(
+      (workspace) => workspace?.kind && workspace.kind !== "local",
+    )
+    if (!hosted) return value
+    return project?.id ?? value
+  }
+
   // Same three-source cascade as `projectLabel`, for the icon rather than the name.
   const projectIcon = (value: string): ProjectIconMeta | undefined => {
     const fromList = (layout.projects.list() ?? []).find((project) => project.worktree === value)?.icon
@@ -247,11 +263,11 @@ export function NewSessionDesignView(props: {
           value,
           label: projectLabel(value),
           // projectLabel falls back to a directory basename, which is a raw UUID
-          // for cloud workspaces — the path is what disambiguates two projects
-          // that resolve to the same display name. Upstream drops the path
-          // because its project list cannot contain UUID-named directories; ours
-          // can, so this line stays even though it costs the row a second line.
-          detail: value,
+          // for cloud workspaces — the detail is what disambiguates two projects
+          // that resolve to the same display name. Hosted rows get the project
+          // id (their "directory" is a workspace placeholder); local rows keep
+          // the path.
+          detail: projectDetail(value),
           avatar: projectAvatar(value),
         })),
         onSelect: openProject,
