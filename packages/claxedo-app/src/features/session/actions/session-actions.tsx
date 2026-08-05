@@ -15,7 +15,6 @@ import {
   type Nav,
   type SessionItem,
 } from "@/features/session/app-ports"
-import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 import { sessionRoute as canonicalSessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
 import { CloudStartupView, type CloudLog } from "@/features/session/ui/components/cloud-startup-view"
 import { appendWorkspaceRuntimeLog, prepareWorkspaceRuntime } from "@/platform/runtime/cloud/workspace-runtime-store"
@@ -294,7 +293,6 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
         }}
         onDelete={async (item) => {
           try {
-            phCapture("session_deleted", { ...identityProps(), surface: "session" })
             await props.globalSDK.client.session.delete({ directory: item.directory, sessionID: item.id })
             removeDirectorySessionCacheRow(item.directory, item.id)
             const meta = sessionMeta(item.directory, item.id)
@@ -318,7 +316,6 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
     if (!directory) return false
 
     try {
-      phCapture("session_archived", { ...identityProps(), surface: "session" })
       const archivedAt = Date.now()
       await props.globalSDK.client.session.update({
         directory,

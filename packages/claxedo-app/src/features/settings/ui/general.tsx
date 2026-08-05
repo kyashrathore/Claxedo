@@ -24,7 +24,7 @@ import {
 } from "@/platform/settings/provider"
 import { playSoundById, SOUND_OPTIONS } from "@/platform/notifications/sound"
 import { requestNotificationPermission } from "@/platform/notifications/notification-permission"
-import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
+import { capture as phCapture, captureException, identityProps } from "@/platform/telemetry/analytics"
 import { AccountSettingsSection } from "@/features/settings/ui/account-section"
 import { Can } from "@/platform/auth/role"
 import { Link } from "@/features/settings/app-ports"
@@ -131,6 +131,11 @@ export const SettingsGeneral: Component = () => {
         })
       })
       .catch((err: unknown) => {
+        // A handled failure: the user sees a toast and the error is swallowed,
+        // so `capture_exceptions` never sees it. A broken update path is
+        // invisible to us otherwise, and it is the one failure that stops users
+        // receiving every later fix.
+        captureException(err, { ...identityProps(), surface: "settings" })
         const message = err instanceof Error ? err.message : String(err)
         showToast({ title: language.t("common.requestFailed"), description: message })
       })

@@ -1,5 +1,4 @@
 import type { ActionProps } from "../../../app/workbench/actions/shared"
-import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 import { surfaceRoute } from "@/features/documents/app-ports"
 
 export type PageActionProps = Pick<ActionProps, "activeDirectory" | "navigate" | "projects"> & {
@@ -10,7 +9,6 @@ export type PageActionProps = Pick<ActionProps, "activeDirectory" | "navigate" |
 
 export function createPageActions(props: PageActionProps) {
   const handleNewPage = () => {
-    phCapture("page_created", { ...identityProps(), surface: "documents" })
 
     const current = typeof props.activeDirectory === "function" ? props.activeDirectory() : undefined
     const first = typeof props.projects === "function" ? props.projects()[0]?.worktree : undefined

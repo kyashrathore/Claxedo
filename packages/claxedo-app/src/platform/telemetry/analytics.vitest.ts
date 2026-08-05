@@ -197,7 +197,24 @@ describe("VITE_CLAXEDO_TELEMETRY_MODE", () => {
 
   test("`on` is matched case-insensitively after trimming", async () => {
     await loadWithMode("  ON  ")
-    expect(client.init).toHaveBeenCalledWith(REAL_KEY, expect.objectContaining({ capture_exceptions: true }))
+    expect(client.init).toHaveBeenCalledWith(REAL_KEY, expect.objectContaining({ capture_exceptions: expect.any(Object) }))
+  })
+
+  /**
+   * Tripwire, not a preference. `console.error` is used for benign diagnostics
+   * throughout this app; capturing it would bury real crashes under noise. The
+   * options are spelled out at the call site precisely so an SDK default flip
+   * cannot turn this on silently — this assertion is what makes that fail.
+   */
+  test("console errors are never captured as exceptions", async () => {
+    await loadWithMode("on")
+    expect(client.init).toHaveBeenCalledWith(REAL_KEY, expect.objectContaining({
+      capture_exceptions: {
+        capture_unhandled_errors: true,
+        capture_unhandled_rejections: true,
+        capture_console_errors: false,
+      },
+    }))
   })
 
   test("an opted-out build drops queued calls instead of accumulating them", async () => {

@@ -297,6 +297,43 @@ jobs:
         working-directory: packages/claxedo-desktop
         run: bun run build
 
+      # A source-map upload token is optional config: its absence must degrade
+      # to "no upload, release still green", never a failed build. secrets.* is
+      # not usable directly in `if:`, hence the bridge through a step output.
+      # Mirrors deploy-claxedo-app.yml.
+      - name: Check for PostHog source map token
+        id: posthog_cli_check
+        if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
+        env:
+          POSTHOG_CLI_TOKEN: ${{ secrets.POSTHOG_CLI_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "$POSTHOG_CLI_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Inject and upload PostHog source maps
+        if: steps.posthog_cli_check.outputs.enabled == 'true'
+        working-directory: packages/claxedo-desktop
+        env:
+          POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_TOKEN }}
+          POSTHOG_CLI_PROJECT_ID: ${{ vars.POSTHOG_CLI_PROJECT_ID }}
+          POSTHOG_CLI_HOST: ${{ vars.POSTHOG_CLI_HOST || 'https://us.posthog.com' }}
+        run: |
+          set -euo pipefail
+          bunx @posthog/cli@0.9.1 --host "$POSTHOG_CLI_HOST" sourcemap inject --directory out/renderer --release-version "$GITHUB_SHA"
+          bunx @posthog/cli@0.9.1 --host "$POSTHOG_CLI_HOST" sourcemap upload --directory out/renderer --release-version "$GITHUB_SHA"
+
+      # Unconditional: build.sourcemap is "hidden" (vite.renderer.ts), so *.map
+      # files exist on disk whenever the build ran, upload token present or not.
+      # A shipped installer must never carry raw source maps.
+      - name: Strip source maps before packaging
+        if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
+        working-directory: packages/claxedo-desktop
+        run: find out -type f -name '*.map' -delete
+
       - name: Run source diagnostics release gate
         if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
         working-directory: packages/claxedo-desktop

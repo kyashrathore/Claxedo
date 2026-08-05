@@ -2,21 +2,6 @@ import type { RunDto, CommandResult, OutcomeDto, WorkItemDto } from "@claxedo/wo
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { createSignal, For, Match, Switch, type Accessor, type JSX, Show } from "solid-js"
 import type { WorkGraphClient, WorkGraphSessionOpener } from "./api"
-import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
-
-/**
- * Best-effort extraction of `create_work_item`'s command-result id. The client's
- * `Mutate` wrapper (see below) only ever returns a boolean — this reads the id
- * out of the raw `CommandResult` before it is discarded, for `workgraph_task_created`
- * telemetry only. Returns undefined on any unexpected shape rather than guessing.
- */
-function createdWorkItemId(result: CommandResult): string | undefined {
-  if (!result.ok) return undefined
-  const value = result.value
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
-  const id = (value as Record<string, unknown>).workItemId
-  return typeof id === "string" ? id : undefined
-}
 
 export type Mutate = (action: () => Promise<CommandResult>) => Promise<boolean>
 
@@ -242,22 +227,7 @@ export function WorkItemLeaf(props: {
     if (busy()) return
     setBusy(true)
     try {
-      const ok = await props.mutate(() => props.client.approveWorkItem(props.item.id, props.item.version))
-      // `workgraph_task_completed` fires here by design, not on the engine's own
-      // `state === "completed"` transition: that transition is entirely
-      // server/engine-driven (evidence + integration, no client call), so there is
-      // no click handler to bind it to. This is the row's only user-facing
-      // "approve" action — it admits a Staged task to run ("Run" / "Approve & run"
-      // above), the closest analog the UI has to the task moving forward.
-      if (ok) {
-        phCapture("workgraph_task_completed", {
-          ...identityProps(),
-          surface: "workgraph",
-          task_id: props.item.id,
-          stream_id: props.item.streamId,
-          ...(props.item.outcomeId ? { outcome_id: props.item.outcomeId } : {}),
-        })
-      }
+      await props.mutate(() => props.client.approveWorkItem(props.item.id, props.item.version))
     } finally {
       setBusy(false)
     }
@@ -535,7 +505,6 @@ export function InlineAddTask(props: {
     // `props.mutate` only ever resolves to a boolean, so the created id is read
     // out of the raw CommandResult inside this closure — the exact value the
     // real request returns, not a separate re-derivation.
-    let taskId: string | undefined
     const created = await props.mutate(async () => {
       const result = await props.client.createWorkItem({
         streamId: props.streamId,
@@ -553,21 +522,10 @@ export function InlineAddTask(props: {
           ],
         },
       })
-      taskId = createdWorkItemId(result)
       return result
     })
     setBusy(false)
     if (!created) return
-    // Ids only — never the title just typed above.
-    if (taskId) {
-      phCapture("workgraph_task_created", {
-        ...identityProps(),
-        surface: "workgraph",
-        task_id: taskId,
-        stream_id: props.streamId,
-        ...(props.outcomeId ? { outcome_id: props.outcomeId } : {}),
-      })
-    }
     setValue("")
     setOpen(false)
   }

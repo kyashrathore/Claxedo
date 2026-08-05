@@ -34,6 +34,14 @@ export function createElectronRenderer(mode: string): UserConfig {
       include: ["@opencode-ai/session-ui > @shikijs/stream"],
     },
     build: {
+      // PostHog Error Tracking symbolication (release-claxedo.yml). Without
+      // maps a desktop stack frame arrives as `main-Ci34eFPC.js:1:284915`,
+      // which is untriageable. "hidden" writes *.map next to each chunk but
+      // adds no `//# sourceMappingURL` comment, so the packaged app never
+      // points at a map; the release workflow uploads them to PostHog and then
+      // deletes every *.map before packaging. Mirrors claxedo-app's
+      // vite.cloud.config.ts.
+      sourcemap: "hidden",
       rollupOptions: {
         input: {
           main: normalize(path.join(rendererRoot, "index.html")),

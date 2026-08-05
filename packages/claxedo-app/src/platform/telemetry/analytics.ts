@@ -117,8 +117,19 @@ export function initPostHog() {
       person_profiles: "identified_only",
       capture_pageview: false,
       // Replaces Sentry: automatically captures unhandled exceptions and
-      // promise rejections, visible under PostHog → Error Tracking
-      capture_exceptions: true,
+      // promise rejections, visible under PostHog → Error Tracking.
+      //
+      // Spelled out rather than `true` so the console setting is pinned by us
+      // instead of inherited from an SDK default that could flip in a future
+      // release. `capture_console_errors` stays OFF deliberately: this app uses
+      // `console.error` for benign diagnostics (failed optional probes, expected
+      // race warnings), and turning those into exception events would bury the
+      // real crashes under noise that nobody can action.
+      capture_exceptions: {
+        capture_unhandled_errors: true,
+        capture_unhandled_rejections: true,
+        capture_console_errors: false,
+      },
     })
     ready = true
     flush()
