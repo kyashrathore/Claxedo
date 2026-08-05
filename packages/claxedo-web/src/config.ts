@@ -10,7 +10,7 @@ export const previewSrc = `${appUrl}/demo/?embed=1`
 export const contact = "https://discord.gg/GC6QagQ8QE"
 export const github = "https://github.com/kyashrathore/Claxedo"
 export const docs = "/framework"
-export const version = "0.0.64"
+export const version = "0.0.65"
 
 const dlBase = `${github}/releases/download/claxedo-v${version}`
 
