@@ -305,6 +305,11 @@ jobs:
           CLAXEDO_POSTHOG_KEY: ${{ vars.VITE_POSTHOG_KEY }}
           CLAXEDO_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST }}
           CLAXEDO_TELEMETRY_MODE: ${{ vars.VITE_CLAXEDO_TELEMETRY_MODE || 'on' }}
+          # electron-vite runs under Node, whose default ~2GB old-space no
+          # longer fits the renderer bundle on the mac legs (both OOM-killed
+          # the first v0.0.65 build). Linux and Windows pass with room either
+          # way; a raised cap is inert there.
+          NODE_OPTIONS: --max-old-space-size=4096
         working-directory: packages/claxedo-desktop
         run: bun run build
 
@@ -317,6 +322,8 @@ jobs:
         if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
         env:
           POSTHOG_CLI_TOKEN: ${{ secrets.POSTHOG_CLI_TOKEN }}
+        # bash syntax; the windows leg's default pwsh cannot parse `set -euo`.
+        shell: bash
         run: |
           set -euo pipefail
           if [ -n "$POSTHOG_CLI_TOKEN" ]; then
@@ -332,6 +339,7 @@ jobs:
           POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_TOKEN }}
           POSTHOG_CLI_PROJECT_ID: ${{ vars.POSTHOG_CLI_PROJECT_ID }}
           POSTHOG_CLI_HOST: ${{ vars.POSTHOG_CLI_HOST || 'https://us.posthog.com' }}
+        shell: bash
         run: |
           set -euo pipefail
           bunx @posthog/cli@0.9.1 --host "$POSTHOG_CLI_HOST" sourcemap inject --directory out/renderer --release-version "$GITHUB_SHA"
@@ -343,6 +351,8 @@ jobs:
       - name: Strip source maps before packaging
         if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
         working-directory: packages/claxedo-desktop
+        # `find -delete` is GNU/BSD find; pwsh on the windows leg has neither.
+        shell: bash
         run: find out -type f -name '*.map' -delete
 
       - name: Run source diagnostics release gate
