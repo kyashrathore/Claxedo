@@ -22,6 +22,9 @@ export type HarnessStoreState = {
   selectedModelProvider?: string
   selectedAgent: string
   dynamicModels: HarnessModelOption[] | null
+  /** Reasoning/thinking levels the harness offers; `[]` = none, `null` = unknown. */
+  thoughtLevels: HarnessModelOption[] | null
+  selectedThoughtLevel: string | undefined
   readiness: HarnessReadiness
   optionsSource: OptionsSource
   optionsStale: boolean
@@ -59,6 +62,8 @@ export function initialHarnessStoreState(input: {
     selectedModelProvider: saved?.providerID ?? (type === "pi" ? undefined : type),
     selectedAgent: initialValue(input.scope, input.savedAgent, input.legacyAgent),
     dynamicModels: null,
+    thoughtLevels: null,
+    selectedThoughtLevel: undefined,
     readiness: "ready",
     optionsSource: "empty",
     optionsStale: false,
@@ -92,6 +97,8 @@ export function workspaceDraftHarnessResetPatch(): HarnessStorePatch {
     selectedModel: "",
     selectedModelProvider: undefined,
     dynamicModels: null,
+    thoughtLevels: null,
+    selectedThoughtLevel: undefined,
     readiness: "ready",
     optionsSource: "empty",
     optionsStale: false,
@@ -172,6 +179,8 @@ export function harnessSwitchStartPatch(input: {
     selectedModel: effectiveHarnessModel(input.type),
     selectedModelProvider: undefined,
     dynamicModels: null,
+    thoughtLevels: null,
+    selectedThoughtLevel: undefined,
     configError: undefined,
     readiness: "ready",
     optionsSource: "empty",
@@ -204,6 +213,8 @@ export function harnessHealthReadiness(input: {
 function emptyOptionsPatch() {
   return {
     dynamicModels: null,
+    thoughtLevels: null,
+    selectedThoughtLevel: undefined,
     optionsSource: "empty" as const,
     optionsStale: false,
     optionsLoading: false,

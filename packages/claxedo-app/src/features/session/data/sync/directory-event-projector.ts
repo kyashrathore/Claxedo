@@ -8,7 +8,7 @@ import {
 } from "../../store/session-status-dispatcher"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { setSessionDiffQueryData } from "./queries"
-import { reconcileUpdatedSessionListQueryData } from "../query/session-list"
+import { invalidateSessionListQueries, reconcileUpdatedSessionListQueryData } from "../query/session-list"
 
 type DirectoryEvent = {
   type: string
@@ -60,6 +60,18 @@ export function applyDirectoryEventToShellQueries(input: {
   directory: string
 }) {
   switch (input.event.type) {
+    case "session.created": {
+      // The rendered rail rows come from the paginated `session-list` query,
+      // which the directory session-cache write in `applySessionListEvent` does
+      // NOT feed. `event-ingress` invalidates it for the Claxedo
+      // `session.lifecycle` "created" event, but nothing did so for a plain
+      // server `session.created` SSE event — so a session created outside the
+      // in-app submit path stayed invisible in the sidebar until a full restart.
+      // This runs on both routing paths (child directories via
+      // `routeDirectoryEvent`, others directly), same as the reconcile below.
+      void invalidateSessionListQueries()
+      break
+    }
     case "session.updated": {
       const info = (input.event.properties as { info: Session }).info
       reconcileUpdatedSessionListQueryData({

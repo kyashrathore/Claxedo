@@ -20,7 +20,7 @@ import type { AgentConfigOptionRow } from "../../index"
 import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
 import type { ResolvedMcpServer } from "../../mcp-resolver"
 import { createLiveModelSource } from "../../live-model-source"
-import { modelConfigOption, type SdkModelEntry } from "../../sdk-model-catalog"
+import { modelConfigOption, resolveTurnEffort, thoughtLevelConfigOption, type SdkModelEntry } from "../../sdk-model-catalog"
 import {
   extractTextFromParts,
   record,
@@ -92,7 +92,17 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       anthropic: claudeAuthValue(auth),
     }
     this.currentMcp = (record(config.mcp) as Record<string, ResolvedMcpServer> | undefined) ?? {}
+    // Held, not applied here: the SDK takes `effort` as a per-query option, so
+    // it is read when the next session is created rather than pushed at the
+    // running one. `undefined` means "let the model decide", which is not the
+    // same as any named level and must survive a config apply that omits it.
+    if ("effort" in config) {
+      this.currentEffort = typeof config.effort === "string" ? config.effort : undefined
+    }
   }
+
+  /** Selected reasoning effort, echoed back through `configOptions`. */
+  private currentEffort: string | undefined
 
   async createAgentSession() {
     return `${CLAUDE_PENDING_PREFIX}${randomUUID()}`
@@ -145,6 +155,11 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       return result
     }
 
+    const turnEffort = resolveTurnEffort(
+      this.modelSource.peek(),
+      input.input.model.modelID,
+      input.input.variant,
+    )
     const q: Query = query({
       prompt: extractTextFromParts(input.input.parts),
       options: {
@@ -167,6 +182,13 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         canUseTool: requestPermission,
         ...(input.input.agent ? { agent: input.input.agent } : {}),
         ...(turnModel(input.input.model.modelID, input.model) ? { model: turnModel(input.input.model.modelID, input.model) } : {}),
+        // Reasoning effort rides the TURN, not a config push. A Claude turn is
+        // exactly one `query()`, and the SDK takes `effort` as a per-query
+        // option alongside `model` and `agent` above — so this is the same
+        // shape opencode already uses, where the chosen level travels on the
+        // prompt rather than being pushed at the process. `variant` is the
+        // field that already carries it end to end (`PromptInput.variant`).
+        ...(turnEffort ? { effort: turnEffort } : {}),
         ...(input.getAgentSessionId().startsWith(CLAUDE_PENDING_PREFIX)
           ? {}
           : { resume: input.getAgentSessionId() }),
@@ -209,11 +231,23 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
   }
 
   async configOptions(currentModel: string, directory?: string): Promise<AgentConfigOptionRow[]> {
-    return [modelConfigOption(await this.modelSource.models(directory), currentModel)]
+    return this.buildConfigOptions(await this.modelSource.models(directory), currentModel)
   }
 
   peekConfigOptions(currentModel: string): AgentConfigOptionRow[] {
-    return [modelConfigOption(this.modelSource.peek(), currentModel)]
+    return this.buildConfigOptions(this.modelSource.peek(), currentModel)
+  }
+
+  /**
+   * Model first, then the selected model's effort levels when it has any. The
+   * effort row is omitted rather than disabled for models without it — an inert
+   * control that appears and disappears with the model reads as a glitch.
+   */
+  private buildConfigOptions(models: readonly SdkModelEntry[], currentModel: string): AgentConfigOptionRow[] {
+    const effort = thoughtLevelConfigOption(models, currentModel, this.currentEffort)
+    return effort
+      ? [modelConfigOption(models, currentModel), effort]
+      : [modelConfigOption(models, currentModel)]
   }
 
   /**
@@ -255,6 +289,13 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         id: model.value,
         name: model.displayName,
         ...(model.description ? { description: model.description } : {}),
+        // Effort capability is per model and already on the wire here — it was
+        // being dropped one line after being fetched, which is why the composer
+        // could never offer a thinking level for this harness.
+        ...(model.supportsEffort ? { supportsEffort: true } : {}),
+        ...(model.supportedEffortLevels?.length
+          ? { supportedEffortLevels: [...model.supportedEffortLevels] }
+          : {}),
       }))
     } finally {
       q.close()

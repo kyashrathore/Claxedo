@@ -1,6 +1,6 @@
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import type { HarnessModelChoice, HarnessReadiness } from "./selection"
-import type { HarnessType } from "./profile"
+import type { HarnessModelOption, HarnessType } from "./profile"
 import type { DraftDefaultLabels } from "./draft-defaults"
 import type { DraftDefaultResult, ResolveDraftDefaultInput } from "./draft-default-policy"
 
@@ -24,12 +24,16 @@ export type HarnessSelectionControllerStore = {
   markUnavailable(scope: string): void
   setHarness(scope: string, type: HarnessType, input?: HarnessScopeInput, binary?: string): void | Promise<void>
   setModel(scope: string, model: ModelKey, input?: HarnessScopeInput, labels?: DraftDefaultLabels): void | Promise<void>
+  setThoughtLevel(scope: string, value: string | undefined): void
   rememberDraftModel(scope: string, model: ModelKey, input?: HarnessScopeInput, labels?: DraftDefaultLabels): void | boolean
   resolveDraftDefault(scope: string, input: Omit<ResolveDraftDefaultInput, "saved">): boolean
   harness(scope: string): HarnessType
   isHarnessMode(scope: string): boolean
   readiness(scope: string): HarnessReadiness
   models(scope: string): HarnessModelChoice[]
+  thoughtLevels(scope: string): HarnessModelOption[]
+  setThoughtLevel(scope: string, value: string | undefined): void
+  selectedThoughtLevel(scope: string): string | undefined
   selectedModel(scope: string): string
   selectedModelKey(scope: string): ModelKey | undefined
   optionsStale(scope: string): boolean
@@ -53,6 +57,9 @@ export type HarnessSelectionSnapshot = {
   readiness: HarnessReadiness
   models: HarnessModelChoice[]
   selectedModel: string
+  /** Reasoning/thinking levels for the CURRENT model, when offered. */
+  thoughtLevels: HarnessModelOption[]
+  selectedThoughtLevel: string | undefined
   selectedModelKey?: ModelKey
   optionsStale: boolean
   optionsLoading: boolean
@@ -71,6 +78,8 @@ export function createHarnessSelectionController(store: HarnessSelectionControll
         readiness: store.readiness(scope),
         models: store.models(scope),
         selectedModel: store.selectedModel(scope),
+        thoughtLevels: store.thoughtLevels(scope),
+        selectedThoughtLevel: store.selectedThoughtLevel(scope),
         selectedModelKey: store.selectedModelKey(scope),
         optionsStale: store.optionsStale(scope),
         optionsLoading: store.optionsLoading(scope),
@@ -88,6 +97,7 @@ export function createHarnessSelectionController(store: HarnessSelectionControll
       store.setHarness(scope, type, input, binary),
     setModel: (scope: string, model: ModelKey, input?: HarnessScopeInput, labels?: DraftDefaultLabels) =>
       store.setModel(scope, model, input, labels),
+    setThoughtLevel: (scope: string, value: string | undefined) => store.setThoughtLevel(scope, value),
     rememberDraftModel: (scope: string, model: ModelKey, input?: HarnessScopeInput, labels?: DraftDefaultLabels) =>
       store.rememberDraftModel(scope, model, input, labels),
     resolveDraftDefault: (scope: string, input: Omit<ResolveDraftDefaultInput, "saved">) =>

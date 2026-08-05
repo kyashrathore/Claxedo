@@ -20,6 +20,7 @@ import {
   setDeploymentMode,
 } from "@/platform/telemetry/analytics"
 import { isDemoMode, isEmbedMode } from "@/platform/api/api"
+import { urlRoutingEnabled } from "@/lib/runtime-mode"
 import { ConfigProvider } from "../providers/config"
 import { ClaxedoEventsProvider } from "../integrations/claxedo-events"
 import { Persist, resetDemoPersisted, setPersisted } from "@/platform/persistence/persist"
@@ -91,7 +92,11 @@ const platform: Platform = {
         })
         notification.onclick = () => {
           window.focus()
-          if (href) {
+          // Same file:// hazard as the session-route writers: on desktop this
+          // pushed an unloadable path AND the popstate went nowhere (MemoryRouter
+          // does not listen), so skipping it loses no navigation. See
+          // `urlRoutingEnabled`.
+          if (href && urlRoutingEnabled()) {
             window.history.pushState(null, "", href)
             window.dispatchEvent(new PopStateEvent("popstate"))
           }

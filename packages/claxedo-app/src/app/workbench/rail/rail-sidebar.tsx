@@ -52,6 +52,7 @@ import {
   sessionStatusQueryOptions,
 } from "../../../features/session/data/sync/queries"
 import { dispatchSessionRequestsEvent, dispatchSessionStatusEvent } from "../../../features/session/store/session-status-dispatcher"
+import { createSidebarStatusPoll } from "./rail-sidebar-status-poll"
 import { shellDataKeys } from "@/platform/sync/keys"
 import {
   useSessionInventoryActions,
@@ -92,6 +93,7 @@ import {
 import { TerminalSurfaceNavigation } from "../../../features/terminal/ui/navigation/terminal-surface-navigation"
 export { parseOwnerRepo } from "./rail-git-remote"
 import type { ProjectItem, RuntimeKind, SessionItem, WorkspaceInfo, WorkspaceItem } from "./domain-types"
+import { urlRoutingEnabled } from "@/lib/runtime-mode"
 export type { ProjectItem, RuntimeKind, SessionItem, WorkspaceInfo, WorkspaceItem } from "./domain-types"
 
 const VIEW_KEY = "claxedo.session-view.v1"
@@ -417,6 +419,10 @@ function sidebarStatusTargetFresh(sessionID: string, now = Date.now()) {
 
 function replaceSessionUrl(session: Row) {
   if (typeof window === "undefined") return
+  // Desktop routes with MemoryRouter over a file:// document: writing the route
+  // here left the window at `file:///w/<dir>/<session>`, which reloads into a
+  // blank error page. See `urlRoutingEnabled`.
+  if (!urlRoutingEnabled()) return
   const directory = session.directory ?? session.project.worktree
   const route = sessionRefForWorkspaceSession({ sessionId: session.id, directory, workspace: workspaceSessionBacking(session, directory) })?.host === "workspace" ? workspaceSessionRoute(directory, session.id) : sessionRoute(session.id)
   if (window.location.pathname === route) return
@@ -898,7 +904,6 @@ export function RailSidebar(props: RailSidebarProps) {
         directory: group.directory,
         sessions: group.targets.map((target) => target.sessionID),
       })))
-      let timer: ReturnType<typeof setTimeout> | undefined
       const run = () => {
         if (fastSessionSwitchAnyQuietDelay() > 0) return
         for (const group of groups) {
@@ -967,11 +972,21 @@ export function RailSidebar(props: RailSidebarProps) {
           void request
         }
       }
-      if (fastSessionSwitchAnyQuietDelay() > 0) return
-      timer = setTimeout(run, 250)
-      onCleanup(() => {
-        if (timer) clearTimeout(timer)
+      // Poll rather than fire once: `run` self-skips when the batch is fresh or
+      // in flight, and the server does not push `session.status` for harness
+      // sessions — a single shot left the rail showing `idle` for a session the
+      // server reported as `busy`. The quiet-window check moves inside the gate
+      // so a fast switch skips a tick instead of killing the loop.
+      const poll = createSidebarStatusPoll({
+        run,
+        schedule: (fn, ms) => setTimeout(fn, ms),
+        clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+        shouldRun: () =>
+          fastSessionSwitchAnyQuietDelay() <= 0 &&
+          (typeof document === "undefined" || document.visibilityState !== "hidden"),
       })
+      poll.start()
+      onCleanup(() => poll.stop())
     }),
   )
 

@@ -85,7 +85,16 @@ export type WorkspaceRuntimeEvent =
   | { type: "process.config.changed"; directory: string; configs: unknown[] }
   | SessionLifecycleEvent
 
-export const workspaceRuntimeBus = createBus<WorkspaceRuntimeEvent>()
+type RuntimeBus = ReturnType<typeof createBus<WorkspaceRuntimeEvent>>
+
+// Each public dist entry (index/host/routes/…) is bundled separately, so this
+// module is instantiated once per entry in the same process. Pin the bus on
+// globalThis so publishers in one bundle reach subscribers in another.
+const globalBusKey = Symbol.for("claxedo.workspace-runtime.bus")
+const globalBusStore = globalThis as Record<PropertyKey, unknown>
+export const workspaceRuntimeBus: RuntimeBus =
+  (globalBusStore[globalBusKey] as RuntimeBus | undefined) ??
+  (globalBusStore[globalBusKey] = createBus<WorkspaceRuntimeEvent>())
 
 /** @deprecated Use {@link WorkspaceRuntimeEvent}; product-branded alias kept for compatibility. */
 export type ClaxedoEvent = WorkspaceRuntimeEvent

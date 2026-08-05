@@ -24,9 +24,19 @@ export async function ensureSpawnHelper() {
   if (process.platform === "win32") return
   const helper = spawnHelperPath()
   if (!helper) return
-  try {
-    const stat = await fs.promises.stat(helper)
-    if (stat.mode & 0o111) return
-    await fs.promises.chmod(helper, 0o755)
-  } catch {}
+  for (const candidate of spawnHelperCandidates(helper)) {
+    try {
+      const stat = await fs.promises.stat(candidate)
+      if (stat.mode & 0o111) continue
+      await fs.promises.chmod(candidate, 0o755)
+    } catch {}
+  }
+}
+
+// In a packaged Electron app require.resolve points inside the read-only
+// app.asar archive, while node-pty actually execs the app.asar.unpacked copy.
+export function spawnHelperCandidates(helper: string) {
+  const asar = `app.asar${path.sep}`
+  if (!helper.includes(asar) || helper.includes(`app.asar.unpacked${path.sep}`)) return [helper]
+  return [helper, helper.replace(asar, `app.asar.unpacked${path.sep}`)]
 }

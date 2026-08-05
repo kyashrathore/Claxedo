@@ -1,5 +1,5 @@
 import { applyClaxedoSessionLifecycleEvent, type ClaxedoSessionLifecycleEvent } from "@/features/session/data/sync/session-list-events"
-import { invalidateSessionListQueries } from "@/features/session/data/query/session-list"
+import { invalidateSessionListQueries, upsertCreatedSessionListRow } from "@/features/session/data/query/session-list"
 import type { DirectorySessionCacheValue } from "../../../features/session/data/sync/queries"
 import { applyGlobalProjectEvent } from "@/platform/sync/global-event-projector"
 import { routeDirectoryEvent, type RoutableEvent } from "./event-router"
@@ -246,6 +246,17 @@ function applyClaxedoSessionLifecycleToSync(input: EventIngressInput, event: Cla
   // refresh `applySessionEvent` performs below).
   void invalidateSessionListQueries()
   const info = event.info as LifecycleSession
+  upsertCreatedSessionListRow({
+    row: {
+      sessionId: info.id,
+      title: info.title,
+      directory: info.directory,
+      projectId: info.projectID,
+      ...(typeof info.workspaceID === "string" ? { workspaceId: info.workspaceID } : event.workspaceId ? { workspaceId: event.workspaceId } : {}),
+      createdAt: info.time.created,
+      updatedAt: info.time.updated,
+    },
+  })
   applySessionStatusSseEvent({
     directory: event.directory,
     event: { type: "session.idle", properties: { sessionID: info.id } },

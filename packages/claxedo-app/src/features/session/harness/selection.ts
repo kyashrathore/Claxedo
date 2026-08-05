@@ -18,6 +18,8 @@ export type HarnessSelectionState = {
   readonly readiness: HarnessReadiness
   readonly optionsLoading: boolean
   readonly configError?: string
+  /** Chosen reasoning/thinking level, when the harness offers any. */
+  readonly selectedThoughtLevel?: string
 }
 
 export function harnessMode(type?: HarnessType) {
@@ -59,6 +61,11 @@ export function harnessModelKeyForSubmit(state: HarnessSelectionState): ModelKey
   return {
     providerID,
     modelID: selected,
+    // Effort rides the model key's `variant`, the same field opencode uses. A
+    // harness turn is one `query()` and the SDK takes `effort` per query, so
+    // the level travels WITH the prompt instead of being pushed at the running
+    // process — which is why this needed no new transport.
+    ...(state.selectedThoughtLevel ? { variant: state.selectedThoughtLevel } : {}),
   }
 }
 

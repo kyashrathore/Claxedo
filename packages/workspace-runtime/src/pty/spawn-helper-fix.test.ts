@@ -6,7 +6,7 @@
  */
 import { describe, test, expect, afterAll } from "bun:test"
 import * as fs from "fs"
-import { ensureSpawnHelper, spawnHelperPath } from "./spawn-helper-fix"
+import { ensureSpawnHelper, spawnHelperCandidates, spawnHelperPath } from "./spawn-helper-fix"
 
 // spawnHelperPath() answers "where WOULD it be", not "does it exist" — some
 // node-pty prebuilds (linux-x64 among them) ship without spawn-helper, and the
@@ -66,5 +66,22 @@ describe.skipIf(!helper || process.platform === "win32")("spawn-helper permissio
 
     const modeAfter = fs.statSync(helper!).mode
     expect(modeAfter).toBe(modeBefore)
+  })
+})
+
+describe("spawnHelperCandidates", () => {
+  test("maps an asar path to its unpacked counterpart", () => {
+    const asarPath = "/app/Claxedo Dev.app/Contents/Resources/app.asar/node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper"
+    expect(spawnHelperCandidates(asarPath)).toEqual([
+      asarPath,
+      "/app/Claxedo Dev.app/Contents/Resources/app.asar.unpacked/node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper",
+    ])
+  })
+
+  test("leaves plain and already-unpacked paths alone", () => {
+    const plain = "/repo/node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper"
+    expect(spawnHelperCandidates(plain)).toEqual([plain])
+    const unpacked = "/app/Contents/Resources/app.asar.unpacked/node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper"
+    expect(spawnHelperCandidates(unpacked)).toEqual([unpacked])
   })
 })

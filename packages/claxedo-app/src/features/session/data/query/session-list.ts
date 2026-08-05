@@ -153,6 +153,60 @@ export function invalidateSessionListQueries(input: { baseUrl?: string } = {}) {
   })
 }
 
+// A `session.lifecycle` "created" doorbell races the server's projection write:
+// the event is published before the response-tap records the row, so the
+// invalidation refetch can return a list that still lacks the new session (the
+// row then only shows up on the NEXT invalidation). The event carries the full
+// session, so upsert the row into matching active queries directly — the
+// refetch that follows stays the source of truth and reconciles any drift.
+export function upsertCreatedSessionListRow(input: {
+  baseUrl?: string
+  row: Omit<SessionNavigationRow, "type" | "sessionRef" | "tags" | "attachments">
+}) {
+  const workspaceId = input.row.workspaceId
+  const row: SessionNavigationRow = {
+    ...input.row,
+    type: "session",
+    sessionRef: workspaceId
+      ? `workspace:${workspaceId}:session:${input.row.sessionId}`
+      : `local:${input.row.directory}:session:${input.row.sessionId}`,
+    tags: [],
+    attachments: [],
+  }
+  const base = input.baseUrl === undefined ? undefined : normalizedBase(input.baseUrl)
+  for (const query of queryClient.getQueryCache().findAll({
+    predicate: (query) => isSessionListQueryKey(query.queryKey, base),
+  })) {
+    const listQuery = sessionListQueryFromKey(query.queryKey)
+    if (!listQuery || listQuery.cursor || !rowMatchesSessionListQuery(row, listQuery)) continue
+    setSessionListQueryData(query.queryKey as ReturnType<typeof queryKeys.shell.sessionList>, (response) => {
+      if (!response) return response
+      if (response.items?.some((item) => item.sessionRef === row.sessionRef)) return response
+      return {
+        ...response,
+        ...(response.items ? { items: [row, ...response.items] } : {}),
+        totalKnown: response.totalKnown === undefined ? undefined : response.totalKnown + 1,
+      }
+    })
+  }
+}
+
+function sessionListQueryFromKey(key: readonly unknown[]): SessionListQuery | undefined {
+  const query = key[3]
+  return query && typeof query === "object" ? query as SessionListQuery : undefined
+}
+
+// Mirrors the server's `rowInScope` for the unfiltered default views. Views
+// with active status/environment/git filters are left to the refetch.
+function rowMatchesSessionListQuery(row: SessionNavigationRow, query: SessionListQuery) {
+  if (query.scope === "global") return false
+  if (query.archived === "archived") return false
+  if (query.status?.length || query.environment?.length || query.git?.length) return false
+  if (query.scope === "project") return !query.projectId || row.projectId === query.projectId
+  if (query.workspaceId && row.workspaceId === query.workspaceId) return true
+  return !query.directory || row.directory === query.directory
+}
+
 export function reconcileArchivedSessionListQueryData(input: {
   baseUrl?: string
   sessionRef: string

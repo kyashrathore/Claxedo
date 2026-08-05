@@ -134,29 +134,46 @@ export function PromptToolbarControls(props: {
                   props.model().list(),
                 )
               }}
+              openCode={{
+                model: props.model,
+                label: props.modelLabel,
+                loading: props.providerLoading,
+                showVariantSelector: props.showVariantSelector,
+                variants: props.variants,
+                currentVariant: props.currentVariant,
+                variantLabel: props.variantLabel,
+                onVariantSelect: props.onVariantSelect,
+              }}
             />
           )}
         </Show>
-        <PromptModelControl
-          harnessMode={props.modelHarnessMode}
-          providerLoading={props.providerLoading}
-          providerID={props.providerID}
-          label={props.modelLabel}
-          model={props.model}
-          connectRequired={props.modelConnectRequired}
-          onConnect={props.onModelConnect}
-          controlStyle={props.controlStyle}
-          chooseTitle={props.modelTitle}
-          chooseKeybind={props.modelKeybind}
-          onClose={props.onModelClose}
-          showVariantSelector={props.showVariantSelector}
-          variantTitle={props.variantTitle}
-          variantKeybind={props.variantKeybind}
-          variants={props.variants}
-          currentVariant={props.currentVariant}
-          variantLabel={props.variantLabel}
-          onVariantSelect={props.onVariantSelect}
-        />
+        {/* The merged picker owns model + effort now. `PromptModelControl`
+            stays for the ONE state it uniquely handles: the server's legacy
+            `big-pickle` placeholder names a model with no serving path, so the
+            picker has nothing to pick and Connect is the only action that
+            resolves it. */}
+        <Show when={props.modelConnectRequired()}>
+          <PromptModelControl
+              harnessMode={props.modelHarnessMode}
+            providerLoading={props.providerLoading}
+            providerID={props.providerID}
+            label={props.modelLabel}
+            model={props.model}
+            connectRequired={props.modelConnectRequired}
+            onConnect={props.onModelConnect}
+            controlStyle={props.controlStyle}
+            chooseTitle={props.modelTitle}
+            chooseKeybind={props.modelKeybind}
+            onClose={props.onModelClose}
+            showVariantSelector={props.showVariantSelector}
+            variantTitle={props.variantTitle}
+            variantKeybind={props.variantKeybind}
+            variants={props.variants}
+            currentVariant={props.currentVariant}
+              variantLabel={props.variantLabel}
+              onVariantSelect={props.onVariantSelect}
+          />
+        </Show>
       </div>
     </div>
   )

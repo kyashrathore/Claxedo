@@ -141,3 +141,34 @@ describe("harness selection", () => {
     expect(harnessReadyForSubmit(state)).toBe(true)
   })
 })
+
+/**
+ * Effort travels on `ModelKey.variant` — the SAME field opencode already uses.
+ * A harness turn is one `query()` and the Claude SDK takes `effort` per query,
+ * so the chosen level rides the prompt rather than being pushed at the process.
+ * That is why no new transport was needed for this.
+ */
+describe("harnessModelKeyForSubmit — thought level", () => {
+  const base = {
+    harness: "claude-acp" as const,
+    selectedModel: "opus",
+    readiness: "ready" as const,
+    optionsLoading: false,
+    dynamicModels: [{ id: "opus", name: "Opus" }],
+  }
+
+  test("carries the selected level as the model key's variant", () => {
+    expect(harnessModelKeyForSubmit({ ...base, selectedThoughtLevel: "high" })).toEqual({
+      providerID: "claude-acp",
+      modelID: "opus",
+      variant: "high",
+    })
+  })
+
+  test("omits variant entirely when no level is selected", () => {
+    expect(harnessModelKeyForSubmit(base)).toEqual({
+      providerID: "claude-acp",
+      modelID: "opus",
+    })
+  })
+})

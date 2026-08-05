@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { createBus } from "./bus"
+import { createBus, workspaceRuntimeBus } from "./bus"
 
 describe("createBus", () => {
   it("delivers to later subscribers when an earlier subscriber throws", () => {
@@ -32,5 +32,23 @@ describe("createBus", () => {
 
     expect(events).toEqual(["running"])
     expect((errors[0] as Error).message).toBe("async subscriber failed")
+  })
+})
+
+describe("workspaceRuntimeBus", () => {
+  it("is one process-wide instance across separate module evaluations", async () => {
+    // dist ships each public entry as its own bundle, each inlining bus.ts.
+    // Query-suffixed imports stand in for those duplicate module instances.
+    const a = (await import(`./bus?bundle=${"a"}`)) as typeof import("./bus")
+    const b = (await import(`./bus?bundle=${"b"}`)) as typeof import("./bus")
+    expect(a).not.toBe(b)
+    expect(a.workspaceRuntimeBus).toBe(b.workspaceRuntimeBus)
+    expect(a.workspaceRuntimeBus).toBe(workspaceRuntimeBus)
+
+    const seen: string[] = []
+    const unsubscribe = b.workspaceRuntimeBus.subscribe((event) => seen.push(event.type))
+    a.workspaceRuntimeBus.publish({ type: "heartbeat" })
+    unsubscribe()
+    expect(seen).toEqual(["heartbeat"])
   })
 })

@@ -243,6 +243,71 @@
   min-width: 0;
 }
 
+/* The merged harness→model→effort picker. Narrower than the 360px default
+   because it holds one list at a time, never a row of controls; the padding is
+   a touch larger so the section headers do not sit on the surface edge. It
+   takes the shared class for SURFACE and ELEVATION — the whole point of
+   `.claxedo-composer-menu` — and overrides only its own geometry. */
+.claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-picker {
+  width: min(304px, calc(100vw - 24px));
+  min-width: 0;
+  padding: 6px;
+}
+
+/* Disclosure motion. The panel enters FROM its header — a short downward slide
+   plus a fade — so the eye is told which row the content belongs to at the
+   moment it appears. Height is deliberately not animated: the popover is a
+   fixed 320px and the model list scrolls inside it, so there is no height to
+   animate and faking one would make the list jump while it settles. */
+@keyframes claxedo-harness-picker-panel {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.harness-picker-panel {
+  animation: claxedo-harness-picker-panel 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* The surface resizes as sections open and close — three headers when shut,
+   320px for a short list, 416px for the searchable model list — so that change
+   is animated rather than snapped.
+   `interpolate-size: allow-keywords` is what makes the closed state (height
+   `auto`, since it hugs its headers) animatable at all; without it a keyword
+   height is not an interpolable value and the box would jump on the way out.
+   Chromium-only, which is the whole target here, and it degrades to today's
+   instant resize anywhere it is missing. */
+.harness-picker-surface {
+  interpolate-size: allow-keywords;
+  transition: height 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .harness-picker-surface {
+    transition: none;
+  }
+}
+
+/* Full-bleed panel: cancels the 6px surface padding so the model list's search
+   bar and footer run edge to edge, the way the upstream picker draws them. An
+   inset there turns those full-width rules into a card floating inside the
+   menu. */
+[data-component="harness-model-picker"] [data-slot="harness-picker-panel"][data-flush] {
+  margin-inline: -6px;
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  .harness-picker-panel {
+    animation: none;
+  }
+}
+
 .claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-compact
   [data-slot="select-select-content-list"],
 .claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-compact
@@ -289,10 +354,16 @@
     gap: 2px;
   }
 
+  /* `prompt-harness-model` is deliberately NOT in this list. It used to be one
+     of three chips, so collapsing it to an icon was fine — the harness chip
+     beside it still named the setup. It is now the ONLY control for harness,
+     model and effort, and an unlabelled glyph leaves a narrow composer stating
+     nothing about what will answer the prompt. It keeps its label and truncates
+     instead; the rules below still strip its chevron and provider mark to buy
+     that label room. */
   [data-action="prompt-permission-mode"],
   [data-action="prompt-harness"],
   [data-action="prompt-model"],
-  [data-action="prompt-harness-model"],
   [data-action="prompt-model-variant"] {
     width: 28px;
     min-width: 28px;
@@ -306,7 +377,6 @@
   [data-action="prompt-permission-mode"] [data-slot="composer-control-label"],
   [data-action="prompt-harness"] [data-slot="composer-control-label"],
   [data-action="prompt-model"] [data-slot="composer-control-label"],
-  [data-action="prompt-harness-model"] [data-slot="composer-control-label"],
   [data-action="prompt-model-variant"] [data-slot="composer-control-label"],
   [data-action="prompt-harness"] [data-slot="select-select-trigger-icon"],
   [data-action="prompt-model-variant"] [data-slot="select-select-trigger-icon"],
@@ -317,8 +387,13 @@
     display: none;
   }
 
+  [data-action="prompt-harness-model"] {
+    max-width: 148px;
+    padding-inline: 6px;
+    gap: 4px;
+  }
+
   [data-action="prompt-model"] .composer-compact-only,
-  [data-action="prompt-harness-model"] .composer-compact-only,
   [data-action="prompt-model-variant"] .composer-compact-only {
     display: inline-flex;
   }

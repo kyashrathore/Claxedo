@@ -13,6 +13,14 @@
   position: relative;
   display: flex;
   min-height: 0;
+  /* Size queries below resolve against THIS pane, not the window. Splitting the
+     workbench narrows the shell without touching the viewport, so a `@media`
+     rule cannot see the case that actually matters — two panes on a wide
+     display. Named so the queries can only ever match this container.
+     Safe on this element: its inline size comes from the pane, never from its
+     contents, and it is already the `position: relative` containing block the
+     card is absolutely placed against, so `contain: layout` changes nothing. */
+  container: session-envcard-shell / inline-size;
 }
 
 .session-envcard-primary {
@@ -20,20 +28,30 @@
   min-width: 0;
 }
 
-/* Bounded card, top-aligned inside the reserved gutter, content-sized. */
+/* Bounded card, top-aligned inside the reserved gutter, content-sized.
+
+   `top: 1.75rem` is a shared-corner constraint, not a taste value. The pane's
+   own "Close Pane" control is `absolute right-2 top-2` at `size-5`, so it owns
+   rows 8-28px down the SAME right edge this card is anchored to; at 0.85rem
+   the collapsed rail's top-right corner sat underneath it. 28px is the first
+   row that clears it — and it is also where the session header's "…" glyph
+   starts (its 24px button box begins at 24, but the box is invisible; the
+   16px icon inside starts at 28), so clearing the close control and lining up
+   with the "…" are the same number. Keep them in step if either moves.
+   The bottom gutter stays 0.85rem, hence the asymmetric max-height. */
 .session-envcard {
   position: absolute;
-  top: 0.85rem;
+  top: 1.75rem;
   right: 0.85rem;
   z-index: 30;
   width: 15rem;
-  max-height: calc(100% - 1.7rem);
+  max-height: calc(100% - 2.6rem);
   overflow-y: auto;
 }
 
 /* Collapsed: the same gutter spot holds the shell's vertical icon rail. */
 .session-envcard.is-collapsed {
-  width: 2.5rem;
+  width: 1.75rem;
   overflow-y: visible;
 }
 
@@ -73,12 +91,44 @@
   .session-envcard-shell:has(.session-envcard.is-collapsed) [data-session-timeline-root] .scroll-view__viewport,
   .session-envcard-shell:has(.session-envcard.is-collapsed) [data-session-timeline-loading],
   .session-envcard-shell:has(.session-envcard.is-collapsed) [data-component="session-prompt-dock"] {
-    padding-right: 3.6rem;
+    padding-right: 3rem;
+  }
+}
+
+/* Gone entirely in a narrow PANE, not just a narrow window.
+
+   The `@media` rule below drops the card under a 768px viewport, but it cannot
+   see the case that actually bites: splitting a wide window leaves each pane a
+   few hundred pixels across while the viewport stays wide. A size query on the
+   shell measures the pane, so both cases resolve through one threshold (BP_MD).
+
+   Under that width the card is `display: none` — not merely unexpandable. It
+   does not come back on focus, on hover, or on any other state: this block is
+   width-only, and nothing else in this file re-shows the card.
+
+   The gutter reservation has to go with it. `:has()` still matches a
+   `display: none` element, and the reservation lives under `@media (min-width:
+   769px)` — so in a narrow pane inside a wide window the card would be
+   invisible while the timeline still paid 3.6rem for it. Same selectors,
+   later in the file, so these win on source order at equal specificity. */
+@container session-envcard-shell (max-width: 768px) {
+  .session-envcard {
+    display: none;
+  }
+
+  .session-envcard-shell:has(.session-envcard) [data-session-timeline-root] .scroll-view__viewport,
+  .session-envcard-shell:has(.session-envcard) [data-session-timeline-loading],
+  .session-envcard-shell:has(.session-envcard) [data-component="session-prompt-dock"],
+  .session-envcard-shell:has(.session-envcard.is-collapsed) [data-session-timeline-root] .scroll-view__viewport,
+  .session-envcard-shell:has(.session-envcard.is-collapsed) [data-session-timeline-loading],
+  .session-envcard-shell:has(.session-envcard.is-collapsed) [data-component="session-prompt-dock"] {
+    padding-right: 0;
   }
 }
 
 /* Below desktop width the reading column needs the full width; drop the card
-   (the gutter rule above is already scoped to desktop widths). */
+   (the gutter rule above is already scoped to desktop widths). Kept alongside
+   the size query: this one also covers a shell that never became a container. */
 @media (max-width: 768px) {
   .session-envcard {
     display: none;

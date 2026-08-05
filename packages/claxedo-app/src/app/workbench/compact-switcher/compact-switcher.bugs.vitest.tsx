@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
+import { createSignal } from "solid-js"
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
 import { CompactSwitcher } from "./compact-switcher"
 import type { SwitcherItem } from "./switcher-items"
@@ -73,5 +74,41 @@ describe("CompactSwitcher — pending-select cancellation (regression guard)", (
     // The user's last intent was the active tab; the stale scrub must not override it.
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(onSelect).toHaveBeenLastCalledWith("content-terminal")
+  })
+})
+
+describe("CompactSwitcher — tab element identity (regression guard)", () => {
+  // BUG 3: `switcherItems` (rail-header-surfaces.ts) is a memo that rebuilds
+  // every SwitcherItem OBJECT on every recompute — a focus change, a session
+  // status tick, a worktree-info resolve. `<For>` keys on object identity, so
+  // each of those recomputes disposed and re-created the entire tab strip's
+  // DOM. Re-created children mean the strip's horizontal scroll position is
+  // thrown away, which is what makes clicking a tab visibly jump.
+  test("re-emitting the same tabs as fresh objects keeps the tab elements", () => {
+    const [list, setList] = createSignal(items)
+    render(() => <CompactSwitcher items={list()} />)
+
+    const before = screen.getAllByTestId("compact-switcher-tab")
+    expect(before).toHaveLength(2)
+
+    // Exactly what the memo emits on any tick: same tabs, new object identities,
+    // with focus moved from the terminal to the session.
+    setList(items.map((item) => ({ ...item, active: item.contentId === "content-session" })))
+
+    const after = screen.getAllByTestId("compact-switcher-tab")
+    expect(after[0]).toBe(before[0])
+    expect(after[1]).toBe(before[1])
+  })
+
+  test("a title change updates in place instead of replacing the tab", () => {
+    const [list, setList] = createSignal(items)
+    render(() => <CompactSwitcher items={list()} />)
+
+    const before = screen.getAllByTestId("compact-switcher-tab")[0]
+    setList(items.map((item) => ({ ...item, title: `${item.title} (renamed)` })))
+
+    const after = screen.getAllByTestId("compact-switcher-tab")[0]
+    expect(after).toBe(before)
+    expect(screen.getByRole("button", { name: "Build fix (renamed)" })).toBeTruthy()
   })
 })

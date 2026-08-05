@@ -298,6 +298,14 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     harnessReadyForSubmit: (scope: string) => harnessReadyForSubmit(read(scope)),
     isHarnessMode: (scope: string) => read(scope).harness !== "opencode",
     models: (scope: string) => harnessModels(read(scope)),
+    thoughtLevels: (scope: string) => read(scope).thoughtLevels ?? [],
+    setThoughtLevel: (scope: string, value: string | undefined) => {
+      // State only. The level reaches the harness on the NEXT PROMPT via
+      // `harnessModelKeyForSubmit`'s `variant`, so there is nothing to push
+      // here — the same reason opencode's variant setter is a local write.
+      applyPatch(scope, { selectedThoughtLevel: value })
+    },
+    selectedThoughtLevel: (scope: string) => read(scope).selectedThoughtLevel,
     selectedAgent: (scope: string) => read(scope).selectedAgent,
     selectedModel: (scope: string) => effectiveHarnessModel(read(scope).harness, read(scope).selectedModel),
     selectedModelKey: (scope: string) => harnessModelKeyForSubmit(read(scope)),

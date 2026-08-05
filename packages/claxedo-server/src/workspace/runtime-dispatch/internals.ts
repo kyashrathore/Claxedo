@@ -307,11 +307,38 @@ export function embeddedConfigModeForPath(pathname: string): EmbeddedWorkspaceRu
   return "sync"
 }
 
+/**
+ * The URL the embedded runtime sees for a dispatched request.
+ *
+ * This hop reuses the CALLER's origin rather than a synthetic one. The runtime
+ * derives real behaviour from this URL — PTY creation reads its port via
+ * `requestPort` and injects it as `CLAXEDO_PORT` / `CLAXEDO_SERVER_PORT`, which
+ * is where terminal agent hooks post their lifecycle events. Dispatching from a
+ * synthetic `http://embedded-workspace-runtime.local` (no port) made
+ * `requestPort` fall through to the http default, so every terminal was told
+ * the server lived on port 80: `notify.sh` posted to
+ * `http://127.0.0.1:80/api/wr/hook/agent-lifecycle`, got nothing, and — because
+ * it backgrounds its curl and discards the response — failed silently. The
+ * symptom was a coding agent in a terminal that never showed working/permission
+ * status, with no error anywhere. Verified by spawning a PTY that printed its
+ * own env: `CLAXEDO_PORT=[80]` against a server on 3001.
+ *
+ * The synthetic host only ever bought a recognisable marker in traces, and
+ * nothing routes on it. Fabricating an origin for a request that HAS one just
+ * invents values the runtime then trusts, so the in-process hop is identified
+ * by the `x-workspace-id` / `x-opencode-directory` headers set below instead.
+ * (The other synthetic-base call sites construct requests with no caller at
+ * all, so they legitimately need one.)
+ */
+export function embeddedRuntimeTargetUrl(requestUrl: URL, targetPath: string): URL {
+  return new URL(targetPath + requestUrl.search, requestUrl)
+}
+
 export async function embedded(c: Context, ws: NonNullable<Awaited<ReturnType<typeof resolveWorkspace>>>, pathname?: string) {
   const url = new URL(c.req.url)
   const targetPath = pathname ?? url.pathname
   const runtime = await ensureEmbeddedWorkspaceRuntime(ws, { config: embeddedConfigModeForPath(targetPath) })
-  const target = new URL(targetPath + url.search, "http://embedded-workspace-runtime.local")
+  const target = embeddedRuntimeTargetUrl(url, targetPath)
   if (target.searchParams.has("directory")) target.searchParams.set("directory", ws.directory)
   const headers = opencodeHeaders(c.req.raw.headers)
   headers.set("x-workspace-id", ws.id)

@@ -60,7 +60,13 @@ export type PickerState = {
   set: (item: { modelID: string; providerID: string } | undefined, options?: { recent?: boolean }) => void
 }
 
-const ModelList: Component<{
+/**
+ * Exported so the composer's merged harness→model picker can host the REAL
+ * list inside its own disclosure instead of reimplementing it. Search,
+ * provider grouping, connected/free/latest tags, tooltips and the
+ * `model_selected` commit point all live here and must not fork.
+ */
+export const ModelList: Component<{
   provider?: string
   class?: string
   onSelect: () => void

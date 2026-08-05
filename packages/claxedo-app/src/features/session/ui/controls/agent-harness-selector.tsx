@@ -1,11 +1,8 @@
 import { Show, createEffect, createMemo, createSignal, onCleanup, untrack, type JSX } from "solid-js"
-import { Button } from "@opencode-ai/ui/button"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
-import { Select } from "@opencode-ai/ui/select"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { ModelSelectorPopover, type PickerItem, type PickerState } from "@/features/session/ui/model/select-model"
-import { COMPOSER_HARNESS_MENU_CLASS, COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics"
+import { type PickerItem, type PickerState } from "@/features/session/ui/model/select-model"
+import { HarnessModelPicker } from "@/features/session/composer/ui/harness-model-picker"
 import { publishComposerNotice, type ComposerNotice } from "@/features/session/composer/ui/composer-notice"
 import { resolveHarnessNotice } from "@/features/session/composer/ui/harness-notice"
 import { HARNESS_DISPLAY_NAMES, type HarnessType } from "@/features/session/harness/profile"
@@ -118,6 +115,21 @@ interface AgentHarnessSelectorProps {
   harnessController: HarnessSelectionController
   openCodeModel?: () => ModelKey | undefined
   openCodeModelLabels?: () => DraftDefaultLabels | undefined
+  /**
+   * opencode's model state, supplied by the composer toolbar. Both modes speak
+   * `PickerState` — the ONLY difference is who builds it, so the merged picker
+   * just chooses a source rather than adapting between two shapes.
+   */
+  openCode?: {
+    model: () => PickerState
+    label: () => string
+    loading: () => boolean
+    showVariantSelector: () => boolean
+    variants: () => string[]
+    currentVariant: () => string | undefined
+    variantLabel: (value: string) => string
+    onVariantSelect: (value: string) => void
+  }
 }
 
 export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
@@ -483,21 +495,13 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       },
     }
   })
-  publishComposerNotice(notice)
-
-  return (
-    <>
-      {/* Harness selector — disabled when current session has messages */}
-      <Select
-        size="normal"
-        options={HARNESS_OPTIONS}
-        current={harness()}
-        label={(r) => harnessOptionLabel(r)}
-        groupBy={(r) => harnessOptionGroup(r)}
-        onOpenChange={(open) => {
-          if (open) openedViaMenu = true
-        }}
-        onSelect={(r) => {
+  // Extracted from the old Kobalte `Select`'s inline `onSelect` so the merged
+  // picker can call the same side effects. `openedViaMenu` existed because
+  // Kobalte re-fires onChange with the CURRENT value when its options
+  // collection changes identity; the picker only ever calls this from a real
+  // click, so intent is passed explicitly.
+  const applyHarness = (r: HarnessType | undefined) => {
+    openedViaMenu = true
           const current = harness()
           const apply = shouldApplyHarnessSelection({
             next: r,
@@ -553,24 +557,89 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
           }).finally(() => {
             setSwitchingHarness((current) => current === r ? undefined : current)
           })
+  }
+
+  // Harness mode builds its own PickerState from `rows()`; opencode mode is
+  // handed one by the toolbar. Same shape, so this is a source switch.
+  const isHarnessMode = createMemo(() => selection().isHarnessMode)
+  const activePicker = createMemo<PickerState>(() =>
+    isHarnessMode() ? model() : props.openCode?.model() ?? model())
+  const activeModelLabel = createMemo(
+    () => (isHarnessMode() ? modelLabel() : props.openCode?.label()) || "Select model")
+  // Effort resolves from whichever side owns the model list. Both end up on the
+  // SAME wire field — `ModelKey.variant` → `PromptInput.variant` — because a
+  // harness turn is one `query()` and the SDK takes `effort` per query, exactly
+  // as opencode takes a variant per prompt. One channel, two sources.
+  const harnessThoughtLevels = createMemo(() => selection().thoughtLevels ?? [])
+  const activeShowEffort = createMemo(() =>
+    isHarnessMode() ? harnessThoughtLevels().length > 1 : (props.openCode?.showVariantSelector() ?? false))
+  const activeVariants = createMemo(() =>
+    isHarnessMode() ? harnessThoughtLevels().map((item) => item.id) : (props.openCode?.variants() ?? []))
+  const activeCurrentVariant = createMemo(() =>
+    isHarnessMode() ? selection().selectedThoughtLevel : props.openCode?.currentVariant())
+  const harnessLevelName = (value: string) =>
+    harnessThoughtLevels().find((item) => item.id === value)?.name ?? value
+
+  const activeModelLoading = createMemo(() =>
+    (isHarnessMode() ? modelLoading() : props.openCode?.loading() ?? false) || harnessSwitching())
+
+  publishComposerNotice(notice)
+
+  return (
+    <>
+      {/* ONE control for the three questions that are really one decision:
+          harness → model → effort. See harness-model-picker.tsx. The trigger
+          keeps the harness mark AND the model name, so a live session still
+          states which harness it is on without spending a second chip on it.
+
+          Safe to put an icon in THIS trigger, unlike the Select it replaces:
+          Kobalte's Select names its trigger via `aria-labelledby` pointing at
+          the value span, which markup invalidates (see renderHarnessOption's
+          note). This is a Popover trigger with an explicit `aria-label`. */}
+      <HarnessModelPicker
+        harness={harness}
+        harnessOptions={HARNESS_OPTIONS}
+        harnessLabel={harnessOptionLabel}
+        harnessGroup={harnessOptionGroup}
+        harnessDisabled={harnessDisabled}
+        harnessHint={() => (sessionLocked() ? "Start a new session to change harness" : undefined)}
+        harnessIcon={(option) => <HarnessOptionIcon harness={option} />}
+        onHarnessSelect={applyHarness}
+        showManageModels={() => harness() === "opencode" || harness() === "pi"}
+        modelError={() => {
+          // The SAME resolved notice the composer row shows, rendered inside
+          // the Model section too. The row explains the failure globally; the
+          // section REPLACES the list, because a working search box over zero
+          // rows claims "this harness has no models" when the truth is that
+          // loading them failed. Only list-invalidating failures qualify — a
+          // merely stale list still has usable rows and stays a hint.
+          const failure = notice()
+          if (!failure || failure.tone !== "critical") return undefined
+          return {
+            message: failure.message,
+            ...(failure.detail ? { detail: failure.detail } : {}),
+            ...(failure.action ? { action: { label: failure.action.label, run: failure.action.run } } : {}),
+          }
         }}
-        class="min-w-[112px] max-w-[140px] max-md:min-w-[104px] max-md:max-w-[112px]"
-        valueClass={harnessDisabled() ? "truncate text-13-regular text-text-weak" : "truncate text-13-regular"}
-        contentClass={COMPOSER_HARNESS_MENU_CLASS}
-        triggerStyle={harnessTriggerStyle()}
-        triggerProps={{ "data-action": "prompt-harness" }}
-        variant="ghost"
-        disabled={harnessDisabled()}
-      >
-        {renderHarnessOption}
-      </Select>
-      <Show when={harnessSwitching()}>
-        <span
-          aria-hidden="true"
-          class="size-3 shrink-0 animate-spin rounded-full border border-border-base border-t-transparent"
-          title="Switching harness"
-        />
-      </Show>
+        model={activePicker}
+        modelLabel={activeModelLabel}
+        modelLoading={activeModelLoading}
+        modelDisabled={modelDisabled}
+        showEffort={activeShowEffort}
+        variants={activeVariants}
+        currentVariant={activeCurrentVariant}
+        variantLabel={(value) => isHarnessMode() ? harnessLevelName(value) : (props.openCode?.variantLabel(value) ?? value)}
+        onVariantSelect={(value) => {
+          if (isHarnessMode()) {
+            props.harnessController.setThoughtLevel(scope(), value === "default" ? undefined : value)
+            return
+          }
+          props.openCode?.onVariantSelect(value)
+        }}
+        triggerStyle={() => modelTriggerStyle()}
+        triggerHint={modelHint}
+        triggerLabel={modelHint() ? `Select harness and model — ${modelHint()}` : "Select harness and model"}
+      />
 
       {/* Readiness indicator. Connecting is progress, not a fault, so it stays
           inline; the settled failure it can escalate into is published to the
@@ -580,44 +649,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
           <span class="inline-block w-2 h-2 rounded-full bg-text-weak animate-pulse mr-1" />
           Connecting
         </span>
-      </Show>
-
-      {/* Model selector — non-opencode harnesses use grouped model popover */}
-      <Show when={selection().isHarnessMode}>
-        <ModelSelectorPopover
-          model={model()}
-          // Same surface as the `+` menu and the context-row pickers it sits
-          // beside. Without this the harness model popover opened at its own
-          // width and row rhythm — and harness mode is the DEFAULT, so this was
-          // the most visible instance of the inconsistency, not an edge case.
-          contentClass={COMPOSER_MENU_CLASS}
-          actions={harness() === "pi"}
-          connectHarness={harness() === "pi" ? "pi" : undefined}
-          tooltips={false}
-          triggerAs={Button}
-          triggerProps={modelTriggerProps()}
-        >
-          <Icon name="brain" size="small" class="composer-compact-only shrink-0 text-v2-icon-icon-base" />
-          <Show when={picked()?.provider.id && !modelUnavailable() && !modelOptionsFailed()}>
-            <ProviderIcon
-              id={picked()!.provider.id}
-              class="composer-model-provider size-4 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity duration-150"
-            />
-          </Show>
-          <span
-            data-slot="composer-control-label"
-            class={
-              modelDisabled()
-                ? "truncate text-13-regular text-text-weak"
-                : "truncate text-13-regular"
-            }
-          >
-            {modelLabel()}
-          </span>
-          <Show when={!modelDisabled()}>
-            <Icon name="chevron-down" size="small" class="shrink-0" />
-          </Show>
-        </ModelSelectorPopover>
       </Show>
     </>
   )

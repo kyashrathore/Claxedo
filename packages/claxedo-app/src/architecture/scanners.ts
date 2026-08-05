@@ -159,6 +159,28 @@ export function oscColorEscapesOutsideResponder(files: SourceFile[]): Finding[] 
     .flatMap((file) => findMatches(file, oscColorEscapeRe))
 }
 
+/**
+ * Writing the document URL only round-trips on an http(s) page.
+ *
+ * The packaged desktop renderer is a `file://` document routed by
+ * `MemoryRouter`, so a pushed/replaced path becomes `file:///w/<dir>/<session>`
+ * — an unloadable path. The next reload asks Chromium to load it as a file,
+ * fails with `net::ERR_FAILED`, and strands the user on a blank
+ * `chrome-error://chromewebdata/` window that only a relaunch recovers.
+ *
+ * Any prod source that writes history state must therefore gate it on
+ * `urlRoutingEnabled()`. Referencing the guard anywhere in the file satisfies
+ * the rule: the intent is to catch a URL write added with no protocol check at
+ * all, not to prove the branch wraps a specific call.
+ */
+const historyUrlWriteRe = /history\.(?:push|replace)State\s*\(/g
+
+export function unguardedHistoryUrlWrites(files: SourceFile[]): Finding[] {
+  return files
+    .filter((file) => !file.text.includes("urlRoutingEnabled"))
+    .flatMap((file) => findMatches(file, historyUrlWriteRe))
+}
+
 export const WORKGRAPH_SURFACE_FILE = "app/integrations/first-party-content-surfaces.tsx"
 
 export function workGraphEagerSurfaceViolations(files: SourceFile[]): Finding[] {

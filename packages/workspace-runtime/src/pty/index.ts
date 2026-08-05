@@ -19,6 +19,8 @@ import { osc7 as osc7Parser } from "./osc7"
 import { oscProcessExit } from "./osc-process-exit"
 import { buildSafeEnv, getLocale } from "./env"
 import { resolveCwd } from "./resolve-cwd"
+import { workspaceId as runtimeWorkspaceId } from "../target"
+import { terminalHookWorkspaceId } from "./hook-workspace-id"
 import { disposeMode } from "./dispose-mode"
 import {
   type QueuedOperation,
@@ -503,7 +505,19 @@ export namespace Pty {
     if (claxedoPort && setupComplete) {
       const tabId = env.CLAXEDO_TAB_ID || id
       const terminalId = env.CLAXEDO_TERMINAL_ID || id
-      const workspaceId = env.CLAXEDO_WORKSPACE_ID || cwd
+      // The agent hooks post this straight back as `?workspaceId=` (see
+      // agent-hooks/templates notify.sh), and the runtime resolves that as a
+      // workspace IDENTITY. Falling back to `cwd` put a directory path in that
+      // slot, so every hook call 404'd — silently, because notify.sh
+      // backgrounds its curl and discards the response. Net effect: no
+      // `agent.lifecycle` event ever reached the app, so a coding agent running
+      // in a terminal never showed working/permission status. Verified against
+      // a live server: `?workspaceId=<cwd path>` → 404,
+      // `?workspaceId=<uuid>` → 200 {"success":true}.
+      const workspaceId = terminalHookWorkspaceId({
+        envWorkspaceId: env.CLAXEDO_WORKSPACE_ID,
+        runtimeWorkspaceId: () => runtimeWorkspaceId(),
+      })
 
       const agentEnv = getTerminalEnvVars({
         tabId,

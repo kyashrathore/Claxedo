@@ -1,4 +1,4 @@
-import { For, Show, createEffect, onCleanup } from "solid-js"
+import { For, Show, createEffect, createMemo, onCleanup } from "solid-js"
 import type { SwitcherItem } from "./switcher-items"
 import { useDragSource } from "../workbench/index"
 import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui/controls/claxedo-icon"
@@ -159,13 +159,24 @@ function canDrag(item: SwitcherItem) {
 
 export function CompactSwitcher(props: CompactSwitcherProps) {
   const itemElements = new Map<string, HTMLDivElement>()
+  let stripElement: HTMLElement | undefined
   let scrollTimer: ReturnType<typeof setTimeout> | undefined
   let selectTimer: ReturnType<typeof setTimeout> | undefined
   const items = () => props.items ?? []
   const activeItem = () => items().find((item) => item.active)
 
+  // The strip is rendered from CONTENT IDS, not from the item objects. The
+  // caller's `switcherItems` memo rebuilds every SwitcherItem object on every
+  // recompute (focus change, status tick, worktree-info resolve), and `<For>`
+  // keys on object identity — so keying on the objects tore down and rebuilt
+  // the whole row each time, throwing away the strip's horizontal scroll
+  // position and making a plain tab click jump. Ids are primitives, so an
+  // unchanged id keeps its DOM node and every field below updates in place.
+  const itemIds = createMemo(() => items().map((item) => item.contentId))
+  const itemById = createMemo(() => new Map(items().map((item) => [item.contentId, item] as const)))
+
   createEffect(() => {
-    const ids = new Set(items().map((item) => item.contentId))
+    const ids = new Set(itemIds())
     itemElements.forEach((_, id) => {
       if (!ids.has(id)) itemElements.delete(id)
     })
@@ -175,19 +186,23 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
     const item = activeItem()
     if (!item) return
     const element = itemElements.get(item.contentId)
-    if (!element?.scrollIntoView) return
+    const parent = stripElement
+    if (!element || !parent) return
     if (scrollTimer) clearTimeout(scrollTimer)
     scrollTimer = setTimeout(() => {
       scrollTimer = undefined
-      const parent = element.parentElement
-      if (!parent) return
       const elementRect = element.getBoundingClientRect()
       const parentRect = parent.getBoundingClientRect()
-      if (elementRect.left >= parentRect.left && elementRect.right <= parentRect.right) return
-      element.scrollIntoView({
-        block: "nearest",
-        inline: "nearest",
-      })
+      const leftOverflow = elementRect.left - parentRect.left
+      const rightOverflow = elementRect.right - parentRect.right
+      if (leftOverflow >= 0 && rightOverflow <= 0) return
+      // Move the strip itself rather than calling `scrollIntoView`, which walks
+      // EVERY scrollable ancestor — a tab at the header edge could otherwise
+      // scroll the workbench beneath it. `smooth` so the catch-up reads as the
+      // strip following the selection instead of a snap.
+      const left = parent.scrollLeft + (leftOverflow < 0 ? leftOverflow : rightOverflow)
+      if (typeof parent.scrollTo === "function") parent.scrollTo({ left, behavior: "smooth" })
+      else parent.scrollLeft = left
     }, ACTIVE_SCROLL_DELAY_MS)
   })
 
@@ -236,6 +251,9 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
 
   return (
     <nav
+      ref={(el) => {
+        stripElement = el
+      }}
       aria-label="Workbench panes"
       data-testid="compact-switcher"
       class="flex h-full min-w-0 items-center gap-0.5 overflow-x-auto overflow-y-hidden px-1"
@@ -243,112 +261,119 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
         "scrollbar-width": "none",
       }}
     >
-      <For each={items()}>
-        {(item) => {
-          return (
-            <div
-              data-testid="compact-switcher-tab"
-              class="group relative h-7 min-w-[118px] max-w-[220px] shrink-0"
-              ref={(el) => {
-                itemElements.set(item.contentId, el)
-              }}
-            >
+      <For each={itemIds()}>
+        {(id) => (
+          <Show when={itemById().get(id)}>
+            {(item) => (
               <div
-                data-slot="workbench-tab"
-                data-selected={item.active ? "true" : undefined}
-                class="flex h-7 w-full min-w-0 max-w-[220px] shrink-0 items-stretch gap-0 rounded-md border border-transparent py-0 pl-1.5 pr-1.5 text-left text-[12px] leading-none transition-[background-color,color] duration-100"
-                classList={{
-                  "bg-surface-base-hover text-text-base":
-                    item.active,
-                  "text-text-weak group-hover:bg-surface-base-hover/35 group-hover:text-text-base group-focus-within:bg-surface-base-hover/35 group-focus-within:text-text-base":
-                    !item.active,
-                  "pr-7": item.closable,
+                data-testid="compact-switcher-tab"
+                // The 28px tab IS the tap target — it is 118-220px wide, which
+                // clears a thumb horizontally. Without this opt-out the mobile /
+                // coarse-pointer floor in app-shell.css sizes every button
+                // inside it to 40x40: the title button outgrows the tab and
+                // drops its label ~7px below the avatar, and the 18px close
+                // glyph inflates over the title. Same reasoning as the rail
+                // sidebar rows.
+                data-claxedo-compact-touch
+                class="group relative h-7 min-w-[118px] max-w-[220px] shrink-0"
+                ref={(el) => {
+                  itemElements.set(id, el)
                 }}
               >
-                <Tooltip
-                  value={<SwitcherMetadataCard item={item} />}
-                  placement="bottom-start"
-                  openDelay={240}
-                  // `theme-overlay-bare`: this tooltip is a POSITIONER, not a
-                  // surface — the card inside draws the chrome. Codex gives every
-                  // overlay a hairline with `!important`, which beats the
-                  // `shadow-none` utility here and edged the wrapper as well as
-                  // the card, a pixel apart. The marker opts it out.
-                  contentClass="theme-overlay-bare z-[260] p-0 border-none bg-transparent shadow-none"
-                  class="flex h-full w-5 shrink-0 items-center"
+                <div
+                  data-slot="workbench-tab"
+                  data-selected={item().active ? "true" : undefined}
+                  class="flex h-7 w-full min-w-0 max-w-[220px] shrink-0 items-stretch gap-0 rounded-md border border-transparent py-0 pl-1.5 pr-1.5 text-left text-[12px] leading-none transition-[background-color,color] duration-100"
+                  classList={{
+                    "bg-surface-base-hover text-text-base":
+                      item().active,
+                    "text-text-weak group-hover:bg-surface-base-hover/35 group-hover:text-text-base group-focus-within:bg-surface-base-hover/35 group-focus-within:text-text-base":
+                      !item().active,
+                    "pr-7": item().closable,
+                  }}
                 >
+                  <Tooltip
+                    value={<SwitcherMetadataCard item={item()} />}
+                    placement="bottom-start"
+                    openDelay={240}
+                    // `theme-overlay-bare`: this tooltip is a POSITIONER, not a
+                    // surface — the card inside draws the chrome. Codex gives every
+                    // overlay a hairline with `!important`, which beats the
+                    // `shadow-none` utility here and edged the wrapper as well as
+                    // the card, a pixel apart. The marker opts it out.
+                    contentClass="theme-overlay-bare z-[260] p-0 border-none bg-transparent shadow-none"
+                    class="flex h-full w-5 shrink-0 items-center"
+                  >
+                    <button
+                      type="button"
+                      aria-label={`${item().projectLabel ?? "Global"} / ${item().workspaceLabel ?? "Global"}`}
+                      data-testid="switcher-prefix-trigger"
+                      draggable={false}
+                      class="flex h-full w-full shrink-0 items-center border-none bg-transparent p-0 outline-none"
+                      onClick={(event) => select(event, item())}
+                    >
+                      <SwitcherPrefixMark item={item()} active={item().active} />
+                    </button>
+                  </Tooltip>
                   <button
                     type="button"
-                    aria-label={`${item.projectLabel ?? "Global"} / ${item.workspaceLabel ?? "Global"}`}
-                    data-testid="switcher-prefix-trigger"
-                    draggable={false}
-                    class="flex h-full w-full shrink-0 items-center border-none bg-transparent p-0 outline-none"
-                    onClick={(event) => select(event, item)}
-                  >
-                    <SwitcherPrefixMark item={item} active={item.active} />
-                  </button>
-                </Tooltip>
-                <button
-                  type="button"
-                  aria-label={item.title}
-                  data-testid="switcher-title-button"
-                  aria-current={item.active ? "page" : undefined}
-                  ref={(el) => {
-                    // Pointer-driven surface drag (mouse + touch + pen), replacing
-                    // native HTML5 `draggable` so tabs can be dragged onto a pane
-                    // on touch devices too (WP-C3). `canDrag` still gates kind.
-                    const dispose = useDragSource(el, {
-                      contentId: () => (canDrag(item) ? item.contentId : undefined),
-                      sourceKind: "tab",
-                      label: () => item.title,
-                      enabled: () => canDrag(item),
-                      // Horizontal strip (`overflow-x-auto`): let the browser pan
-                      // the tab row by touch; drag is gated behind a long-press.
-                      touchAction: "pan-x",
-                      onBegin: () => props.onDragStart?.(item.contentId),
-                      onEnd: () => props.onDragEnd?.(),
-                    })
-                    onCleanup(dispose)
-                  }}
-                  onClick={(event) => select(event, item)}
-                  onAuxClick={(event) => {
-                    if (event.button !== 1 || !item.closable) return
-                    close(event, item)
-                  }}
-                  class="ml-1 flex h-full min-w-0 flex-1 items-center border-none bg-transparent p-0 text-left text-[12px] leading-none text-inherit outline-none"
-                >
-                  <span
-                    data-testid="switcher-title"
-                    class="min-w-0 flex-1 overflow-hidden whitespace-nowrap"
-                    style={{
-                      "mask-image": "linear-gradient(to right, #000 calc(100% - 16px), transparent)",
-                      "-webkit-mask-image": "linear-gradient(to right, #000 calc(100% - 16px), transparent)",
+                    aria-label={item().title}
+                    data-testid="switcher-title-button"
+                    aria-current={item().active ? "page" : undefined}
+                    ref={(el) => {
+                      // Pointer-driven surface drag (mouse + touch + pen), replacing
+                      // native HTML5 `draggable` so tabs can be dragged onto a pane
+                      // on touch devices too (WP-C3). `canDrag` still gates kind.
+                      const dispose = useDragSource(el, {
+                        contentId: () => (canDrag(item()) ? item().contentId : undefined),
+                        sourceKind: "tab",
+                        label: () => item().title,
+                        enabled: () => canDrag(item()),
+                        // Horizontal strip (`overflow-x-auto`): let the browser pan
+                        // the tab row by touch; drag is gated behind a long-press.
+                        touchAction: "pan-x",
+                        onBegin: () => props.onDragStart?.(item().contentId),
+                        onEnd: () => props.onDragEnd?.(),
+                      })
+                      onCleanup(dispose)
                     }}
+                    onClick={(event) => select(event, item())}
+                    onAuxClick={(event) => {
+                      if (event.button !== 1 || !item().closable) return
+                      close(event, item())
+                    }}
+                    class="ml-1 flex h-full min-w-0 flex-1 items-center border-none bg-transparent p-0 text-left text-[12px] leading-none text-inherit outline-none"
                   >
-                    {item.title}
-                  </span>
-                </button>
+                    {/* Ellipsis, not a fade mask. The tab caps at 220px, and a
+                        gradient that dissolves the last 16px reads as a render
+                        glitch at that width — the reader cannot tell a clipped
+                        title from a faint one. `truncate` ends it on a glyph. */}
+                    <span data-testid="switcher-title" class="min-w-0 flex-1 truncate">
+                      {item().title}
+                    </span>
+                  </button>
+                </div>
+                <Show when={item().closable}>
+                  <button
+                    type="button"
+                    aria-label={`Close ${item().title}`}
+                    class="absolute right-1 top-1/2 z-10 flex size-[18px] -translate-y-1/2 items-center justify-center rounded-full border-none bg-transparent p-0 text-icon-weak-base opacity-0 outline-none transition-[opacity,background-color,color] duration-100 hover:bg-surface-base-hover hover:text-icon-base hover:opacity-100 focus-visible:opacity-100 focus-visible:bg-surface-base-hover group-hover:opacity-100"
+                    classList={{
+                      "opacity-65": item().active,
+                    }}
+                    onPointerDown={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                    }}
+                    onClick={(event) => close(event, item())}
+                  >
+                    <Icon name="close-small" size="small" />
+                  </button>
+                </Show>
               </div>
-              <Show when={item.closable}>
-                <button
-                  type="button"
-                  aria-label={`Close ${item.title}`}
-                  class="absolute right-1 top-1/2 z-10 flex size-[18px] -translate-y-1/2 items-center justify-center rounded-full border-none bg-transparent p-0 text-icon-weak-base opacity-0 outline-none transition-[opacity,background-color,color] duration-100 hover:bg-surface-base-hover hover:text-icon-base hover:opacity-100 focus-visible:opacity-100 focus-visible:bg-surface-base-hover group-hover:opacity-100"
-                  classList={{
-                    "opacity-65": item.active,
-                  }}
-                  onPointerDown={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                  }}
-                  onClick={(event) => close(event, item)}
-                >
-                  <Icon name="close-small" size="small" />
-                </button>
-              </Show>
-            </div>
-          )
-        }}
+            )}
+          </Show>
+        )}
       </For>
     </nav>
   )

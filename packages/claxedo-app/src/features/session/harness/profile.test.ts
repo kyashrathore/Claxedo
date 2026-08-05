@@ -5,6 +5,7 @@ import {
   decodeSessionConfig,
   effectiveHarnessModel,
   extractModelsFromConfigOptions,
+  extractThoughtLevelFromConfigOptions,
   failedHarness,
   hardFailedHarness,
   harnessProfile,
@@ -218,5 +219,100 @@ describe("harness profile", () => {
     expect(source).not.toContain("queryClient")
     expect(source).not.toContain("@opencode-ai/sdk")
     expect(source).not.toContain("localStorage")
+  })
+})
+
+/**
+ * Payload shapes here are transcribed from the agents themselves, not invented:
+ *  - codex-acp 1.1.7 `createReasoningEffortConfigOption` emits
+ *    `{ id, name: "Reasoning effort", category: "thought_level", type: "select",
+ *       currentValue, options: [{ value, name, description }] }`
+ *  - claude-agent-acp 0.63.0 emits the same shape with `name: "Effort"` and
+ *    `options` starting with a literal `{ value: "default", name: "Default" }`.
+ * `thought_level` is a first-class category in the ACP schema
+ * (`SessionConfigOptionCategory = "mode" | "model" | "model_config" | "thought_level" | string`).
+ */
+describe("extractThoughtLevelFromConfigOptions", () => {
+  test("reads codex-acp's reasoning-effort option", () => {
+    expect(extractThoughtLevelFromConfigOptions([
+      {
+        id: "model",
+        name: "Model",
+        category: "model",
+        type: "select",
+        currentValue: "gpt-5",
+        selectOptions: [{ id: "gpt-5", name: "GPT-5" }],
+      },
+      {
+        id: "reasoning_effort",
+        name: "Reasoning effort",
+        category: "thought_level",
+        type: "select",
+        currentValue: "medium",
+        options: [
+          { value: "low", name: "Low", description: "Fastest" },
+          { value: "medium", name: "Medium" },
+          { value: "high", name: "High" },
+        ],
+      },
+    ])).toEqual({
+      current: "medium",
+      levels: [
+        { id: "low", name: "Low", description: "Fastest" },
+        { id: "medium", name: "Medium" },
+        { id: "high", name: "High" },
+      ],
+    })
+  })
+
+  test("reads claude-agent-acp's effort option, default row included", () => {
+    expect(extractThoughtLevelFromConfigOptions([
+      {
+        id: "effort",
+        name: "Effort",
+        category: "thought_level",
+        type: "select",
+        currentValue: "default",
+        options: [
+          { value: "default", name: "Default" },
+          { value: "high", name: "High" },
+        ],
+      },
+    ])).toEqual({
+      current: "default",
+      levels: [{ id: "default", name: "Default" }, { id: "high", name: "High" }],
+    })
+  })
+
+  // The native SDK path supplies `selectOptions` (id/name) rather than ACP's
+  // `options` (value/name), exactly as the model option does.
+  test("reads a selectOptions-shaped effort option", () => {
+    expect(extractThoughtLevelFromConfigOptions([
+      {
+        id: "effort",
+        name: "Effort",
+        category: "thought_level",
+        type: "select",
+        currentValue: "high",
+        selectOptions: [{ id: "high", name: "High" }, { id: "max", name: "Max" }],
+      },
+    ])).toEqual({
+      current: "high",
+      levels: [{ id: "high", name: "High" }, { id: "max", name: "Max" }],
+    })
+  })
+
+  test("is null when the harness offers no thought-level option", () => {
+    expect(extractThoughtLevelFromConfigOptions([
+      { id: "model", name: "Model", category: "model", type: "select", currentValue: "opus", selectOptions: [{ id: "opus", name: "Opus" }] },
+    ])).toBeNull()
+  })
+
+  // A single choice is not a choice — offering it spends a whole disclosure
+  // section on something the user cannot change.
+  test("is null when only one level is offered", () => {
+    expect(extractThoughtLevelFromConfigOptions([
+      { id: "effort", name: "Effort", category: "thought_level", type: "select", currentValue: "high", options: [{ value: "high", name: "High" }] },
+    ])).toBeNull()
   })
 })

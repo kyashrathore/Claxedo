@@ -230,6 +230,7 @@ describe("harness options loader", () => {
     expect(patches.at(-1)).toEqual({
       optionsSource: "harness",
       optionsStale: false,
+      thoughtLevels: [],
       optionsLoading: false,
       dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
     })

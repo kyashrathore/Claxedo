@@ -95,10 +95,22 @@ describe("CompactSwitcher", () => {
     expect(screen.getAllByTestId("compact-switcher-tab")[1]).toHaveClass("h-7")
     expect(screen.getAllByTestId("compact-switcher-tab")[1]).toHaveClass("shrink-0")
     expect(screen.getAllByTestId("compact-switcher-tab")[1]).toHaveClass("max-w-[220px]")
-    expect(screen.getByText("Dev server")).toHaveClass("overflow-hidden")
-    expect(screen.getByText("Dev server")).toHaveStyle({
-      "mask-image": "linear-gradient(to right, #000 calc(100% - 16px), transparent)",
-    })
+    // The title ends on an ellipsis at the 220px cap, not on a fade mask that
+    // reads as a render glitch.
+    expect(screen.getByText("Dev server")).toHaveClass("truncate")
+    expect(screen.getByText("Dev server").style.maskImage).toBe("")
+  })
+
+  test("opts the tab out of the coarse-pointer 40px touch floor", () => {
+    render(() => <CompactSwitcher items={items} />)
+
+    // app-shell.css floors every aria-labelled button to 40x40 under
+    // `(max-width: 767px), (pointer: coarse)`. Inside a 28px tab that pushes the
+    // title below the avatar and inflates the close glyph over it; the tab
+    // itself is the tap target, so it carries the documented opt-out.
+    for (const tab of screen.getAllByTestId("compact-switcher-tab")) {
+      expect(tab.hasAttribute("data-claxedo-compact-touch")).toBe(true)
+    }
   })
 
   test("renders project avatars as the metadata hover targets without grouping tabs", () => {

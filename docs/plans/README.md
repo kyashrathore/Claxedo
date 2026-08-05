@@ -55,6 +55,46 @@ explain a maintained package or cross-package delivery contract.
     needs, HLD attaching every addition to a named existing seam (gateway,
     wakes sinks, command union, launchability oracle), and phased impl with
     exact files, tests, and DoD. Evolves the existing WorkGraph; nothing rebuilt.
+- [Durable agents layer](./2026-08-05-001-feat-durable-agents-layer-plan.md)
+  - Active API-first plan extracting the agent-turn primitives WorkGraph already
+    runs (master, intake) into `@claxedo/agents`: Agent/Turn/Receipt as frozen
+    contracts first, then the master onto the generic loop, then intake as the
+    falsification test. Opens with the usage snippets the phases must make
+    compile and run. Phase 0 (real wake budgets on the hosted lane, where
+    `maxDepth` currently bounds nothing) is independently shippable. Settles the
+    turn boundary (`succeeded | continue | failed` plus a wall-clock cap for a
+    hung harness), per-turn profiles so an agent can switch harness/model between
+    turns, stored-not-derived session identity with a transcript-compatibility
+    rule, a namespaced tool-contribution registry (WorkGraph's REST operations
+    are one source among several — the package names none of them), the
+    agent-vs-worker transport split that generalizes the existing
+    `workgraph-run-tools` broker, and the memory port as the thing that makes
+    harness-switching viable. The shape it is designed for — agent as a
+    pi-central session that spawns workers, which makes channel-triggering free —
+    is blocked hosted until `projectionStore`/`durableSessionLog` get Convex
+    adapters, so the phases stay harness-agnostic. Carries the 2026-08-05
+    survey of ten durable-agent/execution candidates as evaluated-and-declined,
+    with the re-open tripwire, plus three inherited defects: the wake reason
+    never reaches the prompt, charter enforcement does not read the charter, and
+    the hosted lane disables three of four wake budgets.
+- [Channels on the hosted Worker](./2026-08-05-002-feat-channels-on-hosted-worker-plan.md)
+  - Active plan making channel ingress work on the deployed Cloudflare Worker,
+    which serves no channel routes today. Organizing decision: delivery-ack and
+    turn-execution are separate invocations — the webhook verifies/dedups/enqueues
+    and returns, a `channel_turn` wake provisions and prompts. Phases: workflow
+    path-filter + composition guards, Convex-backed channel stores behind one
+    two-backend conformance suite, a durable approval bridge (the memory `Map` is
+    wrong once ack and execute are different isolates), the split itself, outbound
+    replies via the unimplemented `workGraphNotifyOwner` seam, staging proof.
+    A channel routes a thread to ONE central agent session and decides nothing
+    else — no workspace, sandbox, or session lifetime; if work needs a repo the
+    agent calls `spawn_session`, which is the acceptance loop `2026-07-07-002`
+    already specifies. The in-request streaming generator is deleted on the
+    hosted path rather than ported. Critical path is Phase 3.0: hosted sets both
+    `projectionStore` and `durableSessionLog` to fail-closed `unusedStore` stubs,
+    so a central agent session has nowhere to persist — the same blocker
+    `2026-08-05-001` records, and the same port Phase 1 opens. One hosted session
+    adapter serves both plans; do not build two.
 
 ## Maintenance
 

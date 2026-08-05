@@ -77,7 +77,11 @@ export function ContextCard(props: {
             {props.collapsedContent}
             <button
               type="button"
-              data-icon-interaction="subdued"
+              /* `standalone`, matching the rail items above it. `subdued`
+                 paints `--icon-interaction-muted`, which read as a disabled
+                 glyph sitting directly under three `standalone` siblings — the
+                 rail is four peer controls, not three plus an afterthought. */
+              data-icon-interaction="standalone"
               class="ui-context-card-rail-item ui-context-card-rail-expand"
               aria-label={props.collapsedLabel ?? `Expand ${props.label}`}
               onClick={() => props.onToggleCollapse?.()}

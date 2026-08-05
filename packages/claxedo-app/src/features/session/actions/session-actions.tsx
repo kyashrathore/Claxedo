@@ -26,6 +26,7 @@ import { reconcileArchivedSessionListQueryData } from "../data/query/session-lis
 import { removeDirectorySession } from "../data/sync/directory-session-cache"
 import { cloneLocalSelectionState, getLocalSelectionHandoff, localDraftSelectionHandoffID, setLocalSelectionHandoff, type LocalSelectionState } from "../store/local-selection-handoff"
 import { sessionConfigSelectionQueryKey } from "../store/session-config-selection"
+import { urlRoutingEnabled } from "@/lib/runtime-mode"
 
 const directorySessionCacheEnsureTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const DIRECTORY_SESSION_CACHE_ENSURE_DELAY_MS = 8_000
@@ -39,6 +40,10 @@ function sessionListRefForArchive(sessionItem: SessionItem, directory: string) {
 export function createSessionActions(props: ActionProps, nav: Nav) {
   const replaceSessionUrl = (sessionId: string) => {
     if (typeof window === "undefined") return
+    // Desktop routes with MemoryRouter over a file:// document: writing the
+    // route here left the window at `file:///s/<session>`, which reloads into a
+    // blank error page. See `urlRoutingEnabled`.
+    if (!urlRoutingEnabled()) return
     const next = canonicalSessionRoute(sessionId)
     if (window.location.pathname === next) return
     window.history.replaceState(window.history.state, "", next)

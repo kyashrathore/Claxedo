@@ -12,7 +12,7 @@ import {
   type ParentProps,
 } from "solid-js"
 import { createStreamConnectivity } from "../connection/stream-connectivity"
-import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
+import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import type { SessionLifecycleEvent } from "../../features/session/data/session-lifecycle"
 import type { WorkgraphChangedEvent } from "../../features/workgraph/workgraph-changed-event"
@@ -218,6 +218,34 @@ export type ClaxedoEventStreamTarget =
   | { kind: "central"; url: URL }
   | { kind: "workspace"; serverUrl: string; workspaceId: string; directory?: string }
 
+/**
+ * The workspace id for a LOCAL workspace at `directory`.
+ *
+ * `signedWorkspaceFromProjects` deliberately skips anything that is not
+ * `cloud` / `user-hosted`, because signed identity is what the relay needs.
+ * Event streams need an id for a different reason — to name which workspace's
+ * events to receive — and a local workspace has one in the projects cache.
+ */
+function localWorkspaceIdForDirectory(projects: ProjectCache, directoryOrId: string | undefined) {
+  if (!directoryOrId) return undefined
+  for (const project of projects) {
+    for (const [key, workspace] of Object.entries(project.workspaces ?? {})) {
+      if (workspace.kind && workspace.kind !== "local") continue
+      const workspaceId = workspace.workspaceId ?? workspace.id ?? key
+      if (!workspaceId) continue
+      // The shell route is `/w/<workspaceId>/…`, so what reaches here is often
+      // the workspace ID rather than a path — matching on directory alone
+      // silently found nothing and left the workspace stream unopened.
+      if (
+        workspaceId === directoryOrId ||
+        key === directoryOrId ||
+        sameWorkspaceDirectory(workspace.directory, directoryOrId)
+      ) return workspaceId
+    }
+  }
+  return undefined
+}
+
 export function claxedoEventStreamTargets(input: {
   serverUrl?: string
   directory?: string
@@ -232,6 +260,25 @@ export function claxedoEventStreamTargets(input: {
   const workspaceId = routeDirectory
     ? routeDirectory
     : signedWorkspaceFromProjects(input.projects ?? [], input.directory)?.workspaceId
+      // A LOCAL workspace has no signed identity, so the two lookups above both
+      // come back empty and the app used to fall through to the bare central
+      // stream alone — which carries only `server.connected` / heartbeats.
+      // Every workspace-scoped event (`pty.created`, `pty.stream`,
+      // `agent.lifecycle`, session status) is published on the workspace stream,
+      // so local sessions received NONE of them: terminals sat forever on their
+      // `pending-…` placeholder because the `pty.created` that resolves it never
+      // arrived, and a coding agent in a terminal never reported status.
+      // Measured against the running server: `/api/wr/events` bare yields only
+      // server.connected + heartbeat, while the workspace-scoped stream yields
+      // pty.created, pty.stream, pty.exited and agent.lifecycle.
+      //
+      // Local belongs on the same per-workspace stream as everything else —
+      // remote workspaces connect directly too, so there is no single global
+      // stream to fall back on. The transport seam already handles it: a
+      // loopback `serverUrl` resolves this target to the local proxy rather
+      // than the relay (see `eventStreamFetch`), so no Runtime Access Token is
+      // minted for a workspace that needs none.
+      ?? localWorkspaceIdForDirectory(input.projects ?? [], input.directory)
 
   if (!workspaceId) return [central]
   return [

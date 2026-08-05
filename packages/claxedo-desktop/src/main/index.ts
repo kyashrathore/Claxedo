@@ -6,7 +6,8 @@ import { createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { Event, MessageBoxOptions } from "electron"
-import { app, BrowserWindow, dialog, utilityProcess } from "electron"
+import { app, BrowserWindow, dialog, session, utilityProcess } from "electron"
+import { trustMainRendererOrigin } from "./renderer-origin"
 import pkg from "electron-updater"
 import treeKill from "tree-kill"
 import { installDesktopTelemetry } from "./telemetry"
@@ -451,6 +452,15 @@ async function initialize() {
       logger.log("server connection ready", {
         variant: serverConnection.variant,
         url: serverConnection.url,
+      })
+
+      // Must run before the renderer opens any socket to this server: the
+      // file:// document sends `Origin: file://` on every WebSocket handshake,
+      // which the server's loopback gate rejects with 403. See renderer-origin.ts.
+      trustMainRendererOrigin({
+        serverUrl: serverConnection.url,
+        onBeforeSendHeaders: (filter, listener) =>
+          session.defaultSession.webRequest.onBeforeSendHeaders(filter, listener),
       })
 
       logger.log("server connection started")

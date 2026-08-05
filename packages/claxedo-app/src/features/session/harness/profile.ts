@@ -81,6 +81,44 @@ export function extractModelsFromConfigOptions(
   }
 }
 
+/**
+ * The harness's reasoning/thinking-effort choice, when it offers one.
+ *
+ * `thought_level` is a first-class category in the ACP schema alongside `mode`
+ * and `model`, and both bundled agents already emit it — codex-acp as
+ * "Reasoning effort", claude-agent-acp as "Effort" with a leading `default`
+ * row. Native SDK harnesses report the same category through the same channel;
+ * the Claude SDK's `ModelInfo` carries `supportedEffortLevels` PER MODEL, which
+ * is why this is re-derived whenever the option payload changes rather than
+ * cached against the harness.
+ *
+ * Mirrors `extractModelsFromConfigOptions` deliberately, including the
+ * `selectOptions` vs `options` split: ACP sends `options` (`value`/`name`),
+ * the native SDK path sends `selectOptions` (`id`/`name`).
+ *
+ * Returns null when the harness offers no such option OR offers exactly one
+ * level — a single choice is not a choice, and surfacing it would spend a whole
+ * disclosure section on something the user cannot change.
+ */
+export function extractThoughtLevelFromConfigOptions(
+  options: HarnessConfigOption[],
+): { levels: HarnessModelOption[]; current?: string } | null {
+  const opt = options.find((item) => item.category === "thought_level" && item.type === "select")
+  if (!opt) return null
+  const levels = opt.selectOptions?.length
+    ? opt.selectOptions.map((item) => ({ ...item }))
+    : (opt.options ?? []).map((item) => ({
+        id: item.value,
+        name: item.name,
+        ...(item.description ? { description: item.description } : {}),
+      }))
+  if (levels.length < 2) return null
+  return {
+    levels,
+    ...(typeof opt.currentValue === "string" ? { current: opt.currentValue } : {}),
+  }
+}
+
 export function decodeHarnessState(value: unknown): HarnessState | undefined {
   const raw = record(value)
   if (!raw) return undefined

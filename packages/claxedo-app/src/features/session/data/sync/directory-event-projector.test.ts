@@ -89,6 +89,24 @@ describe("directory event shell query projector", () => {
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_created", "todo"))).toBeUndefined()
   })
 
+  // The rendered rail rows come from the paginated `session-list` query, which
+  // the directory session-cache write in `applySessionListEvent` does NOT feed.
+  // `event-ingress` already invalidates it for the Claxedo `session.lifecycle`
+  // "created" event, but a plain server `session.created` SSE event had no such
+  // branch — so a session created outside the in-app submit path stayed
+  // invisible in the sidebar until a full app restart. Verified live against a
+  // packaged build: `POST /session` emitted `session.created` on `/global/event`
+  // with the correct directory envelope, and the row still did not appear.
+  test("refetches the paginated session list when a session is created", () => {
+    const key = ["shell", "default", "sessionList", { directory: "/tmp/ws" }] as const
+    queryClient.setQueryData(key, { session: [], total: 0 })
+    expect(queryClient.getQueryState(key)?.isInvalidated).toBe(false)
+
+    apply({ type: "session.created", properties: { info: root("ses_created_live") } })
+
+    expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true)
+  })
+
   test("archives remove shell session queries", () => {
     queryClient.setQueryData(shellDataKeys.sessionId("ses_query", "todo"), [{ id: "todo_1" }])
 

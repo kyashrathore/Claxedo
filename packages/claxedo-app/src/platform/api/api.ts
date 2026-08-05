@@ -84,6 +84,16 @@ function localUrl(url: string | undefined): boolean {
 
 function sameOriginForRemoteLocalBackend(url: string | undefined): string | undefined {
   if (typeof window === "undefined") return undefined
+  // Only a page actually served over http(s) can double as its own API origin.
+  // The packaged desktop renderer is loaded via `win.loadFile(...)`, so it is a
+  // file:// page — and Chromium reports its origin as the literal string
+  // "file://" with an empty hostname, which slipped past both guards below (the
+  // opaque-origin check only matches the origin spelled "null", and the
+  // loopback check reads the *hostname*). This then handed back "file://" as
+  // the API base, so every call resolved to `file:///session?...` /
+  // `file:///api/workspace/resolve?...` and failed with ERR_FILE_NOT_FOUND: no
+  // session would start and no harness would switch in the shipped app.
+  if (!/^https?:$/.test(window.location.protocol)) return undefined
   if (window.location.origin === "null") return undefined
   if (localHost(window.location.hostname)) return undefined
   if (url && !localUrl(url)) return undefined

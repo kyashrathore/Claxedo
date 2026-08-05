@@ -52,6 +52,8 @@ describe("harness status actions", () => {
       harness: "opencode",
       harnessMode: "opencode",
       selectedModel: "",
+      thoughtLevels: null,
+      selectedThoughtLevel: undefined,
       dynamicModels: null,
       readiness: "ready",
       optionsSource: "empty",

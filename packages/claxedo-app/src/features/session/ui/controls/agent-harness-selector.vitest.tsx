@@ -90,75 +90,65 @@ vi.mock("@/features/session/preferences/pane", () => ({
   initialPaneValue: (_scope: string, saved?: string, legacy?: string | null) => saved ?? legacy ?? "",
 }))
 
-// Stub Select to expose trigger + option buttons in the DOM
-vi.mock("@opencode-ai/ui/select", () => ({
-  Select: (props: any) => {
-    const groups = (props.options as string[]).reduce((result, opt) => {
-      const group = props.groupBy?.(opt) ?? ""
+// Stub the merged harness→model picker, preserving the DOM contract these
+// tests were written against: a harness trigger, one button per harness option,
+// and the model control with its trigger props spread onto a real node. The
+// component under test no longer imports `Select` or `ModelSelectorPopover` —
+// it composes one picker — so this is where the seam moved.
+vi.mock("@/features/session/composer/ui/harness-model-picker", () => ({
+  HarnessModelPicker: (props: any) => {
+    const options: string[] = [...props.harnessOptions]
+    const groups = options.reduce((result, opt) => {
+      const group = harnessGroupForTest(opt)
       result.set(group, [...(result.get(group) ?? []), opt])
       return result
     }, new Map<string, string[]>())
     return (
-      <div data-testid="select" data-disabled={props.disabled ? "true" : "false"}>
-        <button
-          data-testid="select-trigger"
-          disabled={props.disabled}
-        >
-          {props.label?.(props.current) ?? props.current}
+      <div data-testid="select" data-disabled={props.harnessDisabled?.() ? "true" : "false"}>
+        <button data-testid="select-trigger" disabled={props.harnessDisabled?.()}>
+          {props.harnessLabel?.(props.harness?.())}
         </button>
-        {[...groups.entries()].map(([group, options]) => (
+        {[...groups.entries()].map(([group, opts]) => (
           <div data-testid={`select-group-${group}`}>
             <span>{group}</span>
-            {options.map((opt: string) => (
-              <>
-                {/* Choosing an option is only reachable with the menu open, so
-                    faithfully fire onOpenChange(true) first (real Kobalte does). */}
-                <button
-                  data-testid={`select-option-${opt}`}
-                  onClick={() => {
-                    props.onOpenChange?.(true)
-                    props.onSelect?.(opt)
-                  }}
-                >
-                  {props.label?.(opt) ?? opt}
-                </button>
-                {/* Simulates the trigger's typeahead-while-closed: a value change
-                    WITHOUT the menu ever opening. */}
-                <button
-                  data-testid={`select-typeahead-${opt}`}
-                  onClick={() => props.onSelect?.(opt)}
-                >
-                  {props.label?.(opt) ?? opt}
-                </button>
-              </>
+            {opts.map((opt: string) => (
+              <button data-testid={`select-option-${opt}`} onClick={() => props.onHarnessSelect?.(opt)}>
+                {props.harnessLabel?.(opt) ?? opt}
+              </button>
             ))}
           </div>
         ))}
+        <div data-testid="model-selector" data-disabled={props.modelDisabled?.() ? "true" : "false"}>
+          <div
+            data-testid="model-trigger-content"
+            data-action="prompt-harness-model"
+            title={props.triggerHint?.()}
+            aria-label={props.triggerLabel}
+          >
+            {props.modelLabel?.()}
+          </div>
+          {(props.model?.().list?.() ?? []).map((item: any) => (
+            <button
+              data-testid={`model-option-${item.id}`}
+              onClick={() => props.model?.().set?.({ modelID: item.id, providerID: item.provider?.id })}
+            >
+              {item.name}
+            </button>
+          ))}
+        </div>
       </div>
     )
   },
 }))
 
-vi.mock("@/features/session/ui/model/select-model", () => ({
-  ModelSelectorPopover: (props: any) => {
-    const items = props.model?.list?.() ?? []
-    return (
-      <div data-testid="model-selector" data-disabled={props.triggerProps?.disabled ? "true" : "false"}>
-        {/* Spread the trigger props onto a real node: the soft "why is this
-            inert" hints now ride the control itself instead of a sibling dot. */}
-        <div data-testid="model-trigger-content" {...props.triggerProps}>{props.children}</div>
-        {items.map((item: any) => (
-          <button
-            data-testid={`model-option-${item.id}`}
-            onClick={() => props.model?.set?.({ modelID: item.id, providerID: item.provider?.id })}
-          >
-            {item.name}
-          </button>
-        ))}
-      </div>
-    )
-  },
-}))
+// Mirrors harnessOptionGroup in the component; the stub groups rows the same
+// way so the "groups harness choices by ACP / native SDK / direct" test still
+// describes what a user sees.
+function harnessGroupForTest(input: string) {
+  if (input === "claude-acp" || input === "codex-acp" || input === "cursor-acp") return "ACP"
+  if (input === "claude-sdk" || input === "codex-app-server" || input === "cursor-sdk") return "Native SDK"
+  return "Direct"
+}
 
 vi.mock("@opencode-ai/ui/v2/tooltip-v2", () => ({
   TooltipV2: (props: any) => (
@@ -335,26 +325,24 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
     )
   })
 
-  test("does not capture harness_selected when the click is a no-op (current harness, disabled, or stray typeahead)", () => {
+  test("does not capture harness_selected when the click is a no-op (the current harness)", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
 
+    // claude-acp is already current — re-picking it must not emit telemetry.
     fireEvent.click(container.querySelector("[data-testid='select-option-claude-acp']") as HTMLButtonElement)
-    fireEvent.click(container.querySelector("[data-testid='select-typeahead-codex-acp']") as HTMLButtonElement)
 
     expect(captured.filter((entry) => entry.event === "harness_selected")).toEqual([])
   })
 
-  test("a typeahead-while-closed change does NOT switch the harness", () => {
-    // Regression: with the trigger focused (never opened), the Kobalte trigger's
-    // typeahead mutates the value on a bare keystroke. Stray typing must not
-    // silently switch the session's harness.
-    const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
-    const typeahead = container.querySelector("[data-testid='select-typeahead-codex-acp']") as HTMLButtonElement
-    expect(typeahead).not.toBeNull()
-
-    fireEvent.click(typeahead)
-    expect(setHarnessCalls).toHaveLength(0)
-  })
+  // RETIRED: "a typeahead-while-closed change does NOT switch the harness".
+  //
+  // That guarded a hazard of the Kobalte `Select` this control used to be: with
+  // the trigger focused but never opened, its typeahead mutated the value on a
+  // bare keystroke, and `openedViaMenu` existed solely to reject the resulting
+  // onChange. The merged picker is a Popover whose harness rows are plain
+  // buttons, so there is no value-mutating path that is not a click — the test
+  // could only ever assert against its own stub. What still holds is covered by
+  // the no-op and locked cases around it.
 
   test("clicking an option does NOT call setHarness when locked", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={true} />)

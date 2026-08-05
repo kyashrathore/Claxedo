@@ -50,7 +50,41 @@ function setServerEnv(input: { claxedo?: string; legacy?: string }) {
   import.meta.env.VITE_OPENCODE_BACKEND_URL = input.legacy
 }
 
+/**
+ * Put the DOM in the shape the PACKAGED desktop renderer actually has.
+ *
+ * The desktop main process loads the window with `win.loadFile(...)`, so the
+ * renderer is a file:// page. Setting `location.href` alone is NOT enough to
+ * reproduce it: happy-dom serializes a file:// page's origin as the string
+ * "null" (the spec's opaque-origin serialization), but real Chromium/Electron
+ * reports the literal string "file://" with an empty hostname — measured
+ * directly in the shipped app's devtools console.
+ *
+ * That one-value divergence is why this bug shipped. `getClaxedoServerUrl()`
+ * only rejected the origin spelled "null" and only bailed on a loopback
+ * *hostname*, so under happy-dom the guard fired and the suite stayed green,
+ * while in the real app the app handed back its own "file://" origin as the API
+ * base — every call then resolved to `file:///session?...` /
+ * `file:///api/workspace/resolve?...` and failed with ERR_FILE_NOT_FOUND, so no
+ * session would start and no harness would switch.
+ *
+ * So pin `origin` to the browser-truthful value rather than trusting the
+ * test DOM. Do NOT call `configureApiRuntime()` alongside this: production
+ * never calls it, and setting `cfg.base` short-circuits the entire fallback
+ * chain — which is why the pre-existing file:// test above never caught this.
+ */
+function asPackagedDesktopRenderer() {
+  window.location.href = "file:///Applications/Claxedo.app/Contents/Resources/app.asar/out/renderer/index.html"
+  Object.defineProperty(window.location, "origin", {
+    configurable: true,
+    get: () => "file://",
+  })
+}
+
 beforeEach(() => {
+  // Drop any `origin` override a previous test installed (see
+  // asPackagedDesktopRenderer) so it cannot leak into unrelated cases.
+  Reflect.deleteProperty(window.location, "origin")
   window.location.href = "http://localhost/"
   window.__OPENCODE__ = originalOpencode ? { ...originalOpencode } : undefined
   token = null
@@ -255,6 +289,24 @@ describe("getDefaultBaseUrl", () => {
   test("points IPv4 app development at claxedo-server", () => {
     window.location.href = "http://127.0.0.1:4444/workspace"
     expect(getDefaultBaseUrl()).toBe("http://127.0.0.1:3001")
+  })
+
+  test("points the packaged desktop renderer at claxedo-server", () => {
+    asPackagedDesktopRenderer()
+    expect(getDefaultBaseUrl()).toBe("http://127.0.0.1:3001")
+  })
+
+  test("never resolves API paths against the file:// origin", () => {
+    asPackagedDesktopRenderer()
+    expect(new URL("/session", getDefaultBaseUrl()).toString()).toBe("http://127.0.0.1:3001/session")
+  })
+})
+
+describe("getClaxedoServerUrl on the packaged desktop renderer", () => {
+  test("falls through to claxedo-server rather than the file:// origin", () => {
+    asPackagedDesktopRenderer()
+    setServerEnv({ claxedo: undefined, legacy: undefined })
+    expect(getClaxedoServerUrl()).toBe("http://127.0.0.1:3001")
   })
 })
 

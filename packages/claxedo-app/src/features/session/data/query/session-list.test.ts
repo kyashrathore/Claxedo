@@ -6,6 +6,7 @@ import {
   reconcileArchivedSessionListQueryData,
   sessionListRequest,
   sessionListQueryOptions,
+  upsertCreatedSessionListRow,
   type SessionListResponse,
 } from "./session-list"
 import { authFetch } from "@/platform/api/api"
@@ -368,5 +369,53 @@ describe("session list query cache", () => {
     expect(result.nextCursor).toBe("cursor_after_ses_3")
     expect(queryClient.getQueryData<SessionListResponse>(key)?.items?.map((item) => item.sessionId))
       .toEqual(["ses_1", "ses_2", "ses_3"])
+  })
+})
+
+describe("upsertCreatedSessionListRow", () => {
+  const key = (query: Parameters<typeof queryKeys.shell.sessionList>[1]) =>
+    queryKeys.shell.sessionList("http://test.local", query)
+  const newRow = {
+    sessionId: "ses_new",
+    title: "New",
+    directory: "/repo",
+    projectId: "proj_1",
+    workspaceId: "ws_1",
+    createdAt: 4,
+    updatedAt: 4,
+  }
+
+  test("prepends the created row into matching workspace and project queries, skipping global scope", () => {
+    const workspaceKey = key({ scope: "workspace", workspaceId: "ws_1", directory: "/repo", limit: 2 })
+    const projectKey = key({ scope: "project", projectId: "proj_1", limit: 2 })
+    const globalKey = key({ scope: "global", limit: 2 })
+    queryClient.setQueryData(workspaceKey, response())
+    queryClient.setQueryData(projectKey, response())
+    queryClient.setQueryData(globalKey, response())
+
+    upsertCreatedSessionListRow({ row: newRow })
+
+    const workspace = queryClient.getQueryData<SessionListResponse>(workspaceKey)
+    expect(workspace?.items?.[0]?.sessionRef).toBe("workspace:ws_1:session:ses_new")
+    expect(workspace?.totalKnown).toBe(4)
+    expect(queryClient.getQueryData<SessionListResponse>(projectKey)?.items?.[0]?.sessionId).toBe("ses_new")
+    expect(queryClient.getQueryData<SessionListResponse>(globalKey)?.items?.some((item) => item.sessionId === "ses_new")).toBe(false)
+  })
+
+  test("matches by directory without workspaceId, dedupes, and skips filtered views", () => {
+    const directoryKey = key({ scope: "workspace", directory: "/repo", limit: 2 })
+    const filteredKey = key({ scope: "workspace", workspaceId: "ws_1", status: ["running"], limit: 2 })
+    const archivedKey = key({ scope: "workspace", workspaceId: "ws_1", archived: "archived", limit: 2 })
+    queryClient.setQueryData(directoryKey, response())
+    queryClient.setQueryData(filteredKey, response())
+    queryClient.setQueryData(archivedKey, response())
+
+    upsertCreatedSessionListRow({ row: newRow })
+    upsertCreatedSessionListRow({ row: newRow })
+
+    const items = queryClient.getQueryData<SessionListResponse>(directoryKey)?.items
+    expect(items?.filter((item) => item.sessionId === "ses_new")).toHaveLength(1)
+    expect(queryClient.getQueryData<SessionListResponse>(filteredKey)?.items?.some((item) => item.sessionId === "ses_new")).toBe(false)
+    expect(queryClient.getQueryData<SessionListResponse>(archivedKey)?.items?.some((item) => item.sessionId === "ses_new")).toBe(false)
   })
 })

@@ -29,6 +29,7 @@ describe("harness options state", () => {
         optionsSource: "harness",
         optionsStale: false,
         optionsLoading: false,
+        thoughtLevels: [],
         dynamicModels: [
           { id: "sonnet", name: "Sonnet" },
           { id: "opus", name: "Opus" },
@@ -87,6 +88,7 @@ describe("harness options state", () => {
         optionsSource: "harness",
         optionsStale: false,
         optionsLoading: false,
+        thoughtLevels: [],
         dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
         selectedModel: "removed",
         configError: "Selected model unavailable",
@@ -120,6 +122,7 @@ describe("harness options state", () => {
         optionsSource: "catalog",
         optionsStale: false,
         optionsLoading: true,
+        thoughtLevels: [],
         dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
         selectedModel: "sonnet",
         configError: undefined,
@@ -141,6 +144,7 @@ describe("harness options state", () => {
         optionsSource: "empty",
         optionsStale: true,
         optionsLoading: true,
+        thoughtLevels: [],
         dynamicModels: [],
         configError: "Loading model options...",
       },
@@ -158,6 +162,7 @@ describe("harness options state", () => {
         optionsSource: "empty",
         optionsStale: true,
         optionsLoading: false,
+        thoughtLevels: [],
         dynamicModels: [],
         configError: "Model options unavailable",
       },
@@ -177,6 +182,7 @@ describe("harness options state", () => {
         optionsSource: "harness",
         optionsStale: false,
         optionsLoading: false,
+        thoughtLevels: [],
         dynamicModels: [],
         selectedModel: "default",
         configError: "No model options available",
@@ -211,6 +217,7 @@ describe("harness options state", () => {
         optionsSource: "harness",
         optionsStale: true,
         optionsLoading: true,
+        thoughtLevels: [],
         dynamicModels: [{ id: "", name: "Empty" }],
         selectedModel: "default",
         configError: "Loading model options...",
@@ -229,5 +236,69 @@ describe("harness options state", () => {
     expect(source).not.toContain("queryClient")
     expect(source).not.toContain("@opencode-ai/sdk")
     expect(source).not.toContain("localStorage")
+  })
+})
+
+describe("harness options state — thought level", () => {
+  const modelOption = {
+    id: "model",
+    name: "Model",
+    category: "model",
+    type: "select" as const,
+    currentValue: "opus",
+    selectOptions: [{ id: "sonnet", name: "Sonnet" }, { id: "opus", name: "Opus" }],
+  }
+  const effortOption = {
+    id: "effort",
+    name: "Effort",
+    category: "thought_level",
+    type: "select" as const,
+    currentValue: "high",
+    options: [{ value: "default", name: "Default" }, { value: "high", name: "High" }],
+  }
+
+  test("carries the harness's effort levels alongside its models", () => {
+    const result = applyHarnessOptionsResponse({
+      type: "claude-acp",
+      selectedModel: "sonnet",
+      tries: 0,
+      payload: { source: "harness", stale: false, options: [modelOption, effortOption] },
+    })
+    expect(result.patch.thoughtLevels).toEqual([
+      { id: "default", name: "Default" },
+      { id: "high", name: "High" },
+    ])
+    expect(result.patch.selectedThoughtLevel).toBe("high")
+  })
+
+  /**
+   * The effort payload must survive the branches that bail on the MODEL result.
+   * A harness can legitimately answer with an effort option while its model list
+   * is still loading, and dropping it there is how a control that "sometimes
+   * disappears" gets built.
+   */
+  test("keeps effort levels when the model list comes back empty", () => {
+    const result = applyHarnessOptionsResponse({
+      type: "claude-acp",
+      selectedModel: "sonnet",
+      tries: 0,
+      payload: { source: "harness", stale: false, options: [effortOption] },
+    })
+    expect(result.patch.dynamicModels).toEqual([])
+    expect(result.patch.thoughtLevels).toEqual([
+      { id: "default", name: "Default" },
+      { id: "high", name: "High" },
+    ])
+  })
+
+  test("clears effort levels for a harness that offers none", () => {
+    const result = applyHarnessOptionsResponse({
+      type: "claude-acp",
+      selectedModel: "sonnet",
+      tries: 0,
+      payload: { source: "harness", stale: false, options: [modelOption] },
+    })
+    expect(result.patch.thoughtLevels).toEqual([])
+    expect(result.patch.selectedThoughtLevel).toBeUndefined()
   })
 })

@@ -47,7 +47,7 @@
 /* Collapsed, the rail chip carries its own border — drop any variant surface.
    The width is explicit (the rail's natural size) so it can transition. */
 .ui-context-card.is-collapsed {
-  width: 2.5rem;
+  width: 1.75rem;
   padding: 0;
   background: none;
   box-shadow: none;
@@ -108,12 +108,15 @@
 
 /* ── Collapsed rail: item buttons + expand, Cursor-style ── */
 
+/* Slimmer rail, smaller glyphs. Plain rem steps on purpose — an earlier pass
+   derived 6.4px / 1px / 18px by measuring a screenshot, which matched a
+   reference exactly and left values nobody can reason about or reuse. */
 .ui-context-card-rail {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.2rem;
-  padding: 0.3rem;
+  gap: 0.125rem;
+  padding: 0.125rem;
   border: 1px solid var(--border-weak-base);
   border-radius: var(--radius-lg);
 }
@@ -121,8 +124,8 @@
 .ui-context-card-rail-item {
   display: grid;
   place-items: center;
-  width: 1.75rem;
-  height: 1.75rem;
+  width: 1.25rem;
+  height: 1.25rem;
   border-radius: var(--radius-md);
   color: var(--icon-weak-base);
   transition:
@@ -140,13 +143,23 @@
   color: var(--icon-critical-base);
 }
 
+/* 0.875rem (14px) glyph in a 1.25rem (20px) button — 3px of air per side.
+   The rail adds only 2px of its own, so the glyph sits 5px from the edge
+   instead of the 9px it had when a 14px icon floated in a 24px cell inside
+   4px padding. Two small paddings stack into one large one. */
+.ui-context-card-rail-item [data-component="icon"],
+.ui-context-card-rail-item [data-slot="icon-svg"] {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
 /* The expand control sits under a hairline, always last. */
 .ui-context-card-rail-expand {
-  margin-top: 0.15rem;
+  margin-top: 0.25rem;
   border-top: 1px solid var(--border-weak-base);
   border-radius: 0 0 var(--radius-md) var(--radius-md);
-  padding-top: 0.15rem;
-  height: 1.9rem;
+  padding-top: 0.25rem;
+  height: 1.75rem;
 }
 
 /* ── Sections (Environment / Subagents / Browser stacks) ── */

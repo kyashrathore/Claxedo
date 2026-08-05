@@ -5,7 +5,6 @@ import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { Popover } from "@opencode-ai/ui/popover"
 import { useSDK } from "@/features/session/app-ports"
 import { useClaxedoState } from "@/features/session/app-ports"
-import { usePaneId } from "@/features/session/app-ports"
 import { useShellQueryOptions } from "@/features/session/app-ports"
 import { createProcessClient } from "@/features/session/app-ports"
 import { parseOwnerRepo } from "@/features/session/app-ports"
@@ -477,14 +476,26 @@ export function sessionEnvironmentCardState(): SessionEnvironmentCardState {
  * Wires the presentational card to the live session: git change totals, branch,
  * and the isolation kind, all read from the scoped session SDK and the signed
  * project inventory. Renders ONLY while the shared workspace panel is closed
- * (otherwise it duplicates the panel) and only for the focused pane (so split
- * panes never stack two cards). It expects to be placed as a direct child of
- * the `.session-envcard-shell` flex row.
+ * (otherwise it duplicates the panel). It expects to be placed as a direct
+ * child of the `.session-envcard-shell` flex row.
+ *
+ * Deliberately NOT gated on pane focus. Visibility here is not free: the
+ * reserved gutter is keyed off `:has(.session-envcard)`, so mounting or
+ * unmounting the card changes `padding-right` on the timeline's scroll viewport
+ * and the composer dock — which relays out and repaints the entire transcript.
+ * Tying that to focus meant every click between split panes redrew both
+ * timelines. One card per pane, stable for as long as the pane is on screen.
+ *
+ * (The old gate compared `usePaneId()` against the focused pane. That context
+ * carries a STRING captured once at mount, so it was wrong in both directions:
+ * a surface that mounted unbound holds `""` and passed the gate forever, while
+ * one that mounted into a pane held a stale id that stopped matching the moment
+ * the surface moved. Cards never stacked either way — each is absolutely
+ * positioned inside its own pane's shell.)
  */
 export function SessionEnvironmentCardMount() {
   const sdk = useSDK()
   const state = useClaxedoState()
-  const paneId = usePaneId()
   const queryOptions = useShellQueryOptions()
   const platform = usePlatform()
   const prompt = usePrompt()
@@ -492,8 +503,7 @@ export function SessionEnvironmentCardMount() {
 
   const directory = () => sdk.directory
   const panelOpen = () => state.workspacePanel.state().open
-  const focused = () => !paneId || state.wb.state.focusedPaneId === paneId
-  const visible = () => !panelOpen() && !!directory() && focused()
+  const visible = () => !panelOpen() && !!directory()
   // Never paint the card before its persisted collapse state is known: showing
   // the default (expanded) and correcting it a tick later is the visible
   // expand-then-collapse flash. `ready` is already true on the sync (web) path.
