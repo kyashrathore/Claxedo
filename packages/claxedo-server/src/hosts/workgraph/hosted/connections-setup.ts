@@ -14,7 +14,7 @@ import {
 } from "@claxedo/connections"
 import { Hono, type Context } from "hono"
 import { anyApi, type FunctionReference } from "convex/server"
-import { controlPlaneAuthContext, type ClerkVerifier, type ControlPlaneAuthConfig } from "../../../platform/auth/auth"
+import { controlPlaneAuthContext, controlPlaneAuthErrorBody, ControlPlaneAuthError, type ClerkVerifier, type ControlPlaneAuthConfig } from "../../../platform/auth/auth"
 import { hostedOrgCredentials } from "../../../credentials/worker/index"
 import { githubIntegrationForEnv } from "../../../connections/github-oauth"
 import { createConvexConnectionAttempts } from "../../../authority/adapters/convex/connection-attempts"
@@ -28,9 +28,11 @@ type Executor = Readonly<{
 type Query = FunctionReference<"query">
 type Mutation = FunctionReference<"mutation">
 const api = anyApi as unknown as {
-  orgs: { membershipByClerkIds: Query }
+  orgs: { membershipByClerkIds: Query; personalMembershipForClerkSubject: Mutation }
   workgraphConnections: { listMetadata: Query; upsertMetadata: Mutation; deleteMetadata: Mutation }
 }
+
+type Membership = { member?: boolean; org_id?: string; user_id?: string } | null
 
 type Metadata = Readonly<{
   id: string
@@ -60,19 +62,25 @@ export function createHostedConnectionsSetup(input: Readonly<{
 }>) {
   const app = new Hono()
   const handle = async (c: Context) => {
-    const auth = await controlPlaneAuthContext(c.req.raw, {
-      config: input.authConfig,
-      ...(input.verifier ? { verifier: input.verifier } : {}),
-      cliTokenEnv: input.env,
-    })
-    if (auth.mode !== "signed" || !auth.user.orgId) return c.json({ code: "connections_org_required" }, 403)
-    const denied = await input.requireEntitlement?.(auth.user.orgId)
+    let auth
+    try {
+      auth = await controlPlaneAuthContext(c.req.raw, {
+        config: input.authConfig,
+        ...(input.verifier ? { verifier: input.verifier } : {}),
+        cliTokenEnv: input.env,
+      })
+    } catch (err) {
+      if (err instanceof ControlPlaneAuthError) {
+        return c.json(controlPlaneAuthErrorBody(err), err.status)
+      }
+      throw err
+    }
+    if (auth.mode !== "signed") return c.json({ code: "connections_org_required" }, 403)
+    // Personal accounts carry no Clerk org claim; entitlement is an org-billing
+    // concept, so the gate only applies when an org claim exists.
+    const denied = auth.user.orgId ? await input.requireEntitlement?.(auth.user.orgId) : undefined
     if (denied) return c.json(denied.body, denied.status)
-    const membership = await input.executor.query(api.orgs.membershipByClerkIds, {
-      service_token: input.serviceToken,
-      clerk_org_id: auth.user.orgId,
-      clerk_subject: auth.user.subject,
-    }) as { member?: boolean; org_id?: string; user_id?: string } | null
+    const membership = await hostedMembership(input, auth.user)
     if (!membership?.member || !membership.org_id || !membership.user_id) {
       return c.json({ code: "connections_org_membership_required" }, 403)
     }
@@ -104,12 +112,8 @@ export function createHostedRepositoryAccess(input: Parameters<typeof createHost
     connectionId: string,
     fullName: string,
   ) => {
-    if (!auth?.user.orgId) return { ok: false as const, status: 403 as const, code: "connections_org_required" }
-    const membership = await input.executor.query(api.orgs.membershipByClerkIds, {
-      service_token: input.serviceToken,
-      clerk_org_id: auth.user.orgId,
-      clerk_subject: auth.user.subject,
-    }) as { member?: boolean; org_id?: string; user_id?: string } | null
+    if (!auth) return { ok: false as const, status: 403 as const, code: "connections_org_required" }
+    const membership = await hostedMembership(input, auth.user)
     if (!membership?.member || !membership.org_id || !membership.user_id) {
       return { ok: false as const, status: 403 as const, code: "connections_org_membership_required" }
     }
@@ -132,6 +136,32 @@ export function createHostedRepositoryAccess(input: Parameters<typeof createHost
       service.dispose()
     }
   }
+}
+
+/**
+ * Membership verdict for the signed caller's credential scope. Sessions with a
+ * Clerk org claim re-check membership in that org; sessions without one
+ * (personal accounts) resolve the caller's personal org — the same scope
+ * `resolveForMe` (convex/orgs.ts) hands every other hosted surface, so a solo
+ * user's connections live under their personal org exactly like their
+ * workspaces. The personal path is a mutation because resolution
+ * auto-provisions the personal org row on first use.
+ */
+async function hostedMembership(
+  input: Parameters<typeof createHostedConnectionsSetup>[0],
+  user: { orgId?: string; subject: string },
+): Promise<Membership> {
+  if (user.orgId) {
+    return await input.executor.query(api.orgs.membershipByClerkIds, {
+      service_token: input.serviceToken,
+      clerk_org_id: user.orgId,
+      clerk_subject: user.subject,
+    }) as Membership
+  }
+  return await input.executor.mutation(api.orgs.personalMembershipForClerkSubject, {
+    service_token: input.serviceToken,
+    clerk_subject: user.subject,
+  }) as Membership
 }
 
 function hostedConnectionsService(

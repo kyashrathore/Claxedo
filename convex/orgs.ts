@@ -452,6 +452,26 @@ export const membershipByClerkIds = serviceQuery({
   },
 })
 
+/**
+ * Personal-org counterpart of `membershipByClerkIds` for the hosted connections
+ * gate (src/hosts/workgraph/hosted/connections-setup.ts): sessions without a
+ * Clerk organization (personal accounts) resolve to the caller's personal org —
+ * the same scope `resolveForMe` hands every other hosted surface. Mutation
+ * because `personalOrgForUser` auto-provisions the org row on first use.
+ * Service-token gated (machine principal), like `membershipByClerkIds`.
+ */
+export const personalMembershipForClerkSubject = serviceMutation({
+  args: {
+    clerk_subject: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await userByClerkSubject(ctx.db, args.clerk_subject)
+    if (!user) return { member: false as const }
+    const org = await personalOrgForUser(ctx, user)
+    return { member: true as const, org_id: String(org._id), user_id: String(user._id), role: "owner" }
+  },
+})
+
 // ===========================================================================
 // Pre-launch security review §6.12 — organization deletion cascade.
 //
