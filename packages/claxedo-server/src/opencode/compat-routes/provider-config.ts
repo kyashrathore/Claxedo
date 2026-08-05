@@ -138,10 +138,35 @@ function providerListHasModels(input: unknown) {
   })
 }
 
+/**
+ * Degrade to `fallback` when the engine cannot answer, rather than 500ing a
+ * route the rest of the app depends on.
+ *
+ * The degraded shape is INDISTINGUISHABLE from a healthy empty result — an
+ * unloadable engine made `/config/providers` answer `{providers: []}` and the
+ * model picker showed a bland "No model results" for an entire release, while
+ * the only trace was a console.warn on a stream the packaged desktop app
+ * discards. So this also records the failure where a running app can be asked
+ * about it: `/api/claxedo/health` reports `degraded`, which is what the
+ * cross-surface matrix test asserts against.
+ */
+const degradations = new Map<string, { at: number; error: string }>()
+
+export function engineDegradations() {
+  return [...degradations.entries()].map(([label, info]) => ({ label, ...info }))
+}
+
+export function clearEngineDegradations() {
+  degradations.clear()
+}
+
 async function safe<T>(label: string, fallback: () => Promise<T> | T, run: () => Promise<T>) {
   try {
-    return await run()
+    const result = await run()
+    degradations.delete(label)
+    return result
   } catch (err) {
+    degradations.set(label, { at: Date.now(), error: err instanceof Error ? err.message : String(err) })
     console.warn(`[opencode-compat] ${label} unavailable`, err)
     return await fallback()
   }
