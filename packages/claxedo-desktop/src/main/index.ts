@@ -10,13 +10,14 @@ import { app, BrowserWindow, dialog, utilityProcess } from "electron"
 import pkg from "electron-updater"
 import treeKill from "tree-kill"
 import { installDesktopTelemetry } from "./telemetry"
+import { reportInstall } from "./install-telemetry"
 
 // Registered before every other line in this file (including the app.setName
 // / app.setPath calls immediately below): once a listener exists here,
 // Electron/Node's default uncaughtException behavior is disabled, so this
 // module's handler becomes the only thing standing between a thrown error
 // and a desktop app that hangs instead of failing fast.
-installDesktopTelemetry()
+const telemetryClient = installDesktopTelemetry()
 
 const APP_NAMES: Record<string, string> = {
   dev: "Claxedo Dev",
@@ -34,6 +35,17 @@ app.setPath(
   process.env.CLAXEDO_DESKTOP_USER_DATA_DIR ??
     join(app.getPath("appData"), IS_PACKAGED ? APP_IDS[CHANNEL] : "ai.claxedo.desktop.dev"),
 )
+// Deliberately AFTER app.setPath("userData", …) above: the once-only marker
+// lives in userData, so reporting any earlier would write it to Electron's
+// default path and re-report on the next launch from the real one. Not awaited
+// — startup never blocks on telemetry, and reportInstall swallows its own
+// failures.
+void reportInstall(telemetryClient, {
+  userDataDir: app.getPath("userData"),
+  appVersion: app.getVersion(),
+  channel: CHANNEL,
+})
+
 const { autoUpdater } = pkg
 
 import type { InitStep, ServerReadyData, WslConfig } from "../preload/types"

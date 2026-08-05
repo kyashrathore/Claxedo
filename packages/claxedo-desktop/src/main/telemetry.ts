@@ -34,13 +34,33 @@ function clean(value: string | undefined): string | undefined {
   return trimmed ? trimmed : undefined
 }
 
+/**
+ * Build-time telemetry config, inlined by electron.vite.config.ts.
+ *
+ * A packaged app runs in a user's session, not CI's: `process.env` there holds
+ * none of the deploy variables, so a release that read only the environment
+ * would be permanently, silently off. These constants are how an official
+ * build carries its own configuration.
+ *
+ * `process.env` still wins over them everywhere below — that ordering is what
+ * keeps a self-builder (or a test, or a support session) able to point a build
+ * at their own project, or turn it off, without rebuilding. When a variable is
+ * unset at build time the define bakes `undefined` and every gate behaves
+ * exactly as it did before this existed.
+ */
+const baked = {
+  key: clean(import.meta.env.CLAXEDO_POSTHOG_KEY),
+  host: clean(import.meta.env.CLAXEDO_POSTHOG_HOST),
+  mode: clean(import.meta.env.CLAXEDO_TELEMETRY_MODE),
+} as const
+
 /** Only `on` permits sending, matched case-insensitively after trimming;
  *  `off`, unset, and anything unrecognized all mean off. Mirrors
  *  claxedo-server's observability/config.ts telemetryEnabled — the desktop
  *  main process reads process.env directly rather than importing the server
  *  package, so the rule is restated here rather than shared. */
 function telemetryEnabled(env: NodeJS.ProcessEnv): boolean {
-  return clean(env.CLAXEDO_TELEMETRY_MODE)?.toLowerCase() === "on"
+  return (clean(env.CLAXEDO_TELEMETRY_MODE) ?? baked.mode)?.toLowerCase() === "on"
 }
 
 /** CLAXEDO_POSTHOG_KEY first; POSTHOG_KEY is the unprefixed fallback shared
@@ -52,11 +72,11 @@ function telemetryEnabled(env: NodeJS.ProcessEnv): boolean {
  *  surfaces as an opaque SDK-internal field on the client. */
 export function resolveKey(env: NodeJS.ProcessEnv): string | undefined {
   if (!telemetryEnabled(env)) return undefined
-  return clean(env.CLAXEDO_POSTHOG_KEY) ?? clean(env.POSTHOG_KEY)
+  return clean(env.CLAXEDO_POSTHOG_KEY) ?? clean(env.POSTHOG_KEY) ?? baked.key
 }
 
 export function resolveHost(env: NodeJS.ProcessEnv): string {
-  return clean(env.CLAXEDO_POSTHOG_HOST) ?? DEFAULT_HOST
+  return clean(env.CLAXEDO_POSTHOG_HOST) ?? baked.host ?? DEFAULT_HOST
 }
 
 /** CLAXEDO_RELEASE wins; GIT_SHA is the deploy-tooling alias the other

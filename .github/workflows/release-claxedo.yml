@@ -267,6 +267,33 @@ jobs:
           VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
           VITE_CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
           VITE_CLAXEDO_SERVER_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+          # Telemetry has to be BAKED here, in both halves of the app, because
+          # a packaged build runs on a user's machine where none of these
+          # variables exist. Reading them only at runtime is why shipped
+          # desktop builds sent nothing before this.
+          #
+          #  - VITE_* reach the RENDERER (claxedo-app's analytics.ts), which
+          #    fires `app_launched` on every start — the recurring signal
+          #    DAU/WAU/MAU are computed from.
+          #  - CLAXEDO_* reach the MAIN process via electron.vite.config.ts
+          #    defines, which is what lets the once-per-profile
+          #    `app_installed` event send.
+          #
+          # Public by design: the renderer vars ship in the client bundle —
+          # this is the PostHog PROJECT key (capture-only), never a personal
+          # API key. An unset key leaves both halves uninitialized: no client,
+          # no network call, matching the "no keys configured => nothing sent"
+          # contract self-built binaries rely on.
+          #
+          # Mode defaults to "on" so an unpopulated repo var cannot silently
+          # ship a dark release; setting the repo var to "off" still disables
+          # telemetry without a code change. This mirrors deploy-claxedo-app.yml.
+          VITE_POSTHOG_KEY: ${{ vars.VITE_POSTHOG_KEY }}
+          VITE_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST }}
+          VITE_CLAXEDO_TELEMETRY_MODE: ${{ vars.VITE_CLAXEDO_TELEMETRY_MODE || 'on' }}
+          CLAXEDO_POSTHOG_KEY: ${{ vars.VITE_POSTHOG_KEY }}
+          CLAXEDO_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST }}
+          CLAXEDO_TELEMETRY_MODE: ${{ vars.VITE_CLAXEDO_TELEMETRY_MODE || 'on' }}
         working-directory: packages/claxedo-desktop
         run: bun run build
 

@@ -60,6 +60,9 @@ import StructuredData from "../components/StructuredData.astro"
   <body class={bodyClass}>
     <a class="skip-link" href="#main-content">Skip to content</a>
     <slot />
-    <script>import "../scripts/analytics"</script>
+    <script>
+      import "../scripts/analytics"
+      import "../scripts/posthog"
+    </script>
   </body>
 </html>

@@ -6,7 +6,7 @@ description: "What Claxedo collects, what it doesn't, and how to remove your dat
 
 # Privacy Policy
 
-> Effective date: 2026-07-28
+> Effective date: 2026-08-05
 
 Claxedo is a free, open-source (MIT) coding-agent workspace built by a small team. This page explains, in plain language, what data the software touches and who else can see it. If anything here is unclear, [open a GitHub issue](https://github.com/kyashrathore/Claxedo/issues) and ask.
 
@@ -28,7 +28,22 @@ You only enter hosted mode by signing in and opting into it.
 
 ## Telemetry (opt-in, off by default)
 
-Claxedo can integrate with [PostHog](https://posthog.com) for both product analytics and error tracking — it's the only telemetry vendor Claxedo uses. Telemetry is **opt-in by deployment configuration**, and self-hosted deployments default to off.
+Claxedo can integrate with [PostHog](https://posthog.com) for both product analytics and error tracking — it's the only telemetry vendor Claxedo uses. Telemetry is **opt-in by deployment configuration**, and self-hosted and self-built deployments default to off.
+
+### This website
+
+claxedo.com measures page views and download clicks so we can tell which pages are useful and which platforms people want builds for.
+
+**This site sets no cookies.** Analytics state is kept in your browser's session storage and is discarded when you close the tab, so there is no cross-site or cross-visit tracking and no consent banner to click through. Page addresses are reduced to their section (`/framework`, `/download`, `/compare`) before being sent — the specific page you read is never recorded. PostHog derives an approximate **country** from your IP address on its servers; we do not collect precise location, and the site never asks your browser for it.
+
+### The desktop app
+
+Official Claxedo-distributed desktop builds report two things:
+
+- **A one-time install event** the first time a new profile launches. It carries a randomly generated install identifier, your operating system, CPU architecture, OS version, and the app version. The identifier is random — it is not derived from your machine, username, hardware, or network — so two installs by the same person cannot be linked.
+- **An app-launch event** each time the app starts, which is how we count how many people actively use Claxedo day to day.
+
+Builds you compile yourself send neither: both require a key that is only present in official releases, and both are additionally gated on `CLAXEDO_TELEMETRY_MODE=on`.
 
 When telemetry is turned on, two kinds of data can be sent:
 

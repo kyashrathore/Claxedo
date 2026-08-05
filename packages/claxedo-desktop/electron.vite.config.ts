@@ -13,12 +13,28 @@ const channel = (() => {
   return "dev"
 })()
 
+// Telemetry config has to be BAKED, not read from the environment at runtime.
+// The main process runs on an end user's machine, where CLAXEDO_POSTHOG_KEY
+// and friends simply do not exist — so a shipped build reading only
+// `process.env` sends nothing no matter what CI was given. These defines are
+// what let an official release report anything at all; `src/main/telemetry.ts`
+// still prefers a real `process.env` value when one is present, so a
+// self-builder can override, and an unset variable bakes as `undefined` and
+// leaves the build silent (the two-opt-in gate is unchanged).
+const telemetryDefines = Object.fromEntries(
+  (["CLAXEDO_POSTHOG_KEY", "CLAXEDO_POSTHOG_HOST", "CLAXEDO_TELEMETRY_MODE"] as const).map((name) => [
+    `import.meta.env.${name}`,
+    JSON.stringify(process.env[name]?.trim() || undefined),
+  ]),
+)
+
 // ── Config ──
 
 export default defineConfig(({ mode }) => {
   return {
     main: {
       define: {
+        ...telemetryDefines,
         "import.meta.env.CLAXEDO_CHANNEL": JSON.stringify(channel),
         // The reviewed CIM script, CRLF-normalized + UTF-16LE + base64 — the
         // shape PowerShell's -EncodedCommand takes. A define rather than a
