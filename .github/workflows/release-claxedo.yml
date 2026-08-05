@@ -153,6 +153,12 @@ jobs:
     # the correct PostHog project (337043); those three are what remain.
     environment: staging
     runs-on: ${{ matrix.host }}
+    env:
+      # electron-vite runs under Node, whose default ~2GB old-space no longer
+      # fits the renderer bundle on the mac legs (both OOM-killed in the first
+      # v0.0.65 build). Job-level so package.ts's internal rebuild inherits it
+      # too — step-level env did not reach it and the OOM moved there.
+      NODE_OPTIONS: --max-old-space-size=4096
     strategy:
       fail-fast: false
       matrix:
@@ -305,11 +311,6 @@ jobs:
           CLAXEDO_POSTHOG_KEY: ${{ vars.VITE_POSTHOG_KEY }}
           CLAXEDO_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST }}
           CLAXEDO_TELEMETRY_MODE: ${{ vars.VITE_CLAXEDO_TELEMETRY_MODE || 'on' }}
-          # electron-vite runs under Node, whose default ~2GB old-space no
-          # longer fits the renderer bundle on the mac legs (both OOM-killed
-          # the first v0.0.65 build). Linux and Windows pass with room either
-          # way; a raised cap is inert there.
-          NODE_OPTIONS: --max-old-space-size=4096
         working-directory: packages/claxedo-desktop
         run: bun run build
 
