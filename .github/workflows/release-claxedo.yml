@@ -137,9 +137,20 @@ jobs:
 
   build-desktop:
     needs: [prepare, diagnostics-dependency-trust, diagnostics-performance]
-    # The VITE_* cloud vars are environment-scoped, not repo-level. Only the
-    # staging environment exists today; switch to production once that
-    # environment is created and promoted.
+    # The VITE_* cloud vars are environment-scoped, not repo-level.
+    #
+    # KNOWN DEFECT, deliberately not fixed here: this workflow builds the
+    # signed installers users download, but resolves `staging`. Every shipped
+    # release therefore carries staging's Clerk publishable key (a `pk_test_`
+    # one), the `-staging` control plane URL, and staging's PostHog project —
+    # so real user installs are indistinguishable from test runs.
+    #
+    # Switching this to `production` is a ONE-WORD change, but it must not
+    # happen until the production environment carries real values for
+    # CLAXEDO_CONTROL_PLANE_URL, VITE_CLERK_PUBLISHABLE_KEY and VITE_CONVEX_URL.
+    # Flipping it first would ship builds pointing at nothing, which is worse
+    # than the current mislabelling. The production environment already holds
+    # the correct PostHog project (337043); those three are what remain.
     environment: staging
     runs-on: ${{ matrix.host }}
     strategy:
