@@ -1,6 +1,7 @@
 import { persistQueryClient } from "@tanstack/query-persist-client-core"
-import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister"
+import { createStore, del, get, set } from "idb-keyval"
 import { queryClient } from "@/platform/query/query-client"
+import { compactProviderListForStorage } from "@/platform/query/provider-list"
 
 const day = 1000 * 60 * 60 * 24
 const buildHash = import.meta.env.VITE_BUILD_HASH ?? "dev"
@@ -25,10 +26,12 @@ function deferToIdle(run: () => void) {
   setTimeout(run, 0)
 }
 
+type MaybePromise<T> = T | Promise<T>
+
 type StorageLike = {
-  getItem: (key: string) => string | null
-  setItem: (key: string, value: string) => void
-  removeItem: (key: string) => void
+  getItem: (key: string) => MaybePromise<string | null | undefined>
+  setItem: (key: string, value: string) => MaybePromise<unknown>
+  removeItem: (key: string) => MaybePromise<unknown>
 }
 
 type PersistedQuery = {
@@ -49,7 +52,9 @@ type PersistedClient = {
 
 let uninstall: (() => void) | undefined
 
-export const queryPersisterKey = "claxedo-query-v1"
+export const queryPersisterKey = "claxedo-query-v3"
+export const MAX_QUERY_PERSISTENCE_BYTES = 2 * 1024 * 1024
+const legacyQueryPersisterKeys = ["claxedo-query-v1", "claxedo-query-v2"]
 
 const MAP_TAG = "$claxedo:map"
 
@@ -155,7 +160,84 @@ function safePersistedClient<T>(client: T): T {
         if (!Array.isArray(query.queryKey)) return false
         if (!shouldDehydrateQuery({ queryKey: query.queryKey, state: query.state })) return false
         return true
-      }),
+      }).map((query) => query.queryKey?.[0] === "controlPlane" && query.queryKey[2] === "providers"
+        ? {
+            ...query,
+            state: query.state ? { ...query.state, data: compactProviderListForStorage(query.state.data) } : query.state,
+          }
+        : query),
+    },
+  }
+}
+
+function indexedDbStorage(): StorageLike | undefined {
+  if (typeof indexedDB === "undefined") return
+  const store = createStore("claxedo-query-cache", "queries")
+  return {
+    getItem: (key) => get<string>(key, store),
+    setItem: (key, value) => set(key, value, store),
+    removeItem: (key) => del(key, store),
+  }
+}
+
+function serializedBytes(value: string) {
+  return new TextEncoder().encode(value).byteLength
+}
+
+function createAsyncStoragePersister(input: {
+  storage: StorageLike
+  throttleTime: number
+  maxBytes: number
+}) {
+  let pending: unknown
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let disposed = false
+  let writes = Promise.resolve()
+
+  const flush = () => {
+    const client = pending
+    pending = undefined
+    if (!client || disposed) return
+    writes = writes.then(async () => {
+      if (disposed) return
+      const serialized = JSON.stringify(safePersistedClient(client), mapReplacer)
+      if (serializedBytes(serialized) > input.maxBytes) {
+        await input.storage.removeItem(queryPersisterKey)
+        return
+      }
+      await input.storage.setItem(queryPersisterKey, serialized)
+    }).catch(() => {})
+  }
+
+  return {
+    persister: {
+      persistClient(client: unknown) {
+        pending = client
+        if (timer !== undefined) return Promise.resolve()
+        timer = setTimeout(() => {
+          timer = undefined
+          flush()
+        }, input.throttleTime)
+        return Promise.resolve()
+      },
+      async restoreClient() {
+        const cached = await input.storage.getItem(queryPersisterKey)
+        if (!cached) return
+        return safePersistedClient(JSON.parse(cached, mapReviver))
+      },
+      async removeClient() {
+        pending = undefined
+        if (timer !== undefined) clearTimeout(timer)
+        timer = undefined
+        await writes
+        await input.storage.removeItem(queryPersisterKey)
+      },
+    },
+    dispose() {
+      disposed = true
+      pending = undefined
+      if (timer !== undefined) clearTimeout(timer)
+      timer = undefined
     },
   }
 }
@@ -164,6 +246,7 @@ export function installQueryPersister(input: {
   storage?: StorageLike | null
   buster?: string
   throttleTime?: number
+  maxBytes?: number
   /**
    * When true, schedule the persistQueryClient setup behind requestIdleCallback
    * so the initial cache hydration + subscription wiring does not contend with
@@ -178,35 +261,34 @@ export function installQueryPersister(input: {
 } = {}) {
   if (uninstall) return
   const storage = input.storage === undefined
-    ? typeof localStorage === "undefined" ? undefined : localStorage
+    ? indexedDbStorage()
     : input.storage
   if (!storage) return
 
   const setup = () => {
     if (uninstall) return undefined
-    const persister = createSyncStoragePersister({
+    const legacyStorage = input.storage ?? (typeof localStorage === "undefined" ? undefined : localStorage)
+    legacyQueryPersisterKeys.forEach((key) => {
+      void Promise.resolve(legacyStorage?.removeItem(key)).catch(() => {})
+    })
+    const storagePersister = createAsyncStoragePersister({
       storage,
-      key: queryPersisterKey,
       throttleTime: input.throttleTime ?? 1000,
-      serialize: (client) => JSON.stringify(client, mapReplacer),
-      deserialize: (cached) => JSON.parse(cached, mapReviver),
+      maxBytes: input.maxBytes ?? MAX_QUERY_PERSISTENCE_BYTES,
     })
     const result = persistQueryClient({
       queryClient: queryClient as never,
-      persister: {
-        ...persister,
-        restoreClient: async () => {
-          const client = await persister.restoreClient()
-          return client ? safePersistedClient(client) : client
-        },
-      },
+      persister: storagePersister.persister as never,
       maxAge: day,
       buster: input.buster ?? buildHash,
       dehydrateOptions: {
         shouldDehydrateQuery,
       },
     })
-    uninstall = result[0]
+    uninstall = () => {
+      result[0]()
+      storagePersister.dispose()
+    }
     return result
   }
 
@@ -235,7 +317,7 @@ export function installQueryPersister(input: {
   const result = setup()
   if (!result) return
   return {
-    unsubscribe: result[0],
+    unsubscribe: uninstall!,
     restore: result[1],
   }
 }

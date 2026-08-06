@@ -1,14 +1,13 @@
 import { QueryClient } from "@tanstack/solid-query"
 
-const day = 1000 * 60 * 60 * 24
-const week = day * 7
+export const QUERY_CACHE_GC_TIME_MS = 30 * 60 * 1000
 
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
       retry: false,
-      gcTime: week,
+      gcTime: QUERY_CACHE_GC_TIME_MS,
     },
   },
 })

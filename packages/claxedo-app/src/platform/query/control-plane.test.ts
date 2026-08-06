@@ -7,6 +7,7 @@ import {
   providerAuthQuery,
   providerListQuery,
 } from "./control-plane"
+import { mergeProviderIndexWithDetails, normalizeProviderList } from "./provider-list"
 
 function project(id: string, worktree: string): Project {
   return {
@@ -114,6 +115,41 @@ describe("control-plane query helpers", () => {
     expect(query.queryKey).toEqual(["controlPlane", "http://example.test", "providers"])
     expect(query.staleTime).toBe(5 * 60 * 1000)
     expect(Array.from((await query.queryFn()).all.keys())).toEqual(["openai"])
+  })
+
+  test("a late compact provider index preserves model details already loaded into the cache", () => {
+    const detailed = normalizeProviderList({
+      all: [{
+        id: "anthropic",
+        name: "Anthropic",
+        source: "api",
+        env: ["ANTHROPIC_API_KEY"],
+        options: {},
+        models: {
+          sonnet: { id: "sonnet", name: "Sonnet" },
+          opus: { id: "opus", name: "Opus" },
+        },
+      }],
+      connected: ["anthropic"],
+      default: { anthropic: "sonnet" },
+    } as ProviderListResponse)
+    const compact = normalizeProviderList({
+      all: [{
+        id: "anthropic",
+        name: "Anthropic",
+        source: "api",
+        env: [],
+        options: {},
+        models: { sonnet: { id: "sonnet", name: "Sonnet" } },
+      }],
+      connected: ["anthropic"],
+      default: { anthropic: "sonnet" },
+    } as ProviderListResponse)
+
+    const merged = mergeProviderIndexWithDetails(detailed, compact)
+
+    expect(Object.keys(merged.all.get("anthropic")?.models ?? {})).toEqual(["sonnet", "opus"])
+    expect(merged.all.get("anthropic")?.env).toEqual(["ANTHROPIC_API_KEY"])
   })
 
   test("providerAuthQuery uses a separate non-SWR auth bucket", async () => {

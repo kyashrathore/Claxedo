@@ -120,7 +120,6 @@
     "@tanstack/ai-client": "0.22.1",
     "@tanstack/ai-solid": "0.15.1",
     "@tanstack/query-persist-client-core": "5.90.2",
-    "@tanstack/query-sync-storage-persister": "5.90.2",
     "@tanstack/solid-query": "5.91.4",
     "@tanstack/solid-virtual": "catalog:",
     "@tiptap/core": "3.23.4",

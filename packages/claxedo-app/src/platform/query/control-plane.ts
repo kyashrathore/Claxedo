@@ -1,7 +1,9 @@
 import type { Command, Project, ProviderAuthResponse, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
 import { queryKeys } from "@/platform/query/keys"
 import { cmp } from "@/platform/query/sort"
-import { normalizeProviderList } from "@/platform/query/provider-list"
+import { mergeProviderIndexWithDetails, normalizeProviderList } from "@/platform/query/provider-list"
+
+export type { ProviderListResponse } from "@opencode-ai/sdk/v2/client"
 
 type ProjectClient = {
   project: {
@@ -107,6 +109,10 @@ export function providerListQuery(input: {
   return {
     queryKey: queryKeys.controlPlane.providers(input.baseUrl, input.directory ?? undefined, input.harnessType),
     staleTime: 5 * 60 * 1000,
+    structuralSharing: (previous: unknown, index: unknown) => mergeProviderIndexWithDetails(
+      previous as Parameters<typeof mergeProviderIndexWithDetails>[0],
+      index as Parameters<typeof mergeProviderIndexWithDetails>[1],
+    ),
     queryFn: async () => {
       if (!input.harnessType) {
         return normalizeProviderList((await backend.listProviders()) ?? { all: [], connected: [], default: {} })

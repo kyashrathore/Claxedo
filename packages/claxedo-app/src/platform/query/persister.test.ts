@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import {
   installQueryPersister,
+  MAX_QUERY_PERSISTENCE_BYTES,
   queryPersistencePolicies,
   queryPersisterKey,
   resetQueryPersisterForTest,
@@ -89,6 +90,65 @@ describe("query persister", () => {
     expect(queryClient.getQueryData(["runtime", "base", "mcp", "/tmp/ws"])).toBeUndefined()
   })
 
+  test("deletes the legacy full-catalog cache without parsing it", async () => {
+    const target = storage()
+    target.setItem("claxedo-query-v1", "legacy multi-megabyte provider catalog")
+    target.setItem("claxedo-query-v2", "legacy synchronous cache")
+
+    await installQueryPersister({ storage: target, buster: "build-a", throttleTime: 0 })?.restore
+
+    expect(target.getItem("claxedo-query-v1")).toBeNull()
+    expect(target.getItem("claxedo-query-v2")).toBeNull()
+  })
+
+  test("drops the persisted cache when the hard byte budget is exceeded", async () => {
+    const target = storage()
+    await installQueryPersister({ storage: target, buster: "build-a", throttleTime: 0, maxBytes: 256 })?.restore
+
+    queryClient.setQueryData(["controlPlane", "base", "projects"], [{ id: "p".repeat(2_000) }])
+    await tick()
+
+    expect(target.getItem(queryPersisterKey)).toBeNull()
+    expect(MAX_QUERY_PERSISTENCE_BYTES).toBe(2 * 1024 * 1024)
+  })
+
+  test("serializes asynchronous writes so an older snapshot cannot win a race", async () => {
+    const data = new Map<string, string>()
+    let releaseFirst = () => {}
+    let markFirstStarted = () => {}
+    const firstStarted = new Promise<void>((resolve) => {
+      markFirstStarted = resolve
+    })
+    const firstRelease = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    let writes = 0
+    const target = {
+      getItem: (key) => data.get(key) ?? null,
+      setItem: async (key, value) => {
+        writes++
+        if (writes === 1) {
+          markFirstStarted()
+          await firstRelease
+        }
+        data.set(key, value)
+      },
+      removeItem: (key) => data.delete(key),
+    }
+    await installQueryPersister({ storage: target, buster: "build-a", throttleTime: 0 })?.restore
+
+    queryClient.setQueryData(["controlPlane", "base", "projects"], [{ id: "older" }])
+    await firstStarted
+    queryClient.setQueryData(["controlPlane", "base", "projects"], [{ id: "newer" }])
+    await tick()
+    releaseFirst()
+    await tick()
+    await tick()
+
+    expect(target.getItem(queryPersisterKey)).toContain("newer")
+    expect(target.getItem(queryPersisterKey)).not.toContain("older")
+  })
+
   test("round-trips Map-valued query data (provider catalog) through storage", async () => {
     const target = storage()
     await installQueryPersister({ storage: target, buster: "build-a", throttleTime: 0 })?.restore
@@ -109,6 +169,36 @@ describe("query persister", () => {
     expect(restored?.all instanceof Map).toBe(true)
     expect((restored?.all as Map<string, { id: string }>).get("opencode")?.id).toBe("opencode")
     expect(restored?.connected).toEqual(["opencode"])
+  })
+
+  test("persists only provider names and connected default models after lazy detail loading", async () => {
+    const target = storage()
+    await installQueryPersister({ storage: target, buster: "build-a", throttleTime: 0 })?.restore
+
+    queryClient.setQueryData(["controlPlane", "base", "providers"], {
+      all: new Map([
+        ["anthropic", {
+          id: "anthropic",
+          name: "Anthropic",
+          options: { enormous: "do-not-persist" },
+          models: {
+            sonnet: { id: "sonnet", name: "Sonnet" },
+            opus: { id: "opus", name: "Opus", metadata: "do-not-persist" },
+          },
+        }],
+        ["openai", { id: "openai", name: "OpenAI", models: { gpt: { id: "gpt" } } }],
+      ]),
+      connected: ["anthropic"],
+      default: { anthropic: "sonnet", openai: "gpt" },
+    })
+    await tick()
+
+    const cached = target.getItem(queryPersisterKey) ?? ""
+    expect(cached).toContain("sonnet")
+    expect(cached).toContain("Anthropic")
+    expect(cached).toContain("OpenAI")
+    expect(cached).not.toContain("opus")
+    expect(cached).not.toContain("do-not-persist")
   })
 
   test("drops stale pending queries before restore", async () => {
