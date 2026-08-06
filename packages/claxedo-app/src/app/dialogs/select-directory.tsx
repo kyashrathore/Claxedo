@@ -315,6 +315,7 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
 
   return (
     <Dialog
+      flush
       title={props.title ?? language.t("command.project.open")}
       class="codex-directory-picker codex-overlay-surface"
       action={

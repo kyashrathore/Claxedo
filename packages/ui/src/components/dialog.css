@@ -54,7 +54,7 @@
 
       [data-slot="dialog-header"] {
         display: flex;
-        padding: 16px 20px;
+        padding: 16px var(--dialog-inset);
         justify-content: space-between;
         align-items: center;
         flex-shrink: 0;
@@ -74,11 +74,21 @@
         /* [data-slot="dialog-close-button"] {} */
       }
 
+      /* ── Dialog inset ──────────────────────────────────────────────
+         All three slots share ONE horizontal inset, `--dialog-inset`, so the
+         title, the description and the body content sit on a single left edge.
+         They used to disagree: the header had 20px, the description 24px left /
+         16px right (clawed back to 20 by an inline `margin-left: -4px` in
+         dialog.tsx), and the body had NO padding at all — see the commented-out
+         `padding: 8px` on dialog-content above, which is where this used to
+         live. With the body at zero, all ~46 callers either re-implemented the
+         inset by hand (10px, 16px, 24px, and 24/10 were all in use) or got none
+         and rendered flush to the card edge. Change the token, not the slots. */
+      --dialog-inset: 20px;
+
       [data-slot="dialog-description"] {
         display: flex;
-        padding: 16px;
-        padding-left: 24px;
-        padding-top: 0;
+        padding: 0 var(--dialog-inset) 16px;
         margin-top: -8px;
         justify-content: space-between;
         align-items: center;
@@ -103,6 +113,7 @@
         flex-direction: column;
         flex: 1;
         overflow: hidden;
+        padding: 0 var(--dialog-inset) var(--dialog-inset);
 
         &:focus-visible {
           outline: none;
@@ -112,6 +123,22 @@
         outline: none;
       }
     }
+  }
+
+  /* Full-bleed bodies: the surface owns its own chrome out to the card edge
+     (palette, `<List>` rows with full-width hover, settings section rules), so
+     the shared inset would double up on padding those rows already carry. The
+     header and description keep theirs — only the body goes flush.
+
+     The selector is written out to the body's full depth on purpose: the base
+     rule above is nested four levels deep, so a shorter `&[data-flush]
+     [data-slot="dialog-body"]` loses on specificity and silently does nothing. */
+  &[data-flush]
+    [data-slot="dialog-container"]
+    [data-slot="dialog-content"]
+    [data-slot="dialog-body"] {
+    padding-left: 0;
+    padding-right: 0;
   }
 
   &[data-fit] {

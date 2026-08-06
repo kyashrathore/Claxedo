@@ -88,7 +88,7 @@ export function DialogDeleteWorkspace(props: DialogDeleteWorkspaceProps) {
 
   return (
     <Dialog title={isCloudSandbox() ? "Destroy Sandbox" : language.t("workspace.delete.title")} fit>
-      <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
+      <div class="flex flex-col gap-4">
         <div class="flex flex-col gap-1">
           <span class="text-14-regular text-text-strong">
             {isCloudSandbox()

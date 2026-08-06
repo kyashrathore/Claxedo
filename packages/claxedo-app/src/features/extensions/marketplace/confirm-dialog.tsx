@@ -63,7 +63,7 @@ export function MarketplaceConfirmDialog(props: {
 }): JSX.Element {
   return (
     <Dialog title={props.options.title}>
-      <div class="flex min-w-[340px] max-w-[440px] flex-col gap-4 p-4">
+      <div class="flex min-w-[340px] max-w-[440px] flex-col gap-4">
         <p class="whitespace-pre-line text-[13px] text-text-weak">{props.options.body}</p>
         <div class="flex justify-end gap-2">
           <Button variant="ghost" onClick={() => props.onCancel()}>

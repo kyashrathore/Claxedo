@@ -123,7 +123,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
         setGate("status", workspace.status ?? "acquiring_sandbox")
         void props.dialog.show(() => (
           <Dialog title="Preparing cloud workspace" fit>
-            <div class="px-6 pb-6 pt-2">
+            <div class="pt-2">
               <CloudStartupView
                 status={gate.status}
                 err={gate.err}

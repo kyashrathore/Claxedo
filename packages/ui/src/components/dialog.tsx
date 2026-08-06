@@ -8,6 +8,16 @@ export interface DialogProps extends ParentProps {
   description?: JSXElement
   action?: JSXElement
   size?: "normal" | "large" | "x-large"
+  /**
+   * Drop the body's horizontal inset so content runs edge to edge.
+   *
+   * For surfaces that own their own chrome to the card's edge — a command
+   * palette, a `<List>` whose rows carry full-width hover states, a settings
+   * pane with full-bleed section rules. Content dialogs (copy, form fields,
+   * buttons) want the default inset, which lines their left edge up with the
+   * title.
+   */
+  flush?: boolean
   class?: ComponentProps<"div">["class"]
   classList?: ComponentProps<"div">["classList"]
   fit?: boolean
@@ -30,6 +40,7 @@ export function Dialog(props: DialogProps) {
     <div
       data-component="dialog"
       data-fit={props.fit ? true : undefined}
+      data-flush={props.flush ? true : undefined}
       data-size={props.size || "normal"}
       data-transition={props.transition ? true : undefined}
     >
@@ -72,9 +83,7 @@ export function Dialog(props: DialogProps) {
             </div>
           </Show>
           <Show when={props.description}>
-            <Kobalte.Description data-slot="dialog-description" style={{ "margin-left": "-4px" }}>
-              {props.description}
-            </Kobalte.Description>
+            <Kobalte.Description data-slot="dialog-description">{props.description}</Kobalte.Description>
           </Show>
           <div data-slot="dialog-body">{props.children}</div>
         </Kobalte.Content>

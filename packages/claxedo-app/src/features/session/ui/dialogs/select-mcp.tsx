@@ -123,7 +123,7 @@ export const DialogSelectMcp: Component = () => {
 
   return (
     <Dialog title="MCP Servers" description="Install and manage MCP servers from the Claxedo Marketplace catalog." size="large">
-      <div class="flex max-h-[70vh] flex-col gap-4 px-1 pb-2">
+      <div class="flex max-h-[70vh] flex-col gap-4">
         <label class="flex min-h-10 items-center gap-2 rounded-md border border-border-weak-base bg-surface-raised-base px-3">
           <Icon name="magnifying-glass" size="small" class="text-icon-weak-base" />
           <input

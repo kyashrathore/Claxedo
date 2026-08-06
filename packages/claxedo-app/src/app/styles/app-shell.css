@@ -99,19 +99,6 @@
   }
 }
 
-/* --bp-md complement (767 = below BP_MD) — diagnostics dialog full-viewport. */
-@media (max-width: 767px) {
-  [data-component="dialog"]:has(.claxedo-diagnostics-dialog) [data-slot="dialog-container"] {
-    width: 100vw;
-    height: 100dvh;
-  }
-
-  .claxedo-diagnostics-dialog {
-    min-height: 100%;
-    border-radius: 0;
-  }
-}
-
 /* Mode 5: Hide messages panel (CSS fallback) */
 .claxedo-session[data-panel-mode="5"] .\@container {
   display: none !important;
@@ -170,36 +157,37 @@
   }
 }
 
-/* ─── Settings dialog: roomier surface + readable backdrop ─── */
+/* ─── Command palette: gutter + readable backdrop ─── */
 
-/* The shared `x-large` box is shared with other dialogs, so the settings surface
-   opts into its own, larger box instead of widening `x-large` for everyone.
-   `.claxedo-settings-dialog` lands on [data-slot="dialog-content"] (Dialog's
-   `class` prop), so the container is matched through it. */
-[data-component="dialog"]:has(> [data-slot="dialog-container"] > .claxedo-settings-dialog)
-  > [data-slot="dialog-container"] {
-  width: min(calc(100vw - 32px), 1120px);
-  height: min(calc(100vh - 72px), 860px);
+/* `.claxedo-command-palette` lands on [data-slot="dialog-content"] (Dialog's
+   `class` prop). The shared dialog surface ships with no padding, so the search
+   field and every result row ran the full 640px width and collided with the
+   content box's own rounded corners — the palette read as an unstyled sheet.
+   An 8px inset gives the rows somewhere to sit; the radius is widened to
+   8 + 6 (gutter + the row/search `--radius-md`) so the outer corner stays
+   concentric with the highlighted row inside it. */
+.claxedo-command-palette {
+  padding: 8px;
+  border-radius: 14px;
 }
 
-/* Kobalte portals the overlay as a sibling of the dialog layer, so the settings
+/* Kobalte portals the overlay as a sibling of the dialog layer, so the palette
    backdrop is selected from their shared <body> ancestor. The shared 0.2 alpha
-   is invisible against the dark app chrome; this dims and blurs enough to read
-   the dialog as modal. */
-body:has([data-slot="dialog-content"].claxedo-settings-dialog) [data-component="dialog-overlay"] {
-  background-color: hsl(from var(--background-base) h s l / 0.6);
-  backdrop-filter: blur(3px);
-  /* Match the dialog's own 150ms in / 100ms out so the backdrop and the panel
+   is invisible against the near-black app chrome; this is a light dim — enough
+   to seat the palette above the workspace without hiding it. */
+body:has([data-slot="dialog-content"].claxedo-command-palette) [data-component="dialog-overlay"] {
+  background-color: hsl(from var(--background-base) h s l / 0.45);
+  /* Match the dialog's own 150ms in / 100ms out so the backdrop and the palette
      move as one surface instead of the dim snapping ahead of the box. */
-  animation: claxedoSettingsBackdropHide 100ms ease-in forwards;
+  animation: claxedoPaletteBackdropHide 100ms ease-in forwards;
 }
 
-body:has([data-slot="dialog-content"].claxedo-settings-dialog)
+body:has([data-slot="dialog-content"].claxedo-command-palette)
   [data-component="dialog-overlay"][data-expanded] {
-  animation: claxedoSettingsBackdropShow 150ms ease-out;
+  animation: claxedoPaletteBackdropShow 150ms ease-out;
 }
 
-@keyframes claxedoSettingsBackdropShow {
+@keyframes claxedoPaletteBackdropShow {
   from {
     opacity: 0;
   }
@@ -208,7 +196,82 @@ body:has([data-slot="dialog-content"].claxedo-settings-dialog)
   }
 }
 
-@keyframes claxedoSettingsBackdropHide {
+@keyframes claxedoPaletteBackdropHide {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body:has([data-slot="dialog-content"].claxedo-command-palette) [data-component="dialog-overlay"],
+  body:has([data-slot="dialog-content"].claxedo-command-palette)
+    [data-component="dialog-overlay"][data-expanded] {
+    animation: none;
+  }
+}
+
+/* ─── Workbench dialogs: roomier surface + readable backdrop ─── */
+
+/* The shared `x-large` box is shared with other dialogs, so the settings and
+   diagnostics surfaces opt into one larger box instead of widening `x-large`
+   for everyone. The opt-in class lands on [data-slot="dialog-content"] (Dialog's
+   `class` prop), so the container is matched through it. */
+[data-component="dialog"]:has(> [data-slot="dialog-container"] > .claxedo-settings-dialog)
+  > [data-slot="dialog-container"],
+[data-component="dialog"]:has(> [data-slot="dialog-container"] > .claxedo-diagnostics-dialog)
+  > [data-slot="dialog-container"] {
+  width: min(calc(100vw - 32px), 1120px);
+  height: min(calc(100vh - 72px), 860px);
+}
+
+/* --bp-md complement (767 = below BP_MD) — diagnostics dialog full-viewport.
+   Declared after the shared box so the equal-specificity narrow override wins. */
+@media (max-width: 767px) {
+  [data-component="dialog"]:has(> [data-slot="dialog-container"] > .claxedo-diagnostics-dialog)
+    > [data-slot="dialog-container"] {
+    width: 100vw;
+    height: 100dvh;
+  }
+
+  .claxedo-diagnostics-dialog {
+    min-height: 100%;
+    border-radius: 0;
+  }
+}
+
+/* Kobalte portals the overlay as a sibling of the dialog layer, so the backdrop
+   is selected from their shared <body> ancestor. The shared 0.2 alpha is
+   invisible against the dark app chrome; this dims and blurs enough to read the
+   dialog as modal. */
+body:has([data-slot="dialog-content"].claxedo-settings-dialog) [data-component="dialog-overlay"],
+body:has([data-slot="dialog-content"].claxedo-diagnostics-dialog) [data-component="dialog-overlay"] {
+  background-color: hsl(from var(--background-base) h s l / 0.6);
+  backdrop-filter: blur(3px);
+  /* Match the dialog's own 150ms in / 100ms out so the backdrop and the panel
+     move as one surface instead of the dim snapping ahead of the box. */
+  animation: claxedoDialogBackdropHide 100ms ease-in forwards;
+}
+
+body:has([data-slot="dialog-content"].claxedo-settings-dialog)
+  [data-component="dialog-overlay"][data-expanded],
+body:has([data-slot="dialog-content"].claxedo-diagnostics-dialog)
+  [data-component="dialog-overlay"][data-expanded] {
+  animation: claxedoDialogBackdropShow 150ms ease-out;
+}
+
+@keyframes claxedoDialogBackdropShow {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes claxedoDialogBackdropHide {
   from {
     opacity: 1;
   }
@@ -220,6 +283,9 @@ body:has([data-slot="dialog-content"].claxedo-settings-dialog)
 @media (prefers-reduced-motion: reduce) {
   body:has([data-slot="dialog-content"].claxedo-settings-dialog) [data-component="dialog-overlay"],
   body:has([data-slot="dialog-content"].claxedo-settings-dialog)
+    [data-component="dialog-overlay"][data-expanded],
+  body:has([data-slot="dialog-content"].claxedo-diagnostics-dialog) [data-component="dialog-overlay"],
+  body:has([data-slot="dialog-content"].claxedo-diagnostics-dialog)
     [data-component="dialog-overlay"][data-expanded] {
     animation: none;
   }

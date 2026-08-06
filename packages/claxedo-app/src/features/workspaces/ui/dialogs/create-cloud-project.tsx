@@ -304,7 +304,7 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
 
   return (
     <Dialog title="New Cloud Project">
-      <div class="p-4 min-w-[400px]">
+      <div class="min-w-[400px]">
         <Switch>
           <Match when={phase() === "form"}>
             <form onSubmit={handleSubmit} class="space-y-4">
