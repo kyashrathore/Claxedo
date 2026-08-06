@@ -9,6 +9,7 @@ import { providerAuthMethods } from "../../credentials/provider-auth/service"
 import { listProjects } from "../../workspace/store"
 import { dataDir, stateDir } from "../../platform/runtime/lib/paths"
 import { OPENCODE_INTERNAL_BASE, opencodeEngineMode, opencodeRequest } from "../../opencode/engine"
+import { providerCatalogView } from "../../opencode/provider-catalog-view"
 import type { ControlPlaneServices } from "../../authority/services"
 import {
   ControlPlaneAuthError,
@@ -143,13 +144,13 @@ async function providerBody(harnessOverride: string | undefined, options: Option
   const harnessId = await resolveHarnessId(harnessOverride)
   if (harnessId !== "opencode" || opencodeCompatDisabled(options)) return localProviderCatalog(harnessId, options)
   return safe("provider", () => localProviderCatalog(harnessId, options), async () => {
-    const res = await opencodeRequest(new Request(new URL("/provider", OPENCODE_INTERNAL_BASE), {
+    const res = await opencodeRequest(new Request(new URL("/provider?view=index", OPENCODE_INTERNAL_BASE), {
       signal: AbortSignal.timeout(5_000),
     }))
     if (!res.ok) throw new Error(`OpenCode provider catalog fetch failed: ${res.status}`)
     const body = await res.json()
     if (!providerListHasModels(body)) throw new Error(`OpenCode provider catalog contained no provider models`)
-    return body
+    return providerCatalogView(body)
   })
 }
 

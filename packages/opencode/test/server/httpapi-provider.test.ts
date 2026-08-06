@@ -352,6 +352,29 @@ describe("provider HttpApi", () => {
   )
 
   it.instance(
+    "serves a compact provider index and expands only the selected provider",
+    Effect.gen(function* () {
+      const directory = (yield* TestInstance).directory
+      const headers = { "x-opencode-directory": directory }
+      const indexResponse = yield* request("/provider?view=index", { headers })
+      expect(indexResponse.status).toBe(200)
+      const index = yield* indexResponse.json
+      expect(providerList(index, "all").length).toBeGreaterThan(1)
+      expect(providerList(index, "all").every((provider) =>
+        isRecord(provider) && isRecord(provider.models) && Object.keys(provider.models).length <= 1,
+      )).toBe(true)
+
+      const detailResponse = yield* request("/provider?provider=anthropic", { headers })
+      expect(detailResponse.status).toBe(200)
+      const detail = yield* detailResponse.json
+      expect(providerList(detail, "all")).toHaveLength(1)
+      expect(providerByID(detail, "all", "anthropic")).toBeDefined()
+      expect(Object.keys(providerByID(detail, "all", "anthropic")?.models as object)).not.toHaveLength(0)
+    }),
+    projectOptions,
+  )
+
+  it.instance(
     "serves provider lists when auth loaders add runtime fetch options",
     Effect.gen(function* () {
       const directory = (yield* TestInstance).directory

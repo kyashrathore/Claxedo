@@ -3,6 +3,7 @@ import { OPENCODE_INTERNAL_BASE, opencodeRequest } from "../../opencode/engine"
 import { opencodeCompatDisabled, type OpenCodeCompatRouteOptions } from "./proxy"
 import { piProviderCatalog } from "../../credentials/pi-provider-catalog"
 import { providerAuthMethods } from "../../credentials/provider-auth/service"
+import { providerCatalogView } from "../provider-catalog-view"
 
 export async function resolveHarnessId(override?: string) {
   if (override) return override
@@ -26,19 +27,24 @@ export function emptyConfigProviders() {
   }
 }
 
-export async function providerBody(harnessOverride: string | undefined, options: OpenCodeCompatRouteOptions) {
+export async function providerBody(harnessOverride: string | undefined, options: OpenCodeCompatRouteOptions, providerId?: string) {
   const harnessId = await resolveHarnessId(harnessOverride)
   if (harnessId === "pi") return piProviderCatalog(options.env ?? process.env)
   if (harnessId !== "opencode" || opencodeCompatDisabled(options)) return localProviderCatalog(harnessId, options)
   return safe("provider", () => localProviderCatalog(harnessId, options), async () => {
-    const res = await opencodeRequest(new Request(new URL("/provider", OPENCODE_INTERNAL_BASE), {
+    const url = new URL("/provider", OPENCODE_INTERNAL_BASE)
+    if (providerId) url.searchParams.set("provider", providerId)
+    if (!providerId) url.searchParams.set("view", "index")
+    const res = await opencodeRequest(new Request(url, {
       signal: AbortSignal.timeout(5_000),
     }))
     if (!res.ok) throw new Error(`OpenCode provider catalog fetch failed: ${res.status}`)
     const body = await res.json()
-    if (!providerListHasModels(body)) throw new Error(`OpenCode provider catalog contained no provider models`)
+    if (providerId ? !providerListHasModels(body) : !providerListHasProviders(body)) {
+      throw new Error(`OpenCode provider catalog contained no ${providerId ? "provider models" : "providers"}`)
+    }
     options.onOpencodeAccess?.()
-    return body
+    return providerCatalogView(body, providerId)
   })
 }
 
@@ -128,14 +134,21 @@ function localProviderCatalog(harnessId: string, options: OpenCodeCompatRouteOpt
 }
 
 function providerListHasModels(input: unknown) {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return false
-  const all = (input as { all?: unknown }).all
-  if (!Array.isArray(all)) return false
-  return all.some((item) => {
-    if (!item || typeof item !== "object" || Array.isArray(item)) return false
+  return providerList(input).some((item) => {
     const models = (item as { models?: unknown }).models
     return !!models && typeof models === "object" && !Array.isArray(models) && Object.keys(models).length > 0
   })
+}
+
+function providerListHasProviders(input: unknown) {
+  return providerList(input).some((item) => typeof (item as { id?: unknown }).id === "string")
+}
+
+function providerList(input: unknown) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return []
+  const all = (input as { all?: unknown }).all
+  if (!Array.isArray(all)) return []
+  return all.filter((item): item is Record<string, unknown> => !!item && typeof item === "object" && !Array.isArray(item))
 }
 
 /**

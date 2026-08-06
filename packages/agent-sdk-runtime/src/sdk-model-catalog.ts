@@ -34,13 +34,14 @@ export type SdkModelEntry = {
   description?: string
   isDefault?: boolean
   /**
-   * Effort capability, straight off the Claude Agent SDK's `ModelInfo`. It is
-   * PER MODEL — "Opus" offers levels that "Haiku" does not — which is why the
+   * Harness-reported effort capability. It is per model, which is why the
    * thought-level option below is derived from the selected model rather than
-   * cached against the harness.
+   * cached against the harness. `defaultEffort` preserves the harness's own
+   * default when it reports one.
    */
   supportsEffort?: boolean
   supportedEffortLevels?: string[]
+  defaultEffort?: string
 }
 
 export function sdkModelOptions(harness: NativeSdkHarnessId): readonly SdkModelEntry[] {
@@ -82,9 +83,19 @@ export function resolveTurnEffort(
 ): SdkEffortLevel | undefined {
   if (!requested) return undefined
   if (!(SDK_EFFORT_LEVELS as readonly string[]).includes(requested)) return undefined
-  const model = models.find((item) => item.id === modelId)
+  return resolveSupportedEffort(models, modelId, requested) as SdkEffortLevel | undefined
+}
+
+/** Resolves a harness-advertised effort without imposing another harness's union. */
+export function resolveSupportedEffort(
+  models: readonly SdkModelEntry[],
+  modelId: string | undefined,
+  requested: string | undefined,
+) {
+  if (!requested) return undefined
+  const model = selectedEffortModel(models, modelId)
   if (!model?.supportsEffort) return undefined
-  return model.supportedEffortLevels?.includes(requested) ? requested as SdkEffortLevel : undefined
+  return model.supportedEffortLevels?.includes(requested) ? requested : undefined
 }
 
 function titleCase(value: string) {
@@ -114,15 +125,17 @@ export function thoughtLevelConfigOption(
   // `setModel("")`, so that is the common case, not an edge one. A non-empty id
   // we do not recognise must NOT silently adopt some other model's levels;
   // that would advertise an effort the turn cannot run at.
-  const model = currentModel
-    ? models.find((item) => item.id === currentModel)
-    : models.find((item) => item.isDefault) ?? models[0]
+  const model = selectedEffortModel(models, currentModel)
   const levels = model?.supportsEffort ? model.supportedEffortLevels ?? [] : []
   if (levels.length < 2) return undefined
   // Never hand back a level this model does not offer. The SDK silently
   // downgrades an unsupported effort, which would leave the UI reporting a
   // setting the turn never actually ran with.
-  const current = currentEffort && levels.includes(currentEffort) ? currentEffort : levels[0]
+  const current = currentEffort && levels.includes(currentEffort)
+    ? currentEffort
+    : model?.defaultEffort && levels.includes(model.defaultEffort)
+    ? model.defaultEffort
+    : levels[0]
   return {
     id: EFFORT_CONFIG_ID,
     name: "Effort",
@@ -135,6 +148,11 @@ export function thoughtLevelConfigOption(
     // extractor reads either, so both paths land on one Effort section.
     selectOptions: levels.map((level) => ({ id: level, name: titleCase(level) })),
   }
+}
+
+function selectedEffortModel(models: readonly SdkModelEntry[], modelId: string | undefined) {
+  if (modelId) return models.find((item) => item.id === modelId)
+  return models.find((item) => item.isDefault) ?? models[0]
 }
 
 export function modelConfigOption(models: readonly SdkModelEntry[], currentModel?: string): AgentConfigOptionRow {

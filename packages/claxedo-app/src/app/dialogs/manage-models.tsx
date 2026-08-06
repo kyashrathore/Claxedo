@@ -4,17 +4,22 @@ import { List } from "@opencode-ai/ui/list"
 import { Switch } from "@opencode-ai/ui/switch"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { Button } from "@opencode-ai/ui/button"
-import type { Component } from "solid-js"
+import { onMount, type Component } from "solid-js"
 import { useLocal } from "@/features/session/providers/session-selection"
-import { popularProviders } from "@/app/providers/use-providers"
+import { popularProviders, useProviders } from "@/app/providers/use-providers"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { DialogSelectProvider } from "@/app/dialogs/select-provider"
 
 export const DialogManageModels: Component = () => {
   const local = useLocal()
+  const providers = useProviders()
   const language = useLanguage()
   const dialog = useDialog()
+
+  onMount(() => {
+    void Promise.allSettled(providers.connected().map((provider) => providers.load(provider.id)))
+  })
 
   const handleConnectProvider = () => {
     dialog.show(() => <DialogSelectProvider />)

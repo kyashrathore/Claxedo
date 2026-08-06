@@ -54,13 +54,17 @@
       "family": "switcher surface status",
       "writer": "app/workbench/rail/rail-header-surfaces.ts",
       "status": "live"
+    },
+    {
+      "family": "provider catalog query cache",
+      "writer": "app/providers/use-providers.ts",
+      "status": "live"
     }
   ],
   "grandfathered": [
     "features/workspaces/actions/project-actions.tsx",
     "features/review/ui/review-vcs-cache.ts",
     "features/terminal/workbench/pane-terminal-recovery.ts",
-    "app/dialogs/provider-connect-form.tsx",
     "app/dialogs/custom-provider.tsx",
     "features/settings/ui/providers.tsx",
     "app/providers/global-sync/provider.tsx",

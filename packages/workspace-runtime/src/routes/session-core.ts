@@ -822,7 +822,10 @@ export function createSessionRoutes(opts: Opts) {
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
       const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "abort", "abort")
       if (unsupported) return unsupported
-      const result = await adapter.abort!(sessionId, directory)
+      const runtime = await opts.resolveRuntime?.(c, { sessionId, directory })
+      const result = runtime
+        ? await runtime.turns.abort(sessionId, directory)
+        : await adapter.abort!(sessionId, directory)
       if (result.status === "recovering") {
         opts.publishGlobal(withDir(compatScope(directory, sessionId), sessionStatus(sessionId, recovering(result.message))))
       }

@@ -2,6 +2,7 @@ import { describe, expect, it, spyOn } from "bun:test"
 import { fetchDouble } from "../test-support/fetch-double"
 import type {
   AgentMessage,
+  AgentRuntime,
   AgentRuntimeStreamEvent,
   PromptInput,
   RuntimeDirectory,
@@ -1235,6 +1236,45 @@ describe("session prompt route", () => {
         },
       },
     }])
+  })
+
+  it("aborts through the session runtime so cancellation becomes a durable turn outcome", async () => {
+    const directory = process.cwd()
+    const calls = { adapterAborts: 0, runtimeAborts: 0 }
+    const app = createSessionRoutes({
+      resolveAdapter: async () => ({
+        ...adapter({}),
+        abort: async () => {
+          calls.adapterAborts++
+          return { ok: true as const, status: "cancelled" as const }
+        },
+      }),
+      resolveRuntime: async () => ({
+        turns: {
+          abort: async () => {
+            calls.runtimeAborts++
+            return { ok: true as const, status: "cancelled" as const }
+          },
+        },
+      }) as unknown as AgentRuntime,
+      resolveDirectory: async () => directory,
+      publishGlobal() {},
+      sessionBus: {
+        publish() {},
+        subscribe() {
+          return () => {}
+        },
+      },
+    })
+
+    const res = await app.request(`http://localhost/session/s1/abort?directory=${encodeURIComponent(directory)}`, {
+      method: "POST",
+    })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, status: "cancelled" })
+    expect(calls.runtimeAborts).toBe(1)
+    expect(calls.adapterAborts).toBe(0)
   })
 
   it("returns typed unsupported operation failures from harness capabilities", async () => {

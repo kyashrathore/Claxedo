@@ -15,12 +15,11 @@ import { TextField } from "@opencode-ai/ui/text-field"
 import { createMemo, Match, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
-import type { NormalizedProviderListResponse } from "@/platform/query/provider-list"
 import { Link } from "@/app/controls/link"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
 import { useLanguage } from "@/platform/i18n/provider"
-import { useProviders } from "@/app/providers/use-providers"
+import { mergeProviderQuery, useProviders } from "@/app/providers/use-providers"
 import { claxedoCredentialRequest } from "@/platform/api/credential-request"
 import { queryClient } from "@/platform/query/query-client"
 
@@ -49,7 +48,7 @@ export function useProviderConnectForm(props: ProviderConnectFormProps) {
   // the whole screen with it — fall back to the id rather than crash.
   const provider = createMemo(() =>
     providers.all().get(props.provider)
-      ?? { id: props.provider, name: props.provider, env: [], options: {}, models: {} },
+      ?? { id: props.provider, name: props.provider, source: "custom" as const, env: [], options: {}, models: {} },
   )
   const codexBundleRequired = () => props.harness === "pi" && props.provider === "openai-codex"
   const authProviderID = () => codexBundleRequired() ? "codex-acp" : props.provider
@@ -78,25 +77,21 @@ export function useProviderConnectForm(props: ProviderConnectFormProps) {
       await queryClient.invalidateQueries({
         predicate: (query) => query.queryKey[2] === "providers" && query.queryKey[4] === props.harness,
       })
+      await providers.load(props.provider).catch(() => undefined)
       return
     }
     const current = provider()
-    queryClient.setQueryData<NormalizedProviderListResponse | undefined>(
-      queryOptions.providers(null).queryKey,
-      (cached) => {
-        const providerList = cached ?? providers.state()
-        return {
-          ...providerList,
-          all: new Map(providerList.all).set(props.provider, { ...current, source: "api" }),
-          connected: providerList.connected.includes(props.provider)
-            ? providerList.connected
-            : [...providerList.connected, props.provider],
-        }
-      },
-    )
+    mergeProviderQuery({
+      queryKey: queryOptions.providers(null).queryKey,
+      current: providers.state(),
+      providerId: props.provider,
+      provider: { ...current, source: "api" },
+      ensureConnected: true,
+    })
     await queryClient.invalidateQueries({
       predicate: (query) => query.queryKey[2] === "providers" && query.queryKey[4] !== "pi",
     })
+    await providers.load(props.provider).catch(() => undefined)
   }
 
   const complete = async () => {

@@ -62,6 +62,7 @@ export const ProviderList: Component<{
       }}
       onSelect={(x) => {
         if (!x) return
+        void providers.load(x.id).catch(() => undefined)
         props.onSelect(x.id)
       }}
     >

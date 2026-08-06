@@ -276,6 +276,23 @@ const sDKContextInput = {
       createClient(opts: Parameters<typeof globalSDK.createClient>[0]) {
         return wrapRuntimeFileClient(scopedClient(opts), opts.directory ?? directory())
       },
+      request(pathname: string, init?: RequestInit) {
+        const dir = directory()
+        const workspace = workspaceForDirectory(dir)
+        const request = platform.fetch ?? authFetch
+        if (!workspace) return request(new URL(pathname, globalSDK.url), init)
+        return createTransport({
+          placement: {
+            workspaceId: workspace.workspaceId,
+            hosting: "workspace",
+            transport: centralTransportForServer(globalSDK.url) === "loopback" ? "loopback" : "workspace-relay",
+          },
+          serverUrl: globalSDK.url,
+          directory: dir,
+          request,
+          relayRequest: request,
+        }).fetch(pathname, init)
+      },
       workspace(directoryOverride?: string) {
         return workspaceForDirectory(directoryOverride ?? directory())
       },

@@ -38,23 +38,62 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
     const svc = yield* ProviderAuth.Service
 
     const list = Effect.fn("ProviderHttpApi.list")(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const url = new URL(request.url, "http://opencode.local")
+      const selectedProvider = url.searchParams.get("provider")
+      const indexOnly = url.searchParams.get("view") === "index"
       const config = yield* cfg.get()
       const all = yield* ModelsDev.Service.use((s) => s.get())
       const disabled = new Set(config.disabled_providers ?? [])
       const enabled = config.enabled_providers ? new Set(config.enabled_providers) : undefined
-      const filtered: Record<string, (typeof all)[string]> = {}
-      for (const [key, value] of Object.entries(all)) {
-        if ((enabled ? enabled.has(key) : true) && !disabled.has(key)) filtered[key] = value
-      }
+      const filtered = Object.fromEntries(
+        Object.entries(all).filter(([key]) => (enabled ? enabled.has(key) : true) && !disabled.has(key)),
+      )
       const connected = yield* provider.list()
+      const connectedIDs = Object.keys(connected)
+      if (indexOnly) {
+        const defaults = Provider.defaultModelIDs(connected)
+        const providers = new Map(
+          Object.entries(filtered).map(([id, item]) => [id, { id, name: item.name }] as const),
+        )
+        Object.entries(connected).forEach(([id, item]) => providers.set(id, { id, name: item.name }))
+        return {
+          all: [...providers.values()].map((item) => {
+            const connectedProvider = connected[ProviderV2.ID.make(item.id)]
+            const defaultModel = defaults[item.id]
+            return {
+              id: ProviderV2.ID.make(item.id),
+              name: item.name,
+              source: connectedProvider?.source ?? "custom" as const,
+              env: [],
+              options: {},
+              models: connectedProvider && defaultModel && connectedProvider.models[defaultModel]
+                ? { [defaultModel]: Provider.toPublicInfo(connectedProvider).models[defaultModel]! }
+                : {},
+            }
+          }),
+          default: defaults,
+          connected: connectedIDs,
+        }
+      }
+      if (selectedProvider) {
+        const id = ProviderV2.ID.make(selectedProvider)
+        const selected = connected[id] ?? (filtered[selectedProvider] ? Provider.fromModelsDevProvider(filtered[selectedProvider]) : undefined)
+        return {
+          all: selected ? [Provider.toPublicInfo(selected)] : [],
+          default: Provider.defaultModelIDs({ ...connected, ...(selected ? { [id]: selected } : {}) }),
+          connected: connectedIDs,
+        }
+      }
       const providers = Object.assign(
         mapValues(filtered, (item) => Provider.fromModelsDevProvider(item)),
         connected,
       )
+      const defaults = Provider.defaultModelIDs(providers)
       return {
         all: Object.values(providers).map(Provider.toPublicInfo),
-        default: Provider.defaultModelIDs(providers),
-        connected: Object.keys(connected),
+        default: defaults,
+        connected: connectedIDs,
       }
     })
 

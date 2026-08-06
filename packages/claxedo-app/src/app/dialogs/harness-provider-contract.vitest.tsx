@@ -43,6 +43,7 @@ vi.mock("@/app/providers/use-providers", async () => {
         loading: () => false,
         error: () => undefined,
         refresh: () => undefined,
+        load: async () => undefined,
         all: () => all,
         default: () => ({}),
         popular: () => [],

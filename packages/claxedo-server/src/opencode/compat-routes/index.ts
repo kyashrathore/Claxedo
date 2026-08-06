@@ -116,7 +116,7 @@ function compatRoutes(options: OpenCodeCompatRouteOptions) {
     .get("/provider", async (c) => {
       const harnessId = requestHarnessId(c)
       try {
-        const body = await providerBody(harnessId, options)
+        const body = await providerBody(harnessId, options, c.req.query("provider"))
         const status = rec(body)?.ok === false ? 502 : 200
         return c.json(body, status)
       } catch (cause) {

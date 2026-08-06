@@ -814,11 +814,17 @@ function opencodeProxyHeaders(headers: HeadersInit, base?: HeadersInit) {
 // the real server URL (URL/spawn mode) or routes on path only (injected mode).
 const OPENCODE_INTERNAL_BASE = "http://opencode.internal"
 
-async function proxyOpenCode(c: any, adapter: AgentHarnessAdapter, baseHeaders?: HeadersInit) {
+async function proxyOpenCode(
+  c: any,
+  adapter: AgentHarnessAdapter,
+  baseHeaders?: HeadersInit,
+  queryPatch?: Record<string, string>,
+) {
   if (!hasAdapterCapability(adapter, "http-proxy")) return
   const request = await (adapter as AgentHarnessAdapter & HttpProxyAdapter).getRequestFn()
   const reqUrl = new URL(c.req.url)
   const target = new URL(reqUrl.pathname + reqUrl.search, OPENCODE_INTERNAL_BASE)
+  Object.entries(queryPatch ?? {}).forEach(([key, value]) => target.searchParams.set(key, value))
   const headers = opencodeProxyHeaders(c.req.raw.headers, baseHeaders)
   const directory = c.req.query("directory") || c.req.header("x-opencode-directory")
   if (directory) headers.set("x-opencode-directory", assertTarget(directory))
@@ -854,6 +860,36 @@ function providerListHasModels(input: unknown) {
     const models = (item as { models?: unknown }).models
     return !!models && typeof models === "object" && !Array.isArray(models) && Object.keys(models).length > 0
   })
+}
+
+function providerCatalogView(input: { all?: unknown[]; connected?: unknown[]; default?: Record<string, unknown> }, providerId?: string) {
+  const connected = Array.isArray(input.connected)
+    ? input.connected.filter((item): item is string => typeof item === "string")
+    : []
+  const defaults = input.default && typeof input.default === "object" ? input.default : {}
+  return {
+    all: (input.all ?? []).flatMap((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return []
+      const provider = item as Record<string, unknown>
+      if (typeof provider.id !== "string" || typeof provider.name !== "string") return []
+      if (providerId && provider.id !== providerId) return []
+      const models = provider.models && typeof provider.models === "object" && !Array.isArray(provider.models)
+        ? provider.models as Record<string, unknown>
+        : {}
+      if (providerId) return [{ ...provider, models }]
+      const configuredDefault = defaults[provider.id]
+      const defaultModel = typeof configuredDefault === "string" ? configuredDefault : undefined
+      return [{
+        id: provider.id,
+        name: provider.name,
+        models: connected.includes(provider.id) && defaultModel && models[defaultModel]
+          ? { [defaultModel]: models[defaultModel] }
+          : {},
+      }]
+    }),
+    connected,
+    default: defaults,
+  }
 }
 
 function providerUnavailable(harness: RuntimeRunner) {
@@ -1631,12 +1667,20 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         }
         const adapter = runner.id === "opencode" ? ensure() : await ensureSessionAdapter({ id: "opencode", access: "native" })
         try {
-          const res = await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders)
+          const detail = c.req.query("provider")
+          const res = await proxyOpenCode(
+            c,
+            adapter,
+            hostOptions.opencodeHeaders,
+            detail ? undefined : { view: "index" },
+          )
           if (res?.ok) {
             const body = await res.json().catch(() => undefined) as
               | { all?: unknown[]; connected?: unknown[]; default?: Record<string, unknown> }
               | undefined
-            if (providerListHasModels(body)) return c.json(body)
+            if (providerListHasModels(body) || (!detail && Array.isArray(body?.all))) {
+              return c.json(providerCatalogView(body ?? {}, detail))
+            }
           }
           return c.json({
             ok: false,

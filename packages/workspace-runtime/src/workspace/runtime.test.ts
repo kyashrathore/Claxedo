@@ -1352,7 +1352,7 @@ describe("workspace runtime auth helpers", () => {
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
     globalThis.fetch = fetchDouble((async (input, init) => {
       const req = input instanceof Request ? input : new Request(String(input), init)
-      if (req.url === "http://opencode.test/provider?runner=opencode") {
+      if (req.url === "http://opencode.test/provider?runner=opencode&view=index") {
         return new Response(JSON.stringify({
           all: [{ id: "opencode", name: "OpenCode", env: [], models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } } }],
           connected: ["opencode"],
@@ -1506,7 +1506,7 @@ describe("workspace runtime auth helpers", () => {
     const seen: Array<{ authorization: string | null; workspaceId: string | null; forwardedBy: string | null }> = []
     globalThis.fetch = fetchDouble((async (input, init) => {
       const req = input instanceof Request ? input : new Request(String(input), init)
-      if (req.url === "http://opencode.test/provider?runner=opencode") {
+      if (req.url === "http://opencode.test/provider?runner=opencode&view=index") {
         seen.push({
           authorization: req.headers.get("authorization"),
           workspaceId: req.headers.get("x-workspace-id"),
@@ -1547,7 +1547,7 @@ describe("workspace runtime auth helpers", () => {
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
     globalThis.fetch = fetchDouble((async (input, init) => {
       const req = input instanceof Request ? input : new Request(String(input), init)
-      if (req.url === "http://opencode.test/provider?runner=opencode") {
+      if (req.url === "http://opencode.test/provider?runner=opencode&view=index") {
         return new Response(JSON.stringify({
           all: [{ id: "opencode", name: "OpenCode", env: [], models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } } }],
           connected: ["opencode"],
@@ -1622,7 +1622,7 @@ describe("workspace runtime auth helpers", () => {
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
     globalThis.fetch = fetchDouble((async (input, init) => {
       const req = input instanceof Request ? input : new Request(String(input), init)
-      if (req.url === "http://opencode.test/provider?runner=opencode") {
+      if (req.url === "http://opencode.test/provider?runner=opencode&view=index") {
         return new Response("unavailable", { status: 503 })
       }
       return originalFetch(input, init)
@@ -1650,7 +1650,7 @@ describe("workspace runtime auth helpers", () => {
     })
   })
 
-  test("opencode provider route errors when upstream metadata has no models", async () => {
+  test("opencode provider index accepts an empty model catalog", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-provider-empty-"))
     tempDirs.push(dir)
 
@@ -1658,7 +1658,7 @@ describe("workspace runtime auth helpers", () => {
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
     globalThis.fetch = fetchDouble((async (input, init) => {
       const req = input instanceof Request ? input : new Request(String(input), init)
-      if (req.url === "http://opencode.test/provider?runner=opencode") {
+      if (req.url === "http://opencode.test/provider?runner=opencode&view=index") {
         return new Response(JSON.stringify({ all: [], connected: [], default: {} }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -1679,14 +1679,8 @@ describe("workspace runtime auth helpers", () => {
     expect(config.status).toBe(200)
 
     const provider = await app.request("http://localhost/provider?runner=opencode")
-    expect(provider.status).toBe(502)
-    expect(await provider.json()).toMatchObject({
-      ok: false,
-      error: {
-        code: "provider_models_unavailable",
-        harness: "opencode",
-      },
-    })
+    expect(provider.status).toBe(200)
+    expect(await provider.json()).toEqual({ all: [], connected: [], default: {} })
   })
 
   test("provider route errors instead of returning static ACP runner model metadata", async () => {

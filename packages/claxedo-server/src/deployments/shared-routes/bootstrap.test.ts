@@ -72,8 +72,16 @@ describe("BootstrapRoutes", () => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
       if (url.pathname === "/provider") {
         return Response.json({
-          all: [{ id: "opencode", name: "OpenCode", models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } } }],
-          default: { opencode: "test/model" },
+          all: [{
+            id: "opencode",
+            name: "OpenCode",
+            options: { large: "catalog metadata" },
+            models: {
+              "big-pickle": { id: "big-pickle", name: "Big Pickle" },
+              "unused-model": { id: "unused-model", name: "Unused" },
+            },
+          }],
+          default: { opencode: "big-pickle" },
           connected: ["opencode"],
         })
       }
@@ -91,6 +99,11 @@ describe("BootstrapRoutes", () => {
       expect(ambientIgnored.status).toBe(200)
       const ambientIgnoredBody = await ambientIgnored.json()
       expect(ambientIgnoredBody.provider.connected).toEqual(["opencode"])
+      expect(ambientIgnoredBody.provider.all).toEqual([{
+        id: "opencode",
+        name: "OpenCode",
+        models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } },
+      }])
       expect(calls).toBeGreaterThan(0)
 
       calls = 0
