@@ -116,7 +116,6 @@ const prev: Record<string, string | undefined> = {
   CURSOR_API_KEY: process.env.CURSOR_API_KEY,
   CLAXEDO_ACP_IDLE_TIMEOUT_MS: process.env.CLAXEDO_ACP_IDLE_TIMEOUT_MS,
   CLAXEDO_ACP_PROMPT_TIMEOUT_MS: process.env.CLAXEDO_ACP_PROMPT_TIMEOUT_MS,
-  CLAXEDO_WORKGRAPH_REPOSITORY: process.env.CLAXEDO_WORKGRAPH_REPOSITORY,
 }
 
 process.env.HOME = home
@@ -125,7 +124,6 @@ process.env.CLAXEDO_STATE_DIR = path.join(data, "state")
 process.env.POSTHOG_KEY = ""
 process.env.CLAXEDO_ACP_IDLE_TIMEOUT_MS = "60000"
 process.env.CLAXEDO_ACP_PROMPT_TIMEOUT_MS = "15000"
-process.env.CLAXEDO_WORKGRAPH_REPOSITORY = path.resolve(import.meta.dirname, "../../../../..")
 delete process.env.ANTHROPIC_API_KEY
 delete process.env.OPENAI_API_KEY
 delete process.env.CURSOR_API_KEY

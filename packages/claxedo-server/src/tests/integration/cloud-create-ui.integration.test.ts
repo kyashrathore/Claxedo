@@ -186,14 +186,12 @@ const prev = {
   HOME: process.env.HOME,
   CLAXEDO_DATA_DIR: process.env.CLAXEDO_DATA_DIR,
   CLAXEDO_STATE_DIR: process.env.CLAXEDO_STATE_DIR,
-  CLAXEDO_WORKGRAPH_REPOSITORY: process.env.CLAXEDO_WORKGRAPH_REPOSITORY,
   POSTHOG_KEY: process.env.POSTHOG_KEY,
 }
 
 process.env.HOME = home
 process.env.CLAXEDO_DATA_DIR = data
 process.env.CLAXEDO_STATE_DIR = path.join(data, "state")
-process.env.CLAXEDO_WORKGRAPH_REPOSITORY = path.resolve(import.meta.dirname, "../../../../..")
 process.env.POSTHOG_KEY = ""
 
 const [serverMod, store, agent] = await Promise.all([
@@ -279,8 +277,6 @@ describe("cloud create UI integration", () => {
     process.env.HOME = prev.HOME
     process.env.CLAXEDO_DATA_DIR = prev.CLAXEDO_DATA_DIR
     process.env.CLAXEDO_STATE_DIR = prev.CLAXEDO_STATE_DIR
-    if (prev.CLAXEDO_WORKGRAPH_REPOSITORY === undefined) delete process.env.CLAXEDO_WORKGRAPH_REPOSITORY
-    else process.env.CLAXEDO_WORKGRAPH_REPOSITORY = prev.CLAXEDO_WORKGRAPH_REPOSITORY
     process.env.POSTHOG_KEY = prev.POSTHOG_KEY
     await fs.rm(root, { recursive: true, force: true })
   })
