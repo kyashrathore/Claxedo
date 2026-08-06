@@ -52,6 +52,15 @@ export function loadServerEnvForDevelopment(input: {
   return loaded
 }
 
+export function resolveDesktopServerDataDir(input: {
+  channel: "dev" | "beta" | "prod"
+  home: string
+  configured?: string
+}) {
+  if (input.configured?.trim()) return input.configured
+  return join(input.home, input.channel === "prod" ? ".claxedo" : `.claxedo-${input.channel}`)
+}
+
 export function parseEnvFile(text: string): Array<[string, string]> {
   return text.split("\n").flatMap((line) => {
     const trimmed = line.trim()

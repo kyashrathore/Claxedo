@@ -14,7 +14,7 @@ import { dataDir } from "../runtime/lib/paths"
 import { Log } from "../runtime/lib/log"
 import { lazy } from "../runtime/lib/lazy"
 import path from "path"
-import { readFileSync, readdirSync, existsSync } from "fs"
+import { readFileSync, readdirSync, existsSync, mkdirSync } from "fs"
 import { createRequire } from "module"
 import * as schema from "./schema"
 import { repair } from "./repair"
@@ -44,6 +44,7 @@ function bunRuntime() {
 }
 
 function openDatabase(file: string) {
+  if (file !== ":memory:") mkdirSync(path.dirname(file), { recursive: true })
   if (bunRuntime()) {
     const bun = require("bun:sqlite") as BunSqliteModule
     const drizzle = (require("drizzle-orm/bun-sqlite") as BunDrizzleModule).drizzle

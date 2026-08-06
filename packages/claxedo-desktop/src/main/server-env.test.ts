@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { loadServerEnvForDevelopment, parseEnvFile } from "./server-env"
+import { loadServerEnvForDevelopment, parseEnvFile, resolveDesktopServerDataDir } from "./server-env"
 
 const roots: string[] = []
 
@@ -78,6 +78,29 @@ describe("loading the server's env for development", () => {
     loadServerEnvForDevelopment({ repoRoot, env: second })
 
     expect(second.KEY).toBe("already")
+  })
+})
+
+describe("desktop server data directory", () => {
+  test("isolates development and beta from the production profile", () => {
+    expect(resolveDesktopServerDataDir({ channel: "dev", home: "/Users/test" })).toBe("/Users/test/.claxedo-dev")
+    expect(resolveDesktopServerDataDir({ channel: "beta", home: "/Users/test" })).toBe("/Users/test/.claxedo-beta")
+    expect(resolveDesktopServerDataDir({ channel: "prod", home: "/Users/test" })).toBe("/Users/test/.claxedo")
+  })
+
+  test("preserves an explicitly configured data directory", () => {
+    expect(resolveDesktopServerDataDir({
+      channel: "dev",
+      home: "/Users/test",
+      configured: "/tmp/claxedo-custom",
+    })).toBe("/tmp/claxedo-custom")
+  })
+
+  test("treats a blank configured directory as unset", () => {
+    expect(resolveDesktopServerDataDir({ channel: "dev", home: "/Users/test", configured: "" }))
+      .toBe("/Users/test/.claxedo-dev")
+    expect(resolveDesktopServerDataDir({ channel: "dev", home: "/Users/test", configured: "   " }))
+      .toBe("/Users/test/.claxedo-dev")
   })
 })
 

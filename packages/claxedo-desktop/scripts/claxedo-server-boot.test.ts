@@ -55,8 +55,8 @@ test("bundled claxedo-server boots the embedded engine and serves engine-backed 
       HOME: root,
       CLAXEDO_CHILD_PORT: String(port),
       CLAXEDO_DESKTOP_PARENT_PID: String(process.pid),
-      CLAXEDO_DATA_DIR: mkdir(path.join(root, "data")),
-      CLAXEDO_WORKGRAPH_REPOSITORY: mkdir(path.join(root, "workgraph")),
+      // First launch hands the server a profile path that does not exist yet.
+      CLAXEDO_DATA_DIR: path.join(root, "data"),
       CLAXEDO_CHILD_OPENCODE_EMBED_PATH: ENGINE_ARTIFACT,
     },
     stdout: "pipe",
@@ -93,11 +93,6 @@ async function freePort() {
   await new Promise<void>((resolve) => server.close(() => resolve()))
   if (!port) throw new Error("could not allocate a free port")
   return port
-}
-
-function mkdir(dir: string) {
-  fs.mkdirSync(dir, { recursive: true })
-  return dir
 }
 
 async function waitForHealth(base: string, child: { exited: Promise<number>; stderr: Bun.ReadableStream }) {
