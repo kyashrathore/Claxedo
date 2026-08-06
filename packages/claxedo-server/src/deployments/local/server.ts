@@ -373,7 +373,9 @@ export const SELF_HOST_DOCUMENT_CONTENT_SECURITY_POLICY = [
   "media-src 'self' data: blob: https:",
   "worker-src 'self' blob:",
   `connect-src 'self' https: wss: ${SELF_HOST_LOOPBACK_CONNECT_SOURCES.join(" ")}`,
-  "frame-src https://challenges.cloudflare.com",
+  // Hosted-browser previews use an empty iframe sandbox, so HTTPS documents
+  // receive no scripts, forms, popups, or same-origin privileges.
+  "frame-src https:",
 ].join("; ")
 
 /**

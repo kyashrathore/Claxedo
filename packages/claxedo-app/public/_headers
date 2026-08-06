@@ -52,6 +52,9 @@
   # workers. 'unsafe-inline' on style-src is likewise required — index.html
   # carries an inline <style> AND an inline style attribute on <html>, and
   # xterm/mermaid/cytoscape inject <style> elements at runtime.
+  # frame-src permits HTTPS because the hosted Browser tab previews external
+  # sources in an iframe with an empty sandbox (no scripts, forms, popups, or
+  # same-origin privileges).
   #
   # VALIDATED so far, by loading the production build in a real browser with
   # exactly these headers applied: the SPA boots and renders, Clerk's bundled
@@ -76,7 +79,7 @@
   # avatar host and Clerk's frontend API are the two known unknowns, (4) narrow
   # connect-src/img-src off `https:`, (5) rename this header to
   # `Content-Security-Policy` in one deliberate, reviewable diff.
-  Content-Security-Policy-Report-Only: default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; frame-ancestors 'self' https://claxedo.com https://www.claxedo.com; script-src 'self' 'wasm-unsafe-eval' https://*.i.posthog.com https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; media-src 'self' data: blob: https:; worker-src 'self' blob:; connect-src 'self' https: wss:; frame-src https://challenges.cloudflare.com
+  Content-Security-Policy-Report-Only: default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; frame-ancestors 'self' https://claxedo.com https://www.claxedo.com; script-src 'self' 'wasm-unsafe-eval' https://*.i.posthog.com https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; media-src 'self' data: blob: https:; worker-src 'self' blob:; connect-src 'self' https: wss:; frame-src https:
 
 # Vite emits content-hashed filenames under /assets (e.g. main-DUtf99h4.js), so
 # they are immutable. Pages MERGES overlapping rules, so set Cache-Control once

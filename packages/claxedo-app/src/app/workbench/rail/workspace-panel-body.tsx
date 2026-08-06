@@ -105,6 +105,14 @@ export function WorkspacePanelBody(props: {
     const value = focus()
     return value?.kind === "context" ? value.version : 0
   }
+  const focusBrowserUrl = () => {
+    const value = focus()
+    return value?.kind === "browser" ? value.url : undefined
+  }
+  const focusBrowserVersion = () => {
+    const value = focus()
+    return value?.kind === "browser" ? value.version : 0
+  }
   const activeSurfaceId = () => claxedoState.wb.selectors.focusedContent() ?? undefined
   const activeSurface = () => {
     const target = targetContentId()
@@ -293,6 +301,8 @@ export function WorkspacePanelBody(props: {
                                   focusProcessVersion={focusProcessVersion()}
                                   focusContextSessionId={focusContextSessionId()}
                                   focusContextVersion={focusContextVersion()}
+                                  focusBrowserUrl={focusBrowserUrl()}
+                                  focusBrowserVersion={focusBrowserVersion()}
                                 />
                               </Suspense>
                             </ProcessPaneProvider>

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   REVIEW_TAB,
   closeWorkspaceTab,
+  openBrowserWorkspaceTab,
   openFileWorkspaceTab,
   nextActiveWorkspaceTabAfterClose,
   type ReviewWorkspaceTab,
@@ -33,6 +34,33 @@ describe("review workspace tabs", () => {
     expect(result.added).toBe(false)
     expect(result.activeTabId).toBe("src/app.ts")
     expect(result.tabs).toBe(tabs)
+  })
+
+  test("opening an external image reuses the browser tab and updates its URL", () => {
+    const first = openBrowserWorkspaceTab({
+      tabs: [REVIEW_TAB],
+      browserId: "workspace-browser:repo",
+      url: "https://example.com/first.png",
+    })
+    const second = openBrowserWorkspaceTab({
+      tabs: first.tabs,
+      browserId: "workspace-browser:repo",
+      url: "https://example.com/second.png",
+      navigationVersion: 2,
+    })
+
+    expect(second.added).toBe(false)
+    expect(second.activeTabId).toBe("browser")
+    expect(second.tabs).toEqual([
+      REVIEW_TAB,
+      {
+        id: "browser",
+        kind: "browser",
+        browserId: "workspace-browser:repo",
+        url: "https://example.com/second.png",
+        navigationVersion: 2,
+      },
+    ])
   })
 
   test("closing the active file tab selects its neighbor", () => {

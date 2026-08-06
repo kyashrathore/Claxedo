@@ -52,6 +52,8 @@ export type WorkspaceBrowserPanelProps = {
    * usual "send" affordance.
    */
   sessionId: string
+  initialUrl?: string
+  navigationVersion?: number
 }
 
 export function WorkspaceBrowserPanel(props: WorkspaceBrowserPanelProps) {
@@ -134,6 +136,9 @@ function BrowserPaneMount(props: WorkspaceBrowserPanelProps & {
       paneId={props.panelKey}
       tabId={props.panelKey}
       browserId={props.panelKey}
+      initialUrl={props.initialUrl}
+      hostedUrl={props.initialUrl}
+      navigationVersion={props.navigationVersion}
       onPageComment={props.onPageComment}
     />
   )

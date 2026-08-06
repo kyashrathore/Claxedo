@@ -238,6 +238,7 @@ describe("Cloudflare Pages headers for the SPA", () => {
     // Load-bearing relaxations — each one white-screens the app if dropped.
     // Shiki compiles an inlined WASM module on the main thread and in workers.
     expect(reportOnly).toContain("'wasm-unsafe-eval'")
+    expect(reportOnly).toContain("frame-src https:")
     // index.html has an inline <style> and an inline style attribute on <html>.
     expect(reportOnly).toContain("style-src 'self' 'unsafe-inline'")
     // posthog-js lazy-loads recorder/exception-autocapture from the assets host.

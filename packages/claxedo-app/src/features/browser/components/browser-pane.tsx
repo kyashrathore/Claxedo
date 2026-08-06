@@ -1,6 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, type Component } from "solid-js"
 import { Portal } from "solid-js/web"
-
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
@@ -17,6 +16,8 @@ import {
 import { useBrowserHistory, type BrowserHistoryState } from "../store/browser-history"
 import { browserToolbarSlot } from "@/ui/controls/portal-slot"
 import { normalizeAddressBarInput } from "./browser-url"
+import { syncBrowserPaneUrl } from "./browser-pane-navigation"
+import { HostedBrowserFrame } from "./hosted-browser-frame"
 
 /**
  * BrowserPane.
@@ -60,6 +61,8 @@ export type BrowserPaneProps = {
   tabId?: string
   browserId?: string
   initialUrl?: string
+  hostedUrl?: string
+  navigationVersion?: number
   /**
    * Invoked when the guest webview navigates or its page title updates.
    * Lets the host update the persisted `TabItem` so close+reopen restores
@@ -185,7 +188,7 @@ export const BrowserPane: Component<BrowserPaneProps> = (props) => {
     <BrowserPaneProvider paneId={props.paneId} bridge={api} initialUrl={props.initialUrl}>
       <BrowserPaneKeyboardHandlers />
       <div class="flex h-full w-full flex-col bg-background-base text-text-base">
-        <BrowserPaneToolbar initialUrl={props.initialUrl} browserId={props.browserId} history={history} api={api} />
+        <BrowserPaneToolbar initialUrl={props.initialUrl} browserId={props.browserId} history={history} api={showWebview() ? api : undefined} />
         <div class="relative flex-1">
           <div
             data-testid="browser-pane-webview-host"
@@ -198,18 +201,14 @@ export const BrowserPane: Component<BrowserPaneProps> = (props) => {
           >
             <Show
               when={showWebview() && api}
-              fallback={
-                <div class="flex h-full w-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground">
-                  <div class="font-medium text-text-base">Browser tabs are unavailable.</div>
-                  <div>Open this workspace in the Claxedo desktop app to use the browser.</div>
-                </div>
-              }
+              fallback={enabled() === false ? <HostedBrowserFrame url={props.hostedUrl} /> : <div class="size-full bg-background-base" />}
             >
               {(apiAccessor) => (
                 <WebviewHost
                   paneId={props.paneId}
                   tabId={props.tabId}
                   initialUrl={props.initialUrl}
+                  navigationVersion={props.navigationVersion}
                   api={apiAccessor()}
                   browserId={props.browserId}
                   history={history}
@@ -358,6 +357,7 @@ function BrowserPaneToolbar(props: {
             variant="ghost"
             size="normal"
             aria-label="Reload"
+            disabled={!props.api}
             onClick={() => void ctx.reload(false)}
             data-testid="browser-pane-reload"
           />
@@ -376,13 +376,14 @@ function BrowserPaneToolbar(props: {
             size="normal"
             variant="ghost"
             aria-label="Inspect element"
+            disabled={!props.api}
             aria-pressed={ctx.inspectMode()}
             class="aria-pressed:bg-surface-base-active"
             onClick={() => void ctx.setInspectMode(!ctx.inspectMode())}
             data-testid="browser-pane-inspect-toggle"
           />
         </Tooltip>
-        <DropdownMenu gutter={4} placement="bottom-end">
+        <Show when={props.api}><DropdownMenu gutter={4} placement="bottom-end">
           <Tooltip value="Browser options" placement="bottom">
             <DropdownMenu.Trigger
               class="flex size-6 items-center justify-center rounded-sm text-icon-base transition-colors hover:bg-surface-base-hover aria-expanded:bg-surface-base-active"
@@ -434,7 +435,7 @@ function BrowserPaneToolbar(props: {
               </DropdownMenu.CheckboxItem>
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
-        </DropdownMenu>
+        </DropdownMenu></Show>
       </div>
     </div>
   )
@@ -543,6 +544,7 @@ function BrowserAddressBar(props: { initialUrl?: string; api?: BrowserBridgeApi;
           }}
           placeholder="Enter URL or search"
           spellcheck={false}
+          readOnly={!props.api}
           class="min-w-0 flex-1 bg-transparent text-12-regular text-text-base placeholder:text-text-weak focus:outline-none"
           data-testid="browser-pane-address-bar"
         />
@@ -705,6 +707,7 @@ type WebviewHostProps = {
   paneId: string
   tabId?: string
   initialUrl?: string
+  navigationVersion?: number
   api: BrowserBridgeApi
   browserId?: string
   history?: BrowserHistoryState
@@ -722,7 +725,7 @@ function WebviewHost(props: WebviewHostProps) {
   const ctx = useBrowserPane()
   const [url] = createSignal(props.initialUrl && props.initialUrl.length > 0 ? props.initialUrl : DEFAULT_URL)
   let webview: WebviewElement | undefined
-
+  const markNavigationReady = syncBrowserPaneUrl(() => props.initialUrl, () => props.navigationVersion, ctx.currentUrl, (next) => props.api.navigate(props.paneId, next))
   const handleDomReady = () => {
     ctx.setLoading(false)
     if (!webview) return
@@ -744,6 +747,7 @@ function WebviewHost(props: WebviewHostProps) {
         console.warn("[browser-pane] registry.register failed", res.error)
         return
       }
+      markNavigationReady()
       // Registration succeeded — refresh nav state so the toolbar enables
       // back/forward buttons appropriately.
       void ctx.refreshNavigationState()

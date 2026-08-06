@@ -134,6 +134,8 @@ export type ReviewWorkspaceProps = {
   focusProcessVersion?: number
   focusContextSessionId?: string
   focusContextVersion?: number
+  focusBrowserUrl?: string
+  focusBrowserVersion?: number
   leafId?: string
   surfaceId?: string
   class?: string
@@ -238,13 +240,15 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     setStore("activeTabId", next.activeTabId)
   }
 
-  const openBrowserTab = () => {
+  const openBrowserTab = (url?: string, navigationVersion?: number) => {
     const next = openBrowserWorkspaceTab({
       tabs: store.tabs,
       browserId: `workspace-browser:${encodeURIComponent(props.directory)}`,
+      url,
+      navigationVersion,
     })
+    if (next.tabs !== store.tabs) setStore("tabs", next.tabs)
     if (next.added) {
-      setStore("tabs", next.tabs)
       activateTabAfterMount(BROWSER_TAB_ID)
       return
     }
@@ -360,6 +364,14 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     ([, sessionId]) => {
       if (!sessionId) return
       openContextTab(sessionId)
+    },
+  ))
+
+  createEffect(on(
+    () => [props.focusBrowserVersion, props.focusBrowserUrl] as const,
+    ([, url]) => {
+      if (!url) return
+      openBrowserTab(url, props.focusBrowserVersion)
     },
   ))
 
@@ -593,6 +605,8 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
             <WorkspaceBrowserPanel
               panelKey={tab.browserId}
               sessionId={props.sessionId}
+              initialUrl={tab.url}
+              navigationVersion={tab.navigationVersion}
             />
           </PromptProvider>
         )
@@ -656,7 +670,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
                   <Icon name="circle-half" size="small" />
                   Context
                 </DropdownMenu.Item>
-                <DropdownMenu.Item onSelect={openBrowserTab}>
+                <DropdownMenu.Item onSelect={() => openBrowserTab()}>
                   <Icon name="globe" size="small" />
                   Browser
                 </DropdownMenu.Item>

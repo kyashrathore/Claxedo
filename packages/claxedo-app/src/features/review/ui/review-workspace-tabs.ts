@@ -4,7 +4,7 @@ export type ReviewWorkspaceTab =
   | { id: "review"; kind: "review" }
   | { id: "context"; kind: "context"; sessionId: string }
   | { id: string; kind: "file"; tabId: string }
-  | { id: "browser"; kind: "browser"; browserId: string }
+  | { id: "browser"; kind: "browser"; browserId: string; url?: string; navigationVersion?: number }
   | { id: string; kind: "process"; processId: string }
 
 export const REVIEW_TAB_ID = "review"
@@ -57,12 +57,32 @@ export function openContextWorkspaceTab(input: { tabs: readonly ReviewWorkspaceT
   }
 }
 
-export function openBrowserWorkspaceTab(input: { tabs: readonly ReviewWorkspaceTab[]; browserId: string }) {
-  if (input.tabs.some((tab) => tab.kind === "browser")) {
-    return { tabs: input.tabs, activeTabId: BROWSER_TAB_ID, added: false }
+export function openBrowserWorkspaceTab(input: {
+  tabs: readonly ReviewWorkspaceTab[]
+  browserId: string
+  url?: string
+  navigationVersion?: number
+}) {
+  const index = input.tabs.findIndex((tab) => tab.kind === "browser")
+  if (index !== -1) {
+    return {
+      tabs: input.url
+        ? input.tabs.map((tab, tabIndex) => tabIndex === index
+          ? { ...tab, url: input.url, navigationVersion: input.navigationVersion }
+          : tab)
+        : input.tabs,
+      activeTabId: BROWSER_TAB_ID,
+      added: false,
+    }
   }
   return {
-    tabs: [...input.tabs, { id: BROWSER_TAB_ID, kind: "browser", browserId: input.browserId } satisfies ReviewWorkspaceTab],
+    tabs: [...input.tabs, {
+      id: BROWSER_TAB_ID,
+      kind: "browser",
+      browserId: input.browserId,
+      ...(input.url ? { url: input.url } : {}),
+      ...(input.navigationVersion !== undefined ? { navigationVersion: input.navigationVersion } : {}),
+    } satisfies ReviewWorkspaceTab],
     activeTabId: BROWSER_TAB_ID,
     added: true,
   }

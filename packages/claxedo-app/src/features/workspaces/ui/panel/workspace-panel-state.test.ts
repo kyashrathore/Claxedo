@@ -89,6 +89,21 @@ describe("workspace panel state", () => {
     expect(retargeted.focus).toEqual({ kind: "process", processId: "proc-dev", version: 2 })
   })
 
+  test("carries external image URLs through browser focus", () => {
+    const state = openWorkspacePanel(createWorkspacePanel(), {
+      workspaceDir: "/workspace",
+      targetPaneId: "pane-session",
+      navigator: null,
+      focus: { kind: "browser", url: "https://cdn.example.com/source.png" },
+    })
+
+    expect(state.focus).toEqual({
+      kind: "browser",
+      url: "https://cdn.example.com/source.png",
+      version: 1,
+    })
+  })
+
   test("clears navigator and focus when requested", () => {
     const state = retargetWorkspacePanel(
       openWorkspacePanel(createWorkspacePanel(), {

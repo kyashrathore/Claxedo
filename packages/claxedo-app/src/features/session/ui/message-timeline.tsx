@@ -108,6 +108,7 @@ import { formatDuration } from "@/ui/session-kit"
 import { installTimelineMermaid } from "./mermaid-timeline"
 import {
   timelineAnchorClickTarget,
+  timelineExternalSourceClickTarget,
   timelineFileFocus,
   timelineFileTarget,
   resolveTimelinePath as resolveTimelineFilePath,
@@ -462,6 +463,18 @@ export function MessageTimeline(props: {
   // Capture phase runs before the link's default action (see above).
   const registerTimelineRoot = (el: HTMLDivElement) => {
     const onCapture = (event: MouseEvent) => {
+      const externalSourceUrl = timelineExternalSourceClickTarget(event)
+      if (externalSourceUrl) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        claxedoState.workspacePanel.open({
+          workspaceDir: sdk.directory.replace(/\/$/, ""),
+          targetPaneId: paneId,
+          navigator: null,
+          focus: { kind: "browser", url: externalSourceUrl },
+        })
+        return
+      }
       const raw = timelineAnchorClickTarget(event)
       if (!raw || !fileFocus(raw)) return
       event.preventDefault()

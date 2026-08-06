@@ -153,6 +153,7 @@ describe("self-host SPA bundle responses carry the document policy", () => {
     expect(reportOnly).toContain("worker-src 'self' blob:")
     expect(reportOnly).toContain("https://*.i.posthog.com")
     expect(reportOnly).toContain("https://challenges.cloudflare.com")
+    expect(reportOnly).toContain("frame-src https:")
   })
 
   test("the document CSP is REPORT-ONLY; only frame-ancestors is enforcing", async () => {

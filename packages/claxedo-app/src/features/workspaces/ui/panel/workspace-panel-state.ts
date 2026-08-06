@@ -31,10 +31,12 @@ export function isGlobalPanelMode(mode: WorkspacePanelMode | undefined): mode is
 export type FileFocusIntent = "tab" | "review"
 export type WorkspacePanelFocus =
   | { kind: "file"; path: string; version: number; intent: FileFocusIntent; line?: number; col?: number }
+  | { kind: "browser"; url: string; version: number }
   | { kind: "process"; processId: string; version: number }
   | { kind: "context"; sessionId: string; version: number }
 export type WorkspacePanelFocusTarget =
   | { kind: "file"; path: string; intent: FileFocusIntent; line?: number; col?: number }
+  | { kind: "browser"; url: string }
   | { kind: "process"; processId: string }
   | { kind: "context"; sessionId: string }
 export type WorkspacePanelActivityTarget = {
