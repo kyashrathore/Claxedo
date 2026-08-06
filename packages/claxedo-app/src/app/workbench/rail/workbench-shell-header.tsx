@@ -6,7 +6,7 @@ import type { SwitcherItem } from "../compact-switcher/switcher-items"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import {
   setBrowserToolbarSlot,
-  setMarkdownFileActionsSlot,
+  setFileHeaderActionsSlot,
   setProcessToolbarSlot,
   setReviewControlsSlot,
   setReviewTabHeaderSlot,
@@ -268,25 +268,23 @@ function L2HeaderStrip(props: {
                 {tab().path}
               </span>
               <Show when={isMarkdownPath(tab().path)}>
-                <>
-                  <button
-                    type="button"
-                    class="flex size-6 shrink-0 items-center justify-center rounded-sm text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base"
-                    aria-label={markdownSourceView(tab().path) ? "Preview markdown" : "Show source"}
-                    title={markdownSourceView(tab().path) ? "Preview markdown" : "Show source"}
-                    onClick={() => toggleMarkdownPreview(tab().path)}
-                  >
-                    <Icon name={markdownSourceView(tab().path) ? "eye" : "code"} size="small" />
-                  </button>
-                  <span
-                    ref={(element) => {
-                      setMarkdownFileActionsSlot(element)
-                      return () => setMarkdownFileActionsSlot(null)
-                    }}
-                    class="contents"
-                  />
-                </>
+                <button
+                  type="button"
+                  class="flex size-6 shrink-0 items-center justify-center rounded-sm text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base"
+                  aria-label={markdownSourceView(tab().path) ? "Preview markdown" : "Show source"}
+                  title={markdownSourceView(tab().path) ? "Preview markdown" : "Show source"}
+                  onClick={() => toggleMarkdownPreview(tab().path)}
+                >
+                  <Icon name={markdownSourceView(tab().path) ? "eye" : "code"} size="small" />
+                </button>
               </Show>
+              <span
+                ref={(element) => {
+                  setFileHeaderActionsSlot(element)
+                  return () => setFileHeaderActionsSlot(null)
+                }}
+                class="flex shrink-0 items-center gap-0.5"
+              />
               <span class="flex-1" />
               <WorkspaceTools />
             </div>

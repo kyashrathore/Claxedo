@@ -219,10 +219,15 @@ export const CODEX_ICON_TRANSFORMS = {
   "chevron-down": "rotate(90 10 10)",
   "chevron-grabber-vertical": "rotate(90 10 10)",
   "chevron-left": "rotate(180 10 10)",
+  // The custom copy mark occupies an 11-unit box while neighboring toolbar
+  // glyphs occupy roughly 14 units. Scale it around the 20-unit grid center so
+  // it reads at the same optical size without changing any button geometry.
+  copy: "translate(-2 -2) scale(1.2)",
   "layout-right": "rotate(180 10 10)",
   "layout-right-full": "rotate(180 10 10)",
   "layout-right-partial": "rotate(180 10 10)",
   "outline-chevron-down": "rotate(90 10 10)",
+  "outline-copy": "translate(-2 -2) scale(1.2)",
   "scroll-to-latest": "rotate(180 10 10)",
   "sidebar-right": "rotate(180 10 10)",
   selector: "rotate(90 10 10)",

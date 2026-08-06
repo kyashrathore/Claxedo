@@ -26,8 +26,9 @@ import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { getFilename } from "@/lib/path"
 import { checksum } from "@/lib/encode"
 import { imagePreviewUrl } from "@/platform/files/file-preview"
+import { createPathHelpers } from "@/platform/files/path"
 import type { LineComment } from "@/platform/comments/provider"
-import { markdownFileActionsSlot } from "@/ui/controls/portal-slot"
+import { fileHeaderActionsSlot } from "@/ui/controls/portal-slot"
 
 // Module-level signal tracking which file paths are in preview mode.
 // Shared across all TabFile instances so the same file shows consistent state.
@@ -56,6 +57,8 @@ export type TabFileProps = {
   path: string
   class?: string
   hideHeader?: boolean
+  /** Whether this retained file tab currently owns the shared header action slot. */
+  headerActive?: boolean
   onCollaborate?: () => void
   /** Line to select + reveal once content renders (from `file.ts:42` links). */
   focusLine?: number
@@ -68,6 +71,7 @@ export function TabFile(props: TabFileProps) {
   const comments = useComments()
   const language = useLanguage()
   const prompt = usePrompt()
+  const filePath = createPathHelpers(() => sdk.directory)
 
   // Text files carry `content` (rendered by the code viewer); binary files
   // (images, etc.) carry `binary` with the base64 payload + mime type.
@@ -77,6 +81,7 @@ export function TabFile(props: TabFileProps) {
   const [loading, setLoading] = createSignal(true)
   const [openedComment, setOpenedComment] = createSignal<string | null>(null)
   const [commenting, setCommenting] = createSignal<SelectedLineRange | null>(null)
+  const [copiedPath, setCopiedPath] = createSignal(false)
   // Selection = the user's manual line selection, or (until the user selects
   // manually under the current focus nonce) the line a `file.ts:42` link
   // focused. Derived rather than effect-written so link focus needs no
@@ -93,6 +98,20 @@ export function TabFile(props: TabFileProps) {
   })
   const setSelected = (range: SelectedLineRange | null) => setManualSelected({ atNonce: props.focusNonce, range })
   let loadSeq = 0
+  let copiedPathTimer: ReturnType<typeof setTimeout> | undefined
+
+  const copyRelativePath = () => {
+    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
+    if (!clipboard?.writeText) return
+    void clipboard.writeText(filePath.normalize(props.path)).then(
+      () => {
+        setCopiedPath(true)
+        if (copiedPathTimer) clearTimeout(copiedPathTimer)
+        copiedPathTimer = setTimeout(() => setCopiedPath(false), 2000)
+      },
+      () => {},
+    )
+  }
 
   const loadFile = (path: string, opts?: { silent?: boolean }) => {
     if (!path) return
@@ -150,6 +169,7 @@ export function TabFile(props: TabFileProps) {
   onCleanup(() => {
     loadSeq++
     if (watchTimer) clearTimeout(watchTimer)
+    if (copiedPathTimer) clearTimeout(copiedPathTimer)
     stopWatch()
   })
 
@@ -314,26 +334,52 @@ export function TabFile(props: TabFileProps) {
                 icon="page-plus"
                 variant="ghost"
                 size="small"
+                data-icon-interaction="subdued"
                 onClick={() => props.onCollaborate?.()}
                 aria-label="Add to Documents"
               />
             </Tooltip>
           </Show>
+          <Tooltip value={copiedPath() ? "Copied relative path" : "Copy relative path"}>
+            <IconButton
+              icon={copiedPath() ? "check" : "copy"}
+              variant="ghost"
+              size="small"
+              data-icon-interaction="subdued"
+              onClick={copyRelativePath}
+              aria-label={copiedPath() ? "Copied relative path" : "Copy relative path"}
+            />
+          </Tooltip>
         </div>
       </Show>
 
-      <Show when={props.hideHeader && isMd() && props.onCollaborate && markdownFileActionsSlot()}>
+      <Show when={props.hideHeader && props.headerActive !== false && fileHeaderActionsSlot()}>
         {(mount) => (
           <Portal mount={mount()}>
-            <Tooltip value="Add to Documents">
-              <IconButton
-                icon="page-plus"
-                variant="ghost"
-                size="small"
-                onClick={() => props.onCollaborate?.()}
-                aria-label="Add to Documents"
-              />
-            </Tooltip>
+            <div class="flex shrink-0 items-center gap-0.5">
+              <Show when={isMd() && props.onCollaborate}>
+                <Tooltip value="Add to Documents">
+                  <IconButton
+                    icon="page-plus"
+                    variant="ghost"
+                    size="small"
+                    data-icon-interaction="subdued"
+                    onClick={() => props.onCollaborate?.()}
+                    aria-label="Add to Documents"
+                  />
+                </Tooltip>
+              </Show>
+              <Tooltip value={copiedPath() ? "Copied relative path" : "Copy relative path"}>
+                <IconButton
+                  icon={copiedPath() ? "check" : "copy"}
+                  variant="ghost"
+                  size="small"
+                  data-icon-interaction="subdued"
+                  onClick={copyRelativePath}
+                  aria-label={copiedPath() ? "Copied relative path" : "Copy relative path"}
+                />
+              </Tooltip>
+            </div>
           </Portal>
         )}
       </Show>

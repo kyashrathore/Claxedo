@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { cleanup, render, waitFor } from "@solidjs/testing-library"
+import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library"
 
 const h = vi.hoisted(() => ({
   fileRead: vi.fn(async () => ({ data: { content: "one\ntwo\nthree\nfour" } })),
@@ -97,6 +97,7 @@ vi.mock("@opencode-ai/ui/tooltip", () => ({
 }))
 
 import { TabFile } from "./tab-file"
+import { setFileHeaderActionsSlot } from "@/ui/controls/portal-slot"
 
 describe("TabFile comments", () => {
   beforeEach(() => {
@@ -105,6 +106,7 @@ describe("TabFile comments", () => {
 
   afterEach(() => {
     cleanup()
+    setFileHeaderActionsSlot(null)
     vi.unstubAllGlobals()
     h.fileRead.mockClear()
     h.commentsList.mockClear()
@@ -170,6 +172,41 @@ describe("TabFile comments", () => {
     })
     expect(h.commentsRemove).toHaveBeenCalledWith("/repo/src/app.ts", "comment-1")
     expect(h.promptRemoveComment).toHaveBeenCalledWith("/repo/src/app.ts", "comment-1")
+  })
+
+  test("file header copies the workspace-relative path from a subdued action", async () => {
+    const writeText = vi.fn(async () => {})
+    vi.stubGlobal("navigator", { clipboard: { writeText } })
+    const view = render(() => <TabFile path="/repo/docs/readme.md" onCollaborate={() => {}} />)
+
+    const add = view.getByRole("button", { name: "Add to Documents" })
+    const copy = view.getByRole("button", { name: "Copy relative path" })
+
+    expect(add.getAttribute("data-icon-interaction")).toBe("subdued")
+    expect(copy.getAttribute("data-icon-interaction")).toBe("subdued")
+
+    fireEvent.click(copy)
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("docs/readme.md"))
+    expect(view.getByRole("button", { name: "Copied relative path" })).toBeTruthy()
+  })
+
+  test("portaled file header exposes copy path for non-Markdown files", async () => {
+    const writeText = vi.fn(async () => {})
+    vi.stubGlobal("navigator", { clipboard: { writeText } })
+    const view = render(() => (
+      <>
+        <div ref={setFileHeaderActionsSlot} />
+        <TabFile path="/repo/docs/readme.md" hideHeader headerActive={false} onCollaborate={() => {}} />
+        <TabFile path="/repo/assets/mark.svg" hideHeader headerActive />
+      </>
+    ))
+
+    expect(view.queryByRole("button", { name: "Add to Documents" })).toBeNull()
+    expect(view.getAllByRole("button", { name: "Copy relative path" })).toHaveLength(1)
+    fireEvent.click(view.getByRole("button", { name: "Copy relative path" }))
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("assets/mark.svg"))
   })
 
   test("binary images render an inline preview", async () => {

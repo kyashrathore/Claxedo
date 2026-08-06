@@ -594,6 +594,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
             path={file.pathFromTab(tab.tabId) ?? tab.tabId}
             class="h-full"
             hideHeader
+            headerActive={store.activeTabId === tab.id}
             focusLine={fileTabFocusLine(tab.tabId)}
             focusNonce={props.focusVersion}
             onCollaborate={() => void collaborateWithMarkdown(file.pathFromTab(tab.tabId) ?? tab.tabId)}

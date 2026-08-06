@@ -61,6 +61,7 @@ describe("ClaxedoIcon", () => {
         <ClaxedoIcon name="dot-grid" />
         <ClaxedoIcon name="file-text" />
         <ClaxedoIcon name="page-plus" />
+        <ClaxedoIcon name="copy" />
         <ClaxedoIcon name="folder" />
         <ClaxedoIcon name="pin" />
         <ClaxedoIcon name="pin-filled" />
@@ -81,6 +82,10 @@ describe("ClaxedoIcon", () => {
     expect(view.container.querySelector('use[href="#claxedo-icon-more-horizontal"]')).toBeTruthy()
     expect(view.container.querySelector('use[href="#claxedo-icon-file"]')).toBeTruthy()
     expect(view.container.querySelector('use[href="#claxedo-icon-page-plus"]')).toBeTruthy()
+    expect(view.container.querySelector('use[href="#claxedo-icon-copy"]')).toHaveAttribute(
+      "transform",
+      "translate(-2 -2) scale(1.2)",
+    )
     expect(view.container.querySelector('use[href="#claxedo-icon-folder"]')).toBeTruthy()
     expect(view.container.querySelector('use[href="#claxedo-icon-pin"]')).toBeTruthy()
     expect(view.container.querySelector('use[href="#claxedo-icon-pin-filled"]')).toBeTruthy()
