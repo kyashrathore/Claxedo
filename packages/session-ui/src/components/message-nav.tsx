@@ -90,9 +90,6 @@ export function MessageNav(
               selectMessage(message)
             }}
           >
-            <div data-slot="message-nav-preview-index" aria-hidden="true">
-              {String(index() + 1).padStart(2, "0")}
-            </div>
             <div data-slot="message-nav-preview-copy">
               <p data-slot="message-nav-preview-user">{user()}</p>
               <Show when={preview()?.assistant}>

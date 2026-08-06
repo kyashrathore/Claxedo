@@ -116,6 +116,7 @@ import {
   resolveTimelinePath as resolveTimelineFilePath,
 } from "./timeline-file-paths"
 import { messageNavCurrentID, messageNavPreview, messageNavVisible } from "./message-nav-preview"
+import "./message-nav-gutter.css"
 
 installTimelineMermaid()
 
@@ -1174,7 +1175,7 @@ export function MessageTimeline(props: {
 
     return (
       <Dialog title={language.t("session.delete.title")} fit>
-        <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
+        <div class="flex flex-col gap-4">
           <div class="flex flex-col gap-1">
             <span class="text-14-regular text-text-strong">
               {language.t("session.delete.confirm", { name: name() })}
@@ -1718,14 +1719,21 @@ export function MessageTimeline(props: {
         )}
       </Show>
       <Show when={messageNavVisible((props.navMessages ?? props.userMessages).length) && props.onMessageSelect}>
-        <MessageNav
-          class="absolute left-2 md:left-3 top-1/2 -translate-y-1/2 z-[45]"
-          messages={props.navMessages ?? props.userMessages}
-          current={currentNavMessage()}
-          size="compact"
-          onMessageSelect={props.onMessageSelect!}
-          getPreview={turnPreview}
-        />
+        {/*
+          Query container for the rail. It sizes to the timeline but holds no
+          fixed-position descendants, so `container-type` cannot re-root the
+          context menu the way declaring it on the timeline root would.
+        */}
+        <div data-slot="message-nav-gutter" class="pointer-events-none absolute inset-0 z-[45]">
+          <MessageNav
+            class="pointer-events-auto absolute left-2 md:left-3 top-1/2 -translate-y-1/2"
+            messages={props.navMessages ?? props.userMessages}
+            current={currentNavMessage()}
+            size="compact"
+            onMessageSelect={props.onMessageSelect!}
+            getPreview={turnPreview}
+          />
+        </div>
       </Show>
       <div
         class="absolute left-1/2 -translate-x-1/2 bottom-6 z-[60] pointer-events-none transition-all duration-200 ease-out"

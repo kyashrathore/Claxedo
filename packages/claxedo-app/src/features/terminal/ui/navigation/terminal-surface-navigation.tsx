@@ -1,7 +1,7 @@
 import { For, Show, createMemo } from "solid-js"
 import { ClaxedoIcon as Icon, ClaxedoIconV2 } from "@/ui/controls/claxedo-icon"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { NavigationRow, NavigationStatusDot, type SwitcherStatus } from "@/features/terminal/app-ports"
+import { NavigationRow, NavigationRowGlyph, NavigationStatusDot, type SwitcherStatus } from "@/features/terminal/app-ports"
 import { terminalSurfaceTitle } from "./terminal-surface-title"
 import {
   type NavigationDragStart,
@@ -77,21 +77,57 @@ function TerminalSurfaceNavigationRow(props: {
       prepareContentId={() => props.row.contentId}
       onDragStart={props.onDragStart}
     >
-      <span
-        aria-hidden="true"
-        data-slot="terminal-row-icon"
-        class="relative z-[1] pointer-events-none flex size-4 shrink-0 items-center justify-center"
-        classList={{
-          "text-text-strong": props.row.active,
-          "text-icon-weak-base": !props.row.active,
-        }}
-      >
-        <Icon name="terminal" size="small" />
-      </span>
-      <Show when={status() !== "idle"}>
-        <span class="relative z-[1] pointer-events-none flex">
-          <NavigationStatusDot status={status()} active={props.row.active} />
-        </span>
+      {/* A nested terminal row puts its glyph in the shared row-glyph column,
+          out of the flow — so its title starts at the SAME x as every session
+          title beside it. In flow the icon plus the row's `gap-2` pushed
+          terminal text 24px right of its neighbours, which read as a broken
+          hierarchy rather than a type distinction.
+
+          Status REPLACES the terminal icon in that column rather than sitting
+          beside it. Two glyphs do not fit in a 16px step without crowding the
+          label, and while a terminal is working its status is the salient fact
+          — its type is still carried by the monospace label and its "Claude:"
+          prefix. The icon returns the moment it settles. */}
+      <Show when={props.nested} fallback={
+        <>
+          <span
+            aria-hidden="true"
+            data-slot="terminal-row-icon"
+            class="relative z-[1] pointer-events-none flex size-4 shrink-0 items-center justify-center"
+            classList={{
+              "text-text-strong": props.row.active,
+              "text-icon-weak-base": !props.row.active,
+            }}
+          >
+            <Icon name="terminal" size="small" />
+          </span>
+          <Show when={status() !== "idle"}>
+            <span class="relative z-[1] pointer-events-none flex">
+              <NavigationStatusDot status={status()} active={props.row.active} />
+            </span>
+          </Show>
+        </>
+      }>
+        <NavigationRowGlyph>
+          <Show
+            when={status() !== "idle"}
+            fallback={
+              <span
+                aria-hidden="true"
+                data-slot="terminal-row-icon"
+                class="flex items-center justify-center"
+                classList={{
+                  "text-text-strong": props.row.active,
+                  "text-icon-weak-base": !props.row.active,
+                }}
+              >
+                <Icon name="terminal" size="small" />
+              </span>
+            }
+          >
+            <NavigationStatusDot status={status()} active={props.row.active} />
+          </Show>
+        </NavigationRowGlyph>
       </Show>
       <span
         class="relative z-[1] pointer-events-none font-mono text-[12px] leading-tight truncate flex-1 min-w-0"
@@ -110,7 +146,10 @@ function TerminalSurfaceNavigationRow(props: {
           type="button"
           aria-label={`Close terminal: ${props.row.title}`}
           data-slot="terminal-row-close"
-          class="relative z-10 -mr-1 inline-flex size-6 shrink-0 items-center justify-center rounded-full border-none bg-transparent p-0 leading-none text-icon-weak-base opacity-0 transition-[opacity,background-color,color] duration-100 hover:bg-surface-base-hover hover:text-icon-strong-base group-hover/terminal:opacity-100 focus:opacity-100 focus-visible:bg-surface-base-hover focus-visible:outline-none"
+          /* `rounded-sm`, matching `--radius-sm` in icon-button.css — the hover
+             chip behind a dismiss X is the same shape here as on every other
+             icon button, not a circle. */
+          class="relative z-10 -mr-1 inline-flex size-6 shrink-0 items-center justify-center rounded-sm border-none bg-transparent p-0 leading-none text-icon-weak-base opacity-0 transition-[opacity,background-color,color] duration-100 hover:bg-surface-base-hover hover:text-icon-strong-base group-hover/terminal:opacity-100 focus:opacity-100 focus-visible:bg-surface-base-hover focus-visible:outline-none"
           onClick={(event) => {
             event.stopPropagation()
             props.onClose(props.row)

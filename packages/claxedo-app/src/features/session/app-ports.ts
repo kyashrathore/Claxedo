@@ -71,6 +71,8 @@ export type SessionAppPorts = {
   terminalSurfaceStatus: typeof SurfaceStatus.terminalSurfaceStatus
   NavigationRow: typeof Navigation.NavigationRow
   NavigationStatusDot: typeof Navigation.NavigationStatusDot
+  NavigationRowStatusGutter: typeof Navigation.NavigationRowStatusGutter
+  NavigationRowGlyph: typeof Navigation.NavigationRowGlyph
   ensureActionDirectorySessionCache: typeof LayoutActions.ensureDirectorySessionCache
   findProjectForWorkspace: typeof LayoutActions.findProjectForWorkspace
   findWorkspaceForDirectory: typeof LayoutActions.findWorkspaceForDirectory
@@ -155,6 +157,8 @@ export type SwitcherStatus = SwitcherItems.SwitcherStatus
 export const terminalSurfaceStatus = bind("terminalSurfaceStatus")
 export const NavigationRow = bind("NavigationRow")
 export const NavigationStatusDot = bind("NavigationStatusDot")
+export const NavigationRowStatusGutter = bind("NavigationRowStatusGutter")
+export const NavigationRowGlyph = bind("NavigationRowGlyph")
 export type SessionItem = RailTypes.SessionItem
 export type ProjectItem = RailTypes.ProjectItem
 export type ActionProps = LayoutActions.ActionProps

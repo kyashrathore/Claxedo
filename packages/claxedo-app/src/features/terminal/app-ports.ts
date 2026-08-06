@@ -18,6 +18,8 @@ export type TerminalAppPorts = {
   SessionPaneScope: typeof SessionScope.SessionPaneScope
   NavigationRow: typeof Navigation.NavigationRow
   NavigationStatusDot: typeof Navigation.NavigationStatusDot
+  NavigationRowGlyph: typeof Navigation.NavigationRowGlyph
+  NavigationRowStatusGutter: typeof Navigation.NavigationRowStatusGutter
   workspacePlacement: typeof WorkspaceConnection.workspacePlacement
   recoverMissingWorkspace: typeof WorkspaceRecovery.recoverMissingWorkspace
   /**
@@ -52,6 +54,8 @@ export const SessionPaneScope = bind("SessionPaneScope")
 export type SwitcherStatus = SwitcherItems.SwitcherStatus
 export const NavigationRow = bind("NavigationRow")
 export const NavigationStatusDot = bind("NavigationStatusDot")
+export const NavigationRowGlyph = bind("NavigationRowGlyph")
+export const NavigationRowStatusGutter = bind("NavigationRowStatusGutter")
 export type NavigationDragStart = SessionNavigation.NavigationDragStart
 export type RowActivityDetail = SessionNavigation.RowActivityDetail
 export type TerminalSurfaceRow = SessionNavigation.TerminalSurfaceRow

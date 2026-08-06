@@ -1,6 +1,6 @@
 import { For, Show, createMemo, createSignal } from "solid-js"
 import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui/controls/claxedo-icon"
-import { NavigationRow, NavigationStatusDot, type SwitcherStatus } from "@/features/session/app-ports"
+import { NavigationRow, NavigationRowStatusGutter, NavigationStatusDot, type SwitcherStatus } from "@/features/session/app-ports"
 import {
   type NavigationDragStart,
   type SessionNavigationRow,
@@ -80,6 +80,9 @@ function SessionNavigationItem(props: {
         prepareContentId={() => props.onPrepareDrag(props.row)}
         onDragStart={props.onDragStart}
       >
+        <Show when={props.row.nested}>
+          <NavigationRowStatusGutter status={status()} active={props.row.active} />
+        </Show>
         <div class="relative z-[1] pointer-events-none flex items-baseline gap-1.5 flex-1 min-w-0 overflow-hidden">
           <span
             data-slot="session-navigation-title"
@@ -117,8 +120,14 @@ function SessionNavigationItem(props: {
               "text-text-weaker": !props.row.active,
             }}
           >
-            <Show when={status() !== "idle"} fallback={props.row.timeLabel}>
+            {/* The timestamp now survives a busy turn: status moved to the
+                left gutter (`NavigationRowStatusGutter`), so the two no longer
+                compete for this slot. Top-level rows have no gutter to move
+                into and keep the old in-place swap. */}
+            <Show when={props.row.nested || status() === "idle"} fallback={
               <NavigationStatusDot status={status()} active={props.row.active} />
+            }>
+              {props.row.timeLabel}
             </Show>
           </span>
           <button

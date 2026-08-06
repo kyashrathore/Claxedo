@@ -1,4 +1,4 @@
-import { onCleanup, type JSX } from "solid-js"
+import { Show, onCleanup, type JSX } from "solid-js"
 import { useDragSource } from "../workbench/index"
 import type { SwitcherStatus } from "../compact-switcher/switcher-items"
 import {
@@ -105,6 +105,58 @@ export function NavigationRow(props: NavigationRowProps) {
       />
       {props.children}
     </div>
+  )
+}
+
+/**
+ * The single glyph column that precedes a nested row's label.
+ *
+ * ONE column, shared by every row type, is the whole point. The rail is an
+ * indented tree — workspace, then section, then rows — and in a tree a row's
+ * own mark belongs at its own indent step, immediately before its label. An
+ * earlier attempt parked the status dot at the far-left edge of the row
+ * (`left-1.5`, x≈11), which put it LEFT of the workspace icon above it: the
+ * deepest item in the tree ended up with the outermost mark, inverting the
+ * hierarchy, and it read as debris floating in the margin rather than as part
+ * of the row.
+ *
+ * Sized and placed to match the terminal glyph that already lived here
+ * (`left-4`, `size-4` → x 21-37 against a title at 41), so glyphs and labels
+ * form two clean vertical columns down the whole list. Absolute, so a row with
+ * no glyph still starts its title at exactly the same x — alignment is what
+ * makes a dense list read as calm.
+ *
+ * Nested rows only: a top-level row indents 12px, which cannot hold a glyph
+ * without crowding its own label, so those keep their inline layout.
+ */
+export function NavigationRowGlyph(props: { children: JSX.Element }) {
+  return (
+    <span
+      data-slot="navigation-row-glyph"
+      class="absolute left-4 top-1/2 -translate-y-1/2 z-[1] pointer-events-none flex size-4 items-center justify-center"
+    >
+      {props.children}
+    </span>
+  )
+}
+
+/**
+ * The status dot in that glyph column. Separate from {@link NavigationRowGlyph}
+ * so a terminal row can put its own icon in the same column when idle.
+ */
+export function NavigationRowStatusGutter(props: { status: SwitcherStatus; active?: boolean }) {
+  // `<Show>`, NOT an early `if (props.status === "idle") return null`. A Solid
+  // component body runs exactly once, so an early return would capture whatever
+  // status the row had at mount — idle, for every row that has not started work
+  // yet — and the glyph would never appear when that row later went busy.
+  // `NavigationStatusDot` has the same early-return shape and survives it only
+  // because every caller already wraps it in its own `<Show>`.
+  return (
+    <Show when={props.status !== "idle"}>
+      <NavigationRowGlyph>
+        <NavigationStatusDot status={props.status} active={props.active} />
+      </NavigationRowGlyph>
+    </Show>
   )
 }
 
