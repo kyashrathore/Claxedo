@@ -245,6 +245,44 @@ describe("harness hydrator", () => {
     expect(subject.cache.seen.get("scope")).toBe("/two\nnew")
   })
 
+  test("does not apply an older draft hydration after an explicit selection cancels it", async () => {
+    const subject = createSubject()
+    let release: (() => void) | undefined
+    const hydrator = createHarnessHydrator<ScopeInput>({
+      base: "http://127.0.0.1:3001",
+      seed: () => {},
+      state: (scope) => subject.state.get(scope),
+      resetWorkspaceDraftHarness: () => {},
+      applyStatus: async () => subject.calls.push("stale-status-applied"),
+      setReadyHydration: () => {},
+      setReadyFallback: () => {},
+      fetchConfigOptions: () => {},
+      refresh: async () => {},
+      fastSessionSwitchQuiet: () => false,
+      workspaceRuntime: () => false,
+      runtime: {
+        useLocalHarnessConfig: () => true,
+        harnessSessionFetch: () => async () => response({}),
+        localHarnessConfigFetch: () => async () => {
+          await new Promise<void>((resolve) => {
+            release = resolve
+          })
+          return response({ type: "opencode" })
+        },
+      },
+      cache: subject.cache,
+    })
+
+    const pending = hydrator.hydrate("scope", { directory: "/repo", sessionId: "new" })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    hydrator.cancel("scope")
+    release!()
+    await pending
+
+    expect(subject.calls).toEqual([])
+    expect(subject.cache.seen.has("scope")).toBe(false)
+  })
+
   test("hydrates a saved draft through workspace-default ownership without applying status selection", async () => {
     const subject = createSubject()
     const hydrator = createHarnessHydrator<ScopeInput>({

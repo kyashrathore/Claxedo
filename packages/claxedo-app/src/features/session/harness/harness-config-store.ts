@@ -197,7 +197,10 @@ export function createHarnessConfigStore() {
     cache: createHarnessSwitcherQueryCache(),
   })
 
-  const setHarness = switcher.setHarness
+  const setHarness: typeof switcher.setHarness = (scope, type, input, binary) => {
+    hydrator.cancel(scope)
+    return switcher.setHarness(scope, type, input, binary)
+  }
 
   const setAgent = modelWriter.setAgent
 

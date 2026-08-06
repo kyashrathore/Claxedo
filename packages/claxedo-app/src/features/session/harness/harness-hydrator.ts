@@ -200,7 +200,15 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
     return hydrate(scope, params)
   }
 
+  // An explicit user selection owns the scope immediately. Any hydration
+  // already waiting on status/refresh must not apply its older server snapshot
+  // after that click and silently restore the previous harness.
+  const cancel = (scope: string) => {
+    generations.delete(scope)
+  }
+
   return {
+    cancel,
     hydrate,
     reprobe,
     status,
