@@ -1,4 +1,5 @@
-import { setMermaidRenderer } from "@/ui/session-kit"
+import { sanitizeSvg, setMermaidRenderer, setMermaidViewer } from "@/ui/session-kit"
+import { openMermaidViewer } from "./mermaid-viewer"
 
 /**
  * Timeline mermaid renderer (T14). Lazily loads mermaid on the first diagram, renders with
@@ -69,9 +70,14 @@ export async function renderTimelineMermaid(source: string): Promise<string> {
   return svg
 }
 
+export function openTimelineMermaidViewer(source: string) {
+  return openMermaidViewer(source, renderTimelineMermaid, sanitizeSvg)
+}
+
 let installed = false
 export function installTimelineMermaid() {
   if (installed) return
   installed = true
   setMermaidRenderer(renderTimelineMermaid)
+  setMermaidViewer(openTimelineMermaidViewer)
 }

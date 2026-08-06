@@ -193,9 +193,39 @@ const shellLanguages = new Set(["bash", "sh", "shell", "zsh", "fish", "console",
  * than a reason to fall back to the raw string.
  */
 let mermaidRenderer: ((source: string) => Promise<string>) | undefined
+let mermaidViewer: ((source: string) => void) | undefined
 
 export function setMermaidRenderer(fn: ((source: string) => Promise<string>) | undefined) {
   mermaidRenderer = fn
+}
+
+export function setMermaidViewer(fn: ((source: string) => void) | undefined) {
+  mermaidViewer = fn
+}
+
+function createMermaidViewButton(source: string) {
+  const button = document.createElement("button")
+  button.type = "button"
+  button.title = "Open full screen"
+  button.setAttribute("aria-label", "Open diagram full screen")
+  button.setAttribute("data-slot", "mermaid-view-button")
+  button.innerHTML =
+    '<svg aria-hidden="true" viewBox="0 0 16 16"><path d="M6 2.5H2.5V6M10 2.5h3.5V6M6 13.5H2.5V10M10 13.5h3.5V10"/></svg>'
+  button.addEventListener("click", () => mermaidViewer?.(source))
+  return button
+}
+
+function ensureMermaidViewButton(wrapper: HTMLElement, source: string) {
+  const existing = wrapper.querySelector('[data-slot="mermaid-view-button"]')
+  if (!mermaidViewer) {
+    existing?.remove()
+    return
+  }
+  if (existing instanceof HTMLButtonElement && existing.dataset.mermaidSource === source) return
+  existing?.remove()
+  const button = createMermaidViewButton(source)
+  button.dataset.mermaidSource = source
+  wrapper.appendChild(button)
 }
 
 function renderMermaidBlocks(root: HTMLElement) {
@@ -208,7 +238,10 @@ function renderMermaidBlocks(root: HTMLElement) {
     if (language !== "mermaid" || !code) continue
     const source = code.textContent ?? ""
     if (!source.trim()) continue
-    if (wrapper.getAttribute("data-mermaid-source") === source) continue
+    if (wrapper.getAttribute("data-mermaid-source") === source) {
+      if (wrapper.getAttribute("data-mermaid-state") === "rendered") ensureMermaidViewButton(wrapper, source)
+      continue
+    }
     wrapper.setAttribute("data-mermaid-source", source)
     void mermaidRenderer(source)
       .then((svg) => {
@@ -228,10 +261,12 @@ function renderMermaidBlocks(root: HTMLElement) {
         }
         diagram.innerHTML = safe
         wrapper.setAttribute("data-mermaid-state", "rendered")
+        ensureMermaidViewButton(wrapper, source)
       })
       .catch(() => {
         // Fallback: keep the code block, clear the marker so a later retry is possible.
         wrapper.querySelector('[data-slot="mermaid-diagram"]')?.remove()
+        wrapper.querySelector('[data-slot="mermaid-view-button"]')?.remove()
         wrapper.removeAttribute("data-mermaid-source")
         wrapper.removeAttribute("data-mermaid-state")
       })

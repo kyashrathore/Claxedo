@@ -1,0 +1,198 @@
+[data-component="mermaid-viewer"] {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: color-mix(in oklab, black 48%, transparent);
+  backdrop-filter: blur(6px);
+  animation: mermaid-viewer-backdrop-enter 120ms ease-out;
+}
+
+[data-slot="mermaid-viewer-dialog"] {
+  position: relative;
+  width: 80vw;
+  height: 80vh;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 0.5px solid var(--border-weak-base);
+  border-radius: 12px;
+  color: var(--text-base);
+  background: var(--background-base);
+  box-shadow: 0 24px 80px color-mix(in oklab, black 46%, transparent);
+  animation: mermaid-viewer-dialog-enter 140ms ease-out;
+}
+
+[data-slot="mermaid-viewer-dialog"] > [data-action="close"],
+[data-slot="mermaid-viewer-toolbar"] button {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-weak);
+  background: transparent;
+  cursor: pointer;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+
+[data-slot="mermaid-viewer-dialog"] > [data-action="close"] {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  width: 30px;
+  padding: 0;
+  border: 0.5px solid var(--border-weak-base);
+  background: color-mix(in oklab, var(--background-stronger) 92%, transparent);
+}
+
+[data-slot="mermaid-viewer-dialog"] > [data-action="close"]:hover,
+[data-slot="mermaid-viewer-dialog"] > [data-action="close"]:focus-visible,
+[data-slot="mermaid-viewer-toolbar"] button:hover,
+[data-slot="mermaid-viewer-toolbar"] button:focus-visible {
+  color: var(--text-strong);
+  background: var(--surface-inset-base);
+  outline: none;
+}
+
+[data-slot="mermaid-viewer-dialog"] button svg,
+[data-slot="mermaid-viewer-toolbar"] button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+[data-slot="mermaid-viewer-viewport"] {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+  cursor: default;
+  background-image: radial-gradient(circle, color-mix(in oklab, var(--text-weak) 18%, transparent) 0.5px, transparent 0.5px);
+  background-size: 20px 20px;
+}
+
+[data-component="mermaid-viewer"][data-pan-enabled="true"] [data-slot="mermaid-viewer-viewport"] {
+  cursor: grab;
+}
+
+[data-component="mermaid-viewer"][data-dragging="true"] [data-slot="mermaid-viewer-viewport"] {
+  cursor: grabbing;
+}
+
+[data-slot="mermaid-viewer-viewport"]:focus-visible {
+  outline: 1px solid color-mix(in oklab, var(--text-interactive-base) 55%, transparent);
+  outline-offset: -1px;
+}
+
+[data-slot="mermaid-viewer-content"] {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  color: var(--text-weak);
+  font-size: 12px;
+  transform-origin: center;
+  user-select: none;
+  will-change: transform;
+}
+
+[data-slot="mermaid-viewer-content"][data-state="ready"] svg {
+  display: block;
+  pointer-events: none;
+  user-select: none;
+}
+
+[data-slot="mermaid-viewer-content"][data-state="error"] {
+  color: var(--text-weak);
+  padding: 10px 14px;
+  border: 0.5px solid var(--border-weak-base);
+  border-radius: 8px;
+  background: var(--background-stronger);
+}
+
+[data-slot="mermaid-viewer-toolbar"] {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 0.5px solid var(--border-weak-base);
+  border-radius: 9px;
+  background: color-mix(in oklab, var(--background-stronger) 94%, transparent);
+  box-shadow: 0 10px 30px color-mix(in oklab, black 24%, transparent);
+  transform: translateX(-50%);
+}
+
+[data-slot="mermaid-viewer-toolbar"] [data-action="drag"] {
+  gap: 6px;
+}
+
+[data-slot="mermaid-viewer-toolbar"] [data-action="drag"]::after {
+  content: "Drag";
+  font-size: 12px;
+}
+
+[data-slot="mermaid-viewer-toolbar"] [data-action="drag"][aria-pressed="true"] {
+  color: var(--text-strong);
+  background: var(--surface-inset-base);
+}
+
+[data-slot="mermaid-viewer-toolbar"] [data-action="reset"] {
+  min-width: 48px;
+  color: var(--text-base);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+[data-slot="mermaid-viewer-divider"] {
+  width: 0.5px;
+  height: 16px;
+  margin: 0 3px;
+  background: var(--border-weak-base);
+}
+
+@keyframes mermaid-viewer-backdrop-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes mermaid-viewer-dialog-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-component="mermaid-viewer"],
+  [data-slot="mermaid-viewer-dialog"] {
+    animation: none;
+  }
+}
+
+@media (max-width: 640px), (max-height: 640px) {
+  [data-component="mermaid-viewer"] {
+    padding: 12px;
+  }
+
+  [data-slot="mermaid-viewer-dialog"] {
+    width: calc(100vw - 24px);
+    height: calc(100vh - 24px);
+  }
+}
