@@ -1,0 +1,246 @@
+{
+  "workbench": {
+    "panes": [
+      {
+        "id": "memory-pane",
+        "contentId": "memory-workgraph"
+      }
+    ],
+    "split": {
+      "direction": "h",
+      "sizes": [1],
+      "root": {
+        "t": "leaf",
+        "id": "memory-pane"
+      }
+    },
+    "contentIds": [
+      "memory-workgraph",
+      "memory-marketplace",
+      "memory-pages",
+      "memory-session-1",
+      "memory-session-2",
+      "memory-session-3",
+      "memory-session-4",
+      "memory-session-5",
+      "memory-session-6",
+      "memory-session-7"
+    ],
+    "contentRecency": [
+      "memory-workgraph",
+      "memory-marketplace",
+      "memory-pages",
+      "memory-session-1",
+      "memory-session-2",
+      "memory-session-3",
+      "memory-session-4",
+      "memory-session-5",
+      "memory-session-6",
+      "memory-session-7"
+    ],
+    "focusedPaneId": "memory-pane",
+    "layoutSnapshots": {}
+  },
+  "meta": {
+    "memory-workgraph": {
+      "id": "memory-workgraph",
+      "type": "workgraph",
+      "scope": "global",
+      "content": {
+        "type": "workgraph",
+        "title": "WorkGraph"
+      }
+    },
+    "memory-marketplace": {
+      "id": "memory-marketplace",
+      "type": "marketplace",
+      "scope": "global",
+      "content": {
+        "type": "marketplace",
+        "title": "Marketplace"
+      }
+    },
+    "memory-pages": {
+      "id": "memory-pages",
+      "type": "pages-index",
+      "scope": "global",
+      "content": {
+        "type": "pages-index",
+        "title": "Documents"
+      }
+    },
+    "memory-session-1": {
+      "id": "memory-session-1",
+      "type": "session",
+      "scope": "directory",
+      "directory": "/tmp/claxedo-memory-workspace",
+      "sessionId": "memory-session-1",
+      "content": {
+        "type": "session",
+        "directory": "/tmp/claxedo-memory-workspace",
+        "sessionId": "memory-session-1",
+        "sessionRef": {
+          "sessionId": "memory-session-1",
+          "host": "workspace",
+          "cwd": "/tmp/claxedo-memory-workspace",
+          "toolSandbox": {
+            "kind": "local",
+            "cwd": "/tmp/claxedo-memory-workspace"
+          }
+        }
+      }
+    },
+    "memory-session-2": {
+      "id": "memory-session-2",
+      "type": "session",
+      "scope": "directory",
+      "directory": "/tmp/claxedo-memory-workspace",
+      "sessionId": "memory-session-2",
+      "content": {
+        "type": "session",
+        "directory": "/tmp/claxedo-memory-workspace",
+        "sessionId": "memory-session-2",
+        "sessionRef": {
+          "sessionId": "memory-session-2",
+          "host": "workspace",
+          "cwd": "/tmp/claxedo-memory-workspace",
+          "toolSandbox": {
+            "kind": "local",
+            "cwd": "/tmp/claxedo-memory-workspace"
+          }
+        }
+      }
+    },
+    "memory-session-3": {
+      "id": "memory-session-3",
+      "type": "session",
+      "scope": "directory",
+      "directory": "/tmp/claxedo-memory-workspace",
+      "sessionId": "memory-session-3",
+      "content": {
+        "type": "session",
+        "directory": "/tmp/claxedo-memory-workspace",
+        "sessionId": "memory-session-3",
+        "sessionRef": {
+          "sessionId": "memory-session-3",
+          "host": "workspace",
+          "cwd": "/tmp/claxedo-memory-workspace",
+          "toolSandbox": {
+            "kind": "local",
+            "cwd": "/tmp/claxedo-memory-workspace"
+          }
+        }
+      }
+    },
+    "memory-session-4": {
+      "id": "memory-session-4",
+      "type": "session",
+      "scope": "directory",
+      "directory": "/tmp/claxedo-memory-workspace",
+      "sessionId": "memory-session-4",
+      "content": {
+        "type": "session",
+        "directory": "/tmp/claxedo-memory-workspace",
+        "sessionId": "memory-session-4",
+        "sessionRef": {
+          "sessionId": "memory-session-4",
+          "host": "workspace",
+          "cwd": "/tmp/claxedo-memory-workspace",
+          "toolSandbox": {
+            "kind": "local",
+            "cwd": "/tmp/claxedo-memory-workspace"
+          }
+        }
+      }
+    },
+    "memory-session-5": {
+      "id": "memory-session-5",
+      "type": "session",
+      "scope": "directory",
+      "directory": "/tmp/claxedo-memory-workspace",
+      "sessionId": "memory-session-5",
+      "content": {
+        "type": "session",
+        "directory": "/tmp/claxedo-memory-workspace",
+        "sessionId": "memory-session-5",
+        "sessionRef": {
+          "sessionId": "memory-session-5",
+          "host": "workspace",
+          "cwd": "/tmp/claxedo-memory-workspace",
+          "toolSandbox": {
+            "kind": "local",
+            "cwd": "/tmp/claxedo-memory-workspace"
+          }
+        }
+      }
+    },
+    "memory-session-6": {
+      "id": "memory-session-6",
+      "type": "session",
+      "scope": "directory",
+      "directory": "/tmp/claxedo-memory-workspace",
+      "sessionId": "memory-session-6",
+      "content": {
+        "type": "session",
+        "directory": "/tmp/claxedo-memory-workspace",
+        "sessionId": "memory-session-6",
+        "sessionRef": {
+          "sessionId": "memory-session-6",
+          "host": "workspace",
+          "cwd": "/tmp/claxedo-memory-workspace",
+          "toolSandbox": {
+            "kind": "local",
+            "cwd": "/tmp/claxedo-memory-workspace"
+          }
+        }
+      }
+    },
+    "memory-session-7": {
+      "id": "memory-session-7",
+      "type": "session",
+      "scope": "directory",
+      "directory": "/tmp/claxedo-memory-workspace",
+      "sessionId": "memory-session-7",
+      "content": {
+        "type": "session",
+        "directory": "/tmp/claxedo-memory-workspace",
+        "sessionId": "memory-session-7",
+        "sessionRef": {
+          "sessionId": "memory-session-7",
+          "host": "workspace",
+          "cwd": "/tmp/claxedo-memory-workspace",
+          "toolSandbox": {
+            "kind": "local",
+            "cwd": "/tmp/claxedo-memory-workspace"
+          }
+        }
+      }
+    }
+  },
+  "rail": {
+    "collapsed": false,
+    "hovered": false,
+    "pinned": true,
+    "locked": false,
+    "width": 260
+  },
+  "workspace": {
+    "paneWorktree": {},
+    "recency": {},
+    "worktreeColor": {}
+  },
+  "workspacePanel": {
+    "open": true,
+    "mode": "workgraph-attention"
+  },
+  "terminal": {
+    "owner": {},
+    "agentStatus": {},
+    "agentSeen": {},
+    "lifecycle": {}
+  },
+  "processPane": {
+    "crashedWhileClosed": false,
+    "pendingAction": null
+  }
+}
