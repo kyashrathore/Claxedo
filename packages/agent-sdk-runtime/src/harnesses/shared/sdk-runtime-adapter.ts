@@ -40,6 +40,11 @@ import type {
 import { harnessCapabilities, type HarnessCapabilities } from "../../capabilities"
 import { createTurnEventProjector, type RuntimeAppendSource } from "../shared/turn-projection"
 import {
+  createChildEventRouter,
+  type ChildProjectionTarget,
+  type RuntimeEventRoute,
+} from "../shared/child-event-routing"
+import {
   createSessionTurnLifecycle,
   EXPLICIT_TURN_ABORT_REASON,
   type SessionTurnLifecycle,
@@ -97,7 +102,8 @@ export type SdkRuntimeTurnInput = {
   input: PromptInput
   directory: string
   abort: AbortController
-  ingest: (raw: RawHarnessEvent, source: RuntimeAppendSource) => void
+  ingest: (raw: RawHarnessEvent, source: RuntimeAppendSource, route?: RuntimeEventRoute) => void
+  associateChild: (correlationKey: string, target: ChildProjectionTarget) => void
   rebindAgentSession: (agentSessionId: string) => void
   model: string
 }
@@ -405,10 +411,12 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       if (queue.length > 0 || promptDone) resolve()
       else resolvers.push(resolve)
     })
-    const projector = createTurnEventProjector({
+    const parentProjector = createTurnEventProjector({
       store: this.store,
-      sessionId: id,
-      getAgentSessionId: () => agentSessionId,
+      owner: {
+        sessionId: id,
+        getAgentSessionId: () => agentSessionId,
+      },
       directory,
       input,
       assistantMessageId: input.assistantMessageId,
@@ -416,9 +424,32 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       onEvent: push,
       onRuntimeEvent: this.options.eventHub?.publishRuntime,
     })
-    const ingest = (raw: RawHarnessEvent, source: RuntimeAppendSource) => {
+    const router = createChildEventRouter({
+      parent: parentProjector,
+      createChildProjector: (target) => createTurnEventProjector({
+        store: this.store,
+        owner: {
+          sessionId: target.sessionId,
+          getAgentSessionId: target.getAgentSessionId,
+        },
+        directory,
+        input: target.input,
+        assistantMessageId: target.assistantMessageId,
+        created: target.created,
+        onEvent: () => {},
+        onRuntimeEvent: this.options.eventHub?.publishRuntime,
+      }),
+      onDiagnostic: (payload) => this.options.eventHub?.publishRuntime({
+        directory,
+        sessionId: id,
+        agentSessionId,
+        assistantMessageId: input.assistantMessageId,
+        payload,
+      }),
+    })
+    const ingest = (raw: RawHarnessEvent, source: RuntimeAppendSource, route?: RuntimeEventRoute) => {
       const result = runtime.ingest(raw)
-      for (const runtimeEvent of result.events) projector.project(runtimeEvent, source)
+      for (const runtimeEvent of result.events) router.project(runtimeEvent, source, route)
     }
     const rebindAgentSession = (sdkSessionId: string) => {
       if (!sdkSessionId || sdkSessionId === agentSessionId) return
@@ -438,6 +469,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       directory,
       abort,
       ingest,
+      associateChild: router.associate,
       rebindAgentSession,
       model: this.currentModel,
     })
@@ -472,17 +504,18 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       }
     } finally {
       await run
+      router.dispose()
     }
 
     if (abort.signal.reason === EXPLICIT_TURN_ABORT_REASON) {
       const updated = messageUpdated(buildAssistantMessage({
-        id: projector.assistantMessageId(),
+        id: router.assistantMessageId(),
         sessionID: id,
         parentID: input.userMessageId ?? id,
         agent: input.agent,
         model: input.model,
         directory,
-        created: projector.created(),
+        created: router.created(),
         completed: Date.now(),
         error: { name: "MessageAbortedError", data: { message: "Aborted by user" } },
         variant: input.variant,
@@ -497,15 +530,15 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       return
     }
     if (!promptError) return
-    for (const event of projector.terminalizeOpenTools(promptError, { dir: "in", method: "prompt.error.open-tools", frame: { message: promptError } })) yield event
+    for (const event of router.terminalizeParent(promptError, { dir: "in", method: "prompt.error.open-tools", frame: { message: promptError } })) yield event
     const updated = messageUpdated(buildAssistantMessage({
-      id: projector.assistantMessageId(),
+      id: router.assistantMessageId(),
       sessionID: id,
       parentID: input.userMessageId ?? id,
       agent: input.agent,
       model: input.model,
       directory,
-      created: projector.created(),
+      created: router.created(),
       completed: Date.now(),
       error: { name: "UnknownError", data: firstTurnErrorData(promptError) },
       variant: input.variant,

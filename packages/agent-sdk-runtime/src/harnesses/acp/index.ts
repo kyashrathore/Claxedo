@@ -76,6 +76,7 @@ import { ACP_RECOVER } from "./recovery"
 import { recovering } from "../../status"
 import { toAcpMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
 import { createTurnEventProjector } from "../shared/turn-projection"
+import { createChildEventRouter } from "../shared/child-event-routing"
 import { createSessionTurnLifecycle, type SessionTurnLifecycle } from "../shared/turn-lifecycle"
 import { requireWorkspaceDirectory } from "../../target"
 import {
@@ -955,16 +956,41 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       queue.push(event)
       for (const r of resolvers.splice(0)) r()
     }
-    const projector = createTurnEventProjector({
+    const parentProjector = createTurnEventProjector({
       store: this.store,
-      sessionId: id,
-      getAgentSessionId: () => agentSessionId,
+      owner: {
+        sessionId: id,
+        getAgentSessionId: () => agentSessionId,
+      },
       directory,
       input,
       assistantMessageId: assistantMsgId,
       created,
       onEvent: push,
       onRuntimeEvent: this.options.eventHub?.publishRuntime,
+    })
+    const router = createChildEventRouter({
+      parent: parentProjector,
+      createChildProjector: (target) => createTurnEventProjector({
+        store: this.store,
+        owner: {
+          sessionId: target.sessionId,
+          getAgentSessionId: target.getAgentSessionId,
+        },
+        directory,
+        input: target.input,
+        assistantMessageId: target.assistantMessageId,
+        created: target.created,
+        onEvent: () => {},
+        onRuntimeEvent: this.options.eventHub?.publishRuntime,
+      }),
+      onDiagnostic: (payload) => this.options.eventHub?.publishRuntime({
+        directory,
+        sessionId: id,
+        agentSessionId,
+        assistantMessageId: input.assistantMessageId,
+        payload,
+      }),
     })
 
     const wait = () =>
@@ -1039,14 +1065,14 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
           payload: update,
         })
         for (const runtimeEvent of result.events) {
-          projector.project(runtimeEvent, {
+          router.project(runtimeEvent, {
             dir: "in",
             method: "sessionUpdate",
             frame: update,
           })
           if (runtimeEvent.type !== "step-start") continue
-          assistantMsgId = projector.assistantMessageId()
-          created = projector.created()
+          assistantMsgId = router.assistantMessageId()
+          created = router.created()
         }
       }
       const install = () => {
@@ -1072,7 +1098,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       const stop = (stopReason: StopReason) => {
         log.info("sendMessage: prompt resolved", { stopReason, ms: Date.now() - t0 })
         for (const runtimeEvent of translateStopReason(stopReason as Parameters<typeof translateStopReason>[0], id)) {
-          projector.project(runtimeEvent, {
+          router.project(runtimeEvent, {
             dir: "in",
             method: "prompt.stop",
             frame: { stopReason },
@@ -1169,12 +1195,13 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       }
     } finally {
       await promptPromise
+      router.dispose()
       this.lifecycle().delete(id, turn)
     }
 
     if (promptError) {
       log.error("sendMessage: ending with error", { promptError, ms: Date.now() - t0 })
-      for (const event of projector.terminalizeOpenTools(promptError, {
+      for (const event of router.terminalizeParent(promptError, {
         dir: "in",
         method: "prompt.error.open-tools",
         frame: { message: promptError },

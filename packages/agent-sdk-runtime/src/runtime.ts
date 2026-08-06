@@ -19,6 +19,7 @@ import type { AgentHarnessAdapter } from "./adapter-contract"
 import { hasAdapterCapability } from "./capabilities"
 import { buildSession, eventSessionId, sessionError, sessionIdle, sessionUpdated, toCompatEvent, type CompatEvent } from "./compat-events"
 import { createTurnEventProjector } from "./harnesses/shared/turn-projection"
+import { createChildEventRouter } from "./harnesses/shared/child-event-routing"
 import { createRuntimeEventHub, type RuntimeEventHub } from "./runtime-event-hub"
 import type { AgentRuntimeStoreWithRecovery } from "./harnesses/shared/runtime-store"
 import { extractPromptTitleText, fallbackSessionTitle, hasConcreteSessionTitle } from "./session-title"
@@ -259,16 +260,43 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       }
       return event
     }
-    const projector = createTurnEventProjector({
+    const parentProjector = createTurnEventProjector({
       store,
-      sessionId,
-      getAgentSessionId: () => store.getAgentSessionId(sessionId) ?? sessionId,
+      owner: {
+        sessionId,
+        getAgentSessionId: () => store.getAgentSessionId(sessionId) ?? sessionId,
+      },
       directory: runtimeDirectory(directory),
       input: prompt,
       assistantMessageId: stableAssistantMessageId,
       created: Date.now(),
       onEvent: () => {},
-      onRuntimeEvent: (event) => publish({ sessionId, directory, payload: event.payload }),
+      onRuntimeEvent: (event) => publish({
+        sessionId: event.sessionId,
+        directory: event.directory,
+        payload: event.payload,
+      }),
+    })
+    const router = createChildEventRouter({
+      parent: parentProjector,
+      createChildProjector: (target) => createTurnEventProjector({
+        store,
+        owner: {
+          sessionId: target.sessionId,
+          getAgentSessionId: target.getAgentSessionId,
+        },
+        directory: runtimeDirectory(directory),
+        input: target.input,
+        assistantMessageId: target.assistantMessageId,
+        created: target.created,
+        onEvent: () => {},
+        onRuntimeEvent: (event) => publish({
+          sessionId: event.sessionId,
+          directory: event.directory,
+          payload: event.payload,
+        }),
+      }),
+      onDiagnostic: (payload) => publish({ sessionId, directory, payload }),
     })
     const maybeEmitTitle = async () => {
       if (titleEmitted) return
@@ -303,7 +331,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           continue
         }
         if (isProjectableRuntimeEvent(payload)) {
-          projector.project(payload, { dir: "in", method: "sendMessage" })
+          router.project(payload, { dir: "in", method: "sendMessage" })
           continue
         }
         publish({ sessionId, directory, payload })
@@ -330,6 +358,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         assistantMessageId: prompt.assistantMessageId,
         outcome: { status: "failed", completedAt: Date.now(), error: message },
       })
+    } finally {
+      router.dispose()
     }
   }
 

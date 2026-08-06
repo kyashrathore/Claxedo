@@ -11,18 +11,23 @@ const source: RuntimeAppendSource = {
 
 function projector(input: {
   appendEvent?: (event: CompatEvent) => { payload: CompatEvent } | void
+  onAppend?: (event: { sessionId: string; agentSessionId?: string; payload: CompatEvent }) => void
   onEvent?: (event: CompatEvent) => void
   onRuntimeEvent?: (event: RuntimeEventEnvelopeInput) => void
+  owner?: { sessionId: string; agentSessionId: string }
 } = {}) {
   return createTurnEventProjector({
     store: {
       appendEvent(event) {
+        input.onAppend?.(event)
         if (input.appendEvent) return input.appendEvent(event.payload) as { payload: CompatEvent }
         return { payload: event.payload }
       },
     },
-    sessionId: "session-1",
-    getAgentSessionId: () => "agent-session-1",
+    owner: {
+      sessionId: input.owner?.sessionId ?? "session-1",
+      getAgentSessionId: () => input.owner?.agentSessionId ?? "agent-session-1",
+    },
     directory: "/repo",
     input: {
       userMessageId: "user-1",
@@ -38,6 +43,34 @@ function projector(input: {
 }
 
 describe("createTurnEventProjector", () => {
+  test("uses its explicit owner for compat storage, projection, and runtime publication", () => {
+    const appended: Array<{ sessionId: string; agentSessionId?: string; payload: CompatEvent }> = []
+    const runtime: RuntimeEventEnvelopeInput[] = []
+    const item = projector({
+      owner: { sessionId: "child-1", agentSessionId: "provider-child-1" },
+      onAppend: (event) => appended.push(event),
+      onRuntimeEvent: (event) => runtime.push(event),
+    })
+
+    item.project({ type: "text-delta", delta: "child text" }, source)
+    item.project({ type: "step-start", newMessageId: "child-assistant-2" }, source)
+    item.project({ type: "tool-start", toolCallId: "tool-1", toolName: "bash" }, source)
+    item.terminalizeOpenTools("failed", source)
+
+    expect(appended.length).toBeGreaterThan(0)
+    expect(appended.every((event) =>
+      event.sessionId === "child-1" && event.agentSessionId === "provider-child-1"
+    )).toBe(true)
+    expect(appended.some((event) =>
+      event.payload.type === "message.updated" &&
+      event.payload.properties.info.sessionID === "child-1"
+    )).toBe(true)
+    expect(runtime.length).toBeGreaterThan(0)
+    expect(runtime.every((event) =>
+      event.sessionId === "child-1" && event.agentSessionId === "provider-child-1"
+    )).toBe(true)
+  })
+
   test("does not publish runtime events when compat append fails", () => {
     const runtime: RuntimeEventEnvelopeInput[] = []
     const compat: CompatEvent[] = []
