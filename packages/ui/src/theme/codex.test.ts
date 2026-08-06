@@ -26,19 +26,19 @@ const approved = {
     "composer-border": "#d8d8d8",
   },
   dark: {
-    "shell-surface-sidebar": "#282828",
-    "shell-surface-header": "#171717",
-    "shell-surface-composer": "#2d2d2d",
-    "shell-surface-context-card": "#242424",
-    "overlay-surface": "#2d2d2d",
+    "shell-surface-sidebar": "#181818",
+    "shell-surface-header": "#0d0d0d",
+    "shell-surface-composer": "#212121",
+    "shell-surface-context-card": "#1c1c1c",
+    "overlay-surface": "#212121",
     "overlay-surface-input": "#ffffff0f",
-    "tab-surface-selected": "#242424",
+    "tab-surface-selected": "#1c1c1c",
     "overlay-text": "#f2f2f2",
     "overlay-text-muted": "#bdbdbd",
     "overlay-border": "#414141",
-    "row-surface-hover": "#343434",
-    "row-surface-selected": "#3a3a3a",
-    "composer-border": "#3b3b3b",
+    "row-surface-hover": "#282828",
+    "row-surface-selected": "#303030",
+    "composer-border": "#303030",
   },
 } as const
 
@@ -93,9 +93,9 @@ describe("Codex theme", () => {
 
   test("preserves the verified dark surfaces", () => {
     expect(theme.dark).toMatchObject({
-      "border-base": "#3b3b3b",
-      "border-weak-base": "#333333",
-      "border-weaker-base": "#2a2a2a",
+      "border-base": "#303030",
+      "border-weak-base": "#282828",
+      "border-weaker-base": "#212121",
     })
   })
 
@@ -103,8 +103,8 @@ describe("Codex theme", () => {
      must not move it, so both resolve to the same verified values. */
   test("leaves dark surfaces unsplit", () => {
     expect(theme.dark).toMatchObject({
-      "codex-surface-inverted": "#2d2d2d",
-      "codex-surface-inverted-hover": "#3a3a3a",
+      "codex-surface-inverted": "#212121",
+      "codex-surface-inverted-hover": "#303030",
       "codex-border-inverted": "#414141",
       "codex-text-inverted": "#f2f2f2",
       "codex-text-inverted-muted": "#bdbdbd",

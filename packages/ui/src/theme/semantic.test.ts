@@ -3,13 +3,50 @@ import Ajv from "ajv"
 import schema from "./desktop-theme.schema.json"
 import { contrastRatio } from "./color"
 import { DEFAULT_THEMES } from "./default-themes"
-import type { HexColor } from "./types"
+import type { DesktopTheme, HexColor } from "./types"
 import { SEMANTIC_THEME_ROLE_FALLBACKS, resolveTheme, themeToCss } from "./resolve"
 
 const roles = Object.keys(SEMANTIC_THEME_ROLE_FALLBACKS) as (keyof typeof SEMANTIC_THEME_ROLE_FALLBACKS)[]
 const modes = ["light", "dark"] as const
+const syntheticSeedsTheme = {
+  name: "Synthetic seeds coverage",
+  id: "synthetic-seeds",
+  light: {
+    seeds: {
+      neutral: "#f4f4f4",
+      primary: "#2563eb",
+      success: "#168447",
+      warning: "#c65d19",
+      error: "#d43d37",
+      info: "#247cc0",
+      interactive: "#147cc1",
+      diffAdd: "#168447",
+      diffDelete: "#d43d37",
+    },
+  },
+  dark: {
+    seeds: {
+      neutral: "#171717",
+      primary: "#369ce8",
+      success: "#35bd70",
+      warning: "#f28b45",
+      error: "#ef5350",
+      info: "#58a6e7",
+      interactive: "#58a6e7",
+      diffAdd: "#35bd70",
+      diffDelete: "#ef5350",
+    },
+  },
+} satisfies DesktopTheme
 
 describe("semantic theme contract", () => {
+  test("snapshots every resolved token for every theme and mode", () => {
+    expect({
+      ...Object.fromEntries(Object.entries(DEFAULT_THEMES).map(([id, theme]) => [id, resolveTheme(theme)])),
+      [syntheticSeedsTheme.id]: resolveTheme(syntheticSeedsTheme),
+    }).toMatchSnapshot()
+  })
+
   /*
    * `tokens[role] = tokens[fallback]` writes `undefined` when a fallback token
    * is missing, and `themeToCss` then emits the literal string "undefined" as
@@ -31,7 +68,7 @@ describe("semantic theme contract", () => {
   })
 
   test("never emits the string \"undefined\" into generated CSS", () => {
-    for (const [id, theme] of Object.entries(DEFAULT_THEMES)) {
+    for (const [id, theme] of [...Object.entries(DEFAULT_THEMES), [syntheticSeedsTheme.id, syntheticSeedsTheme]] as const) {
       const resolved = resolveTheme(theme)
       for (const mode of modes) {
         expect(themeToCss(resolved[mode]), `${id}/${mode}`).not.toContain("undefined")

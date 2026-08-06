@@ -459,9 +459,9 @@ html[data-theme="codex"] {
    * validated as color values by desktop-theme.schema.json, and a shadow is a
    * geometry-plus-color string.
    */
-  --codex-radius-overlay: 10px;
-  --codex-shadow-raised: 0 2px 4px -1px light-dark(#00000014, #00000033);
-  --codex-shadow-overlay: 0 10px 15px -3px light-dark(#0000001a, #00000033),
+  --radius-overlay: 10px;
+  --elevation-shadow-raised: 0 2px 4px -1px light-dark(#00000014, #00000033);
+  --elevation-shadow-overlay: 0 10px 15px -3px light-dark(#0000001a, #00000033),
     0 4px 6px -4px light-dark(#0000001a, #00000033);
   /*
    * Elevation, read out of the shipped app's own bundle rather than eyeballed.
@@ -492,11 +492,11 @@ html[data-theme="codex"] {
    * Two percent apart on a half-pixel line, and the dark ends diverge by more —
    * 16% against 10% — which is the half worth keeping separate.
    */
-  --codex-elevation-stroke: 0 0 0 0.5px light-dark(#0000001f, #ffffff29);
-  --codex-shadow-hairline: 0 0 0 0.5px light-dark(#0000001a, #ffffff1a);
-  --codex-elevation-card: var(--codex-elevation-stroke), 0 3px 7.5px light-dark(#0000000a, #00000029),
+  --elevation-ring-card: 0 0 0 0.5px light-dark(#0000001f, #ffffff29);
+  --elevation-ring-overlay: 0 0 0 0.5px light-dark(#0000001a, #ffffff1a);
+  --elevation-shadow-card: var(--elevation-ring-card), 0 3px 7.5px light-dark(#0000000a, #00000029),
     0 0 20px light-dark(#0000000d, #00000033);
-  --codex-shadow-sidebar-edge: var(--codex-elevation-stroke), 0 3px 7.5px light-dark(#00000008, #00000021),
+  --elevation-shadow-sidebar: var(--elevation-ring-card), 0 3px 7.5px light-dark(#00000008, #00000021),
     0 0 16px light-dark(#00000005, #00000014);
 }
 
@@ -517,7 +517,7 @@ html[data-theme="codex"] body {
 html[data-theme="codex"] [data-testid="rail-sidebar"] {
   background-color: var(--shell-surface-sidebar);
   border-right-color: var(--shell-border-sidebar) !important;
-  box-shadow: var(--codex-shadow-sidebar-edge);
+  box-shadow: var(--elevation-shadow-sidebar);
 }
 
 html[data-theme="codex"] [data-testid="rail-sidebar"] > :first-child {
@@ -591,7 +591,7 @@ html[data-theme="codex"] [data-component="session-composer"] {
   background-color: var(--shell-surface-composer);
   box-shadow:
     inset 0 0 0 1px var(--composer-border),
-    var(--codex-shadow-raised);
+    var(--elevation-shadow-raised);
 }
 
 /*
@@ -629,14 +629,14 @@ html[data-theme="codex"] [data-slot="switcher-metadata-card"],
    everything around it moved to the 0.5px stroke. */
 html[data-theme="codex"] .ui-context-card-rail {
   border: 0 !important;
-  box-shadow: var(--codex-elevation-card);
+  box-shadow: var(--elevation-shadow-card);
   /*
    * 10px, same as the menus. The app's scale is `--radius-md: .5rem`,
    * `--radius-lg: .625rem`, `--radius-xl: .75rem`, and its floating surfaces sit
    * on `lg` — 10px. Both our `--radius-lg` and Tailwind's `rounded-lg` are 8px,
    * so these cards were rendering a step tighter than every overlay beside them.
    */
-  border-radius: var(--codex-radius-overlay) !important;
+  border-radius: var(--radius-overlay) !important;
 }
 
 /*
@@ -664,7 +664,7 @@ html[data-theme="codex"] [data-component="menu-v2-content"],
 html[data-theme="codex"] [data-component="tooltip-v2"],
 /*
  * Select belongs here for the same reason as its neighbours, but it arrived by
- * a different route: select.css used to read `--codex-radius-overlay` directly
+ * a different route: select.css used to read the theme's overlay radius directly
  * and inherited it from `html[data-theme="codex"]`, so it never needed naming.
  * Once select.css moved onto the semantic roles that inheritance went away and
  * the menu silently dropped to a 6px radius and a hairline shadow while every
@@ -682,7 +682,7 @@ html[data-theme="codex"] [data-component="select-content"],
 html[data-theme="codex"] .claxedo-composer-menu,
 html[data-theme="codex"] .theme-overlay-surface,
 html[data-theme="codex"] .codex-overlay-surface {
-  border-radius: var(--codex-radius-overlay) !important;
+  border-radius: var(--radius-overlay) !important;
   /*
    * Drop PLUS the 0.5px stroke, which is how the shipped app composes an
    * overlay: `box-shadow: var(--shadow), var(--shadow-hairline)`, where
@@ -693,10 +693,10 @@ html[data-theme="codex"] .codex-overlay-surface {
    * thickness at full opacity, so removing it outright overshot in the other
    * direction. The `border: 0` below stays, because the edge is this stroke now.
    */
-  box-shadow: var(--codex-shadow-overlay), var(--codex-shadow-hairline) !important;
+  box-shadow: var(--elevation-shadow-overlay), var(--elevation-ring-overlay) !important;
   /*
    * No hairline. Each of these components draws its own
-   * `border: 1px solid var(--overlay-border)`, and `--codex-shadow-overlay` is
+   * `border: 1px solid var(--overlay-border)`, and `--elevation-shadow-overlay` is
    * two drop layers with no ring of its own — so in Codex the edge was a hard
    * 1px line where the shipped app has none. Removed rather than made
    * transparent: several of these set `background-clip: padding-box`, so a
