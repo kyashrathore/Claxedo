@@ -294,6 +294,50 @@ describe("createAcpEventTranslator", () => {
     })
   })
 
+  test("U7: reads Codex ACP subagent identity instead of leaving metadata.sessionId undefined", () => {
+    const agent = runtime("codex-acp")
+
+    const event = agent.ingest({
+      source: "acp.jsonrpc",
+      method: "session/update",
+      payload: {
+        sessionUpdate: "tool_call",
+        toolCallId: "spawn-1",
+        title: "Start subagent 1",
+        rawInput: { agentThreadId: "codex-child-thread-1" },
+        _meta: { codex: { subagent: { threadId: "codex-child-thread-1", status: "running" } } },
+      },
+    }).events.find((item) => item.type === "tool-start")
+
+    expect(event).toMatchObject({
+      type: "tool-start",
+      kind: "collab_agent_tool_call",
+      metadata: { sessionId: "codex-child-thread-1" },
+    })
+  })
+
+  test("U7: recognizes the Cursor ACP subagent title while declaring no child transcript", () => {
+    const agent = runtime("cursor-acp")
+
+    const event = agent.ingest({
+      source: "acp.jsonrpc",
+      method: "session/update",
+      payload: {
+        sessionUpdate: "tool_call",
+        toolCallId: "task-1",
+        title: "Task: Subagent task",
+        rawInput: { description: "Inspect the cache" },
+      },
+    }).events.find((item) => item.type === "tool-start")
+
+    expect(event).toMatchObject({
+      type: "tool-start",
+      toolName: "task",
+      display: { intent: "task" },
+    })
+    expect(JSON.stringify(event)).not.toContain("sessionId")
+  })
+
   test("emits config updates without requiring an active prompt listener", () => {
     const agent = runtime()
 

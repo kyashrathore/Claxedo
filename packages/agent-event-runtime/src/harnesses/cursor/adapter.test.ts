@@ -153,6 +153,35 @@ describe("cursorSdkAdapter", () => {
     ])
   })
 
+  test("U8: concurrent same-type Cursor subagents receive distinct host identities", () => {
+    const agent = runtime()
+    const spawn = (toolCallId: string) => agent.ingest({
+      source: "cursor.sdk.message",
+      payload: {
+        type: "tool_call",
+        agent_id: "agent-1",
+        run_id: "run-1",
+        call_id: toolCallId,
+        name: "Task",
+        status: "running",
+        args: { description: toolCallId, subagentType: { kind: "code-reviewer" } },
+      },
+    }).events
+      .map((event) => event as unknown as { type: string; childSessionId?: string; subagentKey?: string })
+      .find((event) => event.type === "subagent-spawned" || event.type === "subagent-updated")
+
+    const first = spawn("task-1")
+    const second = spawn("task-2")
+    const firstIdentity = first?.subagentKey ?? first?.childSessionId
+    const secondIdentity = second?.subagentKey ?? second?.childSessionId
+
+    expect(firstIdentity).toBeDefined()
+    expect(secondIdentity).toBeDefined()
+    expect(firstIdentity).not.toBe("code-reviewer")
+    expect(secondIdentity).not.toBe("code-reviewer")
+    expect(secondIdentity).not.toBe(firstIdentity)
+  })
+
   test("maps status and local stream terminal events", () => {
     const agent = runtime()
 

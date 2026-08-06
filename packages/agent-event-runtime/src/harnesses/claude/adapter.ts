@@ -98,7 +98,7 @@ function isTodoTool(toolName: string) {
 }
 
 function isTaskTool(toolName: string) {
-  return toolName.toLowerCase() === "task"
+  return ["agent", "task"].includes(toolName.toLowerCase())
 }
 
 function todoStatus(value: unknown) {
@@ -544,7 +544,7 @@ export function claudeSdkAdapter(): HarnessEventAdapter<ClaudeSdkAdapterState> {
             if (result.isError) {
               return [{ type: "tool-error", toolCallId: result.toolCallId, error: result.text, display, metadata }]
             }
-            return [{ type: "tool-output", toolCallId: result.toolCallId, output: result.block, display, metadata }]
+            return [{ type: "tool-output", toolCallId: result.toolCallId, output: result.text, display, metadata }]
           })
         }
 

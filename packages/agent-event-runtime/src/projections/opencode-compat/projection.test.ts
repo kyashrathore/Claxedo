@@ -219,6 +219,22 @@ describe("createOpencodeCompatProjection", () => {
     })
   })
 
+  test("flattens array-shaped tool output content", () => {
+    const projection = makeProjection()
+
+    projection.ingest({ type: "tool-start", toolCallId: "tool-1", toolName: "task" })
+    const completed = projection.ingest({
+      type: "tool-output",
+      toolCallId: "tool-1",
+      output: { content: [{ type: "text", text: "first" }, { type: "text", text: "second" }] },
+    })
+
+    expect(completed[0]?.payload).toMatchObject({
+      type: "message.part.updated",
+      properties: { part: { state: { status: "completed", output: "first\nsecond" } } },
+    })
+  })
+
   test("sanitizes unserializable tool output and emits a projection diagnostic", () => {
     const projection = makeProjection()
     const circular: Record<string, unknown> = { ok: true, count: 1n }

@@ -160,7 +160,7 @@ describe("claudeSdkAdapter", () => {
     }).events).toMatchObject([{
       type: "tool-output",
       toolCallId: "tool-grep-1",
-      output: { type: "tool_result", tool_use_id: "tool-grep-1", content: "src/example.ts:1:foo" },
+      output: "src/example.ts:1:foo",
     }])
   })
 
@@ -223,6 +223,65 @@ describe("claudeSdkAdapter", () => {
       { type: "tool-input", toolCallId: "tool-task-1", input: { description: "Review", subagent_type: "code-reviewer" } },
       { type: "subagent-spawned", childSessionId: "code-reviewer" },
     ])
+  })
+
+  test("U2: classifies the Claude Agent wire name as subagent work", () => {
+    const agent = runtime()
+
+    expect(agent.ingest({
+      source: "claude.sdk.message",
+      payload: {
+        type: "stream_event",
+        event: {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "tool_use",
+            id: "tool-agent-1",
+            name: "Agent",
+            input: { description: "Review", subagent_type: "code-reviewer" },
+          },
+        },
+      },
+    }).events).toMatchObject([
+      { type: "tool-start", toolCallId: "tool-agent-1", toolName: "Agent", kind: "collab_agent_tool_call" },
+      { type: "tool-input", toolCallId: "tool-agent-1", input: { description: "Review", subagent_type: "code-reviewer" } },
+      { type: "subagent-spawned", childSessionId: "code-reviewer" },
+    ])
+  })
+
+  test("U2: emits flattened text for array-content Claude tool results", () => {
+    const agent = runtime()
+    agent.ingest({
+      source: "claude.sdk.message",
+      payload: {
+        type: "stream_event",
+        event: {
+          type: "content_block_start",
+          index: 0,
+          content_block: { type: "tool_use", id: "tool-grep-array-1", name: "Grep", input: {} },
+        },
+      },
+    })
+
+    expect(agent.ingest({
+      source: "claude.sdk.message",
+      payload: {
+        type: "user",
+        message: {
+          role: "user",
+          content: [{
+            type: "tool_result",
+            tool_use_id: "tool-grep-array-1",
+            content: [{ type: "text", text: "first" }, { type: "text", text: "second" }],
+          }],
+        },
+      },
+    }).events).toMatchObject([{
+      type: "tool-output",
+      toolCallId: "tool-grep-array-1",
+      output: "first\nsecond",
+    }])
   })
 
   test("maps non-question canUseTool callbacks to permission requests", () => {

@@ -1780,7 +1780,7 @@ export function registerTool(input: { name: string; render?: ToolComponent }) {
 }
 
 export function getTool(name: string) {
-  return state[name]?.render
+  return state[name.toLowerCase()]?.render
 }
 
 export const ToolRegistry = {
@@ -3044,6 +3044,7 @@ ToolRegistry.register({
  * Registered after the definitions above so the targets exist.
  */
 const TOOL_NAME_ALIASES: Record<string, string> = {
+  agent: "task",
   command: "bash",
   shell: "bash",
   local_shell: "bash",

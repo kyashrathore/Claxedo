@@ -180,7 +180,7 @@ describe("createCentralSessionRuntime", () => {
     }
   })
 
-  test("inherits the source Pi model for dispatched child sessions", async () => {
+  test("U1/U9: Pi dispatch associates its child and emits normalized subagent lifecycle", async () => {
     const priorEnabled = process.env.CLAXEDO_PI_MODEL_BACKEND
     const priorKey = process.env.ANTHROPIC_API_KEY
     process.env.CLAXEDO_PI_MODEL_BACKEND = "1"
@@ -188,6 +188,8 @@ describe("createCentralSessionRuntime", () => {
     try {
       const svc = services()
       const runtime = createCentralSessionRuntime(svc)
+      const runtimeEvents: RuntimeEventEnvelope[] = []
+      runtime.eventHub.subscribeRuntime((event) => runtimeEvents.push(event))
       const modelID = Object.keys(piProviderCatalog().all.find((provider) => provider.id === "anthropic")!.models)[0]!
       const source = await runtime.createHybridSession({
         title: "Source",
@@ -195,6 +197,12 @@ describe("createCentralSessionRuntime", () => {
       })
       const child = await runtime.createDispatchedSession(source.id, { title: "Child", workspaceId: "ws_child" })
 
+      expect.soft(child.parentID).toBe(source.id)
+      expect.soft(runtimeEvents.some((event) => {
+        const payload = event.payload as unknown as { type: string; childSessionId?: string }
+        return (payload.type === "subagent-spawned" || payload.type === "subagent-updated") &&
+          payload.childSessionId === child.id
+      })).toBe(true)
       expect(svc.projectionStore.put_session_meta).toHaveBeenLastCalledWith(child.id, expect.objectContaining({
         workspaceID: "ws_child",
         model: { providerID: "anthropic", modelID },

@@ -26,3 +26,15 @@ describe("readPartText", () => {
     expect(readPartText(undefined, { id: "part_1", text: "\n  body  \n" })).toBe("body")
   })
 })
+
+describe("cross-harness tool registry", () => {
+  test("U2: normalizes harness tool names before registry lookup", async () => {
+    expect(await Bun.file(`${import.meta.dir}/message-part.tsx`).text()).toContain(
+      "return state[name.toLowerCase()]?.render",
+    )
+  })
+
+  test("U2: aliases the Claude Agent tool to the task renderer", async () => {
+    expect(await Bun.file(`${import.meta.dir}/message-part.tsx`).text()).toMatch(/agent:\s*["']task["']/)
+  })
+})

@@ -442,7 +442,7 @@ function output(
   if (diff(value)) return { value: "", issues: [] }
 
   if (row) {
-    const body = text(row.content) ?? text(row.text) ?? text(row.body) ?? text(row.stdout) ?? text(row.stderr)
+    const body = text(row.content) ?? arrayContentText(row.content) ?? text(row.text) ?? text(row.body) ?? text(row.stdout) ?? text(row.stderr)
     if (body) return { value: body, issues: [] }
     const onlyScalars = Object.values(row).every((item) =>
       item == null || typeof item === "string" || typeof item === "number" || typeof item === "boolean",
@@ -450,11 +450,21 @@ function output(
     if (onlyScalars) return { value: "", issues: [] }
   }
 
-  if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
-    return { value: value.join("\n"), issues: [] }
-  }
+  const body = arrayContentText(value)
+  if (body !== undefined) return { value: body, issues: [] }
 
   return stringifyProjectionValue(value)
+}
+
+function arrayContentText(value: unknown) {
+  if (!Array.isArray(value)) return
+  const content = value.flatMap((item) => {
+    if (typeof item === "string") return item
+    const row = object(item)
+    return text(row?.text) ?? text(row?.content) ?? []
+  })
+  if (content.length !== value.length) return
+  return content.join("\n")
 }
 
 function compatToolStatus(status: Extract<AgentRuntimeEvent, { type: "tool-status" }>["status"]) {

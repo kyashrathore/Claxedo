@@ -32,6 +32,11 @@ async function nextEvent<T extends { type: string }>(iterator: AsyncIterator<T>,
 }
 
 describe("PiHarnessAdapter", () => {
+  test("U4/U9: a bare Pi adapter does not advertise a subagent tool", () => {
+    const capabilities = new PiHarnessAdapter().readHarnessCapabilities("/work")
+    expect((capabilities as typeof capabilities & { subagents?: boolean }).subagents ?? false).toBe(false)
+  })
+
   test("adopts a requested deterministic Session idempotently", async () => {
     const adapter = new PiHarnessAdapter()
 

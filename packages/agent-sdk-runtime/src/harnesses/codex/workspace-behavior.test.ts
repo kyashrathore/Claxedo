@@ -6,6 +6,7 @@ import { CodexHarnessAdapter } from "./index"
 import type { PromptInput, SessionConfig } from "../../index"
 import type { AgentRuntimeStoreWithRecovery } from "../shared/runtime-store"
 import { fakeRuntimeStore } from "../../test-utils/fake-runtime-store"
+import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../../runtime-event-hub"
 
 const tempDirs: string[] = []
 
@@ -56,7 +57,7 @@ function fakeCodexStore(): AgentRuntimeStoreWithRecovery {
   })
 }
 
-async function makeFakeCodex(options: { requestRefresh?: boolean; auth401?: boolean; models?: unknown[] } = {}) {
+async function makeFakeCodex(options: { requestRefresh?: boolean; auth401?: boolean; models?: unknown[]; subagent?: boolean } = {}) {
   const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "codex-app-server-"))
   tempDirs.push(dir)
   const binary = path.join(dir, "codex")
@@ -66,6 +67,7 @@ const fs = require("fs")
 const logPath = ${JSON.stringify(log)}
 const requestRefresh = ${JSON.stringify(options.requestRefresh === true)}
 const auth401 = ${JSON.stringify(options.auth401 === true)}
+const subagent = ${JSON.stringify(options.subagent === true)}
 const models = ${JSON.stringify(options.models ?? [])}
 let buffer = ""
 let completed = false
@@ -114,6 +116,10 @@ process.stdin.on("data", (chunk) => {
       }
       write({ id: message.id, result: { turn: { id: "turn-1", status: "inProgress" } } })
       write({ method: "turn/started", params: { threadId: "thread-1", turn: { id: "turn-1", status: "inProgress" } } })
+      if (subagent) {
+        write({ method: "item/started", params: { threadId: "thread-1", turnId: "turn-1", item: { id: "spawn-1", type: "collabAgentToolCall", tool: "spawn_agent", status: "inProgress", senderThreadId: "thread-1", receiverThreadIds: ["thread-child-1"] } } })
+        write({ method: "item/agentMessage/delta", params: { threadId: "thread-child-1", turnId: "child-turn-1", itemId: "child-message-1", delta: "CHILD-ONLY" } })
+      }
       if (requestRefresh) {
         write({ id: 900, method: "account/chatgptAuthTokens/refresh", params: { reason: "unauthorized", previousAccountId: "acct-1" } })
       } else {
@@ -331,5 +337,27 @@ describe("CodexHarnessAdapter", () => {
     adapter.dispose()
 
     expect(events.some((event) => JSON.stringify(event).includes("Codex authentication failed with 401 Unauthorized"))).toBe(true)
+  })
+
+  test("U6: Codex child-thread notifications reach runtime admission", async () => {
+    const fake = await makeFakeCodex({ subagent: true })
+    const eventHub = createRuntimeEventHub()
+    const runtimeEvents: RuntimeEventEnvelope[] = []
+    eventHub.subscribeRuntime((event) => runtimeEvents.push(event))
+    const adapter = new CodexHarnessAdapter({
+      binary: fake.binary,
+      eventHub,
+      createStore: () => fakeCodexStore(),
+      storeRoot: path.join(fake.dir, "store"),
+    })
+    adapter.setModel("gpt-5.5")
+
+    const session = await adapter.createSession(fake.dir)
+    for await (const _event of adapter.sendMessage(session.id, prompt("gpt-5.5"), fake.dir)) {}
+    adapter.dispose()
+
+    expect(runtimeEvents.some((event) =>
+      event.payload.type === "text-delta" && event.payload.delta === "CHILD-ONLY"
+    )).toBe(true)
   })
 })
