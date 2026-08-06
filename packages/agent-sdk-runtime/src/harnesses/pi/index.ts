@@ -7,7 +7,11 @@ import {
   sessionError,
   type CompatPart,
 } from "../../compat-events"
-import { harnessCapabilities, type HarnessCapabilities } from "../../capabilities"
+import {
+  harnessCapabilities,
+  type HarnessCapabilities,
+  type HarnessCapabilityContext,
+} from "../../capabilities"
 import {
   type AgentAgentRow,
   type AgentCommandRow,
@@ -79,6 +83,11 @@ export type PiAdapterOptions = AgentHarnessAdapterProcessOptions & {
    * non-exec prompts keep the historical echo behavior.
    */
   modelBackend?: PiModelBackendResolver
+  toolExtensionProvider?: PiToolExtensionProvider
+}
+
+export type PiToolExtensionProvider = {
+  providesSubagentTool(input: { sessionId: string; model: NonNullable<SessionConfig["model"]> }): boolean
 }
 
 export type PiSessionPlacement = Omit<SessionEnvFactoryInput, "sessionId">
@@ -153,6 +162,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
   private runStore: RunStore<AgentRuntimeStreamEvent>
   private eventHub: RuntimeEventHub | undefined
   private modelBackend: PiModelBackendResolver | undefined
+  private toolExtensionProvider: PiToolExtensionProvider | undefined
   private processObserver: AgentProcessObserver | undefined
 
   constructor(options: PiAdapterOptions = {}) {
@@ -161,6 +171,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     this.runStore = options.runStore ?? createMemoryRunStore()
     this.eventHub = options.eventHub
     this.modelBackend = options.modelBackend
+    this.toolExtensionProvider = options.toolExtensionProvider
     this.processObserver = options.processObserver
   }
 
@@ -358,7 +369,20 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     return { ok: true }
   }
 
-  readHarnessCapabilities(_directory: RuntimeDirectory): HarnessCapabilities {
+  async readHarnessCapabilities(_directory: RuntimeDirectory, context?: HarnessCapabilityContext): Promise<HarnessCapabilities> {
+    const session = context?.sessionId ? this.sessions.get(context.sessionId) : undefined
+    const model = session?.config.model
+    const supportsSubagentTool = !!(
+      session &&
+      model &&
+      !(model.providerID === "pi" && model.modelID === "virtual") &&
+      this.modelBackend &&
+      this.toolExtensionProvider?.providesSubagentTool({ sessionId: session.id, model })
+    )
+    const subagents = !!(supportsSubagentTool && session && model && await this.modelBackend?.({
+      sessionId: session.id,
+      model,
+    }))
     return harnessCapabilities({
       harness: "pi",
       abort: true,
@@ -374,6 +398,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
       revert: false,
       unrevert: false,
       configOptions: false,
+      subagents,
     })
   }
 

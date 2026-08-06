@@ -319,6 +319,7 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
       revert: true,
       unrevert: true,
       configOptions: false,
+      subagents: true,
     })
   }
 

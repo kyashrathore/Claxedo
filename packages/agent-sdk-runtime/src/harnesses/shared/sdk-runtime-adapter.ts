@@ -235,6 +235,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       revert: false,
       unrevert: false,
       configOptions: true,
+      subagents: true,
     })
   }
 

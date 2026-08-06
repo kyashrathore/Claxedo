@@ -2948,6 +2948,7 @@ describe("scoped Session tool compatibility", () => {
         revert: false,
         unrevert: false,
         configOptions: false,
+        subagents: false,
       }),
       sendMessage: async function* (_id: string, input: { parts: unknown[] }) {
         resolvePrompt(input)

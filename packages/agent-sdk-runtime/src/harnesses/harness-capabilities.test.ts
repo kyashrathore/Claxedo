@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test"
+import { getModel } from "@mariozechner/pi-ai"
 import type { WithInternals } from "../test-utils/class-internals"
 import { AcpHarnessAdapter } from "./acp/index"
 import { ClaudeHarnessAdapter } from "./claude/index"
 import { CodexHarnessAdapter } from "./codex/index"
 import { CursorHarnessAdapter } from "./cursor/index"
 import { OpenCodeHarnessAdapter } from "./opencode/index"
+import { PiHarnessAdapter } from "./pi/index"
 import {
   harnessCapabilities as canonicalHarnessCapabilities,
   type HarnessCapabilities,
@@ -24,6 +26,7 @@ const REQUIRED_KEYS: ReadonlyArray<keyof HarnessCapabilities> = [
   "revert",
   "unrevert",
   "configOptions",
+  "subagents",
 ]
 
 type AcpBaseInternals = {
@@ -106,6 +109,45 @@ describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
       expect(caps.configOptions).toBe(true)
       assertCompleteShape(caps)
     }
+  })
+
+  test("supported coding harnesses advertise subagents", () => {
+    const adapters = [
+      new OpenCodeHarnessAdapter("http://127.0.0.1:4096").readHarnessCapabilities(),
+      acpAdapterWithHarness("claude").readHarnessCapabilities(),
+      acpAdapterWithHarness("codex").readHarnessCapabilities(),
+      acpAdapterWithHarness("cursor").readHarnessCapabilities(),
+      ...(["claude", "codex", "cursor"] as const).map((type) => sdkAdapterWithDriver(type).readHarnessCapabilities()),
+    ]
+    expect(adapters.every((caps) => caps.subagents)).toBe(true)
+  })
+
+  test("bare and virtual-only Pi adapters do not advertise subagents", async () => {
+    const bare = new PiHarnessAdapter()
+    const session = await bare.createSession(undefined, "Virtual")
+
+    const capabilities = await bare.readHarnessCapabilities(undefined, { sessionId: session.id })
+    expect(capabilities.subagents).toBe(false)
+    assertCompleteShape(capabilities)
+  })
+
+  test("model-backed Pi advertises subagents only with the configured tool-extension provider", async () => {
+    const model = getModel("openai-codex", "gpt-5.1-codex-mini")
+    const configured = new PiHarnessAdapter({
+      modelBackend: () => ({ model, getApiKey: () => "test-key" }),
+      toolExtensionProvider: { providesSubagentTool: () => true },
+    })
+    const withoutProvider = new PiHarnessAdapter({
+      modelBackend: () => ({ model, getApiKey: () => "test-key" }),
+    })
+    const configuredSession = await configured.createSession(undefined, "Configured")
+    const unconfiguredSession = await withoutProvider.createSession(undefined, "Unconfigured")
+    const update = { model: { providerID: model.provider, modelID: model.id } }
+    await configured.updateSessionConfig(configuredSession.id, update, undefined)
+    await withoutProvider.updateSessionConfig(unconfiguredSession.id, update, undefined)
+
+    expect((await configured.readHarnessCapabilities(undefined, { sessionId: configuredSession.id })).subagents).toBe(true)
+    expect((await withoutProvider.readHarnessCapabilities(undefined, { sessionId: unconfiguredSession.id })).subagents).toBe(false)
   })
 
   test("configOptions is the cross-runtime way to declare ACP-only model probing", () => {

@@ -1318,7 +1318,7 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
         raw: chunk.raw,
       }))]
 
-    case "subagent-spawned":
+    case "subagent-updated":
       return []
 
     default: {

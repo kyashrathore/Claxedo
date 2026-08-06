@@ -192,7 +192,7 @@ const CONTENTION_TIMEOUT = 45_000
 // (`AGENT_RUNTIME_EVENT_CONTRACT_VERSION` in
 // `packages/agent-event-runtime/src/contracts/agent-runtime-event.ts`); a frame
 // with any other value is dropped by `runtimeEnvelope` (src/context/global-sdk.tsx).
-const RUNTIME_EVENT_CONTRACT_VERSION = 3
+const RUNTIME_EVENT_CONTRACT_VERSION = 4
 // Real, versioned, servable house-model id — NOT the bare "big-pickle", which
 // the app reserves as the non-selectable pre-provisioning placeholder
 // (`signed-workspace-model.ts`); serving that exact id as the only model leaves
@@ -569,7 +569,7 @@ async function installUserHostedRuntimeMock(
 
         // Fire-and-forget: emit the turn as CONTRACT-V3 AgentRuntimeEvent frames on
         // the runtime-events lane. Each frame is the exact envelope `runtimeEnvelope`
-        // (src/context/global-sdk.tsx) validates — `contractVersion` === 3,
+        // (src/context/global-sdk.tsx) validates — `contractVersion` === 4,
         // `directory`, `sessionId`, `assistantMessageId`, and a `payload` that is one
         // `AgentRuntimeEvent` variant — then handed to `createOpencodeCompatProjection`.
         // The `session-status: busy` → `finish` pair drives the app's turn
@@ -690,7 +690,7 @@ test.describe("core user-hosted workspace @core", () => {
 
   // The reply renders through the real projection path: the mock emits the turn as
   // CONTRACT-V3 AgentRuntimeEvent frames on the relay `/api/wr/runtime-events` lane
-  // (`{contractVersion:3, directory, sessionId, assistantMessageId, payload}`), which
+  // (`{contractVersion:4, directory, sessionId, assistantMessageId, payload}`), which
   // global-sdk's runtime loop reads via `runtimeEnvelope` and runs through
   // `createOpencodeCompatProjection`. The `session-status: busy` → `finish` pair
   // settles the turn, and the settle re-fetches the message list over the relay lane
@@ -749,7 +749,7 @@ test.describe("core user-hosted workspace @core", () => {
       "finish",
     ])
     for (const frame of mock.requests.runtimeFramesEmitted) {
-      expect(frame.contractVersion).toBe(3)
+      expect(frame.contractVersion).toBe(4)
       expect(frame.sessionId).toBe(SESSION_ID)
       // `${userID}_r` convention (Tier-M reconciliation rule, e2e/INVARIANTS.md).
       expect(String(frame.assistantMessageId).endsWith("_r")).toBe(true)

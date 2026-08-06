@@ -61,6 +61,7 @@ function adapter(input: {
         revert: true,
         unrevert: true,
         configOptions: false,
+        subagents: true,
       }
     },
     sendMessage: (_id: string, _prompt: PromptInput, directory: RuntimeDirectory) => {

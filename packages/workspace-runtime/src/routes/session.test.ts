@@ -65,6 +65,7 @@ function adapter(input: {
       revert: true,
       unrevert: true,
       configOptions: false,
+      subagents: true,
     }),
     sendMessage(id, prompt, directory) {
       input.onPrompt?.(prompt, directory)
@@ -418,6 +419,7 @@ describe("session prompt route", () => {
           revert: false,
           unrevert: false,
           configOptions: true,
+          subagents: true,
         }),
         getServerUrl: async () => "http://proxy-capable.test",
         // `http-proxy` is a two-method capability; the double has to satisfy
@@ -818,6 +820,7 @@ describe("session prompt route", () => {
           revert: !input?.sessionId,
           unrevert: !input?.sessionId,
           configOptions: !!input?.sessionId,
+          subagents: true,
         }),
       }),
       resolveDirectory: async (_c, input) => input?.sessionId ? `${directory}/session` : directory,
@@ -839,6 +842,7 @@ describe("session prompt route", () => {
       commands: true,
       questions: true,
       configOptions: false,
+      subagents: true,
     })
     expect(session.status).toBe(200)
     expect(await session.json()).toMatchObject({
@@ -846,6 +850,7 @@ describe("session prompt route", () => {
       commands: false,
       questions: false,
       configOptions: true,
+      subagents: true,
     })
   })
 
@@ -944,6 +949,7 @@ describe("session prompt route", () => {
         revert: true,
         unrevert: true,
         configOptions: false,
+        subagents: true,
       }),
     }))
 
@@ -1295,6 +1301,7 @@ describe("session prompt route", () => {
         revert: false,
         unrevert: false,
         configOptions: true,
+        subagents: true,
       }),
       abort: async () => {
         calls.push("abort")

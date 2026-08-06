@@ -5,10 +5,7 @@ import {
   type CompatEvent,
   type OpencodeCompatProjection,
 } from "@claxedo/agent-event-runtime/opencode-compat"
-import {
-  AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-  type AgentRuntimeEvent,
-} from "@claxedo/agent-event-runtime/contracts"
+import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION, type AgentRuntimeEvent } from "@claxedo/agent-event-runtime/contracts"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { batch, onCleanup, onMount } from "solid-js"
@@ -34,13 +31,15 @@ import { createGlobalSdkFetch } from "@/platform/sync/global-sdk-fetch"
 import { createEventCoalescer } from "@/platform/sync/global-sdk/event-coalescer"
 import { createHeartbeatWatchdog } from "@/platform/sync/global-sdk/heartbeat-watchdog"
 import { RECONNECT_DELAY_MS, reconnectBackoffMs } from "@/platform/sync/global-sdk/reconnect-backoff"
+import { createSubagentRegistry, type SubagentRegistry } from "@/features/session/subagents/subagent-registry"
+import { abortSubagentsForParent, applySubagentCompatLifecycleEvent, applySubagentRuntimeEventEnvelope } from "@/features/session/subagents/subagent-ingress"
+export { abortSubagentsForParent, applySubagentCompatLifecycleEvent, applySubagentRuntimeEventEnvelope } from "@/features/session/subagents/subagent-ingress"
 export { createControlPlaneEventFetch } from "../global-sdk-event-fetch"
 export { createGlobalSdkFetch } from "@/platform/sync/global-sdk-fetch"
 
 export type GlobalSdkEvent = OpenCodeEvent | CompatEvent
 type Event = GlobalSdkEvent
 type EventDirectory = string
-
 const claxedoExtensionEventTypes = new Set<string>(["message.completed", "session.agent", "session.config", "session.usage", "runtime.diagnostic"])
 const USER_HOSTED_WORKSPACE_KIND = "user-hosted"
 
@@ -146,7 +145,7 @@ function authEnabledRuntime() {
   return import.meta.env.VITE_AUTH_ENABLED === "true"
 }
 
-type RuntimeEventEnvelope = {
+export type RuntimeEventEnvelope = {
   contractVersion: typeof AGENT_RUNTIME_EVENT_CONTRACT_VERSION
   directory: EventDirectory
   sessionId: string
@@ -243,9 +242,11 @@ export function resetRuntimeReplayGapState(input: {
   covered?: RuntimeCoveredSessions
   baseUrl?: string
   liveSession?: LiveSession
+  subagents?: SubagentRegistry
 }) {
   input.projections?.clear()
   input.covered?.clear()
+  input.subagents?.replayGap()
   const directory = eventDirectoryForLiveSession({
     directory: input.envelope.directory,
     liveSession: input.liveSession,
@@ -434,6 +435,7 @@ const globalSDKContextInput = {
     const transientStreamError = (error: unknown) =>
       error instanceof TypeError && error.message.toLowerCase() === "network error"
     const runtimeCoveredSessions: RuntimeCoveredSessions = new Set()
+    const subagents = createSubagentRegistry()
     const markStreamReady = () => {
       if (streamReady) return
       streamReady = true
@@ -571,11 +573,13 @@ const globalSDKContextInput = {
                   covered: runtimeCoveredSessions,
                   baseUrl: currentServer.http.url,
                   liveSession: eventLiveSession(),
+                  subagents,
                 })
                 lastRuntimeEventId = undefined
                 runtimeAttempt.abort()
                 break
               }
+              applySubagentRuntimeEventEnvelope(envelope, subagents)
               if (!runtimeProjectionOwnsCompat(envelope)) continue
               rememberRuntimeEventEnvelope(envelope, runtimeCoveredSessions)
               for (const event of projectRuntimeEventEnvelope(envelope, projections)) {
@@ -669,6 +673,7 @@ const globalSDKContextInput = {
                 directory: event.directory ?? "global",
                 liveSession: eventLiveSession(),
               })
+              applySubagentCompatLifecycleEvent(event.payload, subagents)
               if (!shouldAcceptCompatEvent(event.payload, runtimeCoveredSessions)) continue
               enqueue(directory, event.payload)
 
@@ -775,6 +780,7 @@ const globalSDKContextInput = {
         (opts?.workspaceId !== undefined && opts.workspaceId !== liveSession?.workspaceId) ||
         (opts?.workspaceKind !== undefined && opts.workspaceKind !== liveSession?.workspaceKind)
       liveSession = next
+      if (scopeChanged) subagents.workspaceChanged()
       if (scopeChanged && started) {
         scheduleLiveSessionRestart()
       }
@@ -790,6 +796,7 @@ const globalSDKContextInput = {
         ready,
         setLiveSession,
         getLiveSession: () => liveSession,
+        subagents: { registry: subagents, abortParent: (sessionID: string) => abortSubagentsForParent(sessionID, subagents) },
       },
       createClient(opts: Omit<Parameters<typeof createSdkForServer>[0], "server" | "fetch">) {
         const s = server.current

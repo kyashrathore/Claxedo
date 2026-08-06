@@ -11,6 +11,15 @@ function makeProjection() {
 }
 
 describe("createOpencodeCompatProjection", () => {
+  test("keeps subagent lifecycle out of the compatibility projection", () => {
+    expect(makeProjection().ingest({
+      type: "subagent-updated",
+      subagentKey: "child-1",
+      revision: 1,
+      childSessionId: "child-session-1",
+    })).toEqual([])
+  })
+
   test("emits text deltas incrementally", () => {
     const projection = createOpencodeCompatProjection({
       sessionId: "session-1",

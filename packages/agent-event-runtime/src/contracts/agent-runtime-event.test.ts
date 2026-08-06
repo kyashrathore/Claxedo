@@ -8,7 +8,7 @@ import {
 
 describe("AgentRuntimeEvent contract", () => {
   test("exposes an explicit contract version and event kind registry", () => {
-    expect(AGENT_RUNTIME_EVENT_CONTRACT_VERSION).toBe(3)
+    expect(AGENT_RUNTIME_EVENT_CONTRACT_VERSION).toBe(4)
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("text-delta")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("user-message-delta")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("tool-status")
@@ -24,6 +24,7 @@ describe("AgentRuntimeEvent contract", () => {
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("auth-status")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("rate-limit")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("mcp-server-status")
+    expect(AGENT_RUNTIME_EVENT_TYPES).toContain("subagent-updated")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("diagnostic")
     expect(new Set(AGENT_RUNTIME_EVENT_TYPES).size).toBe(AGENT_RUNTIME_EVENT_TYPES.length)
     expect(Object.values(AGENT_RUNTIME_EVENT_FACTORY_TYPES).sort()).toEqual([...AGENT_RUNTIME_EVENT_TYPES].sort())
@@ -61,6 +62,22 @@ describe("AgentRuntimeEvent contract", () => {
         message: "boom",
         severity: "error",
       },
+    })
+    expect(agentRuntimeEvent.subagentUpdated({
+      subagentKey: "subagent-1",
+      revision: 3,
+      toolCallId: "call-1",
+      toolCallRole: "spawn",
+      childSessionId: "session-child-1",
+      transcript: { kind: "live", ref: "transcript-1" },
+    })).toEqual({
+      type: "subagent-updated",
+      subagentKey: "subagent-1",
+      revision: 3,
+      toolCallId: "call-1",
+      toolCallRole: "spawn",
+      childSessionId: "session-child-1",
+      transcript: { kind: "live", ref: "transcript-1" },
     })
   })
 

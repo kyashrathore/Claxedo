@@ -221,7 +221,6 @@ describe("claudeSdkAdapter", () => {
     }).events).toMatchObject([
       { type: "tool-start", toolCallId: "tool-task-1", toolName: "Task", kind: "collab_agent_tool_call" },
       { type: "tool-input", toolCallId: "tool-task-1", input: { description: "Review", subagent_type: "code-reviewer" } },
-      { type: "subagent-spawned", childSessionId: "code-reviewer" },
     ])
   })
 
@@ -246,7 +245,6 @@ describe("claudeSdkAdapter", () => {
     }).events).toMatchObject([
       { type: "tool-start", toolCallId: "tool-agent-1", toolName: "Agent", kind: "collab_agent_tool_call" },
       { type: "tool-input", toolCallId: "tool-agent-1", input: { description: "Review", subagent_type: "code-reviewer" } },
-      { type: "subagent-spawned", childSessionId: "code-reviewer" },
     ])
   })
 

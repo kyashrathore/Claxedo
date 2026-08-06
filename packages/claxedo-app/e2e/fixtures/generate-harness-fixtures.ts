@@ -38,8 +38,8 @@
  *     native rendering path, not repeat the full matrix — see the spec's SPEC block).
  *
  * ONE DELIBERATE POST-GENERATION AUGMENTATION (documented, not a hand-invented shape):
- * the real `subagent-spawned` AgentRuntimeEvent is intentionally dropped by the
- * opencode-compat projection (`case "subagent-spawned": return []` in projection.ts) —
+ * the real `subagent-updated` AgentRuntimeEvent is intentionally dropped by the
+ * opencode-compat projection (`case "subagent-updated": return []` in projection.ts) —
  * child-session correlation for the `task` tool card happens client-side via a
  * session-list lookup (`taskSession()` in message-part.tsx) that this fixture harness
  * cannot reproduce (it would require a second live session in the store). To still

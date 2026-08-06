@@ -152,11 +152,6 @@ function toolDisplay(toolName: string, input: Record<string, unknown>) {
   })
 }
 
-function subagentId(input: Record<string, unknown>, fallback: string) {
-  const subagent = object(input.subagentType) ?? object(input.subagent_type)
-  return text(subagent?.name) ?? text(subagent?.kind) ?? text(input.subagent_type) ?? text(input.mode) ?? fallback
-}
-
 function ensureTool(input: {
   state: CursorSdkAdapterState
   toolCallId: string
@@ -194,9 +189,6 @@ function ensureTool(input: {
       { type: "tool-start", toolCallId: input.toolCallId, toolName, kind, display, metadata: { cursor: { itemType: kind } } },
       ...(rawInput && Object.keys(rawInput).length
         ? [{ type: "tool-input", toolCallId: input.toolCallId, input: rawInput, display, metadata: { cursor: { itemType: kind } } } satisfies AgentRuntimeEvent]
-        : []),
-      ...(isTaskTool(toolName)
-        ? [{ type: "subagent-spawned", childSessionId: subagentId(rawInput ?? {}, input.toolCallId) } satisfies AgentRuntimeEvent]
         : []),
     ] satisfies AgentRuntimeEvent[],
     toolName,

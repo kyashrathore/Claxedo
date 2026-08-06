@@ -710,6 +710,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       revert: false,
       unrevert: false,
       configOptions: true,
+      subagents: true,
     })
   }
 

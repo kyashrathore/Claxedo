@@ -20,6 +20,7 @@ const ENTRIES = [
   "src/runtime.ts",
   "src/sse.ts",
   "src/mcp-resolver.ts",
+  "src/subagent-admission.ts",
   "src/stores/memory.ts",
   "src/stores/sqlite.ts",
   "src/stores/convex.ts",

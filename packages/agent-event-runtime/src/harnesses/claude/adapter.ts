@@ -163,9 +163,6 @@ function toolStartEvents(block: Record<string, unknown>): AgentRuntimeEvent[] {
     ...(Object.keys(input).length > 0
       ? [{ type: "tool-input", toolCallId, input, display, metadata } satisfies AgentRuntimeEvent]
       : []),
-    ...(isTaskTool(toolName)
-      ? [{ type: "subagent-spawned", childSessionId: text(input.subagent_type) ?? toolCallId } satisfies AgentRuntimeEvent]
-      : []),
   ]
 }
 
@@ -707,16 +704,11 @@ function translateSystemMessage(
       })
 
     case "task_started":
-      return message.tool_use_id
-        ? [{
-          type: "subagent-spawned",
-          childSessionId: message.task_id,
-        }]
-        : unmappedSdkEvent({
-          sdkEvent: "SDKTaskStartedMessage",
-          reason: "task start without a parent tool use has no dedicated AgentRuntimeEvent equivalent",
-          event,
-        })
+      return unmappedSdkEvent({
+        sdkEvent: "SDKTaskStartedMessage",
+        reason: "subagent lifecycle observations are admitted by the host boundary",
+        event,
+      })
 
     case "task_notification":
       if (message.tool_use_id && message.status === "failed") {
