@@ -1888,14 +1888,33 @@ const pathFileNamePrefixes = new Set([
   "zshrc",
 ])
 
-export function inlineCodeKind(text: string): "path" | "url" | undefined {
+export function inlineCodeKind(text: string): "path" | "path-candidate" | "url" | undefined {
   if (/^https?:\/\//i.test(text)) return "url"
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) return
-  if (text === "/") return
-  if (/^\/[a-z][a-z0-9-]*$/i.test(text)) return
   if (/\s/.test(text)) return
   if (/[()\[\]{}*+=<>|&^"';]/.test(text)) return
-  if (/[/\\]/.test(text) || /^\.\.?[/\\]/.test(text) || hasPathExtension(text) || hasPathFileName(text)) return "path"
+  // `~/…` can't be expanded client-side, so the file panel refuses it
+  // (workspace-file-focus.ts). Marking it a path is a dead affordance.
+  if (text.startsWith("~")) return
+  return filePathKind(text)
+}
+
+/**
+ * Known filenames can be styled immediately. Ambiguous slash-shaped values
+ * need workspace metadata: real extensionless files, directories, event names,
+ * routes, MIME types, package specifiers, and prose are lexically identical.
+ * `path-candidate` stays visually inert until a workspace-aware host promotes
+ * an exact file match to `path`.
+ */
+function filePathKind(text: string): "path" | "path-candidate" | undefined {
+  // Chips carry the timeline's `:line[:col]` suffix (`src/foo.ts:42`); it isn't
+  // part of the filename. Same suffix resolveWorkspaceFileFocus() parses off.
+  const base = text.replace(/:\d+(?::\d+)?$/, "")
+  if (!base || base === "/" || /^\/[a-z][a-z0-9-]*$/i.test(base) || /[/\\]$/.test(base)) return
+  if (base.split(/[/\\]/).some((segment) => segment === "..")) return
+  const name = base.split(/[/\\]/).pop() ?? ""
+  if (hasPathExtension(name) || hasPathFileName(name)) return "path"
+  if (/[/\\]/.test(base)) return "path-candidate"
 }
 
 function hasPathExtension(text: string) {

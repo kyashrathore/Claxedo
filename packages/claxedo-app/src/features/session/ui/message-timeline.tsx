@@ -110,6 +110,7 @@ import { installTimelineMermaid } from "./mermaid-timeline"
 import {
   timelineAnchorClickTarget,
   timelineExternalSourceClickTarget,
+  observeTimelineFileCandidates,
   timelineFileFocus,
   timelineFileTarget,
   resolveTimelinePath as resolveTimelineFilePath,
@@ -484,7 +485,16 @@ export function MessageTimeline(props: {
       openFileInPanel(raw)
     }
     el.addEventListener("click", onCapture, { capture: true })
-    onCleanup(() => el.removeEventListener("click", onCapture, { capture: true }))
+    const stopCandidatePromotion = observeTimelineFileCandidates(el, sdk.directory, (query) =>
+      sdk.client.find.files({ query, dirs: "false" }).then(
+        (response) => response.data ?? [],
+        () => [],
+      ),
+    )
+    onCleanup(() => {
+      el.removeEventListener("click", onCapture, { capture: true })
+      stopCandidatePromotion()
+    })
   }
 
   // File context menu (T11): right-click a file link/path → Open / Copy path / Reveal.
