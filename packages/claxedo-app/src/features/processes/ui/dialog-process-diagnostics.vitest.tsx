@@ -23,11 +23,28 @@ const state = vi.hoisted(() => {
 })
 
 const warmSnapshot = [{
+  // Also present in the store, so it exercises the merge onto an existing row.
+  sessionId: "019-task",
+  mounted: true,
+  recency: 0,
+  messageCount: 120,
+  buckets: {
+    chatBytes: 12 * 1024 ** 2,
+    imageBytes: 6 * 1024 ** 2,
+    compactionBytes: 2 * 1024 ** 2,
+    totalBytes: 20 * 1024 ** 2,
+  },
+}, {
   sessionId: "ses_warm",
   mounted: false,
-  recency: 0,
+  recency: 1,
   messageCount: 42,
-  buckets: { chatBytes: 4_096, imageBytes: 8_192, compactionBytes: 2_048, totalBytes: 14_336 },
+  buckets: {
+    chatBytes: 4 * 1024 ** 2,
+    imageBytes: 8 * 1024 ** 2,
+    compactionBytes: 2 * 1024 ** 2,
+    totalBytes: 14 * 1024 ** 2,
+  },
 }] satisfies LocalDiagnostics.WarmSessionMemory[]
 
 vi.mock("@/platform/runtime/platform-provider", () => ({
@@ -83,15 +100,21 @@ beforeEach(() => {
 
 afterEach(() => cleanup())
 
+const showTab = (name: string) => fireEvent.click(screen.getByRole("tab", { name }))
+
 describe("local performance diagnostics dialog", () => {
   test("loads retained startup history, subscribes once, and renders ranked local ownership", async () => {
     render(() => <DialogProcessDiagnostics />)
 
     expect(screen.getByText("Loading retained startup history…")).toBeInTheDocument()
-    expect(await screen.findByRole("button", { name: /Codex harness/ })).toBeInTheDocument()
+    expect(await screen.findByText("CPU and memory history")).toBeInTheDocument()
     expect(screen.getByText("Collector active")).toBeInTheDocument()
-    expect(screen.getByText("CPU and memory history")).toBeInTheDocument()
     expect(screen.getByText(/Workspace model work shares/)).toBeInTheDocument()
+
+    // Contributors live behind their own tab, so they are not in the a11y tree until shown.
+    expect(screen.queryByRole("button", { name: /Codex harness/ })).not.toBeInTheDocument()
+    showTab("Processes")
+    expect(screen.getByRole("button", { name: /Codex harness/ })).toBeInTheDocument()
     expect(state.getSnapshot).toHaveBeenCalledOnce()
     expect(state.subscribe).toHaveBeenCalledOnce()
 
@@ -103,27 +126,77 @@ describe("local performance diagnostics dialog", () => {
     await waitFor(() => expect(screen.getByText(/last sample/)).toHaveTextContent(formatTime(4_000)))
   })
 
-  test("runs the full session scan only when triggered and shows stored and warm causes", async () => {
-    render(() => <DialogProcessDiagnostics warmSessions={() => warmSnapshot} />)
-    await screen.findByRole("button", { name: /Codex harness/ })
+  test("runs the full session scan only when triggered and ranks stored and warm sessions together", async () => {
+    const view = render(() => <DialogProcessDiagnostics warmSessions={() => warmSnapshot} />)
+    await screen.findByText("CPU and memory history")
+    showTab("Session memory")
 
     expect(state.scanSessionMemory).not.toHaveBeenCalled()
     expect(screen.getByText(/No background scan runs/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Scan session memory" }))
 
     await waitFor(() => expect(state.scanSessionMemory).toHaveBeenCalledWith({ warmSessions: warmSnapshot }))
-    expect(await screen.findByText("Warm sessions")).toBeInTheDocument()
-    expect(screen.getByText("Largest stored sessions")).toBeInTheDocument()
-    expect(screen.getByText("Retained unmounted · 42 messages · warm rank 1")).toBeInTheDocument()
-    expect(screen.getByText("Large Codex task")).toBeInTheDocument()
-    expect(screen.getAllByText("Images").length).toBeGreaterThan(0)
-    expect(screen.getAllByText("Compaction").length).toBeGreaterThan(0)
+    expect(await screen.findByText("Sessions by weight")).toBeInTheDocument()
+
+    // Stored and warm sessions rank together in one list, heaviest first, and the
+    // warm-only conversation still earns a row from the renderer's own estimate.
+    const rows = [...view.container.querySelectorAll<HTMLElement>('[data-testid="diagnostics-session"]')]
+    expect(rows.map((row) => row.dataset.sessionId)).toEqual(["019-task", "020-thread", "ses_warm"])
+    // A stored session that is also warm keeps its stored weight and gains the tick.
+    expect(rows[0]).toHaveAttribute("data-warm", "true")
+    expect(rows[0]).toHaveTextContent("Large Codex task")
+    expect(rows[0]).toHaveTextContent("70.0 MiB")
+    expect(within(rows[0]!).getByTestId("diagnostics-session-tag")).toHaveTextContent("Mounted")
+    expect(rows[0]).toHaveTextContent("120 messages")
+    expect(rows[1]).not.toHaveAttribute("data-warm")
+    expect(rows[2]).toHaveAttribute("data-warm", "true")
+    expect(within(rows[2]!).getByTestId("diagnostics-session-tag")).toHaveTextContent("Cached")
+    expect(rows[2]).toHaveTextContent("42 messages")
+    expect(within(rows[1]!).queryByTestId("diagnostics-session-tag")).not.toBeInTheDocument()
     expect(screen.getByText(/serialized payload, not exact JavaScript heap/)).toBeInTheDocument()
+  })
+
+  test("caps the session list at ten rows and reveals the rest on request", async () => {
+    const base = sessionMemoryScan()
+    state.scanSessionMemory.mockResolvedValue({
+      ...base,
+      sessions: Array.from({ length: 40 }, (_, index) => ({
+        ...base.sessions[0]!,
+        sessionId: `ses_${String(index).padStart(3, "0")}`,
+        title: `Session ${String(index)}`,
+        buckets: {
+          chatBytes: (40 - index) * 1024 ** 2,
+          imageBytes: 0,
+          compactionBytes: 0,
+          totalBytes: (40 - index) * 1024 ** 2,
+        },
+      })),
+      warmSessions: [],
+    })
+    const view = render(() => <DialogProcessDiagnostics />)
+    await screen.findByText("CPU and memory history")
+    showTab("Session memory")
+    fireEvent.click(screen.getByRole("button", { name: "Scan session memory" }))
+    await screen.findByText("Sessions by weight")
+
+    const rows = () => view.container.querySelectorAll('[data-testid="diagnostics-session"]')
+    expect(rows()).toHaveLength(10)
+    expect(rows()[0]).toHaveTextContent("1. Session 0")
+    expect(rows()[9]).toHaveTextContent("10. Session 9")
+    expect(view.container.textContent).not.toContain("Session 10")
+
+    fireEvent.click(screen.getByRole("button", { name: /Show 25 more \(30 remaining\)/ }))
+    expect(rows()).toHaveLength(35)
+    fireEvent.click(screen.getByRole("button", { name: /Show 25 more \(5 remaining\)/ }))
+    expect(rows()).toHaveLength(40)
+    expect(screen.queryByRole("button", { name: /Show 25 more/ })).not.toBeInTheDocument()
   })
 
   test("uses only the opaque grant for a named owner action and refreshes after the result", async () => {
     render(() => <DialogProcessDiagnostics />)
-    const owner = await screen.findByRole("button", { name: /Codex harness/ })
+    await screen.findByText("CPU and memory history")
+    showTab("Processes")
+    const owner = screen.getByRole("button", { name: /Codex harness/ })
     fireEvent.click(owner)
     fireEvent.click(screen.getByRole("button", { name: "Stop gracefully" }))
 
@@ -210,7 +283,8 @@ describe("local performance diagnostics dialog", () => {
     state.getSnapshot.mockResolvedValue(taskSnapshot())
     const view = render(() => <DialogProcessDiagnostics />)
 
-    await screen.findByRole("button", { name: /Electron main/ })
+    await screen.findByText("CPU and memory history")
+    showTab("Processes")
     const contributors = [...view.container.querySelectorAll<HTMLElement>(
       '[data-testid="diagnostics-contributor"]',
     )]
@@ -224,9 +298,8 @@ describe("local performance diagnostics dialog", () => {
     const range = view.container.querySelector<HTMLElement>('[aria-label="Retained window summary"]')!
     expect(Number(range.dataset.diagnosticsRangeStart)).toBe(1_000)
     expect(Number(range.dataset.diagnosticsRangeEnd)).toBe(3_000)
-    expect(view.container.querySelector('[data-testid="diagnostics-source"]')).toHaveAttribute(
-      "data-state",
-      "degraded",
+    expect(view.container.querySelector('[data-testid="diagnostics-source-health"]')).toHaveTextContent(
+      "linux-proc degraded",
     )
     expect(view.container.querySelector('[data-testid="diagnostics-churn"]')).toHaveAttribute(
       "data-measurement",
@@ -480,22 +553,51 @@ function sessionMemoryScan(): LocalDiagnostics.SessionMemoryScanResult {
     version: 1,
     scannedAt: 5_000,
     durationMs: 1_250,
-    stored: { chatBytes: 10_000, imageBytes: 20_000, compactionBytes: 5_000, totalBytes: 35_000 },
-    resident: warmSnapshot[0]!.buckets,
+    stored: {
+      chatBytes: 42 * 1024 ** 2,
+      imageBytes: 60 * 1024 ** 2,
+      compactionBytes: 10 * 1024 ** 2,
+      totalBytes: 112 * 1024 ** 2,
+    },
+    resident: warmSnapshot[1]!.buckets,
     sources: [{
-      harness: "codex",
+      harness: "claxedo",
       profile: "native",
       state: "scanned",
-      sessionCount: 1,
-      buckets: { chatBytes: 10_000, imageBytes: 20_000, compactionBytes: 5_000, totalBytes: 35_000 },
+      sessionCount: 2,
+      buckets: {
+        chatBytes: 42 * 1024 ** 2,
+        imageBytes: 60 * 1024 ** 2,
+        compactionBytes: 10 * 1024 ** 2,
+        totalBytes: 112 * 1024 ** 2,
+      },
     }],
-    sessions: [{
-      sessionId: "019-task",
-      title: "Large Codex task",
-      harness: "codex",
-      profile: "native",
-      buckets: { chatBytes: 10_000, imageBytes: 20_000, compactionBytes: 5_000, totalBytes: 35_000 },
-    }],
+    sessions: [
+      {
+        sessionId: "019-task",
+        title: "Large Codex task",
+        harness: "claxedo",
+        profile: "native",
+        buckets: {
+          chatBytes: 2 * 1024 ** 2,
+          imageBytes: 60 * 1024 ** 2,
+          compactionBytes: 8 * 1024 ** 2,
+          totalBytes: 70 * 1024 ** 2,
+        },
+      },
+      {
+        sessionId: "020-thread",
+        title: "Long chat thread",
+        harness: "claxedo",
+        profile: "native",
+        buckets: {
+          chatBytes: 40 * 1024 ** 2,
+          imageBytes: 0,
+          compactionBytes: 2 * 1024 ** 2,
+          totalBytes: 42 * 1024 ** 2,
+        },
+      },
+    ],
     warmSessions: warmSnapshot,
   }
 }

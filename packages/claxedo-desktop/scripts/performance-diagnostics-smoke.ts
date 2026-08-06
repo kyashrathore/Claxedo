@@ -637,8 +637,7 @@ async function renderedTaskEvidence(client: CdpClient) {
       sidecarContributor: kinds.has("sidecar"),
       memoryGrowthContributor,
       limitationDisclosed:
-        root.textContent?.includes("unmeasured churn, never as zero usage") === true &&
-        root.querySelectorAll('[data-testid="diagnostics-source"]').length > 0,
+        root.textContent?.includes("unmeasured churn, never as zero usage") === true,
       churnEvidence,
     }
   })()`)

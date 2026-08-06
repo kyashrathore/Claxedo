@@ -7,6 +7,13 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { buildDiagnosticsModel, ownerGroup } from "./diagnostics/model"
 import { DiagnosticsTimeline, formatTime } from "./diagnostics/timeline"
 
+const TABS = [
+  { id: "activity", label: "Activity" },
+  { id: "sessions", label: "Session memory" },
+  { id: "processes", label: "Processes" },
+] as const
+type TabId = (typeof TABS)[number]["id"]
+
 export function DialogProcessDiagnostics(props: {
   warmSessions?: () => LocalDiagnostics.WarmSessionMemory[]
 }) {
@@ -20,7 +27,8 @@ export function DialogProcessDiagnostics(props: {
   const [sessionScan, setSessionScan] = createSignal<LocalDiagnostics.SessionMemoryScanResult>()
   const [sessionScanBusy, setSessionScanBusy] = createSignal(false)
   const [sessionScanError, setSessionScanError] = createSignal<string>()
-  const [storedSessionsShown, setStoredSessionsShown] = createSignal(100)
+  const [tab, setTab] = createSignal<TabId>("activity")
+  const [sessionsShown, setSessionsShown] = createSignal(10)
   const [announcement, setAnnouncement] = createSignal("")
   let lastReceivedAt = Date.now()
   let unsubscribe: (() => void) | undefined
@@ -110,10 +118,33 @@ export function DialogProcessDiagnostics(props: {
     Math.max(0, ...(model()?.series.flatMap((point) => point.cpu === undefined ? [] : [point.cpu]) ?? [])))
   const peakRss = createMemo(() =>
     Math.max(0, ...(model()?.series.flatMap((point) => point.rssBytes === undefined ? [] : [point.rssBytes]) ?? [])))
-  const warmSessions = createMemo(() => sessionScan()?.warmSessions.toSorted(
-    (left, right) => right.buckets.totalBytes - left.buckets.totalBytes || left.recency - right.recency,
-  ) ?? [])
-  const storedSessions = createMemo(() => sessionScan()?.sessions.slice(0, storedSessionsShown()) ?? [])
+  const sessions = createMemo(() => {
+    const scan = sessionScan()
+    if (!scan) return []
+    const warm = new Map(scan.warmSessions.map((session) => [session.sessionId, session]))
+    const rows = scan.sessions.map((session) => ({
+      sessionId: session.sessionId,
+      label: session.title ?? session.sessionId,
+      detail: `${session.harness}${session.profile ? ` · ${session.profile}` : ""}`,
+      buckets: session.buckets,
+      warm: warm.get(session.sessionId),
+    }))
+    // A conversation can be warm before it is ever written back, so warm-only
+    // sessions still get a row — measured from the renderer's own estimate.
+    const stored = new Set(rows.map((row) => row.sessionId))
+    const warmOnly = scan.warmSessions
+      .filter((session) => !stored.has(session.sessionId))
+      .map((session) => ({
+        sessionId: session.sessionId,
+        label: session.sessionId,
+        detail: "not yet written to a store",
+        buckets: session.buckets,
+        warm: session,
+      }))
+    return [...rows, ...warmOnly].sort((left, right) => right.buckets.totalBytes - left.buckets.totalBytes)
+  })
+  const degradedSources = createMemo(() =>
+    (snapshot()?.sources ?? []).filter((source) => source.state !== "healthy"))
 
   const scanSessions = async () => {
     if (!capability || sessionScanBusy()) return
@@ -122,7 +153,7 @@ export function DialogProcessDiagnostics(props: {
     try {
       const result = await capability.scanSessionMemory({ warmSessions: props.warmSessions?.() ?? [] })
       setSessionScan(result)
-      setStoredSessionsShown(100)
+      setSessionsShown(10)
       setAnnouncement(
         `Session memory scan complete. ${result.sessions.length} stored sessions and ${result.warmSessions.length} warm sessions analyzed.`,
       )
@@ -176,6 +207,11 @@ export function DialogProcessDiagnostics(props: {
                 <p class="mt-1 text-[11px] text-text-weak">
                   History starts {formatTime(value().retainedFromAt)} · last sample {formatTime(value().capturedAt)}
                   {value().retention.state === "truncated" ? " · retained history is memory-limited" : ""}
+                  <Show when={degradedSources().length > 0}>
+                    <span data-testid="diagnostics-source-health" data-degraded={degradedSources().length}>
+                      {" · "}{degradedSources().map((source) => `${source.source} ${source.state}`).join(", ")}
+                    </span>
+                  </Show>
                 </p>
               )}
             </Show>
@@ -191,194 +227,208 @@ export function DialogProcessDiagnostics(props: {
           )}
         </Show>
 
+        <div role="tablist" aria-label="Diagnostics sections" class="flex shrink-0 gap-1 border-b border-border-weak-base px-5 max-md:px-3">
+          <For each={TABS}>
+            {(entry) => (
+              <button
+                type="button"
+                role="tab"
+                id={`diagnostics-tab-${entry.id}`}
+                aria-selected={tab() === entry.id}
+                aria-controls={`diagnostics-panel-${entry.id}`}
+                tabIndex={tab() === entry.id ? 0 : -1}
+                class="-mb-px border-b-2 px-2.5 py-2 text-[12px] transition-colors"
+                classList={{
+                  "border-border-interactive-base font-medium text-text-strong": tab() === entry.id,
+                  "border-transparent text-text-weak hover:text-text-base": tab() !== entry.id,
+                }}
+                onClick={() => setTab(entry.id)}
+              >
+                {entry.label}
+              </button>
+            )}
+          </For>
+        </div>
+
         <Show
           when={!loading() && snapshot() && model()}
           fallback={<div class="flex flex-1 items-center justify-center p-8 text-[13px] text-text-weak">Loading retained startup history…</div>}
         >
-          <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overflow-x-hidden px-5 py-4 max-md:px-3">
-              <section
-                aria-label="Retained window summary"
-                data-diagnostics-range-start={model()!.bounds.startAt}
-                data-diagnostics-range-end={model()!.bounds.endAt}
-                class="grid grid-cols-4 overflow-hidden rounded-lg border border-border-weak-base max-md:grid-cols-2"
-              >
-                <Metric label="Current CPU" value={formatCpu(current()?.cpu)} />
-                <Metric label="Peak CPU" value={formatCpu(peakCpu())} />
-                <Metric label="Current RSS" value={formatBytes(current()?.rssBytes)} />
-                <Metric label="Peak RSS" value={formatBytes(peakRss())} />
-              </section>
+          <div class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-5 py-4 max-md:px-3">
+            <div
+              role="tabpanel"
+              id="diagnostics-panel-activity"
+              aria-labelledby="diagnostics-tab-activity"
+              hidden={tab() !== "activity"}
+            >
+              <div class="grid gap-4">
+                <section
+                  aria-label="Retained window summary"
+                  data-diagnostics-range-start={model()!.bounds.startAt}
+                  data-diagnostics-range-end={model()!.bounds.endAt}
+                  class="grid grid-cols-4 overflow-hidden rounded-lg border border-border-weak-base max-md:grid-cols-2"
+                >
+                  <Metric label="Current CPU" value={formatCpu(current()?.cpu)} />
+                  <Metric label="Peak CPU" value={formatCpu(peakCpu())} />
+                  <Metric label="Current RSS" value={formatBytes(current()?.rssBytes)} />
+                  <Metric label="Peak RSS" value={formatBytes(peakRss())} />
+                </section>
 
-              <section aria-labelledby="diagnostics-session-memory-title" class="rounded-lg border border-border-weak-base">
-                <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border-weak-base px-3 py-2.5">
-                  <div>
-                    <h2 id="diagnostics-session-memory-title" class="text-[13px] font-medium text-text-strong">Session memory</h2>
-                    <p class="mt-0.5 max-w-3xl text-[11px] text-text-weak">
-                      Triggered only. Scans local Claxedo, Codex, and Claude session stores, then measures conversation payloads currently kept warm by this renderer.
-                    </p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="small"
-                    disabled={sessionScanBusy()}
-                    onClick={() => void scanSessions()}
-                  >
+                <DiagnosticsTimeline
+                  points={model()!.series}
+                  spikes={model()!.markers.filter((marker): marker is LocalDiagnostics.SpikeMarker => marker.type === "spike")}
+                  bounds={model()!.bounds}
+                />
+
+                <Show when={model()!.churn.length > 0}>
+                  <section aria-labelledby="diagnostics-churn-title" class="rounded-lg border border-border-weak-base p-3">
+                    <h2 id="diagnostics-churn-title" class="text-[13px] font-medium text-text-strong">Short-lived activity</h2>
+                    <ul class="mt-2 grid gap-1 text-[11px] text-text-weak">
+                      <For each={model()!.churn}>
+                        {(item) => (
+                          <li
+                            data-testid="diagnostics-churn"
+                            data-owner-id={item.ownerId}
+                            data-measurement={item.resourceMeasurement}
+                          >
+                            {snapshot()!.owners.find((owner) => owner.id === item.ownerId)?.label ?? item.ownerId}: {item.launched} launched, {item.exited} exited · resources {item.resourceMeasurement}
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </section>
+                </Show>
+
+                <p class="text-[10px] text-text-weak">
+                  Workspace model work shares the Claxedo server process series. Remote runtimes are excluded. Short-lived
+                  launches without a native sample remain visible as unmeasured churn, never as zero usage.
+                </p>
+              </div>
+            </div>
+
+            <div
+              role="tabpanel"
+              id="diagnostics-panel-sessions"
+              aria-labelledby="diagnostics-tab-sessions"
+              hidden={tab() !== "sessions"}
+            >
+              <div class="grid gap-4">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                  <p class="max-w-2xl text-[11px] text-text-weak">
+                    Triggered only. Scans Claxedo-owned session stores across local profiles and harnesses, then measures
+                    conversation payloads currently kept warm by this renderer.
+                  </p>
+                  <Button variant="ghost" size="small" disabled={sessionScanBusy()} onClick={() => void scanSessions()}>
                     {sessionScanBusy() ? "Scanning all sessions…" : sessionScan() ? "Scan again" : "Scan session memory"}
                   </Button>
                 </div>
 
                 <Show when={sessionScanError()}>
-                  {(value) => <p role="alert" class="m-3 rounded border border-border-critical-base px-3 py-2 text-[11px] text-text-on-critical-base">{value()}</p>}
+                  {(value) => (
+                    <p role="alert" class="rounded border border-border-critical-base px-3 py-2 text-[11px] text-text-on-critical-base">
+                      {value()}
+                    </p>
+                  )}
                 </Show>
 
                 <Show
                   when={sessionScan()}
                   fallback={
-                    <div class="p-3 text-[11px] text-text-weak">
-                      No background scan runs. Start one to rank large sessions, split chat/image/compaction bytes, and identify mounted or retained warm conversations.
-                    </div>
+                    <p class="rounded-lg border border-border-weak-base p-6 text-center text-[11px] text-text-weak">
+                      No background scan runs. Start one to weigh stored sessions, split chat/image/compaction bytes, and
+                      identify conversations still held warm by this renderer.
+                    </p>
                   }
                 >
                   {(scan) => (
-                    <div class="grid gap-3 p-3">
-                      <div class="grid grid-cols-4 overflow-hidden rounded border border-border-weak-base max-md:grid-cols-2">
+                    <>
+                      <section class="grid grid-cols-4 overflow-hidden rounded-lg border border-border-weak-base max-md:grid-cols-2">
                         <Metric label="Stored payload" value={formatBytes(scan().stored.totalBytes)} />
                         <Metric label="Warm payload estimate" value={formatBytes(scan().resident.totalBytes)} />
                         <Metric label="Stored images" value={formatBytes(scan().stored.imageBytes)} />
                         <Metric label="Stored compactions" value={formatBytes(scan().stored.compactionBytes)} />
-                      </div>
+                      </section>
 
-                      <div>
-                        <h3 class="text-[11px] font-medium uppercase tracking-wide text-text-weak">Scanned stores</h3>
-                        <div class="mt-1.5 flex flex-wrap gap-1.5">
-                          <For each={scan().sources}>
-                            {(source) => (
-                              <span
-                                data-testid="diagnostics-session-memory-source"
-                                data-state={source.state}
-                                class="rounded-full border border-border-weak-base px-2 py-1 text-[10px] text-text-weak"
-                              >
-                                {source.harness}{source.profile ? ` · ${source.profile}` : ""} · {source.state} · {source.sessionCount} sessions · {formatBytes(source.buckets.totalBytes)}
-                              </span>
-                            )}
-                          </For>
-                        </div>
-                      </div>
-
-                      <div class="rounded border border-border-weak-base">
-                        <div class="border-b border-border-weak-base px-2.5 py-2">
-                          <h3 class="text-[12px] font-medium text-text-strong">Warm sessions</h3>
-                          <p class="mt-0.5 text-[10px] text-text-weak">
-                            Mounted sessions are visible now. Retained sessions are unmounted conversation clients kept for fast switching and can still add memory overhead.
+                      <section aria-labelledby="diagnostics-sessions-title" class="rounded-lg border border-border-weak-base">
+                        <div class="border-b border-border-weak-base px-3 py-2">
+                          <h2 id="diagnostics-sessions-title" class="text-[13px] font-medium text-text-strong">Sessions by weight</h2>
+                          <p class="mt-0.5 text-[11px] text-text-weak">
+                            Ranked by serialized payload. Tagged sessions are also held in memory by this renderer —
+                            <span class="text-text-base"> Mounted</span> is on screen now, <span class="text-text-base">Cached</span> is
+                            retained unmounted for fast switching.
                           </p>
                         </div>
-                        <Show when={warmSessions().length > 0} fallback={<p class="p-3 text-[11px] text-text-weak">No conversations are currently warm in this renderer.</p>}>
-                          <ul class="divide-y divide-border-weak-base/60">
-                            <For each={warmSessions()}>
-                              {(session) => (
-                                <li data-testid="diagnostics-warm-session" class="grid grid-cols-[minmax(0,1fr)_auto] gap-3 px-2.5 py-2 text-[11px]">
-                                  <span class="min-w-0">
-                                    <span class="block truncate font-medium text-text-base">{session.sessionId}</span>
-                                    <span class="text-[10px] text-text-weak">
-                                      {session.mounted ? "Mounted" : "Retained unmounted"} · {session.messageCount} messages · warm rank {session.recency + 1}
-                                    </span>
+                        <Show when={sessions().length > 0} fallback={<p class="p-4 text-[12px] text-text-weak">No stored or warm sessions found.</p>}>
+                          <div
+                            aria-hidden="true"
+                            class="grid grid-cols-[minmax(0,1fr)_repeat(4,minmax(72px,auto))] gap-3 border-b border-border-weak-base bg-surface-base px-3 py-1.5 text-[9px] uppercase tracking-wide text-text-weak max-md:hidden"
+                          >
+                            <span />
+                            <span class="text-right">Total</span>
+                            <span class="text-right">Chat</span>
+                            <span class="text-right">Images</span>
+                            <span class="text-right">Compaction</span>
+                          </div>
+                          <For each={sessions().slice(0, sessionsShown())}>
+                            {(session, index) => (
+                              <div
+                                data-testid="diagnostics-session"
+                                data-session-id={session.sessionId}
+                                data-warm={session.warm ? "true" : undefined}
+                                class="grid grid-cols-[minmax(0,1fr)_repeat(4,minmax(72px,auto))] items-center gap-3 border-t border-border-weak-base/40 px-3 py-2 first:border-t-0 max-md:grid-cols-[minmax(0,1fr)_auto]"
+                              >
+                                <span class="min-w-0">
+                                  <span class="flex items-center gap-1.5 text-[12px] font-medium text-text-strong">
+                                    <span class="truncate">{String(index() + 1)}. {session.label}</span>
+                                    <Show when={session.warm}>
+                                      {(warm) => (
+                                        <span
+                                          data-testid="diagnostics-session-tag"
+                                          class="shrink-0 rounded border border-border-weak-base px-1.5 py-px text-[9px] font-medium uppercase tracking-wide text-text-weak"
+                                        >
+                                          {warm().mounted ? "Mounted" : "Cached"}
+                                        </span>
+                                      )}
+                                    </Show>
                                   </span>
-                                  <MemoryBuckets buckets={session.buckets} />
-                                </li>
-                              )}
-                            </For>
-                          </ul>
-                        </Show>
-                      </div>
-
-                      <div class="rounded border border-border-weak-base">
-                        <div class="border-b border-border-weak-base px-2.5 py-2">
-                          <h3 class="text-[12px] font-medium text-text-strong">Largest stored sessions</h3>
-                          <p class="mt-0.5 text-[10px] text-text-weak">All stores are analyzed; rows are ranked by serialized size and rendered in batches.</p>
-                        </div>
-                        <Show when={scan().sessions.length > 0} fallback={<p class="p-3 text-[11px] text-text-weak">No stored sessions found.</p>}>
-                          <ul class="divide-y divide-border-weak-base/60">
-                            <For each={storedSessions()}>
-                              {(session) => (
-                                <li data-testid="diagnostics-stored-session" class="grid grid-cols-[minmax(0,1fr)_auto] gap-3 px-2.5 py-2 text-[11px]">
-                                  <span class="min-w-0">
-                                    <span class="block truncate font-medium text-text-base">{session.title ?? session.sessionId}</span>
-                                    <span class="block truncate text-[10px] text-text-weak">
-                                      {session.harness}{session.profile ? ` · ${session.profile}` : ""} · {session.sessionId}
-                                    </span>
+                                  <span class="block truncate text-[10px] text-text-weak">
+                                    {session.warm ? `${session.warm.messageCount} messages · ` : ""}
+                                    {session.detail} · {session.sessionId}
                                   </span>
-                                  <MemoryBuckets buckets={session.buckets} />
-                                </li>
-                              )}
-                            </For>
-                          </ul>
-                          <Show when={storedSessionsShown() < scan().sessions.length}>
+                                </span>
+                                <Value headed label="Total" value={formatBytes(session.buckets.totalBytes)} />
+                                <Value headed label="Chat" value={formatBytes(session.buckets.chatBytes)} />
+                                <Value headed label="Images" value={formatBytes(session.buckets.imageBytes)} />
+                                <Value headed label="Compaction" value={formatBytes(session.buckets.compactionBytes)} />
+                              </div>
+                            )}
+                          </For>
+                          <Show when={sessionsShown() < sessions().length}>
                             <div class="border-t border-border-weak-base p-2 text-center">
-                              <Button variant="ghost" size="small" onClick={() => setStoredSessionsShown((value) => value + 100)}>
-                                Show 100 more
+                              <Button variant="ghost" size="small" onClick={() => setSessionsShown((value) => value + 25)}>
+                                Show 25 more ({String(sessions().length - sessionsShown())} remaining)
                               </Button>
                             </div>
                           </Show>
                         </Show>
-                      </div>
+                      </section>
 
                       <p class="text-[10px] text-text-weak">
-                        Completed in {formatDuration(scan().durationMs)}. Values estimate serialized payload, not exact JavaScript heap or decoded image/GPU memory; live overhead can be higher.
+                        Completed in {formatDuration(scan().durationMs)}. Values estimate serialized payload, not exact
+                        JavaScript heap or decoded image/GPU memory; live overhead can be higher.
                       </p>
-                    </div>
+                    </>
                   )}
                 </Show>
-              </section>
+              </div>
+            </div>
 
-              <DiagnosticsTimeline
-                points={model()!.series}
-                spikes={model()!.markers.filter((marker): marker is LocalDiagnostics.SpikeMarker => marker.type === "spike")}
-                bounds={model()!.bounds}
-              />
-
-              <Show when={model()!.markers.some((marker) => marker.type === "spike")}>
-                <section aria-labelledby="diagnostics-spikes-title" class="rounded-lg border border-border-weak-base p-3">
-                  <h2 id="diagnostics-spikes-title" class="text-[13px] font-medium text-text-strong">Attributed spikes</h2>
-                  <p class="mt-0.5 text-[11px] text-text-weak">Automatic resource jumps correlated with the active route, workbench surfaces, terminal residency, and focused session render size.</p>
-                  <ul class="mt-2 grid gap-1.5 text-[11px] text-text-weak">
-                    <For each={model()!.markers.filter((marker): marker is LocalDiagnostics.SpikeMarker => marker.type === "spike").toReversed()}>
-                      {(spike) => (
-                        <li data-testid="diagnostics-attributed-spike" class="rounded border border-border-weak-base px-2 py-1.5">
-                          <span class="font-medium text-text-base">{formatTime(spike.at)} · {describeSpike(spike, snapshot()!)}</span>
-                          <Show when={spike.context}>
-                            {(context) => <span class="ml-1">· {describeContext(context())}</span>}
-                          </Show>
-                        </li>
-                      )}
-                    </For>
-                  </ul>
-                </section>
-              </Show>
-
-              <section aria-labelledby="diagnostics-sources-title" class="rounded-lg border border-border-weak-base p-3">
-                <h2 id="diagnostics-sources-title" class="text-[13px] font-medium text-text-strong">Collector sources</h2>
-                <div class="mt-2 flex flex-wrap gap-2">
-                  <For each={snapshot()!.sources}>
-                    {(source) => (
-                      <span
-                        data-testid="diagnostics-source"
-                        data-source={source.source}
-                        data-state={source.state}
-                        class="rounded-full border border-border-weak-base px-2 py-1 text-[11px] text-text-weak"
-                      >
-                        {source.source} · {source.state} · {source.accuracy}
-                        {source.state !== "unsupported" && "lastSuccessAt" in source && source.lastSuccessAt
-                          ? ` · ${formatTime(source.lastSuccessAt)}`
-                          : ""}
-                      </span>
-                    )}
-                  </For>
-                </div>
-                <p class="mt-2 text-[11px] text-text-weak">
-                  Workspace model work shares the Claxedo server process series. Remote runtimes are excluded. Short-lived
-                  launches without a native sample remain visible as unmeasured churn, never as zero usage.
-                </p>
-              </section>
-
+            <div
+              role="tabpanel"
+              id="diagnostics-panel-processes"
+              aria-labelledby="diagnostics-tab-processes"
+              hidden={tab() !== "processes"}
+            >
               <section aria-labelledby="diagnostics-contributors-title" class="rounded-lg border border-border-weak-base">
                 <div class="border-b border-border-weak-base px-3 py-2">
                   <h2 id="diagnostics-contributors-title" class="text-[13px] font-medium text-text-strong">Ranked contributors</h2>
@@ -457,26 +507,7 @@ export function DialogProcessDiagnostics(props: {
                   </For>
                 </Show>
               </section>
-
-              <Show when={model()!.churn.length > 0}>
-                <section aria-labelledby="diagnostics-churn-title" class="rounded-lg border border-border-weak-base p-3">
-                  <h2 id="diagnostics-churn-title" class="text-[13px] font-medium text-text-strong">Short-lived activity</h2>
-                  <ul class="mt-2 grid gap-1 text-[11px] text-text-weak">
-                    <For each={model()!.churn}>
-                      {(item) => (
-                        <li
-                          data-testid="diagnostics-churn"
-                          data-owner-id={item.ownerId}
-                          data-measurement={item.resourceMeasurement}
-                        >
-                          {snapshot()!.owners.find((owner) => owner.id === item.ownerId)?.label ?? item.ownerId}: {item.launched} launched, {item.exited} exited · resources {item.resourceMeasurement}
-                        </li>
-                      )}
-                    </For>
-                  </ul>
-                </section>
-              </Show>
-
+            </div>
           </div>
         </Show>
         <p class="sr-only" aria-live="polite">{announcement()}</p>
@@ -494,31 +525,13 @@ function Metric(props: { label: string; value: string }) {
   )
 }
 
-function Value(props: { label: string; value: string }) {
+function Value(props: { label: string; value: string; headed?: boolean }) {
   return (
     <span class="text-right max-md:hidden">
-      <span class="block text-[9px] uppercase text-text-weak">{props.label}</span>
+      {/* Under a column header the per-row label is redundant ink, but it still has
+          to name the number for anyone reading the row on its own. */}
+      <span class={props.headed ? "sr-only" : "block text-[9px] uppercase text-text-weak"}>{props.label}</span>
       <span class="block text-[11px] tabular-nums text-text-base">{props.value}</span>
-    </span>
-  )
-}
-
-function MemoryBuckets(props: { buckets: LocalDiagnostics.SessionMemoryBuckets }) {
-  return (
-    <span class="grid min-w-[270px] grid-cols-4 gap-2 text-right tabular-nums max-md:min-w-[220px]">
-      <Bucket label="Total" value={props.buckets.totalBytes} strong />
-      <Bucket label="Chat" value={props.buckets.chatBytes} />
-      <Bucket label="Images" value={props.buckets.imageBytes} />
-      <Bucket label="Compaction" value={props.buckets.compactionBytes} />
-    </span>
-  )
-}
-
-function Bucket(props: { label: string; value: number; strong?: boolean }) {
-  return (
-    <span>
-      <span class="block text-[9px] uppercase text-text-weak">{props.label}</span>
-      <span class={`block text-[10px] ${props.strong ? "font-medium text-text-strong" : "text-text-base"}`}>{formatBytes(props.value)}</span>
     </span>
   )
 }
@@ -575,33 +588,6 @@ function sourceTransition(
 
 function formatCpu(value: number | undefined) {
   return value === undefined ? "Unavailable" : `${value.toFixed(value >= 10 ? 0 : 1)}%`
-}
-
-function describeSpike(spike: LocalDiagnostics.SpikeMarker, snapshot: LocalDiagnostics.RetainedSnapshot) {
-  const owner = spike.ownerId
-    ? snapshot.owners.find((candidate) => candidate.id === spike.ownerId)?.label ?? spike.ownerId
-    : snapshot.processes.find((process) => process.identity.id === spike.processId)?.label ?? spike.processId
-  return spike.metric === "cpu"
-    ? `${owner} CPU ${formatCpu(spike.value)} (${formatCpu(spike.delta)} jump)`
-    : `${owner} RSS ${formatBytes(spike.value)} (+${formatBytes(spike.delta)})`
-}
-
-function describeContext(context: LocalDiagnostics.Context) {
-  const workbench = context.workbench
-  const panel = context.workspacePanel
-  const session = context.sessionRender
-  return [
-    context.screen,
-    workbench.focusedSurface ? `surface ${workbench.focusedSurface}` : undefined,
-    workbench.focusedPaneId ? `pane ${workbench.focusedPaneId}` : undefined,
-    `${workbench.paneCount} layout pane${workbench.paneCount === 1 ? "" : "s"}`,
-    workbench.stashedSurfaceCount ? `${workbench.stashedSurfaceCount} stashed surface${workbench.stashedSurfaceCount === 1 ? "" : "s"}` : undefined,
-    `${context.terminalTabs.total} mounted terminal tab${context.terminalTabs.total === 1 ? "" : "s"} (${context.terminalTabs.paneBound} pane-bound, ${context.terminalTabs.stashed} stashed)`,
-    panel.open ? `workspace panel ${[panel.mode, panel.tab, panel.navigator].filter(Boolean).join("/")}` : "workspace panel closed",
-    session ? `rendered session ${session.sessionId}: DOM ${session.domNodeCount} · ${session.mountedTimelineRowCount}/${session.timelineRowCount} timeline rows mounted · ${session.messageCount} messages` : undefined,
-    context.sessionId ? `session ${context.sessionId}` : undefined,
-    context.workspaceId ? `workspace ${context.workspaceId}` : undefined,
-  ].filter((item): item is string => !!item).join(" · ")
 }
 
 function formatBytes(value: number | undefined) {
