@@ -9,12 +9,12 @@ import {
 
 describe("first-turn recovery", () => {
   test.each([
-    ["credential", "Reconnect provider"],
-    ["harness", "Try again"],
-    ["model", "Switch model and retry"],
-    ["workspace", "Retry"],
+    ["credential", "Reconnect and resend"],
+    ["harness", "Resend last prompt"],
+    ["model", "Switch model and resend"],
+    ["workspace", "Resend last prompt"],
     ["session", "Start a new session"],
-    ["unknown", "Try again"],
+    ["unknown", "Resend last prompt"],
   ] as const)("maps %s to one recovery action", (kind, label) => {
     expect(sessionRecovery(kind)).toEqual(expect.objectContaining({ kind, label }))
   })
@@ -65,10 +65,9 @@ describe("first-turn recovery", () => {
     ).toBe("Anthropic rejected the credential (401). Check your API key in Settings, then try again.")
   })
 
-  test("a bodyless transport failure names the provider and the failure mode", () => {
-    // The minimal case still gets specific copy, never a shrug.
+  test("a status-less failure does not claim the provider was unreachable", () => {
     expect(sessionRecoveryDescription("unknown", { name: "UnknownError", data: {} }, { providerID: "anthropic" }))
-      .toBe("Couldn't reach Anthropic — the request never got a response. Check your connection and try again.")
+      .toBe("The agent returned an error before completing this turn. Resend the last prompt.")
   })
 
   // A 401 classifies as `credential`, whose class copy is strictly vaguer than

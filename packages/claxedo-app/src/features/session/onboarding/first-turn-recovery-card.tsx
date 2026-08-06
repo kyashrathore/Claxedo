@@ -18,28 +18,31 @@ function RawDetail(props: { detail: string }) {
   }
 
   return (
-    <div class="mt-1 min-w-0">
-      <div class="group flex min-w-0 items-start gap-1">
+    <div class="mt-2 min-w-0">
+      <div class="group flex min-w-0 items-center gap-1" data-slot="turn-error-detail-header">
         <button
           type="button"
-          class="flex min-w-0 flex-1 items-start gap-1 text-left"
+          class="flex min-h-6 min-w-0 flex-1 items-center gap-1 text-left"
           aria-expanded={open()}
           onClick={() => setOpen((value) => !value)}
         >
           <Icon
             name="chevron-right"
             size="small"
-            class="mt-0.5 shrink-0 text-icon-weak-base transition-transform duration-150"
+            class="shrink-0 text-icon-weak-base transition-transform duration-150"
             style={{ transform: open() ? "rotate(90deg)" : "rotate(0deg)" }}
           />
-          <span class="min-w-0 flex-1 line-clamp-2 break-words font-mono text-12-regular text-text-weaker">{props.detail}</span>
+          <span class="min-w-0 flex-1 line-clamp-2 break-words font-mono text-12-regular text-text-weaker">
+            {open() ? "Error details" : props.detail}
+          </span>
         </button>
         <Show when={open()}>
           <Tooltip value={copied() ? "Copied" : "Copy error"} placement="top" gutter={4}>
             <IconButton
               icon={copied() ? "check" : "copy"}
-              size="normal"
+              size="small"
               variant="ghost"
+              data-icon-interaction="subdued"
               onMouseDown={(e) => e.preventDefault()}
               onClick={(e) => {
                 e.stopPropagation()
@@ -51,7 +54,7 @@ function RawDetail(props: { detail: string }) {
         </Show>
       </div>
       <Show when={open()}>
-        <div class="mt-1 whitespace-pre-wrap break-words pl-[20px] font-mono text-12-regular text-text-weaker select-text">
+        <div class="mt-1 whitespace-pre-wrap break-words pl-5 font-mono text-12-regular text-text-weaker select-text" data-slot="turn-error-detail-body">
           {props.detail}
         </div>
       </Show>
@@ -77,6 +80,11 @@ export function FirstTurnRecoveryCard(props: {
   const description = () =>
     props.summary ??
     sessionRecoveryDescription(props.kind, props.error, { providerID: props.providerID, modelID: props.modelID })
+  const detail = () => {
+    const value = props.detail?.trim()
+    if (!value || value === description().trim()) return
+    return value
+  }
   const [pending, setPending] = createSignal(false)
   const act = async () => {
     if (pending()) return
@@ -89,13 +97,13 @@ export function FirstTurnRecoveryCard(props: {
   }
 
   return (
-    <div class="rounded-lg border border-border-weak-base bg-transparent px-4 py-3" data-testid="first-turn-recovery-card" data-recovery-class={props.kind}>
+    <div class="mt-2 rounded-lg border border-border-weak-base bg-transparent px-4 py-3" data-testid="first-turn-recovery-card" data-recovery-class={props.kind}>
       <div class="flex items-start gap-3">
         <Icon name="warning" class="mt-0.5 size-4 shrink-0 text-icon-warning-base" />
         <div class="min-w-0 flex-1">
           <div class="text-14-medium text-text-strong">{recovery().title}</div>
           <div class="mt-1 text-13-regular text-text-base">{description()}</div>
-          <Show when={props.detail}>{(detail) => <RawDetail detail={detail()} />}</Show>
+          <Show when={detail()}>{(value) => <RawDetail detail={value()} />}</Show>
           <Button
             class="mt-3"
             size="small"

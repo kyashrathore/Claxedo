@@ -36,29 +36,27 @@ describe("provider error detail", () => {
     expect(summary).toBe("Anthropic is rate limiting this key (429). Wait a moment and try again, or use a different key.")
   })
 
-  test("a bodyless network error names the provider and the failure mode", () => {
+  test("a status-less error does not invent a network failure", () => {
     const { summary, detail } = providerErrorDetail(
       { name: "UnknownError", data: { message: "fetch failed" } },
       { providerID: "anthropic" },
     )
 
-    expect(summary).toBe("Couldn't reach Anthropic — the request never got a response. Check your connection and try again.")
+    expect(summary).toBe("The agent returned an error before completing this turn. Check the details below, then resend the last prompt.")
     expect(detail).toBe("fetch failed")
   })
 
   // The banned generic-shrug state: even an error carrying nothing at all must
   // produce copy naming what we know.
-  test("an error with nothing reported still yields specific transport copy", () => {
+  test("an error with nothing reported keeps the diagnosis honest", () => {
     const { summary, detail } = providerErrorDetail({ name: "UnknownError", data: {} }, { providerID: "anthropic" })
-    expect(summary).toBe("Couldn't reach Anthropic — the request never got a response. Check your connection and try again.")
+    expect(summary).toBe("The agent returned an error before completing this turn. Resend the last prompt.")
     expect(detail).toBeUndefined()
   })
 
-  test("falls back to a neutral noun when even the provider is unknown, never a shrug", () => {
+  test("does not expose an internal harness id for status-less failures", () => {
     const { summary } = providerErrorDetail({ name: "UnknownError", data: {} })
-    expect(summary).toBe(
-      "Couldn't reach the model provider — the request never got a response. Check your connection and try again.",
-    )
+    expect(summary).toBe("The agent returned an error before completing this turn. Resend the last prompt.")
     expect(summary).not.toMatch(/something went wrong|no more detail/i)
   })
 
@@ -113,5 +111,11 @@ describe("relay provider label", () => {
     expect(providerLabel({ providerID: "anthropic", relayLabel: "Console" })).toBe("Anthropic")
     expect(providerLabel({ providerID: "some-custom-provider" })).toBe("some-custom-provider")
     expect(providerLabel({})).toBeUndefined()
+  })
+
+  test("uses product names for internal harness provider ids", () => {
+    expect(providerLabel({ providerID: "codex-app-server" })).toBe("Codex")
+    expect(providerLabel({ providerID: "claude-acp" })).toBe("Claude")
+    expect(providerLabel({ providerID: "cursor-sdk" })).toBe("Cursor")
   })
 })

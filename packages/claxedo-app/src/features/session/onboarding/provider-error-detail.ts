@@ -114,6 +114,12 @@ const PROVIDER_NAMES: Record<string, string> = {
   groq: "Groq",
   mistral: "Mistral",
   xai: "xAI",
+  "claude-acp": "Claude",
+  "claude-sdk": "Claude",
+  "codex-acp": "Codex",
+  "codex-app-server": "Codex",
+  "cursor-acp": "Cursor",
+  "cursor-sdk": "Cursor",
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -143,24 +149,6 @@ export function providerErrorDetail(
   const body = text(data.responseBody)
   const provider = providerLabel({ providerID: context?.providerID, modelID: context?.modelID, relayLabel })
 
-  // Summary: who failed, what kind of failure, and what to do about it. There
-  // is no generic-shrug branch — every level of the hierarchy names something
-  // concrete:
-  //   full        status + provider's message
-  //   partial     status only
-  //   transport   no status at all: a named provider and a named failure mode
-  const summary = (() => {
-    const who = provider ?? "the model provider"
-    if (status !== undefined) {
-      const head = statusSummary(status)
-      const named = provider ? head.replace(/^The model provider/, provider) : head
-      return `${named} (${status}). ${repair(status)}`
-    }
-    // Transport level: the request never got a response. Say exactly that, and
-    // never dress it up as a generic failure.
-    return `Couldn't reach ${who} — the request never got a response. Check your connection and try again.`
-  })()
-
   // Detail: the provider's own words, verbatim, nothing re-derived. Message and
   // body are both kept — the body often carries the machine-readable code the
   // message omits — but never duplicated when the message already is the body.
@@ -169,6 +157,21 @@ export function providerErrorDetail(
   if (body && body !== message) parts.push(body)
   const detail = parts.length ? parts.join("\n") : undefined
 
+  // Summary: who failed, what kind of failure, and what to do about it. There
+  // is no generic-shrug branch. A real HTTP status supports a provider-level
+  // diagnosis; a status-less error does not prove the provider was unreachable.
+  const summary = (() => {
+    const who = provider ?? "the model provider"
+    if (status !== undefined) {
+      const head = statusSummary(status)
+      const named = provider ? head.replace(/^The model provider/, provider) : head
+      return `${named} (${status}). ${repair(status)}`
+    }
+    if (detail) {
+      return "The agent returned an error before completing this turn. Check the details below, then resend the last prompt."
+    }
+    return "The agent returned an error before completing this turn. Resend the last prompt."
+  })()
+
   return { summary, detail, ...(status !== undefined ? { status } : {}) }
 }
-

@@ -4,12 +4,12 @@ import { FirstTurnRecoveryCard } from "./first-turn-recovery-card"
 
 describe("FirstTurnRecoveryCard", () => {
   test.each([
-    ["credential", "Reconnect provider"],
-    ["harness", "Try again"],
-    ["model", "Switch model and retry"],
-    ["workspace", "Retry"],
+    ["credential", "Reconnect and resend"],
+    ["harness", "Resend last prompt"],
+    ["model", "Switch model and resend"],
+    ["workspace", "Resend last prompt"],
     ["session", "Start a new session"],
-    ["unknown", "Try again"],
+    ["unknown", "Resend last prompt"],
   ] as const)("renders exactly one %s recovery action", (kind, label) => {
     const action = vi.fn()
     const view = render(() => <FirstTurnRecoveryCard kind={kind} detail="detail" onAction={action} />)
@@ -26,7 +26,7 @@ describe("FirstTurnRecoveryCard", () => {
       complete = resolve
     }))
     const view = render(() => <FirstTurnRecoveryCard kind="unknown" detail="detail" onAction={action} />)
-    const button = view.getByRole("button", { name: "Try again" })
+    const button = view.getByRole("button", { name: "Resend last prompt" })
 
     fireEvent.click(button)
     fireEvent.click(button)
@@ -56,7 +56,7 @@ describe("FirstTurnRecoveryCard", () => {
     expect(view.container.textContent).not.toMatch(/no more detail was reported|something went wrong/i)
   })
 
-  test("keeps the raw provider body collapsed until the disclosure is opened", () => {
+  test("shows the raw provider detail once when the disclosure is opened", () => {
     const body = '{"error":{"type":"authentication_error"}}'
     const view = render(() => (
       <FirstTurnRecoveryCard
@@ -72,11 +72,26 @@ describe("FirstTurnRecoveryCard", () => {
     expect(disclosure).toHaveAttribute("aria-expanded", "false")
     fireEvent.click(disclosure!)
     expect(disclosure).toHaveAttribute("aria-expanded", "true")
-    // Verbatim: the provider's own body, not a re-derived sentence.
-    expect(view.container.textContent).toContain(body)
+    expect(disclosure).toHaveTextContent("Error details")
+    expect(disclosure).not.toHaveTextContent(body)
+    expect(view.container.textContent?.split(body)).toHaveLength(2)
+    expect(view.container.querySelector('[data-slot="turn-error-detail-header"]')).toHaveClass("items-center")
+    expect(view.getByRole("button", { name: "Copy error" })).toHaveAttribute("data-size", "small")
   })
 
-  test("a detail-less wire error still renders specific transport copy, never a shrug", () => {
+  test("does not offer a disclosure when the detail only repeats the description", () => {
+    const view = render(() => (
+      <FirstTurnRecoveryCard
+        kind="unknown"
+        summary="The agent returned an error."
+        detail="The agent returned an error."
+        onAction={vi.fn()}
+      />
+    ))
+    expect(view.container.querySelector("button[aria-expanded]")).toBeNull()
+  })
+
+  test("a detail-less wire error keeps the diagnosis honest", () => {
     const view = render(() => (
       <FirstTurnRecoveryCard
         kind="unknown"
@@ -85,9 +100,12 @@ describe("FirstTurnRecoveryCard", () => {
         onAction={vi.fn()}
       />
     ))
-    expect(view.container.textContent).toContain(
-      "Couldn't reach Anthropic — the request never got a response. Check your connection and try again.",
-    )
+    expect(view.container.textContent).toContain("The agent returned an error before completing this turn. Resend the last prompt.")
     expect(view.container.textContent).not.toMatch(/no more detail was reported|something went wrong/i)
+  })
+
+  test("keeps recovery cards separated from the preceding timeline row", () => {
+    const view = render(() => <FirstTurnRecoveryCard kind="unknown" detail="detail" onAction={vi.fn()} />)
+    expect(view.getByTestId("first-turn-recovery-card")).toHaveClass("mt-2")
   })
 })
