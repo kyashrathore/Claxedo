@@ -31,6 +31,13 @@ export const CONTENT_TYPES = [
 
 export type ContentType = typeof CONTENT_TYPES[number]
 
+/**
+ * Content types that refuse to close. `closeContent` bails on these, so every
+ * other reaper (LRU eviction, persisted-state validation) has to exempt them
+ * too or the two paths disagree about which tabs can disappear.
+ */
+export const PINNED_CONTENT_TYPES: ReadonlySet<ContentType> = new Set(["pages-index"])
+
 export type ContentScope = "directory" | "global"
 export type DraftSessionPanel = "attach" | "create"
 

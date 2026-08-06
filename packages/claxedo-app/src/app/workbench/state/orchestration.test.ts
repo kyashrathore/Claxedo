@@ -7,6 +7,7 @@ import { emptyClaxedoState } from "./persistence"
 import { createMetadataSlice } from "./metadata"
 import { createTerminalSlice } from "./terminal"
 import { createLayoutOrchestration } from "./orchestration"
+import { MAX_OPEN_SURFACES } from "./surface-budget"
 
 /**
  * Build a minimal fake `UseWorkbench` over a SolidJS store that mirrors the
@@ -574,5 +575,139 @@ describe("state/orchestration", () => {
     expect(a).toBe(b)
     expect(meta.get(a)?.directory).toBe("/new/dir")
     expect(meta.get(a)?.filePath).toBe("/path/file.md")
+  })
+
+  describe("surface budget", () => {
+    /** Open `count` distinct sessions, oldest first. */
+    const openSessions = (
+      layout: ReturnType<typeof makeFixture>["layout"],
+      count: number,
+      opts?: { focus?: boolean },
+    ) =>
+      Array.from({ length: count }, (_, i) =>
+        layout.openSession("/work/foo", `ses_${i + 1}`, `Session ${i + 1}`, {
+          sessionRef: localSessionRef(`ses_${i + 1}`),
+          ...opts,
+        }),
+      )
+
+    test("opening past the cap evicts the least-recently-used surface", () => {
+      const { layout, getState, meta } = makeFixture()
+      const opened = openSessions(layout, MAX_OPEN_SURFACES)
+      expect(getState().contentIds).toHaveLength(MAX_OPEN_SURFACES)
+
+      const extra = layout.openSession("/work/foo", "ses_extra", "Extra", {
+        sessionRef: localSessionRef("ses_extra"),
+      })
+
+      expect(getState().contentIds).toHaveLength(MAX_OPEN_SURFACES)
+      expect(getState().contentIds).toContain(extra)
+      // The first session opened is the one that has gone the longest unused.
+      expect(getState().contentIds).not.toContain(opened[0])
+      expect(meta.get(opened[0]!)).toBeUndefined()
+      expect(meta.get(opened[1]!)).toBeDefined()
+    })
+
+    test("eviction follows use, not open order", () => {
+      const { layout, getState } = makeFixture()
+      const opened = openSessions(layout, MAX_OPEN_SURFACES)
+      // Touch the oldest surface so the second-oldest becomes the LRU.
+      layout.showContent(opened[0]!)
+
+      layout.openSession("/work/foo", "ses_extra", "Extra", {
+        sessionRef: localSessionRef("ses_extra"),
+      })
+
+      expect(getState().contentIds).toContain(opened[0])
+      expect(getState().contentIds).not.toContain(opened[1])
+    })
+
+    test("a background tab does not evict the surface the user is looking at", () => {
+      const { layout, getState, wb } = makeFixture()
+      const opened = openSessions(layout, MAX_OPEN_SURFACES)
+      const focused = opened.at(-1)!
+      expect(wb.selectors.focusedContent()).toBe(focused)
+
+      // Batch auto-tab adds surfaces without stealing focus.
+      layout.openSession("/work/foo", "ses_bg", "Background", {
+        sessionRef: localSessionRef("ses_bg"),
+        focus: false,
+      })
+
+      expect(getState().contentIds).toContain(focused)
+      expect(wb.selectors.focusedContent()).toBe(focused)
+      expect(getState().contentIds).toHaveLength(MAX_OPEN_SURFACES)
+    })
+
+    test("never evicts either half of a split", () => {
+      const { layout, getState, wb } = makeFixture()
+      const left = layout.openSession("/work/left", "ses_left", "Left", {
+        sessionRef: localSessionRef("ses_left", "/work/left"),
+      })
+      const right = layout.openSession("/work/right", "ses_right", "Right", {
+        sessionRef: localSessionRef("ses_right", "/work/right"),
+      })
+      layout.showContent(left)
+      layout.splitContent(wb.selectors.contentPane(left)!, "right" satisfies Edge, right)
+      expect(wb.selectors.visiblePanes().length).toBe(2)
+
+      // Background adds — `navigation.show` would collapse the split, which is
+      // its own documented behaviour and would make both halves unmounted (and
+      // so legitimately evictable). Auto-tab does not focus, so the split holds.
+      openSessions(layout, MAX_OPEN_SURFACES * 2, { focus: false })
+
+      expect(wb.selectors.visiblePanes().length).toBe(2)
+      expect(getState().contentIds).toContain(left)
+      expect(getState().contentIds).toContain(right)
+      expect(getState().contentIds).toHaveLength(MAX_OPEN_SURFACES)
+    })
+
+    test("no pane is ever left pointing at an evicted surface", () => {
+      const { layout, getState } = makeFixture()
+      openSessions(layout, MAX_OPEN_SURFACES * 3)
+
+      const alive = new Set(getState().contentIds)
+      for (const pane of getState().panes) {
+        if (pane.contentId === null) continue
+        expect(alive.has(pane.contentId)).toBe(true)
+      }
+    })
+
+    test("never evicts a pinned pages-index surface", () => {
+      const { layout, getState, meta } = makeFixture()
+      const pinned = layout.openPagesIndex("/work/foo")
+
+      // Push it far past the LRU boundary.
+      openSessions(layout, MAX_OPEN_SURFACES * 2)
+
+      expect(getState().contentIds).toContain(pinned)
+      expect(meta.get(pinned)?.type).toBe("pages-index")
+      expect(getState().contentIds).toHaveLength(MAX_OPEN_SURFACES)
+    })
+
+    test("reopening an existing surface never evicts anything", () => {
+      const { layout, getState } = makeFixture()
+      const opened = openSessions(layout, MAX_OPEN_SURFACES)
+      const before = [...getState().contentIds]
+
+      const again = layout.openSession("/work/foo", "ses_1", "Session 1", {
+        sessionRef: localSessionRef("ses_1"),
+      })
+
+      expect(again).toBe(opened[0])
+      expect(getState().contentIds).toEqual(before)
+    })
+
+    test("evicting a terminal releases its terminal-slice state", () => {
+      const { layout, getState, terminal } = makeFixture()
+      const term = layout.openTerminal("/work/foo", "pty_1", "Terminal")
+      terminal.own(term, "pty_1")
+      expect(terminal.owner("pty_1")).toBe(term)
+
+      openSessions(layout, MAX_OPEN_SURFACES * 2)
+
+      expect(getState().contentIds).not.toContain(term)
+      expect(terminal.owner("pty_1")).toBeUndefined()
+    })
   })
 })

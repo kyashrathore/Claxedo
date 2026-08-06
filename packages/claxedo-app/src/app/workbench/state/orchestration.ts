@@ -10,6 +10,8 @@
 // and lives in `state.meta`.
 
 import type { ContentMeta, ContentPayload, ContentType } from "./types"
+import { PINNED_CONTENT_TYPES } from "./types"
+import { selectEvictableSurfaces } from "./surface-budget"
 import type { Edge, UseWorkbench } from "../workbench/index"
 import type { MetadataSliceApi } from "./metadata"
 import type { TerminalSliceApi } from "./terminal"
@@ -24,7 +26,7 @@ import { markRouteIntentClosed } from "./route-intent"
 
 type WorkspaceDirectoryRef = string
 
-export type ContentCloseReason = "user" | "panic" | "merge"
+export type ContentCloseReason = "user" | "panic" | "merge" | "evict"
 
 export type CleanupHook = (id: string, meta: ContentMeta | undefined, reason: ContentCloseReason) => void
 export type OpenSessionOptions = { focus?: boolean; sessionRef?: SessionRef }
@@ -60,7 +62,7 @@ export type LayoutOrchestrationApi = {
   _cleanupOnClose(id: string, reason: ContentCloseReason): void
 }
 
-const PINNED_TYPES: ReadonlySet<ContentType> = new Set(["pages-index"])
+const PINNED_TYPES = PINNED_CONTENT_TYPES
 
 const newId = (type: ContentType) => {
   const prefix =
@@ -118,7 +120,7 @@ export function createLayoutOrchestration(input: {
     const { meta: nextMeta, payload } = build()
     if (payload) nextMeta.content = payload
     meta.upsert(nextMeta)
-    wb.contents.add(nextMeta.id)
+    addContent(nextMeta.id)
     if (opts?.focus !== false) wb.navigation.show(nextMeta.id)
     return nextMeta.id
   }
@@ -187,6 +189,38 @@ export function createLayoutOrchestration(input: {
     }
     cleanupHook?.(id, m, reason)
     meta.remove(id)
+  }
+
+  /**
+   * Add a content to the workbench and bring the open-surface count back within
+   * budget. Every `openX` funnels through here, so the LRU cap holds regardless
+   * of which surface type crossed the line — and regardless of whether the new
+   * tab took focus, since `contents.add` already lands it at the head of
+   * `contentRecency` and it is therefore never its own eviction victim.
+   */
+  const addContent = (id: string) => {
+    wb.contents.add(id)
+
+    const state = wb.state
+    const evictable = selectEvictableSurfaces({
+      contentIds: state.contentIds,
+      contentRecency: state.contentRecency,
+      mountedIds: state.panes
+        .map((pane) => pane.contentId)
+        .filter((contentId): contentId is string => !!contentId),
+      pinnedIds: state.contentIds.filter((contentId) => {
+        const m = meta.get(contentId)
+        return !!m && PINNED_TYPES.has(m.type)
+      }),
+    })
+
+    for (const evicted of evictable) {
+      // Deliberately not `closeContent`: eviction is not user intent, so it must
+      // not record a route-intent close (that would stop the route layer from
+      // ever re-materializing the session the user navigates back to).
+      wb.contents.remove(evicted)
+      _cleanupOnClose(evicted, "evict")
+    }
   }
 
   return {
@@ -418,7 +452,7 @@ export function createLayoutOrchestration(input: {
         },
       }
       meta.upsert(next)
-      wb.contents.add(id)
+      addContent(id)
       wb.navigation.show(id)
       return id
     },
@@ -470,7 +504,7 @@ export function createLayoutOrchestration(input: {
       }
       const id = newId("workgraph")
       meta.upsert({ id, type: "workgraph", scope: "global", content: { type: "workgraph", title: "WorkGraph" } })
-      wb.contents.add(id)
+      addContent(id)
       wb.navigation.show(id)
       return id
     },

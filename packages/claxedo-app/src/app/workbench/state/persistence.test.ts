@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { emptyClaxedoState, validate } from "./persistence"
+import { MAX_OPEN_SURFACES } from "./surface-budget"
 
 const localSessionRef = (sessionId: string) => ({
   sessionId,
@@ -263,5 +264,114 @@ describe("state/persistence", () => {
     expect(result.dirty).toBe(false)
     expect(result.state.meta.marketplace_1?.type).toBe("marketplace")
     expect(result.state.meta.marketplace_1?.content?.type).toBe("marketplace")
+  })
+
+  describe("surface budget", () => {
+    const sessionAt = (index: number) => ({
+      id: `content_${index}`,
+      type: "session" as const,
+      scope: "directory" as const,
+      directory: "/work/foo",
+      sessionId: `ses_${index}`,
+      content: {
+        type: "session" as const,
+        directory: "/work/foo",
+        sessionId: `ses_${index}`,
+        sessionRef: localSessionRef(`ses_${index}`),
+      },
+    })
+
+    /** `count` session surfaces, MRU-first: content_1 newest, content_N oldest. */
+    const stateWithSessions = (count: number) => {
+      const contentIds = Array.from({ length: count }, (_, i) => `content_${i + 1}`)
+      const input = emptyClaxedoState()
+      input.workbench = {
+        panes: [{ id: "pane_1", contentId: contentIds[0] ?? null }],
+        split: { direction: "h", sizes: [1], root: { t: "leaf", id: "pane_1" } },
+        contentIds,
+        contentRecency: [...contentIds],
+        focusedPaneId: "pane_1",
+        layoutSnapshots: {},
+      }
+      input.meta = Object.fromEntries(
+        contentIds.map((id, i) => [id, sessionAt(i + 1)]),
+      )
+      return input
+    }
+
+    test("keeps a persisted blob that is already within budget intact", () => {
+      const result = validate(stateWithSessions(MAX_OPEN_SURFACES))
+
+      expect(result.dirty).toBe(false)
+      expect(result.state.workbench.contentIds).toHaveLength(MAX_OPEN_SURFACES)
+    })
+
+    test("trims an over-budget blob down to the LRU cap", () => {
+      // The real-world shape this exists for: a long-lived profile that
+      // accumulated every session it ever opened, most of them dead.
+      const result = validate(stateWithSessions(151))
+
+      expect(result.dirty).toBe(true)
+      expect(result.state.workbench.contentIds).toHaveLength(MAX_OPEN_SURFACES)
+      // The 10 most recent survive; everything older is gone.
+      expect(result.state.workbench.contentIds).toEqual(
+        Array.from({ length: MAX_OPEN_SURFACES }, (_, i) => `content_${i + 1}`),
+      )
+      expect(result.state.workbench.contentIds).not.toContain("content_11")
+      expect(result.state.workbench.contentRecency).toHaveLength(MAX_OPEN_SURFACES)
+    })
+
+    test("drops the meta of every evicted surface", () => {
+      const result = validate(stateWithSessions(151))
+
+      expect(Object.keys(result.state.meta)).toHaveLength(MAX_OPEN_SURFACES)
+      expect(result.state.meta.content_11).toBeUndefined()
+      expect(result.state.meta.content_151).toBeUndefined()
+      expect(result.state.meta.content_1?.sessionId).toBe("ses_1")
+    })
+
+    test("never evicts a mounted surface, however stale", () => {
+      const input = stateWithSessions(151)
+      // The oldest surface is the one sitting in the pane.
+      input.workbench.panes = [{ id: "pane_1", contentId: "content_151" }]
+
+      const result = validate(input)
+
+      expect(result.state.workbench.contentIds).toContain("content_151")
+      expect(result.state.workbench.panes[0]?.contentId).toBe("content_151")
+      expect(result.state.workbench.contentIds).toHaveLength(MAX_OPEN_SURFACES)
+      expect(result.state.meta.content_151?.sessionId).toBe("ses_151")
+    })
+
+    test("never evicts a pinned pages-index surface", () => {
+      const input = stateWithSessions(151)
+      input.meta.content_151 = {
+        id: "content_151",
+        type: "pages-index",
+        scope: "directory",
+        directory: "/work/foo",
+      }
+
+      const result = validate(input)
+
+      expect(result.state.workbench.contentIds).toContain("content_151")
+      expect(result.state.meta.content_151?.type).toBe("pages-index")
+      expect(result.state.workbench.contentIds).toHaveLength(MAX_OPEN_SURFACES)
+    })
+
+    test("spends the budget on live surfaces, not on junk it was going to drop anyway", () => {
+      const input = stateWithSessions(MAX_OPEN_SURFACES)
+      // Five ids the earlier passes remove: no meta at all. If the budget ran
+      // before those drops it would evict five live sessions to make room.
+      const junk = ["junk_1", "junk_2", "junk_3", "junk_4", "junk_5"]
+      input.workbench.contentIds = [...junk, ...input.workbench.contentIds]
+      input.workbench.contentRecency = [...junk, ...input.workbench.contentRecency]
+
+      const result = validate(input)
+
+      expect(result.state.workbench.contentIds).toEqual(
+        Array.from({ length: MAX_OPEN_SURFACES }, (_, i) => `content_${i + 1}`),
+      )
+    })
   })
 })

@@ -3,7 +3,8 @@
 import { constructWorkbenchState, validate as validateWorkbench } from "../workbench/index"
 import type { WorkbenchState } from "../workbench/index"
 import { createWorkspacePanel, type WorkspacePanelState } from "../../../features/workspaces/ui/panel/workspace-panel-state"
-import { CONTENT_TYPES } from "./types"
+import { CONTENT_TYPES, PINNED_CONTENT_TYPES } from "./types"
+import { selectEvictableSurfaces } from "./surface-budget"
 import type {
   ClaxedoState,
   ContentMeta,
@@ -181,6 +182,25 @@ function validateWorkspacePanel(input: unknown): WorkspacePanelState {
 }
 
 /**
+ * Remove a set of contents from a workbench state — unassign their panes, drop
+ * them from `contentIds`/`contentRecency`, and discard their layout snapshots.
+ */
+function dropContents(state: WorkbenchState, drop: ReadonlySet<string>): WorkbenchState {
+  if (drop.size === 0) return state
+  return {
+    ...state,
+    panes: state.panes.map((pane) =>
+      pane.contentId && drop.has(pane.contentId) ? { ...pane, contentId: null } : pane,
+    ),
+    contentIds: state.contentIds.filter((id) => !drop.has(id)),
+    contentRecency: state.contentRecency.filter((id) => !drop.has(id)),
+    layoutSnapshots: Object.fromEntries(
+      Object.entries(state.layoutSnapshots).filter(([id]) => !drop.has(id)),
+    ),
+  }
+}
+
+/**
  * Normalize an unknown blob to a fully-formed ClaxedoState. Always returns a
  * usable state — drops invalid fragments and back-fills defaults.
  */
@@ -199,22 +219,7 @@ export function validate(input: unknown): { state: ClaxedoState; dirty: boolean 
       .filter(([, raw]) => isObject(raw) && raw.type === "process")
       .map(([id]) => id),
   )
-  let workbench: WorkbenchState =
-    deprecatedContentIds.size === 0
-      ? wbResult.state
-      : {
-          ...wbResult.state,
-          panes: wbResult.state.panes.map((pane) =>
-            pane.contentId && deprecatedContentIds.has(pane.contentId)
-              ? { ...pane, contentId: null }
-              : pane,
-          ),
-          contentIds: wbResult.state.contentIds.filter((id) => !deprecatedContentIds.has(id)),
-          contentRecency: wbResult.state.contentRecency.filter((id) => !deprecatedContentIds.has(id)),
-          layoutSnapshots: Object.fromEntries(
-            Object.entries(wbResult.state.layoutSnapshots).filter(([id]) => !deprecatedContentIds.has(id)),
-          ),
-        }
+  let workbench: WorkbenchState = dropContents(wbResult.state, deprecatedContentIds)
   if (deprecatedContentIds.size > 0) dirty = true
 
   // Meta — drop entries whose id is not in workbench.contentIds. The
@@ -249,22 +254,35 @@ export function validate(input: unknown): { state: ClaxedoState; dirty: boolean 
   // can create a real surface instead of leaving an empty mounted pane.
   const missingMetaIds = new Set(workbench.contentIds.filter((id) => !meta[id]))
   if (missingMetaIds.size > 0) {
-    const cleaned = validateWorkbench({
-      ...workbench,
-      panes: workbench.panes.map((pane) =>
-        pane.contentId && missingMetaIds.has(pane.contentId)
-          ? { ...pane, contentId: null }
-          : pane,
-      ),
-      contentIds: workbench.contentIds.filter((id) => !missingMetaIds.has(id)),
-      contentRecency: workbench.contentRecency.filter((id) => !missingMetaIds.has(id)),
-      layoutSnapshots: Object.fromEntries(
-        Object.entries(workbench.layoutSnapshots).filter(([id]) => !missingMetaIds.has(id)),
-      ),
-    })
+    const cleaned = validateWorkbench(dropContents(workbench, missingMetaIds))
     workbench = cleaned.state
     dirty = true
     if (cleaned.dirty) dirty = true
+  }
+
+  // Apply the LRU surface budget to what survived. Nothing else reaps tabs, so
+  // without this a long-lived profile accumulates every session and terminal it
+  // ever opened — the persisted blob only ever grows, and tabs whose backing
+  // session is long gone stay in the switcher forever. Runs last so that junk
+  // dropped above never costs a live tab its slot.
+  const evictedIds = new Set(
+    selectEvictableSurfaces({
+      contentIds: workbench.contentIds,
+      contentRecency: workbench.contentRecency,
+      mountedIds: workbench.panes
+        .map((pane) => pane.contentId)
+        .filter((id): id is string => !!id),
+      pinnedIds: workbench.contentIds.filter((id) => {
+        const type = meta[id]?.type
+        return !!type && PINNED_CONTENT_TYPES.has(type)
+      }),
+    }),
+  )
+  if (evictedIds.size > 0) {
+    const trimmed = validateWorkbench(dropContents(workbench, evictedIds))
+    workbench = trimmed.state
+    dirty = true
+    for (const id of evictedIds) delete meta[id]
   }
 
   const rail = validateRail(input.rail)
