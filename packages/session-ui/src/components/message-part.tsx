@@ -530,7 +530,7 @@ export function getToolInfo(
       }
     case "websearch":
       return {
-        icon: "window-cursor",
+        icon: "magnifying-glass",
         title: webSearchProviderLabel(metadata?.provider),
         subtitle: input.query,
       }
@@ -2301,7 +2301,7 @@ ToolRegistry.register({
     return (
       <BasicTool
         {...props}
-        icon="window-cursor"
+        icon="magnifying-glass"
         trigger={{
           title: title(),
           subtitle: query(),

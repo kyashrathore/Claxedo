@@ -14,6 +14,7 @@ export type CodexCustomGlyph =
   | "codex-custom-close-small"
   | "codex-custom-copy"
   | "codex-custom-cursor"
+  | "codex-custom-file"
   | "codex-custom-folder"
   | "codex-custom-folder-open"
   | "codex-custom-collapse-all"
@@ -30,6 +31,7 @@ export type CodexCustomGlyph =
   | "codex-custom-opencode"
   | "codex-custom-panel-expand"
   | "codex-custom-panel-restore"
+  | "codex-custom-page-plus"
   | "codex-custom-pin"
   | "codex-custom-pin-filled"
   | "codex-custom-pi"
@@ -95,8 +97,8 @@ export const CODEX_ICON_ALIASES = {
   expand: "codex-custom-panel-expand",
   "expand-all": "codex-custom-expand-all",
   eye: "codex-20-106",
-  file: "codex-20-098",
-  "file-text": "codex-20-098",
+  file: "codex-custom-file",
+  "file-text": "codex-custom-file",
   "file-tree": "codex-20-138",
   "file-tree-active": "codex-20-138",
   filetree: "codex-20-138",
@@ -107,7 +109,7 @@ export const CODEX_ICON_ALIASES = {
   fork: "codex-20-093",
   gauge: "codex-20-107",
   github: "codex-20-043",
-  glasses: "codex-20-106",
+  glasses: "codex-20-048",
   globe: "codex-20-011",
   "grid-plus": "codex-20-031",
   hand: "codex-20-115",
@@ -153,7 +155,7 @@ export const CODEX_ICON_ALIASES = {
   "outline-square-arrow": "codex-20-055",
   "outline-xmark": "codex-20-121",
   page: "codex-20-098",
-  "page-plus": "codex-20-031",
+  "page-plus": "codex-custom-page-plus",
   pencil: "codex-20-019",
   "pencil-line": "codex-20-019",
   photo: "codex-20-047",

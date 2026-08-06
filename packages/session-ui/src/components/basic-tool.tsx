@@ -364,6 +364,27 @@ function args(input: Record<string, unknown> | undefined, exclude?: string) {
     .slice(0, 3)
 }
 
+function genericToolIcon(tool: string): IconProps["name"] {
+  switch (tool.toLowerCase()) {
+    case "read":
+    case "read_file":
+      return "glasses"
+    case "bash":
+    case "command":
+    case "shell":
+    case "local_shell":
+      return "terminal-square"
+    case "webfetch":
+    case "web_fetch":
+      return "window-cursor"
+    case "websearch":
+    case "web_search":
+      return "magnifying-glass"
+    default:
+      return "mcp"
+  }
+}
+
 export function GenericTool(props: {
   tool: string
   status?: string
@@ -378,11 +399,11 @@ export function GenericTool(props: {
 
   return (
     <BasicTool
-      icon="mcp"
+      icon={genericToolIcon(props.tool)}
       status={props.status}
       startedAt={props.startedAt}
       trigger={{
-        title: i18n.t("ui.basicTool.called", { tool: props.tool }),
+        title: i18n.t("ui.basicTool.called", { tool: props.tool }).replaceAll("`", ""),
         subtitle: subtitle(),
         args: args(props.input, subtitle()),
       }}

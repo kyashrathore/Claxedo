@@ -104,6 +104,7 @@ const icons = {
   "circle-half": `<circle cx="10" cy="10" r="7.91667" stroke="currentColor"/><path d="M10 2.08333A7.91667 7.91667 0 0 0 10 17.9167Z" fill="currentColor"/>`,
   "chevron-double-left": `<path d="M8.33464 13.3346L5.0013 10.0013L8.33464 6.66797M14.168 13.3346L10.8346 10.0013L14.168 6.66797" stroke="currentColor" stroke-linecap="square"/>`,
   file: `<path d="M12.5 1.66667H5C4.07953 1.66667 3.33333 2.41286 3.33333 3.33333V16.6667C3.33333 17.5871 4.07953 18.3333 5 18.3333H15C15.9205 18.3333 16.6667 17.5871 16.6667 16.6667V5.83333L12.5 1.66667Z" stroke="currentColor" stroke-linecap="square"/><path d="M11.6667 1.66667V4.16667C11.6667 5.08714 12.4129 5.83333 13.3333 5.83333H16.6667" stroke="currentColor" stroke-linecap="square"/>`,
+  "page-plus": `<path d="M9.5 2.5H4.5C3.94772 2.5 3.5 2.94772 3.5 3.5V16.5C3.5 17.0523 3.94772 17.5 4.5 17.5H10M9.5 2.5L12.5 5.5M9.5 2.5V4.5C9.5 5.05228 9.94772 5.5 10.5 5.5H12.5V9.5M14.5 11.5V17.5M11.5 14.5H17.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>`,
   copy: `<path d="M6.2513 6.24935V2.91602H17.0846V13.7493H13.7513M13.7513 6.24935V17.0827H2.91797V6.24935H13.7513Z" stroke="currentColor" stroke-linecap="round"/>`,
   check: `<path d="M5 11.9657L8.37838 14.7529L15 5.83398" stroke="currentColor" stroke-linecap="square"/>`,
   photo: `<path d="M16.6665 16.6666L11.6665 11.6666L9.99984 13.3333L6.6665 9.99996L3.08317 13.5833M2.9165 2.91663H17.0832V17.0833H2.9165V2.91663ZM13.3332 7.49996C13.3332 8.30537 12.6803 8.95829 11.8748 8.95829C11.0694 8.95829 10.4165 8.30537 10.4165 7.49996C10.4165 6.69454 11.0694 6.04163 11.8748 6.04163C12.6803 6.04163 13.3332 6.69454 13.3332 7.49996Z" stroke="currentColor" stroke-linecap="square"/>`,
@@ -270,6 +271,7 @@ const CODEX_CUSTOM_GLYPHS = {
   "codex-custom-check": "check",
   "codex-custom-close-small": "close-small",
   "codex-custom-copy": "copy",
+  "codex-custom-file": "file",
   "codex-custom-folder": "folder",
   "codex-custom-magnifying-glass": "magnifying-glass",
   "codex-custom-magnifying-glass-menu": "magnifying-glass-menu",
@@ -278,6 +280,7 @@ const CODEX_CUSTOM_GLYPHS = {
   "codex-custom-more-horizontal": "more-horizontal",
   "codex-custom-panel-expand": "panel-expand",
   "codex-custom-panel-restore": "panel-restore",
+  "codex-custom-page-plus": "page-plus",
   "codex-custom-providers": "providers",
   "codex-custom-stop": "stop",
 } as const satisfies Record<string, keyof typeof icons>
