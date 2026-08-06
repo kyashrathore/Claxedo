@@ -8,6 +8,7 @@ import { FileComponentProvider } from "@opencode-ai/ui/context/file"
 import { MarkedProvider } from "@opencode-ai/ui/context/marked"
 import { Font } from "@opencode-ai/ui/font"
 import { ThemeProvider } from "@opencode-ai/ui/theme"
+import { syncIconLibraryWithTheme } from "@/ui/icons/config"
 import { MetaProvider } from "@solidjs/meta"
 import { type BaseRouterProps, Router, Route, Navigate, useLocation, useNavigate } from "@solidjs/router"
 import {
@@ -192,7 +193,7 @@ export function AppBaseProviders(props: ParentProps) {
             "oc-2" fallback inside @opencode-ai/ui, so the shared package keeps its
             own default for other consumers. A stored THEME_ID still wins, so this
             only applies to users who have never picked a theme. */}
-        <ThemeProvider defaultTheme="codex">
+        <ThemeProvider defaultTheme="codex" onThemeApplied={syncIconLibraryWithTheme}>
           <LanguageProvider strings={getExtensions().app.strings}>
             <UiI18nBridge>
               <ErrorBoundary fallback={(error) => <ErrorPage error={error} />}>

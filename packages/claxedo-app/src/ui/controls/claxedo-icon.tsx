@@ -1,11 +1,11 @@
-import { onMount, splitProps, type ComponentProps } from "solid-js"
+import { onMount, Show, splitProps, type ComponentProps } from "solid-js"
 // ⚠️ Licence risk — see the note in
 // `packages/ui/src/components/codex-icons.tsx`. The Codex branch of this
 // component renders artwork extracted from the proprietary ChatGPT desktop app.
 // Known and accepted for now; the "opencode" branch below is the clean fallback.
 import { OpenCodeIcon as UpstreamIcon, type IconProps as UpstreamIconProps } from "@opencode-ai/ui/icon"
 import { codexIconSprite } from "@opencode-ai/ui/codex-icons"
-import { ACTIVE_ICON_LIBRARY } from "@/ui/icons/config"
+import { iconLibrary } from "@/ui/icons/config"
 import type { AppIconName } from "@/ui/icons/catalog"
 import {
   CODEX_ICON_TRANSFORMS,
@@ -177,6 +177,8 @@ function CodexGlyph(props: ClaxedoIconProps & { bare?: boolean }) {
   const svg = () => (
     <svg
       data-slot="icon-svg"
+      data-icon={local.bare ? local.name : undefined}
+      data-library={local.bare ? "codex" : undefined}
       classList={{
         ...local.classList,
         [local.class ?? ""]: !!local.class,
@@ -205,17 +207,25 @@ function CodexGlyph(props: ClaxedoIconProps & { bare?: boolean }) {
 }
 
 export function ClaxedoIcon(props: ClaxedoIconProps) {
-  if (ACTIVE_ICON_LIBRARY === "opencode") {
-    return <UpstreamIcon {...props as UpstreamIconProps} name={openCodeIconLibrary.resolve(props.name)} />
-  }
-  return <CodexGlyph {...props} />
+  return (
+    <Show
+      when={iconLibrary() === "codex"}
+      fallback={<UpstreamIcon {...props as UpstreamIconProps} name={openCodeIconLibrary.resolve(props.name)} />}
+    >
+      <CodexGlyph {...props} />
+    </Show>
+  )
 }
 
 export function ClaxedoIconV2(props: ClaxedoIconProps) {
-  if (ACTIVE_ICON_LIBRARY === "opencode") {
-    return <UpstreamIcon {...props as UpstreamIconProps} name={openCodeIconLibrary.resolve(props.name)} />
-  }
-  return <CodexGlyph {...props} bare />
+  return (
+    <Show
+      when={iconLibrary() === "codex"}
+      fallback={<UpstreamIcon {...props as UpstreamIconProps} name={openCodeIconLibrary.resolve(props.name)} />}
+    >
+      <CodexGlyph {...props} bare />
+    </Show>
+  )
 }
 
 function customGlyph(name: CodexGlyphName) {

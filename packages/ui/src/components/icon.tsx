@@ -185,7 +185,7 @@ export function OpenCodeIcon(props: IconProps) {
   onMount(ensureSprite)
 
   return (
-    <div data-component="icon" data-size={local.size || "normal"}>
+    <div data-component="icon" data-library="opencode" data-size={local.size || "normal"}>
       <svg
         data-slot="icon-svg"
         classList={{
@@ -204,8 +204,30 @@ export function OpenCodeIcon(props: IconProps) {
 }
 
 export type IconLibrary = "codex" | "opencode"
+export type IconLibraryPreference = "auto" | IconLibrary
 
-const [iconLibrary, setIconLibrary] = createSignal<IconLibrary>("codex")
+const [iconLibraryTheme, setIconLibraryTheme] = createSignal(
+  typeof document === "object" ? (document.documentElement.dataset.theme ?? "codex") : "codex",
+)
+const [iconLibraryPreference, setIconLibraryPreferenceValue] = createSignal<IconLibraryPreference>("auto")
+
+const iconLibrary = () => {
+  const preference = iconLibraryPreference()
+  if (preference !== "auto") return preference
+  return iconLibraryTheme() === "codex" ? "codex" : "opencode"
+}
+
+export function setIconLibrary(library: IconLibrary) {
+  setIconLibraryPreferenceValue(library)
+}
+
+export function setIconLibraryPreference(preference: IconLibraryPreference) {
+  setIconLibraryPreferenceValue(preference)
+}
+
+export function syncIconLibraryWithTheme(theme: { id: string }) {
+  setIconLibraryTheme(theme.id)
+}
 
 /**
  * Which glyph set `Icon` renders.
@@ -216,7 +238,7 @@ const [iconLibrary, setIconLibrary] = createSignal<IconLibrary>("codex")
  * it takes effect on already-mounted icons — which matters if it ever has to be
  * flipped in a hurry (see the licence note in ./codex-icons.tsx).
  */
-export { iconLibrary, setIconLibrary }
+export { iconLibrary, iconLibraryPreference }
 
 /**
  * Codex glyph for a name, or undefined when the set has no equivalent.
