@@ -22,7 +22,9 @@ export type WorkbenchProps = {
   renderEmpty?: () => JSX.Element
   keyMap?: Partial<KeyMap>
   mountPolicy?: "always" | "active-only"
+  /** Candidate retention cap; visible candidates count toward it but are never unmounted. */
   maxMountedContents?: number
+  /** Surfaces outside this predicate remain mounted regardless of the candidate cap. */
   mountCapCandidate?: (contentId: string) => boolean
   onFocusChange?: (paneId: string | null, contentId: string | null) => void
   onPaneResize?: (paneId: string, rect: PaneRect) => void
@@ -274,7 +276,8 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
       ...s.panes.map((pane) => pane.contentId).filter((id): id is string => !!id),
     ])]
     if (mountPolicy() === "always") {
-      if (!props.maxMountedContents || ids.length <= props.maxMountedContents) return ids
+      const maxMountedContents = props.maxMountedContents
+      if (maxMountedContents === undefined || ids.length <= maxMountedContents) return ids
       const visibleIds = ids.filter((id) => visibleContentSet().has(id))
       const alwaysMountedSet = props.mountCapCandidate
         ? new Set(ids.filter((id) => !props.mountCapCandidate?.(id)))
@@ -287,7 +290,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
           !visibleContentSet().has(id) &&
           (!props.mountCapCandidate || props.mountCapCandidate(id))
         )
-        .slice(0, Math.max(0, props.maxMountedContents - visibleCandidateIds.length))
+        .slice(0, Math.max(0, maxMountedContents - visibleCandidateIds.length))
       return [...new Set([...visibleIds, ...alwaysMountedSet, ...retainedCandidateIds])]
     }
     return ids.filter((id) => isVisibleContent(id))
