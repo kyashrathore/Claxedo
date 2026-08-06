@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { AssistantMessage, UserMessage } from "@opencode-ai/sdk/v2"
+import type { AssistantMessage, Part, UserMessage } from "@opencode-ai/sdk/v2"
 import { Timeline, TimelineRow } from "./message-timeline.data"
 
 describe("timeline row reuse", () => {
@@ -166,6 +166,28 @@ describe("T8: interrupted-turn detection (D2)", () => {
     expect(rows.find((row) => row._tag === "Error")).toBeUndefined()
   })
 
+  test("a legacy persisted Codex abort error renders the interrupted divider", () => {
+    const aborted = assistantMessage("msg_assistant", "msg_user", {})
+    aborted.error = {
+      name: "UnknownError",
+      data: { message: "Codex turn aborted" },
+    } as AssistantMessage["error"]
+    const rows = Timeline.constructMessageRows(
+      userMessage("msg_user"),
+      () => [],
+      [aborted],
+      0,
+      false,
+      "idle",
+      false,
+      true,
+      () => undefined,
+      false,
+    )
+
+    expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "TurnDivider"])
+  })
+
   test("a canonical SDK-runtime cancellation renders the interrupted divider, not an Error row", () => {
     const unsettled = assistantMessage("msg_assistant", "msg_user", {})
 
@@ -187,6 +209,47 @@ describe("T8: interrupted-turn detection (D2)", () => {
       expect.objectContaining({ label: "interrupted" }),
     )
     expect(rows.find((row) => row._tag === "Error")).toBeUndefined()
+  })
+
+  test("a canonical SDK-runtime cancellation hides the open tool card", () => {
+    const rows = Timeline.constructMessageRows(
+      userMessage("msg_user"),
+      (messageID) => messageID === "msg_assistant" ? [runningToolPart("tool-1", messageID)] : [],
+      [assistantMessage("msg_assistant", "msg_user", {})],
+      0,
+      false,
+      "idle",
+      false,
+      true,
+      () => undefined,
+      false,
+      { status: "cancelled", completedAt: 45, assistantMessageId: "msg_assistant" },
+    )
+
+    expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "TurnDivider"])
+  })
+
+  test("a canonical SDK-runtime cancellation wins over a late harness abort error", () => {
+    const aborted = assistantMessage("msg_assistant", "msg_user", {})
+    aborted.error = {
+      name: "UnknownError",
+      data: { message: "Codex turn aborted" },
+    } as AssistantMessage["error"]
+    const rows = Timeline.constructMessageRows(
+      userMessage("msg_user"),
+      () => [],
+      [aborted],
+      0,
+      false,
+      "idle",
+      false,
+      true,
+      () => undefined,
+      false,
+      { status: "cancelled", completedAt: 45, assistantMessageId: "msg_assistant" },
+    )
+
+    expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "TurnDivider"])
   })
 
   test("an unsettled SDK message with no cancellation outcome does not render a false interruption", () => {
@@ -296,4 +359,16 @@ function textPart(id: string, messageID: string, text: string): Part {
     type: "text",
     text,
   } as Part
+}
+
+function runningToolPart(id: string, messageID: string): Part {
+  return {
+    id,
+    sessionID: "ses_1",
+    messageID,
+    type: "tool",
+    callID: id,
+    tool: "read",
+    state: { status: "running", input: { file: "README.md" }, time: { start: 2 } },
+  }
 }

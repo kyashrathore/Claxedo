@@ -223,7 +223,7 @@ export namespace Timeline {
     // durable on the Session turn outcome, which must match the exact assistant message.
     // Missing completion metadata is not an abort signal: normal turns can be observed
     // between the idle event and their message completion checkpoint.
-    const nativeInterruptedIndex = assistantMessages.findIndex((m) => m.error?.name === "MessageAbortedError")
+    const nativeInterruptedIndex = assistantMessages.findIndex(assistantMessageInterrupted)
     const sdkInterruptedIndex =
       nativeInterruptedIndex === -1 && lastTurn?.status === "cancelled" && lastTurn.assistantMessageId
         ? assistantMessages.findIndex((message) => message.id === lastTurn.assistantMessageId)
@@ -238,7 +238,10 @@ export namespace Timeline {
     const settled = assistantMessages.some(assistantMessageSettled)
     const assistantPartRefs = assistantMessages.flatMap((message, messageIndex) =>
       getMessageParts(message.id)
-        .filter((part) => renderablePart(part, showReasoning))
+        .filter((part) =>
+          renderablePart(part, showReasoning) &&
+          !(interrupted && part.type === "tool" && (part.state.status === "pending" || part.state.status === "running"))
+        )
         .map((part) => ({ messageID: message.id, messageIndex, part })),
     )
     const assistantItems =
@@ -407,7 +410,7 @@ export namespace Timeline {
       )
     }
 
-    if (error) {
+    if (error && !interrupted) {
       const data = error.data?.message
       const raw = typeof data === "string" ? data : data === undefined || data === null ? "" : String(data)
       // Upstream relays prefix the provider's message with their own
@@ -552,9 +555,15 @@ export namespace Timeline {
     assistantMessages: AssistantMessage[],
     lastTurn?: SessionTurnOutcome,
   ) {
-    if (assistantMessages.some((m) => m.error?.name === "MessageAbortedError")) return true
+    if (assistantMessages.some(assistantMessageInterrupted)) return true
     if (lastTurn?.status !== "cancelled" || !lastTurn.assistantMessageId) return false
     return assistantMessages.some((message) => message.id === lastTurn.assistantMessageId)
+  }
+
+  function assistantMessageInterrupted(message: AssistantMessage) {
+    if (message.error?.name === "MessageAbortedError") return true
+    if (message.error?.name !== "UnknownError") return false
+    return (message.error.data as { message?: unknown } | undefined)?.message === "Codex turn aborted"
   }
 }
 

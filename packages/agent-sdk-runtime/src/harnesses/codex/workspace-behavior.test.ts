@@ -56,7 +56,7 @@ function fakeCodexStore(): AgentRuntimeStoreWithRecovery {
   })
 }
 
-async function makeFakeCodex(options: { requestRefresh?: boolean; auth401?: boolean } = {}) {
+async function makeFakeCodex(options: { requestRefresh?: boolean; auth401?: boolean; models?: unknown[] } = {}) {
   const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "codex-app-server-"))
   tempDirs.push(dir)
   const binary = path.join(dir, "codex")
@@ -66,6 +66,7 @@ const fs = require("fs")
 const logPath = ${JSON.stringify(log)}
 const requestRefresh = ${JSON.stringify(options.requestRefresh === true)}
 const auth401 = ${JSON.stringify(options.auth401 === true)}
+const models = ${JSON.stringify(options.models ?? [])}
 let buffer = ""
 let completed = false
 function write(message) {
@@ -99,6 +100,9 @@ process.stdin.on("data", (chunk) => {
     if (message.method === "account/login/start") {
       write({ id: message.id, result: { type: "chatgptAuthTokens" } })
     }
+    if (message.method === "model/list") {
+      write({ id: message.id, result: { data: models, nextCursor: null } })
+    }
     if (message.method === "thread/start") {
       write({ id: message.id, result: { thread: { id: "thread-1" } } })
       write({ method: "thread/started", params: { thread: { id: "thread-1" } } })
@@ -123,13 +127,27 @@ process.stdin.on("data", (chunk) => {
   return { dir, binary, log }
 }
 
-function prompt(modelID: string): PromptInput {
+function prompt(modelID: string, variant?: string): PromptInput {
   return {
     parts: ["Reply with exactly OK."],
     userMessageId: "user-1",
     assistantMessageId: "assistant-1",
     agent: "build",
     model: { providerID: "codex-app-server", modelID },
+    ...(variant ? { variant } : {}),
+  }
+}
+
+function codexModel(efforts: string[], defaultEffort: string) {
+  return {
+    id: "gpt-5.5",
+    model: "gpt-5.5",
+    displayName: "GPT-5.5",
+    description: "Frontier model",
+    hidden: false,
+    isDefault: true,
+    supportedReasoningEfforts: efforts.map((reasoningEffort) => ({ reasoningEffort, description: reasoningEffort })),
+    defaultReasoningEffort: defaultEffort,
   }
 }
 
@@ -180,6 +198,55 @@ describe("CodexHarnessAdapter", () => {
 
     expect(requests.find((request) => request.method === "thread/start")!.params?.model).toBe("gpt-5.5")
     expect(requests.find((request) => request.method === "turn/start")!.params?.model).toBe("gpt-5.4")
+  })
+
+  test("exposes each Codex model's supported reasoning efforts as a config option", async () => {
+    const fake = await makeFakeCodex({
+      models: [codexModel(["low", "high", "xhigh"], "high")],
+    })
+    const adapter = new CodexHarnessAdapter({
+      binary: fake.binary,
+      createStore: () => fakeCodexStore(),
+      storeRoot: path.join(fake.dir, "store"),
+    })
+    adapter.setModel("gpt-5.5")
+
+    expect(await adapter.probeConfigOptions(fake.dir)).toContainEqual({
+      id: "effort",
+      name: "Effort",
+      description: "How much reasoning effort the model should use",
+      category: "thought_level",
+      type: "select",
+      currentValue: "high",
+      selectOptions: [
+        { id: "low", name: "Low" },
+        { id: "high", name: "High" },
+        { id: "xhigh", name: "Xhigh" },
+      ],
+    })
+    adapter.dispose()
+  })
+
+  test("passes the selected reasoning effort to Codex turn/start", async () => {
+    const fake = await makeFakeCodex({
+      models: [codexModel(["minimal", "high"], "high")],
+    })
+    const adapter = new CodexHarnessAdapter({
+      binary: fake.binary,
+      createStore: () => fakeCodexStore(),
+      storeRoot: path.join(fake.dir, "store"),
+    })
+    adapter.setModel("gpt-5.5")
+    await adapter.probeConfigOptions(fake.dir)
+    const session = await adapter.createSession(fake.dir)
+    for await (const _event of adapter.sendMessage(session.id, prompt("gpt-5.5", "minimal"), fake.dir)) {}
+    adapter.dispose()
+
+    const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
+      method: string
+      params?: Record<string, unknown>
+    })
+    expect(requests.find((request) => request.method === "turn/start")!.params?.effort).toBe("minimal")
   })
 
   test("logs into Codex app-server with ChatGPT tokens and answers refresh requests", async () => {

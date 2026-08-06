@@ -13,7 +13,12 @@ import type { AgentHarnessAdapterHealth, FetchLike } from "../../adapter-contrac
 import type { ResolvedMcpServer } from "../../mcp-resolver"
 import { Log } from "../../log"
 import { createLiveModelSource } from "../../live-model-source"
-import { modelConfigOption, type SdkModelEntry } from "../../sdk-model-catalog"
+import {
+  modelConfigOption,
+  resolveSupportedEffort,
+  thoughtLevelConfigOption,
+  type SdkModelEntry,
+} from "../../sdk-model-catalog"
 import {
   errorMessage,
   extractTextFromParts,
@@ -240,6 +245,11 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       }
     }
     const model = codexTurnModel(input.input, input.model)
+    const effort = resolveSupportedEffort(
+      this.modelSource.peek(),
+      codexAppServerModel(input.input.model.modelID),
+      input.input.variant,
+    )
     const project = (method: string, payload: JsonRecord, frame: unknown) => input.ingest({
       source: CODEX_SOURCE,
       method,
@@ -281,6 +291,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
         input.directory,
       ),
       ...(model ? { model } : {}),
+      ...(effort ? { effort } : {}),
     }) as Promise<JsonRecord>
 
     try {
@@ -327,11 +338,18 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   }
 
   async configOptions(currentModel: string, directory?: string): Promise<AgentConfigOptionRow[]> {
-    return [modelConfigOption(await this.modelSource.models(directory), currentModel)]
+    return this.buildConfigOptions(await this.modelSource.models(directory), currentModel)
   }
 
   peekConfigOptions(currentModel: string): AgentConfigOptionRow[] {
-    return [modelConfigOption(this.modelSource.peek(), currentModel)]
+    return this.buildConfigOptions(this.modelSource.peek(), currentModel)
+  }
+
+  private buildConfigOptions(models: readonly SdkModelEntry[], currentModel: string) {
+    const effort = thoughtLevelConfigOption(models, codexAppServerModel(currentModel), undefined)
+    return effort
+      ? [modelConfigOption(models, currentModel), effort]
+      : [modelConfigOption(models, currentModel)]
   }
 
   /**
@@ -370,11 +388,20 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
           if (!row || row.hidden === true) continue
           const id = text(row.model) ?? text(row.id)
           if (!id || models.has(id)) continue
+          const supportedEffortLevels = Array.isArray(row.supportedReasoningEfforts)
+            ? row.supportedReasoningEfforts
+              .map((option) => text(record(option)?.reasoningEffort))
+              .filter((effort): effort is string => !!effort)
+            : []
           models.set(id, {
             id,
             name: text(row.displayName) ?? id,
             ...(text(row.description) ? { description: text(row.description)! } : {}),
             ...(row.isDefault === true ? { isDefault: true } : {}),
+            ...(supportedEffortLevels.length
+              ? { supportsEffort: true, supportedEffortLevels }
+              : {}),
+            ...(text(row.defaultReasoningEffort) ? { defaultEffort: text(row.defaultReasoningEffort)! } : {}),
           })
         }
         cursor = text(result.nextCursor)

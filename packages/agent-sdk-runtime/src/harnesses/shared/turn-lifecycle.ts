@@ -5,6 +5,10 @@ export type TrackedTurn = {
   turnId?: string
 }
 
+// An intentional stop is a cancelled outcome. Teardown paths use abortAll()
+// without this marker so process loss still surfaces as a real turn failure.
+export const EXPLICIT_TURN_ABORT_REASON = Symbol("explicit-turn-abort")
+
 export function createSessionTurnLifecycle<T extends TrackedTurn>() {
   const busySessions = new Set<string>()
   const activeTurns = new Map<string, T>()
@@ -36,7 +40,7 @@ export function createSessionTurnLifecycle<T extends TrackedTurn>() {
     abort(sessionId: string) {
       const turn = activeTurns.get(sessionId)
       if (!turn) return false
-      turn.abort?.abort()
+      turn.abort?.abort(EXPLICIT_TURN_ABORT_REASON)
       turn.close?.()
       return true
     },

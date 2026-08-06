@@ -6,6 +6,7 @@ import { createCodexAppServerDriver } from "../codex/driver"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import { runtimeSnapshot } from "@claxedo/agent-event-runtime"
 import { storeRows } from "../../test-utils/store-internals"
+import type { AgentRuntimeStreamEvent } from "../../index"
 
 function minimalSdkRuntimeDriver(): SdkRuntimeDriver {
   return {
@@ -134,6 +135,53 @@ describe("SdkRuntimeAdapter", () => {
       reason: "harness_process_lost",
       message: "process exited",
     })
+  })
+
+  test("explicit abort persists an interruption sentinel without emitting a session error", async () => {
+    const store = storeRows(createMemoryRuntimeStore())
+    let started: (() => void) | undefined
+    const running = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    const adapter = new SdkRuntimeAdapter({
+      store,
+      driver: () => ({
+        ...minimalSdkRuntimeDriver(),
+        runTurn: async (input) => {
+          started?.()
+          await new Promise((_, reject) => {
+            input.abort.signal.addEventListener(
+              "abort",
+              () => reject(new Error("Codex turn aborted")),
+              { once: true },
+            )
+          })
+        },
+      }),
+    })
+    const session = await adapter.createSession("/repo")
+    const events: AgentRuntimeStreamEvent[] = []
+    const turn = (async () => {
+      for await (const event of adapter.sendMessage(session.id, {
+        parts: [{ type: "text", text: "hello" }],
+        userMessageId: "user-1",
+        assistantMessageId: "assistant-1",
+        agent: "build",
+        model: { providerID: "codex-app-server", modelID: "gpt-test" },
+      }, "/repo")) events.push(event)
+    })()
+
+    await running
+    await expect(adapter.abort(session.id, "/repo")).resolves.toEqual({ ok: true, status: "cancelled" })
+    await turn
+
+    expect(events.map((event) => event.type)).not.toContain("session.error")
+    const messages = store.getMessages(session.id) as Array<{ info: { id: string; error?: unknown } }>
+    expect(messages.find((message) => message.info.id === "assistant-1")?.info.error).toEqual({
+      name: "MessageAbortedError",
+      data: { message: "Aborted by user" },
+    })
+    adapter.dispose()
   })
 
   test("dispose aborts and closes active turns", () => {

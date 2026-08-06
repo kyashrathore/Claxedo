@@ -39,7 +39,11 @@ import type {
 } from "../../adapter-contract"
 import { harnessCapabilities, type HarnessCapabilities } from "../../capabilities"
 import { createTurnEventProjector, type RuntimeAppendSource } from "../shared/turn-projection"
-import { createSessionTurnLifecycle, type SessionTurnLifecycle } from "../shared/turn-lifecycle"
+import {
+  createSessionTurnLifecycle,
+  EXPLICIT_TURN_ABORT_REASON,
+  type SessionTurnLifecycle,
+} from "../shared/turn-lifecycle"
 import type { AgentRuntimeStore } from "../shared/runtime-store"
 import { hasConcreteSessionTitle } from "../../session-title"
 import { requireWorkspaceDirectory } from "../../target"
@@ -438,6 +442,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       model: this.currentModel,
     })
       .catch((err: unknown) => {
+        if (abort.signal.reason === EXPLICIT_TURN_ABORT_REASON) return
         promptError = errorMessage(err)
       })
       .finally(() => {
@@ -469,6 +474,28 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       await run
     }
 
+    if (abort.signal.reason === EXPLICIT_TURN_ABORT_REASON) {
+      const updated = messageUpdated(buildAssistantMessage({
+        id: projector.assistantMessageId(),
+        sessionID: id,
+        parentID: input.userMessageId ?? id,
+        agent: input.agent,
+        model: input.model,
+        directory,
+        created: projector.created(),
+        completed: Date.now(),
+        error: { name: "MessageAbortedError", data: { message: "Aborted by user" } },
+        variant: input.variant,
+      }))
+      this.store.appendEvent({
+        sessionId: id,
+        agentSessionId,
+        payload: updated,
+        source: { dir: "in", method: "prompt.aborted" },
+      })
+      yield updated
+      return
+    }
     if (!promptError) return
     for (const event of projector.terminalizeOpenTools(promptError, { dir: "in", method: "prompt.error.open-tools", frame: { message: promptError } })) yield event
     const updated = messageUpdated(buildAssistantMessage({
