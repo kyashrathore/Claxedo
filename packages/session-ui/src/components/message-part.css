@@ -131,6 +131,12 @@
     display: flex;
     flex-direction: column;
     align-items: flex-end;
+
+    &[data-markdown] {
+      width: min(92%, 900px);
+      max-width: min(92%, 900px);
+      align-items: stretch;
+    }
   }
 
   [data-slot="user-message-text"] {
@@ -152,6 +158,24 @@
     }
 
     max-width: 100%;
+
+    &[data-markdown] {
+      display: block;
+      width: 100%;
+      white-space: normal;
+
+      [data-component="markdown"] {
+        min-width: 0;
+      }
+
+      table {
+        margin-block: 4px;
+      }
+
+      th {
+        background: var(--v2-background-bg-layer-03);
+      }
+    }
   }
 
   [data-slot="user-message-copy-wrapper"] {

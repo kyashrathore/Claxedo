@@ -69,6 +69,7 @@ import { useLocation } from "@solidjs/router"
 import { attached, inline, kind, typeLabel } from "./message-file"
 import { readPartText } from "./message-part-text"
 import { SessionProgressIndicatorV2 } from "../v2/components/session-progress-indicator-v2"
+import { shouldRenderUserMarkdown } from "./user-message-markdown"
 
 async function writeClipboard(text: string): Promise<boolean> {
   const body = typeof document === "undefined" ? undefined : document.body
@@ -1492,6 +1493,10 @@ export function UserMessageDisplay(props: {
 
   const agents = createMemo(() => (props.parts?.filter((p) => p.type === "agent") as AgentPart[]) ?? [])
 
+  const renderAsMarkdown = createMemo(
+    () => shouldRenderUserMarkdown(text()) && inlineFiles().length === 0 && agents().length === 0,
+  )
+
   const model = createMemo(() => {
     const providerID = props.message.model?.providerID
     const modelID = props.message.model?.modelID
@@ -1604,9 +1609,18 @@ export function UserMessageDisplay(props: {
           </Show>
         }
       >
-        <div data-slot="user-message-body">
-          <div data-slot="user-message-text" data-comments={messageComments().length > 0 ? "true" : undefined}>
-            <HighlightedText text={text()} references={inlineFiles()} agents={agents()} />
+        <div data-slot="user-message-body" data-markdown={renderAsMarkdown() ? "true" : undefined}>
+          <div
+            data-slot="user-message-text"
+            data-comments={messageComments().length > 0 ? "true" : undefined}
+            data-markdown={renderAsMarkdown() ? "true" : undefined}
+          >
+            <Show
+              when={renderAsMarkdown()}
+              fallback={<HighlightedText text={text()} references={inlineFiles()} agents={agents()} />}
+            >
+              <Markdown text={text()} cacheKey={textPart()?.id} streaming={false} />
+            </Show>
             <Show when={messageComments().length > 0}>
               <UserMessageComments comments={messageComments()} bounded />
             </Show>
