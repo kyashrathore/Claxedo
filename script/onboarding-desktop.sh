@@ -77,14 +77,12 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PROFILE="$PROFILE_ROOT/$PROFILE_NAME"
 USER_DATA_DIR="$PROFILE/userdata"
 DATA_DIR="$PROFILE/claxedo"
-WORKGRAPH_DIR="$PROFILE/workgraph"
 FAKE_HOME="$PROFILE/home"
 
 if [ "$PRINT_ENV" = 1 ]; then
   echo "CLAXEDO_DESKTOP_USER_DATA_DIR=$USER_DATA_DIR"
   echo "CLAXEDO_DATA_DIR=$DATA_DIR"
   echo "CLAXEDO_STATE_DIR=$DATA_DIR/state"
-  echo "CLAXEDO_WORKGRAPH_REPOSITORY=$WORKGRAPH_DIR"
   echo "VITE_CLAXEDO_ONBOARDING_V1=true"
   [ "$NO_CREDENTIALS" = 1 ] && echo "HOME=$FAKE_HOME"
   exit 0
@@ -112,7 +110,7 @@ if [ "$KEEP" = 0 ]; then
   fi
 fi
 
-mkdir -p "$USER_DATA_DIR" "$DATA_DIR" "$WORKGRAPH_DIR"
+mkdir -p "$USER_DATA_DIR" "$DATA_DIR"
 [ "$NO_CREDENTIALS" = 1 ] && mkdir -p "$FAKE_HOME"
 
 if [ "$RESET_ONLY" = 1 ]; then
@@ -133,7 +131,6 @@ claxedo_load_server_env "$REPO_ROOT"
 export CLAXEDO_DESKTOP_USER_DATA_DIR="$USER_DATA_DIR"
 export CLAXEDO_DATA_DIR="$DATA_DIR"
 export CLAXEDO_STATE_DIR="$DATA_DIR/state"
-export CLAXEDO_WORKGRAPH_REPOSITORY="$WORKGRAPH_DIR"
 export VITE_CLAXEDO_ONBOARDING_V1=true
 
 # A server URL/token inherited from the shell would point the desktop app at an

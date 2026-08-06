@@ -112,7 +112,6 @@ import {
   createLocalEmbeddedWorkGraph,
   mountLazyEmbeddedWorkGraph,
   recordLocalWorkGraphLlmUsage,
-  requireLocalWorkGraphRepositoryDirectory,
 } from "../../hosts/workgraph/composition/server-workgraph"
 import { mountLocalOnlyUsageLimits } from "./server-usage-limits"
 import { centralModelBackend } from "../../session/runtime"
@@ -135,6 +134,7 @@ import { RemoteAccessRoutes } from "../../routes/remote-access"
 import { createRemoteAccessService, unavailableRemoteAccessService } from "./remote-access-service"
 import { localHostIdentity, registrationPayload, signHostPayload } from "../../workspace/local-host"
 import { hasUserHostedMachineTunnel, startUserHostedMachineTunnel, stopUserHostedMachineTunnel } from "../../user-hosted-tunnel"
+import { DEFAULT_CLAXEDO_SERVER_PORT } from "./port"
 
 const execFileAsync = promisify(execFile)
 
@@ -435,9 +435,15 @@ export function localSecurityHeaders(): MiddlewareHandler {
   return async (c, next) => {
     await next()
     const https = requestIsHttps(c.req)
-    const entries = spaBundleRequests.has(c.req.raw)
+    const spaResponse = spaBundleRequests.has(c.req.raw)
+    const entries = spaResponse
       ? selfHostDocumentSecurityHeaderEntries({ https })
-      : securityHeaderEntries({ https })
+      : [
+          ...securityHeaderEntries({ https }),
+          ...(c.res.headers.get("cache-control")?.includes("public")
+            ? []
+            : [["cache-control", "no-store"]] as const),
+        ]
     const stamped = withSecurityHeaders(c.res, entries)
     // Only needed when the immutable-headers fallback rebuilt the response
     // (proxied `fetch()` results carry an immutable header guard).
@@ -1053,7 +1059,7 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
 }
 
 function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseDataDirOwner: () => void) {
-  const port = options.port ?? 3001
+  const port = options.port ?? DEFAULT_CLAXEDO_SERVER_PORT
   // No external opencodeUrl configured => embed the engine in-process (default).
   // An explicit opencodeUrl is the external-URL opt-in. NOTHING listens on :4096.
   const opencodeCompat = process.env.CLAXEDO_DISABLE_OPENCODE_COMPAT !== "1"
@@ -1352,13 +1358,9 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     releaseDirectory: (directory: string) =>
       workgraphSessions.then((sessions) => sessions.releaseDirectory?.(directory) ?? Promise.resolve()),
   }
-  const workgraphRepositoryDirectory = requireLocalWorkGraphRepositoryDirectory(
-    process.env.CLAXEDO_WORKGRAPH_REPOSITORY,
-  )
   const workgraphWorktreeRoot = path.join(dataDir(), "workgraph-worktrees")
   const workgraphExecution = createLocalWorkspaceExecution({
     worktreeRoot: workgraphWorktreeRoot,
-    legacyRepositoryDirectory: async () => workgraphRepositoryDirectory,
     worktrees: {
       provision: async (input) => {
         const workspace = await provisionRegisteredWorktree({
@@ -1383,7 +1385,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     execution: workgraphExecution,
     executionCapabilities: createLocalExecutionCapabilities({
       opencodeRequest,
-      repositoryDirectory: workgraphRepositoryDirectory,
       harness: async () => sessionComposerHarness(defaultHarness(await loadUserConfig())),
       connections: built.connections,
       resolveTeamOwner: () => undefined,
@@ -1399,8 +1400,8 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
       // Live SDK-harness model lists for the workgraph catalog, served by the
       // embedded workspace runtime (in-process for local workspaces). Failure
       // falls back to the static catalog inside sdkProviders.
-      harnessConfigOptions: async (harness) => {
-        const workspace = await getWorkspaceByDirectory(workgraphRepositoryDirectory).catch(() => undefined)
+      harnessConfigOptions: async (directory, harness) => {
+        const workspace = await getWorkspaceByDirectory(directory).catch(() => undefined)
         if (!workspace || workspace.kind === "cloud") return undefined
         const search = new URLSearchParams({ directory: workspace.directory, harness })
         const response = await sandboxFetch(workspace, `/api/wr/harness-config-options?${search}`)
@@ -1408,7 +1409,19 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
         return response.json()
       },
     }),
-    sourcePlanning: { sessions: workgraphSessionGateway, directory: workgraphRepositoryDirectory },
+    sourcePlanning: {
+      sessions: workgraphSessionGateway,
+      resolveDirectory: async (_context, execution) => {
+        if (execution.environment?.kind !== "local_worktree" || !execution.environment.directory?.trim()) {
+          throw new Error("Local source planning requires the target Stream's project directory")
+        }
+        const workspace = await getWorkspaceByDirectory(execution.environment.directory).catch(() => undefined)
+        if (!workspace || workspace.kind === "cloud") {
+          throw new Error("Local source planning requires a known local project directory")
+        }
+        return workspace.directory
+      },
+    },
     master: {
       sessions: workgraphSessionGateway,
       directory: (context, streamId) => path.join(
@@ -1681,7 +1694,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
 }
 
 export function startServer(
-  port = 3001,
+  port = DEFAULT_CLAXEDO_SERVER_PORT,
   opencodeUrl?: string,
   opencodePassword?: string | null,
   options: { processObserver?: ProcessObserver; opencodeEmbedPath?: string } = {},

@@ -47,9 +47,6 @@ export type WorkGraphWorktreeGateway = Readonly<{
 export function createLocalWorkspaceExecution(
   input: Readonly<{
     worktreeRoot: string
-    legacyRepositoryDirectory?: (baseRevision: string) => Promise<string>
-    /** Compatibility for persisted pre-target Streams and older host compositions. */
-    repositoryDirectory?: (baseRevision: string) => Promise<string>
     worktrees?: WorkGraphWorktreeGateway
     sessions: WorkGraphSessionGateway
   }>,
@@ -104,8 +101,7 @@ export function createLocalWorkspaceExecution(
               baseRevision: (await run("git", ["-C", parent, "rev-parse", "HEAD"])).stdout.trim(),
             }
           : request.repository
-        const repository =
-          parent ?? request.environment.directory?.trim() ?? (await (input.legacyRepositoryDirectory ?? input.repositoryDirectory)?.(repositoryTarget.baseRevision))
+        const repository = parent ?? request.environment.directory?.trim()
         if (!repository) throw new Error("Local execution requires the Stream's project directory")
         if (!path.isAbsolute(repository)) throw new Error("Local execution requires an absolute project directory")
         const workspaceId = await (async () => {

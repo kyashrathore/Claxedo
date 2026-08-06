@@ -87,20 +87,6 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     source: { file: "packages/claxedo-desktop/src/main/apps.ts", callee: "execFileSync", calls: 4 },
   }),
   product({
-    id: "desktop-workgraph-repository",
-    family: "WorkGraph repository initialisation",
-    owner: "desktop",
-    linkage: "app",
-    observation: "lifecycle-only",
-    stop: "unsupported",
-    kill: "unsupported",
-    source: {
-      file: "packages/claxedo-desktop/src/main/workgraph-repository.ts",
-      callee: "execFileSync",
-      calls: 1,
-    },
-  }),
-  product({
     id: "diagnostics-workers",
     family: "Isolated POSIX and Windows metrics workers",
     classification: "registered-root",

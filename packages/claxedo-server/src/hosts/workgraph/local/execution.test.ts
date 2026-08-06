@@ -17,7 +17,6 @@ describe("local WorkGraph workspace execution", () => {
     let admitted = false
     const execution = createLocalWorkspaceExecution({
       worktreeRoot: "/tmp/workgraph-connections",
-      repositoryDirectory: async () => "/tmp/repository",
       sessions: {
         admit: async () => {
           admitted = true
@@ -59,9 +58,6 @@ describe("local WorkGraph workspace execution", () => {
     const admissions: Array<{ directory: string; prompt: string }> = []
     const execution = createLocalWorkspaceExecution({
       worktreeRoot: worktrees,
-      repositoryDirectory: async () => {
-        throw new Error("legacy repository fallback must not be used")
-      },
       sessions: {
         admit: async (input) => {
           admissions.push(input)
@@ -107,13 +103,24 @@ describe("local WorkGraph workspace execution", () => {
     })])
   })
 
+  it("requires every root Stream to name its project directory", async () => {
+    const root = await repositoryFixture("workgraph-local-project-required")
+    const execution = adapter(root, `${root}/worktrees`)
+
+    await expect(execution.provisionOrAdopt(owner(), {
+      streamId: "stream-without-project" as StreamID,
+      environment: { kind: "local_worktree", placement: "shared" },
+      repository: { baseRevision: "HEAD" },
+    })).rejects.toThrow("requires the Stream's project directory")
+  })
+
   it("branches a child Stream envelope from the parent's moving head", async () => {
     const root = await repositoryFixture("workgraph-local-child-stream")
     const execution = adapter(root, `${root}/worktrees`)
     const parentStreamId = "stream-parent" as StreamID
     const parent = await execution.provisionOrAdopt(owner(), {
       streamId: parentStreamId,
-      environment: { kind: "local_worktree", placement: "shared" },
+      environment: { kind: "local_worktree", placement: "shared", directory: `${root}/repository` },
       repository: { baseRevision: "HEAD" },
     })
     await fs.writeFile(path.join(parent.workspaceId, "parent.txt"), "parent head\n")
@@ -140,7 +147,7 @@ describe("local WorkGraph workspace execution", () => {
     const streamId = "stream-landing" as StreamID
     const envelope = await execution.provisionOrAdopt(owner(), {
       streamId,
-      environment: { kind: "local_worktree", placement: "shared" },
+      environment: { kind: "local_worktree", placement: "shared", directory: repository },
       repository: { baseRevision: "HEAD" },
     })
     const before = (await run("git", ["-C", envelope.workspaceId, "rev-parse", "HEAD"])).stdout.trim()
@@ -182,7 +189,7 @@ describe("local WorkGraph workspace execution", () => {
     const streamId = "stream-landing-funnel" as StreamID
     const envelope = await execution.provisionOrAdopt(owner(), {
       streamId,
-      environment: { kind: "local_worktree", placement: "shared" },
+      environment: { kind: "local_worktree", placement: "shared", directory: repository },
       repository: { baseRevision: "HEAD" },
     })
     const base = (await run("git", ["-C", repository, "rev-parse", "HEAD"])).stdout.trim()
@@ -230,7 +237,7 @@ describe("local WorkGraph workspace execution", () => {
     const streamId = "stream-scheduled-rebase" as StreamID
     const envelope = await execution.provisionOrAdopt(owner(), {
       streamId,
-      environment: { kind: "local_worktree", placement: "shared" },
+      environment: { kind: "local_worktree", placement: "shared", directory: repository },
       repository: { baseRevision: "trunk" },
     })
     const originalHead = (await run("git", ["-C", envelope.workspaceId, "rev-parse", "HEAD"])).stdout.trim()
@@ -328,7 +335,7 @@ describe("local WorkGraph workspace execution", () => {
     const execution = adapter(root, worktrees)
     const request = {
       streamId: "same" as StreamID,
-      environment: { kind: "local_worktree" as const, placement: "shared" as const },
+      environment: { kind: "local_worktree" as const, placement: "shared" as const, directory: `${root}/repository` },
       repository: { baseRevision: "HEAD" },
     }
     const [first, second] = await Promise.all([
@@ -355,7 +362,7 @@ describe("local WorkGraph workspace execution", () => {
     const streamId = "stream-cleanup" as StreamID
     const envelope = await execution.provisionOrAdopt(owner(), {
       streamId,
-      environment: { kind: "local_worktree", placement: "shared" },
+      environment: { kind: "local_worktree", placement: "shared", directory: `${root}/repository` },
       repository: { baseRevision: "HEAD" },
     })
     const legacyChild = path.join(
@@ -396,7 +403,6 @@ describe("local WorkGraph workspace execution", () => {
     const directories: string[] = []
     const execution = createLocalWorkspaceExecution({
       worktreeRoot: worktrees,
-      repositoryDirectory: async () => `${root}/repository`,
       sessions: {
         admit: async (input) => { directories.push(input.directory); return `session_${input.runId}` },
         cancel: async () => undefined,
@@ -406,7 +412,7 @@ describe("local WorkGraph workspace execution", () => {
     const streamId = "stream-workspace" as StreamID
     const envelope = await execution.provisionOrAdopt(owner(), {
       streamId,
-      environment: { kind: "local_worktree", placement: "shared" },
+      environment: { kind: "local_worktree", placement: "shared", directory: `${root}/repository` },
       repository: { baseRevision: "HEAD" },
     })
     await Promise.all(["run_1", "run_2"].map((runId) => execution.launch(owner(), {
@@ -431,7 +437,6 @@ describe("local WorkGraph workspace execution", () => {
     const directories: string[] = []
     const execution = createLocalWorkspaceExecution({
       worktreeRoot: worktrees,
-      repositoryDirectory: async () => `${root}/repository`,
       sessions: {
         admit: async (input) => {
           directories.push(input.directory)
@@ -444,7 +449,7 @@ describe("local WorkGraph workspace execution", () => {
     const streamId = "stream-isolated" as StreamID
     const envelope = await execution.provisionOrAdopt(owner(), {
       streamId,
-      environment: { kind: "local_worktree", placement: "worktree" },
+      environment: { kind: "local_worktree", placement: "worktree", directory: `${root}/repository` },
       repository: { baseRevision: "HEAD" },
     })
     const isolatedProfile = {
@@ -530,7 +535,6 @@ async function repositoryFixture(name: string) {
 function adapter(root: string, worktreeRoot: string, releaseDirectory?: (directory: string) => Promise<void>) {
   return createLocalWorkspaceExecution({
     worktreeRoot,
-    repositoryDirectory: async () => `${root}/repository`,
     sessions: {
       admit: async (input) => `session_${input.runId}`,
       cancel: async () => undefined,

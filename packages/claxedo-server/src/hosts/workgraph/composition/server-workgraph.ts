@@ -1,6 +1,5 @@
 import type { Hono as HonoType } from "hono"
 import { Hono } from "hono"
-import path from "node:path"
 import type BetterSqlite3 from "better-sqlite3"
 import {
   createConnectionWebhookVerifier,
@@ -12,7 +11,7 @@ import {
 } from "@claxedo/connections"
 import type { ExecutionCapabilitiesPort, WorkspaceExecutionPort } from "@claxedo/workgraph"
 import type { SourceIssueConnector } from "@claxedo/workgraph/connectors"
-import type { WorkGraphContext } from "@claxedo/workgraph/contracts"
+import type { ExecutionProfileDefaults, WorkGraphContext } from "@claxedo/workgraph/contracts"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,
@@ -44,22 +43,6 @@ export type LocalWorkGraphAuthOptions = Readonly<{
 
 export type LocalEmbeddedWorkGraph = Awaited<ReturnType<typeof createLocalEmbeddedWorkGraph>>
 
-export class LocalWorkGraphRepositoryDirectoryRequiredError extends Error {
-  readonly code = "local_workgraph_repository_directory_required"
-  readonly retryable = false
-
-  constructor() {
-    super("Local WorkGraph requires CLAXEDO_WORKGRAPH_REPOSITORY to be an absolute repository directory")
-    this.name = "LocalWorkGraphRepositoryDirectoryRequiredError"
-  }
-}
-
-export function requireLocalWorkGraphRepositoryDirectory(value: string | undefined) {
-  const directory = value?.trim()
-  if (!directory || !path.isAbsolute(directory)) throw new LocalWorkGraphRepositoryDirectoryRequiredError()
-  return path.normalize(directory)
-}
-
 export async function recordLocalWorkGraphLlmUsage(
   ...args: Parameters<typeof import("@claxedo/workgraph").recordSqliteWorkGraphLlmUsage>
 ) {
@@ -79,7 +62,10 @@ export async function createLocalEmbeddedWorkGraph(
     executionCapabilities?: ExecutionCapabilitiesPort
     sourcePlanning?: Readonly<{
       sessions: WorkGraphSessionGateway
-      directory: string
+      resolveDirectory(
+        context: WorkGraphContext,
+        execution: ExecutionProfileDefaults,
+      ): Promise<string> | string
     }>
     master?: Readonly<{
       sessions: WorkGraphSessionGateway
@@ -141,7 +127,7 @@ export async function createLocalEmbeddedWorkGraph(
             admit: input.sourcePlanning.sessions.admit,
             result: input.sourcePlanning.sessions.result,
           },
-          sessionDirectory: input.sourcePlanning.directory,
+          resolveSessionDirectory: input.sourcePlanning.resolveDirectory,
         }
       : {}),
   })

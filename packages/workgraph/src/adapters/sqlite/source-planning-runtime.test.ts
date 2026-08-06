@@ -6,13 +6,13 @@ import { createSqliteWorkGraphService } from "./store"
 import { createSqliteSourcePlanningRuntime } from "./source-planning-runtime"
 
 describe("SQLite durable source planning runtime", () => {
-  it("requires an exact Session directory before composing a Session-backed runtime", () => {
+  it("requires a Session directory resolver before composing a Session-backed runtime", () => {
     const database = new BetterSqlite3(":memory:")
     try {
       expect(() => createSqliteSourcePlanningRuntime({
         database,
         sessions: { admit: async () => "session", result: async () => ({ state: "running" }) },
-      })).toThrow("requires an explicit Session directory")
+      })).toThrow("requires a Session directory resolver")
     } finally {
       database.close()
     }
@@ -26,7 +26,7 @@ describe("SQLite durable source planning runtime", () => {
       const source = await createSource(workgraph, false)
       const runtime = createSqliteSourcePlanningRuntime({
         database,
-        sessionDirectory: "/repo",
+        resolveSessionDirectory: () => "/repo",
         sessions: {
           async admit() {
             admissions += 1
@@ -75,7 +75,10 @@ describe("SQLite durable source planning runtime", () => {
       const runtime = createSqliteSourcePlanningRuntime({
         database,
         workerId: "planner-a",
-        sessionDirectory: "/repo",
+        resolveSessionDirectory: (_context, execution) => {
+          if (execution.environment?.kind !== "local_worktree") throw new Error("Expected local source target")
+          return execution.environment.directory!
+        },
         sessions: {
           async admit(input) {
             admissions.push(input)
@@ -182,7 +185,7 @@ describe("SQLite durable source planning runtime", () => {
       const workgraph = service(database)
       const target = await workgraph.execute(owner(), {
         operationId: "target-stream" as never,
-        command: { version: 1, type: "create_stream", title: "Existing launch Stream" },
+        command: { version: 1, type: "create_stream", title: "Existing launch Stream", execution: sourceExecution },
       })
       if (!target.ok) throw new Error("target Stream failed")
       const targetStreamId = (target.value as { streamId: string }).streamId
@@ -192,7 +195,10 @@ describe("SQLite durable source planning runtime", () => {
       let prompt = ""
       const runtime = createSqliteSourcePlanningRuntime({
         database,
-        sessionDirectory: "/repo",
+        resolveSessionDirectory: (_context, execution) => {
+          if (execution.environment?.kind !== "local_worktree") throw new Error("Expected target Stream directory")
+          return execution.environment.directory!
+        },
         sessions: {
           async admit(input) { prompt = input.prompt; return String(input.sessionId) },
           async result() { return { state: "succeeded", summary: JSON.stringify(output), artifacts: [] } },
@@ -229,7 +235,7 @@ describe("SQLite durable source planning runtime", () => {
       output.suggestedPlacement = suggestedPlacement as AdmissionAgentPlan["suggestedPlacement"]
       const runtime = createSqliteSourcePlanningRuntime({
         database,
-        sessionDirectory: "/repo",
+        resolveSessionDirectory: () => "/repo",
         sessions: {
           async admit(input) { return String(input.sessionId) },
           async result() { return { state: "succeeded", summary: JSON.stringify(output), artifacts: [] } },
@@ -267,7 +273,7 @@ describe("SQLite durable source planning runtime", () => {
       const runtime = createSqliteSourcePlanningRuntime({
         database,
         workerId: "planner-a",
-        sessionDirectory: "/repo",
+        resolveSessionDirectory: () => "/repo",
         sessions: {
           async admit(input) { return String(input.sessionId) },
           async result() { return { state: "running" } },
@@ -313,13 +319,23 @@ describe("SQLite durable source planning runtime", () => {
           return { state: "succeeded" as const, summary: JSON.stringify(plan(source.ref)), artifacts: [] }
         },
       }
-      const beforeRestart = createSqliteSourcePlanningRuntime({ database, clock: { now: () => now }, workerId: "planner-before", sessions, sessionDirectory: "/repo" })
+      const beforeRestart = createSqliteSourcePlanningRuntime({ database, clock: { now: () => now }, workerId: "planner-before", sessions, resolveSessionDirectory: () => "/repo" })
       await expect(beforeRestart.runDue(owner())).resolves.toMatchObject({ state: "running" })
       const durable = JSON.parse((database.prepare("SELECT payload_json FROM wg_v2_due_jobs").get() as { payload_json: string }).payload_json)
-      expect(durable).toMatchObject({ sessionId: identities[0]?.sessionId, sessionAdmissionConfirmed: false })
+      expect(durable).toMatchObject({
+        sessionId: identities[0]?.sessionId,
+        sessionDirectory: "/repo",
+        sessionAdmissionConfirmed: false,
+      })
 
       now += 5 * 60 * 1000
-      const afterRestart = createSqliteSourcePlanningRuntime({ database, clock: { now: () => now }, workerId: "planner-after", sessions, sessionDirectory: "/repo" })
+      const afterRestart = createSqliteSourcePlanningRuntime({
+        database,
+        clock: { now: () => now },
+        workerId: "planner-after",
+        sessions,
+        resolveSessionDirectory: () => { throw new Error("durable Session directory should be reused") },
+      })
       await expect(afterRestart.runDue(owner())).resolves.toMatchObject({ state: "completed", sessionId: identities[0]?.sessionId })
       expect(identities).toEqual([identities[0], identities[0]])
       expect(await admission(database, source.proposalId)).toMatchObject({ generation: { method: "agent_session", sessionId: identities[0]?.sessionId } })
@@ -337,7 +353,7 @@ describe("SQLite durable source planning runtime", () => {
       const runtime = createSqliteSourcePlanningRuntime({
         database,
         clock: { now: () => now },
-        sessionDirectory: "/repo",
+        resolveSessionDirectory: () => "/repo",
         sessions: {
           classifyAdmissionError: () => "unavailable",
           async admit() { throw new Error("Session V2 is disabled") },
@@ -414,7 +430,7 @@ describe("SQLite durable source planning runtime", () => {
       output.proposedWorkItems[0]!.dependencyKeys = ["verify"]
       const runtime = createSqliteSourcePlanningRuntime({
         database,
-        sessionDirectory: "/repo",
+        resolveSessionDirectory: () => "/repo",
         sessions: {
           async admit(input) { return String(input.sessionId) },
           async result() { return { state: "succeeded", summary: JSON.stringify(output), artifacts: [] } },
@@ -507,6 +523,7 @@ async function createSource(workgraph: ReturnType<typeof service>, configure = t
       type: "propose_admission",
       source: ref,
       ...(targetStreamId ? { targetStreamId: targetStreamId as never } : {}),
+      ...(!targetStreamId ? { execution: sourceExecution } : {}),
     },
   })
   if (!proposed.ok) throw new Error("proposal failed")
@@ -514,14 +531,17 @@ async function createSource(workgraph: ReturnType<typeof service>, configure = t
 }
 
 const generationExecution = {
-  environment: { kind: "local_worktree" as const, placement: "shared" as const },
-  repository: { baseRevision: "dev" },
   harness: "claxedo-v2",
   agent: "build",
   model: { providerId: "openai", modelId: "gpt-5" },
   effort: "high",
   tools: ["read"],
   connectionIds: [],
+}
+
+const sourceExecution = {
+  environment: { kind: "local_worktree" as const, placement: "shared" as const, directory: "/repo" },
+  repository: { baseRevision: "dev" },
 }
 
 async function admission(database: BetterSqlite3.Database, proposalId: string) {

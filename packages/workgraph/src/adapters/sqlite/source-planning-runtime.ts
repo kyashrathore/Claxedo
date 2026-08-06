@@ -35,11 +35,16 @@ export type SourcePlanningSessionGateway = Readonly<{
 export function createSqliteSourcePlanningRuntime(input: Readonly<{
   database: BetterSqlite3.Database
   sessions?: SourcePlanningSessionGateway
-  sessionDirectory?: string
+  resolveSessionDirectory?: (
+    context: WorkGraphContext,
+    execution: ExecutionProfileDefaults,
+  ) => Promise<string> | string
   clock?: Readonly<{ now(): number }>
   workerId?: string
 }>) {
-  const sessionDirectory = input.sessions ? requireSessionDirectory(input.sessionDirectory, "SQLite source planning") : undefined
+  if (input.sessions && !input.resolveSessionDirectory) {
+    throw new Error("SQLite source planning requires a Session directory resolver")
+  }
   const database = initializeWorkGraphSqliteSchema(input.database).raw()
   if (!database) throw new Error("The SQLite source planning runtime requires a real better-sqlite3 database")
   const clock = input.clock ?? { now: Date.now }
@@ -59,20 +64,29 @@ export function createSqliteSourcePlanningRuntime(input: Readonly<{
       }
       try {
         const existing = sourcePlanningSession(database, context, claimed.id)
-        const profile = existing?.profile ?? sourcePlanningProfile(database, context, source.execution)
+        const execution = existing?.directory ? undefined : sourcePlanningExecution(database, context, source)
+        const profile = existing?.profile ?? sourcePlanningProfile(database, context, execution)
+        const sessionDirectory = execution
+          ? requireSessionDirectory(
+              await input.resolveSessionDirectory?.(context, execution),
+              "SQLite source planning",
+            )
+          : requireSessionDirectory(existing?.directory, "SQLite source planning")
         const requestedSessionId = existing?.id ?? `ses_workgraph_${claimed.id}_${claimed.leaseEpoch}`
-        if (!existing) markSession(database, context, claimed.id, workerId, claimed.leaseEpoch, requestedSessionId, profile, false, clock.now())
+        if (!existing?.directory) {
+          markSession(database, context, claimed.id, workerId, claimed.leaseEpoch, requestedSessionId, sessionDirectory, profile, existing?.admitted ?? false, clock.now())
+        }
         const admitted = existing?.admitted ? requestedSessionId : await input.sessions.admit({
           runId: claimed.id,
           sessionId: requestedSessionId,
-          directory: sessionDirectory!,
+          directory: sessionDirectory,
           title: `Plan: ${source.title}`,
           prompt: sourcePlanningPrompt(claimed.job, source),
           profile,
           context,
         }).then((id) => {
           if (id !== requestedSessionId) throw new Error("Source planning Session did not adopt its caller-owned durable identity")
-          markSession(database, context, claimed.id, workerId, claimed.leaseEpoch, id, profile, true, clock.now())
+          markSession(database, context, claimed.id, workerId, claimed.leaseEpoch, id, sessionDirectory, profile, true, clock.now())
           return id
         }).catch((error) => {
           const disposition = input.sessions!.classifyAdmissionError?.(error) ?? "indeterminate"
@@ -341,17 +355,47 @@ function sourcePlanningProfile(
   return profile.data
 }
 
+function sourcePlanningExecution(
+  database: BetterSqlite3.Database,
+  context: WorkGraphContext,
+  source: NonNullable<ReturnType<typeof planningSource>>,
+) {
+  const stream = typeof source.evidence.targetStreamId === "string"
+    ? database.prepare(`
+        SELECT execution_defaults_json FROM wg_v2_streams
+        WHERE organization_id = ? AND owner_user_id = ? AND id = ?
+      `).get(context.organizationId, context.ownerUserId, source.evidence.targetStreamId) as
+        | { execution_defaults_json: string }
+        | undefined
+    : undefined
+  const streamExecution = stream
+    ? ExecutionProfileDefaultsSchema.parse(JSON.parse(stream.execution_defaults_json))
+    : undefined
+  return ExecutionProfileDefaultsSchema.parse({
+    ...streamExecution,
+    ...source.execution,
+    ...(streamExecution?.environment ? { environment: streamExecution.environment } : {}),
+    ...(streamExecution?.repository ? { repository: streamExecution.repository } : {}),
+  })
+}
+
 function sourcePlanningSession(database: BetterSqlite3.Database, context: WorkGraphContext, jobId: string) {
   const row = database.prepare("SELECT payload_json FROM wg_v2_due_jobs WHERE organization_id = ? AND owner_user_id = ? AND id = ?")
     .get(context.organizationId, context.ownerUserId, jobId) as { payload_json: string } | undefined
   const payload = row ? JSON.parse(row.payload_json) as SourcePlanJob & {
     generationProfile?: unknown
+    sessionDirectory?: unknown
     sessionAdmissionConfirmed?: boolean
   } : undefined
   if (!payload?.sessionId) return undefined
   const profile = ResolvedGenerationProfileSchema.safeParse(payload.generationProfile)
   if (!profile.success) throw new Error("Source planning Session has no valid durable generation profile")
-  return { id: payload.sessionId, admitted: payload.sessionAdmissionConfirmed === true, profile: profile.data }
+  return {
+    id: payload.sessionId,
+    ...(typeof payload.sessionDirectory === "string" ? { directory: payload.sessionDirectory } : {}),
+    admitted: payload.sessionAdmissionConfirmed === true,
+    profile: profile.data,
+  }
 }
 
 function markSession(
@@ -361,6 +405,7 @@ function markSession(
   workerId: string,
   leaseEpoch: number,
   sessionId: string,
+  sessionDirectory: string,
   profile: ResolvedGenerationProfile,
   admitted: boolean,
   now: number,
@@ -373,6 +418,7 @@ function markSession(
       .run(JSON.stringify({
         ...JSON.parse(row.payload_json),
         sessionId,
+        sessionDirectory,
         generationProfile: profile,
         sessionAdmissionConfirmed: admitted,
       }), context.organizationId, context.ownerUserId, jobId, workerId, leaseEpoch)

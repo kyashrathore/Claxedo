@@ -241,7 +241,6 @@ describe("WorkGraph execution capability composition", () => {
     try {
       const requested: string[] = []
       const capabilities = createLocalExecutionCapabilities({
-        repositoryDirectory: path.join(directory, "ledger"),
         resolveRepositoryDirectory: (requestedDirectory) => (requestedDirectory === directory ? directory : undefined),
         harness: async () => "opencode",
         now: () => 456,
@@ -294,9 +293,9 @@ describe("WorkGraph execution capability composition", () => {
     const directory = await gitRepository()
     try {
       const capabilities = createLocalExecutionCapabilities({
-        repositoryDirectory: directory,
+        resolveRepositoryDirectory: (requestedDirectory) => requestedDirectory === directory ? directory : undefined,
         harness: async () => "codex-acp",
-        harnessConfigOptions: async (harness) => harness === "codex-acp" ? [{
+        harnessConfigOptions: async (requestedDirectory, harness) => requestedDirectory === directory && harness === "codex-acp" ? [{
           id: "model",
           currentValue: "gpt-5.6-sol",
           options: [{ value: "gpt-5.6-sol", name: "GPT-5.6-Sol" }],
@@ -309,7 +308,7 @@ describe("WorkGraph execution capability composition", () => {
         },
       })
 
-      const result = await capabilities.read(context, {})
+      const result = await capabilities.read(context, { directory })
       expect(result.models.filter((model) => model.harnessId === "codex-acp")).toEqual([{
         harnessId: "codex-acp",
         providerId: "codex-acp",
@@ -323,22 +322,16 @@ describe("WorkGraph execution capability composition", () => {
   })
 
   test("advertises only connected organization-owned team Connections available to execution", async () => {
-    const directory = await gitRepository()
     const partitions: unknown[] = []
-    try {
-      const capabilities = createLocalExecutionCapabilities({
-        repositoryDirectory: directory,
-        harness: async () => "opencode",
-        opencodeRequest: async (request) => {
-          const pathname = new URL(request.url).pathname
-          return Response.json(
-            pathname === "/agent" ? runtime.agents : pathname === "/api/model" ? runtime.providers : runtime.tools,
-          )
-        },
-        connections: {
-          list: async (partition: unknown) => {
-            partitions.push(partition)
-            return [
+    const capabilities = createLocalExecutionCapabilities({
+      harness: async () => "opencode",
+      opencodeRequest: async () => {
+        throw new Error("Unscoped capabilities must not inspect a repository runtime")
+      },
+      connections: {
+        list: async (partition: unknown) => {
+          partitions.push(partition)
+          return [
               {
                 id: "connection_team",
                 integrationId: "github",
@@ -369,25 +362,22 @@ describe("WorkGraph execution capability composition", () => {
                 createdAt: 1,
                 updatedAt: 1,
               },
-            ]
-          },
-        } as unknown as ConnectionsService,
-        resolveTeamOwner: () => "org:org_1",
-      })
-
-      const result = await capabilities.read(context, {})
-      expect(partitions).toEqual([{ owner: "owner_1", teamOwner: "org:org_1" }])
-      expect(result.connections).toEqual([
-        {
-          id: "connection_team",
-          integrationId: "github",
-          scope: "team",
-          grantedCapabilities: ["work-source"],
+          ]
         },
-      ])
-    } finally {
-      await rm(directory, { recursive: true, force: true })
-    }
+      } as unknown as ConnectionsService,
+      resolveTeamOwner: () => "org:org_1",
+    })
+
+    const result = await capabilities.read(context, {})
+    expect(partitions).toEqual([{ owner: "owner_1", teamOwner: "org:org_1" }])
+    expect(result.connections).toEqual([
+      {
+        id: "connection_team",
+        integrationId: "github",
+        scope: "team",
+        grantedCapabilities: ["work-source"],
+      },
+    ])
   })
 
   test("reads an existing managed catalog without provisioning on GET and provisions only on explicit refresh", async () => {
@@ -940,12 +930,10 @@ describe("WorkGraph execution capability composition", () => {
   })
 
   test("scopes base-revision enumeration to a validated project directory", async () => {
-    const bootRepo = await gitRepository()
     const otherRepo = await gitRepositoryWithBranches()
     const validated: string[] = []
     try {
       const capabilities = createLocalExecutionCapabilities({
-        repositoryDirectory: bootRepo,
         harness: async () => "opencode",
         // Only the second repository is a "known project"; everything else is unknown.
         resolveRepositoryDirectory: (directory) => {
@@ -960,94 +948,77 @@ describe("WorkGraph execution capability composition", () => {
         },
       })
 
-      // No selector → nothing. The boot repository is WorkGraph's own ledger, so
-      // its refs are never advertised as if they were a user project's.
-      const boot = await capabilities.read(context, {})
-      expect(boot.repository.baseRevisions).toEqual([])
+      const unscoped = await capabilities.read(context, {})
+      expect(unscoped.repository.baseRevisions).toEqual([])
       expect(validated).toEqual([])
 
       // A validated selector → THAT repository's branches, HEAD-first / newest-first.
       const scoped = await capabilities.read(context, { directory: otherRepo })
       expect(scoped.repository.baseRevisions).toEqual(["HEAD", "newer-feature", "older-feature", "main"])
-      expect(validated).toEqual([otherRepo])
+      expect(validated).toEqual([otherRepo, otherRepo])
     } finally {
-      await rm(bootRepo, { recursive: true, force: true })
       await rm(otherRepo, { recursive: true, force: true })
     }
   })
 
   test("fails closed on an unknown or non-existent directory without running git against it", async () => {
-    const bootRepo = await gitRepository()
     const validated: string[] = []
-    try {
-      const capabilities = createLocalExecutionCapabilities({
-        repositoryDirectory: bootRepo,
-        harness: async () => "opencode",
-        // Unknown project directory: the validator returns nothing, so git must
-        // never be invoked against the caller-supplied path.
-        resolveRepositoryDirectory: (directory) => {
-          validated.push(directory)
-          return undefined
-        },
-        opencodeRequest: async (request) => {
-          const pathname = new URL(request.url).pathname
-          return Response.json(
-            pathname === "/agent" ? runtime.agents : pathname === "/api/model" ? runtime.providers : runtime.tools,
-          )
-        },
-      })
+    const capabilities = createLocalExecutionCapabilities({
+      harness: async () => "opencode",
+      // Unknown project directory: the validator returns nothing, so git must
+      // never be invoked against the caller-supplied path.
+      resolveRepositoryDirectory: (directory) => {
+        validated.push(directory)
+        return undefined
+      },
+      opencodeRequest: async (request) => {
+        const pathname = new URL(request.url).pathname
+        return Response.json(
+          pathname === "/agent" ? runtime.agents : pathname === "/api/model" ? runtime.providers : runtime.tools,
+        )
+      },
+    })
 
-      await expect(capabilities.read(context, { directory: "/not/a/known/project" })).rejects.toMatchObject({
-        code: "execution_capabilities_unavailable",
-        capability: "repository",
-        reason: "repository_unavailable",
-        retryable: false,
-      })
-      expect(validated).toEqual(["/not/a/known/project"])
+    await expect(capabilities.read(context, { directory: "/not/a/known/project" })).rejects.toMatchObject({
+      code: "execution_capabilities_unavailable",
+      capability: "repository",
+      reason: "repository_unavailable",
+      retryable: false,
+    })
+    expect(validated).toEqual(["/not/a/known/project", "/not/a/known/project"])
 
-      // A relative selector is rejected before the validator is even consulted.
-      await expect(capabilities.read(context, { directory: "relative/path" })).rejects.toMatchObject({
-        capability: "repository",
-        reason: "repository_unavailable",
-      })
-      expect(validated).toEqual(["/not/a/known/project"])
-    } finally {
-      await rm(bootRepo, { recursive: true, force: true })
-    }
+    // A relative selector is rejected before the validator is even consulted.
+    await expect(capabilities.read(context, { directory: "relative/path" })).rejects.toMatchObject({
+      capability: "repository",
+      reason: "repository_unavailable",
+    })
+    expect(validated).toEqual(["/not/a/known/project", "/not/a/known/project"])
   })
 
   test("fails closed when the validator resolves a directory that no longer exists", async () => {
-    const bootRepo = await gitRepository()
     const missing = path.join(os.tmpdir(), "workgraph-capabilities-missing-does-not-exist")
-    try {
-      const capabilities = createLocalExecutionCapabilities({
-        repositoryDirectory: bootRepo,
-        harness: async () => "opencode",
-        resolveRepositoryDirectory: () => missing,
-        opencodeRequest: async (request) => {
-          const pathname = new URL(request.url).pathname
-          return Response.json(
-            pathname === "/agent" ? runtime.agents : pathname === "/api/model" ? runtime.providers : runtime.tools,
-          )
-        },
-      })
+    const capabilities = createLocalExecutionCapabilities({
+      harness: async () => "opencode",
+      resolveRepositoryDirectory: () => missing,
+      opencodeRequest: async (request) => {
+        const pathname = new URL(request.url).pathname
+        return Response.json(
+          pathname === "/agent" ? runtime.agents : pathname === "/api/model" ? runtime.providers : runtime.tools,
+        )
+      },
+    })
 
-      await expect(capabilities.read(context, { directory: missing })).rejects.toMatchObject({
-        capability: "repository",
-        reason: "repository_unavailable",
-        retryable: false,
-      })
-    } finally {
-      await rm(bootRepo, { recursive: true, force: true })
-    }
+    await expect(capabilities.read(context, { directory: missing })).rejects.toMatchObject({
+      capability: "repository",
+      reason: "repository_unavailable",
+      retryable: false,
+    })
   })
 
   test("suggests only local branches for the base revision, most recently committed first", async () => {
-    const ledger = await gitRepository()
     const directory = await gitRepositoryWithBranches()
     try {
       const capabilities = createLocalExecutionCapabilities({
-        repositoryDirectory: ledger,
         harness: async () => "opencode",
         resolveRepositoryDirectory: (requested) => (requested === directory ? directory : undefined),
         opencodeRequest: async (request) => {
@@ -1063,37 +1034,22 @@ describe("WorkGraph execution capability composition", () => {
       expect(result.repository.baseRevisions).not.toContain("origin/main")
       expect(result.repository.baseRevisions).not.toContain("upstream/main")
     } finally {
-      await rm(ledger, { recursive: true, force: true })
       await rm(directory, { recursive: true, force: true })
     }
   })
 
-  test("never advertises the WorkGraph ledger's own refs as a user repository", async () => {
-    const ledger = await gitRepositoryWithBranches()
-    try {
-      const capabilities = createLocalExecutionCapabilities({
-        repositoryDirectory: ledger,
-        harness: async () => "opencode",
-        // The ledger IS a known directory here: even so, a read that resolves to
-        // it must expose nothing, so the New stream dialog has no revisions to
-        // render until a real project is picked.
-        resolveRepositoryDirectory: (directory) => directory,
-        opencodeRequest: async (request) => {
-          const pathname = new URL(request.url).pathname
-          return Response.json(
-            pathname === "/agent" ? runtime.agents : pathname === "/api/model" ? runtime.providers : runtime.tools,
-          )
-        },
-      })
+  test("does not inspect any Git or runtime repository on an unscoped capability read", async () => {
+    const capabilities = createLocalExecutionCapabilities({
+      harness: async () => "opencode",
+      resolveRepositoryDirectory: () => {
+        throw new Error("Unscoped capabilities must not resolve a repository")
+      },
+      opencodeRequest: async () => {
+        throw new Error("Unscoped capabilities must not inspect a repository runtime")
+      },
+    })
 
-      await expect(capabilities.read(context, {})).resolves.toMatchObject({ repository: { baseRevisions: [] } })
-      await expect(capabilities.read(context, { directory: ledger })).rejects.toMatchObject({
-        capability: "repository",
-        reason: "repository_unavailable",
-      })
-    } finally {
-      await rm(ledger, { recursive: true, force: true })
-    }
+    await expect(capabilities.read(context, {})).resolves.toMatchObject({ repository: { baseRevisions: [] } })
   })
 })
 

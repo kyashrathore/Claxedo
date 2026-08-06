@@ -1,7 +1,5 @@
-import { execFile } from "node:child_process"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { promisify } from "node:util"
 import { serve } from "@hono/node-server"
 import Database from "better-sqlite3"
 import { Hono } from "hono"
@@ -118,10 +116,6 @@ const embedded = await createLocalEmbeddedWorkGraph({
   database,
   execution: createLocalWorkspaceExecution({
     worktreeRoot: path.join(repositoryDirectory, ".claxedo-workgraph-worktrees"),
-    repositoryDirectory: async (baseRevision) => {
-      await promisify(execFile)("git", ["-C", repositoryDirectory, "rev-parse", "--verify", baseRevision])
-      return repositoryDirectory
-    },
     sessions,
   }),
   executionCapabilities: capabilities,

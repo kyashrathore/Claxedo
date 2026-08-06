@@ -9,7 +9,6 @@ import {
   createLocalEmbeddedWorkGraph,
   mountEmbeddedWorkGraph,
   mountLazyEmbeddedWorkGraph,
-  requireLocalWorkGraphRepositoryDirectory,
   type LocalWorkGraphAuthOptions,
 } from "./server-workgraph"
 import type { ExecutionCapabilitiesPort, WorkspaceExecutionPort } from "@claxedo/workgraph"
@@ -33,15 +32,6 @@ afterEach(() => {
 })
 
 describe("embedded local WorkGraph v2", () => {
-  it("requires an explicitly configured absolute local repository before composition", () => {
-    expect(() => requireLocalWorkGraphRepositoryDirectory(undefined)).toThrowError(expect.objectContaining({
-      code: "local_workgraph_repository_directory_required",
-      retryable: false,
-    }))
-    expect(() => requireLocalWorkGraphRepositoryDirectory("relative/repo")).toThrow("requires CLAXEDO_WORKGRAPH_REPOSITORY")
-    expect(requireLocalWorkGraphRepositoryDirectory(" /repo ")).toBe("/repo")
-  })
-
   it("mounts the composed local execution capability port at the WorkGraph API", async () => {
     const executionCapabilities: ExecutionCapabilitiesPort = {
       read: async (context) => {

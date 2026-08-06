@@ -22,7 +22,6 @@ const SESSION_COMPOSER_HARNESSES = [
 
 export function createLocalExecutionCapabilities(input: Readonly<{
   opencodeRequest: OpenCodeRequestFn
-  repositoryDirectory: string
   harness(): Promise<string>
   connections?: ConnectionsService
   resolveTeamOwner?: (context: WorkGraphContext) => string | undefined
@@ -32,7 +31,7 @@ export function createLocalExecutionCapabilities(input: Readonly<{
    * directory to enumerate refs from — or `undefined` when the directory is not
    * a known project. Base-revision enumeration NEVER runs git against an
    * unvalidated path: an unknown directory fails closed with a typed repository
-   * capability error. Omit to keep every read scoped to the boot repository.
+   * capability error.
    */
   resolveRepositoryDirectory?: (directory: string) => Promise<string | undefined> | string | undefined
   /**
@@ -41,7 +40,7 @@ export function createLocalExecutionCapabilities(input: Readonly<{
    * running harness instead of the static fallback catalog. Optional: absent or
    * failing, the static catalog is served exactly as before.
    */
-  harnessConfigOptions?: (harness: string) => Promise<unknown>
+  harnessConfigOptions?: (directory: string, harness: string) => Promise<unknown>
   now?: () => number
 }>) {
   return createExecutionCapabilitiesPort({
@@ -51,18 +50,31 @@ export function createLocalExecutionCapabilities(input: Readonly<{
       remoteUrlInput: false,
       baseRevisionInput: true,
     },
-    readRuntime: async () => {
-      const [activeHarness, agents, providers, tools] = await Promise.all([
+    readRuntime: async (_context, request) => {
+      const harnessConfigOptions = input.harnessConfigOptions
+      const directory = resolveScopedRepositoryDirectory(input, request.directory)
+      const [resolvedDirectory, activeHarness, runtime] = await Promise.all([
+        directory,
         input.harness(),
-        runtimeJson(input, "/agent"),
-        runtimeJson(input, "/api/model"),
-        runtimeJson(input, "/experimental/tool/ids"),
+        directory.then(async (selectedDirectory) => {
+          if (!selectedDirectory) return [[], { connected: [], all: [] }, ["terminal"]] as const
+          return Promise.all([
+            runtimeJson(input, selectedDirectory, "/agent"),
+            runtimeJson(input, selectedDirectory, "/api/model"),
+            runtimeJson(input, selectedDirectory, "/experimental/tool/ids"),
+          ])
+        }),
       ])
       const harnesses = [
         ...(await Promise.all(SESSION_COMPOSER_HARNESSES.map(async (harness) => ({
           harness: { harness },
           agents: defaultAgent(harness),
-          providers: await sdkProviders(harness, input.harnessConfigOptions),
+          providers: await sdkProviders(
+            harness,
+            resolvedDirectory && harnessConfigOptions
+              ? (selectedHarness) => harnessConfigOptions(resolvedDirectory, selectedHarness)
+              : undefined,
+          ),
           tools: [],
           connectionTools: false,
         })))),
@@ -73,7 +85,7 @@ export function createLocalExecutionCapabilities(input: Readonly<{
           tools: [],
           connectionTools: false,
         },
-        { harness: { harness: "opencode" }, agents, providers, tools },
+        { harness: { harness: "opencode" }, agents: runtime[0], providers: runtime[1], tools: runtime[2] },
       ]
       const preferred = composerHarness(activeHarness)
       return {
@@ -82,18 +94,10 @@ export function createLocalExecutionCapabilities(input: Readonly<{
           : harnesses,
       }
     },
-    // Base-revision enumeration is directory-scoped: when the caller names a
-    // project, its refs come from THAT repository (validated first), otherwise
-    // from the boot repository — exactly the prior behavior.
+    // Base-revision enumeration is always scoped to a caller-selected project.
     readRepository: async (_context, request) => {
       const directory = await resolveScopedRepositoryDirectory(input, request.directory)
-      // The boot repository is WorkGraph's own ledger, not user code. Its refs are
-      // an internal implementation detail: an unscoped read advertises none, and
-      // naming it explicitly fails closed like any other non-project directory.
-      if (directory === input.repositoryDirectory) {
-        if (request.directory?.trim()) throw unknownRepository(request.directory.trim())
-        return { baseRevisions: [] }
-      }
+      if (!directory) return { baseRevisions: [] }
       const run = promisify(execFile)
       const [, refs, remoteUrl] = await Promise.all([
         run("git", ["-C", directory, "rev-parse", "--verify", "HEAD^{commit}"]),
@@ -136,18 +140,16 @@ export function createLocalExecutionCapabilities(input: Readonly<{
  * caller-supplied path. A requested directory is honored only when it is an
  * absolute path that the server's authoritative known-projects validator
  * recognizes AND that exists on disk. Anything else throws a typed repository
- * capability error (never a silent boot-repo enumeration of the wrong repo).
- * No directory → the boot repository, exactly as before.
+ * capability error. An unscoped read has no repository catalog.
  */
 async function resolveScopedRepositoryDirectory(
   input: Readonly<{
-    repositoryDirectory: string
     resolveRepositoryDirectory?: (directory: string) => Promise<string | undefined> | string | undefined
   }>,
   requested: string | undefined,
 ) {
   const trimmed = requested?.trim()
-  if (!trimmed) return input.repositoryDirectory
+  if (!trimmed) return undefined
   if (!input.resolveRepositoryDirectory || !path.isAbsolute(trimmed)) {
     throw unknownRepository(trimmed)
   }
@@ -244,9 +246,13 @@ function withDefaultEffort(catalog: ReturnType<typeof piProviderCatalog>) {
   }
 }
 
-async function runtimeJson(input: Readonly<{ opencodeRequest: OpenCodeRequestFn; repositoryDirectory: string }>, pathname: string) {
+async function runtimeJson(
+  input: Readonly<{ opencodeRequest: OpenCodeRequestFn }>,
+  directory: string,
+  pathname: string,
+) {
   const response = await input.opencodeRequest(new Request(new URL(pathname, OPENCODE_INTERNAL_BASE), {
-    headers: { "x-opencode-directory": input.repositoryDirectory },
+    headers: { "x-opencode-directory": directory },
     signal: AbortSignal.timeout(5_000),
   }))
   if (!response.ok) throw new Error(`Execution runtime catalog ${pathname} failed with ${response.status}`)
