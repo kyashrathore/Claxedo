@@ -173,29 +173,23 @@ function createSessionEntries(props: {
   globalSDK: ReturnType<typeof useGlobalSDK>
   language: ReturnType<typeof useLanguage>
 }) {
+  const [revision, setRevision] = createSignal(0)
   const state: {
-    token: number
     inflight: Promise<Entry[]> | undefined
     cached: Entry[] | undefined
   } = {
-    token: 0,
     inflight: undefined,
     cached: undefined,
   }
 
   const sessions = (text: string) => {
+    revision()
     const query = text.trim()
-    if (!query) {
-      state.token += 1
-      state.inflight = undefined
-      state.cached = undefined
-      return [] as Entry[]
-    }
+    if (!query) return [] as Entry[]
 
     if (state.cached) return state.cached
-    if (state.inflight) return state.inflight
+    if (state.inflight) return [] as Entry[]
 
-    const current = state.token
     const dirs = props.workspaces()
     if (dirs.length === 0) return [] as Entry[]
 
@@ -236,7 +230,6 @@ function createSessionEntries(props: {
       }),
     )
       .then((results) => {
-        if (state.token !== current) return [] as Entry[]
         const seen = new Set<string>()
         const category = props.language.t("command.category.session")
         const next = results
@@ -249,14 +242,19 @@ function createSessionEntries(props: {
           })
           .map((item) => createSessionEntry(item, category))
         state.cached = next
+        setRevision((value) => value + 1)
         return next
       })
-      .catch(() => [] as Entry[])
+      .catch(() => {
+        state.cached = []
+        setRevision((value) => value + 1)
+        return [] as Entry[]
+      })
       .finally(() => {
         state.inflight = undefined
       })
 
-    return state.inflight
+    return [] as Entry[]
   }
 
   return { sessions }
@@ -355,7 +353,8 @@ export function DialogSelectFile(props: {
       return files.map((path) => createFileEntry(path, category))
     }
 
-    const [files, nextSessions] = await Promise.all([file().searchFiles(query), Promise.resolve(sessions(query))])
+    const nextSessions = sessions(query)
+    const files = await file().searchFiles(query)
     const category = language.t("palette.group.files")
     const entries = files.map((path) => createFileEntry(path, category))
     return [...commandEntries.list(), ...nextSessions, ...entries]
@@ -426,7 +425,8 @@ export function DialogSelectFile(props: {
 
   return (
     <Dialog
-      class="pt-3 pb-0 !max-h-[480px]"
+      flush
+      class="claxedo-command-palette !max-h-[480px]"
       transition
       aria-label={filesOnly() ? language.t("session.header.searchFiles") : language.t("palette.search.placeholder")}
     >

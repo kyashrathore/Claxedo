@@ -57,6 +57,7 @@ let focusInputCalls = 0
 const promptSets: unknown[] = []
 const navigateCalls: string[] = []
 const dialogFactories: Array<() => unknown> = []
+const fileDialogProps: Array<{ mode?: "all" | "files"; directory: string; sessionId?: string }> = []
 const localModelSetCalls: Array<{ model: unknown; options?: { recent?: boolean } }> = []
 type CapturedPicker = {
   list: () => Array<{ id: string; provider: { id: string } }>
@@ -131,7 +132,9 @@ mock.module("@opencode-ai/ui/context/dialog", () => ({
 }))
 
 mock.module("@/features/session/ui/dialogs/select-file", () => ({
-  DialogSelectFile: () => undefined,
+  DialogSelectFile: (props: { mode?: "all" | "files"; directory: string; sessionId?: string }) => {
+    fileDialogProps.push(props)
+  },
 }))
 
 mock.module("@/features/session/ui/model/select-model", () => ({
@@ -335,6 +338,7 @@ describe("upstream contract", async () => {
     promptSets.length = 0
     navigateCalls.length = 0
     dialogFactories.length = 0
+    fileDialogProps.length = 0
     modelDialogProps.length = 0
     localModelSetCalls.length = 0
     clearConversationChatRegistryForTest()
@@ -385,6 +389,18 @@ describe("upstream contract", async () => {
     expect(ids).toContain("session.fork")
     expect(ids).toContain("message.previous")
     expect(ids).toContain("message.next")
+  })
+
+  test("scopes Open File to files while the command palette keeps the combined mode", () => {
+    const fileOpen = collectCommands().find((command) => command.id === "file.open")
+
+    fileOpen?.onSelect("keybind")
+    dialogFactories.at(-1)?.()
+    expect(fileDialogProps.at(-1)).toMatchObject({ mode: "files", directory: "/repo", sessionId: "session-1" })
+
+    fileOpen?.onSelect("palette")
+    dialogFactories.at(-1)?.()
+    expect(fileDialogProps.at(-1)).toMatchObject({ mode: "all", directory: "/repo", sessionId: "session-1" })
   })
 
   test("model picker command injects the local model controller", () => {

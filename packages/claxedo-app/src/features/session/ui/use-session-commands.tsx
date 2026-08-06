@@ -182,9 +182,10 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       description: language.t("palette.search.placeholder"),
       keybind: "mod+p",
       slash: "open",
-      onSelect: () => {
+      onSelect: (source) => {
         dialog.show(() => (
           <DialogSelectFile
+            mode={source === "palette" ? "all" : "files"}
             directory={args.directory()}
             sessionId={args.sessionId()}
             onOpenFile={args.showAllFiles}
