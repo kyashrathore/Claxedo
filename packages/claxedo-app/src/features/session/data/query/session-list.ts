@@ -241,18 +241,39 @@ export function reconcileUpdatedSessionListQueryData(input: SessionListUpdate) {
   })) {
     setSessionListQueryData(query.queryKey as ReturnType<typeof queryKeys.shell.sessionList>, (response) => {
       if (!response) return response
+      // `updated_desc` is the list's contract, and this reconcile can move a
+      // row's `updatedAt` — so the rows have to be re-ordered, not just
+      // rewritten in place. Without this an auto-titled session stayed at
+      // whatever index it was first inserted at while claiming a brand-new
+      // timestamp: observed live as a 30-second-old "Greeting" sitting at
+      // position 6, below rows 12-29 minutes older than it.
+      //
+      // Guarded on the view's own sort so a list ordered some other way is
+      // left exactly as the server sent it.
+      const sorted = response.view?.sort === "updated_desc"
       return {
         ...response,
-        ...(response.items ? { items: reconcileUpdatedSessionListRows(response.items, input) } : {}),
+        ...(response.items ? { items: reorder(reconcileUpdatedSessionListRows(response.items, input), sorted) } : {}),
         ...(response.groups ? {
           groups: response.groups.map((group) => ({
             ...group,
-            items: reconcileUpdatedSessionListRows(group.items, input),
+            items: reorder(reconcileUpdatedSessionListRows(group.items, input), sorted),
           })),
         } : {}),
       }
     })
   }
+}
+
+/**
+ * Re-sort newest-first, but only when the caller confirmed the view is
+ * `updated_desc`. Sorted as a stable pass over a copy: rows whose `updatedAt`
+ * ties keep the server's relative order, so this never reshuffles a list it
+ * had no reason to touch.
+ */
+function reorder(rows: readonly SessionNavigationRow[], sorted: boolean) {
+  if (!sorted) return rows as SessionNavigationRow[]
+  return [...rows].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
 }
 
 function reconcileUpdatedSessionListRows(
