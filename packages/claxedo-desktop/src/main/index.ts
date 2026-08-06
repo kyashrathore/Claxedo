@@ -1,8 +1,7 @@
 import { EventEmitter } from "node:events"
 import { spawn } from "node:child_process"
-import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs"
+import { existsSync, renameSync, writeFileSync } from "node:fs"
 import { rm } from "node:fs/promises"
-import { createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { Event, MessageBoxOptions } from "electron"
@@ -53,11 +52,11 @@ import type { InitStep, ServerReadyData, WslConfig } from "../preload/types"
 import { ensureAgentPath } from "./agent-path"
 import { checkAppExists, resolveAppPath, wslPath } from "./apps"
 import { resolveSystemClaude } from "./claude-executable"
-import { loadServerEnvForDevelopment } from "./server-env"
-import { ensureWorkGraphRepository } from "./workgraph-repository"
+import { loadServerEnvForDevelopment, resolveDesktopServerDataDir } from "./server-env"
 import type { BrowserRegistry } from "./browser/registry"
 import { setupBrowserTab } from "./browser/setup"
 import { CHANNEL, IS_PACKAGED, UPDATER_ENABLED } from "./constants"
+import { findFreePort, resolveBaseServerPort } from "./server-port"
 import { runRestart } from "../shared/restart-policy"
 import type { DiagnosticsWebContents } from "./diagnostics/ipc"
 import { createElectronSource } from "./diagnostics/electron-source"
@@ -134,12 +133,7 @@ const scanSessionMemory = createSessionMemoryScanner({
     claudeHome: process.env.CLAUDE_CONFIG_DIR ?? join(app.getPath("home"), ".claude"),
     databases: [
       ...(["prod", "beta", "dev"] as const).map((channel) => ({
-        path: join(
-          app.getPath("home"),
-          channel === "prod" ? ".claxedo" : `.claxedo-${channel}`,
-          "opencode-engine",
-          "opencode.db",
-        ),
+        path: join(resolveDesktopServerDataDir({ channel, home: app.getPath("home") }), "opencode-engine", "opencode.db"),
         profile: channel,
       })),
       ...(process.env.CLAXEDO_DATA_DIR
@@ -256,7 +250,7 @@ function getOpenCodeEmbedPath(): string {
 }
 
 async function startClaxedoServer(): Promise<{ url: string }> {
-  const claxedoPort = await getFreePort(Number(process.env.CLAXEDO_SERVER_PORT ?? 3001))
+  const claxedoPort = await findFreePort(resolveBaseServerPort())
   const serverPath = getClaxedoServerPath()
   const openCodeEmbedPath = getOpenCodeEmbedPath()
   logger.log("starting claxedo-server with embedded OpenCode", { serverPath, claxedoPort, openCodeEmbedPath })
@@ -288,15 +282,6 @@ async function startClaxedoServer(): Promise<{ url: string }> {
     else logger.warn("Claude Code CLI not found; Claude harnesses need `claude` installed and on PATH")
   }
 
-  // The embedded claxedo-server hard-requires CLAXEDO_WORKGRAPH_REPOSITORY to be
-  // an absolute directory at composition (server.ts) — unset, startServer throws
-  // and the whole utility process dies. There is no single project repo on
-  // desktop, so default WorkGraph to a stable dir under userData.
-  // Development only, and never for a packaged app: those files hold real
-  // secrets from whoever checked the repo out, and a shipped binary has no
-  // source tree beside it to read. `script/onboarding-desktop.sh` does the same
-  // thing for its own launch path; this covers a bare `bun dev:desktop`, where
-  // there is no wrapper script to source anything.
   if (!IS_PACKAGED) {
     try {
       loadServerEnvForDevelopment({
@@ -308,18 +293,11 @@ async function startClaxedoServer(): Promise<{ url: string }> {
     }
   }
 
-  if (!process.env.CLAXEDO_WORKGRAPH_REPOSITORY?.trim()) {
-    const workgraphDir = join(app.getPath("userData"), "workgraph")
-    try {
-      // A directory is not enough: WorkGraph reads base revisions with
-      // `git rev-parse HEAD^{commit}`, so a fresh profile has to boot with a
-      // repository that already has a commit.
-      ensureWorkGraphRepository(workgraphDir)
-      process.env.CLAXEDO_WORKGRAPH_REPOSITORY = workgraphDir
-    } catch (err) {
-      logger.warn("failed to prepare WorkGraph repository directory", { workgraphDir, error: String(err) })
-    }
-  }
+  const serverDataDir = resolveDesktopServerDataDir({
+    channel: CHANNEL,
+    home: app.getPath("home"),
+    configured: process.env.CLAXEDO_DATA_DIR,
+  })
 
   try {
     const serverLaunchId = `claxedo-server-${crypto.randomUUID()}`
@@ -333,6 +311,7 @@ async function startClaxedoServer(): Promise<{ url: string }> {
           Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
         ),
         CLAXEDO_CHILD_PORT: String(claxedoPort),
+        CLAXEDO_DATA_DIR: serverDataDir,
         CLAXEDO_DESKTOP_PARENT_PID: String(process.pid),
         CLAXEDO_CHILD_OPENCODE_EMBED_PATH: openCodeEmbedPath,
         CLAXEDO_DIAGNOSTICS_LAUNCH_ID: serverLaunchId,
@@ -439,12 +418,16 @@ async function setupServerConnection(): Promise<ServerConnection> {
     // to 3001 while `startClaxedoServer` honours CLAXEDO_SERVER_PORT, so the
     // env var moved the embedded server but not the probe — leaving no way to
     // run an isolated dev server. Two checkouts of the repo (say a worktree and
-    // the main tree) both defaulted to 3001, so whichever started second
-    // silently attached to the FIRST one's server: its PTYs, its
+    // the main tree) both defaulted to the same base port, so whichever started
+    // second silently attached to the FIRST one's server: its PTYs, its
     // workspace-runtime code. A renderer change appears to work while the
     // server half of the same change never runs, and quitting one app leaves
     // the other's PTYs alive. Set CLAXEDO_SERVER_PORT to get a private server.
-    const devPort = Number(process.env.CLAXEDO_SERVER_PORT ?? 3001)
+    //
+    // This probe is also why the base port must not be a popular default: a hit
+    // here is adopted as "our server", so any unrelated project listening on it
+    // would be handed the session. See DEFAULT_CLAXEDO_SERVER_PORT.
+    const devPort = resolveBaseServerPort()
     const candidates = [process.env.CLAXEDO_SERVER_URL, `http://127.0.0.1:${devPort}`].filter(Boolean) as string[]
     const results = await Promise.all(candidates.map(async (url) => ({ url, ok: await checkHealth(url) })))
     const hit = results.find((r) => r.ok)
@@ -596,8 +579,8 @@ const diagnosticsIpc = registerIpcHandlers({
   setStartAtLogin: (enabled) => startAtLogin.set(enabled),
   browser: browserRegistry,
   processDiagnostics: {
-    scanSessionMemory,
     profiler: diagnosticsProfiler,
+    scanSessionMemory,
     isAllowedUrl: isTrustedMainRendererUrl,
     async confirmAction(input) {
       if (process.env.CLAXEDO_DIAGNOSTICS_PACKAGED_SMOKE === "1") return true
@@ -791,27 +774,6 @@ function ensureLoopbackNoProxy() {
   upsert("no_proxy")
 }
 
-async function getFreePort(preferred: number) {
-  const listen = (port: number) => new Promise<number>((resolve, reject) => {
-    const server = createServer()
-    server.once("error", reject)
-    server.listen(port, "127.0.0.1", () => {
-      const address = server.address()
-      if (typeof address !== "object" || !address) {
-        server.close()
-        reject(new Error("Failed to get port"))
-        return
-      }
-      const port = address.port
-      server.close(() => resolve(port))
-    })
-  })
-  return listen(preferred).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "EADDRINUSE") return listen(0)
-    throw error
-  })
-}
-
 function cleanupLegacyDevCaches() {
   if (IS_PACKAGED) return
   const marker = join(app.getPath("userData"), ".legacy-cache-cleaned-v1")
@@ -841,7 +803,11 @@ function cleanupLegacyDevCaches() {
 }
 
 function sqliteFileExists() {
-  const base = process.env.CLAXEDO_DATA_DIR?.trim() || join(app.getPath("home"), ".claxedo")
+  const base = resolveDesktopServerDataDir({
+    channel: CHANNEL,
+    home: app.getPath("home"),
+    configured: process.env.CLAXEDO_DATA_DIR,
+  })
   return existsSync(join(base, "opencode-engine", "opencode.db"))
 }
 

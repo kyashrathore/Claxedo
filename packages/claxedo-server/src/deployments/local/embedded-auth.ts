@@ -7,6 +7,7 @@ import { bearer } from "better-auth/plugins"
 import { getMigrations } from "better-auth/db/migration"
 import { dataDir } from "../../platform/runtime/lib/paths"
 import type { BetterAuthVerifier } from "../../platform/auth/auth"
+import { DEFAULT_CLAXEDO_SERVER_PORT } from "./port"
 
 /**
  * Embedded Better Auth for self-host boxes (part of the self-host/hosted-parity
@@ -75,7 +76,7 @@ function trustedOrigins(env: NodeJS.ProcessEnv): string[] {
     .map((o) => o.trim())
     .filter(Boolean)
   // Wildcards are supported by better-auth's origin matcher; localhost dev
-  // (vite :4444 → control plane :3001) must pass the CSRF origin check.
+  // (vite :4444 → local control plane) must pass the CSRF origin check.
   return ["http://localhost:*", "http://127.0.0.1:*", ...extra]
 }
 
@@ -98,7 +99,7 @@ export function createEmbeddedAuth(
     secret: resolveSecret(env, path.dirname(dbPath)),
     // Only used for redirect-style flows; email+password + bearer verification
     // are origin-relative. Overridable via the standard better-auth env.
-    baseURL: env.BETTER_AUTH_URL?.trim() || "http://localhost:3001",
+    baseURL: env.BETTER_AUTH_URL?.trim() || `http://localhost:${DEFAULT_CLAXEDO_SERVER_PORT}`,
     emailAndPassword: { enabled: true },
     trustedOrigins: trustedOrigins(env),
     // The bearer plugin issues a signed session token via the

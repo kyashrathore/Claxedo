@@ -45,7 +45,7 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
   // `normalizeServerUrl`, so building catalog URLs against it produced
   // 404s for every marketplace request. Use the dedicated claxedo-server
   // URL helper instead, which respects VITE_CLAXEDO_SERVER_URL and
-  // falls back to 127.0.0.1:3001.
+  // falls back to the local Claxedo server.
   const apiBase = () => getClaxedoServerUrl()
   const fetchFn = props.request ?? globalThis.fetch
   // Rubric Q4: replace the URL-shape-inferred `claxedoServerFetch` with an

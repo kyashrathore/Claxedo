@@ -38,10 +38,14 @@ BACKUP_ROOT="$HOME/.claxedo-resets"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="$BACKUP_ROOT/$STAMP"
 
-# The server (:3001) and embedded/standalone engine (:4096) hold the sqlite
-# stores open — resetting under them corrupts state and they recreate dirs
-# mid-move. The desktop app embeds the same server.
-for port in 3001 4096; do
+# The server (:2593, DEFAULT_CLAXEDO_SERVER_PORT) and embedded/standalone
+# engine (:4096) hold the sqlite stores open — resetting under them corrupts
+# state and they recreate dirs mid-move. The desktop app embeds the same server.
+#
+# The desktop walks UP from the base port when it is taken (2593, 2594, 2595…),
+# so a second instance does not land on the base port. Sweep the low end of that
+# walk or this guard silently passes while a server is still holding the store.
+for port in 2593 2594 2595 2596 4096; do
   if lsof -ti tcp:"$port" >/dev/null 2>&1; then
     echo "error: something is listening on :$port — stop claxedo-server / the engine / the desktop app first." >&2
     exit 1

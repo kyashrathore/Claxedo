@@ -8,6 +8,7 @@ import { Persist, persisted } from "@/platform/persistence/persist"
 import { validWorktree } from "@/platform/sync/worktree"
 import { getExtensions } from "@/features/extensions"
 import { isDemoMode } from "@/platform/api/api"
+import { DEFAULT_LOCAL_CLAXEDO_SERVER_PORT } from "@/platform/api/local-server"
 import { queryClient } from "@/platform/query/query-client"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 import { ServerConnection } from "@/platform/connection/server-connection"
@@ -29,7 +30,7 @@ export function normalizeServerUrl(input: string) {
     if (local && (url.port === "3000" || url.port === "4444") && !isDemoMode()) {
       const env = import.meta.env.VITE_OPENCODE_BACKEND_URL as string | undefined
       if (env?.trim()) return env.trim().replace(/\/+$/, "")
-      url.port = "3001"
+      url.port = String(DEFAULT_LOCAL_CLAXEDO_SERVER_PORT)
       return url.toString().replace(/\/+$/, "")
     }
   } catch {

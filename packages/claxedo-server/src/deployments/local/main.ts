@@ -1,4 +1,5 @@
 import { startServer } from "./server"
+import { DEFAULT_CLAXEDO_SERVER_PORT } from "./port"
 import { getPostHog } from "../../platform/telemetry/errors/posthog"
 import { reportError } from "../../platform/telemetry/errors/report"
 
@@ -38,7 +39,7 @@ process.on("uncaughtException", (err) => {
   void reportFatalThenExit(err)
 })
 
-const port = parseInt(process.env.CLAXEDO_SERVER_PORT ?? "3001", 10)
+const port = parseInt(process.env.CLAXEDO_SERVER_PORT ?? String(DEFAULT_CLAXEDO_SERVER_PORT), 10)
 // Composition root: an explicit OPENCODE_URL is the external-URL opt-in; its
 // ABSENCE now means EMBEDDED engine (in-process), not the retired :4096 default.
 const opencodeUrl = process.env.OPENCODE_URL?.trim() || undefined

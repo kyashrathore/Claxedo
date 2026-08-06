@@ -34,7 +34,7 @@ The app needs a backend (the control plane) and the Vite dev server. Run them in
 two terminals:
 
 ```sh
-# 1. Backend / control plane — serves on http://127.0.0.1:3001
+# 1. Backend / control plane — serves on http://127.0.0.1:2593
 cd packages/claxedo-server
 bun run dev
 
@@ -45,7 +45,7 @@ bun run dev
 
 When the web server is up you'll see Vite print `VITE ... ready` with
 `Local: http://localhost:4444/`; open that URL. The dev server proxies `/api`,
-`/event`, and the other backend routes to `http://127.0.0.1:3001` by default.
+`/event`, and the other backend routes to `http://127.0.0.1:2593` by default.
 Point it at a different backend with `VITE_CLAXEDO_SERVER_URL`, and override the
 web port with `PORT` (default `4444`).
 

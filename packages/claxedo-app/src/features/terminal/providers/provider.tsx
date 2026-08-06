@@ -8,6 +8,7 @@ import { mergeCreatedTerminal, type LocalPTY } from "@/features/terminal/provide
 import { legacyDirectoryFromRouteKey } from "@/platform/identity/route"
 import { legacyTerminalPersistScopeKey, terminalScopeKey } from "@/platform/identity/session-view-key"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
+import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "@/platform/api/local-server"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { resolveWorkspaceRuntime } from "@/platform/runtime/cloud/workspace-runtime-store"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
@@ -320,7 +321,7 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
   onCleanup(unsubDeleted)
 
   // Hoist claxedo-server base URL and port once for all method bodies
-  const claxedoBase = options?.claxedoServerUrl ?? "http://127.0.0.1:3001"
+  const claxedoBase = options?.claxedoServerUrl ?? DEFAULT_LOCAL_CLAXEDO_SERVER_URL
   const customRequest = options?.request
   const decodedDir = decodeDirectory(dir)
   const scopedWorkspace = sdk.workspace(decodedDir)
@@ -359,11 +360,33 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
     return runtime.transport.fetch(ptyPath(path, runtime.workspaceId), init)
   }
   const claxedoPort = (() => {
+    // NEVER fall back to a constant port. This value becomes `CLAXEDO_PORT` in
+    // every terminal's environment, and the agent notify hook
+    // (`~/.workspace-runtime/hooks/notify.sh`) POSTs its lifecycle events there
+    // — so a wrong value means terminal coding agents show no status at all,
+    // SILENTLY, because notify.sh discards its curl output.
+    //
+    // The old code returned the historical fixed dev port both when the URL had no explicit port and
+    // when it failed to parse. That is right only for the dev server, which
+    // once genuinely used that port — which is exactly why this stayed invisible. The
+    // PACKAGED app's embedded server binds an EPHEMERAL port (61435, 61883 and
+    // 54728 observed across runs on 2026-08-06), and `lsof`/`curl` confirmed
+    // nothing listens on the guessed port there, so every hook POST was swallowed. Same
+    // failure shape as the `CLAXEDO_PORT=80` defect fixed in claxedo-server's
+    // `embeddedRuntimeTargetUrl`, reintroduced downstream by a different
+    // wrong constant.
+    //
+    // A missing port is legitimate (a plain http/https origin), so that case
+    // derives the scheme default. An UNPARSEABLE base is not legitimate — it
+    // means the caller handed us something that is not an origin, and guessing
+    // a port there is what made this class of bug undetectable. Return
+    // undefined and let the caller omit the variable rather than inject a lie.
     try {
       const u = new URL(claxedoBase)
-      return u.port || "3001"
+      if (u.port) return u.port
+      return u.protocol === "https:" ? "443" : "80"
     } catch {
-      return "3001"
+      return undefined
     }
   })()
 

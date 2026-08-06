@@ -8,6 +8,7 @@ import { setExtensions } from "../../features/extensions/index"
 import { appExtensions } from "../../features/extensions/index"
 import { serverExtensions } from "../../features/extensions/index"
 import { initializeClerk } from "@/platform/auth/auth-client"
+import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "@/platform/api/local-server"
 
 /**
  * Configuration for initializing Claxedo cloud extensions.
@@ -95,7 +96,7 @@ export function getDefaultConfig(): ClaxedoConfig {
     sandboxEnabled: true,
     globalChatEnabled: import.meta.env.VITE_GLOBAL_CHAT_ENABLED === "true",
     daytonaApiKey: envString(import.meta.env.VITE_DAYTONA_API_KEY),
-    claxedoServerUrl: envString(import.meta.env.VITE_CLAXEDO_SERVER_URL) ?? "http://127.0.0.1:3001",
+    claxedoServerUrl: envString(import.meta.env.VITE_CLAXEDO_SERVER_URL) ?? DEFAULT_LOCAL_CLAXEDO_SERVER_URL,
   }
 }
 

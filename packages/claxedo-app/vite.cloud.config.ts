@@ -15,7 +15,9 @@ const isDemoBuild = process.env.CLAXEDO_BUILD_TARGET === "demo"
  */
 function cloudConfig({ mode }: { mode: string }): UserConfig {
   const env = loadEnv(mode, process.cwd(), "VITE_")
-  const backendTarget = env.VITE_CLAXEDO_SERVER_URL || env.VITE_OPENCODE_BACKEND_URL || "http://127.0.0.1:3001"
+  // 2593 tracks DEFAULT_CLAXEDO_SERVER_PORT in claxedo-server (see
+  // src/deployments/local/port.ts) — the port `claxedo-server dev` listens on.
+  const backendTarget = env.VITE_CLAXEDO_SERVER_URL || env.VITE_OPENCODE_BACKEND_URL || "http://127.0.0.1:2593"
   return {
     define: {
       __DEMO_ENABLED__: JSON.stringify(isDemoBuild || mode === "development"),
