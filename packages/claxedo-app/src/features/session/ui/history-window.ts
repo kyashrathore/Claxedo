@@ -186,6 +186,11 @@ export function createSessionHistoryWindow(input: Input) {
     void fetchOlderMessages()
   }
 
+  const revealTurn = (id: string) => {
+    const index = input.visibleUserMessages().findIndex((message) => message.id === id)
+    if (index >= 0 && index < turnStart()) setTurnStart(index)
+  }
+
   createEffect(
     on(
       input.sessionID,
@@ -230,6 +235,7 @@ export function createSessionHistoryWindow(input: Input) {
     turnStart,
     setTurnStart,
     renderedUserMessages,
+    revealTurn,
     loadAndReveal,
     onScrollerScroll,
   }

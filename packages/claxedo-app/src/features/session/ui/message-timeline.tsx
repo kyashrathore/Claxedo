@@ -25,6 +25,7 @@ import { Card } from "@opencode-ai/ui/card"
 import {
   ContextToolGroup,
   Message,
+  MessageNav,
   MessageDivider,
   Part as MessagePart,
   partDefaultOpen,
@@ -111,6 +112,7 @@ import {
   timelineFileTarget,
   resolveTimelinePath as resolveTimelineFilePath,
 } from "./timeline-file-paths"
+import { messageNavCurrentID, messageNavPreview, messageNavVisible } from "./message-nav-preview"
 
 installTimelineMermaid()
 
@@ -395,6 +397,9 @@ export function MessageTimeline(props: {
   setContentRef: (el: HTMLDivElement) => void
   historyShift: boolean
   userMessages: UserMessage[]
+  navMessages?: UserMessage[]
+  currentMessage?: UserMessage
+  onMessageSelect?: (message: UserMessage) => void
   status: () => SessionStatus
   anchor: (id: string) => string
   setRevealMessage?: (fn: (id: string) => void) => void
@@ -590,6 +595,14 @@ export function MessageTimeline(props: {
   const parentTitle = createMemo(() => sessionTitle(parent()?.title) ?? language.t("command.session.new"))
   const getMsgParts = (msgId: string) => sessionConversation()?.parts[msgId] ?? emptyParts
   const getParentMsgParts = (msgId: string) => parentConversation()?.parts[msgId] ?? emptyParts
+  const turnPreview = (message: UserMessage) =>
+    messageNavPreview({
+      userMessageID: message.id,
+      assistantMessageIDs: (assistantMessagesByParent().get(message.id) ?? emptyAssistantMessages).map(
+        (item) => item.id,
+      ),
+      getParts: getMsgParts,
+    })
   const childTaskDescription = createMemo(() => {
     const id = sessionID()
     if (!id) return
@@ -768,6 +781,22 @@ export function MessageTimeline(props: {
     })
     return result
   })
+  const [viewportMessageID, setViewportMessageID] = createSignal<string>()
+  const currentNavMessage = createMemo(() => {
+    const id = viewportMessageID()
+    const messages = props.navMessages ?? props.userMessages
+    return messages.find((message) => message.id === id) ?? props.currentMessage ?? messages.at(-1)
+  })
+  const updateViewportMessage = (root: HTMLDivElement) => {
+    const id = messageNavCurrentID(
+      virtualizer.getVirtualItems().flatMap((item) => {
+        const row = timelineRows()[item.index]
+        return row && "userMessageID" in row ? [{ id: row.userMessageID, start: item.start }] : []
+      }),
+      root.scrollTop + 100,
+    )
+    if (id !== viewportMessageID()) setViewportMessageID(id)
+  }
 
   createEffect(() => {
     props.setRevealMessage?.((id) => {
@@ -938,6 +967,7 @@ export function MessageTimeline(props: {
 
   const handleListScroll = (event: Event & { currentTarget: HTMLDivElement }) => {
     if (prependLoading) updatePrependAnchor()
+    updateViewportMessage(event.currentTarget)
     props.onScheduleScrollState(event.currentTarget)
     props.onHistoryScroll()
     // The virtualizer and resizeItem re-anchor own bottom-following.
@@ -1654,6 +1684,16 @@ export function MessageTimeline(props: {
             </div>
           </>
         )}
+      </Show>
+      <Show when={messageNavVisible((props.navMessages ?? props.userMessages).length) && props.onMessageSelect}>
+        <MessageNav
+          class="absolute left-2 md:left-3 top-1/2 -translate-y-1/2 z-[45]"
+          messages={props.navMessages ?? props.userMessages}
+          current={currentNavMessage()}
+          size="compact"
+          onMessageSelect={props.onMessageSelect!}
+          getPreview={turnPreview}
+        />
       </Show>
       <div
         class="absolute left-1/2 -translate-x-1/2 bottom-6 z-[60] pointer-events-none transition-all duration-200 ease-out"

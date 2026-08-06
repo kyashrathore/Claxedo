@@ -102,6 +102,10 @@
  *      own log tail — never a silent skip. A missing OPTIONAL binary
  *      (`claude`/`codex`) throws `GATING:` under `CI` and `test.skip`s with a
  *      visible reason locally (see HARNESS NOTES for why the two differ).
+ *  10. The timeline turn picker stays absent through 10 turns, appears on turn
+ *      11, previews only the hovered user/assistant pair, and scrolls to the
+ *      selected turn. Settled history is seeded into the real embedded engine's
+ *      isolated SQLite projection; no browser route or application endpoint is mocked.
  *
  * INVARIANTS — completed assistant content is never hidden by stale busy state
  *   (#3 in `e2e/INVARIANTS.md`): every oracle call here proves it against REAL
@@ -421,6 +425,7 @@
  */
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { execFile, spawn, type ChildProcess } from "node:child_process"
+import { DatabaseSync as SQLiteDatabase } from "node:sqlite"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -446,6 +451,7 @@ const SERVER_DIR = path.join(REPO_ROOT, "packages", "claxedo-server")
 const BACKEND_PORT = Number(process.env.CLAXEDO_TIER_REAL_BACKEND_PORT ?? 4317)
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`
 const TURNS = 3
+const TURN_PICKER_TURNS = 11
 
 let scripted: ScriptedModelServer | undefined
 let server: ChildProcess | undefined
@@ -861,12 +867,20 @@ function expectScriptedTraffic(dialect: ScriptedDialect, turns: number) {
  * harness owns its catalog and `waitForHarnessReady` already gates on it.
  */
 async function selectScriptedModel(page: Page) {
-  const control = page.locator('[data-action="prompt-model"]').last()
+  const standalone = page.locator('[data-action="prompt-model"]').last()
+  const unified = page.locator('[data-action="prompt-harness-model"]').last()
+  const control = (await standalone.count()) > 0 ? standalone : unified
   await expect(control).toBeVisible({ timeout: 30_000 })
   // `disabled` (not `aria-disabled`) while the provider catalog loads; a click
   // then is a no-op that leaves the default model in place.
   await expect(control).toBeEnabled({ timeout: 45_000 })
   await control.click()
+  if ((await standalone.count()) === 0) {
+    const picker = page.locator('[data-component="harness-model-picker"]')
+    await expect(picker).toBeVisible({ timeout: 20_000 })
+    await picker.locator('[data-slot="harness-picker-section"]').filter({ hasText: /^Harness/ }).click()
+    await picker.getByRole("button", { name: "OpenCode", exact: true }).click()
+  }
   // ~180 providers, virtualized: the entry is not in the DOM until the search
   // narrows to it.
   const search = page.getByRole("textbox", { name: /Search models/i }).last()
@@ -953,6 +967,86 @@ async function runRealHarnessJourney(page: Page, dir: string, harness: HarnessCa
   expectScriptedTraffic(harness.dialect, TURNS)
 }
 
+async function demoBeat(page: Page) {
+  if (process.env.CLAXEDO_E2E_RECORD_DEMO !== "1") return
+  // Recording-only pacing. Every behavioral wait is asserted independently;
+  // normal E2E runs never pay for these pauses.
+  await page.waitForTimeout(1_200)
+}
+
+async function createPickerSession(dir: string) {
+  const response = await fetch(`${BACKEND_URL}/session?directory=${encodeURIComponent(dir)}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      title: "Timeline turn picker",
+      harness: { type: "opencode", model: "tier-real/scripted-model" },
+      model: { providerID: "tier-real", modelID: "scripted-model" },
+    }),
+  })
+  if (response.status !== 201) {
+    throw new Error(`GATING: failed to seed picker session (${response.status}): ${await response.text()}`)
+  }
+  return (await response.json()) as { id: string }
+}
+
+function seedPickerTurn(dir: string, sessionID: string, turn: number) {
+  const marker = `PICKER-${String(turn).padStart(2, "0")}-${Date.now().toString().slice(-5)}`
+  const prompt = `Reply with exactly this one token and nothing else: ${marker}`
+  const n = String(turn).padStart(2, "0")
+  const messageID = `msg_seed_user_${n}`
+  const assistantID = `msg_seed_assistant_${n}`
+  const created = Date.now() - (TURN_PICKER_TURNS - turn + 1) * 60_000
+  const database = new SQLiteDatabase(path.join(dataDir, "opencode-engine", "opencode.db"))
+  database.exec("PRAGMA busy_timeout = 5000")
+  const run = (sql: string, values: (string | number)[]) => database.prepare(sql).run(...values)
+  database.exec("BEGIN IMMEDIATE")
+  try {
+    run(
+      "INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)",
+      [messageID, sessionID, created, created, JSON.stringify({
+        role: "user",
+        time: { created },
+        agent: "build",
+        model: { providerID: "tier-real", modelID: "scripted-model" },
+        summary: { diffs: [] },
+      })],
+    )
+    run(
+      "INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)",
+      [`prt_seed_user_${n}`, messageID, sessionID, created, created, JSON.stringify({ type: "text", text: prompt })],
+    )
+    run(
+      "INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)",
+      [assistantID, sessionID, created + 500, created + 1_500, JSON.stringify({
+        role: "assistant",
+        time: { created: created + 500, completed: created + 1_500 },
+        parentID: messageID,
+        agent: "build",
+        providerID: "tier-real",
+        modelID: "scripted-model",
+        mode: "build",
+        path: { cwd: dir, root: dir },
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        finish: "stop",
+      })],
+    )
+    run(
+      "INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)",
+      [`prt_seed_assistant_${n}`, assistantID, sessionID, created + 500, created + 1_500, JSON.stringify({
+        type: "text",
+        text: marker,
+        time: { start: created + 500, end: created + 1_500 },
+      })],
+    )
+    database.exec("COMMIT")
+  } finally {
+    database.close()
+  }
+  return { marker, prompt, messageID }
+}
+
 test.describe("real harness journeys @core @tier-real", () => {
   test.skip(
     !TIER_REAL,
@@ -997,6 +1091,77 @@ test.describe("real harness journeys @core @tier-real", () => {
     const dir = await makeWorkspace("opencode")
     await seedOneProject(page, dir)
     await runRealHarnessJourney(page, dir, { id: "opencode", dialect: "chat" })
+  })
+
+  test("timeline turn picker previews one seeded turn and appears only after 10 — behavior 10", async ({
+    page,
+  }, testInfo) => {
+    testInfo.setTimeout(600_000)
+    const dir = await makeWorkspace("turn-picker")
+    await seedOneProject(page, dir)
+    const session = await createPickerSession(dir)
+    const turns: ReturnType<typeof seedPickerTurn>[] = []
+    for (let turn = 1; turn < TURN_PICKER_TURNS; turn += 1) {
+      turns.push(await seedPickerTurn(dir, session.id, turn))
+    }
+
+    await page.goto(`/s/${session.id}#message-${turns[0]!.messageID}`, { waitUntil: "domcontentloaded" })
+    await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+    await expect(page.locator('[data-testid="session-page-root"]')).toHaveAttribute(
+      "data-session-visible-user-count",
+      String(TURN_PICKER_TURNS - 1),
+      { timeout: 30_000 },
+    )
+    await expect(page.locator('[data-component="message-nav-hovercard"]'), "turn picker rendered at 10 turns").toHaveCount(0)
+
+    turns.push(await seedPickerTurn(dir, session.id, TURN_PICKER_TURNS))
+    await page.reload({ waitUntil: "domcontentloaded" })
+
+    await expect(page.locator('[data-testid="session-page-root"]')).toHaveAttribute(
+      "data-session-visible-user-count",
+      String(TURN_PICKER_TURNS),
+    )
+    const picker = page.locator('[data-component="message-nav-hovercard"]')
+    const ticks = picker.locator('[data-slot="message-nav-tick-button"]')
+    await expect(picker).toBeVisible()
+    await expect(ticks).toHaveCount(TURN_PICKER_TURNS)
+    await expect(picker.locator('[data-slot="message-nav-tick-button"][aria-current="step"]')).toHaveCount(1)
+    await expect(picker.locator('[data-slot="message-nav-tick-button"][data-distance="0"]')).toHaveCount(1)
+    await demoBeat(page)
+
+    const assertPreview = async (index: number) => {
+      await ticks.nth(index).hover()
+      const preview = page.locator('[data-slot="message-nav-turn-preview"]:visible')
+      await expect(preview, `turn ${index + 1} preview did not open`).toHaveCount(1)
+      await expect(preview.locator('[data-slot="message-nav-preview-user"]')).toContainText(turns[index]!.prompt)
+      await expect(preview.locator('[data-slot="message-nav-preview-assistant"]')).toContainText(turns[index]!.marker)
+      return preview
+    }
+
+    await assertPreview(1)
+    await demoBeat(page)
+    await assertPreview(4)
+    await expect
+      .poll(() => ticks.evaluateAll((items) => items.map((item) => {
+        const line = item.querySelector<HTMLElement>('[data-slot="message-nav-tick-line"]')!
+        return Math.round(line.getBoundingClientRect().width)
+      })))
+      .toEqual([8, 11, 15, 21, 28, 21, 15, 11, 8, 8, 8])
+    expect(await ticks.evaluateAll((items) => {
+      const styles = items.map((item) => getComputedStyle(
+        item.querySelector<HTMLElement>('[data-slot="message-nav-tick-line"]')!,
+      ))
+      return styles.flatMap((style, index) =>
+        style.backgroundColor === styles[4]!.backgroundColor && style.height === styles[4]!.height ? [index] : [],
+      )
+    })).toEqual([4])
+    await demoBeat(page)
+    await ticks.nth(4).click()
+    await expect(
+      page.locator(SELECTORS.userMessageContent).filter({ hasText: turns[4]!.prompt }).last(),
+      "clicked turn did not scroll into the timeline viewport",
+    ).toBeInViewport()
+    await demoBeat(page)
   })
 
   test("claude ACP harness (real claude-agent-acp subprocess) completes 3 scripted turns and survives reload — behaviors 2,6,8,9", async ({

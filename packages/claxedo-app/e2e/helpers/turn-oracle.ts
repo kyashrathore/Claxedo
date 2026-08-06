@@ -27,6 +27,8 @@ export type Evidence = {
   spec: string
   /** Scenario slug, e.g. "first-send-renders-reply". Filesystem-safe. */
   scenario: string
+  /** Real harness subprocesses can need longer than the mocked-lane default. */
+  timeout?: number
 }
 
 function slugify(value: string) {
@@ -69,10 +71,10 @@ function packageRoot() {
  * and contains `text`. Returns the Locator for layers (b)/(c) to reuse — never
  * re-queries by text a second time (that would open a re-render race).
  */
-async function domTruth(page: Page, text: string | RegExp): Promise<Locator> {
+async function domTruth(page: Page, text: string | RegExp, timeout = 20_000): Promise<Locator> {
   const visible = page.locator(SELECTORS.assistantContentVisible).filter({ hasText: text })
   await expect(visible.last(), `assistant reply "${text}" never appeared in a visible assistant-content slot`).toBeVisible({
-    timeout: 20_000,
+    timeout,
   })
   return visible.last()
 }
@@ -101,7 +103,15 @@ async function submitControlReady(page: Page) {
  * CSS-visibility checks (toBeVisible) miss entirely.
  */
 async function geometricTruth(page: Page, locator: Locator) {
-  await locator.scrollIntoViewIfNeeded()
+  await expect
+    .poll(
+      () => locator.scrollIntoViewIfNeeded().then(() => true).catch(() => false),
+      {
+        timeout: 20_000,
+        message: "assistant reply kept detaching while the virtualized timeline tried to scroll it into view",
+      },
+    )
+    .toBe(true)
   // Converged, not sampled once: between domTruth resolving this locator and the
   // measurement here, a live timeline can re-render the row (part updates,
   // supersession collapsing a provisional, virtualizer regrouping) — and a
@@ -174,7 +184,7 @@ export async function expectAssistantReplyVisible(
   evidence?: Evidence,
 ): Promise<Locator> {
   const resolved = resolveEvidence(evidence)
-  const locator = await domTruth(page, text)
+  const locator = await domTruth(page, text, resolved.timeout)
   await thinkingRowGone(page)
   await submitControlReady(page)
   await geometricTruth(page, locator)

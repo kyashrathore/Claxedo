@@ -1419,6 +1419,13 @@ export default function SessionPage() {
                         }}
                         historyShift={false}
                         userMessages={historyWindow.renderedUserMessages()}
+                        navMessages={visibleUserMessages()}
+                        currentMessage={activeMessage()}
+                        onMessageSelect={(message) => {
+                          autoScroll.pause()
+                          historyWindow.revealTurn(message.id)
+                          scrollToMessage(message)
+                        }}
                         status={sessionController.status}
                         anchor={anchor}
                         setScrollToEnd={(fn) => {
