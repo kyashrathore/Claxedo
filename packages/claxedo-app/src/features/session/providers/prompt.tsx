@@ -177,11 +177,13 @@ const promptCache = createRefCountedLruResourceCache<PromptSession>(MAX_PROMPT_S
 type Scope = {
   dir: string
   id?: string
+  draftId?: string
 }
 
 type PromptProviderProps = {
   directory?: Accessor<string> | string
   sessionId?: Accessor<string | undefined> | string
+  draftId?: Accessor<string | undefined> | string
 }
 
 function value<T>(input: Accessor<T> | T): T {
@@ -407,6 +409,7 @@ const promptContextInput = {
         promptScopeKey({
           dir: props.directory ? value(props.directory) : undefined,
           id: props.sessionId ? value(props.sessionId) : undefined,
+          draftId: props.draftId ? value(props.draftId) : undefined,
         }),
         undefined,
       )
@@ -420,8 +423,8 @@ const promptContextInput = {
     // orphan entry the composer never mounts. BOTH `session()` and `withScope`
     // derive their key through the one canonical `promptScopeKey`, which applies
     // `sessionViewKey` exactly once. A `Scope` therefore carries the RAW
-    // directory + session id (mirroring `PromptProviderProps`); a scope producer
-    // must never pre-compute the key or it double-wraps here.
+    // directory, session id, and draft id (mirroring `PromptProviderProps`); a
+    // scope producer must never pre-compute the key or it double-wraps here.
     //
     // An explicit scope is BORROWED for the duration of the call only: pinning it
     // past that would make the entry immortal, and a leaked pin is worse than the
@@ -430,7 +433,7 @@ const promptContextInput = {
     // later mounts that scope.
     const withScope = <R,>(scope: Scope | undefined, use: (session: PromptSession) => R): R => {
       if (!scope) return use(session())
-      const handle = acquire(promptScopeKey({ dir: scope.dir, id: scope.id }), undefined)
+      const handle = acquire(promptScopeKey({ dir: scope.dir, id: scope.id, draftId: scope.draftId }), undefined)
       try {
         return use(handle.value)
       } finally {

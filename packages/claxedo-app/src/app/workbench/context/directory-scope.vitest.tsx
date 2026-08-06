@@ -24,6 +24,9 @@ const state = vi.hoisted(() => ({
   sessionSyncProviderProps: undefined as undefined | {
     syncSession?: (sessionID: string) => void | Promise<void>
   },
+  promptProviderProps: undefined as undefined | {
+    draftId?: () => string | undefined
+  },
 }))
 
 const readyStore = {
@@ -103,7 +106,10 @@ vi.mock("@/app/providers/file", () => ({
 }))
 
 vi.mock("@/features/session/providers/prompt", () => ({
-  PromptProvider: (props: any) => <>{props.children}</>,
+  PromptProvider: (props: any) => {
+    state.promptProviderProps = props
+    return <>{props.children}</>
+  },
 }))
 
 vi.mock("@/platform/comments/provider", () => ({
@@ -183,6 +189,7 @@ beforeEach(() => {
   state.agentQueryOptions = undefined
   state.queryData.clear()
   state.dataProviderProps = undefined
+  state.promptProviderProps = undefined
 })
 
 afterEach(() => {
@@ -291,6 +298,7 @@ describe("DirectoryScope bootstrap gating", () => {
       expect(result.getByText("draft composer content")).toBeTruthy()
     })
     expect(state.dataProviderProps?.data.session).toEqual([])
+    expect(state.promptProviderProps?.draftId?.()).toBe("surface-1")
     expect(state.refreshDirectory).toHaveBeenCalledWith("/repo/main", "codex-acp", { quiet: undefined })
     expect(result.queryByText("Preparing workspace")).toBeNull()
   })

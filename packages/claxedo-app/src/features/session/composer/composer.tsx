@@ -646,6 +646,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     onNewSessionWorktreeReset: props.onNewSessionWorktreeReset,
     onCloudStartup: props.onCloudStartup,
     draftId: resolvedDraftId,
+    harnessScope: scope,
     onSubmit: props.onSubmit,
     navigateOnCreate: () => props.navigateOnCreate ?? true,
     system: () => props.system,

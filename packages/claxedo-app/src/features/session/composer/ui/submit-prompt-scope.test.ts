@@ -3,18 +3,30 @@ import { sessionViewKey } from "@/platform/identity/session-view-key"
 import { promptScopeKey, promptViewScope, uniquePromptScopes } from "./submit-prompt-scope"
 
 // The composer reads its draft through `PromptProvider.session()`, which keys the
-// prompt cache/persist on `sessionViewKey({ directory, sessionId })`. The submit
-// path clears that draft with `prompt.reset(promptViewScope({ directory,
-// sessionId }))`, which resolves its key through `pick` == `promptScopeKey`.
+// prompt cache/persist on `sessionViewKey({ directory, sessionId, draftId })`.
+// The submit path clears that draft with `prompt.reset(promptViewScope({
+// directory, sessionId, draftId }))`, which resolves its key through `pick` ==
+// `promptScopeKey`.
 //
 // Property under test: for ANY directory / sessionId / mode, the key the
 // clear-after-send path targets is byte-identical to the key the composer reads.
 // If they drift, the just-sent text stays in the composer and ArrowUp history
 // recall (which requires an empty composer) is dead.
-const composerReadKey = (directory?: string, sessionId?: string) => sessionViewKey({ directory, sessionId })
-const submitClearKey = (directory?: string, sessionId?: string) => promptScopeKey(promptViewScope({ directory, sessionId }))
+const composerReadKey = (directory?: string, sessionId?: string, draftId?: string) =>
+  sessionViewKey({ directory, sessionId, draftId })
+const submitClearKey = (directory?: string, sessionId?: string, draftId?: string) =>
+  promptScopeKey(promptViewScope({ directory, sessionId, draftId }))
 
 describe("prompt submit/clear scope derivation", () => {
+  test("clear target matches the exact new-session draft surface", () => {
+    expect(submitClearKey("/proj/alpha", "new", "draft-a")).toBe(
+      composerReadKey("/proj/alpha", "new", "draft-a"),
+    )
+    expect(submitClearKey("/proj/alpha", "new", "draft-a")).not.toBe(
+      submitClearKey("/proj/alpha", "new", "draft-b"),
+    )
+  })
+
   const cases: Array<{ name: string; directory?: string; sessionId?: string }> = [
     { name: "new draft (sessionId 'new')", directory: "/proj/alpha", sessionId: "new" },
     { name: "new draft (sessionId undefined)", directory: "/proj/alpha", sessionId: undefined },
@@ -61,5 +73,12 @@ describe("prompt submit/clear scope derivation", () => {
     // The two distinct scopes must resolve to DIFFERENT persist keys so both the
     // draft slot and the freshly-created-session slot get reset.
     expect(promptScopeKey(scopes[0])).not.toBe(promptScopeKey(scopes[1]))
+  })
+
+  test("uniquePromptScopes keeps separate new-session draft surfaces", () => {
+    const draftA = promptViewScope({ directory: "/proj/alpha", sessionId: "new", draftId: "draft-a" })
+    const draftB = promptViewScope({ directory: "/proj/alpha", sessionId: "new", draftId: "draft-b" })
+
+    expect(uniquePromptScopes([draftA, draftB, draftA])).toEqual([draftA, draftB])
   })
 })

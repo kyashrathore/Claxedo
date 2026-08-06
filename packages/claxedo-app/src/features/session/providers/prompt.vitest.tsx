@@ -3,6 +3,7 @@ import { createSignal } from "solid-js"
 import { render, cleanup, waitFor } from "@solidjs/testing-library"
 
 const [sessionId, setSessionId] = createSignal<string | undefined>(undefined)
+const [draftId, setDraftId] = createSignal<string | undefined>(undefined)
 
 vi.mock("@/features/session/app-ports", () => ({
   useServer: () => ({ url: "http://localhost:4096" }),
@@ -37,7 +38,14 @@ let other: ReturnType<typeof usePrompt>
 
 function Probe() {
   latest = usePrompt()
-  return <div data-testid="prompt">{latest.current().map((part) => ("content" in part ? part.content : "")).join("")}</div>
+  return (
+    <div
+      data-testid="prompt"
+      data-images={latest.current().filter((part) => part.type === "image").length}
+    >
+      {latest.current().map((part) => ("content" in part ? part.content : "")).join("")}
+    </div>
+  )
 }
 
 function OtherProbe() {
@@ -60,10 +68,45 @@ function pressureScopes(prompt: ReturnType<typeof usePrompt>, dir: string, count
 afterEach(() => {
   cleanup()
   setSessionId(undefined)
+  setDraftId(undefined)
   setOtherSessionId(undefined)
 })
 
 describe("PromptProvider", () => {
+  test("keeps image attachments and submit cleanup isolated between new-session draft surfaces", async () => {
+    setSessionId("new")
+    setDraftId("draft-a")
+    const view = render(() => (
+      <PromptProvider directory="/repo" sessionId={sessionId} draftId={draftId}>
+        <Probe />
+      </PromptProvider>
+    ))
+    const attachment: ImageAttachmentPart = {
+      type: "image",
+      id: "image-a",
+      filename: "screenshot.png",
+      mime: "image/png",
+      dataUrl: "data:image/png;base64,AAAA",
+    }
+
+    latest.set([...text("sent"), attachment], 4)
+    await waitFor(() => expect(view.getByTestId("prompt")).toHaveAttribute("data-images", "1"))
+
+    setDraftId("draft-b")
+    await waitFor(() => expect(view.getByTestId("prompt")).toHaveAttribute("data-images", "0"))
+    latest.set(text("fresh draft"), 11)
+    await waitFor(() => expect(view.getByTestId("prompt").textContent).toBe("fresh draft"))
+
+    latest.reset({ dir: "/repo", id: "new", draftId: "draft-a" })
+    await waitFor(() => expect(view.getByTestId("prompt").textContent).toBe("fresh draft"))
+
+    setDraftId("draft-a")
+    await waitFor(() => {
+      expect(view.getByTestId("prompt").textContent).toBe("")
+      expect(view.getByTestId("prompt")).toHaveAttribute("data-images", "0")
+    })
+  })
+
   test("keeps drafts isolated per split session and honors scoped set/reset", async () => {
     setSessionId("ses-a")
     const view = render(() => (

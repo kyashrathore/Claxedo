@@ -15,6 +15,7 @@ export function composerModeSnapshot(input: ComposerModeSnapshotInput) {
   const draftId = input.mode.kind === "draft" && input.mode.draftId ? input.mode.draftId : input.draftId ?? input.surfaceId
   const directory = input.sessionDirectory ?? input.sdkDirectory
   const harnessSessionId = input.mode.kind === "draft" ? "new" : sessionId
+  const harnessDirectory = input.mode.kind === "draft" ? input.sdkDirectory : directory
 
   return {
     newSession: input.mode.kind === "draft",
@@ -23,7 +24,7 @@ export function composerModeSnapshot(input: ComposerModeSnapshotInput) {
     draftId,
     directory,
     scope: panePreferenceScope({
-      directory,
+      directory: harnessDirectory,
       sessionId: harnessSessionId,
       surfaceId: input.surfaceId,
       draftId,

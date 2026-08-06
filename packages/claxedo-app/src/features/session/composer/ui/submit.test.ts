@@ -17,6 +17,15 @@ describe("submit.ts architecture contract", () => {
     expect(source).not.toContain("lastSavedConfigBySession.set")
   })
 
+  test("draft submit reads harness ownership from the exact scope owned by the picker", async () => {
+    const source = await Bun.file(new URL("./submit.ts", import.meta.url)).text()
+    const sourceScope = source.slice(source.indexOf("const sourceScope"), source.indexOf("const scope =", source.indexOf("const sourceScope")))
+
+    expect(sourceScope).toContain("input.harnessScope?.()")
+    const composer = await Bun.file(new URL("../composer.tsx", import.meta.url)).text()
+    expect(composer).toContain("harnessScope: scope")
+  })
+
 
   test("normal submit dispatch uses the shared submit phases without a prompt-machine side adapter", async () => {
     const source = await Bun.file(new URL("./submit-normal-prompt.ts", import.meta.url)).text()
@@ -24,9 +33,9 @@ describe("submit.ts architecture contract", () => {
     expect(source).not.toContain("prompt-machine-effects")
     expect(source).not.toContain("runExistingSessionPromptMachineEffects")
     expect(source).not.toContain("shouldRunExistingSessionPromptMachineEffects")
-    expect(source.indexOf("await recordPromptSubmission(input.record)")).toBeLessThan(source.indexOf("const promptRequest = preparePromptRequest(prepare)"))
     expect(source.indexOf("const promptRequest = preparePromptRequest(prepare)")).toBeLessThan(source.indexOf("applyOptimisticPromptHandoff(handoff(promptRequest))"))
-    expect(source.indexOf("applyOptimisticPromptHandoff(handoff(promptRequest))")).toBeLessThan(source.indexOf("void sendPromptRequest({"))
+    expect(source.indexOf("applyOptimisticPromptHandoff(handoff(promptRequest))")).toBeLessThan(source.indexOf("await recordPromptSubmission(input.record)"))
+    expect(source.indexOf("await recordPromptSubmission(input.record)")).toBeLessThan(source.indexOf("void sendPromptRequest"))
   })
 
 

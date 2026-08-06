@@ -53,6 +53,7 @@ import { createPromptAbort } from "./submit-abort"
 import { acquireSubmitSessionTarget, createCloudStartupController, finalizeSubmitSessionTarget, patchExistingSubmitSessionRef, type CloudStartupState } from "./submit-create-session"
 import { resolvePreparedSubmitDirectory } from "./submit-directory"
 import { dispatchNormalPromptSubmit } from "./submit-normal-prompt"
+import { promptHarnessDirectory } from "./harness-directory"
 import { promptViewScope, uniquePromptScopes } from "./submit-prompt-scope"
 import { parseCachedSessionConfig, parseExistingSessionConfig, sameExistingSessionConfig } from "./submit-session-config"
 import { createSubmitTransportAdapter, savedSessionConfigQueryKey, _resetSavedSessionConfigCacheForTest, workspaceRuntimeRef } from "./submit-transport"
@@ -81,6 +82,8 @@ type PromptSubmitTargetInput = {
   sessionDirectory?: Accessor<string | undefined>
   draftId?: Accessor<string | undefined>
   surfaceId?: Accessor<string | undefined>
+  /** Exact preference scope used by the visible harness/model picker. */
+  harnessScope?: Accessor<string>
 }
 
 /** The composer content and per-request overrides carried into the prompt. */
@@ -322,12 +325,12 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     input.resetHistoryNavigation()
 
     const fallbackDirectory = draftId ? undefined : sdk.directory
-    // Match PromptProvider.session() keying: project/workspace directory, never draftScope.
-    // The composer reads from (sessionDirectory, sessionId|"new"); resetting a
-    // draft-scoped entry would touch a different cache slot and leave the visible prompt.
+    // Match PromptProvider.session() keying exactly: restoring a submitted draft
+    // must not mutate another draft opened while this submission was in flight.
     const promptScope = promptViewScope({
       directory: projectDirectory ?? fallbackDirectory ?? sdk.directory,
       sessionId: explicitSessionID,
+      draftId,
     })
     const isNewSession = !explicitSessionID || explicitSessionID === "new"
     const shouldAutoAccept = isNewSession && input.autoAccept()
@@ -396,7 +399,18 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
 
     const scopeIdentity = { sessionId: explicitSessionID, surfaceId: surfaceId(), draftId }
-    const sourceScope = panePreferenceScope({ directory: projectDirectory ?? fallbackDirectory ?? sdk.directory, ...scopeIdentity })
+    // Consume the exact picker scope. Reconstructing it after directory
+    // preparation can observe a newer SDK directory than the mounted picker
+    // did and silently fall back to OpenCode. The reconstruction remains for
+    // non-composer callers that do not own a visible picker.
+    const sourceScope = input.harnessScope?.() ?? panePreferenceScope({
+      directory: promptHarnessDirectory({
+        sdkDirectory: sdk.directory,
+        sessionDirectory: projectDirectory ?? fallbackDirectory,
+        sessionId: explicitSessionID,
+      }),
+      ...scopeIdentity,
+    })
     const scope = panePreferenceScope({ directory: sessionDirectory, ...scopeIdentity })
     if (isNewSession && sourceScope !== scope && selectedHarnessMode(sourceScope) && !selectedHarnessMode(scope)) {
       // Cloud workspace creation changes submit directory; carry draft harness ownership.

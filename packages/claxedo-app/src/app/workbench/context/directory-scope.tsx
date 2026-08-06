@@ -240,7 +240,7 @@ export function DirectoryScope(props: ParentProps<{
         >
           <TerminalProvider>
             <FileProvider>
-              <PromptProvider directory={props.directory} sessionId={props.sessionId}>
+              <PromptProvider directory={props.directory} sessionId={props.sessionId} draftId={props.surfaceId}>
                 <CommentScopeProvider
                   directory={() => props.directory}
                   sessionId={() => props.sessionId?.()}

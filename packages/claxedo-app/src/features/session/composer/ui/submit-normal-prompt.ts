@@ -217,9 +217,9 @@ export async function dispatchNormalPromptSubmit(input: {
     }
   }
 
-  await recordPromptSubmission(input.record)
   const promptRequest = preparePromptRequest(prepare)
   applyOptimisticPromptHandoff(handoff(promptRequest))
+  await recordPromptSubmission(input.record)
   void sendPromptRequest({
     ...send(promptRequest),
     payload: buildPayload(promptRequest),

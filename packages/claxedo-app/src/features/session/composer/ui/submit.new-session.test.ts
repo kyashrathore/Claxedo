@@ -6,7 +6,7 @@ import * as h from "./submit.harness.test"
 const {
   createSubmit, createPromptSubmit, submitEvent, settleSubmitEffects, waitForSubmitEffect,
   seedProjectCatalog, seedCommandList, sessionStatusFor, localSessionRef, promptLengthForTest,
-  repoMainPromptScope, promptValue, state, calls, boots, apiCalls, fetchCalls, unsignedCalls,
+  promptValue, state, calls, boots, apiCalls, fetchCalls, unsignedCalls,
   runtimeCalls, transportPromptAsyncCalls, sessionCreateCalls, transportClients, harnessSetCalls,
   buildRequestPartCalls, shellCalls, commandCalls, navCalls, flowEvents, handoffCalls, toasts,
   promptCalls, optimisticAdds, optimisticRemoves, promptContextItems, promptContextAdds,
@@ -22,6 +22,7 @@ afterAll(() => h.restoreSubmitMocks(mock))
 describe("New-session creation: cloud, worktree, and tab handoff", () => {
   test("clears the visible workspace draft after creating a new session", async () => {
     state.demoMode = false
+    const stateAtSubmit: Array<{ resetCount: number; optimisticCount: number }> = []
 
     const submit = createPromptSubmit({
       info: () => undefined,
@@ -40,28 +41,34 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       resetHistoryNavigation: () => undefined,
       setMode: () => undefined,
       setPopover: () => undefined,
-      onSubmit: () => undefined,
+      onSubmit: () => {
+        stateAtSubmit.push({
+          resetCount: promptCalls.reset.length,
+          optimisticCount: optimisticAdds.length,
+        })
+      },
       navigateOnCreate: () => false,
     })
 
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
 
-    // clearInput resets RAW {dir, id} scopes — `pick`/`promptScopeKey` applies
+    // clearInput resets RAW {dir, id, draftId} scopes — `pick`/`promptScopeKey` applies
     // `sessionViewKey` exactly once, resolving each to the same persist key the
     // composer reads (the draft slot before creation, the session slot after).
     // Pre-computing the key inside the scope would double-wrap it and leave the
     // just-sent text in the composer.
     expect(promptCalls.reset).toEqual([
-      { dir: "/repo/main", id: "new" },
+      { dir: "/repo/main", id: "new", draftId: "draft-1" },
       { dir: "/repo/main", id: "session-1" },
     ])
     expect(promptCalls.reset.map((scope) => promptScopeKey(scope))).toEqual([
-      repoMainPromptScope,
+      "draft:draft-1",
       "workspace:%2Frepo%2Fmain:session:session-1",
     ])
     expect(sessionCreateCalls.at(-1)?.options?.headers?.["x-claxedo-draft-id"]).toBe("draft-1")
     expect(sessionCreateCalls.at(-1)?.input).toEqual({ directory: "/repo/main" })
+    expect(stateAtSubmit).toEqual([{ resetCount: 2, optimisticCount: 1 }])
   })
 
 
