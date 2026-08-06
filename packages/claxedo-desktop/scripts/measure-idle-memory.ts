@@ -62,7 +62,7 @@ try {
     expression: `localStorage.setItem("claxedo.state.v5", ${JSON.stringify(JSON.stringify(fixture))})`,
   })
   await client.send("Page.reload", { ignoreCache: true })
-  await waitForExpression(client, `document.readyState === "complete" && document.querySelectorAll("[data-workbench-content]").length >= 10`)
+  await waitForExpression(client, `document.readyState === "complete" && Boolean(document.getElementById("root")?.children.length)`)
   await delay(idleMs)
 
   await client.send("Performance.enable")
@@ -76,7 +76,15 @@ try {
   }
   const page = asObject(evaluationValue(await client.send("Runtime.evaluate", {
     expression: `(() => ({
-      restoredContentCount: document.querySelectorAll("[data-workbench-content]").length,
+      restoredContentCount: (() => {
+        try {
+          const state = JSON.parse(localStorage.getItem("claxedo.state.v5") ?? "{}")
+          return Array.isArray(state?.workbench?.contentIds) ? state.workbench.contentIds.length : 0
+        } catch {
+          return 0
+        }
+      })(),
+      mountedContentCount: document.querySelectorAll("[data-workbench-content]").length,
       rendererReady: Number(document.readyState === "complete" && Boolean(document.getElementById("root")?.children.length)),
     }))()`,
     returnByValue: true,
@@ -97,6 +105,7 @@ try {
     total_rss_mib: round(processes.reduce((total, process) => total + process.rssKiB, 0) / 1024),
     renderer_ready: Number(page.rendererReady ?? 0),
     restored_content_count: Number(page.restoredContentCount ?? 0),
+    mounted_content_count: Number(page.mountedContentCount ?? 0),
     total_footprint_mib: footprint.summary,
     main_rss_mib: rssMiB(roles.main),
     gpu_rss_mib: rssMiB(roles.gpu),
