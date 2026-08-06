@@ -356,7 +356,7 @@ function eventsStream(c: Context, heartbeatMs: number, lastEventId?: string) {
   return new Response(body, {
     headers: {
       "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
+      "Cache-Control": "no-store",
       Connection: "keep-alive",
     },
   })

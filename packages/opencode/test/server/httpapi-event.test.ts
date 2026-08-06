@@ -51,7 +51,7 @@ describe("event HttpApi", () => {
 
         expect(response.status).toBe(200)
         expect(response.headers["content-type"]).toContain("text/event-stream")
-        expect(response.headers["cache-control"]).toBe("no-cache, no-transform")
+        expect(response.headers["cache-control"]).toBe("no-store, no-transform")
         expect(response.headers["x-accel-buffering"]).toBe("no")
         expect(response.headers["x-content-type-options"]).toBe("nosniff")
         expect(yield* readEvent(reader)).toMatchObject({ type: "server.connected", properties: {} })

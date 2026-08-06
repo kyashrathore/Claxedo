@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { attachSseFanout, createSseReplayBuffer, encodeSseData } from "./sse"
+import { attachSseFanout, createSseReplayBuffer, encodeSseData, sseHeaders } from "./sse"
 import { fakeSetInterval } from "./test-utils/class-internals"
 
 type TestEvent = { type: "delta" | "idle"; value: string }
+
+test("SSE responses cannot enter the browser HTTP cache", () => {
+  expect(sseHeaders()["Cache-Control"]).toBe("no-store")
+})
 
 describe("attachSseFanout", () => {
   test("unsubscribes and clears heartbeat on cleanup", () => {

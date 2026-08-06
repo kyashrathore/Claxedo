@@ -73,6 +73,7 @@ describe("self-host API responses carry the hosted lockdown policy", () => {
     expect(res.headers.get("content-security-policy")).toContain("default-src 'none'")
     // An API response is not a document, so nothing is report-only here.
     expect(res.headers.get("content-security-policy-report-only")).toBeNull()
+    expect(res.headers.get("cache-control")).toBe("no-store")
     // Still a working API response, not a locked-down brick.
     expect(await res.json()).toMatchObject({ ok: true })
   })
@@ -208,6 +209,7 @@ describe("self-host SPA bundle responses carry the document policy", () => {
       expect(res.headers.get("content-security-policy"), asset).not.toContain("default-src")
       expect(res.headers.get("content-security-policy-report-only"), asset).toContain("'wasm-unsafe-eval'")
       expect(res.headers.get("x-content-type-options"), asset).toBe("nosniff")
+      expect(res.headers.get("cache-control"), asset).not.toBe("no-store")
     }
   })
 

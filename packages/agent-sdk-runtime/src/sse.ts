@@ -13,7 +13,7 @@ export type SseReplayBuffer<T> = {
 export function sseHeaders() {
   return {
     "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
+    "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
   }
 }

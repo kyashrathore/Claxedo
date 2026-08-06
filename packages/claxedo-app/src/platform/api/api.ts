@@ -3,6 +3,7 @@
  */
 import { getAuthToken } from "@/platform/auth/auth-client";
 import { throttledFetch } from "@/lib/fetch-throttle";
+import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "@/platform/api/local-server"
 export { isDemoMode, isDemoPath, isEmbedMode } from "@/lib/runtime-mode"
 import { isDemoMode } from "@/lib/runtime-mode"
 
@@ -216,7 +217,7 @@ export function getClaxedoServerUrl(): string {
   // set via configureApiRuntime() during init. Fall back to it before the
   // hardcoded default so PTY/events/documents calls reach the right server.
   if (cfg.base) return cfg.base
-  return "http://127.0.0.1:3001"
+  return DEFAULT_LOCAL_CLAXEDO_SERVER_URL
 }
 
 /**
@@ -257,7 +258,7 @@ export function getDefaultBaseUrl(): string {
   if (typeof window !== "undefined") {
     const host = window.location.hostname
     if (localHost(host) && window.location.port === "4444") {
-      return "http://127.0.0.1:3001"
+      return DEFAULT_LOCAL_CLAXEDO_SERVER_URL
     }
   }
 
@@ -289,6 +290,7 @@ export async function authFetch(
   input = eventInput.input
   init = eventInput.init
   const apiFetchDebug = beginApiFetchDebug(input)
+  const cache = localUrl(apiFetchUrl(input)) ? "no-store" as const : init?.cache
   const buildRequest = async (forceRefreshToken: boolean): Promise<{ request: Request | string | URL; init?: RequestInit; token: string | null }> => {
     const token = await getAuthToken(forceRefreshToken ? { skipCache: true } : undefined)
 
@@ -306,7 +308,7 @@ export async function authFetch(
       const existingHeaders = new Headers(input.headers)
       if (forceRefreshToken) existingHeaders.delete("Authorization")
       setAuth(existingHeaders)
-      return { request: new Request(input, { ...init, headers: existingHeaders }), token }
+      return { request: new Request(input, { ...init, cache, headers: existingHeaders }), token }
     }
 
     const headers = new Headers(init?.headers)
@@ -315,21 +317,21 @@ export async function authFetch(
     if (init?.body && typeof init.body === "string" && !headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json")
     }
-    return { request: input, init: { ...init, headers }, token }
+    return { request: input, init: { ...init, cache, headers }, token }
   }
 
   const withoutAuthorization = async () => {
     if (input instanceof Request) {
       const headers = new Headers(input.headers)
       headers.delete("Authorization")
-      return fetch(new Request(input, { ...init, headers }))
+      return fetch(new Request(input, { ...init, cache, headers }))
     }
     const headers = new Headers(init?.headers)
     headers.delete("Authorization")
     if (init?.body && typeof init.body === "string" && !headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json")
     }
-    return fetch(input, { ...init, headers })
+    return fetch(input, { ...init, cache, headers })
   }
 
   // Every authed fetch flows through a global concurrency limiter so a

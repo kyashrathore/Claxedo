@@ -753,7 +753,7 @@ export function createSessionController(input: {
             workspaceId,
             workspaceKind,
           }),
-          queryFn: transportRequest,
+          queryFn: transportRequest, gcTime: 0,
         }))
       .then((result) => {
         if (result.session && "error" in result.session && isSessionNotFoundError(result.session.error)) {

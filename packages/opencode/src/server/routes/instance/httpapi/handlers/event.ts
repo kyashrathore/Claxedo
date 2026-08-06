@@ -77,7 +77,7 @@ function eventResponse(events: EventV2.Interface) {
       {
         contentType: "text/event-stream",
         headers: {
-          "Cache-Control": "no-cache, no-transform",
+          "Cache-Control": "no-store, no-transform",
           "X-Accel-Buffering": "no",
           "X-Content-Type-Options": "nosniff",
         },

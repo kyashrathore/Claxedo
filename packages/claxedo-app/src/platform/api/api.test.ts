@@ -4,6 +4,7 @@ let token: string | null = null
 const calls: Array<{
   auth: string | null
   body: string
+  cache: RequestCache
   dir: string | null
   url: string
 }> = []
@@ -99,6 +100,7 @@ beforeEach(() => {
     calls.push({
       auth: req.headers.get("Authorization"),
       body: await req.clone().text(),
+      cache: init?.cache ?? req.cache ?? "default",
       dir: req.headers.get("x-opencode-directory"),
       url: req.url,
     })
@@ -165,6 +167,12 @@ describe("authFetch", () => {
     expect(calls[0]?.auth).toBe("Bearer tok_123")
   })
 
+  test("bypasses Chromium's HTTP cache for local API responses", async () => {
+    await authFetch("http://127.0.0.1:2593/api/claxedo/bootstrap")
+
+    expect(calls[0]?.cache).toBe("no-store")
+  })
+
   test("uses configured desktop basic auth when no token exists", async () => {
     configureApiRuntime({ password: "desk-secret" })
 
@@ -203,6 +211,7 @@ describe("authFetch", () => {
       calls.push({
         auth: req.headers.get("Authorization"),
         body: await req.clone().text(),
+        cache: init?.cache ?? req.cache ?? "default",
         dir: req.headers.get("x-opencode-directory"),
         url: req.url,
       })
@@ -253,6 +262,7 @@ describe("authFetch workspace routing boundary", () => {
     expect(calls).toHaveLength(1)
     expect(calls[0]).toMatchObject({
       auth: "Bearer tok_123",
+      cache: "default",
       dir: null,
       url: "https://control.test/provider?directory=%2Frepo%2Fmain",
     })
@@ -283,22 +293,22 @@ describe("getDefaultBaseUrl", () => {
 
   test("points localhost app development at claxedo-server", () => {
     window.location.href = "http://localhost:4444/workspace"
-    expect(getDefaultBaseUrl()).toBe("http://127.0.0.1:3001")
+    expect(getDefaultBaseUrl()).toBe("http://127.0.0.1:2593")
   })
 
   test("points IPv4 app development at claxedo-server", () => {
     window.location.href = "http://127.0.0.1:4444/workspace"
-    expect(getDefaultBaseUrl()).toBe("http://127.0.0.1:3001")
+    expect(getDefaultBaseUrl()).toBe("http://127.0.0.1:2593")
   })
 
   test("points the packaged desktop renderer at claxedo-server", () => {
     asPackagedDesktopRenderer()
-    expect(getDefaultBaseUrl()).toBe("http://127.0.0.1:3001")
+    expect(getDefaultBaseUrl()).toBe("http://127.0.0.1:2593")
   })
 
   test("never resolves API paths against the file:// origin", () => {
     asPackagedDesktopRenderer()
-    expect(new URL("/session", getDefaultBaseUrl()).toString()).toBe("http://127.0.0.1:3001/session")
+    expect(new URL("/session", getDefaultBaseUrl()).toString()).toBe("http://127.0.0.1:2593/session")
   })
 })
 
@@ -306,7 +316,7 @@ describe("getClaxedoServerUrl on the packaged desktop renderer", () => {
   test("falls through to claxedo-server rather than the file:// origin", () => {
     asPackagedDesktopRenderer()
     setServerEnv({ claxedo: undefined, legacy: undefined })
-    expect(getClaxedoServerUrl()).toBe("http://127.0.0.1:3001")
+    expect(getClaxedoServerUrl()).toBe("http://127.0.0.1:2593")
   })
 })
 
