@@ -29,6 +29,8 @@ const channels = [
   "process-diagnostics:get-snapshot",
   "process-diagnostics:subscribe",
   "process-diagnostics:unsubscribe",
+  "process-diagnostics:context",
+  "process-diagnostics:scan-session-memory",
   "process-diagnostics:stop",
   "process-diagnostics:kill",
 ] as const
@@ -37,6 +39,7 @@ export function registerProcessDiagnosticsIpc(
   router: DiagnosticsIpcRouter,
   options: {
     profiler: Profiler
+    scanSessionMemory(request: LocalDiagnostics.SessionMemoryScanRequest): Promise<LocalDiagnostics.SessionMemoryScanResult>
     isAllowedUrl(url: string): boolean
     confirmAction(input: {
       webContents: DiagnosticsWebContents
@@ -110,6 +113,17 @@ export function registerProcessDiagnosticsIpc(
   router.handle("process-diagnostics:unsubscribe", (event) => {
     revoke(stateFor(event))
     return { ok: true as const }
+  })
+  router.handle("process-diagnostics:context", (event, input) => {
+    stateFor(event)
+    options.profiler.recordContext(LocalDiagnostics.SetContextRequest.parse(input))
+    return { ok: true as const }
+  })
+  router.handle("process-diagnostics:scan-session-memory", async (event, input) => {
+    stateFor(event)
+    return LocalDiagnostics.SessionMemoryScanResult.parse(
+      await options.scanSessionMemory(LocalDiagnostics.SessionMemoryScanRequest.parse(input)),
+    )
   })
   router.handle("process-diagnostics:stop", (event, input) =>
     dispatchAction(event, LocalDiagnostics.StopRequest.parse(input)))

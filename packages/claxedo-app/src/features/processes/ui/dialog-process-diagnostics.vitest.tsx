@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
+import { cleanup, createEvent, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import type { JSX } from "solid-js"
 import type { LocalDiagnostics } from "../data/local-diagnostics"
@@ -16,8 +16,19 @@ const state = vi.hoisted(() => {
     }),
     stop: vi.fn(),
     kill: vi.fn(),
+    scanSessionMemory: vi.fn<(
+      request: LocalDiagnostics.SessionMemoryScanRequest,
+    ) => Promise<LocalDiagnostics.SessionMemoryScanResult>>(),
   }
 })
+
+const warmSnapshot = [{
+  sessionId: "ses_warm",
+  mounted: false,
+  recency: 0,
+  messageCount: 42,
+  buckets: { chatBytes: 4_096, imageBytes: 8_192, compactionBytes: 2_048, totalBytes: 14_336 },
+}] satisfies LocalDiagnostics.WarmSessionMemory[]
 
 vi.mock("@/platform/runtime/platform-provider", () => ({
   usePlatform: () => ({
@@ -25,6 +36,7 @@ vi.mock("@/platform/runtime/platform-provider", () => ({
     processDiagnostics: {
       getSnapshot: state.getSnapshot,
       subscribe: state.subscribe,
+      scanSessionMemory: state.scanSessionMemory,
       stop: state.stop,
       kill: state.kill,
     },
@@ -53,6 +65,7 @@ beforeEach(() => {
   state.subscribe.mockClear()
   state.stop.mockReset()
   state.kill.mockReset()
+  state.scanSessionMemory.mockReset()
   state.getSnapshot.mockResolvedValue(snapshot())
   state.stop.mockResolvedValue({
     ok: true,
@@ -65,6 +78,7 @@ beforeEach(() => {
     action: "kill",
     code: "user-cancelled",
   })
+  state.scanSessionMemory.mockResolvedValue(sessionMemoryScan())
 })
 
 afterEach(() => cleanup())
@@ -78,8 +92,6 @@ describe("local performance diagnostics dialog", () => {
     expect(screen.getByText("Collector active")).toBeInTheDocument()
     expect(screen.getByText("CPU and memory history")).toBeInTheDocument()
     expect(screen.getByText(/Workspace model work shares/)).toBeInTheDocument()
-    expect(screen.getByText("Lifecycle activity")).toBeInTheDocument()
-    expect(screen.getByText(/owner started · Codex harness/)).toBeInTheDocument()
     expect(state.getSnapshot).toHaveBeenCalledOnce()
     expect(state.subscribe).toHaveBeenCalledOnce()
 
@@ -89,6 +101,24 @@ describe("local performance diagnostics dialog", () => {
       samples: [...snapshot().samples, point(4_000, 4, 4_000)],
     })
     await waitFor(() => expect(screen.getByText(/last sample/)).toHaveTextContent(formatTime(4_000)))
+  })
+
+  test("runs the full session scan only when triggered and shows stored and warm causes", async () => {
+    render(() => <DialogProcessDiagnostics warmSessions={() => warmSnapshot} />)
+    await screen.findByRole("button", { name: /Codex harness/ })
+
+    expect(state.scanSessionMemory).not.toHaveBeenCalled()
+    expect(screen.getByText(/No background scan runs/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Scan session memory" }))
+
+    await waitFor(() => expect(state.scanSessionMemory).toHaveBeenCalledWith({ warmSessions: warmSnapshot }))
+    expect(await screen.findByText("Warm sessions")).toBeInTheDocument()
+    expect(screen.getByText("Largest stored sessions")).toBeInTheDocument()
+    expect(screen.getByText("Retained unmounted · 42 messages · warm rank 1")).toBeInTheDocument()
+    expect(screen.getByText("Large Codex task")).toBeInTheDocument()
+    expect(screen.getAllByText("Images").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Compaction").length).toBeGreaterThan(0)
+    expect(screen.getByText(/serialized payload, not exact JavaScript heap/)).toBeInTheDocument()
   })
 
   test("uses only the opaque grant for a named owner action and refreshes after the result", async () => {
@@ -106,17 +136,55 @@ describe("local performance diagnostics dialog", () => {
     expect(state.getSnapshot).toHaveBeenCalledTimes(2)
   })
 
-  test("exposes named keyboard range handles and a textual equivalent", async () => {
+  test("labels both value axes with whole-number ticks", async () => {
+    render(() => <DialogProcessDiagnostics />)
+    const chart = await screen.findByRole("img")
+
+    // The 80% CPU peak and 8000-byte RSS peak round up to whole-number axis tops,
+    // so every gridline is readable as a value.
+    const axis = within(chart)
+    expect(axis.getByText("80%")).toBeInTheDocument()
+    expect(axis.getByText("40%")).toBeInTheDocument()
+    expect(axis.getByText("KiB")).toBeInTheDocument()
+    expect(axis.getByText("8")).toBeInTheDocument()
+    expect(axis.getByText("6")).toBeInTheDocument()
+    expect(chart).toHaveAttribute(
+      "aria-label",
+      expect.stringContaining("CPU axis 0 to 80%, peak 80%"),
+    )
+    expect(chart).toHaveAttribute(
+      "aria-label",
+      expect.stringContaining("Memory axis 0 to 8 KiB, peak 8 KiB"),
+    )
+    expect(screen.queryByRole("slider")).not.toBeInTheDocument()
+  })
+
+  test("reads out the hovered sample and the spike attributed to it", async () => {
     const view = render(() => <DialogProcessDiagnostics />)
-    const start = await screen.findByRole("slider", { name: "Selection start" })
-    expect(start).toBeInTheDocument()
-    expect(screen.getByRole("slider", { name: "Selection end" })).toBeInTheDocument()
-    fireEvent.input(start, { target: { value: "2000" } })
-    await waitFor(() => expect(view.container.querySelector("[aria-live]")).toHaveTextContent("Selected timeline interval"))
-    fireEvent.click(screen.getByText("Text timeline summary"))
-    expect(screen.getByRole("columnheader", { name: "Time" })).toBeInTheDocument()
-    expect(screen.getByRole("columnheader", { name: "CPU" })).toBeInTheDocument()
-    expect(screen.getByRole("columnheader", { name: "RSS" })).toBeInTheDocument()
+    const chart = await screen.findByRole("img")
+
+    // Attribution dots mark every spike; a captured context makes the dot solid.
+    const dots = [...view.container.querySelectorAll<SVGElement>('[data-testid="diagnostics-spike"]')]
+    expect(dots).toHaveLength(1)
+    expect(dots[0]).toHaveAttribute("data-attributed", "true")
+    expect(view.container.querySelector('[data-testid="diagnostics-hover-readout"]')).toBeNull()
+
+    // happy-dom reports a zero-size rect, so pin the chart box and hover its midpoint,
+    // which lands on the 2,000 ms sample.
+    chart.getBoundingClientRect = () => new DOMRect(0, 0, 800, 232)
+    hoverAt(chart, 394)
+
+    const readout = await screen.findByTestId("diagnostics-hover-readout")
+    const values = within(readout)
+    expect(values.getByText(formatTime(2_000))).toBeInTheDocument()
+    expect(values.getByText("80%")).toBeInTheDocument()
+    expect(values.getByText("8 KiB")).toBeInTheDocument()
+    expect(values.getByText(/CPU spike \+79\.0%/)).toBeInTheDocument()
+    expect(values.getByText("Session · session ses_abc")).toBeInTheDocument()
+
+    fireEvent.pointerLeave(chart)
+    await waitFor(() =>
+      expect(view.container.querySelector('[data-testid="diagnostics-hover-readout"]')).toBeNull())
   })
 
   test("announces source transitions without announcing routine samples", async () => {
@@ -153,7 +221,7 @@ describe("local performance diagnostics dialog", () => {
       contributors.some((item) =>
         item.dataset.ownerKind === "harness" && Number(item.dataset.rssChange) > 0),
     ).toBe(true)
-    const range = view.container.querySelector<HTMLElement>('[aria-label="Selected interval summary"]')!
+    const range = view.container.querySelector<HTMLElement>('[aria-label="Retained window summary"]')!
     expect(Number(range.dataset.diagnosticsRangeStart)).toBe(1_000)
     expect(Number(range.dataset.diagnosticsRangeEnd)).toBe(3_000)
     expect(view.container.querySelector('[data-testid="diagnostics-source"]')).toHaveAttribute(
@@ -167,6 +235,13 @@ describe("local performance diagnostics dialog", () => {
     expect(screen.getByText(/unmeasured churn, never as zero usage/)).toBeInTheDocument()
   })
 })
+
+/** happy-dom's PointerEvent drops `clientX` from its init, so pin it on the event. */
+function hoverAt(chart: HTMLElement, clientX: number) {
+  const event = createEvent.pointerMove(chart)
+  Object.defineProperty(event, "clientX", { value: clientX })
+  fireEvent(chart, event)
+}
 
 function taskSnapshot(): LocalDiagnostics.RetainedSnapshot {
   const owners = [
@@ -341,13 +416,39 @@ function snapshot(): LocalDiagnostics.RetainedSnapshot {
       state: "healthy",
       lastSuccessAt: 3_000,
     }],
-    markers: [{
-      type: "lifecycle",
-      id: "marker-owner-started",
-      at: 2_000,
-      event: "owner-started",
-      ownerId: "owner-codex",
-    }],
+    markers: [
+      {
+        type: "lifecycle",
+        id: "marker-owner-started",
+        at: 2_000,
+        event: "owner-started",
+        ownerId: "owner-codex",
+      },
+      {
+        type: "spike",
+        id: "marker-cpu-spike",
+        at: 2_000,
+        metric: "cpu",
+        value: 80,
+        delta: 79,
+        ownerId: "owner-codex",
+        processId: "host:42:100",
+        context: {
+          screen: "Session",
+          route: "/session/abc",
+          sessionId: "ses_abc",
+          workbench: {
+            focusedSurface: "session",
+            paneCount: 1,
+            surfaceCount: 1,
+            stashedSurfaceCount: 0,
+            paneSurfaceTypes: ["session"],
+          },
+          terminalTabs: { total: 0, paneBound: 0, stashed: 0 },
+          workspacePanel: { open: false },
+        },
+      },
+    ],
     interval: {
       startAt: 1_000,
       endAt: 3_000,
@@ -371,5 +472,30 @@ function point(at: number, cpu: number, rssBytes: number) {
     processId: "host:42:100",
     cpuMachinePercent: { state: "available" as const, value: cpu },
     rssBytes: { state: "available" as const, value: rssBytes },
+  }
+}
+
+function sessionMemoryScan(): LocalDiagnostics.SessionMemoryScanResult {
+  return {
+    version: 1,
+    scannedAt: 5_000,
+    durationMs: 1_250,
+    stored: { chatBytes: 10_000, imageBytes: 20_000, compactionBytes: 5_000, totalBytes: 35_000 },
+    resident: warmSnapshot[0]!.buckets,
+    sources: [{
+      harness: "codex",
+      profile: "native",
+      state: "scanned",
+      sessionCount: 1,
+      buckets: { chatBytes: 10_000, imageBytes: 20_000, compactionBytes: 5_000, totalBytes: 35_000 },
+    }],
+    sessions: [{
+      sessionId: "019-task",
+      title: "Large Codex task",
+      harness: "codex",
+      profile: "native",
+      buckets: { chatBytes: 10_000, imageBytes: 20_000, compactionBytes: 5_000, totalBytes: 35_000 },
+    }],
+    warmSessions: warmSnapshot,
   }
 }

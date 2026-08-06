@@ -48,6 +48,7 @@ import {
 import { createShellLayoutState } from "./layout/state"
 import { focusComposerSurface } from "../features/session/composer/ui/composer-focus"
 import { DialogProcessDiagnostics } from "../features/processes/ui"
+import { warmConversationMemorySnapshot } from "../features/session/conversation/conversation-registry"
 import {
   TerminalWorkspaceProvisioningProvider,
   type TerminalWorkspaceProvisioning,
@@ -293,7 +294,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     claxedoState.rail.setWidth(shellLayout.committedRailWidth())
   }
   const openDiagnostics = () => {
-    dialog.show(() => <DialogProcessDiagnostics />)
+    dialog.show(() => <DialogProcessDiagnostics warmSessions={warmConversationMemorySnapshot} />)
   }
   const openLocalDiagnostics = platform.processDiagnostics ? openDiagnostics : undefined
   const handleSidebarHotZoneEnter = () => {

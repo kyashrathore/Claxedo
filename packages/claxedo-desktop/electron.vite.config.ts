@@ -76,6 +76,7 @@ export default defineConfig(({ mode }) => {
           input: {
             index: "src/main/index.ts",
             "process-metrics-worker": "src/main/diagnostics/process-metrics-worker-entry.ts",
+            "session-memory-worker": "src/main/diagnostics/session-memory-worker-entry.ts",
           },
         },
       },

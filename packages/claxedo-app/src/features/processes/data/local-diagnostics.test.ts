@@ -308,6 +308,22 @@ describe("local diagnostics contract", () => {
         prompt: "sentinel-secret",
       }).success,
     ).toBe(false)
+
+    const context = {
+      screen: "workspace-session",
+      route: "/w/workspace-1/session/session-1",
+      workbench: {
+        focusedSurface: "session",
+        paneCount: 1,
+        surfaceCount: 1,
+        stashedSurfaceCount: 0,
+        paneSurfaceTypes: ["session"],
+      },
+      terminalTabs: { total: 0, paneBound: 0, stashed: 0 },
+      workspacePanel: { open: false },
+    }
+    expect(LocalDiagnostics.Context.safeParse({ ...context, screenshot: "sentinel-secret" }).success).toBe(false)
+    expect(LocalDiagnostics.Context.safeParse({ ...context, domHtml: "sentinel-secret" }).success).toBe(false)
   })
 
   test("represents PID reuse as separate creation identities", () => {
@@ -350,6 +366,27 @@ describe("local diagnostics contract", () => {
         }).success,
       ).toBe(false)
     }
+  })
+
+  test("keeps session memory causes exclusive and validates triggered scan results", () => {
+    const result = LocalDiagnostics.SessionMemoryScanResult.parse({
+      version: 1,
+      scannedAt: 2_000,
+      durationMs: 25,
+      stored: { chatBytes: 100, imageBytes: 200, compactionBytes: 300, totalBytes: 600 },
+      resident: { chatBytes: 10, imageBytes: 20, compactionBytes: 30, totalBytes: 60 },
+      sources: [],
+      sessions: [],
+      warmSessions: [],
+    })
+
+    expect(result.stored.totalBytes).toBe(600)
+    expect(LocalDiagnostics.SessionMemoryBuckets.safeParse({
+      chatBytes: 100,
+      imageBytes: 200,
+      compactionBytes: 300,
+      totalBytes: 601,
+    }).success).toBe(false)
   })
 
   test("allows web platforms to omit local diagnostics entirely", () => {

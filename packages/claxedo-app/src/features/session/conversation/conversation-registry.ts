@@ -15,6 +15,7 @@ import {
   type ConversationChatEntry,
 } from "./conversation-chat-client"
 import { queryClient } from "@/platform/query/query-client"
+import { estimateConversationMemory } from "./conversation-memory"
 
 /**
  * One canonical conversation store per session. The registry owns a TanStack
@@ -172,6 +173,19 @@ export function registeredConversationSnapshot(sessionID: string | undefined) {
 
 export function conversationEntryIdsForTest() {
   return [...entries.keys()]
+}
+
+export function warmConversationMemorySnapshot() {
+  return [...entries.values()].toReversed().map((entry, recency) => {
+    const messages = entry.client.getMessages()
+    return {
+      sessionId: entry.sessionID,
+      mounted: entry.refs > 0,
+      recency,
+      messageCount: messages.length,
+      buckets: estimateConversationMemory(messages),
+    }
+  })
 }
 
 export function clearConversationChatRegistryForTest() {

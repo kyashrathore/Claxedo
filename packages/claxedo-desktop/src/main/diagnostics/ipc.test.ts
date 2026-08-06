@@ -6,6 +6,7 @@ type Listener = (...args: unknown[]) => void
 
 function harness(options: {
   profiler?: object
+  scanSessionMemory?: (request: unknown) => Promise<unknown>
   confirmAction?: (input: {
     webContents: DiagnosticsWebContents
     action: "stop" | "kill"
@@ -72,6 +73,7 @@ function harness(options: {
     handlers.get(channel)?.({ sender: webContents, senderFrame }, input)
   const controller = registerProcessDiagnosticsIpc(router, {
     profiler: (options.profiler ?? profiler) as never,
+    scanSessionMemory: options.scanSessionMemory ?? (async (request) => scanResult(request)),
     isAllowedUrl: (url) => url === "app://claxedo/index.html",
     confirmAction: options.confirmAction ?? (async () => false),
   })
@@ -126,7 +128,80 @@ function snapshot() {
   }
 }
 
+function scanResult(request: unknown) {
+  const warmSessions = (request as { warmSessions?: unknown[] }).warmSessions ?? []
+  const buckets = { chatBytes: 0, imageBytes: 0, compactionBytes: 0, totalBytes: 0 }
+  return {
+    version: 1 as const,
+    scannedAt: 20,
+    durationMs: 10,
+    stored: buckets,
+    resident: buckets,
+    sources: [],
+    sessions: [],
+    warmSessions,
+  }
+}
+
 describe("process diagnostics IPC", () => {
+  test("runs a validated session-memory scan only for the trusted main frame", async () => {
+    const requests: unknown[] = []
+    const fake = harness({
+      scanSessionMemory: async (request) => {
+        requests.push(request)
+        return scanResult(request)
+      },
+    })
+    const request = {
+      warmSessions: [{
+        sessionId: "ses_warm",
+        mounted: false,
+        recency: 0,
+        messageCount: 2,
+        buckets: { chatBytes: 10, imageBytes: 20, compactionBytes: 30, totalBytes: 60 },
+      }],
+    }
+
+    await expect(fake.invoke("process-diagnostics:scan-session-memory", fake.mainFrame, request)).resolves.toMatchObject({
+      warmSessions: [{ sessionId: "ses_warm" }],
+    })
+    expect(requests).toEqual([request])
+    expect(() => fake.invoke("process-diagnostics:scan-session-memory", fake.mainFrame, { warmSessions: [{ sessionId: "bad" }] })).toThrow()
+    fake.controller.dispose()
+  })
+
+  test("records validated main-frame context without exposing profiler internals", () => {
+    const contexts: unknown[] = []
+    const fake = harness({
+      profiler: {
+        getSnapshot: snapshot,
+        getGeneration: () => "generation-1",
+        subscribe: () => () => undefined,
+        recordContext: (context: unknown) => contexts.push(context),
+      },
+    })
+
+    expect(fake.invoke("process-diagnostics:context", fake.mainFrame, {
+      screen: "workspace-session",
+      route: "/w/workspace-1/session/session-1",
+      workspaceId: "workspace-1",
+      sessionId: "session-1",
+      workbench: {
+        focusedSurface: "session",
+        focusedPaneId: "pane-1",
+        paneCount: 1,
+        surfaceCount: 2,
+        stashedSurfaceCount: 1,
+        paneSurfaceTypes: ["session"],
+      },
+      terminalTabs: { total: 1, paneBound: 0, stashed: 1 },
+      workspacePanel: { open: false },
+    })).toEqual({ ok: true })
+    expect(contexts).toEqual([expect.objectContaining({ screen: "workspace-session", sessionId: "session-1" })])
+    expect(() => fake.invoke("process-diagnostics:context", fake.mainFrame, { screen: "home" })).toThrow()
+    fake.controller.dispose()
+  })
+
   test("accepts only the registered current main frame and exact allowed URL", () => {
     const fake = harness()
     expect(fake.invoke("process-diagnostics:get-snapshot")).toEqual(snapshot())

@@ -4,18 +4,23 @@ import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-j
 
 import type { LocalDiagnostics } from "../data/local-diagnostics"
 import { usePlatform } from "@/platform/runtime/platform-provider"
-import { buildDiagnosticsModel, ownerGroup, type DiagnosticsRange } from "./diagnostics/model"
-import { DiagnosticsTimeline, formatDuration, formatTime } from "./diagnostics/timeline"
+import { buildDiagnosticsModel, ownerGroup } from "./diagnostics/model"
+import { DiagnosticsTimeline, formatTime } from "./diagnostics/timeline"
 
-export function DialogProcessDiagnostics() {
+export function DialogProcessDiagnostics(props: {
+  warmSessions?: () => LocalDiagnostics.WarmSessionMemory[]
+}) {
   const capability = usePlatform().processDiagnostics
   const [snapshot, setSnapshot] = createSignal<LocalDiagnostics.RetainedSnapshot>()
   const [loading, setLoading] = createSignal(true)
   const [error, setError] = createSignal<string>()
   const [disconnected, setDisconnected] = createSignal(false)
-  const [selected, setSelected] = createSignal<DiagnosticsRange>()
   const [expanded, setExpanded] = createSignal<Record<string, boolean>>({})
   const [busy, setBusy] = createSignal<string>()
+  const [sessionScan, setSessionScan] = createSignal<LocalDiagnostics.SessionMemoryScanResult>()
+  const [sessionScanBusy, setSessionScanBusy] = createSignal(false)
+  const [sessionScanError, setSessionScanError] = createSignal<string>()
+  const [storedSessionsShown, setStoredSessionsShown] = createSignal(100)
   const [announcement, setAnnouncement] = createSignal("")
   let lastReceivedAt = Date.now()
   let unsubscribe: (() => void) | undefined
@@ -96,19 +101,38 @@ export function DialogProcessDiagnostics() {
 
   const model = createMemo(() => {
     const current = snapshot()
-    return current ? buildDiagnosticsModel(current, selected()) : undefined
+    return current ? buildDiagnosticsModel(current) : undefined
   })
   const grouped = createMemo(() =>
     [...Map.groupBy(model()?.contributors ?? [], (contributor) => ownerGroup(contributor.owner.kind)).entries()])
-  const lifecycle = createMemo(() =>
-    (model()?.markers ?? [])
-      .filter((marker): marker is LocalDiagnostics.LifecycleMarker => marker.type === "lifecycle")
-      .sort((a, b) => b.at - a.at))
   const current = createMemo(() => model()?.series.at(-1))
   const peakCpu = createMemo(() =>
     Math.max(0, ...(model()?.series.flatMap((point) => point.cpu === undefined ? [] : [point.cpu]) ?? [])))
   const peakRss = createMemo(() =>
     Math.max(0, ...(model()?.series.flatMap((point) => point.rssBytes === undefined ? [] : [point.rssBytes]) ?? [])))
+  const warmSessions = createMemo(() => sessionScan()?.warmSessions.toSorted(
+    (left, right) => right.buckets.totalBytes - left.buckets.totalBytes || left.recency - right.recency,
+  ) ?? [])
+  const storedSessions = createMemo(() => sessionScan()?.sessions.slice(0, storedSessionsShown()) ?? [])
+
+  const scanSessions = async () => {
+    if (!capability || sessionScanBusy()) return
+    setSessionScanBusy(true)
+    setSessionScanError(undefined)
+    try {
+      const result = await capability.scanSessionMemory({ warmSessions: props.warmSessions?.() ?? [] })
+      setSessionScan(result)
+      setStoredSessionsShown(100)
+      setAnnouncement(
+        `Session memory scan complete. ${result.sessions.length} stored sessions and ${result.warmSessions.length} warm sessions analyzed.`,
+      )
+    } catch (cause) {
+      setSessionScanError(message(cause))
+      setAnnouncement(`Session memory scan failed: ${message(cause)}.`)
+    } finally {
+      setSessionScanBusy(false)
+    }
+  }
 
   const act = async (
     ownerId: string,
@@ -134,19 +158,8 @@ export function DialogProcessDiagnostics() {
       setBusy(undefined)
     }
   }
-  const selectRange = (range: DiagnosticsRange) => {
-    setSelected(range)
-    setAnnouncement(
-      `Selected timeline interval ${formatTime(range.startAt)} to ${formatTime(range.endAt)}, ${formatDuration(range.endAt - range.startAt)}.`,
-    )
-  }
-  const clearRange = () => {
-    setSelected(undefined)
-    setAnnouncement("Timeline returned to the live retained window.")
-  }
-
   return (
-    <Dialog title="Local performance diagnostics" size="x-large" class="claxedo-diagnostics-dialog">
+    <Dialog title="Local performance diagnostics" size="x-large" transition class="claxedo-diagnostics-dialog">
       <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border-weak-base px-5 py-3 max-md:px-3">
           <div>
@@ -184,9 +197,9 @@ export function DialogProcessDiagnostics() {
         >
           <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overflow-x-hidden px-5 py-4 max-md:px-3">
               <section
-                aria-label="Selected interval summary"
-                data-diagnostics-range-start={model()!.range.startAt}
-                data-diagnostics-range-end={model()!.range.endAt}
+                aria-label="Retained window summary"
+                data-diagnostics-range-start={model()!.bounds.startAt}
+                data-diagnostics-range-end={model()!.bounds.endAt}
                 class="grid grid-cols-4 overflow-hidden rounded-lg border border-border-weak-base max-md:grid-cols-2"
               >
                 <Metric label="Current CPU" value={formatCpu(current()?.cpu)} />
@@ -195,14 +208,151 @@ export function DialogProcessDiagnostics() {
                 <Metric label="Peak RSS" value={formatBytes(peakRss())} />
               </section>
 
+              <section aria-labelledby="diagnostics-session-memory-title" class="rounded-lg border border-border-weak-base">
+                <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border-weak-base px-3 py-2.5">
+                  <div>
+                    <h2 id="diagnostics-session-memory-title" class="text-[13px] font-medium text-text-strong">Session memory</h2>
+                    <p class="mt-0.5 max-w-3xl text-[11px] text-text-weak">
+                      Triggered only. Scans local Claxedo, Codex, and Claude session stores, then measures conversation payloads currently kept warm by this renderer.
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="small"
+                    disabled={sessionScanBusy()}
+                    onClick={() => void scanSessions()}
+                  >
+                    {sessionScanBusy() ? "Scanning all sessions…" : sessionScan() ? "Scan again" : "Scan session memory"}
+                  </Button>
+                </div>
+
+                <Show when={sessionScanError()}>
+                  {(value) => <p role="alert" class="m-3 rounded border border-border-critical-base px-3 py-2 text-[11px] text-text-on-critical-base">{value()}</p>}
+                </Show>
+
+                <Show
+                  when={sessionScan()}
+                  fallback={
+                    <div class="p-3 text-[11px] text-text-weak">
+                      No background scan runs. Start one to rank large sessions, split chat/image/compaction bytes, and identify mounted or retained warm conversations.
+                    </div>
+                  }
+                >
+                  {(scan) => (
+                    <div class="grid gap-3 p-3">
+                      <div class="grid grid-cols-4 overflow-hidden rounded border border-border-weak-base max-md:grid-cols-2">
+                        <Metric label="Stored payload" value={formatBytes(scan().stored.totalBytes)} />
+                        <Metric label="Warm payload estimate" value={formatBytes(scan().resident.totalBytes)} />
+                        <Metric label="Stored images" value={formatBytes(scan().stored.imageBytes)} />
+                        <Metric label="Stored compactions" value={formatBytes(scan().stored.compactionBytes)} />
+                      </div>
+
+                      <div>
+                        <h3 class="text-[11px] font-medium uppercase tracking-wide text-text-weak">Scanned stores</h3>
+                        <div class="mt-1.5 flex flex-wrap gap-1.5">
+                          <For each={scan().sources}>
+                            {(source) => (
+                              <span
+                                data-testid="diagnostics-session-memory-source"
+                                data-state={source.state}
+                                class="rounded-full border border-border-weak-base px-2 py-1 text-[10px] text-text-weak"
+                              >
+                                {source.harness}{source.profile ? ` · ${source.profile}` : ""} · {source.state} · {source.sessionCount} sessions · {formatBytes(source.buckets.totalBytes)}
+                              </span>
+                            )}
+                          </For>
+                        </div>
+                      </div>
+
+                      <div class="rounded border border-border-weak-base">
+                        <div class="border-b border-border-weak-base px-2.5 py-2">
+                          <h3 class="text-[12px] font-medium text-text-strong">Warm sessions</h3>
+                          <p class="mt-0.5 text-[10px] text-text-weak">
+                            Mounted sessions are visible now. Retained sessions are unmounted conversation clients kept for fast switching and can still add memory overhead.
+                          </p>
+                        </div>
+                        <Show when={warmSessions().length > 0} fallback={<p class="p-3 text-[11px] text-text-weak">No conversations are currently warm in this renderer.</p>}>
+                          <ul class="divide-y divide-border-weak-base/60">
+                            <For each={warmSessions()}>
+                              {(session) => (
+                                <li data-testid="diagnostics-warm-session" class="grid grid-cols-[minmax(0,1fr)_auto] gap-3 px-2.5 py-2 text-[11px]">
+                                  <span class="min-w-0">
+                                    <span class="block truncate font-medium text-text-base">{session.sessionId}</span>
+                                    <span class="text-[10px] text-text-weak">
+                                      {session.mounted ? "Mounted" : "Retained unmounted"} · {session.messageCount} messages · warm rank {session.recency + 1}
+                                    </span>
+                                  </span>
+                                  <MemoryBuckets buckets={session.buckets} />
+                                </li>
+                              )}
+                            </For>
+                          </ul>
+                        </Show>
+                      </div>
+
+                      <div class="rounded border border-border-weak-base">
+                        <div class="border-b border-border-weak-base px-2.5 py-2">
+                          <h3 class="text-[12px] font-medium text-text-strong">Largest stored sessions</h3>
+                          <p class="mt-0.5 text-[10px] text-text-weak">All stores are analyzed; rows are ranked by serialized size and rendered in batches.</p>
+                        </div>
+                        <Show when={scan().sessions.length > 0} fallback={<p class="p-3 text-[11px] text-text-weak">No stored sessions found.</p>}>
+                          <ul class="divide-y divide-border-weak-base/60">
+                            <For each={storedSessions()}>
+                              {(session) => (
+                                <li data-testid="diagnostics-stored-session" class="grid grid-cols-[minmax(0,1fr)_auto] gap-3 px-2.5 py-2 text-[11px]">
+                                  <span class="min-w-0">
+                                    <span class="block truncate font-medium text-text-base">{session.title ?? session.sessionId}</span>
+                                    <span class="block truncate text-[10px] text-text-weak">
+                                      {session.harness}{session.profile ? ` · ${session.profile}` : ""} · {session.sessionId}
+                                    </span>
+                                  </span>
+                                  <MemoryBuckets buckets={session.buckets} />
+                                </li>
+                              )}
+                            </For>
+                          </ul>
+                          <Show when={storedSessionsShown() < scan().sessions.length}>
+                            <div class="border-t border-border-weak-base p-2 text-center">
+                              <Button variant="ghost" size="small" onClick={() => setStoredSessionsShown((value) => value + 100)}>
+                                Show 100 more
+                              </Button>
+                            </div>
+                          </Show>
+                        </Show>
+                      </div>
+
+                      <p class="text-[10px] text-text-weak">
+                        Completed in {formatDuration(scan().durationMs)}. Values estimate serialized payload, not exact JavaScript heap or decoded image/GPU memory; live overhead can be higher.
+                      </p>
+                    </div>
+                  )}
+                </Show>
+              </section>
+
               <DiagnosticsTimeline
                 points={model()!.series}
+                spikes={model()!.markers.filter((marker): marker is LocalDiagnostics.SpikeMarker => marker.type === "spike")}
                 bounds={model()!.bounds}
-                range={model()!.range}
-                live={!selected()}
-                onRangeChange={selectRange}
-                onClear={clearRange}
               />
+
+              <Show when={model()!.markers.some((marker) => marker.type === "spike")}>
+                <section aria-labelledby="diagnostics-spikes-title" class="rounded-lg border border-border-weak-base p-3">
+                  <h2 id="diagnostics-spikes-title" class="text-[13px] font-medium text-text-strong">Attributed spikes</h2>
+                  <p class="mt-0.5 text-[11px] text-text-weak">Automatic resource jumps correlated with the active route, workbench surfaces, terminal residency, and focused session render size.</p>
+                  <ul class="mt-2 grid gap-1.5 text-[11px] text-text-weak">
+                    <For each={model()!.markers.filter((marker): marker is LocalDiagnostics.SpikeMarker => marker.type === "spike").toReversed()}>
+                      {(spike) => (
+                        <li data-testid="diagnostics-attributed-spike" class="rounded border border-border-weak-base px-2 py-1.5">
+                          <span class="font-medium text-text-base">{formatTime(spike.at)} · {describeSpike(spike, snapshot()!)}</span>
+                          <Show when={spike.context}>
+                            {(context) => <span class="ml-1">· {describeContext(context())}</span>}
+                          </Show>
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </section>
+              </Show>
 
               <section aria-labelledby="diagnostics-sources-title" class="rounded-lg border border-border-weak-base p-3">
                 <h2 id="diagnostics-sources-title" class="text-[13px] font-medium text-text-strong">Collector sources</h2>
@@ -232,7 +382,7 @@ export function DialogProcessDiagnostics() {
               <section aria-labelledby="diagnostics-contributors-title" class="rounded-lg border border-border-weak-base">
                 <div class="border-b border-border-weak-base px-3 py-2">
                   <h2 id="diagnostics-contributors-title" class="text-[13px] font-medium text-text-strong">Ranked contributors</h2>
-                  <p class="mt-0.5 text-[11px] text-text-weak">Ranked by peak CPU, then peak resident memory, in the selected interval.</p>
+                  <p class="mt-0.5 text-[11px] text-text-weak">Ranked by peak CPU, then peak resident memory, across the retained window.</p>
                 </div>
                 <Show when={grouped().length > 0} fallback={<p class="p-4 text-[12px] text-text-weak">No sampled local contributors in this interval.</p>}>
                   <For each={grouped()}>
@@ -327,37 +477,6 @@ export function DialogProcessDiagnostics() {
                 </section>
               </Show>
 
-              <Show when={lifecycle().length > 0}>
-                <section aria-labelledby="diagnostics-lifecycle-title" class="rounded-lg border border-border-weak-base p-3">
-                  <h2 id="diagnostics-lifecycle-title" class="text-[13px] font-medium text-text-strong">Lifecycle activity</h2>
-                  <p class="mt-0.5 text-[11px] text-text-weak">Events correlated with the selected interval; they provide timing context rather than a fabricated resource split.</p>
-                  <ul class="mt-2 grid gap-1 text-[11px] text-text-weak">
-                    <For each={lifecycle().slice(0, 100)}>
-                      {(marker) => <li>{formatTime(marker.at)} · {describeMarker(marker, snapshot()!)}</li>}
-                    </For>
-                  </ul>
-                  <Show when={lifecycle().length > 100}>
-                    <p class="mt-2 text-[11px] text-text-weak">{String(lifecycle().length - 100)} earlier selected events are summarized by the interval and churn views.</p>
-                  </Show>
-                </section>
-              </Show>
-
-              <details class="rounded-lg border border-border-weak-base p-3">
-                <summary class="cursor-pointer text-[13px] font-medium text-text-strong">Text timeline summary</summary>
-                <p class="mt-2 text-[11px] text-text-weak">
-                  {formatTime(model()!.range.startAt)} to {formatTime(model()!.range.endAt)} · {formatDuration(model()!.range.endAt - model()!.range.startAt)}
-                </p>
-                <div class="mt-2 overflow-x-auto">
-                  <table class="w-full min-w-[420px] text-left text-[11px]">
-                    <thead><tr><th class="py-1">Time</th><th>CPU</th><th>RSS</th></tr></thead>
-                    <tbody>
-                      <For each={model()!.series}>
-                        {(point) => <tr><td class="py-1">{formatTime(point.at)}</td><td>{formatCpu(point.cpu)}</td><td>{formatBytes(point.rssBytes)}</td></tr>}
-                      </For>
-                    </tbody>
-                  </table>
-                </div>
-              </details>
           </div>
         </Show>
         <p class="sr-only" aria-live="polite">{announcement()}</p>
@@ -380,6 +499,26 @@ function Value(props: { label: string; value: string }) {
     <span class="text-right max-md:hidden">
       <span class="block text-[9px] uppercase text-text-weak">{props.label}</span>
       <span class="block text-[11px] tabular-nums text-text-base">{props.value}</span>
+    </span>
+  )
+}
+
+function MemoryBuckets(props: { buckets: LocalDiagnostics.SessionMemoryBuckets }) {
+  return (
+    <span class="grid min-w-[270px] grid-cols-4 gap-2 text-right tabular-nums max-md:min-w-[220px]">
+      <Bucket label="Total" value={props.buckets.totalBytes} strong />
+      <Bucket label="Chat" value={props.buckets.chatBytes} />
+      <Bucket label="Images" value={props.buckets.imageBytes} />
+      <Bucket label="Compaction" value={props.buckets.compactionBytes} />
+    </span>
+  )
+}
+
+function Bucket(props: { label: string; value: number; strong?: boolean }) {
+  return (
+    <span>
+      <span class="block text-[9px] uppercase text-text-weak">{props.label}</span>
+      <span class={`block text-[10px] ${props.strong ? "font-medium text-text-strong" : "text-text-base"}`}>{formatBytes(props.value)}</span>
     </span>
   )
 }
@@ -434,24 +573,35 @@ function sourceTransition(
   return `Collector source update: ${changes.join("; ")}.`
 }
 
-function describeMarker(
-  marker: LocalDiagnostics.LifecycleMarker,
-  snapshot: LocalDiagnostics.RetainedSnapshot,
-) {
-  const owner = marker.ownerId
-    ? snapshot.owners.find((candidate) => candidate.id === marker.ownerId)?.label ?? marker.ownerId
-    : undefined
-  return [
-    marker.event.replaceAll("-", " "),
-    owner,
-    marker.source,
-    marker.action,
-    marker.outcome,
-  ].filter(Boolean).join(" · ")
-}
-
 function formatCpu(value: number | undefined) {
   return value === undefined ? "Unavailable" : `${value.toFixed(value >= 10 ? 0 : 1)}%`
+}
+
+function describeSpike(spike: LocalDiagnostics.SpikeMarker, snapshot: LocalDiagnostics.RetainedSnapshot) {
+  const owner = spike.ownerId
+    ? snapshot.owners.find((candidate) => candidate.id === spike.ownerId)?.label ?? spike.ownerId
+    : snapshot.processes.find((process) => process.identity.id === spike.processId)?.label ?? spike.processId
+  return spike.metric === "cpu"
+    ? `${owner} CPU ${formatCpu(spike.value)} (${formatCpu(spike.delta)} jump)`
+    : `${owner} RSS ${formatBytes(spike.value)} (+${formatBytes(spike.delta)})`
+}
+
+function describeContext(context: LocalDiagnostics.Context) {
+  const workbench = context.workbench
+  const panel = context.workspacePanel
+  const session = context.sessionRender
+  return [
+    context.screen,
+    workbench.focusedSurface ? `surface ${workbench.focusedSurface}` : undefined,
+    workbench.focusedPaneId ? `pane ${workbench.focusedPaneId}` : undefined,
+    `${workbench.paneCount} layout pane${workbench.paneCount === 1 ? "" : "s"}`,
+    workbench.stashedSurfaceCount ? `${workbench.stashedSurfaceCount} stashed surface${workbench.stashedSurfaceCount === 1 ? "" : "s"}` : undefined,
+    `${context.terminalTabs.total} mounted terminal tab${context.terminalTabs.total === 1 ? "" : "s"} (${context.terminalTabs.paneBound} pane-bound, ${context.terminalTabs.stashed} stashed)`,
+    panel.open ? `workspace panel ${[panel.mode, panel.tab, panel.navigator].filter(Boolean).join("/")}` : "workspace panel closed",
+    session ? `rendered session ${session.sessionId}: DOM ${session.domNodeCount} · ${session.mountedTimelineRowCount}/${session.timelineRowCount} timeline rows mounted · ${session.messageCount} messages` : undefined,
+    context.sessionId ? `session ${context.sessionId}` : undefined,
+    context.workspaceId ? `workspace ${context.workspaceId}` : undefined,
+  ].filter((item): item is string => !!item).join(" · ")
 }
 
 function formatBytes(value: number | undefined) {
@@ -464,6 +614,11 @@ function formatBytes(value: number | undefined) {
 function formatDelta(value: number | undefined) {
   if (value === undefined) return "Unavailable"
   return `${value >= 0 ? "+" : "−"}${formatBytes(Math.abs(value))}`
+}
+
+function formatDuration(value: number) {
+  if (value < 1_000) return `${value} ms`
+  return `${(value / 1_000).toFixed(value < 10_000 ? 1 : 0)} s`
 }
 
 function message(cause: unknown) {

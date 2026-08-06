@@ -27,38 +27,10 @@ export function liveRange(snapshot: LocalDiagnostics.RetainedSnapshot): Diagnost
   return { startAt: snapshot.retainedFromAt, endAt: snapshot.capturedAt }
 }
 
-export function clampRange(
-  input: DiagnosticsRange,
-  bounds: DiagnosticsRange,
-): DiagnosticsRange {
-  const startAt = Math.max(bounds.startAt, Math.min(input.startAt, bounds.endAt))
-  const endAt = Math.max(startAt, Math.min(input.endAt, bounds.endAt))
-  return { startAt, endAt }
-}
-
-export function moveRange(
-  input: DiagnosticsRange,
-  bounds: DiagnosticsRange,
-  direction: -1 | 1,
-  sampleTimes: number[],
-  large = false,
-) {
-  const ordered = [...new Set(sampleTimes)].sort((a, b) => a - b)
-  const baseStep = adjacentStep(ordered)
-  const distance = baseStep * (large ? 5 : 1) * direction
-  const width = input.endAt - input.startAt
-  const nextStart = Math.max(bounds.startAt, Math.min(input.startAt + distance, bounds.endAt - width))
-  return { startAt: nextStart, endAt: nextStart + width }
-}
-
-export function buildDiagnosticsModel(
-  snapshot: LocalDiagnostics.RetainedSnapshot,
-  selected?: DiagnosticsRange,
-) {
+export function buildDiagnosticsModel(snapshot: LocalDiagnostics.RetainedSnapshot) {
   const bounds = liveRange(snapshot)
-  const range = clampRange(selected ?? bounds, bounds)
   const processes = new Map(snapshot.processes.map((process) => [process.identity.id, process]))
-  const points = snapshot.samples.filter((point) => point.at >= range.startAt && point.at <= range.endAt)
+  const points = snapshot.samples.filter((point) => point.at >= bounds.startAt && point.at <= bounds.endAt)
   const byTimestamp = Map.groupBy(points, (point) => point.at)
   const series = [...byTimestamp.entries()]
     .sort(([a], [b]) => a - b)
@@ -74,10 +46,10 @@ export function buildDiagnosticsModel(
     points.filter((point) => processes.get(point.processId)?.ownerId),
     (point) => processes.get(point.processId)!.ownerId!,
   )
-  const selectedProcessIds = new Set(points.map((point) => point.processId))
+  const retainedProcessIds = new Set(points.map((point) => point.processId))
   const processesByOwner = Map.groupBy(
     snapshot.processes.filter(
-      (process) => process.ownerId && selectedProcessIds.has(process.identity.id),
+      (process) => process.ownerId && retainedProcessIds.has(process.identity.id),
     ),
     (process) => process.ownerId!,
   )
@@ -112,17 +84,16 @@ export function buildDiagnosticsModel(
       (b.peakCpu ?? -1) - (a.peakCpu ?? -1) ||
       (b.peakRssBytes ?? -1) - (a.peakRssBytes ?? -1) ||
       a.owner.label.localeCompare(b.owner.label))
-  const selectedChurn = snapshot.markers.filter(
+  const retainedChurn = snapshot.markers.filter(
     (marker): marker is LocalDiagnostics.ChurnMarker =>
-      marker.type === "churn" && marker.at >= range.startAt && marker.at <= range.endAt,
+      marker.type === "churn" && marker.at >= bounds.startAt && marker.at <= bounds.endAt,
   )
 
   return {
     bounds,
-    range,
     series,
     contributors,
-    churn: [...Map.groupBy(selectedChurn, (marker) => marker.ownerId).entries()].map(
+    churn: [...Map.groupBy(retainedChurn, (marker) => marker.ownerId).entries()].map(
       ([ownerId, markers]) => ({
         ownerId,
         launched: markers.reduce((total, marker) => total + marker.launched, 0),
@@ -132,7 +103,7 @@ export function buildDiagnosticsModel(
           : ("unmeasured" as const),
       }),
     ),
-    markers: snapshot.markers.filter((marker) => marker.at >= range.startAt && marker.at <= range.endAt),
+    markers: snapshot.markers.filter((marker) => marker.at >= bounds.startAt && marker.at <= bounds.endAt),
   }
 }
 
@@ -145,11 +116,6 @@ export function ownerGroup(kind: LocalDiagnostics.OwnerKind) {
   if (kind === "managed-process") return "Managed processes"
   if (kind === "sidecar") return "Sidecars"
   return "Other local processes"
-}
-
-function adjacentStep(times: number[]) {
-  const gaps = times.slice(1).map((time, index) => time - times[index]!).filter((gap) => gap > 0)
-  return gaps.length > 0 ? Math.min(...gaps) : 1_000
 }
 
 function sum(values: number[]) {

@@ -322,7 +322,70 @@ export namespace LocalDiagnostics {
     .strict()
   export type ChurnMarker = z.infer<typeof ChurnMarker>
 
-  export const Marker = z.discriminatedUnion("type", [LifecycleMarker, ChurnMarker])
+  export const Context = z
+    .object({
+      screen: SafeLabel,
+      route: z.string().min(1).max(4_096),
+      workspaceId: Identifier.optional(),
+      sessionId: Identifier.optional(),
+      workbench: z.object({
+        focusedSurface: SafeLabel.optional(),
+        focusedPaneId: Identifier.optional(),
+        paneCount: z.number().int().nonnegative().max(64),
+        surfaceCount: z.number().int().nonnegative().max(512),
+        stashedSurfaceCount: z.number().int().nonnegative().max(512),
+        paneSurfaceTypes: SafeLabel.array().max(64),
+      }).strict(),
+      terminalTabs: z.object({
+        total: z.number().int().nonnegative().max(512),
+        paneBound: z.number().int().nonnegative().max(64),
+        stashed: z.number().int().nonnegative().max(512),
+      }).strict(),
+      workspacePanel: z.object({
+        open: z.boolean(),
+        mode: SafeLabel.optional(),
+        navigator: SafeLabel.optional(),
+        tab: SafeLabel.optional(),
+        focus: SafeLabel.optional(),
+        target: z.enum(["focused-pane", "other-pane", "unbound"]).optional(),
+      }).strict(),
+      sessionRender: z.object({
+        sessionId: Identifier,
+        messageCount: z.number().int().nonnegative(),
+        conversationCount: z.number().int().nonnegative(),
+        visibleUserCount: z.number().int().nonnegative(),
+        renderedUserCount: z.number().int().nonnegative(),
+        timelineRowCount: z.number().int().nonnegative(),
+        mountedTimelineRowCount: z.number().int().nonnegative(),
+        domNodeCount: z.number().int().nonnegative(),
+      }).strict().optional(),
+    })
+    .strict()
+  export type Context = z.infer<typeof Context>
+
+  export const ContextMarker = Context.extend({
+    type: z.literal("context"),
+    id: Identifier,
+    at: Timestamp,
+  }).strict()
+  export type ContextMarker = z.infer<typeof ContextMarker>
+
+  export const SpikeMarker = z
+    .object({
+      type: z.literal("spike"),
+      id: Identifier,
+      at: Timestamp,
+      metric: z.enum(["cpu", "rss"]),
+      value: z.number().finite().nonnegative(),
+      delta: z.number().finite().positive(),
+      ownerId: Identifier.optional(),
+      processId: Identifier,
+      context: Context.optional(),
+    })
+    .strict()
+  export type SpikeMarker = z.infer<typeof SpikeMarker>
+
+  export const Marker = z.discriminatedUnion("type", [LifecycleMarker, ChurnMarker, ContextMarker, SpikeMarker])
   export type Marker = z.infer<typeof Marker>
 
   export const ChurnSummary = z
@@ -443,6 +506,78 @@ export namespace LocalDiagnostics {
   ])
   export type SnapshotUpdate = z.infer<typeof SnapshotUpdate>
 
+  export const SessionMemoryBuckets = z
+    .object({
+      chatBytes: z.number().int().nonnegative(),
+      imageBytes: z.number().int().nonnegative(),
+      compactionBytes: z.number().int().nonnegative(),
+      totalBytes: z.number().int().nonnegative(),
+    })
+    .strict()
+    .refine(
+      (value) => value.totalBytes === value.chatBytes + value.imageBytes + value.compactionBytes,
+      { message: "Session memory buckets must add up to the total" },
+    )
+  export type SessionMemoryBuckets = z.infer<typeof SessionMemoryBuckets>
+
+  export const WarmSessionMemory = z
+    .object({
+      sessionId: Identifier,
+      mounted: z.boolean(),
+      recency: z.number().int().nonnegative(),
+      messageCount: z.number().int().nonnegative(),
+      buckets: SessionMemoryBuckets,
+    })
+    .strict()
+  export type WarmSessionMemory = z.infer<typeof WarmSessionMemory>
+
+  export const SessionMemoryScanRequest = z
+    .object({
+      warmSessions: WarmSessionMemory.array().max(512),
+    })
+    .strict()
+  export type SessionMemoryScanRequest = z.infer<typeof SessionMemoryScanRequest>
+
+  export const SessionMemoryHarness = z.enum(["claxedo", "codex", "claude"])
+  export type SessionMemoryHarness = z.infer<typeof SessionMemoryHarness>
+
+  export const StoredSessionMemory = z
+    .object({
+      sessionId: Identifier,
+      title: SafeLabel.optional(),
+      harness: SessionMemoryHarness,
+      profile: SafeLabel.optional(),
+      updatedAt: Timestamp.optional(),
+      buckets: SessionMemoryBuckets,
+    })
+    .strict()
+  export type StoredSessionMemory = z.infer<typeof StoredSessionMemory>
+
+  export const SessionMemorySource = z
+    .object({
+      harness: SessionMemoryHarness,
+      profile: SafeLabel.optional(),
+      state: z.enum(["scanned", "unavailable", "failed"]),
+      sessionCount: z.number().int().nonnegative(),
+      buckets: SessionMemoryBuckets,
+    })
+    .strict()
+  export type SessionMemorySource = z.infer<typeof SessionMemorySource>
+
+  export const SessionMemoryScanResult = z
+    .object({
+      version: z.literal(1),
+      scannedAt: Timestamp,
+      durationMs: Duration,
+      stored: SessionMemoryBuckets,
+      resident: SessionMemoryBuckets,
+      sources: SessionMemorySource.array().max(32),
+      sessions: StoredSessionMemory.array().max(10_000),
+      warmSessions: WarmSessionMemory.array().max(512),
+    })
+    .strict()
+  export type SessionMemoryScanResult = z.infer<typeof SessionMemoryScanResult>
+
   export const StopRequest = z
     .object({
       action: z.literal("stop"),
@@ -491,9 +626,14 @@ export namespace LocalDiagnostics {
   ])
   export type ActionResult = z.infer<typeof ActionResult>
 
+  export const SetContextRequest = Context
+  export type SetContextRequest = z.infer<typeof SetContextRequest>
+
   export type Capability = {
     getSnapshot(): Promise<RetainedSnapshot>
     subscribe(listener: (snapshot: RetainedSnapshot) => void): () => void
+    recordContext(context: SetContextRequest): Promise<void>
+    scanSessionMemory(request: SessionMemoryScanRequest): Promise<SessionMemoryScanResult>
     stop(request: StopRequest): Promise<ActionResult>
     kill(request: KillRequest): Promise<ActionResult>
   }

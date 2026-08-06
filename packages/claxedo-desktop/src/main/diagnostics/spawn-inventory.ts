@@ -116,6 +116,20 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     },
   }),
   product({
+    id: "session-memory-scan-worker",
+    family: "Triggered session memory scan worker",
+    owner: "diagnostics",
+    linkage: "app",
+    observation: "host-tree",
+    stop: "supported",
+    kill: "supported",
+    source: {
+      file: "packages/claxedo-desktop/src/main/diagnostics/session-memory-worker.ts",
+      callee: "spawn",
+      calls: 1,
+    },
+  }),
+  product({
     id: "diagnostics-wsl",
     family: "Bounded WSL metrics probe",
     classification: "registered-root",

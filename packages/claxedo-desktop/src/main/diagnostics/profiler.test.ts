@@ -4,6 +4,7 @@ import { EventEmitter } from "node:events"
 
 import {
   aggregateInterval,
+  compactMetricPoints,
   createProfiler,
   type DiagnosticsClock,
   type DiagnosticsObservation,
@@ -97,6 +98,87 @@ function source(collect: DiagnosticsSource["collect"]): DiagnosticsSource {
 }
 
 describe("bounded desktop profiler", () => {
+  test("keeps real peak CPU and RSS snapshots for completed minutes and preserves the recent raw minute", () => {
+    const samples = [
+      observation(1_000, 10, "1000", 2, 100).point,
+      observation(20_000, 10, "1000", 40, 200).point,
+      observation(50_000, 10, "1000", 5, 500).point,
+      observation(70_000, 10, "1000", 7, 350).point,
+      observation(90_000, 10, "1000", 9, 400).point,
+    ]
+
+    compactMetricPoints(samples, 60_000, 60_000)
+
+    expect(samples).toHaveLength(4)
+    expect(samples[0]).toMatchObject({
+      at: 20_000,
+      cpuMachinePercent: { state: "available", value: 40 },
+      rssBytes: { state: "available", value: 200 },
+    })
+    expect(samples[1]).toMatchObject({
+      at: 50_000,
+      cpuMachinePercent: { state: "available", value: 5 },
+      rssBytes: { state: "available", value: 500 },
+    })
+    expect(samples.slice(2).map((sample) => sample.at)).toEqual([70_000, 90_000])
+  })
+
+  test("attributes abrupt process growth to the active screen and session", () => {
+    const clock = new FakeClock()
+    const profiler = createProfiler({
+      clock,
+      startupIntervalMs: 2_000,
+      source: source((at) => [observation(at, 10, "1000", at === 0 ? 1 : 30, at === 0 ? 1_000 : 80 * 1024 * 1024)]),
+    })
+    profiler.recordContext({
+      screen: "workspace-session",
+      route: "/w/workspace-1/session/session-1",
+      workspaceId: "workspace-1",
+      sessionId: "session-1",
+      workbench: {
+        focusedSurface: "session",
+        focusedPaneId: "pane-1",
+        paneCount: 2,
+        surfaceCount: 4,
+        stashedSurfaceCount: 2,
+        paneSurfaceTypes: ["session", "terminal"],
+      },
+      terminalTabs: { total: 3, paneBound: 1, stashed: 2 },
+      workspacePanel: { open: true, mode: "review", tab: "file", target: "focused-pane" },
+      sessionRender: {
+        sessionId: "session-1",
+        messageCount: 120,
+        conversationCount: 118,
+        visibleUserCount: 24,
+        renderedUserCount: 10,
+        timelineRowCount: 42,
+        mountedTimelineRowCount: 8,
+        domNodeCount: 840,
+      },
+    })
+    clock.advance(2_000)
+
+    expect(profiler.getSnapshot().markers).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "spike",
+        metric: "cpu",
+        ownerId: "owner-main",
+        context: expect.objectContaining({
+          screen: "workspace-session",
+          sessionId: "session-1",
+          terminalTabs: { total: 3, paneBound: 1, stashed: 2 },
+          sessionRender: expect.objectContaining({ domNodeCount: 840 }),
+        }),
+      }),
+      expect.objectContaining({
+        type: "spike",
+        metric: "rss",
+        context: expect.objectContaining({ workspaceId: "workspace-1" }),
+      }),
+    ]))
+    profiler.dispose()
+  })
+
   test("retains an immediate main sample before later startup and renderer markers", async () => {
     const clock = new FakeClock()
     const profiler = createProfiler({

@@ -116,6 +116,16 @@ const processDiagnosticsBridge: ProcessDiagnosticsBridge = {
       void ipcRenderer.invoke("process-diagnostics:unsubscribe").catch(() => {})
     }
   },
+  recordContext: async (context) => {
+    await ipcRenderer.invoke("process-diagnostics:context", LocalDiagnostics.SetContextRequest.parse(context))
+  },
+  scanSessionMemory: async (request) =>
+    LocalDiagnostics.SessionMemoryScanResult.parse(
+      await ipcRenderer.invoke(
+        "process-diagnostics:scan-session-memory",
+        LocalDiagnostics.SessionMemoryScanRequest.parse(request),
+      ),
+    ),
   stop: async (request) =>
     LocalDiagnostics.ActionResult.parse(
       await ipcRenderer.invoke("process-diagnostics:stop", LocalDiagnostics.StopRequest.parse(request)),

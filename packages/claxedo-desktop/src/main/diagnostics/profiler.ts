@@ -13,6 +13,11 @@ export const DIAGNOSTICS_MAX_BYTES = 20 * 1024 * 1024
 export const DIAGNOSTICS_STARTUP_INTERVAL_MS = 500
 export const DIAGNOSTICS_STARTUP_DURATION_MS = 120_000
 export const DIAGNOSTICS_STEADY_INTERVAL_MS = 2_000
+export const DIAGNOSTICS_RAW_WINDOW_MS = 60_000
+export const DIAGNOSTICS_ROLLUP_BUCKET_MS = 60_000
+export const DIAGNOSTICS_CPU_SPIKE_DELTA = 15
+export const DIAGNOSTICS_RSS_SPIKE_DELTA_BYTES = 64 * 1024 * 1024
+const DIAGNOSTICS_SPIKE_COOLDOWN_MS = 30_000
 
 export type DiagnosticsObservation = {
   owner: LocalDiagnostics.OwnerIdentity
@@ -106,6 +111,8 @@ export function createProfiler(options: {
   let interactive = false
   let pressureTruncated = false
   let markerSequence = 0
+  let activeContext: LocalDiagnostics.Context | undefined
+  const lastSpikeAt = new Map<string, number>()
   const additionalSourceStates = new Map<LocalDiagnostics.SourceId, LocalDiagnostics.SourceStatus["state"]>()
   const observedOwnerRoots = new Map<
     string,
@@ -188,7 +195,8 @@ export function createProfiler(options: {
 
     function finishCollection() {
       inFlight = false
-      notify(trim(clock.now()))
+      const at = clock.now()
+      publishOrMaintain(at)
       if (burstPending) {
         burstPending = false
         scheduleBurst()
@@ -250,12 +258,54 @@ export function createProfiler(options: {
     }
     processes.set(observation.process.identity.id, observation.process)
     activeByPid.set(observation.process.identity.pid, observation.process.identity.id)
+    const previous = findPreviousSample(observation.point.processId, observation.point.at)
     const existing = findCurrentSample(observation.point)
     if (existing >= 0) {
       samples[existing] = mergeMetricPoints(samples[existing]!, observation.point)
+      recordSpikes(observation, previous)
       return
     }
     samples.push(observation.point)
+    recordSpikes(observation, previous)
+  }
+
+  function findPreviousSample(processId: string, at: number) {
+    for (let index = samples.length - 1; index >= 0; index--) {
+      const sample = samples[index]!
+      if (sample.at >= at || sample.processId !== processId) continue
+      return sample
+    }
+  }
+
+  function recordSpikes(observation: DiagnosticsObservation, previous: LocalDiagnostics.MetricPoint | undefined) {
+    if (!previous) return
+    recordSpike("cpu", observation.point.cpuMachinePercent, previous.cpuMachinePercent, DIAGNOSTICS_CPU_SPIKE_DELTA)
+    recordSpike("rss", observation.point.rssBytes, previous.rssBytes, DIAGNOSTICS_RSS_SPIKE_DELTA_BYTES)
+
+    function recordSpike(
+      metric: LocalDiagnostics.SpikeMarker["metric"],
+      current: LocalDiagnostics.CpuMachinePercent | LocalDiagnostics.ByteReading,
+      prior: LocalDiagnostics.CpuMachinePercent | LocalDiagnostics.ByteReading,
+      threshold: number,
+    ) {
+      if (current.state !== "available" || prior.state !== "available") return
+      const delta = current.value - prior.value
+      if (delta < threshold) return
+      const key = `${observation.point.processId}\0${metric}`
+      if (observation.point.at - (lastSpikeAt.get(key) ?? Number.NEGATIVE_INFINITY) < DIAGNOSTICS_SPIKE_COOLDOWN_MS) return
+      lastSpikeAt.set(key, observation.point.at)
+      appendMarker({
+        type: "spike",
+        id: nextMarkerId(),
+        at: observation.point.at,
+        metric,
+        value: current.value,
+        delta,
+        ownerId: observation.process.ownerId,
+        processId: observation.point.processId,
+        ...(activeContext ? { context: activeContext } : {}),
+      })
+    }
   }
 
   function findCurrentSample(point: LocalDiagnostics.MetricPoint) {
@@ -339,7 +389,7 @@ export function createProfiler(options: {
       ...(marker.action ? { action: marker.action } : {}),
       ...(marker.outcome ? { outcome: marker.outcome } : {}),
     })
-    notify(trim(clock.now()))
+    publishOrMaintain(clock.now())
     scheduleBurst()
     return id
   }
@@ -381,12 +431,7 @@ export function createProfiler(options: {
   }
 
   function trim(at: number) {
-    const cutoff = Math.max(startedAt, at - targetWindowMs)
-    removeBefore(samples, cutoff, (sample) => sample.at)
-    removeBefore(markers, cutoff, (marker) => marker.at)
-    removeUnreferencedHistoricalProcesses(processes, samples)
-    removeUnreferencedHistoricalOwners(owners, processes, markers)
-
+    maintainRetention(at)
     let snapshot = buildSnapshot(at)
     let retainedBytes = byteLength(snapshot)
     while (retainedBytes > maxBytes && (samples.length > 0 || markers.length > 0)) {
@@ -403,10 +448,22 @@ export function createProfiler(options: {
       retainedBytes = byteLength(snapshot)
     }
     stats.retainedBytes = retainedBytes
+    return snapshot
+  }
+
+  function maintainRetention(at: number) {
+    const cutoff = Math.max(startedAt, at - targetWindowMs)
+    removeBefore(samples, cutoff, (sample) => sample.at)
+    removeBefore(markers, cutoff, (marker) => marker.at)
+    compactMetricPoints(samples, Math.max(cutoff, at - DIAGNOSTICS_RAW_WINDOW_MS), DIAGNOSTICS_ROLLUP_BUCKET_MS)
+    removeUnreferencedHistoricalProcesses(processes, samples)
+    removeUnreferencedHistoricalOwners(owners, processes, markers)
+    lastSpikeAt.forEach((_, key) => {
+      if (!processes.has(key.slice(0, key.indexOf("\0")))) lastSpikeAt.delete(key)
+    })
     stats.retainedProcesses = processes.size
     stats.retainedSamples = samples.length
     stats.retainedMarkers = markers.length
-    return snapshot
   }
 
   function buildSnapshot(at: number): LocalDiagnostics.RetainedSnapshot {
@@ -458,7 +515,21 @@ export function createProfiler(options: {
     })
   }
 
+  function publishOrMaintain(at: number) {
+    if (listeners.size > 0) {
+      notify(trim(at))
+      return
+    }
+    maintainRetention(at)
+  }
+
   return {
+    recordContext(context: LocalDiagnostics.SetContextRequest) {
+      if (disposed || sameContext(activeContext, context)) return
+      activeContext = context
+      appendMarker({ type: "context", id: nextMarkerId(), at: clock.now(), ...context })
+      publishOrMaintain(clock.now())
+    },
     markInteractive() {
       if (disposed || interactive) return
       interactive = true
@@ -670,7 +741,7 @@ export function createProfiler(options: {
           })
           return
         }
-        notify(trim(clock.now()))
+        publishOrMaintain(clock.now())
         scheduleBurst()
       }
       utilityProcess.on("spawn", register)
@@ -710,6 +781,45 @@ export function createProfiler(options: {
       label: descriptor.label,
     })
   }
+}
+
+export function compactMetricPoints(
+  samples: LocalDiagnostics.MetricPoint[],
+  rawFromAt: number,
+  bucketMs: number,
+) {
+  const raw = samples.filter((sample) => sample.at >= rawFromAt)
+  const buckets = new Map<number, LocalDiagnostics.MetricPoint[]>()
+  samples.filter((sample) => sample.at < rawFromAt).forEach((sample) => {
+    const bucket = Math.floor(sample.at / bucketMs) * bucketMs
+    buckets.set(bucket, [...(buckets.get(bucket) ?? []), sample])
+  })
+  const rollups = [...buckets.values()].flatMap((bucket) => {
+    const snapshots = Map.groupBy(bucket, (sample) => sample.at)
+    const peakCpuAt = peakSnapshotAt(snapshots, "cpuMachinePercent")
+    const peakRssAt = peakSnapshotAt(snapshots, "rssBytes")
+    return [...new Set([peakCpuAt, peakRssAt])].flatMap((at) => snapshots.get(at) ?? [])
+  })
+  samples.splice(0, samples.length, ...[...rollups, ...raw].sort(
+    (left, right) => left.at - right.at || left.processId.localeCompare(right.processId),
+  ))
+}
+
+function sameContext(left: LocalDiagnostics.Context | undefined, right: LocalDiagnostics.Context) {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
+function peakSnapshotAt(
+  snapshots: Map<number, LocalDiagnostics.MetricPoint[]>,
+  metric: "cpuMachinePercent" | "rssBytes",
+) {
+  return [...snapshots].reduce((peak, candidate) => {
+    const total = candidate[1].reduce((sum, sample) => {
+      const reading = sample[metric]
+      return reading.state === "available" ? sum + reading.value : sum
+    }, 0)
+    return total > peak.total ? { at: candidate[0], total } : peak
+  }, { at: snapshots.keys().next().value!, total: Number.NEGATIVE_INFINITY }).at
 }
 
 export function aggregateInterval(input: {

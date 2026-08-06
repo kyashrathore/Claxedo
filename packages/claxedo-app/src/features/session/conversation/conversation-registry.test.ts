@@ -14,6 +14,7 @@ import {
   registeredConversationUserMessages,
   registerSessionConversationChat,
   removeRegisteredConversationMessage,
+  warmConversationMemorySnapshot,
 } from "./conversation-registry"
 
 function userMessage(id: string, sessionID: string): Message {
@@ -90,6 +91,23 @@ describe("conversation chat registry", () => {
       info: message("msg_3", "ses_1"),
     }))).toBe(true)
     expect(registeredConversationSnapshot("ses_1").messages.map((m) => m.id)).toEqual(["msg_1", "msg_3"])
+  })
+
+  test("reports mounted and retained conversation payloads only when explicitly requested", () => {
+    const unregister = registerSessionConversationChat("ses_1")
+    hydrateRegisteredConversationSnapshot({
+      sessionID: "ses_1",
+      messages: [message("msg_1", "ses_1")],
+      parts: { msg_1: [textPart("part_1", "ses_1", "msg_1", "large transcript")] },
+    })
+
+    expect(warmConversationMemorySnapshot()).toEqual([
+      expect.objectContaining({ sessionId: "ses_1", mounted: true, recency: 0, messageCount: 1 }),
+    ])
+    expect(warmConversationMemorySnapshot()[0]!.buckets.totalBytes).toBeGreaterThan("large transcript".length)
+
+    unregister()
+    expect(warmConversationMemorySnapshot()[0]).toMatchObject({ sessionId: "ses_1", mounted: false })
   })
 
   test("hydrates over unstringifiable chat messages instead of overflowing equality", () => {

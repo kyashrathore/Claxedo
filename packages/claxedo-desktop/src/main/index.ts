@@ -63,6 +63,7 @@ import type { DiagnosticsWebContents } from "./diagnostics/ipc"
 import { createElectronSource } from "./diagnostics/electron-source"
 import { createProcessMetricsSource } from "./diagnostics/process-metrics-source"
 import { createProfiler } from "./diagnostics/profiler"
+import { createSessionMemoryScanner } from "./diagnostics/session-memory-worker"
 import { createOwnerOperationBridge } from "./diagnostics/owner-operation-bridge"
 import { createWindowsWslCollector, createWslSource } from "./diagnostics/wsl-source"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand, wireFullscreenEvents } from "./ipc"
@@ -126,6 +127,27 @@ const diagnosticsSource = createProcessMetricsSource({
   }),
 })
 const diagnosticsProfiler = createProfiler({ source: diagnosticsSource })
+const scanSessionMemory = createSessionMemoryScanner({
+  workerPath: join(import.meta.dirname, "session-memory-worker.js"),
+  paths: {
+    codexHome: process.env.CODEX_HOME ?? join(app.getPath("home"), ".codex"),
+    claudeHome: process.env.CLAUDE_CONFIG_DIR ?? join(app.getPath("home"), ".claude"),
+    databases: [
+      ...(["prod", "beta", "dev"] as const).map((channel) => ({
+        path: join(
+          app.getPath("home"),
+          channel === "prod" ? ".claxedo" : `.claxedo-${channel}`,
+          "opencode-engine",
+          "opencode.db",
+        ),
+        profile: channel,
+      })),
+      ...(process.env.CLAXEDO_DATA_DIR
+        ? [{ path: join(process.env.CLAXEDO_DATA_DIR, "opencode-engine", "opencode.db"), profile: "configured" }]
+        : []),
+    ].filter((database, index, all) => all.findIndex((candidate) => candidate.path === database.path) === index),
+  },
+})
 const diagnosticsSmokeFixtures = createPackagedDiagnosticsFixtures()
 
 logger.log("app starting", {
@@ -574,6 +596,7 @@ const diagnosticsIpc = registerIpcHandlers({
   setStartAtLogin: (enabled) => startAtLogin.set(enabled),
   browser: browserRegistry,
   processDiagnostics: {
+    scanSessionMemory,
     profiler: diagnosticsProfiler,
     isAllowedUrl: isTrustedMainRendererUrl,
     async confirmAction(input) {

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { LocalDiagnostics } from "../../data/local-diagnostics"
 
-import { buildDiagnosticsModel, clampRange, liveRange, moveRange, ownerGroup } from "./model"
+import { buildDiagnosticsModel, liveRange, ownerGroup } from "./model"
 
 const snapshot = {
   version: 1,
@@ -95,13 +95,19 @@ const snapshot = {
 } satisfies LocalDiagnostics.RetainedSnapshot
 
 describe("diagnostics view model", () => {
-  test("ranks the selected interval by actual peak contribution", () => {
-    const model = buildDiagnosticsModel(snapshot, { startAt: 1_500, endAt: 2_500 })
-    expect(model.series).toEqual([{ at: 2_000, cpu: 85, rssBytes: 550 }])
+  test("ranks the retained window by actual peak contribution", () => {
+    const model = buildDiagnosticsModel(snapshot)
+    expect(model.bounds).toEqual({ startAt: 1_000, endAt: 3_000 })
+    expect(model.series).toEqual([
+      { at: 1_000, cpu: 30, rssBytes: 300 },
+      { at: 2_000, cpu: 85, rssBytes: 550 },
+      { at: 3_000, cpu: 2, rssBytes: 200 },
+    ])
     expect(model.contributors.map((item) => item.owner.id)).toEqual(["owner-harness", "owner-server"])
     expect(model.contributors[0]).toMatchObject({
       peakCpu: 80,
-      currentRssBytes: 300,
+      currentRssBytes: 200,
+      rssChangeBytes: 100,
       confidence: "direct",
       actionEligibility: { state: "eligible" },
     })
@@ -110,7 +116,7 @@ describe("diagnostics view model", () => {
     ])
   })
 
-  test("shows only process generations sampled in the selected interval", () => {
+  test("shows only process generations sampled inside the retained window", () => {
     const historical = {
       ...snapshot.processes[0]!,
       identity: {
@@ -123,26 +129,17 @@ describe("diagnostics view model", () => {
     const model = buildDiagnosticsModel({
       ...snapshot,
       processes: [historical, ...snapshot.processes],
-      samples: [point(1_000, historical.identity.id, 99, 999), ...snapshot.samples],
-    }, { startAt: 1_500, endAt: 2_500 })
+      samples: [point(500, historical.identity.id, 99, 999), ...snapshot.samples],
+    })
 
     expect(model.contributors[0]?.processes.map((process) => process.identity.id)).toEqual([
       "host:42:100",
     ])
   })
 
-  test("keeps live bounds separate from a fixed clamped selection", () => {
+  test("bounds the window by the collector's retained span, not the sample extent", () => {
     expect(liveRange(snapshot)).toEqual({ startAt: 1_000, endAt: 3_000 })
-    expect(clampRange({ startAt: 0, endAt: 9_000 }, liveRange(snapshot))).toEqual({
-      startAt: 1_000,
-      endAt: 3_000,
-    })
-    expect(moveRange(
-      { startAt: 1_000, endAt: 2_000 },
-      liveRange(snapshot),
-      1,
-      snapshot.samples.map((point) => point.at),
-    )).toEqual({ startAt: 2_000, endAt: 3_000 })
+    expect(liveRange({ ...snapshot, retainedFromAt: 2_000 })).toEqual({ startAt: 2_000, endAt: 3_000 })
   })
 
   test("maps every owner family to a stable user-facing group", () => {

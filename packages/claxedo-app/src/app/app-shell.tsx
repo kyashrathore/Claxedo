@@ -10,7 +10,7 @@
  */
 
 import "./styles/app-shell.css"
-import { createEffect, type ParentProps } from "solid-js"
+import { createEffect, createMemo, lazy, type ParentProps } from "solid-js"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { Toast } from "@opencode-ai/ui/toast"
 
@@ -18,7 +18,6 @@ import { AppShellLayout } from "./app-shell-layout"
 import { ClaxedoStateProvider } from "./workbench/state/index"
 
 import { isDemoMode } from "@/platform/api/api"
-import { lazy } from "solid-js"
 import { PromptHarnessControllersProvider } from "../features/session/composer/ui/harness-controller"
 import { WorkspaceScopeHost } from "../features/workspaces/data/workspace-scope"
 import { ClaxedoRouteStateBridge } from "./workbench/state/route-bridge"
@@ -26,6 +25,11 @@ import { useClaxedoAppShellCommands } from "./app-shell-commands"
 import { useAppShellRouteSync } from "./app-shell-route-sync"
 import { useAppShellState } from "./app-shell-state"
 import { useAppShellActions } from "./app-shell-actions"
+import {
+  buildProcessDiagnosticsContext,
+  useFocusedSessionRenderMetrics,
+} from "./integrations/process-diagnostics-context"
+import { reviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
 
 const DemoTourController = __DEMO_ENABLED__
   ? lazy(() => import("./demo/tour-controller").then((m) => ({ default: m.DemoTourController })))
@@ -41,6 +45,36 @@ function ClaxedoAppShellContent(props: ParentProps) {
   const shell = useAppShellState({
     params,
     pathname: () => location.pathname,
+  })
+  const diagnosticSession = createMemo(() => {
+    const panes = shell.state.wb.selectors.visiblePanes()
+    const focused = shell.state.wb.state.focusedPaneId
+    return [...panes].sort((left, right) => left.id === focused ? -1 : right.id === focused ? 1 : 0)
+      .flatMap((pane) => {
+        const content = pane.contentId ? shell.state.meta.get(pane.contentId) : undefined
+        return content?.type === "session" && content.sessionId
+          ? [{ paneId: pane.id, sessionId: content.sessionId }]
+          : []
+      })[0]
+  })
+  const sessionRender = useFocusedSessionRenderMetrics({
+    enabled: () => !!shell.platform.processDiagnostics,
+    paneId: () => diagnosticSession()?.paneId,
+    sessionId: () => diagnosticSession()?.sessionId,
+  })
+
+  createEffect(() => {
+    void shell.platform.processDiagnostics?.recordContext(buildProcessDiagnosticsContext({
+      pathname: location.pathname,
+      activeSessionId: shell.activeSessionId(),
+      focusedPaneId: shell.state.wb.state.focusedPaneId ?? undefined,
+      panes: shell.state.wb.selectors.visiblePanes(),
+      contentIds: shell.state.wb.state.contentIds,
+      content: shell.state.meta.get,
+      workspacePanel: shell.state.workspacePanel.state(),
+      workspacePanelTab: reviewWorkspaceActiveTab()?.kind,
+      sessionRender: sessionRender(),
+    }))
   })
   useClaxedoAppShellCommands({
     state: shell.state,

@@ -13,6 +13,7 @@ import type {
   WslConfig,
 } from "../preload/types"
 import type { BrowserRegistry } from "./browser/registry"
+import type { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
 import { IS_PACKAGED } from "./constants"
 import { isSafeExternalUrl } from "./navigation-guard"
 import { runRestart } from "../shared/restart-policy"
@@ -45,6 +46,7 @@ type Deps = {
   browser?: BrowserRegistry
   processDiagnostics: {
     profiler: Profiler
+    scanSessionMemory(request: LocalDiagnostics.SessionMemoryScanRequest): Promise<LocalDiagnostics.SessionMemoryScanResult>
     isAllowedUrl(url: string): boolean
     confirmAction(input: {
       webContents: import("./diagnostics/ipc").DiagnosticsWebContents

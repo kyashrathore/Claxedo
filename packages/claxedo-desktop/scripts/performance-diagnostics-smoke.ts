@@ -56,7 +56,6 @@ export type DiagnosticsSmokeEvidence = {
     collectorState: boolean
     timeline: boolean
     contributorRanking: boolean
-    lifecycle: boolean
     intervalIdentified: boolean
     electronContributor: boolean
     serverContributor: boolean
@@ -474,7 +473,6 @@ export async function runPackagedSmoke() {
         collectorState: text.includes("Collector"),
         timeline: text.includes("CPU and memory history"),
         contributorRanking: text.includes("Ranked contributors"),
-        lifecycle: text.includes("Lifecycle activity"),
         sidecarExpected,
         ...task,
       }
@@ -482,7 +480,6 @@ export async function runPackagedSmoke() {
         !renderedProduct.collectorState ||
         !renderedProduct.timeline ||
         !renderedProduct.contributorRanking ||
-        !renderedProduct.lifecycle ||
         !renderedProduct.intervalIdentified ||
         !renderedProduct.electronContributor ||
         !renderedProduct.serverContributor ||
@@ -618,7 +615,7 @@ async function renderedTaskEvidence(client: CdpClient) {
     if (!root) return {}
     const contributors = [...root.querySelectorAll('[data-testid="diagnostics-contributor"]')]
     const kinds = new Set(contributors.map((item) => item.dataset.ownerKind))
-    const range = root.querySelector('[aria-label="Selected interval summary"]')
+    const range = root.querySelector('[aria-label="Retained window summary"]')
     const memoryGrowthContributor = contributors.some((item) => {
       const value = Number(item.dataset.rssChange)
       return item.dataset.ownerId === "diagnostics-packaged-stop" &&
