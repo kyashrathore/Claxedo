@@ -7,6 +7,7 @@
 
 import {
   createContext,
+  createEffect,
   onCleanup,
   useContext,
   type ParentProps,
@@ -371,20 +372,29 @@ export function eventStreamFetch(
   }).fetch(CLAXEDO_EVENTS_RELAY_PATH, init)
 }
 
-function initialRouteDirectory() {
+function routeDirectory(pathname: string) {
   if (typeof window === "undefined") return
+  const routed = shellRouteDirectoryFromPathname(pathname)
+  if (routed) return routed
   const configured = (window as typeof window & {
     __OPENCODE__?: { activeDirectory?: string }
   }).__OPENCODE__?.activeDirectory
   if (configured) return configured
-  return shellRouteDirectoryFromPathname(window.location.pathname)
 }
 
-export function ClaxedoEventsProvider(props: ParentProps) {
+function eventStreamTargetKey(target: ClaxedoEventStreamTarget) {
+  if (target.kind === "central") return `central:${target.url.href}`
+  return `workspace:${target.serverUrl}:${target.workspaceId}:${target.directory ?? ""}`
+}
+
+export function ClaxedoEventsProvider(props: ParentProps<{
+  pathname: () => string
+  serverUrl: () => string
+}>) {
   const emitter = createEventEmitter()
   const connectivity = createStreamConnectivity()
 
-  const cleanups = new Set<() => void>()
+  const connections = new Map<string, () => void>()
   let stopped = false
 
   const emitEvent = (input: string) => {
@@ -617,17 +627,44 @@ export function ClaxedoEventsProvider(props: ParentProps) {
     }
   }
 
-  for (const target of claxedoEventStreamTargets({
-    directory: initialRouteDirectory(),
-    projects: queryClient.getQueryData<ProjectCache>(queryKeys.controlPlane.projects(getClaxedoServerUrl())) ?? [],
-  })) {
-    cleanups.add(connectTarget(target))
+  const reconcileTargets = () => {
+    const targets = claxedoEventStreamTargets({
+      serverUrl: props.serverUrl(),
+      directory: routeDirectory(props.pathname()),
+      projects: queryClient.getQueryData<ProjectCache>(queryKeys.controlPlane.projects(props.serverUrl())) ?? [],
+    })
+    const next = new Map(targets.map((target) => [eventStreamTargetKey(target), target]))
+    for (const [key, cleanup] of connections) {
+      if (next.has(key)) continue
+      cleanup()
+      connections.delete(key)
+    }
+    for (const [key, target] of next) {
+      if (connections.has(key)) continue
+      connections.set(key, connectTarget(target))
+    }
   }
+
+  // Route identity and project/workspace identity resolve independently. A
+  // client-side navigation can supply the former after boot, while the project
+  // query can supply the latter later still; either transition may make a new
+  // workspace stream target available.
+  reconcileTargets()
+  createEffect(reconcileTargets)
+  const unsubscribeQueryCache = queryClient.getQueryCache().subscribe((event) => {
+    const expected = queryKeys.controlPlane.projects(props.serverUrl())
+    if (event.query.queryKey.length !== expected.length) return
+    if (event.query.queryKey[0] !== expected[0]) return
+    if (event.query.queryKey[1] !== expected[1]) return
+    if (event.query.queryKey[2] !== expected[2]) return
+    reconcileTargets()
+  })
 
   onCleanup(() => {
     stopped = true
-    cleanups.forEach((cleanup) => cleanup())
-    cleanups.clear()
+    unsubscribeQueryCache()
+    connections.forEach((cleanup) => cleanup())
+    connections.clear()
   })
 
   const value: ClaxedoEventsContextValue = {

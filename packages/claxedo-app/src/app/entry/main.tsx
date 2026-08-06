@@ -22,7 +22,6 @@ import {
 import { isDemoMode, isEmbedMode } from "@/platform/api/api"
 import { urlRoutingEnabled } from "@/lib/runtime-mode"
 import { ConfigProvider } from "../providers/config"
-import { ClaxedoEventsProvider } from "../integrations/claxedo-events"
 import { Persist, resetDemoPersisted, setPersisted } from "@/platform/persistence/persist"
 
 // Initialize cloud extensions before rendering
@@ -264,11 +263,9 @@ async function startApp() {
     () => (
       <ConfigProvider config={config}>
         <PlatformProvider value={platform}>
-          <ClaxedoEventsProvider>
-            <AppBaseProviders>
-              <AppInterface />
-            </AppBaseProviders>
-          </ClaxedoEventsProvider>
+          <AppBaseProviders>
+            <AppInterface />
+          </AppBaseProviders>
         </PlatformProvider>
       </ConfigProvider>
     ),

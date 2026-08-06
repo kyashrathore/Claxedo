@@ -52,6 +52,7 @@ import { installSessionStatusTelemetryDevtools } from "../../features/session/st
 import { getExtensions } from "@/features/extensions"
 import { RemoteAccessMarkerRecorder } from "@/features/onboarding"
 import { TelemetryIdentityRecorder } from "@/app/integrations/telemetry-identity"
+import { ClaxedoEventsProvider } from "@/app/integrations/claxedo-events"
 
 // Restore navigation data before the shell mounts so the sidebar can paint its
 // last-known session rows while the local server refresh runs in the background.
@@ -185,11 +186,13 @@ export function AppBaseProviders(props: ParentProps) {
     <MetaProvider>
       <Font />
       <QueryClientProvider client={queryClient}>
-        {/* Vercel is the app's default theme. Set here rather than by changing the
+        {/* Codex is the app's default theme — it is the one the rest of the app's
+            chrome is designed against (see the `html[data-theme="codex"]` blocks
+            in styles/ui-overrides.css). Set here rather than by changing the
             "oc-2" fallback inside @opencode-ai/ui, so the shared package keeps its
             own default for other consumers. A stored THEME_ID still wins, so this
             only applies to users who have never picked a theme. */}
-        <ThemeProvider defaultTheme="vercel">
+        <ThemeProvider defaultTheme="codex">
           <LanguageProvider strings={getExtensions().app.strings}>
             <UiI18nBridge>
               <ErrorBoundary fallback={(error) => <ErrorPage error={error} />}>
@@ -386,6 +389,17 @@ function AuthenticatedProviders(props: ParentProps) {
   )
 }
 
+function RoutedClaxedoEventsProvider(props: ParentProps) {
+  const location = useLocation()
+  const server = useServer()
+
+  return (
+    <ClaxedoEventsProvider pathname={() => location.pathname} serverUrl={() => server.url}>
+      {props.children}
+    </ClaxedoEventsProvider>
+  )
+}
+
 function AuthenticatedLayout(
   props: ParentProps & { defaultServer?: ServerConnection.Key; servers?: Array<ServerConnection.Any> },
 ) {
@@ -420,31 +434,33 @@ function AuthenticatedLayout(
 
   return (
     <ServerProvider defaultServer={defaultServer} servers={props.servers}>
-      <AuthenticatedProviders>
-        <ConnectionGate>
-          <GlobalSDKProvider>
-            <GlobalSyncProvider>
-              <SettingsProvider>
-                <PermissionProvider>
-                  <LayoutProvider>
-                    <NotificationProvider>
-                      <ModelsProvider>
-                        <CommandProvider>
-                          <HighlightsProvider>
-                            <ClaxedoAppShellHost>
-                              {props.children}
-                            </ClaxedoAppShellHost>
-                          </HighlightsProvider>
-                        </CommandProvider>
-                      </ModelsProvider>
-                    </NotificationProvider>
-                  </LayoutProvider>
-                </PermissionProvider>
-              </SettingsProvider>
-            </GlobalSyncProvider>
-          </GlobalSDKProvider>
-        </ConnectionGate>
-      </AuthenticatedProviders>
+      <RoutedClaxedoEventsProvider>
+        <AuthenticatedProviders>
+          <ConnectionGate>
+            <GlobalSDKProvider>
+              <GlobalSyncProvider>
+                <SettingsProvider>
+                  <PermissionProvider>
+                    <LayoutProvider>
+                      <NotificationProvider>
+                        <ModelsProvider>
+                          <CommandProvider>
+                            <HighlightsProvider>
+                              <ClaxedoAppShellHost>
+                                {props.children}
+                              </ClaxedoAppShellHost>
+                            </HighlightsProvider>
+                          </CommandProvider>
+                        </ModelsProvider>
+                      </NotificationProvider>
+                    </LayoutProvider>
+                  </PermissionProvider>
+                </SettingsProvider>
+              </GlobalSyncProvider>
+            </GlobalSDKProvider>
+          </ConnectionGate>
+        </AuthenticatedProviders>
+      </RoutedClaxedoEventsProvider>
     </ServerProvider>
   )
 }

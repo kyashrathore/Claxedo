@@ -54,7 +54,11 @@ async function waitFor(predicate: () => boolean, timeoutMs: number) {
 test("the event stream resumes from Last-Event-ID on reconnect instead of replaying the log", async () => {
   const dispose = createRoot((disposer) => {
     try {
-      ClaxedoEventsProvider({ children: undefined })
+      ClaxedoEventsProvider({
+        children: undefined,
+        pathname: () => "/",
+        serverUrl: () => "http://127.0.0.1:3001",
+      })
     } catch (error) {
       // This package has no Solid JSX transform under `bun test` (it has no
       // component-rendering tests at all), so the provider's closing

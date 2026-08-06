@@ -14,7 +14,7 @@ function fetchDouble(handler: (input: RequestInfo | URL, init?: RequestInit) => 
 }
 
 describe("claxedoEventStreamTargets", () => {
-  test("keeps local workspaces on the central event stream", () => {
+  test("adds a workspace runtime stream for local workspaces", () => {
     expect(claxedoEventStreamTargets({
       serverUrl: "https://control.example.test",
       directory: "/repo/local",
@@ -29,6 +29,12 @@ describe("claxedoEventStreamTargets", () => {
       }],
     })).toEqual([
       { kind: "central", url: new URL("https://control.example.test/api/wr/events") },
+      {
+        kind: "workspace",
+        serverUrl: "https://control.example.test",
+        workspaceId: "ws_local",
+        directory: "/repo/local",
+      },
     ])
   })
 
