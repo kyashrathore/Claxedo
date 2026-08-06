@@ -52,8 +52,8 @@ export function RailWorkbenchCanvas(props: {
         renderContent={(id, ctx) => (
           <ContentRenderer id={id} ctx={ctx} fallbackDirectory={props.emptyDraftDirectory} />
         )}
-        maxMountedContents={12}
-        mountCapCandidate={(id) => props.state.meta.get(id)?.type === "session"}
+        maxMountedContents={0}
+        mountCapCandidate={(id) => props.state.meta.get(id)?.type !== "terminal"}
         renderEmpty={() => (
           <Show
             when={props.emptyDraftDirectory()}
