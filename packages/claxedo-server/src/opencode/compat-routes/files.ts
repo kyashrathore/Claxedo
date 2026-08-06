@@ -3,6 +3,15 @@ import path from "path"
 import { git } from "./git"
 
 const ALL_IGNORE = new Set([".git", ".DS_Store", "node_modules", ".next", "dist", "build", ".turbo", ".vercel", ".cache"])
+const FILE_SEARCH_CACHE_MS = 10_000
+
+const fileSearchCache = new Map<
+  string,
+  {
+    expires: number
+    index: Promise<{ files: string[]; directories: string[]; all: string[] }>
+  }
+>()
 
 export async function globSearch(
   searchDir: string,
@@ -10,31 +19,40 @@ export async function globSearch(
   type: "file" | "directory" | "any",
   limit: number,
 ) {
-  const out: string[] = []
   const q = query.trim().toLowerCase()
-  const queue = [""]
-  while (queue.length && out.length < limit) {
-    const rel = queue.shift()!
-    const abs = rel ? path.join(searchDir, rel) : searchDir
-    let rows: fs.Dirent[]
-    try {
-      rows = (await fs.promises.readdir(abs, { withFileTypes: true })).toSorted((a, b) => a.name.localeCompare(b.name))
-    } catch {
-      continue
-    }
-    for (const row of rows) {
-      if (row.name === ".git" || row.name === ".DS_Store") continue
-      const next = rel ? path.join(rel, row.name) : row.name
-      const hit = !q || next.toLowerCase().includes(q)
-      if (row.isDirectory()) {
-        queue.push(next)
-        if (type !== "file" && hit) out.push(next)
-      }
-      if (!row.isDirectory() && type !== "directory" && hit) out.push(next)
-      if (out.length >= limit) break
-    }
+  if (limit < 1) return []
+
+  const root = path.resolve(searchDir)
+  const cached = fileSearchCache.get(root)
+  const index = cached && cached.expires > Date.now()
+    ? cached.index
+    : (() => {
+        const next = buildFileSearchIndex(root)
+        fileSearchCache.set(root, { expires: Date.now() + FILE_SEARCH_CACHE_MS, index: next })
+        void next.catch(() => {
+          if (fileSearchCache.get(root)?.index === next) fileSearchCache.delete(root)
+        })
+        return next
+      })()
+  const found = await index
+  const paths = type === "file" ? found.files : type === "directory" ? found.directories : found.all
+  return paths.filter((item) => !q || item.toLowerCase().includes(q)).slice(0, limit)
+}
+
+async function buildFileSearchIndex(root: string) {
+  const files = (await gitListAll(root)) ?? (await walkAll(root))
+  const directories = new Set<string>()
+  files.forEach((file) => {
+    const parts = file.replaceAll("\\", "/").split("/")
+    parts.slice(0, -1).forEach((_, index) => directories.add(parts.slice(0, index + 1).join("/")))
+  })
+  const normalizedFiles = files.map((file) => file.replaceAll("\\", "/")).sort()
+  const normalizedDirectories = Array.from(directories).sort()
+  return {
+    files: normalizedFiles,
+    directories: normalizedDirectories,
+    all: [...normalizedFiles, ...normalizedDirectories].sort(),
   }
-  return out
 }
 
 // Text search budget. The engine backs `/find` with ripgrep; the compat layer
