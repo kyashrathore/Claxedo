@@ -15,7 +15,9 @@ type IconSize = ComponentProps<typeof Icon>["size"]
  * inline at the call site.
  */
 export const SEMANTIC_ICON = {
-  /** The workspace's pending diff — Codex's document-and-branch Changes glyph. */
+  /** The workspace's pending diff — the boxed ±, shared with the review tab this
+   *  row opens (`workspacePanel.open({ mode: "review" })`). One destination, one
+   *  mark. */
   changes: "changes",
   /** File browsing — Codex's overlapping-folder explorer glyph. */
   files: "folders",

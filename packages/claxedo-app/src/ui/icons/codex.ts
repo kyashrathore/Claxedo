@@ -11,6 +11,7 @@ type CodexSpriteGlyph = `codex-20-${string}`
 export type CodexCustomGlyph =
   | "codex-custom-check"
   | "codex-custom-claude"
+  | "codex-custom-close"
   | "codex-custom-close-small"
   | "codex-custom-copy"
   | "codex-custom-cursor"
@@ -25,6 +26,7 @@ export type CodexCustomGlyph =
   | "codex-custom-magnifying-glass"
   | "codex-custom-magnifying-glass-menu"
   | "codex-custom-marketplace"
+  | "codex-custom-mcp"
   | "codex-custom-models"
   | "codex-custom-more-horizontal"
   | "codex-custom-openai"
@@ -74,7 +76,9 @@ export const CODEX_ICON_ALIASES = {
   "circle-half": "codex-20-145",
   "circle-x": "codex-20-121",
   claude: "codex-custom-claude",
-  close: "codex-20-121",
+  // Bare X, not the ringed `codex-20-121` that `circle-x` uses — see the note on
+  // the same entry in `packages/ui/src/components/codex-icon-map.tsx`.
+  close: "codex-custom-close",
   "close-small": "codex-custom-close-small",
   cloud: "codex-20-087",
   "cloud-upload": "codex-20-087",
@@ -86,7 +90,13 @@ export const CODEX_ICON_ALIASES = {
   console: "codex-20-050",
   copy: "codex-custom-copy",
   cursor: "codex-custom-cursor",
-  changes: "codex-20-120",
+  // The boxed ±, the same glyph `review` uses — the Changes row opens the review
+  // tab, so the two surfaces now carry one mark (see the drift note on
+  // CONCEPT_ICON in ui/semantic-icon.tsx). This was codex-20-120, a compound
+  // document-and-branch mark whose branch badge is drawn from 12 to 23.8 in a
+  // 20-unit viewBox: it rendered clipped, and at roughly full-bleed it read far
+  // denser than the ~14-unit folder and console glyphs sitting beside it.
+  changes: "codex-20-071",
   dash: "codex-20-053",
   discord: "codex-20-153",
   download: "codex-20-012",
@@ -136,7 +146,10 @@ export const CODEX_ICON_ALIASES = {
   // no distinct glyph for any of them; each is drawn locally instead.
   marketplace: "codex-custom-marketplace",
   maximize: "codex-custom-panel-expand",
-  mcp: "codex-20-129",
+  // The sprite has no MCP mark, so this pointed at codex-20-129 — the same
+  // node-graph glyph as `workgraph`/`link`, which is why MCP tool rows read as
+  // WorkGraph nodes. Drawn locally instead, like the other vendor marks.
+  mcp: "codex-custom-mcp",
   menu: "codex-20-097",
   models: "codex-custom-models",
   monitor: "codex-20-101",
@@ -153,7 +166,7 @@ export const CODEX_ICON_ALIASES = {
   "outline-share": "codex-20-083",
   "outline-sliders": "codex-20-079",
   "outline-square-arrow": "codex-20-055",
-  "outline-xmark": "codex-20-121",
+  "outline-xmark": "codex-custom-close",
   page: "codex-20-098",
   "page-plus": "codex-custom-page-plus",
   pencil: "codex-20-019",
@@ -211,7 +224,7 @@ export const CODEX_ICON_ALIASES = {
   "workspace-isolated": "codex-20-140",
   "workspace-new": "codex-20-032",
   worktree: "codex-custom-worktree",
-  "xmark-small": "codex-20-121",
+  "xmark-small": "codex-custom-close-small",
 } as const satisfies Record<AppIconName, CodexGlyphName>
 
 export const CODEX_ICON_TRANSFORMS = {

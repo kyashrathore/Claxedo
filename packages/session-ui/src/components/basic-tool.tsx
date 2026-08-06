@@ -364,7 +364,53 @@ function args(input: Record<string, unknown> | undefined, exclude?: string) {
     .slice(0, 3)
 }
 
-function genericToolIcon(tool: string): IconProps["name"] {
+/**
+ * Whether a tool row is an MCP operation, for any harness.
+ *
+ * `intent` and `kind` are the harness-agnostic signals: every adapter routes
+ * through `canonicalToolIntent`, and the opencode-compat projection copies both
+ * onto the part input, so codex (`item/mcpToolCall/*`), cursor (`mcp*` names)
+ * and claude (`mcp__server__tool`) all arrive here already classified. The name
+ * check is the backstop, and it is a substring rather than the `mcp__` prefix
+ * because the MCP *resource* tools carry no prefix and are named differently per
+ * harness — `ListMcpResourcesTool` on claude, `list_mcp_resources` on opencode.
+ */
+function isMcpTool(tool: string, input?: Record<string, unknown>) {
+  if (input?.intent === "mcp" || input?.kind === "mcp_tool_call") return true
+  return tool.toLowerCase().includes("mcp")
+}
+
+/**
+ * Icon by canonical tool intent — the only classification every harness shares.
+ *
+ * Tool *names* agree on nothing. Take a file edit: opencode calls it `edit` /
+ * `write` / `apply_patch`, claude `Edit` / `Write` / `MultiEdit`, cursor `write`
+ * / `edit`, codex synthesises the literal string `file-change`, and an ACP client
+ * sends whatever it likes. Every one of those lands on `intent: "edit"` — claude,
+ * codex and cursor via a `file_change` kind through `canonicalToolIntent`, ACP via
+ * its own `kind === "edit"` rule in `harnesses/acp/state.ts`. The projection copies
+ * `intent` onto the part input, so keying on it here covers all five at once where
+ * a name switch covers one harness per case.
+ *
+ * Intents absent from this table (`list`, `move`, `lint`, `computer`, …) have no
+ * settled mark yet and fall through to the wrench rather than borrowing a wrong one.
+ */
+const INTENT_ICONS: Record<string, IconProps["name"]> = {
+  edit: "pencil-line",
+  read: "glasses",
+  shell: "terminal-square",
+  search: "magnifying-glass",
+  fetch: "window-cursor",
+  delete: "trash",
+  mcp: "mcp",
+}
+
+function genericToolIcon(tool: string, input?: Record<string, unknown>): IconProps["name"] {
+  if (isMcpTool(tool, input)) return "mcp"
+  const intent = input?.intent
+  if (typeof intent === "string" && INTENT_ICONS[intent]) return INTENT_ICONS[intent]
+  // Name fallbacks, for parts that reach the timeline without a classified
+  // intent — the opencode native engine emits tool names with no ToolDisplay.
   switch (tool.toLowerCase()) {
     case "read":
     case "read_file":
@@ -381,7 +427,9 @@ function genericToolIcon(tool: string): IconProps["name"] {
     case "web_search":
       return "magnifying-glass"
     default:
-      return "mcp"
+      // A wrench, not `mcp`: the fallback covers every unrecognised tool, and
+      // most of them are not MCP tools at all.
+      return "wrench"
   }
 }
 
@@ -399,7 +447,7 @@ export function GenericTool(props: {
 
   return (
     <BasicTool
-      icon={genericToolIcon(props.tool)}
+      icon={genericToolIcon(props.tool, props.input)}
       status={props.status}
       startedAt={props.startedAt}
       trigger={{

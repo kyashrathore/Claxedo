@@ -30,7 +30,12 @@ export const UI_CODEX_ICON_ALIASES = {
   "circle-dashed": "codex-20-122",
   "circle-half": "codex-20-145",
   "circle-x": "codex-20-121",
-  close: "codex-20-121",
+  /* `close` is a dismiss affordance, not a status mark, so it draws the bare X
+     from the local table. The bulk-generated alias table pointed it at
+     `codex-20-121` — the *circled* X that `circle-x` and `circle-ban-sign`
+     legitimately use — which put a ringed glyph on every toast, dialog and
+     popover close button. The extracted sprite has no plain X of its own. */
+  close: "codex-custom-close",
   "close-small": "codex-custom-close-small",
   "cloud-upload": "codex-20-087",
   code: "codex-20-022",
@@ -78,7 +83,11 @@ export const UI_CODEX_ICON_ALIASES = {
   // `CODEX_CUSTOM_GLYPHS` in ./icon.tsx.
   marketplace: "codex-custom-marketplace",
   maximize: "codex-custom-panel-expand",
-  mcp: "codex-20-129",
+  // The extracted sprite carries no MCP mark, so this pointed at codex-20-129 —
+  // the same node-graph glyph as `workgraph` and `link`, which is why MCP tool
+  // rows read as WorkGraph nodes. Drawn locally instead, same as `marketplace`
+  // and `models` above; see `CODEX_CUSTOM_GLYPHS` in ./icon.tsx.
+  mcp: "codex-custom-mcp",
   menu: "codex-20-097",
   models: "codex-custom-models",
   "new-session": "codex-20-019",
@@ -121,6 +130,7 @@ export const UI_CODEX_ICON_ALIASES = {
   warning: "codex-20-082",
   "window-cursor": "codex-20-109",
   workgraph: "codex-20-129",
+  wrench: "codex-20-014",
 } as const
 
 export const UI_CODEX_ICON_TRANSFORMS = {

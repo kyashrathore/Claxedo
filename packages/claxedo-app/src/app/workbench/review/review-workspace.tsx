@@ -434,11 +434,14 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     queueMicrotask(remove)
   }
 
+  // No radius override in `class`: `IconButton` already draws `--radius-sm`, the
+  // same corner every other icon button in the app uses. This carried
+  // `rounded-full`, which made the one dismiss affordance on the tab a circle.
   const closeButtonFor = (id: string, label: string, visible: boolean) => (
     <IconButton
       icon="close-small"
       variant="ghost"
-      class="h-5 w-5 rounded-full transition-opacity focus-visible:pointer-events-auto focus-visible:opacity-100"
+      class="h-5 w-5 transition-opacity focus-visible:pointer-events-auto focus-visible:opacity-100"
       classList={{
         "opacity-100 pointer-events-auto": visible,
         "opacity-0 pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100": !visible,
@@ -552,7 +555,12 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
           <span class="truncate">{tabLabel(tab)}</span>
         </button>
         <div class="absolute right-1 flex h-full items-center">
-          <div data-testid="workspace-tab-close" data-workspace-tab-id={tab.id}>
+          {/* `flex` is load-bearing, not cosmetic. As a block, this wrapper laid
+              out the inline-flex button on a text baseline, so it measured 22px
+              around a 20px button — 2px of descender space below. `items-center`
+              centred the 22px box, leaving the X one pixel above the label and
+              the tab's own glyph. */}
+          <div class="flex" data-testid="workspace-tab-close" data-workspace-tab-id={tab.id}>
             {closeButtonFor(tab.id, closeLabel(tab), selected())}
           </div>
         </div>

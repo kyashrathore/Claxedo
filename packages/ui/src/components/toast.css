@@ -78,18 +78,15 @@
     animation: toastSwipeOut 100ms ease-out forwards;
   }
 
-  &[data-variant="success"] {
-    border-color: var(--border-success-base);
-  }
-
-  /* No coloured edge for errors: the heading icon carries it, and a red hairline
-     was the only chroma on an otherwise monochrome surface. */
-  &[data-variant="error"] {
-    border-color: var(--border-weak-base);
-  }
-
+  /* No coloured edge for any severity. The card is a neutral floating surface
+     like every other one in the system; severity is carried by the heading
+     glyph. A green/red/blue hairline was the only chroma on an otherwise
+     monochrome surface, so it read as decoration rather than meaning — and it
+     is the one place the toast stopped looking like the rest of the app. */
+  &[data-variant="success"],
+  &[data-variant="error"],
   &[data-variant="loading"] {
-    border-color: var(--border-info-base);
+    border-color: var(--border-weak-base);
   }
 
   [data-slot="toast-icon"] {

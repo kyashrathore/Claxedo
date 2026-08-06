@@ -17,6 +17,12 @@ import { openCodeIconLibrary } from "@/ui/icons/opencode"
 
 const claxedoIcons = {
   check: `<path d="M5 11.9657L8.37838 14.7529L15 5.83398" stroke="currentColor" stroke-linecap="square"/>`,
+  // Dismiss marks. The extracted Codex sprite has no bare X — its only X sits
+  // inside a ring (codex-20-121), which `circle-x` uses as a *status* glyph — so
+  // both sizes are drawn here. `close` is byte-identical to the `close` entry in
+  // the upstream `icons` table in `packages/ui/src/components/icon.tsx`, so a
+  // callsite renders the same mark whichever component it reaches for.
+  close: `<path d="M3.75 3.75L16.25 16.25M16.25 3.75L3.75 16.25" stroke="currentColor" stroke-linecap="square"/>`,
   "close-small": `<path d="M6.75 6.75L13.25 13.25M13.25 6.75L6.75 13.25" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>`,
   copy: `<rect x="7" y="6.5" width="8.5" height="8.5" rx="2" stroke="currentColor" stroke-width="1.25"/><path d="M12.5 4.5H6.5C5.39543 4.5 4.5 5.39543 4.5 6.5V12.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>`,
   file: `<path d="M12.5 1.66667H5C4.07953 1.66667 3.33333 2.41286 3.33333 3.33333V16.6667C3.33333 17.5871 4.07953 18.3333 5 18.3333H15C15.9205 18.3333 16.6667 17.5871 16.6667 16.6667V5.83333L12.5 1.66667Z" stroke="currentColor" stroke-linecap="square"/><path d="M11.6667 1.66667V4.16667C11.6667 5.08714 12.4129 5.83333 13.3333 5.83333H16.6667" stroke="currentColor" stroke-linecap="square"/>`,
@@ -43,6 +49,10 @@ const claxedoIcons = {
   models: `<path fill-rule="evenodd" clip-rule="evenodd" d="M17.5 10C12.2917 10 10 12.2917 10 17.5C10 12.2917 7.70833 10 2.5 10C7.70833 10 10 7.70833 10 2.5C10 7.70833 12.2917 10 17.5 10Z" stroke="currentColor"/>`,
   providers: `<path d="M10.0001 4.37562V2.875M13 4.37793V2.87793M7.00014 4.37793V2.875M10 17.1279V15.6279M13 17.1279V15.6279M7 17.1279V15.6279M15.625 13.0029H17.125M15.625 7.00293H17.125M15.625 10.0029H17.125M2.875 10.0029H4.375M2.875 13.0029H4.375M2.875 7.00293H4.375M4.375 4.37793H15.625V15.6279H4.375V4.37793ZM12.6241 10.0022C12.6241 11.4519 11.4488 12.6272 9.99908 12.6272C8.54934 12.6272 7.37408 11.4519 7.37408 10.0022C7.37408 8.55245 8.54934 7.3772 9.99908 7.3772C11.4488 7.3772 12.6241 8.55245 12.6241 10.0022Z" stroke="currentColor" stroke-linecap="square"/>`,
   "more-horizontal": `<circle cx="5" cy="10" r="1.6" fill="currentColor"/><circle cx="10" cy="10" r="1.6" fill="currentColor"/><circle cx="15" cy="10" r="1.6" fill="currentColor"/>`,
+  // Official Model Context Protocol mark, from lobe-icons (MIT) on a 24 grid,
+  // scaled onto this component's 20 one. Byte-identical to the `mcp` entry in
+  // `packages/ui/src/components/icon.tsx` so both components draw the same mark.
+  mcp: `<g transform="scale(0.83333)" fill="currentColor" fill-rule="evenodd" clip-rule="evenodd"><path d="M15.688 2.343a2.588 2.588 0 00-3.61 0l-9.626 9.44a.863.863 0 01-1.203 0 .823.823 0 010-1.18l9.626-9.44a4.313 4.313 0 016.016 0 4.116 4.116 0 011.204 3.54 4.3 4.3 0 013.609 1.18l.05.05a4.115 4.115 0 010 5.9l-8.706 8.537a.274.274 0 000 .393l1.788 1.754a.823.823 0 010 1.18.863.863 0 01-1.203 0l-1.788-1.753a1.92 1.92 0 010-2.754l8.706-8.538a2.47 2.47 0 000-3.54l-.05-.049a2.588 2.588 0 00-3.607-.003l-7.172 7.034-.002.002-.098.097a.863.863 0 01-1.204 0 .823.823 0 010-1.18l7.273-7.133a2.47 2.47 0 00-.003-3.537z"/><path d="M14.485 4.703a.823.823 0 000-1.18.863.863 0 00-1.204 0l-7.119 6.982a4.115 4.115 0 000 5.9 4.314 4.314 0 006.016 0l7.12-6.982a.823.823 0 000-1.18.863.863 0 00-1.204 0l-7.119 6.982a2.588 2.588 0 01-3.61 0 2.47 2.47 0 010-3.54l7.12-6.982z"/></g>`,
   "magnifying-glass": `<path d="M15.75 15.75L12.8023 12.8023M14.444 8.34701C14.444 11.4382 11.9382 13.944 8.84701 13.944C5.75587 13.944 3.25 11.4382 3.25 8.34701C3.25 5.25587 5.75587 2.75 8.84701 2.75C11.9382 2.75 14.444 5.25587 14.444 8.34701Z" stroke="currentColor" stroke-linecap="square"/>`,
   "magnifying-glass-menu": `<path d="M2.08325 10.0002H4.58325M2.08325 5.41683H5.41659M2.08325 14.5835H5.41659M16.4583 13.9585L18.7499 16.2502M17.9166 10.0002C17.9166 12.9917 15.4915 15.4168 12.4999 15.4168C9.50838 15.4168 7.08325 12.9917 7.08325 10.0002C7.08325 7.00862 9.50838 4.5835 12.4999 4.5835C15.4915 4.5835 17.9166 7.00862 17.9166 10.0002Z" stroke="currentColor" stroke-linecap="square"/>`,
   // Codex authors project disclosure folders on a 16px grid. Scale those
@@ -117,6 +127,7 @@ function ensureSprite() {
 const customGlyphs = {
   "codex-custom-check": "check",
   "codex-custom-claude": "claude",
+  "codex-custom-close": "close",
   "codex-custom-close-small": "close-small",
   "codex-custom-copy": "copy",
   "codex-custom-cursor": "cursor",
@@ -131,6 +142,7 @@ const customGlyphs = {
   "codex-custom-magnifying-glass": "magnifying-glass",
   "codex-custom-magnifying-glass-menu": "magnifying-glass-menu",
   "codex-custom-marketplace": "marketplace",
+  "codex-custom-mcp": "mcp",
   "codex-custom-models": "models",
   "codex-custom-more-horizontal": "more-horizontal",
   "codex-custom-openai": "openai",
