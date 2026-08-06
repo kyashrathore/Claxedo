@@ -143,6 +143,10 @@ function make(dir: string) {
   const workspaceDeletes: Array<{ url: string; method?: string }> = []
   const worktreeRemoves: unknown[] = []
   const cleaned: Array<{ directory: string; projectId?: string }> = []
+  // Open tabs, as the metadata registry sees them. Tests that care about tab
+  // teardown push entries here before invoking an action.
+  const metas: Array<{ id: string; directory?: string; providerDirectory?: string }> = []
+  const closedContents: string[] = []
   const shows: unknown[] = []
   const cacheEnsures: string[] = []
   const cacheRefreshes: string[] = []
@@ -203,10 +207,15 @@ function make(dir: string) {
           acts.push("tab-new")
           return "tab-new"
         },
-        closeContent: () => undefined,
+        closeContent: (id: string) => {
+          closedContents.push(id)
+          const index = metas.findIndex((meta) => meta.id === id)
+          if (index >= 0) metas.splice(index, 1)
+        },
       },
       meta: {
-        findAll: () => [],
+        findAll: (predicate: (meta: { directory?: string; providerDirectory?: string }) => boolean) =>
+          metas.filter(predicate),
       },
     },
     dialog: {
@@ -270,7 +279,7 @@ function make(dir: string) {
     navs.push({ path, reason, details })
   }
 
-  return { props, adds, acts, navs, nav, worktreeReady, routes, closes, removes, workspaceDeletes, worktreeRemoves, cleaned, shows, data, projectsQueryKey, cacheEnsures, cacheRefreshes, bootstraps, paneWorktrees }
+  return { props, adds, acts, navs, nav, worktreeReady, routes, closes, removes, workspaceDeletes, worktreeRemoves, cleaned, metas, closedContents, shows, data, projectsQueryKey, cacheEnsures, cacheRefreshes, bootstraps, paneWorktrees }
 }
 
 describe("createProjectActions", () => {
@@ -409,6 +418,70 @@ describe("createProjectActions", () => {
       method: "DELETE",
     }])
     expect(routes).toEqual(["/"])
+  })
+
+  test("removing a project closes the tabs of every directory it owns", () => {
+    const { props, nav, metas, closedContents, cleaned } = make("/workspace/feature")
+    // A worktree that only ever appears under `workspaces` — never a sandbox.
+    // Walking `worktree + sandboxes` alone left its tabs open in the switcher,
+    // pointing at a project that no longer exists.
+    metas.push(
+      { id: "tab-root", directory: "/workspace/main" },
+      { id: "tab-sandbox", directory: "/workspace/formlink" },
+      { id: "tab-worktree", directory: "/workspace/wt-1" },
+      { id: "tab-draft", providerDirectory: "/workspace/main" },
+      { id: "tab-other-project", directory: "/workspace/unrelated" },
+    )
+
+    createProjectActions(props, nav).handleRemoveProject(project({
+      id: "p1",
+      worktree: "/workspace/main",
+      sandboxes: ["/workspace/formlink"],
+      workspaces: {
+        "/workspace/main": { id: "/workspace/main", directory: "/workspace/main" },
+        "/workspace/wt-1": { id: "/workspace/wt-1", directory: "/workspace/wt-1" },
+      },
+    }))
+
+    expect(closedContents.sort()).toEqual(["tab-draft", "tab-root", "tab-sandbox", "tab-worktree"])
+    expect(closedContents).not.toContain("tab-other-project")
+    expect(metas.map((meta) => meta.id)).toEqual(["tab-other-project"])
+    // Each owned directory is purged exactly once, despite `main` appearing in
+    // both `worktree` and `workspaces`.
+    expect(cleaned).toEqual([
+      { directory: "/workspace/main", projectId: "p1" },
+      { directory: "/workspace/formlink", projectId: "p1" },
+      { directory: "/workspace/wt-1", projectId: "p1" },
+    ])
+  })
+
+  test("deleting a workspace closes its draft tab as well as its session tabs", async () => {
+    const { props, nav, metas, closedContents, data, projectsQueryKey } = make("/workspace/feature")
+    data.project[0] = {
+      id: "p1",
+      worktree: "/workspace/main",
+      sandboxes: ["/workspace/feature"],
+      workspaces: {
+        "/workspace/feature": { id: "/workspace/feature", directory: "/workspace/feature" },
+      },
+    }
+    queryClient.setQueryData(projectsQueryKey, data.project)
+    metas.push(
+      { id: "tab-session", directory: "/workspace/feature" },
+      { id: "tab-draft", providerDirectory: "/workspace/feature" },
+      { id: "tab-main", directory: "/workspace/main" },
+    )
+
+    createProjectActions(props, nav).handleDeleteWorkspace({
+      directory: "/workspace/feature",
+      isMain: false,
+      isCloud: false,
+      projectWorktree: "/workspace/main",
+    } as never)
+    await deleteDialogProps?.onDelete("/workspace/feature")
+
+    expect(closedContents.sort()).toEqual(["tab-draft", "tab-session"])
+    expect(metas.map((meta) => meta.id)).toEqual(["tab-main"])
   })
 
   test("deleting a workspace removes it from both sandboxes and workspaces immediately", async () => {

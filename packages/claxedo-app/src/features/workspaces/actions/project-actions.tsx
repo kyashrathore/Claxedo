@@ -34,6 +34,27 @@ import {
 type ProvisionEvent = Extract<ClaxedoEvent, { type: "provision" }>
 type WorkspaceDirectoryRef = string
 
+/**
+ * Every directory a project owns: its root worktree, its sandboxes, and the
+ * worktrees in `workspaces`.
+ *
+ * Removing a project has to purge state keyed by directory — open tabs above
+ * all — and tab metas carry the workspace directory, not the project id. The
+ * three lists overlap but none of them is a superset: a git worktree created
+ * from the project shows up in `workspaces` without ever being a sandbox, so
+ * walking only `worktree + sandboxes` left that worktree's tabs behind in the
+ * switcher, pointing at a project that no longer exists.
+ */
+function projectDirectories(project: ProjectItem): string[] {
+  return [
+    ...new Set([
+      project.worktree,
+      ...(project.sandboxes ?? []),
+      ...Object.keys(project.workspaces ?? {}),
+    ]),
+  ].filter(Boolean)
+}
+
 export type ProjectActionProps = Pick<
   ActionProps,
   | "params"
@@ -337,9 +358,15 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
   }
 
   const purgeWorkspaceState = (dir: string) => {
-    props.state.meta.findAll((m) => m.directory === dir).forEach((meta) => {
-      props.state.layout.closeContent(meta.id)
-    })
+    // `providerDirectory` as well as `directory`: a draft-session tab is scoped
+    // `global` and only records the workspace that would receive its first
+    // prompt, so matching on `directory` alone left the draft tab of a removed
+    // project open with nowhere to send anything.
+    props.state.meta
+      .findAll((m) => m.directory === dir || m.providerDirectory === dir)
+      .forEach((meta) => {
+        props.state.layout.closeContent(meta.id)
+      })
     queryClient
       .getQueryData<DirectorySessionCacheValue>(directorySessionCacheQueryOptions({ directory: dir }).queryKey)
       ?.session.forEach((session) => {
@@ -488,7 +515,7 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
 
   const handleRemoveProject = (project: ProjectItem) => {
     const current = props.activeProjectId()
-    for (const dir of [project.worktree, ...(project.sandboxes ?? [])]) {
+    for (const dir of projectDirectories(project)) {
       purgeWorkspaceState(dir)
       props.state.workspace.cleanupDeletedWorktree(dir, project.id)
     }
