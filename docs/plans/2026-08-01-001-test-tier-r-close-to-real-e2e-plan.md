@@ -68,8 +68,8 @@ in-repo, so none of them get invented:
 
 **Hermeticity requirements** (each one already paid for in debugging hours):
 `OPENCODE_DISABLE_MODELS_FETCH=true` is mandatory; health probes must be bounded
-per-probe with `AbortSignal.timeout`; `CLAXEDO_WORKGRAPH_REPOSITORY` must be set
-or the server fatals at boot; `OPENCODE_AUTH_CONTENT` shadows the auth bridge, so
+per-probe with `AbortSignal.timeout`; each WorkGraph Stream carries its execution
+repository target; `OPENCODE_AUTH_CONTENT` shadows the auth bridge, so
 never set it on the server; the provider cache needs `POST /global/dispose` after
 a live auth change; engine env flags are read at import time, so setting them in
 the spawn env is correct and mutating them later is not.
@@ -168,7 +168,7 @@ Structure clones `live-real-harness-smoke.spec.ts`, whose `startServer`,
       `expectLiveTurnsSettledAfterReload` are promoted into a shared helper that
       both the live spec and this one import — no forked copy. Progress:
 - [ ] A real `claxedo-server` boots (`bun run start`, scratch `CLAXEDO_DATA_DIR`,
-      port 4317, `CLAXEDO_WORKGRAPH_REPOSITORY` = repo root) with the full
+      port 4317) with the full
       injection env: `OPENCODE_CONFIG_CONTENT`, `OPENCODE_DISABLE_MODELS_FETCH=true`,
       `ANTHROPIC_BASE_URL` + `ANTHROPIC_API_KEY=test-key`, and `CODEX_CONFIG`.
       The scripted server starts first. Progress:

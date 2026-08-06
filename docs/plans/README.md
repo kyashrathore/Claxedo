@@ -1,12 +1,68 @@
 # Claxedo Plans
 
 Status: retained plans index
-Last updated: 2026-08-01
+Last updated: 2026-08-07
 
 This directory keeps active plans and concise dated references that still help
 explain a maintained package or cross-package delivery contract.
 
 ## Retained Plans
+
+- [Cross-harness subagents](./2026-08-07-002-feat-cross-harness-subagents-plan.md)
+  - Active plan (U1–U13) making a subagent a first-class object on every harness
+    that has one: recognized at spawn, status-tracked, and openable beside its
+    parent session. Exists because the feature works on exactly one of eight
+    rails — and is broken at a different layer on each, which is why it has
+    never been fixed as one thing. Claude's tool was renamed `Task` → `Agent`
+    and detection never followed; Codex has the richest subagent protocol of the
+    three and every child-thread event is dropped by the driver before the
+    adapter runs; Cursor emits an agent *type* where a session id belongs; the
+    host `session` table has no `parent_id` column at all. Leads with the
+    finding that broke the first draft: the persisting turn projector is
+    server-side and parent-keyed, so forwarding nested events without routing
+    them corrupts the parent transcript rather than revealing subagents.
+    Replaces the degenerate one-field `subagent-spawned` event with one
+    idempotent `subagent-updated` upsert keyed on `(parentSessionId,
+    toolCallId)`, survivable across replay gaps and reconnects.
+
+- [Follow-up steer and queue](./2026-08-07-001-feat-followup-steer-queue-plan.md)
+  - Active plan (U1–U11) making a message sent while the agent is working a
+    reversible object: held client-side and shown dim, editable and cancellable
+    while dim, promotable into the running turn, drained in order when the turn
+    ends. Exists because the shipped `Settings → Follow-up behavior` row is
+    doubly dead — the provider coerces `"queue"` back to `"steer"` and nothing
+    consumes the value — while sending during a live turn behaves four different
+    ways across the harness fleet, from a hard refusal to an undeclared silent
+    fold-in to a concurrent second run on pi. Carries upstream capability
+    research against the pinned SDKs: six of eight harnesses can steer, and
+    Codex loses the ability purely by being run over ACP.
+
+- [Portable Claxedo Apps platform](./2026-08-06-004-feat-portable-claxedo-apps-platform-design.md)
+  - Umbrella architecture for every supported app form: private AI-authored
+    gadgets, symmetric collaborative instances, blueprints, publisher-managed
+    user-scoped apps, Gatekeeper-backed external apps, and public static sites.
+    Defines instance/data/distribution policies, sandbox and sharing models,
+    provider portability, UX journeys, hard problems, and sequencing against
+    the multiplayer plan.
+
+- [Portable managed mini-apps — Content Engine](./2026-08-06-003-feat-portable-managed-mini-apps-content-engine-design.md)
+  - Reference vertical for the umbrella Apps platform's managed user-scoped
+    mode: one immutable release line, private instance and SQLite-compatible
+    data per app customer, browser capture, existing Claxedo AI and skills,
+    scheduler connectors, provider alternatives, publisher UX, and portability.
+
+- [Full-matrix real e2e](./2026-08-06-001-test-full-matrix-real-e2e-plan.md)
+  - Active test plan (phases 0–6) extending Tier R from two lanes to the whole
+    deployment matrix — packaged desktop and hosted web, unsigned and signed,
+    embedded, user-hosted and cloud — with nothing stubbed but the AI model
+    endpoint. Exists because a single 2026-08-05/06 session found twelve
+    defects, four already shipped in v0.0.65, and every one sat in a blind spot:
+    no lane runs the packaged app (so the whole `file://` renderer bug class was
+    undetectable), and the status-dot proofs deliver events through the DEV
+    `__claxedoEmitTestEvent` seam, staying green while nothing reached real
+    users. Carries a defect → scenario coverage table for all twelve fixed and
+    six open issues, and demotes boot/render assertions to diagnostics after the
+    owner's correction that the app booted fine through every failure.
 
 - [Tier R close-to-real e2e](./2026-08-01-001-test-tier-r-close-to-real-e2e-plan.md)
   - Active test plan (phases 0–5) adding a third e2e tier where the app, server,
