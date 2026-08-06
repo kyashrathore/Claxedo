@@ -173,6 +173,7 @@ export function finalizeSubmitSessionTarget(input: {
   readonly session: SubmitSessionTarget
   readonly sessionDirectory: SubmitDirectory
   readonly scope: string
+  readonly provisionalTitle?: string
   readonly surfaceId: string | undefined
   readonly claxedoState: ReturnType<typeof useClaxedoState> | undefined
   readonly projects: readonly ProjectCatalogItem[]
@@ -236,6 +237,7 @@ export function finalizeSubmitSessionTarget(input: {
       sourceScope: input.scope,
       sessionDirectory: input.sessionDirectory,
       shouldAutoAccept: input.shouldAutoAccept,
+      provisionalTitle: input.provisionalTitle,
       enableAutoAccept: input.enableAutoAccept,
       navigateOnCreate: input.navigateOnCreate,
       previousSessionId: input.previousSessionId,

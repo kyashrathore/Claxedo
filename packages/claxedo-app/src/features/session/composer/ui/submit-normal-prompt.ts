@@ -39,6 +39,7 @@ export async function dispatchNormalPromptSubmit(input: {
   readonly session: { id: string }
   readonly sessionDirectory: SubmitDirectory
   readonly sessionRef?: SessionRef
+  readonly provisionalTitle?: string
   readonly agent: string
   readonly model: { providerID: string; modelID: string }
   readonly variant?: string
@@ -126,6 +127,7 @@ export async function dispatchNormalPromptSubmit(input: {
       previousSessionId: input.previousSessionId,
       sessionDirectory: input.sessionDirectory,
       sessionRef: input.sessionRef,
+      provisionalTitle: input.provisionalTitle,
       sessionID: input.session.id,
       addOptimisticMessage: timeline.addSubmittedPrompt,
       applyCreatedSessionHandoff: input.applyCreatedSessionHandoff,

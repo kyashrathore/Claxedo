@@ -89,6 +89,20 @@ import { expect, test, type Locator, type Page } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, expectTurnCounts, expectNoDuplicateRows, SELECTORS } from "../helpers/turn-oracle"
 
+type TitleContinuityProbe = {
+  expectedTitle: string
+  first?: Element
+  seenExpected: boolean
+  seenSidebar: boolean
+  seenSwitcher: boolean
+  violations: string[]
+  sample: () => void
+  observer?: MutationObserver
+  timer?: number
+}
+
+type TitleContinuityWindow = typeof window & { __titleContinuityProbe?: TitleContinuityProbe }
+
 const DIR = "/tmp/e2e-core-first-prompt-local"
 const SESSION_ID = "ses_core_first_prompt_local"
 
@@ -122,6 +136,28 @@ async function seedNoProjects(page: Page) {
   })
 }
 
+async function installPlaceholderSessionList(page: Page) {
+  await page.route("**/api/control/session-list**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      view: { scope: "global", groupBy: "none", sort: "updated_desc", limit: 50 },
+      items: [{
+        type: "session",
+        sessionRef: SESSION_ID,
+        sessionId: SESSION_ID,
+        title: "Untitled session",
+        directory: DIR,
+        createdAt: 10,
+        updatedAt: 10,
+        tags: [],
+        attachments: [],
+      }],
+      totalKnown: 1,
+    }),
+  }))
+}
+
 async function openDraftPrompt(page: Page, dir: string): Promise<Locator> {
   await page.goto(`/${slug(dir)}/session`)
   await page.waitForLoadState("domcontentloaded")
@@ -135,6 +171,75 @@ async function openDraftPrompt(page: Page, dir: string): Promise<Locator> {
 
 function sessionUrlPattern(sessionId: string) {
   return new RegExp(`(?:/s/${sessionId}|/w/[^/]+/session/${sessionId})$`)
+}
+
+async function startTitleContinuityProbe(page: Page, sessionId: string, expectedTitle: string) {
+  await page.evaluate(({ id, expected }) => {
+    const target = window as TitleContinuityWindow
+    const probe: TitleContinuityProbe = {
+      expectedTitle: expected,
+      seenExpected: false,
+      seenSidebar: false,
+      seenSwitcher: false,
+      violations: [],
+      sample: () => undefined,
+    }
+    const record = (violation: string) => {
+      if (!probe.violations.includes(violation)) probe.violations.push(violation)
+    }
+    probe.sample = () => {
+      const current = document.querySelector("[data-session-title]")
+      if (!probe.first && current) probe.first = current
+      if (probe.first) {
+        if (!current || !probe.first.isConnected) record("header detached")
+        if (current && current !== probe.first) record("header replaced")
+      }
+      const sidebar = document.querySelector(
+        `[data-testid="rail-sidebar-session-row"][data-session-id="${id}"] [data-slot="session-navigation-title"]`,
+      )
+      const switcher = document.querySelector('[data-testid="compact-switcher"] [data-testid="switcher-title"]')
+      const titles = [
+        current?.querySelector('[data-slot="session-title-child"]'),
+        sidebar,
+        switcher,
+      ].flatMap((element) => element ? [element.textContent?.trim() ?? ""] : [])
+      if (!probe.seenExpected && titles.includes(probe.expectedTitle)) probe.seenExpected = true
+      if (!probe.seenExpected) return
+      if (sidebar) probe.seenSidebar = true
+      if (switcher) probe.seenSwitcher = true
+      titles.forEach((title) => {
+        if (!title) record("a session title became empty")
+        if (/^(new|untitled) session$/i.test(title)) record(`a session title regressed to ${title}`)
+      })
+      if (new Set(titles).size > 1) {
+        record(`session title surfaces diverged: ${titles.join(" | ")}`)
+      }
+    }
+    probe.observer = new MutationObserver(probe.sample)
+    probe.observer.observe(document.body, { childList: true, subtree: true, characterData: true })
+    probe.timer = window.setInterval(probe.sample, 16)
+    target.__titleContinuityProbe = probe
+    probe.sample()
+  }, { id: sessionId, expected: expectedTitle })
+}
+
+async function finishTitleContinuityProbe(page: Page) {
+  return page.evaluate(() => {
+    const target = window as TitleContinuityWindow
+    const probe = target.__titleContinuityProbe
+    probe?.sample()
+    probe?.observer?.disconnect()
+    if (probe?.timer !== undefined) clearInterval(probe.timer)
+    return {
+      seen: !!probe?.first,
+      seenExpected: !!probe?.seenExpected,
+      seenSidebar: !!probe?.seenSidebar,
+      seenSwitcher: !!probe?.seenSwitcher,
+      connected: !!probe?.first?.isConnected,
+      title: probe?.first?.querySelector('[data-slot="session-title-child"]')?.textContent?.trim() ?? "",
+      violations: probe?.violations ?? ["probe missing"],
+    }
+  })
 }
 
 test.describe("core first prompt (local) @core", () => {
@@ -158,6 +263,7 @@ test.describe("core first prompt (local) @core", () => {
       sessionId: SESSION_ID,
       harnessModels: { opencode: [{ id: "gpt-5", name: "GPT-5" }] },
     })
+    await installPlaceholderSessionList(page)
 
     await seedOneProject(page, DIR)
     const input = await openDraftPrompt(page, DIR)
@@ -167,6 +273,7 @@ test.describe("core first prompt (local) @core", () => {
     await input.fill(promptText)
     await expect(input).toContainText(promptText, { timeout: 10_000 })
 
+    await startTitleContinuityProbe(page, SESSION_ID, promptText)
     await page.locator(SELECTORS.submitControl).last().click()
 
     // Behavior 4: the optimistic user row renders before the server round-trip
@@ -188,6 +295,29 @@ test.describe("core first prompt (local) @core", () => {
     // Behavior 3: exactly one user row + one assistant row, no duplication.
     await expectTurnCounts(page, { user: 1, assistant: 1 })
     await expectNoDuplicateRows(page)
+
+    await Promise.all([
+      page.locator('[data-session-title] [data-slot="session-title-child"]'),
+      page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${SESSION_ID}"] [data-slot="session-navigation-title"]`),
+    ].map((title) => expect(title).toHaveText(promptText, { timeout: 10_000 })))
+
+    const sidebarToggle = page.locator('[data-testid="sidebar-toggle"]')
+    await expect(sidebarToggle).toBeVisible({ timeout: 10_000 })
+    await sidebarToggle.click()
+    const switcher = page.locator('[data-testid="compact-switcher"]')
+    await expect(switcher).toBeVisible({ timeout: 10_000 })
+    await expect(switcher.locator('[data-testid="switcher-title"]')).toHaveText(promptText, { timeout: 10_000 })
+
+    const titleContinuity = await finishTitleContinuityProbe(page)
+    expect(titleContinuity).toMatchObject({
+      seen: true,
+      seenExpected: true,
+      seenSidebar: true,
+      seenSwitcher: true,
+      connected: true,
+      violations: [],
+    })
+    expect(titleContinuity.title).not.toBe("")
 
     expect(mock.requests.createSessionCount).toBe(1)
     expect(mock.requests.promptBodies[0]?.text).toBe(promptText)

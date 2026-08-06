@@ -23,6 +23,7 @@ import { useClaxedoState } from "@/features/session/app-ports"
 import { panePreferenceScope } from "@/features/session/preferences/pane"
 import { useClaxedoEventsOptional } from "@/features/session/app-ports"
 import { queryClient } from "@/platform/query/query-client"
+import { provisionalSessionTitle } from "../../lib/session-title-sync"
 import { commandListQuery } from "../../data/query/shell"
 import { useDirectorySessionCacheActions } from "../../data/sync/directory-session-cache"
 import { useGlobalBootstrapActions } from "@/features/session/app-ports"
@@ -553,16 +554,17 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     })
     session = target.session
     replaceSession = target.replaceSession
-
     if (!session) {
       clearBoot()
       return
     }
+    const provisionalTitle = mode === "normal" ? provisionalSessionTitle(text) : undefined
     const finalizedSessionTarget = finalizeSubmitSessionTarget({
       target,
       session,
       sessionDirectory,
       scope,
+      provisionalTitle,
       surfaceId: surfaceId(),
       claxedoState,
       projects: projectCatalog(),
@@ -739,7 +741,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     })) {
       return
     }
-
     await dispatchNormalPromptSubmit({
       text,
       currentPrompt,
@@ -748,6 +749,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       session,
       sessionDirectory,
       sessionRef,
+      provisionalTitle,
       agent,
       model,
       variant,

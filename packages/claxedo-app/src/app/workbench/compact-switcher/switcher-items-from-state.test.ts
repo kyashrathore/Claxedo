@@ -98,6 +98,13 @@ describe("buildSwitcherItemsFromState", () => {
     expect(items[1].active).toBe(true)
   })
 
+  test("normalizes a provisional first-prompt title", () => {
+    const api = makeApi()
+    api.layout.openSession("/work/foo", "ses_1", "  Fix   the\n terminal pane  ")
+
+    expect(buildSwitcherItemsFromState(api)[0].title).toBe("Fix the terminal pane")
+  })
+
   test("falls back to type-based titles when no explicit title", () => {
     const api = makeApi()
     api.layout.openSession("/work/foo", "ses_1")

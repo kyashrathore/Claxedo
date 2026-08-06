@@ -205,6 +205,7 @@ export type ApplyCreatedSessionTargetEffectsContext = {
   sourceScope: string
   sessionDirectory: SubmitDirectory
   sessionRef?: SessionRef
+  provisionalTitle?: string
   surfaceId?: string
   shouldAutoAccept: boolean
   enableAutoAccept: (sessionID: string, directory: SubmitDirectory) => void
@@ -227,6 +228,7 @@ export type ApplyOptimisticPromptHandoffContext = {
   previousSessionId?: string
   sessionDirectory: SubmitDirectory
   sessionRef?: SessionRef
+  provisionalTitle?: string
   sessionID: string
   addOptimisticMessage: VoidFunction
   applyCreatedSessionHandoff: VoidFunction

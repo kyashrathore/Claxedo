@@ -131,6 +131,47 @@ describe("applyCreatedSessionTargetEffects", () => {
     expect(typeof result.handoffCreatedSession).toBe("function")
   })
 
+  test("deferred handoff fills a placeholder existing tab without replacing a concrete title", () => {
+    const patches: Array<{ id: string; patch: Record<string, unknown> }> = []
+    const existing = {
+      id: "tab-existing",
+      type: "session" as const,
+      directory: "/repo/main",
+      sessionId: "ses_1",
+      content: { type: "session" as const, directory: "/repo/main", sessionId: "ses_1", title: "New Session" },
+    }
+    const create = () => applyCreatedSessionTargetEffects({
+      created: true,
+      session: { id: "ses_1" },
+      sourceScope: "scope-1",
+      sessionDirectory: "/repo/main",
+      provisionalTitle: "Fix the terminal pane",
+      shouldAutoAccept: false,
+      enableAutoAccept: () => undefined,
+      navigateOnCreate: true,
+      previousSessionId: "new",
+      setLayoutTabs: () => undefined,
+      navigate: () => undefined,
+      publishCloudHandoff: () => undefined,
+      claxedoState: {
+        wb: { selectors: { focusedContent: () => undefined } },
+        meta: {
+          get: () => undefined,
+          find: () => existing,
+          patch: (id: string, patch: Record<string, unknown>) => patches.push({ id, patch }),
+        },
+        layout: { openSession: () => "tab-added", showContent: () => undefined },
+      } as never,
+    })
+
+    create().handoffCreatedSession?.()
+    expect(patches[0]?.patch.content).toMatchObject({ title: "Fix the terminal pane" })
+
+    existing.content.title = "Generated title"
+    create().handoffCreatedSession?.()
+    expect(patches).toHaveLength(1)
+  })
+
   test("deferred handoff patches the originating surface when focus moved", async () => {
     const patches: Array<{ id: string; patch: Record<string, unknown> }> = []
     const layoutTabs: Array<{ sessionKey: string; sessionID: string }> = []
@@ -141,6 +182,7 @@ describe("applyCreatedSessionTargetEffects", () => {
       session: { id: "ses_1" },
       sourceScope: "scope-1",
       sessionDirectory: "ws_1",
+      provisionalTitle: "Fix the terminal pane",
       surfaceId: "tab-new",
       shouldAutoAccept: false,
       enableAutoAccept: () => undefined,
@@ -194,7 +236,7 @@ describe("applyCreatedSessionTargetEffects", () => {
         patch: {
           directory: "ws_1",
           sessionId: "ses_1",
-          content: { type: "session", directory: "ws_1", sessionId: "ses_1", title: "New Session" },
+          content: { type: "session", directory: "ws_1", sessionId: "ses_1", title: "Fix the terminal pane" },
         },
       },
     ])
@@ -212,6 +254,7 @@ describe("applyCreatedSessionTargetEffects", () => {
       sourceScope: "scope-1",
       sessionDirectory: "/repo/main",
       sessionRef: localSessionRef("ses_1"),
+      provisionalTitle: "Fix the terminal pane",
       surfaceId: "tab-new",
       shouldAutoAccept: false,
       enableAutoAccept: () => undefined,
@@ -319,6 +362,7 @@ describe("applyCreatedSessionTargetEffects", () => {
       sourceScope: "scope-1",
       sessionDirectory: "/repo/main",
       sessionRef: localSessionRef("ses_1"),
+      provisionalTitle: "Fix the terminal pane",
       surfaceId: "tab-new",
       shouldAutoAccept: false,
       enableAutoAccept: () => undefined,
@@ -368,7 +412,7 @@ describe("applyCreatedSessionTargetEffects", () => {
             type: "session",
             directory: "/repo/main",
             sessionId: "ses_1",
-            title: "New Session",
+            title: "Fix the terminal pane",
             sessionRef: localSessionRef("ses_1"),
           },
         },
@@ -491,6 +535,7 @@ describe("applyOptimisticPromptHandoff", () => {
       handoffCreatedSession: false,
       sessionDirectory: "/repo/main",
       sessionRef: localSessionRef("ses_1"),
+      provisionalTitle: "Fix the terminal pane",
       sessionID: "ses_1",
       addOptimisticMessage: () => {
         added++
@@ -536,6 +581,7 @@ describe("applyOptimisticPromptHandoff", () => {
       handoffCreatedSession: false,
       sessionDirectory: "/repo/main",
       sessionRef: localSessionRef("ses_1"),
+      provisionalTitle: "Fix the terminal pane",
       sessionID: "ses_1",
       surfaceId: "tab-new",
       previousSessionId: "new",
@@ -560,6 +606,7 @@ describe("applyOptimisticPromptHandoff", () => {
       type: "session",
       directory: "/repo/main",
       sessionId: "ses_1",
+      title: "Fix the terminal pane",
       sessionRef: {
         sessionId: "ses_1",
         host: "workspace",

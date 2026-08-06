@@ -92,6 +92,7 @@ import { sessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
 import { isSessionTurnActive } from "../store/session-store"
 import { useSessionSyncOptional } from "@/features/session/providers/session-sync"
 import { removeDirectorySessionTree, updateDirectorySession } from "../data/sync/directory-session-cache"
+import { mergeCanonicalSessionUpdate } from "../data/sync/session-list-events"
 import {
   timelineInitialRevealShouldScroll,
   timelineInitialRevealVisibility,
@@ -408,6 +409,7 @@ export function MessageTimeline(props: {
   setHistoryAnchor?: (handlers: { capture: () => void; restore: () => void }) => void
   onFirstTurnRecovery?: (kind: SessionErrorClass, userMessageID: string) => unknown
   firstTurnRecovery?: boolean
+  title: () => string | undefined
 }) {
   let touchGesture: number | undefined
 
@@ -591,7 +593,7 @@ export function MessageTimeline(props: {
     if (!id) return
     return directorySession(id)
   })
-  const titleValue = createMemo(() => info()?.title)
+  const titleValue = createMemo(props.title)
   const titleLabel = createMemo(() => sessionTitle(titleValue()))
   const parentID = createMemo(() => info()?.parentID)
   const parent = createMemo(() => {
@@ -1004,10 +1006,17 @@ export function MessageTimeline(props: {
   }
 
   const titleMutation = useMutation(() => ({
-    mutationFn: (input: { id: string; title: string }) =>
-      sdk.client.session.update({ sessionID: input.id, title: input.title }),
-    onSuccess: (_, input) => {
-      updateDirectorySession(sdk.directory, input.id, (session) => ({ ...session, title: input.title }))
+    mutationFn: async (input: { id: string; title: string }) => {
+      const baseline = directorySession(input.id)
+      const result = await sdk.client.session.update({ sessionID: input.id, title: input.title })
+      return { result, baseline }
+    },
+    onSuccess: ({ result, baseline }, input) => {
+      if (result.data) {
+        updateDirectorySession(sdk.directory, input.id, (session) =>
+          mergeCanonicalSessionUpdate(session, result.data, baseline),
+        )
+      }
       setTitle("editing", false)
     },
     onError: (err) => {

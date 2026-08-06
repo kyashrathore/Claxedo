@@ -77,6 +77,25 @@ export type WorkspaceRuntimeEvent =
       lastAssistantMessage?: string
       eventType: "Busy" | "Idle" | "UserActionRequired" | "Error"
     }
+  /**
+   * A compat `session.updated` forwarded verbatim to the workspace stream.
+   *
+   * The auto-title (agent-sdk-runtime `runtime.ts`, `method:"auto-title"`)
+   * renames a session from the "New Session" placeholder to one derived from
+   * the first prompt, and publishes exactly this event — but it used to be
+   * dropped at the runtime's bridge, so the rail kept the placeholder (in the
+   * wrong sort position, since the row's `updated` moved too) until some
+   * unrelated refetch happened to land. Measured before the fix: zero
+   * `session.updated` frames on `/api/wr/events` across a full
+   * create-and-complete cycle, while every `session.lifecycle`, `agent.lifecycle`
+   * and `pty.*` frame arrived.
+   *
+   * `properties` is the compat payload shape (`{ info: Session }`) the app's
+   * `directory-event-projector` already reads — it is passed through untouched
+   * rather than remapped, because the client half of this path was already
+   * complete (`claxedoDirectoryEventTypes` subscribes, the projector reconciles).
+   */
+  | { type: "session.updated"; directory?: string; workspaceId?: string; properties?: unknown }
   | { type: "heartbeat" }
   | { type: "process.started"; directory: string; configId: string; ptyId: string }
   | { type: "process.stopped"; directory: string; configId: string; exitCode: number }

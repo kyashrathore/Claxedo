@@ -292,7 +292,7 @@ function sessionLifecycleInfo(input: {
     projectID: typeof row.projectID === "string" ? row.projectID : input.workspaceId ?? "global",
     ...(input.workspaceId ? { workspaceID: input.workspaceId } : {}),
     ...(typeof row.directory === "string" ? { directory: row.directory } : input.directory ? { directory: input.directory } : {}),
-    title: typeof row.title === "string" ? row.title : input.title ?? "New Session",
+    title: typeof row.title === "string" ? row.title : input.title ?? "",
     version: typeof row.version === "string" ? row.version : "local",
     ...(typeof row.parentID === "string" ? { parentID: row.parentID } : {}),
     time: {

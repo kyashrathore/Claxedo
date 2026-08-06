@@ -7,11 +7,28 @@ import { isConversationEventType } from "../../conversation/conversation-event"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { cleanupDroppedSessionCaches, cleanupSessionCaches } from "./session-cache-cleanup"
 import type { DirectorySessionCacheValue } from "./queries"
+import { isConcreteSessionTitle } from "../../lib/session-title-sync"
 
 // Canonical envelope lives in `shared/data/session-lifecycle` (rubric D4). This module
 // re-exports under the historical alias so existing imports keep working while
 // lifecycle projection moves out of the generic event reducer.
 export type ClaxedoSessionLifecycleEvent = SessionLifecycleEvent
+
+export function mergeCanonicalSessionUpdate(
+  current: Session,
+  canonical: Session,
+  baseline?: Pick<Session, "title" | "time">,
+) {
+  if (canonical.id !== current.id) return current
+  if (canonical.time.updated < current.time.updated) return current
+  if (
+    canonical.time.updated === current.time.updated &&
+    canonical.title !== current.title &&
+    isConcreteSessionTitle(current.title) &&
+    (!baseline || baseline.time.updated !== current.time.updated || baseline.title !== current.title)
+  ) return current
+  return { ...current, ...canonical }
+}
 
 function permissionMapForTrim(sessions: Session[]) {
   const permission: Record<string, PermissionRequest[]> = {}
@@ -53,7 +70,7 @@ export function applySessionListEvent(input: {
       const idx = Binary.search(input.cache.session, info.id, (item) => item.id)
       if (idx.found) {
         const session = input.cache.session.slice()
-        session[idx.index] = info
+        session[idx.index] = mergeCanonicalSessionUpdate(session[idx.index], info)
         return { ...input.cache, session }
       }
       const list = insertTrimmedSessionList(input.cache, info, idx.index, input.directory)
@@ -67,6 +84,7 @@ export function applySessionListEvent(input: {
       const info = (input.event.properties as { info: Session }).info
       const idx = Binary.search(input.cache.session, info.id, (item) => item.id)
       if (info.time.archived) {
+        if (idx.found && info.time.updated < input.cache.session[idx.index].time.updated) return input.cache
         const session = input.cache.session.slice()
         if (idx.found) {
           session.splice(idx.index, 1)
@@ -80,7 +98,16 @@ export function applySessionListEvent(input: {
       }
       if (idx.found) {
         const session = input.cache.session.slice()
-        session[idx.index] = info
+        // MERGE, never replace. A `session.updated` frame is a partial view of
+        // the row — the runtime's auto-title publishes `buildSession(...)`,
+        // which carries id/slug/directory/title/version/time and NO `config`.
+        // Replacing wholesale erased `config.model` from the cached session,
+        // and the composer reads exactly that (`submit.ts`,
+        // `parseExistingSessionConfig(input.info()?.config)`): with the model
+        // gone it refused every subsequent prompt in an EXISTING session with
+        // the "Select an agent and model" toast. Spreading the previous row
+        // first keeps any field the sender did not speak to.
+        session[idx.index] = mergeCanonicalSessionUpdate(session[idx.index], info)
         return { ...input.cache, session }
       }
       const list = insertTrimmedSessionList(input.cache, info, idx.index, input.directory)

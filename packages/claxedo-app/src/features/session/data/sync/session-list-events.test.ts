@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import type { PermissionRequest, Session, SessionStatus } from "@opencode-ai/sdk/v2/client"
-import { applyClaxedoSessionLifecycleEvent, applyDirectorySessionCacheEvent } from "./session-list-events"
+import {
+  applyClaxedoSessionLifecycleEvent,
+  applyDirectorySessionCacheEvent,
+  mergeCanonicalSessionUpdate,
+} from "./session-list-events"
 import { clearOpenSessions, setOpenSessions } from "@/features/session/store/open-sessions"
 import { conversationEventTypes } from "../../conversation/conversation-event"
 import { queryClient } from "@/platform/query/query-client"
@@ -46,6 +50,25 @@ afterEach(() => {
 })
 
 describe("claxedo applyDirectorySessionCacheEvent", () => {
+  test("a mutation response only wins an equal timestamp when the cache still matches its baseline", () => {
+    const baseline = { ...root("ses_a"), title: "Original title", time: { created: 1, updated: 30 } }
+    const current = { ...root("ses_a"), title: "Newer event title", time: { created: 1, updated: 30 } }
+    const older = { ...root("ses_a"), title: "Older mutation title", time: { created: 1, updated: 20 } }
+    const conflicting = { ...root("ses_a"), title: "Equal-time mutation title", time: { created: 1, updated: 30 } }
+    const newer = { ...root("ses_a"), title: "Canonical mutation title", time: { created: 1, updated: 40 } }
+
+    expect(mergeCanonicalSessionUpdate(baseline, conflicting, baseline)).toMatchObject({
+      title: "Equal-time mutation title",
+      time: { updated: 30 },
+    })
+    expect(mergeCanonicalSessionUpdate(current, older, baseline)).toBe(current)
+    expect(mergeCanonicalSessionUpdate(current, conflicting, baseline)).toBe(current)
+    expect(mergeCanonicalSessionUpdate(current, newer, baseline)).toMatchObject({
+      title: "Canonical mutation title",
+      time: { updated: 40 },
+    })
+  })
+
   test("conversation events are owned by chat state, not the global-sync mirror", () => {
     const current = cache()
 
@@ -141,6 +164,52 @@ describe("claxedo applyDirectorySessionCacheEvent", () => {
 
     expect(next?.session.map((item) => item.id)).toEqual(["ses_a"])
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_z", "todo"))).toEqual([{ id: "todo_z" }])
+  })
+
+  // REGRESSION. The runtime's auto-title publishes `buildSession(...)` — a
+  // PARTIAL row: id/slug/directory/title/version/time and no `config`. This
+  // branch used to assign it over the cached row wholesale, erasing
+  // `config.model`; the composer reads exactly that field
+  // (`submit.ts`, `parseExistingSessionConfig(input.info()?.config)`) and then
+  // refused every further prompt in an already-open session with the
+  // "Select an agent and model" toast. Reproduced in the running app the
+  // moment `session.updated` started being delivered at all.
+  test("session.updated merges over the cached row instead of erasing fields it omits", () => {
+    const cached = {
+      ...root("ses_a"),
+      config: { model: { providerID: "claude-sdk", modelID: "default" } },
+    } as Session & { config: unknown }
+
+    const next = applyDirectorySessionCacheEvent({
+      event: {
+        type: "session.updated",
+        // Exactly the shape the auto-title sends: a new title, no `config`.
+        properties: { info: { ...root("ses_a"), title: "Say FIXPROBE and nothing else." } },
+      },
+      cache: cache({ session: [cached], total: 1 }),
+      push() {},
+      directory: "/tmp/ws",
+    })
+
+    const row = next?.session.find((item) => item.id === "ses_a") as (Session & { config?: unknown }) | undefined
+    expect(row?.title).toBe("Say FIXPROBE and nothing else.")
+    // The field the frame never mentioned must survive.
+    expect(row?.config).toEqual({ model: { providerID: "claude-sdk", modelID: "default" } })
+  })
+
+  test("older created and updated events cannot regress a cached title", () => {
+    const current = { ...root("ses_a"), title: "Current title", time: { created: 1, updated: 30 } }
+    const older = { ...root("ses_a"), title: "Stale title", time: { created: 1, updated: 20 } }
+
+    for (const type of ["session.created", "session.updated"]) {
+      const next = applyDirectorySessionCacheEvent({
+        event: { type, properties: { info: older } },
+        cache: cache({ session: [current], total: 1 }),
+        push() {},
+        directory: "/tmp/ws",
+      })
+      expect(next?.session[0]).toBe(current)
+    }
   })
 
   test("session.created and a not-yet-present session.updated trim identically (shared insert path)", () => {

@@ -6,6 +6,7 @@ import { panePreferenceScope } from "@/features/session/preferences/pane"
 import { sessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
 import { sessionViewKey } from "@/platform/identity/session-view-key"
 import { sessionContentPayload } from "@/features/session/app-ports"
+import { isConcreteSessionTitle } from "@/features/session/lib/session-title-sync"
 import type {
   ApplyCreatedSessionTargetEffectsContext,
   ApplyOptimisticPromptHandoffContext,
@@ -63,6 +64,7 @@ export function applyCreatedSessionTargetEffects(input: ApplyCreatedSessionTarge
             directory: input.sessionDirectory,
             sessionId: input.session.id,
             sessionRef: input.sessionRef,
+            title: input.provisionalTitle,
           }),
         })
         queueMicrotask(() => input.navigate(createdSessionRoute({
@@ -85,6 +87,7 @@ export function applyCreatedSessionTargetEffects(input: ApplyCreatedSessionTarge
             directory: input.sessionDirectory,
             sessionId: input.session.id,
             sessionRef: input.sessionRef,
+            title: input.provisionalTitle,
           }),
         })
       }
@@ -94,13 +97,24 @@ export function applyCreatedSessionTargetEffects(input: ApplyCreatedSessionTarge
           meta.directory === input.sessionDirectory &&
           meta.sessionId === input.session.id,
       )
+      if (existingTab && input.provisionalTitle && !isConcreteSessionTitle(existingTab.content?.title?.trim())) {
+        input.claxedoState?.meta.patch(existingTab.id, {
+          content: sessionContentPayload({
+            current: existingTab.content,
+            directory: input.sessionDirectory,
+            sessionId: input.session.id,
+            sessionRef: input.sessionRef,
+            title: input.provisionalTitle,
+          }),
+        })
+      }
       const contentId =
         patchableDraftTab?.id ??
         existingTab?.id ??
         input.claxedoState?.layout.openSession(
           input.sessionDirectory,
           input.session.id,
-          "Session",
+          input.provisionalTitle ?? "Session",
           { sessionRef: input.sessionRef },
         )
       if (contentId) input.claxedoState?.layout.showContent(contentId)
@@ -131,12 +145,13 @@ export function applyOptimisticPromptHandoff(input: ApplyOptimisticPromptHandoff
             directory: input.sessionDirectory,
             sessionId: input.sessionID,
             content: sessionContentPayload({
-            current: meta?.content,
-            directory: input.sessionDirectory,
-            sessionId: input.sessionID,
-            sessionRef: input.sessionRef,
-          }),
-        })
+              current: meta?.content,
+              directory: input.sessionDirectory,
+              sessionId: input.sessionID,
+              sessionRef: input.sessionRef,
+              title: input.provisionalTitle,
+            }),
+          })
         }
       : undefined
 

@@ -61,6 +61,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       "workspace:%2Frepo%2Fmain:session:session-1",
     ])
     expect(sessionCreateCalls.at(-1)?.options?.headers?.["x-claxedo-draft-id"]).toBe("draft-1")
+    expect(sessionCreateCalls.at(-1)?.input).toEqual({ directory: "/repo/main" })
   })
 
 
@@ -347,7 +348,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     await waitForSubmitEffect(() => flowEvents.some((item) => item === "navigate:/w/ws_1/session/session-1"))
 
     expect(patchCalls).toEqual([])
-    expect(openCalls).toEqual([{ directory: "ws_1", sessionID: "session-1", title: "Session" }])
+    expect(openCalls).toEqual([{ directory: "ws_1", sessionID: "session-1", title: "hello" }])
     expect(showCalls).toEqual(["tab-added"])
     expect(optimisticAdds.map((item) => ({ directory: item.directory, sessionID: item.sessionID }))).toContainEqual({
       directory: "ws_1",
@@ -707,7 +708,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     await new Promise<void>((r) => setTimeout(r, 0))
 
     expect(patchCalls).toEqual([])
-    expect(openCalls).toEqual([{ directory: "/repo/main", sessionID: "session-1", title: "Session" }])
+    expect(openCalls).toEqual([{ directory: "/repo/main", sessionID: "session-1", title: "hello" }])
     expect(showCalls).toEqual(["tab-added"])
     expect(handoffCalls).toEqual([{ sessionKey: "workspace:%2Frepo%2Fmain:session:session-1", sessionID: "session-1" }])
     expect(navCalls).toHaveLength(1)
@@ -854,7 +855,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
 
-    expect(openCalls).toEqual([{ directory: "/repo/main", sessionID: "session-1", title: "Session" }])
+    expect(openCalls).toEqual([{ directory: "/repo/main", sessionID: "session-1", title: "hello" }])
     expect(showCalls).toEqual(["tab-added"])
     expect(closeCalls).toEqual([])
     expect(navCalls).toEqual(["/w/%2Frepo%2Fmain/session/session-1"])
@@ -890,7 +891,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
             type: "session",
             directory: "/repo/main",
             sessionId: "new",
-            title: "Session",
+            title: "hello",
           },
         }),
         patch: (id: string, patch: Record<string, unknown>) => {
@@ -937,7 +938,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
             type: "session",
             directory: "/repo/main",
             sessionId: "session-1",
-            title: "Session",
+            title: "hello",
             sessionRef: {
               sessionId: "session-1",
               host: "workspace",

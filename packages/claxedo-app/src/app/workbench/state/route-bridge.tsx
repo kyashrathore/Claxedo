@@ -28,7 +28,11 @@ import { useAgentHooks } from "./agent-status-listener"
 import { createBatchAutoTabListener } from "./batch-autotab"
 import { useClaxedoState } from "./"
 import { projectWorkspaceDirectories, workspaceRouteIdentity } from "../../../features/workspaces/lib/workspace-display"
-import { sessionTitleFromSources, sessionTitleSignature } from "../../../features/session/lib/session-title-sync"
+import {
+  indexSessionTitleInventory,
+  sessionTitleFromSources,
+  sessionTitleSignature,
+} from "../../../features/session/lib/session-title-sync"
 import { createRouteIntentAdapter, isRouteIntentClosed, sessionInventoryTarget } from "./route-intent"
 import { routeSessionHarness } from "./route-session-harness"
 import {
@@ -230,16 +234,14 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
   const directorySessions = (directory: string) =>
     queryClient.getQueryData<DirectorySessionCacheValue>(directorySessionCacheQueryOptions({ directory }).queryKey)
       ?.session ?? []
-  const sessionTitleFromInventory = (sessionId: string, directory?: string) => {
+  const sessionTitleInventoryIndex = createMemo(() => indexSessionTitleInventory(sessionInventory()))
+  const sessionTitleFromInventory = (sessionId: string, directory?: string, provisionalTitle?: string) => {
     return sessionTitleFromSources({
       sessionId,
       directory,
       directorySessions,
-      inventory: {
-        global: sessionInventory().global,
-        byWorkspace: sessionInventory().byWorkspace,
-        byProject: sessionInventory().byProject,
-      },
+      provisionalTitle,
+      inventoryIndex: sessionTitleInventoryIndex(),
     })
   }
   const routeResolutionDirectories = () =>
@@ -695,7 +697,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
       if (meta.id === focusedId) continue
       if (meta.type !== "session" && meta.type !== "context") continue
       if (!meta.directory || !meta.sessionId || meta.sessionId === "new") continue
-      const title = sessionTitleFromInventory(meta.sessionId, meta.directory)
+      const title = sessionTitleFromInventory(meta.sessionId, meta.directory, meta.content?.title)
       if (!title || meta.content?.title === title) continue
       state.meta.patch(meta.id, {
         content: {

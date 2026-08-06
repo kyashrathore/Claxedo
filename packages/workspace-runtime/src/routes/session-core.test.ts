@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createSessionRoutes, type RuntimeSessionBusEvent } from "./session-core"
+import { createSessionRoutes, type RuntimeSessionBusEvent, type SessionLifecycleEvent } from "./session-core"
 import type {
   AgentMessageRow,
   AgentRuntime,
@@ -96,6 +96,7 @@ function routes(input: {
   adapter: AgentHarnessAdapter
   events?: CompatEnvelope[]
   busEvents?: RuntimeSessionBusEvent[]
+  lifecycle?: SessionLifecycleEvent[]
 }) {
   return createSessionRoutes({
     resolveAdapter: () => input.adapter,
@@ -105,10 +106,22 @@ function routes(input: {
       subscribe: () => () => {},
     },
     publishGlobal: (event) => input.events?.push(event),
+    publishSessionLifecycle: (event) => input.lifecycle?.push(event),
   })
 }
 
 describe("createSessionRoutes directory-less sessions", () => {
+  test("keeps a missing backend title empty in the created lifecycle row", async () => {
+    const lifecycle: SessionLifecycleEvent[] = []
+    const res = await routes({ adapter: adapter(), lifecycle }).request("http://localhost/session", {
+      method: "POST",
+      body: "{}",
+    })
+
+    expect(res.status).toBe(201)
+    expect((lifecycle.find((event) => event.phase === "created")?.info as { title?: string } | undefined)?.title).toBe("")
+  })
+
   test("returns an empty agent list when harness cannot expose live agent options", async () => {
     const res = await routes({
       adapter: {

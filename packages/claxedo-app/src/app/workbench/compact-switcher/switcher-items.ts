@@ -1,5 +1,6 @@
 import type { ClaxedoStateApi } from "../state/provider"
 import type { ContentMeta, ContentType } from "../state/types"
+import { resolveSessionTitle } from "@/features/session/lib/session-title-sync"
 
 export type SwitcherStatus = "idle" | "working" | "permission" | "done"
 export type SwitcherKind = "session" | "terminal" | "page" | "marketplace" | "workgraph"
@@ -54,7 +55,9 @@ export function mapKindFromMeta(type: ContentType): SwitcherKind {
 }
 
 function titleFromMeta(meta: ContentMeta): string {
-  const explicit = meta.content?.title
+  const explicit = meta.type === "session" || meta.type === "draft-session"
+    ? resolveSessionTitle({ provisionalTitle: meta.content?.title })
+    : meta.content?.title
   if (explicit) return explicit
   switch (meta.type) {
     case "session":

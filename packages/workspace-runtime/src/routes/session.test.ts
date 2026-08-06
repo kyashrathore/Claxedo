@@ -18,6 +18,7 @@ import {
   sessionError,
   sessionIdle,
   sessionStatus,
+  sessionUpdated,
   type CompatEvent,
 } from "../compat-events"
 import { createRuntimeEventHub } from "../runtime-event-hub"
@@ -1490,6 +1491,49 @@ describe("session prompt route", () => {
       expect(lifecycle.map((event) => event.workspaceId)).toEqual([expect.any(String), expect.any(String)])
     } finally {
       unsubscribe()
+    }
+  })
+
+  it("forwards session.updated to workspaceRuntimeBus exactly once", async () => {
+    const directory = process.cwd()
+    const previousWorkspaceId = process.env.WORKSPACE_RUNTIME_WORKSPACE_ID
+    process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = "ws_title_updates"
+    const update = sessionUpdated(buildSession({
+      id: "s1",
+      directory,
+      title: "Prompt-derived title",
+      created: 10,
+      updated: 20,
+    }))
+    const events: Extract<WorkspaceRuntimeEvent, { type: "session.updated" }>[] = []
+    const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+      if (event.type === "session.updated" && (event.properties as { info?: { id?: string } } | undefined)?.info?.id === "s1") {
+        events.push(event)
+      }
+    })
+
+    try {
+      const app = SessionRoutes(() => adapter({
+        async *sendMessage() {
+          yield update
+        },
+      }))
+      const res = await app.request(`http://localhost/session/s1/message?directory=${encodeURIComponent(directory)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parts: [] }),
+      })
+
+      expect(res.status).toBe(200)
+      expect(events).toEqual([{
+        type: "session.updated",
+        directory,
+        workspaceId: "ws_title_updates",
+        properties: update.properties,
+      }])
+    } finally {
+      unsubscribe()
+      process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = previousWorkspaceId
     }
   })
 

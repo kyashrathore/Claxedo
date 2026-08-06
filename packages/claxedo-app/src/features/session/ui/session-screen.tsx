@@ -16,22 +16,17 @@ import { useQuery } from "@tanstack/solid-query"
 import { useLocal } from "@/features/session/providers/session-selection"
 import { createStore } from "solid-js/store"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
-import { useTerminal } from "@/features/session/app-ports"
-import { useCommand, useLayout } from "@/features/session/app-ports"
+import { isWorkspaceReady, useClaxedoEventsOptional, useClaxedoState, useCommand, useGlobalSDK, useLayout, usePaneId, useSDK, useServer, useShellQueryOptions as useQueryOptions, useTerminal } from "@/features/session/app-ports"
 import { addProjectAction } from "@/features/session/ui/components/session-add-project-action"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useLocation, useNavigate } from "@solidjs/router"
 import { UserMessage, type SnapshotFileDiff } from "@opencode-ai/sdk/v2"
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
-import { useSDK } from "@/features/session/app-ports"
-import { useGlobalSDK } from "@/features/session/app-ports"
 import { usePrompt } from "@/features/session/providers/prompt"
 import { setCursorPosition } from "@/features/session/composer/ui/editor-dom"
 import { promptLength } from "@/features/session/composer/ui/history"
 import { useComments } from "@/platform/comments/provider"
-import { useServer } from "@/features/session/app-ports"
-import { useShellQueryOptions as useQueryOptions } from "@/features/session/app-ports"
 import { showToast } from "@opencode-ai/ui/toast"
 import { NewSessionDesignView, SessionHeader, type NewSessionWorkspaceKind } from "@/features/session/ui/components"
 import { createNewSessionWorkspaceState, type ProjectWorkspace } from "@/features/session/ui/components/session-new-workspace-options"
@@ -49,9 +44,6 @@ import { useSessionCommands } from "@/features/session/ui/use-session-commands"
 import { SessionComposerRegion, createSessionComposerState } from "@/features/session/ui/composer/index"
 import { useSessionHashScroll } from "@/features/session/ui/use-session-hash-scroll"
 import { useSessionParams } from "@/features/session/providers/session-params"
-import { usePaneId } from "@/features/session/app-ports"
-import { useClaxedoState } from "@/features/session/app-ports"
-import { useClaxedoEventsOptional } from "@/features/session/app-ports"
 import { CloudStartupView, isForbiddenConnectionError, type CloudLog } from "@/features/session/ui/components/cloud-startup-view"
 import { resolveSessionDirectory, resolveSessionIdentity, resolveSignedSessionWorkspaceId, signedProjectWorkspaceId, type SessionIdentity } from "@/features/session/ui/session-identity"
 import {
@@ -79,17 +71,14 @@ import { parseShellRoute, sessionRoute, shellRouteDirectory, workspaceSessionRou
 import { sessionViewKey, terminalScopeKey } from "@/platform/identity/session-view-key"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
-import { isWorkspaceReady } from "@/features/session/app-ports"
 import { retargetSessionRef } from "@/platform/identity/session-ref"
 import { SessionConversationOwner } from "@/features/session/conversation/session-conversation-owner"
 import { registeredConversationSnapshot } from "@/features/session/conversation/conversation-registry"
 import { removeDirectorySession, updateDirectorySession, useDirectorySessionCacheActions } from "@/features/session/data/sync/directory-session-cache"
-import {
-  directorySessionCacheQueryOptions,
-  emptySessionInventory,
-  sessionInventoryQueryOptions,
-} from "@/features/session/data/sync/queries"
+import { directorySessionCacheQueryOptions, emptySessionInventory, sessionInventoryQueryOptions } from "@/features/session/data/sync/queries"
 import { queryClient } from "@/platform/query/query-client"
+import { indexSessionTitleInventory, selectSessionTitleInventoryRow, stableSessionTitle } from "@/features/session/lib/session-title-sync"
+import { mergeCanonicalSessionUpdate } from "@/features/session/data/sync/session-list-events"
 import { dispatchSessionStatusEvent } from "@/features/session/store/session-status-dispatcher"
 import type { SessionInventoryRow } from "@/features/session/data/query/types"
 import { createSessionComposerModes } from "@/features/session/ui/composer/session-composer-mode"
@@ -106,7 +95,6 @@ import { classifySessionKeydown, isEditableTagName } from "@/features/session/ui
 import { createFirstTurnOnboarding } from "@/features/session/onboarding/first-turn-onboarding"
 import { SessionHealthPeek } from "@/features/session/ui/components/session-health-peek"
 import { SessionConnectionLine } from "@/features/session/ui/components/session-connection-line"
-
 export default function SessionPage() {
   const sessionParams = useSessionParams()
   const claxedoState = useClaxedoState()
@@ -173,13 +161,12 @@ export default function SessionPage() {
   const sessionInventory = createMemo(() =>
     sessionInventoryQuery.data ?? emptySessionInventory<SessionInventoryRow>(),
   )
+  const sessionTitleInventoryIndex = createMemo(() => indexSessionTitleInventory(sessionInventory()))
   const inventorySession = createMemo(() => {
     const id = sessionID()
     if (!id) return
-    const inventory = sessionInventory()
-    return inventory.global.find((session) => session.id === id) ??
-      Object.values(inventory.byProject).flat().find((session) => session.id === id) ??
-      Object.values(inventory.byWorkspace).flatMap((group) => group.sessions).find((session) => session.id === id)
+    const route = parseShellRoute(location.pathname)
+    return selectSessionTitleInventoryRow({ sessionId: id, directory: activeSessionRef()?.host === "central" || route.kind === "session" ? undefined : routeDirectory(), index: sessionTitleInventoryIndex() })
   })
   const dir = createMemo(() => resolveSessionDirectory({
     routeDirectory: routeDirectory(),
@@ -447,7 +434,6 @@ export default function SessionPage() {
       jump: false,
     },
   })
-
   const sessionKey = createMemo(() =>
     sessionViewKey({
       directory: dir(),
@@ -455,16 +441,23 @@ export default function SessionPage() {
       draftId: sessionParams.surfaceId?.(),
     })
   )
-
   const infoState = createMemo((prev: ReturnType<typeof stableSessionInfo>) =>
     stableSessionInfo(prev, sessionKey(), sessionController.info()),
   )
   const info = createMemo(() => infoState()?.value)
+  const resolvedTitleState = createMemo((previous: ReturnType<typeof stableSessionTitle>) => stableSessionTitle(previous, {
+    sessionKey: sessionKey(), directoryTitle: info()?.title, directoryUpdatedAt: info()?.time.updated,
+    inventoryTitle: inventorySession()?.title, inventoryUpdatedAt: inventorySession()?.time.updated,
+    provisionalTitle: activeContentMeta()?.sessionId === sessionID() && activeContentMeta()?.directory === dir()
+      ? activeContentMeta()?.content?.title
+      : undefined,
+  }))
+  const resolvedTitle = () => resolvedTitleState()?.title
   createEffect(() => {
     const meta = activeContentMeta()
     const id = sessionID()
-    const next = (info()?.title ?? inventorySession()?.title)?.trim()
-    if (sessionParams.active?.() === false || !meta || meta.type !== "session" || !id || meta.sessionId !== id || !next) return
+    const next = resolvedTitle()
+    if (sessionParams.active?.() === false || !meta || meta.type !== "session" || !id || meta.sessionId !== id || meta.directory !== dir() || !next) return
     if (meta.content?.title === next) return
     claxedoState.meta.patch(meta.id, {
       content: {
@@ -569,12 +562,15 @@ export default function SessionPage() {
       return
     }
     const next = decision.title
+    const baseline = directorySession(currentSessionID)
 
     setTitle("saving", true)
     await sdk.client.session
       .update({ sessionID: currentSessionID, title: next })
-      .then(() => {
-        updateDirectorySessionCacheRow(currentSessionID, (session) => ({ ...session, title: next }))
+      .then((result) => {
+        if (result.data) {
+          updateDirectorySessionCacheRow(currentSessionID, (session) => mergeCanonicalSessionUpdate(session, result.data, baseline))
+        }
         setTitle({ editing: false, saving: false })
       })
       .catch((err) => {
@@ -1337,7 +1333,7 @@ export default function SessionPage() {
       data-session-conversation-count={String(conversation().messages.length)}
       data-session-visible-user-count={String(visibleUserMessages().length)}
       data-session-rendered-user-count={String(historyWindow.renderedUserMessages().length)}
-      data-session-info-title={info()?.title ?? inventorySession()?.title ?? ""}
+      data-session-info-title={resolvedTitle() ?? ""}
     >
       <SessionHeader />
       <div class="flex-1 min-h-0 flex flex-col">
@@ -1396,6 +1392,7 @@ export default function SessionPage() {
                     {(_id) => (
                       <MessageTimeline
                         actions={actions()}
+                        title={resolvedTitle}
                         scroll={ui.scroll}
                         onResumeScroll={resumeScroll}
                         setScrollRef={setScrollRef}

@@ -94,6 +94,7 @@ import { TerminalSurfaceNavigation } from "../../../features/terminal/ui/navigat
 export { parseOwnerRepo } from "./rail-git-remote"
 import type { ProjectItem, RuntimeKind, SessionItem, WorkspaceInfo, WorkspaceItem } from "./domain-types"
 import { urlRoutingEnabled } from "@/lib/runtime-mode"
+import { resolveSessionTitle } from "@/features/session/lib/session-title-sync"
 export type { ProjectItem, RuntimeKind, SessionItem, WorkspaceInfo, WorkspaceItem } from "./domain-types"
 
 const VIEW_KEY = "claxedo.session-view.v1"
@@ -238,7 +239,10 @@ type GlobalSection = {
   rows: Row[]
 }
 
-const sessionRowTitle = (title?: string) => title?.trim() || "Untitled session"
+const sessionRowTitle = (title?: string, provisionalTitle?: string, updatedAt?: number) =>
+  resolveSessionTitle({ inventoryTitle: title, inventoryUpdatedAt: updatedAt, provisionalTitle }) ?? "Untitled session"
+
+const sessionTitleMetaKey = (sessionId: string, directory: NonNullable<SessionInventoryRow["directory"]>) => JSON.stringify([directory, sessionId])
 
 function sessionNavigationRefForRow(session: Row) {
   if (session.sessionRef) return session.sessionRef
@@ -431,6 +435,15 @@ function replaceSessionUrl(session: Row) {
 export function RailSidebar(props: RailSidebarProps) {
   const claxedoState = useClaxedoState()
   const language = useLanguage()
+  const workbenchSessionTitles = createMemo(() => new Map(
+    claxedoState.meta.all().flatMap((meta) =>
+      meta.type === "session" && meta.sessionId && meta.directory && meta.content?.title
+        ? [[sessionTitleMetaKey(meta.sessionId, meta.directory), meta.content.title] as const]
+        : [],
+    ),
+  ))
+  const workbenchSessionTitle = (sessionId: string, directory: NonNullable<SessionInventoryRow["directory"]>) =>
+    workbenchSessionTitles().get(sessionTitleMetaKey(sessionId, directory))
 
   const openWorkspacePanel = (directory: string) => {
     claxedoState.workspacePanel.open("review", {
@@ -606,7 +619,7 @@ export function RailSidebar(props: RailSidebarProps) {
     props.projects.flatMap((project) =>
       (sessionInventory().byProject[project.id] ?? []).map((item) => ({
         id: item.id,
-        title: sessionRowTitle(item.title),
+        title: sessionRowTitle(item.title, workbenchSessionTitle(item.id, item.directory), item.time.updated),
         time: item.time.updated ?? item.time.created,
         directory: item.directory,
         workspaceId: item.workspaceId,
@@ -628,7 +641,7 @@ export function RailSidebar(props: RailSidebarProps) {
     props.globalChatEnabled
       ? sessionInventory().global.map((item) => ({
         id: item.id,
-        title: sessionRowTitle(item.title),
+        title: sessionRowTitle(item.title, workbenchSessionTitle(item.id, item.directory), item.time.updated),
         time: item.time.updated ?? item.time.created,
         directory: item.directory,
         workspaceId: item.workspaceId,
@@ -652,7 +665,7 @@ export function RailSidebar(props: RailSidebarProps) {
 
   const row = (item: SessionInventoryRow, project: ProjectItem, directory?: string): Row => ({
     id: item.id,
-    title: sessionRowTitle(item.title),
+    title: sessionRowTitle(item.title, workbenchSessionTitle(item.id, directory ?? item.directory), item.time.updated),
     time: item.time.updated ?? item.time.created,
     directory: directory ?? item.directory,
     workspaceId: item.workspaceId,
@@ -681,7 +694,7 @@ export function RailSidebar(props: RailSidebarProps) {
     return {
       id: item.sessionId,
       sessionRef: item.sessionRef,
-      title: sessionRowTitle(item.title),
+      title: sessionRowTitle(item.title, workbenchSessionTitle(item.sessionId, resolvedDirectory), item.updatedAt),
       time: item.updatedAt ?? item.createdAt,
       directory: resolvedDirectory,
       workspaceId: item.workspaceId,
