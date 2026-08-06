@@ -49,6 +49,14 @@ const LANE_TAGS = ["@core", "@live", "@marketing"] as const
  *     and run by the separate `e2e (tier-real)` CI job. See `e2e/INVARIANTS.md` rule 6.
  *   `@documents-*-canary` — release-canary selectors used by the `test:e2e:documents:*`
  *     scripts to run a subset of an already-laned spec.
+ *   `@surface-desktop` / `@surface-web` — per-surface selectors from
+ *     `docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`'s lane x scenario
+ *     matrix: which physical surface (packaged Electron vs a browser) a spec drives,
+ *     orthogonal to which suite/other sub-selector it also carries. See the matching
+ *     comment in `playwright.config.ts`'s SUITE LANE REGISTRY for the `--grep-invert`
+ *     caveat — today `desktop-unsigned-embedded.spec.ts` rides `@tier-real`'s carve-out,
+ *     but a future `@surface-desktop`/`@surface-web` spec with no other sub-selector
+ *     needs its own registry entry there before it exists, or it silently double-runs.
  */
 const SUB_SELECTOR_TAGS = [
   "@workgraph-real",
@@ -56,6 +64,8 @@ const SUB_SELECTOR_TAGS = [
   "@documents-release-canary",
   "@documents-rich-canary",
   "@documents-unsigned-local-canary",
+  "@surface-desktop",
+  "@surface-web",
 ] as const
 
 /** Owned by `playwright.deployed.config.ts`; `testIgnore`d by the main config. */

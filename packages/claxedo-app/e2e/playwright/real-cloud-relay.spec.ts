@@ -173,7 +173,6 @@ const TIER_REAL = process.env.CLAXEDO_TIER_REAL_E2E === "1"
 const APP_DIR = path.resolve(import.meta.dirname, "../..")
 const REPO_ROOT = path.resolve(APP_DIR, "../..")
 const SERVER_DIR = path.join(REPO_ROOT, "packages", "claxedo-server")
-const AUTH_TOKEN = "real-cloud-relay-token"
 
 type FixtureInfo = {
   backendUrl: string
@@ -183,6 +182,19 @@ type FixtureInfo = {
   runtimeAccessToken: string
   directory: string
   role: string
+  // Real, signed control-plane bearer JWT for `browserSubject = "user_browser"`
+  // (`signed-browser-relay-fixture.mjs`'s `browserControlPlaneToken`, minted by
+  // that file's real local JWKS issuer). Plan `2026-08-06-001` Phase 3: after
+  // the fixture's control plane became the REAL `hosted-node` composition on
+  // `customVerifierAuthAdapter`, the literal string this spec used to seed
+  // (`"real-cloud-relay-token"`) started failing `jwtVerify` with 401
+  // `invalid_bearer_token` (`platform/auth/auth.ts:335`) because it is not a
+  // JWT at all — every API call from the page would 401 before the gate could
+  // even reach "ready". `controlPlaneToken` is the fixture's fix for that: it
+  // is signed with the same keypair `controlPlaneJwks` verifies against, for
+  // the exact subject this spec's `seedWorkspace()` already claims via
+  // `__CLAXEDO_TEST_AUTH_USER__ = { id: "user_browser" }`.
+  controlPlaneToken: string
 }
 
 let scripted: ScriptedModelServer | undefined
@@ -224,8 +236,6 @@ async function startFixture(): Promise<FixtureInfo> {
         ...process.env,
         CLAXEDO_E2E_BACKEND_PORT: String(backendPort),
         CLAXEDO_E2E_RELAY_FIXTURE_ACCESS: "cloud",
-        // Without a workgraph repository the server fatals before it prints.
-        CLAXEDO_WORKGRAPH_REPOSITORY: REPO_ROOT,
         // The injection seam: these reach the harness because harnessSpawnEnv
         // spreads process.env into every spawn (see HARNESS NOTES).
         OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeScriptedProviderConfig(scripted.v1Url)),
@@ -256,7 +266,13 @@ async function startFixture(): Promise<FixtureInfo> {
         if (settled || !line.trim()) continue
         try {
           const parsed = JSON.parse(line) as FixtureInfo
-          if (!parsed.backendUrl || !parsed.relayUrl || !parsed.workspaceId) continue
+          // `controlPlaneToken` is required here, not merely typed: without this
+          // check a fixture build that regresses and stops printing the field
+          // would resolve with `controlPlaneToken: undefined`, `seedWorkspace`
+          // would seed the literal string "undefined" as the bearer token, and
+          // every test would fail 60s later inside `gateReachesReady` with a
+          // confusing timeout instead of a clear boot-time GATING error.
+          if (!parsed.backendUrl || !parsed.relayUrl || !parsed.workspaceId || !parsed.controlPlaneToken) continue
           settled = true
           clearTimeout(timeout)
           resolve(parsed)
@@ -338,13 +354,20 @@ const forbiddenOpencodeRequests = async () =>
  */
 async function seedWorkspace(page: Page, input: FixtureInfo) {
   await page.addInitScript(
-    (seed: { info: FixtureInfo; token: string }) => {
+    // `seed` is the whole `FixtureInfo`, not a hand-picked subset — plan
+    // `2026-08-06-001` Phase 3: this used to be `{ info: FixtureInfo; token:
+    // string }` with `token` hardcoded at the CALL SITE to a non-JWT literal.
+    // Threading the real `controlPlaneToken` the fixture mints (see the field's
+    // doc comment on `FixtureInfo` above) means there is now exactly one place
+    // — the fixture's own JWKS-backed mint — that can produce a value here,
+    // instead of two places that had to be kept in sync by hand.
+    (seed: FixtureInfo) => {
       localStorage.clear()
       const w = window as typeof window & {
         __CLAXEDO_TEST_AUTH_TOKEN__?: string
         __CLAXEDO_TEST_AUTH_USER__?: { id: string }
       }
-      w.__CLAXEDO_TEST_AUTH_TOKEN__ = seed.token
+      w.__CLAXEDO_TEST_AUTH_TOKEN__ = seed.controlPlaneToken
       w.__CLAXEDO_TEST_AUTH_USER__ = { id: "user_browser" }
       // `worktree` is the WORKSPACE REF (`workspace:<id>`), not the filesystem
       // path. Two reasons, both found empirically:
@@ -358,13 +381,13 @@ async function seedWorkspace(page: Page, input: FixtureInfo) {
       //      path-keyed `GET /api/workspace/resolve?directory=…` misses the row
       //      and (worse) auto-creates a SECOND workspace with a different id.
       //      Keying by ref sidesteps the alias entirely.
-      const ref = `workspace:${seed.info.workspaceId}`
+      const ref = `workspace:${seed.workspaceId}`
       localStorage.setItem(
         "opencode.global.dat:server",
         JSON.stringify({
           list: [],
           projects: {
-            local: [{ worktree: ref, expanded: true, sandboxes: [seed.info.workspaceId] }],
+            local: [{ worktree: ref, expanded: true, sandboxes: [seed.workspaceId] }],
           },
           lastProject: {},
           workspaceServer: {},
@@ -379,7 +402,7 @@ async function seedWorkspace(page: Page, input: FixtureInfo) {
               id: "proj_real_cloud_relay",
               name: "Real Cloud Relay",
               worktree: ref,
-              sandboxes: [seed.info.workspaceId],
+              sandboxes: [seed.workspaceId],
               // Keyed by BOTH the ref and the filesystem path:
               // `sessionWorkspaceRuntimeRef` reads the real `kind` off this
               // inventory (`platform/runtime/session-workspace.ts`) and matches
@@ -388,16 +411,16 @@ async function seedWorkspace(page: Page, input: FixtureInfo) {
               // the cloud one.
               workspaces: {
                 [ref]: {
-                  id: seed.info.workspaceId,
+                  id: seed.workspaceId,
                   kind: "cloud",
                   workspace_name: "Real Cloud Relay",
-                  directory: seed.info.directory,
+                  directory: seed.directory,
                 },
-                [seed.info.directory]: {
-                  id: seed.info.workspaceId,
+                [seed.directory]: {
+                  id: seed.workspaceId,
                   kind: "cloud",
                   workspace_name: "Real Cloud Relay",
-                  directory: seed.info.directory,
+                  directory: seed.directory,
                 },
               },
             },
@@ -405,7 +428,7 @@ async function seedWorkspace(page: Page, input: FixtureInfo) {
         }),
       )
     },
-    { info: input, token: AUTH_TOKEN },
+    input,
   )
 }
 

@@ -50,15 +50,9 @@
  *   `[data-slot="session-turn-message-content"]` — user turn row; counted via
  *     `turn-oracle-extras.ts`'s `expectLiveUserRowCount` because a real reply
  *     can render more than one assistant row per turn (reasoning + text).
- *   `[data-action="prompt-harness"]` — harness `<Select>` trigger. Targeted by
- *     this attribute, never by its current label: the label is whatever the
- *     server/workspace-scoped draft default last resolved to, so it only reads
- *     "OpenCode" for the first scenario in a run (see `switchDraftHarness`).
- *   `[role="option"][data-key="<harness-id>"]` — a listbox entry. Options are
- *     picked by `data-key`, never by label+index: see `switchDraftHarness`.
- *   `[data-action="prompt-harness-model"]` — harness model control; asserted
- *     only to stop reading "Loading models"/"Select model", never for a
- *     specific model name.
+ *   `[data-action="prompt-harness-model"]` — the combined harness/model/effort
+ *     trigger. Its model label and the picker's Harness summary are asserted
+ *     separately; the trigger intentionally renders the harness as an icon.
  *   `[data-component='composer-notice']` with `data-notice="runtime-unavailable"`
  *     — the single unavailable-harness surface (`core-harness-ownership-local`
  *     behavior 5); the cursor scenario asserts against it.
@@ -378,8 +372,6 @@
  *   - `OPENCODE_DISABLE_MODELS_FETCH=true` is mandatory for hermeticity: the
  *     engine otherwise fetches the live models.dev catalog at boot, which is
  *     both a real network call and a boot-time flake source in CI.
- *   - `CLAXEDO_WORKGRAPH_REPOSITORY` must be set or the spawned server fatals
- *     before `/api/claxedo/health` ever answers.
  *   - Call-count shape (behavior 6), measured against the scripted endpoint
  *     with the real binaries rather than assumed: the embedded engine issues
  *     one extra `chat` call per session for the title (auto-answered with
@@ -441,6 +433,7 @@ import {
 } from "../helpers/scripted-model-server"
 import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 import { expectLiveTurnsSettledAfterReload, expectLiveUserRowCount } from "../helpers/turn-oracle-extras"
+import { expectRailRowVisible } from "../helpers/rail-oracle"
 
 const execFileAsync = promisify(execFile)
 
@@ -516,9 +509,6 @@ async function startServer() {
       ...process.env,
       CLAXEDO_DATA_DIR: dataDir,
       CLAXEDO_SERVER_PORT: String(BACKEND_PORT),
-      // Without a workgraph repository the spawned server fatals before
-      // /api/claxedo/health ever answers.
-      CLAXEDO_WORKGRAPH_REPOSITORY: REPO_ROOT,
       // The whole tier, in four env vars — see HARNESS NOTES' injection table.
       OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeScriptedProviderConfig(scripted.v1Url)),
       TIER_REAL_API_KEY: "test-key",
@@ -711,69 +701,39 @@ function sessionUrlPattern() {
  * Selects a harness on a DRAFT composer, and proves the selection actually
  * landed before returning.
  *
- * Two things here are deliberate and were each paid for:
+ * The current composer has one combined picker. Harness rows are grouped ACP
+ * then Native SDK, so the duplicated family label's index identifies access;
+ * the scenario's dialect counter remains the decisive per-variant proof.
  *
- * 1. The trigger is found by `[data-action="prompt-harness"]`, never by its
- *    label. The label is whatever the server/workspace-scoped draft default
- *    last resolved to (INVARIANTS #2: "a new draft reads one
- *    server/workspace-scoped `{harness, model}` pair; an explicit harness
- *    action atomically replaces that pair for future drafts"), so it only reads
- *    "OpenCode" for the FIRST scenario in a run. A per-scenario `git init`
- *    worktree does NOT isolate this — the pair is not keyed by directory.
- *
- * 2. The option is found by `data-key` (the harness id), never by label +
- *    `nth(index)`. "Claude"/"Codex"/"Cursor" each appear TWICE in the listbox,
- *    once under "ACP" and once under "Native SDK"
- *    (`agent-harness-selector.tsx`'s `harnessOptionGroup`), so an index is only
- *    correct while every group renders every harness; when the list is still
- *    resolving, an index silently selects the NEIGHBOURING harness. DOM
- *    confirmed against the running app: `<li role="option" data-key="codex-acp"
- *    data-slot="select-select-item">`.
- *
- * The retry exists because a click can be accepted by the listbox and still not
- * commit: the composer is observed back on its previous harness with the menu
- * closed, most often when a hydration for the freshly-created workspace lands
- * between the open and the click. Re-opening and re-clicking settles it. This
- * is a real app race, NOT something this spec should paper over silently — it
- * is called out in HARNESS NOTES, and the bounded retry keeps the tier able to
- * test the thing it exists to test (model routing) instead of failing in the
- * setup step every other run.
+ * The selected row itself is the setup oracle. A non-empty model label is not:
+ * the previous OpenCode model can remain visible while the asynchronous switch
+ * is still pending, which used to let this setup return on the wrong harness.
  */
-/** Trigger label for a harness id — `agent-harness-selector.tsx`'s `HARNESS_OPTION_LABELS`. */
-function expectedTriggerLabel(harnessKey: string) {
-  if (harnessKey.startsWith("claude")) return /^Claude$/
-  if (harnessKey.startsWith("codex")) return /^Codex$/
-  if (harnessKey.startsWith("cursor")) return /^Cursor$/
-  return new RegExp(`^${harnessKey}$`, "i")
+function harnessPickerTarget(harnessKey: string) {
+  const native = harnessKey === "claude-sdk" || harnessKey === "codex-app-server" || harnessKey === "cursor-sdk"
+  if (harnessKey.startsWith("claude")) return { label: /^Claude$/, index: native ? 1 : 0 }
+  if (harnessKey.startsWith("codex")) return { label: /^Codex$/, index: native ? 1 : 0 }
+  if (harnessKey.startsWith("cursor")) return { label: /^Cursor$/, index: native ? 1 : 0 }
+  return { label: new RegExp(`^${harnessKey}$`, "i"), index: 0 }
 }
 
 async function switchDraftHarness(page: Page, harnessKey: string) {
-  const trigger = page.locator('[data-action="prompt-harness"]').last()
-  const option = page.locator(`[role="option"][data-key="${harnessKey}"]`)
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    await expect(trigger).toBeEnabled({ timeout: 30_000 })
-    await trigger.click()
-    await expect(option).toBeVisible({ timeout: 30_000 })
-    await option.click()
-    // Checked against the TRIGGER's label, not the option's `aria-selected`:
-    // the listbox unmounts on close, and while it is open every option renders
-    // `aria-selected="false"` — including the currently-selected one (verified
-    // by dumping the live listbox HTML). The label cannot distinguish the ACP
-    // and native-SDK variants of one harness, so this only proves the harness
-    // FAMILY changed; the per-variant proof is behavior 6's dialect counters,
-    // which is the assertion that actually matters.
-    const landed = await expect(trigger)
-      .toHaveText(expectedTriggerLabel(harnessKey), { timeout: 10_000 })
-      .then(() => true)
-      .catch(() => false)
-    if (landed) return
-    await page.keyboard.press("Escape").catch(() => undefined)
-  }
-  throw new Error(
-    `GATING: the draft harness never settled on "${harnessKey}" after 3 attempts — the option was visible and ` +
-      `clicked each time, but the composer did not adopt it. See this spec's HARNESS NOTES ("draft harness switch " +
-      "can silently not commit").`,
-  )
+  const trigger = page.locator('[data-action="prompt-harness-model"]').last()
+  const target = harnessPickerTarget(harnessKey)
+  await expect(trigger).toBeEnabled({ timeout: 30_000 })
+  await trigger.click()
+  const picker = page.locator('[data-component="harness-model-picker"]')
+  const harnessSection = picker.locator('[data-slot="harness-picker-section"]').first()
+  await expect(harnessSection).toBeVisible({ timeout: 30_000 })
+  await harnessSection.click()
+  const option = picker.getByRole("button", { name: target.label }).nth(target.index)
+  await expect(option).toBeVisible({ timeout: 30_000 })
+  await option.click()
+  await harnessSection.click()
+  await expect(option, `draft did not adopt harness "${harnessKey}"`).toHaveAttribute("aria-current", "true", {
+    timeout: 45_000,
+  })
+  await page.keyboard.press("Escape")
 }
 
 /**
@@ -913,6 +873,60 @@ type HarnessCase = {
     }
 )
 
+/**
+ * The rail oracle: a session the user just started must be FINDABLE and
+ * LEGIBLE in the sidebar while it runs, without a reload.
+ *
+ * All three assertions were reproduced by hand against a real server on
+ * 2026-08-06 before being written down here:
+ *   - row present: the `session.lifecycle` "created" frame does reach the
+ *     client and inserts the row (this one passes today).
+ *   - working dot: for the native-SDK harness the server publishes
+ *     `agent.lifecycle` Busy with `tabId` = the SESSION id and NO `terminalId`.
+ *     `agent-status-listener.ts:164` computes `terminalId || tabId` and writes
+ *     it into the TERMINAL status map, which no chat row reads; meanwhile the
+ *     chat row's own source, `GET /session/status`, never lists a native-SDK
+ *     session at all (measured absent across a 30s poll during a live turn).
+ *     So the dot never lights.
+ *   - real title: the server replaces the "New Session" placeholder at the
+ *     moment the turn completes (measured: title and `lastTurn.status
+ *     ="completed"` both appear at +6.6s) with one derived from the first
+ *     prompt (`fallbackSessionTitle`, session-title.ts:12) and publishes
+ *     `session.updated` for it. That frame used to be dropped by
+ *     `bridgeLifecycleEvent` (workspace-runtime `routes/session.ts`) — 0 such
+ *     frames on the wire across a full cycle — so the rail kept the
+ *     placeholder, in the wrong sort position, until an unrelated refetch
+ *     happened to land. Now bridged; this assertion is the end-to-end guard
+ *     that it stays bridged against a REAL server, which the mocked lane
+ *     cannot prove.
+ *
+ * Asserted on the shared `[data-sidebar-status]` contract and the row's own
+ * title slot, so a fix is free to route the signal any way it likes.
+ */
+async function expectRailRowTracksTheSession(
+  page: Page,
+  sessionId: string,
+  promptText: string,
+  releaseModelReply: () => void,
+) {
+  const row = await expectRailRowVisible({ page, sessionId, timeout: 15_000 })
+
+  // Mid-turn: the row must show the working dot. Idle rows render a
+  // relative-time label and no `[data-sidebar-status]` element at all.
+  try {
+    await expect(row.locator("[data-sidebar-status=\"working\"]")).toHaveCount(1, { timeout: 20_000 })
+  } finally {
+    releaseModelReply()
+  }
+
+  // Once the turn settles the server has the generated title; the rail must
+  // stop showing the placeholder. Matched on "not the placeholder" rather than
+  // on the exact generated string, which the model chooses and may reword.
+  await expect(row.locator("[data-slot=\"session-navigation-title\"]"))
+    .not.toHaveText(/^(New Session|Untitled session)$/, { timeout: 60_000 })
+  void promptText
+}
+
 /** Drives the shared "3 scripted turns + reload, full oracle each turn" journey. */
 async function runRealHarnessJourney(page: Page, dir: string, harness: HarnessCase) {
   scripted?.resetCounts()
@@ -926,6 +940,14 @@ async function runRealHarnessJourney(page: Page, dir: string, harness: HarnessCa
     await selectScriptedModel(page)
   }
 
+  const modelControl = page.locator(
+    '[data-action="prompt-harness-model"]:visible, [data-action="prompt-model"]:visible',
+  ).last()
+  const modelLabel = modelControl.locator('[data-slot="composer-control-label"]')
+  await expect(modelLabel, `${harness.id} did not expose a model label`).toHaveText(/\S/, { timeout: 20_000 })
+  const selectedModel = (await modelLabel.textContent())!.trim()
+  const selectedModelPattern = new RegExp(selectedModel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+
   const markers: string[] = []
   for (let turn = 1; turn <= TURNS; turn += 1) {
     const marker = `REAL-${harness.id.replace(/[^a-z0-9]/gi, "")}-${runId}-T${turn}`
@@ -933,9 +955,31 @@ async function runRealHarnessJourney(page: Page, dir: string, harness: HarnessCa
     const promptText = `Reply with exactly this one token and nothing else, no punctuation, no formatting: ${marker}`
     const textbox = turn === 1 ? input : page.getByRole("textbox", { name: /Ask anything/i }).last()
     await composePrompt(page, textbox, promptText)
-    await page.locator(SELECTORS.submitControl).last().click()
-    if (turn === 1) {
-      await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+    if (turn === 1) scripted?.setReplyDelayMs(8_000)
+    try {
+      await page.locator(SELECTORS.submitControl).last().click()
+      if (turn === 1) {
+        await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+        const sessionId = /(?:\/s\/|\/session\/)([^/]+)$/.exec(new URL(page.url()).pathname)?.[1]
+        expect(sessionId, "session route did not expose the created session id").toBeTruthy()
+        // The rail is the surface the user navigates by, and until now this lane
+        // — the ONLY one that runs a real harness against a real claxedo-server —
+        // asserted nothing about it. Three separate rail defects shipped behind
+        // that gap, all of them invisible to the mocked Tier M proofs because
+        // those inject events straight onto the bus.
+        await expectRailRowTracksTheSession(
+          page,
+          decodeURIComponent(sessionId!),
+          promptText,
+          () => scripted?.setReplyDelayMs(0),
+        )
+        await expect(
+          modelLabel,
+          `${harness.id} lost its model label during the draft-to-session handoff`,
+        ).toHaveText(selectedModelPattern)
+      }
+    } finally {
+      if (turn === 1) scripted?.setReplyDelayMs(0)
     }
     await expectAssistantReplyVisible(page, new RegExp(marker), {
       spec: "real-harness-local",
@@ -950,13 +994,22 @@ async function runRealHarnessJourney(page: Page, dir: string, harness: HarnessCa
   // same visible name, and `getByRole("button", {name})` also matches the
   // model control on some harnesses.
   if (harness.option) {
-    const trigger = page.locator('[data-action="prompt-harness"]').last()
-    await expect(trigger).toHaveText(harness.option)
-    await expect(trigger).toBeDisabled()
+    const trigger = page.locator('[data-action="prompt-harness-model"]').last()
+    await expect(trigger).not.toContainText(/Loading models|Select model|^$/)
+    await expect(trigger).toBeEnabled()
+    await trigger.click()
+    await expect(
+      page.locator('[data-component="harness-model-picker"] [data-slot="harness-picker-section"]').first(),
+      "existing session should lock harness switching without disabling the combined model picker",
+    ).toBeDisabled()
+    await page.keyboard.press("Escape")
   }
 
   await page.reload({ waitUntil: "domcontentloaded" })
   await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+  await expect(modelLabel, `${harness.id} lost its model label after reload`).toHaveText(selectedModelPattern, {
+    timeout: 20_000,
+  })
   await expectAssistantReplyVisible(page, new RegExp(markers[TURNS - 1]!), {
     spec: "real-harness-local",
     scenario: `${harness.id}-reload`,
@@ -1107,7 +1160,10 @@ test.describe("real harness journeys @core @tier-real", () => {
 
     await page.goto(`/s/${session.id}#message-${turns[0]!.messageID}`, { waitUntil: "domcontentloaded" })
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
-    await expect(page.locator('[data-testid="session-page-root"]')).toHaveAttribute(
+    const sessionRoot = page.locator(
+      `[data-testid="session-page-root"][data-session-id="${session.id}"][data-session-messages-ready="true"]`,
+    ).filter({ visible: true })
+    await expect(sessionRoot).toHaveAttribute(
       "data-session-visible-user-count",
       String(TURN_PICKER_TURNS - 1),
       { timeout: 30_000 },
@@ -1117,11 +1173,11 @@ test.describe("real harness journeys @core @tier-real", () => {
     turns.push(await seedPickerTurn(dir, session.id, TURN_PICKER_TURNS))
     await page.reload({ waitUntil: "domcontentloaded" })
 
-    await expect(page.locator('[data-testid="session-page-root"]')).toHaveAttribute(
+    await expect(sessionRoot).toHaveAttribute(
       "data-session-visible-user-count",
       String(TURN_PICKER_TURNS),
     )
-    const picker = page.locator('[data-component="message-nav-hovercard"]')
+    const picker = sessionRoot.locator('[data-component="message-nav-hovercard"]')
     const ticks = picker.locator('[data-slot="message-nav-tick-button"]')
     await expect(picker).toBeVisible()
     await expect(ticks).toHaveCount(TURN_PICKER_TURNS)
@@ -1253,12 +1309,10 @@ test.describe("real harness journeys @core @tier-real", () => {
       await expect(modelControl.last()).not.toContainText(/Loading models|Select model/i, { timeout: 30_000 })
     }
 
-    // No silent fallback to plain OpenCode in either branch (INVARIANTS #4).
-    // Asserted on the trigger's own text rather than a global "no OpenCode
-    // button anywhere" count — see `switchDraftHarness`'s doc for why the
-    // label is scenario-order-dependent.
+    // No obsolete split controls: the current combined control owns both
+    // harness and model selection on this surface.
     await expect(page.locator('[data-action="prompt-model"]')).toHaveCount(0)
-    await expect(page.locator('[data-action="prompt-harness"]').last()).not.toHaveText(/^OpenCode$/)
+    await expect(page.locator('[data-action="prompt-harness"]')).toHaveCount(0)
 
     // The wire-level half: nothing this spec redirected was touched. A cursor
     // selection that fell back to the engine or to claude would show up here as

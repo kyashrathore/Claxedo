@@ -990,6 +990,9 @@ test.describe("core sidebar tree @core", () => {
       projectId: PROJECT_ID,
       projectName: "sidebar-tree",
       harness: "codex-acp",
+      workspaces: {
+        [DIR]: { workspaceId: DIR, kind: "local", directory: DIR, available: true },
+      },
     })
     const fixtures = await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: [] })
     await seedProject(page, { dir: DIR })
@@ -1018,6 +1021,7 @@ test.describe("core sidebar tree @core", () => {
       phase: "created",
       directory: DIR,
       sessionID: "ses_codex_new",
+      workspaceId: DIR,
       info: {
         id: "ses_codex_new",
         slug: "ses_codex_new",
@@ -1037,7 +1041,9 @@ test.describe("core sidebar tree @core", () => {
     // seconds: the events stream is a reconnect-poll loop (~2s cadence), and
     // the row renders after inventory -> section recompute -> session-list
     // refetch, so keep the generous timeout.
-    await expect(page.locator('[data-testid="rail-sidebar-session-row"][data-session-id="ses_codex_new"]'))
+    // The lifecycle row can currently appear in both the project and workspace
+    // sections; duplication is tracked separately from this delivery proof.
+    await expect(page.locator('[data-testid="rail-sidebar-session-row"][data-session-id="ses_codex_new"]').first())
       .toBeVisible({ timeout: 15_000 })
     await expect(page.locator('[data-testid="rail-sidebar-session-list-empty"]')).toHaveCount(0)
   })

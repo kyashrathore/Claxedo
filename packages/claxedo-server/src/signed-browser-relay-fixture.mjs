@@ -6,7 +6,7 @@ import { createServer } from "node:http"
 import { promisify } from "node:util"
 import { once } from "node:events"
 import { serve } from "@hono/node-server"
-import { exportJWK, generateKeyPair } from "jose"
+import { createRemoteJWKSet, exportJWK, generateKeyPair, jwtVerify } from "jose"
 import {
   mintHostTunnelToken,
   mintRuntimeAccessToken,
@@ -17,7 +17,18 @@ import { createApp } from "./deployments/local/server"
 import { opencodeRequest } from "./opencode/engine.ts"
 import { createControlPlaneServices } from "./authority/services.ts"
 import { createSqliteCentralStore } from "./authority/adapters/sqlite/central-store.ts"
-import { configureWorkspaceSupervisor, createWorkspaceSupervisorSandboxManager, injectRuntime, shutdownWorkspaceSupervisor } from "./workspace/supervisor/supervisor.ts"
+import { createSqliteWorkspaceAuthority } from "./authority/adapters/sqlite/workspace-authority.ts"
+import { customVerifierAuthAdapter } from "./platform/auth/auth.ts"
+import { startLocalJwksIssuer } from "./e2e-local-jwks-issuer.mjs"
+// PRE-EXISTING BREAKAGE, fixed in passing: `refactor(server): group the
+// workspace supervisor and store into directories` (78d734a70) moved this
+// module to `index.ts`, then `refactor(server): W7.1-7.5` (7776fc9f1) deleted
+// the old `supervisor.ts` outright — but never updated this import, so this
+// fixture 500'd at module-resolution time (`ERR_MODULE_NOT_FOUND`) before
+// this line was fixed, independent of and prior to the Phase 3 control-plane
+// swap. Verified: `find packages/claxedo-server/src -name supervisor.ts`
+// returns nothing; `workspace/supervisor/index.ts` exports every symbol below.
+import { configureWorkspaceSupervisor, createWorkspaceSupervisorSandboxManager, injectRuntime, shutdownWorkspaceSupervisor } from "./workspace/supervisor/index.ts"
 import { recordSupervisorSandboxLeaseReady } from "./sandbox/stores/sqlite-supervisor-state.ts"
 import { ensureWorkspace, updateWorkspace } from "./workspace/store/index.ts"
 import { startUserHostedWorkspaceTunnel, stopAllUserHostedWorkspaceTunnels, stopUserHostedWorkspaceTunnel } from "./user-hosted-tunnel.ts"
@@ -336,34 +347,128 @@ if (access === "cloud") {
   })
 }
 
-const workspaceRow = {
-  workspace_id: workspaceId,
-  project_id: projectId,
-  backing: access === "cloud" ? "cloud-vm" : "local-worktree",
-  access,
-  // Real filesystem directory the embedded workspace-runtime actually serves —
-  // `routes/bootstrap.ts`'s `signedBootstrapProjects()` reads `remote_directory` (falling
-  // back to a fake "/workspace" placeholder when absent), and the client's
-  // `sessionWorkspaceRuntimeRef` inventory match needs this to agree with the real
-  // directory for the workspace to resolve consistently across the app.
-  remote_directory: workspaceDir,
-  display_name: access === "cloud" ? "Signed Cloud Relay" : "Signed Browser Relay",
-  repo_name: "opencode",
-  git_branch: "main",
-}
-const authConfig = {
-  enabled: true,
-  issuer: "https://clerk.e2e.test",
-  jwksUrl: "https://clerk.e2e.test/.well-known/jwks.json",
-}
-const verifier = async (token, config) => ({
-  mode: "signed",
-  user: {
-    subject: token,
-    tokenIdentifier: `${config.issuer}|${token}`,
+// --- REAL control-plane auth + authority (2026-08-06 plan Phase 3) ---------
+//
+// Owner decision 1 (docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md):
+// "no only thing that needs to be stubbed is harness called ai endpoint
+// nothing else stubbed." Before this change, this fixture declared local
+// `authConfig`/`verifier` consts right here that accepted ANY bearer string
+// and echoed it back as the verified subject — zero cryptographic
+// verification — and `services.authority` (assigned by mutation further
+// down, now deleted) was a hand-rolled object literal that answered every
+// call with a canned `workspaceRow`, never touching a real store. Neither
+// exercised the code every real deployment runs.
+//
+// What replaces them:
+//   - `startLocalJwksIssuer()` (`./e2e-local-jwks-issuer.mjs`) runs a REAL
+//     HTTP JWKS endpoint backed by a REAL EdDSA keypair (`node:crypto`
+//     webcrypto via `jose`, already a dependency — no new one added).
+//   - `controlPlaneVerifier` below does REAL `jose.jwtVerify()` against that
+//     endpoint — the same shape `tokenVerifierAsClerk`/`betterAuthAdapter`
+//     use in production (`platform/auth/auth.ts`), just pointed at this
+//     issuer instead of Clerk.
+//   - `customVerifierAuthAdapter` (`platform/auth/auth.ts:179`) wires the two
+//     into `services.auth` — this is a documented, first-class adapter,
+//     not a test-only seam; it is how a self-hoster plugs in Auth0/Ory/any
+//     OIDC-shaped issuer instead of Clerk.
+//   - `createSqliteWorkspaceAuthority()` (`authority/adapters/sqlite/
+//     workspace-authority.ts`) is the SAME self-host `WorkspaceAuthority`
+//     `deployments/local/server.ts:948`'s `createDefaultLocalControlPlaneServices`
+//     composes when no `CLAXEDO_WORKSPACE_AUTHORITY_URL` (Convex) is set —
+//     full role/session/sharing model, mirrored 1:1 from the Convex backend,
+//     backed by a real SQLite file under this fixture's own
+//     `CLAXEDO_DATA_DIR` (set above, so it lands in the same hermetic
+//     `mkdtemp` root as `createSqliteCentralStore` and is deleted with it).
+//
+// LIMIT, stated verbatim per the plan: a local JWKS issuer is a SUPPORTED
+// SELF-HOST MODE, not a stub — same middleware, same real crypto — but
+// Clerk-specific behaviour (its actual token shape, its JWKS rotation
+// cadence, its session-claim vocabulary) is covered only by the nightly
+// credentialed `live-*` lane (`e2e/INVARIANTS.md`), which runs against a real
+// Clerk test tenant. Nothing here proves this fixture matches Clerk's wire
+// format — only that the CONTROL PLANE's own auth/authority code, exercised
+// with a real signed token, behaves correctly.
+const jwksIssuer = await startLocalJwksIssuer()
+const controlPlaneAudience = "claxedo-e2e-relay-fixture"
+const controlPlaneJwks = createRemoteJWKSet(new URL(jwksIssuer.jwksUrl))
+const controlPlaneVerifier = async (token, config) => {
+  const { payload } = await jwtVerify(token, controlPlaneJwks, {
     issuer: config.issuer,
+    ...(config.audience ? { audience: config.audience } : {}),
+  })
+  const subject = typeof payload.sub === "string" ? payload.sub : undefined
+  if (!subject) throw new Error("e2e control-plane JWT is missing a subject claim")
+  return {
+    mode: "signed",
+    user: {
+      subject,
+      tokenIdentifier: `${config.issuer}|${subject}`,
+      issuer: config.issuer,
+      ...(typeof payload.org_id === "string" && payload.org_id ? { orgId: payload.org_id } : {}),
+    },
+  }
+}
+
+// The synthetic browser identity. `tokenIdentifier` MUST be built the exact
+// same way `controlPlaneVerifier` builds it above (`${issuer}|${subject}`) —
+// that string is the authority's row-ownership key
+// (`workspace-authority-store.ts`'s `users` table primary key), so a request
+// verified through the real path resolves to the SAME row this fixture seeds
+// through the direct authority calls below.
+const browserSubject = "user_browser"
+const browserAuth = {
+  mode: "signed",
+  token: "",
+  user: {
+    subject: browserSubject,
+    tokenIdentifier: `${jwksIssuer.issuer}|${browserSubject}`,
+    issuer: jwksIssuer.issuer,
   },
+}
+// A real, signed control-plane bearer token for that identity — printed in
+// this fixture's stdout JSON (below) as `controlPlaneToken` so a spec can
+// authenticate as `browserSubject` for real. NOTE: as of 2026-08-06 neither
+// `real-cloud-relay.spec.ts` nor `live-user-hosted-relay.spec.ts` read this
+// field yet — both still seed `window.__CLAXEDO_TEST_AUTH_TOKEN__` with a
+// hardcoded literal (`real-cloud-relay.spec.ts:176`,
+// `live-user-hosted-relay.spec.ts:536`), which `controlPlaneVerifier` above
+// now REJECTS with 401 `invalid_bearer_token` (`platform/auth/auth.ts:335`)
+// because it is not a JWT. That is a real, load-bearing gap this fixture
+// alone cannot close — see the Phase 3 completion note at the bottom of this
+// file for the exact fix required in those spec files.
+const browserControlPlaneToken = await jwksIssuer.mint({
+  subject: browserSubject,
+  audience: controlPlaneAudience,
+  ttlSeconds: 3600,
 })
+
+const authority = createSqliteWorkspaceAuthority()
+if (access === "cloud") {
+  await authority.createCloudWorkspace(browserAuth, {
+    workspaceId,
+    displayName: "Signed Cloud Relay",
+    repoName: "opencode",
+    gitBranch: "main",
+  })
+} else {
+  await authority.registerLocalForSharing(browserAuth, {
+    workspaceId,
+    displayName: "Signed Browser Relay",
+    // Real filesystem directory the embedded workspace-runtime actually
+    // serves — `routes/bootstrap.ts`'s `signedBootstrapProjects()` reads
+    // `remote_directory`, and the client's `sessionWorkspaceRuntimeRef`
+    // inventory match needs this to agree with the real directory. NOTE:
+    // `createCloudWorkspace` (used above for `access === "cloud"`) has NO
+    // `remoteDirectory` parameter on the real `WorkspaceAuthority` port
+    // (`platform/auth/authority.ts:158-172`) — this is a genuine gap in the
+    // real port, not something this fixture can route around; cloud-mode
+    // routing already gets its directory from the SEPARATE `workspace/store`
+    // row (`ensureWorkspace`/`updateWorkspace`, above), which is unaffected.
+    remoteDirectory: workspaceDir,
+    repoName: "opencode",
+    gitBranch: "main",
+  })
+}
 const runtimeAccessTokenSigner = async (input) => {
   const now = Date.now()
   const jti = `jti_${now}`
@@ -387,10 +492,21 @@ const services = createControlPlaneServices({
   projectionStore: centralStore.projectionStore,
   durableSessionLog: centralStore.durableSessionLog,
 }, {
-  auth: {
-    config: authConfig,
-    verifier,
-  },
+  auth: customVerifierAuthAdapter({
+    issuer: jwksIssuer.issuer,
+    audience: controlPlaneAudience,
+    jwksUrl: jwksIssuer.jwksUrl,
+    verifier: controlPlaneVerifier,
+  }),
+  // Real self-host `WorkspaceAuthority`, injected at the composition site —
+  // exactly the seam `authority/services.ts:220` documents ("the authority is
+  // always injected by the composition site; the generic services never
+  // construct one") and the same object `deployments/local/server.ts:948`
+  // composes for production self-host. Replaces the hand-rolled
+  // `services.authority = {...}` object literal that used to sit after
+  // `createApp(services)` below — every method there returned a canned value
+  // and touched no store.
+  authority,
   relay: {
     relayUrl,
     runtimeAccessTokenSigner,
@@ -492,79 +608,32 @@ const sessionMessages = [{
     text: access === "cloud" ? "Signed cloud relay replay message" : "Signed browser relay replay message",
   }],
 }]
-services.authority = {
-  usersMe: async () => ({ id: "user_browser" }),
-  listOrgs: async () => [],
-  resolveOrgId: async () => "personal",
-  authorizeSessionRead: async () => {},
-  authorizeWorkspaceOpen: async () => {},
-  openWorkspace: async () => ({
-    allowed: true,
-    role,
-    workspace: workspaceRow,
-  }),
-  listWorkspaces: async () => [workspaceRow],
-  registerLocalForSharing: async () => workspaceRow,
-  createLocalHostLinkChallenge: async () => ({
-    challenge_id: "challenge_1",
-    nonce: "nonce_1",
-    expires_at: Date.now() + 60_000,
-  }),
-  registerLocalHostLink: async () => ({
-    active: true,
-    host_id: hostId,
-    workspace_id: workspaceId,
-    expires_at: Date.now() + 60_000,
-    last_seen_at: Date.now(),
-  }),
-  heartbeatLocalHostLink: async () => ({
-    active: true,
-    host_id: hostId,
-    workspace_id: workspaceId,
-    expires_at: Date.now() + 60_000,
-    last_seen_at: Date.now(),
-  }),
-  pauseLocalHostLink: async () => ({ workspace_id: workspaceId, paused: true, count: 1 }),
-  activeLocalHostLink: async () => ({
-    active: true,
-    host_id: hostId,
-    workspace_id: workspaceId,
-    expires_at: Date.now() + 60_000,
-    last_seen_at: Date.now(),
-  }),
-  deleteWorkspace: async () => ({}),
-  createCloudWorkspace: async () => ({}),
-  grantWorkspaceShare: async () => ({}),
-  revokeWorkspaceShare: async () => ({}),
-  listSessions: async () => [{
-    session_id: "signed-browser-relay-session",
-    workspace_id: workspaceId,
-    project_id: projectId,
-    directory: workspaceDir,
-    title: access === "cloud" ? "Signed cloud relay session" : "Signed browser relay session",
-    created_at: 1,
-    updated_at: 2,
-  }],
-  readSessionMessages: async () => ({
-    allowed: true,
-    messages: sessionMessages,
-  }),
-  upsertSessionVisibility: async () => ({}),
-  replaceSessionVisibility: async () => ({}),
-  deleteSessionVisibility: async () => ({}),
-  recordRuntimeAccessToken: async () => ({}),
-  runtimeAccessTokenActive: async () => ({ active: true }),
-  revokeRuntimeAccessToken: async () => ({}),
-  revokeRuntimeAccessTokensForWorkspaceUser: async () => ({}),
-  listWorkspaceAgentExtensions: async () => [],
-  listWorkspaceAgentExtensionsForRuntime: async () => [],
-  authorizeWorkspaceAgentExtensionsAdmin: async () => {},
-  upsertWorkspaceAgentExtension: async () => ({}),
-  setWorkspaceAgentExtensionEnabled: async () => ({}),
-  deleteWorkspaceAgentExtension: async () => ({}),
-  auditDeny: async () => {},
-  auditAllow: async () => {},
-}
+// Register the canned session in the REAL authority too, under the SAME
+// identity that registered the workspace above — `syncSessionMessages`
+// requires "write" role on the workspace (`workspace-authority.ts:859`
+// `requireWorkspace(db, who, args.workspaceId, "write")`), which `browserAuth`
+// has because it is the workspace's `owner_token_identifier`
+// (`workspaceRoleForUser` returns "owner" for the row owner unconditionally,
+// same file, line 398).
+//
+// This is belt-and-suspenders with the `durableSessionLog`/`projectionStore`
+// writes above, not a replacement for them — both are already REAL SQLite-
+// backed stores (`createSqliteCentralStore`) and were never part of the
+// hand-rolled control plane this phase removes. Why both are seeded:
+// `GET /sessions` on a signed-hosted-browser request answers ONLY from
+// `requireAuthority(services).listSessions` (`session/routes/control-plane-
+// session.ts:373-400`) — the projection store is never consulted on that
+// route — so the session would not appear in the sidebar without this call.
+// `GET /sessions/:id/messages`, by contrast, prefers `projectionStore`'s
+// replay log when non-empty and only falls back to the authority
+// (`control-plane-session.ts:439-457`), so the durable-log writes above are
+// what actually serves message content; this call exists so the authority's
+// OWN answer is correct too, for whichever future caller reads it.
+await authority.syncSessionMessages(browserAuth, {
+  sessionId: "signed-browser-relay-session",
+  workspaceId,
+  messages: sessionMessages,
+})
 
 const built = createApp(services)
 built.app.get("/__fixture/opencode-requests", (c) => c.json({ requests: opencodeRequests }))
@@ -598,6 +667,30 @@ built.app.get("/__fixture/mint", async (c) => {
     now,
   }, runtime.privateKey, "EdDSA")
   return c.json({ role, runtimeAccessToken: token, relayUrl, tokenExpiresAt: now + tokenTtlSeconds * 1_000 })
+})
+// Phase 3 checklist item: "'Shared/teammate' for user-hosted is a second
+// identity minted by the same issuer" (2026-08-06 plan). Mints a REAL
+// control-plane JWT for a distinct `sub` — the sqlite authority's `user()`
+// upserts a distinct row per `token_identifier`
+// (`workspace-authority.ts:205-213`) — and grants it a real share on this
+// fixture's workspace via `grantWorkspaceShare` (same file, :555-579), the
+// exact method the product's own "invite a teammate" flow calls. This is a
+// same-mechanism variant of the owner identity above, not new plumbing.
+built.app.get("/__fixture/authority-identity", async (c) => {
+  const subject = c.req.query("subject")
+  const role = c.req.query("role")
+  if (!subject) return c.json({ error: "subject is required" }, 400)
+  if (role !== "viewer" && role !== "editor" && role !== "admin") {
+    return c.json({ error: "role must be one of viewer|editor|admin" }, 400)
+  }
+  const tokenIdentifier = `${jwksIssuer.issuer}|${subject}`
+  await authority.grantWorkspaceShare(browserAuth, {
+    workspaceId,
+    role,
+    grantedToTokenIdentifier: tokenIdentifier,
+  })
+  const token = await jwksIssuer.mint({ subject, audience: controlPlaneAudience, ttlSeconds: 3600 })
+  return c.json({ subject, tokenIdentifier, role, controlPlaneToken: token })
 })
 if (access !== "cloud") {
   built.app.post("/__fixture/tunnel/pause", async (c) => {
@@ -666,6 +759,11 @@ console.log(JSON.stringify({
   role,
   workspaceDir,
   directory: workspaceDir,
+  // Real, signed control-plane bearer token for `browserSubject` — see the
+  // block above `authority = createSqliteWorkspaceAuthority()` for what
+  // verifies it and why no current spec consumes this field yet.
+  controlPlaneToken: browserControlPlaneToken,
+  controlPlaneIssuer: jwksIssuer.issuer,
 }))
 
 async function shutdown() {
@@ -675,6 +773,7 @@ async function shutdown() {
   await cloudRuntime?.close()
   await shutdownWorkspaceSupervisor()
   await opencode.close()
+  await jwksIssuer.close()
   await fs.rm(root, { recursive: true, force: true }).catch(() => undefined)
 }
 

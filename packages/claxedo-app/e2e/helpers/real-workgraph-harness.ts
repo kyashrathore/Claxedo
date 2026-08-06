@@ -282,7 +282,6 @@ export async function createRealWorkGraphHarness(input: Readonly<{
   diagMark("after createRealSessionRuntime (provider mock server listening)")
   const execution = createLocalWorkspaceExecution({
     worktreeRoot: path.join(directory, "worktrees"),
-    repositoryDirectory: async () => repository,
     sessions: realSessions?.gateway ?? {
       admit: async ({ runId, sessionId }) => {
         const adopted = sessionId ?? `session:${runId}`
@@ -364,7 +363,7 @@ export async function createRealWorkGraphHarness(input: Readonly<{
       connectionToolIds: WorkGraphConnectionToolNames,
       now: () => now,
     }),
-    sourcePlanning: { sessions: generationSessions, directory: repository },
+    sourcePlanning: { sessions: generationSessions, resolveDirectory: () => repository },
   })
   executeRun = (context, request) => {
     // `WorkGraphRunOperation` is a FOUR-member union (record_checkpoint |

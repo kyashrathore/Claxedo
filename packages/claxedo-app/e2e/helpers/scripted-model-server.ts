@@ -67,6 +67,17 @@ export type ScriptedModelServer = {
    * not already carry the tool's result gets `tool_use` instead of text.
    */
   scriptTool(call: ScriptedToolCall): void
+  /**
+   * Hold every subsequent reply for `ms` before writing it — OFF (0) by
+   * default so no existing spec slows down. The request is still counted and
+   * pushed to `requests` IMMEDIATELY on receipt (see the handler below), only
+   * the response write is delayed — this is what lets a caller assert
+   * "counter already non-zero" and "status still shows busy" as two
+   * genuinely distinct, orderable moments instead of a near-zero-latency
+   * busy->idle transition no polling loop can reliably straddle. Set back to
+   * 0 (or leave unset) to restore the default instant reply.
+   */
+  setReplyDelayMs(ms: number): void
   close(): Promise<void>
 }
 
@@ -89,6 +100,7 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
   let counts: Record<ScriptedDialect, number> = { chat: 0, messages: 0, responses: 0 }
   let pendingTool: ScriptedToolCall | undefined
   let sequence = 0
+  let replyDelayMs = 0
 
   const server = createServer(async (incoming, outgoing) => {
     if (incoming.method !== "POST") {
@@ -125,6 +137,12 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
     }
     requests.push({ dialect, path, model: String(body.model ?? "scripted"), prompt, reply })
 
+    // Counted and recorded ABOVE, before any delay — a caller polling
+    // `counts()` sees the hit immediately, regardless of `replyDelayMs`.
+    // Only the response WRITE waits, which is what holds the caller (a real
+    // `claude`/session turn) in a "busy" state for an assertable window.
+    if (replyDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, replyDelayMs))
+
     if (dialect === "chat") return respondChat(outgoing, sequence, reply)
     if (dialect === "responses") return respondResponses(outgoing, sequence, body, reply)
     return respondMessages(outgoing, sequence, body, reply)
@@ -149,6 +167,9 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
     },
     scriptTool: (call) => {
       pendingTool = call
+    },
+    setReplyDelayMs: (ms) => {
+      replyDelayMs = ms
     },
     close: () => closeAll(server),
   }
@@ -284,7 +305,25 @@ requires_openai_auth = false
  * `CLAUDE_CONFIG_DIR` is what makes the redirect trustworthy.
  */
 export function claudeScriptedEnv(url: string, configDir: string) {
-  return { ANTHROPIC_BASE_URL: url, ANTHROPIC_API_KEY: "test-key", CLAUDE_CONFIG_DIR: configDir }
+  return {
+    ANTHROPIC_BASE_URL: url,
+    CLAUDE_CODE_API_BASE_URL: url,
+    ANTHROPIC_API_KEY: "test-key",
+    // Claude Code has multiple auth branches. Current builds can still prefer
+    // the machine's persisted claude.ai OAuth session unless the OAuth slot is
+    // explicitly occupied, even when ANTHROPIC_AUTH_TOKEN is present. Set all
+    // supported slots to the same inert fixture token: the real CLI still runs,
+    // while every request must authenticate only against the redirected server.
+    ANTHROPIC_AUTH_TOKEN: "test-key",
+    CLAUDE_CODE_OAUTH_TOKEN: "test-key",
+    // Remote/admin settings can union environment keys into a long-running
+    // Claude process after spawn. In a redirect test the launch environment is
+    // the authority; allowing a fetched base URL to replace it is both flaky
+    // and capable of sending the inert fixture key to the real endpoint.
+    CLAUDE_CODE_DISABLE_ADMIN_ENV_UNION: "1",
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+    CLAUDE_CONFIG_DIR: configDir,
+  }
 }
 
 // ---------------------------------------------------------------------------

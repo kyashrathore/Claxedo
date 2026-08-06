@@ -4,6 +4,27 @@ import { getLease } from "./sandbox/stores/lease.sql"
 import { resolveWorkspace } from "./workspace/store/index.ts"
 import { sandboxLeaseUrl } from "./sandbox/stores/sqlite-supervisor-state.ts"
 
+// 2026-08-06 plan Phase 3 (docs/plans/2026-08-06-001-test-full-matrix-real-
+// e2e-plan.md) note: this file has NO control-plane `createServer(...)` to
+// swap. It is a real `@claxedo/workspace-relay` instance (`createWorkspace
+// RelayBun` below) — a separate real process the OWNING fixture
+// (`signed-browser-relay-fixture.mjs`) spawns as a child via `bun` — and its
+// only auth surface is the relay's own EdDSA runtime-access/host-tunnel token
+// verification, which was already real before this phase (`runtimeAccessKey`/
+// `relayHostSigningKey` below are imported EdDSA JWKs, not stubs). The
+// hand-rolled control plane Phase 3 replaces — the fake bearer-token verifier
+// and the canned `services.authority` object — lived entirely in
+// `signed-browser-relay-fixture.mjs`, which now composes the REAL
+// `createSqliteWorkspaceAuthority()` (`authority/adapters/sqlite/workspace-
+// authority.ts`) behind `customVerifierAuthAdapter` (`platform/auth/auth.ts:
+// 179`) backed by a real local JWKS issuer (`e2e-local-jwks-issuer.mjs`).
+//
+// Documented here too, verbatim, per the plan's requirement that both
+// fixtures carry this note: a local JWKS issuer is a SUPPORTED SELF-HOST
+// MODE, not a stub — same middleware, real crypto — but Clerk-specific
+// behaviour (token shape, JWKS rotation, session claims) is covered only by
+// the nightly credentialed lane.
+
 function required(name) {
   const value = process.env[name]?.trim()
   if (!value) throw new Error(`${name} is required`)

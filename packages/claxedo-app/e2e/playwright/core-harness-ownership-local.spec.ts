@@ -304,8 +304,10 @@ function sessionUrlPattern(sessionId: string) {
 }
 
 async function switchDraftHarness(page: Page, optionName: RegExp, optionIndex: number) {
-  await page.getByRole("button", { name: /^OpenCode$/ }).last().click()
-  await page.getByRole("option", { name: optionName }).nth(optionIndex).click()
+  await page.locator('[data-action="prompt-harness-model"]:visible').last().click()
+  const picker = page.locator('[data-component="harness-model-picker"]')
+  await picker.locator('[data-slot="harness-picker-section"]').first().click()
+  await picker.getByRole("button", { name: optionName }).nth(optionIndex).click()
 }
 
 async function expectOnlyHarnessModelControl(page: Page, modelName: string | RegExp) {
@@ -324,8 +326,24 @@ async function expectOnlyHarnessModelControl(page: Page, modelName: string | Reg
  * harness's label, not "OpenCode". This helper waits for that auto-hydration.
  */
 async function expectHarnessAutoHydrated(page: Page, optionLabel: RegExp) {
-  await expect(page.getByRole("button", { name: optionLabel }).last()).toBeVisible({ timeout: 20_000 })
-  await expect(page.getByRole("button", { name: /^OpenCode$/ })).toHaveCount(0)
+  const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
+  await expect(control).toBeVisible({ timeout: 20_000 })
+  await expect(page.locator('[data-action="prompt-model"]')).toHaveCount(0)
+  if (await control.isDisabled()) return
+  await control.click()
+  const section = page.locator('[data-component="harness-model-picker"] [data-slot="harness-picker-section"]').first()
+  await expect(section.locator("span").last()).toHaveText(optionLabel)
+  await page.keyboard.press("Escape")
+}
+
+async function expectHarnessLocked(page: Page, optionLabel: RegExp) {
+  const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
+  if (await control.isDisabled()) return
+  await control.click()
+  const section = page.locator('[data-component="harness-model-picker"] [data-slot="harness-picker-section"]').first()
+  await expect(section.locator("span").last()).toHaveText(optionLabel)
+  await expect(section).toBeDisabled()
+  await page.keyboard.press("Escape")
 }
 
 async function expectOnlyOpenCodeModelControl(page: Page) {
@@ -432,7 +450,7 @@ test.describe("core harness ownership (local) @core", () => {
       await expectOnlyHarnessModelControl(page, harnessCase.modelLabel)
 
       // Harness Select is still interactive pre-send.
-      await expect(page.getByRole("button", { name: harnessCase.option }).last()).toBeEnabled()
+      await expect(page.locator('[data-action="prompt-harness-model"]:visible').last()).toBeEnabled()
 
       const first = `core harness ${harnessCase.harness} first turn`
       await composePrompt(page, input, first)
@@ -452,7 +470,7 @@ test.describe("core harness ownership (local) @core", () => {
       await expectOnlyHarnessModelControl(page, harnessCase.modelLabel)
 
       // Behavior 3: harness Select is locked now that the session exists.
-      await expect(page.getByRole("button", { name: harnessCase.option }).last()).toBeDisabled()
+      await expectHarnessLocked(page, harnessCase.option)
 
       const second = `core harness ${harnessCase.harness} second turn`
       await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), second)
@@ -471,7 +489,7 @@ test.describe("core harness ownership (local) @core", () => {
       await page.reload({ waitUntil: "domcontentloaded" })
       await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
       await expectOnlyHarnessModelControl(page, harnessCase.modelLabel)
-      await expect(page.getByRole("button", { name: harnessCase.option }).last()).toBeDisabled()
+      await expectHarnessLocked(page, harnessCase.option)
 
       const third = `core harness ${harnessCase.harness} resumed turn`
       await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), third)
@@ -486,6 +504,165 @@ test.describe("core harness ownership (local) @core", () => {
       await expectAssistantReplyVisible(page, `ack 3: ${third}`)
     })
   }
+
+  test("a newly-created busy Claude native session keeps its harness and model during the first turn", async ({
+    page,
+  }) => {
+    const sessionId = "ses_core_harness_claude_first_turn"
+    const mock = await installMockRuntime(page, {
+      dir: DIR,
+      sessionId,
+      harness: "claude-sdk",
+      harnessModels: {
+        "claude-sdk": [{ id: "default", name: "Default (recommended)" }],
+      },
+      delayedIdleMs: 3_000,
+    })
+    await seedOneProject(page, DIR)
+    const input = await openDraftPrompt(page, DIR)
+    const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
+    await expect(control).toContainText(/Default \(recommended\)|default/i, { timeout: 20_000 })
+
+    const text = "core Claude native first turn"
+    await composePrompt(page, input, text)
+    await page.locator(SELECTORS.submitControl).last().click()
+    await expect.poll(() => mock.requests.promptCount, { timeout: 15_000 }).toBe(1)
+    await expect(page).toHaveURL(sessionUrlPattern(sessionId), { timeout: 20_000 })
+    await expect(page.locator(SELECTORS.submitControl).last()).toHaveAttribute("aria-label", /stop/i, {
+      timeout: 10_000,
+    })
+
+    await expect(control, "draft-to-session handoff cleared the native Claude model while the turn was busy").toContainText(
+      /Default \(recommended\)|default/i,
+      { timeout: 1_000 },
+    )
+    await expect(control).not.toContainText(/Loading models|Select model|^$/)
+    await control.click()
+    await expect(page.locator('[data-component="harness-model-picker"]')).toContainText(/Harness\s*Claude/i)
+  })
+
+  test("a prefetched rail switch restores an existing native harness and model after the network-quiet window", async ({
+    page,
+  }) => {
+    const sessionId = "ses_core_harness_fast_switch"
+    const first = "core native harness fast switch"
+    await installMockRuntime(page, {
+      dir: DIR,
+      sessionId,
+      harness: "codex-app-server",
+      existingSession: { prompt: first, reply: `ack 1: ${first}` },
+    })
+    await seedOneProject(page, DIR)
+    await page.route("**/api/control/session-list**", (route) => route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 5 },
+        items: [{
+          type: "session",
+          sessionRef: sessionId,
+          sessionId,
+          title: first,
+          directory: DIR,
+          projectId: "proj_mock_runtime",
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          tags: [],
+          attachments: [],
+        }],
+      }),
+    }))
+    // Start at home with a cold transient harness store, then let the rail warm
+    // the existing transcript before clicking its row. That click starts the
+    // production fast-switch network-quiet window; direct session URLs and
+    // reloads never exercise it.
+    await page.goto("/")
+    await page.waitForLoadState("domcontentloaded")
+    const row = page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${sessionId}"]`).first()
+    await expect(row).toBeVisible({ timeout: 20_000 })
+    // Pin the exact branch independently of first-fold prefetch timing. The
+    // rail owns this global and writes the same 2s values when its transcript
+    // cache is warm; doing both in one browser task guarantees the session
+    // composer mounts while that production quiet window is active.
+    await row.evaluate((element, id) => {
+      ;(element.querySelector("button") as HTMLButtonElement | null)?.click()
+      const now = Date.now()
+      ;(window as typeof window & {
+        __claxedoFastSessionSwitch?: { sessionId: string; until: number; networkQuietUntil?: number }
+      }).__claxedoFastSessionSwitch = {
+        sessionId: id,
+        until: now + 250,
+        networkQuietUntil: now + 2_000,
+      }
+    }, sessionId)
+
+    const quietUntil = await page.evaluate(() => (
+      window as typeof window & { __claxedoFastSessionSwitch?: { networkQuietUntil?: number } }
+    ).__claxedoFastSessionSwitch?.networkQuietUntil)
+    expect(quietUntil, "rail click did not exercise the prefetched network-quiet path").toBeGreaterThan(Date.now())
+
+    await expect(page).toHaveURL(sessionUrlPattern(sessionId), { timeout: 20_000 })
+    await expect(page.locator('[data-action="prompt-harness-model"]').last()).toContainText(
+      /GPT-5\.5|gpt-5\.5/i,
+      { timeout: 500 },
+    )
+    await expect(page.locator('[data-action="prompt-model"]')).toHaveCount(0)
+  })
+
+  test("a busy Claude native session keeps its harness and model after a partial session.updated frame", async ({
+    page,
+  }) => {
+    const sessionId = "ses_core_harness_claude_updated"
+    const workspaceId = "ws_core_harness_claude_updated"
+    const mock = await installMockRuntime(page, {
+      dir: DIR,
+      sessionId,
+      harness: "claude-sdk",
+      harnessModels: {
+        "claude-sdk": [{ id: "default", name: "Default (recommended)" }],
+      },
+      existingSession: { prompt: "existing Claude prompt", reply: "existing Claude reply" },
+      workspaces: {
+        [DIR]: { workspaceId, kind: "local", directory: DIR, available: true },
+      },
+    })
+
+    await seedOneProject(page, DIR)
+    await page.goto(`/${slug(DIR)}/session/${sessionId}`)
+    await page.waitForLoadState("domcontentloaded")
+    await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+    const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
+    await expect(control).toContainText(/Default \(recommended\)|default/i, { timeout: 20_000 })
+
+    mock.setSessionStatus(sessionId, { type: "busy" })
+    mock.emit({ type: "session.status", properties: { sessionID: sessionId, status: { type: "busy" } } })
+    await expect(page.locator('[data-action="prompt-submit"]:visible').last()).toHaveAttribute("aria-label", /stop/i, {
+      timeout: 10_000,
+    })
+
+    const now = Date.now()
+    mock.emitFlat({
+      type: "session.updated",
+      directory: DIR,
+      workspaceId,
+      properties: {
+        sessionID: sessionId,
+        info: {
+          id: sessionId,
+          slug: sessionId,
+          projectID: "proj_mock_runtime",
+          directory: DIR,
+          title: "Updated Claude title",
+          version: "local",
+          time: { created: now - 1_000, updated: now },
+        },
+      },
+    })
+
+    await page.waitForTimeout(500)
+    await expect(control).toContainText(/Default \(recommended\)|default/i)
+    await expect(control).not.toContainText(/Select model/i)
+  })
 
   test("Pi selects a configured provider model without harness options and owns the payload — behavior 4", async ({
     page,
@@ -672,7 +849,7 @@ test.describe("core harness ownership (local) @core", () => {
       // showing the polling harness's label) and submit are what's gated.
       await expect(input).toHaveAttribute("contenteditable", "true")
       await expect(input).not.toHaveAttribute("aria-disabled")
-      await expect(page.getByRole("button", { name: /^Claude$/ }).last()).toBeDisabled()
+      await expect(page.locator('[data-action="prompt-harness-model"]:visible').last()).toBeDisabled()
       await expect(page.locator(SELECTORS.submitControl).last()).toBeDisabled()
 
       // Never silently falls back to plain OpenCode, and no requests are sent.
@@ -729,7 +906,7 @@ test.describe("core harness ownership (local) @core", () => {
       await expect(input).toBeVisible({ timeout: 20_000 })
 
       await expectHarnessAutoHydrated(page, /^Claude$/)
-      const harnessTrigger = page.getByRole("button", { name: /^Claude$/ }).last()
+      const harnessTrigger = page.locator('[data-action="prompt-harness-model"]:visible').last()
 
       // Phase 1 — still connecting: pill shown, harness Select trigger disabled
       // (dimmed), editor stays live/typeable, never the "Unavailable" notice row.
@@ -909,8 +1086,7 @@ test.describe("core harness ownership (local) @core", () => {
 
       // Pick a non-OpenCode harness on the local draft.
       await switchDraftHarness(page, /^Claude$/, 0)
-      await expect(page.getByRole("button", { name: /^Claude$/ }).last()).toBeVisible({ timeout: 20_000 })
-      await expect(page.getByRole("button", { name: /^OpenCode$/ })).toHaveCount(0)
+      await expectHarnessAutoHydrated(page, /^Claude$/)
       await expect
         .poll(() =>
           page.evaluate(
@@ -921,8 +1097,7 @@ test.describe("core harness ownership (local) @core", () => {
 
       // Reload the same draft route — the selection is kept, never force-reset to OpenCode.
       await openDraftPrompt(page, DIR)
-      await expect(page.getByRole("button", { name: /^Claude$/ }).last()).toBeVisible({ timeout: 20_000 })
-      await expect(page.getByRole("button", { name: /^OpenCode$/ })).toHaveCount(0)
+      await expectHarnessAutoHydrated(page, /^Claude$/)
     },
   )
 

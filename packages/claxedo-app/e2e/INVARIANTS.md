@@ -29,6 +29,19 @@ green output alone.
    without it.
 4. **If the evidence contradicts the assertion, the assertion is the bug.** Fix the
    oracle, never the evidence.
+5. **An assertion that can pass while the feature is unusable is a defect in the suite,
+   not reassurance.** Boot/render assertions ("the shell renders", "the page loaded") may
+   exist ONLY as labelled diagnostics and never count as coverage. The incident: on
+   2026-08-05/06 the packaged desktop app booted fine through every one of defects 1
+   (`file://` renderer became its own API base), 3 (reload broke the packaged app), and 4
+   (WebSocket `Origin: file://` rejected, terminal stuck at `Reconnecting... n/6`) — the
+   owner only discovered the app was broken when *creating a session* or *creating a
+   terminal*, not from watching it boot. A "shell renders" assertion would have stayed
+   green through the entire period. Coverage must sit on the first server-touching
+   mutation (`POST /session`, terminal creation, a real send) — never on the shell having
+   rendered. See `docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`, scenario
+   A1, which keeps exactly this kind of assertion but demotes it explicitly: "A1 is
+   explicitly demoted... It stays only because it fails earlier and more legibly than B1."
 
 ## The Oracle (verbatim from the plan)
 
@@ -171,6 +184,19 @@ no test, fails review.
    the migration (salvageable scenarios, known-good route shapes) but is not part of the
    Playwright `testDir` (`./e2e`) and must never be re-wired into `playwright.config.ts`.
    Once every spec in the plan's spec list is ported, delete it.
+8. **The DEV direct-bus test seam is not a transport.** `window.__claxedoEmitTestEvent` /
+   `emitClaxedoEvent` hands an event straight to the client-side bus — it MUST NOT be the
+   sole delivery path for any assertion that claims a transport works. The incident:
+   `core-terminal.spec.ts`'s status-dot scenarios (around lines 920-1000) injected via this
+   seam, bypassing the SSE fetch, stream-target selection, and frame parser entirely — so
+   those specs stayed green through the 2026-08-05/06 period when defects 4-7 meant
+   *nothing* was actually delivered to a real user (WebSocket `Origin: file://` rejected,
+   a directory path posted as `workspaceId`, `CLAXEDO_PORT=80` from a portless synthetic
+   origin, local workspaces opening no event stream at all). "On units it's working" was
+   true and useless. A transport-dependent proof goes through `mock.emitFlat()` (served by
+   the real `**/api/wr/events` route) or a real Tier R/L lane; the direct-bus seam may
+   still be used for setup/scaffolding that is not itself the thing under test. See
+   `docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`.
 
 ## Spec index
 
@@ -200,3 +226,24 @@ Operational lessons paid for in hours of chasing false signals. Do not relearn t
 5. **A shared git index across parallel agent sessions means a bare `git commit` sweeps
    other agents' staged files.** Always commit by pathspec (`git commit --only <paths>`),
    never a bare `git commit` when other sessions may have work staged.
+6. **Two concurrent `launchPackagedApp()` calls on the same machine are NOT
+   independent, even with distinct `--user-data-dir`s.** Found 2026-08-06 authoring
+   `desktop-signed-embedded-shared.spec.ts`/`desktop-signed-cloud.spec.ts`: an
+   otherwise-clean `A1` scenario failed with `electron.launch: Target page, context or
+   browser has been closed` after only ~190ms, no window ever opening, main-process
+   `exitCode: 0`. Root-caused, not guessed: `packages/claxedo-desktop/src/main/
+   index.ts:161` calls `app.requestSingleInstanceLock()` before any window opens, and on
+   `false` calls `app.quit()` and `return`s immediately — this exact log signature
+   (`app starting` printed, then nothing, then a clean exit). Electron's singleton lock
+   is keyed by the app's OS-level bundle identity, NOT by `--user-data-dir`, so a SECOND
+   `Claxedo Dev.app` process launched anywhere on the machine (a concurrent agent
+   session, a leftover probe script, a developer's own running copy) silently steals the
+   lock from whichever instance loses the race — the loser looks exactly like a random
+   flake with no error inside the app itself. Confirmed empirically: the identical two
+   test files passed cleanly back-to-back except for one run where `ps aux` showed a
+   SEPARATE, concurrently-running `Claxedo Dev.app` process (a different `--user-data-dir`
+   entirely) that was not this suite's own. This is a real hazard for EVERY
+   `desktop-*.spec.ts` lane, not specific to the signed lanes — until Electron's lock is
+   made `--user-data-dir`-aware (out of scope for an e2e spec file) or CI serializes all
+   `@surface-desktop` jobs onto one runner, do not treat a single red `desktop-*` run as
+   proof of a regression: `ps aux | grep -i "Claxedo"` for a second app instance FIRST.

@@ -313,6 +313,19 @@ type FixtureInfo = {
   runtimeAccessToken: string
   directory: string
   role: string
+  // Real, signed control-plane bearer JWT for `browserSubject = "user_browser"`
+  // (`signed-browser-relay-fixture.mjs`'s `browserControlPlaneToken`, minted
+  // through that file's real local JWKS issuer). Plan `2026-08-06-001` Phase 3:
+  // once the fixture's control plane became the REAL `hosted-node` composition
+  // on `customVerifierAuthAdapter`, the two hardcoded literals this spec used
+  // to seed — `seedWorkspace`'s `__CLAXEDO_TEST_AUTH_TOKEN__ =
+  // "live-user-hosted-relay-token"` and `mintConnectionFromPage`'s inline
+  // `Bearer live-user-hosted-relay-token` — both started failing `jwtVerify`
+  // with 401 `invalid_bearer_token` (`platform/auth/auth.ts:335`), because
+  // neither is a JWT. `controlPlaneToken` is signed with the same keypair
+  // `controlPlaneJwks` verifies against, for the exact subject this spec's
+  // `__CLAXEDO_TEST_AUTH_USER__ = { id: "user_browser" }` already claims.
+  controlPlaneToken: string
 }
 
 type RunningFixture = {
@@ -389,7 +402,21 @@ async function startFixture(extraEnv: Record<string, string> = {}): Promise<Runn
         if (settled || !line.trim()) continue
         try {
           const parsed = JSON.parse(line) as FixtureInfo
-          if (!parsed.backendUrl || !parsed.relayUrl || !parsed.workspaceId || !parsed.runtimeAccessToken) continue
+          // `controlPlaneToken` gates readiness alongside the pre-existing
+          // fields for the same reason `runtimeAccessToken` already does: a
+          // fixture regression that silently stopped printing it would
+          // otherwise resolve with `controlPlaneToken: undefined`, and every
+          // dependent test would fail deep inside `gateReachesReady`'s 40s
+          // timeout instead of a clear boot-time GATING error here.
+          if (
+            !parsed.backendUrl ||
+            !parsed.relayUrl ||
+            !parsed.workspaceId ||
+            !parsed.runtimeAccessToken ||
+            !parsed.controlPlaneToken
+          ) {
+            continue
+          }
           settled = true
           clearTimeout(timeout)
           resolve(parsed)
@@ -530,10 +557,13 @@ async function startFrontend(input: { backendUrl: string }): Promise<RunningFron
 async function seedWorkspace(page: Page, info: FixtureInfo) {
   await page.addInitScript((input: FixtureInfo) => {
     localStorage.clear()
+    // Real JWT, not a literal — see `FixtureInfo.controlPlaneToken`'s doc
+    // comment above for the incident (401 `invalid_bearer_token` once the
+    // fixture's control plane became the real `customVerifierAuthAdapter`).
     ;(window as typeof window & {
       __CLAXEDO_TEST_AUTH_TOKEN__?: string
       __CLAXEDO_TEST_AUTH_USER__?: { id: string }
-    }).__CLAXEDO_TEST_AUTH_TOKEN__ = "live-user-hosted-relay-token"
+    }).__CLAXEDO_TEST_AUTH_TOKEN__ = input.controlPlaneToken
     ;(window as typeof window & {
       __CLAXEDO_TEST_AUTH_TOKEN__?: string
       __CLAXEDO_TEST_AUTH_USER__?: { id: string }
@@ -602,13 +632,18 @@ async function gateReachesReady(page: Page, timeoutMs = 40_000) {
  * real app relies on.
  */
 async function mintConnectionFromPage(page: Page, info: FixtureInfo) {
-  return await page.evaluate(async (workspaceId) => {
-    const res = await fetch(`/api/workspace/${encodeURIComponent(workspaceId)}/connection`, {
-      headers: { authorization: "Bearer live-user-hosted-relay-token" },
+  // Same real-JWT requirement as `seedWorkspace` above (see `FixtureInfo.
+  // controlPlaneToken`'s doc comment): this used to hardcode the identical
+  // non-JWT literal `"live-user-hosted-relay-token"` independently of
+  // `seedWorkspace`'s copy, so fixing one without the other would have left
+  // this call 401ing on its own. Both now read the one fixture-minted token.
+  return await page.evaluate(async (input: { workspaceId: string; token: string }) => {
+    const res = await fetch(`/api/workspace/${encodeURIComponent(input.workspaceId)}/connection`, {
+      headers: { authorization: `Bearer ${input.token}` },
     })
     if (!res.ok) throw new Error(`connection mint failed: ${res.status} ${await res.text()}`)
     return (await res.json()) as { relayUrl: string; runtimeAccessToken: string; role: string }
-  }, info.workspaceId)
+  }, { workspaceId: info.workspaceId, token: info.controlPlaneToken })
 }
 
 async function relayFetchFromPage(

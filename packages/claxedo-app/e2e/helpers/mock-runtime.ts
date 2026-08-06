@@ -299,6 +299,12 @@ export type MockRuntimeOptions = {
   >
   /** The harness this session is created/locked with. Defaults to "opencode". */
   harness?: Harness
+  /**
+   * Starts with one completed turn in an already-created session. Use this for
+   * rail-entry/revisit scenarios: creating the session in the same renderer
+   * also seeds its transient harness store, masking cold session hydration.
+   */
+  existingSession?: { prompt: string; reply?: string }
   /** Per-harness model catalog for the composer's model popover. */
   harnessModels?: Partial<Record<Harness, HarnessModelOption[]>>
   /** Readiness state the harness config endpoint reports. */
@@ -977,6 +983,32 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     }
   }
 
+  if (options.existingSession) {
+    const model = harnessModel()
+    const userID = "msg_existing_user"
+    const assistantID = "msg_existing_assistant"
+    const assistant = assistantMessagePending({
+      id: assistantID,
+      parentID: userID,
+      agent: "build",
+      providerID: providerIdFor(harness),
+      modelID: model.id,
+    })
+    assistant.info.time.completed = Date.now()
+    assistant.parts = [textPart(SESSION_ID, assistantID, options.existingSession.reply ?? "existing reply")]
+    messages = [
+      userMessage({
+        id: userID,
+        text: options.existingSession.prompt,
+        agent: "build",
+        providerID: providerIdFor(harness),
+        modelID: model.id,
+      }),
+      assistant,
+    ]
+    sessionCreated = true
+  }
+
   // ------------------------------------------------------------------------
   // Turn driver — runs the busy -> pending message -> deltas -> completed ->
   // idle sequence over real ticks, per the "How streaming works" note above.
@@ -1433,9 +1465,17 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // entirely.
   const wrEventsHandler = async (route: Route) => {
     if (!api(route)) return route.continue()
+    const request = route.request()
+    const url = new URL(request.url())
+    const workspaceScoped = url.pathname.startsWith("/workspaces/") ||
+      url.searchParams.has("directory") ||
+      request.headers()["x-opencode-directory"]?.startsWith("workspace:") === true
     const batch = await busWrEvents.drain(sseIdleTimeoutMs, lastEventIdOf(route))
     const now = Date.now()
-    const replays = flatWrReplay.filter((entry) => entry.until > now)
+    // Flat lifecycle frames originate on a workspace runtime stream. The bare
+    // central `/api/wr/events` stream carries central events only; replaying a
+    // workspace frame there makes a central-only client look correctly wired.
+    const replays = workspaceScoped ? flatWrReplay.filter((entry) => entry.until > now) : []
     // Log-delivered flat copies are dropped in favor of the replay list so a
     // reader does not see the same frame twice in one body. Replay frames
     // deliberately carry NO `id:` line — they must not advance an

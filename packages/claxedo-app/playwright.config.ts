@@ -25,6 +25,22 @@ const reuse = process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === "1"
 // `@workgraph-real` is not a lane of its own: it is a sub-selector inside `core`,
 // carved out of the sharded lane by `test:e2e:core:base`'s `--grep-invert` and run by
 // the separate `e2e (workgraph-real)` CI job. Same for the `@documents-*-canary` tags.
+// `@surface-desktop` / `@surface-web` are sub-selectors of the same kind, added for
+// `docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`'s lane x scenario
+// matrix: every spec that drives the packaged Electron app carries `@surface-desktop`,
+// every spec that drives a browser surface carries `@surface-web`, so a spec can be
+// selected by WHICH SURFACE it exercises independent of which suite (core/live) or
+// which other sub-selector (`@tier-real`, `@workgraph-real`) it also carries.
+// `desktop-unsigned-embedded.spec.ts` is tagged `@core @tier-real @surface-desktop`
+// today; `@tier-real` already carves it out of `test:e2e:core:base`'s sharded run (the
+// desktop build cost cannot live on a shard whose build points at :3001), so
+// `@surface-desktop` does not need its own `--grep-invert` entry there YET. It will need
+// one the moment a `@surface-desktop` spec ships WITHOUT `@tier-real`/`@workgraph-real`
+// alongside it (Phase 4's `desktop-signed-embedded-shared` / `desktop-signed-cloud`) —
+// until then a bare `@surface-desktop` spec would run twice: once in the sharded core
+// lane, once in its own job. `@surface-web` currently selects nothing (no spec carries
+// it yet), the same "reserved, not yet load-bearing" state `@documents-*-canary` was in
+// before `documents-core.spec.ts` landed.
 const suiteGrep = {
   core: /@core/,
   live: /@live/,

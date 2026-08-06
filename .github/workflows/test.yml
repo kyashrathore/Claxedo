@@ -647,6 +647,128 @@ jobs:
             packages/claxedo-app/e2e/playwright/test-results
             packages/claxedo-app/e2e/playwright/report
 
+  # `desktop-unsigned-embedded` (Phase 2 of docs/plans/2026-08-06-001-test-full-
+  # matrix-real-e2e-plan.md): the ONLY lane that runs the PACKAGED Electron app,
+  # whose renderer is a `file://` document. Every other job in this file points
+  # a browser at an `http://localhost` dev/preview server, where
+  # `window.location.protocol` is `https?:` and the whole `file://` bug class
+  # (four defects shipped to users in v0.0.65 -- see the plan's coverage table)
+  # is structurally undetectable. This job is what closes that hole.
+  #
+  # macOS-only, and that is an accepted gap, not an oversight: the `file://`
+  # defect class follows from `win.loadFile()` vs `win.loadURL()` in
+  # packages/claxedo-desktop/src/main/windows.ts:177-186, which every platform
+  # shares -- it is not a macOS-specific code path -- so a mac-only lane still
+  # catches all four shipped defects (1, 3, 4 directly; 5/6 via the D2
+  # scenario). Linux would need `xvfb-run` in front of the packaged binary,
+  # the same way release-gates.yml's packaged diagnostics smoke already does
+  # for Linux; that is a follow-up, not required to close the gap this job
+  # exists for.
+  e2e-desktop:
+    name: e2e (desktop-unsigned-embedded)
+    runs-on: macos-15
+    env:
+      # electron-vite runs under Node, whose default ~2GB old-space does not
+      # fit the renderer bundle -- this is the SAME OOM release-claxedo.yml's
+      # mac legs hit ("both OOM-killed in the first v0.0.65 build"; see its
+      # identical job-level NODE_OPTIONS and comment). Job-level, not
+      # step-level: `bun run build` here is `scripts/build.ts`, which spawns
+      # its own rebuild as a child process, and release-claxedo.yml's comment
+      # records that a step-level var did not reach that child -- the OOM
+      # just moved there.
+      NODE_OPTIONS: --max-old-space-size=4096
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          # Matches the other e2e jobs' pin in this file (Playwright 1.59 hangs
+          # extracting Chromium under 24.16). This job never extracts a
+          # Playwright browser (see the "Run desktop e2e" step below), but
+          # there is no reason to diverge from the version every other e2e job
+          # here already runs on.
+          node-version: "24.15"
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Same scoped list as the e2e/e2e-workgraph/e2e-tier-real jobs above --
+      # packages/*/dist is gitignored and the desktop build resolves these
+      # @claxedo/* workspace packages through their dist exports.
+      - name: Build dist-resolved workspace packages
+        run: >-
+          bun turbo build
+          --filter=@claxedo/agent-event-runtime
+          --filter=@claxedo/agent-extensions
+          --filter=@claxedo/agent-sdk-runtime
+          --filter=@claxedo/channels
+          --filter=@claxedo/connections
+          --filter=@claxedo/mcp
+          --filter=@claxedo/sandbox-manager
+          --filter=@claxedo/wakes
+          --filter=@claxedo/workgraph
+          --filter=@claxedo/workspace-relay-protocol
+          --filter=@claxedo/workspace-relay
+          --filter=@claxedo/workspace-runtime
+
+      # Builds the packaged app ONCE for the whole job; every scenario in
+      # desktop-unsigned-embedded.spec.ts launches a fresh process from this
+      # same binary (e2e/helpers/electron-app.ts's launchPackagedApp), not a
+      # fresh build. `--dir` skips DMG assembly and notarisation (the full
+      # `package:mac` path is ~5 min / 1.4 GB) while still producing an
+      # asar-packed app whose renderer loads over `file://` -- asar is never
+      # disabled in electron-builder.config.ts, so packing, and therefore the
+      # bug class this lane exists to catch, is independent of the --dir
+      # target. This is the exact command electron-app.ts's own GATING error
+      # names when no packaged binary is found. Measured 2026-08-06: 42s / 403 MB.
+      - name: Build packaged desktop app (--dir, unsigned)
+        working-directory: packages/claxedo-desktop
+        run: |
+          bun run build
+          npx electron-builder --dir --config electron-builder.config.ts
+
+      # No Playwright browser install here, unlike every e2e job above: this
+      # spec's only Playwright entry point is `_electron.launch()`
+      # (e2e/helpers/electron-app.ts), which drives the packaged binary's OWN
+      # bundled Chromium and never touches Playwright's `page`/`context`/
+      # `browser` fixtures or a downloaded browser. `test:e2e:core:base`'s
+      # `--grep-invert "@workgraph-real|@tier-real"` already carves this spec
+      # (tagged `@tier-real @surface-desktop`) out of the sharded PR lane, so
+      # it only ever runs here.
+      - name: Run desktop e2e (unsigned, embedded)
+        working-directory: packages/claxedo-app
+        timeout-minutes: 30
+        env:
+          # No web app is under test in this lane -- the packaged renderer is
+          # its own file:// document talking to its own embedded server -- so
+          # playwright.config.ts's default webServer (`bun run dev`) would
+          # boot a vite dev server that nothing in this spec ever navigates
+          # to. Skip it rather than pay for it.
+          PLAYWRIGHT_SKIP_WEBSERVER: "1"
+          PLAYWRIGHT_VIDEO: "0"
+        run: bun run test:e2e:desktop
+
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-desktop-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            packages/claxedo-app/e2e/playwright/test-results
+            packages/claxedo-app/e2e/playwright/report
+
   e2e-workgraph-journey:
     name: e2e (workgraph-journey)
     runs-on: ubuntu-latest

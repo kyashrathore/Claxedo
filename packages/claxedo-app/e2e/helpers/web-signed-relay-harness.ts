@@ -1,0 +1,667 @@
+/**
+ * Shared boot/serve/drive primitives for the two Phase-4 web lanes,
+ * `web-signed-cloud.spec.ts` and `web-signed-userhosted.spec.ts`
+ * (`docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`, Phase 4).
+ *
+ * WHY THIS FILE EXISTS — the plan's Phase 4 mandate is explicit: "Each lane is
+ * a thin configuration wrapper over Phase 1's oracles; no journey logic is
+ * duplicated per lane." The two lanes differ in exactly one axis — which
+ * `CLAXEDO_E2E_RELAY_FIXTURE_ACCESS` the fixture boots as ("cloud" vs the
+ * fixture's default "user-hosted") — and share every other concern: booting
+ * `signed-browser-relay-fixture.mjs` with the scripted model wired in,
+ * building and serving the REAL production web bundle against that fixture's
+ * backend, seeding a browser session onto the fixture's workspace, and
+ * driving the composer/rail/terminal DOM. `real-cloud-relay.spec.ts` and
+ * `live-user-hosted-relay.spec.ts` each hand-rolled their own copy of most of
+ * this before this file existed; this module is the single copy both new
+ * lanes (and, incidentally, either of those two files, though this task does
+ * not touch them) draw from.
+ *
+ * REAL BUILT WEB APP, NOT THE DEV SERVER — measured directly, 2026-08-06:
+ * `node ./node_modules/vite/bin/vite.js build --config vite.cloud.config.ts
+ * --outDir <dir>` with `VITE_CLAXEDO_SERVER_URL`/`VITE_CLAXEDO_E2E=1` set
+ * completes in ~18s, and `vite preview --outDir <dir> --port <port>
+ * --strictPort` serves the result and answers real requests immediately.
+ * `getClaxedoServerUrl()` (`src/platform/api/api.ts:209`) reads
+ * `import.meta.env.VITE_CLAXEDO_SERVER_URL`, which Vite inlines as a literal
+ * string at BUILD time for a production bundle (unlike the dev server, where
+ * it is merely read once at server start) — so the built bundle addresses the
+ * fixture's backend by an absolute, cross-origin URL baked in at build time,
+ * exactly the way `real-cloud-relay.spec.ts`'s and `live-user-hosted-
+ * relay.spec.ts`'s DEV-server-based frontends do it, just compiled instead of
+ * transformed on the fly. `vite.cloud.config.ts`'s `server.proxy` block is
+ * irrelevant to either path for this reason — the client never relies on
+ * same-origin proxying, so `vite preview` (which does not replay
+ * `server.proxy`) needs no additional config. This closes the deviation those
+ * two sibling specs recorded ("this spec runs its own dedicated vite frontend
+ * DEV server... not a build") for the two lanes owned by this task.
+ *
+ * FIXED PORTS, NOT `freePort()` — Phase 4's own checklist requires "distinct
+ * port block per lane; lanes shard in parallel" (plan line 254). A dynamically
+ * allocated port cannot be known before the build that bakes it in, so each
+ * lane's spec file passes ITS OWN fixed backend/preview port pair (overridable
+ * by env, mirroring `real-harness-local.spec.ts`'s
+ * `CLAXEDO_TIER_REAL_BACKEND_PORT` convention) rather than this module
+ * allocating one dynamically.
+ */
+import { expect, test, type Locator, type Page } from "@playwright/test"
+import { execFile, spawn, type ChildProcess } from "node:child_process"
+import * as fs from "node:fs/promises"
+import * as os from "node:os"
+import path from "node:path"
+import { promisify } from "node:util"
+import { SELECTORS as RAIL_SELECTORS } from "./rail-oracle"
+import {
+  claudeScriptedEnv,
+  opencodeScriptedProviderConfig,
+  type ScriptedModelServer,
+} from "./scripted-model-server"
+
+export const APP_DIR = path.resolve(import.meta.dirname, "..", "..")
+export const REPO_ROOT = path.resolve(APP_DIR, "..", "..")
+export const SERVER_DIR = path.join(REPO_ROOT, "packages", "claxedo-server")
+
+export type SignedRelayAccess = "cloud" | "user-hosted"
+
+/**
+ * Mirrors `signed-browser-relay-fixture.mjs`'s stdout JSON shape — the exact
+ * type both `real-cloud-relay.spec.ts` and `live-user-hosted-relay.spec.ts`
+ * already declare locally. `controlPlaneToken` is required, not merely typed,
+ * by the readiness parser below for the same reason those two files require
+ * it: a fixture regression that stopped printing it would otherwise resolve
+ * with `controlPlaneToken: undefined`, and every dependent test would fail
+ * deep inside `gateReachesReady`'s timeout instead of a clear boot-time
+ * GATING error.
+ */
+export type RelayFixtureInfo = {
+  backendUrl: string
+  relayUrl: string
+  workspaceId: string
+  hostId: string
+  runtimeAccessToken: string
+  directory: string
+  role: string
+  controlPlaneToken: string
+}
+
+export type RunningRelayFixture = {
+  info: RelayFixtureInfo
+  log(): string
+  close(): Promise<void>
+}
+
+async function stopChild(child: ChildProcess | undefined) {
+  if (!child || child.exitCode !== null || child.signalCode) return
+  await new Promise<void>((resolve) => {
+    const timeout = setTimeout(() => {
+      child.kill("SIGKILL")
+      resolve()
+    }, 8_000)
+    child.once("exit", () => {
+      clearTimeout(timeout)
+      resolve()
+    })
+    child.kill("SIGTERM")
+  })
+}
+
+/**
+ * Boots the real `signed-browser-relay-fixture.mjs` — real relay process,
+ * real EdDSA JWT mint/verify, real `hosted-node` control plane on
+ * `createSqliteCentralStore` (plan Phase 3) — with the scripted model
+ * endpoint and (for the C4 harness-switch scenario) the scripted claude
+ * endpoint wired into its OWN process env. Both reach the harness through the
+ * exact mechanism `real-cloud-relay.spec.ts`'s HARNESS NOTES verified
+ * directly: `harnessSpawnEnv` spreads `process.env` into every harness spawn,
+ * and any subprocess the fixture's embedded/cloud runtime forks inherits this
+ * process's environment, denylist-filtered for only nine Claxedo-internal
+ * names.
+ *
+ * `access: "user-hosted"` omits `CLAXEDO_E2E_RELAY_FIXTURE_ACCESS` entirely
+ * rather than setting it to the literal string — the fixture's own default
+ * (`access = process.env.CLAXEDO_E2E_RELAY_FIXTURE_ACCESS === "cloud" ? ...
+ * : "user-hosted"`) already resolves to user-hosted on absence, and setting
+ * an env var to `undefined` in a spawn's `env` object serializes to nothing
+ * usable across the trip to a child process on some platforms — omitting the
+ * key entirely is unambiguous.
+ */
+export async function startSignedRelayFixture(opts: {
+  access: SignedRelayAccess
+  backendPort: number
+  scripted: ScriptedModelServer
+  claudeConfigDir: string
+  extraEnv?: Record<string, string>
+}): Promise<RunningRelayFixture> {
+  let log = ""
+  const child = spawn(
+    "node",
+    ["--import", "./src/text-imports.mjs", "--import", "tsx", "src/signed-browser-relay-fixture.mjs"],
+    {
+      cwd: SERVER_DIR,
+      env: {
+        ...process.env,
+        CLAXEDO_E2E_BACKEND_PORT: String(opts.backendPort),
+        ...(opts.access === "cloud" ? { CLAXEDO_E2E_RELAY_FIXTURE_ACCESS: "cloud" } : {}),
+        OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeScriptedProviderConfig(opts.scripted.v1Url)),
+        TIER_REAL_API_KEY: "test-key",
+        OPENCODE_DISABLE_MODELS_FETCH: "true",
+        ...claudeScriptedEnv(opts.scripted.url, opts.claudeConfigDir),
+        ...opts.extraEnv,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  )
+
+  const info = await new Promise<RelayFixtureInfo>((resolve, reject) => {
+    let settled = false
+    let stdout = ""
+    const finish = (err: Error) => {
+      if (settled) return
+      settled = true
+      reject(err)
+    }
+    const timeout = setTimeout(() => {
+      finish(new Error(`GATING: signed relay fixture (access=${opts.access}) did not start within 120s.\n${log}`))
+    }, 120_000)
+    child.stdout?.on("data", (chunk) => {
+      const text = chunk.toString()
+      log += text
+      stdout += text
+      for (const line of stdout.split("\n")) {
+        if (settled || !line.trim()) continue
+        try {
+          const parsed = JSON.parse(line) as RelayFixtureInfo
+          if (!parsed.backendUrl || !parsed.relayUrl || !parsed.workspaceId || !parsed.controlPlaneToken) continue
+          settled = true
+          clearTimeout(timeout)
+          resolve(parsed)
+        } catch {
+          continue
+        }
+      }
+    })
+    child.stderr?.on("data", (chunk) => (log += chunk.toString()))
+    child.once("exit", (code, signal) => {
+      clearTimeout(timeout)
+      finish(new Error(`GATING: signed relay fixture (access=${opts.access}) exited before starting (${code ?? signal}).\n${log}`))
+    })
+    child.once("error", finish)
+  })
+
+  // WARM-UP, ported verbatim from `live-user-hosted-relay.spec.ts`'s
+  // `startFixture` — a REAL product cold-start race, not a test artifact.
+  // That file's HARNESS NOTES: "the embedded workspace-runtime's `opencode`
+  // engine lazy-boots on first use (`ensureEmbeddedWorkspaceRuntime` in
+  // `embedded-workspace-runtime.ts`). The FIRST `/session` request to land
+  // during that boot window intermittently 500s ... or, more severely,
+  // surfaces as the UI's own 'opencode exited during startup' error."
+  // MISSING here initially (this task's own `startSignedRelayFixture` did
+  // not port it) reproduced exactly that shape live 2026-08-06: journeyA2's
+  // first-ever real send on a freshly booted user-hosted fixture silently
+  // created no session row within a 20s window, deterministically, even in
+  // total isolation with a fresh backend (ruling out cross-test flakiness).
+  // Cloud mode is not known to need this (`startCloudRuntime` performs its
+  // own health probe before this function ever returns), but doing it
+  // unconditionally is harmless — a few no-op retries at worst.
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const res = await fetch(`${info.relayUrl}/workspaces/${info.workspaceId}/session`, {
+      headers: { authorization: `Bearer ${info.runtimeAccessToken}` },
+    }).catch(() => undefined)
+    if (res?.ok) break
+    await new Promise((resolve) => setTimeout(resolve, 1_000))
+  }
+
+  return { info, log: () => log, close: () => stopChild(child) }
+}
+
+export type RunningWebApp = {
+  url: string
+  close(): Promise<void>
+}
+
+/**
+ * Builds the REAL production web bundle pointed at `backendUrl` (baked in at
+ * build time, see file header) and serves it via `vite preview`. Invoked
+ * directly against `vite`'s own CLI entry rather than the `bun run build`
+ * npm-script alias so `--outDir` can be overridden per lane — two lanes
+ * building concurrently into the package's single default `dist/` would
+ * clobber each other.
+ */
+export async function buildAndServeWebApp(opts: {
+  backendUrl: string
+  outDir: string
+  previewPort: number
+}): Promise<RunningWebApp> {
+  let buildLog = ""
+  await new Promise<void>((resolve, reject) => {
+    const build = spawn(
+      "node",
+      [
+        "./node_modules/vite/bin/vite.js",
+        "build",
+        "--config",
+        "vite.cloud.config.ts",
+        "--outDir",
+        opts.outDir,
+      ],
+      {
+        cwd: APP_DIR,
+        env: {
+          ...process.env,
+          VITE_CLAXEDO_SERVER_URL: opts.backendUrl,
+          // Keeps the e2e-only harness seams (test-auth bypass via
+          // `__CLAXEDO_TEST_AUTH_TOKEN__`, the `/__e2e/*` routes) alive in the
+          // production bundle — tree-shaken out of any build that does NOT
+          // set this flag, so real production is unaffected
+          // (`playwright.config.ts`'s own `CLAXEDO_E2E_PREBUILT` comment).
+          VITE_CLAXEDO_E2E: "1",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    )
+    build.stdout?.on("data", (chunk) => (buildLog += chunk.toString()))
+    build.stderr?.on("data", (chunk) => (buildLog += chunk.toString()))
+    build.once("exit", (code) => {
+      if (code === 0) return resolve()
+      reject(new Error(`GATING: vite build (outDir=${opts.outDir}) exited ${code}.\n${buildLog}`))
+    })
+    build.once("error", reject)
+  })
+
+  let previewLog = ""
+  const preview = spawn(
+    "node",
+    [
+      "./node_modules/vite/bin/vite.js",
+      "preview",
+      "--config",
+      "vite.cloud.config.ts",
+      "--outDir",
+      opts.outDir,
+      "--port",
+      String(opts.previewPort),
+      "--strictPort",
+      "--host",
+      "127.0.0.1",
+    ],
+    {
+      cwd: APP_DIR,
+      env: { ...process.env, VITE_CLAXEDO_SERVER_URL: opts.backendUrl, VITE_CLAXEDO_E2E: "1" },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  )
+  preview.stdout?.on("data", (chunk) => (previewLog += chunk.toString()))
+  preview.stderr?.on("data", (chunk) => (previewLog += chunk.toString()))
+
+  const url = `http://127.0.0.1:${opts.previewPort}`
+  const start = Date.now()
+  while (Date.now() - start < 45_000) {
+    if (preview.exitCode !== null) {
+      throw new Error(`GATING: vite preview (port=${opts.previewPort}) exited before becoming healthy.\n${previewLog}`)
+    }
+    const ok = await fetch(url, { signal: AbortSignal.timeout(3_000) }).then((r) => r.ok).catch(() => false)
+    if (ok) break
+    await new Promise((resolve) => setTimeout(resolve, 300))
+  }
+  const healthy = await fetch(url).then((r) => r.ok).catch(() => false)
+  if (!healthy) throw new Error(`GATING: vite preview at ${url} did not become healthy within 45s.\n${previewLog}`)
+
+  return {
+    url,
+    close: async () => {
+      if (preview.exitCode !== null || preview.signalCode) return
+      await new Promise<void>((resolve) => {
+        const timeout = setTimeout(() => {
+          preview.kill("SIGKILL")
+          resolve()
+        }, 8_000)
+        preview.once("exit", () => {
+          clearTimeout(timeout)
+          resolve()
+        })
+        preview.kill("SIGTERM")
+      })
+    },
+  }
+}
+
+/**
+ * Seeds the browser onto the fixture's workspace as a real relay-backed
+ * target, keyed BOTH by the `workspace:<id>` ref and by the raw directory —
+ * the same belt-and-suspenders shape `real-cloud-relay.spec.ts`'s
+ * `seedWorkspace` uses (see that file's inline comments for the two concrete
+ * failure modes each key independently guards against: `placementFor`/
+ * `workspaceIdFromRef` needing the ref shape, and a path-keyed resolve
+ * missing the row or aliasing a `/private/var` symlink into a second
+ * workspace). `kind` is threaded through so ONE function serves both lanes.
+ */
+export async function seedWorkspace(page: Page, info: RelayFixtureInfo, kind: SignedRelayAccess) {
+  await page.addInitScript(
+    (seed: RelayFixtureInfo & { kind: SignedRelayAccess }) => {
+      localStorage.clear()
+      const w = window as typeof window & {
+        __CLAXEDO_TEST_AUTH_TOKEN__?: string
+        __CLAXEDO_TEST_AUTH_USER__?: { id: string }
+      }
+      w.__CLAXEDO_TEST_AUTH_TOKEN__ = seed.controlPlaneToken
+      w.__CLAXEDO_TEST_AUTH_USER__ = { id: "user_browser" }
+      const ref = `workspace:${seed.workspaceId}`
+      localStorage.setItem(
+        "opencode.global.dat:server",
+        JSON.stringify({
+          list: [],
+          projects: { local: [{ worktree: ref, expanded: true, sandboxes: [seed.workspaceId] }] },
+          lastProject: {},
+          workspaceServer: {},
+          closedProjects: {},
+        }),
+      )
+      localStorage.setItem(
+        "opencode.global.dat:globalSync.project",
+        JSON.stringify({
+          value: [
+            {
+              id: `proj_web_signed_${seed.kind}`,
+              name: `Web Signed ${seed.kind}`,
+              worktree: ref,
+              sandboxes: [seed.workspaceId],
+              workspaces: {
+                [ref]: { id: seed.workspaceId, kind: seed.kind, workspace_name: `Web Signed ${seed.kind}`, directory: seed.directory },
+                [seed.directory]: { id: seed.workspaceId, kind: seed.kind, workspace_name: `Web Signed ${seed.kind}`, directory: seed.directory },
+              },
+            },
+          ],
+        }),
+      )
+    },
+    { ...info, kind },
+  )
+}
+
+export function sessionRoute(info: RelayFixtureInfo) {
+  return `/w/${encodeURIComponent(info.workspaceId)}/session`
+}
+
+/** Behavior common to every scenario: the connect gate reaches a usable, non-provisioning composer. */
+export async function gateReachesReady(page: Page, timeoutMs = 60_000): Promise<Locator> {
+  await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: timeoutMs })
+  await expect(page.locator('[data-component="cloud-startup-view"]')).toHaveCount(0, { timeout: timeoutMs })
+  const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
+  await expect(input).toBeVisible({ timeout: timeoutMs })
+  await expect(input).toHaveAttribute("contenteditable", "true")
+  return input
+}
+
+export function composerInput(page: Page): Locator {
+  return page.getByRole("textbox", { name: /Ask anything/i }).last()
+}
+
+/**
+ * `.fill()` alone sometimes writes the DOM node without firing the input
+ * events the composer's reactive state reads (measured independently by both
+ * `real-harness-local.spec.ts`'s `composePrompt` and `desktop-unsigned-
+ * embedded.spec.ts`'s `composeText`) — real keystrokes are the always-correct
+ * fallback, reused verbatim here.
+ */
+export async function composeText(page: Page, input: Locator, text: string) {
+  await input.click()
+  await input.fill(text)
+  if (!((await input.textContent()) ?? "").includes(text)) {
+    await page.keyboard.press(process.platform === "darwin" ? "Meta+A" : "Control+A")
+    await page.keyboard.type(text)
+  }
+  await expect(input).toContainText(text, { timeout: 10_000 })
+}
+
+/**
+ * Picks "Scripted Model" in the composer's model control.
+ *
+ * MEASURED LIVE 2026-08-06 against this exact web build, correcting an
+ * assumption carried over from `real-harness-local.spec.ts` (whose LOCAL,
+ * non-relay-backed workspace defaults to the "opencode" harness with a
+ * SEPARATE `[data-action="prompt-model"]` trigger): a signed, relay-backed
+ * workspace's fresh draft defaults straight to a real bundled HARNESS
+ * ("Claude Sonnet 4.6" observed, not "opencode"), rendering the MERGED
+ * `[data-action="prompt-harness-model"]` trigger instead —
+ * `desktop-unsigned-embedded.spec.ts`'s identical selector, which that file's
+ * own comment mis-attributed to a desktop-only build difference. It is not:
+ * the actual axis is whether "opencode" is the active harness, and every
+ * relay-backed workspace this task's two lanes drive starts on a non-opencode
+ * harness by default, same as the packaged desktop lane. A run that skipped
+ * this step would render a real bundled model's reply while the scripted
+ * server logged zero requests — the exact false-green owner decision 1
+ * ("only the AI endpoint may be faked") exists to prevent.
+ */
+export async function selectScriptedModel(page: Page) {
+  const control = page.locator('[data-action="prompt-harness-model"]').last()
+  await expect(control, "the composer's harness+model control never appeared").toBeVisible({ timeout: 30_000 })
+  await control.click()
+  const popover = page.locator('[data-component="harness-model-picker"]')
+  await expect(popover, "the harness/model picker popover never opened").toBeVisible({ timeout: 15_000 })
+  const search = page.getByRole("textbox", { name: /Search models/i }).last()
+  await expect(search, "the harness/model picker's search box never appeared").toBeVisible({ timeout: 20_000 })
+  await search.fill("Scripted")
+  const option = page.getByText(/^Scripted Model$/i).last()
+  await expect(
+    option,
+    '"Scripted Model" is missing from the picker — see opencodeScriptedProviderConfig\'s doc on release_date visibility gating',
+  ).toBeVisible({ timeout: 20_000 })
+
+  // Settle beat before the click — MEASURED 2026-08-06: the filtered list can
+  // still be re-rendering for a fraction of a second right after `fill()`
+  // (React-style DOM-node replacement, not merely re-styling), which
+  // intermittently raced a same-frame `.click()` into "element was detached,
+  // retrying". A bounded plain re-click (re-resolving the locator fresh each
+  // time — never reusing a handle across attempts, and never pressing
+  // Escape/reopening the popover, which risks discarding whatever draft
+  // state the app associates with that keypress) is deliberately the
+  // smallest fix: a prior version of this function DID reopen-on-failure and
+  // was pulled after this task's own testing correlated it with sessions
+  // silently never reaching the server — though a second isolated check
+  // reproduced a similarly-shaped stall on THIS simpler version too, under
+  // the same heavily loaded machine (`uptime` showed load average 4-6 with
+  // ~660 processes and 4 other logged-in sessions at the time), so that
+  // correlation should be read as "the reopen shape is not worth the risk
+  // it was pulled for," not as a proven root cause — the flicker itself is
+  // real relay-hop latency this suite cannot eliminate, only absorb.
+  const deadline = Date.now() + 20_000
+  let lastErr: unknown
+  for (;;) {
+    await page.waitForTimeout(300)
+    try {
+      await page.getByText(/^Scripted Model$/i).last().click({ timeout: 5_000 })
+      lastErr = undefined
+      break
+    } catch (err) {
+      lastErr = err
+      if (Date.now() > deadline) break
+    }
+  }
+  if (lastErr) {
+    expect(false, `"Scripted Model" click never landed: ${String(lastErr)}`).toBe(true)
+  }
+  await expect(control, 'harness+model control never adopted "Scripted Model"').toContainText(/Scripted Model/i, {
+    timeout: 20_000,
+  })
+}
+
+/** Trigger label for a harness id — `agent-harness-selector.tsx`'s `HARNESS_OPTION_LABELS`, mirrored from `real-harness-local.spec.ts`. */
+function expectedTriggerLabel(harnessKey: string) {
+  if (harnessKey.startsWith("claude")) return /^Claude$/
+  if (harnessKey.startsWith("codex")) return /^Codex$/
+  if (harnessKey.startsWith("cursor")) return /^Cursor$/
+  return new RegExp(`^${harnessKey}$`, "i")
+}
+
+/**
+ * C4's harness switch. Reused verbatim from `real-harness-local.spec.ts`'s
+ * `switchDraftHarness` (identical DOM contract on the web build) — the
+ * bounded retry exists because a click can be accepted by the listbox and
+ * still not commit when a hydration for the freshly-created workspace lands
+ * between open and click; that is a real app race documented there, not
+ * something this helper should paper over silently.
+ */
+export async function switchDraftHarness(page: Page, harnessKey: string) {
+  const trigger = page.locator('[data-action="prompt-harness"]').last()
+  const option = page.locator(`[role="option"][data-key="${harnessKey}"]`)
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    await expect(trigger).toBeEnabled({ timeout: 30_000 })
+    await trigger.click()
+    await expect(option).toBeVisible({ timeout: 30_000 })
+    await option.click()
+    const landed = await expect(trigger)
+      .toHaveText(expectedTriggerLabel(harnessKey), { timeout: 10_000 })
+      .then(() => true)
+      .catch(() => false)
+    if (landed) return
+    await page.keyboard.press("Escape").catch(() => undefined)
+  }
+  throw new Error(`GATING: the draft harness never settled on "${harnessKey}" after 3 attempts.`)
+}
+
+/** See `real-harness-local.spec.ts`'s `waitForHarnessReady` for the 45s/`claude-sdk` rationale this mirrors. */
+export async function waitForHarnessReady(page: Page) {
+  await expect(page.locator('[data-action="prompt-harness-model"]').last()).not.toContainText(
+    /Loading models|Select model/i,
+    { timeout: 45_000 },
+  )
+}
+
+export function submitControl(page: Page): Locator {
+  return page.locator('[data-action="prompt-submit"]').last()
+}
+
+export async function submitDraft(page: Page) {
+  const submit = submitControl(page)
+  await expect(submit, "no submit control").toBeVisible({ timeout: 10_000 })
+  await expect(submit, "submit stayed disabled").toBeEnabled({ timeout: 10_000 })
+  await submit.click()
+}
+
+/**
+ * Every SUBSEQUENT send in an already-open session (as opposed to
+ * `submitDraft`'s first send on a brand-new draft) — same enabled-wait
+ * `submitDraft` does, factored out so no call site can regress to a bare
+ * `submitControl(page).click()`.
+ *
+ * REQUIRED, not a style preference — MEASURED live 2026-08-06: a bare
+ * `.click()` right after `composeText()` intermittently landed on the
+ * button while it was still momentarily disabled (composer validation
+ * settling a beat after the text lands), especially right after
+ * `page.reload()`. Playwright's auto-actionability wait does not cover a
+ * CUSTOM disabled affordance the way `toBeEnabled()` does, so the click
+ * silently no-ops — reproduced deterministically as A2's second turn never
+ * completing, in isolation, with a freshly booted backend (ruling out cross-
+ * test flakiness as the cause).
+ */
+export async function sendSubsequentMessage(page: Page) {
+  const submit = submitControl(page)
+  await expect(submit, "submit control never became enabled for a subsequent send").toBeEnabled({ timeout: 10_000 })
+  await submit.click()
+}
+
+export async function currentSessionIds(page: Page): Promise<string[]> {
+  const ids = await page
+    .locator(RAIL_SELECTORS.allSessionRows)
+    .evaluateAll((els) => els.map((el) => el.getAttribute("data-session-id")))
+  return ids.filter((id): id is string => !!id)
+}
+
+/**
+ * B1's row-appears-live proof needs the session id the app just minted. Web
+ * lanes DO have a URL to correlate against (`sessionUrlPattern` in
+ * `real-harness-local.spec.ts`) — but relying on `page.url()` here would
+ * silently stop proving the RAIL announced the row (defects 1/2/7's actual
+ * symptom) and start proving only client-side navigation, which a broken
+ * rail-invalidation path can satisfy on its own. Diffing the rail's own
+ * `data-session-id` set (same technique `desktop-unsigned-embedded.spec.ts`
+ * uses, where no URL exists at all) keeps this lane's B1 proof identical in
+ * kind to every other lane's.
+ */
+export async function waitForNewSessionId(page: Page, before: string[], timeoutMs = 30_000): Promise<string> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const ids = await currentSessionIds(page)
+    const found = ids.find((id) => !before.includes(id))
+    if (found) return found
+    if (Date.now() > deadline) {
+      throw new Error(
+        `GATING: no new rail session row appeared within ${timeoutMs}ms. Rows seen: ${JSON.stringify(ids)}`,
+      )
+    }
+    await page.waitForTimeout(200)
+  }
+}
+
+/** Same placeholder-id exclusion as `desktop-unsigned-embedded.spec.ts`'s `waitForNewTerminalId` — see that file's doc for why both `"new"` and `pending-*` must be excluded. */
+export async function waitForNewTerminalId(page: Page, before: string[], timeoutMs = 20_000): Promise<string> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const ids = await page
+      .locator('[data-testid="rail-sidebar-terminal-row"]')
+      .evaluateAll((els) => els.map((el) => el.getAttribute("data-terminal-id")))
+    const found = ids.find((id): id is string => !!id && id !== "new" && !id.startsWith("pending-") && !before.includes(id))
+    if (found) return found
+    if (Date.now() > deadline) {
+      throw new Error(`GATING: no new terminal row appeared within ${timeoutMs}ms. Rows seen: ${JSON.stringify(ids)}`)
+    }
+    await page.waitForTimeout(200)
+  }
+}
+
+/** Opens the terminal creator and presses the "Shell" tile — same contract `core-terminal.spec.ts`'s `createPlainTerminal` pins against the mock. */
+export async function createShellTerminal(page: Page) {
+  const before = await page
+    .locator('[data-testid="rail-sidebar-terminal-row"]')
+    .evaluateAll((els) => els.map((el) => el.getAttribute("data-terminal-id")).filter((id): id is string => !!id))
+  const newTermBtn = page.locator('[data-testid="workspace-scope-new-terminal"]')
+  await expect(newTermBtn, 'the toolbar\'s "New Terminal" affordance never appeared').toBeVisible({ timeout: 15_000 })
+  await newTermBtn.first().click()
+  const launchers = page.locator('[data-component="terminal-new-launchers"]')
+  await expect(launchers, "the terminal creator's launcher grid never opened").toBeVisible({ timeout: 15_000 })
+  const shellTile = launchers.locator('[data-slot="terminal-launcher"][data-launcher-id="shell"]')
+  await expect(shellTile, 'the creator\'s "Shell" tile never appeared').toBeVisible({ timeout: 10_000 })
+  await shellTile.click()
+  return waitForNewTerminalId(page, before, 20_000)
+}
+
+/** A scratch git worktree — same shape `desktop-unsigned-embedded.spec.ts`'s `makeScratchWorkspace` uses, kept here only for callers that need a real directory alongside the fixture's own (currently unused by either spec but kept available for a future scenario that needs a SECOND workspace). */
+export async function makeScratchGitDir(label: string): Promise<string> {
+  const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-e2e-web-signed-${label}-`)))
+  return dir
+}
+
+const execFileAsync = promisify(execFile)
+
+/** Mirrors `real-harness-local.spec.ts`'s `resolveBinary` — resolves an override env var or a bare name on PATH, verified with `--version`. */
+export async function resolveBinary(name: string, envVar: string): Promise<string | undefined> {
+  const override = process.env[envVar]?.trim()
+  const binary = override || name
+  try {
+    if (binary.includes("/")) {
+      await execFileAsync(binary, ["--version"], { timeout: 10_000 })
+      return binary
+    }
+    const found = await execFileAsync("which", [binary], { timeout: 10_000 })
+    const resolved = found.stdout.trim() || binary
+    await execFileAsync(resolved, ["--version"], { timeout: 10_000 })
+    return resolved
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Same asymmetry as `real-harness-local.spec.ts`'s `requireBinary`: an absent
+ * binary is a contributor's local reality (visible `test.skip`) but a broken
+ * CI job (loud GATING throw), because the lane is expected to install the
+ * binaries it drives. Neither path is ever silent.
+ */
+export function requireBinary(binary: string | undefined, name: string, hint: string) {
+  if (binary) return
+  const reason =
+    `${name} binary not found on PATH (or its override failed \`--version\`) — ${hint} ` +
+    `No authentication is required for this tier: the scripted model server is the endpoint.`
+  if (process.env.CI) throw new Error(`GATING: ${reason}`)
+  test.skip(true, reason)
+}

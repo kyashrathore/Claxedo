@@ -159,7 +159,6 @@ const Database = createRequire(import.meta.url)(
 const database = new Database(path.join(directory, "workgraph.sqlite"))
 const execution = createLocalWorkspaceExecution({
   worktreeRoot: path.join(directory, "worktrees"),
-  repositoryDirectory: async () => repository,
   sessions,
 })
 const embedded = await createLocalEmbeddedWorkGraph({ database, execution })

@@ -291,11 +291,6 @@ async function startServer() {
       ...process.env,
       CLAXEDO_DATA_DIR: dataDir,
       CLAXEDO_SERVER_PORT: String(BACKEND_PORT),
-      // Without a workgraph repository the spawned claxedo-server fatals before
-      // /api/claxedo/health ever answers (documented in docs/e2e-decisions.md,
-      // live-real-harness-smoke :600 row). Point it at this checkout, derived
-      // from the spec's own path.
-      CLAXEDO_WORKGRAPH_REPOSITORY: REPO_ROOT,
     },
     stdio: ["ignore", "pipe", "pipe"],
   })

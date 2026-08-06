@@ -65,8 +65,9 @@
  *     keyed by EXACT, case-sensitive `part.tool`: `read, list, glob, grep, webfetch,
  *     websearch, task, bash, edit, write, apply_patch, todowrite, question, skill`.
  *     Any other `part.tool` string falls back to `GenericTool`
- *     (`packages/session-ui/src/components/basic-tool.tsx` line ~322, `icon="mcp"`,
- *     title interpolates the raw tool string verbatim).
+ *     (`packages/session-ui/src/components/basic-tool.tsx`, `icon="wrench"` unless
+ *     the row is an MCP operation, which draws `icon="mcp"`; title interpolates
+ *     the raw tool string verbatim).
  *   Per-tool DOM (all under `[data-component="tool-part-wrapper"]`):
  *     read/list/glob/grep: `[data-slot="basic-tool-tool-subtitle"]` (path/pattern),
  *       `[data-slot="basic-tool-tool-arg"]` (extra args) — hidden while pending.
@@ -114,7 +115,7 @@
  *   3. Each registered ToolRegistry renderer (read, list, glob, grep, webfetch,
  *      websearch, task, bash, edit, write, apply_patch, skill) renders via its
  *      dedicated component for a part carrying that exact `tool` string.
- *   4. An unregistered `tool` string falls back to `GenericTool` (MCP icon, raw name
+ *   4. An unregistered `tool` string falls back to `GenericTool` (wrench icon, raw name
  *      in the title) — proven both via a deliberately-unknown name AND via harnesses
  *      whose native (non-ACP) tool names don't happen to match the registry (Claude
  *      SDK's `"Grep"`, Codex app-server's `"command"`, Cursor SDK's `"shell"`).
