@@ -13,7 +13,7 @@ const packageDir = path.resolve(import.meta.dir, "..")
 const mainPath = path.join(packageDir, "out/main/index.js")
 const cdpPort = Number(Bun.env.CLAXEDO_DESKTOP_CDP_PORT ?? "9460")
 const serverPort = Number(Bun.env.CLAXEDO_SERVER_PORT ?? String(cdpPort + 1_000))
-const idleMs = Number(Bun.env.CLAXEDO_MEMORY_IDLE_MS ?? "5000")
+const idleMs = Number(Bun.env.CLAXEDO_MEMORY_IDLE_MS ?? "20000")
 const fixturePath = Bun.env.CLAXEDO_MEMORY_FIXTURE
   ? path.resolve(packageDir, Bun.env.CLAXEDO_MEMORY_FIXTURE)
   : path.join(import.meta.dir, "fixtures/memory-profile/state.json")
@@ -66,7 +66,15 @@ try {
   })
   await client.send("Page.reload", { ignoreCache: true })
   await waitForExpression(client, `document.readyState === "complete" && Boolean(document.getElementById("root")?.children.length)`)
+  await delay(2_000)
+  const startupProcesses = processFamily(app.pid)
+  const startupFootprint = nativeFootprint(startupProcesses)
+  await delay(idleMs)
+  const emptyProcesses = processFamily(app.pid)
+  const emptyFootprint = nativeFootprint(emptyProcesses)
   const core = await verifyCore(serverPort)
+  const activeProcesses = processFamily(app.pid)
+  const activeFootprint = nativeFootprint(activeProcesses)
   await delay(idleMs)
 
   await client.send("Performance.enable")
@@ -108,6 +116,10 @@ try {
   }
   const footprint = nativeFootprint(processes)
   const rssMiB = (process?: ProcessRow) => round((process?.rssKiB ?? 0) / 1024)
+  const startupHarnessProcesses = harnessProcesses(startupProcesses)
+  const emptyHarnessProcesses = harnessProcesses(emptyProcesses)
+  const activeHarnessProcesses = harnessProcesses(activeProcesses)
+  const idleHarnessProcesses = harnessProcesses(processes)
 
   console.log(JSON.stringify({
     profile: path.basename(path.dirname(fixturePath)),
@@ -124,7 +136,16 @@ try {
     terminal_delete_status: core.status.terminalDelete,
     restored_content_count: Number(page.restoredContentCount ?? 0),
     mounted_content_count: Number(page.mountedContentCount ?? 0),
+    startup_footprint_mib: startupFootprint.summary,
+    empty_shell_footprint_mib: emptyFootprint.summary,
+    active_harness_footprint_mib: activeFootprint.summary,
     total_footprint_mib: footprint.summary,
+    startup_harness_process_count: startupHarnessProcesses.length,
+    empty_shell_harness_process_count: emptyHarnessProcesses.length,
+    active_harness_process_count: activeHarnessProcesses.length,
+    post_idle_harness_process_count: idleHarnessProcesses.length,
+    active_harness_commands: activeHarnessProcesses.map((process) => process.command),
+    post_idle_harness_commands: idleHarnessProcesses.map((process) => process.command),
     main_rss_mib: rssMiB(roles.main),
     gpu_rss_mib: rssMiB(roles.gpu),
     renderer_rss_mib: rssMiB(roles.renderer),
@@ -263,6 +284,13 @@ function processFamily(rootPid: number) {
     })
   }
   return rows.filter((row) => family.has(row.pid))
+}
+
+function harnessProcesses(processes: ProcessRow[]) {
+  return processes.filter((process) =>
+    process.command.includes("claxedo-engine-worker") ||
+    /(?:^|[\/\s])opencode(?:\s|$).*\bserve\b/.test(process.command)
+  )
 }
 
 function nativeFootprint(processes: ProcessRow[]) {
