@@ -66,6 +66,7 @@ try {
   })
   await client.send("Page.reload", { ignoreCache: true })
   await waitForExpression(client, `document.readyState === "complete" && Boolean(document.getElementById("root")?.children.length)`)
+  const core = await verifyCore(serverPort)
   await delay(idleMs)
 
   await client.send("Performance.enable")
@@ -112,6 +113,15 @@ try {
     profile: path.basename(path.dirname(fixturePath)),
     total_rss_mib: round(processes.reduce((total, process) => total + process.rssKiB, 0) / 1024),
     renderer_ready: Number(page.rendererReady ?? 0),
+    core_routes_ok: core.routes,
+    terminal_smoke_ok: core.terminal,
+    health_status: core.status.health,
+    project_status: core.status.project,
+    session_status: core.status.sessions,
+    config_status: core.status.config,
+    providers_status: core.status.providers,
+    terminal_create_status: core.status.terminalCreate,
+    terminal_delete_status: core.status.terminalDelete,
     restored_content_count: Number(page.restoredContentCount ?? 0),
     mounted_content_count: Number(page.mountedContentCount ?? 0),
     total_footprint_mib: footprint.summary,
@@ -143,6 +153,46 @@ try {
     if (err.trim()) console.error(err.trim())
   }
   await rm(root, { recursive: true, force: true })
+}
+
+async function verifyCore(port: number) {
+  const base = `http://127.0.0.1:${String(port)}`
+  const directory = encodeURIComponent(packageDir)
+  const health = await fetch(`${base}/api/claxedo/health`)
+  const project = await fetch(`${base}/project/current?directory=${directory}`)
+  const sessions = await fetch(`${base}/session?directory=${directory}&roots=true`)
+  const config = await fetch(`${base}/global/config`)
+  const providers = await fetch(`${base}/provider?view=index`)
+  const createTerminal = await fetch(`${base}/api/wr/pty?directory=${directory}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title: "memory-smoke", initialCommand: "printf memory-smoke; sleep 30" }),
+  })
+  const terminal = createTerminal.ok ? asObject(await createTerminal.json()) : {}
+  const terminalId = typeof terminal.id === "string" ? terminal.id : undefined
+  const deleteTerminal = terminalId
+    ? await fetch(`${base}/api/wr/pty/${encodeURIComponent(terminalId)}?directory=${directory}`, { method: "DELETE" })
+    : undefined
+  return {
+    routes: Number(
+      health.ok &&
+        project.ok &&
+        sessions.ok &&
+        Array.isArray(await sessions.json()) &&
+        config.ok &&
+        providers.ok,
+    ),
+    terminal: Number(createTerminal.ok && deleteTerminal?.ok === true),
+    status: {
+      health: health.status,
+      project: project.status,
+      sessions: sessions.status,
+      config: config.status,
+      providers: providers.status,
+      terminalCreate: createTerminal.status,
+      terminalDelete: deleteTerminal?.status ?? 0,
+    },
+  }
 }
 
 async function waitForTarget() {
