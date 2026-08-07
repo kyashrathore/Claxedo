@@ -777,7 +777,11 @@ Terminal states: structural package acceptance with machine-readable inventory a
 
 **Verification:** WorkGraph and Documents are fully hosted contributions, unavailable persisted surfaces normalize safely, and local renderer/server production graphs do not reach their implementations.
 
-- [ ] **Unit 3: Complete Workspace Runtime harness lifecycle ownership**
+- [~] **Unit 3: Complete Workspace Runtime harness lifecycle ownership** — *shared primitive and the OpenCode adapter landed; four adapters and the server handover remain*
+
+**Status (2026-08-08):** `agent-sdk-runtime/src/harnesses/shared/process-lifecycle.ts` owns single-flight startup, generation ownership, activity leases, the 30-second idle grace, bounded stop, and parent-loss cleanup, with 15 tests against a deterministic child fixture. The OpenCode adapter is wired to it, which fixed a real defect (a cached rejected startup promise bricked the adapter until process restart) and closed a real gap (the spawned `opencode serve` ran with no `OPENCODE_SERVER_PASSWORD`; each launch now gets a fresh credential passed through the environment, attached at the single request seam, and redacted from logs).
+
+**Not done:** the ACP, Codex, Claude, and Pi adapters still own their own lifecycles and must move onto the primitive; `deployments/local/server.ts` still holds process-lifecycle responsibility that should become host policy only; and the per-adapter liveness/replay-safety scenarios in this unit's test list are unwritten for those four.
 
 **Goal:** Make Workspace Runtime's lazy harness registry the sole local dispatch path and give each adapter complete start/share/active/idle/stop/restart and transport-security ownership.
 
