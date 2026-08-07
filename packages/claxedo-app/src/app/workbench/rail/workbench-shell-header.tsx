@@ -64,7 +64,7 @@ export function WorkbenchShellHeader(props: {
   onNewPage: () => void
   onNewSession: () => void
   onNewTerminalDraft: () => void
-  onNewTask: () => void
+  onNewTask?: () => void
   onSettings?: () => void
   onShowSidebar: () => void
   onSidebarHotZoneEnter: () => void

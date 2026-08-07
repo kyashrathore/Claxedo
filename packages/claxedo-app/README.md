@@ -51,6 +51,16 @@ web port with `PORT` (default `4444`).
 
 > The desktop shell is a separate package: `cd packages/claxedo-desktop && bun run dev`.
 
+### Optional Documents and WorkGraph features
+
+Documents and WorkGraph are disabled by default so the empty shell does not load
+their server graphs, UI modules, or persisted surfaces. Enable either feature in
+desktop/local-server development with `CLAXEDO_ENABLE_DOCUMENTS=1` or
+`CLAXEDO_ENABLE_WORKGRAPH=1`. Browser builds use the matching build-time flags
+`VITE_CLAXEDO_ENABLE_DOCUMENTS=1` and `VITE_CLAXEDO_ENABLE_WORKGRAPH=1`.
+
+The UI chunks load only after an enabled feature surface is opened.
+
 ### Onboarding v1 preview
 
 The onboarding v1 UI is build-time gated and disabled by default so normal UI

@@ -82,6 +82,8 @@ function createHarness(input: {
   }
   resolveSession?: (sessionId: string) => Promise<{ directory: string; title?: string; workspaceId?: string; environment?: { kind?: string }; sessionRef?: SessionRef } | undefined>
   canUseDocuments?: boolean
+  documentsEnabled?: boolean
+  workgraphEnabled?: boolean
 } = {}) {
   let focused = input.focused ?? null
   let sessionInventory = input.sessionInventory
@@ -316,6 +318,8 @@ function createHarness(input: {
     resolveSession: input.resolveSession,
     currentSessionId: () => undefined,
     canUseDocuments: () => input.canUseDocuments,
+    documentsEnabled: () => input.documentsEnabled ?? true,
+    canUseWorkGraph: () => input.workgraphEnabled ?? true,
     navigate: (path, options) => navigateCalls.push({ path, replace: options?.replace }),
   })
 
@@ -485,6 +489,19 @@ describe("state route intent", () => {
     const composer = createHarness()
     composer.receive({ workspaceId: "/repo/main", newTask: true })
     expect(composer.opened).toEqual([{ name: "openTaskComposer", directory: "/repo/main" }])
+  })
+
+  test("redirects WorkGraph route intents while the feature is disabled", async () => {
+    const harness = createHarness({ workgraphEnabled: false })
+
+    harness.receive({ workspaceId: "/repo/main", workspaceWorkGraph: true })
+    await new Promise<void>((resolve) => queueMicrotask(resolve))
+
+    expect(harness.opened).toEqual([])
+    expect(harness.navigateCalls).toEqual([{
+      path: workspaceSessionRoute("/repo/main"),
+      replace: true,
+    }])
   })
 
   test("workspace browse route opens the workspace panel without creating a session surface", () => {
@@ -1583,6 +1600,19 @@ describe("state route intent", () => {
       path: workspaceSessionRoute("/workspace/main"),
       replace: true,
     })
+  })
+
+  test("page index deep-links redirect while Documents is disabled", async () => {
+    const harness = createHarness({ documentsEnabled: false })
+
+    harness.receive({ pageId: "__index__" })
+    await new Promise<void>((resolve) => queueMicrotask(resolve))
+
+    expect(harness.opened).toEqual([])
+    expect(harness.navigateCalls).toEqual([{
+      path: workspaceSessionRoute("/workspace/main"),
+      replace: true,
+    }])
   })
 
   // --- CONFIRMED BUG (compact tabs "circles") ---

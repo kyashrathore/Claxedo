@@ -137,6 +137,10 @@ const processDiagnosticsBridge: ProcessDiagnosticsBridge = {
 }
 
 const api: ElectronAPI = {
+  optionalFeatures: {
+    documents: process.env.CLAXEDO_ENABLE_DOCUMENTS === "1",
+    workgraph: process.env.CLAXEDO_ENABLE_WORKGRAPH === "1",
+  },
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
   awaitInitialization: (onStep) => {
     const handler = (_: unknown, step: InitStep) => onStep(step)

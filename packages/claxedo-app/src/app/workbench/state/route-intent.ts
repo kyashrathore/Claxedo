@@ -273,6 +273,8 @@ export function createRouteIntentAdapter(input: {
   resolveSession?: (sessionId: string) => Promise<ResolvedSessionTarget | undefined> | ResolvedSessionTarget | undefined
   currentSessionId?: Accessor<string | undefined>
   canUseDocuments?: Accessor<boolean>
+  documentsEnabled?: Accessor<boolean>
+  canUseWorkGraph?: Accessor<boolean>
   navigate: (path: string, options?: { replace?: boolean }) => void
   log?: (event: string, payload?: Record<string, unknown>) => void
 }) {
@@ -420,14 +422,26 @@ export function createRouteIntentAdapter(input: {
       return
     }
     if (intent.workgraph) {
+      if (input.canUseWorkGraph?.() !== true) {
+        redirect("/")
+        return
+      }
       state.layout.openWorkGraph()
       return
     }
     if (intent.newTask) {
+      if (input.canUseWorkGraph?.() !== true) {
+        redirect(intent.workspaceId ? workspaceSessionRoute(intent.workspaceId) : "/")
+        return
+      }
       state.layout.openTaskComposer(intent.workspaceId)
       return
     }
     if (intent.workspaceWorkGraph && intent.workspaceId) {
+      if (input.canUseWorkGraph?.() !== true) {
+        redirect(workspaceSessionRoute(intent.workspaceId))
+        return
+      }
       state.layout.openWorkspaceWorkGraph(intent.workspaceId)
       return
     }
@@ -580,6 +594,10 @@ export function createRouteIntentAdapter(input: {
     }
 
     if (intent.pageId) {
+      if (input.documentsEnabled?.() !== true) {
+        redirect(workspaceSessionRoute(workspaceId))
+        return
+      }
       if (intent.pageId === ROUTE_INTENT_INDEX) {
         const existing = findContent(
           (m) => m.type === "pages-index" && m.directory === workspaceId,

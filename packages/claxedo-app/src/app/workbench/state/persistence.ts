@@ -1,8 +1,13 @@
 // Persistence — v5 validator/defaults.
 
-import { constructWorkbenchState, validate as validateWorkbench } from "../workbench/index"
+import { constructWorkbenchState, reducers, validate as validateWorkbench } from "../workbench/index"
 import type { WorkbenchState } from "../workbench/index"
-import { createWorkspacePanel, type WorkspacePanelState } from "../../../features/workspaces/ui/panel/workspace-panel-state"
+import {
+  createWorkspacePanel,
+  isGlobalPanelMode,
+  type WorkspacePanelState,
+} from "../../../features/workspaces/ui/panel/workspace-panel-state"
+import type { OptionalFeatureFlags } from "@/app/integrations/optional-feature-flags"
 import { CONTENT_TYPES, PINNED_CONTENT_TYPES } from "./types"
 import { selectEvictableSurfaces } from "./surface-budget"
 import type {
@@ -197,6 +202,42 @@ function dropContents(state: WorkbenchState, drop: ReadonlySet<string>): Workben
     layoutSnapshots: Object.fromEntries(
       Object.entries(state.layoutSnapshots).filter(([id]) => !drop.has(id)),
     ),
+  }
+}
+
+export function pruneDisabledOptionalFeatures(state: ClaxedoState, flags: OptionalFeatureFlags): ClaxedoState {
+  const disabledIds = new Set(
+    Object.values(state.meta)
+      .filter((meta) => {
+        if (!flags.documents && (meta.type === "page" || meta.type === "pages-index")) return true
+        return !flags.workgraph &&
+          (meta.type === "workgraph" || meta.type === "workspace-workgraph" || meta.type === "task-composer")
+      })
+      .map((meta) => meta.id),
+  )
+  const resetWorkspacePanel = !flags.workgraph && isGlobalPanelMode(state.workspacePanel.mode)
+  if (disabledIds.size === 0 && !resetWorkspacePanel) return state
+
+  const closed = state.workbench.panes
+    .filter((pane) => pane.contentId && disabledIds.has(pane.contentId))
+    .reduce(
+      (workbench, pane) => reducers.split.close(workbench, pane.id, { destroyContent: true }),
+      state.workbench,
+    )
+  const workbench = validateWorkbench(dropContents(closed, disabledIds)).state
+  const paneIds = new Set(workbench.panes.map((pane) => pane.id))
+
+  return {
+    ...state,
+    workbench,
+    meta: Object.fromEntries(Object.entries(state.meta).filter(([id]) => !disabledIds.has(id))),
+    workspace: {
+      ...state.workspace,
+      paneWorktree: Object.fromEntries(
+        Object.entries(state.workspace.paneWorktree).filter(([paneId]) => paneIds.has(paneId)),
+      ),
+    },
+    workspacePanel: resetWorkspacePanel ? createWorkspacePanel() : state.workspacePanel,
   }
 }
 

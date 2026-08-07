@@ -139,6 +139,10 @@ export type BrowserBridge = {
 export type ProcessDiagnosticsBridge = LocalDiagnostics.Capability
 
 export type ElectronAPI = {
+  optionalFeatures: Readonly<{
+    documents: boolean
+    workgraph: boolean
+  }>
   killSidecar: () => Promise<void>
   awaitInitialization: (onStep: (step: InitStep) => void) => Promise<ServerReadyData>
   getDefaultServer: () => Promise<string | null>

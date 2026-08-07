@@ -16,6 +16,13 @@ wrapper package with explicit stable exports. Until then, publish/release checks
 must keep `private: true`, run `bun run check:package-boundary`, and inspect
 `npm pack --dry-run` before any archive leaves a developer machine.
 
+## Optional local features
+
+The local Documents and WorkGraph dependency graphs are disabled by default.
+Set `CLAXEDO_ENABLE_DOCUMENTS=1` or `CLAXEDO_ENABLE_WORKGRAPH=1` to mount their
+routes. Enabled graphs are imported lazily; disabled graphs do not initialize
+their databases, brokers, intake subscriptions, or reconcilers.
+
 ## Workspace-Runtime Host Composition And Sandbox Image
 
 claxedo-server owns the runnable **host composition** for the workspace

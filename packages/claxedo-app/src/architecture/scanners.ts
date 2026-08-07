@@ -182,18 +182,20 @@ export function unguardedHistoryUrlWrites(files: SourceFile[]): Finding[] {
 }
 
 export const WORKGRAPH_SURFACE_FILE = "app/integrations/first-party-content-surfaces.tsx"
+export const WORKGRAPH_LAZY_SURFACE_FILE = "app/integrations/workgraph-content-surfaces.tsx"
 
-export function workGraphEagerSurfaceViolations(files: SourceFile[]): Finding[] {
+export function workGraphLazySurfaceViolations(files: SourceFile[]): Finding[] {
   const file = files.find((item) => item.path === WORKGRAPH_SURFACE_FILE)
   if (!file) return [{ file: WORKGRAPH_SURFACE_FILE, line: 1, match: "WorkGraph surface file is missing" }]
-  const findings = [
-    ...findMatches(file, /const\s+WorkGraphContent\s*=\s*lazy/g),
-    ...findMatches(file, /Loading WorkGraph/g),
-  ]
-  if (/import\s+\{\s*WorkGraphContent\s*\}\s+from\s+["']\.\.\/\.\.\/features\/workgraph["']/.test(file.text)) {
-    return findings
+  const implementation = files.find((item) => item.path === WORKGRAPH_LAZY_SURFACE_FILE)
+  const findings = findMatches(file, /import\s+.+from\s+["']\.\/workgraph-content-surfaces["']/g)
+  if (!implementation) {
+    findings.push({ file: WORKGRAPH_LAZY_SURFACE_FILE, line: 1, match: "lazy WorkGraph surface file is missing" })
   }
-  return [{ file: file.path, line: 1, match: "WorkGraphContent must be imported eagerly" }, ...findings]
+  if (!/lazy\s*\(\s*\(\)\s*=>\s*import\(["']\.\/workgraph-content-surfaces["']\)/.test(file.text)) {
+    findings.push({ file: file.path, line: 1, match: "WorkGraph surfaces must use a lazy import boundary" })
+  }
+  return findings
 }
 
 /**
@@ -202,8 +204,8 @@ export function workGraphEagerSurfaceViolations(files: SourceFile[]): Finding[] 
  * flow reads as a different application.
  */
 export function workGraphNativePickerViolations(files: SourceFile[]): Finding[] {
-  const file = files.find((item) => item.path === WORKGRAPH_SURFACE_FILE)
-  if (!file) return [{ file: WORKGRAPH_SURFACE_FILE, line: 1, match: "WorkGraph surface file is missing" }]
+  const file = files.find((item) => item.path === WORKGRAPH_LAZY_SURFACE_FILE)
+  if (!file) return [{ file: WORKGRAPH_LAZY_SURFACE_FILE, line: 1, match: "WorkGraph surface file is missing" }]
   return findMatches(file, /openDirectoryPickerDialog/g)
 }
 
