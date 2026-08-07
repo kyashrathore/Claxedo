@@ -104,6 +104,11 @@ describe("interactive hosted Session smoke", () => {
       expect(call.headers.get("x-opencode-directory")).toBe("/workspace")
     }
     expect(harness.createdSessionId!.length).toBeGreaterThan(100)
+    expect(harness.createdSessionProfile).toEqual({
+      agent: "build",
+      model: { providerID: "opencode", id: "mimo-v2.5-free", variant: "default" },
+      tools: [],
+    })
     expect(harness.promptText).toContain(markerToken(harness.runId!))
     // Both probes were consulted before declaring the turn settled.
     expect(harness.calls.some((call) => call.url.endsWith("/api/session/active"))).toBe(true)
@@ -217,6 +222,11 @@ function fakeStaging(
       WORKGRAPH_SMOKE_USER_A_ID: "user_a",
       WORKGRAPH_SMOKE_ORGANIZATION_A_ID: "org_a",
       WORKGRAPH_SMOKE_REPOSITORY_URL: "https://github.test/owner/repo.git",
+      WORKGRAPH_SMOKE_AGENT: "build",
+      WORKGRAPH_SMOKE_PROVIDER_ID: "opencode",
+      WORKGRAPH_SMOKE_MODEL_ID: "mimo-v2.5-free",
+      WORKGRAPH_SMOKE_EFFORT: "default",
+      WORKGRAPH_SMOKE_TOOLS_JSON: "[]",
       WORKGRAPH_SMOKE_RETRY_DELAY_MS: "1",
     } as Record<string, string>,
     calls: [] as Array<{ url: string; method: string; headers: Headers }>,
@@ -224,6 +234,9 @@ function fakeStaging(
     observedRetryAfterMs: [] as number[],
     turnPolls: 0,
     createdSessionId: undefined as string | undefined,
+    createdSessionProfile: undefined as
+      | { agent: string; model: { providerID: string; id: string; variant: string }; tools: string[] }
+      | undefined,
     promptText: "",
     runId: undefined as string | undefined,
     prompted: false,
@@ -295,12 +308,18 @@ function fakeStaging(
     if (url.pathname.startsWith(relayPrefix)) {
       const path = url.pathname.slice(relayPrefix.length)
       if (path === "/api/session" && method === "POST") {
-        const body = JSON.parse(String(init?.body)) as { id: string }
+        const body = JSON.parse(String(init?.body)) as {
+          id: string
+          agent: string
+          model: { providerID: string; id: string; variant: string }
+          tools: string[]
+        }
         if (options.routerRefusesLongIds && body.id.length > 100) {
           // The exact router-level refusal shape: no body, no content-type.
           return new Response(null, { status: 404 })
         }
         state.createdSessionId = body.id
+        state.createdSessionProfile = { agent: body.agent, model: body.model, tools: body.tools }
         return Response.json({ id: options.rewriteSessionId ? "ses_rewritten" : body.id }, { status: 201 })
       }
       const sessionSegment = `/api/session/${encodeURIComponent(state.createdSessionId ?? "")}`
