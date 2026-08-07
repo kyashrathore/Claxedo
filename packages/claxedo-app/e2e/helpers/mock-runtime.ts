@@ -141,7 +141,7 @@ export type PromptBody = {
 export type SessionCreateRequest = {
   /** The `x-claxedo-draft-id` header, validated against the server's own pattern. */
   draftId: string | undefined
-  /** The request body; `{}` when the client sent none (which is the normal case). */
+  /** The request body, including the complete initial session config. */
   body: Record<string, unknown>
 }
 
@@ -402,7 +402,7 @@ export type MockRuntimeOptions = {
    * state. Pass `[]` for a genuinely empty workspace.
    */
   workspaceFiles?: { path: string; content: string }[]
-  /** `PATCH /session/:id/config` returns a non-2xx (500 — a simulated adapter/transport blowup). */
+  /** Initial config persistence fails during `POST /session`, and later config PATCHes also return 500. */
   configPatchFailure?: boolean
   /**
    * `PATCH /session/:id/config` answers the route's REAL harness-switch rejection:
@@ -2186,10 +2186,13 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       // CONTRACT: validated against the real route (see
       // e2e/helpers/contracts/session-create.ts). The draft-id header is checked the
       // way `parseDraftId` checks it — a malformed id is a hard 400 server-side, so
-      // it must not pass silently here; the body is optional (the app sends none).
+      // it must not pass silently here; the body carries the complete initial config.
       const draftId = parseDraftIdHeader(route.request().headers(), url)
       const body = parseSessionCreateRequest(route.request().postDataJSON?.() ?? undefined, url)
       requests.createSessionBodies.push({ draftId, body })
+      if (options.configPatchFailure && Object.keys(body).some((key) => ["harness", "model", "agent", "variant"].includes(key))) {
+        return json(route, { error: { code: "session_create_failed", message: "config unavailable" } }, 500)
+      }
       const sessionHarness = new URL(url).searchParams.get("harness")
       if (sessionHarness && sessionHarness !== "opencode") requests.harnessSessionCreateCount += 1
       else requests.opencodeSessionCreateCount += 1

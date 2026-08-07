@@ -95,6 +95,18 @@ export function normalizeSessionConfigUpdate(input: unknown): SessionConfigUpdat
   }
 }
 
+export function normalizeSessionCreateConfig(input: unknown): SessionConfigUpdate {
+  const row = record(input) ?? {}
+  const model = record(row.model)
+  return normalizeSessionConfigUpdate({
+    ...row,
+    ...(typeof model?.providerID === "string" && typeof model.id === "string"
+      ? { model: { providerID: model.providerID, modelID: model.id } }
+      : {}),
+    ...(!("variant" in row) && typeof model?.variant === "string" ? { variant: model.variant } : {}),
+  })
+}
+
 export function normalizeSessionConfig(input: unknown): SessionConfig | undefined {
   const row = record(input) ?? {}
   const update = normalizeSessionConfigUpdate(input)

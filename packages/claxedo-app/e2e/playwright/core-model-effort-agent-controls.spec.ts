@@ -104,9 +104,8 @@
  *      `showAgentSelector()` and `harnessPending()` are mutually exclusive states, so a
  *      "visible AND disabled" agent selector cannot be produced through the public
  *      composer surface today.
- *   8. A failed first `PATCH /session/:id/config` shows a "Could not save session config"
- *      toast and keeps the new session unpublished: the draft remains intact and no
- *      prompt request is made.
+ *   8. Failed initial config persistence makes `POST /session` fail and keeps the new
+ *      session unpublished: the draft remains intact and no prompt request is made.
  *   9. With zero resolvable model (no connected providers at all), pressing Enter to
  *      submit blocks the send: a "Select an agent and model" toast appears, the composer
  *      text is preserved verbatim, and zero `prompt_async` requests are made.
@@ -115,7 +114,7 @@
  *
  * INVARIANTS — exactly one model control exists in the DOM at a time (INVARIANTS.md #1,
  *   scoped here to plain-OpenCode mode only; the harness-owned case is spec 3's); a
- *   config-PATCH failure must never block the send itself (see behavior 8); the submit
+ *   an existing-session config-PATCH failure must never discard composer state; the submit
  *   control's gating for "no model resolvable" is enforced
  *   both by disabling `[data-action="prompt-submit"]` AND by a defensive server-side-of-
  *   the-guard toast reachable via Enter (INVARIANTS.md #4 — "never assert readiness via a
@@ -127,8 +126,8 @@
  *     picker's model/variant rows — so behaviors 1–4, 6, 10 install an additional
  *     `page.route` override (this spec file only, not the shared helper) adding a
  *     connected `anthropic` provider with priced, multi-variant models.
- *   - Behavior 8 pins the creation boundary: the authoritative config PATCH completes
- *     before local session promotion. A non-2xx response therefore preserves the draft
+ *   - Behavior 8 pins the creation boundary: the complete config is part of the
+ *     authoritative create operation. A create failure therefore preserves the draft
  *     instead of exposing a session whose harness/model contract is incomplete.
  *   - Behavior 7's non-testability: `showAgentSelector()` requires
  *     `toolbarHarnessMode(scope()) === false`; `harnessPending()` requires
@@ -617,7 +616,7 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
   // core-harness-ownership-local's territory (this spec is plain-OpenCode only).
 
   test(
-    "failed first config PATCH preserves the unpublished draft — behavior 8",
+    "failed initial config persistence preserves the unpublished draft — behavior 8",
     async ({ page }) => {
       const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, configPatchFailure: true })
       await seedOneProject(page, DIR)
@@ -628,13 +627,13 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
       await input.fill(promptText)
       await page.locator(SELECTORS.submitControl).last().click()
 
-      await expect.poll(() => mock.requests.configPatchCount, { timeout: 15_000 }).toBeGreaterThan(0)
-      await expect(page.locator('[data-slot="toast-title"]', { hasText: "Could not save session config" })).toBeVisible({
+      await expect.poll(() => mock.requests.createSessionCount, { timeout: 15_000 }).toBeGreaterThan(0)
+      await expect(page.locator('[data-slot="toast-title"]', { hasText: "Failed to create session" })).toBeVisible({
         timeout: 10_000,
       })
       await expect(input).toContainText(promptText)
       await expect.poll(() => mock.requests.promptCount, { intervals: [500, 1000, 1000], timeout: 3_000 }).toBe(0)
-      expect(mock.requests.configPatchCount).toBe(1)
+      expect(mock.requests.configPatchCount).toBe(0)
       expect(mock.requests.createSessionCount).toBe(1)
     },
   )

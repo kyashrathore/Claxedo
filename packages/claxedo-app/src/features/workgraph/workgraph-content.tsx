@@ -95,7 +95,7 @@ export function WorkGraphContent(props: {
     window.addEventListener("keydown", dismissCreating, true)
     onCleanup(() => window.removeEventListener("keydown", dismissCreating, true))
   }
-  const [snapshot, { refetch }] = createResource(() => client.snapshot())
+  const [snapshot, { mutate: replaceSnapshot, refetch }] = createResource(() => client.snapshot())
   const [defaults] = createResource(() => client.defaults())
 
   // The execution capability catalog powers the Settings, Stream-settings, and New
@@ -228,7 +228,7 @@ export function WorkGraphContent(props: {
         const kind = result.error.code === "version_conflict" ? "conflict" : "request_failed"
         throw new WorkGraphApiError(kind, result.error.message)
       }
-      await refetch()
+      replaceSnapshot(await client.snapshot())
       return true
     } catch (error) {
       setMutationError(normalizeError(error))

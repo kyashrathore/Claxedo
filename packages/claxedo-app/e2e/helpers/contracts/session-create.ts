@@ -5,10 +5,8 @@
 //
 // WHAT IS DIFFERENT ABOUT THIS ROUTE
 // ----------------------------------
-// `prompt_async`'s contract is its body. This route's is mostly NOT: the app's
-// `createSession` (`src/platform/runtime/agent/agent-runtime-client.ts:465-478`)
-// sends `{ method: "POST", headers }` with **no body at all**. The enforceable
-// surface here is therefore:
+// `POST /session` admits a session and its complete initial runtime config as one
+// operation. The enforceable surface is therefore:
 //
 //   (a) the `x-claxedo-draft-id` HEADER, which the server validates against a strict
 //       pattern and answers with a hard 400 on violation. The mock ignored it
@@ -18,8 +16,7 @@
 //   (b) the 201 status. The mock returned 200 (its shared `json()` helper defaults
 //       there); the real route returns `c.json(normalizeSession(...), 201)` on every
 //       success path.
-//   (c) the body WHEN one is sent, which is looser than the route's own annotation
-//       admits — see SESSION_CREATE_CONFIG_FIELDS.
+//   (c) the body, including the fields in SESSION_CREATE_CONFIG_FIELDS.
 //
 // KNOWN LIMIT
 // -----------
@@ -101,13 +98,13 @@ export const SESSION_CREATE_CONFIG_FIELDS = {
       // the model — unless BOTH ids are strings. A half-filled model is not an error
       // server-side, it is a silent no-op, which is exactly the kind of thing a spec
       // should never be allowed to assert around.
-      if (typeof model.providerID !== "string" || typeof model.modelID !== "string") {
-        return `model must carry BOTH providerID and modelID as strings (promptModel drops it otherwise), got `
-          + `providerID=${typeOf(model.providerID)} modelID=${typeOf(model.modelID)}`
+      if (typeof model.providerID !== "string" || (typeof model.id !== "string" && typeof model.modelID !== "string")) {
+        return `model must carry providerID and id as strings, got `
+          + `providerID=${typeOf(model.providerID)} id=${typeOf(model.id)}`
       }
       return undefined
     },
-    consumedBy: "promptModel(row.model); null clears, partial is silently dropped",
+    consumedBy: "normalizeSessionCreateConfig maps the Protocol model id and nested variant into SessionConfigUpdate",
   },
   variant: {
     check: nullableString("variant"),
@@ -183,9 +180,8 @@ export function parseDraftIdHeader(headers: Readonly<Record<string, string>>, ur
 }
 
 /**
- * Validates a session-create request body. The body is optional: the app's own
- * `createSession` sends none, and the server tolerates that via
- * `.catch(() => ({}))`, so absent/empty is valid and yields `{}`.
+ * Validates a session-create request body. The route remains compatible with
+ * body-less external callers, while Claxedo sends the complete initial config.
  */
 export function parseSessionCreateRequest(rawBody: unknown, url: string): Record<string, unknown> {
   if (rawBody === undefined || rawBody === null) return {}

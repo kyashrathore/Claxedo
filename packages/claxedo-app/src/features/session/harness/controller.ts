@@ -4,11 +4,16 @@ import type { HarnessModelChoice, HarnessReadiness } from "./selection"
 import type { HarnessModelOption, HarnessType } from "./profile"
 import type { DraftDefaultLabels } from "./draft-defaults"
 import type { DraftDefaultResult, ResolveDraftDefaultInput } from "./draft-default-policy"
+import type { PreparedRuntimeSessionConfig } from "./prepared-session"
 
 export type HarnessScopeInput = {
   directory?: string
   sessionId?: string
   sessionRef?: SessionRef
+}
+
+export type HarnessSessionClaimInput = HarnessScopeInput & {
+  sessionConfig: PreparedRuntimeSessionConfig
 }
 
 export type HarnessSelectionControllerStore = {
@@ -47,7 +52,7 @@ export type HarnessSelectionControllerStore = {
 }
 
 export type HarnessSubmitControllerStore = HarnessSelectionControllerStore & {
-  claimSession(scope: string, input?: HarnessScopeInput): Promise<{ id: string } | undefined>
+  claimSession(scope: string, input: HarnessSessionClaimInput): Promise<{ id: string } | undefined>
   promote(from: string, to: string): void
   harnessReadyForSubmit(scope: string): boolean
   harnessModelKeyForSubmit(scope: string): ModelKey | undefined
@@ -119,7 +124,7 @@ export function createHarnessSubmitController(store: HarnessSubmitControllerStor
     readiness: (scope: string): HarnessReadiness => store?.readiness(scope) ?? "ready",
     readyForSubmit: (scope: string) => store?.harnessReadyForSubmit(scope) ?? true,
     modelKeyForSubmit: (scope: string) => store?.harnessModelKeyForSubmit(scope),
-    claimSession: (scope: string, input?: HarnessScopeInput) =>
+    claimSession: (scope: string, input: HarnessSessionClaimInput) =>
       store?.claimSession(scope, input) ?? Promise.resolve(undefined),
     setHarness: (scope: string, type: HarnessType, input?: HarnessScopeInput, binary?: string) =>
       store?.setHarness(scope, type, input, binary) ?? Promise.resolve(),

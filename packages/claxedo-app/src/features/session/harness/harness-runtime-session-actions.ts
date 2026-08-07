@@ -2,6 +2,7 @@ import { createOpencodeClient as defaultCreateOpencodeClient } from "@opencode-a
 import { harnessWorkspaceRuntimeRef, type HarnessScopeInput } from "./store-policy"
 import type {
   PreparedRuntimeSession,
+  PreparedRuntimeSessionConfig,
   PreparedSessionDirectory,
 } from "./prepared-session"
 import type { HarnessType } from "./profile"
@@ -9,7 +10,11 @@ import { harnessQueryFetch } from "@/platform/runtime/harness-query-fetch"
 
 type HarnessRuntimeSessionClient = {
   session: {
-    create(input: { directory: PreparedSessionDirectory }): Promise<{ data?: { id?: string } }>
+    create(input: {
+      directory: PreparedSessionDirectory
+      agent: string
+      model: { providerID: string; id: string; variant?: string }
+    }): Promise<{ data?: { id?: string } }>
     delete(input: { directory: PreparedSessionDirectory; sessionID: string }): Promise<unknown>
   }
 }
@@ -26,7 +31,7 @@ type HarnessRuntimeSessionRuntime<ScopeInput extends HarnessScopeInput> = {
   harnessSessionFetch(input?: ScopeInput): typeof fetch
 }
 
-export function createHarnessRuntimeSessionActions<ScopeInput extends HarnessScopeInput>(input: {
+export function createHarnessRuntimeSessionActions<ScopeInput extends HarnessScopeInput & { sessionConfig: PreparedRuntimeSessionConfig }>(input: {
   base: string
   runtime: HarnessRuntimeSessionRuntime<ScopeInput>
   createClient?: CreateHarnessRuntimeSessionClient
@@ -37,7 +42,7 @@ export function createHarnessRuntimeSessionActions<ScopeInput extends HarnessSco
     input.runtime.useLocalHarnessConfig(params) || !!harnessWorkspaceRuntimeRef(params)
 
   const create = async (params: {
-    input?: ScopeInput
+    input: ScopeInput
     directory: PreparedSessionDirectory
     harness: HarnessType
   }) => {
@@ -50,7 +55,15 @@ export function createHarnessRuntimeSessionActions<ScopeInput extends HarnessSco
       }),
       directory: params.directory,
       throwOnError: true,
-    }).session.create({ directory: params.directory })
+    }).session.create({
+      directory: params.directory,
+      agent: params.input.sessionConfig.agent,
+      model: {
+        providerID: params.input.sessionConfig.model.providerID,
+        id: params.input.sessionConfig.model.modelID,
+        ...(params.input.sessionConfig.variant ? { variant: params.input.sessionConfig.variant } : {}),
+      },
+    })
     return res.data?.id
   }
 

@@ -97,7 +97,7 @@ export function createPreparedRuntimeSessionStore<ScopeInput extends { directory
     })
   }
 
-  const claim = async (scope: string, params?: ScopeInput): Promise<{ id: string } | undefined> => {
+  const claim = async (scope: string, params: ScopeInput): Promise<{ id: string } | undefined> => {
     if (input.state(scope).harness === "opencode") return undefined
     const item = await prepare(scope, params)
     if (!item) return undefined

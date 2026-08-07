@@ -73,6 +73,7 @@ export const fetchCalls: Array<{ url: string; method?: string; body?: string | n
 export const unsignedCalls: Array<{ url: string; method?: string; authorization?: string | null; body?: string | null }> = []
 export const runtimeCalls: Array<{ input: string; method?: string; body?: string | null }> = []
 export const transportPromptAsyncCalls: unknown[] = []
+export const harnessClaimCalls: unknown[] = []
 export const sessionCreateCalls: Array<{ input: unknown; options?: { headers?: Record<string, string> } }> = []
 export const transportClients: Array<{ baseUrl?: string; directory?: string; fetch?: unknown }> = []
 export const harnessSetCalls: Array<{ scope: string; type: string; input?: { directory?: string; sessionId?: string } }> = []
@@ -237,7 +238,10 @@ export function testHarnessController(): HarnessSubmitController {
     readiness: () => "ready",
     readyForSubmit: () => !state.harnessMode || !!state.harnessSubmitModel,
     modelKeyForSubmit: () => (state.harnessMode ? state.harnessSubmitModel?.key : undefined),
-    claimSession: async () => (state.harnessMode ? await state.harnessClaimSession : undefined),
+    claimSession: async (_scope, input) => {
+      harnessClaimCalls.push(input)
+      return state.harnessMode ? await state.harnessClaimSession : undefined
+    },
     setHarness: async (scope: string, type: HarnessType, input?: { directory?: string; sessionId?: string }) => {
       harnessSetCalls.push({ scope, type, input })
       if (type === "opencode") state.harnessMode = false
@@ -453,6 +457,7 @@ export async function installSubmitMocks(mock: ModuleMocker) {
           create: async (createInput: unknown, options?: { headers?: Record<string, string> }) => {
             calls.create += 1
             sessionCreateCalls.push({ input: createInput, options })
+            if (state.sessionConfigSaveError) throw new Error(state.sessionConfigSaveError)
             return { data: { id: "session-1" } }
           },
           get: async ({ sessionID }: { sessionID: string }) => ({ data: state.transportGetSession ? { id: sessionID } : undefined }),
@@ -944,6 +949,7 @@ export function resetSubmitHarness() {
   unsignedCalls.length = 0
   runtimeCalls.length = 0
   transportPromptAsyncCalls.length = 0
+  harnessClaimCalls.length = 0
   sessionCreateCalls.length = 0
   transportClients.length = 0
   harnessSetCalls.length = 0

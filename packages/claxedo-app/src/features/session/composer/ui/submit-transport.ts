@@ -235,7 +235,6 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     hostedSessionClient,
     createRuntimePromptClient,
     readSessionConfig,
-    persistSessionConfig,
     saveSessionConfig,
   }
 }

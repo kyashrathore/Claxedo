@@ -112,6 +112,75 @@ function routes(input: {
 }
 
 describe("createSessionRoutes directory-less sessions", () => {
+  test("persists the complete config before publishing a created session", async () => {
+    const calls: string[] = []
+    const lifecycle: SessionLifecycleEvent[] = []
+    const item = adapter()
+    const app = routes({
+      lifecycle,
+      adapter: {
+        ...item,
+        createSession: async () => {
+          calls.push("create")
+          return { id: "session_configured" }
+        },
+        updateSessionConfig: async (id, update) => {
+          calls.push(`config:${id}:${update.model?.providerID}:${update.model?.modelID}`)
+          return {
+            harness: update.harness ?? { id: "claude", access: "native" },
+            ...(update.model ? { model: update.model } : {}),
+            agent: update.agent ?? null,
+            variant: update.variant ?? null,
+          }
+        },
+      },
+    })
+
+    const res = await app.request("http://localhost/session", {
+      method: "POST",
+      body: JSON.stringify({
+        model: { providerID: "claude-sdk", id: "sonnet", variant: "high" },
+        agent: "build",
+      }),
+    })
+
+    expect(res.status).toBe(201)
+    expect(calls).toEqual(["create", "config:session_configured:claude-sdk:sonnet"])
+    expect(lifecycle.map((event) => event.phase)).toEqual(["creating", "created"])
+  })
+
+  test("rolls back a session whose initial config cannot be persisted", async () => {
+    const calls: string[] = []
+    const lifecycle: SessionLifecycleEvent[] = []
+    const item = adapter()
+    const app = routes({
+      lifecycle,
+      adapter: {
+        ...item,
+        createSession: async () => ({ id: "session_rejected" }),
+        updateSessionConfig: async () => {
+          calls.push("config")
+          throw new Error("config unavailable")
+        },
+        deleteSession: async (id) => {
+          calls.push(`delete:${id}`)
+        },
+      },
+    })
+
+    const res = await app.request("http://localhost/session", {
+      method: "POST",
+      body: JSON.stringify({
+        model: { providerID: "claude-sdk", id: "sonnet" },
+      }),
+    })
+
+    expect(res.status).toBe(500)
+    expect(calls).toEqual(["config", "delete:session_rejected"])
+    expect(lifecycle.map((event) => event.phase)).toEqual(["creating", "failed"])
+    expect(await res.json()).toMatchObject({ error: { message: "config unavailable" } })
+  })
+
   test("keeps a missing backend title empty in the created lifecycle row", async () => {
     const lifecycle: SessionLifecycleEvent[] = []
     const res = await routes({ adapter: adapter(), lifecycle }).request("http://localhost/session", {

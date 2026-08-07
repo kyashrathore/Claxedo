@@ -139,6 +139,7 @@ describe("acquireSubmitSessionTarget", () => {
     const creates: Array<{
       directory: string
       harnessType: string
+      config: Omit<Parameters<SubmitSessionCreateClient["session"]["create"]>[0], "directory">
       headers: Record<string, string> | undefined
     }> = []
 
@@ -151,6 +152,12 @@ describe("acquireSubmitSessionTarget", () => {
           creates.push({
             directory: request.directory,
             harnessType: input.harnessType,
+            config: {
+              harness: request.harness,
+              agent: request.agent,
+              model: request.model,
+              variant: request.variant,
+            },
             headers: init?.headers,
           })
           return { data: { id: "created-1" } }
@@ -167,6 +174,10 @@ describe("acquireSubmitSessionTarget", () => {
       {
         directory: "/repo/main",
         harnessType: "codex-acp",
+        config: {
+          agent: "build",
+          model: { providerID: "test", id: "fixture" },
+        },
         headers: { "x-claxedo-draft-id": "draft-1" },
       },
     ])
@@ -343,6 +354,11 @@ function acquireSessionTarget(overrides: Partial<AcquireSessionTargetInput>) {
     scope: "scope-1",
     draftId: undefined,
     sessionHarnessType: "opencode",
+    sessionConfig: {
+      agent: "build",
+      model: { providerID: "test", modelID: "fixture" },
+      variant: undefined,
+    },
     events: undefined,
     boot: () => {},
     createSessionClient: () => submitSessionClient(),

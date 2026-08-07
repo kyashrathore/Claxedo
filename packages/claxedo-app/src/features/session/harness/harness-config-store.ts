@@ -36,8 +36,10 @@ import type { DraftDefaultLabels } from "./draft-defaults"
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import type { ResolveDraftDefaultInput } from "./draft-default-policy"
 import { sessionPaneWorkspaceKey } from "@/platform/runtime/session-workspace"
+import type { PreparedRuntimeSessionConfig } from "./prepared-session"
 
 type ScopeInput = HarnessScopeInput
+type ClaimInput = ScopeInput & { sessionConfig: PreparedRuntimeSessionConfig }
 
 function record(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
@@ -65,12 +67,12 @@ export function createHarnessConfigStore() {
     projects: () => projectsQuery.data ?? [],
   })
   const harnessStore = createHarnessStore(localStorage)
-  const runtimeSessionActions = createHarnessRuntimeSessionActions({
+  const runtimeSessionActions = createHarnessRuntimeSessionActions<ClaimInput>({
     base,
     runtime: harnessRuntime,
   })
 
-  const preparedRuntimeSessions = createPreparedRuntimeSessionStore<ScopeInput>({
+  const preparedRuntimeSessions = createPreparedRuntimeSessionStore<ClaimInput>({
     canUseRuntimeSession: runtimeSessionActions.canUseRuntimeSession,
     state: harnessStore.touch,
     create: runtimeSessionActions.create,

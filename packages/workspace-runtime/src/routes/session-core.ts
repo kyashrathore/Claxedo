@@ -37,7 +37,7 @@ import {
   type RuntimeSessionBusEvent,
   type SessionPromptBody,
 } from "../session/service"
-import { normalizeSessionConfigUpdate } from "../session-config"
+import { normalizeSessionConfigUpdate, normalizeSessionCreateConfig } from "../session-config"
 import { disposeRuntimeSessionDocuments, flushRuntimeSessionDocuments } from "./document-hydration"
 
 export type { RuntimeSessionBusEvent } from "../session/service"
@@ -499,8 +499,8 @@ export function createSessionRoutes(opts: Opts) {
     })
     .post("/session", async (c) => {
       const directory = await opts.resolveDirectory(c)
-      const body = (await c.req.json().catch(() => ({}))) as { id?: string; title?: string; model?: unknown }
-      const config = normalizeSessionConfigUpdate(body)
+      const body = (await c.req.json().catch(() => ({}))) as { id?: string; title?: string }
+      const config = normalizeSessionCreateConfig(body)
       const draftId = parseDraftId(c.req.header("x-claxedo-draft-id"))
       const workspaceId = await opts.resolveWorkspaceId?.(c, directory)
       opts.publishSessionLifecycle?.({
@@ -519,6 +519,22 @@ export function createSessionRoutes(opts: Opts) {
         const session = opts.createSession
           ? await opts.createSession(c, directory, body.title, body.id)
           : await adapter.createSession(directory, body.title, body.id)
+        if (Object.keys(config).length > 0) {
+          try {
+            if (opts.updateSessionConfig) {
+              await opts.updateSessionConfig(c, directory, session.id, config, adapter)
+            } else {
+              await adapter.updateSessionConfig(session.id, config, directory)
+            }
+          } catch (error) {
+            try {
+              await adapter.deleteSession(session.id, directory)
+            } catch (cleanupError) {
+              throw new AggregateError([error, cleanupError], "Session config persistence and creation rollback failed")
+            }
+            throw error
+          }
+        }
         await after(opts.afterCreateSession?.(c, directory, session))
         opts.publishSessionLifecycle?.({
           type: "session.lifecycle",
