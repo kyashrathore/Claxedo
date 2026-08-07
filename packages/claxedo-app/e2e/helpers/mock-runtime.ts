@@ -278,6 +278,29 @@ export type MockRuntimeRequests = {
   cloudHarnessOptionsHarnesses: string[]
 }
 
+export type MockRuntimeSubagentRow = {
+  subagentKey: string
+  revision: number
+  mode?: "foreground" | "background"
+  status?: "pending" | "running" | "paused" | "interrupted" | "completed" | "failed" | "killed"
+  label?: string
+  subagentType?: string
+  description?: string
+  providerId?: string
+  providerKind?: string
+  childSessionId?: string
+  transcript?: { kind: "live" | "file" | "messages" | "none"; ref?: string }
+  toolCallEdges?: Array<{ toolCallId: string; role: "spawn" | "interaction"; revision: number }>
+}
+
+export type MockRuntimeChildSession = {
+  id: string
+  parentId: string
+  title: string
+  prompt: string
+  reply: string
+}
+
 export type MockRuntimeOptions = {
   dir?: string
   sessionId?: string
@@ -305,6 +328,12 @@ export type MockRuntimeOptions = {
    * also seeds its transient harness store, masking cold session hydration.
    */
   existingSession?: { prompt: string; reply?: string }
+  /** Durable host rows returned by `GET /session/:parent/subagents`. */
+  subagents?: Record<string, MockRuntimeSubagentRow[]>
+  /** Read-only child Sessions available to subagent open/navigation scenarios. */
+  childSessions?: MockRuntimeChildSession[]
+  /** Parent-scope authorization used by the canonical runtime-event SSE route. */
+  runtimeEventAuthorizeParent?: (parentSessionId: string) => boolean
   /** Per-harness model catalog for the composer's model popover. */
   harnessModels?: Partial<Record<Harness, HarnessModelOption[]>>
   /** Readiness state the harness config endpoint reports. */
@@ -933,6 +962,16 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     }
   }
 
+  function childSessionRow(child: MockRuntimeChildSession) {
+    return {
+      ...sessionRow(child.title),
+      id: child.id,
+      slug: child.id,
+      parentID: child.parentId,
+      title: child.title,
+    }
+  }
+
   function textPart(sessionID: string, messageID: string, text: string): MockPart {
     return { id: `${messageID}_text`, sessionID, messageID, type: "text", text }
   }
@@ -981,6 +1020,42 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       },
       parts: [],
     }
+  }
+
+  function childMessages(child: MockRuntimeChildSession): MockMessageRow[] {
+    const model = harnessModel()
+    const userID = `${child.id}_user`
+    const assistantID = `${child.id}_assistant`
+    return [
+      {
+        info: {
+          id: userID,
+          sessionID: child.id,
+          role: "user",
+          time: { created: Date.now() },
+          agent: "build",
+          model: { providerID: providerIdFor(harness), modelID: model.id },
+        },
+        parts: [textPart(child.id, userID, child.prompt)],
+      },
+      {
+        info: {
+          id: assistantID,
+          sessionID: child.id,
+          role: "assistant",
+          time: { created: Date.now(), completed: Date.now() },
+          parentID: userID,
+          agent: "build",
+          providerID: providerIdFor(harness),
+          modelID: model.id,
+          mode: "code",
+          path: { cwd: DIR, root: DIR },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+        parts: [textPart(child.id, assistantID, child.reply)],
+      },
+    ]
   }
 
   if (options.existingSession) {
@@ -1487,6 +1562,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   }
   const wrRuntimeEventsHandler = async (route: Route) => {
     if (!api(route)) return route.continue()
+    const parentSessionId = new URL(route.request().url()).searchParams.get("parentSessionId")
+    if (parentSessionId && options.runtimeEventAuthorizeParent && !options.runtimeEventAuthorizeParent(parentSessionId)) {
+      return json(route, { error: "Forbidden" }, 403)
+    }
     const batch = await busWrRuntime.drain(sseIdleTimeoutMs, lastEventIdOf(route))
     await route.fulfill({ status: 200, contentType: "text/event-stream", body: sseBody(batch) }).catch(() => {})
   }
@@ -2093,7 +2172,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       assertSessionCreateResponse(created, url)
       return json(route, created, SESSION_CREATE_STATUS)
     }
-    return json(route, sessionCreated ? [sessionRow(textOf(messages[0]?.parts) || "")] : [])
+    return json(route, [
+      ...(sessionCreated ? [sessionRow(textOf(messages[0]?.parts) || "")] : []),
+      ...(options.childSessions ?? []).map(childSessionRow),
+    ])
   }
   await page.route("**/session", handleSessionList)
   await page.route("**/session?**", handleSessionList)
@@ -2264,7 +2346,18 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return route.fulfill({ ...SESSION_COMMAND_SUCCESS })
   })
 
-  await page.route("**/session/*/message**", (r) => (api(r) ? json(r, messages) : r.continue()))
+  await page.route("**/session/*/subagents**", (r) => {
+    if (!api(r)) return r.continue()
+    const parentSessionId = decodeURIComponent(new URL(r.request().url()).pathname.split("/").at(-2) ?? "")
+    return json(r, options.subagents?.[parentSessionId] ?? [])
+  })
+
+  await page.route("**/session/*/message**", (r) => {
+    if (!api(r)) return r.continue()
+    const sessionId = decodeURIComponent(new URL(r.request().url()).pathname.split("/").at(-2) ?? "")
+    const child = options.childSessions?.find((row) => row.id === sessionId)
+    return json(r, child ? childMessages(child) : messages)
+  })
 
   await page.route("**/session/*", (r) => {
     if (!api(r)) return r.continue()
@@ -2308,7 +2401,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         permission: Array.isArray(rules) && rules.length > 0 && rules.every(isRule) ? rules : undefined,
       })
     }
-    return json(r, sessionRow(textOf(messages[0]?.parts) || ""))
+    const sessionId = decodeURIComponent(pathname.split("/").at(-1) ?? "")
+    const child = options.childSessions?.find((row) => row.id === sessionId)
+    return json(r, child ? childSessionRow(child) : sessionRow(textOf(messages[0]?.parts) || ""))
   })
 
   // --------------------------------------------------------------------

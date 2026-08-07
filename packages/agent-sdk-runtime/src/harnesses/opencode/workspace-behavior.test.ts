@@ -177,6 +177,7 @@ describe("opencode adapter", () => {
       revert: true,
       unrevert: true,
       configOptions: false,
+      subagents: true,
     })
   })
 

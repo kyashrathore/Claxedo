@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION } from "@claxedo/agent-event-runtime"
 import {
+  applySubagentRuntimeEventEnvelope,
+  abortSubagentsForParent,
+  applySubagentCompatLifecycleEvent,
   compatEventEnvelope,
   createControlPlaneEventFetch,
   createGlobalSdkFetch,
@@ -16,6 +19,7 @@ import {
   runtimeReplayGap,
   shouldAcceptCompatEvent,
 } from "@/app/providers/global-sdk/provider"
+import { createSubagentRegistry } from "@/features/session/subagents/subagent-registry"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 
@@ -225,6 +229,58 @@ describe("global sdk event fetch", () => {
     ])
   })
 
+  test("admits subagent envelopes beside projection while compat projection remains empty", () => {
+    const registry = createSubagentRegistry()
+    const envelope = {
+      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
+      directory: "/repo/main",
+      sessionId: "runtime-session-1",
+      payload: {
+        type: "subagent-updated",
+        subagentKey: "child-1",
+        revision: 1,
+        childSessionId: "child-session-1",
+        transcript: { kind: "live", ref: "child-session-1" },
+      },
+    } as const
+
+    expect(applySubagentRuntimeEventEnvelope(envelope, registry)).toBe(true)
+    expect(registry.get("runtime-session-1", "child-1")).toMatchObject({
+      childSessionId: "child-session-1",
+    })
+    expect(projectRuntimeEventEnvelope(envelope)).toEqual([])
+  })
+
+  test("session delete removes subagents and parent abort interrupts only foreground children", () => {
+    const registry = createSubagentRegistry()
+    registry.apply("parent-1", {
+      type: "subagent-updated",
+      subagentKey: "foreground",
+      revision: 4,
+      mode: "foreground",
+      status: "running",
+    })
+    registry.apply("parent-1", {
+      type: "subagent-updated",
+      subagentKey: "background",
+      revision: 2,
+      mode: "background",
+      status: "running",
+    })
+
+    abortSubagentsForParent("parent-1", registry)
+    expect(registry.get("parent-1", "foreground")).toMatchObject({
+      status: "interrupted",
+      fieldRevisions: { status: 5 },
+    })
+    expect(registry.get("parent-1", "background")?.status).toBe("running")
+    expect(applySubagentCompatLifecycleEvent({
+      type: "session.deleted",
+      properties: { info: { id: "parent-1" } },
+    } as never, registry)).toBe(true)
+    expect(registry.list("parent-1")).toEqual([])
+  })
+
   test("reuses runtime projections by root session while routing events to the current directory", () => {
     const projections = new Map()
     projectRuntimeEventEnvelope({
@@ -398,6 +454,13 @@ describe("global sdk event fetch", () => {
   test("runtime replay gaps reset projections and invalidate session read models", async () => {
     const projections = new Map([["runtime-session-1:assistant-1", {} as never]])
     const covered = new Set(["runtime-session-1"])
+    const subagents = createSubagentRegistry()
+    subagents.apply("runtime-session-1", {
+      type: "subagent-updated",
+      subagentKey: "child-1",
+      revision: 1,
+      status: "running",
+    })
     const rowKey = queryKeys.session.row("http://claxedo.test", "/repo/main", "runtime-session-1")
     const messagesKey = queryKeys.session.messages("http://claxedo.test", "/repo/main", "runtime-session-1")
     queryClient.setQueryData(rowKey, { id: "runtime-session-1" })
@@ -417,10 +480,12 @@ describe("global sdk event fetch", () => {
       projections,
       covered,
       baseUrl: "http://claxedo.test",
+      subagents,
     })
 
     expect(projections.size).toBe(0)
     expect(covered.size).toBe(0)
+    expect(subagents.list()).toEqual([])
     expect(queryClient.getQueryState(rowKey)?.isInvalidated).toBe(true)
     expect(queryClient.getQueryState(messagesKey)?.isInvalidated).toBe(true)
   })

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
+import { sessionConfigRawQueryKey } from "../../store/session-config-selection"
 import * as h from "./submit.harness.test"
 
 const {
@@ -43,13 +44,13 @@ describe("Existing-session config persistence (rubric C1 dedupe)", () => {
       authorization: null,
     }))
     expect(JSON.parse(unsignedCalls.find((call) =>
-      call.url === "http://localhost:3001/session/session-existing/config?directory=%2Frepo%2Fmain&harness=opencode"
+      call.url === "http://localhost:3001/session/session-existing/config?directory=%2Frepo%2Fmain&harness=opencode" && call.method === "PATCH"
     )?.body ?? "{}")).toEqual({
       harness: { type: "opencode" },
       agent: "review",
       model: { providerID: "new-provider", modelID: "new-model" },
     })
-    expect(JSON.parse(queryClient.getQueryData<string>(h.savedSessionConfigQueryKey("session-existing")) ?? "{}")).toEqual({
+    expect(queryClient.getQueryData(sessionConfigRawQueryKey("session-existing"))).toEqual({
       harness: { type: "opencode" },
       agent: "review",
       model: { providerID: "new-provider", modelID: "new-model" },
@@ -74,14 +75,14 @@ describe("Existing-session config persistence (rubric C1 dedupe)", () => {
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
     const configUrl = "http://localhost:3001/session/session-c1-dedup/config?directory=%2Frepo%2Fmain&harness=opencode"
-    const firstCount = unsignedCalls.filter((call) => call.url === configUrl).length
+    const firstCount = unsignedCalls.filter((call) => call.url === configUrl && call.method === "PATCH").length
     expect(firstCount).toBe(1)
 
     // Submit again with the same model/agent — no PATCH should fire.
     promptValue.splice(0, promptValue.length, { type: "text", content: "another", start: 0, end: 7 })
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
-    const secondCount = unsignedCalls.filter((call) => call.url === configUrl).length
+    const secondCount = unsignedCalls.filter((call) => call.url === configUrl && call.method === "PATCH").length
     expect(secondCount).toBe(1) // still 1 — dedup blocked the second PATCH
   })
 
@@ -103,14 +104,14 @@ describe("Existing-session config persistence (rubric C1 dedupe)", () => {
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
     const configUrl = "http://localhost:3001/session/session-c1-change/config?directory=%2Frepo%2Fmain&harness=opencode"
-    expect(unsignedCalls.filter((call) => call.url === configUrl).length).toBe(1)
+    expect(unsignedCalls.filter((call) => call.url === configUrl && call.method === "PATCH").length).toBe(1)
 
     // Mid-session model change.
     state.localCurrentModel = { id: "model-b", provider: { id: "prov" } }
     promptValue.splice(0, promptValue.length, { type: "text", content: "next", start: 0, end: 4 })
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
-    const matches = unsignedCalls.filter((call) => call.url === configUrl)
+    const matches = unsignedCalls.filter((call) => call.url === configUrl && call.method === "PATCH")
     expect(matches.length).toBe(2)
     expect(JSON.parse(matches.at(-1)?.body ?? "{}").model).toEqual({ providerID: "prov", modelID: "model-b" })
   })

@@ -79,12 +79,13 @@
  *       = `getFilename(filePath)`, hidden while pending.
  *     apply_patch(multi-file, `metadata.files.length > 1`): renders an Accordion of
  *       `[data-slot="apply-patch-filename"]` rows instead.
- *     task: `[data-component="task-tool-card"]` inside an `<a>` trigger
- *       (`triggerAsLink` always true) with `[data-slot="basic-tool-tool-subtitle"]` =
- *       `input.description`; clickable/child-linked only once
- *       `part.state.metadata.sessionId` (or a session-list title match — session-list
- *       correlation is NOT modeled by this spec's fixtures, see HARNESS NOTES) is
- *       known — `childSessionId()`, line ~1931.
+ *     task: `[data-component="task-tool-card"]` with
+ *       `[data-slot="basic-tool-tool-subtitle"]` = `input.description`. The host's
+ *       durable subagent registry associates the tool `callID` with a subagent through
+ *       an explicit spawn edge. A ready child Session renders inside an `<a>` trigger;
+ *       `transcript: {kind:"none"}` renders an explicit unavailable subtitle and no
+ *       navigation control. Provider ids and transcript refs remain opaque identity,
+ *       not navigation targets.
  *     question: `[data-component="question-answers"]` with
  *       `[data-slot="question-answer-item"]` rows, rendered ONLY once
  *       `state.metadata.answers.length > 0` (`completed()`, line ~2527) — the outer
@@ -170,8 +171,16 @@
  *      `expect(page.getByText("WritableIterable is closed")).toHaveCount(0)` was VACUOUS
  *      (the string is absent from the fixture, so it also passed on a blank page). It is
  *      kept only as a corollary.
- *  15. Claude ACP's `Task` tool and Cursor ACP's `Task: Subagent task` tool render the
- *      dedicated `task` component with a child-session-linked, clickable trigger.
+ *  15. Cross-harness subagent task parts resolve only through explicit host-owned spawn
+ *      edges. OpenCode native, Claude native/ACP, Codex native, valid Cursor native,
+ *      and model-backed Pi foreground/background rows progress Working -> Completed and
+ *      open a read-only child transcript without replacing the parent. Codex ACP,
+ *      Cursor ACP, and invalid Cursor native rows say `Transcript unavailable` and
+ *      expose no navigation control. Bare Pi creates no synthetic task card, and an
+ *      unauthorized parent-scoped runtime stream is rejected before subscription.
+ *      Wide layouts preserve parent and child panes together; a narrow layout shows
+ *      explicit read-only copy instead of a composer, and Back restores focus to the
+ *      originating spawn card.
  *  16. Per-client tool NAME normalization: Cursor/Claude/Codex ACP's `"Terminal"`
  *      title -> `bash`. SCOPE CORRECTION (2026-07-25): that mapping is performed
  *      UPSTREAM by `harnesses/acp/registry.ts`, and the committed ACP fixtures already
@@ -275,14 +284,13 @@
  *   `harnesses/pi` directory exists) — their SSE events already ARE the target
  *   `Part` shape, so their fixture is authored directly as that shape (see
  *   `generate-harness-fixtures.ts`'s documented exception) rather than derived from a
- *   translation step; `pi`'s scenario is deliberately reduced (text + one tool) since
- *   it shares the identical native rendering path. The `task` tool's child-session
- *   link normally resolves via a session-list title-match (`taskSession()`,
- *   message-part.tsx line ~597) that this fixture harness cannot reproduce (it would
- *   need a second live session in the store); this spec's generator instead stamps
- *   `state.metadata.sessionId` directly after real translation (the one hand-touched
- *   field in the whole fixture set — documented in the generator's file header) to
- *   prove the render path, not the store-correlation path.
+ *   translation step; `pi`'s renderer scenario is deliberately reduced (text + one
+ *   tool) since it shares the identical native rendering path. Subagent scenarios below
+ *   extend the shared mock with host-shaped `GET /session/:parent/subagents` rows,
+ *   child Session/message endpoints, and canonical runtime-event envelopes. Tool-to-
+ *   child correlation therefore uses the production contract: explicit
+ *   `toolCallEdges`, a host-minted `childSessionId`, and no fixture-injected session
+ *   metadata or title matching.
  *
  * OUT OF SCOPE — harness selection/ownership/model/effort UI
  *   (`core-harness-ownership-local`/`-cloud`); the permission/question/todo DOCK
@@ -325,10 +333,16 @@
  *   against directly.
  */
 import { expect, test, type Page } from "@playwright/test"
+import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION } from "@claxedo/agent-event-runtime"
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { installMockRuntime, type MockRuntimeHandles } from "../helpers/mock-runtime"
+import {
+  installMockRuntime,
+  type MockRuntimeChildSession,
+  type MockRuntimeHandles,
+  type MockRuntimeSubagentRow,
+} from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 
 const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "harness-traces")
@@ -422,11 +436,10 @@ function slug(value: string) {
 //     connection (mirrors real SSE resumption semantics,
 //     `sseJsonStream`/`onEventId` in `global-sdk.tsx`), so EVERY poller sees
 //     EVERY event exactly once, independent of which one asks first.
-// (`/api/wr/runtime-events` — a separate, stricter-contract channel needing
-// raw `AgentRuntimeEvent` + projection, `startRuntimeEvents()` in the same
-// file — is left unmocked; its failures are filtered by
-// `nonBackgroundNoiseConsole` above and don't block this spec's assertions,
-// which only depend on the central `/api/wr/events` channel.)
+// `/api/wr/runtime-events` is the separate canonical runtime channel. The
+// shared mock mounts it directly; U13 sends raw contract-versioned
+// `subagent-updated` envelopes there while ordinary translated parts continue
+// through this compat bridge.
 type SpecEvent = { directory: string; payload: unknown }
 
 function createSpecEventLog() {
@@ -533,7 +546,15 @@ function nonBackgroundNoiseConsole(entries: string[]) {
  * (`${userMessageID}_r`, production convention) — pass it to
  * `loadTrace`/`loadFixtureFile` so fixture parts attach to that row.
  */
-async function primeHarness(page: Page, harness: string): Promise<{
+async function primeHarness(
+  page: Page,
+  harness: string,
+  subagents?: {
+    rows: MockRuntimeSubagentRow[]
+    children?: MockRuntimeChildSession[]
+    runtimeEventAuthorizeParent?: (parentSessionId: string) => boolean
+  },
+): Promise<{
   mock: MockRuntimeHandles
   dir: string
   sessionId: string
@@ -546,6 +567,11 @@ async function primeHarness(page: Page, harness: string): Promise<{
     dir,
     sessionId,
     harness: harness as never,
+    ...(subagents ? {
+      subagents: { [`ses_harness_matrix_${harness}`]: subagents.rows },
+      childSessions: subagents.children,
+      runtimeEventAuthorizeParent: subagents.runtimeEventAuthorizeParent,
+    } : {}),
     // Pin opencode to a concrete model instead of the mock default `big-pickle`
     // placeholder. The reworked composer (see `core-docks.spec.ts`'s identical
     // `establishSession` note) defers/redirects the very first send while only the
@@ -649,6 +675,122 @@ async function replay(
     { type: "message.updated", properties: { sessionID: assistantInfo.sessionID, info: assistantInfo } } as never,
     dir,
   )
+}
+
+type SubagentHarnessCase = {
+  name: string
+  harness: string
+  providerKind?: string
+  providerId?: string
+  transcript: MockRuntimeSubagentRow["transcript"]
+  mode?: "foreground" | "background"
+  openable: boolean
+}
+
+const subagentHarnessCases: SubagentHarnessCase[] = [
+  { name: "OpenCode native", harness: "opencode", providerKind: "opencode", providerId: "ses-child-opencode", transcript: { kind: "live", ref: "ses-child-opencode" }, openable: true },
+  { name: "Claude native", harness: "claude-sdk", providerKind: "claude-agent", providerId: "agent-42", transcript: { kind: "messages", ref: "agent-42" }, openable: true },
+  { name: "Claude ACP", harness: "claude-acp", transcript: { kind: "messages", ref: "acp:agent-42" }, openable: true },
+  { name: "Codex native", harness: "codex-app-server", providerKind: "codex", providerId: "thread-child-1", transcript: { kind: "live", ref: "thread-child-1" }, openable: true },
+  { name: "Codex ACP", harness: "codex-acp", providerKind: "codex-acp-thread", providerId: "thread-child-1", transcript: { kind: "none" }, openable: false },
+  { name: "Cursor native valid", harness: "cursor-sdk", providerKind: "cursor-agent", providerId: "cursor-agent-1", transcript: { kind: "file", ref: "cursor-transcript-1" }, openable: true },
+  { name: "Cursor native invalid", harness: "cursor-sdk", providerKind: "cursor-agent", transcript: { kind: "none" }, openable: false },
+  { name: "Cursor ACP", harness: "cursor-acp", transcript: { kind: "none" }, openable: false },
+  { name: "Pi foreground", harness: "pi", providerKind: "pi", providerId: "pi-child-foreground", transcript: { kind: "live", ref: "pi-child-foreground" }, mode: "foreground", openable: true },
+  { name: "Pi background", harness: "pi", providerKind: "pi", providerId: "pi-child-background", transcript: { kind: "live", ref: "pi-child-background" }, mode: "background", openable: true },
+]
+
+function subagentScenario(input: SubagentHarnessCase) {
+  const suffix = input.name.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-")
+  const subagentKey = `subagent-${suffix}`
+  const toolCallId = `spawn-${suffix}`
+  const childSessionId = input.openable ? `ses-child-${suffix}` : undefined
+  const description = `Delegate ${input.name}`
+  return {
+    subagentKey,
+    toolCallId,
+    childSessionId,
+    description,
+    fixture: {
+      rows: [{
+        subagentKey,
+        revision: 1,
+        mode: input.mode ?? "foreground",
+        status: "running",
+        label: input.name,
+        subagentType: "general-purpose",
+        description,
+        ...(input.providerKind ? { providerKind: input.providerKind } : {}),
+        ...(input.providerId ? { providerId: input.providerId } : {}),
+        ...(childSessionId ? { childSessionId } : {}),
+        transcript: input.transcript,
+        toolCallEdges: [{ toolCallId, role: "spawn", revision: 1 }],
+      }] satisfies MockRuntimeSubagentRow[],
+      ...(childSessionId ? {
+        children: [{
+          id: childSessionId,
+          parentId: `ses_harness_matrix_${input.harness}`,
+          title: input.name,
+          prompt: description,
+          reply: `child transcript for ${input.name}`,
+        }],
+      } : {}),
+    },
+  }
+}
+
+function subagentTaskEnvelope(input: {
+  sessionId: string
+  assistantId: string
+  toolCallId: string
+  description: string
+}): Envelope {
+  return {
+    directory: "",
+    payload: {
+      id: `message.part.updated:${input.assistantId}:${input.toolCallId}`,
+      type: "message.part.updated",
+      properties: {
+        sessionID: input.sessionId,
+        part: {
+          id: input.toolCallId,
+          sessionID: input.sessionId,
+          messageID: input.assistantId,
+          type: "tool",
+          callID: input.toolCallId,
+          tool: "task",
+          state: {
+            status: "completed",
+            input: { description: input.description, subagent_type: "general-purpose" },
+            output: "",
+            title: "task",
+            metadata: {},
+            time: { start: 1, end: 2 },
+          },
+        },
+        time: 2,
+      },
+    },
+  }
+}
+
+function completeSubagent(
+  mock: MockRuntimeHandles,
+  directory: string,
+  sessionId: string,
+  subagentKey: string,
+) {
+  mock.emitFlat({
+    contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
+    directory,
+    sessionId,
+    payload: {
+      type: "subagent-updated",
+      subagentKey,
+      revision: 2,
+      status: "completed",
+    },
+  } as never)
 }
 
 const assistantContent = () => SELECTORS.assistantContentVisible
@@ -973,7 +1115,7 @@ test.describe("core harness rendering matrix @core", () => {
     ).toBeVisible({ timeout: 45_000 })
   })
 
-  test("claude-acp — text dedup, Terminal->bash, read, todowrite hidden, Task child link — behaviors 1,3,9,15,16", async ({ page }) => {
+  test("claude-acp — text dedup, Terminal->bash, read, todowrite hidden, unbound Task omitted — behaviors 1,3,9,15,16", async ({ page }) => {
     // The longest trace in the matrix; on CI's 2-core runners the replay alone
     // crowds the 60s default and the run dies mid-revealTurn. slow() = 3x.
     test.slow()
@@ -1008,10 +1150,10 @@ test.describe("core harness rendering matrix @core", () => {
     // the closed-by-default `ContextToolGroup` collapsible (opened by `revealTurn`).
     await expect(content.locator('[data-slot="basic-tool-tool-subtitle"]', { hasText: "index.ts" })).toBeVisible()
 
-    // behavior 15: "Task" -> task, clickable child-session trigger.
-    const taskCard = content.locator('[data-component="task-tool-card"]').filter({ hasText: "Review the auth module" })
-    await expect(taskCard).toBeVisible()
-    await expect(taskCard.locator('xpath=ancestor::a[1]')).toHaveCount(1) // triggerAsLink -> real <a>
+    // behavior 15: fixture translation alone carries no authoritative host spawn edge,
+    // so it renders no subagent surface. The U13 matrix below supplies the durable host
+    // association and proves the open path.
+    await expect(content.getByText("Review the auth module")).toHaveCount(0)
 
     // behavior 9: "Update TODOs" never became a tool row.
     await expect(content.getByText("Ship the fix")).toHaveCount(0)
@@ -1046,7 +1188,7 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.locator('[data-component="tool-part-wrapper"]')).toHaveCount(2)
   })
 
-  test("cursor-acp — full-text snapshot dedup, WritableIterable sentinel swallowed, Terminal->bash, Task child link, todowrite hidden — behaviors 9,13,14,15,16", async ({ page }) => {
+  test("cursor-acp — full-text snapshot dedup, WritableIterable sentinel swallowed, Terminal->bash, Task omitted, todowrite hidden — behaviors 9,13,14,15,16", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page,"cursor-acp")
     const trace = loadTrace("cursor-acp", assistantId)
     await replay(mock, dir, trace, assistantInfo)
@@ -1100,9 +1242,9 @@ test.describe("core harness rendering matrix @core", () => {
       )
       .toBe(true)
 
-    // behavior 15: "Task: Subagent task" -> task, child-linked.
-    const taskCard = content.locator('[data-component="task-tool-card"]').filter({ hasText: "Investigate flaky test" })
-    await expect(taskCard).toBeVisible()
+    // behavior 15: Cursor ACP exposes no authoritative host association, so it renders
+    // no subagent surface instead of manufacturing a transcript identity from tool state.
+    await expect(content.getByText("Investigate flaky test")).toHaveCount(0)
 
     // behavior 9: "Update TODOs" never became a tool row.
     await expect(content.getByText("Fix flake")).toHaveCount(0)
@@ -1206,6 +1348,117 @@ test.describe("core harness rendering matrix @core", () => {
 
     // behavior 9: updateTodos intercepted, never a tool row.
     await expect(content.getByText("Ship adapter")).toHaveCount(0)
+  })
+
+  // U13 closes the cross-harness subagent loop at the translated runtime/UI
+  // boundary. Adapter-level suites prove how each provider discovers the row;
+  // these scenarios deliberately start from the durable host row plus canonical
+  // `subagent-updated` event that every adapter feeds to the app. The association
+  // is the explicit spawn edge (`toolCallId`), never tool metadata, session titles,
+  // provider ids, or transcript refs.
+  for (const input of subagentHarnessCases) {
+    test(`subagents — ${input.name} ${input.openable ? "opens its child transcript" : "is explicitly unavailable"} — behavior 15`, async ({ page }) => {
+      test.slow()
+      const scenario = subagentScenario(input)
+      const primed = await primeHarness(page, input.harness, scenario.fixture)
+      await replay(
+        primed.mock,
+        primed.dir,
+        [subagentTaskEnvelope({
+          sessionId: primed.sessionId,
+          assistantId: primed.assistantId,
+          toolCallId: scenario.toolCallId,
+          description: scenario.description,
+        })],
+        primed.assistantInfo,
+      )
+
+      const card = page.locator(
+        `[data-component="task-tool-card"][data-subagent-key="${scenario.subagentKey}"]`,
+      )
+      await expect(card).toBeVisible({ timeout: 45_000 })
+      await expect(card.locator('[data-slot="subagent-status"]')).toHaveText("Working")
+      if (input.mode === "background") {
+        await expect(card.locator('[data-slot="basic-tool-tool-subtitle"]')).toContainText(
+          "Background · continues independently",
+        )
+      }
+
+      completeSubagent(primed.mock, primed.dir, primed.sessionId, scenario.subagentKey)
+      await expect(card.locator('[data-slot="subagent-status"]')).toHaveText("Completed", { timeout: 20_000 })
+
+      const anchor = card.locator("xpath=ancestor::a[1]")
+      if (!input.openable) {
+        await expect(card.locator('[data-slot="basic-tool-tool-subtitle"]')).toContainText("Transcript unavailable")
+        await expect(anchor).toHaveCount(0)
+        await expect(card.locator('[data-component="task-tool-action"]')).toHaveCount(0)
+        return
+      }
+
+      await expect(anchor).toHaveCount(1)
+      await expect(card.locator('[data-component="task-tool-action"]')).toHaveCount(1)
+      const closeWorkspacePanel = page.getByRole("button", { name: "Close workspace panel", exact: true })
+      if (await closeWorkspacePanel.isVisible().catch(() => false)) await closeWorkspacePanel.click()
+      await anchor.click()
+      await expect(page.getByText(`child transcript for ${input.name}`, { exact: true })).toBeVisible({ timeout: 30_000 })
+      await expectAssistantReplyVisible(page, `ack 1: matrix probe ${input.harness}`)
+    })
+  }
+
+  test("subagents — narrow child surface is read-only and returns focus to its spawn card — behavior 15", async ({ page }) => {
+    test.slow()
+    await page.setViewportSize({ width: 700, height: 900 })
+    const input = subagentHarnessCases.find((item) => item.name === "OpenCode native")!
+    const scenario = subagentScenario(input)
+    const primed = await primeHarness(page, input.harness, scenario.fixture)
+    await replay(
+      primed.mock,
+      primed.dir,
+      [subagentTaskEnvelope({
+        sessionId: primed.sessionId,
+        assistantId: primed.assistantId,
+        toolCallId: scenario.toolCallId,
+        description: scenario.description,
+      })],
+      primed.assistantInfo,
+    )
+
+    const card = page.locator(
+      `[data-component="task-tool-card"][data-subagent-key="${scenario.subagentKey}"]`,
+    )
+    const anchor = card.locator("xpath=ancestor::a[1]")
+    await expect(anchor).toHaveCount(1)
+    await anchor.focus()
+    await page.keyboard.press("Enter")
+
+    const childHeading = page.locator(`[data-session-timeline-session-id="${scenario.childSessionId}"] [data-subagent-child-heading]`)
+    await expect(childHeading).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText("Subagent sessions cannot be prompted.", { exact: true })).toBeVisible()
+    await expect(page.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Back to main session.", exact: true })).toBeVisible()
+
+    await page.locator('[data-slot="session-title-parent"]').click()
+    await expect(card).toBeVisible({ timeout: 30_000 })
+    await expect(anchor).toBeFocused()
+    await expectAssistantReplyVisible(page, "ack 1: matrix probe opencode")
+  })
+
+  test("subagents — bare Pi capability emits no synthetic task card — behavior 15", async ({ page }) => {
+    const { mock } = await primeHarness(page, "pi")
+    await expect(page.locator('[data-component="task-tool-card"]')).toHaveCount(0)
+    expect(mock.requests.badResponses).toEqual([])
+  })
+
+  test("subagents — unauthorized parent runtime stream is rejected before subscription — behavior 15", async ({ page }) => {
+    await primeHarness(page, "opencode", {
+      rows: [],
+      runtimeEventAuthorizeParent: (parentSessionId) => parentSessionId !== "parent-denied",
+    })
+    const response = await page.evaluate(async () => {
+      const result = await fetch("/api/wr/runtime-events?parentSessionId=parent-denied")
+      return { status: result.status, body: await result.json() }
+    })
+    expect(response).toEqual({ status: 403, body: { error: "Forbidden" } })
   })
 
   // behavior 6: assistant `file`-type parts (image/audio data-url, resource links) now

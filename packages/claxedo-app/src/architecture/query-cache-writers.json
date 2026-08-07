@@ -31,8 +31,8 @@
       "status": "live"
     },
     {
-      "family": "saved session config signature",
-      "writer": "features/session/composer/ui/submit-transport.ts",
+      "family": "session raw config",
+      "writer": "features/session/store/session-config-query-cache.ts",
       "status": "live"
     },
     {

@@ -1,6 +1,7 @@
 import { createMemo, For, Show } from "solid-js"
 import type { ToolPart } from "@opencode-ai/sdk/v2"
 import { AgentGlyph } from "./agent-glyph"
+import { useData, type SubagentView } from "../context"
 
 /**
  * SubagentChip row (T12/T13) — when a turn spawns ≥2 subagents, they render as chips
@@ -11,60 +12,102 @@ type ChipModel = {
   key: string
   childSessionId?: string
   name: string
-  status: "running" | "interrupted" | "done"
+  status: SubagentView["status"]
+  resolution: SubagentView["resolution"]
   color?: string
 }
 
-function chipFromPart(part: ToolPart): ChipModel {
-  const state = part.state as {
-    status?: string
-    input?: Record<string, unknown>
-    metadata?: Record<string, unknown>
-  }
-  const input = state.input ?? {}
-  const metadata = state.metadata ?? {}
-  const childSessionId = typeof metadata.sessionId === "string" ? metadata.sessionId : undefined
-  const name =
-    (typeof input.subagent_type === "string" && input.subagent_type) ||
-    (typeof input.description === "string" && input.description) ||
-    "agent"
-  const status: ChipModel["status"] =
-    state.status === "running" || state.status === "pending"
-      ? "running"
-      : state.status === "error"
-        ? "interrupted"
-        : "done"
-  return { key: part.id, childSessionId, name, status, color: undefined }
+export function dispatchSubagentOpen(target: EventTarget | null, input: {
+  childSessionId?: string
+  subagentKey: string
+  interaction: boolean
+  openable: boolean
+}) {
+  if (!target || input.interaction || !input.childSessionId || !input.openable) return false
+  return !target.dispatchEvent(new CustomEvent("claxedo:open-subagent", {
+    bubbles: true,
+    cancelable: true,
+    detail: {
+      childSessionId: input.childSessionId,
+      subagentKey: input.subagentKey,
+    },
+  }))
 }
 
-export function SubagentChipRow(props: { parts: ToolPart[]; onOpen?: (childSessionId: string) => void }) {
-  const chips = createMemo(() => props.parts.map(chipFromPart))
+function chipFromView(view: SubagentView): ChipModel {
+  return {
+    key: view.subagentKey,
+    childSessionId: view.childSessionId,
+    name: view.agentLabel || view.label,
+    status: view.status,
+    resolution: view.resolution,
+  }
+}
+
+function statusLabel(status: ChipModel["status"]) {
+  if (status === "running" || status === "pending") return "working"
+  if (status === "completed") return "done"
+  if (status === "unknown") return "status unavailable"
+  return status
+}
+
+export function SubagentChipRow(props: {
+  parts?: ToolPart[]
+  subagents?: SubagentView[]
+  onOpen?: (childSessionId: string, origin: HTMLButtonElement) => void
+}) {
+  const data = useData()
+  const chips = createMemo(() => {
+    if (props.subagents) return props.subagents.map(chipFromView)
+    return (props.parts ?? []).flatMap((part) =>
+      (data.resolveSubagents?.(part.sessionID, part.callID) ?? []).map(chipFromView)
+    )
+  })
   const visible = createMemo(() => chips().slice(0, 3))
   const overflow = createMemo(() => Math.max(0, chips().length - 3))
 
   return (
     <div data-component="subagent-chip-row">
       <For each={visible()}>
-        {(chip) => (
-          <button
-            type="button"
-            data-component="subagent-chip"
-            data-status={chip.status}
-            disabled={!chip.childSessionId}
-            onClick={(event) => {
-              event.stopPropagation()
-              if (chip.childSessionId) props.onOpen?.(chip.childSessionId)
-            }}
-          >
-            <AgentGlyph seed={chip.childSessionId || chip.name} active={chip.status === "running"} size={14} />
-            <span data-slot="subagent-chip-name">{chip.name}</span>
-            <Show when={chip.status !== "done"}>
-              <span data-slot="subagent-chip-status">
-                {chip.status === "running" ? "working" : "interrupted"}
-              </span>
+        {(chip) => {
+          const content = () => (
+            <>
+              <AgentGlyph seed={chip.childSessionId || chip.key} active={chip.status === "running"} size={14} />
+              <span data-slot="subagent-chip-name">{chip.name}</span>
+              <span data-slot="subagent-chip-status" aria-live="polite">{statusLabel(chip.status)}</span>
+            </>
+          )
+          const openable = () => chip.resolution === "ready" && !!chip.childSessionId
+          return (
+            <Show
+              when={openable()}
+              fallback={
+                <span
+                  data-component="subagent-chip"
+                  data-subagent-key={chip.key}
+                  data-status={chip.status}
+                  aria-label={`${chip.name}, ${statusLabel(chip.status)}, transcript unavailable`}
+                >
+                  {content()}
+                </span>
+              }
+            >
+              <button
+                type="button"
+                data-component="subagent-chip"
+                data-subagent-key={chip.key}
+                data-status={chip.status}
+                aria-label={`${chip.name}, ${statusLabel(chip.status)}`}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  if (chip.childSessionId) props.onOpen?.(chip.childSessionId, event.currentTarget)
+                }}
+              >
+                {content()}
+              </button>
             </Show>
-          </button>
-        )}
+          )
+        }}
       </For>
       <Show when={overflow() > 0}>
         <span data-slot="subagent-chip-overflow">

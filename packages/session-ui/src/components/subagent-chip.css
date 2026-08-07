@@ -51,11 +51,31 @@
   &:active {
     transform: scale(0.97);
   }
+}
 
-  &:disabled {
-    cursor: default;
-    opacity: 0.7;
+span[data-component="subagent-chip"] {
+  cursor: default;
+
+  &:hover {
+    color: var(--text-base);
+    border-color: var(--border-weak-base);
   }
+}
+
+[data-component="subagent-card-list"] {
+  display: grid;
+  gap: 6px;
+}
+
+[data-component="task-tool-card"][data-subagent-role="spawn"]:focus-visible {
+  outline: 2px solid var(--border-focus, var(--border-interactive-base));
+  outline-offset: 2px;
+}
+
+[data-slot="subagent-status"] {
+  flex-shrink: 0;
+  color: var(--text-weaker);
+  font-size: var(--font-size-small);
 }
 
 [data-slot="subagent-chip-overflow"] {

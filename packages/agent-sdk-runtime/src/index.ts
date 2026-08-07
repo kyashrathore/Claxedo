@@ -29,6 +29,16 @@ export type {
 export type { CompatEvent, CompatEnvelope, CompatPart } from "./compat-events"
 export { classifyFirstTurnError, firstTurnErrorData, FIRST_TURN_ERROR_CLASSES } from "./first-turn-error"
 export type { FirstTurnErrorClass } from "./first-turn-error"
+export {
+  createMemorySubagentAdmissionStore,
+  createSubagentAdmissionBoundary,
+} from "./subagent-admission"
+export type {
+  AdmittedSubagentObservation,
+  SubagentAdmissionBoundary,
+  SubagentAdmissionStore,
+  SubagentObservation,
+} from "./subagent-admission"
 export { chunk, live, recovering } from "./status"
 export type { StatusChunk, StatusCompat, StatusRecover } from "./status"
 export {
@@ -117,6 +127,7 @@ export type PromptInput = {
   format?: PromptFormat
   system?: string
   variant?: string
+  permissionMode?: string
 }
 
 export type ProcessHarnessConnection = {

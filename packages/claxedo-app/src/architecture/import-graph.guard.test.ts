@@ -15,6 +15,7 @@ const liveTypeContracts = [
   "features/documents/data/document-changed-event.ts",
   "features/session/data/backend/types.ts",
   "features/session/data/query/types.ts",
+  "features/session/composer/ui/submit-input.ts",
   "features/session/composer/prompt-input-props.ts",
   "features/terminal/core/backend/types.ts",
   "lib/lru-map.ts",

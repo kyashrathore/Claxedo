@@ -4,6 +4,7 @@ export type { ProjectMeta } from "@/platform/query/project-meta"
 
 export type SessionInventoryRow = {
   id: string
+  sessionRef?: string
   title: string
   directory: string
   workspaceId?: string

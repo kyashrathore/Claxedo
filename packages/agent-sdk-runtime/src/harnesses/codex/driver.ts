@@ -7,7 +7,11 @@ import {
   createAgentEventRuntime,
   type AgentEventRuntime,
 } from "@claxedo/agent-event-runtime"
-import { codexAppServerAdapter } from "@claxedo/agent-event-runtime/harnesses/codex"
+import {
+  codexAppServerAdapter,
+  codexCollabAgentCall,
+  codexStartedSubagent,
+} from "@claxedo/agent-event-runtime/harnesses/codex"
 import type { AgentConfigOptionRow, PromptInput } from "../../index"
 import type { AgentHarnessAdapterHealth, FetchLike } from "../../adapter-contract"
 import type { ResolvedMcpServer } from "../../mcp-resolver"
@@ -53,7 +57,12 @@ const OPENAI_ISSUER = "https://auth.openai.com"
 type CodexActiveThread = {
   sessionId: string
   agentSessionId: string
+  directory: string
+  model?: string
+  effort?: string
+  process: CodexAppServerProcess
   project: (method: string, payload: JsonRecord, frame: unknown) => void
+  observeSubagent: SdkRuntimeTurnInput["observeSubagent"]
 }
 
 /**
@@ -131,6 +140,20 @@ export function createCodexAppServerDriver(host: SdkRuntimeDriverHost, options: 
 
 type CodexDriverOptions = { binary?: string; fetch?: FetchLike; codexHome?: string }
 
+const CODEX_DYNAMIC_TOOLS = [{
+  name: "spawn_agent",
+  description: "Spawn a child Codex agent to execute one bounded task.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      task_name: { type: "string", description: "Short stable name for the child task." },
+      message: { type: "string", description: "Task instructions for the child agent." },
+    },
+    required: ["task_name", "message"],
+    additionalProperties: false,
+  },
+}]
+
 class CodexAppServerDriver implements SdkRuntimeDriver {
   readonly type = "codex" as const
   private auth: SdkRuntimeAuth = {}
@@ -202,6 +225,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       approvalPolicy: settings.approvalPolicy,
       approvalsReviewer: "user",
       sandbox: settings.sandbox,
+      dynamicTools: CODEX_DYNAMIC_TOOLS,
       ...(model ? { model } : {}),
     }) as JsonRecord
     const thread = record(result.thread)
@@ -250,7 +274,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       codexAppServerModel(input.input.model.modelID),
       input.input.variant,
     )
-    const project = (method: string, payload: JsonRecord, frame: unknown) => input.ingest({
+    const project = (method: string, payload: JsonRecord, frame: unknown, route?: { kind: "parent" } | { kind: "child"; correlationKey: string }) => input.ingest({
       source: CODEX_SOURCE,
       method,
       payload,
@@ -258,25 +282,83 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       dir: "in",
       method,
       frame,
-    })
+    }, route)
     this.activeThreads.set(threadId, {
       sessionId: input.sessionId,
       agentSessionId: threadId,
+      directory: input.directory,
+      ...(model ? { model } : {}),
+      ...(effort ? { effort } : {}),
+      process: proc,
       project,
+      observeSubagent: input.observeSubagent,
     })
+    let messageQueue = Promise.resolve()
     const unsubscribe = proc.onMessage((message) => {
       const method = text(message.method)
       const params = record(message.params) ?? {}
       if (!method) return
-      const eventThreadId = text(params.threadId) ?? text(record(params.thread)?.id)
-      if (eventThreadId && eventThreadId !== threadId) return
-      if (method === "turn/started") {
-        turnId = text(record(params.turn)?.id) ?? turnId
-        const active = this.host.lifecycle().get(input.sessionId)
-        if (active) active.turnId = turnId
-      }
-      if (method === "turn/completed") resolveCompleted?.()
-      project(method, params, message)
+      messageQueue = messageQueue.then(async () => {
+        const startedSubagent = method === "thread/started" ? codexStartedSubagent(params) : undefined
+        if (startedSubagent?.parentThreadId === threadId) {
+          await input.observeSubagent({
+            observation: {
+              observationId: `codex:thread-started:${startedSubagent.id}:${startedSubagent.status}`,
+              harnessExecutionId: threadId,
+              stableCorrelationId: startedSubagent.id,
+              providerId: startedSubagent.id,
+              providerKind: "codex",
+              status: startedSubagent.status,
+              transcript: { kind: "live" },
+              ...(startedSubagent.label ? { label: startedSubagent.label } : {}),
+              ...(startedSubagent.subagentType ? { subagentType: startedSubagent.subagentType } : {}),
+              ...(startedSubagent.description ? { description: startedSubagent.description } : {}),
+            },
+            correlationKeys: [startedSubagent.id],
+            source: { dir: "in", method, frame: message },
+          })
+        }
+
+        const call = codexCollabAgentCall(record(params.item))
+        if (call?.senderThreadId === threadId) {
+          await Promise.all(call.receiverThreadIds.map((receiverThreadId) => input.observeSubagent({
+            observation: {
+              observationId: `codex:${method}:${call.id}:${receiverThreadId}:${call.statuses[receiverThreadId] ?? "edge"}`,
+              harnessExecutionId: threadId,
+              stableCorrelationId: receiverThreadId,
+              toolCallId: call.id,
+              toolCallRole: call.toolCallRole,
+              providerId: receiverThreadId,
+              providerKind: "codex",
+              transcript: { kind: "live" },
+              ...(call.statuses[receiverThreadId]
+                ? { status: call.statuses[receiverThreadId] }
+                : call.toolCallRole === "spawn" && method === "item/started"
+                  ? { status: "pending" as const }
+                  : {}),
+              ...(call.prompt ? { description: call.prompt } : {}),
+              subagentType: call.model ?? "codex",
+            },
+            correlationKeys: [receiverThreadId],
+            source: { dir: "in", method, frame: message },
+          })))
+        }
+
+        const eventThreadId = text(params.threadId) ?? text(record(params.thread)?.id)
+        const parentOwned = !eventThreadId || eventThreadId === threadId
+        if (method === "turn/started" && parentOwned) {
+          turnId = text(record(params.turn)?.id) ?? turnId
+          const active = this.host.lifecycle().get(input.sessionId)
+          if (active) active.turnId = turnId
+        }
+        project(
+          method,
+          params,
+          message,
+          parentOwned ? { kind: "parent" } : { kind: "child", correlationKey: eventThreadId },
+        )
+        if (method === "turn/completed" && parentOwned) resolveCompleted?.()
+      }).catch((err: unknown) => failTurn(new Error(errorMessage(err))))
     })
     const unsubscribeStderr = proc.onStderr(onStderr)
     input.abort.signal.addEventListener("abort", onAbort, { once: true })
@@ -489,7 +571,13 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       }
     }
     if (method === "item/tool/call") {
-      return { contentItems: [{ type: "text", text: "Dynamic tool calls are not implemented by Claxedo yet." }], success: false }
+      if (!active || text(params.tool) !== "spawn_agent") {
+        return {
+          contentItems: [{ type: "inputText", text: `Dynamic tool ${text(params.tool) ?? "call"} is not implemented by Claxedo.` }],
+          success: false,
+        }
+      }
+      return this.spawnDynamicCodexAgent(active, params, message)
     }
     if (
       method === "item/commandExecution/requestApproval" ||
@@ -523,6 +611,132 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       }
     }
     throw new Error(`Unsupported Codex app-server request: ${method}`)
+  }
+
+  private async spawnDynamicCodexAgent(active: CodexActiveThread, params: JsonRecord, frame: JsonRecord) {
+    const callId = text(params.callId) ?? randomUUID()
+    const args = record(params.arguments) ?? {}
+    const prompt = text(args.message) ?? text(args.prompt) ?? text(args.description)
+    if (!prompt) {
+      return {
+        contentItems: [{ type: "inputText", text: "spawn_agent requires a message." }],
+        success: false,
+      }
+    }
+    const label = text(args.task_name) ?? "Codex subagent"
+    const settings = codexSettingsFor(this.permissionSelection.currentId(active.sessionId))
+    let childThreadId = ""
+    try {
+      const result = record(await active.process.request("thread/start", {
+        cwd: active.directory,
+        approvalPolicy: settings.approvalPolicy,
+        approvalsReviewer: "user",
+        sandbox: settings.sandbox,
+        threadSource: "subagent",
+        ...(active.model ? { model: active.model } : {}),
+      }))
+      childThreadId = text(record(result?.thread)?.id) ?? ""
+      if (!childThreadId) throw new Error("Codex app-server did not return a child thread id")
+      await active.observeSubagent({
+        observation: {
+          observationId: `codex:dynamic:${callId}:${childThreadId}:running`,
+          harnessExecutionId: active.agentSessionId,
+          stableCorrelationId: childThreadId,
+          toolCallId: callId,
+          toolCallRole: "spawn",
+          providerId: childThreadId,
+          providerKind: "codex",
+          status: "running",
+          transcript: { kind: "live" },
+          label,
+          description: prompt,
+          subagentType: active.model ?? "codex",
+        },
+        correlationKeys: [childThreadId],
+        source: { dir: "in", method: "item/tool/call", frame },
+      })
+      await this.runDynamicCodexChild(active, childThreadId, prompt)
+      await active.observeSubagent({
+        observation: {
+          observationId: `codex:dynamic:${callId}:${childThreadId}:completed`,
+          harnessExecutionId: active.agentSessionId,
+          stableCorrelationId: childThreadId,
+          toolCallId: callId,
+          toolCallRole: "spawn",
+          providerId: childThreadId,
+          providerKind: "codex",
+          status: "completed",
+          transcript: { kind: "live" },
+          label,
+          description: prompt,
+          subagentType: active.model ?? "codex",
+        },
+        correlationKeys: [childThreadId],
+        source: { dir: "in", method: "item/tool/call", frame },
+      })
+      return {
+        contentItems: [{ type: "inputText", text: `Subagent ${childThreadId} completed successfully.` }],
+        success: true,
+      }
+    } catch (cause) {
+      if (childThreadId) {
+        await active.observeSubagent({
+          observation: {
+            observationId: `codex:dynamic:${callId}:${childThreadId}:failed`,
+            harnessExecutionId: active.agentSessionId,
+            stableCorrelationId: childThreadId,
+            toolCallId: callId,
+            toolCallRole: "spawn",
+            providerId: childThreadId,
+            providerKind: "codex",
+            status: "failed",
+            transcript: { kind: "live" },
+            label: errorMessage(cause),
+            description: prompt,
+            subagentType: active.model ?? "codex",
+          },
+          correlationKeys: [childThreadId],
+          source: { dir: "in", method: "item/tool/call", frame },
+        })
+      }
+      return {
+        contentItems: [{ type: "inputText", text: `Subagent failed: ${errorMessage(cause)}` }],
+        success: false,
+      }
+    }
+  }
+
+  private async runDynamicCodexChild(active: CodexActiveThread, threadId: string, prompt: string) {
+    let resolveCompleted: (() => void) | undefined
+    let rejectCompleted: ((err: Error) => void) | undefined
+    const completed = new Promise<void>((resolve, reject) => {
+      resolveCompleted = resolve
+      rejectCompleted = reject
+    })
+    const unsubscribe = active.process.onMessage((message) => {
+      const params = record(message.params) ?? {}
+      if (text(params.threadId) !== threadId) return
+      if (text(message.method) === "turn/completed") resolveCompleted?.()
+      if (text(message.method) === "error") rejectCompleted?.(new Error(text(params.message) ?? "Codex child turn failed"))
+    })
+    try {
+      await active.process.request("turn/start", {
+        threadId,
+        input: [{ type: "text", text: prompt }],
+        cwd: active.directory,
+        approvalPolicy: codexSettingsFor(this.permissionSelection.currentId(active.sessionId)).approvalPolicy,
+        approvalsReviewer: "user",
+        sandboxPolicy: codexSandboxPolicy(
+          codexSettingsFor(this.permissionSelection.currentId(active.sessionId)).sandbox,
+          active.directory,
+        ),
+        ...(active.model ? { model: active.model } : {}),
+        ...(active.effort ? { effort: active.effort } : {}),
+      })
+      await completed
+    } finally {
+      unsubscribe()
+    }
   }
 
   private async refreshChatgptAuthTokens() {

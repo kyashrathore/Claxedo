@@ -15,6 +15,11 @@ export type RuntimeAppendSource = {
   frame?: unknown
 }
 
+export type TurnProjectionOwner = {
+  sessionId: string
+  getAgentSessionId: () => string
+}
+
 type RuntimeEventStore = {
   appendEvent(input: {
     sessionId: string
@@ -31,8 +36,7 @@ function committed(payload: { payload: CompatEvent }) {
 
 export function createTurnEventProjector(options: {
   store: RuntimeEventStore
-  sessionId: string
-  getAgentSessionId: () => string
+  owner: TurnProjectionOwner
   directory: string
   input: Pick<PromptInput, "userMessageId" | "agent" | "model" | "variant">
   assistantMessageId: string
@@ -44,23 +48,23 @@ export function createTurnEventProjector(options: {
   let created = options.created
   const runtimeProjectionMessageId = options.assistantMessageId
   const projection = createOpencodeCompatProjection({
-    sessionId: options.sessionId,
+    sessionId: options.owner.sessionId,
     directory: options.directory,
     assistantMessageId,
   })
   const publishRuntime = (payload: AgentRuntimeEvent) => {
     options.onRuntimeEvent?.({
       directory: options.directory,
-      sessionId: options.sessionId,
-      agentSessionId: options.getAgentSessionId(),
+      sessionId: options.owner.sessionId,
+      agentSessionId: options.owner.getAgentSessionId(),
       assistantMessageId: runtimeProjectionMessageId,
       payload,
     })
   }
   const append = (payload: CompatEvent, source: RuntimeAppendSource) => {
     const output = committed(options.store.appendEvent({
-      sessionId: options.sessionId,
-      agentSessionId: options.getAgentSessionId(),
+      sessionId: options.owner.sessionId,
+      agentSessionId: options.owner.getAgentSessionId(),
       payload,
       source,
     }))
@@ -86,8 +90,8 @@ export function createTurnEventProjector(options: {
       created = Date.now()
       append(messageUpdated(buildAssistantMessage({
         id: assistantMessageId,
-        sessionID: options.sessionId,
-        parentID: options.input.userMessageId ?? options.sessionId,
+        sessionID: options.owner.sessionId,
+        parentID: options.input.userMessageId ?? options.owner.sessionId,
         agent: options.input.agent,
         model: options.input.model,
         directory: options.directory,
@@ -99,8 +103,8 @@ export function createTurnEventProjector(options: {
       return projection.terminalizeOpenTools(message).map((event) => {
         const payload = event.payload
         const output = committed(options.store.appendEvent({
-          sessionId: options.sessionId,
-          agentSessionId: options.getAgentSessionId(),
+          sessionId: options.owner.sessionId,
+          agentSessionId: options.owner.getAgentSessionId(),
           payload,
           source,
         }))
@@ -111,6 +115,8 @@ export function createTurnEventProjector(options: {
     },
   }
 }
+
+export type TurnEventProjector = ReturnType<typeof createTurnEventProjector>
 
 function record(input: unknown): Record<string, unknown> | undefined {
   return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined

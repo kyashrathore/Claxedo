@@ -62,6 +62,8 @@ import {
   mountWorkspacePty,
 } from "./core"
 import type { RuntimeConfigApplyStatus, WorkspaceHost, WorkspaceHostMountOptions } from "./host"
+import type { RuntimeEventAuthorization } from "../routes/events"
+import type { WorkspaceTranscriptRoutesOptions } from "./core"
 
 /**
  * The store surface the workspace-runtime engine actually consumes — derived
@@ -82,12 +84,14 @@ export type WorkspaceRuntimeStore =
     getSession(id: string): AgentSession | null
     getMessages(id: string): AgentMessage[]
     getSessionMaxSeq(sessionId: string): number
+    listSubagents?: (parentSessionId: string) => unknown[]
     bindSession(input: {
       sessionId: string
       directory: string
       agentSessionId?: string
       title?: string
       ownerKey?: string
+      parentSessionId?: string
       createdAt?: number
     }): void
     updateSessionConfig(
@@ -114,6 +118,10 @@ export type WorkspaceRuntimeStoreFactory = (input: { storeRoot?: string }) => Wo
 export type WorkspaceHostOptions = {
   /** Optional, local-only lifecycle observer supplied by an embedding host. */
   processObserver?: ProcessObserver
+  /** Parent-Session authorization and child ownership used by scoped runtime-event streams. */
+  runtimeEventAuthorization?: RuntimeEventAuthorization
+  /** Host-mediated resolver endpoint for opaque file-backed transcript handles. */
+  transcripts?: WorkspaceTranscriptRoutesOptions
   opencodeUrl?: string
   /**
    * Injected in-process engine transport — a peer of `opencodeUrl`. When set,
@@ -703,12 +711,26 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
       match: (runner) => nativeSdk(runner),
       create: ({ runner, options }) => {
         const Adapter = NATIVE_HARNESS_ADAPTERS[runner.id as keyof typeof NATIVE_HARNESS_ADAPTERS]
+        const transcripts = options.transcripts
+        const registerTranscript = transcripts?.resolver.register
         return new Adapter({
           ...(processConnection(runner)?.binary || HARNESS_BINARY_FALLBACKS[harnessKey(runner)] ? { binary: binary(runner) } : {}),
           createStore: adapterCreateStore(resolveStoreFactory(options)),
           ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
           ...(options.eventHub ? { eventHub: options.eventHub } : {}),
           ...(options.processObserver ? { processObserver: agentProcessObserver(options.processObserver) } : {}),
+          ...(runner.id === "cursor" && registerTranscript && transcripts ? {
+            transcriptRegistrar: {
+              register: (input) => registerTranscript({
+                workspaceId: transcripts.workspaceId,
+                ...input,
+              }),
+              open: (input) => transcripts.resolver.open({
+                workspaceId: transcripts.workspaceId,
+                ...input,
+              }),
+            },
+          } : {}),
         })
       },
     },
@@ -1563,6 +1585,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           eventHub,
           exposure: options.exposure,
           processObserver: hostOptions.processObserver,
+          runtimeEventAuthorization: hostOptions.runtimeEventAuthorization,
+          transcripts: hostOptions.transcripts,
         })
       } else {
         if (options.pty) mountWorkspacePty(app, options.pty.upgradeWebSocket, hostOptions.processObserver)
@@ -1788,6 +1812,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         eventHub,
         resolveRuntime: (input) => runtimeForSession(input),
         listSessions: (c, directory) => listSessions(c as { req: { query: (k: string) => string | undefined } }, directory),
+        listSubagents: ({ parentSessionId }) => store().listSubagents?.(parentSessionId) ?? [],
         listPermissions: (c, directory) => listPermissions(c as { req: { query: (k: string) => string | undefined } }, directory),
         listQuestions: (c, directory) => listQuestions(c as { req: { query: (k: string) => string | undefined } }, directory),
         createActiveTurnScope: (input) => createActiveTurnScope(input),
@@ -1841,9 +1866,19 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           const adapterConfig = await adapter.updateSessionConfig(sessionId, update, directory)
           return store().updateSessionConfig(sessionId, adapterConfig, { directory }) ?? adapterConfig
         },
+        afterDeleteSession: ({ sessionId }) => {
+          hostOptions.transcripts?.resolver.invalidateParent?.(hostOptions.transcripts.workspaceId, sessionId)
+        },
         ...(hostOptions.opencodeHeaders ? { opencodeHeaders: hostOptions.opencodeHeaders } : {}),
       }))
       app.route("/", OpenCodeCompatRoutes())
+    },
+    hasSession(sessionId: string) {
+      return !!store().getSession(sessionId)
+    },
+    parentSessionIdFor(sessionId: string) {
+      const session = store().getSession(sessionId) as { parentID?: string | null } | null
+      return session?.parentID ?? undefined
     },
     async apply(next: RuntimeSnapshot) {
       const normalized = normalizeRuntimeSnapshot(next)

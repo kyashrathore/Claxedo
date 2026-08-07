@@ -6,6 +6,7 @@
 - Local `main` ref may not exist; use `dev` or `origin/dev` for diffs.
 - Prefer automation: execute requested actions without confirmation unless blocked by missing info or safety/irreversibility.
 - This workspace is for `claxedo` development. Default product work should target `packages/claxedo-app`, `packages/claxedo-server`, or `packages/claxedo-desktop`, not upstream `opencode`, unless the task is explicitly about sync/rebase work.
+- Never repair a broken contract with fallback or synthesized data/events. Fix the authoritative producer so consumers receive the canonical value in the correct order.
 
 ## Special Agents
 

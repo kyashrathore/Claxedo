@@ -1,5 +1,6 @@
 import { Hono, type Context } from "hono"
 import { type SessionEnvFactory } from "@claxedo/agent-sdk-runtime"
+import { runtimeEventsHandler } from "@claxedo/workspace-runtime/routes"
 import { createCentralSessionRuntime } from "./session/runtime"
 import { ControlPlaneSessionRoutes } from "./session/routes/control-plane-session"
 import { isLoopbackLocalRequest } from "./platform/http/peer-address"
@@ -145,6 +146,18 @@ export function createCentralControlApp(services: ControlPlaneServices, options:
     ...(options.productDeploymentMode ? { productDeploymentMode: options.productDeploymentMode } : {}),
   })
   const app = new Hono()
+  const sessionRuntimeEvents = runtimeEventsHandler(runtime.eventHub, {
+    authorizeParent: () => true,
+    resolveParentSessionId: (event) => runtime.parentSessionIdFor(event.sessionId),
+  })
+  app.get("/api/control/session/:id/runtime-events", async (c: Context) => {
+    const access = await centralRuntimeAccess(c.req.raw, services, options)
+    if (access instanceof Response) return access
+    if (c.req.query("parentSessionId") !== c.req.param("id")) {
+      return c.json({ error: "parentSessionId must match the central session path" }, 400)
+    }
+    return sessionRuntimeEvents(c as never)
+  })
   app.route("/api/control", ControlPlaneSessionRoutes(services, {
     ...(options.authConfig ? { authConfig: options.authConfig } : {}),
     ...(options.verifier ? { verifier: options.verifier } : {}),

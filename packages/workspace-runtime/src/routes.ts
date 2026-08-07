@@ -36,6 +36,8 @@ export type {
 export { PtyRoutes } from "./routes/pty"
 export { ProcessRoutes } from "./routes/process"
 export { runtimeEventsHandler } from "./routes/events"
+export type { RuntimeEventAuthorization } from "./routes/events"
+export { TranscriptRoutes } from "./routes/transcript"
 export { AgentHookRoutes } from "./routes/agent-hook"
 export { createSessionRoutes } from "./routes/session-core"
 export type { RuntimeSessionBusEvent, SessionLifecycleEvent } from "./routes/session-core"

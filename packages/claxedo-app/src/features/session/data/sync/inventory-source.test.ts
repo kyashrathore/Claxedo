@@ -210,6 +210,7 @@ describe("global sync inventory source helpers", () => {
   test("controlMetaToGlobalSession maps local control metadata into SDK-like rows", () => {
     expect(controlMetaToGlobalSession({
       sessionID: "ses_local",
+      sessionRef: "central:ses_local",
       title: "Local session",
       directory: "/repo/local",
       projectID: "project_local",
@@ -226,6 +227,7 @@ describe("global sync inventory source helpers", () => {
       },
     })).toEqual({
       id: "ses_local",
+      sessionRef: "central:ses_local",
       title: "Local session",
       directory: "/repo/local",
       projectID: "project_local",

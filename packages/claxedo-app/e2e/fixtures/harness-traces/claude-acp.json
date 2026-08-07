@@ -923,8 +923,7 @@
                   "extractor": "claude-task",
                   "toolCallId": "tool-task-1",
                   "subagentType": "code-reviewer"
-                },
-                "sessionId": "ses_child_claude_task"
+                }
               },
               "time": {
                 "start": 1130,
@@ -946,8 +945,7 @@
                 "extractor": "claude-task",
                 "toolCallId": "tool-task-1",
                 "subagentType": "code-reviewer"
-              },
-              "sessionId": "ses_child_claude_task"
+              }
             }
           },
           "time": 1130

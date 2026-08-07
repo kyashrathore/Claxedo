@@ -283,6 +283,28 @@ describe("harness store facade", () => {
     expect(store.read("draft:one").configError).toBeUndefined()
   })
 
+  test("server-owned sessions clear draft-only model errors before hydration", () => {
+    const store = createHarnessStore(storage)
+    store.applyPatch("session:one", {
+      draftDefault: {
+        harness: "pi",
+        model: { providerID: "anthropic", modelID: "removed" },
+      },
+      draftDefaultState: "saved-model-unavailable",
+      configError: "Saved model unavailable",
+    })
+
+    store.markServer("session:one")
+
+    expect(store.read("session:one")).toMatchObject({
+      draftDefaultAuthority: "server",
+      draftDefaultWritePending: false,
+    })
+    expect(store.read("session:one").draftDefault).toBeUndefined()
+    expect(store.read("session:one").draftDefaultState).toBeUndefined()
+    expect(store.read("session:one").configError).toBeUndefined()
+  })
+
   test("explicit selection and promotion invalidate captured default work", () => {
     createDraftDefaultPreferences(storage).save(
       { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" },

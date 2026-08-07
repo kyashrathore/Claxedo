@@ -255,6 +255,13 @@ export function HarnessModelPicker<H extends string>(props: {
    * else in the app asserts on.
    */
   triggerHint?: Accessor<string | undefined>
+  triggerState?: Accessor<{
+    harness: string
+    model?: string
+    provider?: string
+    readiness: string
+    readyForSubmit: boolean
+  }>
 }) {
   const language = useLanguage()
   const dialog = useDialog()
@@ -328,6 +335,11 @@ export function HarnessModelPicker<H extends string>(props: {
         aria-label={props.triggerLabel ?? "Select harness, model and effort"}
         title={props.triggerHint?.()}
         data-action="prompt-harness-model"
+        data-harness={props.triggerState?.().harness}
+        data-model={props.triggerState?.().model}
+        data-provider={props.triggerState?.().provider}
+        data-readiness={props.triggerState?.().readiness}
+        data-ready-for-submit={props.triggerState?.().readyForSubmit ? "true" : "false"}
         class="composer-harness-model group min-w-0 max-w-[260px] max-md:max-w-[132px] text-13-regular"
       >
         {/* The harness mark, always. Loading is reported by the Model section

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
+import { sessionConfigRawQueryKey } from "../../store/session-config-selection"
 import * as h from "./submit.harness.test"
 
 const {
@@ -159,11 +160,11 @@ describe("upstream contract", () => {
     state.harnessMode = false
     state.localCurrentModel = { id: "big-pickle", provider: { id: "opencode" } }
     state.localCurrentAgent = { name: "stale-agent" }
-    queryClient.setQueryData(h.savedSessionConfigQueryKey("session-1"), JSON.stringify({
+    queryClient.setQueryData(sessionConfigRawQueryKey("session-1"), {
       harness: { type: "codex-acp" },
       agent: "build",
       model: { providerID: "codex-acp", modelID: "gpt-5.5" },
-    }))
+    })
 
     const submit = createSubmit({
       info: () => ({ id: "session-1" }),

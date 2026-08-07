@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import {
   createAgentRuntime,
+  createSubagentAdmissionBoundary,
   type AgentHarnessFactory,
   type AgentMessageRow,
   type AgentRuntimeStore,
@@ -8,6 +9,8 @@ import {
   type SandboxRef,
   type SessionConfigUpdate,
   type SessionEnvFactory,
+  type SubagentAdmissionStore,
+  type SubagentObservation,
 } from "@claxedo/agent-sdk-runtime"
 import {
   codexBundlePiBackendResolver,
@@ -146,6 +149,10 @@ type CentralSessionRuntimeOptions = {
   usageLedger?: UsageLedger
   /** Product-plane `deployment_mode` for turn metering; defaults to self-host. */
   productDeploymentMode?: ProductDeploymentMode
+  /** Deterministic model backend injection for tests and embedded deployments. */
+  modelBackend?: PiModelBackendResolver
+  /** Hard ceiling for background subagents; production defaults to 15 minutes. */
+  subagentTimeoutMs?: number
 }
 
 /**
@@ -294,25 +301,30 @@ function buildWakeTools(wakes: Wakes, sessionId: string, workspaceId: string): P
 export function createCentralSessionRuntime(services: ControlPlaneServices, options: CentralSessionRuntimeOptions = {}) {
   const eventHub = createRuntimeEventHub()
   const turnCredentials = options.turnCredentials ?? createConnectionTurnCredentials()
-  // Late-bound because spawn_session needs createHybridSession + the message
+  const subagentChildren = new Set<string>()
+  const sessionPlacements = new Map<string, { workspaceId?: string; toolSandbox: SandboxRef }>()
+  // Late-bound because the subagent tool needs createHybridSession + the message
   // routes, which are built after the adapter. The factory captures the source
   // session so child sessions inherit its concrete model.
   let dispatchToolsForSession = (_sessionId: string): PiAgentTool[] => []
   // Assigned below (needs placementRoutes + createHybridSession); captured here
   // so each turn gets session-scoped wake tools. Opt-in via CLAXEDO_WAKES=1.
   let wakes: Wakes | undefined
-  const baseModelBackend = centralModelBackend()
+  const baseModelBackend = options.modelBackend ?? centralModelBackend().modelBackend
   const modelBackend: PiModelBackendResolver = async (input) => {
-        const backend = await baseModelBackend.modelBackend(input)
-        if (!backend) return undefined
-        const extraTools = [...(backend.extraTools ?? []), ...dispatchToolsForSession(input.sessionId)]
-        if (wakes) {
-          const meta = await services.projectionStore.session_meta(input.sessionId)
-          const workspaceId = (meta?.workspaceID as string | undefined) ?? input.sessionId
-          extraTools.push(...buildWakeTools(wakes, input.sessionId, workspaceId))
-        }
-        return { ...backend, extraTools }
-      }
+    const backend = await baseModelBackend(input)
+    if (!backend) return undefined
+    const meta = await services.projectionStore.session_meta(input.sessionId)
+    const extraTools = [
+      ...(backend.extraTools ?? []),
+      ...(subagentChildren.has(input.sessionId) || meta?.parentID ? [] : dispatchToolsForSession(input.sessionId)),
+    ]
+    if (wakes) {
+      const workspaceId = (meta?.workspaceID as string | undefined) ?? input.sessionId
+      extraTools.push(...buildWakeTools(wakes, input.sessionId, workspaceId))
+    }
+    return { ...backend, extraTools }
+  }
   const adapter = new PiHarnessAdapter({
     eventHub,
     defaultPlacement: {
@@ -326,9 +338,24 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     // default (consent model), and tests stay hermetic. Enable with
     // CLAXEDO_PI_MODEL=provider/modelId (or "auto"), or CLAXEDO_PI_MODEL_BACKEND=1.
     modelBackend,
+    toolExtensionProvider: { providesSubagentTool: () => true },
     ...(options.createEnv ? { createEnv: options.createEnv } : {}),
   })
   const runtimeStore = createMemoryRuntimeStore() as unknown as AgentRuntimeStoreWithRecovery
+  const subagentStore = runtimeStore as AgentRuntimeStoreWithRecovery & SubagentAdmissionStore & {
+    listSubagents(parentSessionId: string): unknown[]
+  }
+  const subagentAdmission = createSubagentAdmissionBoundary({
+    store: {
+      admit: (input) => subagentStore.admit(input),
+      markPublished: (parentSessionId, observationId) => subagentStore.markPublished(parentSessionId, observationId),
+    },
+    publish: (parentSessionId, event) => eventHub.publishRuntime({
+      directory: parentSessionId,
+      sessionId: parentSessionId,
+      payload: event,
+    }),
+  })
   const runtime = createAgentRuntime({
     store: runtimeStore as unknown as AgentRuntimeStore,
     harnesses: [{
@@ -421,17 +448,23 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
           return modelID ? [{ providerID, modelID }] : []
         })
     for (const model of candidates) {
-      const backend = await baseModelBackend.modelBackend({ sessionId, model })
+      const backend = await baseModelBackend({ sessionId, model })
       if (backend) return { providerID: backend.model.provider, modelID: backend.model.id }
     }
   }
-  function bindRuntimeSession(input: { id: string; title?: string | null; model?: { providerID: string; modelID: string } }) {
+  function bindRuntimeSession(input: {
+    id: string
+    title?: string | null
+    model?: { providerID: string; modelID: string }
+    parentSessionId?: string
+  }) {
     const currentModel = runtimeStore.getSessionConfig(input.id)?.model
     runtimeStore.bindSession({
       sessionId: input.id,
       directory: input.id,
       title: input.title ?? undefined,
       agentSessionId: input.id,
+      ...(input.parentSessionId ? { parentSessionId: input.parentSessionId } : {}),
     })
     runtimeStore.updateSessionConfig(input.id, {
       harness: { id: "pi", access: "native" },
@@ -444,8 +477,14 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     if (runtimeStore.getSession(sessionId)) return true
     const meta = await services.projectionStore.session_meta(sessionId)
     if (meta?.host !== "central") return false
+    if (meta.parentID) subagentChildren.add(sessionId)
+    sessionPlacements.set(sessionId, {
+      ...(meta.workspaceID ? { workspaceId: meta.workspaceID } : {}),
+      toolSandbox: toolSandboxFromMeta(meta),
+    })
     await adapter.bindSession({
       id: sessionId,
+      ...(meta.parentID ? { parentID: meta.parentID } : {}),
       title: meta.title ?? null,
       placement: {
         mode: "hybrid",
@@ -455,11 +494,19 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       },
     })
     if (meta.model) await adapter.updateSessionConfig(sessionId, { model: meta.model }, undefined)
-    bindRuntimeSession({ id: sessionId, title: meta.title ?? null, ...(meta.model ? { model: meta.model } : {}) })
+    bindRuntimeSession({
+      id: sessionId,
+      title: meta.title ?? null,
+      ...(meta.model ? { model: meta.model } : {}),
+      ...(meta.parentID ? { parentSessionId: meta.parentID } : {}),
+    })
     return true
   }
   const routes = createSessionRoutes({
     resolveAdapter: () => adapter,
+    beforeSessionOperation: async (_c, input) => {
+      if (input.operation === "delete_session") await terminateBackgrounds(input.sessionId, "interrupted")
+    },
     resolveRuntime: async (_c, input) => {
       if (input?.sessionId) await ensureCentralRuntimeSession(input.sessionId)
       return runtime
@@ -537,9 +584,10 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
         title: typeof row.title === "string" ? row.title : null,
       })
     },
-    afterUpdateSession: async (_c, _directory, session) => {
+    afterUpdateSession: async (_c, _directory, session, updates) => {
       const row = session as { id?: unknown; title?: unknown; time?: { archived?: number } }
       if (typeof row.id !== "string") return
+      if (updates.time?.archived !== undefined) await terminateBackgrounds(row.id, "interrupted")
       bindRuntimeSession({
         id: row.id,
         title: typeof row.title === "string" ? row.title : null,
@@ -548,7 +596,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
         host: "central",
         directory: null,
         title: typeof row.title === "string" ? row.title : null,
-        archived: row.time?.archived ?? null,
+        archived: updates.time?.archived ?? row.time?.archived ?? null,
       })
     },
     afterMessageCheckpoint: async (_c, directory, sessionId) => {
@@ -652,6 +700,10 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
         ? { kind: "workspace-runtime", workspaceId: toolSandbox.workspaceId, ...(toolSandbox.directory ? { directory: toolSandbox.directory } : {}) }
         : null,
     })
+    sessionPlacements.set(sessionId, {
+      ...(workspaceId ? { workspaceId } : {}),
+      toolSandbox,
+    })
     return c.json({ ok: true, placement: { sessionId, mode: "hybrid", host: "central", workspaceId: workspaceId ?? null, toolSandbox } })
   })
   // Cast: workspace-runtime pins hono 4.10 while this package is on 4.12 —
@@ -660,15 +712,19 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
 
   async function createHybridSession(input: {
     sessionId?: string
+    parentID?: string
     title?: string | null
     workspaceId?: string | null
     toolSandbox?: SandboxRef
     sourceChannel?: SourceChannel
     sourceThreadKey?: string
+    subagentKey?: string
+    spawningToolCallId?: string
     /** Harness id; only "pi" is dispatchable centrally today (route-validated). */
     harness?: string
     model?: { providerID: string; modelID: string }
     requireModel?: boolean
+    admitToolSandbox?: boolean
   }) {
     if (input.model) {
       const invalid = validatePiPromptModel(input.model)
@@ -676,7 +732,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     }
     const sessionId = input.sessionId ?? randomUUID()
     const requestedToolSandbox = virtualToolSandbox(input.toolSandbox)
-    const admitted = requestedToolSandbox.kind === "workspace-runtime" && options.admitWorkspaceSession
+    const admitted = input.admitToolSandbox !== false && requestedToolSandbox.kind === "workspace-runtime" && options.admitWorkspaceSession
       ? await options.admitWorkspaceSession({
           sessionId,
           workspaceId: requestedToolSandbox.workspaceId,
@@ -711,6 +767,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     }
     const session = await adapter.bindSession({
       id: sessionId,
+      ...(input.parentID ? { parentID: input.parentID } : {}),
       title: input.title ?? null,
       placement: {
         mode: "hybrid",
@@ -719,16 +776,28 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
         toolSandbox,
       },
     })
+    sessionPlacements.set(session.id, {
+      ...(workspaceId ? { workspaceId } : {}),
+      toolSandbox,
+    })
     const model = input.model ?? await deploymentDefaultModel(session.id)
     if (input.requireModel && !model) {
       await adapter.deleteSession(session.id, undefined)
       throw new Error("Pi model is not configured; select a model or configure CLAXEDO_PI_MODEL")
     }
     if (model) await adapter.updateSessionConfig(session.id, { model }, undefined)
-    bindRuntimeSession({ id: session.id, title: input.title ?? "Hybrid Session", ...(model ? { model } : {}) })
+    if (input.parentID) subagentChildren.add(session.id)
+    bindRuntimeSession({
+      id: session.id,
+      title: input.title ?? "Hybrid Session",
+      ...(model ? { model } : {}),
+      ...(input.parentID ? { parentSessionId: input.parentID } : {}),
+    })
     const tags = [
       ...(input.sourceChannel ? [`source-channel:${input.sourceChannel}`] : []),
       ...(input.sourceThreadKey ? [`source-thread:${input.sourceThreadKey}`] : []),
+      ...(input.subagentKey ? [`subagent-key:${input.subagentKey}`] : []),
+      ...(input.spawningToolCallId ? [`subagent-tool-call:${input.spawningToolCallId}`] : []),
       ...(input.harness && input.harness !== "pi" ? [`harness:${input.harness}`] : []),
     ]
     // Persist the tools-only sandbox verbatim as a first-class field. Only
@@ -747,12 +816,27 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       : null
     await services.projectionStore.put_session_meta(session.id, {
       host: "central",
+      ...(input.parentID ? { parentID: input.parentID } : {}),
       ...(workspaceId ? { workspaceID: workspaceId } : {}),
       directory: null,
       ...(storedToolSandbox ? { toolSandbox: storedToolSandbox } : {}),
       title: input.title ?? "Hybrid Session",
       ...(model ? { model } : {}),
       ...(tags.length > 0 ? { tags } : {}),
+    })
+    const boundSession = runtimeStore.getSession(session.id) as { time?: { updated?: unknown } } | null
+    if (typeof boundSession?.time?.updated !== "number") {
+      throw new Error(`Central session ${session.id} was persisted without an updated timestamp`)
+    }
+    eventHub.publishRuntime({
+      directory: session.id,
+      sessionId: session.id,
+      payload: {
+        type: "session-info",
+        title: input.title ?? "Hybrid Session",
+        ...(input.parentID ? { parentID: input.parentID } : {}),
+        updatedAt: new Date(boundSession.time.updated).toISOString(),
+      },
     })
     // Metric spec §4.5: server-emitted and attributable, replacing a
     // client-side funnel step that self-host suppresses. Emitted only on the
@@ -773,7 +857,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
 
   // Wakes: durable out-of-band session resumption. Opt-in; a fired wake spawns a
   // fresh turn on its session by posting an injected message through the same
-  // message route the spawn_session tool uses. The scheduler drives time wakes;
+  // message route the in-process subagent tool uses. The scheduler drives time wakes;
   // deliverEvent/resolve are exposed on the return for the channels/webhook layer.
   if (process.env.CLAXEDO_WAKES === "1") {
     const store = new SqliteWakeStore({ path: process.env.CLAXEDO_WAKES_DB || ":memory:" })
@@ -798,60 +882,229 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     }).start()
   }
 
+  type SubagentToolUpdate = Parameters<PiAgentTool["execute"]>[3]
+  type ActiveBackground = {
+    childSessionId: string
+    terminate: (status: "killed" | "interrupted") => Promise<void>
+  }
+  const activeBackgrounds = new Map<string, Map<string, ActiveBackground>>()
+  const backgroundCounts = new Map<string, number>()
+  const subagentTimeoutMs = options.subagentTimeoutMs ?? 15 * 60 * 1_000
+
+  function backgroundTasks(parentSessionId: string) {
+    const current = activeBackgrounds.get(parentSessionId) ?? new Map<string, ActiveBackground>()
+    activeBackgrounds.set(parentSessionId, current)
+    return current
+  }
+
   async function createDispatchedSession(sourceSessionId: string, input: {
+    task: string
     title?: string
-    workspaceId?: string
+    background?: boolean
+    toolCallId?: string
+    signal?: AbortSignal
+    onUpdate?: SubagentToolUpdate
   }) {
+    const task = input.task.trim()
+    if (!task) throw new Error("subagent task is required")
+    const mode = input.background ? "background" as const : "foreground" as const
+    const toolCallId = input.toolCallId ?? `pi-subagent-${randomUUID()}`
+    const childSessionId = randomUUID()
     const source = await adapter.getSessionConfig(sourceSessionId, undefined)
     const sourceModel = source.model?.providerID === "pi" && source.model.modelID === "virtual"
       ? undefined
       : source.model
-    return createHybridSession({
-      title: input.title?.trim() || "Background Session",
-      ...(sourceModel ? { model: sourceModel } : {}),
-      requireModel: true,
-      ...(input.workspaceId ? {
-        workspaceId: input.workspaceId,
-        toolSandbox: { kind: "workspace-runtime", workspaceId: input.workspaceId },
-      } : {}),
+    if (!sourceModel) throw new Error("Pi model is not configured; subagents require a model-backed parent session")
+    const sourceMeta = await services.projectionStore.session_meta(sourceSessionId)
+    const placement: { workspaceId?: string; toolSandbox: SandboxRef } = sessionPlacements.get(sourceSessionId) ?? (sourceMeta ? {
+      ...(sourceMeta.workspaceID ? { workspaceId: sourceMeta.workspaceID } : {}),
+      toolSandbox: toolSandboxFromMeta(sourceMeta),
+    } : {
+      toolSandbox: { kind: "virtual", id: "central-pi" } as const,
     })
+    if (mode === "background" && (backgroundCounts.get(sourceSessionId) ?? 0) >= 4) {
+      throw new Error("a parent session may run at most 4 background subagents")
+    }
+    if (mode === "background") backgroundCounts.set(sourceSessionId, (backgroundCounts.get(sourceSessionId) ?? 0) + 1)
+    const releaseBackgroundSlot = () => {
+      if (mode !== "background") return
+      const remaining = (backgroundCounts.get(sourceSessionId) ?? 1) - 1
+      if (remaining > 0) backgroundCounts.set(sourceSessionId, remaining)
+      if (remaining <= 0) backgroundCounts.delete(sourceSessionId)
+    }
+    const baseObservation = {
+      stableCorrelationId: toolCallId,
+      toolCallId,
+      toolCallRole: "spawn" as const,
+      mode,
+      label: input.title?.trim() || "Subagent",
+      subagentType: "pi",
+      description: task,
+      providerKind: "pi",
+      childSessionId,
+      transcript: { kind: "live" as const, ref: childSessionId },
+    }
+    const pending = await subagentAdmission.admit(sourceSessionId, {
+      ...baseObservation,
+      observationId: `${toolCallId}:pending`,
+      status: "pending",
+    }).catch((cause) => {
+      releaseBackgroundSlot()
+      throw cause
+    })
+    const subagentKey = pending.subagentKey
+    input.onUpdate?.({
+      content: [{ type: "text", text: `${baseObservation.label}: pending` }],
+      details: { subagentKey, childSessionId, status: "pending" },
+    })
+    const observe = async (stage: string, status: NonNullable<SubagentObservation["status"]>) => {
+      const event = await subagentAdmission.admit(sourceSessionId, {
+        ...baseObservation,
+        observationId: `${toolCallId}:${stage}`,
+        subagentKey,
+        status,
+      })
+      input.onUpdate?.({
+        content: [{ type: "text", text: `${baseObservation.label}: ${status}` }],
+        details: { subagentKey, childSessionId, status },
+      })
+      return event
+    }
+    try {
+      await createHybridSession({
+        sessionId: childSessionId,
+        parentID: sourceSessionId,
+        title: input.title?.trim() || "Subagent",
+        model: sourceModel,
+        requireModel: true,
+        admitToolSandbox: false,
+        ...(placement.workspaceId ? { workspaceId: placement.workspaceId } : {}),
+        toolSandbox: placement.toolSandbox,
+        subagentKey,
+        spawningToolCallId: toolCallId,
+      })
+    } catch (cause) {
+      try {
+        await observe("failed-to-create", "failed")
+      } finally {
+        releaseBackgroundSlot()
+      }
+      throw cause
+    }
+
+    let forcedStatus: "failed" | "killed" | "interrupted" | undefined
+    let failure: string | undefined
+    let finalText = ""
+    const runChild = async () => {
+      const unsubscribe = eventHub.subscribeRuntime((event) => {
+        if (event.sessionId !== childSessionId) return
+        if (event.payload.type === "text-delta") finalText += event.payload.delta
+        if (event.payload.type === "error") failure = event.payload.error
+        input.onUpdate?.({
+          content: [{
+            type: "text",
+            text: event.payload.type === "text-delta" ? event.payload.delta : `${baseObservation.label}: ${event.payload.type}`,
+          }],
+          details: { subagentKey, childSessionId, event: event.payload },
+        })
+      })
+      const abort = () => {
+        forcedStatus = "interrupted"
+        void adapter.abort(childSessionId, undefined)
+      }
+      if (mode === "foreground") input.signal?.addEventListener("abort", abort, { once: true })
+      if (mode === "foreground" && input.signal?.aborted) abort()
+      const timeout = mode === "background" ? setTimeout(() => {
+        forcedStatus = "failed"
+        failure = `background subagent timed out after ${subagentTimeoutMs}ms`
+        void adapter.abort(childSessionId, undefined)
+      }, subagentTimeoutMs) : undefined
+      try {
+        await observe("running", "running")
+        if (!forcedStatus) {
+          const response = await runTurn({ sessionId: childSessionId }, () =>
+            placementRoutes.request(`http://127.0.0.1/session/${encodeURIComponent(childSessionId)}/message`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ parts: [{ type: "text", text: task }] }),
+            }),
+          )
+          if (!response.ok && !failure) failure = `child turn failed with HTTP ${response.status}`
+        }
+      } catch (cause) {
+        failure = cause instanceof Error ? cause.message : String(cause)
+      } finally {
+        if (timeout) clearTimeout(timeout)
+        input.signal?.removeEventListener("abort", abort)
+        unsubscribe()
+      }
+      const status = forcedStatus ?? (failure ? "failed" : "completed")
+      await observe(status, status)
+      if (failure && status === "failed") throw new Error(failure)
+      return { subagentKey, childSessionId, status, text: finalText }
+    }
+
+    if (mode === "foreground") return runChild()
+    const tasks = backgroundTasks(sourceSessionId)
+    const running = runChild().catch((cause: unknown) => {
+      console.error(`[central-runtime] background subagent ${childSessionId} failed:`, cause)
+    }).finally(() => {
+      tasks.delete(subagentKey)
+      if (tasks.size === 0) activeBackgrounds.delete(sourceSessionId)
+      releaseBackgroundSlot()
+    })
+    tasks.set(subagentKey, {
+      childSessionId,
+      terminate: async (status) => {
+        forcedStatus = status
+        await adapter.abort(childSessionId, undefined)
+        await running
+      },
+    })
+    return { subagentKey, childSessionId, status: "running" as const }
   }
 
-  // The central Agent's dispatch tool (acceptance loop: "creates a background
-  // session via claxedo-mcp"): in-process equivalent of the claxedo-mcp
-  // spawn_session tool — no MCP hop needed for the pi central harness. The
-  // initial prompt is fired WITHOUT awaiting the turn (message route runs the
-  // whole turn before responding).
+  async function terminateSubagent(parentSessionId: string, subagentKey: string) {
+    const task = activeBackgrounds.get(parentSessionId)?.get(subagentKey)
+    if (!task) return false
+    await task.terminate("killed")
+    return true
+  }
+
+  async function terminateBackgrounds(parentSessionId: string, status: "killed" | "interrupted") {
+    await Promise.all(
+      [...(activeBackgrounds.get(parentSessionId)?.values() ?? [])].map((task) => task.terminate(status)),
+    )
+  }
+
+  // Native Pi tool extension. The child inherits the parent's selected model
+  // and exact tools-only placement; no workspace selector is exposed to the model.
   dispatchToolsForSession = (sourceSessionId) => [{
-      name: "spawn_session",
-      label: "spawn_session",
-      description:
-        "Spawn a background Claxedo work session. Model turns run centrally; tool side-effects run in the " +
-        "given workspace's runtime (workspace_id) or a virtual sandbox. The initial prompt is dispatched " +
-        "fire-and-forget; returns the new session id and app URL.",
+      name: "subagent",
+      label: "subagent",
+      description: "Delegate a task to an isolated child session. Foreground waits for the result; background returns its stable identity immediately.",
       parameters: Type.Object({
-        title: Type.Optional(Type.String({ description: "Session title shown in the app." })),
-        prompt: Type.String({ description: "Initial prompt for the background session." }),
-        workspace_id: Type.Optional(Type.String({ description: "Workspace whose runtime hosts the session's tools." })),
+        task: Type.String({ description: "Task for the child session." }),
+        title: Type.Optional(Type.String({ description: "Child session title." })),
+        background: Type.Optional(Type.Boolean({ description: "Run independently in the background." })),
       }),
-      execute: async (_toolCallId, params) => {
-        const args = params as { title?: string; prompt: string; workspace_id?: string }
-        const workspaceId = args.workspace_id?.trim()
-        const session = await createDispatchedSession(sourceSessionId, {
-          title: args.title?.trim() || "Background Session",
-          ...(workspaceId ? { workspaceId } : {}),
+      execute: async (toolCallId, params, signal, onUpdate) => {
+        const result = await createDispatchedSession(sourceSessionId, {
+          ...(params as { task: string; title?: string; background?: boolean }),
+          toolCallId,
+          ...(signal ? { signal } : {}),
+          ...(onUpdate ? { onUpdate } : {}),
         })
-        void Promise.resolve(runTurn({ sessionId: session.id }, () =>
-          placementRoutes.request(`http://127.0.0.1/session/${encodeURIComponent(session.id)}/message`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ parts: [{ type: "text", text: args.prompt }] }),
-          }),
-        )).catch((err: unknown) => {
-          console.error(`[central-runtime] spawn_session initial prompt failed for ${session.id}:`, err)
-        })
-        const result = { session_id: session.id, app_url: `/s/${encodeURIComponent(session.id)}`, workspace_id: workspaceId ?? null }
-        return { content: [{ type: "text", text: JSON.stringify(result) }], details: result }
+        return {
+          content: [{
+            type: "text",
+            text: "text" in result && result.text ? result.text : JSON.stringify({
+              subagentKey: result.subagentKey,
+              childSessionId: result.childSessionId,
+            }),
+          }],
+          details: result,
+        }
       },
     } as PiAgentTool]
 
@@ -865,6 +1118,13 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       services.projectionStore.source_channel_session_counts_by_week?.(input) ?? Promise.resolve([]),
     createHybridSession,
     createDispatchedSession,
+    parentSessionIdFor: (sessionId: string) => {
+      const session = runtimeStore.getSession(sessionId) as { parentID?: unknown } | null
+      return typeof session?.parentID === "string" ? session.parentID : sessionId
+    },
+    subagentToolForSession: (sessionId: string) => dispatchToolsForSession(sessionId)[0]!,
+    terminateSubagent,
+    listSubagents: (parentSessionId: string) => subagentStore.listSubagents(parentSessionId),
     updateSessionModel: async (sessionId: string, model: { providerID: string; modelID: string }) => {
       if (!(await ensureCentralRuntimeSession(sessionId))) throw new Error(`No central session ${sessionId}`)
       const session = runtimeStore.getSession(sessionId)
@@ -877,7 +1137,11 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
         agent: null,
       })
     },
-    invalidateSession: (sessionId: string) => runtimeStore.deleteSession(sessionId),
+    invalidateSession: (sessionId: string) => {
+      sessionPlacements.delete(sessionId)
+      subagentChildren.delete(sessionId)
+      runtimeStore.deleteSession(sessionId)
+    },
     turnCredentials,
     runTurn,
     /** Present when CLAXEDO_WAKES=1. The channels/webhook layer calls deliverEvent/resolve. */

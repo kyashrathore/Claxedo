@@ -1,16 +1,13 @@
-import type { OutputFormat } from "@opencode-ai/sdk/v2/client"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { showToast } from "@opencode-ai/ui/toast"
 import { submitErrorMessage } from "./submit-error-message"
 import { useNavigate } from "@solidjs/router"
-import { type Accessor } from "solid-js"
-import type { FileSelection } from "@/platform/files/types"
 import { useShellQueryOptions as useQueryOptions } from "@/features/session/app-ports"
 import { useGlobalSDK } from "@/features/session/app-ports"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useLayout } from "@/features/session/app-ports"
 import { useLocal } from "@/features/session/providers/session-selection"
-import { type ContextItem, type ImageAttachmentPart, type Prompt, usePrompt } from "@/features/session/providers/prompt"
+import { usePrompt } from "@/features/session/providers/prompt"
 import { usePermission } from "@/features/session/providers/permission"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useSDK } from "@/features/session/app-ports"
@@ -32,7 +29,7 @@ import {
   removeRegisteredConversationMessage,
 } from "../../conversation/conversation-registry"
 import { harnessProfile, pickHarness } from "@/features/session/harness/profile"
-import { createHarnessSubmitController, type HarnessSubmitController } from "@/features/session/harness/controller"
+import { createHarnessSubmitController } from "@/features/session/harness/controller"
 import { useConfigOptional } from "@/features/session/app-ports"
 import { workspaceCreateUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import {
@@ -47,118 +44,19 @@ import {
 } from "../../submit/index"
 import { type ProjectCatalogItem } from "../workspace-resolver"
 import { admitPromptSubmission } from "../../commands/prompt-machine"
-import { composerHarnessId, isComposerHarnessMode, type ComposerMode } from "../mode"
+import { composerHarnessId, isComposerHarnessMode } from "../mode"
 import { dispatchCommandPromptSubmit } from "./submit-command-prompt"
 import { createPromptAbort } from "./submit-abort"
-import { acquireSubmitSessionTarget, createCloudStartupController, finalizeSubmitSessionTarget, patchExistingSubmitSessionRef, type CloudStartupState } from "./submit-create-session"
+import { acquireSubmitSessionTarget, createCloudStartupController, finalizeSubmitSessionTarget, patchExistingSubmitSessionRef } from "./submit-create-session"
 import { resolvePreparedSubmitDirectory } from "./submit-directory"
 import { dispatchNormalPromptSubmit } from "./submit-normal-prompt"
 import { promptHarnessDirectory } from "./harness-directory"
 import { promptViewScope, uniquePromptScopes } from "./submit-prompt-scope"
-import { parseCachedSessionConfig, parseExistingSessionConfig, sameExistingSessionConfig } from "./submit-session-config"
-import { createSubmitTransportAdapter, savedSessionConfigQueryKey, _resetSavedSessionConfigCacheForTest, workspaceRuntimeRef } from "./submit-transport"
+import { parseExistingSessionConfig, sameExistingSessionConfig } from "./submit-session-config"
+import { createSubmitTransportAdapter, workspaceRuntimeRef } from "./submit-transport"
+import type { CommentItem, CreateWorkspaceResult, PromptSubmitInput } from "./submit-input"
 
-export { savedSessionConfigQueryKey, _resetSavedSessionConfigCacheForTest }
-
-export type FollowupDraft = {
-  sessionID: string
-  sessionDirectory: string
-  prompt: Prompt
-  context: (ContextItem & { key: string })[]
-  agent: string
-  model: { providerID: string; modelID: string }
-  variant?: string
-}
-
-// `createPromptSubmit`'s options were one ~40-field flag bag; the cohesive
-// sub-interfaces below (recomposed by intersection into `PromptSubmitInput`,
-// so the flat call shape and every existing field reference stay unchanged)
-// group them by role instead of one wall of fields.
-
-/** Which existing session / draft this submit acts on. */
-type PromptSubmitTargetInput = {
-  info: Accessor<{ id: string; config?: unknown } | undefined>
-  sessionID?: Accessor<string | undefined>
-  sessionDirectory?: Accessor<string | undefined>
-  draftId?: Accessor<string | undefined>
-  surfaceId?: Accessor<string | undefined>
-  /** Exact preference scope used by the visible harness/model picker. */
-  harnessScope?: Accessor<string>
-}
-
-/** The composer content and per-request overrides carried into the prompt. */
-type PromptSubmitContentInput = {
-  imageAttachments: Accessor<ImageAttachmentPart[]>
-  commentCount: Accessor<number>
-  autoAccept: Accessor<boolean>
-  mode: Accessor<SubmitMode>
-  working: Accessor<boolean>
-  composerMode: Accessor<ComposerMode>
-  /** System prompt injected with every request (e.g. page context for dock sessions). */
-  system?: Accessor<string | undefined>
-  /** Sent with the prompt so it governs THIS turn, including the first. */
-  permissionMode?: Accessor<string | undefined>
-  /** Override the agent name (e.g. force "doc" agent in page dock). */
-  agent?: Accessor<string | undefined>
-  /** Scoped variant override for the current draft/session pane. */
-  variant?: Accessor<string | undefined>
-  /** Structured output format for embedded flows. */
-  format?: Accessor<OutputFormat | undefined>
-}
-
-/** Callbacks bridging back to the editor / input surface after a submit. */
-type PromptSubmitEditorBridge = {
-  editor: () => HTMLDivElement | undefined
-  queueScroll: () => void
-  promptLength: (prompt: Prompt) => number
-  addToHistory: (prompt: Prompt, mode: SubmitMode) => void
-  resetHistoryNavigation: () => void
-  setMode: (mode: SubmitMode) => void
-  setPopover: (popover: "at" | "slash" | null) => void
-}
-
-/** New-session provisioning: which worktree/workspace to create and where it lives. */
-type PromptSubmitProvisioningInput = {
-  newSessionWorktree?: Accessor<string | undefined>
-  newSessionWorkspaceKind?: Accessor<"local" | "cloud" | "user-hosted" | undefined>
-  onNewSessionWorktreeReset?: () => void
-  onCloudStartup?: (state?: CloudStartupState) => void
-  navigateOnCreate?: Accessor<boolean>
-  signedControlPlane?: Accessor<boolean>
-  workspaceId?: Accessor<string | undefined>
-  workspaceKind?: Accessor<"cloud" | "user-hosted" | undefined>
-  fallbackModel?: Accessor<{ id: string; provider: { id: string } } | undefined>
-}
-
-/** Boot / sending status reporting hooks. */
-type PromptSubmitStatusInput = {
-  setBooting?: (value?: { harness: string; sessionID?: string; phase?: "booting" | "sending" }) => void
-  bootScope?: Accessor<string>
-}
-
-type PromptSubmitInput = PromptSubmitTargetInput &
-  PromptSubmitContentInput &
-  PromptSubmitEditorBridge &
-  PromptSubmitProvisioningInput &
-  PromptSubmitStatusInput & {
-    onSubmit?: () => void
-    canAbort?: Accessor<boolean>
-    harnessController?: HarnessSubmitController
-  }
-
-type CreateWorkspaceResult = {
-  workspaceId: string
-  directory?: string
-}
-
-type CommentItem = {
-  path: string
-  selection?: FileSelection
-  comment?: string
-  commentID?: string
-  commentOrigin?: "review" | "file"
-  preview?: string
-}
+export type { FollowupDraft } from "./submit-input"
 
 export function createPromptSubmit(input: PromptSubmitInput) {
   const navigate = useNavigate()
@@ -252,6 +150,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     signedControlPlane: () => input.signedControlPlane?.(),
     workspaceId: () => input.workspaceId?.(),
     workspaceKind: () => input.workspaceKind?.(),
+    sessionRef: () => input.sessionRef?.(),
     request: platform.fetch ?? authFetch,
     localRequest: authFetch,
     config,
@@ -269,6 +168,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     usesLoopbackWorkspaceBridge,
     usesWorkspaceRuntimeSession,
     modelForSubmit,
+    readSessionConfig,
     sessionClient,
     hostedSessionClient,
     saveSessionConfig,
@@ -303,6 +203,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const currentPrompt = prompt.current()
     const text = currentPrompt.map((part) => ("content" in part ? part.content : "")).join("")
     const images = input.imageAttachments().slice()
+    const permissionMode = input.permissionMode?.()
     // `userMode` is the raw input-toggle value (never widens to "slash");
     // `mode` is the resolved branch the dispatcher switches on after
     // `resolveSubmitMode` runs. The two diverge when the resolver promotes
@@ -417,20 +318,25 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       harnessController.promote(sourceScope, scope)
     }
     const infoSessionConfig = isNewSession ? undefined : parseExistingSessionConfig(input.info()?.config)
-    const cachedSessionConfig = isNewSession || infoSessionConfig ? undefined : parseCachedSessionConfig(explicitSessionID ? queryClient.getQueryData<string>(savedSessionConfigQueryKey(explicitSessionID)) : undefined)
-    const existingSessionConfig = isNewSession ? undefined
-      : infoSessionConfig ?? cachedSessionConfig ??
-        parseExistingSessionConfig((await sessionClient(sessionDirectory).session
-          .get({ sessionID: explicitSessionID!, directory: sessionDirectory })
-          .then((result) => (result.data as { config?: unknown } | undefined)?.config)
-          .catch(() => undefined)))
-    // Workspace-runtime drafts default to OpenCode only when no persisted
-    // session config owns the existing session.
-    if (workspaceRuntimeRef(sessionDirectory) && !existingSessionConfig && !selectedHarnessMode(scope)) {
-      await harnessController.setHarness(scope, "opencode", {
-        directory: sessionDirectory,
-        sessionId: explicitSessionID,
-      })
+    const existingSessionConfig = await (async () => {
+      if (isNewSession) return undefined
+      if (infoSessionConfig) return infoSessionConfig
+      try {
+        return parseExistingSessionConfig(await readSessionConfig({
+          sessionID: explicitSessionID!,
+          directory: sessionDirectory,
+          harnessType: selectedHarnessType(scope),
+        }))
+      } catch (err) {
+        showToast({
+          title: language.t("prompt.toast.promptSendFailed.title"),
+          description: errorMessage(err),
+          variant: "error",
+        })
+      }
+    })()
+    if (!isNewSession && usesWorkspaceRuntimeSession(sessionDirectory) && !existingSessionConfig) {
+      return
     }
     const harnessMode = existingSessionConfig ? existingSessionConfig.harnessType !== "opencode" : selectedHarnessMode(scope)
     const sessionHarnessType = existingSessionConfig?.harnessType ?? (harnessMode ? selectedHarnessType(scope) : "opencode")
@@ -482,11 +388,12 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       })
     }
     const selectedVariant = harnessMode ? undefined : input.variant?.() ?? local.model.variant.current()
-    // A fresh local model diverging from our OWN dedup-cache signature is a deliberate mid-session swap that must win — else the
-    // unchanged PATCH body is skipped by rubric-C1 dedup and dropped (authoritative config / harness sessions are excluded).
+    // An OpenCode picker change made after this surface restored its session
+    // config is a deliberate mid-session swap. Structured session info and
+    // harness sessions continue to own their persisted model.
     const freshSelectedModel = harnessMode ? undefined : local.model.current()
-    const selectionOverridesExisting = !!freshSelectedModel && existingSessionConfig === cachedSessionConfig && !!cachedSessionConfig?.model &&
-      (freshSelectedModel.provider.id !== cachedSessionConfig.model.providerID || freshSelectedModel.id !== cachedSessionConfig.model.modelID)
+    const selectionOverridesExisting = !!freshSelectedModel && !infoSessionConfig && !!existingSessionConfig?.model &&
+      (freshSelectedModel.provider.id !== existingSessionConfig.model.providerID || freshSelectedModel.id !== existingSessionConfig.model.modelID)
     const submittedConfig = existingSessionConfig?.model && !selectionOverridesExisting
       ? {
           model: existingSessionConfig.model,
@@ -767,7 +674,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       agent,
       model,
       variant,
-      permissionMode: input.permissionMode?.(),
+      permissionMode,
       system: input.system?.()?.trim(),
       format: input.format?.(),
       targetCreated: target.created,

@@ -150,6 +150,37 @@ infer behavior from strings.
 not expose live model options. ACP transports should prefer live
 `configOptions` from the agent when available.
 
+### Subagent support matrix
+
+Subagent discovery is normalized into durable, parent-scoped host rows. A spawn
+tool is associated with its row by an explicit `toolCallId` edge. The host mints
+`childSessionId` when it can materialize a readable child Session; provider ids
+and transcript refs stay opaque and are never treated as Session ids or file
+paths by the UI.
+
+| Harness | Discovery | Transcript | Child Session |
+| --- | --- | --- | --- |
+| OpenCode native | native task/session lifecycle | live | openable |
+| Claude native | `Agent` tool lifecycle | messages | openable after host materialization |
+| Claude ACP | Claude subagent metadata plus parent-tool correlation | messages | openable after host materialization |
+| Codex native | collab thread lifecycle | live | openable |
+| Codex ACP | Start/Interact/Interrupt activity | unavailable | not openable |
+| Cursor native | `Task` result carrying a valid transcript reference | file | conditionally openable after host materialization |
+| Cursor ACP | `Task: Subagent task` lifecycle | unavailable | not openable |
+| Pi model-backed | foreground or background child lifecycle | live | openable |
+| Pi bare adapter | no subagent capability | none | no subagent row |
+
+Foreground children participate in parent interruption; background children
+continue independently and remain visible as background work. Child transcripts
+are read-only conversation surfaces: opening one preserves the parent Session,
+and repeated activation focuses the existing child surface. Rows with no
+supported transcript render an explicit unavailable state with no navigation
+control.
+
+Runtime event streams that expose these rows are scoped and authorized by parent
+Session. A denied parent subscription returns `403` before replay or live events
+are attached, so one parent cannot observe another parent's child lifecycle.
+
 ### Capabilities
 
 `src/capabilities.ts` describes runtime feature support.

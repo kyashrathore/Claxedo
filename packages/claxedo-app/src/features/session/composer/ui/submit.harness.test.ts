@@ -246,8 +246,6 @@ export async function seedCommandList(directory: string) {
 }
 
 let rawCreatePromptSubmit: typeof import("./submit").createPromptSubmit
-let resetSavedSessionConfigCacheForTest: (() => void) | undefined
-export let savedSessionConfigQueryKey: typeof import("./submit").savedSessionConfigQueryKey
 let clearRuntimeQueries: (() => void) | undefined
 let resetRuntimeEnsureCache: (() => void) | undefined
 
@@ -550,6 +548,11 @@ export async function installSubmitMocks(mock: ModuleMocker) {
         authorization: request.headers.get("Authorization"),
         body: init?.body ? String(init.body) : null,
       })
+      if (/\/session\/[^/]+\/config$/.test(new URL(request.url).pathname)) {
+        return request.method === "PATCH" && init?.body
+          ? new Response(String(init.body), { status: 200, headers: { "Content-Type": "application/json" } })
+          : Response.json({ harness: { type: "opencode" } })
+      }
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -866,8 +869,6 @@ export async function installSubmitMocks(mock: ModuleMocker) {
 
   const mod = await import("./submit")
   rawCreatePromptSubmit = mod.createPromptSubmit
-  resetSavedSessionConfigCacheForTest = mod._resetSavedSessionConfigCacheForTest
-  savedSessionConfigQueryKey = mod.savedSessionConfigQueryKey
   const testQueryClient = (await import("@/platform/query/query-client")).queryClient
   clearRuntimeQueries = () => testQueryClient.clear()
   resetRuntimeEnsureCache = (await import("@/platform/runtime/cloud/workspace-runtime-store")).resetWorkspaceRuntimeEnsureCache
@@ -901,7 +902,6 @@ export function resetSubmitHarness() {
   worktreeCreateCalls.length = 0
   enabledAutoAccept.length = 0
   apiCalls.length = 0
-  resetSavedSessionConfigCacheForTest?.()
   fetchCalls.length = 0
   unsignedCalls.length = 0
   runtimeCalls.length = 0

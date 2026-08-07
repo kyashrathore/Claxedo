@@ -63,6 +63,11 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
     const dir = directory() ?? props.fallbackDirectory?.()
     return dir && dir !== "/workspace" ? dir : undefined
   })
+  const paneDirectory = () => {
+    if (effectiveSessionRef()?.host === "central") return directory() ?? fallbackDirectory() ?? "global"
+    if (canRenderWorkspaceScope()) return directory()
+    return undefined
+  }
   const [centralFallbackExpired, setCentralFallbackExpired] = createSignal(false)
   createEffect(() => {
     const waitingForRealSession = requiresSessionRef() && !effectiveSessionRef() && !!fallbackDirectory()
@@ -125,7 +130,7 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
           fallback={<div class="flex items-center justify-center h-full text-text-weak">Missing session identity</div>}
         >
           <Show
-            when={canRenderWorkspaceScope() ? directory() : undefined}
+            when={paneDirectory()}
             fallback={
               <Show
                 when={effectiveSessionRef()?.host === "central"}

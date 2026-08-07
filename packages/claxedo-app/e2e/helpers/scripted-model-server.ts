@@ -37,20 +37,40 @@
  * and "zero requests after idle" without touching the wire itself.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
+import type {
+  ContentBlock,
+  Message,
+  MessageCreateParams,
+  RawMessageStreamEvent,
+} from "@anthropic-ai/sdk/resources/messages"
+import type {
+  ChatCompletionChunk,
+  ChatCompletionCreateParams,
+} from "openai/resources/chat/completions"
+import type {
+  Response as OpenAIResponse,
+  ResponseCreateParams,
+  ResponseOutputItem,
+  ResponseStreamEvent,
+} from "openai/resources/responses/responses"
 
 export type ScriptedDialect = "chat" | "messages" | "responses"
 
 export type ScriptedModelRequest = {
   dialect: ScriptedDialect
   path: string
+  /** Full provider request, typed from the official Anthropic/OpenAI SDK. */
+  body: ChatCompletionCreateParams | MessageCreateParams | ResponseCreateParams
   model: string
   /** Flattened prompt text the reply was derived from. */
   prompt: string
   /** What the server decided to answer. */
-  reply: { kind: "text"; text: string } | { kind: "tool"; name: string; input: unknown }
+  reply: { kind: "text"; text: string } | { kind: "tool"; name: string; input: unknown; namespace?: string }
+  /** Tool definitions advertised by the real harness in this provider request. */
+  tools: { name: string; inputSchema?: unknown }[]
 }
 
-export type ScriptedToolCall = { name: string; input: unknown }
+export type ScriptedToolCall = { name: string; input: unknown; namespace?: string; whenPromptIncludes?: string }
 
 export type ScriptedModelServer = {
   /** Origin without a trailing slash, e.g. http://127.0.0.1:52341 */
@@ -95,6 +115,12 @@ export const SCRIPTED_TITLE = "Scripted Tier R Session"
 const MARKER_PROMPT = /reply with exactly this one token[^:]*:\s*\\?"?([A-Za-z0-9._-]+)/gi
 const TITLE_PROMPT = "Generate a title for this conversation"
 
+type ScriptedModelBody =
+  | { dialect: "chat"; body: ChatCompletionCreateParams }
+  | { dialect: "messages"; body: MessageCreateParams }
+  | { dialect: "responses"; body: ResponseCreateParams }
+type ScriptedMessageBlock = Extract<ContentBlock, { type: "text" | "tool_use" }>
+
 export async function startScriptedModelServer(port = 0): Promise<ScriptedModelServer> {
   const requests: ScriptedModelRequest[] = []
   let counts: Record<ScriptedDialect, number> = { chat: 0, messages: 0, responses: 0 }
@@ -107,35 +133,38 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
       outgoing.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true }))
       return
     }
-    const body = await readJson(incoming)
     const path = incoming.url ?? "/"
     const dialect: ScriptedDialect = path.includes("responses")
       ? "responses"
       : path.includes("messages")
         ? "messages"
         : "chat"
-    counts[dialect] += 1
+    const request = modelRequestBody(dialect, await readJson(incoming))
+    const body = request.body
+    counts[request.dialect] += 1
     sequence += 1
 
-    const prompt = promptText(dialect, body)
-    const transcript = JSON.stringify(body)
-    const toolResultSeen = dialect === "responses"
-      ? transcript.includes("function_call_output")
-      : dialect === "messages"
-        ? transcript.includes('"tool_result"')
-        : transcript.includes('"role":"tool"')
+    const prompt = promptText(request)
+    const toolResultSeen = hasToolResult(request)
 
     let reply: ScriptedModelRequest["reply"]
     if (prompt.includes(TITLE_PROMPT)) {
       reply = { kind: "text", text: SCRIPTED_TITLE }
-    } else if (pendingTool && !toolResultSeen) {
-      reply = { kind: "tool", name: pendingTool.name, input: pendingTool.input }
+    } else if (pendingTool && (pendingTool.whenPromptIncludes
+      ? prompt.includes(pendingTool.whenPromptIncludes)
+      : !toolResultSeen)) {
+      reply = {
+        kind: "tool",
+        name: pendingTool.name,
+        input: pendingTool.input,
+        ...(pendingTool.namespace ? { namespace: pendingTool.namespace } : {}),
+      }
       pendingTool = undefined
     } else {
       const marker = [...prompt.matchAll(MARKER_PROMPT)].at(-1)?.[1]
       reply = { kind: "text", text: marker ?? "ok" }
     }
-    requests.push({ dialect, path, model: String(body.model ?? "scripted"), prompt, reply })
+    requests.push({ dialect: request.dialect, path, body, model: body.model ?? "scripted", prompt, reply, tools: modelTools(body) })
 
     // Counted and recorded ABOVE, before any delay — a caller polling
     // `counts()` sees the hit immediately, regardless of `replyDelayMs`.
@@ -143,9 +172,9 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
     // `claude`/session turn) in a "busy" state for an assertable window.
     if (replyDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, replyDelayMs))
 
-    if (dialect === "chat") return respondChat(outgoing, sequence, reply)
-    if (dialect === "responses") return respondResponses(outgoing, sequence, body, reply)
-    return respondMessages(outgoing, sequence, body, reply)
+    if (request.dialect === "chat") return respondChat(outgoing, sequence, reply)
+    if (request.dialect === "responses") return respondResponses(outgoing, sequence, request.body, reply)
+    return respondMessages(outgoing, sequence, request.body, reply)
   })
 
   await new Promise<void>((resolve, reject) => {
@@ -164,6 +193,7 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
     counts: () => ({ ...counts }),
     resetCounts: () => {
       counts = { chat: 0, messages: 0, responses: 0 }
+      requests.splice(0)
     },
     scriptTool: (call) => {
       pendingTool = call
@@ -201,6 +231,7 @@ export function opencodeScriptedProviderConfig(v1Url: string) {
     formatter: false,
     lsp: false,
     model: "tier-real/scripted-model",
+    permission: { task: "allow" },
     provider: {
       "tier-real": {
         name: "Tier R Scripted",
@@ -238,6 +269,10 @@ export function opencodeScriptedProviderConfig(v1Url: string) {
 export function codexScriptedConfigJson(v1Url: string) {
   return JSON.stringify({
     model_provider: "scripted",
+    features: {
+      multi_agent: true,
+      multi_agent_v2: { enabled: true, non_code_mode_only: true, tool_namespace: "agents" },
+    },
     model_providers: {
       scripted: {
         name: "scripted",
@@ -284,6 +319,14 @@ export function codexScriptedConfigJson(v1Url: string) {
 export function codexScriptedConfigToml(v1Url: string, model = "gpt-5.6-sol") {
   return `model_provider = "scripted"
 model = "${model}"
+
+[features]
+multi_agent = true
+
+[features.multi_agent_v2]
+enabled = true
+non_code_mode_only = true
+tool_namespace = "agents"
 
 [model_providers.scripted]
 name = "scripted"
@@ -332,28 +375,38 @@ export function claudeScriptedEnv(url: string, configDir: string) {
 
 function respondChat(outgoing: ServerResponse, sequence: number, reply: ScriptedModelRequest["reply"]) {
   const usage = { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
-  const events =
+  const chunk = (choices: ChatCompletionChunk["choices"], includeUsage = false): ChatCompletionChunk => ({
+    id: `chatcmpl_${sequence}`,
+    choices,
+    created: 0,
+    model: "scripted",
+    object: "chat.completion.chunk",
+    ...(includeUsage ? { usage } : {}),
+  })
+  const events: ChatCompletionChunk[] =
     reply.kind === "text"
       ? [
-          { choices: [{ delta: { role: "assistant" } }] },
-          { choices: [{ delta: { content: reply.text } }] },
-          { choices: [{ delta: {}, finish_reason: "stop" }], usage },
+          chunk([{ delta: { role: "assistant" }, finish_reason: null, index: 0 }]),
+          chunk([{ delta: { content: reply.text }, finish_reason: null, index: 0 }]),
+          chunk([{ delta: {}, finish_reason: "stop", index: 0 }], true),
         ]
       : [
-          { choices: [{ delta: { role: "assistant" } }] },
-          {
-            choices: [
-              {
-                delta: {
-                  tool_calls: [
-                    { index: 0, id: `call_${sequence}`, type: "function", function: { name: reply.name, arguments: "" } },
-                  ],
-                },
-              },
-            ],
-          },
-          { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify(reply.input) } }] } }] },
-          { choices: [{ delta: {}, finish_reason: "tool_calls" }], usage },
+          chunk([{ delta: { role: "assistant" }, finish_reason: null, index: 0 }]),
+          chunk([{
+            delta: {
+              tool_calls: [
+                { index: 0, id: `call_${sequence}`, type: "function", function: { name: reply.name, arguments: "" } },
+              ],
+            },
+            finish_reason: null,
+            index: 0,
+          }]),
+          chunk([{
+            delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify(reply.input) } }] },
+            finish_reason: null,
+            index: 0,
+          }]),
+          chunk([{ delta: {}, finish_reason: "tool_calls", index: 0 }], true),
         ]
   outgoing.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" })
   events.forEach((event) => outgoing.write(`data: ${JSON.stringify(event)}\n\n`))
@@ -363,93 +416,144 @@ function respondChat(outgoing: ServerResponse, sequence: number, reply: Scripted
 function respondMessages(
   outgoing: ServerResponse,
   sequence: number,
-  body: Record<string, unknown>,
+  body: MessageCreateParams,
   reply: ScriptedModelRequest["reply"],
 ) {
-  const content =
+  const content: ScriptedMessageBlock[] =
     reply.kind === "text"
-      ? [{ type: "text", text: reply.text }]
-      : [{ type: "tool_use", id: `toolu_scripted_${sequence}`, name: reply.name, input: reply.input }]
+      ? [{ type: "text", text: reply.text, citations: null }]
+      : [{
+          type: "tool_use",
+          id: `toolu_scripted_${sequence}`,
+          name: reply.name,
+          input: reply.input,
+          caller: { type: "direct" },
+        }]
   const stop = reply.kind === "text" ? "end_turn" : "tool_use"
+  const usage: Message["usage"] = {
+    cache_creation: null,
+    cache_creation_input_tokens: null,
+    cache_read_input_tokens: null,
+    inference_geo: null,
+    input_tokens: 1,
+    output_tokens: 1,
+    output_tokens_details: null,
+    server_tool_use: null,
+    service_tier: "standard",
+  }
+  const message = (stopReason: Message["stop_reason"], blocks = content): Message => ({
+    id: `msg_${sequence}`,
+    container: null,
+    type: "message",
+    role: "assistant",
+    model: body.model ?? "scripted",
+    content: blocks,
+    stop_details: null,
+    stop_reason: stopReason,
+    stop_sequence: null,
+    usage,
+  })
 
   if (!body.stream) {
     outgoing.writeHead(200, { "content-type": "application/json" })
-    outgoing.end(
-      JSON.stringify({
-        id: `msg_${sequence}`,
-        type: "message",
-        role: "assistant",
-        model: body.model ?? "scripted",
-        content,
-        stop_reason: stop,
-        usage: { input_tokens: 1, output_tokens: 1 },
-      }),
-    )
+    outgoing.end(JSON.stringify(message(stop)))
     return
   }
 
-  const events: string[] = [
-    frame("message_start", {
+  const events: RawMessageStreamEvent[] = [
+    {
       type: "message_start",
-      message: {
-        id: `msg_${sequence}`,
-        type: "message",
-        role: "assistant",
-        model: body.model ?? "scripted",
-        content: [],
-        stop_reason: null,
-        usage: { input_tokens: 1, output_tokens: 1 },
-      },
-    }),
+      message: message(null, []),
+    },
   ]
   content.forEach((block, index) => {
     if (block.type === "text") {
-      events.push(frame("content_block_start", { type: "content_block_start", index, content_block: { type: "text", text: "" } }))
-      events.push(frame("content_block_delta", { type: "content_block_delta", index, delta: { type: "text_delta", text: (block as { text: string }).text } }))
+      events.push({
+        type: "content_block_start",
+        index,
+        content_block: { type: "text", text: "", citations: null },
+      })
+      events.push({ type: "content_block_delta", index, delta: { type: "text_delta", text: block.text } })
     } else {
-      const tool = block as { id: string; name: string; input: unknown }
-      events.push(frame("content_block_start", { type: "content_block_start", index, content_block: { type: "tool_use", id: tool.id, name: tool.name, input: {} } }))
-      events.push(frame("content_block_delta", { type: "content_block_delta", index, delta: { type: "input_json_delta", partial_json: JSON.stringify(tool.input) } }))
+      events.push({
+        type: "content_block_start",
+        index,
+        content_block: { ...block, input: {} },
+      })
+      events.push({
+        type: "content_block_delta",
+        index,
+        delta: { type: "input_json_delta", partial_json: JSON.stringify(block.input) },
+      })
     }
-    events.push(frame("content_block_stop", { type: "content_block_stop", index }))
+    events.push({ type: "content_block_stop", index })
   })
-  events.push(frame("message_delta", { type: "message_delta", delta: { stop_reason: stop }, usage: { output_tokens: 1 } }))
-  events.push(frame("message_stop", { type: "message_stop" }))
+  events.push({
+    type: "message_delta",
+    delta: { container: null, stop_details: null, stop_reason: stop, stop_sequence: null },
+    usage: {
+      cache_creation_input_tokens: null,
+      cache_read_input_tokens: null,
+      input_tokens: 1,
+      output_tokens: 1,
+      output_tokens_details: null,
+      server_tool_use: null,
+    },
+  })
+  events.push({ type: "message_stop" })
   outgoing.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" })
-  outgoing.end(events.join(""))
+  outgoing.end(events.map((event) => frame(event.type, event)).join(""))
 }
 
 function respondResponses(
   outgoing: ServerResponse,
   sequence: number,
-  body: Record<string, unknown>,
+  body: ResponseCreateParams,
   reply: ScriptedModelRequest["reply"],
 ) {
-  const item =
-    reply.kind === "text"
-      ? {
-          type: "message",
-          id: `msg_${sequence}`,
-          role: "assistant",
-          status: "completed",
-          content: [{ type: "output_text", text: reply.text }],
-        }
-      : {
+  const toolItem = reply.kind === "tool"
+    ? {
           type: "function_call",
           id: `fc_${sequence}`,
           call_id: `call_${sequence}`,
           name: reply.name,
           arguments: JSON.stringify(reply.input),
+          ...(reply.namespace ? { namespace: reply.namespace } : {}),
           status: "completed",
-        }
-  const response = {
-    id: `resp_${sequence}`,
-    object: "response",
+        } satisfies Extract<ResponseOutputItem, { type: "function_call" }>
+    : undefined
+  const item: ResponseOutputItem = toolItem ?? {
+    type: "message",
+    id: `msg_${sequence}`,
+    role: "assistant",
     status: "completed",
-    model: body.model ?? "scripted",
-    output: [item],
-    usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+    content: [{ type: "output_text", text: reply.kind === "text" ? reply.text : "", annotations: [], logprobs: [] }],
   }
+  const response = (status: OpenAIResponse["status"], output: ResponseOutputItem[]): OpenAIResponse => ({
+    id: `resp_${sequence}`,
+    created_at: 0,
+    output_text: reply.kind === "text" ? reply.text : "",
+    error: null,
+    incomplete_details: null,
+    instructions: null,
+    metadata: null,
+    object: "response",
+    status,
+    model: body.model ?? "scripted",
+    output,
+    parallel_tool_calls: false,
+    temperature: null,
+    tool_choice: "auto",
+    tools: [],
+    top_p: null,
+    usage: {
+      input_tokens: 1,
+      input_tokens_details: { cached_tokens: 0 },
+      output_tokens: 1,
+      output_tokens_details: { reasoning_tokens: 0 },
+      total_tokens: 2,
+    },
+  })
   // The FULL streamed delta sequence, not just created/done/completed.
   //
   // This is load-bearing for codex-acp and was proven by A/B against the real
@@ -467,24 +571,24 @@ function respondResponses(
   // terminal-only shape happily and prints the text, which is why the gap
   // looked like a wrapper bug until the app-server protocol was driven
   // directly. Any future edit here must keep the delta frames.
-  const streamed =
+  const streamed: ResponseStreamEvent[] =
     reply.kind === "text"
       ? [
-          frame("response.output_item.added", {
+          {
             type: "response.output_item.added",
             sequence_number: 1,
             output_index: 0,
             item: { type: "message", id: `msg_${sequence}`, role: "assistant", status: "in_progress", content: [] },
-          }),
-          frame("response.content_part.added", {
+          },
+          {
             type: "response.content_part.added",
             sequence_number: 2,
             item_id: `msg_${sequence}`,
             output_index: 0,
             content_index: 0,
-            part: { type: "output_text", text: "", annotations: [] },
-          }),
-          frame("response.output_text.delta", {
+            part: { type: "output_text", text: "", annotations: [], logprobs: [] },
+          },
+          {
             type: "response.output_text.delta",
             sequence_number: 3,
             item_id: `msg_${sequence}`,
@@ -492,8 +596,8 @@ function respondResponses(
             content_index: 0,
             delta: reply.text,
             logprobs: [],
-          }),
-          frame("response.output_text.done", {
+          },
+          {
             type: "response.output_text.done",
             sequence_number: 4,
             item_id: `msg_${sequence}`,
@@ -501,25 +605,47 @@ function respondResponses(
             content_index: 0,
             text: reply.text,
             logprobs: [],
-          }),
-          frame("response.content_part.done", {
+          },
+          {
             type: "response.content_part.done",
             sequence_number: 5,
             item_id: `msg_${sequence}`,
             output_index: 0,
             content_index: 0,
-            part: { type: "output_text", text: reply.text, annotations: [] },
-          }),
+            part: { type: "output_text", text: reply.text, annotations: [], logprobs: [] },
+          },
         ]
-      : []
-  const sse = [
-    frame("response.created", { type: "response.created", response: { ...response, status: "in_progress", output: [] } }),
+      : toolItem ? [
+          {
+            type: "response.output_item.added",
+            sequence_number: 1,
+            output_index: 0,
+            item: { ...toolItem, arguments: "", status: "in_progress" },
+          },
+          {
+            type: "response.function_call_arguments.delta",
+            sequence_number: 2,
+            item_id: toolItem.id,
+            output_index: 0,
+            delta: toolItem.arguments,
+          },
+          {
+            type: "response.function_call_arguments.done",
+            sequence_number: 3,
+            item_id: toolItem.id,
+            output_index: 0,
+            name: toolItem.name,
+            arguments: toolItem.arguments,
+          },
+        ] : []
+  const events: ResponseStreamEvent[] = [
+    { type: "response.created", sequence_number: 0, response: response("in_progress", []) },
     ...streamed,
-    frame("response.output_item.done", { type: "response.output_item.done", output_index: 0, item }),
-    frame("response.completed", { type: "response.completed", response }),
-  ].join("")
+    { type: "response.output_item.done", sequence_number: 6, output_index: 0, item },
+    { type: "response.completed", sequence_number: 7, response: response("completed", [item]) },
+  ]
   outgoing.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" })
-  outgoing.end(sse)
+  outgoing.end(events.map((event) => frame(event.type, event)).join(""))
 }
 
 function frame(event: string, data: unknown) {
@@ -532,17 +658,79 @@ function frame(event: string, data: unknown) {
  * plain strings all carry the marker as a substring, and the marker regex
  * needs nothing more.
  */
-function promptText(dialect: ScriptedDialect, body: Record<string, unknown>) {
-  const source = dialect === "responses" ? body.input : body.messages
-  return JSON.stringify(source ?? body)
+function promptText(request: ScriptedModelBody) {
+  const source = request.dialect === "responses" ? request.body.input : request.body.messages
+  return JSON.stringify(source ?? request.body)
 }
 
-async function readJson(incoming: IncomingMessage): Promise<Record<string, unknown>> {
+function hasToolResult(request: ScriptedModelBody) {
+  if (request.dialect === "responses") {
+    return Array.isArray(request.body.input) && request.body.input.some((item) => record(item)?.type === "function_call_output")
+  }
+  if (request.dialect === "messages") {
+    return request.body.messages.some((message) =>
+      Array.isArray(message.content) && message.content.some((block) => record(block)?.type === "tool_result"))
+  }
+  return request.body.messages.some((message) => message.role === "tool")
+}
+
+function modelRequestBody(dialect: ScriptedDialect, input: unknown): ScriptedModelBody {
+  const body = record(input) ?? {}
+  const model = typeof body.model === "string" && body.model ? body.model : "scripted"
+  if (dialect === "responses") {
+    return {
+      dialect,
+      body: {
+        ...body,
+        model,
+        input: body.input ?? "",
+      } as ResponseCreateParams,
+    }
+  }
+  const messages = Array.isArray(body.messages) ? body.messages : []
+  if (dialect === "messages") {
+    return {
+      dialect,
+      body: {
+        ...body,
+        model,
+        max_tokens: typeof body.max_tokens === "number" ? body.max_tokens : 1,
+        messages,
+      } as MessageCreateParams,
+    }
+  }
+  return {
+    dialect,
+    body: {
+      ...body,
+      model,
+      messages,
+    } as ChatCompletionCreateParams,
+  }
+}
+
+function modelTools(body: ScriptedModelBody["body"]) {
+  return (body.tools ?? []).flatMap((tool) => {
+    const row = record(tool)
+    const fn = record(row?.function)
+    const name = typeof row?.name === "string"
+      ? row.name
+      : typeof fn?.name === "string"
+        ? fn.name
+        : undefined
+    return name ? [{ name, ...(row?.input_schema ? { inputSchema: row.input_schema } : fn?.parameters ? { inputSchema: fn.parameters } : {}) }] : []
+  })
+}
+
+function record(input: unknown): Record<string, unknown> | undefined {
+  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
+}
+
+async function readJson(incoming: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = []
   for await (const chunk of incoming) chunks.push(chunk as Buffer)
   try {
-    const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"))
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {}
+    return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown
   } catch {
     return {}
   }

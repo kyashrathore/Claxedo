@@ -4,6 +4,7 @@ import os from "os"
 import path from "path"
 import {
   configureEmbeddedWorkspaceRuntime,
+  cursorTranscriptRoot,
   ensureEmbeddedWorkspaceRuntime,
   releaseEmbeddedWorkspaceRuntime,
   shutdownEmbeddedWorkspaceRuntimes,
@@ -58,6 +59,7 @@ async function workspaceIsClean(directory: string) {
 const previous = {
   CLAXEDO_DATA_DIR: process.env.CLAXEDO_DATA_DIR,
   CLAXEDO_AGENT_TYPE: process.env.CLAXEDO_AGENT_TYPE,
+  CURSOR_DATA_DIR: process.env.CURSOR_DATA_DIR,
   OPENCODE_URL: process.env.OPENCODE_URL,
 }
 
@@ -67,6 +69,8 @@ afterEach(async () => {
   else process.env.CLAXEDO_DATA_DIR = previous.CLAXEDO_DATA_DIR
   if (previous.CLAXEDO_AGENT_TYPE === undefined) delete process.env.CLAXEDO_AGENT_TYPE
   else process.env.CLAXEDO_AGENT_TYPE = previous.CLAXEDO_AGENT_TYPE
+  if (previous.CURSOR_DATA_DIR === undefined) delete process.env.CURSOR_DATA_DIR
+  else process.env.CURSOR_DATA_DIR = previous.CURSOR_DATA_DIR
   if (previous.OPENCODE_URL === undefined) delete process.env.OPENCODE_URL
   else process.env.OPENCODE_URL = previous.OPENCODE_URL
 })
@@ -238,6 +242,46 @@ describe("embedded workspace runtime", () => {
       expect(rebuilt).not.toBe(first)
     } finally {
       shutdownEmbeddedWorkspaceRuntimes()
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("mounts the production transcript resolver for each embedded workspace", async () => {
+    const { root, project } = await makeWorkspaceRoot("claxedo-embedded-transcripts-")
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+
+    try {
+      const runtime = await ensureEmbeddedWorkspaceRuntime(workspace("ws_transcripts", project), { config: "skip" })
+      const response = await runtime.app.request(
+        "http://localhost/api/wr/subagent-transcripts/not-a-handle?parentSessionId=parent",
+      )
+
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual({ state: "unavailable", reason: "invalid-handle" })
+      const unauthorized = await runtime.app.request(
+        "http://localhost/api/wr/runtime-events?parentSessionId=missing-parent",
+      )
+      expect(unauthorized.status).toBe(403)
+    } finally {
+      shutdownEmbeddedWorkspaceRuntimes()
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("uses Cursor's canonical project transcript root instead of the workspace checkout", async () => {
+    const { root, project } = await makeWorkspaceRoot("claxedo-embedded-cursor-root-")
+    process.env.CURSOR_DATA_DIR = path.join(root, "cursor-data")
+
+    try {
+      expect(cursorTranscriptRoot(project)).toBe(path.join(
+        root,
+        "cursor-data",
+        "projects",
+        project.replace(/[^a-zA-Z0-9]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, ""),
+        "agent-transcripts",
+      ))
+      expect(cursorTranscriptRoot(project)).not.toContain(path.join(project, path.sep))
+    } finally {
       await fs.rm(root, { recursive: true, force: true })
     }
   })

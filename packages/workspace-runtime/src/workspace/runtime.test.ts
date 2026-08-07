@@ -2534,6 +2534,34 @@ describe("workspace host store factory seam (Unit 2)", () => {
     }
   }
 
+  test("deleting a parent Session invalidates its opaque transcript handles", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-transcript-delete-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const invalidated: Array<{ workspaceId: string; parentSessionId: string }> = []
+    const app = new Hono()
+    const host = mountTestHost(app, {
+      harness: { id: "claude", access: "native" },
+      storeFactory: memoryStoreFactory().factory,
+      transcripts: {
+        workspaceId: "workspace-a",
+        resolver: {
+          open: async () => ({ state: "unavailable", reason: "invalid-handle" }),
+          invalidateParent: (workspaceId, parentSessionId) => invalidated.push({ workspaceId, parentSessionId }),
+        },
+      },
+    })
+
+    const response = await app.request(
+      `http://localhost/session/parent-a?directory=${encodeURIComponent(dir)}&runner=claude`,
+      { method: "DELETE" },
+    )
+
+    expect(response.status).toBe(200)
+    expect(invalidated).toEqual([{ workspaceId: "workspace-a", parentSessionId: "parent-a" }])
+    host.dispose()
+  })
+
   test("injected memory-backed factory serves store-backed routes without touching disk", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-store-factory-"))
     tempDirs.push(dir)
@@ -2948,6 +2976,7 @@ describe("scoped Session tool compatibility", () => {
         revert: false,
         unrevert: false,
         configOptions: false,
+        subagents: false,
       }),
       sendMessage: async function* (_id: string, input: { parts: unknown[] }) {
         resolvePrompt(input)

@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { createAgentEventRuntime } from "../../core/runtime"
 import type { RuntimeSnapshot } from "../../core/state"
-import { codexAppServerAdapter, type CodexAppServerAdapterState } from "./adapter"
+import {
+  codexAppServerAdapter,
+  codexCollabAgentCall,
+  codexCollabAgentStatus,
+  codexStartedSubagent,
+  type CodexAppServerAdapterState,
+} from "./adapter"
 
 function runtime(initialSnapshot?: RuntimeSnapshot<CodexAppServerAdapterState>) {
   return createAgentEventRuntime({
@@ -528,6 +534,88 @@ describe("codexAppServerAdapter", () => {
       message: "Careful",
       severity: "warn",
     }])
+  })
+
+  test("classifies collab calls by their real tool and preserves every receiver edge", () => {
+    expect(codexCollabAgentCall({
+      id: "call-1",
+      type: "collabAgentToolCall",
+      tool: "sendInput",
+      status: "inProgress",
+      senderThreadId: "thread-parent",
+      receiverThreadIds: ["thread-child-1", "thread-child-2"],
+      prompt: "Continue",
+      agentsStates: {
+        "thread-child-1": { status: "running", message: null },
+        "thread-child-2": { status: "pendingInit", message: null },
+      },
+    })).toEqual({
+      id: "call-1",
+      tool: "sendInput",
+      toolCallRole: "interaction",
+      senderThreadId: "thread-parent",
+      receiverThreadIds: ["thread-child-1", "thread-child-2"],
+      prompt: "Continue",
+      statuses: {
+        "thread-child-1": "running",
+        "thread-child-2": "pending",
+      },
+    })
+
+    expect(codexCollabAgentCall({
+      id: "call-2",
+      type: "collabAgentToolCall",
+      tool: "spawnAgent",
+      senderThreadId: "thread-parent",
+      receiverThreadIds: ["thread-child-1"],
+      agentsStates: {},
+    })?.toolCallRole).toBe("spawn")
+  })
+
+  test("normalizes every Codex collab status without collapsing terminal states", () => {
+    expect([
+      "pendingInit",
+      "running",
+      "interrupted",
+      "completed",
+      "errored",
+      "shutdown",
+      "notFound",
+    ].map(codexCollabAgentStatus)).toEqual([
+      "pending",
+      "running",
+      "interrupted",
+      "completed",
+      "failed",
+      "killed",
+      "failed",
+    ])
+  })
+
+  test("maps thread/started parent identity without emitting a parent diagnostic", () => {
+    const payload = {
+      thread: {
+        id: "thread-child",
+        parentThreadId: "thread-parent",
+        preview: "Inspect the adapter",
+        agentNickname: "Ada",
+        agentRole: "reviewer",
+        status: { type: "active", activeFlags: [] },
+      },
+    }
+    expect(codexStartedSubagent(payload)).toEqual({
+      id: "thread-child",
+      parentThreadId: "thread-parent",
+      status: "running",
+      label: "Ada",
+      subagentType: "reviewer",
+      description: "Inspect the adapter",
+    })
+    expect(runtime().ingest({
+      source: "codex.app-server",
+      method: "thread/started",
+      payload,
+    }).events).toEqual([])
   })
 
   test("reports app-server methods that have no runtime mapping", () => {

@@ -6,6 +6,9 @@ import { CodexHarnessAdapter } from "./index"
 import type { PromptInput, SessionConfig } from "../../index"
 import type { AgentRuntimeStoreWithRecovery } from "../shared/runtime-store"
 import { fakeRuntimeStore } from "../../test-utils/fake-runtime-store"
+import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../../runtime-event-hub"
+import { createMemoryRuntimeStore } from "../../stores/memory"
+import { storeRows } from "../../test-utils/store-internals"
 
 const tempDirs: string[] = []
 
@@ -56,7 +59,7 @@ function fakeCodexStore(): AgentRuntimeStoreWithRecovery {
   })
 }
 
-async function makeFakeCodex(options: { requestRefresh?: boolean; auth401?: boolean; models?: unknown[] } = {}) {
+async function makeFakeCodex(options: { requestRefresh?: boolean; auth401?: boolean; models?: unknown[]; subagent?: boolean } = {}) {
   const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "codex-app-server-"))
   tempDirs.push(dir)
   const binary = path.join(dir, "codex")
@@ -66,6 +69,7 @@ const fs = require("fs")
 const logPath = ${JSON.stringify(log)}
 const requestRefresh = ${JSON.stringify(options.requestRefresh === true)}
 const auth401 = ${JSON.stringify(options.auth401 === true)}
+const subagent = ${JSON.stringify(options.subagent === true)}
 const models = ${JSON.stringify(options.models ?? [])}
 let buffer = ""
 let completed = false
@@ -114,6 +118,16 @@ process.stdin.on("data", (chunk) => {
       }
       write({ id: message.id, result: { turn: { id: "turn-1", status: "inProgress" } } })
       write({ method: "turn/started", params: { threadId: "thread-1", turn: { id: "turn-1", status: "inProgress" } } })
+      if (subagent) {
+        write({ method: "thread/started", params: { thread: { id: "thread-child-1", parentThreadId: "thread-1", preview: "Research one", agentNickname: "Alpha", agentRole: "researcher", status: { type: "active", activeFlags: [] } } } })
+        write({ method: "thread/started", params: { thread: { id: "thread-child-2", parentThreadId: "thread-1", preview: "Research two", agentNickname: "Beta", agentRole: "researcher", status: { type: "active", activeFlags: [] } } } })
+        write({ method: "item/started", params: { threadId: "thread-1", turnId: "turn-1", item: { id: "spawn-1", type: "collabAgentToolCall", tool: "spawnAgent", status: "inProgress", senderThreadId: "thread-1", receiverThreadIds: ["thread-child-1", "thread-child-2"], prompt: "Research both", model: "gpt-5.5", agentsStates: { "thread-child-1": { status: "running", message: null }, "thread-child-2": { status: "pendingInit", message: null } } } } })
+        write({ method: "item/agentMessage/delta", params: { threadId: "thread-child-1", turnId: "child-turn-1", itemId: "child-message-1", delta: "CHILD-ONLY" } })
+        write({ method: "item/agentMessage/delta", params: { threadId: "thread-child-2", turnId: "child-turn-2", itemId: "child-message-2", delta: "SECOND-CHILD-ONLY" } })
+        write({ method: "item/completed", params: { threadId: "thread-1", turnId: "turn-1", item: { id: "spawn-1", type: "collabAgentToolCall", tool: "spawnAgent", status: "completed", senderThreadId: "thread-1", receiverThreadIds: ["thread-child-1", "thread-child-2"], prompt: "Research both", model: "gpt-5.5", agentsStates: { "thread-child-1": { status: "running", message: null }, "thread-child-2": { status: "running", message: null } } } } })
+        write({ method: "item/started", params: { threadId: "thread-1", turnId: "turn-1", item: { id: "send-1", type: "collabAgentToolCall", tool: "sendInput", status: "inProgress", senderThreadId: "thread-1", receiverThreadIds: ["thread-child-1"], prompt: "Continue", model: null, agentsStates: { "thread-child-1": { status: "completed", message: null } } } } })
+        write({ method: "item/started", params: { threadId: "thread-1", turnId: "turn-1", item: { id: "close-1", type: "collabAgentToolCall", tool: "closeAgent", status: "completed", senderThreadId: "thread-1", receiverThreadIds: ["thread-child-2"], prompt: null, model: null, agentsStates: { "thread-child-2": { status: "shutdown", message: null } } } } })
+      }
       if (requestRefresh) {
         write({ id: 900, method: "account/chatgptAuthTokens/refresh", params: { reason: "unauthorized", previousAccountId: "acct-1" } })
       } else {
@@ -331,5 +345,48 @@ describe("CodexHarnessAdapter", () => {
     adapter.dispose()
 
     expect(events.some((event) => JSON.stringify(event).includes("Codex authentication failed with 401 Unauthorized"))).toBe(true)
+  })
+
+  test("U6: routes Codex child threads through revisioned lifecycle admission into isolated stores", async () => {
+    const fake = await makeFakeCodex({ subagent: true })
+    const eventHub = createRuntimeEventHub()
+    const runtimeEvents: RuntimeEventEnvelope[] = []
+    eventHub.subscribeRuntime((event) => runtimeEvents.push(event))
+    const store = storeRows(createMemoryRuntimeStore())
+    const adapter = new CodexHarnessAdapter({
+      binary: fake.binary,
+      eventHub,
+      store,
+      storeRoot: path.join(fake.dir, "store"),
+    })
+    adapter.setModel("gpt-5.5")
+
+    const session = await adapter.createSession(fake.dir)
+    for await (const _event of adapter.sendMessage(session.id, prompt("gpt-5.5"), fake.dir)) {}
+    adapter.dispose()
+
+    const lifecycle = runtimeEvents.filter((event) => event.payload.type === "subagent-updated")
+    const childOne = lifecycle.filter((event) => event.payload.type === "subagent-updated" && event.payload.providerId === "thread-child-1")
+    const childTwo = lifecycle.filter((event) => event.payload.type === "subagent-updated" && event.payload.providerId === "thread-child-2")
+    expect(new Set(childOne.map((event) => event.payload.type === "subagent-updated" ? event.payload.subagentKey : undefined)).size).toBe(1)
+    expect(new Set(childTwo.map((event) => event.payload.type === "subagent-updated" ? event.payload.subagentKey : undefined)).size).toBe(1)
+    expect(childOne.some((event) => event.payload.type === "subagent-updated" && event.payload.toolCallId === "spawn-1" && event.payload.toolCallRole === "spawn")).toBe(true)
+    expect(childTwo.some((event) => event.payload.type === "subagent-updated" && event.payload.toolCallId === "spawn-1" && event.payload.toolCallRole === "spawn")).toBe(true)
+    expect(childOne.some((event) => event.payload.type === "subagent-updated" && event.payload.toolCallId === "send-1" && event.payload.toolCallRole === "interaction" && event.payload.status === "completed")).toBe(true)
+    expect(childTwo.some((event) => event.payload.type === "subagent-updated" && event.payload.toolCallId === "close-1" && event.payload.toolCallRole === "interaction" && event.payload.status === "killed")).toBe(true)
+    expect(childOne.map((event) => event.payload.type === "subagent-updated" ? event.payload.revision : 0)).toEqual(
+      childOne.map((_, index) => index + 1),
+    )
+
+    const sessions = store.listSessions(fake.dir) as Array<{ id: string; parentID?: string; agent_session_id?: string }>
+    const childSessions = sessions.filter((item) => item.parentID === session.id)
+    expect(childSessions).toHaveLength(2)
+    expect(childSessions.map((item) => item.id)).not.toContain("thread-child-1")
+    expect(childSessions.map((item) => item.id)).not.toContain("thread-child-2")
+    expect(childSessions.map((item) => item.agent_session_id).sort()).toEqual(["thread-child-1", "thread-child-2"])
+    expect(JSON.stringify(store.getMessages(session.id))).not.toContain("CHILD-ONLY")
+    expect(childSessions.some((item) => JSON.stringify(store.getMessages(item.id)).includes("CHILD-ONLY"))).toBe(true)
+    expect(childSessions.some((item) => JSON.stringify(store.getMessages(item.id)).includes("SECOND-CHILD-ONLY"))).toBe(true)
+    expect(runtimeEvents.filter((event) => event.payload.type === "text-delta").map((event) => event.sessionId)).toEqual(expect.arrayContaining(childSessions.map((item) => item.id)))
   })
 })

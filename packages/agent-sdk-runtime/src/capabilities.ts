@@ -17,6 +17,7 @@ export type HarnessCapabilities = {
   revert: boolean
   unrevert: boolean
   configOptions: boolean
+  subagents: boolean
 }
 
 export type HarnessCapabilityContext = {

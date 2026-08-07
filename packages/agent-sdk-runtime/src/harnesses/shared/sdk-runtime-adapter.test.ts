@@ -7,6 +7,7 @@ import { createMemoryRuntimeStore } from "../../stores/memory"
 import { runtimeSnapshot } from "@claxedo/agent-event-runtime"
 import { storeRows } from "../../test-utils/store-internals"
 import type { AgentRuntimeStreamEvent } from "../../index"
+import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../../runtime-event-hub"
 
 function minimalSdkRuntimeDriver(): SdkRuntimeDriver {
   return {
@@ -29,6 +30,176 @@ function minimalSdkRuntimeDriver(): SdkRuntimeDriver {
 }
 
 describe("SdkRuntimeAdapter", () => {
+  test("applies the requested permission mode before the provider turn", async () => {
+    const order: string[] = []
+    const adapter = new SdkRuntimeAdapter({
+      store: storeRows(createMemoryRuntimeStore()),
+      driver: () => ({
+        ...minimalSdkRuntimeDriver(),
+        setPermissionMode: async (_sessionId, modeId) => {
+          order.push(`mode:${modeId}`)
+          return { modes: [], appliesFrom: "next-turn" as const }
+        },
+        runTurn: async () => {
+          order.push("turn")
+        },
+      }),
+    })
+    const session = await adapter.createSession("/repo")
+
+    for await (const _event of adapter.sendMessage(session.id, {
+      parts: [{ type: "text", text: "go" }],
+      assistantMessageId: "assistant",
+      agent: "general",
+      model: { providerID: "codex", modelID: "test" },
+      permissionMode: "full-access",
+    }, "/repo")) {}
+
+    expect(order).toEqual(["mode:full-access", "turn"])
+    adapter.dispose()
+  })
+
+  test("admits revisioned subagent observations and reuses one opaque child target across interaction edges", async () => {
+    const store = storeRows(createMemoryRuntimeStore())
+    const eventHub = createRuntimeEventHub()
+    const runtime: RuntimeEventEnvelope[] = []
+    eventHub.subscribeRuntime((event) => runtime.push(event))
+    const adapter = new SdkRuntimeAdapter({
+      store,
+      eventHub,
+      driver: () => ({
+        ...minimalSdkRuntimeDriver(),
+        createRuntime: () => ({
+          ingest: (raw: { payload?: { text?: string } }) => ({
+            events: raw.payload?.text ? [{ type: "text-delta", delta: raw.payload.text }] : [],
+            snapshot: { harness: "codex", threadId: "thread-1", adapterState: {} },
+          }),
+          snapshot: () => ({ harness: "codex", threadId: "thread-1", adapterState: {} }),
+        }) as never,
+        runTurn: async (input) => {
+          await input.observeSubagent({
+            observation: {
+              observationId: "spawn",
+              stableCorrelationId: "provider-child",
+              toolCallId: "spawn-call",
+              toolCallRole: "spawn",
+              providerId: "provider-child",
+              providerKind: "test",
+              status: "running",
+              transcript: { kind: "live" },
+            },
+            correlationKeys: ["provider-child"],
+          })
+          await input.observeSubagent({
+            observation: {
+              observationId: "interaction",
+              stableCorrelationId: "provider-child",
+              toolCallId: "send-call",
+              toolCallRole: "interaction",
+              providerId: "provider-child",
+              providerKind: "test",
+              status: "completed",
+              transcript: { kind: "live" },
+            },
+            correlationKeys: ["provider-child"],
+          })
+          input.ingest(
+            { source: "test", payload: { text: "child-only" } },
+            { dir: "in", method: "child" },
+            { kind: "child", correlationKey: "provider-child" },
+          )
+        },
+      }),
+    })
+    const session = await adapter.createSession("/repo")
+    for await (const _event of adapter.sendMessage(session.id, {
+      parts: [{ type: "text", text: "delegate" }],
+      userMessageId: "parent-user",
+      assistantMessageId: "parent-assistant",
+      agent: "general",
+      model: { providerID: "codex", modelID: "test" },
+    }, "/repo")) {}
+
+    const lifecycle = runtime.filter((event) => event.payload.type === "subagent-updated")
+    expect(lifecycle.map((event) => event.payload.type === "subagent-updated" ? event.payload.revision : 0)).toEqual([1, 2])
+    expect(new Set(lifecycle.map((event) => event.payload.type === "subagent-updated" ? event.payload.subagentKey : undefined)).size).toBe(1)
+    expect(lifecycle.map((event) => event.payload.type === "subagent-updated" ? event.payload.childSessionId : undefined)).toEqual([
+      expect.any(String),
+      expect.any(String),
+    ])
+    const child = (store.listSessions("/repo") as Array<{ id: string; parentID?: string; agent_session_id?: string }>)
+      .find((item) => item.parentID === session.id)!
+    expect(child.id).not.toBe("provider-child")
+    expect(child.agent_session_id).toBe("provider-child")
+    expect(JSON.stringify(store.getMessages(session.id))).not.toContain("child-only")
+    expect(JSON.stringify(store.getMessages(child.id))).toContain("child-only")
+    adapter.dispose()
+  })
+
+  test("routes child compat output to the child store without yielding it in the parent stream", async () => {
+    const store = storeRows(createMemoryRuntimeStore())
+    const eventHub = createRuntimeEventHub()
+    const runtime: RuntimeEventEnvelope[] = []
+    eventHub.subscribeRuntime((event) => runtime.push(event))
+    const adapter = new SdkRuntimeAdapter({
+      store,
+      eventHub,
+      driver: () => ({
+        ...minimalSdkRuntimeDriver(),
+        createRuntime: () => ({
+          ingest: () => ({
+            events: [{ type: "text-delta", delta: "child-only text" }],
+            snapshot: { harness: "codex", threadId: "thread-1", adapterState: {} },
+          }),
+          snapshot: () => ({ harness: "codex", threadId: "thread-1", adapterState: {} }),
+        }) as never,
+        runTurn: async (input) => {
+          input.associateChild("child-thread", {
+            sessionId: "child-session",
+            getAgentSessionId: () => "provider-child-thread",
+            assistantMessageId: "child-assistant",
+            created: 100,
+            input: {
+              userMessageId: "child-user",
+              agent: "general",
+              model: { providerID: "codex", modelID: "test" },
+            },
+          })
+          input.ingest(
+            { type: "child-update" } as never,
+            { dir: "in", method: "test" },
+            { kind: "child", correlationKey: "child-thread" },
+          )
+        },
+      }),
+    })
+    const session = await adapter.createSession("/repo")
+    store.bindSession({
+      sessionId: "child-session",
+      directory: "/repo",
+      agentSessionId: "provider-child-thread",
+    })
+    const yielded: AgentRuntimeStreamEvent[] = []
+
+    for await (const event of adapter.sendMessage(session.id, {
+      parts: [{ type: "text", text: "delegate" }],
+      userMessageId: "parent-user",
+      assistantMessageId: "parent-assistant",
+      agent: "general",
+      model: { providerID: "codex", modelID: "test" },
+    }, "/repo")) yielded.push(event)
+
+    expect(JSON.stringify(yielded)).not.toContain("child-only text")
+    expect(JSON.stringify(store.getMessages(session.id))).not.toContain("child-only text")
+    expect(JSON.stringify(store.getMessages("child-session"))).toContain("child-only text")
+    expect(runtime).toContainEqual(expect.objectContaining({
+      sessionId: "child-session",
+      agentSessionId: "provider-child-thread",
+      payload: { type: "text-delta", delta: "child-only text" },
+    }))
+    adapter.dispose()
+  })
+
   test("adopts a requested deterministic Session without creating a second agent thread", async () => {
     let created = 0
     const adapter = new SdkRuntimeAdapter({

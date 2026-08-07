@@ -36,7 +36,7 @@ function lastTurnOf(rows: { getSession(id: string): unknown }, id: string) {
 }
 
 function testHarness(options: {
-  sendMessage?: (id: string) => AsyncIterable<AgentRuntimeStreamEvent>
+  sendMessage?: AgentHarnessAdapter["sendMessage"]
   abort?: (id: string) => Promise<AgentRuntimeAbortResult>
   runtimeConfigCalls?: string[]
 } = {}): AgentHarnessFactory {
@@ -123,6 +123,25 @@ describe("createAgentRuntime", () => {
       { info: { role: "user" } },
       { info: { role: "assistant" } },
     ])
+    runtime.dispose()
+  })
+
+  test("carries a turn permission mode into the harness prompt", async () => {
+    const modes: Array<string | undefined> = []
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [testHarness({
+        sendMessage: async function* (_id, input) {
+          modes.push(input.permissionMode)
+        },
+      })],
+    })
+    const session = await runtime.sessions.create({ directory: undefined, harness: { id: "pi", access: "native" } })
+
+    await runtime.turns.start({ sessionId: session.id, text: "hello", permissionMode: "agent-full-access" })
+    await tick()
+
+    expect(modes).toEqual(["agent-full-access"])
     runtime.dispose()
   })
 

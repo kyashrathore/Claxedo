@@ -1,5 +1,10 @@
 import type { LocalRunStreamEvent, SDKMessage } from "@cursor/sdk"
-import type { AgentRuntimeEvent } from "../../contracts/agent-runtime-event"
+import type {
+  AgentRuntimeEvent,
+  SubagentMode,
+  SubagentStatus,
+  SubagentToolCallRole,
+} from "../../contracts/agent-runtime-event"
 import { runtimeDiagnostic } from "../../contracts/diagnostics"
 import type { HarnessEventAdapter, HarnessEventAdapterContext, HarnessEventAdapterResult } from "../../core/adapter"
 import { toolDisplayFromInput } from "../tool-display"
@@ -15,6 +20,21 @@ export type CursorSdkAdapterState = {
     kind: string
     input?: Record<string, unknown>
   }>
+}
+
+export type CursorSubagentObservation = {
+  observationId: string
+  harnessExecutionId?: string
+  toolCallId: string
+  toolCallRole: SubagentToolCallRole
+  mode?: SubagentMode
+  status: SubagentStatus
+  label?: string
+  subagentType?: string
+  description?: string
+  providerId?: string
+  providerKind?: string
+  transcript: { kind: "none" }
 }
 
 function createCursorSdkAdapterState(): CursorSdkAdapterState {
@@ -152,11 +172,6 @@ function toolDisplay(toolName: string, input: Record<string, unknown>) {
   })
 }
 
-function subagentId(input: Record<string, unknown>, fallback: string) {
-  const subagent = object(input.subagentType) ?? object(input.subagent_type)
-  return text(subagent?.name) ?? text(subagent?.kind) ?? text(input.subagent_type) ?? text(input.mode) ?? fallback
-}
-
 function ensureTool(input: {
   state: CursorSdkAdapterState
   toolCallId: string
@@ -165,13 +180,29 @@ function ensureTool(input: {
 }) {
   const existing = input.state.toolsByCallId[input.toolCallId]
   const toolName = existing?.toolName ?? input.toolName
-  const rawInput = existing?.input ?? input.rawInput
+  const rawInput = existing?.input || input.rawInput
+    ? { ...existing?.input, ...input.rawInput }
+    : undefined
   const kind = existing?.kind ?? toolKind(toolName)
   const display = toolDisplay(toolName, rawInput ?? {})
   if (existing) {
+    const inputChanged = input.rawInput && Object.entries(input.rawInput)
+      .some(([key, value]) => JSON.stringify(existing.input?.[key]) !== JSON.stringify(value))
     return {
-      state: input.state,
-      events: [] satisfies AgentRuntimeEvent[],
+      state: {
+        ...input.state,
+        toolsByCallId: {
+          ...input.state.toolsByCallId,
+          [input.toolCallId]: {
+            toolName,
+            kind,
+            ...(rawInput ? { input: rawInput } : {}),
+          },
+        },
+      },
+      events: inputChanged
+        ? [{ type: "tool-input", toolCallId: input.toolCallId, input: rawInput ?? {}, display, metadata: { cursor: { itemType: kind } } } satisfies AgentRuntimeEvent]
+        : [],
       toolName,
       rawInput,
       kind,
@@ -195,9 +226,6 @@ function ensureTool(input: {
       ...(rawInput && Object.keys(rawInput).length
         ? [{ type: "tool-input", toolCallId: input.toolCallId, input: rawInput, display, metadata: { cursor: { itemType: kind } } } satisfies AgentRuntimeEvent]
         : []),
-      ...(isTaskTool(toolName)
-        ? [{ type: "subagent-spawned", childSessionId: subagentId(rawInput ?? {}, input.toolCallId) } satisfies AgentRuntimeEvent]
-        : []),
     ] satisfies AgentRuntimeEvent[],
     toolName,
     rawInput,
@@ -212,10 +240,99 @@ function errorMessage(value: unknown) {
   return text(row?.message) ?? text(nested?.message) ?? text(row?.error) ?? text(value) ?? JSON.stringify(value)
 }
 
+function taskErrorMessage(value: unknown) {
+  const row = object(value)
+  const nested = object(row?.error)
+  return text(row?.message) ?? text(nested?.message) ?? text(row?.error) ?? text(value) ?? "Cursor task failed"
+}
+
 function successfulOutput(value: unknown) {
   const row = object(value)
   if (row?.status === "success" && row.value !== undefined) return row.value
   return value
+}
+
+function taskOutput(value: unknown) {
+  const result = object(value)
+  const success = result?.status === "success" ? object(result.value) : undefined
+  if (!success) return successfulOutput(value)
+  return safeTaskSuccess(success)
+}
+
+function safeTaskSuccess(success: Record<string, unknown>) {
+  return {
+    ...(text(success.agentId) ? { agentId: text(success.agentId) } : {}),
+    ...(typeof success.isBackground === "boolean" ? { isBackground: success.isBackground } : {}),
+    ...(number(success.durationMs) !== undefined ? { durationMs: number(success.durationMs) } : {}),
+    ...(text(success.resultSuffix) ? { resultSuffix: text(success.resultSuffix) } : {}),
+    ...(text(success.backgroundReason) ? { backgroundReason: text(success.backgroundReason) } : {}),
+  }
+}
+
+function taskMetadata(value: unknown) {
+  const result = object(value)
+  const success = result?.status === "success" ? object(result.value) : undefined
+  if (!success) return { transcript: "unavailable" }
+  return {
+    transcript: text(success.transcriptPath) ? "awaiting-host-resolution" : "unavailable",
+    ...(text(success.agentId) ? { agentId: text(success.agentId) } : {}),
+    ...(typeof success.isBackground === "boolean" ? { isBackground: success.isBackground } : {}),
+    ...(number(success.durationMs) !== undefined ? { durationMs: number(success.durationMs) } : {}),
+    ...(text(success.backgroundReason) ? { backgroundReason: text(success.backgroundReason) } : {}),
+  }
+}
+
+export function cursorSubagentObservations(value: unknown): CursorSubagentObservation[] {
+  const message = object(value)
+  if (!message || message.type !== "tool_call" || !isTaskTool(text(message.name) ?? "")) return []
+  const toolCallId = text(message.call_id)
+  if (!toolCallId) return []
+  const args = toolInput(message.args)
+  const result = object(message.result)
+  const success = result?.status === "success" ? object(result.value) : undefined
+  const providerId = text(success?.agentId) ?? text(args.agentId) ?? text(args.resume)
+  const priorProviderId = text(args.agentId) ?? text(args.resume)
+  const status = message.status === "running"
+    ? "running"
+    : message.status === "error" || result?.status === "error"
+      ? "failed"
+      : "completed"
+  const subagentType = text(object(args.subagentType)?.name) ?? text(object(args.subagentType)?.kind)
+  return [{
+    observationId: `cursor:task:${text(message.run_id) ?? "unknown"}:${toolCallId}:${status}`,
+    ...(text(message.run_id) ? { harnessExecutionId: text(message.run_id) } : {}),
+    toolCallId,
+    toolCallRole: priorProviderId ? "interaction" : "spawn",
+    ...(typeof success?.isBackground === "boolean"
+      ? { mode: success.isBackground ? "background" : "foreground" }
+      : {}),
+    status,
+    ...(text(args.description) ? { label: text(args.description), description: text(args.description) } : {}),
+    ...(subagentType ? { subagentType } : {}),
+    ...(providerId ? { providerId } : {}),
+    ...(providerId ? { providerKind: "cursor-agent" } : {}),
+    // Cursor supplies a provider-local path only on success. U11 owns turning
+    // that path into an authorized opaque handle; until then this rail fails closed.
+    transcript: { kind: "none" },
+  }]
+}
+
+export function cursorRuntimeMessage(value: unknown) {
+  const message = object(value)
+  if (!message || message.type !== "tool_call" || !isTaskTool(text(message.name) ?? "")) return value
+  const result = object(message.result)
+  if (!result) return value
+  if (result.status === "error") {
+    return {
+      ...message,
+      result: { status: "error", error: taskErrorMessage(result.error) },
+    }
+  }
+  if (result.status !== "success") return value
+  return {
+    ...message,
+    result: { ...result, value: safeTaskSuccess(object(result.value) ?? {}) },
+  }
 }
 
 function isErrorResult(value: unknown) {
@@ -241,7 +358,18 @@ function toolCompletedEvents(input: {
       state: ensured.state,
       events: [
         ...ensured.events,
-        { type: "tool-error", toolCallId: input.toolCallId, error: errorMessage(input.result) ?? "Cursor tool failed", display: ensured.display, metadata: { cursor: { itemType: ensured.kind } } },
+        {
+          type: "tool-error",
+          toolCallId: input.toolCallId,
+          error: errorMessage(input.result) ?? "Cursor tool failed",
+          display: ensured.display,
+          metadata: {
+            cursor: {
+              itemType: ensured.kind,
+              ...(isTaskTool(ensured.toolName) ? { subagent: { transcript: "unavailable" } } : {}),
+            },
+          },
+        },
       ] satisfies AgentRuntimeEvent[],
     }
   }
@@ -249,7 +377,18 @@ function toolCompletedEvents(input: {
     state: ensured.state,
     events: [
       ...ensured.events,
-      { type: "tool-output", toolCallId: input.toolCallId, output: successfulOutput(input.result), display: ensured.display, metadata: { cursor: { itemType: ensured.kind } } },
+      {
+        type: "tool-output",
+        toolCallId: input.toolCallId,
+        output: isTaskTool(ensured.toolName) ? taskOutput(input.result) : successfulOutput(input.result),
+        display: ensured.display,
+        metadata: {
+          cursor: {
+            itemType: ensured.kind,
+            ...(isTaskTool(ensured.toolName) ? { subagent: taskMetadata(input.result) } : {}),
+          },
+        },
+      },
     ] satisfies AgentRuntimeEvent[],
   }
 }

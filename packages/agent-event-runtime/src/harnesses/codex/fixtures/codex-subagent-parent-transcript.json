@@ -1,0 +1,115 @@
+[
+  {
+    "directory": "/workspace",
+    "payload": {
+      "id": "message.part.updated:assistant-parent-1:000000_spawn-1",
+      "type": "message.part.updated",
+      "properties": {
+        "sessionID": "session-parent-1",
+        "part": {
+          "id": "000000_spawn-1",
+          "sessionID": "session-parent-1",
+          "messageID": "assistant-parent-1",
+          "type": "tool",
+          "callID": "spawn-1",
+          "tool": "spawn_agent",
+          "state": {
+            "status": "running",
+            "input": {
+              "intent": "generic",
+              "kind": "dynamic_tool_call"
+            },
+            "metadata": {
+              "codex": {
+                "itemType": "dynamic_tool_call"
+              }
+            },
+            "time": {
+              "start": 100
+            }
+          },
+          "metadata": {
+            "codex": {
+              "itemType": "dynamic_tool_call"
+            }
+          }
+        },
+        "time": 100
+      }
+    }
+  },
+  {
+    "directory": "/workspace",
+    "payload": {
+      "id": "message.part.updated:assistant-parent-1:000000_spawn-1",
+      "type": "message.part.updated",
+      "properties": {
+        "sessionID": "session-parent-1",
+        "part": {
+          "id": "000000_spawn-1",
+          "sessionID": "session-parent-1",
+          "messageID": "assistant-parent-1",
+          "type": "tool",
+          "callID": "spawn-1",
+          "tool": "spawn_agent",
+          "state": {
+            "status": "completed",
+            "input": {
+              "intent": "generic",
+              "kind": "dynamic_tool_call"
+            },
+            "output": "",
+            "title": "spawn_agent",
+            "metadata": {
+              "codex": {
+                "itemType": "dynamic_tool_call"
+              }
+            },
+            "time": {
+              "start": 100,
+              "end": 100
+            }
+          },
+          "metadata": {
+            "codex": {
+              "itemType": "dynamic_tool_call"
+            }
+          }
+        },
+        "time": 100
+      }
+    }
+  },
+  {
+    "directory": "/workspace",
+    "payload": {
+      "id": "message.part.updated:assistant-parent-1:000001_assistant-parent-1-text",
+      "type": "message.part.updated",
+      "properties": {
+        "sessionID": "session-parent-1",
+        "part": {
+          "id": "000001_assistant-parent-1-text",
+          "sessionID": "session-parent-1",
+          "messageID": "assistant-parent-1",
+          "type": "text",
+          "text": ""
+        },
+        "time": 100
+      }
+    }
+  },
+  {
+    "directory": "/workspace",
+    "payload": {
+      "id": "message.part.delta:assistant-parent-1:000001_assistant-parent-1-text",
+      "type": "message.part.delta",
+      "properties": {
+        "sessionID": "session-parent-1",
+        "messageID": "assistant-parent-1",
+        "partID": "000001_assistant-parent-1-text",
+        "field": "text",
+        "delta": "Parent answer unchanged."
+      }
+    }
+  }
+]

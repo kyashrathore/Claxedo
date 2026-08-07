@@ -30,10 +30,11 @@ export type ContentCloseReason = "user" | "panic" | "merge" | "evict"
 
 export type CleanupHook = (id: string, meta: ContentMeta | undefined, reason: ContentCloseReason) => void
 export type OpenSessionOptions = { focus?: boolean; sessionRef?: SessionRef }
+type OpenCentralSessionOptions = { focus?: boolean; authoritative?: boolean; sessionRef?: SessionRef }
 
 export type LayoutOrchestrationApi = {
   openSession(directory: string, sessionId: string, title?: string, opts?: OpenSessionOptions): string
-  openCentralSession(sessionId: string, title?: string, opts?: { focus?: boolean }): string
+  openCentralSession(sessionId: string, title?: string, opts?: OpenCentralSessionOptions): string
   openDraftSession(providerDirectory: string, draftId: string, opts?: { focus?: boolean }): string
   completeDraftSession(input: { draftId: string; directory: string; sessionId: string; title?: string; sessionRef?: SessionRef }): string | undefined
   openTerminal(directory: string, terminalId: string, title?: string, opts?: { focus?: boolean; command?: string }): string
@@ -53,6 +54,7 @@ export type LayoutOrchestrationApi = {
   splitContent(targetPane: string, edge: Edge, id: string): void
   /** Alias for `wb.navigation.show(id)`. */
   showContent(id: string): void
+  restoreContentFocus(id: string): void
 
   /**
    * Internal hook the rail-layout's `onContentClose` calls when the Workbench
@@ -84,7 +86,9 @@ function sameSessionRef(a: SessionRef | undefined, b: SessionRef | undefined) {
     a.host !== b.host ||
     a.workspaceId !== b.workspaceId ||
     a.cwd !== b.cwd ||
-    a.toolSandbox?.kind !== b.toolSandbox?.kind
+    a.toolSandbox?.kind !== b.toolSandbox?.kind ||
+    a.harness?.id !== b.harness?.id ||
+    a.harness?.binary !== b.harness?.binary
   ) return false
   if (a.toolSandbox?.kind === "workspace" && b.toolSandbox?.kind === "workspace") {
     return (
@@ -107,6 +111,29 @@ export function createLayoutOrchestration(input: {
   cleanupHook?: CleanupHook
 }): LayoutOrchestrationApi {
   const { wb, meta, terminal, cleanupHook } = input
+
+  const restoreContentFocus = (id: string) => {
+    const origin = meta.get(id)?.returnFocus
+    if (!origin || typeof document === "undefined") return
+    const attempt = (remaining: number) => {
+      const exact = origin.originId
+        ? document.querySelector<HTMLElement>(`[data-subagent-origin-id="${CSS.escape(origin.originId)}"]`)
+        : undefined
+      const marker = origin.subagentKey
+        ? document.querySelector<HTMLElement>(
+            `[data-session-timeline-session-id="${CSS.escape(origin.parentSessionId)}"] [data-subagent-key="${CSS.escape(origin.subagentKey)}"]`,
+          )
+        : document.querySelector<HTMLElement>(`[data-session-timeline-session-id="${CSS.escape(origin.parentSessionId)}"]`)
+      const target = exact ?? marker?.closest<HTMLElement>("a, button") ?? marker
+      if (target && target.getClientRects().length > 0) {
+        target.focus()
+        target.scrollIntoView({ block: "center" })
+        return
+      }
+      if (remaining > 0) requestAnimationFrame(() => attempt(remaining - 1))
+    }
+    queueMicrotask(() => attempt(60))
+  }
 
   const showOrCreate = (
     existing: ContentMeta | undefined,
@@ -188,6 +215,7 @@ export function createLayoutOrchestration(input: {
       terminal.clearForContent(id)
     }
     cleanupHook?.(id, m, reason)
+    restoreContentFocus(id)
     meta.remove(id)
   }
 
@@ -279,6 +307,9 @@ export function createLayoutOrchestration(input: {
     },
 
     openCentralSession(sessionId, title, opts) {
+      const sessionRef = opts?.sessionRef?.host === "central" && opts.sessionRef.sessionId === sessionId
+        ? opts.sessionRef
+        : centralSessionRef({ sessionId })
       const workspaceExisting = meta.find(
         (m) =>
           m.type === "session" &&
@@ -291,7 +322,7 @@ export function createLayoutOrchestration(input: {
             isLocalSessionDirectory(m.directory)
           ),
       )
-      if (workspaceExisting) {
+      if (workspaceExisting && !opts?.authoritative) {
         if (workspaceExisting.directory && workspaceExisting.content?.type === "session" && !workspaceExisting.content.sessionRef) {
           const sessionRef = localSessionRefForDirectory({ sessionId, directory: workspaceExisting.directory })
           meta.patch(workspaceExisting.id, {
@@ -307,7 +338,7 @@ export function createLayoutOrchestration(input: {
       const existing = meta.find(
         (m) => m.type === "session" && !m.directory && m.sessionId === sessionId,
       )
-      if (existing) patchSessionTitle(existing, undefined, sessionId, title)
+      if (existing) patchSessionTitle(existing, undefined, sessionId, title, sessionRef)
       const contentId = showOrCreate(
         existing,
         () => {
@@ -323,7 +354,7 @@ export function createLayoutOrchestration(input: {
               type: "session",
               sessionId,
               title,
-              sessionRef: centralSessionRef({ sessionId }),
+              sessionRef,
             },
           }
         },
@@ -590,6 +621,8 @@ export function createLayoutOrchestration(input: {
     showContent(id) {
       wb.navigation.show(id)
     },
+
+    restoreContentFocus,
 
     _cleanupOnClose,
   }

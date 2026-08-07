@@ -389,7 +389,7 @@ describe("tool.task", () => {
   )
 
   it.instance(
-    "execute shapes child permissions for task, todowrite, and primary tools",
+    "U1: OpenCode task creates a real child Session associated to its parent",
     () =>
       Effect.gen(function* () {
         const sessions = yield* Session.Service
@@ -418,6 +418,7 @@ describe("tool.task", () => {
         )
 
         const child = yield* sessions.get(result.metadata.sessionId)
+        expect(result.metadata.sessionId).toBe(child.id)
         expect(child.parentID).toBe(chat.id)
         expect(child.agent).toBe("reviewer")
         expect(child.permission).toEqual([

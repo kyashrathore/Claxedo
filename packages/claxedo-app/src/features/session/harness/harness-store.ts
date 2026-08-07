@@ -144,7 +144,10 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     setStore(scope, {
       draftDefaultAuthority: "server",
       draftDefaultRevision: (read(scope).draftDefaultRevision ?? 0) + 1,
+      draftDefault: undefined,
+      draftDefaultState: undefined,
       draftDefaultWritePending: false,
+      configError: undefined,
     })
   }
 

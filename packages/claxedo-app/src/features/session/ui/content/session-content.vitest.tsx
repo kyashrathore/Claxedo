@@ -71,7 +71,7 @@ afterEach(() => {
 })
 
 describe("SessionContent", () => {
-  test("renders workspace-less central sessions as no-backing surfaces", () => {
+  test("renders workspace-less central sessions in a global pane scope", () => {
     render(() => (
       <SessionContent
         meta={{
@@ -93,15 +93,13 @@ describe("SessionContent", () => {
       />
     ))
 
-    expect(screen.getByTestId("central-session-content")).toHaveAttribute("data-session-id", "ses_central")
-    expect(screen.getByText("Session unavailable")).toBeTruthy()
-    expect(screen.queryByTestId("session-pane-scope")).toBeNull()
-    expect(screen.queryByTestId("session-page")).toBeNull()
-    expect(calls.directoryScope).not.toHaveBeenCalled()
-    expect(calls.sessionPage).not.toHaveBeenCalled()
+    expect(screen.getByTestId("session-pane-scope")).toHaveAttribute("data-directory", "global")
+    expect(screen.getByTestId("session-page")).toBeTruthy()
+    expect(calls.directoryScope).toHaveBeenCalledOnce()
+    expect(calls.sessionPage).toHaveBeenCalledOnce()
   })
 
-  test("keeps real central sessions on a real-session loading surface when a fallback workspace exists", () => {
+  test("renders central sessions through their fallback project scope", () => {
     render(() => (
       <SessionContent
         meta={{
@@ -124,15 +122,10 @@ describe("SessionContent", () => {
       />
     ))
 
-    expect(screen.getByTestId("session-content")).toHaveAttribute("data-session-id", "ses_central")
-    expect(screen.getByTestId("session-page-root")).toHaveAttribute("data-session-id", "ses_central")
-    expect(screen.getByTestId("session-page-root")).toHaveAttribute("data-session-messages-ready", "false")
-    expect(screen.queryByTestId("session-content-fallback-draft")).toBeNull()
-    expect(screen.queryByTestId("session-pane-scope")).toBeNull()
-    expect(screen.queryByTestId("session-page")).toBeNull()
-    expect(screen.queryByText("No workspace backing")).toBeNull()
-    expect(calls.directoryScope).not.toHaveBeenCalled()
-    expect(calls.sessionPage).not.toHaveBeenCalled()
+    expect(screen.getByTestId("session-pane-scope")).toHaveAttribute("data-directory", "/work/repo")
+    expect(screen.getByTestId("session-page")).toBeTruthy()
+    expect(calls.directoryScope).toHaveBeenCalledOnce()
+    expect(calls.sessionPage).toHaveBeenCalledOnce()
   })
 
   test("keeps local legacy session routes on the real session composer path", () => {
@@ -206,7 +199,7 @@ describe("SessionContent", () => {
     expect(screen.getByTestId("session-page")).toBeTruthy()
   })
 
-  test("keeps central sessions with a directory but virtual tools on a real-session loading surface", () => {
+  test("renders central sessions with a directory in that pane scope", () => {
     render(() => (
       <SessionContent
         meta={{
@@ -231,15 +224,10 @@ describe("SessionContent", () => {
       />
     ))
 
-    expect(screen.getByTestId("session-content")).toHaveAttribute("data-session-id", "ses_authz")
-    expect(screen.getByTestId("session-page-root")).toHaveAttribute("data-session-id", "ses_authz")
-    expect(screen.getByTestId("session-page-root")).toHaveAttribute("data-session-messages-ready", "false")
-    expect(screen.queryByTestId("session-content-fallback-draft")).toBeNull()
-    expect(screen.queryByTestId("session-pane-scope")).toBeNull()
-    expect(screen.queryByTestId("session-page")).toBeNull()
-    expect(screen.queryByText("No workspace backing")).toBeNull()
-    expect(calls.directoryScope).not.toHaveBeenCalled()
-    expect(calls.sessionPage).not.toHaveBeenCalled()
+    expect(screen.getByTestId("session-pane-scope")).toHaveAttribute("data-directory", "ws_authz")
+    expect(screen.getByTestId("session-page")).toBeTruthy()
+    expect(calls.directoryScope).toHaveBeenCalledOnce()
+    expect(calls.sessionPage).toHaveBeenCalledOnce()
   })
 
   test("retargets the current session ref when nested content opens another session", () => {

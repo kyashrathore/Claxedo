@@ -276,8 +276,8 @@ describe("AgentRuntimeClient", () => {
     })
 
     expect(calls).toEqual([
-      "POST http://127.0.0.1:3001/session/ses_central/prompt_async?directory=",
-      "GET http://127.0.0.1:3001/session/ses_central/message?directory=&limit=20",
+      "POST http://127.0.0.1:3001/api/control/session/ses_central/prompt_async?directory=",
+      "GET http://127.0.0.1:3001/api/control/session/ses_central/message?directory=&limit=20",
     ])
     expect(bodies).toEqual([expect.objectContaining({
       directory: "",

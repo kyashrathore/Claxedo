@@ -31,6 +31,8 @@ import {
 } from "@claxedo/agent-event-runtime"
 import {
   createAcpEventTranslator,
+  classifyAcpSubagentUpdate,
+  type AcpSubagentObservation,
   translateStopReason,
 } from "@claxedo/agent-event-runtime/harnesses/acp"
 import {
@@ -76,7 +78,13 @@ import { ACP_RECOVER } from "./recovery"
 import { recovering } from "../../status"
 import { toAcpMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
 import { createTurnEventProjector } from "../shared/turn-projection"
+import { createChildEventRouter, type ChildProjectionTarget } from "../shared/child-event-routing"
 import { createSessionTurnLifecycle, type SessionTurnLifecycle } from "../shared/turn-lifecycle"
+import {
+  createMemorySubagentAdmissionStore,
+  createSubagentAdmissionBoundary,
+  type SubagentAdmissionStore,
+} from "../../subagent-admission"
 import { requireWorkspaceDirectory } from "../../target"
 import {
   createStdioACPTransport,
@@ -120,6 +128,14 @@ export type AcpHarnessAdapterOptions = AgentHarnessAdapterProcessOptions & {
   createStore?: (storeRoot?: string) => AcpRuntimeStore
   eventHub?: RuntimeEventHub
   createTransport?: ACPTransportFactory
+  subagentAdmissionStore?: SubagentAdmissionStore
+  materializeSubagent?: (input: {
+    parentSessionId: string
+    parentAgentSessionId: string
+    directory: string
+    event: import("@claxedo/agent-event-runtime").SubagentUpdatedEvent
+    prompt: Pick<PromptInput, "userMessageId" | "agent" | "model" | "variant">
+  }) => Promise<ChildProjectionTarget | undefined> | ChildProjectionTarget | undefined
 }
 
 export {
@@ -230,6 +246,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
   private permissionOwners = new Map<string, ACPProcess>()
   private probe: ProbeEntry | null = null
   private configRestartPending = false
+  private subagentAdmissions?: SubagentAdmissionStore
 
   constructor(private readonly options: AcpHarnessAdapterOptions) {
     this.store = options.store ?? options.createStore?.(options.storeRoot) ?? missingStore()
@@ -248,6 +265,10 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
   private lifecycle(): SessionTurnLifecycle<ActiveAcpTurn> {
     this.turnLifecycle ??= createSessionTurnLifecycle<ActiveAcpTurn>()
     return this.turnLifecycle
+  }
+
+  private subagentAdmissionStore() {
+    return this.options.subagentAdmissionStore ?? (this.subagentAdmissions ??= createMemorySubagentAdmissionStore())
   }
 
   private processMap() {
@@ -709,6 +730,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       revert: false,
       unrevert: false,
       configOptions: true,
+      subagents: true,
     })
   }
 
@@ -955,10 +977,12 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       queue.push(event)
       for (const r of resolvers.splice(0)) r()
     }
-    const projector = createTurnEventProjector({
+    const parentProjector = createTurnEventProjector({
       store: this.store,
-      sessionId: id,
-      getAgentSessionId: () => agentSessionId,
+      owner: {
+        sessionId: id,
+        getAgentSessionId: () => agentSessionId,
+      },
       directory,
       input,
       assistantMessageId: assistantMsgId,
@@ -966,6 +990,178 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       onEvent: push,
       onRuntimeEvent: this.options.eventHub?.publishRuntime,
     })
+    const router = createChildEventRouter({
+      parent: parentProjector,
+      createChildProjector: (target) => createTurnEventProjector({
+        store: this.store,
+        owner: {
+          sessionId: target.sessionId,
+          getAgentSessionId: target.getAgentSessionId,
+        },
+        directory,
+        input: target.input,
+        assistantMessageId: target.assistantMessageId,
+        created: target.created,
+        onEvent: () => {},
+        onRuntimeEvent: this.options.eventHub?.publishRuntime,
+      }),
+      onDiagnostic: (payload) => this.options.eventHub?.publishRuntime({
+        directory,
+        sessionId: id,
+        agentSessionId,
+        assistantMessageId: input.assistantMessageId,
+        payload,
+      }),
+    })
+    const admissionStore = this.store.admit && this.store.markPublished
+      ? {
+          admit: (input: Parameters<NonNullable<AcpRuntimeStore["admit"]>>[0]) => this.store.admit!(input),
+          markPublished: (parentSessionId: string, observationId: string) => this.store.markPublished!(parentSessionId, observationId),
+        }
+      : this.subagentAdmissionStore()
+    const subagentAdmission = createSubagentAdmissionBoundary({
+      store: admissionStore,
+      publish: (_parentSessionId, event) => router.project(event, {
+        dir: "in",
+        method: "sessionUpdate.subagent",
+        frame: event,
+      }),
+    })
+    const pendingSubagentUpdates = new Set<Promise<void>>()
+    const subagentByToolCall = new Map<string, AcpSubagentObservation>()
+    const childByToolCall = new Map<string, {
+      sessionId: string
+      agentSessionId: string
+      target: ChildProjectionTarget
+      started: boolean
+      finished: boolean
+    }>()
+    const childFor = (observation: AcpSubagentObservation) => {
+      if (observation.transcript.kind === "none" || this.options.materializeSubagent) return
+      const existing = childByToolCall.get(observation.toolCallId)
+      if (existing) return existing
+      const sessionId = randomUUID()
+      const agentSessionId = `unbound:${sessionId}`
+      const target = {
+        sessionId,
+        getAgentSessionId: () => agentSessionId,
+        assistantMessageId: randomUUID(),
+        created: Date.now(),
+        input: {
+          userMessageId: randomUUID(),
+          agent: input.agent,
+          model: input.model,
+          ...(input.variant ? { variant: input.variant } : {}),
+        },
+      } satisfies ChildProjectionTarget
+      const child = { sessionId, agentSessionId, target, started: false, finished: false }
+      childByToolCall.set(observation.toolCallId, child)
+      return child
+    }
+    const materializeChild = (
+      child: NonNullable<ReturnType<typeof childFor>>,
+      observation: AcpSubagentObservation,
+      correlationKey: string,
+    ) => {
+      if (!child.started) {
+        child.started = true
+        this.store.bindSession({
+          sessionId: child.sessionId,
+          parentSessionId: id,
+          directory,
+          title: observation.description ?? observation.label ?? "Subagent",
+          agentSessionId: child.agentSessionId,
+        })
+        const parentConfig = this.store.getSessionConfig(id)
+        if (parentConfig) this.store.updateSessionConfig(child.sessionId, parentConfig)
+        this.store.startTurn({
+          sessionId: child.sessionId,
+          agentSessionId: child.agentSessionId,
+          userMessageId: child.target.input.userMessageId,
+          assistantMessageId: child.target.assistantMessageId,
+          agent: child.target.input.agent,
+          model: child.target.input.model,
+          parts: observation.description ? [{ type: "text", text: observation.description }] : [],
+          ...(child.target.input.variant ? { variant: child.target.input.variant } : {}),
+        })
+      }
+      router.associate(correlationKey, child.target)
+      if (child.finished || !["completed", "failed", "killed", "interrupted"].includes(observation.status ?? "")) return
+      child.finished = true
+      this.store.finishTurn?.({
+        sessionId: child.sessionId,
+        assistantMessageId: child.target.assistantMessageId,
+        outcome: observation.status === "failed"
+          ? { status: "failed", completedAt: Date.now(), error: observation.label ?? "Subagent failed" }
+          : observation.status === "completed"
+            ? { status: "completed", completedAt: Date.now() }
+            : { status: "cancelled", completedAt: Date.now(), reason: observation.status ?? "interrupted" },
+      })
+    }
+    const admitSubagent = (
+      observation: AcpSubagentObservation,
+      correlationKey: string,
+      frame: unknown,
+    ) => {
+      const child = childFor(observation)
+      const admitted = {
+        ...observation,
+        harnessExecutionId: agentSessionId,
+        ...(child ? { childSessionId: child.sessionId } : {}),
+      }
+      subagentByToolCall.set(observation.toolCallId, observation)
+      return subagentAdmission.admit(id, admitted).then(async (event) => {
+        if (child) {
+          materializeChild(child, observation, correlationKey)
+          return
+        }
+        if (event.transcript?.kind === "none") return
+        const target = await this.options.materializeSubagent?.({
+          parentSessionId: id,
+          parentAgentSessionId: agentSessionId,
+          directory,
+          event,
+          prompt: input,
+        })
+        if (target) router.associate(correlationKey, target)
+      }).catch((err) => router.project({
+        type: "diagnostic",
+        diagnostic: {
+          code: "acp_subagent_admission_failed",
+          message: errorMessage(err),
+          severity: "warn",
+          source: "acp-adapter",
+        },
+      }, {
+        dir: "in",
+        method: "sessionUpdate.subagent.error",
+        frame,
+      }))
+    }
+    const scheduleSubagentUpdate = (update: SessionUpdate) => {
+      const toolCallId = "toolCallId" in update ? update.toolCallId : undefined
+      const classified = classifyAcpSubagentUpdate(
+        this.acpClient(),
+        update,
+        toolCallId ? subagentByToolCall.get(toolCallId) : undefined,
+      )
+      if (!classified || classified.kind === "child") return classified
+      const task = admitSubagent(classified.observation, classified.correlationKey, update)
+      pendingSubagentUpdates.add(task)
+      void task.finally(() => pendingSubagentUpdates.delete(task))
+      return classified
+    }
+    const completeForegroundSubagents = () => Promise.all([...subagentByToolCall.values()].flatMap((observation) => {
+      if (observation.mode === "background") return []
+      if (["completed", "failed", "killed", "interrupted"].includes(observation.status ?? "")) return []
+      const completed = {
+        ...observation,
+        observationId: `${observation.toolCallId}:prompt:completed`,
+        status: "completed" as const,
+      }
+      subagentByToolCall.set(observation.toolCallId, completed)
+      return [admitSubagent(completed, observation.toolCallId, completed)]
+    }))
 
     const wait = () =>
       new Promise<void>((resolve) => {
@@ -1016,12 +1212,18 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
           await replace()
         }
       }
+      if (input.permissionMode) {
+        const applied = await bound("ACP permission mode", proc.setPermissionMode(agentSessionId, input.permissionMode))
+        if (applied.currentModeId !== input.permissionMode) {
+          throw new Error(`ACP kept permission mode ${applied.currentModeId ?? "unknown"} instead of ${input.permissionMode}`)
+        }
+      }
       try {
-        await bound("ACP sync", proc.syncSession(agentSessionId, input))
+        await bound("ACP sync", proc.syncSession(agentSessionId, input, { syncMode: false }))
       } catch (err) {
         if (!unrestorable(this.harnessId(), err)) throw err
         await replace()
-        await bound("ACP sync", proc.syncSession(agentSessionId, input))
+        await bound("ACP sync", proc.syncSession(agentSessionId, input, { syncMode: false }))
       }
     } catch (err) {
       promptError = errorMessage(err)
@@ -1033,20 +1235,23 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
 
     if (!promptError) {
       const forward = (update: SessionUpdate) => {
+        const subagent = scheduleSubagentUpdate(update)
         const result = eventRuntime.ingest({
           source: "acp.jsonrpc",
           method: "session/update",
           payload: update,
         })
         for (const runtimeEvent of result.events) {
-          projector.project(runtimeEvent, {
+          router.project(runtimeEvent, {
             dir: "in",
             method: "sessionUpdate",
             frame: update,
-          })
-          if (runtimeEvent.type !== "step-start") continue
-          assistantMsgId = projector.assistantMessageId()
-          created = projector.created()
+          }, subagent?.kind === "child"
+            ? { kind: "child", correlationKey: subagent.correlationKey }
+            : { kind: "parent" })
+          if (subagent?.kind === "child" || runtimeEvent.type !== "step-start") continue
+          assistantMsgId = router.assistantMessageId()
+          created = router.created()
         }
       }
       const install = () => {
@@ -1072,7 +1277,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       const stop = (stopReason: StopReason) => {
         log.info("sendMessage: prompt resolved", { stopReason, ms: Date.now() - t0 })
         for (const runtimeEvent of translateStopReason(stopReason as Parameters<typeof translateStopReason>[0], id)) {
-          projector.project(runtimeEvent, {
+          router.project(runtimeEvent, {
             dir: "in",
             method: "prompt.stop",
             frame: { stopReason },
@@ -1115,13 +1320,14 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
             })
             push(event)
           }
+          await completeForegroundSubagents()
           stop(result.stopReason)
         } catch (err) {
           proc.permissionPushers.delete(agentSessionId)
           if (retried || !missing(err)) throw err
           retried = true
           await replace()
-          await bound("ACP sync", proc.syncSession(agentSessionId, input))
+          await bound("ACP sync", proc.syncSession(agentSessionId, input, { syncMode: false }))
           return run()
         }
       }
@@ -1169,12 +1375,14 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       }
     } finally {
       await promptPromise
+      await Promise.allSettled([...pendingSubagentUpdates])
+      router.dispose()
       this.lifecycle().delete(id, turn)
     }
 
     if (promptError) {
       log.error("sendMessage: ending with error", { promptError, ms: Date.now() - t0 })
-      for (const event of projector.terminalizeOpenTools(promptError, {
+      for (const event of router.terminalizeParent(promptError, {
         dir: "in",
         method: "prompt.error.open-tools",
         frame: { message: promptError },

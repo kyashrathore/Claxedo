@@ -2,7 +2,11 @@ import {
   createAgentEventRuntime,
   type AgentEventRuntime,
 } from "@claxedo/agent-event-runtime"
-import { claudeSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/claude"
+import {
+  claudeChildCorrelationKey,
+  claudeSdkAdapter,
+  claudeSubagentObservations,
+} from "@claxedo/agent-event-runtime/harnesses/claude"
 import { randomUUID } from "crypto"
 import { spawn } from "child_process"
 import {
@@ -13,6 +17,7 @@ import {
   type PermissionResult,
   type PermissionUpdate,
   type Query,
+  type SDKMessage,
   type SpawnOptions,
   type SpawnedProcess,
 } from "@anthropic-ai/claude-agent-sdk"
@@ -46,6 +51,10 @@ import {
 
 const CLAUDE_PENDING_PREFIX = "claude-sdk:"
 const MODEL_LIST_TIMEOUT_MS = 30_000
+
+// The routed nested-turn fixture measures forwarded child frames and bytes
+// against the contract thresholds before this option is enabled.
+export const CLAUDE_FORWARD_SUBAGENT_TEXT = true
 
 export function createClaudeSdkDriver(host: SdkRuntimeDriverHost): SdkRuntimeDriver {
   return new ClaudeSdkDriver(host)
@@ -168,6 +177,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         // bundled binary. Throws an actionable install error when absent.
         pathToClaudeCodeExecutable: requireClaudeExecutable(),
         includePartialMessages: true,
+        forwardSubagentText: CLAUDE_FORWARD_SUBAGENT_TEXT,
         abortController: input.abort,
         // Both are passed together on purpose. `permissionMode` decides how much
         // runs unprompted; `canUseTool` only fires when the flow falls THROUGH to
@@ -212,17 +222,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       close: () => q.close(),
     })
     for await (const message of q) {
-      const sdkSessionId = text(record(message)?.session_id)
-      if (sdkSessionId) input.rebindAgentSession(sdkSessionId)
-      input.ingest({
-        source: "claude.sdk",
-        method: `claude/${message.type}`,
-        payload: message,
-      }, {
-        dir: "in",
-        method: `claude.${message.type}`,
-        frame: message,
-      })
+      await ingestClaudeSdkMessage(input, message)
     }
   }
 
@@ -302,6 +302,35 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       abort.abort()
     }
   }
+}
+
+export async function ingestClaudeSdkMessage(
+  input: Pick<SdkRuntimeTurnInput, "ingest" | "observeSubagent" | "rebindAgentSession">,
+  message: SDKMessage,
+) {
+  const sdkSessionId = text(record(message)?.session_id)
+  if (sdkSessionId) input.rebindAgentSession(sdkSessionId)
+  await Promise.all(claudeSubagentObservations(message).map((observation) => input.observeSubagent({
+    observation,
+    correlationKeys: [observation.stableCorrelationId, observation.toolCallId]
+      .filter((key): key is string => !!key),
+    source: {
+      dir: "in",
+      method: `claude.${message.type}`,
+      frame: message,
+    },
+  })))
+  input.ingest({
+    source: "claude.sdk",
+    method: `claude/${message.type}`,
+    payload: message,
+  }, {
+    dir: "in",
+    method: `claude.${message.type}`,
+    frame: message,
+  }, claudeChildCorrelationKey(message)
+    ? { kind: "child", correlationKey: claudeChildCorrelationKey(message) }
+    : { kind: "parent" })
 }
 
 export function spawnObservedClaudeCodeProcess(input: {

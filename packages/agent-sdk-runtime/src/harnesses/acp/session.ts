@@ -39,7 +39,7 @@ function flat(options: SessionConfigSelectOption[] | SessionConfigSelectGroup[])
   return options as SessionConfigSelectOption[]
 }
 
-function pick(cfg: SessionConfigOption[] | null, kind: "mode" | "model") {
+function pick(cfg: SessionConfigOption[] | null, kind: "mode" | "model" | "thought_level") {
   return cfg?.find((item) => item.type === "select" && (item.category === kind || item.id === kind)) ?? null
 }
 
@@ -514,28 +514,49 @@ export async function resume(
   throw new Error("ACP agent does not advertise session resume or load support")
 }
 
-export async function sync(conn: ACPConn, state: ACPState, sessionId: string, input: PromptInput) {
+export async function sync(
+  conn: ACPConn,
+  state: ACPState,
+  sessionId: string,
+  input: PromptInput,
+  options: { syncMode?: boolean } = {},
+) {
   let next = state
 
-  const mode = pick(next.cfg, "mode")
-  const mid = match(mode, [input.agent])
-  if (mid && currentValue(mode) !== mid) {
+  if (options.syncMode !== false) {
+    const mode = pick(next.cfg, "mode")
+    const mid = match(mode, [input.agent])
+    if (mid && currentValue(mode) !== mid) {
+      next = merge(
+        next,
+        await conn.request(methods.agent.session.setConfigOption, {
+          sessionId,
+          configId: mode!.id,
+          value: mid,
+        }),
+      )
+    } else if (next.modes.length > 0) {
+      // Only call setSessionMode if the agent name matches a known ACP mode.
+      // OpenCode agent names (e.g. "General") don't map to ACP modes (e.g. "code", "plan").
+      const lower = input.agent.toLowerCase()
+      const matched = modeIds(next).find((id) => id === input.agent || id === lower)
+      if (matched) {
+        await conn.request(methods.agent.session.setMode, { sessionId, modeId: matched })
+      }
+    }
+  }
+
+  const effort = pick(next.cfg, "thought_level")
+  const effortId = input.variant ? match(effort, [input.variant, input.variant.toLowerCase()]) : undefined
+  if (effortId && currentValue(effort) !== effortId) {
     next = merge(
       next,
       await conn.request(methods.agent.session.setConfigOption, {
         sessionId,
-        configId: mode!.id,
-        value: mid,
+        configId: effort!.id,
+        value: effortId,
       }),
     )
-  } else if (next.modes.length > 0) {
-    // Only call setSessionMode if the agent name matches a known ACP mode.
-    // OpenCode agent names (e.g. "General") don't map to ACP modes (e.g. "code", "plan").
-    const lower = input.agent.toLowerCase()
-    const matched = modeIds(next).find((id) => id === input.agent || id === lower)
-    if (matched) {
-      await conn.request(methods.agent.session.setMode, { sessionId, modeId: matched })
-    }
   }
 
   const cfg = pick(next.cfg, "model")

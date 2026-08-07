@@ -24,10 +24,6 @@ export function parseExistingSessionConfig(input: unknown): ExistingSessionConfi
   }
 }
 
-export function parseCachedSessionConfig(cached: string | undefined) {
-  return cached ? parseExistingSessionConfig(JSON.parse(cached)) : undefined
-}
-
 export function sameExistingSessionConfig(left: ExistingSessionConfig, right: ExistingSessionConfig) {
   return left.harnessType === right.harnessType &&
     left.agent === right.agent &&

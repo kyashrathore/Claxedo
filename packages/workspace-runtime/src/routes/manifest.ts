@@ -9,6 +9,7 @@ export const WorkspaceRuntimeRoutes = {
   process: `${WorkspaceRuntimeApiPrefix}/process`,
   events: `${WorkspaceRuntimeApiPrefix}/events`,
   runtimeEvents: `${WorkspaceRuntimeApiPrefix}/runtime-events`,
+  subagentTranscripts: `${WorkspaceRuntimeApiPrefix}/subagent-transcripts`,
   file: `${WorkspaceRuntimeApiPrefix}/file`,
   fileSearch: `${WorkspaceRuntimeApiPrefix}/find/file`,
   diff: `${WorkspaceRuntimeApiPrefix}/diff`,

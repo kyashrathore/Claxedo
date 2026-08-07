@@ -69,6 +69,13 @@
       "import": "./dist/mcp-resolver.mjs",
       "default": "./dist/mcp-resolver.mjs"
     },
+    "./subagent-admission": {
+      "types": "./dist/subagent-admission.d.ts",
+      "bun": "./dist/subagent-admission.mjs",
+      "development": "./dist/subagent-admission.mjs",
+      "import": "./dist/subagent-admission.mjs",
+      "default": "./dist/subagent-admission.mjs"
+    },
     "./session-env": {
       "types": "./dist/session-env.d.ts",
       "bun": "./dist/session-env.mjs",

@@ -1,4 +1,5 @@
 import type { ModelKey } from "@/features/session/composer/model-strategy"
+import type { SessionRef } from "@/platform/identity/session-ref"
 import type { HarnessModelChoice, HarnessReadiness } from "./selection"
 import type { HarnessModelOption, HarnessType } from "./profile"
 import type { DraftDefaultLabels } from "./draft-defaults"
@@ -7,6 +8,7 @@ import type { DraftDefaultResult, ResolveDraftDefaultInput } from "./draft-defau
 export type HarnessScopeInput = {
   directory?: string
   sessionId?: string
+  sessionRef?: SessionRef
 }
 
 export type HarnessSelectionControllerStore = {
@@ -57,6 +59,7 @@ export type HarnessSelectionSnapshot = {
   readiness: HarnessReadiness
   models: HarnessModelChoice[]
   selectedModel: string
+  selectedModelProvider?: string
   /** Reasoning/thinking levels for the CURRENT model, when offered. */
   thoughtLevels: HarnessModelOption[]
   selectedThoughtLevel: string | undefined
@@ -72,15 +75,17 @@ export type HarnessSelectionSnapshot = {
 export function createHarnessSelectionController(store: HarnessSelectionControllerStore) {
   return {
     read(scope: string): HarnessSelectionSnapshot {
+      const selectedModelKey = store.selectedModelKey(scope)
       return {
         harness: store.harness(scope),
         isHarnessMode: store.isHarnessMode(scope),
         readiness: store.readiness(scope),
         models: store.models(scope),
         selectedModel: store.selectedModel(scope),
+        selectedModelProvider: selectedModelKey?.providerID,
         thoughtLevels: store.thoughtLevels(scope),
         selectedThoughtLevel: store.selectedThoughtLevel(scope),
-        selectedModelKey: store.selectedModelKey(scope),
+        selectedModelKey,
         optionsStale: store.optionsStale(scope),
         optionsLoading: store.optionsLoading(scope),
         configError: store.configError(scope),

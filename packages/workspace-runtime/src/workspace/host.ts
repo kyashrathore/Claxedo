@@ -56,6 +56,8 @@ export type WorkspaceCheckpointControl = {
 
 export type WorkspaceHost = {
   mount: (app: Hono, options: WorkspaceHostMountOptions) => void
+  hasSession: (sessionId: string) => boolean
+  parentSessionIdFor: (sessionId: string) => string | undefined
   apply: (snapshot: RuntimeSnapshot) => Promise<void>
   detail: () => {
     state: "ready" | "applying" | "error"

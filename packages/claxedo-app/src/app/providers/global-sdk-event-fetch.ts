@@ -8,6 +8,7 @@ const USER_HOSTED_WORKSPACE_KIND = "user-hosted"
 
 export type LiveSession = {
   sessionID: string
+  host?: "central" | "workspace"
   directory?: string
   workspaceId?: string
   workspaceKind?: string
@@ -56,6 +57,7 @@ export function createControlPlaneEventFetch(input: ControlPlaneEventFetchInput)
     const url = new URL(request.url)
     const session = input.liveSession()
     if (url.pathname !== "/global/event" && url.pathname !== "/event") return input.fetch(request)
+    if (session?.host === "central") return input.fetch(request)
 
     const explicitWorkspaceId = url.searchParams.get("workspaceId")
     const resolvedWorkspace = explicitWorkspaceId

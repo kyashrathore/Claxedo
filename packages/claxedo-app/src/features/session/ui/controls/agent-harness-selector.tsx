@@ -7,6 +7,7 @@ import { publishComposerNotice, type ComposerNotice } from "@/features/session/c
 import { resolveHarnessNotice } from "@/features/session/composer/ui/harness-notice"
 import { HARNESS_DISPLAY_NAMES, type HarnessType } from "@/features/session/harness/profile"
 import type { HarnessSelectionController } from "@/features/session/harness/controller"
+import type { SessionRef } from "@/platform/identity/session-ref"
 import { shouldApplyHarnessSelection } from "./agent-harness-selection-guard"
 import { watchHarnessReprobe } from "@/features/session/harness/harness-reprobe"
 import { panePreferenceScope } from "@/features/session/preferences/pane"
@@ -109,6 +110,7 @@ interface AgentHarnessSelectorProps {
   modelLocked?: boolean
   directory?: string
   sessionId?: string
+  sessionRef?: SessionRef
   surfaceId?: string
   draftId?: string
   active?: boolean
@@ -181,6 +183,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       void props.harnessController.hydrate(nextScope, {
         directory: nextDirectory,
         sessionId: nextSessionId,
+        sessionRef: props.sessionRef,
       })
     }), 50)
     onCleanup(() => clearTimeout(timer))
@@ -454,6 +457,11 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     "aria-label": modelHint() ? `Select harness model — ${modelHint()}` : "Select harness model",
     ...(modelHint() ? { title: modelHint()! } : {}),
     "data-action": "prompt-harness-model",
+    "data-harness": selection().harness,
+    "data-model": selection().selectedModel,
+    "data-provider": selection().selectedModelProvider,
+    "data-readiness": selection().readiness,
+    "data-ready-for-submit": selection().selectedModelKey ? "true" : "false",
   }))
 
   // One row, one message, one action — see `harness-notice.ts` for the ordering.
@@ -639,6 +647,13 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         triggerStyle={() => modelTriggerStyle()}
         triggerHint={modelHint}
         triggerLabel={modelHint() ? `Select harness and model — ${modelHint()}` : "Select harness and model"}
+        triggerState={() => ({
+          harness: selection().harness,
+          model: selection().selectedModel,
+          provider: selection().selectedModelProvider,
+          readiness: selection().readiness,
+          readyForSubmit: !!selection().selectedModelKey,
+        })}
       />
 
       {/* Readiness indicator. Connecting is progress, not a fault, so it stays

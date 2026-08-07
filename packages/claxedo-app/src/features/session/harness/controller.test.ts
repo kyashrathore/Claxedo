@@ -53,6 +53,7 @@ describe("harness controller facade", () => {
       thoughtLevels: [{ id: "low", name: "Low" }, { id: "high", name: "High" }],
       selectedThoughtLevel: "high",
       selectedModel: "gpt-5.5",
+      selectedModelProvider: "codex-acp",
       selectedModelKey: { providerID: "codex-acp", modelID: "gpt-5.5" },
       optionsStale: false,
       optionsLoading: false,

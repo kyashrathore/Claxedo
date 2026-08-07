@@ -6,6 +6,9 @@ import type { AgentProcessDescriptor, AgentProcessObserver } from "../../process
 import { generateAITitle } from "./title"
 import type { CompatEvent } from "../../compat-events"
 import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
+import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../../runtime-event-hub"
+import type { SessionUpdate } from "./process"
+import { MemoryRuntimeStore } from "../../stores/memory"
 
 function adapter() {
   const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
@@ -159,6 +162,100 @@ describe("AcpHarnessAdapter permissions", () => {
     await item.respondPermission("perm-1", "allow_always", "/work")
 
     expect(selected).toEqual([{ outcome: { outcome: "selected", optionId: "allow-session" } }])
+  })
+})
+
+describe("AcpHarnessAdapter subagent routing", () => {
+  test("admits Claude lifecycle before routing nested transcript events to the child", async () => {
+    const runtimeEvents: RuntimeEventEnvelope[] = []
+    const permissionModes: string[] = []
+    const eventHub = createRuntimeEventHub()
+    eventHub.subscribeRuntime((event) => runtimeEvents.push(event))
+    const store = new MemoryRuntimeStore()
+    store.bindSession({
+      sessionId: "parent-session",
+      directory: "/work",
+      title: "Parent",
+      agentSessionId: "parent-agent-session",
+    })
+    store.updateSessionConfig("parent-session", {
+      harness: { id: "claude", access: "acp" },
+      model: { providerID: "claude-acp", modelID: "default" },
+      agent: "build",
+      variant: null,
+    })
+    const adapter = new AcpHarnessAdapter({
+      binary: "claude-agent-acp",
+      harness: "claude",
+      store,
+      eventHub,
+    })
+    internalsOf<{
+      getOrSpawnProcess: () => Promise<{ proc: {
+        permissionPushers: Map<string, unknown>
+        syncSession: () => Promise<void>
+        prompt: (_sessionId: string, _input: unknown, forward: (update: SessionUpdate) => void) => Promise<{ stopReason: "end_turn" }>
+        cancel: () => Promise<void>
+      }; isNew: false }>
+    }>(adapter).getOrSpawnProcess = async () => ({
+      isNew: false,
+      proc: {
+        permissionPushers: new Map(),
+        async syncSession() {},
+        async setPermissionMode(_sessionId: string, modeId: string) {
+          permissionModes.push(modeId)
+          return { modes: [], currentModeId: modeId, appliesFrom: "next-turn" as const }
+        },
+        async prompt(_sessionId, _input, forward) {
+          forward({
+            sessionUpdate: "tool_call",
+            toolCallId: "agent-1",
+            title: "Agent",
+            status: "in_progress",
+            rawInput: { description: "Inspect cache" },
+            _meta: { claudeCode: { subagent: true } },
+          })
+          forward({
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "child result" },
+            _meta: { claudeCode: { parentToolUseId: "agent-1" } },
+          })
+          return { stopReason: "end_turn" }
+        },
+        async cancel() {},
+      },
+    })
+
+    for await (const _event of adapter.sendMessage("parent-session", {
+      parts: [{ type: "text", text: "delegate" }],
+      userMessageId: "parent-user",
+      assistantMessageId: "parent-assistant",
+      agent: "build",
+      model: { providerID: "claude-acp", modelID: "default" },
+      permissionMode: "bypassPermissions",
+    }, "/work")) {}
+
+    const childSessionId = store.listSubagents("parent-session")[0]?.childSessionId
+    expect(childSessionId).toBeString()
+    expect(store.getSession(childSessionId!)).toMatchObject({ parentID: "parent-session" })
+    expect(JSON.stringify(store.getMessages(childSessionId!))).toContain("child result")
+    expect(permissionModes).toEqual(["bypassPermissions"])
+    expect(runtimeEvents).toContainEqual(expect.objectContaining({
+      sessionId: "parent-session",
+      payload: expect.objectContaining({
+        type: "subagent-updated",
+        childSessionId,
+        transcript: { kind: "messages", ref: "acp:agent-1" },
+      }),
+    }))
+    expect(runtimeEvents).toContainEqual(expect.objectContaining({
+      sessionId: childSessionId,
+      payload: expect.objectContaining({ type: "text-delta", delta: "child result" }),
+    }))
+    expect(runtimeEvents).not.toContainEqual(expect.objectContaining({
+      sessionId: "parent-session",
+      payload: expect.objectContaining({ type: "text-delta", delta: "child result" }),
+    }))
   })
 })
 

@@ -4,6 +4,7 @@ import { localOnlyAuthAdapter } from "../platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
 import type { RuntimeEventEnvelope } from "@claxedo/agent-sdk-runtime/runtime-event-hub"
 import { createVirtualSessionEnv, type SessionEnv, type SessionEnvFactoryInput } from "@claxedo/agent-sdk-runtime"
+import { requirePiModel, type PiModelBackend, type PiModelBackendResolver } from "@claxedo/agent-sdk-runtime/adapters"
 import { createCentralSessionRuntime } from "./runtime"
 import { createCentralControlApp } from "../central-runtime"
 import { createConnectionTurnCredentials } from "../connections/turn-credentials"
@@ -35,6 +36,80 @@ function services(): ControlPlaneServices {
     sandbox: {},
     telemetry: { capture: vi.fn() },
     localExecution: { enabled: true },
+  }
+}
+
+function successfulModelBackend(text = "child result"): PiModelBackendResolver {
+  return (input) => {
+    if (!input.model) return undefined
+    const streamFn: NonNullable<PiModelBackend["streamFn"]> = (model) => {
+      const message = {
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text }],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "stop" as const,
+        timestamp: Date.now(),
+      }
+      return {
+        async *[Symbol.asyncIterator]() {
+          yield { type: "start" as const, partial: { ...message, content: [] } }
+          yield { type: "text_start" as const, contentIndex: 0, partial: { ...message, content: [] } }
+          yield { type: "text_delta" as const, contentIndex: 0, delta: text, partial: message }
+          yield { type: "text_end" as const, contentIndex: 0, content: text, partial: message }
+          yield { type: "done" as const, reason: "stop" as const, message }
+        },
+        result: async () => message,
+      } as unknown as ReturnType<NonNullable<PiModelBackend["streamFn"]>>
+    }
+    return { model: requirePiModel(input.model), getApiKey: () => "test-key", streamFn }
+  }
+}
+
+function blockingModelBackend(started: (sessionId: string) => void): PiModelBackendResolver {
+  return (input) => {
+    if (!input.model) return undefined
+    const streamFn: NonNullable<PiModelBackend["streamFn"]> = (model, _context, options) => {
+      const failed = {
+        role: "assistant" as const,
+        content: [],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "error" as const,
+        errorMessage: "aborted",
+        timestamp: Date.now(),
+      }
+      return {
+        async *[Symbol.asyncIterator]() {
+          started(input.sessionId)
+          await new Promise<void>((resolveAbort) => {
+            if (options?.signal?.aborted) return resolveAbort()
+            options?.signal?.addEventListener("abort", () => resolveAbort(), { once: true })
+          })
+          yield { type: "error" as const, reason: "error" as const, error: failed }
+        },
+        result: async () => failed,
+      } as unknown as ReturnType<NonNullable<PiModelBackend["streamFn"]>>
+    }
+    return { model: requirePiModel(input.model), getApiKey: () => "test-key", streamFn }
   }
 }
 
@@ -180,27 +255,251 @@ describe("createCentralSessionRuntime", () => {
     }
   })
 
-  test("inherits the source Pi model for dispatched child sessions", async () => {
+  test("U9: Pi foreground subagent inherits placement, streams progress, and returns final text", async () => {
     const priorEnabled = process.env.CLAXEDO_PI_MODEL_BACKEND
     const priorKey = process.env.ANTHROPIC_API_KEY
     process.env.CLAXEDO_PI_MODEL_BACKEND = "1"
     process.env.ANTHROPIC_API_KEY = "test-key"
     try {
       const svc = services()
-      const runtime = createCentralSessionRuntime(svc)
+      const placements: SessionEnvFactoryInput[] = []
+      const runtime = createCentralSessionRuntime(svc, {
+        modelBackend: successfulModelBackend(),
+        createEnv: async (input) => {
+          placements.push(input)
+          return createVirtualSessionEnv()
+        },
+      })
+      const runtimeEvents: RuntimeEventEnvelope[] = []
+      runtime.eventHub.subscribeRuntime((event) => runtimeEvents.push(event))
+      const updates: unknown[] = []
+      const modelID = Object.keys(piProviderCatalog().all.find((provider) => provider.id === "anthropic")!.models)[0]!
+      const source = await runtime.createHybridSession({
+        title: "Source",
+        model: { providerID: "anthropic", modelID },
+        workspaceId: "ws_parent",
+        toolSandbox: { kind: "workspace-runtime", workspaceId: "ws_parent", directory: "/work/parent" },
+      })
+      const child = await runtime.createDispatchedSession(source.id, {
+        task: "Return a concise result",
+        title: "Child",
+        toolCallId: "tool-foreground",
+        onUpdate: (update) => updates.push(update),
+      })
+
+      expect(child).toMatchObject({ status: "completed", text: "child result" })
+      expect(runtimeEvents.filter((event) => event.sessionId === source.id).map((event) =>
+        event.payload.type === "subagent-updated" ? event.payload.status : undefined,
+      ).filter(Boolean)).toEqual(["pending", "running", "completed"])
+      expect(runtimeEvents.filter((event) => event.sessionId === child.childSessionId).some((event) =>
+        event.payload.type === "text-delta",
+      )).toBe(true)
+      expect(runtimeEvents).toContainEqual(expect.objectContaining({
+        sessionId: child.childSessionId,
+        payload: expect.objectContaining({ type: "session-info", parentID: source.id }),
+      }))
+      expect(updates.length).toBeGreaterThan(2)
+      expect(placements).toHaveLength(2)
+      expect(placements[1]).toMatchObject({
+        workspaceId: "ws_parent",
+        toolSandbox: { kind: "workspace-runtime", workspaceId: "ws_parent", directory: "/work/parent" },
+      })
+      expect(svc.projectionStore.put_session_meta).toHaveBeenCalledWith(child.childSessionId, expect.objectContaining({
+        parentID: source.id,
+        workspaceID: "ws_parent",
+        model: { providerID: "anthropic", modelID },
+        tags: expect.arrayContaining([
+          `subagent-key:${child.subagentKey}`,
+          "subagent-tool-call:tool-foreground",
+        ]),
+      }))
+      const config = await runtime.routes.request(`http://127.0.0.1/session/${child.childSessionId}/config`)
+      await expect(config.json()).resolves.toMatchObject({ model: { providerID: "anthropic", modelID } })
+      const rootCapabilities = await runtime.routes.request(`http://127.0.0.1/session/${source.id}/capabilities`)
+      const childCapabilities = await runtime.routes.request(`http://127.0.0.1/session/${child.childSessionId}/capabilities`)
+      await expect(rootCapabilities.json()).resolves.toMatchObject({ subagents: true })
+      await expect(childCapabilities.json()).resolves.toMatchObject({ subagents: false })
+
+      const settledUpdateCount = updates.length
+      runtime.eventHub.publishRuntime({
+        directory: child.childSessionId,
+        sessionId: child.childSessionId,
+        payload: { type: "text-delta", delta: "after settlement" },
+      })
+      expect(updates).toHaveLength(settledUpdateCount)
+    } finally {
+      if (priorEnabled === undefined) delete process.env.CLAXEDO_PI_MODEL_BACKEND
+      else process.env.CLAXEDO_PI_MODEL_BACKEND = priorEnabled
+      if (priorKey === undefined) delete process.env.ANTHROPIC_API_KEY
+      else process.env.ANTHROPIC_API_KEY = priorKey
+    }
+  })
+
+  test("U9: native subagent tool schema cannot select another workspace", async () => {
+    const tool = createCentralSessionRuntime(services()).subagentToolForSession("parent")
+    const properties = (tool.parameters as { properties?: Record<string, unknown> }).properties ?? {}
+
+    expect(tool.name).toBe("subagent")
+    expect(Object.keys(properties).sort()).toEqual(["background", "task", "title"])
+    expect(JSON.stringify(tool)).not.toContain("workspace_id")
+  })
+
+  test("U9: background subagents return immediately, enforce the parent limit, and persist host kills", async () => {
+    const priorEnabled = process.env.CLAXEDO_PI_MODEL_BACKEND
+    const priorKey = process.env.ANTHROPIC_API_KEY
+    process.env.CLAXEDO_PI_MODEL_BACKEND = "1"
+    process.env.ANTHROPIC_API_KEY = "test-key"
+    try {
+      const started: string[] = []
+      const runtime = createCentralSessionRuntime(services(), {
+        modelBackend: blockingModelBackend((sessionId) => started.push(sessionId)),
+      })
       const modelID = Object.keys(piProviderCatalog().all.find((provider) => provider.id === "anthropic")!.models)[0]!
       const source = await runtime.createHybridSession({
         title: "Source",
         model: { providerID: "anthropic", modelID },
       })
-      const child = await runtime.createDispatchedSession(source.id, { title: "Child", workspaceId: "ws_child" })
+      const children = await Promise.all([0, 1, 2, 3].map((index) => runtime.createDispatchedSession(source.id, {
+        task: `background ${index}`,
+        background: true,
+        toolCallId: `tool-background-${index}`,
+      })))
 
-      expect(svc.projectionStore.put_session_meta).toHaveBeenLastCalledWith(child.id, expect.objectContaining({
-        workspaceID: "ws_child",
+      expect(children.every((child) => child.status === "running")).toBe(true)
+      await eventually(() => expect(started).toHaveLength(4))
+      await expect(runtime.createDispatchedSession(source.id, {
+        task: "fifth",
+        background: true,
+      })).rejects.toThrow("at most 4")
+
+      await Promise.all(children.map((child) => runtime.terminateSubagent(source.id, child.subagentKey)))
+      await eventually(() => {
+        expect(runtime.listSubagents(source.id)).toEqual(expect.arrayContaining(children.map((child) =>
+          expect.objectContaining({ subagentKey: child.subagentKey, status: "killed" }),
+        )))
+      })
+    } finally {
+      if (priorEnabled === undefined) delete process.env.CLAXEDO_PI_MODEL_BACKEND
+      else process.env.CLAXEDO_PI_MODEL_BACKEND = priorEnabled
+      if (priorKey === undefined) delete process.env.ANTHROPIC_API_KEY
+      else process.env.ANTHROPIC_API_KEY = priorKey
+    }
+  })
+
+  test("U10: archiving or deleting a parent interrupts its active Pi background children", async () => {
+    const priorEnabled = process.env.CLAXEDO_PI_MODEL_BACKEND
+    const priorKey = process.env.ANTHROPIC_API_KEY
+    process.env.CLAXEDO_PI_MODEL_BACKEND = "1"
+    process.env.ANTHROPIC_API_KEY = "test-key"
+    try {
+      const started: string[] = []
+      const runtime = createCentralSessionRuntime(services(), {
+        modelBackend: blockingModelBackend((sessionId) => started.push(sessionId)),
+      })
+      const modelID = Object.keys(piProviderCatalog().all.find((provider) => provider.id === "anthropic")!.models)[0]!
+      const archivedParent = await runtime.createHybridSession({
+        title: "Archived parent",
         model: { providerID: "anthropic", modelID },
-      }))
-      const config = await runtime.routes.request(`http://127.0.0.1/session/${child.id}/config`)
-      await expect(config.json()).resolves.toMatchObject({ model: { providerID: "anthropic", modelID } })
+      })
+      const archivedChild = await runtime.createDispatchedSession(archivedParent.id, {
+        task: "background until archive",
+        background: true,
+        toolCallId: "tool-archive",
+      })
+      await eventually(() => expect(started).toContain(archivedChild.childSessionId))
+
+      const archived = await runtime.routes.request(`http://127.0.0.1/session/${archivedParent.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ time: { archived: Date.now() } }),
+      })
+      expect(archived.status).toBe(200)
+      await eventually(() => expect(runtime.listSubagents(archivedParent.id)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ subagentKey: archivedChild.subagentKey, status: "interrupted" }),
+      ])))
+
+      const deletedParent = await runtime.createHybridSession({
+        title: "Deleted parent",
+        model: { providerID: "anthropic", modelID },
+      })
+      const deletedChild = await runtime.createDispatchedSession(deletedParent.id, {
+        task: "background until delete",
+        background: true,
+        toolCallId: "tool-delete",
+      })
+      await eventually(() => expect(started).toContain(deletedChild.childSessionId))
+
+      const deleted = await runtime.routes.request(`http://127.0.0.1/session/${deletedParent.id}`, { method: "DELETE" })
+      expect(deleted.status).toBe(200)
+      expect(await runtime.terminateSubagent(deletedParent.id, deletedChild.subagentKey)).toBe(false)
+    } finally {
+      if (priorEnabled === undefined) delete process.env.CLAXEDO_PI_MODEL_BACKEND
+      else process.env.CLAXEDO_PI_MODEL_BACKEND = priorEnabled
+      if (priorKey === undefined) delete process.env.ANTHROPIC_API_KEY
+      else process.env.ANTHROPIC_API_KEY = priorKey
+    }
+  })
+
+  test("U9: background subagents time out into a persisted failed lifecycle", async () => {
+    const priorEnabled = process.env.CLAXEDO_PI_MODEL_BACKEND
+    const priorKey = process.env.ANTHROPIC_API_KEY
+    process.env.CLAXEDO_PI_MODEL_BACKEND = "1"
+    process.env.ANTHROPIC_API_KEY = "test-key"
+    try {
+      const runtime = createCentralSessionRuntime(services(), {
+        modelBackend: blockingModelBackend(() => undefined),
+        subagentTimeoutMs: 5,
+      })
+      const modelID = Object.keys(piProviderCatalog().all.find((provider) => provider.id === "anthropic")!.models)[0]!
+      const source = await runtime.createHybridSession({
+        title: "Source",
+        model: { providerID: "anthropic", modelID },
+      })
+      const child = await runtime.createDispatchedSession(source.id, {
+        task: "wait forever",
+        background: true,
+        toolCallId: "tool-timeout",
+      })
+
+      await eventually(() => expect(runtime.listSubagents(source.id)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ subagentKey: child.subagentKey, status: "failed" }),
+      ])))
+    } finally {
+      if (priorEnabled === undefined) delete process.env.CLAXEDO_PI_MODEL_BACKEND
+      else process.env.CLAXEDO_PI_MODEL_BACKEND = priorEnabled
+      if (priorKey === undefined) delete process.env.ANTHROPIC_API_KEY
+      else process.env.ANTHROPIC_API_KEY = priorKey
+    }
+  })
+
+  test("U9: aborting the foreground tool aborts its child before settlement", async () => {
+    const priorEnabled = process.env.CLAXEDO_PI_MODEL_BACKEND
+    const priorKey = process.env.ANTHROPIC_API_KEY
+    process.env.CLAXEDO_PI_MODEL_BACKEND = "1"
+    process.env.ANTHROPIC_API_KEY = "test-key"
+    try {
+      const started: string[] = []
+      const runtime = createCentralSessionRuntime(services(), {
+        modelBackend: blockingModelBackend((sessionId) => started.push(sessionId)),
+      })
+      const modelID = Object.keys(piProviderCatalog().all.find((provider) => provider.id === "anthropic")!.models)[0]!
+      const source = await runtime.createHybridSession({
+        title: "Source",
+        model: { providerID: "anthropic", modelID },
+      })
+      const abort = new AbortController()
+      const child = runtime.createDispatchedSession(source.id, {
+        task: "block",
+        toolCallId: "tool-abort",
+        signal: abort.signal,
+      })
+      await eventually(() => expect(started).toHaveLength(1))
+      abort.abort()
+
+      await expect(child).resolves.toMatchObject({ status: "interrupted" })
+      expect(runtime.listSubagents(source.id)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ status: "interrupted" }),
+      ]))
     } finally {
       if (priorEnabled === undefined) delete process.env.CLAXEDO_PI_MODEL_BACKEND
       else process.env.CLAXEDO_PI_MODEL_BACKEND = priorEnabled
@@ -276,6 +575,7 @@ describe("createCentralSessionRuntime", () => {
 
     expect(res.status).toBe(200)
     expect(events.map((event) => event.payload.type)).toEqual([
+      "session-info",
       "session-status",
       "text-delta",
       "session-status",
@@ -668,7 +968,7 @@ describe("createCentralSessionRuntime", () => {
 
     const ac = new AbortController()
     const replay = await app.request("http://127.0.0.1/api/claxedo/runtime-events", {
-      headers: { "Last-Event-ID": "1" },
+      headers: { "Last-Event-ID": "2" },
       signal: ac.signal,
     })
     const next = await replay.body!.getReader().read()
@@ -677,12 +977,39 @@ describe("createCentralSessionRuntime", () => {
     const frame = new TextDecoder().decode(next.value)
     expect(replay.status).toBe(200)
     expect(replay.headers.get("content-type")).toContain("text/event-stream")
-    expect(frame).toContain("id: 2")
+    expect(frame).toContain("id: 3")
     expect(frame).toContain(`"sessionId":"${session.id}"`)
     expect(frame).toContain(`"directory":"${session.id}"`)
     expect(frame).toContain(`"assistantMessageId":"user-replay_r"`)
     expect(frame).toContain(`"delta":"replayed"`)
     expect(frame).not.toContain(`"status":"busy"`)
+  })
+
+  test("authorizes and scopes the central session runtime event route", async () => {
+    const control = createCentralControlApp(services())
+    const session = await control.runtime.createHybridSession({ title: "Hybrid" })
+
+    await control.runtime.routes.request(`http://127.0.0.1/session/${session.id}/message`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ type: "text", text: "exec: printf scoped" }],
+        messageID: "user-scoped",
+        agent: "pi",
+        model: { providerID: "pi", modelID: "virtual" },
+      }),
+    })
+
+    const ac = new AbortController()
+    const response = await control.app.request(
+      `http://127.0.0.1/api/control/session/${session.id}/runtime-events?parentSessionId=${session.id}`,
+      { headers: { "Last-Event-ID": "1" }, signal: ac.signal },
+    )
+    const next = await response.body!.getReader().read()
+    ac.abort()
+
+    expect(response.status).toBe(200)
+    expect(new TextDecoder().decode(next.value)).toContain(`"sessionId":"${session.id}"`)
   })
 
   test("aborts an active central hybrid turn through the session route", async () => {
@@ -728,6 +1055,7 @@ describe("createCentralSessionRuntime", () => {
       },
     })
     expect(events.map((event) => event.payload.type)).toEqual([
+      "session-info",
       "session-status",
       "session-status",
       "error",

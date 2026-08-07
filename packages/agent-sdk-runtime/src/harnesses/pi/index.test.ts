@@ -32,6 +32,32 @@ async function nextEvent<T extends { type: string }>(iterator: AsyncIterator<T>,
 }
 
 describe("PiHarnessAdapter", () => {
+  test("U4/U9: a bare Pi adapter does not advertise a subagent tool", async () => {
+    const capabilities = await new PiHarnessAdapter().readHarnessCapabilities("/work")
+    expect(capabilities.subagents).toBe(false)
+  })
+
+  test("U9: subagents require a model-backed native tool extension", async () => {
+    const model = getModel("anthropic", "claude-sonnet-4-5")
+    const backend = {
+      model,
+      getApiKey: () => "test-key",
+      extraTools: [{ name: "subagent" } as never],
+    }
+    const adapter = new PiHarnessAdapter({
+      modelBackend: async () => backend,
+      toolExtensionProvider: { providesSubagentTool: () => true },
+    })
+    const session = await adapter.createSession(undefined)
+    await adapter.updateSessionConfig(session.id, {
+      model: { providerID: model.provider, modelID: model.id },
+    }, undefined)
+
+    expect((await adapter.readHarnessCapabilities(undefined, { sessionId: session.id })).subagents).toBe(true)
+    backend.extraTools = [{ name: "another-tool" } as never]
+    expect((await adapter.readHarnessCapabilities(undefined, { sessionId: session.id })).subagents).toBe(false)
+  })
+
   test("adopts a requested deterministic Session idempotently", async () => {
     const adapter = new PiHarnessAdapter()
 
@@ -44,6 +70,18 @@ describe("PiHarnessAdapter", () => {
     ])
   })
 
+  test("persists a child session's parent identity in canonical session reads", async () => {
+    const adapter = new PiHarnessAdapter()
+
+    await adapter.bindSession({ id: "child-1", parentID: "parent-1", title: "Child" })
+
+    expect(await adapter.getSession("child-1", undefined)).toMatchObject({
+      id: "child-1",
+      parentID: "parent-1",
+      title: "Child",
+    })
+  })
+
   test("creates and runs a directory-less virtual turn", async () => {
     const adapter = new PiHarnessAdapter()
     const session = await adapter.createSession(undefined, "Hybrid")
@@ -53,8 +91,10 @@ describe("PiHarnessAdapter", () => {
     expect(events.map((event) => event.type)).toEqual([
       "message.updated",
       "message.part.updated",
+      "message.updated",
       "session-status",
       "text-delta",
+      "message.updated",
       "session-status",
       "finish",
     ])
@@ -256,7 +296,7 @@ describe("PiHarnessAdapter", () => {
     expect(events).toContainEqual(expect.objectContaining({ type: "text-delta", delta: "ran" }))
     expect(await adapter.listPermissions(undefined)).toEqual([])
     await adapter.respondPermission(`${session.id}:perm_1`, "allow_once", undefined)
-    expect(adapter.readHarnessCapabilities(session.id).permissions).toBe(false)
+    expect((await adapter.readHarnessCapabilities(session.id)).permissions).toBe(false)
   })
 
   /*
@@ -336,6 +376,8 @@ describe("PiHarnessAdapter", () => {
       { type: "text-delta", delta: "hello " },
       { type: "text-delta", delta: "from codex" },
     ])
+    expect(events.findIndex((event) => event.type === "message.updated" && event.properties.info.role === "assistant"))
+      .toBeLessThan(events.findIndex((event) => event.type === "text-delta"))
     expect(events.at(-1)).toEqual({ type: "finish", sessionId: session.id })
     expect(await adapter.getMessages(session.id, undefined)).toMatchObject([
       { info: { id: "user-1", role: "user" } },

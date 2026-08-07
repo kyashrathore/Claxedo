@@ -1,5 +1,9 @@
 import { randomUUID } from "crypto"
-import type { AgentEventRuntime, RawHarnessEvent } from "@claxedo/agent-event-runtime"
+import type {
+  AgentEventRuntime,
+  RawHarnessEvent,
+  SubagentUpdatedEvent,
+} from "@claxedo/agent-event-runtime"
 import {
   buildAssistantMessage,
   buildUserMessage,
@@ -40,6 +44,11 @@ import type {
 import { harnessCapabilities, type HarnessCapabilities } from "../../capabilities"
 import { createTurnEventProjector, type RuntimeAppendSource } from "../shared/turn-projection"
 import {
+  createChildEventRouter,
+  type ChildProjectionTarget,
+  type RuntimeEventRoute,
+} from "../shared/child-event-routing"
+import {
   createSessionTurnLifecycle,
   EXPLICIT_TURN_ABORT_REASON,
   type SessionTurnLifecycle,
@@ -49,9 +58,32 @@ import { hasConcreteSessionTitle } from "../../session-title"
 import { requireWorkspaceDirectory } from "../../target"
 import { firstTurnErrorData } from "../../first-turn-error"
 import type { AgentProcessObserver } from "../../process-observer"
+import {
+  createMemorySubagentAdmissionStore,
+  createSubagentAdmissionBoundary,
+  type SubagentObservation,
+} from "../../subagent-admission"
 
 export type SdkRuntimeRunnerType = NativeSdkHarnessId
 export type SdkRuntimeStore = AgentRuntimeStore
+export type SdkRuntimeTranscriptRegistrar = {
+  register(input: {
+    parentSessionId: string
+    providerKind: string
+    filePath: string
+  }): Promise<
+    | { state: "ready"; handle: string }
+    | { state: "unavailable"; reason: string }
+  >
+  open?(input: {
+    parentSessionId: string
+    handle: string
+  }): Promise<
+    | { state: "ready"; messages: unknown[] }
+    | { state: "empty"; messages: [] }
+    | { state: "unavailable"; reason: string }
+  >
+}
 
 export type SdkRuntimeAdapterOptions = AgentHarnessAdapterProcessOptions & {
   driver: SdkRuntimeDriverFactory
@@ -60,6 +92,7 @@ export type SdkRuntimeAdapterOptions = AgentHarnessAdapterProcessOptions & {
   store?: SdkRuntimeStore
   createStore?: (storeRoot?: string) => SdkRuntimeStore
   eventHub?: RuntimeEventHub
+  transcriptRegistrar?: SdkRuntimeTranscriptRegistrar
 }
 
 export type JsonRecord = Record<string, unknown>
@@ -89,6 +122,7 @@ export type SdkRuntimeDriverHost = {
   pendingPermissions: Map<string, PendingPermission>
   pendingQuestions: Map<string, PendingQuestion>
   processObserver?: AgentProcessObserver
+  transcriptRegistrar?: SdkRuntimeTranscriptRegistrar
   bindSession(input: { sessionId: string; directory: string; title?: string; agentSessionId: string }): void
 }
 export type SdkRuntimeTurnInput = {
@@ -97,7 +131,16 @@ export type SdkRuntimeTurnInput = {
   input: PromptInput
   directory: string
   abort: AbortController
-  ingest: (raw: RawHarnessEvent, source: RuntimeAppendSource) => void
+  ingest: (raw: RawHarnessEvent, source: RuntimeAppendSource, route?: RuntimeEventRoute) => void
+  associateChild: (correlationKey: string, target: ChildProjectionTarget) => void
+  observeSubagent: (input: {
+    observation: SubagentObservation
+    correlationKeys?: string[]
+    source?: RuntimeAppendSource
+  }) => Promise<{
+    event: SubagentUpdatedEvent
+    childSessionId?: string
+  }>
   rebindAgentSession: (agentSessionId: string) => void
   model: string
 }
@@ -189,6 +232,14 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   private turnLifecycle = createSessionTurnLifecycle<ActiveTurn>()
   private pendingPermissions = new Map<string, PendingPermission>()
   private pendingQuestions = new Map<string, PendingQuestion>()
+  private subagentAdmissionStore = createMemorySubagentAdmissionStore()
+  private subagentChildren = new Map<string, {
+    sessionId: string
+    agentSessionId: string
+    target: ChildProjectionTarget
+  }>()
+  private hydratedFileTranscripts = new Set<string>()
+  private subagentChildByCorrelation = new Map<string, string>()
 
   constructor(private readonly options: SdkRuntimeAdapterOptions) {
     this.store = options.store ?? options.createStore?.(options.storeRoot) ?? missingStore()
@@ -198,6 +249,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       pendingPermissions: this.pendingPermissions,
       pendingQuestions: this.pendingQuestions,
       processObserver: options.processObserver,
+      transcriptRegistrar: options.transcriptRegistrar,
       bindSession: (input) => this.store.bindSession(input),
     })
   }
@@ -229,6 +281,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       revert: false,
       unrevert: false,
       configOptions: true,
+      subagents: true,
     })
   }
 
@@ -269,6 +322,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   }
 
   async updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, _directory: string): Promise<AgentSessionRow | null> {
+    if (updates.time?.archived !== undefined) this.lifecycle().abort(id)
     return this.store.updateSession(id, updates) as AgentSessionRow | null
   }
 
@@ -291,6 +345,13 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   }
 
   async deleteSession(id: string, _directory: string): Promise<void> {
+    this.lifecycle().abort(id)
+    for (const child of this.store.listSubagents?.(id) ?? []) {
+      const childSessionId = (child as { childSessionId?: string }).childSessionId
+      if (!childSessionId) continue
+      const agentSessionId = this.store.getAgentSessionId(childSessionId)
+      if (agentSessionId) this.driver.deleteAgentSession?.(childSessionId, agentSessionId)
+    }
     const agentSessionId = this.store.getAgentSessionId(id)
     if (agentSessionId) this.driver.deleteAgentSession?.(id, agentSessionId)
     this.store.deleteSession(id)
@@ -352,6 +413,10 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     }
     let agentSessionId = current
     const created = Date.now()
+    if (input.permissionMode) {
+      if (!this.driver.setPermissionMode) throw new Error(`${this.driver.type} does not support permission modes`)
+      await this.driver.setPermissionMode(id, input.permissionMode, directory)
+    }
     const start = [
       sessionStatus(id, { type: "busy" }),
       ...(input.userMessageId
@@ -405,10 +470,12 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       if (queue.length > 0 || promptDone) resolve()
       else resolvers.push(resolve)
     })
-    const projector = createTurnEventProjector({
+    const parentProjector = createTurnEventProjector({
       store: this.store,
-      sessionId: id,
-      getAgentSessionId: () => agentSessionId,
+      owner: {
+        sessionId: id,
+        getAgentSessionId: () => agentSessionId,
+      },
       directory,
       input,
       assistantMessageId: input.assistantMessageId,
@@ -416,9 +483,146 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       onEvent: push,
       onRuntimeEvent: this.options.eventHub?.publishRuntime,
     })
-    const ingest = (raw: RawHarnessEvent, source: RuntimeAppendSource) => {
+    const router = createChildEventRouter({
+      parent: parentProjector,
+      createChildProjector: (target) => createTurnEventProjector({
+        store: this.store,
+        owner: {
+          sessionId: target.sessionId,
+          getAgentSessionId: target.getAgentSessionId,
+        },
+        directory,
+        input: target.input,
+        assistantMessageId: target.assistantMessageId,
+        created: target.created,
+        onEvent: () => {},
+        onRuntimeEvent: this.options.eventHub?.publishRuntime,
+      }),
+      onDiagnostic: (payload) => this.options.eventHub?.publishRuntime({
+        directory,
+        sessionId: id,
+        agentSessionId,
+        assistantMessageId: input.assistantMessageId,
+        payload,
+      }),
+    })
+    const ingest = (raw: RawHarnessEvent, source: RuntimeAppendSource, route?: RuntimeEventRoute) => {
       const result = runtime.ingest(raw)
-      for (const runtimeEvent of result.events) projector.project(runtimeEvent, source)
+      for (const runtimeEvent of result.events) router.project(runtimeEvent, source, route)
+    }
+    const observeSubagent: SdkRuntimeTurnInput["observeSubagent"] = async (observed) => {
+      const fileTranscript = observed.observation.transcript?.kind === "file" && observed.observation.transcript.ref
+        ? await this.options.transcriptRegistrar?.open?.({
+            parentSessionId: id,
+            handle: observed.observation.transcript.ref,
+          })
+        : undefined
+      const admittedObservation = observed.observation.transcript?.kind === "file" &&
+          (!fileTranscript || fileTranscript.state === "unavailable")
+        ? { ...observed.observation, transcript: { kind: "none" as const } }
+        : observed.observation
+      const correlationKeys = [...new Set([
+        ...(observed.correlationKeys ?? []),
+        admittedObservation.stableCorrelationId,
+        admittedObservation.providerId,
+      ].filter((key): key is string => !!key))]
+      const existingChildKey = correlationKeys
+        .map((key) => this.subagentChildByCorrelation.get(scopedSubagentKey(id, key)))
+        .find((key): key is string => !!key)
+      const existingChild = existingChildKey ? this.subagentChildren.get(existingChildKey) : undefined
+      const openable = admittedObservation.childSessionId !== undefined ||
+        admittedObservation.transcript?.kind === "live" ||
+        admittedObservation.transcript?.kind === "messages" ||
+        admittedObservation.transcript?.kind === "file" && fileTranscript !== undefined && fileTranscript.state !== "unavailable"
+      const childSessionId = admittedObservation.childSessionId ?? existingChild?.sessionId ?? (openable ? randomUUID() : undefined)
+      const observation = {
+        ...admittedObservation,
+        ...(childSessionId ? { childSessionId } : {}),
+      }
+      const source = observed.source ?? { dir: "in" as const, method: "subagent/updated" }
+      const admissionStore = this.store.admit && this.store.markPublished
+        ? {
+            admit: (input: Parameters<NonNullable<SdkRuntimeStore["admit"]>>[0]) => this.store.admit!(input),
+            markPublished: (parentSessionId: string, observationId: string) => this.store.markPublished!(parentSessionId, observationId),
+          }
+        : this.subagentAdmissionStore
+      const event = await createSubagentAdmissionBoundary({
+        store: admissionStore,
+        publish: (_parentSessionId, payload) => router.project(payload, source),
+      }).admit(id, observation)
+
+      if (!childSessionId) return { event }
+      const childKey = scopedSubagentKey(id, event.subagentKey)
+      const child = this.subagentChildren.get(childKey) ?? existingChild ?? (() => {
+        const agentSessionId = observation.providerId ?? `unbound:${childSessionId}`
+        const created = Date.now()
+        const target = {
+          sessionId: childSessionId,
+          getAgentSessionId: () => this.subagentChildren.get(childKey)?.agentSessionId ?? agentSessionId,
+          assistantMessageId: randomUUID(),
+          created,
+          input: {
+            userMessageId: randomUUID(),
+            agent: input.agent,
+            model: input.model,
+            ...(input.variant ? { variant: input.variant } : {}),
+          },
+        } satisfies ChildProjectionTarget
+        this.store.bindSession({
+          sessionId: childSessionId,
+          parentSessionId: id,
+          directory,
+          title: observation.description ?? observation.label ?? "Subagent",
+          agentSessionId,
+        })
+        const parentConfig = this.store.getSessionConfig(id)
+        if (parentConfig) this.store.updateSessionConfig(childSessionId, parentConfig)
+        this.store.startTurn({
+          sessionId: childSessionId,
+          agentSessionId,
+          userMessageId: target.input.userMessageId,
+          assistantMessageId: target.assistantMessageId,
+          agent: target.input.agent,
+          model: target.input.model,
+          parts: observation.description ? [{ type: "text", text: observation.description }] : [],
+          ...(target.input.variant ? { variant: target.input.variant } : {}),
+        })
+        return { sessionId: childSessionId, agentSessionId, target }
+      })()
+      if (observation.providerId && child.agentSessionId.startsWith("unbound:")) {
+        child.agentSessionId = observation.providerId
+        this.store.bindSession({
+          sessionId: child.sessionId,
+          parentSessionId: id,
+          directory,
+          title: observation.description ?? observation.label ?? "Subagent",
+          agentSessionId: child.agentSessionId,
+        })
+      }
+      this.subagentChildren.set(childKey, child)
+      for (const correlationKey of correlationKeys) {
+        this.subagentChildByCorrelation.set(scopedSubagentKey(id, correlationKey), childKey)
+        router.associate(correlationKey, child.target)
+      }
+      const fileCorrelation = correlationKeys[0] ?? event.subagentKey
+      if (fileTranscript && fileTranscript.state !== "unavailable" && !this.hydratedFileTranscripts.has(childKey)) {
+        this.hydratedFileTranscripts.add(childKey)
+        router.associate(fileCorrelation, child.target)
+        const text = transcriptText(fileTranscript.messages)
+        if (text) router.project({ type: "text-delta", delta: text }, source, { kind: "child", correlationKey: fileCorrelation })
+      }
+      if (observation.status === "completed" || observation.status === "failed" || observation.status === "killed" || observation.status === "interrupted") {
+        this.store.finishTurn?.({
+          sessionId: child.sessionId,
+          assistantMessageId: child.target.assistantMessageId,
+          outcome: observation.status === "failed"
+            ? { status: "failed", completedAt: Date.now(), error: observation.label ?? "Subagent failed" }
+            : observation.status === "completed"
+              ? { status: "completed", completedAt: Date.now() }
+              : { status: "cancelled", completedAt: Date.now(), reason: observation.status },
+        })
+      }
+      return { event, childSessionId: child.sessionId }
     }
     const rebindAgentSession = (sdkSessionId: string) => {
       if (!sdkSessionId || sdkSessionId === agentSessionId) return
@@ -438,6 +642,8 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       directory,
       abort,
       ingest,
+      associateChild: router.associate,
+      observeSubagent,
       rebindAgentSession,
       model: this.currentModel,
     })
@@ -472,17 +678,18 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       }
     } finally {
       await run
+      router.dispose()
     }
 
     if (abort.signal.reason === EXPLICIT_TURN_ABORT_REASON) {
       const updated = messageUpdated(buildAssistantMessage({
-        id: projector.assistantMessageId(),
+        id: router.assistantMessageId(),
         sessionID: id,
         parentID: input.userMessageId ?? id,
         agent: input.agent,
         model: input.model,
         directory,
-        created: projector.created(),
+        created: router.created(),
         completed: Date.now(),
         error: { name: "MessageAbortedError", data: { message: "Aborted by user" } },
         variant: input.variant,
@@ -497,15 +704,15 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       return
     }
     if (!promptError) return
-    for (const event of projector.terminalizeOpenTools(promptError, { dir: "in", method: "prompt.error.open-tools", frame: { message: promptError } })) yield event
+    for (const event of router.terminalizeParent(promptError, { dir: "in", method: "prompt.error.open-tools", frame: { message: promptError } })) yield event
     const updated = messageUpdated(buildAssistantMessage({
-      id: projector.assistantMessageId(),
+      id: router.assistantMessageId(),
       sessionID: id,
       parentID: input.userMessageId ?? id,
       agent: input.agent,
       model: input.model,
       directory,
-      created: projector.created(),
+      created: router.created(),
       completed: Date.now(),
       error: { name: "UnknownError", data: firstTurnErrorData(promptError) },
       variant: input.variant,
@@ -698,4 +905,24 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     return event
   }
 
+}
+
+function transcriptText(messages: unknown[]) {
+  return messages.flatMap((message) => readableTranscriptText(message)).filter(Boolean).join("\n\n")
+}
+
+function readableTranscriptText(value: unknown): string[] {
+  if (typeof value === "string") return value.trim() ? [value.trim()] : []
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return Array.isArray(value) ? value.flatMap(readableTranscriptText) : []
+  }
+  const record = value as Record<string, unknown>
+  if (typeof record.text === "string") return readableTranscriptText(record.text)
+  if (typeof record.content === "string" || Array.isArray(record.content)) return readableTranscriptText(record.content)
+  if (record.message) return readableTranscriptText(record.message)
+  return []
+}
+
+function scopedSubagentKey(parentSessionId: string, key: string) {
+  return `${parentSessionId}\0${key}`
 }

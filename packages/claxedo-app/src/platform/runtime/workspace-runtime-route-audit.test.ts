@@ -155,6 +155,7 @@ const sessionNewDesignView = "features/session/ui/components/session-new-design-
 const sessionHeader = "features/session/ui/components/session-header.tsx"
 const promptInput = "features/session/composer/composer.tsx"
 const promptSubmit = "features/session/composer/ui/submit.ts"
+const promptSubmitInput = "features/session/composer/ui/submit-input.ts"
 const promptSubmitPending = "features/session/submit/pending.ts"
 const promptSubmitSend = "features/session/submit/send.ts"
 const promptSubmitTypes = "features/session/submit/types.ts"
@@ -2820,6 +2821,7 @@ describe("workspace runtime route audit", () => {
   test("PromptInput resolves session identity without router params", async () => {
     const text = await Bun.file(path.join(root, promptInput)).text()
     const submit = await Bun.file(path.join(root, promptSubmit)).text()
+    const submitInput = await Bun.file(path.join(root, promptSubmitInput)).text()
     const props = await Bun.file(path.join(root, "features/session/composer/prompt-input-props.ts")).text()
     const toolbar = await Bun.file(path.join(root, promptToolbarState)).text()
     const submitCreate = await Bun.file(path.join(root, "features/session/composer/ui/submit-create-session.ts")).text()
@@ -2871,7 +2873,7 @@ describe("workspace runtime route audit", () => {
     expect(submit).toMatch(/addRegisteredConversationMessage/)
     expect(submit).toMatch(/removeRegisteredConversationMessage/)
     expect(submit).not.toMatch(/setQueryData\(shellDataKeys\.sessionId\(sessionID, "requests"\)/)
-    expect(submit).toMatch(/surfaceId\?:\s*Accessor<string \| undefined>/)
+    expect(submitInput).toMatch(/surfaceId\?:\s*Accessor<string \| undefined>/)
   })
 
   test("prompt send phase routes status through shell queries, not the Solid mirror", async () => {

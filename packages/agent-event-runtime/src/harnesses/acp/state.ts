@@ -219,6 +219,13 @@ function session(raw: unknown) {
   )
 }
 
+function providerSession(raw: unknown, meta: unknown) {
+  const item = object(raw)
+  const codex = nestedMeta(meta, "codex")
+  const subagent = nestedMeta(codex, "subagent")
+  return str(item?.agentThreadId) ?? str(subagent?.threadId)
+}
+
 function parentToolUse(meta: unknown) {
   const claude = nestedMeta(meta, "claudeCode")
   return str(claude?.parentToolUseId) ?? str(claude?.parent_tool_use_id)
@@ -447,7 +454,7 @@ function pick(state: ToolState, diagnostics: AcpDiagnostics) {
   const filePath = str(raw?.filePath) ?? str(search?.path) ?? file ?? diff ?? str(base.input?.filePath)
   const stats = object(state.rawOutput)
   const hasDiff = state.content.some((item) => item.type === "diff")
-  const child = session(raw) ?? session(state.rawOutput)
+  const child = session(raw) ?? session(state.rawOutput) ?? providerSession(raw, state.meta)
   const parentToolCallId = parentToolUse(state.meta)
   const childSubagentType = subagentType(raw, diagnostics)
   const childAgentId = str(raw?.agentId) ?? str(object(state.rawOutput)?.agentId)

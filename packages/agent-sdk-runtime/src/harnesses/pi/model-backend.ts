@@ -31,7 +31,7 @@ export type PiModelBackend = {
   streamFn?: StreamFn
   /**
    * Extra AgentTools joined to the SessionEnv bash tool (e.g. the host's
-   * spawn_session dispatch tool). Applied at Agent creation and preserved
+   * native subagent dispatch tool). Applied at Agent creation and preserved
    * across placement swaps.
    */
   extraTools?: AgentTool[]
@@ -69,7 +69,14 @@ export function requirePiModel(model: PromptModel): Model<Api> {
     model.providerID as Parameters<typeof getModel>[0],
     model.modelID as never,
   ) as Model<Api> | undefined
-  if (resolved) return resolved
+  if (resolved) {
+    const baseUrl = model.providerID === "anthropic"
+      ? process.env.ANTHROPIC_BASE_URL?.trim()
+      : model.providerID === "openai"
+        ? process.env.OPENAI_BASE_URL?.trim()
+        : undefined
+    return baseUrl ? { ...resolved, baseUrl } : resolved
+  }
   throw new PiModelResolutionError(
     "unsupported_model",
     `Pi does not support model ${model.providerID}/${model.modelID}`,

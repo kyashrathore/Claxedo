@@ -11,6 +11,15 @@ function makeProjection() {
 }
 
 describe("createOpencodeCompatProjection", () => {
+  test("keeps subagent lifecycle out of the compatibility projection", () => {
+    expect(makeProjection().ingest({
+      type: "subagent-updated",
+      subagentKey: "child-1",
+      revision: 1,
+      childSessionId: "child-session-1",
+    })).toEqual([])
+  })
+
   test("emits text deltas incrementally", () => {
     const projection = createOpencodeCompatProjection({
       sessionId: "session-1",
@@ -216,6 +225,22 @@ describe("createOpencodeCompatProjection", () => {
           },
         },
       },
+    })
+  })
+
+  test("flattens array-shaped tool output content", () => {
+    const projection = makeProjection()
+
+    projection.ingest({ type: "tool-start", toolCallId: "tool-1", toolName: "task" })
+    const completed = projection.ingest({
+      type: "tool-output",
+      toolCallId: "tool-1",
+      output: { content: [{ type: "text", text: "first" }, { type: "text", text: "second" }] },
+    })
+
+    expect(completed[0]?.payload).toMatchObject({
+      type: "message.part.updated",
+      properties: { part: { state: { status: "completed", output: "first\nsecond" } } },
     })
   })
 

@@ -2,11 +2,35 @@ import type { AvailableCommand, ContentBlock, ToolCallContent } from "@agentclie
 import type { RuntimeDiagnostic } from "./diagnostics"
 import type { RawHarnessEvent } from "./raw-harness-event"
 
-export const AGENT_RUNTIME_EVENT_CONTRACT_VERSION = 3
+export const AGENT_RUNTIME_EVENT_CONTRACT_VERSION = 4
 
 export type RuntimeStatus = "busy" | "idle" | "error" | "recovering"
 export type RuntimeToolStatus = "pending" | "running" | "completed" | "failed"
 export type RuntimeNoticeSeverity = "debug" | "info" | "warn" | "error"
+export type SubagentStatus = "pending" | "running" | "paused" | "interrupted" | "completed" | "failed" | "killed"
+export type SubagentMode = "foreground" | "background"
+export type SubagentToolCallRole = "spawn" | "interaction"
+export type SubagentTranscript = {
+  kind: "live" | "file" | "messages" | "none"
+  ref?: string
+}
+
+export type SubagentUpdatedEvent = {
+  type: "subagent-updated"
+  subagentKey: string
+  revision: number
+  toolCallId?: string
+  toolCallRole?: SubagentToolCallRole
+  mode?: SubagentMode
+  status?: SubagentStatus
+  label?: string
+  subagentType?: string
+  description?: string
+  providerId?: string
+  providerKind?: string
+  childSessionId?: string
+  transcript?: SubagentTranscript
+}
 
 export type ToolIntent =
   | "shell"
@@ -86,7 +110,7 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
   | { type: "auth-status"; status: "authenticated" | "unauthenticated" | "unknown"; authMode?: string | null; planType?: string | null; metadata?: Record<string, unknown> }
   | { type: "rate-limit"; status: "ok" | "limited"; usedPercent?: number; resetsAt?: number | null; windowDurationMins?: number | null; limitId?: string | null; limitName?: string | null; reason?: string | null; metadata?: Record<string, unknown> }
   | { type: "mcp-server-status"; serverName: string; status: "starting" | "ready" | "failed" | "cancelled"; error?: string | null }
-  | { type: "subagent-spawned"; childSessionId: string }
+  | SubagentUpdatedEvent
   | { type: "finish"; sessionId: string }
   | { type: "error"; error: string }
   | { type: "image-delta"; mimeType: string; data: string }
@@ -100,7 +124,7 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
   | { type: "available-commands-update"; commands: AcpAvailableCommand[] }
   | { type: "session-agent"; agentId: string }
   | { type: "config-update"; options: Array<{ id: string; name: string; category?: string; type: "select" | "boolean"; currentValue: string | boolean; selectOptions?: Array<{ id: string; name: string }> }> }
-  | { type: "session-info"; title?: string | null; updatedAt?: string | null }
+  | { type: "session-info"; title?: string | null; updatedAt?: string | null; parentID?: string }
   | { type: "session-title"; title: string }
   | { type: "usage"; contextSize: number; contextUsed: number; cost?: { amount: number; currency: string } }
   | { type: "diagnostic"; diagnostic: RuntimeDiagnostic }
@@ -136,7 +160,7 @@ export const AGENT_RUNTIME_EVENT_TYPE_REGISTRY = {
   "auth-status": true,
   "rate-limit": true,
   "mcp-server-status": true,
-  "subagent-spawned": true,
+  "subagent-updated": true,
   finish: true,
   error: true,
   "image-delta": true,
@@ -183,7 +207,7 @@ export const AGENT_RUNTIME_EVENT_FACTORY_TYPES = {
   authStatus: "auth-status",
   rateLimit: "rate-limit",
   mcpServerStatus: "mcp-server-status",
-  subagentSpawned: "subagent-spawned",
+  subagentUpdated: "subagent-updated",
   finish: "finish",
   error: "error",
   imageDelta: "image-delta",

@@ -120,6 +120,7 @@ type Opts = {
     },
   ) => Promise<RuntimeDirectory> | RuntimeDirectory
   listSessions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentSessionRow[]>
+  listSubagents?: (c: Ctx, directory: RuntimeDirectory, parentSessionId: string) => Promise<unknown[]> | unknown[]
   createSession?: (c: Ctx, directory: RuntimeDirectory, title?: string, id?: string) => Promise<{ id: string }>
   listPermissions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentPermissionRow[]>
   listQuestions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentQuestionRow[]>
@@ -139,7 +140,12 @@ type Opts = {
   ) => Promise<SessionConfig>
   getMessages?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<AgentMessageRow[] | undefined> | AgentMessageRow[] | undefined
   getMessageSnapshot?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<MessageSnapshot | undefined> | MessageSnapshot | undefined
-  afterUpdateSession?: (c: Ctx, directory: RuntimeDirectory, session: unknown) => Promise<void> | void
+  afterUpdateSession?: (
+    c: Ctx,
+    directory: RuntimeDirectory,
+    session: unknown,
+    updates: { title?: string; time?: { archived?: number } },
+  ) => Promise<void> | void
   afterDeleteSession?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<void> | void
   afterMessageCheckpoint?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, messages: AgentMessageRow[]) => Promise<void> | void
   flushSessionDocuments?: (sessionId: string) => Promise<void>
@@ -169,33 +175,6 @@ type Opts = {
 
 const DRAFT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
 
-
-/**
- * Apply a turn's requested permission mode before the prompt reaches the harness.
- *
- * Best-effort ON PURPOSE, and the asymmetry with the PUT route is deliberate: a
- * bad mode id there is the whole request and must fail loudly, whereas here it
- * rides along with a message the user is trying to send. Refusing the message
- * because a stale mode id no longer exists would be a worse outcome than running
- * the turn under the harness's current mode, so this logs the divergence and
- * lets the prompt through.
- *
- * Returns nothing: callers do not branch on it. The mode either landed before
- * the turn or the turn runs as the harness already stood.
- */
-async function applyTurnPermissionMode(input: {
-  adapter: AgentHarnessAdapter
-  sessionId: string
-  directory: RuntimeDirectory
-  modeId?: string
-}) {
-  if (!input.modeId || !input.adapter.setPermissionMode) return
-  try {
-    await input.adapter.setPermissionMode(input.sessionId, input.modeId, input.directory)
-  } catch {
-    // Swallowed by design -- see the note above.
-  }
-}
 
 export function parseDraftId(raw: string | null | undefined): string | undefined {
   if (raw === null || raw === undefined) return undefined
@@ -585,6 +564,13 @@ export function createSessionRoutes(opts: Opts) {
       const caps = await adapter.readHarnessCapabilities(directory, { sessionId })
       return noStoreJson(c, caps)
     })
+    .get("/session/:id/subagents", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "list_subagents")
+      if (guarded) return guarded
+      const directory = await opts.resolveDirectory(c, { sessionId })
+      return noStoreJson(c, await opts.listSubagents?.(c, directory, sessionId) ?? [])
+    })
     .get("/session/:id", async (c) => {
       const sessionId = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, sessionId, "get_session")
@@ -618,7 +604,7 @@ export function createSessionRoutes(opts: Opts) {
       const body = (await c.req.json().catch(() => ({}))) as { title?: string; time?: { archived?: number } }
       const session = await adapter.updateSession(sessionId, body, directory)
       if (!session) return c.json(sessionNotFound(), 404)
-      await after(opts.afterUpdateSession?.(c, directory, session))
+      await after(opts.afterUpdateSession?.(c, directory, session, body))
       return c.json(normalizeSession(session, directory))
     })
     .patch("/session/:id/config", async (c) => {
@@ -666,7 +652,6 @@ export function createSessionRoutes(opts: Opts) {
       const runtime = await opts.resolveRuntime?.(c, { sessionId: id, directory })
       const parsedBody = (await c.req.json().catch(() => ({}))) as SessionPromptBody
       const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: parsedBody }) ?? parsedBody
-      await applyTurnPermissionMode({ adapter, sessionId: id, directory, modeId: body.permissionMode })
       const activeTurn = runtime && opts.createActiveTurnScope
         ? opts.createActiveTurnScope({ c, adapter, directory, sessionId: id })
         : undefined
@@ -884,7 +869,6 @@ export function createSessionRoutes(opts: Opts) {
       const adapter = await opts.resolveAdapter(c, { sessionId: id, directory })
       const parsedBody = (await c.req.json().catch(() => ({}))) as SessionPromptBody
       const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: parsedBody }) ?? parsedBody
-      await applyTurnPermissionMode({ adapter, sessionId: id, directory, modeId: body.permissionMode })
       if (body.messageID) {
         const admitted = promptAdmissions.get(id) ?? new Set<string>()
         if (admitted.has(body.messageID)) return c.body(null, 204)

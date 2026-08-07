@@ -9,6 +9,7 @@ import { PromptModelControl } from "@/features/session/composer/ui/model-control
 import { openCodeDraftLabels } from "@/features/session/composer/open-code-draft-default"
 import type { PermissionModeGroups } from "@/features/session/composer/permission-mode"
 import type { PermissionModeOption } from "@/features/session/permission/modes"
+import type { SessionRef } from "@/platform/identity/session-ref"
 
 /**
  * The composer's bottom row. Two clusters instead of one left-aligned strip:
@@ -43,6 +44,7 @@ export function PromptToolbarControls(props: {
   harnessController: Accessor<HarnessSelectionController | undefined>
   harnessDirectory: Accessor<string | undefined>
   harnessSessionId: Accessor<string | undefined>
+  sessionRef: Accessor<SessionRef | undefined>
   surfaceId: Accessor<string | undefined>
   draftId: Accessor<string | undefined>
   active: Accessor<boolean>
@@ -112,6 +114,7 @@ export function PromptToolbarControls(props: {
               harnessController={controller()}
               directory={props.harnessDirectory()}
               sessionId={props.harnessSessionId()}
+              sessionRef={props.sessionRef()}
               surfaceId={props.surfaceId()}
               draftId={props.draftId()}
               active={props.active()}

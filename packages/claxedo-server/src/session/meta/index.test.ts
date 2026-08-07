@@ -180,16 +180,26 @@ describe("session meta", () => {
     expect((await sessionMeta("clearable"))?.toolSandbox).toBeUndefined()
   })
 
-  test("deletes metadata rows and associations with the session", async () => {
+  test("deletes a session metadata tree and its associations transactionally", async () => {
     await fs.mkdir(root, { recursive: true })
     await putSessionMeta("sess", {
       tags: ["review"],
       attachments: [{ kind: "review", targetID: "rev_1" }],
     })
+    await putSessionMeta("child", {
+      parentID: "sess",
+      tags: ["child"],
+      attachments: [{ kind: "review", targetID: "rev_child" }],
+    })
+    await putSessionMeta("grandchild", { parentID: "child" })
+    await putSessionMeta("unrelated", { tags: ["keep"] })
 
     expect(await sessionMeta("sess")).toBeTruthy()
     await deleteSessionMeta("sess")
     expect(await sessionMeta("sess")).toBeUndefined()
+    expect(await sessionMeta("child")).toBeUndefined()
+    expect(await sessionMeta("grandchild")).toBeUndefined()
+    expect(await sessionMeta("unrelated")).toBeTruthy()
   })
 
   test("stores central sessions without workspace or directory", async () => {
@@ -206,6 +216,19 @@ describe("session meta", () => {
     })
     expect((await sessionMeta("central"))?.directory).toBeUndefined()
     expect((await sessionMeta("central"))?.workspaceID).toBeUndefined()
+  })
+
+  test("keeps workspace-sandboxed central sessions under central identity", async () => {
+    await fs.mkdir(root, { recursive: true })
+    await putSessionMeta("central-workspace", {
+      host: "central",
+      workspaceID: "ws_1",
+      directory: "/tmp/repo",
+      title: "Central workspace",
+    })
+
+    expect((await listSessionNavigationMetas({ limit: 10 })).map((item) => item.sessionRef))
+      .toContain("central:central-workspace")
   })
 
   test("persists a central Pi model and preserves it across projection sync", async () => {

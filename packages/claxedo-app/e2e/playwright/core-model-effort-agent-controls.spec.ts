@@ -42,7 +42,7 @@
  *     PATCHes it immediately whenever `local.model.set()`/`local.agent.set()` commits
  *     while the session is in "opencode scope" (`isOpenCodeSessionScope`); separately,
  *     `submit-transport.ts#saveSessionConfig` PATCHes it again at send time (deduped
- *     against the last-sent JSON via `savedSessionConfigQueryKey`). Both are the SAME
+ *     against the canonical session-config query cache). Both are the SAME
  *     REST endpoint. An EXISTING session's `config.model` (as last read from the
  *     session's info/list query), if present, is used AS-IS for the next send
  *     (`submit.ts:441` — `existingSessionConfig?.model` short-circuits

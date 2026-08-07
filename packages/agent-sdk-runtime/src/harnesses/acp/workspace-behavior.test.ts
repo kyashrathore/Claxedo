@@ -49,6 +49,7 @@ describe("AcpHarnessAdapter", () => {
       revert: false,
       unrevert: false,
       configOptions: true,
+      subagents: true,
     })
   })
 

@@ -75,8 +75,8 @@ export function useProviders(harnessType?: string | (() => string | undefined)) 
   // scope resolves a workspaceId, use the `workspace:<id>` ref form so the query
   // routes through the relay regardless of whether `sdk.directory` is the
   // workspace-ref or the runtime's filesystem path (the latter flickers the
-  // provider list to the empty central → "Select model"). Falls back to the
-  // directory string for local/non-workspace scopes.
+  // provider list to the empty central → "Select model"). Local and central
+  // scopes use their directory string as the stable identity.
   const dir = createMemo(() => {
     const workspaceId = sdk?.workspaceId
     if (workspaceId) return `workspace:${workspaceId}`

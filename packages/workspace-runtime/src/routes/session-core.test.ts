@@ -61,6 +61,7 @@ function adapter(input: {
         revert: true,
         unrevert: true,
         configOptions: false,
+        subagents: true,
       }
     },
     sendMessage: (_id: string, _prompt: PromptInput, directory: RuntimeDirectory) => {
@@ -145,6 +146,29 @@ describe("createSessionRoutes directory-less sessions", () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ harness: "opencode" })
     expect(directories).toEqual([undefined])
+  })
+
+  test("reads durable subagent associations without consulting the harness", async () => {
+    const calls: Array<{ directory: RuntimeDirectory; parentSessionId: string }> = []
+    const app = createSessionRoutes({
+      resolveAdapter: () => adapter(),
+      resolveDirectory: () => undefined,
+      listSubagents: (_c, directory, parentSessionId) => {
+        calls.push({ directory, parentSessionId })
+        return [{ subagentKey: "child_1", revision: 3, status: "running" }]
+      },
+      sessionBus: {
+        publish: () => {},
+        subscribe: () => () => {},
+      },
+      publishGlobal: () => {},
+    })
+    const res = await app.request("http://localhost/session/parent_1/subagents")
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get("cache-control")).toBe("no-store")
+    expect(await res.json()).toEqual([{ subagentKey: "child_1", revision: 3, status: "running" }])
+    expect(calls).toEqual([{ directory: undefined, parentSessionId: "parent_1" }])
   })
 
   test("uses session id as legacy event scope when directory is absent", async () => {
