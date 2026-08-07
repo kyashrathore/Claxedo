@@ -398,7 +398,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       ? {
           model: existingSessionConfig.model,
           agent: input.agent?.() || existingSessionConfig.agent || local.agent.current()?.name || "build",
-          ...(!harnessMode && existingSessionConfig.variant ? { variant: existingSessionConfig.variant } : {}),
+          ...(existingSessionConfig.variant ? { variant: existingSessionConfig.variant } : {}),
         }
       : await resolveSubmittedConfig({
           harnessMode,

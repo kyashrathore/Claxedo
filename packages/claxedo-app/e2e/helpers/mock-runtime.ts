@@ -2193,6 +2193,16 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       if (options.configPatchFailure && Object.keys(body).some((key) => ["harness", "model", "agent", "variant"].includes(key))) {
         return json(route, { error: { code: "session_create_failed", message: "config unavailable" } }, 500)
       }
+      const createModel = body.model && typeof body.model === "object" && !Array.isArray(body.model)
+        ? body.model as Record<string, unknown>
+        : undefined
+      if (body.model === null) savedModel = null
+      if (typeof createModel?.providerID === "string" && typeof createModel.id === "string") {
+        savedModel = { providerID: createModel.providerID, modelID: createModel.id }
+      }
+      if (typeof body.agent === "string" || body.agent === null) savedAgent = body.agent
+      if (typeof body.variant === "string" || body.variant === null) savedVariant = body.variant
+      if (!("variant" in body) && typeof createModel?.variant === "string") savedVariant = createModel.variant
       const sessionHarness = new URL(url).searchParams.get("harness")
       if (sessionHarness && sessionHarness !== "opencode") requests.harnessSessionCreateCount += 1
       else requests.opencodeSessionCreateCount += 1

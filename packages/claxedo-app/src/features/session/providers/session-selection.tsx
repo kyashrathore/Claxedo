@@ -608,7 +608,10 @@ const localContextInput = {
 
           clearLocalSelectionHandoff(localDraftSelectionHandoffID(sdk.directory))
           if (dir === sdk.directory) {
-            commitSessionState(session, next)
+            // The create request already persisted this exact state atomically.
+            // Install it locally without scheduling a redundant config PATCH.
+            setSaved("session", session, next)
+            setSaved("dirty", session, false)
             setStore("draft", undefined)
             return
           }

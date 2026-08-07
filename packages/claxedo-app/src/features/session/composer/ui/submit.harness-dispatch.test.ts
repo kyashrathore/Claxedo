@@ -156,7 +156,7 @@ describe("Harness + demo dispatch and abort", () => {
   })
 
 
-  test("existing harness follow-up drops a stale persisted OpenCode variant", async () => {
+  test("existing harness follow-up preserves its persisted harness variant", async () => {
     state.demoMode = false
 
     const submit = createSubmit({
@@ -181,13 +181,9 @@ describe("Harness + demo dispatch and abort", () => {
       sessionID: "session-1",
       directory: "/repo/main",
       model: { providerID: "claude-acp", modelID: "opus" },
+      variant: "high",
     })
-    expect(transportPromptAsyncCalls.at(-1)).not.toHaveProperty("variant")
-    expect(JSON.parse(unsignedCalls.at(-1)?.body ?? "{}")).toEqual({
-      harness: { type: "claude-acp" },
-      agent: "build",
-      model: { providerID: "claude-acp", modelID: "opus" },
-    })
+    expect(unsignedCalls.filter((call) => call.url.includes("/config"))).toHaveLength(0)
   })
 
 

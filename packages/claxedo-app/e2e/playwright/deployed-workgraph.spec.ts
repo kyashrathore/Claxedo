@@ -82,7 +82,9 @@ test.describe.serial("deployed WorkGraph", () => {
     await baseRevisionField.press("Enter")
     await expect(create.getByRole("button", { name: "Create" })).toBeEnabled({ timeout: 90_000 })
     await create.getByRole("button", { name: "Create" }).click()
-    await expect(create).toBeHidden()
+    // Creation closes only after the command and its canonical snapshot refresh
+    // both settle; use the same deployed control-plane latency budget as readiness.
+    await expect(create).toBeHidden({ timeout: 90_000 })
 
     let stream = streamContainer(page, streamTitle)
     await expect(stream).toBeVisible()

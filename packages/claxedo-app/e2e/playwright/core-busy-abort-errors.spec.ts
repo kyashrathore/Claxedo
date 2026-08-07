@@ -733,7 +733,9 @@ test.describe("core busy / abort / errors @core", () => {
     // is shown in the card's collapsed raw-detail (first-turn-recovery-card.tsx
     // RawDetail); this error classifies as "unknown" (matches none of the credential/
     // session/harness/model/workspace regexes).
-    const errorCard = page.getByTestId("first-turn-recovery-card")
+    // Keep this locator pinned to the original failed turn. Resending creates a
+    // second legitimate failed turn and therefore a second recovery card.
+    const errorCard = page.getByTestId("first-turn-recovery-card").first()
     await expect(errorCard, "recovery/error card never rendered").toBeVisible({ timeout: 20_000 })
     await expect(errorCard).toHaveAttribute("data-recovery-class", "unknown")
     await expect(errorCard).toContainText("overloaded_error: The server is overloaded, please retry later.")
