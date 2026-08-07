@@ -8,7 +8,7 @@ import { dispatchSessionRequestsEvent, dispatchSessionStatusEvent, dispatchSessi
 import { registeredConversationSnapshot } from "../conversation/conversation-registry"
 import { hydrateConversationPage, resolveStoredMessages, resolveStoredParts } from "../conversation/conversation-hydrator"
 import { observeSessionStatusPoll, sessionStatusPollingRemovalGate } from "./session-status-telemetry"
-import { acceptedPromptRefreshRequest, type AcceptedPromptRefresh } from "./accepted-prompt-refresh"
+import { acceptedPromptRefreshRequest, readAcceptedPromptStatus, type AcceptedPromptRefresh } from "./accepted-prompt-refresh"
 import {
   DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES,
   fetchSessionCapabilitiesByTransport,
@@ -69,11 +69,11 @@ function scheduleDelayedTask(task: () => void, delay: number) {
  * FIRST — so on a turn where the engine's envelope won the race, looking up the
  * announced id alone finds nothing.
  *
- * That is not cosmetic: this predicate is what settles the turn. A miss leaves
- * the composer pinned on "Stop"/"Thinking" forever with the reply sitting in
- * the store, which is exactly how claude-sdk's turn 2 presented.
+ * That is not cosmetic: this predicate gates the accepted-turn reconciliation.
+ * A miss leaves the composer pinned on "Stop"/"Thinking" forever with the reply
+ * sitting in the store, which is exactly how claude-sdk's turn 2 presented.
  *
- * The fallback keys on `parentID`, which is the same fact the announced id
+ * The parent match keys on `parentID`, which is the same fact the announced id
  * encodes (`${userMessageId}_r` is derived from it), so this recognises the
  * merged message without widening to "any assistant message in the session".
  *
@@ -90,8 +90,8 @@ function scheduleDelayedTask(task: () => void, delay: number) {
  * the same rule the engine itself uses to decide whether a turn is resumable
  * (prompt.ts's `!["tool-calls"].includes(lastAssistant.finish)`). Without
  * this guard the predicate answered "yes" on step one, and its caller — the
- * accepted-prompt refresh below — dispatched a synthetic `session.idle` into
- * a running turn, derailing every multi-round tool flow (found as the
+ * accepted-prompt refresh below — accepted a terminal status for a running
+ * turn, derailing every multi-round tool flow (found as the
  * workgraph-real lane failing while single-step lanes stayed green).
  */
 export function conversationHasAssistantMessage(sessionID: string, assistantMessageId: string | undefined) {
@@ -838,18 +838,18 @@ export function createSessionController(input: {
           for (const delay of ACCEPTED_PROMPT_REFRESH_ATTEMPT_DELAYS_MS) {
             if (delay > 0) await promptRefreshDelay(delay)
             if (cancelled) return
-            const synced = await syncSessionHistory(request.sessionID, { force: true, silent: true })
+            const [synced, fetchedStatus] = await Promise.all([
+              syncSessionHistory(request.sessionID, { force: true, silent: true }), readAcceptedPromptStatus({ sessionID: request.sessionID, client: sdk.client }),
+            ])
             if (cancelled) return
+            if (fetchedStatus) dispatchSessionStatusEvent({
+              event: { type: "session.status", source: "server", sessionID: request.sessionID, status: fetchedStatus },
+            })
             const assistantMessageId = assistantMessageIdForUserMessage(request.messageID)
-            if (synced && conversationHasAssistantMessage(request.sessionID, assistantMessageId)) {
-              dispatchSessionStatusEvent({ event: { type: "session.status", source: "server", sessionID: request.sessionID, status: idleSessionStatus } })
-              return true
-            }
+            if (synced && fetchedStatus?.type === "idle" && conversationHasAssistantMessage(request.sessionID, assistantMessageId)) return true
           }
         })().catch(() => undefined)
-        onCleanup(() => {
-          cancelled = true
-        })
+        onCleanup(() => { cancelled = true })
       },
     ),
   )

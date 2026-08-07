@@ -369,7 +369,7 @@ export type MockRuntimeOptions = {
   harnessGetPollSettleAfter?: number
   /** Assistant reply text builder. Defaults to `ack <n>: <prompt text>` (legacy vocabulary). */
   replyText?: (turn: number, promptText: string) => string
-  /** Message is marked `time.completed` but `session.idle` is never sent. */
+  /** Message and the live-status route settle, but the `session.idle` event is never sent. */
   staleBusy?: boolean
   /** Extra delay (ms) inserted before `session.idle`, after the message completes. */
   delayedIdleMs?: number
@@ -1212,10 +1212,13 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       properties: { sessionID: SESSION_ID, info: messages.find((row) => row.info.id === input.assistantID)!.info },
     })
 
-    // Deliberately NOT settled in the live map either: a stale-busy server is one
-    // that never reports the turn finished by ANY route, which is the whole point
-    // of the scenario. Settling here would reproduce the contradiction above.
-    if (options.staleBusy) return // idle deliberately never sent
+    // Keep the live-status route authoritative even when the event stream drops the
+    // terminal frame. Reconciliation must read this settled producer; it must not
+    // infer or synthesize idle from the transcript.
+    if (options.staleBusy) {
+      setSessionStatus(SESSION_ID)
+      return // idle event deliberately never sent
+    }
 
     await wait(timings.idle + (options.delayedIdleMs ?? 0))
     setSessionStatus(SESSION_ID)
