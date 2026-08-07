@@ -606,7 +606,11 @@ Terminal states: structural package acceptance with machine-readable inventory a
 
 ### Phase A — Establish the authoritative boundaries
 
-- [ ] **Unit 1: Freeze the desktop-local, self-hosted, and hosted product contracts before moving source**
+- [x] **Unit 1: Freeze the desktop-local, self-hosted, and hosted product contracts before moving source** — *landed except the release measurement baseline*
+
+**Status (2026-08-08):** Route-family table plus local/hosted/self-hosted contract tests, the self-hosted launch-path contract, app-side local/cloud boundary guards with shortest-chain reporting, the desktop product-mode matrix, `docs/tech-docs/desktop-hosted-operation-matrix.md` with its inventory gate, `docs/tech-docs/remote-access-inventory-limits.md`, and the host-tunnel registration characterization are all green.
+
+**Not done:** the immutable clean-`dev` release measurement baseline (five-run fresh-idle / active-harness / post-session-idle desktop cohorts, the five browser flows, and the per-harness numeric ceilings). It needs a packaged Electron build and multi-hour cohort runs on a quiet machine, and it gates only the final Release Qualification Gate — not Units 2–12. The inventory-limit derivation found that the plan's proposed constants do not close: 256 workspaces at 256-byte IDs and labels encode to 133.25 KiB against a 128 KiB cap, so the display-label bound drops to 128 bytes (101.25 KiB, 26.75 KiB headroom). Unit 6 must freeze the adjusted set.
 
 **Goal:** Capture the approved local and hosted route, workflow, dependency, and persistence behavior so each later move has a discriminating gate.
 
@@ -690,7 +694,11 @@ Terminal states: structural package acceptance with machine-readable inventory a
 
 **Verification:** The contract tests fail when any required route is removed, any forbidden product edge is injected, or the profile root changes; they pass against the pre-move composition.
 
-- [ ] **Unit 2: Establish hosted-only WorkGraph and Documents contributions**
+- [x] **Unit 2: Establish hosted-only WorkGraph and Documents contributions** — *landed except hydration pruning and the server-side Documents move*
+
+**Status (2026-08-08):** Workspace Runtime has a dependency-neutral `WorkspaceRuntimeRouteContribution` seam and no longer depends on `@claxedo/workgraph`; the WorkGraph route producers live at `@claxedo/workgraph/runtime-adapter`; the hosted launcher passes them while the kit CLI and the desktop-local embedded runtime pass none; `self-hosted-capabilities.ts` keeps the single binary whole through an explicit capability factory on the create-app seam. On the app side the hosted surfaces moved to `hosted-content-surfaces.tsx` behind `app/composition/product-contributions.ts`, and the eager-surface guard now checks both directions. Evidence: the runtime CLI bundle drops 901.0kb → 867.2kb and `/api/workgraph/*` 404s on a runtime with no contribution.
+
+**Not done:** (1) workbench hydration does not yet prune restored hosted surfaces against `availableContentTypes()` — it only bites once a genuinely local build exists in Unit 9, since both shipped builds currently set `authEnabled`; (2) server-side Documents route/database construction still mounts unconditionally in `createApp` — Unit 7 moves it with the self-hosted composition rather than splitting it across two mechanisms now.
 
 **Goal:** Make WorkGraph and Documents explicit hosted capabilities whose code, routes, state, and lifecycle are absent from the unsigned renderer and server compositions before their packages split.
 
