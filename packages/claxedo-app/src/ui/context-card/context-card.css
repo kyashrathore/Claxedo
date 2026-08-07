@@ -24,7 +24,8 @@
 
 .ui-context-card.is-floating {
   padding: 0.6rem 0.6rem 0.5rem;
-  border-radius: var(--radius-lg);
+  border: var(--surface-card-border, none);
+  border-radius: var(--surface-card-radius, var(--radius-lg));
   /*
    * `--overlay-surface`, because floating IS an overlay — the same role the
    * menus, dropdowns and the switcher card resolve.
@@ -37,11 +38,10 @@
    * `--v2-elevation-raised`, ring and all. `--shadow-lg-border-base` was a
    * literal `0 0 0 1px` ring plus five stacked layers out to 80px of blur — a
    * page-modal weight on a small card — but its hairline was not the mistake.
-   * Themes that edge their surfaces should keep edging this one; only Codex
-   * wants no hairline, and it strips the ring in its own layer
-   * (see ui-overrides.css) rather than every theme losing it here.
+   * Themes that edge their surfaces keep edging this one. Codex supplies its
+   * own half-pixel card ring and quieter washes through `--surface-card-shadow`.
    */
-  box-shadow: var(--v2-elevation-raised);
+  box-shadow: var(--surface-card-shadow, var(--v2-elevation-raised));
 }
 
 /* Collapsed, the rail chip carries its own border — drop any variant surface.
@@ -117,8 +117,9 @@
   align-items: center;
   gap: 0.125rem;
   padding: 0.125rem;
-  border: 1px solid var(--border-weak-base);
-  border-radius: var(--radius-lg);
+  border: var(--surface-card-border, 1px solid var(--border-weak-base));
+  border-radius: var(--surface-card-radius, var(--radius-lg));
+  box-shadow: var(--surface-card-shadow, none);
 }
 
 .ui-context-card-rail-item {

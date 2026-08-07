@@ -15,8 +15,8 @@
 
   background: var(--v2-background-bg-layer-01);
   background-clip: padding-box;
-  border-radius: 6px;
-  box-shadow: var(--v2-elevation-floating);
+  border-radius: var(--surface-overlay-radius, 6px);
+  box-shadow: var(--surface-overlay-shadow, var(--v2-elevation-floating));
 
   outline: none;
 

@@ -65,18 +65,17 @@ describe("semantic overlay CSS", () => {
   })
 
   /*
-   * Shape and elevation stay component-owned. A theme that wants a different
-   * scale restates it in its own layer; it does not inject a shadow token into
-   * the shared stylesheet, and it cannot smuggle one through the theme JSON
-   * because the schema constrains override values to colors.
+   * Shape and elevation stay component-owned. The generic geometry inputs let
+   * the application appearance layer select a scale, while each component's
+   * previous declaration remains its fallback for every other theme.
    */
   test("keeps overlay shape and elevation component-owned", async () => {
     const legacy = await read("../components/dropdown-menu.css")
     const v2 = await read("../v2/components/menu-v2.css")
 
-    expect(legacy).toContain("border-radius: var(--radius-md)")
-    expect(legacy).toContain("box-shadow: var(--shadow-md)")
-    expect(v2).toContain("border-radius: 6px")
-    expect(v2).toContain("box-shadow: var(--v2-elevation-floating)")
+    expect(legacy).toContain("border-radius: var(--surface-overlay-radius, var(--radius-md))")
+    expect(legacy).toContain("box-shadow: var(--surface-overlay-shadow, var(--shadow-md))")
+    expect(v2).toContain("border-radius: var(--surface-overlay-radius, 6px)")
+    expect(v2).toContain("box-shadow: var(--surface-overlay-shadow, var(--v2-elevation-floating))")
   })
 })

@@ -1679,7 +1679,9 @@ export function MessageTimeline(props: {
               }}
             />
             <div
-              class="theme-overlay-surface fixed z-[91] min-w-40 rounded-[10px] border-[0.5px] border-border-weak-base bg-background-stronger p-1 shadow-lg"
+              data-surface="overlay"
+              data-overlay-shell="prominent"
+              class="fixed z-[91] min-w-40 bg-background-stronger p-1"
               style={{ left: `${menu().x}px`, top: `${menu().y}px` }}
             >
               <button

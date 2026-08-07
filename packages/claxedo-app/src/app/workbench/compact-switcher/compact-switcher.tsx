@@ -116,10 +116,10 @@ function SwitcherMetadataCard(props: { item: SwitcherItem }) {
       // carries its own 0.5px ring, so the border goes with it.
       // `raised`, one step below the `floating` the composer menus carry — this
       // is a hover card the size of a tooltip. The token's own 0.5px ring stays:
-      // themes that edge their surfaces should edge this one too. Codex is the
-      // theme that wants no hairline, and it strips the ring in its own layer
-      // (see ui-overrides.css) rather than every theme losing it here.
-      class="w-[320px] rounded-lg bg-[var(--overlay-surface)] p-3 shadow-[var(--v2-elevation-raised)]"
+      // themes that edge their surfaces should edge this one too. Codex assigns
+      // its own half-pixel card ring and quieter washes through the generic
+      // surface role in ui-overrides.css.
+      class="w-[320px] bg-[var(--overlay-surface)] p-3"
     >
       <div class="mb-2.5 flex items-center gap-2.5">
         <ProjectAvatar

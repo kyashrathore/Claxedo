@@ -233,10 +233,12 @@ export function ModelSelectorPopover(props: {
       </Kobalte.Trigger>
       <Kobalte.Portal>
         <Kobalte.Content
+          data-surface="overlay"
+          data-overlay-shell="menu"
           // `w-72`/`p-2` only apply when no caller has taken over sizing: a
           // Tailwind utility lives in @layer utilities and would beat the
           // caller's own width/padding rules.
-          class={`theme-overlay-surface codex-model-picker ${props.contentClass ? "" : "w-72 p-2"} h-80 flex flex-col rounded-md border border-border-base bg-surface-raised-stronger-non-alpha shadow-md z-50 outline-none overflow-hidden ${props.contentClass ?? ""}`}
+          class={`codex-model-picker ${props.contentClass ? "" : "w-72 p-2"} h-80 flex flex-col bg-surface-raised-stronger-non-alpha z-50 outline-none overflow-hidden ${props.contentClass ?? ""}`}
           onEscapeKeyDown={(event) => {
             close("escape")
             event.preventDefault()

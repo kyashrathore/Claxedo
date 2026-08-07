@@ -159,14 +159,14 @@
 
 /* ─── Command palette: gutter + readable backdrop ─── */
 
-/* `.claxedo-command-palette` lands on [data-slot="dialog-content"] (Dialog's
+/* `.command-palette-dialog` lands on [data-slot="dialog-content"] (Dialog's
    `class` prop). The shared dialog surface ships with no padding, so the search
    field and every result row ran the full 640px width and collided with the
    content box's own rounded corners — the palette read as an unstyled sheet.
    An 8px inset gives the rows somewhere to sit; the radius is widened to
    8 + 6 (gutter + the row/search `--radius-md`) so the outer corner stays
    concentric with the highlighted row inside it. */
-.claxedo-command-palette {
+.command-palette-dialog {
   padding: 8px;
   border-radius: 14px;
 }
@@ -175,14 +175,14 @@
    backdrop is selected from their shared <body> ancestor. The shared 0.2 alpha
    is invisible against the near-black app chrome; this is a light dim — enough
    to seat the palette above the workspace without hiding it. */
-body:has([data-slot="dialog-content"].claxedo-command-palette) [data-component="dialog-overlay"] {
+body:has([data-slot="dialog-content"].command-palette-dialog) [data-component="dialog-overlay"] {
   background-color: hsl(from var(--background-base) h s l / 0.45);
   /* Match the dialog's own 150ms in / 100ms out so the backdrop and the palette
      move as one surface instead of the dim snapping ahead of the box. */
   animation: claxedoPaletteBackdropHide 100ms ease-in forwards;
 }
 
-body:has([data-slot="dialog-content"].claxedo-command-palette)
+body:has([data-slot="dialog-content"].command-palette-dialog)
   [data-component="dialog-overlay"][data-expanded] {
   animation: claxedoPaletteBackdropShow 150ms ease-out;
 }
@@ -206,8 +206,8 @@ body:has([data-slot="dialog-content"].claxedo-command-palette)
 }
 
 @media (prefers-reduced-motion: reduce) {
-  body:has([data-slot="dialog-content"].claxedo-command-palette) [data-component="dialog-overlay"],
-  body:has([data-slot="dialog-content"].claxedo-command-palette)
+  body:has([data-slot="dialog-content"].command-palette-dialog) [data-component="dialog-overlay"],
+  body:has([data-slot="dialog-content"].command-palette-dialog)
     [data-component="dialog-overlay"][data-expanded] {
     animation: none;
   }
@@ -219,7 +219,7 @@ body:has([data-slot="dialog-content"].claxedo-command-palette)
    diagnostics surfaces opt into one larger box instead of widening `x-large`
    for everyone. The opt-in class lands on [data-slot="dialog-content"] (Dialog's
    `class` prop), so the container is matched through it. */
-[data-component="dialog"]:has(> [data-slot="dialog-container"] > .claxedo-settings-dialog)
+[data-component="dialog"]:has(> [data-slot="dialog-container"] > .settings-dialog-shell)
   > [data-slot="dialog-container"],
 [data-component="dialog"]:has(> [data-slot="dialog-container"] > .claxedo-diagnostics-dialog)
   > [data-slot="dialog-container"] {
@@ -246,7 +246,7 @@ body:has([data-slot="dialog-content"].claxedo-command-palette)
    is selected from their shared <body> ancestor. The shared 0.2 alpha is
    invisible against the dark app chrome; this dims and blurs enough to read the
    dialog as modal. */
-body:has([data-slot="dialog-content"].claxedo-settings-dialog) [data-component="dialog-overlay"],
+body:has([data-slot="dialog-content"].settings-dialog-shell) [data-component="dialog-overlay"],
 body:has([data-slot="dialog-content"].claxedo-diagnostics-dialog) [data-component="dialog-overlay"] {
   background-color: hsl(from var(--background-base) h s l / 0.6);
   backdrop-filter: blur(3px);
@@ -255,7 +255,7 @@ body:has([data-slot="dialog-content"].claxedo-diagnostics-dialog) [data-componen
   animation: claxedoDialogBackdropHide 100ms ease-in forwards;
 }
 
-body:has([data-slot="dialog-content"].claxedo-settings-dialog)
+body:has([data-slot="dialog-content"].settings-dialog-shell)
   [data-component="dialog-overlay"][data-expanded],
 body:has([data-slot="dialog-content"].claxedo-diagnostics-dialog)
   [data-component="dialog-overlay"][data-expanded] {
@@ -281,8 +281,8 @@ body:has([data-slot="dialog-content"].claxedo-diagnostics-dialog)
 }
 
 @media (prefers-reduced-motion: reduce) {
-  body:has([data-slot="dialog-content"].claxedo-settings-dialog) [data-component="dialog-overlay"],
-  body:has([data-slot="dialog-content"].claxedo-settings-dialog)
+  body:has([data-slot="dialog-content"].settings-dialog-shell) [data-component="dialog-overlay"],
+  body:has([data-slot="dialog-content"].settings-dialog-shell)
     [data-component="dialog-overlay"][data-expanded],
   body:has([data-slot="dialog-content"].claxedo-diagnostics-dialog) [data-component="dialog-overlay"],
   body:has([data-slot="dialog-content"].claxedo-diagnostics-dialog)

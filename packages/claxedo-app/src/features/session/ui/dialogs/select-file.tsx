@@ -426,7 +426,7 @@ export function DialogSelectFile(props: {
   return (
     <Dialog
       flush
-      class="claxedo-command-palette !max-h-[480px]"
+      class="command-palette-dialog !max-h-[480px]"
       transition
       aria-label={filesOnly() ? language.t("session.header.searchFiles") : language.t("palette.search.placeholder")}
     >

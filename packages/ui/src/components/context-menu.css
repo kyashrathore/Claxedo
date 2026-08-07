@@ -2,9 +2,9 @@
 [data-component="context-menu-sub-content"] {
   min-width: 8rem;
   overflow: hidden;
-  border: none;
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-xs-border);
+  border: var(--surface-overlay-border, none);
+  border-radius: var(--surface-overlay-radius, var(--radius-md));
+  box-shadow: var(--surface-overlay-shadow, var(--shadow-xs-border));
   background-clip: padding-box;
   background-color: var(--overlay-surface);
   padding: 4px;

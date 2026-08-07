@@ -60,7 +60,8 @@ describe("PromptPopover ARIA", () => {
     ))
     const listbox = view.getByRole("listbox")
     expect(listbox.id).toBe(PROMPT_POPOVER_LISTBOX_ID)
-    expect(listbox.classList.contains("theme-overlay-surface")).toBe(true)
+    expect(listbox.getAttribute("data-surface")).toBe("overlay")
+    expect(listbox.getAttribute("data-overlay-shell")).toBe("prompt")
     expect(listbox.getAttribute("aria-label")).toBe("prompt.popover.slashLabel")
 
     const options = view.getAllByRole("option")

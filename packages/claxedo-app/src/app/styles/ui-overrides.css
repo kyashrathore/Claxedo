@@ -151,8 +151,8 @@
  * Floating surfaces rebind the page palette to the overlay palette for their
  * whole subtree, so content authored against the generic tokens follows the
  * menu it sits in rather than the page behind it. `[data-surface="overlay"]` is
- * stamped by DropdownMenu; `.theme-overlay-surface` (and its current spelling,
- * `.codex-overlay-surface`) is the opt-in for the hand-authored picker shells —
+ * stamped by DropdownMenu; `.overlay-palette` is the opt-in for component
+ * APIs that expose only a class hook rather than arbitrary data attributes —
  * model picker, Review source, composer suggestions, document filters — that
  * are built outside the shared menu primitives.
  *
@@ -160,8 +160,7 @@
  * the token the surface already painted, so this is inert outside Codex.
  */
 [data-surface="overlay"],
-.theme-overlay-surface,
-.codex-overlay-surface {
+.overlay-palette {
   --background-base: var(--overlay-surface);
   --background-stronger: var(--overlay-surface);
   --surface-base: var(--overlay-surface);
@@ -215,18 +214,68 @@
   color: var(--overlay-text);
 }
 
+[data-overlay-shell="menu"] {
+  border: var(--surface-overlay-border, 1px solid var(--overlay-border));
+  border-radius: var(--surface-overlay-radius, var(--radius-md));
+  box-shadow: var(--surface-overlay-shadow, var(--shadow-md));
+}
+
+[data-overlay-shell="prominent"] {
+  border: var(--surface-overlay-border, 0.5px solid var(--border-weak-base));
+  border-radius: var(--surface-overlay-radius, 10px);
+  box-shadow: var(--surface-overlay-shadow, var(--shadow-lg));
+}
+
+[data-overlay-shell="raised-menu"] {
+  border: var(--surface-overlay-border, 1px solid var(--border-weak-base));
+  border-radius: var(--surface-overlay-radius, var(--radius-md));
+  box-shadow: var(--surface-overlay-shadow, var(--shadow-lg));
+}
+
+[data-overlay-shell="prompt"] {
+  border: var(--surface-overlay-border, none);
+  border-radius: var(--surface-overlay-radius, 12px);
+  box-shadow: var(--surface-overlay-shadow, var(--shadow-lg-border-base));
+}
+
+[data-surface="sidebar"] {
+  box-shadow: var(--surface-sidebar-shadow, none);
+}
+
+@media (forced-colors: active) {
+  :is(
+    [data-component="dialog"] [data-slot="dialog-content"],
+    [data-component="dropdown-menu-content"],
+    [data-component="dropdown-menu-sub-content"],
+    [data-component="context-menu-content"],
+    [data-component="context-menu-sub-content"],
+    [data-component="popover-content"],
+    [data-component="select-content"],
+    [data-component="tooltip"],
+    [data-component="menu-v2-content"],
+    [data-component="tooltip-v2"],
+    [data-overlay-shell],
+    .ui-context-card.is-floating,
+    .ui-context-card-rail,
+    [data-slot="switcher-metadata-card"],
+    [data-surface="composer"]
+  ) {
+    border: 1px solid CanvasText;
+    box-shadow: none;
+  }
+}
+
 /*
  * Only the hand-authored shells need the paint forced. They carry utility
  * classes (`bg-background-base`, `bg-surface-raised-stronger-non-alpha`) that
  * would otherwise win. The shared menu primitives already paint themselves from
- * `--overlay-surface`, so overriding them here would be redundant — and an
- * `!important` on `[data-surface="overlay"]` would take the paint away from
+ * `--overlay-surface`, so overriding them here would be redundant — and a
+ * forced declaration on `[data-surface="overlay"]` would take the paint away from
  * every caller of DropdownMenu in every theme.
  */
-.theme-overlay-surface,
-.codex-overlay-surface {
-  background-color: var(--overlay-surface) !important;
-  border-color: var(--overlay-border) !important;
+.overlay-palette.overlay-palette {
+  background-color: var(--overlay-surface);
+  border-color: var(--overlay-border);
 }
 
 /*
@@ -270,7 +319,7 @@
 [data-icon-interaction="persistent"] [data-slot="icon-svg"],
 [data-icon-interaction="subdued"] [data-component="icon"],
 [data-icon-interaction="subdued"] [data-slot="icon-svg"] {
-  color: inherit !important;
+  color: inherit;
 }
 
 [data-icon-interaction="row-action"]:hover,
@@ -298,7 +347,7 @@
  * DO NOT DELETE THIS RULE. `ClaxedoIconButton` defaults to
  * `data-icon-interaction="persistent"`, so without this the rule above paints
  * a filled primary button `--icon-interaction-strong` — and the
- * `color: inherit !important` two rules up then forces the glyph to follow it,
+ * the inherited color rule two rules up then forces the glyph to follow it,
  * beating the button's own inverse utility class. The composer send arrow ends
  * up the same color as the circle it sits on. That is invisible, not merely
  * wrong, and since this grammar is no longer scoped to Codex it happens in
@@ -338,7 +387,6 @@
 .theme-model-picker [data-slot="list-search"],
 .theme-directory-picker [data-slot="list-search"],
 .codex-model-picker [data-slot="list-search"],
-.codex-directory-picker [data-slot="list-search"],
 .claxedo-composer-menu [data-slot="list-search"] {
   background-color: var(--overlay-surface-input);
   border-radius: 8px;
@@ -382,9 +430,7 @@
 
 .theme-model-picker [data-slot="list-search-container"] > [data-component="icon"],
 .theme-directory-picker [data-slot="list-search-container"] > [data-component="icon"],
-.codex-model-picker [data-slot="list-search-container"] > [data-component="icon"],
-.codex-directory-picker [data-slot="list-search-container"] > [data-component="icon"],
-.codex-directory-picker [data-slot="list-search-container"] [data-slot="icon-svg"] {
+.codex-model-picker [data-slot="list-search-container"] > [data-component="icon"] {
   width: 14px;
   height: 14px;
   color: var(--overlay-icon-muted);
@@ -406,17 +452,11 @@
 .theme-directory-picker [data-slot="dialog-body"],
 .theme-directory-picker [data-component="list"],
 .theme-directory-picker [data-slot="list-scroll"],
-.theme-directory-picker [data-slot="list-header"],
-.codex-directory-picker [data-slot="dialog-header"],
-.codex-directory-picker [data-slot="dialog-body"],
-.codex-directory-picker [data-component="list"],
-.codex-directory-picker [data-slot="list-scroll"],
-.codex-directory-picker [data-slot="list-header"] {
+.theme-directory-picker [data-slot="list-header"] {
   background-color: var(--overlay-surface);
 }
 
-.theme-directory-picker [data-slot="list-search-wrapper"],
-.codex-directory-picker [data-slot="list-search-wrapper"] {
+.theme-directory-picker [data-slot="list-search-wrapper"] {
   margin: 0;
   padding: 0 12px 8px;
 }
@@ -438,7 +478,7 @@
  */
 html[data-theme="codex"] {
   --font-family-sans:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif !important;
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
   --font-family-text:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
   --v2-font-family-sans:
@@ -498,10 +538,18 @@ html[data-theme="codex"] {
     0 0 20px light-dark(#0000000d, #00000033);
   --elevation-shadow-sidebar: var(--elevation-ring-card), 0 3px 7.5px light-dark(#00000008, #00000021),
     0 0 16px light-dark(#00000005, #00000014);
+  --surface-overlay-radius: var(--radius-overlay);
+  --surface-overlay-border: 0;
+  --surface-overlay-shadow: var(--elevation-shadow-overlay), var(--elevation-ring-overlay);
+  --surface-card-radius: var(--radius-overlay);
+  --surface-card-border: 0;
+  --surface-card-shadow: var(--elevation-shadow-card);
+  --surface-composer-shadow: inset 0 0 0 1px var(--composer-border), var(--elevation-shadow-raised);
+  --surface-sidebar-shadow: var(--elevation-shadow-sidebar);
 }
 
 html[data-theme="codex"] body {
-  font-family: var(--font-family-sans) !important;
+  font-family: var(--font-family-sans);
   letter-spacing: -0.006em;
 }
 
@@ -516,8 +564,6 @@ html[data-theme="codex"] body {
  */
 html[data-theme="codex"] [data-testid="rail-sidebar"] {
   background-color: var(--shell-surface-sidebar);
-  border-right-color: var(--shell-border-sidebar) !important;
-  box-shadow: var(--elevation-shadow-sidebar);
 }
 
 html[data-theme="codex"] [data-testid="rail-sidebar"] > :first-child {
@@ -589,120 +635,23 @@ html[data-theme="codex"] [data-slot="workspace-tab"][data-selected="true"] {
 html[data-theme="codex"] [data-component="session-new-composer"],
 html[data-theme="codex"] [data-component="session-composer"] {
   background-color: var(--shell-surface-composer);
-  box-shadow:
-    inset 0 0 0 1px var(--composer-border),
-    var(--elevation-shadow-raised);
 }
 
-/*
- * The context/environment and session cards keep a hairline in Codex.
- *
- * The shipped Codex app edges these cards — a 1px border plus a soft raised
- * shadow — and they are not the same surface as the menus. A dropdown, select
- * or dialog there is a bare panel on its shadow alone, which is why the ring is
- * stripped from those above; a card is a card, and takes an edge.
- */
 /*
  * Positioners opt out of overlay chrome.
  *
  * Some overlays exist only to place something that draws its own surface — the
  * session card sits inside a tooltip whose content is deliberately
- * `border-none bg-transparent shadow-none`. The Codex rules above carry
- * `!important` so they can beat each component's own stylesheet, which also
- * beats that neutralisation, and the result is two strokes a pixel apart: one
- * from the wrapper, one from the card.
+ * `border-none bg-transparent shadow-none`. The doubled opt-out class has
+ * enough specificity to beat the component shell while keeping the exception
+ * theme-agnostic.
  */
-/* Class doubled deliberately. `html[data-theme="codex"] [data-component="tooltip"]`
-   scores the same as a single class here, and those rules appear later in the
-   file, so an equal-specificity opt-out would lose on source order alone. */
-html[data-theme="codex"] .theme-overlay-bare.theme-overlay-bare {
-  border: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-}
-
-html[data-theme="codex"] .ui-context-card.is-floating,
-html[data-theme="codex"] .session-envcard.is-floating,
-html[data-theme="codex"] [data-slot="switcher-metadata-card"],
-/* The collapsed rail chip is the same card at 2.5rem wide — it drew its own
-   1px solid border and had no Codex rule, so it kept a full-weight edge while
-   everything around it moved to the 0.5px stroke. */
-html[data-theme="codex"] .ui-context-card-rail {
-  border: 0 !important;
-  box-shadow: var(--elevation-shadow-card);
-  /*
-   * 10px, same as the menus. The app's scale is `--radius-md: .5rem`,
-   * `--radius-lg: .625rem`, `--radius-xl: .75rem`, and its floating surfaces sit
-   * on `lg` — 10px. Both our `--radius-lg` and Tailwind's `rounded-lg` are 8px,
-   * so these cards were rendering a step tighter than every overlay beside them.
-   */
-  border-radius: var(--radius-overlay) !important;
-}
-
-/*
- * Overlay elevation. The shared overlay components own their own shape and
- * shadow so that no theme is named inside them; Codex restates both here so
- * dialogs, menus, popovers, tooltips and the hand-authored picker shells all
- * sit on one scale instead of half the family following Codex and half
- * following the generic ramp.
- *
- * THE RULE: any overlay component that stops naming `--codex-*` has to be added
- * to this list in the same change. Dropping the escape hatch also drops the
- * inheritance that was quietly supplying Codex's geometry, and the theme tests
- * only assert colour roles — so the component keeps the right fill and border
- * while silently falling to the generic radius and shadow beside neighbours
- * that kept both. That is not hypothetical; see the note on Select below.
- */
-html[data-theme="codex"] [data-component="dialog"] [data-slot="dialog-content"],
-html[data-theme="codex"] [data-component="dropdown-menu-content"],
-html[data-theme="codex"] [data-component="dropdown-menu-sub-content"],
-html[data-theme="codex"] [data-component="context-menu-content"],
-html[data-theme="codex"] [data-component="context-menu-sub-content"],
-html[data-theme="codex"] [data-component="popover-content"],
-html[data-theme="codex"] [data-component="tooltip"],
-html[data-theme="codex"] [data-component="menu-v2-content"],
-html[data-theme="codex"] [data-component="tooltip-v2"],
-/*
- * Select belongs here for the same reason as its neighbours, but it arrived by
- * a different route: select.css used to read the theme's overlay radius directly
- * and inherited it from `html[data-theme="codex"]`, so it never needed naming.
- * Once select.css moved onto the semantic roles that inheritance went away and
- * the menu silently dropped to a 6px radius and a hairline shadow while every
- * overlay beside it kept 10px and the drop. Colour roles are what the theme
- * tests assert, so nothing caught it.
- */
-html[data-theme="codex"] [data-component="select-content"],
-/*
- * The composer menus reach here too. Outside Codex they paint
- * `--v2-elevation-floating`, which carries its own 0.5px ring — correct there,
- * but in Codex that ring is the hairline the shipped app does not have, and the
- * project/worktree pickers are Kobalte popovers rather than one of the
- * primitives named above, so nothing else in this list catches them.
- */
-html[data-theme="codex"] .claxedo-composer-menu,
-html[data-theme="codex"] .theme-overlay-surface,
-html[data-theme="codex"] .codex-overlay-surface {
-  border-radius: var(--radius-overlay) !important;
-  /*
-   * Drop PLUS the 0.5px stroke, which is how the shipped app composes an
-   * overlay: `box-shadow: var(--shadow), var(--shadow-hairline)`, where
-   * `--shadow-hairline` is `0 0 0 .5px #0000001a`.
-   *
-   * These surfaces are not edgeless there — what was wrong before was the
-   * WEIGHT. Each component drew its own 1px solid `--overlay-border`, twice the
-   * thickness at full opacity, so removing it outright overshot in the other
-   * direction. The `border: 0` below stays, because the edge is this stroke now.
-   */
-  box-shadow: var(--elevation-shadow-overlay), var(--elevation-ring-overlay) !important;
-  /*
-   * No hairline. Each of these components draws its own
-   * `border: 1px solid var(--overlay-border)`, and `--elevation-shadow-overlay` is
-   * two drop layers with no ring of its own — so in Codex the edge was a hard
-   * 1px line where the shipped app has none. Removed rather than made
-   * transparent: several of these set `background-clip: padding-box`, so a
-   * transparent border would show the backdrop through the edge.
-   */
-  border: 0 !important;
+/* Class doubled deliberately so this opt-out beats the shared component shell
+   without increasing specificity through a theme selector. */
+.theme-overlay-bare.theme-overlay-bare {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 /*
@@ -764,7 +713,7 @@ html[data-theme="codex"] [data-component="toast-v2"] {
 
 html[data-theme="codex"] [data-component="prompt-input"] {
   color: var(--text-strong);
-  font-family: var(--font-family-sans) !important;
+  font-family: var(--font-family-sans);
   font-size: 14px;
   font-weight: 400;
   letter-spacing: -0.006em;
@@ -812,19 +761,14 @@ html[data-theme="codex"] [data-component="icon"] [data-slot="icon-svg"] {
   shape-rendering: geometricPrecision;
 }
 
-html[data-theme="codex"] .theme-directory-picker,
-html[data-theme="codex"] .codex-directory-picker {
-  background-color: var(--overlay-surface) !important;
-}
-
 html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-item"] + [data-slot="accordion-item"] {
   margin-top: -0.5px;
 }
 
 html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-trigger"],
 html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-content"] {
-  border-width: 0.5px !important;
-  border-color: var(--border-weak-base) !important;
+  border-width: 0.5px;
+  border-color: var(--border-weak-base);
 }
 
 html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-diff-chevron"] {

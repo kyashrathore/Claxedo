@@ -9,10 +9,12 @@
 
 [data-dock-border-underlay] {
   /* Later shadows paint underneath, so this ring masks overlapping surfaces without changing border geometry. */
-  box-shadow:
+  box-shadow: var(
+    --surface-composer-shadow,
     var(--dock-shell-visual-shadow, var(--shadow-xs-border)),
     0 0 0 var(--dock-shell-border-underlay-width, 1px)
-      var(--dock-shell-border-underlay-background, var(--surface-raised-stronger-non-alpha));
+      var(--dock-shell-border-underlay-background, var(--surface-raised-stronger-non-alpha))
+  );
 }
 
 [data-dock-border-underlay="v2"] {

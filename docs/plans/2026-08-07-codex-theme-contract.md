@@ -2,9 +2,22 @@
 
 ## Contract
 
-The Codex theme uses the existing colour-only `ThemeVariantBase.overrides` schema. Colour roles live in `codex.json`. Typography, radius, ring, and elevation values live in one `html[data-theme="codex"]` custom-property block in the application appearance layer. Shared component styles continue to own the declarations that consume those properties.
+The Codex theme uses the existing colour-only `ThemeVariantBase.overrides` schema. Colour roles live in `codex.json`. Typography, radius, ring, and elevation values live in one `html[data-theme="codex"]` custom-property block in the application appearance layer. Shared component styles own the declarations that consume those properties and provide their existing values as fallbacks, so themes that do not assign the generic geometry inputs remain byte-for-byte equivalent at computed style.
 
-The v2 scale remains a parallel vocabulary. `MenuV2`, `SelectV2`, `TooltipV2`, and `ToastV2` retain their `--v2-background-*`, `--v2-text-*`, `--v2-icon-*`, `--v2-border-*`, and `--v2-elevation-*` consumers. The Codex appearance layer bridges their surface colours and elevation values at the component root.
+The v2 scale remains a parallel vocabulary. `MenuV2`, `SelectV2`, `TooltipV2`, and `ToastV2` retain their `--v2-background-*`, `--v2-text-*`, `--v2-icon-*`, `--v2-border-*`, and `--v2-elevation-*` consumers. Their floating shells also consume the same generic overlay geometry inputs as v1, with their current hard-coded radii and v2 elevations as fallbacks. The Codex appearance layer bridges their surface colours and assigns the shared geometry values at the theme root.
+
+## Geometry ownership
+
+| Role | Component-owned declaration | Codex value |
+| --- | --- | --- |
+| Overlay shell | `border-radius: var(--surface-overlay-radius, <existing radius>)` | `10px` |
+| Overlay edge | `border: var(--surface-overlay-border, <existing border>)` | `0` |
+| Overlay elevation | `box-shadow: var(--surface-overlay-shadow, <existing shadow>)` | two-layer drop plus a 0.5px outset ring |
+| Raised card | radius, border, and shadow read `--surface-card-*` with existing component values as fallbacks | `10px`, `0`, and the Codex card ring plus two washes |
+| Composer | the dock shell reads `--surface-composer-shadow` with its existing v2 elevation as fallback | 1px inset composer edge plus the Codex raised shadow |
+| Sidebar | the sidebar owns its shadow declaration and reads `--surface-sidebar-shadow` | Codex card ring plus the sidebar washes |
+
+The variables are role-based rather than theme-based. A component may consume a role only where it owns the corresponding declaration. The theme block supplies values; it does not select components or restate `border`, `border-radius`, or `box-shadow` declarations.
 
 ## Icon selection
 
@@ -23,16 +36,12 @@ The proprietary Codex sprite remains bundled for every user. Theme-driven select
 | --- | --- | --- |
 | W1 | Non-Codex themes | Shared and application icons render OpenCode glyphs. Codex remains unchanged. |
 | W2 | Codex colours | No colour delta. All in-scope v1 dark surface values already use the supplied Codex ramp; the v2 ramp remains independently owned. |
-| W4 | Rail sidebar | Proposed: remove the Codex-only ambient edge shadow and retain the semantic sidebar border. |
-| W4 | New-session and session composers | Proposed: use the component-owned dock elevation and 0.5px underlay ring instead of the Codex-only inset edge and raised shadow. |
-| W4 | Floating context card, environment card, and switcher metadata card | Proposed: use component-owned v2 raised elevation and 8px radius. |
-| W4 | Collapsed context-card rail | Proposed: use its component-owned 1px semantic border and 8px radius without the Codex card shadow. |
-| W4 | Dialog, dropdown, context menu, popover, select, tooltip, and hand-authored overlay shells | Proposed: preserve the token-driven radius and shadow; use each component's 1px semantic outer border in place of the Codex-only 0.5px shadow ring. |
-| W4 | MenuV2 and SelectV2 | Proposed: use the component-owned 6px radius while retaining the Codex surface palette and token-driven elevation. |
-| W4 | TooltipV2 | Proposed: use the component-owned 4px radius while retaining the Codex surface palette and token-driven elevation. |
-| W4 | Toast and ToastV2 | Proposed: retain their inverted palette and component-owned radius; resolve elevation from their existing shadow tokens. |
-
-W4 begins after the proposed rows are owner-approved.
+| W4 | Rail sidebar | No visual delta. Preserve the Codex sidebar ring and ambient washes through `--surface-sidebar-shadow`. |
+| W4 | New-session and session composers | No visual delta. Preserve the 1px inset composer edge and Codex raised shadow through `--surface-composer-shadow`. |
+| W4 | Floating context card, environment card, switcher metadata card, and collapsed context-card rail | No visual delta. Preserve the 10px radius, zero border, and Codex card elevation through `--surface-card-*`. |
+| W4 | Dialog, dropdown, context menu, popover, select, tooltip, and hand-authored overlay shells | No visual delta. Preserve the 10px radius, zero border, two-layer drop, and 0.5px outset ring through `--surface-overlay-*`. |
+| W4 | MenuV2, SelectV2, and TooltipV2 | No visual delta in Codex. Bridge their shell geometry to `--surface-overlay-*`; retain their existing 6px or 4px radius and v2 elevation in every other theme. |
+| W4 | Toast and ToastV2 | No visual delta. Retain their inverted palette and existing component-owned geometry. |
 
 ## Release and rollback
 

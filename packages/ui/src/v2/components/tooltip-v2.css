@@ -16,8 +16,8 @@
   gap: 6px;
 
   background: var(--v2-background-bg-layer-01);
-  box-shadow: var(--v2-elevation-floating);
-  border-radius: 4px;
+  box-shadow: var(--surface-overlay-shadow, var(--v2-elevation-floating));
+  border-radius: var(--surface-overlay-radius, 4px);
 
   font-style: normal;
   font-weight: 530;

@@ -2542,7 +2542,7 @@ export function RailSidebar(props: RailSidebarProps) {
       `}
       style={{
         width: `${width()}px`,
-        "border-right": "1px solid var(--border-weaker-base)",
+        "border-right": "1px solid var(--shell-border-sidebar, var(--border-weaker-base))",
       }}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}

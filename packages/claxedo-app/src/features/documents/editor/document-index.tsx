@@ -693,7 +693,7 @@ function FilterChip(props: { label: string; value?: string; options: FilterOptio
       portal
       open={open()}
       onOpenChange={setOpen}
-      class="theme-overlay-surface documents-filter-popover"
+      class="documents-filter-popover"
       trigger={
         <>
           <span class="documents-chip-label">{props.label}</span>

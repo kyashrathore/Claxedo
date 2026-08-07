@@ -208,7 +208,7 @@
   min-width: 0;
   max-width: calc(100vw - 24px);
   padding: 4px;
-  border-radius: 8px;
+  border-radius: var(--surface-overlay-radius, 8px);
   /*
    * One elevation for every composer menu. These four surfaces are built on
    * three different primitives — MenuV2 for the permission menu, a Kobalte
@@ -222,8 +222,8 @@
    * being restyled. Codex re-states this in its own layer with `!important`
    * (see ui-overrides.css), so this is the non-Codex definition.
    */
-  border: 0;
-  box-shadow: var(--v2-elevation-floating);
+  border: var(--surface-overlay-border, 0);
+  box-shadow: var(--surface-overlay-shadow, var(--v2-elevation-floating));
   /*
    * One surface too, for the same reason. MenuV2 paints
    * `--v2-background-bg-layer-01` — a PAGE layer — so the permission menu came
@@ -231,6 +231,12 @@
    * rebinding the v2 tokens on the component root; every other theme shows it.
    */
   background: var(--overlay-surface);
+}
+
+[data-slot="switcher-metadata-card"] {
+  border: var(--surface-card-border, none);
+  border-radius: var(--surface-card-radius, var(--radius-lg));
+  box-shadow: var(--surface-card-shadow, var(--v2-elevation-raised));
 }
 
 .claxedo-composer-menu.claxedo-composer-menu.claxedo-composer-menu-compact {

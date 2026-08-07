@@ -6,12 +6,12 @@
   z-index: 50;
   min-width: 200px;
   max-width: 320px;
-  border-radius: var(--radius-md);
+  border-radius: var(--surface-overlay-radius, var(--radius-md));
   background-color: var(--overlay-surface);
 
-  border: 1px solid var(--overlay-border);
+  border: var(--surface-overlay-border, 1px solid var(--overlay-border));
   background-clip: padding-box;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--surface-overlay-shadow, var(--shadow-md));
 
   transform-origin: var(--kb-popover-content-transform-origin);
 

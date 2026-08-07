@@ -94,12 +94,12 @@
   min-width: 104px;
   max-width: 23rem;
   overflow: hidden;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--overlay-border);
+  border-radius: var(--surface-overlay-radius, var(--radius-md));
+  border: var(--surface-overlay-border, 1px solid var(--overlay-border));
   background-clip: padding-box;
   background-color: var(--overlay-surface);
   padding: 4px;
-  box-shadow: var(--shadow-xs-border);
+  box-shadow: var(--surface-overlay-shadow, var(--shadow-xs-border));
   z-index: 60;
 
   &[data-expanded] {

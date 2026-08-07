@@ -317,7 +317,7 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
     <Dialog
       flush
       title={props.title ?? language.t("command.project.open")}
-      class="codex-directory-picker codex-overlay-surface"
+      class="theme-directory-picker overlay-palette"
       action={
         <button
           type="button"

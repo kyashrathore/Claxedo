@@ -112,7 +112,11 @@ function RefPickerField(props: {
           </svg>
         </button>
         <Show when={open() && hasResults()}>
-          <div class="codex-overlay-surface absolute left-0 right-0 top-full z-50 mt-1 max-h-52 overflow-y-auto rounded-md border border-border-weak-base bg-background-base shadow-lg">
+          <div
+            data-surface="overlay"
+            data-overlay-shell="raised-menu"
+            class="absolute left-0 right-0 top-full z-50 mt-1 max-h-52 overflow-y-auto bg-background-base"
+          >
             <Show when={filtered().branches.length > 0}>
               <div class="px-2 pt-1.5 pb-0.5 text-11-medium text-text-weak uppercase tracking-wider">Branches</div>
               <For each={filtered().branches.slice(0, 15)}>
@@ -292,7 +296,7 @@ function ReviewToolbarBody(props: ReviewToolbarProps) {
             class: "flex items-center gap-1.5 h-7 px-2 text-12-medium text-text-base hover:bg-surface-base-hover rounded-md transition-[background-color,color,transform] active:scale-[0.96]",
             title: props.scopeLabel,
           }}
-          class="codex-overlay-surface w-[280px] [&_[data-slot=popover-body]]:p-2"
+          class="w-[280px] [&_[data-slot=popover-body]]:p-2"
         >
           <div class="flex flex-col gap-2">
             <div class="px-1.5 pt-1 text-11-medium text-text-weak">Review source</div>
