@@ -9,6 +9,7 @@ const {
   promptValue, state, calls, boots, apiCalls, fetchCalls, unsignedCalls,
   runtimeCalls, transportPromptAsyncCalls, sessionCreateCalls, transportClients, harnessSetCalls,
   buildRequestPartCalls, shellCalls, commandCalls, navCalls, flowEvents, handoffCalls, toasts,
+  sessionPromotionCalls,
   promptCalls, optimisticAdds, optimisticRemoves, promptContextItems, promptContextAdds,
   promptContextRemoves, refreshCalls, bootstrapCalls, worktreeCreateCalls, enabledAutoAccept,
 } = h
@@ -68,6 +69,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     ])
     expect(sessionCreateCalls.at(-1)?.options?.headers?.["x-claxedo-draft-id"]).toBe("draft-1")
     expect(sessionCreateCalls.at(-1)?.input).toEqual({ directory: "/repo/main" })
+    expect(sessionPromotionCalls).toEqual([{ sessionID: "session-1", configWrites: 1 }])
     expect(stateAtSubmit).toEqual([{ resetCount: 2, optimisticCount: 1 }])
   })
 
@@ -108,6 +110,42 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
         description: "Attach a workspace before sending a prompt.",
       },
     ])
+  })
+
+  test("does not publish or prompt a created session whose canonical config write fails", async () => {
+    state.demoMode = false
+    state.sessionConfigSaveError = "config unavailable"
+
+    const submit = createPromptSubmit({
+      info: () => undefined,
+      sessionID: () => "new",
+      sessionDirectory: () => "/repo/main",
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => false,
+      editor: () => undefined,
+      promptLength: promptLengthForTest,
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      onSubmit: () => undefined,
+      navigateOnCreate: () => false,
+    })
+
+    await submit.handleSubmit(submitEvent())
+    await settleSubmitEffects()
+
+    expect(sessionCreateCalls).toHaveLength(1)
+    expect(sessionPromotionCalls).toEqual([])
+    expect(optimisticAdds).toEqual([])
+    expect(calls.prompt + calls.async + calls.transportAsync).toBe(0)
+    expect(toasts).toContainEqual({
+      title: "prompt.toast.sessionConfigSaveFailed.title",
+      description: "config unavailable",
+    })
   })
 
 

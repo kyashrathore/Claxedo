@@ -98,6 +98,22 @@ describe("submit transport adapter", () => {
     ])
   })
 
+  test("authoritative session config persistence rejects before a new session is published", async () => {
+    const adapter = createAdapter(() => new Response("server error", { status: 500 }))
+
+    await expect(adapter.persistSessionConfig({
+      sessionID: "session-created",
+      directory: "/repo/main",
+      harnessType: "claude-sdk",
+      agent: "build",
+      model: { providerID: "claude-sdk", modelID: "sonnet" },
+    })).rejects.toThrow("server error")
+
+    expect(calls).toHaveLength(1)
+    expect(queryClient.getQueryData(sessionConfigRawQueryKey("session-created"))).toBeUndefined()
+    expect(toasts).toEqual([])
+  })
+
   test("session config PATCH resolving with a non-2xx response shows a toast and does not cache the payload", async () => {
     const adapter = createAdapter(() => new Response("server error", { status: 500 }))
 

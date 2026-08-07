@@ -82,6 +82,7 @@ export const commandCalls: unknown[] = []
 export const navCalls: string[] = []
 export const flowEvents: string[] = []
 export const handoffCalls: Array<{ sessionKey: string; sessionID: string }> = []
+export const sessionPromotionCalls: Array<{ sessionID: string; configWrites: number }> = []
 export const toasts: Array<{ title?: string; description?: string }> = []
 export const promptCalls = {
   reset: [] as Array<unknown>,
@@ -155,6 +156,7 @@ export const state: {
   commandListResponse: unknown[]
   runtimeProviderResponse: unknown
   runtimeSessionConfig: unknown
+  sessionConfigSaveError: string | undefined
   claxedoServerUrl: string
   syncProject: SyncProject | undefined
   globalProjects: SyncProject[]
@@ -183,6 +185,7 @@ export const state: {
   commandListResponse: [],
   runtimeProviderResponse: undefined,
   runtimeSessionConfig: undefined,
+  sessionConfigSaveError: undefined,
   claxedoServerUrl: "http://localhost:3001",
   syncProject: undefined,
   globalProjects: [],
@@ -564,6 +567,9 @@ export async function installSubmitMocks(mock: ModuleMocker) {
         body: init?.body ? String(init.body) : null,
       })
       if (/\/session\/[^/]+\/config$/.test(new URL(request.url).pathname)) {
+        if (request.method === "PATCH" && state.sessionConfigSaveError) {
+          return new Response(state.sessionConfigSaveError, { status: 500 })
+        }
         return request.method === "PATCH" && init?.body
           ? Response.json(canonicalSessionConfig(String(init.body)))
           : Response.json({ harness: { id: "opencode", access: "native" } })
@@ -591,6 +597,7 @@ export async function installSubmitMocks(mock: ModuleMocker) {
             return Response.json(state.runtimeSessionConfig)
           }
           if (init?.method === "PATCH" && typeof init.body === "string") {
+            if (state.sessionConfigSaveError) return new Response(state.sessionConfigSaveError, { status: 500 })
             return Response.json(canonicalSessionConfig(init.body))
           }
         }
@@ -642,7 +649,14 @@ export async function installSubmitMocks(mock: ModuleMocker) {
         list: () => state.localAgentList,
       },
       session: {
-        promote: () => undefined,
+        promote: (_directory: string, sessionID: string) => {
+          sessionPromotionCalls.push({
+            sessionID,
+            configWrites: runtimeCalls.filter((call) => call.method === "PATCH" && call.input.includes("/config"))
+              .length + unsignedCalls.filter((call) => call.method === "PATCH" && call.url.includes("/config"))
+              .length,
+          })
+        },
       },
     }),
   }))
@@ -911,6 +925,7 @@ export function resetSubmitHarness() {
   navCalls.length = 0
   flowEvents.length = 0
   handoffCalls.length = 0
+  sessionPromotionCalls.length = 0
   toasts.length = 0
   promptCalls.reset = []
   promptCalls.set = []
@@ -952,6 +967,7 @@ export function resetSubmitHarness() {
   state.commandListResponse = []
   state.runtimeProviderResponse = undefined
   state.runtimeSessionConfig = undefined
+  state.sessionConfigSaveError = undefined
   state.claxedoServerUrl = "http://localhost:3001"
   state.syncProject = { id: "project-1", worktree: "/repo/main", sandboxes: [], workspaces: { "/repo/main": { kind: "local" } } }
   state.globalProjects = [state.syncProject]

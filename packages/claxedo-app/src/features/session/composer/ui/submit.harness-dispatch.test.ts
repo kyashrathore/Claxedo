@@ -86,15 +86,16 @@ describe("Harness + demo dispatch and abort", () => {
       undefined,
     ])
     expect(apiCalls).toHaveLength(0)
-    expect(unsignedCalls).toHaveLength(1)
-    expect(unsignedCalls[0]?.url).toBe("http://localhost:3001/session/session-1/config?directory=%2Frepo%2Fmain&harness=claude-acp")
-    expect(unsignedCalls[0]?.method).toBe("PATCH")
-    expect(unsignedCalls[0]?.authorization).toBeNull()
+    const configCalls = unsignedCalls.filter((call) => call.url.includes("/session/session-1/config"))
+    expect(configCalls).toHaveLength(1)
+    expect(configCalls[0]?.url).toBe("http://localhost:3001/session/session-1/config?directory=%2Frepo%2Fmain&harness=claude-acp")
+    expect(configCalls[0]?.method).toBe("PATCH")
+    expect(configCalls[0]?.authorization).toBeNull()
     expect(transportClients).toHaveLength(1)
     expect(transportClients[0]?.baseUrl).toBe("http://localhost:3001")
     expect(transportClients[0]?.directory).toBe("/repo/main")
     expect(transportClients[0]?.fetch).not.toBeUndefined()
-    expect(JSON.parse(unsignedCalls[0]?.body ?? "{}")).toEqual({
+    expect(JSON.parse(configCalls[0]?.body ?? "{}")).toEqual({
       harness: { type: "claude-acp" },
       agent: "agent",
       model: { providerID: "claude-acp", modelID: "opus" },

@@ -171,6 +171,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     readSessionConfig,
     sessionClient,
     hostedSessionClient,
+    persistSessionConfig,
     saveSessionConfig,
   } = transport
   const abort = createPromptAbort({
@@ -479,6 +480,29 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       clearBoot()
       return
     }
+    if (target.created) {
+      try {
+        await persistSessionConfig({
+          sessionID: session.id,
+          directory: sessionDirectory,
+          harnessType: persistedHarnessType,
+          agent,
+          model,
+          variant,
+        })
+      } catch (err) {
+        const message = errorMessage(err)
+        clearBoot()
+        reportCloudStartupError(message)
+        showToast({
+          title: language.t("prompt.toast.sessionConfigSaveFailed.title", {
+            fallback: "Could not save session config",
+          }),
+          description: message,
+        })
+        return
+      }
+    }
     const provisionalTitle = mode === "normal" ? provisionalSessionTitle(text) : undefined
     const finalizedSessionTarget = finalizeSubmitSessionTarget({
       target,
@@ -551,6 +575,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const recordPromptSubmissionContext = {
       onSubmit: input.onSubmit,
       saveSessionConfig: () => {
+        if (target.created) return Promise.resolve()
         if (existingSessionConfig && sameExistingSessionConfig(existingSessionConfig, {
           harnessType: persistedHarnessType,
           agent,

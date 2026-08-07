@@ -182,7 +182,7 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     return runtimePromptClient
   }
 
-  const saveSessionConfig = async (configInput: SaveSessionConfigInput) => {
+  const persistSessionConfig = async (configInput: SaveSessionConfigInput) => {
     const body = {
       harness: {
         type: configInput.harnessType,
@@ -194,14 +194,18 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     const next = JSON.stringify(body)
     if (sessionConfigSignature(queryClient.getQueryData(sessionConfigRawQueryKey(configInput.sessionID))) === next) return
     const path = sessionConfigPath(configInput)
+    const res = await sessionRequest(configInput.directory, path, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: next,
+    })
+    if (!res.ok) throw new Error((await res.text().catch(() => "")) || `session config save failed: ${res.status}`)
+    setSessionConfigRawQueryData(configInput.sessionID, await res.json())
+  }
+
+  const saveSessionConfig = async (configInput: SaveSessionConfigInput) => {
     try {
-      const res = await sessionRequest(configInput.directory, path, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: next,
-      })
-      if (!res.ok) throw new Error((await res.text().catch(() => "")) || `session config save failed: ${res.status}`)
-      setSessionConfigRawQueryData(configInput.sessionID, await res.json())
+      await persistSessionConfig(configInput)
     } catch (err) {
       input.showToast({
         title: input.text.configSaveFailedTitle,
@@ -235,6 +239,7 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     hostedSessionClient,
     createRuntimePromptClient,
     readSessionConfig,
+    persistSessionConfig,
     saveSessionConfig,
   }
 }
