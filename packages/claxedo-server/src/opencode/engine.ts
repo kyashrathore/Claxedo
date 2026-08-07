@@ -7,9 +7,9 @@
  * composition root (startControlPlaneStack / startServer / main):
  *
  *   - "embedded" (DEFAULT when no external URL is configured): lazily boots the
- *     OpenCode engine in-process through the SDK-next embedded host and serves
- *     requests socketlessly through its single request handler. NOTHING listens
- *     on :4096.
+ *     OpenCode engine through SDK-next. Desktop supplies an on-demand worker
+ *     path so an idle engine can exit; other hosts use the socketless in-process
+ *     handler. NOTHING listens on :4096.
  *   - "external-url": an explicit opt-in. Rewrites the synthetic request origin
  *     (`http://opencode.internal`) onto the configured URL and calls `fetch`,
  *     applying opencodeHeaders — i.e. the historical passthrough behavior.
@@ -22,6 +22,7 @@
 import path from "path"
 import fs from "fs"
 import { pathToFileURL } from "url"
+import { fork, type ChildProcess } from "node:child_process"
 import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
 import {
   createEmbeddedHost,
@@ -90,6 +91,7 @@ export function configureOpenCodeApplicationTools(
 ) {
   if (loadedHost && factory)
     throw new Error("OpenCode application tools must be configured before the embedded engine starts")
+  if (factory) void engineWorkerPromise?.then((worker) => worker.child.kill()).catch(() => {})
   applicationTools = factory
 }
 
@@ -101,9 +103,14 @@ export function configureOpenCodeApplicationTools(
 // composition root hands us the artifact location explicitly. Undefined keeps
 // the historical bare import (claxedo-server dev/tests, external embedders).
 let embedPath: string | undefined
+let workerPath: string | undefined
 
 export function configureOpenCodeEmbedPath(next: string | undefined) {
   embedPath = next?.trim() || undefined
+}
+
+export function configureOpenCodeWorkerPath(next: string | undefined) {
+  workerPath = next?.trim() || undefined
 }
 
 function defaultLoader(): Promise<EmbeddedModule> {
@@ -124,6 +131,7 @@ export function __setOpenCodeEmbedLoaderForTests(next: (() => Promise<EmbeddedMo
 
 let embeddedHostPromise: Promise<EmbeddedHost> | undefined
 let loadedHost: EmbeddedHost | undefined
+let engineWorkerPromise: Promise<{ child: ChildProcess; url: string }> | undefined
 let loggedFailure = false
 
 async function embeddedHost(): Promise<EmbeddedHost> {
@@ -186,7 +194,71 @@ export const opencodeRequest: OpenCodeRequestFn = async (request) => {
   if (config.mode === "external-url") {
     return fetch(rewriteToConfiguredUrl(request, config.url))
   }
+  if (workerPath && !applicationTools) return workerRequest(request)
   return (await embeddedHost()).fetch(request)
+}
+
+async function workerRequest(request: Request) {
+  const retry = request.clone()
+  const worker = await engineWorker()
+  try {
+    return await fetch(rewriteToConfiguredUrl(request, worker.url))
+  } catch {
+    worker.child.kill()
+    engineWorkerPromise = undefined
+    return fetch(rewriteToConfiguredUrl(retry, (await engineWorker()).url))
+  }
+}
+
+async function engineWorker() {
+  if (engineWorkerPromise) return engineWorkerPromise
+  const pending = new Promise<{ child: ChildProcess; url: string }>((resolve, reject) => {
+    const dbDir = path.join(dataDir(), "opencode-engine")
+    fs.mkdirSync(dbDir, { recursive: true })
+    const child = fork(workerPath!, [], {
+      execPath: process.execPath,
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: "1",
+        CLAXEDO_ENGINE_EMBED_PATH: embedPath,
+        CLAXEDO_ENGINE_DB_PATH: path.join(dbDir, "opencode.db"),
+        CLAXEDO_ENGINE_PARENT_PID: String(process.pid),
+      },
+      stdio: ["inherit", "inherit", "inherit", "ipc"],
+    })
+    let settled = false
+    const fail = (cause: unknown) => {
+      if (settled) return
+      settled = true
+      child.kill()
+      clearTimeout(timeout)
+      reject(new OpenCodeEngineUnavailableError(cause))
+      queueMicrotask(() => {
+        if (engineWorkerPromise === pending) engineWorkerPromise = undefined
+      })
+    }
+    const timeout = setTimeout(() => fail("Engine worker did not become ready"), 10_000)
+    child.once("error", fail)
+    child.on("message", (message) => {
+      if (settled || !isWorkerReady(message)) return
+      settled = true
+      clearTimeout(timeout)
+      resolve({ child, url: `http://127.0.0.1:${message.port}` })
+    })
+    child.once("exit", () => {
+      clearTimeout(timeout)
+      if (!settled) fail("Engine worker exited before becoming ready")
+      if (engineWorkerPromise === pending) engineWorkerPromise = undefined
+    })
+  })
+  engineWorkerPromise = pending
+  return engineWorkerPromise
+}
+
+function isWorkerReady(input: unknown): input is { type: "claxedo-engine-ready"; port: number } {
+  if (!input || typeof input !== "object") return false
+  const value = input as { type?: unknown; port?: unknown }
+  return value.type === "claxedo-engine-ready" && Number.isInteger(value.port) && Number(value.port) > 0
 }
 
 /**
@@ -194,6 +266,9 @@ export const opencodeRequest: OpenCodeRequestFn = async (request) => {
  * never loaded (nothing to dispose). Wired into shutdownControlPlaneRuntime.
  */
 export async function drainOpenCodeEngine(): Promise<void> {
+  const worker = await engineWorkerPromise?.catch(() => undefined)
+  engineWorkerPromise = undefined
+  worker?.child.kill()
   if (!loadedHost) return
   const host = loadedHost
   loadedHost = undefined

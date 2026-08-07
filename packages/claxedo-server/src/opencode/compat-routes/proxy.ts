@@ -30,7 +30,10 @@ export async function proxyUpstream(
   pathname: string,
   options?: OpenCodeCompatRouteOptions,
 ) {
-  options?.onOpencodeAccess?.()
+  // Read-only shell hydration does not need a permanent upstream event bridge.
+  // Mutations start it before the engine request so session/tool events cannot
+  // race past the bridge; the idle worker can exit after catalog and history reads.
+  if (!["GET", "HEAD"].includes(c.req.method)) options?.onOpencodeAccess?.()
   const input = workspaceInput(c)
   const ws = await resolveWorkspace({
     workspaceId: input.workspaceId,

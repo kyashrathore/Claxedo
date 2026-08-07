@@ -10,7 +10,7 @@ import * as fs from "fs"
 import { createRequire } from "node:module"
 import * as path from "path"
 
-import { bundleClaxedoServer } from "./bundle-claxedo-server"
+import { bundleClaxedoEngineWorker, bundleClaxedoServer } from "./bundle-claxedo-server"
 import { copyIcons, copyWorkspaceRuntimeTemplates } from "./utils"
 
 const SCRIPT_DIR = import.meta.dir
@@ -128,6 +128,9 @@ if (outputIsStale(workspaceRuntimeOutput, [
 const serverSource = path.resolve(SCRIPT_DIR, "claxedo-server-entry.ts")
 const serverDest = path.resolve(PACKAGE_DIR, "resources/claxedo-server")
 const serverEntry = path.join(serverDest, "index.js")
+const workerSource = path.resolve(SCRIPT_DIR, "claxedo-engine-worker-entry.ts")
+const workerDest = path.resolve(PACKAGE_DIR, "resources/claxedo-engine-worker")
+const workerEntry = path.join(workerDest, "index.js")
 const embeddedOpenCode = path.resolve(OPENCODE_DIR, "dist/node/node.js")
 
 if (outputIsStale(embeddedOpenCode, [
@@ -158,6 +161,13 @@ if (fs.existsSync(serverSource) && outputIsStale(serverEntry, [
   console.log(`[predev] claxedo-server bundle is current`)
 } else {
   console.warn(`[predev] claxedo-server source not found at ${serverSource}, skipping`)
+}
+
+if (outputIsStale(workerEntry, [workerSource, path.resolve(SCRIPT_DIR, "bundle-claxedo-server.ts")])) {
+  console.log(`[predev] Bundling claxedo engine worker...`)
+  await bundleClaxedoEngineWorker(workerSource, workerDest)
+} else {
+  console.log(`[predev] claxedo engine worker is current`)
 }
 
 console.log(`[predev] Done.`)

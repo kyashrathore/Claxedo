@@ -18,6 +18,7 @@ parent?.listen((message) => void transport?.onMessage(message))
 
 startServer(startup.port, startup.opencodeUrl, startup.opencodePassword, {
   ...(startup.opencodeEmbedPath ? { opencodeEmbedPath: startup.opencodeEmbedPath } : {}),
+  ...(startup.opencodeWorkerPath ? { opencodeWorkerPath: startup.opencodeWorkerPath } : {}),
   ...(transport ? { processObserver: transport.observer } : {}),
 })
 
