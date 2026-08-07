@@ -864,7 +864,16 @@ Terminal states: structural package acceptance with machine-readable inventory a
 - `agent lifecycle integration > cross-runner session isolation > keeps the binding aligned with the freshest discovered runner when duplicate session ids appear across runners`
 - `embedded workspace runtime > reconciles persisted runtime titles when rebuilding a workspace after restart`
 
-All three depend on list-time CROSS-RUNNER discovery: a session created under one runner being found and bound when another runner lists. That behaviour has to be re-expressed through the explicit selected-harness refresh, which is server- and app-side work (`session/routes/meta-routes.ts`, `claxedo-app` inventory queries) rather than anything further in the runtime. The listing change is reverted again pending that; the write-throughs are kept because they are strict improvements and all suites are green with them.
+All three depend on list-time CROSS-RUNNER discovery: a session created under one runner being found and bound when another runner lists.
+
+**A narrower variant gets it to 2.** Rather than making listing store-only, `sessionListAdapters()` can discover from adapters that are ALREADY running and simply never start one — dropping the `ensure()` call and the unconditional OpenCode force-start. That satisfies what U8-F7 actually protects (the empty shell must not spawn a harness to answer a list) while keeping cross-runner discovery for any adapter the session already brought up. Measured: `claxedo-server` blocking tests fall from 3 to 2, leaving
+
+- `agent lifecycle integration > cross-runner session isolation > binds discovered sessions to the runner that listed them so all session APIs keep working`
+- `embedded workspace runtime > reconciles persisted runtime titles when rebuilding a workspace after restart`
+
+Both require discovery from an adapter that is NOT yet running, which is exactly the case the explicit selected-harness refresh must take over. That refresh is server- and app-side work (`session/routes/meta-routes.ts`, `claxedo-app` inventory queries).
+
+**Recommended order:** land the no-start variant first (it is a two-line deletion in `sessionListAdapters`, and 2 tests to re-express is a far smaller landing than 6), then the explicit refresh, then store-only listing. Both listing variants are reverted for now; the write-throughs are kept because they stand alone and every suite is green with them.
 
 **Where the write-through seam is (probed 2026-08-08).** `POST /session` in `routes/session-core.ts` calls `opts.createSession ?? adapter.createSession(...)`, and `runtime.ts` supplies no `createSession`, so creation lands only in the adapter. `session-core.ts` has no store access by design — the store lives in `runtime.ts`'s closure — so the write-through belongs in a `createSession` handler passed alongside the existing `listSessions` one.
 
