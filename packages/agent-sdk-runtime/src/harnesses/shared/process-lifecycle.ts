@@ -104,6 +104,98 @@ export type ProcessLifecycle<THandle> = {
   dispose(reason?: StopReason): Promise<void>
 }
 
+
+/**
+ * The idle half of the lifecycle, on its own.
+ *
+ * `createProcessLifecycle` owns start AND stop, which suits an adapter that
+ * spawns a child on demand. ACP does not have that shape: its transport is
+ * built during construction and lives for the directory, so it needs the idle
+ * semantics without the generation machinery.
+ *
+ * Rather than let it keep a second, subtly different idle implementation — the
+ * exact divergence this file exists to end — the reaper is extracted and both
+ * callers use it.
+ *
+ * `touch()` is for point operations (a request completed). `lease()` is for
+ * work that SPANS time and whose end is a separate event: a prompt turn, a
+ * response stream, a subscription. Touch alone cannot express "still working
+ * but silent", which is how a long tool call gets its harness reaped.
+ */
+export type IdleReaper = {
+  /** Restart the countdown. No-op while any lease is held. */
+  touch(): void
+  /** Hold the countdown open until released. */
+  lease(): ActivityLease
+  activeLeases(): number
+  /** Stop the current countdown; a later `touch()` starts a new one. */
+  cancelCountdown(): void
+  /** Stop counting entirely; further touches do nothing. */
+  cancel(): void
+}
+
+export function createIdleReaper(input: {
+  idleMs: number
+  onIdle: () => void
+  setTimeout?: (fn: () => void, ms: number) => unknown
+  clearTimeout?: (handle: unknown) => void
+}): IdleReaper {
+  const setTimer = input.setTimeout ?? ((fn, ms) => setTimeout(fn, ms))
+  const clearTimer = input.clearTimeout ?? ((handle) => clearTimeout(handle as never))
+  let timer: unknown
+  let leases = 0
+  let cancelled = false
+  // Monotonic, so a timer that fires after `cancel()` or after a later `touch()`
+  // cannot reap work it never measured. A cleared `setTimeout` can still fire
+  // if its callback was already queued.
+  let epoch = 0
+
+  const clear = () => {
+    if (timer === undefined) return
+    clearTimer(timer)
+    timer = undefined
+  }
+
+  const arm = () => {
+    clear()
+    if (cancelled || leases > 0) return
+    epoch += 1
+    const armedFor = epoch
+    timer = setTimer(() => {
+      timer = undefined
+      if (cancelled || leases > 0 || epoch !== armedFor) return
+      input.onIdle()
+    }, input.idleMs)
+  }
+
+  return {
+    touch: arm,
+    lease() {
+      leases += 1
+      clear()
+      let released = false
+      return {
+        release() {
+          if (released) return
+          released = true
+          leases -= 1
+          if (leases === 0) arm()
+        },
+      }
+    },
+    activeLeases: () => leases,
+    cancelCountdown() {
+      epoch += 1
+      clear()
+    },
+    cancel() {
+      cancelled = true
+      epoch += 1
+      clear()
+    },
+  }
+}
+
 export function createProcessLifecycle<THandle>(
   options: ProcessLifecycleOptions<THandle>,
 ): ProcessLifecycle<THandle> {
@@ -121,30 +213,34 @@ export function createProcessLifecycle<THandle>(
 
   let state: ProcessLifecycleState = "absent"
   let generation = 0
-  let leases = 0
-  let idleTimer: unknown
   let starting: { generation: number; promise: Promise<THandle>; abort: AbortController } | undefined
   let current: { generation: number; handle: THandle } | undefined
   let disposed = false
+  // Which generation the live countdown belongs to. The reaper guards against
+  // its own late timers; this guards against a countdown that was legitimately
+  // armed for a generation that has since been replaced.
+  let idleGeneration = 0
 
-  const clearIdleTimer = () => {
-    if (idleTimer === undefined) return
-    clearTimer(idleTimer)
-    idleTimer = undefined
-  }
+  const idle = createIdleReaper({
+    idleMs: idleGraceMs,
+    setTimeout: setTimer,
+    clearTimeout: clearTimer,
+    onIdle: () => {
+      if (!current || current.generation !== idleGeneration || disposed) return
+      emit({ type: "idle-timeout", generation: current.generation })
+      void stopInternal("idle")
+    },
+  })
+
+  const clearIdleTimer = () => idle.cancelCountdown()
 
   const armIdleTimer = () => {
-    clearIdleTimer()
-    if (!current || leases > 0 || disposed) return
-    const armedFor = current.generation
-    idleTimer = setTimer(() => {
-      idleTimer = undefined
-      // The generation check is the point: a timer armed for generation 3 must
-      // not tear down generation 4 if a restart happened while it was pending.
-      if (!current || current.generation !== armedFor || leases > 0) return
-      emit({ type: "idle-timeout", generation: armedFor })
-      void stopInternal("idle")
-    }, idleGraceMs)
+    if (!current || disposed) {
+      idle.cancelCountdown()
+      return
+    }
+    idleGeneration = current.generation
+    idle.touch()
   }
 
   const stopInternal = async (reason: StopReason) => {
@@ -234,15 +330,14 @@ export function createProcessLifecycle<THandle>(
   }
 
   const lease = (): ActivityLease => {
-    leases += 1
-    clearIdleTimer()
-    let released = false
+    const held = idle.lease()
     return {
       release() {
-        if (released) return
-        released = true
-        leases -= 1
-        if (leases === 0) armIdleTimer()
+        held.release()
+        // The reaper restarts its own countdown on the last release; re-arming
+        // here re-binds it to the CURRENT generation, which the reaper has no
+        // way to know about.
+        if (idle.activeLeases() === 0) armIdleTimer()
       },
     }
   }
@@ -250,7 +345,7 @@ export function createProcessLifecycle<THandle>(
   return {
     state: () => state,
     generation: () => generation,
-    activeLeases: () => leases,
+    activeLeases: () => idle.activeLeases(),
     ensure,
     async acquire() {
       // Lease BEFORE awaiting the start: a slow start with no lease held would

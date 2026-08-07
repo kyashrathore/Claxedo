@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  createIdleReaper,
   createProcessLifecycle,
   ProcessLifecycleDisposedError,
   terminateOnParentLoss,
@@ -294,3 +295,111 @@ describe("harness process lifecycle", () => {
     expect(handlers.get("beforeExit")).toEqual([])
   })
 })
+
+describe("idle reaper", () => {
+  function reaperFixture(idleMs = 30_000) {
+    const timers: Array<{ id: number; fn: () => void; cleared: boolean }> = []
+    let next = 1
+    let idleCount = 0
+    const reaper = createIdleReaper({
+      idleMs,
+      onIdle: () => { idleCount += 1 },
+      setTimeout: (fn) => {
+        const id = next++
+        timers.push({ id, fn, cleared: false })
+        return id
+      },
+      clearTimeout: (handle) => {
+        const timer = timers.find((item) => item.id === handle)
+        if (timer) timer.cleared = true
+      },
+    })
+    return {
+      reaper,
+      idleCount: () => idleCount,
+      fireAll() {
+        for (const timer of timers.filter((item) => !item.cleared)) {
+          timer.cleared = true
+          timer.fn()
+        }
+      },
+      fireCleared(index: number) { timers[index]!.fn() },
+      liveTimers: () => timers.filter((item) => !item.cleared),
+    }
+  }
+
+  test("counts down only after a touch", () => {
+    const harness = reaperFixture()
+    expect(harness.liveTimers()).toHaveLength(0)
+
+    harness.reaper.touch()
+    harness.fireAll()
+
+    expect(harness.idleCount()).toBe(1)
+  })
+
+  test("a lease suspends the countdown for its whole duration", () => {
+    // The behaviour ACP was missing. Touching on each protocol message covers a
+    // chatty turn; a turn sitting inside one long build call is silent, and
+    // used to race the reaper and lose.
+    const harness = reaperFixture()
+    harness.reaper.touch()
+    const lease = harness.reaper.lease()
+
+    harness.fireAll()
+    expect(harness.idleCount()).toBe(0)
+    expect(harness.reaper.activeLeases()).toBe(1)
+
+    lease.release()
+    harness.fireAll()
+    expect(harness.idleCount()).toBe(1)
+  })
+
+  test("a touch during a lease does not start a countdown", () => {
+    const harness = reaperFixture()
+    const lease = harness.reaper.lease()
+
+    harness.reaper.touch()
+    harness.reaper.touch()
+
+    expect(harness.liveTimers()).toHaveLength(0)
+    lease.release()
+    expect(harness.liveTimers()).toHaveLength(1)
+  })
+
+  test("a timer that fires after a later touch does not reap", () => {
+    // Epoch check. A cleared `setTimeout` can still fire if its callback was
+    // already queued, and the symptom is a harness dying while in use.
+    const harness = reaperFixture()
+    harness.reaper.touch()
+    harness.reaper.touch()
+
+    harness.fireCleared(0)
+
+    expect(harness.idleCount()).toBe(0)
+  })
+
+  test("cancel is terminal", () => {
+    const harness = reaperFixture()
+    harness.reaper.touch()
+    harness.reaper.cancel()
+
+    harness.fireCleared(0)
+    harness.reaper.touch()
+    harness.fireAll()
+
+    expect(harness.idleCount()).toBe(0)
+  })
+
+  test("nested leases release in any order", () => {
+    const harness = reaperFixture()
+    const outer = harness.reaper.lease()
+    const inner = harness.reaper.lease()
+
+    inner.release()
+    expect(harness.liveTimers()).toHaveLength(0)
+    outer.release()
+    expect(harness.liveTimers()).toHaveLength(1)
+  })
+})
+
