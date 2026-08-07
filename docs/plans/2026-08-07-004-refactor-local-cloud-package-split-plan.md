@@ -850,9 +850,19 @@ Terminal states: structural package acceptance with machine-readable inventory a
 
 **Finding (2026-08-08):** `listSessions` in `packages/workspace-runtime/src/workspace/runtime.ts` is the U8-F7 violation, and it is worse than "reads through an adapter". With no `harness` query it calls `sessionListAdapters()`, which invokes `ensure()` AND additionally starts OpenCode whenever the configured runner is something else. So the plainest read in the product — the inventory the empty shell fetches on every launch — starts one or two harness processes before it can answer. An idle desktop cannot be idle.
 
-**Why the obvious fix is not committed:** making generic listing store-only is a two-line change and it passes in isolation, but it makes the explicit `?harness=` path the ONLY route by which sessions predating the store are imported. In a full-suite run that path returned an empty list where the old fan-out returned the upstream session, and I could not establish whether that is test-order contamination or a real gap in `ensureSessionAdapter`'s configuration inheritance. Shipping it unresolved risks a user's historical sessions silently disappearing from their inventory, so the change was reverted rather than landed green-in-isolation.
+**Why the obvious fix is not committed:** making generic listing store-only is a two-line change, but it makes the explicit `?harness=` path the ONLY route by which sessions predating the store are imported — and that path does not durably import them.
 
-**Next step:** prove the explicit selected-harness refresh imports historical sessions in a full-suite run (start from `runtime.test.ts` "opencode compatibility default proxies …", which now needs splitting into a store-only assertion and a discovery assertion), then reland the store-only listing on top of it.
+**Diagnosed precisely (2026-08-08).** With the store-only change applied, a full-suite run shows:
+
+1. `GET /session?directory=D` → `[]` (correct: store-only, no adapter started).
+2. `GET /session?directory=D&harness=opencode` → `200`, upstream `http://opencode.test/session` IS called, and the discovered session IS returned.
+3. `GET /session?directory=D` again → **`[]`**.
+
+So discovery works and returns the row, but the row never becomes visible to `store().listSessions(directory)`. `bindDiscoveredSession` does call `store().bindSession({ sessionId, directory, agentSessionId, ... })` with the right directory, and `listSessions` filters `WHERE directory = ?` on the `session` table — so the gap is between `bindSession` writing a `session.bind` control row into the journal and that row being projected into the `session` table. That projection is where the fix belongs.
+
+Landing the store-only listing before fixing it would make a user's pre-store sessions visible only while a harness is explicitly named, and absent from their normal inventory — a silent data-loss appearance. The change is therefore reverted, not shipped green-in-isolation.
+
+**Next step:** fix the `bindSession` → `session`-table projection so an explicitly discovered historical session appears in the next generic list; assert steps 1–3 above as a test; then reland the two-line store-only listing on top of it.
 
 **Goal:** Make generic local hydration independent of every harness and compatibility stream, with durable runtime metadata and an explicit selected-harness refresh for historical imports.
 
