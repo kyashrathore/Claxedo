@@ -1821,6 +1821,39 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       app.route("/", SessionRoutes((input) => adapterForSession(input), {
         eventHub,
         resolveRuntime: (input) => runtimeForSession(input),
+        createSession: async (c, directory, title, id) => {
+          // Write through to the durable store on CREATE.
+          //
+          // Creation used to land only in the adapter; the store learned about
+          // a session solely through `bindDiscoveredSession` during the
+          // list-time adapter fan-out. That made the store a cache the fan-out
+          // happened to fill rather than the owner of local session inventory,
+          // and it is why generic listing cannot stop fanning out yet (U8-F7).
+          //
+          // Idempotent by construction: `bindSession` upserts, and
+          // `bindDiscoveredSession` skips a row already bound to this
+          // directory, so a later discovery pass neither duplicates nor
+          // clobbers what this wrote.
+          // The requested harness must be honoured here exactly as the route's
+          // own `resolveAdapter` would. Resolving the ACTIVE runner instead
+          // silently creates the session on the wrong adapter — and when the
+          // active runner is ACP, spawns a process the caller never asked for.
+          const query = (c as { req: { query: (k: string) => string | undefined } }).req
+          const requested = normalizeHarnessIdentity(query.query("harness") || query.query("runner") || undefined)
+          const adapter = await adapterForSession({
+            ...(id ? { sessionId: id } : {}),
+            directory,
+            ...(requested ? { harness: { id: requested.id, access: requested.access } } : {}),
+          })
+          const session = await adapter.createSession(directory, title, id)
+          store().bindSession({
+            sessionId: session.id,
+            directory,
+            ...(title ? { title } : {}),
+            agentSessionId: session.id,
+          })
+          return session
+        },
         listSessions: (c, directory) => listSessions(c as { req: { query: (k: string) => string | undefined } }, directory),
         listSubagents: ({ parentSessionId }) => store().listSubagents?.(parentSessionId) ?? [],
         listPermissions: (c, directory) => listPermissions(c as { req: { query: (k: string) => string | undefined } }, directory),

@@ -108,6 +108,17 @@ export function SessionRoutes(
     listPermissions?: (c: unknown, directory: string) => Promise<AgentPermissionRow[]>
     listQuestions?: (c: unknown, directory: string) => Promise<AgentQuestionRow[]>
     listSessions?: (c: unknown, directory: string) => Promise<AgentSessionRow[]>
+    /**
+     * Own session creation instead of delegating straight to the adapter.
+     *
+     * `createSessionRoutes` already supports this; it was simply not exposed
+     * here, so a host had no way to observe a create. Workspace Runtime needs
+     * it to become the OWNER of local session inventory (U8-F7): without a
+     * create hook the store only ever learns about a session from the
+     * list-time adapter fan-out, which makes the store a cache the fan-out
+     * happens to fill rather than the authority.
+     */
+    createSession?: (c: unknown, directory: string, title?: string, id?: string) => Promise<{ id: string }>
     listSubagents?: (input: {
       directory: string
       parentSessionId: string
@@ -205,6 +216,9 @@ export function SessionRoutes(
       : undefined,
     listSessions: options?.listSessions
       ? (c, directory) => options.listSessions!(c, requiredDirectory(directory))
+      : undefined,
+    createSession: options?.createSession
+      ? (c, directory, title, id) => options.createSession!(c, requiredDirectory(directory), title, id)
       : undefined,
     listSubagents: options?.listSubagents
       ? (_c, directory, parentSessionId) => options.listSubagents!({
