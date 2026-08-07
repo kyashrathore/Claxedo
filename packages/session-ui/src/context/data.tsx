@@ -41,6 +41,21 @@ export type NavigateToSessionFn = (sessionID: string) => void
 
 export type SessionHrefFn = (sessionID: string) => string
 
+export type SubagentView = {
+  parentSessionId: string
+  subagentKey: string
+  toolCallRole?: "spawn" | "interaction"
+  mode?: "foreground" | "background"
+  status: "pending" | "running" | "paused" | "interrupted" | "completed" | "failed" | "killed" | "unknown"
+  label: string
+  agentLabel: string
+  description: string
+  childSessionId?: string
+  transcriptKind: "live" | "file" | "messages" | "none" | "unknown"
+  resolution: "not-yet-bound" | "loading" | "ready" | "empty" | "unavailable"
+  ambient: boolean
+}
+
 export const { use: useData, provider: DataProvider } = createSimpleContext({
   name: "Data",
   init: (props: {
@@ -48,6 +63,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
     directory: string
     onNavigateToSession?: NavigateToSessionFn
     onSessionHref?: SessionHrefFn
+    resolveSubagents?: (parentSessionId: string, toolCallId?: string) => SubagentView[]
   }) => {
     return {
       get store() {
@@ -58,6 +74,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
       },
       navigateToSession: props.onNavigateToSession,
       sessionHref: props.onSessionHref,
+      resolveSubagents: props.resolveSubagents,
     }
   },
 })

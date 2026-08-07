@@ -34,6 +34,11 @@ export type SubagentRegistryEntry = {
   fieldRevisions: Readonly<Partial<Record<RevisionField, number>>>
 }
 
+export type SubagentRegistryChange =
+  | { type: "upsert"; parentSessionId: string }
+  | { type: "remove"; parentSessionId: string }
+  | { type: "reset" }
+
 export type SubagentRegistry = {
   apply(parentSessionId: string, event: SubagentUpdatedEvent): SubagentRegistryEntry
   get(parentSessionId: string, subagentKey: string): SubagentRegistryEntry | undefined
@@ -44,6 +49,7 @@ export type SubagentRegistry = {
   workspaceChanged(): void
   replayGap(): void
   abortParent(parentSessionId: string, revisionFor: (entry: SubagentRegistryEntry) => number): SubagentRegistryEntry[]
+  subscribe(listener: (change: SubagentRegistryChange) => void): () => void
 }
 
 type MutableEntry = Omit<SubagentRegistryEntry, "toolCallEdges" | "fieldRevisions"> & {
@@ -54,6 +60,10 @@ type MutableEntry = Omit<SubagentRegistryEntry, "toolCallEdges" | "fieldRevision
 export function createSubagentRegistry(): SubagentRegistry {
   const entries = new Map<string, MutableEntry>()
   const diagnosticRows: SubagentRegistryDiagnostic[] = []
+  const listeners = new Set<(change: SubagentRegistryChange) => void>()
+  const notify = (change: SubagentRegistryChange) => {
+    for (const listener of listeners) listener(change)
+  }
 
   const apply = (parentSessionId: string, event: SubagentUpdatedEvent) => {
     const key = registryKey(parentSessionId, event.subagentKey)
@@ -75,12 +85,14 @@ export function createSubagentRegistry(): SubagentRegistry {
     applyImmutable(entry, event, "providerKind", diagnosticRows)
     applyImmutable(entry, event, "childSessionId", diagnosticRows)
     applyEdge(entry, event, diagnosticRows)
+    notify({ type: "upsert", parentSessionId })
     return clone(entry)
   }
 
   const removeParent = (parentSessionId: string) => {
     const removed = [...entries.values()].filter((entry) => entry.parentSessionId === parentSessionId)
     for (const entry of removed) entries.delete(registryKey(parentSessionId, entry.subagentKey))
+    notify({ type: "remove", parentSessionId })
     return removed.map(clone)
   }
 
@@ -100,9 +112,11 @@ export function createSubagentRegistry(): SubagentRegistry {
     archiveParent: removeParent,
     workspaceChanged() {
       entries.clear()
+      notify({ type: "reset" })
     },
     replayGap() {
       entries.clear()
+      notify({ type: "reset" })
     },
     abortParent(parentSessionId, revisionFor) {
       const interrupted = [...entries.values()].filter((entry) =>
@@ -116,6 +130,10 @@ export function createSubagentRegistry(): SubagentRegistry {
         revision: revisionFor(clone(entry)),
         status: "interrupted",
       }))
+    },
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
     },
   }
 }

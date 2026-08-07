@@ -53,6 +53,7 @@ export type LayoutOrchestrationApi = {
   splitContent(targetPane: string, edge: Edge, id: string): void
   /** Alias for `wb.navigation.show(id)`. */
   showContent(id: string): void
+  restoreContentFocus(id: string): void
 
   /**
    * Internal hook the rail-layout's `onContentClose` calls when the Workbench
@@ -107,6 +108,29 @@ export function createLayoutOrchestration(input: {
   cleanupHook?: CleanupHook
 }): LayoutOrchestrationApi {
   const { wb, meta, terminal, cleanupHook } = input
+
+  const restoreContentFocus = (id: string) => {
+    const origin = meta.get(id)?.returnFocus
+    if (!origin || typeof document === "undefined") return
+    const attempt = (remaining: number) => {
+      const exact = origin.originId
+        ? document.querySelector<HTMLElement>(`[data-subagent-origin-id="${CSS.escape(origin.originId)}"]`)
+        : undefined
+      const marker = origin.subagentKey
+        ? document.querySelector<HTMLElement>(
+            `[data-session-timeline-session-id="${CSS.escape(origin.parentSessionId)}"] [data-subagent-key="${CSS.escape(origin.subagentKey)}"]`,
+          )
+        : document.querySelector<HTMLElement>(`[data-session-timeline-session-id="${CSS.escape(origin.parentSessionId)}"]`)
+      const target = exact ?? marker?.closest<HTMLElement>("a, button") ?? marker
+      if (target && target.getClientRects().length > 0) {
+        target.focus()
+        target.scrollIntoView({ block: "center" })
+        return
+      }
+      if (remaining > 0) requestAnimationFrame(() => attempt(remaining - 1))
+    }
+    queueMicrotask(() => attempt(60))
+  }
 
   const showOrCreate = (
     existing: ContentMeta | undefined,
@@ -188,6 +212,7 @@ export function createLayoutOrchestration(input: {
       terminal.clearForContent(id)
     }
     cleanupHook?.(id, m, reason)
+    restoreContentFocus(id)
     meta.remove(id)
   }
 
@@ -590,6 +615,8 @@ export function createLayoutOrchestration(input: {
     showContent(id) {
       wb.navigation.show(id)
     },
+
+    restoreContentFocus,
 
     _cleanupOnClose,
   }

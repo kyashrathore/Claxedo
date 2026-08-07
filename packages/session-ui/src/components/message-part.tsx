@@ -23,7 +23,6 @@ import {
   Message as MessageType,
   Part as PartType,
   ReasoningPart,
-  Session,
   TextPart,
   ToolPart,
   UserMessage,
@@ -31,7 +30,7 @@ import {
   QuestionAnswer,
   QuestionInfo,
 } from "@opencode-ai/sdk/v2"
-import { useData } from "../context"
+import { useData, type SubagentView } from "../context"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { type UiI18n, useI18n } from "@opencode-ai/ui/context/i18n"
@@ -616,27 +615,6 @@ function sessionLink(id: string | undefined, path: string, href?: (id: string) =
   const idx = path.indexOf("/session")
   if (idx === -1) return
   return `${path.slice(0, idx)}/session/${id}`
-}
-
-function currentSession(path: string) {
-  return path.match(/\/session\/([^/?#]+)/)?.[1]
-}
-
-function taskSession(
-  input: Record<string, any>,
-  path: string,
-  sessions: Session[] | undefined,
-  agents?: readonly { name: string; color?: string }[],
-) {
-  const parentID = currentSession(path)
-  if (!parentID) return
-  const description = typeof input.description === "string" ? input.description : ""
-  const agent = taskAgent(input.subagent_type, agents).name
-  return (sessions ?? [])
-    .filter((session) => session.parentID === parentID && !session.time?.archived)
-    .filter((session) => (description ? session.title.startsWith(description) : true))
-    .filter((session) => (agent ? session.title.includes(`@${agent}`) : true))
-    .sort((a, b) => (b.time.created ?? 0) - (a.time.created ?? 0))[0]?.id
 }
 
 const CONTEXT_GROUP_TOOLS = new Set(["read", "glob", "grep", "list"])
@@ -1749,6 +1727,7 @@ export interface ToolProps {
   input: Record<string, any>
   metadata: Record<string, any>
   tool: string
+  toolCallId?: string
   sessionID?: string
   output?: string
   status?: string
@@ -1895,6 +1874,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               component={render()}
               input={input()}
               tool={part().tool}
+              toolCallId={part().callID}
               sessionID={part().sessionID}
               metadata={partMetadata()}
               // @ts-expect-error
@@ -2328,113 +2308,185 @@ ToolRegistry.register({
   },
 })
 
+function subagentStatus(status: SubagentView["status"]) {
+  switch (status) {
+    case "pending": return "Pending"
+    case "running": return "Working"
+    case "paused": return "Paused"
+    case "interrupted": return "Interrupted"
+    case "completed": return "Completed"
+    case "failed": return "Failed"
+    case "killed": return "Killed"
+    default: return "Status unavailable"
+  }
+}
+
+function SubagentTaskCard(props: {
+  subagent: SubagentView
+  tone?: string
+  v2Tone?: string
+}) {
+  const data = useData()
+  const location = useLocation()
+  const href = createMemo(() => sessionLink(props.subagent.childSessionId, location.pathname, data.sessionHref))
+  const openable = createMemo(() =>
+    props.subagent.resolution === "ready" &&
+    !!props.subagent.childSessionId &&
+    !!(data.navigateToSession || href())
+  )
+  const status = createMemo(() => subagentStatus(props.subagent.status))
+  const subtitle = createMemo(() => [
+    props.subagent.description,
+    props.subagent.mode === "background" ? "Background · continues independently" : undefined,
+    props.subagent.resolution === "unavailable" ? "Transcript unavailable" : undefined,
+    props.subagent.resolution === "not-yet-bound" ? "Transcript not yet available" : undefined,
+  ].filter(Boolean).join(" · "))
+
+  const activate = () => {
+    if (props.subagent.toolCallRole === "interaction") {
+      const selector = `[data-subagent-key="${CSS.escape(props.subagent.subagentKey)}"][data-subagent-role="spawn"]`
+      const canonical = document.querySelector<HTMLElement>(selector)
+      if (canonical) {
+        canonical.scrollIntoView({ block: "center", behavior: "smooth" })
+        canonical.focus({ preventScroll: true })
+        return
+      }
+    }
+    const id = props.subagent.childSessionId
+    if (!id || !openable()) return
+    if (data.navigateToSession) {
+      data.navigateToSession(id)
+      return
+    }
+    const value = href()
+    if (value) window.location.assign(value)
+  }
+
+  const navigate = (event: MouseEvent) => {
+    if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+    const target = event.currentTarget
+    if (target && props.subagent.toolCallRole !== "interaction" && props.subagent.childSessionId && openable()) {
+      const handled = !target.dispatchEvent(new CustomEvent("claxedo:open-subagent", {
+        bubbles: true,
+        cancelable: true,
+        detail: {
+          childSessionId: props.subagent.childSessionId,
+          subagentKey: props.subagent.subagentKey,
+        },
+      }))
+      if (handled) {
+        event.preventDefault()
+        return
+      }
+    }
+    if (!data.navigateToSession) return
+    event.preventDefault()
+    activate()
+  }
+
+  const trigger = () => (
+    <div
+      data-component="task-tool-card"
+      data-subagent-key={props.subagent.subagentKey}
+      data-subagent-role={props.subagent.toolCallRole ?? "ambient"}
+      data-status={props.subagent.status}
+      aria-label={`${props.subagent.label}: ${props.subagent.agentLabel}, ${status()}`}
+      tabIndex={props.subagent.toolCallRole === "spawn" ? -1 : undefined}
+      style={{
+        "--task-agent-color": props.v2Tone,
+        "--task-agent-legacy-color": props.tone,
+      }}
+    >
+      <div data-component="task-tool-surface">
+        <div data-slot="basic-tool-tool-info-structured">
+          <div data-slot="basic-tool-tool-info-main">
+            <Show
+              when={props.subagent.status === "pending" || props.subagent.status === "running"}
+              fallback={
+                <span data-component="task-tool-icon">
+                  <AgentGlyph seed={props.subagent.childSessionId || props.subagent.subagentKey} color={props.tone} />
+                </span>
+              }
+            >
+              <span data-component="task-tool-spinner" style={{ color: props.tone ?? "var(--icon-interactive-base)" }}>
+                <Show when={newLayout()} fallback={<Spinner />}>
+                  <SessionProgressIndicatorV2
+                    style={{ color: props.v2Tone ?? "light-dark(var(--v2-text-text-base), #ffffff)" }}
+                  />
+                </Show>
+              </span>
+            </Show>
+            <span data-component="task-tool-title">{props.subagent.agentLabel || props.subagent.label}</span>
+            <span data-slot="basic-tool-tool-subtitle">{subtitle()}</span>
+            <span data-slot="subagent-status" aria-live="polite" aria-atomic="true">{status()}</span>
+          </div>
+        </div>
+      </div>
+      <Show when={openable() || props.subagent.toolCallRole === "interaction"}>
+        <div data-component="task-tool-action">
+          <Icon name={props.subagent.toolCallRole === "interaction" ? "arrow-up" : "square-arrow-top-right"} size="small" />
+        </div>
+      </Show>
+    </div>
+  )
+
+  return (
+    <BasicTool
+      icon="task"
+      status={props.subagent.status === "pending" || props.subagent.status === "running" ? props.subagent.status : undefined}
+      trigger={trigger()}
+      hideDetails
+      triggerAsLink={openable() && props.subagent.toolCallRole !== "interaction"}
+      triggerHref={props.subagent.toolCallRole === "interaction" ? undefined : href()}
+      clickable={openable() || props.subagent.toolCallRole === "interaction"}
+      onTriggerClick={navigate}
+      onTriggerKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return
+        event.preventDefault()
+        activate()
+      }}
+    />
+  )
+}
+
 ToolRegistry.register({
   name: "task",
   render(props) {
     const data = useData()
     const i18n = useI18n()
-    const location = useLocation()
-    const childSessionId = createMemo(() => {
-      const value = props.metadata.sessionId
-      if (typeof value === "string" && value) return value
-      return taskSession(props.input, location.pathname, data.store.session, data.store.agent)
-    })
     const agent = createMemo(() => taskAgent(props.input.subagent_type, data.store.agent))
-    const title = createMemo(() => agent().name ?? i18n.t("ui.tool.agent.default"))
     const tone = createMemo(() => agent().color)
     const v2Tone = createMemo(() => agent().v2Color)
-    const subtitle = createMemo(() => {
-      const value =
-        typeof props.input.description === "string" && props.input.description
-          ? props.input.description
-          : childSessionId()
-      if (!value) return value
-      if (props.metadata.background === true) return `${value} (background)`
-      return value
-    })
-    const running = createMemo(() => props.status === "pending" || props.status === "running")
-
-    const href = createMemo(() => sessionLink(childSessionId(), location.pathname, data.sessionHref))
-    const clickable = createMemo(() => !!(childSessionId() && (data.navigateToSession || href())))
-
-    const open = () => {
-      const id = childSessionId()
-      if (!id) return
-      if (data.navigateToSession) {
-        data.navigateToSession(id)
-        return
-      }
-      const value = href()
-      if (value) window.location.assign(value)
-    }
-
-    const navigate = (event: MouseEvent) => {
-      if (!data.navigateToSession) return
-      if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
-      event.preventDefault()
-      open()
-    }
-    const navigateKey = (event: KeyboardEvent) => {
-      if (!clickable() || href()) return
-      if (event.key !== "Enter" && event.key !== " ") return
-      event.preventDefault()
-      open()
-    }
-
-    const trigger = () => (
-      <div
-        data-component="task-tool-card"
-        style={{
-          "--task-agent-color": v2Tone(),
-          "--task-agent-legacy-color": tone(),
-        }}
-      >
-        <div data-component="task-tool-surface">
-          <div data-slot="basic-tool-tool-info-structured">
-            <div data-slot="basic-tool-tool-info-main">
-              <Show
-                when={running()}
-                fallback={
-                  <span data-component="task-tool-icon">
-                    <AgentGlyph seed={childSessionId() || title()} color={tone() ?? undefined} />
-                  </span>
-                }
-              >
-                <span data-component="task-tool-spinner" style={{ color: tone() ?? "var(--icon-interactive-base)" }}>
-                  <Show when={newLayout()} fallback={<Spinner />}>
-                    <SessionProgressIndicatorV2
-                      style={{ color: v2Tone() ?? "light-dark(var(--v2-text-text-base), #ffffff)" }}
-                    />
-                  </Show>
-                </span>
-              </Show>
-              <span data-component="task-tool-title">{title()}</span>
-              <Show when={subtitle()}>
-                <span data-slot="basic-tool-tool-subtitle">{subtitle()}</span>
-              </Show>
-            </div>
-          </div>
-        </div>
-        <Show when={clickable()}>
-          <div data-component="task-tool-action">
-            <Icon name="square-arrow-top-right" size="small" />
-          </div>
-        </Show>
-      </div>
+    const fallbackStatus = props.status === "pending" || props.status === "running"
+      ? props.status
+      : props.status === "error"
+        ? "failed" as const
+        : props.status === "completed"
+          ? "completed" as const
+          : "unknown" as const
+    const explicit = createMemo(() =>
+      props.sessionID ? data.resolveSubagents?.(props.sessionID, props.toolCallId) ?? [] : []
     )
+    const subagents = createMemo<SubagentView[]>(() => explicit().length > 0 ? explicit() : [{
+      parentSessionId: props.sessionID ?? "",
+      subagentKey: props.toolCallId ?? "unbound-task",
+      status: fallbackStatus,
+      label: "Subagent",
+      agentLabel: agent().name ?? i18n.t("ui.tool.agent.default"),
+      description: typeof props.input.description === "string" && props.input.description
+        ? props.input.description
+        : "Delegated task",
+      transcriptKind: "none",
+      resolution: "unavailable",
+      ambient: false,
+    }])
 
     return (
-      <BasicTool
-        icon="task"
-        status={props.status}
-        trigger={trigger()}
-        hideDetails
-        triggerAsLink
-        triggerHref={href()}
-        clickable={clickable()}
-        onTriggerClick={navigate}
-        onTriggerKeyDown={navigateKey}
-      />
+      <div data-component="subagent-card-list">
+        <For each={subagents()}>
+          {(subagent) => <SubagentTaskCard subagent={subagent} tone={tone()} v2Tone={v2Tone()} />}
+        </For>
+      </div>
     )
   },
 })

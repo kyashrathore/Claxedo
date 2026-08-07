@@ -151,6 +151,8 @@ describe("subagent registry", () => {
 
   test("isolates identical keys by parent and covers delete, archive, workspace, replay-gap, and abort teardown", () => {
     const registry = createSubagentRegistry()
+    const changes: Array<{ type: string; parentSessionId?: string }> = []
+    registry.subscribe((change) => changes.push(change))
     const add = (parent: string, key: string, mode: "foreground" | "background" = "foreground") =>
       registry.apply(parent, { type: "subagent-updated", subagentKey: key, revision: 1, mode, status: "running" })
 
@@ -174,6 +176,11 @@ describe("subagent registry", () => {
     add("parent-replay", "child")
     registry.replayGap()
     expect(registry.list()).toEqual([])
+    registry.replayGap()
+    registry.deleteParent("empty-parent")
+    expect(changes).toContainEqual({ type: "remove", parentSessionId: "parent-1" })
+    expect(changes).toContainEqual({ type: "remove", parentSessionId: "empty-parent" })
+    expect(changes.filter((change) => change.type === "reset")).toHaveLength(3)
   })
 
   test("round-trips the four validation-rail transcript and identity shapes", () => {

@@ -10,10 +10,11 @@
   * The provider chain mirrors directory-layout.tsx but is decoupled from routing.
   */
 
-import { Show, type Accessor, type ParentProps, createEffect, createMemo, createSignal, untrack } from "solid-js"
+import { Show, type Accessor, type ParentProps, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { useWorkspaceQuery } from "../../../features/workspaces/data/use-workspace-query"
 import { useSDK } from "@/app/providers/sdk/sdk"
+import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { LocalProvider } from "@/features/session/providers/session-selection"
 import { TerminalProvider } from "@/features/terminal/providers/provider"
 import { FileProvider } from "@/app/providers/file"
@@ -35,6 +36,11 @@ import { shellDataKeys } from "@/platform/sync/keys"
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { agentListQuery } from "../../../features/session/data/query/directory"
 import { directorySessionCacheQueryOptions, type DirectorySessionCacheValue } from "../../../features/session/data/sync/queries"
+import {
+  hydrateSubagentRows,
+  presentSubagents,
+  type HostSubagentRow,
+} from "../../../features/session/subagents/subagent-presentation"
 
 function DirectoryDataProvider(props: ParentProps<{
   data: DirectorySessionCacheValue
@@ -45,7 +51,39 @@ function DirectoryDataProvider(props: ParentProps<{
   onSyncSession?: (sessionID: string) => void | Promise<void>
 }>) {
   const sdk = useSDK()
+  const globalSDK = useGlobalSDK()
   const platform = usePlatform()
+  const subagents = globalSDK.event.subagents.registry
+  const [subagentRevision, setSubagentRevision] = createSignal(0)
+  const loadedSubagents = new Set<string>()
+  const loadingSubagents = new Set<string>()
+  onCleanup(subagents.subscribe((change) => {
+    if (change.type === "reset") loadedSubagents.clear()
+    if (change.type === "remove") loadedSubagents.delete(change.parentSessionId)
+    if (change.type === "upsert") loadedSubagents.add(change.parentSessionId)
+    setSubagentRevision((revision) => revision + 1)
+  }))
+
+  const ensureSubagents = (parentSessionId: string) => {
+    if (loadedSubagents.has(parentSessionId) || loadingSubagents.has(parentSessionId)) return
+    loadingSubagents.add(parentSessionId)
+    const query = new URLSearchParams({ directory: props.directory })
+    void sdk.request(`/session/${encodeURIComponent(parentSessionId)}/subagents?${query}`).then(async (response) => {
+      if (!response.ok) throw new Error((await response.text()) || `Subagent read failed: ${response.status}`)
+      hydrateSubagentRows(subagents, parentSessionId, await response.json() as HostSubagentRow[])
+      loadedSubagents.add(parentSessionId)
+    }).catch(() => {
+      loadedSubagents.delete(parentSessionId)
+    }).finally(() => {
+      loadingSubagents.delete(parentSessionId)
+    })
+  }
+
+  const resolveSubagents = (parentSessionId: string, toolCallId?: string) => {
+    subagentRevision()
+    ensureSubagents(parentSessionId)
+    return presentSubagents(subagents, parentSessionId, toolCallId)
+  }
   // agentListQuery hits the workspace RUNTIME for relay-backed scopes, so it must be structurally
   // disabled while that workspace is offline — otherwise it is the fire-and-fail
   // class (404/403 storm before `ready`). `useWorkspaceQuery` keys on the relay
@@ -98,6 +136,7 @@ function DirectoryDataProvider(props: ParentProps<{
       directory={props.directory}
       onNavigateToSession={navigateToSession}
       onSessionHref={sessionHref}
+      resolveSubagents={resolveSubagents}
     >
       <SessionSyncProvider syncSession={syncSession}>
         {props.children}

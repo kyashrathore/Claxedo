@@ -116,6 +116,7 @@ import {
   resolveTimelinePath as resolveTimelineFilePath,
 } from "./timeline-file-paths"
 import { messageNavCurrentID, messageNavPreview, messageNavVisible } from "./message-nav-preview"
+import { BP_MD } from "@/ui/controls/breakpoints"
 import "./message-nav-gutter.css"
 
 installTimelineMermaid()
@@ -430,6 +431,41 @@ export function MessageTimeline(props: {
   const claxedoState = useClaxedoState()
   const paneId = usePaneId()
 
+  const openSubagent = (childSessionId: string, origin?: HTMLElement, subagentKey?: string) => {
+    const contentId = claxedoState.layout.openSession(sdk.directory, childSessionId, "Subagent", { focus: false })
+    const childPane = claxedoState.wb.selectors.contentPane(contentId)
+    const parentSessionId = sessionID() ?? ""
+    const dedicatedPane = claxedoState.meta
+      .findAll((item) => item.id !== contentId && item.returnFocus?.parentSessionId === parentSessionId)
+      .map((item) => claxedoState.wb.selectors.contentPane(item.id))
+      .find((id): id is string => !!id && id !== paneId)
+    if (window.matchMedia(`(min-width: ${BP_MD}px)`).matches && paneId && !childPane && !dedicatedPane) {
+      claxedoState.layout.splitContent(paneId, "right", contentId)
+    } else if (dedicatedPane && !childPane) {
+      claxedoState.wb.panes.assign(dedicatedPane, contentId)
+      claxedoState.layout.showContent(contentId)
+    } else {
+      claxedoState.layout.showContent(contentId)
+    }
+    if (origin) {
+      document.querySelectorAll<HTMLElement>(`[data-subagent-origin-id="${CSS.escape(contentId)}"]`)
+        .forEach((item) => delete item.dataset.subagentOriginId)
+      origin.dataset.subagentOriginId = contentId
+      claxedoState.meta.patch(contentId, {
+        returnFocus: {
+          parentSessionId,
+          subagentKey: subagentKey ?? origin.closest<HTMLElement>("[data-subagent-key]")?.dataset.subagentKey,
+          originId: contentId,
+        },
+      })
+    }
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(
+        `[data-session-timeline-session-id="${CSS.escape(childSessionId)}"] [data-subagent-child-heading]`,
+      )?.focus()
+    })
+  }
+
   // Shared with the terminal's file links (timeline-file-paths.ts):
   // normalizes/relativizes, parses `:line[:col]`, refuses `~`/traversal/
   // out-of-workspace paths (which used to open blank tabs).
@@ -466,6 +502,17 @@ export function MessageTimeline(props: {
   }
   // Capture phase runs before the link's default action (see above).
   const registerTimelineRoot = (el: HTMLDivElement) => {
+    const onOpenSubagent = (raw: Event) => {
+      const event = raw as CustomEvent<{ childSessionId?: string; subagentKey?: string }>
+      const childSessionId = event.detail?.childSessionId
+      if (!childSessionId) return
+      event.preventDefault()
+      const origin = event.target instanceof Element
+        ? event.target.closest<HTMLElement>("button, a, [tabindex]") ?? undefined
+        : undefined
+      openSubagent(childSessionId, origin, event.detail.subagentKey)
+    }
+    el.addEventListener("claxedo:open-subagent", onOpenSubagent)
     const onCapture = (event: MouseEvent) => {
       const externalSourceUrl = timelineExternalSourceClickTarget(event)
       if (externalSourceUrl) {
@@ -493,6 +540,7 @@ export function MessageTimeline(props: {
       ),
     )
     onCleanup(() => {
+      el.removeEventListener("claxedo:open-subagent", onOpenSubagent)
       el.removeEventListener("click", onCapture, { capture: true })
       stopCandidatePromotion()
     })
@@ -564,6 +612,11 @@ export function MessageTimeline(props: {
   const directorySession = (sessionID: string | undefined) =>
     sessionID ? directorySessionRows().find((session) => session.id === sessionID) : undefined
   const tint = createMemo(() => messageAgentColor(sessionMessages(), directoryAgentsQueryResult.data ?? []))
+  const ambientSubagents = createMemo(() => {
+    const id = sessionID()
+    if (!id) return []
+    return (data.resolveSubagents?.(id) ?? []).filter((subagent) => subagent.ambient)
+  })
 
   const [timeoutDone, setTimeoutDone] = createSignal(true)
 
@@ -1161,7 +1214,12 @@ export function MessageTimeline(props: {
   const navigateParent = () => {
     const id = parentID()
     if (!id) return
+    const child = sessionID()
+    const content = child
+      ? claxedoState.meta.find((item) => item.type === "session" && item.sessionId === child)
+      : undefined
     navigate(sessionRoute(id))
+    if (content) claxedoState.layout.restoreContentFocus(content.id)
   }
 
   function DialogDeleteSession(props: { sessionID: string }) {
@@ -1260,7 +1318,7 @@ export function MessageTimeline(props: {
           .map((ref) => getMsgPart(ref.messageID, ref.partID))
           .filter((part): part is ToolPart => part?.type === "tool")
       })
-      return <SubagentChipRow parts={members()} onOpen={(childSessionId) => navigate(sessionRoute(childSessionId))} />
+      return <SubagentChipRow parts={members()} onOpen={openSubagent} />
     }
 
     if (row().group.type === "work") {
@@ -1841,6 +1899,8 @@ export function MessageTimeline(props: {
                       fallback={
                         <h1
                           data-slot="session-title-child"
+                          data-subagent-child-heading={parentID() ? "" : undefined}
+                          tabIndex={parentID() ? -1 : undefined}
                           class="text-14-medium text-text-strong truncate grow-1 min-w-0"
                           onDblClick={openTitleEditor}
                         >
@@ -1937,6 +1997,17 @@ export function MessageTimeline(props: {
               </Show>
             </div>
           </div>
+        </Show>
+        <Show when={ambientSubagents().length > 0}>
+          <section
+            aria-labelledby="background-subagents-heading"
+            class="w-full px-4 pb-4 md:max-w-192 md:mx-auto 2xl:max-w-[880px]"
+          >
+            <h2 id="background-subagents-heading" class="pb-2 text-12-medium text-text-weak">
+              Background subagents
+            </h2>
+            <SubagentChipRow subagents={ambientSubagents()} onOpen={openSubagent} />
+          </section>
         </Show>
         <div
           data-timeline-virtual-content
