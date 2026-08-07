@@ -1,8 +1,7 @@
 import { createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import type { Message, PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
-import { useGlobalSDK } from "@/features/session/app-ports"
-import { useSDK } from "@/features/session/app-ports"
+import { useGlobalSDK, useSDK } from "@/features/session/app-ports"
 import { diffs as list } from "@/lib/diffs"
 import { idleSessionStatus, isSessionTurnActive, mergeBusySessionStatus, pickSessionPermissions, pickSessionQuestions } from "./session-store"
 import { dispatchSessionRequestsEvent, dispatchSessionStatusEvent, dispatchSessionTodoEvent } from "./session-status-dispatcher"
@@ -39,13 +38,9 @@ import { removeDirectorySession, upsertDirectorySession } from "../data/sync/dir
 import { FAST_SESSION_SWITCH_NETWORK_QUIET_MS, FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS, FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS, fastSessionSwitchQuietDelay, fastSessionSwitchNetworkQuiet, suppressedByFastSessionSwitch } from "@/platform/runtime/session-switch"
 import { assistantMessageIdForUserMessage } from "../data/session-types"
 import { backfillFailedCursor, createHistoryMetaState, historyHasMore, historyIsLoading } from "./history-pagination"
+import type { SessionRef } from "@/platform/identity/session-ref"
 
-export {
-  FAST_SESSION_SWITCH_NETWORK_QUIET_MS,
-  FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS,
-  FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS,
-} from "@/platform/runtime/session-switch"
-
+export { FAST_SESSION_SWITCH_NETWORK_QUIET_MS, FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS, FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS } from "@/platform/runtime/session-switch"
 export { resolveStoredMessages, resolveStoredParts }
 
 export function sessionHistoryKey(input: { sessionID: string; directory: string }) {
@@ -54,8 +49,8 @@ export function sessionHistoryKey(input: { sessionID: string; directory: string 
 
 type DirectoryRef = Parameters<typeof sessionHistoryKey>[0]["directory"]
 
-function markLiveSession(event: Pick<ReturnType<typeof useGlobalSDK>["event"], "setLiveSession">, sessionID: string, directory: DirectoryRef, workspaceId?: string) {
-  event.setLiveSession(sessionID, { directory, workspaceId })
+function markLiveSession(event: Pick<ReturnType<typeof useGlobalSDK>["event"], "setLiveSession">, sessionID: string, directory: DirectoryRef, workspaceId?: string, host?: SessionRef["host"]) {
+  event.setLiveSession(sessionID, { directory, workspaceId, host })
 }
 
 function scheduleDelayedTask(task: () => void, delay: number) {
@@ -501,6 +496,7 @@ export function createSessionController(input: {
   // signed user-hosted reads divert to the relay (the central control plane
   // has no session store for them).
   workspaceKind?: Accessor<"cloud" | "user-hosted" | undefined>
+  sessionRef?: Accessor<SessionRef | undefined>
 }) {
   const sdk = useSDK()
   const globalSDK = useGlobalSDK()
@@ -726,6 +722,7 @@ export function createSessionController(input: {
         signedControlPlane,
         workspaceId,
         workspaceKind,
+        sessionRef: input.sessionRef?.(),
       }),
       fetchMessages: () => fetchSessionMessagesByTransport({
         client: sdk.client.session,
@@ -738,6 +735,7 @@ export function createSessionController(input: {
         workspaceId,
         workspaceKind,
         workspaceReachable,
+        sessionRef: input.sessionRef?.(),
       }),
     })
     return (opts?.force
@@ -775,7 +773,7 @@ export function createSessionController(input: {
         // filesystem path (which the hosted inventory can't map back to a
         // workspace). Without it the stream falls through to the central control
         // plane and 404s for relay-backed (user-hosted) workspaces.
-        if (!opts?.silent) globalSDK.event.setLiveSession(sessionID, { directory, workspaceId })
+        if (!opts?.silent) globalSDK.event.setLiveSession(sessionID, { directory, workspaceId, host: input.sessionRef?.()?.host })
         const cursor = result.messages.response.headers.get("x-next-cursor") ?? undefined
         if (!opts?.silent) {
           setHistoryMetaValue("cursor", key, cursor)
@@ -873,6 +871,7 @@ export function createSessionController(input: {
         signedControlPlane,
         workspaceId,
         workspaceKind: signedControlPlane ? input.workspaceKind?.() : undefined,
+        sessionRef: input.sessionRef?.(),
       })).data ?? [],
     }).then((todo) => {
       if (!shouldAcceptSessionTransportResult({ expectedSessionID: sessionID, currentSessionID: input.sessionID() })) return false
@@ -896,6 +895,7 @@ export function createSessionController(input: {
         signedControlPlane: input.signedControlPlane?.() ?? false,
         workspaceId: input.signedControlPlane?.() ? input.workspaceId?.() : undefined,
         workspaceKind: input.signedControlPlane?.() ? input.workspaceKind?.() : undefined,
+        sessionRef: input.sessionRef?.(),
       }),
     }).then(() => {
       if (!shouldAcceptSessionTransportResult({ expectedSessionID: sessionID, currentSessionID: input.sessionID() })) return false
@@ -1018,7 +1018,7 @@ export function createSessionController(input: {
           // See the note at the other setLiveSession call site: thread the
           // scope workspaceId so the runtime stream relays for relay-backed
           // workspaces whose `directory` is a non-ref filesystem path.
-          markLiveSession(globalSDK.event, id, directory, signedControlPlane ? input.workspaceId?.() : undefined)
+          markLiveSession(globalSDK.event, id, directory, signedControlPlane ? input.workspaceId?.() : undefined, input.sessionRef?.()?.host)
           void syncSessionCapabilities(id)
           void syncSessionHistory(id, { bypassQuiet: true }).then((synced) =>
             sessionHydrationDebug("sync-session-complete", { directory, sessionID: id, synced }))

@@ -12,6 +12,7 @@ import {
   type HarnessScopeInput,
 } from "./store-policy"
 import type { HarnessType, OptionsResponse } from "./profile"
+import { centralRuntimePath } from "@/platform/runtime/agent/central-runtime-path"
 
 export type WorkspaceBoot = {
   kind?: "local" | "cloud" | "user-hosted" | null
@@ -106,6 +107,13 @@ export function createHarnessConfigRuntime(input: {
   }
 
   function harnessSessionFetch(params?: HarnessScopeInput) {
+    if (params?.sessionRef?.host === "central") {
+      return ((resource: RequestInfo | URL, init?: RequestInit) => {
+        const current = resource instanceof Request ? new URL(resource.url) : new URL(resource.toString())
+        current.pathname = centralRuntimePath(current.pathname, params.sessionRef)
+        return request(resource instanceof Request ? new Request(current, resource) : current, init)
+      }) as typeof fetch
+    }
     return workspaceRuntimeConfigFetch(params) ?? localHarnessConfigFetch(params)
   }
 

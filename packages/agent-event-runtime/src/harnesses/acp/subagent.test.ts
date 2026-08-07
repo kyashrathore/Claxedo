@@ -18,6 +18,7 @@ describe("classifyAcpSubagentUpdate", () => {
         stableCorrelationId: "agent-1",
         toolCallId: "agent-1",
         toolCallRole: "spawn",
+        mode: "foreground",
         status: "running",
         label: "Agent",
         subagentType: "Explore",
@@ -43,6 +44,37 @@ describe("classifyAcpSubagentUpdate", () => {
         correlationKey: "agent-1",
       })
     }
+  })
+
+  test("recognizes Claude Task updates when the ACP wrapper omits subagent metadata", () => {
+    const started = classifyAcpSubagentUpdate("claude-acp", {
+      sessionUpdate: "tool_call",
+      toolCallId: "agent-2",
+      title: "Task Verify ACP child delegation",
+      status: "pending",
+      rawInput: {
+        description: "Verify ACP child delegation",
+        prompt: "Reply with exactly CHILD-CLAUDE-ACP",
+        subagent_type: "general-purpose",
+      },
+    })
+    expect(started).toMatchObject({
+      kind: "lifecycle",
+      observation: {
+        toolCallRole: "spawn",
+        status: "pending",
+        transcript: { kind: "messages", ref: "acp:agent-2" },
+      },
+    })
+
+    expect(classifyAcpSubagentUpdate("claude-acp", {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "agent-2",
+      status: "completed",
+    }, started?.kind === "lifecycle" ? started.observation : undefined)).toMatchObject({
+      kind: "lifecycle",
+      observation: { status: "completed" },
+    })
   })
 
   test("models Codex Start, Interact, and Interrupt as registry lifecycle updates", () => {

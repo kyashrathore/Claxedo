@@ -484,6 +484,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     })
     await adapter.bindSession({
       id: sessionId,
+      ...(meta.parentID ? { parentID: meta.parentID } : {}),
       title: meta.title ?? null,
       placement: {
         mode: "hybrid",
@@ -766,6 +767,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     }
     const session = await adapter.bindSession({
       id: sessionId,
+      ...(input.parentID ? { parentID: input.parentID } : {}),
       title: input.title ?? null,
       placement: {
         mode: "hybrid",
@@ -821,6 +823,20 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       title: input.title ?? "Hybrid Session",
       ...(model ? { model } : {}),
       ...(tags.length > 0 ? { tags } : {}),
+    })
+    const boundSession = runtimeStore.getSession(session.id) as { time?: { updated?: unknown } } | null
+    if (typeof boundSession?.time?.updated !== "number") {
+      throw new Error(`Central session ${session.id} was persisted without an updated timestamp`)
+    }
+    eventHub.publishRuntime({
+      directory: session.id,
+      sessionId: session.id,
+      payload: {
+        type: "session-info",
+        title: input.title ?? "Hybrid Session",
+        ...(input.parentID ? { parentID: input.parentID } : {}),
+        updatedAt: new Date(boundSession.time.updated).toISOString(),
+      },
     })
     // Metric spec §4.5: server-emitted and attributable, replacing a
     // client-side funnel step that self-host suppresses. Emitted only on the
@@ -1102,6 +1118,10 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       services.projectionStore.source_channel_session_counts_by_week?.(input) ?? Promise.resolve([]),
     createHybridSession,
     createDispatchedSession,
+    parentSessionIdFor: (sessionId: string) => {
+      const session = runtimeStore.getSession(sessionId) as { parentID?: unknown } | null
+      return typeof session?.parentID === "string" ? session.parentID : sessionId
+    },
     subagentToolForSession: (sessionId: string) => dispatchToolsForSession(sessionId)[0]!,
     terminateSubagent,
     listSubagents: (parentSessionId: string) => subagentStore.listSubagents(parentSessionId),

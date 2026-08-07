@@ -425,7 +425,7 @@ export class ACPProcess {
     }
   }
 
-  async syncSession(agentSessionId: string, input: PromptInput) {
+  async syncSession(agentSessionId: string, input: PromptInput, options: { syncMode?: boolean } = {}) {
     this.resetIdleTimer()
     const t0 = Date.now()
     const state = this.state(agentSessionId)
@@ -433,6 +433,7 @@ export class ACPProcess {
     log.info("ACP session sync: starting", {
       agentSessionId,
       agent: input.agent,
+      permissionMode: input.permissionMode ?? null,
       model: input.model.modelID,
       variant: input.variant ?? null,
       pid,
@@ -447,7 +448,7 @@ export class ACPProcess {
       pid,
     })
     try {
-      const next = await sync(this.agent, state, agentSessionId, input)
+      const next = await sync(this.agent, state, agentSessionId, input, options)
       this.states.set(agentSessionId, next)
       if (next.cfg && next.cfg.length > 0) this.cachedConfigOptions = next.cfg
       log.info("ACP session synced", {

@@ -1,15 +1,5 @@
 // Claxedo sessions can render inside independent Workbench panes, so this override uses pane-scoped params, cloud runtime gates, and the inline new-session composer.
-import {
-  onCleanup,
-  onMount,
-  Show,
-  Match,
-  Switch,
-  createMemo,
-  createEffect,
-  createComputed,
-  on,
-} from "solid-js"
+import { onCleanup, onMount, Show, Match, Switch, createMemo, createEffect, createComputed, on } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useQuery } from "@tanstack/solid-query"
@@ -423,6 +413,7 @@ export default function SessionPage() {
     signedControlPlane,
     workspaceId: replayWorkspaceId,
     workspaceKind: resolvedWorkspaceKind,
+    sessionRef: activeSessionRef,
   })
   const [ui, setUi] = createStore({
     pendingMessage: undefined as string | undefined,
@@ -1393,6 +1384,8 @@ export default function SessionPage() {
                       <MessageTimeline
                         actions={actions()}
                         title={resolvedTitle}
+                        sessionRef={activeSessionRef()}
+                        parentID={info()?.parentID}
                         scroll={ui.scroll}
                         onResumeScroll={resumeScroll}
                         setScrollRef={setScrollRef}
@@ -1506,6 +1499,7 @@ export default function SessionPage() {
               ready={!store.deferRender && messagesReady()}
               centered={centered()}
               sessionID={sessionID()}
+              parentID={info()?.parentID}
               mode={composerModes.current()}
               system={contentIntentDefaults()?.system}
               agent={contentIntentDefaults()?.agent}

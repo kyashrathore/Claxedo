@@ -7,6 +7,7 @@ import {
   markRouteIntentClosed,
   resetRouteIntentClosedForTest,
   routeIntentClosedSizeForTest,
+  sessionInventoryTarget,
   type RouteIntentStateApi,
   type RouteIntent,
 } from "./route-intent"
@@ -49,6 +50,25 @@ type WorkspacePanelCall = {
 
 beforeEach(() => {
   resetRouteIntentClosedForTest()
+})
+
+test("central inventory identity is not reclassified as a workspace route", () => {
+  expect(sessionInventoryTarget("ses_central", {
+    loaded: true,
+    global: [{
+      id: "ses_central",
+      sessionRef: "central:ses_central",
+      title: "Central",
+      directory: "/repo/main",
+      workspaceId: "ws_1",
+      projectID: "project_1",
+      tags: [],
+      attachments: [],
+      time: { created: 1, updated: 1 },
+    }],
+    byWorkspace: {},
+    byProject: {},
+  })).toBeUndefined()
 })
 
 function createHarness(input: {

@@ -567,7 +567,7 @@ async function installUserHostedRuntimeMock(
         ]
         await route.fulfill({ status: 204, body: "" })
 
-        // Fire-and-forget: emit the turn as CONTRACT-V3 AgentRuntimeEvent frames on
+        // Fire-and-forget: emit the turn as CONTRACT-V4 AgentRuntimeEvent frames on
         // the runtime-events lane. Each frame is the exact envelope `runtimeEnvelope`
         // (src/context/global-sdk.tsx) validates — `contractVersion` === 4,
         // `directory`, `sessionId`, `assistantMessageId`, and a `payload` that is one
@@ -689,7 +689,7 @@ test.describe("core user-hosted workspace @core", () => {
   })
 
   // The reply renders through the real projection path: the mock emits the turn as
-  // CONTRACT-V3 AgentRuntimeEvent frames on the relay `/api/wr/runtime-events` lane
+  // CONTRACT-V4 AgentRuntimeEvent frames on the relay `/api/wr/runtime-events` lane
   // (`{contractVersion:4, directory, sessionId, assistantMessageId, payload}`), which
   // global-sdk's runtime loop reads via `runtimeEnvelope` and runs through
   // `createOpencodeCompatProjection`. The `session-status: busy` → `finish` pair

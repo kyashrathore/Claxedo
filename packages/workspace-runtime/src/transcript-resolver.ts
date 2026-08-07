@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from "node:crypto"
+import { createRequire } from "node:module"
+import fsSync from "node:fs"
 import fs from "node:fs/promises"
 import path from "node:path"
 
@@ -51,6 +53,126 @@ export function createMemoryTranscriptHandleStore(createHandle = () => `transcri
       })
     },
   }
+}
+
+export function createPersistentTranscriptHandleStore(input: {
+  file: string
+  createHandle?: () => string
+}): TranscriptHandleStore {
+  const open = () => {
+    fsSync.mkdirSync(path.dirname(input.file), { recursive: true, mode: 0o700 })
+    const requireDatabase = createRequire(import.meta.url)
+    const Database = process.versions.bun
+      ? (requireDatabase("bun:sqlite") as { Database: TranscriptDatabaseConstructor }).Database
+      : ((requireDatabase("better-sqlite3") as { default?: TranscriptDatabaseConstructor } | TranscriptDatabaseConstructor) as {
+          default?: TranscriptDatabaseConstructor
+        }).default ?? requireDatabase("better-sqlite3") as TranscriptDatabaseConstructor
+    const database = new Database(input.file)
+    fsSync.chmodSync(input.file, 0o600)
+    database.exec("PRAGMA busy_timeout = 5000")
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS transcript_handle (
+        handle TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        parent_session_id TEXT NOT NULL,
+        provider_kind TEXT NOT NULL,
+        source_path TEXT NOT NULL,
+        canonical_path TEXT NOT NULL,
+        canonical_root TEXT NOT NULL,
+        format TEXT NOT NULL CHECK (format IN ('jsonl', 'json')),
+        digest TEXT NOT NULL
+      )
+    `)
+    database.exec(`
+      CREATE INDEX IF NOT EXISTS transcript_handle_parent_idx
+      ON transcript_handle (workspace_id, parent_session_id)
+    `)
+    return database
+  }
+  return {
+    create(binding) {
+      const handle = input.createHandle?.() ?? `transcript_${randomUUID()}`
+      const database = open()
+      try {
+        database.prepare(`
+          INSERT INTO transcript_handle (
+            handle, workspace_id, parent_session_id, provider_kind, source_path,
+            canonical_path, canonical_root, format, digest
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          handle,
+          binding.workspaceId,
+          binding.parentSessionId,
+          binding.providerKind,
+          binding.sourcePath,
+          binding.canonicalPath,
+          binding.canonicalRoot,
+          binding.format,
+          binding.digest,
+        )
+      } finally {
+        database.close()
+      }
+      return handle
+    },
+    get(handle) {
+      const database = open()
+      try {
+        const row = database.prepare(`
+          SELECT workspace_id, parent_session_id, provider_kind, source_path,
+            canonical_path, canonical_root, format, digest
+          FROM transcript_handle
+          WHERE handle = ?
+        `).get(handle) as TranscriptHandleRow | undefined
+        if (!row) return
+        return {
+          workspaceId: row.workspace_id,
+          parentSessionId: row.parent_session_id,
+          providerKind: row.provider_kind,
+          sourcePath: row.source_path,
+          canonicalPath: row.canonical_path,
+          canonicalRoot: row.canonical_root,
+          format: row.format,
+          digest: row.digest,
+        }
+      } finally {
+        database.close()
+      }
+    },
+    invalidateParent(workspaceId, parentSessionId) {
+      const database = open()
+      try {
+        database.prepare(`
+          DELETE FROM transcript_handle
+          WHERE workspace_id = ? AND parent_session_id = ?
+        `).run(workspaceId, parentSessionId)
+      } finally {
+        database.close()
+      }
+    },
+  }
+}
+
+type TranscriptDatabase = {
+  exec(sql: string): unknown
+  prepare(sql: string): {
+    run(...params: unknown[]): unknown
+    get(...params: unknown[]): unknown
+  }
+  close(): unknown
+}
+
+type TranscriptDatabaseConstructor = new(file: string) => TranscriptDatabase
+
+type TranscriptHandleRow = {
+  workspace_id: string
+  parent_session_id: string
+  provider_kind: string
+  source_path: string
+  canonical_path: string
+  canonical_root: string
+  format: TranscriptProvider["format"]
+  digest: string
 }
 
 export function createTranscriptResolver(options: {

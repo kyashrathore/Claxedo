@@ -267,6 +267,25 @@ describe("state/orchestration", () => {
     expect(getState().contentIds).not.toContain("stale-session")
   })
 
+  test("openCentralSession repairs a global placeholder without a ref", () => {
+    const { layout, meta, wb } = makeFixture()
+    meta.upsert({
+      id: "central-placeholder",
+      type: "session",
+      scope: "global",
+      sessionId: "ses_central",
+      content: { type: "session", sessionId: "ses_central", title: "Placeholder" },
+    })
+    wb.contents.add("central-placeholder")
+
+    expect(layout.openCentralSession("ses_central", "Central")).toBe("central-placeholder")
+    expect(meta.get("central-placeholder")?.content?.sessionRef).toEqual({
+      sessionId: "ses_central",
+      host: "central",
+      toolSandbox: { kind: "virtual" },
+    })
+  })
+
   test("openSession removes stale central placeholder for the same session", () => {
     const { layout, meta, getState } = makeFixture()
     const central = layout.openCentralSession("ses_1", "Central placeholder")
@@ -307,6 +326,21 @@ describe("state/orchestration", () => {
     expect(meta.get(id)?.content?.sessionRef).toEqual(localSessionRef("ses_1", "/work/main"))
     expect(getState().contentIds).toContain("workspace-session")
     expect(wb.selectors.focusedContent()).toBe("workspace-session")
+  })
+
+  test("openCentralSession replaces a workspace placeholder when central metadata is authoritative", () => {
+    const { layout, meta, getState } = makeFixture()
+    const workspace = layout.openSession("/work/main", "ses_1", "Workspace placeholder", {
+      sessionRef: localSessionRef("ses_1", "/work/main"),
+    })
+
+    const central = layout.openCentralSession("ses_1", "Central session", { authoritative: true })
+
+    expect(central).not.toBe(workspace)
+    expect(meta.get(workspace)).toBeUndefined()
+    expect(getState().contentIds).not.toContain(workspace)
+    expect(meta.get(central)?.directory).toBeUndefined()
+    expect(meta.get(central)?.content).toMatchObject({ sessionRef: { host: "central", sessionId: "ses_1" } })
   })
 
   test("openCentralSession repairs a filesystem session surface without a ref", () => {

@@ -294,6 +294,10 @@ describe("createCentralSessionRuntime", () => {
       expect(runtimeEvents.filter((event) => event.sessionId === child.childSessionId).some((event) =>
         event.payload.type === "text-delta",
       )).toBe(true)
+      expect(runtimeEvents).toContainEqual(expect.objectContaining({
+        sessionId: child.childSessionId,
+        payload: expect.objectContaining({ type: "session-info", parentID: source.id }),
+      }))
       expect(updates.length).toBeGreaterThan(2)
       expect(placements).toHaveLength(2)
       expect(placements[1]).toMatchObject({
@@ -571,6 +575,7 @@ describe("createCentralSessionRuntime", () => {
 
     expect(res.status).toBe(200)
     expect(events.map((event) => event.payload.type)).toEqual([
+      "session-info",
       "session-status",
       "text-delta",
       "session-status",
@@ -963,7 +968,7 @@ describe("createCentralSessionRuntime", () => {
 
     const ac = new AbortController()
     const replay = await app.request("http://127.0.0.1/api/claxedo/runtime-events", {
-      headers: { "Last-Event-ID": "1" },
+      headers: { "Last-Event-ID": "2" },
       signal: ac.signal,
     })
     const next = await replay.body!.getReader().read()
@@ -972,12 +977,39 @@ describe("createCentralSessionRuntime", () => {
     const frame = new TextDecoder().decode(next.value)
     expect(replay.status).toBe(200)
     expect(replay.headers.get("content-type")).toContain("text/event-stream")
-    expect(frame).toContain("id: 2")
+    expect(frame).toContain("id: 3")
     expect(frame).toContain(`"sessionId":"${session.id}"`)
     expect(frame).toContain(`"directory":"${session.id}"`)
     expect(frame).toContain(`"assistantMessageId":"user-replay_r"`)
     expect(frame).toContain(`"delta":"replayed"`)
     expect(frame).not.toContain(`"status":"busy"`)
+  })
+
+  test("authorizes and scopes the central session runtime event route", async () => {
+    const control = createCentralControlApp(services())
+    const session = await control.runtime.createHybridSession({ title: "Hybrid" })
+
+    await control.runtime.routes.request(`http://127.0.0.1/session/${session.id}/message`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ type: "text", text: "exec: printf scoped" }],
+        messageID: "user-scoped",
+        agent: "pi",
+        model: { providerID: "pi", modelID: "virtual" },
+      }),
+    })
+
+    const ac = new AbortController()
+    const response = await control.app.request(
+      `http://127.0.0.1/api/control/session/${session.id}/runtime-events?parentSessionId=${session.id}`,
+      { headers: { "Last-Event-ID": "1" }, signal: ac.signal },
+    )
+    const next = await response.body!.getReader().read()
+    ac.abort()
+
+    expect(response.status).toBe(200)
+    expect(new TextDecoder().decode(next.value)).toContain(`"sessionId":"${session.id}"`)
   })
 
   test("aborts an active central hybrid turn through the session route", async () => {
@@ -1023,6 +1055,7 @@ describe("createCentralSessionRuntime", () => {
       },
     })
     expect(events.map((event) => event.payload.type)).toEqual([
+      "session-info",
       "session-status",
       "session-status",
       "error",

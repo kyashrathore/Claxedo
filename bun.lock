@@ -167,6 +167,7 @@
         "zod": "4.4.3",
       },
       "devDependencies": {
+        "@anthropic-ai/sdk": "0.115.0",
         "@axe-core/playwright": "4.12.1",
         "@claxedo/workspace-runtime": "workspace:*",
         "@clerk/testing": "2.2.7",
@@ -188,6 +189,7 @@
         "@xterm/headless": "6.1.0-beta.289",
         "jsdom": "26.1.0",
         "msw": "2.14.6",
+        "openai": "6.26.0",
         "playwright-core": "1.61.1",
         "sharp": "0.34.5",
         "typescript": "catalog:",

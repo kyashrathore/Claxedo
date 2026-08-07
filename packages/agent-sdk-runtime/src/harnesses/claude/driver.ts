@@ -52,9 +52,8 @@ import {
 const CLAUDE_PENDING_PREFIX = "claude-sdk:"
 const MODEL_LIST_TIMEOUT_MS = 30_000
 
-// U5's representative nested-turn fixture measured 6 forwarded child frames
-// (193 bytes of text) beside 7 parent frames: 0.86x and far below the 5 MiB cap.
-// Full message forwarding therefore stays below both plan thresholds.
+// The routed nested-turn fixture measures forwarded child frames and bytes
+// against the contract thresholds before this option is enabled.
 export const CLAUDE_FORWARD_SUBAGENT_TEXT = true
 
 export function createClaudeSdkDriver(host: SdkRuntimeDriverHost): SdkRuntimeDriver {

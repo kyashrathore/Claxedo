@@ -94,6 +94,57 @@ describe("session service", () => {
     expect(output.assistantMessage).toBeUndefined()
   })
 
+  it("carries the requested permission mode into the adapter turn", async () => {
+    const modes: Array<string | undefined> = []
+    await runSessionPromptTurn({
+      adapter: adapter({
+        async *sendMessage(_id, input) {
+          modes.push(input.permissionMode)
+        },
+      }),
+      sessionId: "s1",
+      directory: "/work",
+      body: { parts: [{ type: "text", text: "hello" }], permissionMode: "agent-full-access" },
+      publishGlobal: () => {},
+      publishStatus: () => {},
+    })
+
+    expect(modes).toEqual(["agent-full-access"])
+  })
+
+  it("carries the requested permission mode through the durable runtime turn", async () => {
+    const starts: unknown[] = []
+    await runRuntimePromptTurn({
+      runtime: {
+        turns: {
+          start: async (input: unknown) => {
+            starts.push(input)
+            return {
+              sessionId: "s1",
+              userMessageId: "msg-user",
+              assistantMessageId: "msg-user_r",
+              directory: "/work",
+              prompt: { parts: [], userMessageId: "msg-user", agent: "build", model: { providerID: "test", modelID: "test" } },
+            }
+          },
+        },
+        events: {
+          subscribe: () => ({
+            async *[Symbol.asyncIterator]() {},
+          }),
+          list: async () => [],
+        },
+      } as never,
+      sessionId: "s1",
+      directory: "/work",
+      body: { parts: [{ type: "text", text: "hello" }], permissionMode: "agent-full-access" },
+      publishGlobal: () => {},
+      publishStatus: () => {},
+    })
+
+    expect(starts).toEqual([expect.objectContaining({ permissionMode: "agent-full-access" })])
+  })
+
   it("does not synthesize prompt events when the adapter yields none", async () => {
     const events: CompatEnvelope[] = []
 
@@ -149,4 +200,5 @@ describe("session service", () => {
       { directory: "/work", payload: { type: "session.error" } },
     ])
   })
+
 })

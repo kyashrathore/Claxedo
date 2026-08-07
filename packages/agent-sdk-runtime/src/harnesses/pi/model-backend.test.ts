@@ -39,4 +39,16 @@ describe("Pi model backend resolution", () => {
       expect.objectContaining(unsupportedModel),
     )
   })
+
+  test("honors provider endpoint overrides on the resolved model", () => {
+    const previous = process.env.ANTHROPIC_BASE_URL
+    process.env.ANTHROPIC_BASE_URL = "http://127.0.0.1:4319"
+    try {
+      expect(requirePiModel({ providerID: "anthropic", modelID: "claude-sonnet-4-6" }).baseUrl)
+        .toBe("http://127.0.0.1:4319")
+    } finally {
+      if (previous === undefined) delete process.env.ANTHROPIC_BASE_URL
+      else process.env.ANTHROPIC_BASE_URL = previous
+    }
+  })
 })

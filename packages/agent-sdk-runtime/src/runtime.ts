@@ -107,6 +107,7 @@ export type AgentRuntimeTurnStartInput = {
   tools?: Record<string, boolean>
   format?: PromptInput["format"]
   system?: string
+  permissionMode?: string
   variant?: string
 }
 
@@ -436,6 +437,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           ...(turn.tools ? { tools: turn.tools } : {}),
           ...(turn.format ? { format: turn.format } : {}),
           ...(turn.system ? { system: turn.system } : {}),
+          ...(turn.permissionMode ? { permissionMode: turn.permissionMode } : {}),
           ...(turn.variant !== undefined ? { variant: turn.variant } : config?.variant ? { variant: config.variant } : {}),
         }
         store.startTurn({

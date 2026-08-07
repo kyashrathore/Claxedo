@@ -1,6 +1,9 @@
 import path from "path"
 import fs from "fs/promises"
+import os from "node:os"
 import {
+  createPersistentTranscriptHandleStore,
+  createTranscriptResolver,
   createWorkspaceRuntimeApp,
   Pty,
   type ProcessObserver,
@@ -91,6 +94,14 @@ function storeRoot(ws: Workspace) {
   return path.join(dataDir(), "agent-core", ws.id)
 }
 
+export function cursorTranscriptRoot(workspaceDirectory: string, cursorDataRoot = process.env.CURSOR_DATA_DIR?.trim()) {
+  const project = workspaceDirectory
+    .replace(/[^a-zA-Z0-9]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+  return path.join(cursorDataRoot || path.join(os.homedir(), ".cursor"), "projects", project, "agent-transcripts")
+}
+
 // Agent Extension replay bookkeeping (ownership ledger, lock, fetch cache)
 // lives under Claxedo's data dir keyed by workspace id — NOT in the user's
 // checkout. Generated skills/MCP/plugins still materialize into the workspace;
@@ -102,7 +113,14 @@ function extensionStateRoot(ws: Workspace) {
 
 const embeddedRuntimeGuard = () => true
 
-function options(ws: Workspace, opencodeRequest: OpenCodeRequestFn): WorkspaceRuntimeServerOptions & {
+function options(
+  ws: Workspace,
+  opencodeRequest: OpenCodeRequestFn,
+  sessionAccess: {
+    exists(sessionId: string): boolean
+    parentSessionIdFor(sessionId: string): string | undefined
+  },
+): WorkspaceRuntimeServerOptions & {
   exposure: WorkspaceRuntimeExposure
 } {
   return {
@@ -113,6 +131,24 @@ function options(ws: Workspace, opencodeRequest: OpenCodeRequestFn): WorkspaceRu
     exposure: createClaxedoRuntimeExposure({ kind: "embedded", guard: embeddedRuntimeGuard }),
     target: resolveClaxedoWorkspaceRuntimeTarget(ws),
     storeRoot: storeRoot(ws),
+    transcripts: {
+      workspaceId: ws.id,
+      resolver: createTranscriptResolver({
+        workspaceId: ws.id,
+        providers: {
+          "cursor-agent": { root: cursorTranscriptRoot(ws.directory), format: "jsonl" },
+        },
+        authorizeParent: ({ workspaceId, parentSessionId }) =>
+          workspaceId === ws.id && sessionAccess.exists(parentSessionId),
+        handleStore: createPersistentTranscriptHandleStore({
+          file: path.join(storeRoot(ws), "transcript-handles.db"),
+        }),
+      }),
+    },
+    runtimeEventAuthorization: {
+      authorizeParent: (_context, parentSessionId) => sessionAccess.exists(parentSessionId),
+      resolveParentSessionId: (event) => sessionAccess.parentSessionIdFor(event.sessionId),
+    },
     agentExtensionStateRoot: extensionStateRoot(ws),
     corsOrigin: claxedoCorsOrigin,
     // Claxedo host decision, injected via configureEmbeddedWorkspaceRuntime
@@ -174,8 +210,13 @@ export async function ensureEmbeddedWorkspaceRuntime(
     }
   }
 
+  let activeHost: EmbeddedRuntime["host"] | undefined
+  const created = createWorkspaceRuntimeApp(options(ws, configuredOpencodeRequest, {
+    exists: (sessionId) => activeHost?.hasSession(sessionId) ?? false,
+    parentSessionIdFor: (sessionId) => activeHost?.parentSessionIdFor(sessionId),
+  }))
   const runtime: EmbeddedRuntime = {
-    ...createWorkspaceRuntimeApp(options(ws, configuredOpencodeRequest)),
+    ...created,
     workspace: ws,
     ...(configuredProcessObserver
       ? {
@@ -193,6 +234,7 @@ export async function ensureEmbeddedWorkspaceRuntime(
         }
       : {}),
   }
+  activeHost = runtime.host
   hosts.set(ws.id, runtime)
   if (configuredOnSessionMetaEvent) {
     // Ride the same battle-tested SSE client used for the legacy

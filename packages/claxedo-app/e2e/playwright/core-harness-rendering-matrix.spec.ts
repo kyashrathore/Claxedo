@@ -1115,7 +1115,7 @@ test.describe("core harness rendering matrix @core", () => {
     ).toBeVisible({ timeout: 45_000 })
   })
 
-  test("claude-acp — text dedup, Terminal->bash, read, todowrite hidden, unbound Task unavailable — behaviors 1,3,9,15,16", async ({ page }) => {
+  test("claude-acp — text dedup, Terminal->bash, read, todowrite hidden, unbound Task omitted — behaviors 1,3,9,15,16", async ({ page }) => {
     // The longest trace in the matrix; on CI's 2-core runners the replay alone
     // crowds the 60s default and the run dies mid-revealTurn. slow() = 3x.
     test.slow()
@@ -1150,13 +1150,10 @@ test.describe("core harness rendering matrix @core", () => {
     // the closed-by-default `ContextToolGroup` collapsible (opened by `revealTurn`).
     await expect(content.locator('[data-slot="basic-tool-tool-subtitle"]', { hasText: "index.ts" })).toBeVisible()
 
-    // behavior 15: fixture translation alone classifies "Task" as a task card, but it
-    // carries no host spawn edge or child Session. It remains explicitly unavailable;
-    // the U13 matrix below adds the durable host association and proves the open path.
-    const taskCard = content.locator('[data-component="task-tool-card"]').filter({ hasText: "Review the auth module" })
-    await expect(taskCard).toBeVisible()
-    await expect(taskCard.locator('[data-slot="basic-tool-tool-subtitle"]')).toContainText("Transcript unavailable")
-    await expect(taskCard.locator('xpath=ancestor::a[1]')).toHaveCount(0)
+    // behavior 15: fixture translation alone carries no authoritative host spawn edge,
+    // so it renders no subagent surface. The U13 matrix below supplies the durable host
+    // association and proves the open path.
+    await expect(content.getByText("Review the auth module")).toHaveCount(0)
 
     // behavior 9: "Update TODOs" never became a tool row.
     await expect(content.getByText("Ship the fix")).toHaveCount(0)
@@ -1191,7 +1188,7 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.locator('[data-component="tool-part-wrapper"]')).toHaveCount(2)
   })
 
-  test("cursor-acp — full-text snapshot dedup, WritableIterable sentinel swallowed, Terminal->bash, Task unavailable, todowrite hidden — behaviors 9,13,14,15,16", async ({ page }) => {
+  test("cursor-acp — full-text snapshot dedup, WritableIterable sentinel swallowed, Terminal->bash, Task omitted, todowrite hidden — behaviors 9,13,14,15,16", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page,"cursor-acp")
     const trace = loadTrace("cursor-acp", assistantId)
     await replay(mock, dir, trace, assistantInfo)
@@ -1245,13 +1242,9 @@ test.describe("core harness rendering matrix @core", () => {
       )
       .toBe(true)
 
-    // behavior 15: Cursor ACP classifies the task row, but exposes no supported child
-    // transcript identity. The card is deliberately non-openable.
-    const taskCard = content.locator('[data-component="task-tool-card"]').filter({ hasText: "Investigate flaky test" })
-    await expect(taskCard).toBeVisible()
-    await expect(taskCard.locator('[data-slot="basic-tool-tool-subtitle"]')).toContainText("Transcript unavailable")
-    await expect(taskCard.locator('xpath=ancestor::a[1]')).toHaveCount(0)
-    await expect(taskCard.locator('[data-component="task-tool-action"]')).toHaveCount(0)
+    // behavior 15: Cursor ACP exposes no authoritative host association, so it renders
+    // no subagent surface instead of manufacturing a transcript identity from tool state.
+    await expect(content.getByText("Investigate flaky test")).toHaveCount(0)
 
     // behavior 9: "Update TODOs" never became a tool row.
     await expect(content.getByText("Fix flake")).toHaveCount(0)
@@ -1435,7 +1428,8 @@ test.describe("core harness rendering matrix @core", () => {
     )
     const anchor = card.locator("xpath=ancestor::a[1]")
     await expect(anchor).toHaveCount(1)
-    await anchor.click()
+    await anchor.focus()
+    await page.keyboard.press("Enter")
 
     const childHeading = page.locator(`[data-session-timeline-session-id="${scenario.childSessionId}"] [data-subagent-child-heading]`)
     await expect(childHeading).toBeVisible({ timeout: 30_000 })

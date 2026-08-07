@@ -4,6 +4,7 @@ import {
   routeBridgeSessionConfigUrl,
   routeBridgeSessionMessagesProbeUrl,
   routeKnownSessionDirectory,
+  routeSessionMetaIsCentral,
   routeSessionDirectory,
 } from "./route-bridge-resolution"
 
@@ -20,6 +21,18 @@ describe("routeSessionDirectory", () => {
 
   test("keeps the session directory when it names a different workspace", () => {
     expect(routeSessionDirectory("/other/project", "/repo")).toBe("/other/project")
+  })
+})
+
+describe("routeSessionMetaIsCentral", () => {
+  test("recognizes explicit host and serialized central identity", () => {
+    expect(routeSessionMetaIsCentral({ host: "central", workspaceID: "ws_1" })).toBe(true)
+    expect(routeSessionMetaIsCentral({ sessionRef: "central:ses_1" })).toBe(true)
+    expect(routeSessionMetaIsCentral({ session_ref: "central:ses_1" })).toBe(true)
+  })
+
+  test("does not reclassify workspace metadata", () => {
+    expect(routeSessionMetaIsCentral({ host: "workspace", sessionRef: "workspace:ws_1:session:ses_1" })).toBe(false)
   })
 })
 

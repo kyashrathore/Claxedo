@@ -28,6 +28,7 @@ import type { SessionStatusStage as SessionStatusStageValue } from "@/features/s
 import type { HarnessSelectionController } from "@/features/session/harness/controller"
 import type { PermissionModeGroups } from "@/features/session/composer/permission-mode"
 import type { PermissionModeOption } from "@/features/session/permission/modes"
+import type { SessionRef } from "@/platform/identity/session-ref"
 
 type PromptInputMode = "normal" | "shell"
 type PromptDraggingType = "image" | "@mention" | null
@@ -89,6 +90,7 @@ export const PromptInputFrame: Component<{
   harnessController: Accessor<HarnessSelectionController | undefined>
   harnessDirectory: Accessor<string | undefined>
   harnessSessionId: Accessor<string | undefined>
+  sessionRef: Accessor<SessionRef | undefined>
   surfaceId: Accessor<string | undefined>
   draftId: Accessor<string | undefined>
   active: Accessor<boolean>
@@ -361,6 +363,7 @@ export const PromptInputFrame: Component<{
           harnessController={props.harnessController}
           harnessDirectory={props.harnessDirectory}
           harnessSessionId={props.harnessSessionId}
+          sessionRef={props.sessionRef}
           surfaceId={props.surfaceId}
           draftId={props.draftId}
           active={props.active}

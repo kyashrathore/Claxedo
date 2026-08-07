@@ -12,7 +12,7 @@
           "messageID": "assistant-parent-1",
           "type": "tool",
           "callID": "spawn-1",
-          "tool": "tool",
+          "tool": "spawn_agent",
           "state": {
             "status": "running",
             "input": {
@@ -51,7 +51,7 @@
           "messageID": "assistant-parent-1",
           "type": "tool",
           "callID": "spawn-1",
-          "tool": "tool",
+          "tool": "spawn_agent",
           "state": {
             "status": "completed",
             "input": {
@@ -59,7 +59,7 @@
               "kind": "dynamic_tool_call"
             },
             "output": "",
-            "title": "tool",
+            "title": "spawn_agent",
             "metadata": {
               "codex": {
                 "itemType": "dynamic_tool_call"

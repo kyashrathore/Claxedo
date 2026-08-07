@@ -70,6 +70,18 @@ describe("PiHarnessAdapter", () => {
     ])
   })
 
+  test("persists a child session's parent identity in canonical session reads", async () => {
+    const adapter = new PiHarnessAdapter()
+
+    await adapter.bindSession({ id: "child-1", parentID: "parent-1", title: "Child" })
+
+    expect(await adapter.getSession("child-1", undefined)).toMatchObject({
+      id: "child-1",
+      parentID: "parent-1",
+      title: "Child",
+    })
+  })
+
   test("creates and runs a directory-less virtual turn", async () => {
     const adapter = new PiHarnessAdapter()
     const session = await adapter.createSession(undefined, "Hybrid")
@@ -79,8 +91,10 @@ describe("PiHarnessAdapter", () => {
     expect(events.map((event) => event.type)).toEqual([
       "message.updated",
       "message.part.updated",
+      "message.updated",
       "session-status",
       "text-delta",
+      "message.updated",
       "session-status",
       "finish",
     ])
@@ -362,6 +376,8 @@ describe("PiHarnessAdapter", () => {
       { type: "text-delta", delta: "hello " },
       { type: "text-delta", delta: "from codex" },
     ])
+    expect(events.findIndex((event) => event.type === "message.updated" && event.properties.info.role === "assistant"))
+      .toBeLessThan(events.findIndex((event) => event.type === "text-delta"))
     expect(events.at(-1)).toEqual({ type: "finish", sessionId: session.id })
     expect(await adapter.getMessages(session.id, undefined)).toMatchObject([
       { info: { id: "user-1", role: "user" } },

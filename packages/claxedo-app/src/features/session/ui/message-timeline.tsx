@@ -117,6 +117,7 @@ import {
 } from "./timeline-file-paths"
 import { messageNavCurrentID, messageNavPreview, messageNavVisible } from "./message-nav-preview"
 import { BP_MD } from "@/ui/controls/breakpoints"
+import { retargetSessionRef, type SessionRef } from "@/platform/identity/session-ref"
 import "./message-nav-gutter.css"
 
 installTimelineMermaid()
@@ -413,6 +414,8 @@ export function MessageTimeline(props: {
   onFirstTurnRecovery?: (kind: SessionErrorClass, userMessageID: string) => unknown
   firstTurnRecovery?: boolean
   title: () => string | undefined
+  sessionRef?: SessionRef
+  parentID?: string
 }) {
   let touchGesture: number | undefined
 
@@ -432,7 +435,10 @@ export function MessageTimeline(props: {
   const paneId = usePaneId()
 
   const openSubagent = (childSessionId: string, origin?: HTMLElement, subagentKey?: string) => {
-    const contentId = claxedoState.layout.openSession(sdk.directory, childSessionId, "Subagent", { focus: false })
+    const contentId = claxedoState.layout.openSession(sdk.directory, childSessionId, "Subagent", {
+      focus: false,
+      sessionRef: retargetSessionRef({ sessionId: childSessionId, source: props.sessionRef }),
+    })
     const childPane = claxedoState.wb.selectors.contentPane(contentId)
     const parentSessionId = sessionID() ?? ""
     const dedicatedPane = claxedoState.meta
@@ -659,7 +665,7 @@ export function MessageTimeline(props: {
   })
   const titleValue = createMemo(props.title)
   const titleLabel = createMemo(() => sessionTitle(titleValue()))
-  const parentID = createMemo(() => info()?.parentID)
+  const parentID = createMemo(() => props.parentID)
   const parent = createMemo(() => {
     const id = parentID()
     if (!id) return

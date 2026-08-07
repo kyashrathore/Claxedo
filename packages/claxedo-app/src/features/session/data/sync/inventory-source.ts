@@ -37,6 +37,7 @@ type InventorySourceProject = {
 }
 export type InventoryGlobalSession = {
   id: string
+  sessionRef?: string
   title?: string
   directory: ProjectDirectory
   projectID?: string
@@ -263,6 +264,7 @@ export function toSessionInventoryRow(session: InventoryGlobalSession, input: { 
   const lastTurn = normalizeSessionTurnOutcome(session.lastTurn)
   return {
     id: session.id,
+    ...(session.sessionRef ? { sessionRef: session.sessionRef } : {}),
     title: session.title || "New Session",
     directory: session.directory,
     ...(session.workspaceID || session.workspaceId ? { workspaceId: session.workspaceID ?? session.workspaceId } : {}),
@@ -285,6 +287,9 @@ export function controlMetaToGlobalSession(input: unknown): InventoryGlobalSessi
   const created = typeof row?.createdAt === "number" ? row.createdAt : 0
   return {
     id: txt(row?.sessionID) ?? txt(row?.id) ?? "",
+    ...(txt(row?.sessionRef) ?? txt(row?.session_ref)
+      ? { sessionRef: (txt(row?.sessionRef) ?? txt(row?.session_ref))! }
+      : {}),
     title: txt(row?.title) ?? "New Session",
     directory: txt(row?.directory) ?? "",
     ...(txt(row?.projectID) ? { projectID: txt(row?.projectID) } : {}),

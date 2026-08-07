@@ -54,6 +54,7 @@ import {
 
 type PiSession = {
   id: string
+  parentID?: string
   title: string | null
   created: number
   updated: number
@@ -118,6 +119,7 @@ function notImplemented(feature: string) {
 function row(session: PiSession): AgentSessionRow {
   return {
     id: session.id,
+    ...(session.parentID ? { parentID: session.parentID } : {}),
     title: session.title,
     slug: session.id,
     version: "central",
@@ -229,12 +231,13 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     return await this.bindSession({ id, title, directory })
   }
 
-  async bindSession(input: { id: string; title?: string | null; directory?: RuntimeDirectory; placement?: PiSessionPlacement }) {
+  async bindSession(input: { id: string; parentID?: string; title?: string | null; directory?: RuntimeDirectory; placement?: PiSessionPlacement }) {
     const existing = this.sessions.get(input.id)
     if (existing) {
       // Placement is applied only when the session env is first attached.
       // Re-binding an existing session is an idempotent metadata update.
       existing.title = input.title === undefined ? existing.title : input.title
+      if (input.parentID) existing.parentID = input.parentID
       existing.updated = Date.now()
       return { id: existing.id }
     }
@@ -261,6 +264,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     processObservation.update({ lifecycle: "ready" })
     this.sessions.set(input.id, {
       id: input.id,
+      ...(input.parentID ? { parentID: input.parentID } : {}),
       title: input.title ?? null,
       created: now,
       updated: now,
@@ -425,9 +429,20 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     }
     let assistantText = ""
     let assistantError: string | undefined
+    const assistant = {
+      id: input.assistantMessageId,
+      sessionID: id,
+      parentID: input.userMessageId ?? id,
+      agent: input.agent,
+      model: input.model,
+      directory: scope,
+      ...(input.variant ? { variant: input.variant } : {}),
+    }
     try {
       if (input.userMessageId) {
-        yield emit(messageUpdated(buildUserMessage({
+        const prompt = promptText(input.parts)
+        const user = {
+          info: buildUserMessage({
           id: input.userMessageId,
           sessionID: id,
           agent: input.agent,
@@ -436,10 +451,16 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
           ...(input.format ? { format: input.format } : {}),
           ...(input.system ? { system: input.system } : {}),
           ...(input.variant ? { variant: input.variant } : {}),
-        })))
-        const prompt = promptText(input.parts)
-        if (prompt) yield emit(messagePartUpdated(textPart({ sessionId: id, messageId: input.userMessageId, text: prompt, suffix: "input" })))
+          }),
+          parts: prompt ? [textPart({ sessionId: id, messageId: input.userMessageId, text: prompt, suffix: "input" })] : [],
+        }
+        putMessage(session, user)
+        yield emit(messageUpdated(user.info))
+        if (user.parts[0]) yield emit(messagePartUpdated(user.parts[0]))
       }
+      const info = buildAssistantMessage(assistant)
+      putMessage(session, { info, parts: [] })
+      yield emit(messageUpdated(info))
       yield emit({ type: "session-status", status: "busy" })
       const executable = promptText(input.parts)
       const command = text(executable.match(/^\/?bash\s+([\s\S]+)/)?.[1]) ?? text(executable.match(/^exec:\s*([\s\S]+)/i)?.[1])
@@ -469,51 +490,34 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
           throw new Error("This legacy Pi session has no configured model. Start a new Pi session and choose a model.")
         }
       }
-      yield emit({ type: "session-status", status: "idle" })
-      yield emit({ type: "finish", sessionId: id })
     } catch (cause) {
       assistantError = cause instanceof Error ? cause.message : String(cause)
-      yield emit({ type: "session-status", status: "error" })
-      yield emit({ type: "error", error: assistantError })
     } finally {
       session.active = undefined
       session.updated = Date.now()
     }
     const completed = Date.now()
-    if (input.userMessageId) {
-      const prompt = promptText(input.parts)
-      putMessage(session, {
-        info: buildUserMessage({
-          id: input.userMessageId,
-          sessionID: id,
-          agent: input.agent,
-          model: input.model,
-          ...(input.tools ? { tools: input.tools } : {}),
-          ...(input.format ? { format: input.format } : {}),
-          ...(input.system ? { system: input.system } : {}),
-          ...(input.variant ? { variant: input.variant } : {}),
-        }),
-        parts: prompt ? [textPart({ sessionId: id, messageId: input.userMessageId, text: prompt, suffix: "input" })] : [],
-      })
-    }
-    putMessage(session, {
-      info: buildAssistantMessage({
-        id: input.assistantMessageId,
-        sessionID: id,
-        parentID: input.userMessageId ?? id,
-        agent: input.agent,
-        model: input.model,
-        directory: scope,
+    const info = buildAssistantMessage({
+        ...assistant,
         completed,
         ...(assistantError
           ? { error: { name: "UnknownError", data: firstTurnErrorData(assistantError) } }
           : { finish: "stop" }),
-        ...(input.variant ? { variant: input.variant } : {}),
-      }),
+      })
+    putMessage(session, {
+      info,
       parts: assistantText
         ? [textPart({ sessionId: id, messageId: input.assistantMessageId, text: assistantText, suffix: "text" })]
         : [],
     })
+    yield emit(messageUpdated(info))
+    if (assistantError) {
+      yield emit({ type: "session-status", status: "error" })
+      yield emit({ type: "error", error: assistantError })
+      return
+    }
+    yield emit({ type: "session-status", status: "idle" })
+    yield emit({ type: "finish", sessionId: id })
   }
 
   async getMessages(id: string, _directory: RuntimeDirectory) {
@@ -549,7 +553,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
   }
 
   async listAgents(): Promise<AgentAgentRow[]> {
-    throw notImplemented("Agent options")
+    return []
   }
 
   async getTodos() {

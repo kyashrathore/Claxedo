@@ -3,6 +3,7 @@ import type { SessionTransportCapabilities } from "../data/backend/types"
 import type { AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runtime-client"
 import { usesScopedSessionTransport } from "@/platform/identity/legacy-resolver"
 import { suppressedByFastSessionSwitch } from "@/platform/runtime/session-switch"
+import type { SessionRef } from "@/platform/identity/session-ref"
 
 export type SessionClient = Parameters<typeof createHttpSessionBackend>[0]["client"]
 
@@ -21,6 +22,7 @@ export async function fetchSessionByTransport(input: {
   signedControlPlane?: boolean
   workspaceId?: string
   workspaceKind?: "cloud" | "user-hosted"
+  sessionRef?: SessionRef
 }) {
   return await createHttpSessionBackend({
     client: input.client,
@@ -28,6 +30,7 @@ export async function fetchSessionByTransport(input: {
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,
     workspaceKind: input.workspaceKind,
+    sessionRef: input.sessionRef,
   }).getSession(input)
 }
 
@@ -47,6 +50,7 @@ export async function fetchSessionMessagesByTransport(input: {
    * history synced there outlives the sandbox.
    */
   workspaceReachable?: boolean
+  sessionRef?: SessionRef
 }) {
   if (suppressedByFastSessionSwitch(input.sessionID)) {
     return { data: [], response: new Response(null) }
@@ -58,6 +62,7 @@ export async function fetchSessionMessagesByTransport(input: {
     workspaceId: input.workspaceId,
     workspaceKind: input.workspaceKind,
     workspaceReachable: input.workspaceReachable,
+    sessionRef: input.sessionRef,
   }).listMessages(input)
 }
 
@@ -69,6 +74,7 @@ export async function fetchSessionTodoByTransport(input: {
   signedControlPlane?: boolean
   workspaceId?: string
   workspaceKind?: "cloud" | "user-hosted"
+  sessionRef?: SessionRef
 }) {
   return await createHttpSessionBackend({
     client: input.client,
@@ -76,6 +82,7 @@ export async function fetchSessionTodoByTransport(input: {
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,
     workspaceKind: input.workspaceKind,
+    sessionRef: input.sessionRef,
   }).listTodos(input)
 }
 
@@ -96,6 +103,7 @@ export async function fetchSessionPermissionModesByTransport(input: {
   signedControlPlane?: boolean
   workspaceId?: string
   workspaceKind?: "cloud" | "user-hosted"
+  sessionRef?: SessionRef
 }) {
   return await createHttpSessionBackend({
     client: input.client,
@@ -103,6 +111,7 @@ export async function fetchSessionPermissionModesByTransport(input: {
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,
     workspaceKind: input.workspaceKind,
+    sessionRef: input.sessionRef,
   }).getPermissionModes(input)
 }
 
@@ -115,6 +124,7 @@ export async function setSessionPermissionModeByTransport(input: {
   signedControlPlane?: boolean
   workspaceId?: string
   workspaceKind?: "cloud" | "user-hosted"
+  sessionRef?: SessionRef
 }) {
   return await createHttpSessionBackend({
     client: input.client,
@@ -122,6 +132,7 @@ export async function setSessionPermissionModeByTransport(input: {
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,
     workspaceKind: input.workspaceKind,
+    sessionRef: input.sessionRef,
   }).setPermissionMode(input)
 }
 
@@ -133,6 +144,7 @@ export async function fetchSessionCapabilitiesByTransport(input: {
   signedControlPlane?: boolean
   workspaceId?: string
   workspaceKind?: "cloud" | "user-hosted"
+  sessionRef?: SessionRef
 }) {
   return await createHttpSessionBackend({
     client: input.client,
@@ -140,5 +152,6 @@ export async function fetchSessionCapabilitiesByTransport(input: {
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,
     workspaceKind: input.workspaceKind,
+    sessionRef: input.sessionRef,
   }).getCapabilities(input)
 }

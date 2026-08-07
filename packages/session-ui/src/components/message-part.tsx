@@ -69,6 +69,7 @@ import { attached, inline, kind, typeLabel } from "./message-file"
 import { readPartText } from "./message-part-text"
 import { SessionProgressIndicatorV2 } from "../v2/components/session-progress-indicator-v2"
 import { shouldRenderUserMarkdown } from "./user-message-markdown"
+import { dispatchSubagentOpen } from "./subagent-chip"
 
 async function writeClipboard(text: string): Promise<boolean> {
   const body = typeof document === "undefined" ? undefined : document.body
@@ -2344,7 +2345,7 @@ function SubagentTaskCard(props: {
 
   const activate = () => {
     if (props.subagent.toolCallRole === "interaction") {
-      const selector = `[data-subagent-key="${CSS.escape(props.subagent.subagentKey)}"][data-subagent-role="spawn"]`
+      const selector = `[data-session-timeline-session-id="${CSS.escape(props.subagent.parentSessionId)}"] [data-subagent-key="${CSS.escape(props.subagent.subagentKey)}"][data-subagent-role="spawn"]`
       const canonical = document.querySelector<HTMLElement>(selector)
       if (canonical) {
         canonical.scrollIntoView({ block: "center", behavior: "smooth" })
@@ -2362,22 +2363,20 @@ function SubagentTaskCard(props: {
     if (value) window.location.assign(value)
   }
 
+  const openSubagent = (target: EventTarget | null) => {
+    return dispatchSubagentOpen(target, {
+      childSessionId: props.subagent.childSessionId,
+      subagentKey: props.subagent.subagentKey,
+      interaction: props.subagent.toolCallRole === "interaction",
+      openable: openable(),
+    })
+  }
+
   const navigate = (event: MouseEvent) => {
     if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
-    const target = event.currentTarget
-    if (target && props.subagent.toolCallRole !== "interaction" && props.subagent.childSessionId && openable()) {
-      const handled = !target.dispatchEvent(new CustomEvent("claxedo:open-subagent", {
-        bubbles: true,
-        cancelable: true,
-        detail: {
-          childSessionId: props.subagent.childSessionId,
-          subagentKey: props.subagent.subagentKey,
-        },
-      }))
-      if (handled) {
-        event.preventDefault()
-        return
-      }
+    if (openSubagent(event.currentTarget)) {
+      event.preventDefault()
+      return
     }
     if (!data.navigateToSession) return
     event.preventDefault()
@@ -2443,6 +2442,7 @@ function SubagentTaskCard(props: {
       onTriggerKeyDown={(event) => {
         if (event.key !== "Enter" && event.key !== " ") return
         event.preventDefault()
+        if (openSubagent(event.currentTarget)) return
         activate()
       }}
     />
@@ -2453,33 +2453,12 @@ ToolRegistry.register({
   name: "task",
   render(props) {
     const data = useData()
-    const i18n = useI18n()
     const agent = createMemo(() => taskAgent(props.input.subagent_type, data.store.agent))
     const tone = createMemo(() => agent().color)
     const v2Tone = createMemo(() => agent().v2Color)
-    const fallbackStatus = props.status === "pending" || props.status === "running"
-      ? props.status
-      : props.status === "error"
-        ? "failed" as const
-        : props.status === "completed"
-          ? "completed" as const
-          : "unknown" as const
-    const explicit = createMemo(() =>
+    const subagents = createMemo(() =>
       props.sessionID ? data.resolveSubagents?.(props.sessionID, props.toolCallId) ?? [] : []
     )
-    const subagents = createMemo<SubagentView[]>(() => explicit().length > 0 ? explicit() : [{
-      parentSessionId: props.sessionID ?? "",
-      subagentKey: props.toolCallId ?? "unbound-task",
-      status: fallbackStatus,
-      label: "Subagent",
-      agentLabel: agent().name ?? i18n.t("ui.tool.agent.default"),
-      description: typeof props.input.description === "string" && props.input.description
-        ? props.input.description
-        : "Delegated task",
-      transcriptKind: "none",
-      resolution: "unavailable",
-      ambient: false,
-    }])
 
     return (
       <div data-component="subagent-card-list">
@@ -3097,6 +3076,9 @@ ToolRegistry.register({
  */
 const TOOL_NAME_ALIASES: Record<string, string> = {
   agent: "task",
+  subagent: "task",
+  spawn_agent: "task",
+  spawnagent: "task",
   command: "bash",
   shell: "bash",
   local_shell: "bash",

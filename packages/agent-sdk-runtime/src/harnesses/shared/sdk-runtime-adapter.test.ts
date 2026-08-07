@@ -30,6 +30,35 @@ function minimalSdkRuntimeDriver(): SdkRuntimeDriver {
 }
 
 describe("SdkRuntimeAdapter", () => {
+  test("applies the requested permission mode before the provider turn", async () => {
+    const order: string[] = []
+    const adapter = new SdkRuntimeAdapter({
+      store: storeRows(createMemoryRuntimeStore()),
+      driver: () => ({
+        ...minimalSdkRuntimeDriver(),
+        setPermissionMode: async (_sessionId, modeId) => {
+          order.push(`mode:${modeId}`)
+          return { modes: [], appliesFrom: "next-turn" as const }
+        },
+        runTurn: async () => {
+          order.push("turn")
+        },
+      }),
+    })
+    const session = await adapter.createSession("/repo")
+
+    for await (const _event of adapter.sendMessage(session.id, {
+      parts: [{ type: "text", text: "go" }],
+      assistantMessageId: "assistant",
+      agent: "general",
+      model: { providerID: "codex", modelID: "test" },
+      permissionMode: "full-access",
+    }, "/repo")) {}
+
+    expect(order).toEqual(["mode:full-access", "turn"])
+    adapter.dispose()
+  })
+
   test("admits revisioned subagent observations and reuses one opaque child target across interaction edges", async () => {
     const store = storeRows(createMemoryRuntimeStore())
     const eventHub = createRuntimeEventHub()

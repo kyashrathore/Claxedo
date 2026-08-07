@@ -98,7 +98,11 @@ export function createMemorySubagentAdmissionStore(): SubagentAdmissionStore & {
       ])
       const unboundMatch = sole(associationMatches.filter((key) => {
         const binding = bindings.get(scoped(input.parentSessionId, key))
-        return !binding?.providerId && !binding?.providerKind
+        return !binding?.providerId && (
+          !input.observation.providerKind ||
+          !binding?.providerKind ||
+          binding.providerKind === input.observation.providerKind
+        )
       }))
       const resolved = input.observation.subagentKey
         ?? (providerAssociation

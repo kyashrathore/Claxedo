@@ -41,10 +41,12 @@ import {
   presentSubagents,
   type HostSubagentRow,
 } from "../../../features/session/subagents/subagent-presentation"
+import { centralRuntimePath } from "@/platform/runtime/agent/central-runtime-path"
 
 function DirectoryDataProvider(props: ParentProps<{
   data: DirectorySessionCacheValue
   directory: string
+  sessionRef?: Accessor<SessionRef | undefined>
   harnessType?: Accessor<string | undefined>
   onNavigateToSession?: (sessionID: string) => void
   onSessionHref?: (sessionID: string) => string
@@ -60,7 +62,6 @@ function DirectoryDataProvider(props: ParentProps<{
   onCleanup(subagents.subscribe((change) => {
     if (change.type === "reset") loadedSubagents.clear()
     if (change.type === "remove") loadedSubagents.delete(change.parentSessionId)
-    if (change.type === "upsert") loadedSubagents.add(change.parentSessionId)
     setSubagentRevision((revision) => revision + 1)
   }))
 
@@ -68,7 +69,8 @@ function DirectoryDataProvider(props: ParentProps<{
     if (loadedSubagents.has(parentSessionId) || loadingSubagents.has(parentSessionId)) return
     loadingSubagents.add(parentSessionId)
     const query = new URLSearchParams({ directory: props.directory })
-    void sdk.request(`/session/${encodeURIComponent(parentSessionId)}/subagents?${query}`).then(async (response) => {
+    const path = centralRuntimePath(`/session/${encodeURIComponent(parentSessionId)}/subagents?${query}`, props.sessionRef?.())
+    void sdk.request(path).then(async (response) => {
       if (!response.ok) throw new Error((await response.text()) || `Subagent read failed: ${response.status}`)
       hydrateSubagentRows(subagents, parentSessionId, await response.json() as HostSubagentRow[])
       loadedSubagents.add(parentSessionId)
@@ -272,6 +274,7 @@ export function DirectoryScope(props: ParentProps<{
         <DirectoryDataProvider
           data={data()!}
           directory={props.directory}
+          sessionRef={props.sessionRef}
           harnessType={dataProviderHarnessType}
           onNavigateToSession={props.onNavigateToSession}
           onSessionHref={props.onSessionHref}
@@ -285,7 +288,7 @@ export function DirectoryScope(props: ParentProps<{
                   sessionId={() => props.sessionId?.()}
                 >
                   <CommentsProvider>
-                    <LocalProvider sessionId={props.sessionId}>
+                    <LocalProvider sessionId={props.sessionId} sessionRef={props.sessionRef}>
                       {props.children}
                     </LocalProvider>
                   </CommentsProvider>

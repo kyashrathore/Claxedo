@@ -1285,6 +1285,7 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
         title: chunk.title ?? "",
         created: time,
         updated: time,
+        ...(chunk.parentID ? { parentID: chunk.parentID } : {}),
       })))]
     }
 

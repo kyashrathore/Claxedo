@@ -16,6 +16,14 @@ export function routeKnownSessionDirectory(sessionDirectory: string | undefined,
   return cacheDirectories.find((directory) => sameWorkspaceDirectory(sessionDirectory, directory)) ?? sessionDirectory
 }
 
+export function routeSessionMetaIsCentral(input: unknown) {
+  if (!input || typeof input !== "object") return false
+  const row = input as { host?: unknown; sessionRef?: unknown; session_ref?: unknown }
+  return row.host === "central" ||
+    (typeof row.sessionRef === "string" && row.sessionRef.startsWith("central:")) ||
+    (typeof row.session_ref === "string" && row.session_ref.startsWith("central:"))
+}
+
 export function routeSessionWorkspaceBacking(input: {
   projects: Parameters<typeof signedWorkspaceFromProjects>[0]
   directory: string

@@ -101,6 +101,7 @@ export type { WorkspaceProfile } from "./profile"
 export { createProcessObserver } from "./managed-processes/process-observer"
 export {
   createMemoryTranscriptHandleStore,
+  createPersistentTranscriptHandleStore,
   createTranscriptResolver,
 } from "./transcript-resolver"
 export type {

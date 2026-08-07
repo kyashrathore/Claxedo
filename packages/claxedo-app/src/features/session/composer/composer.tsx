@@ -20,10 +20,7 @@ import type { PickerState } from "@/features/session/ui/model/select-model"
 import { usePermission } from "@/features/session/providers/permission"
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
-import {
-  scrollPromptCursorIntoView,
-  setCursorPosition,
-} from "@/features/session/composer/ui/editor-dom"
+import { scrollPromptCursorIntoView, setCursorPosition } from "@/features/session/composer/ui/editor-dom"
 import { submitHardBlocked } from "@/features/session/composer/submit-block-reason"
 import { createPromptAttachments } from "@/features/session/composer/ui/attachments"
 import { ACCEPTED_FILE_TYPES } from "@/features/session/composer/ui/files"
@@ -123,6 +120,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }))
   const isNewSessionVariant = () => modeSnapshot().newSession
   const resolvedSessionId = () => modeSnapshot().sessionId
+  const permissionSessionId = () => resolvedSessionId() === "new" ? undefined : resolvedSessionId()
   const harnessSessionId = () => modeSnapshot().harnessSessionId
   const resolvedSessionDirectory = () => props.sessionDirectory ?? sessionParams.directory()
   const harnessDirectory = createMemo(() =>
@@ -239,6 +237,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const projectsQuery = useQuery(() => queryOptions.projects())
   const projectCatalog = () => (projectsQuery.data ?? []) as ProjectCatalogItem[]
   const submitSessionDirectory = () => {
+    if (props.sessionRef?.()?.host === "central") return resolvedSessionDirectory() ?? sdk.directory
     const routeRef = sessionWorkspaceRuntimeRef({ directory: sessionParams.directory() })
     if (routeRef) return routeRef.workspaceId
     const directory = resolvedSessionDirectory() ?? sdk.directory
@@ -519,7 +518,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const permissionModeWiring = createComposerPermissionModeWiring({
-    sessionId: resolvedSessionId,
+    sessionId: permissionSessionId,
     directory: () => resolvedSessionDirectory() ?? sdk.directory,
     harness: permissionHarness,
     harnessUnavailable: () =>
@@ -531,7 +530,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const autoAccept = createComposerAutoAccept({
     permission,
-    sessionId: resolvedSessionId,
+    sessionId: permissionSessionId,
     directory: () => resolvedSessionDirectory() ?? sdk.directory,
     harness: permissionHarness,
     // Turning the switch on writes the grants into opencode's OWN persisted
@@ -626,6 +625,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       return selection.kind === "harness" ? selection.modeId : undefined
     },
     sessionID: resolvedSessionId,
+    sessionRef: () => props.sessionRef?.(),
     sessionDirectory: submitSessionDirectory,
     surfaceId: () => sessionParams.surfaceId?.(),
     imageAttachments,
@@ -748,6 +748,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       harnessController={() => harnessSelectionController}
       harnessDirectory={harnessDirectory}
       harnessSessionId={harnessSessionId}
+      sessionRef={() => props.sessionRef?.()}
       surfaceId={() => sessionParams.surfaceId?.()}
       draftId={resolvedDraftId}
       active={() => sessionParams.active?.() ?? true}

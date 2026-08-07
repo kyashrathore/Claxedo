@@ -413,6 +413,10 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     }
     let agentSessionId = current
     const created = Date.now()
+    if (input.permissionMode) {
+      if (!this.driver.setPermissionMode) throw new Error(`${this.driver.type} does not support permission modes`)
+      await this.driver.setPermissionMode(id, input.permissionMode, directory)
+    }
     const start = [
       sessionStatus(id, { type: "busy" }),
       ...(input.userMessageId

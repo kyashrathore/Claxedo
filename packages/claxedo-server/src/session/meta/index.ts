@@ -59,10 +59,31 @@ export async function syncSessionMeta(ws: Workspace | undefined, input: unknown)
 
 export async function deleteSessionMeta(sessionID: string) {
   ClaxedoDB.transaction((db) => {
-    db.delete(ClaxedoSessionAttachmentTable).where(eq(ClaxedoSessionAttachmentTable.session_id, sessionID)).run()
-    db.delete(ClaxedoSessionTagTable).where(eq(ClaxedoSessionTagTable.session_id, sessionID)).run()
-    db.delete(ClaxedoSessionMetaTable).where(eq(ClaxedoSessionMetaTable.session_id, sessionID)).run()
+    const sessionIDs = sessionTreeIDs(
+      db.select({
+        session_id: ClaxedoSessionMetaTable.session_id,
+        parent_session_id: ClaxedoSessionMetaTable.parent_session_id,
+      }).from(ClaxedoSessionMetaTable).all(),
+      sessionID,
+    )
+    db.delete(ClaxedoSessionAttachmentTable).where(inArray(ClaxedoSessionAttachmentTable.session_id, sessionIDs)).run()
+    db.delete(ClaxedoSessionTagTable).where(inArray(ClaxedoSessionTagTable.session_id, sessionIDs)).run()
+    db.delete(ClaxedoSessionMetaTable).where(inArray(ClaxedoSessionMetaTable.session_id, sessionIDs)).run()
   })
+}
+
+function sessionTreeIDs(
+  rows: Array<{ session_id: string; parent_session_id: string | null }>,
+  rootID: string,
+) {
+  const children = Map.groupBy(rows, (row) => row.parent_session_id)
+  const seen = new Set<string>()
+  const visit = (sessionID: string): string[] => {
+    if (seen.has(sessionID)) return []
+    seen.add(sessionID)
+    return [sessionID, ...(children.get(sessionID) ?? []).flatMap((row) => visit(row.session_id))]
+  }
+  return visit(rootID)
 }
 
 export async function putSessionMeta(

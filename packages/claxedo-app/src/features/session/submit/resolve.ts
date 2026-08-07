@@ -156,10 +156,11 @@ export async function resolveSubmittedConfig(
 ): Promise<SubmittedConfig | undefined> {
   if (input.harnessMode) {
     if (!input.harnessModelKey) return
+    const variant = input.variant ?? input.harnessModelKey.variant
     return {
       model: { modelID: input.harnessModelKey.modelID, providerID: input.harnessModelKey.providerID },
       agent: resolveSubmitAgent(input),
-      ...(input.variant ? { variant: input.variant } : {}),
+      ...(variant ? { variant } : {}),
     }
   }
 

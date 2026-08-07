@@ -1,12 +1,14 @@
 import { selectRuntimeModel } from "@/features/session/composer/model-strategy"
 import { isSignedWorkspaceDefaultModel } from "@/features/session/composer/signed-workspace-model"
-import { shellDataKeys } from "@/platform/sync/keys"
 import { createTransport } from "@/platform/runtime/transport"
 import { harnessQueryFetch } from "@/platform/runtime/harness-query-fetch"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { queryClient } from "@/platform/query/query-client"
+import { sessionConfigRawQueryKey } from "../../store/session-config-selection"
+import { setSessionConfigRawQueryData } from "../../store/session-config-query-cache"
 import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime-client"
+import { centralRuntimePath } from "@/platform/runtime/agent/central-runtime-path"
 import { resolveSessionUrl } from "@/platform/runtime/session-url"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import {
@@ -15,19 +17,6 @@ import {
   unsignedLocalFetch,
 } from "@/platform/runtime/transport"
 import type { PromptDispatchInput, SubmitDirectory, SubmitModel, SubmitSessionGetClient } from "../../submit/index"
-
-const savedSessionConfigQueryPart = "saved-config-signature"
-
-export function savedSessionConfigQueryKey(sessionID: string) {
-  return shellDataKeys.sessionId(sessionID, savedSessionConfigQueryPart)
-}
-
-/** Test-only: clear the session-config dedup cache. */
-export function _resetSavedSessionConfigCacheForTest() {
-  queryClient.removeQueries({
-    predicate: (query) => query.queryKey[0] === "shell" && query.queryKey[3] === savedSessionConfigQueryPart,
-  })
-}
 
 export type SubmitTransportClientFactoryInput = {
   readonly baseUrl: string
@@ -41,6 +30,7 @@ export type SubmitTransportPlacementInput<Client extends PromptDispatchInput["cl
   readonly signedControlPlane: () => boolean | undefined
   readonly workspaceId: () => string | undefined
   readonly workspaceKind: () => "cloud" | "user-hosted" | undefined
+  readonly sessionRef?: () => SessionRef | undefined
   readonly request: typeof fetch
   readonly localRequest: typeof fetch
   readonly config: Parameters<typeof resolveSessionUrl>[1]
@@ -68,6 +58,7 @@ export function workspaceRuntimeRef(directory: SubmitDirectory | undefined) {
 export function createSubmitTransportAdapter<Client extends PromptDispatchInput["client"] & SubmitSessionGetClient>(
   input: SubmitTransportPlacementInput<Client>,
 ) {
+  const sessionRef = () => input.sessionRef?.()
   const runtimeTransport = (dir: SubmitDirectory) => submitTransportForPlacement({
     serverUrl: input.serverUrl(), directory: dir, signedControlPlane: input.signedControlPlane(),
     workspaceId: input.workspaceId(), workspaceKind: input.workspaceKind(),
@@ -108,10 +99,19 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
   }
 
   const usesWorkspaceRuntimeSession = (dir: SubmitDirectory) =>
-    runtimeTransport(dir).workspaceRuntimeSession
+    sessionRef()?.host === "central" || runtimeTransport(dir).workspaceRuntimeSession
+
+  const centralSessionFetch = (): typeof fetch =>
+    ((resource: RequestInfo | URL, init?: RequestInit) => {
+      const current = new URL(resource instanceof Request ? resource.url : resource.toString(), input.serverUrl())
+      current.pathname = centralRuntimePath(current.pathname, sessionRef())
+      return input.request(resource instanceof Request ? new Request(current, resource) : current, init)
+    }) as typeof fetch
 
   const sessionFetch = (dir: SubmitDirectory) =>
-    usesWorkspaceRuntimeSession(dir) ? runtimeSessionFetch(dir) : localSessionFetch(dir)
+    sessionRef()?.host === "central"
+      ? centralSessionFetch()
+      : usesWorkspaceRuntimeSession(dir) ? runtimeSessionFetch(dir) : localSessionFetch(dir)
 
   const sessionRequest = (dir: SubmitDirectory, path: string, init?: RequestInit) =>
     sessionFetch(dir)(usesWorkspaceRuntimeSession(dir) ? path : `${input.serverUrl()}${path}`, init)
@@ -191,25 +191,17 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
       ...(configInput.model ? { model: configInput.model } : {}),
       ...(configInput.variant ? { variant: configInput.variant } : {}),
     }
-    // Rubric C1: skip the PATCH when the submitted config matches the
-    // last value persisted for this session. Saves one RTT per prompt on
-    // the common "user typed and hit enter without changing model/agent"
-    // path, which is most prompts in a session. The signature is session
-    // scoped so model swaps still PATCH when the value actually changed.
     const next = JSON.stringify(body)
-    const queryKey = savedSessionConfigQueryKey(configInput.sessionID)
-    if (queryClient.getQueryData<string>(queryKey) === next) return
-    const url = new URL(`/session/${encodeURIComponent(configInput.sessionID)}/config`, "http://claxedo.local")
-    url.searchParams.set("directory", configInput.directory)
-    url.searchParams.set("harness", configInput.harnessType)
+    if (sessionConfigSignature(queryClient.getQueryData(sessionConfigRawQueryKey(configInput.sessionID))) === next) return
+    const path = sessionConfigPath(configInput)
     try {
-      const res = await sessionRequest(configInput.directory, `${url.pathname}${url.search}`, {
+      const res = await sessionRequest(configInput.directory, path, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: next,
       })
       if (!res.ok) throw new Error((await res.text().catch(() => "")) || `session config save failed: ${res.status}`)
-      queryClient.setQueryData(queryKey, next)
+      setSessionConfigRawQueryData(configInput.sessionID, await res.json())
     } catch (err) {
       input.showToast({
         title: input.text.configSaveFailedTitle,
@@ -217,6 +209,20 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
         variant: "error",
       })
     }
+  }
+
+  const readSessionConfig = async (configInput: Pick<SaveSessionConfigInput, "sessionID" | "directory" | "harnessType">) => {
+    return await queryClient.fetchQuery({
+      queryKey: sessionConfigRawQueryKey(configInput.sessionID),
+      staleTime: Number.POSITIVE_INFINITY,
+      queryFn: async () => {
+        const res = await sessionRequest(configInput.directory, sessionConfigPath(configInput), {
+          headers: { Accept: "application/json" },
+        })
+        if (!res.ok) throw new Error((await res.text().catch(() => "")) || `session config read failed: ${res.status}`)
+        return await res.json()
+      },
+    })
   }
 
   return {
@@ -228,8 +234,16 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     sessionClient,
     hostedSessionClient,
     createRuntimePromptClient,
+    readSessionConfig,
     saveSessionConfig,
   }
+}
+
+function sessionConfigPath(input: Pick<SaveSessionConfigInput, "sessionID" | "directory" | "harnessType">) {
+  const url = new URL(`/session/${encodeURIComponent(input.sessionID)}/config`, "http://claxedo.local")
+  url.searchParams.set("directory", input.directory)
+  url.searchParams.set("harness", input.harnessType)
+  return `${url.pathname}${url.search}`
 }
 
 function opencodeProviderPath(input: { directory?: string; harnessType?: string }) {
@@ -237,4 +251,28 @@ function opencodeProviderPath(input: { directory?: string; harnessType?: string 
   if (input.directory) url.searchParams.set("directory", input.directory)
   if (input.harnessType) url.searchParams.set("harness", input.harnessType)
   return `${url.pathname}${url.search}`
+}
+
+function sessionConfigSignature(input: unknown) {
+  const config = object(input)
+  const harness = object(config?.harness)
+  const harnessType = string(harness?.type) ?? string(harness?.id)
+  if (!harnessType) return
+  const model = object(config?.model)
+  const providerID = string(model?.providerID)
+  const modelID = string(model?.modelID)
+  return JSON.stringify({
+    harness: { type: harnessType },
+    ...(string(config?.agent) ? { agent: string(config?.agent) } : {}),
+    ...(providerID && modelID ? { model: { providerID, modelID } } : {}),
+    ...(string(config?.variant) ? { variant: string(config?.variant) } : {}),
+  })
+}
+
+function object(input: unknown) {
+  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
+}
+
+function string(input: unknown) {
+  return typeof input === "string" && input.length > 0 ? input : undefined
 }

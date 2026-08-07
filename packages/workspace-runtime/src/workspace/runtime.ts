@@ -1873,6 +1873,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       }))
       app.route("/", OpenCodeCompatRoutes())
     },
+    hasSession(sessionId: string) {
+      return !!store().getSession(sessionId)
+    },
+    parentSessionIdFor(sessionId: string) {
+      const session = store().getSession(sessionId) as { parentID?: string | null } | null
+      return session?.parentID ?? undefined
+    },
     async apply(next: RuntimeSnapshot) {
       const normalized = normalizeRuntimeSnapshot(next)
       if (!normalized) throw new RuntimeConfigApplyError("runtime_config_invalid", "Invalid runtime config snapshot", 409)

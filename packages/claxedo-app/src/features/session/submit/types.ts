@@ -26,6 +26,7 @@ export type PromptDispatchPayload = {
   messageID: string
   parts: PromptRequestPart[]
   variant?: string
+  permissionMode?: string
   system?: string
   format?: OutputFormat
 }

@@ -8,6 +8,7 @@ import type { CompatEvent } from "../../compat-events"
 import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
 import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../../runtime-event-hub"
 import type { SessionUpdate } from "./process"
+import { MemoryRuntimeStore } from "../../stores/memory"
 
 function adapter() {
   const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
@@ -167,31 +168,27 @@ describe("AcpHarnessAdapter permissions", () => {
 describe("AcpHarnessAdapter subagent routing", () => {
   test("admits Claude lifecycle before routing nested transcript events to the child", async () => {
     const runtimeEvents: RuntimeEventEnvelope[] = []
+    const permissionModes: string[] = []
     const eventHub = createRuntimeEventHub()
     eventHub.subscribeRuntime((event) => runtimeEvents.push(event))
-    const materialized: string[] = []
+    const store = new MemoryRuntimeStore()
+    store.bindSession({
+      sessionId: "parent-session",
+      directory: "/work",
+      title: "Parent",
+      agentSessionId: "parent-agent-session",
+    })
+    store.updateSessionConfig("parent-session", {
+      harness: { id: "claude", access: "acp" },
+      model: { providerID: "claude-acp", modelID: "default" },
+      agent: "build",
+      variant: null,
+    })
     const adapter = new AcpHarnessAdapter({
       binary: "claude-agent-acp",
       harness: "claude",
-      store: fakeRuntimeStore({
-        getAgentSessionId: () => "parent-agent-session",
-        getSession: () => ({ title: "Parent" }) as never,
-      }),
+      store,
       eventHub,
-      materializeSubagent({ event }) {
-        materialized.push(event.subagentKey)
-        return {
-          sessionId: "child-session",
-          getAgentSessionId: () => "child-agent-session",
-          assistantMessageId: "child-assistant",
-          created: 1,
-          input: {
-            userMessageId: "child-user",
-            agent: "explore",
-            model: { providerID: "claude-acp", modelID: "default" },
-          },
-        }
-      },
     })
     internalsOf<{
       getOrSpawnProcess: () => Promise<{ proc: {
@@ -205,6 +202,10 @@ describe("AcpHarnessAdapter subagent routing", () => {
       proc: {
         permissionPushers: new Map(),
         async syncSession() {},
+        async setPermissionMode(_sessionId: string, modeId: string) {
+          permissionModes.push(modeId)
+          return { modes: [], currentModeId: modeId, appliesFrom: "next-turn" as const }
+        },
         async prompt(_sessionId, _input, forward) {
           forward({
             sessionUpdate: "tool_call",
@@ -231,15 +232,24 @@ describe("AcpHarnessAdapter subagent routing", () => {
       assistantMessageId: "parent-assistant",
       agent: "build",
       model: { providerID: "claude-acp", modelID: "default" },
+      permissionMode: "bypassPermissions",
     }, "/work")) {}
 
-    expect(materialized).toHaveLength(1)
+    const childSessionId = store.listSubagents("parent-session")[0]?.childSessionId
+    expect(childSessionId).toBeString()
+    expect(store.getSession(childSessionId!)).toMatchObject({ parentID: "parent-session" })
+    expect(JSON.stringify(store.getMessages(childSessionId!))).toContain("child result")
+    expect(permissionModes).toEqual(["bypassPermissions"])
     expect(runtimeEvents).toContainEqual(expect.objectContaining({
       sessionId: "parent-session",
-      payload: expect.objectContaining({ type: "subagent-updated", transcript: { kind: "messages", ref: "acp:agent-1" } }),
+      payload: expect.objectContaining({
+        type: "subagent-updated",
+        childSessionId,
+        transcript: { kind: "messages", ref: "acp:agent-1" },
+      }),
     }))
     expect(runtimeEvents).toContainEqual(expect.objectContaining({
-      sessionId: "child-session",
+      sessionId: childSessionId,
       payload: expect.objectContaining({ type: "text-delta", delta: "child result" }),
     }))
     expect(runtimeEvents).not.toContainEqual(expect.objectContaining({

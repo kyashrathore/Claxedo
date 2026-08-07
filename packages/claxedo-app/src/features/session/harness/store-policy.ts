@@ -7,6 +7,7 @@ import {
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { centralTransportForServer } from "@/platform/runtime/transport"
+import type { SessionRef } from "@/platform/identity/session-ref"
 import {
   harnessHasConfigOptions,
   pickHarness,
@@ -19,6 +20,7 @@ export const MODEL_OPTIONS_RETRY_LIMIT = 5
 export type HarnessScopeInput = {
   directory?: undefined | string
   sessionId?: string
+  sessionRef?: SessionRef
 }
 
 export type HarnessWorkspaceKind = "local" | "cloud" | "user-hosted"

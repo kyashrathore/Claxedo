@@ -235,8 +235,8 @@ function sessionNavigationRow(session: unknown): SessionNavigationRow | undefine
 }
 
 function sessionRef(input: { sessionId: string; workspaceId?: string; directory: string; host: SessionMeta["host"] }) {
-  if (input.workspaceId) return `workspace:${input.workspaceId}:session:${input.sessionId}`
   if (input.host === "central") return `central:${input.sessionId}`
+  if (input.workspaceId) return `workspace:${input.workspaceId}:session:${input.sessionId}`
   return `local:${input.directory}:session:${input.sessionId}`
 }
 

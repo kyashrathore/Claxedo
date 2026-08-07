@@ -217,6 +217,9 @@ function mergeChatParts(current: MessagePart[], snapshot: MessagePart[]) {
 }
 
 function mergeChatPart(current: MessagePart, snapshot: MessagePart) {
+  if (current.type === "tool-call" && snapshot.type === "tool-call") {
+    return toolCallStateRank(snapshot.state) >= toolCallStateRank(current.state) ? snapshot : current
+  }
   if (
     (current.type === "text" || current.type === "thinking") &&
     snapshot.type === current.type &&
@@ -225,6 +228,12 @@ function mergeChatPart(current: MessagePart, snapshot: MessagePart) {
     return snapshot
   }
   return current
+}
+
+function toolCallStateRank(state: string | undefined) {
+  if (state === "complete") return 2
+  if (state === "input-complete") return 1
+  return 0
 }
 
 function textContent(part: MessagePart) {

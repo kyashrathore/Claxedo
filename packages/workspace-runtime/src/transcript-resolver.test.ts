@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { createTranscriptResolver } from "./transcript-resolver"
+import { createPersistentTranscriptHandleStore, createTranscriptResolver } from "./transcript-resolver"
 
 const roots: string[] = []
 
@@ -187,5 +187,35 @@ describe("transcript resolver", () => {
       parentSessionId: "parent-a",
       handle: "revoked-handle",
     })).toMatchObject({ state: "unavailable", reason: "invalid-handle" })
+  })
+
+  test("persistent handles resolve after the host store is reconstructed", async () => {
+    const { base, providerRoot } = await fixture()
+    const file = path.join(providerRoot, "durable.jsonl")
+    const database = path.join(base, "host", "transcript-handles.db")
+    await Bun.write(file, '{"type":"text","text":"durable"}\n')
+    const createResolver = () => createTranscriptResolver({
+      workspaceId: "workspace-a",
+      providers: { "cursor-agent": { root: providerRoot, format: "jsonl" } },
+      authorizeParent: () => true,
+      handleStore: createPersistentTranscriptHandleStore({
+        file: database,
+        createHandle: () => "durable-handle",
+      }),
+    })
+    const registered = await createResolver().register({
+      workspaceId: "workspace-a",
+      parentSessionId: "parent-a",
+      providerKind: "cursor-agent",
+      filePath: file,
+    })
+
+    expect(registered).toEqual({ state: "ready", handle: "durable-handle" })
+    expect((await fs.stat(database)).mode & 0o777).toBe(0o600)
+    expect(await createResolver().open({
+      workspaceId: "workspace-a",
+      parentSessionId: "parent-a",
+      handle: "durable-handle",
+    })).toEqual({ state: "ready", messages: [{ type: "text", text: "durable" }] })
   })
 })

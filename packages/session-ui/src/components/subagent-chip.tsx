@@ -17,23 +17,21 @@ type ChipModel = {
   color?: string
 }
 
-function fallbackChip(part: ToolPart): ChipModel {
-  const state = part.state as {
-    status?: string
-    input?: Record<string, unknown>
-  }
-  const input = state.input ?? {}
-  const name =
-    (typeof input.subagent_type === "string" && input.subagent_type) ||
-    (typeof input.description === "string" && input.description) ||
-    "agent"
-  const status: ChipModel["status"] =
-    state.status === "running" || state.status === "pending"
-      ? "running"
-      : state.status === "error"
-        ? "interrupted"
-        : "completed"
-  return { key: part.id, name, status, resolution: "unavailable", color: undefined }
+export function dispatchSubagentOpen(target: EventTarget | null, input: {
+  childSessionId?: string
+  subagentKey: string
+  interaction: boolean
+  openable: boolean
+}) {
+  if (!target || input.interaction || !input.childSessionId || !input.openable) return false
+  return !target.dispatchEvent(new CustomEvent("claxedo:open-subagent", {
+    bubbles: true,
+    cancelable: true,
+    detail: {
+      childSessionId: input.childSessionId,
+      subagentKey: input.subagentKey,
+    },
+  }))
 }
 
 function chipFromView(view: SubagentView): ChipModel {
@@ -61,10 +59,9 @@ export function SubagentChipRow(props: {
   const data = useData()
   const chips = createMemo(() => {
     if (props.subagents) return props.subagents.map(chipFromView)
-    return (props.parts ?? []).flatMap((part) => {
-      const explicit = data.resolveSubagents?.(part.sessionID, part.callID) ?? []
-      return explicit.length > 0 ? explicit.map(chipFromView) : [fallbackChip(part)]
-    })
+    return (props.parts ?? []).flatMap((part) =>
+      (data.resolveSubagents?.(part.sessionID, part.callID) ?? []).map(chipFromView)
+    )
   })
   const visible = createMemo(() => chips().slice(0, 3))
   const overflow = createMemo(() => Math.max(0, chips().length - 3))

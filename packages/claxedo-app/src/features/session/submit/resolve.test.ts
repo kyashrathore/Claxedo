@@ -226,6 +226,16 @@ describe("resolveSubmittedConfig", () => {
     expect(result?.model.modelID).toBe("sonnet")
   })
 
+  test("harness path carries its selected thought level from the model key", async () => {
+    const result = await resolveSubmittedConfig({
+      harnessMode: true,
+      harnessModelKey: { providerID: "codex-app-server", modelID: "gpt-5.6-sol", variant: "ultra" },
+      allowModelFallback: false,
+      modelForSubmit: async (model) => model,
+    })
+    expect(result?.variant).toBe("ultra")
+  })
+
   test("harness path refuses to fall back to non-runner model state", async () => {
     let calls = 0
     const result = await resolveSubmittedConfig({

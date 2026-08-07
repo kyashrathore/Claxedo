@@ -513,12 +513,18 @@ async function startServer() {
       OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeScriptedProviderConfig(scripted.v1Url)),
       TIER_REAL_API_KEY: "test-key",
       OPENCODE_DISABLE_MODELS_FETCH: "true",
+      CLAXEDO_PI_MODEL: "anthropic/claude-sonnet-4-6",
       ...claudeScriptedEnv(scripted.url, claudeConfigDir),
       // Both codex knobs: CODEX_HOME redirects the CLI itself (the load-bearing
       // one, for both codex-app-server and codex-acp), CODEX_CONFIG additionally
       // reaches the codex-acp wrapper's own startup path.
       CODEX_HOME: codexHome,
       CODEX_CONFIG: codexScriptedConfigJson(scripted.v1Url),
+      CODEX_THREAD_ID: undefined,
+      CODEX_INTERNAL_ORIGINATOR_OVERRIDE: undefined,
+      CODEX_CI: undefined,
+      CODEX_SANDBOX: undefined,
+      CODEX_SANDBOX_NETWORK_DISABLED: undefined,
       OPENAI_API_KEY: "test-key",
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -1020,6 +1026,169 @@ async function runRealHarnessJourney(page: Page, dir: string, harness: HarnessCa
   expectScriptedTraffic(harness.dialect, TURNS)
 }
 
+type SubagentHarnessCase = HarnessCase & {
+  tool: { name: string; input: unknown; namespace?: string }
+  openable: boolean
+  sessionID?: string
+  workspaceID?: string
+  central?: boolean
+  modelName?: RegExp
+  modelSearch?: string
+  permissionMode?: string
+  effort?: string
+}
+
+async function runRealSubagentJourney(page: Page, dir: string, harness: SubagentHarnessCase) {
+  scripted?.resetCounts()
+  const input = harness.sessionID
+    ? await openExistingPrompt(page, dir, harness.sessionID, harness.workspaceID, harness.central)
+    : await openDraftPrompt(page, dir)
+
+  if (!harness.sessionID && harness.option) {
+    await switchDraftHarness(page, harness.harnessKey)
+    if (harness.modelName) await selectHarnessModel(page, harness.modelName, harness.modelSearch)
+    await waitForHarnessReady(page)
+  } else if (!harness.sessionID) {
+    await selectScriptedModel(page)
+  }
+
+  if (harness.effort) {
+    const control = page.locator('[data-action="prompt-harness-model"]').last()
+    await control.click()
+    const picker = page.locator('[data-component="harness-model-picker"]')
+    await picker.locator('[data-slot="harness-picker-section"]').filter({ hasText: /^Effort/ }).click()
+    await picker.getByRole("button", { name: harness.effort, exact: true }).click()
+    await expect(control).toContainText(harness.effort)
+  }
+
+  if (harness.permissionMode) {
+    const permission = page.locator('[data-action="prompt-permission-mode"]').last()
+    await expect(permission).toBeEnabled({ timeout: 30_000 })
+    await permission.click()
+    const row = page.locator(`[data-permission-mode-row][data-mode="${harness.permissionMode}"]`)
+    await expect(row).toBeVisible({ timeout: 20_000 })
+    await row.click()
+    await expect(permission).toHaveAttribute("data-mode", harness.permissionMode)
+  }
+
+  const marker = `SUBAGENT-${harness.id.replace(/[^a-z0-9]/gi, "")}-${`${Date.now()}`.slice(-6)}`
+  scripted?.scriptTool({ ...harness.tool, whenPromptIncludes: marker })
+  scripted?.setReplyDelayMs(process.env.CLAXEDO_E2E_RECORD_DEMO === "1" ? 2_000 : 750)
+  try {
+    await composePrompt(
+      page,
+      input,
+      `Delegate one child task, then reply with exactly this one token and nothing else: ${marker}`,
+    )
+    if (harness.permissionMode) {
+      await expect(page.locator('[data-action="prompt-permission-mode"]').last()).toHaveAttribute("data-mode", harness.permissionMode)
+    }
+    const submit = page.locator(SELECTORS.submitControl).last()
+    if (harness.id === "pi") {
+      await expect(page.locator('[data-action="prompt-harness-model"]').last()).toHaveAttribute("data-harness", "pi", {
+        timeout: 30_000,
+      })
+      await expect(page.getByText("This Pi model is no longer available", { exact: true })).toHaveCount(0)
+    }
+    await expect(submit, `${harness.id} composer never became submit-ready`).toHaveAttribute("aria-label", "Send", {
+      timeout: 30_000,
+    })
+    await submit.click()
+    await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+    await expect.poll(
+      () => scripted?.requests.some((request) => request.reply.kind === "tool") ?? false,
+      { message: `${harness.id} never received its scripted tool payload`, timeout: 30_000 },
+    ).toBe(true)
+    await expect(page.getByText("Could not save session config", { exact: true })).toHaveCount(0)
+    const card = page.locator('[data-component="task-tool-card"]').last()
+    await expect(card, `${harness.id} never rendered its native delegation as a subagent card`).toBeVisible({
+      timeout: 60_000,
+    })
+    await expect(card.locator('[data-slot="subagent-status"]')).toHaveText(/Pending|Working/, { timeout: 30_000 })
+    await demoBeat(page)
+    await expect(card.locator('[data-slot="subagent-status"]')).toHaveText("Completed", {
+      timeout: 90_000,
+    })
+    await expect(page.locator(SELECTORS.userMessageContent).filter({ hasText: marker })).toBeVisible()
+    await demoBeat(page)
+
+    const anchor = card.locator("xpath=ancestor::a[1]")
+    if (!harness.openable) {
+      await expect(card.locator('[data-slot="basic-tool-tool-subtitle"]')).toContainText("Transcript unavailable")
+      await expect(anchor).toHaveCount(0)
+    } else {
+      await expect(anchor, `${harness.id} completed without an openable child transcript`).toHaveCount(1)
+      await anchor.click()
+      await expect(page.locator("[data-subagent-child-heading]")).toBeVisible({ timeout: 30_000 })
+      await expect(page.getByText("Subagent sessions cannot be prompted.", { exact: true })).toBeVisible()
+      await expectAssistantReplyVisible(page, "ok", {
+        spec: "real-harness-local",
+        scenario: `${harness.id}-subagent-child`,
+      })
+      await demoBeat(page)
+    }
+  } finally {
+    scripted?.setReplyDelayMs(0)
+  }
+
+  const toolRequest = scripted?.requests.find((request) => request.reply.kind === "tool")
+  expect(toolRequest?.reply).toEqual({ kind: "tool", ...harness.tool })
+  const counts = scripted?.counts() ?? { chat: 0, messages: 0, responses: 0 }
+  expect(counts[harness.dialect], `${harness.id} did not execute through its scripted provider endpoint`).toBeGreaterThanOrEqual(2)
+  for (const other of ["chat", "messages", "responses"] as const) {
+    if (other === harness.dialect) continue
+    expect(counts[other], `${harness.id} leaked model traffic onto ${other}`).toBeLessThanOrEqual(other === "chat" ? 1 : 0)
+  }
+}
+
+async function runWorkspaceSubagentJourney(
+  page: Page,
+  workspaceName: string,
+  bootstrapHarness: string | undefined,
+  harness: SubagentHarnessCase,
+) {
+  const dir = await makeWorkspace(workspaceName, bootstrapHarness)
+  await seedOneProject(page, dir)
+  await runRealSubagentJourney(page, dir, harness)
+}
+
+async function runCursorHarnessBoundary(page: Page) {
+  scripted?.resetCounts()
+  const dir = await makeWorkspace("cursor", "cursor-acp")
+  await seedOneProject(page, dir)
+  const input = await openDraftPrompt(page, dir)
+  await switchDraftHarness(page, "cursor-acp")
+
+  const notice = page.locator("[data-component='composer-notice'][data-notice='runtime-unavailable']")
+  const modelControl = page.locator('[data-action="prompt-harness-model"]')
+  await expect
+    .poll(async () => ((await notice.count()) > 0 ? "unavailable" : (await modelControl.count()) > 0 ? "ready" : "pending"), {
+      timeout: 30_000,
+      message: "composer settled into neither the cursor-ready nor the runtime-unavailable state",
+    })
+    .not.toBe("pending")
+
+  if ((await notice.count()) > 0) {
+    await expect(notice).toHaveCount(1)
+    await expect(notice).toHaveAttribute("data-tone", "critical")
+    await expect(notice.locator("[data-action='composer-notice-action']")).toBeVisible()
+    await composePrompt(page, input, "tier-real cursor unavailable attempt")
+    await page.locator(SELECTORS.submitControl).last().click()
+  } else {
+    await expect(modelControl).toHaveCount(1)
+    await expect(modelControl.last()).not.toContainText(/Loading models|Select model/i, { timeout: 30_000 })
+  }
+  await demoBeat(page)
+
+  await expect(page.locator('[data-action="prompt-model"]')).toHaveCount(0)
+  await expect(page.locator('[data-action="prompt-harness"]')).toHaveCount(0)
+  expect(
+    scripted?.counts() ?? { chat: 0, messages: 0, responses: 0 },
+    "expected the scripted model server to receive zero requests during the cursor scenario — any count here means " +
+      "selecting Cursor routed through a provider it does not own",
+  ).toEqual({ chat: 0, messages: 0, responses: 0 })
+}
+
 async function demoBeat(page: Page) {
   if (process.env.CLAXEDO_E2E_RECORD_DEMO !== "1") return
   // Recording-only pacing. Every behavioral wait is asserted independently;
@@ -1028,19 +1197,92 @@ async function demoBeat(page: Page) {
 }
 
 async function createPickerSession(dir: string) {
+  return createHarnessSession(dir, {
+    title: "Timeline turn picker",
+    harness: "opencode",
+    providerID: "tier-real",
+    modelID: "scripted-model",
+  })
+}
+
+async function createHarnessSession(dir: string, input: {
+  title: string
+  harness: string
+  providerID: string
+  modelID: string
+}) {
   const response = await fetch(`${BACKEND_URL}/session?directory=${encodeURIComponent(dir)}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      title: "Timeline turn picker",
-      harness: { type: "opencode", model: "tier-real/scripted-model" },
-      model: { providerID: "tier-real", modelID: "scripted-model" },
+      title: input.title,
+      harness: { type: input.harness, model: `${input.providerID}/${input.modelID}` },
+      model: { providerID: input.providerID, modelID: input.modelID },
     }),
   })
   if (response.status !== 201) {
     throw new Error(`GATING: failed to seed picker session (${response.status}): ${await response.text()}`)
   }
   return (await response.json()) as { id: string }
+}
+
+async function updateSessionConfig(dir: string, sessionID: string, config: unknown) {
+  const response = await fetch(
+    `${BACKEND_URL}/session/${encodeURIComponent(sessionID)}/config?directory=${encodeURIComponent(dir)}`,
+    { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(config) },
+  )
+  if (!response.ok) throw new Error(`GATING: failed to update session config (${response.status}): ${await response.text()}`)
+}
+
+async function createPiSession(dir: string) {
+  const workspaceResponse = await fetch(
+    `${BACKEND_URL}/api/workspace/resolve?directory=${encodeURIComponent(dir)}&create=true`,
+  )
+  if (!workspaceResponse.ok) throw new Error(`GATING: failed to resolve Pi workspace: ${await workspaceResponse.text()}`)
+  const workspace = await workspaceResponse.json() as { workspaceId: string }
+  const response = await fetch(`${BACKEND_URL}/api/control/sessions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      mode: "hybrid",
+      title: "Pi subagent showcase",
+      harness: "pi",
+      workspaceId: workspace.workspaceId,
+      model: { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
+      toolSandbox: { kind: "workspace-runtime", workspaceId: workspace.workspaceId },
+    }),
+  })
+  if (!response.ok) throw new Error(`GATING: failed to create Pi session (${response.status}): ${await response.text()}`)
+  return { ...(await response.json()) as { session: { id: string } }, workspaceId: workspace.workspaceId }
+}
+
+async function openExistingPrompt(page: Page, dir: string, sessionID: string, workspaceID?: string, central = false) {
+  await page.goto(
+    central
+      ? `/s/${encodeURIComponent(sessionID)}`
+      : `/w/${encodeURIComponent(workspaceID ?? dir)}/session/${encodeURIComponent(sessionID)}`,
+    { waitUntil: "domcontentloaded" },
+  )
+  await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+  const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
+  await expect(input).toBeVisible({ timeout: 20_000 })
+  return input
+}
+
+async function selectHarnessModel(page: Page, name: RegExp, searchText?: string) {
+  const control = page.locator('[data-action="prompt-harness-model"]').last()
+  await control.click()
+  const picker = page.locator('[data-component="harness-model-picker"]')
+  const modelSection = picker.locator('[data-slot="harness-picker-section"]').filter({ hasText: /^Model/ })
+  await modelSection.click()
+  if (searchText) {
+    const search = picker.getByRole("textbox", { name: /Search models/i })
+    await search.fill(searchText)
+  }
+  const option = picker.getByRole("button", { name }).last()
+  await expect(option).toBeVisible({ timeout: 30_000 })
+  await option.click()
+  await expect(control).toContainText(name, { timeout: 30_000 })
 }
 
 function seedPickerTurn(dir: string, sessionID: string, turn: number) {
@@ -1244,6 +1486,95 @@ test.describe("real harness journeys @core @tier-real", () => {
     await runRealHarnessJourney(page, dir, { id: "claude-sdk", dialect: "messages", option: /^Claude$/, harnessKey: "claude-sdk" })
   })
 
+  test("claude native SDK runs a provider-issued Agent call as an openable subagent", async ({ page }) => {
+    const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
+    requireBinary(binary, "claude", "install the Claude CLI to exercise its native Agent tool.")
+    const dir = await makeWorkspace("claude-sdk-subagent", "claude-sdk")
+    await seedOneProject(page, dir)
+    await runRealSubagentJourney(page, dir, {
+      id: "claude-sdk",
+      dialect: "messages",
+      option: /^Claude$/,
+      harnessKey: "claude-sdk",
+      tool: {
+        name: "Agent",
+        input: {
+          description: "Verify child delegation",
+          prompt: "Reply with exactly CHILD-CLAUDE-NATIVE",
+          subagent_type: "general-purpose",
+          run_in_background: false,
+        },
+      },
+      openable: true,
+      permissionMode: "bypassPermissions",
+    })
+  })
+
+  test("claude ACP runs a provider-issued Agent call as an openable subagent", async ({ page }) => {
+    const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
+    requireBinary(binary, "claude", "install the Claude CLI to exercise ACP subagents.")
+    const dir = await makeWorkspace("claude-acp-subagent", "claude-acp")
+    await seedOneProject(page, dir)
+    await runRealSubagentJourney(page, dir, {
+      id: "claude-acp",
+      dialect: "messages",
+      option: /^Claude$/,
+      harnessKey: "claude-acp",
+      tool: {
+        name: "Agent",
+        input: {
+          description: "Verify ACP child delegation",
+          prompt: "Reply with exactly CHILD-CLAUDE-ACP",
+          subagent_type: "general-purpose",
+          run_in_background: false,
+        },
+      },
+      openable: true,
+      permissionMode: "bypassPermissions",
+    })
+  })
+
+  test("OpenCode runs a provider-issued task call as an openable subagent", async ({ page }) => {
+    const dir = await makeWorkspace("opencode-subagent")
+    await seedOneProject(page, dir)
+    await runRealSubagentJourney(page, dir, {
+      id: "opencode",
+      dialect: "chat",
+      tool: {
+        name: "task",
+        input: {
+          description: "Verify OpenCode child delegation",
+          prompt: "Reply with exactly CHILD-OPENCODE",
+          subagent_type: "general",
+          background: false,
+        },
+      },
+      openable: true,
+    })
+  })
+
+  test("Pi runs a provider-issued subagent call as an openable child session", async ({ page }) => {
+    const dir = await makeWorkspace("pi-subagent", "pi")
+    await seedOneProject(page, dir)
+    const session = await createPiSession(dir)
+    await runRealSubagentJourney(page, dir, {
+      id: "pi",
+      dialect: "messages",
+      sessionID: session.session.id,
+      workspaceID: session.workspaceId,
+      central: true,
+      tool: {
+        name: "subagent",
+        input: {
+          task: "Reply with exactly CHILD-PI",
+          title: "Verify Pi child delegation",
+          background: false,
+        },
+      },
+      openable: true,
+    })
+  })
+
   test("codex ACP harness (real codex-acp subprocess) completes 3 scripted turns and survives reload — behaviors 4,6,8,9", async ({
     page,
   }) => {
@@ -1268,6 +1599,53 @@ test.describe("real harness journeys @core @tier-real", () => {
     await runRealHarnessJourney(page, dir, { id: "codex-sdk", dialect: "responses", option: /^Codex$/, harnessKey: "codex-app-server" })
   })
 
+  test("codex native SDK runs a provider-issued spawn_agent call as an openable subagent", async ({ page }) => {
+    const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
+    requireBinary(binary, "codex", "install the Codex CLI to exercise its native collaboration tool.")
+    const dir = await makeWorkspace("codex-sdk-subagent", "codex-app-server")
+    await seedOneProject(page, dir)
+    await runRealSubagentJourney(page, dir, {
+      id: "codex-sdk",
+      dialect: "responses",
+      option: /^Codex$/,
+      harnessKey: "codex-app-server",
+      tool: {
+        name: "spawn_agent",
+        input: {
+          task_name: "demo_child",
+          message: "Reply with exactly CHILD-CODEX-NATIVE",
+        },
+      },
+      openable: true,
+      permissionMode: "full-access",
+      effort: "Ultra",
+    })
+  })
+
+  test("codex ACP runs a provider-issued spawn_agent call as a status-only subagent", async ({ page }) => {
+    const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
+    requireBinary(binary, "codex", "install the Codex CLI to exercise ACP subagent metadata.")
+    const dir = await makeWorkspace("codex-acp-subagent", "codex-acp")
+    await seedOneProject(page, dir)
+    await runRealSubagentJourney(page, dir, {
+      id: "codex-acp",
+      dialect: "responses",
+      option: /^Codex$/,
+      harnessKey: "codex-acp",
+      tool: {
+        name: "spawn_agent",
+        namespace: "agents",
+        input: {
+          task_name: "demo_child",
+          message: "Reply with exactly CHILD-CODEX-ACP",
+        },
+      },
+      openable: false,
+      permissionMode: "agent-full-access",
+      effort: "Ultra",
+    })
+  })
+
   test("cursor harness materializes without silently routing through another provider — behavior 7", async ({
     page,
   }) => {
@@ -1277,51 +1655,126 @@ test.describe("real harness journeys @core @tier-real", () => {
     // anyway: selecting Cursor either locks in as itself or reports itself
     // unavailable, and in NEITHER case does anything leak onto a provider this
     // spec pointed elsewhere.
-    scripted?.resetCounts()
-    const dir = await makeWorkspace("cursor", "cursor-acp")
-    await seedOneProject(page, dir)
-    const input = await openDraftPrompt(page, dir)
-    await switchDraftHarness(page, "cursor-acp")
+    await runCursorHarnessBoundary(page)
+  })
 
-    const notice = page.locator("[data-component='composer-notice'][data-notice='runtime-unavailable']")
-    const modelControl = page.locator('[data-action="prompt-harness-model"]')
-    // Whether the cursor binary exists on this machine decides which of the two
-    // legal states the composer settles into; both are asserted, neither is
-    // waited for with a bare sleep.
-    await expect
-      .poll(async () => ((await notice.count()) > 0 ? "unavailable" : (await modelControl.count()) > 0 ? "ready" : "pending"), {
-        timeout: 30_000,
-        message: "composer settled into neither the cursor-ready nor the runtime-unavailable state",
-      })
-      .not.toBe("pending")
+  test("cross-harness subagents demo records every supported agent in one journey", async ({ page }, testInfo) => {
+    test.skip(process.env.CLAXEDO_E2E_RECORD_DEMO !== "1", "Recording-only cohesive every-harness demo journey")
+    testInfo.setTimeout(900_000)
 
-    if ((await notice.count()) > 0) {
-      // Unavailable-state UI, exactly as core-harness-ownership-local behavior 5
-      // pins it against a mock: one notice row, critical tone, actionable.
-      await expect(notice).toHaveCount(1)
-      await expect(notice).toHaveAttribute("data-tone", "critical")
-      await expect(notice.locator("[data-action='composer-notice-action']")).toBeVisible()
-      await composePrompt(page, input, "tier-real cursor unavailable attempt")
-      await page.locator(SELECTORS.submitControl).last().click()
-    } else {
-      // Available: exactly one harness model control, and it is Cursor's.
-      await expect(modelControl).toHaveCount(1)
-      await expect(modelControl.last()).not.toContainText(/Loading models|Select model/i, { timeout: 30_000 })
-    }
+    requireBinary(
+      await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN"),
+      "claude",
+      "install the Claude CLI to record native and ACP subagents.",
+    )
+    requireBinary(
+      await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN"),
+      "codex",
+      "install the Codex CLI to record native and ACP subagents.",
+    )
 
-    // No obsolete split controls: the current combined control owns both
-    // harness and model selection on this surface.
-    await expect(page.locator('[data-action="prompt-model"]')).toHaveCount(0)
-    await expect(page.locator('[data-action="prompt-harness"]')).toHaveCount(0)
+    await runWorkspaceSubagentJourney(page, "demo-claude-sdk", "claude-sdk", {
+      id: "claude-sdk",
+      dialect: "messages",
+      option: /^Claude$/,
+      harnessKey: "claude-sdk",
+      tool: {
+        name: "Agent",
+        input: {
+          description: "Verify child delegation",
+          prompt: "Reply with exactly CHILD-CLAUDE-NATIVE",
+          subagent_type: "general-purpose",
+          run_in_background: false,
+        },
+      },
+      openable: true,
+      permissionMode: "bypassPermissions",
+    })
+    await runWorkspaceSubagentJourney(page, "demo-claude-acp", "claude-acp", {
+      id: "claude-acp",
+      dialect: "messages",
+      option: /^Claude$/,
+      harnessKey: "claude-acp",
+      tool: {
+        name: "Agent",
+        input: {
+          description: "Verify ACP child delegation",
+          prompt: "Reply with exactly CHILD-CLAUDE-ACP",
+          subagent_type: "general-purpose",
+          run_in_background: false,
+        },
+      },
+      openable: true,
+      permissionMode: "bypassPermissions",
+    })
+    await runWorkspaceSubagentJourney(page, "demo-opencode", undefined, {
+      id: "opencode",
+      dialect: "chat",
+      tool: {
+        name: "task",
+        input: {
+          description: "Verify OpenCode child delegation",
+          prompt: "Reply with exactly CHILD-OPENCODE",
+          subagent_type: "general",
+          background: false,
+        },
+      },
+      openable: true,
+    })
 
-    // The wire-level half: nothing this spec redirected was touched. A cursor
-    // selection that fell back to the engine or to claude would show up here as
-    // a non-zero count, including the engine's title call.
-    const counts = scripted?.counts() ?? { chat: 0, messages: 0, responses: 0 }
-    expect(
-      counts,
-      "expected the scripted model server to receive zero requests during the cursor scenario — any count here means " +
-        "selecting Cursor routed through a provider it does not own",
-    ).toEqual({ chat: 0, messages: 0, responses: 0 })
+    const piDir = await makeWorkspace("demo-pi", "pi")
+    await seedOneProject(page, piDir)
+    const pi = await createPiSession(piDir)
+    await runRealSubagentJourney(page, piDir, {
+      id: "pi",
+      dialect: "messages",
+      sessionID: pi.session.id,
+      workspaceID: pi.workspaceId,
+      central: true,
+      tool: {
+        name: "subagent",
+        input: {
+          task: "Reply with exactly CHILD-PI",
+          title: "Verify Pi child delegation",
+          background: false,
+        },
+      },
+      openable: true,
+    })
+
+    await runWorkspaceSubagentJourney(page, "demo-codex-sdk", "codex-app-server", {
+      id: "codex-sdk",
+      dialect: "responses",
+      option: /^Codex$/,
+      harnessKey: "codex-app-server",
+      tool: {
+        name: "spawn_agent",
+        input: {
+          task_name: "demo_child",
+          message: "Reply with exactly CHILD-CODEX-NATIVE",
+        },
+      },
+      openable: true,
+      permissionMode: "full-access",
+      effort: "Ultra",
+    })
+    await runWorkspaceSubagentJourney(page, "demo-codex-acp", "codex-acp", {
+      id: "codex-acp",
+      dialect: "responses",
+      option: /^Codex$/,
+      harnessKey: "codex-acp",
+      tool: {
+        name: "spawn_agent",
+        namespace: "agents",
+        input: {
+          task_name: "demo_child",
+          message: "Reply with exactly CHILD-CODEX-ACP",
+        },
+      },
+      openable: false,
+      permissionMode: "agent-full-access",
+      effort: "Ultra",
+    })
+    await runCursorHarnessBoundary(page)
   })
 })

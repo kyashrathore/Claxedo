@@ -1,10 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
-import {
-  _resetSavedSessionConfigCacheForTest,
-  createSubmitTransportAdapter,
-  savedSessionConfigQueryKey,
-} from "./submit-transport"
+import { sessionConfigRawQueryKey } from "../../store/session-config-selection"
+import { createSubmitTransportAdapter } from "./submit-transport"
 
 describe("submit transport adapter", () => {
   const calls: Array<{ url: string; method: string; body?: string | null }> = []
@@ -13,10 +10,10 @@ describe("submit transport adapter", () => {
   beforeEach(() => {
     calls.length = 0
     toasts.length = 0
-    _resetSavedSessionConfigCacheForTest()
+    queryClient.clear()
   })
 
-  const createAdapter = (response: Response | ((input: string | URL | Request, init?: RequestInit) => Response | Promise<Response>) = new Response("{}", { status: 200 })) =>
+  const createAdapter = (response: Response | ((input: string | URL | Request, init?: RequestInit) => Response | Promise<Response>) = ((_input, init) => Response.json(JSON.parse(String(init?.body))))) =>
     createSubmitTransportAdapter({
       serverUrl: () => "https://control.example",
       signedControlPlane: () => false,
@@ -75,7 +72,7 @@ describe("submit transport adapter", () => {
       agent: "review",
       model: { providerID: "provider", modelID: "model" },
     })
-    expect(queryClient.getQueryData(savedSessionConfigQueryKey("session-1"))).toBe(calls[0]?.body)
+    expect(queryClient.getQueryData(sessionConfigRawQueryKey("session-1"))).toEqual(JSON.parse(calls[0]?.body ?? "{}"))
   })
 
   test("failed session config PATCH shows a toast and does not cache the payload", async () => {
@@ -91,7 +88,7 @@ describe("submit transport adapter", () => {
     })
 
     expect(calls).toHaveLength(1)
-    expect(queryClient.getQueryData(savedSessionConfigQueryKey("session-failed"))).toBeUndefined()
+    expect(queryClient.getQueryData(sessionConfigRawQueryKey("session-failed"))).toBeUndefined()
     expect(toasts).toEqual([
       {
         title: "Could not save session config",
@@ -112,7 +109,7 @@ describe("submit transport adapter", () => {
     })
 
     expect(calls).toHaveLength(1)
-    expect(queryClient.getQueryData(savedSessionConfigQueryKey("session-http-failed"))).toBeUndefined()
+    expect(queryClient.getQueryData(sessionConfigRawQueryKey("session-http-failed"))).toBeUndefined()
     expect(toasts).toEqual([
       {
         title: "Could not save session config",
@@ -120,5 +117,51 @@ describe("submit transport adapter", () => {
         variant: "error",
       },
     ])
+  })
+
+  test("central session config reads use the authoritative control route", async () => {
+    const centralCalls: string[] = []
+    const adapter = createSubmitTransportAdapter({
+      serverUrl: () => "http://127.0.0.1:3001",
+      signedControlPlane: () => false,
+      workspaceId: () => "ws_1",
+      workspaceKind: () => undefined,
+      sessionRef: () => ({
+        sessionId: "session-central",
+        host: "central",
+        workspaceId: "ws_1",
+        toolSandbox: { kind: "virtual" },
+      }),
+      request: async (input, init) => {
+        const request = input instanceof Request ? input : new Request(String(input), init)
+        centralCalls.push(`${request.method} ${request.url}`)
+        return Response.json({
+          harness: { id: "pi", access: "native" },
+          model: { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
+        })
+      },
+      localRequest: fetch,
+      config: undefined,
+      createClient: () => ({
+        session: {
+          get: async () => ({}),
+          prompt: async () => ({}),
+          promptAsync: async () => ({}),
+        },
+      }),
+      showToast: (toast) => toasts.push(toast),
+      formatError: (err) => err instanceof Error ? err.message : "Request failed",
+      text: { configSaveFailedTitle: "Could not save session config" },
+    })
+
+    await expect(adapter.readSessionConfig({
+      sessionID: "session-central",
+      directory: "/repo/main",
+      harnessType: "opencode",
+    })).resolves.toMatchObject({ harness: { id: "pi" } })
+    expect(centralCalls).toEqual([
+      "GET http://127.0.0.1:3001/api/control/session/session-central/config?directory=%2Frepo%2Fmain&harness=opencode",
+    ])
+    expect(toasts).toEqual([])
   })
 })

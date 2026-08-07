@@ -100,6 +100,33 @@ describe("subagent host admission", () => {
     expect(neverBound.providerId).toBeUndefined()
   })
 
+  test("keeps one Claude host key when provider kind precedes the late agent id", async () => {
+    const item = harness()
+    const spawn = await item.boundary.admit("parent-claude", {
+      observationId: "claude-agent-tool:tool-1",
+      harnessExecutionId: "run-claude",
+      toolCallId: "tool-1",
+      toolCallRole: "spawn",
+      providerKind: "claude-agent",
+      status: "pending",
+      transcript: { kind: "messages" },
+    })
+    const bound = await item.boundary.admit("parent-claude", {
+      observationId: "claude-agent-result:tool-1",
+      harnessExecutionId: "run-claude",
+      toolCallId: "tool-1",
+      toolCallRole: "spawn",
+      providerKind: "claude-agent",
+      providerId: "agent-1",
+      status: "running",
+      transcript: { kind: "messages" },
+    })
+
+    expect(bound.subagentKey).toBe(spawn.subagentKey)
+    expect(bound.providerId).toBe("agent-1")
+    expect(bound.revision).toBe(2)
+  })
+
   test("round-trips Claude ACP nested messages and Pi immediate child Session shapes", async () => {
     const item = harness()
     const claude = await item.boundary.admit("parent-claude-acp", {

@@ -27,6 +27,7 @@ import { decodeSessionConfig } from "@/features/session/harness/profile"
 import { agentListQuery, configQuery } from "../data/query/directory"
 import { useWorkspaceQuery } from "@/features/session/app-ports"
 import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime-client"
+import type { SessionRef } from "@/platform/identity/session-ref"
 import { queryClient } from "@/platform/query/query-client"
 import { useSDK } from "@/features/session/app-ports"
 import {
@@ -72,7 +73,7 @@ const migrate = (value: unknown) => {
 
 const localContextInput = {
   name: "Local", gate: true,
-  init: (input: { sessionId?: Accessor<string | undefined> } = {}) => {
+  init: (input: { sessionId?: Accessor<string | undefined>; sessionRef?: Accessor<SessionRef | undefined> } = {}) => {
     const sdk = useSDK()
     const providers = useProviders()
     const models = useModels()
@@ -119,6 +120,7 @@ const localContextInput = {
         serverUrl: sdk.url,
         request: platform.fetch ?? fetch,
         opencodeClient: sdk.client,
+        sessionRef: input.sessionRef?.(),
         // Thread the resolved relay identity: with an fs-path
         // directory and no workspaceId the config restore fell
         // through to the central control plane (404) and silently
@@ -276,6 +278,7 @@ const localContextInput = {
           serverUrl: sdk.url,
           request: platform.fetch ?? fetch,
           opencodeClient: sdk.client,
+          sessionRef: input.sessionRef?.(),
           ...(workspaceClientOptions()),
         }).updateSessionConfig({
           directory: sdk.directory,
@@ -633,4 +636,7 @@ const localContextInput = {
     return result
   },
 }
-export const { use: useLocal, provider: LocalProvider } = createSimpleContext<ReturnType<typeof localContextInput.init>, { sessionId?: Accessor<string | undefined> }>(localContextInput)
+export const { use: useLocal, provider: LocalProvider } = createSimpleContext<
+  ReturnType<typeof localContextInput.init>,
+  { sessionId?: Accessor<string | undefined>; sessionRef?: Accessor<SessionRef | undefined> }
+>(localContextInput)

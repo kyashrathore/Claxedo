@@ -176,33 +176,6 @@ type Opts = {
 const DRAFT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
 
 
-/**
- * Apply a turn's requested permission mode before the prompt reaches the harness.
- *
- * Best-effort ON PURPOSE, and the asymmetry with the PUT route is deliberate: a
- * bad mode id there is the whole request and must fail loudly, whereas here it
- * rides along with a message the user is trying to send. Refusing the message
- * because a stale mode id no longer exists would be a worse outcome than running
- * the turn under the harness's current mode, so this logs the divergence and
- * lets the prompt through.
- *
- * Returns nothing: callers do not branch on it. The mode either landed before
- * the turn or the turn runs as the harness already stood.
- */
-async function applyTurnPermissionMode(input: {
-  adapter: AgentHarnessAdapter
-  sessionId: string
-  directory: RuntimeDirectory
-  modeId?: string
-}) {
-  if (!input.modeId || !input.adapter.setPermissionMode) return
-  try {
-    await input.adapter.setPermissionMode(input.sessionId, input.modeId, input.directory)
-  } catch {
-    // Swallowed by design -- see the note above.
-  }
-}
-
 export function parseDraftId(raw: string | null | undefined): string | undefined {
   if (raw === null || raw === undefined) return undefined
   if (typeof raw !== "string") return undefined
@@ -679,7 +652,6 @@ export function createSessionRoutes(opts: Opts) {
       const runtime = await opts.resolveRuntime?.(c, { sessionId: id, directory })
       const parsedBody = (await c.req.json().catch(() => ({}))) as SessionPromptBody
       const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: parsedBody }) ?? parsedBody
-      await applyTurnPermissionMode({ adapter, sessionId: id, directory, modeId: body.permissionMode })
       const activeTurn = runtime && opts.createActiveTurnScope
         ? opts.createActiveTurnScope({ c, adapter, directory, sessionId: id })
         : undefined
@@ -897,7 +869,6 @@ export function createSessionRoutes(opts: Opts) {
       const adapter = await opts.resolveAdapter(c, { sessionId: id, directory })
       const parsedBody = (await c.req.json().catch(() => ({}))) as SessionPromptBody
       const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: parsedBody }) ?? parsedBody
-      await applyTurnPermissionMode({ adapter, sessionId: id, directory, modeId: body.permissionMode })
       if (body.messageID) {
         const admitted = promptAdmissions.get(id) ?? new Set<string>()
         if (admitted.has(body.messageID)) return c.body(null, 204)

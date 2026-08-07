@@ -21,15 +21,15 @@ import {
   controlSessionUrl,
   workspaceResolveUrl,
 } from "@/platform/runtime/agent/workspace-control-routes"
-import { createTransport } from "@/platform/runtime/transport"
-import { centralTransportForServer } from "@/platform/runtime/transport"
+import { centralTransportForServer, createTransport } from "@/platform/runtime/transport"
 import { workspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import {
   resolveRuntimePlacement,
   resolveSessionResourceRoute,
   shouldUseRuntimeSessionTransport as decideRuntimeSessionTransport,
 } from "@/platform/runtime/agent/placement-table"
-
+import { centralRuntimePath } from "./central-runtime-path"
+export { centralRuntimePath } from "./central-runtime-path"
 /**
  * One permission mode as the harness describes it.
  *
@@ -397,7 +397,7 @@ export function createAgentRuntimeClient(options: {
         return await runtimeTransport({
           directory: input.directory,
           sessionRef: options.sessionRef,
-        }).fetch(runtimePath, init)
+        }).fetch(centralRuntimePath(runtimePath, options.sessionRef), init)
       case "runtime-workspace":
         return await runtimeTransport({
           directory: input.directory,
@@ -445,7 +445,7 @@ export function createAgentRuntimeClient(options: {
       sessionRef,
       workspaceId: target?.workspaceId,
       preferRelayOnLoopback: signed,
-    }).fetch(input.path, init)
+    }).fetch(centralRuntimePath(input.path, sessionRef), init)
   }
 
   async function fetchRuntimeSession(input: {

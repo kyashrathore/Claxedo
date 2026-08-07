@@ -14,12 +14,16 @@ const state = vi.hoisted(() => ({
   registeredConversationSnapshot: vi.fn(() => ({ messages: [], parts: {} })),
   hydrateConversationPage: vi.fn(() => false),
   fileTreeList: vi.fn(() => Promise.resolve()),
+  runtimeRequest: vi.fn(() => Promise.resolve(new Response("[]"))),
+  subagentRows: [] as Array<Record<string, unknown>>,
+  subagentSubscriber: undefined as undefined | ((change: { type: "upsert" | "remove" | "reset"; parentSessionId?: string }) => void),
   agentRows: [] as unknown[],
   agentQueryOptions: undefined as undefined | { queryKey?: readonly unknown[] },
   queryData: new Map<string, unknown>(),
   dataProviderProps: undefined as undefined | {
     data?: unknown
     onSessionHref?: (sessionID: string) => string
+    resolveSubagents?: (parentSessionId: string, toolCallId?: string) => unknown[]
   },
   sessionSyncProviderProps: undefined as undefined | {
     syncSession?: (sessionID: string) => void | Promise<void>
@@ -55,6 +59,30 @@ vi.mock("@/app/providers/sdk/sdk", () => ({
     },
     createClient: () => ({}),
     workspace: () => undefined,
+    request: state.runtimeRequest,
+  }),
+}))
+
+vi.mock("@/app/providers/global-sdk/provider", () => ({
+  useGlobalSDK: () => ({
+    event: {
+      subagents: {
+        registry: {
+          apply: (_parentSessionId: string, event: Record<string, unknown>) => {
+            const index = state.subagentRows.findIndex((row) => row.subagentKey === event.subagentKey)
+            if (index === -1) state.subagentRows.push({ ...event })
+            else state.subagentRows[index] = { ...state.subagentRows[index], ...event }
+          },
+          list: () => state.subagentRows.map((row) => ({ ...row, parentSessionId: "parent", toolCallEdges: new Map([["tool-1", "spawn"]]) })),
+          subscribe: (listener: typeof state.subagentSubscriber) => {
+            state.subagentSubscriber = listener
+            return () => {
+              state.subagentSubscriber = undefined
+            }
+          },
+        },
+      },
+    },
   }),
 }))
 
@@ -185,6 +213,10 @@ beforeEach(() => {
   state.registeredConversationSnapshot.mockReturnValue({ messages: [], parts: {} })
   state.hydrateConversationPage.mockClear()
   state.fileTreeList.mockClear()
+  state.runtimeRequest.mockClear()
+  state.runtimeRequest.mockResolvedValue(new Response("[]"))
+  state.subagentRows = []
+  state.subagentSubscriber = undefined
   state.agentRows = []
   state.agentQueryOptions = undefined
   state.queryData.clear()
@@ -505,6 +537,40 @@ describe("DirectoryScope bootstrap gating", () => {
       limit: 80,
       sessionID: "ses_child",
     }))
+  })
+
+  test("hydrates the durable subagent snapshot after a partial live upsert", async () => {
+    state.queryData.set(JSON.stringify(["directory-session-cache", "/repo/main"]), {
+      at: 1,
+      limit: 5,
+      total: 0,
+      session: readyStore.session,
+    })
+    state.runtimeRequest.mockResolvedValue(new Response(JSON.stringify([{
+      subagentKey: "host-key",
+      revision: 3,
+      status: "running",
+      childSessionId: "child",
+      transcript: { kind: "live", ref: "child" },
+      toolCallEdges: [{ toolCallId: "tool-1", role: "spawn", revision: 1 }],
+    }])))
+
+    render(() => (
+      <DirectoryScope {...directoryScopeProps}
+        directory="/repo/main"
+        sessionId={() => "parent"}
+        surfaceId={() => state.surfaceId}
+      >
+        <div>visible pane content</div>
+      </DirectoryScope>
+    ))
+
+    await waitFor(() => expect(state.dataProviderProps?.resolveSubagents).toBeTypeOf("function"))
+    state.subagentRows = [{ subagentKey: "host-key", revision: 2, status: "completed" }]
+    state.subagentSubscriber?.({ type: "upsert", parentSessionId: "parent" })
+    state.dataProviderProps?.resolveSubagents?.("parent", "tool-1")
+
+    await waitFor(() => expect(state.runtimeRequest).toHaveBeenCalledTimes(1))
   })
 
   test("passes directory session cache rows to DataProvider", async () => {

@@ -72,6 +72,7 @@ export function SessionComposerRegion(props: {
   countWidthDuration?: number
   sessionID?: string
   sessionDirectory?: string
+  parentID?: string
   mode: ComposerMode
   sessionRef?: () => SessionRef | undefined
   signedControlPlane?: () => boolean
@@ -111,7 +112,7 @@ export function SessionComposerRegion(props: {
   })
   const handoffPrompt = createMemo(() => getSessionHandoff(sessionKey())?.prompt)
   const info = createMemo(() => directorySessions(sessionDirectory()).find((session) => session.id === sessionID()))
-  const parentID = createMemo(() => info()?.parentID)
+  const parentID = createMemo(() => props.parentID ?? info()?.parentID)
   const child = createMemo(() => !!parentID())
   const showComposer = createMemo(() => !props.state.blocked() || child())
 

@@ -40,6 +40,40 @@ describe("runtime subagent admission stores", () => {
     expect(restored.listSubagentEvents("parent")).toEqual([first.event])
   })
 
+  test("memory snapshots preserve terminal status after a late active observation", () => {
+    const store = new MemoryRuntimeStore()
+    const spawn = admit(store)
+    store.admit({
+      parentSessionId: "parent",
+      observation: {
+        observationId: "completed",
+        harnessExecutionId: "run",
+        subagentKey: spawn.event.subagentKey,
+        status: "completed",
+      },
+      allocateKey: () => "unused",
+    })
+    store.admit({
+      parentSessionId: "parent",
+      observation: {
+        observationId: "late-running",
+        harnessExecutionId: "run",
+        subagentKey: spawn.event.subagentKey,
+        status: "running",
+      },
+      allocateKey: () => "unused",
+    })
+
+    const restored = new MemoryRuntimeStore()
+    restored.importSnapshot(store.exportSnapshot())
+
+    expect(restored.listSubagents("parent")).toMatchObject([{
+      subagentKey: spawn.event.subagentKey,
+      revision: 3,
+      status: "completed",
+    }])
+  })
+
   test("sqlite snapshots preserve admission across reopen", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-runtime-subagent-"))
     roots.push(root)

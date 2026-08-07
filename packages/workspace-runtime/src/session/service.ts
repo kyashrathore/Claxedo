@@ -168,6 +168,7 @@ function prompt(body: SessionPromptBody, config?: SessionConfig): PromptInput {
     ...(body.tools ? { tools: body.tools } : {}),
     ...(body.format ? { format: body.format } : {}),
     ...(body.system ? { system: body.system } : {}),
+    ...(body.permissionMode ? { permissionMode: body.permissionMode } : {}),
     ...(body.variant !== undefined ? { variant: body.variant } : config?.variant ? { variant: config.variant } : {}),
   }
 }
@@ -257,6 +258,7 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
       ...(input.body.tools ? { tools: input.body.tools } : {}),
       ...(input.body.format ? { format: input.body.format } : {}),
       ...(input.body.system ? { system: input.body.system } : {}),
+      ...(input.body.permissionMode ? { permissionMode: input.body.permissionMode } : {}),
       ...(input.body.variant !== undefined ? { variant: input.body.variant } : {}),
     })
     assistantId = turn.assistantMessageId

@@ -280,6 +280,24 @@ describe("opencode conversation chat adapter", () => {
     expect(mergeConversationSnapshot(live, fetched)[0]?.parts).toHaveLength(1)
   })
 
+  test("snapshot merge advances a live tool call to its persisted terminal state", () => {
+    const settled = { ...message("msg_assistant"), time: { created: 2, completed: 3 } } as Message
+    const live = opencodeConversationSnapshot({
+      messages: [message("msg_assistant")],
+      parts: { msg_assistant: [toolPart("part_tool", "msg_assistant", "running")] },
+    })
+    const fetched = opencodeConversationSnapshot({
+      messages: [settled],
+      parts: { msg_assistant: [toolPart("part_tool", "msg_assistant", "completed")] },
+    })
+
+    expect(mergeConversationSnapshot(live, fetched)[0]?.parts).toMatchObject([{
+      type: "tool-call",
+      state: "complete",
+      output: "ok",
+    }])
+  })
+
   test("snapshot merge preserves chat-owned live deltas for matching parts", () => {
     const snapshot = opencodeConversationSnapshot({
       messages: [message("msg_assistant")],

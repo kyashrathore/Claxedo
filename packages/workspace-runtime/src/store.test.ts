@@ -211,6 +211,44 @@ describe("RuntimeStore", () => {
     second.close()
   })
 
+  it("preserves terminal subagent status after a late active observation and reopen", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    const spawn = store.admit({
+      parentSessionId: "parent",
+      observation: {
+        observationId: "spawn",
+        status: "running",
+      },
+      allocateKey: () => "child-key",
+    })
+    store.admit({
+      parentSessionId: "parent",
+      observation: {
+        observationId: "completed",
+        subagentKey: spawn.event.subagentKey,
+        status: "completed",
+      },
+      allocateKey: () => "unused",
+    })
+    store.admit({
+      parentSessionId: "parent",
+      observation: {
+        observationId: "late-running",
+        subagentKey: spawn.event.subagentKey,
+        status: "running",
+      },
+      allocateKey: () => "unused",
+    })
+    store.close()
+
+    const reopened = new RuntimeStore(root)
+
+    assert.equal(reopened.listSubagents("parent")[0]?.revision, 3)
+    assert.equal(reopened.listSubagents("parent")[0]?.status, "completed")
+    reopened.close()
+  })
+
   it("interrupts active children on archive while preserving durable history", () => {
     const root = tmp()
     const store = new RuntimeStore(root)

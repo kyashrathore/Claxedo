@@ -10,8 +10,8 @@ import type { NormalizedProviderListResponse } from "@/platform/query/provider-l
  * A hosted central (Cloudflare Worker) has no central harness and no
  * `/api/workspace/resolve`, so the boot provider fetch must reach the
  * workspace RUNTIME through the relay (`/workspaces/:id/provider`) whenever
- * the directory is a signed workspace ref — and only fall back to the
- * central `/provider` route for plain directories.
+ * the directory is a signed workspace ref. Plain directories are owned by
+ * the central `/provider` route.
  */
 
 const CENTRAL = "https://central.test"
@@ -106,7 +106,7 @@ describe("bootstrapDirectory provider routing", () => {
     expect([...(providers?.all.keys() ?? [])]).toEqual(["opencode"])
   })
 
-  test("plain directories still fall back to the central provider route", async () => {
+  test("plain directories use the central provider route", async () => {
     const calls: string[] = []
     await bootstrapDirectory({
       directory: "/Users/someone/project",

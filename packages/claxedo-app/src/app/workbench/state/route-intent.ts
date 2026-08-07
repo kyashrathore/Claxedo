@@ -56,9 +56,9 @@ export type RouteIntent = {
 }
 
 export type RouteIntentInventory = {
-  global?: Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }>
-  byWorkspace: Record<string, { key?: string; workspaceId?: string; directory?: string; sessions?: Array<{ id?: string; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }> }>
-  byProject: Record<string, Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }>>
+  global?: Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; sessionRef?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }>
+  byWorkspace: Record<string, { key?: string; workspaceId?: string; directory?: string; sessions?: Array<{ id?: string; title?: string; sessionRef?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }> }>
+  byProject: Record<string, Array<{ id?: string; workspaceId?: string; directory?: string; title?: string; sessionRef?: string; environment?: { kind?: string }; harness?: unknown; runner?: unknown; config?: unknown; harnessType?: unknown }>>
   loaded?: boolean
 }
 
@@ -159,6 +159,13 @@ function workspaceRootBacking(workspaceId: string, inventory: RouteIntentInvento
 }
 
 export function sessionInventoryTarget(sessionId: string, inventory: RouteIntentInventory) {
+  const inventoryRows = [
+    ...(inventory.global ?? []),
+    ...Object.values(inventory.byWorkspace).flatMap((group) => group.sessions ?? []),
+    ...Object.values(inventory.byProject).flatMap((sessions) => sessions),
+  ]
+  if (inventoryRows.some((session) => session.id === sessionId && session.sessionRef?.startsWith("central:"))) return
+
   const workspaceMatches = Object.entries(inventory.byWorkspace)
     .filter(([, group]) => group.sessions?.some((session) => session.id === sessionId))
     .map(([key, group]): InventorySessionTarget => {

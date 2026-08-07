@@ -336,6 +336,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   }
 
   listSubagents(parentSessionId: string) {
+    const statusRevisions = new Map<string, number>()
     const states = new Map<string, {
       parentSessionId: string
       subagentKey: string
@@ -361,8 +362,16 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
         toolCallEdges: [],
       }
       state.revision = Math.max(state.revision, event.revision)
-      for (const field of ["mode", "status", "label", "subagentType", "description"] as const) {
+      for (const field of ["mode", "label", "subagentType", "description"] as const) {
         if (event[field] !== undefined) state[field] = event[field]
+      }
+      if (event.status !== undefined) {
+        const currentRevision = statusRevisions.get(event.subagentKey) ?? 0
+        if ((!terminalSubagentStatus(state.status) && terminalSubagentStatus(event.status)) ||
+          (terminalSubagentStatus(state.status) === terminalSubagentStatus(event.status) && event.revision > currentRevision)) {
+          state.status = event.status
+        }
+        statusRevisions.set(event.subagentKey, Math.max(currentRevision, event.revision))
       }
       for (const field of ["providerId", "providerKind", "childSessionId"] as const) {
         if (state[field] === undefined && event[field] !== undefined) state[field] = event[field]
@@ -646,6 +655,10 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       if (rows.size === 0) this.questions.delete(directory)
     }
   }
+}
+
+function terminalSubagentStatus(status: string | undefined) {
+  return status === "completed" || status === "failed" || status === "killed" || status === "interrupted"
 }
 
 function errorMessage(input: unknown) {

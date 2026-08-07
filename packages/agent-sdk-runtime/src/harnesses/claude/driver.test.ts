@@ -17,8 +17,7 @@ function driver() {
 }
 
 describe("Claude SDK driver", () => {
-  test("U5: forwards representative nested text below the measured volume threshold", () => {
-    const parentFrames = 7
+  test("U5: measures routed nested SDK frames below the forwarding thresholds", async () => {
     const childText = [
       "Inspecting authentication entry points.",
       "Reading the session middleware.",
@@ -27,11 +26,58 @@ describe("Claude SDK driver", () => {
       "Found one stale authorization branch.",
       "The child review is complete.",
     ]
+    const parentMessages = Array.from({ length: 7 }, (_, index) => ({
+      type: "assistant",
+      uuid: `assistant-parent-${index}`,
+      session_id: "sdk-session-measurement",
+      parent_tool_use_id: null,
+      message: {
+        content: index === 0
+          ? [{
+              type: "tool_use",
+              id: "tool-agent-measurement",
+              name: "Agent",
+              input: { description: "Review auth", subagent_type: "code-reviewer" },
+            }]
+          : [{ type: "text", text: `Parent progress ${index}` }],
+      },
+    }))
+    const childMessages = childText.map((value, index) => ({
+      type: "assistant",
+      uuid: `assistant-child-${index}`,
+      session_id: "sdk-session-measurement",
+      parent_tool_use_id: "tool-agent-measurement",
+      message: { content: [{ type: "text", text: value }] },
+    }))
+    const ingested: unknown[][] = []
+    const input = {
+      observeSubagent() {
+        return Promise.resolve({ event: {} })
+      },
+      ingest(...value: unknown[]) {
+        ingested.push(value)
+      },
+      rebindAgentSession() {},
+    } as never
 
-    expect(childText).toHaveLength(6)
-    expect(childText.length / parentFrames).toBeLessThan(2)
-    expect(new TextEncoder().encode(childText.join("")).byteLength).toBe(193)
-    expect(new TextEncoder().encode(childText.join("")).byteLength).toBeLessThan(5 * 1024 * 1024)
+    for (const message of [...parentMessages, ...childMessages]) {
+      await ingestClaudeSdkMessage(input, message as never)
+    }
+
+    const parentFrames = ingested.filter((value) => (value[2] as { kind: string }).kind === "parent")
+    const childFrames = ingested.filter((value) => (value[2] as { kind: string }).kind === "child")
+    const forwardedBytes = childFrames.reduce((total, value) => {
+      const payload = (value[0] as { payload: { message: { content: Array<{ text?: string }> } } }).payload
+      return total + payload.message.content.reduce(
+        (bytes, part) => bytes + new TextEncoder().encode(part.text ?? "").byteLength,
+        0,
+      )
+    }, 0)
+
+    expect(parentFrames).toHaveLength(7)
+    expect(childFrames).toHaveLength(6)
+    expect(childFrames.length / parentFrames.length).toBeLessThan(2)
+    expect(forwardedBytes).toBeLessThan(5 * 1024 * 1024)
     expect(CLAUDE_FORWARD_SUBAGENT_TEXT).toBe(true)
   })
 

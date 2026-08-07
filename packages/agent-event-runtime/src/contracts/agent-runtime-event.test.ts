@@ -96,10 +96,11 @@ describe("AgentRuntimeEvent contract", () => {
       type: "available-commands-update",
       commands: [{ name: "create_plan", description: "Create a plan" }],
     })
-    expect(agentRuntimeEvent.sessionInfo({ title: null, updatedAt: "2026-06-16T00:00:00.000Z" })).toEqual({
+    expect(agentRuntimeEvent.sessionInfo({ title: null, updatedAt: "2026-06-16T00:00:00.000Z", parentID: "parent-1" })).toEqual({
       type: "session-info",
       title: null,
       updatedAt: "2026-06-16T00:00:00.000Z",
+      parentID: "parent-1",
     })
     expect(agentRuntimeEvent.toolStatus({ toolCallId: "tool-1", status: "pending" })).toEqual({
       type: "tool-status",

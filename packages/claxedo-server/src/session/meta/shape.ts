@@ -133,8 +133,8 @@ export function storedSessionRef(input: {
   directory?: string | null
   host?: string | null
 }) {
-  if (input.workspace_id) return `workspace:${input.workspace_id}:session:${input.session_id}`
   if (input.host === "central") return `central:${input.session_id}`
+  if (input.workspace_id) return `workspace:${input.workspace_id}:session:${input.session_id}`
   return `local:${input.directory ?? "global"}:session:${input.session_id}`
 }
 

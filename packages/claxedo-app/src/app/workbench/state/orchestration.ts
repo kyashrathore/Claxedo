@@ -30,10 +30,11 @@ export type ContentCloseReason = "user" | "panic" | "merge" | "evict"
 
 export type CleanupHook = (id: string, meta: ContentMeta | undefined, reason: ContentCloseReason) => void
 export type OpenSessionOptions = { focus?: boolean; sessionRef?: SessionRef }
+type OpenCentralSessionOptions = { focus?: boolean; authoritative?: boolean; sessionRef?: SessionRef }
 
 export type LayoutOrchestrationApi = {
   openSession(directory: string, sessionId: string, title?: string, opts?: OpenSessionOptions): string
-  openCentralSession(sessionId: string, title?: string, opts?: { focus?: boolean }): string
+  openCentralSession(sessionId: string, title?: string, opts?: OpenCentralSessionOptions): string
   openDraftSession(providerDirectory: string, draftId: string, opts?: { focus?: boolean }): string
   completeDraftSession(input: { draftId: string; directory: string; sessionId: string; title?: string; sessionRef?: SessionRef }): string | undefined
   openTerminal(directory: string, terminalId: string, title?: string, opts?: { focus?: boolean; command?: string }): string
@@ -85,7 +86,9 @@ function sameSessionRef(a: SessionRef | undefined, b: SessionRef | undefined) {
     a.host !== b.host ||
     a.workspaceId !== b.workspaceId ||
     a.cwd !== b.cwd ||
-    a.toolSandbox?.kind !== b.toolSandbox?.kind
+    a.toolSandbox?.kind !== b.toolSandbox?.kind ||
+    a.harness?.id !== b.harness?.id ||
+    a.harness?.binary !== b.harness?.binary
   ) return false
   if (a.toolSandbox?.kind === "workspace" && b.toolSandbox?.kind === "workspace") {
     return (
@@ -304,6 +307,9 @@ export function createLayoutOrchestration(input: {
     },
 
     openCentralSession(sessionId, title, opts) {
+      const sessionRef = opts?.sessionRef?.host === "central" && opts.sessionRef.sessionId === sessionId
+        ? opts.sessionRef
+        : centralSessionRef({ sessionId })
       const workspaceExisting = meta.find(
         (m) =>
           m.type === "session" &&
@@ -316,7 +322,7 @@ export function createLayoutOrchestration(input: {
             isLocalSessionDirectory(m.directory)
           ),
       )
-      if (workspaceExisting) {
+      if (workspaceExisting && !opts?.authoritative) {
         if (workspaceExisting.directory && workspaceExisting.content?.type === "session" && !workspaceExisting.content.sessionRef) {
           const sessionRef = localSessionRefForDirectory({ sessionId, directory: workspaceExisting.directory })
           meta.patch(workspaceExisting.id, {
@@ -332,7 +338,7 @@ export function createLayoutOrchestration(input: {
       const existing = meta.find(
         (m) => m.type === "session" && !m.directory && m.sessionId === sessionId,
       )
-      if (existing) patchSessionTitle(existing, undefined, sessionId, title)
+      if (existing) patchSessionTitle(existing, undefined, sessionId, title, sessionRef)
       const contentId = showOrCreate(
         existing,
         () => {
@@ -348,7 +354,7 @@ export function createLayoutOrchestration(input: {
               type: "session",
               sessionId,
               title,
-              sessionRef: centralSessionRef({ sessionId }),
+              sessionRef,
             },
           }
         },

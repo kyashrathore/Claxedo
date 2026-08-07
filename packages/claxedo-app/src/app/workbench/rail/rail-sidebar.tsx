@@ -61,7 +61,7 @@ import { localWorkspaceShareTarget, registerUserHostedWorkspace, workspaceShareU
 import { Can, can } from "@/platform/auth/role"
 import { isWorkspaceReady, workspacePlacement } from "../../../features/workspaces/data/workspace-connection"
 import { getSessionPrefetch, runSessionPrefetch, sameWorkspaceSessionPrefetchIds, SESSION_PREFETCH_TTL, setSessionPrefetch } from "@/platform/sync/session-prefetch"
-import { sessionRefForWorkspaceSession, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+import { centralSessionRef, sessionRefForWorkspaceSession, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { USER_HOSTED_WORKSPACE_KIND } from "@/platform/runtime/agent/workspace-kind"
 import type { PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { fetchSessionMessagesByTransport } from "../../../features/session/store/session-transport"
@@ -428,7 +428,9 @@ function replaceSessionUrl(session: Row) {
   // blank error page. See `urlRoutingEnabled`.
   if (!urlRoutingEnabled()) return
   const directory = session.directory ?? session.project.worktree
-  const route = sessionRefForWorkspaceSession({ sessionId: session.id, directory, workspace: workspaceSessionBacking(session, directory) })?.host === "workspace" ? workspaceSessionRoute(directory, session.id) : sessionRoute(session.id)
+  const route = sessionNavigationRefForRow(session).startsWith("central:")
+    ? sessionRoute(session.id)
+    : workspaceSessionRoute(directory, session.id)
   if (window.location.pathname === route) return
   window.history.replaceState(window.history.state, "", route)
 }
@@ -1120,6 +1122,9 @@ export function RailSidebar(props: RailSidebarProps) {
   const sessionDirectory = (session: Row) => session.directory ?? session.project.worktree
   const sessionWorkbenchRef = (session: Row) => {
     const directory = sessionDirectory(session)
+    if (sessionNavigationRefForRow(session).startsWith("central:")) {
+      return centralSessionRef({ sessionId: session.id, workspaceId: session.workspaceId })
+    }
     return sessionRefForWorkspaceSession({
       sessionId: session.id,
       directory,

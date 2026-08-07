@@ -284,6 +284,10 @@ function subagentCorrelationKeys(observation: SubagentObservation) {
   ].filter((key): key is string => !!key)
 }
 
+function terminalSubagentStatus(status: string | undefined) {
+  return status === "completed" || status === "failed" || status === "killed" || status === "interrupted"
+}
+
 function num(input: unknown): number | undefined {
   return typeof input === "number" ? input : undefined
 }
@@ -969,7 +973,6 @@ export class RuntimeStore {
     `).run(event.revision, now, parentSessionId, event.subagentKey)
     for (const [field, column] of [
       ["mode", "mode"],
-      ["status", "status"],
       ["label", "label"],
       ["subagentType", "subagent_type"],
       ["description", "description"],
@@ -981,6 +984,30 @@ export class RuntimeStore {
         SET ${column} = ?, ${column}_revision = ?
         WHERE parent_session_id = ? AND subagent_key = ? AND ${column}_revision < ?
       `).run(value, event.revision, parentSessionId, event.subagentKey, event.revision)
+    }
+    if (event.status !== undefined) {
+      const current = this.db.prepare(`
+        SELECT status, status_revision
+        FROM session_subagent
+        WHERE parent_session_id = ? AND subagent_key = ?
+      `).get(parentSessionId, event.subagentKey) as { status: string; status_revision: number }
+      const currentTerminal = terminalSubagentStatus(current.status)
+      const incomingTerminal = terminalSubagentStatus(event.status)
+      if ((!currentTerminal && incomingTerminal) ||
+        (currentTerminal === incomingTerminal && event.revision > current.status_revision)) {
+        this.db.prepare(`
+          UPDATE session_subagent
+          SET status = ?, status_revision = MAX(status_revision, ?)
+          WHERE parent_session_id = ? AND subagent_key = ?
+        `).run(event.status, event.revision, parentSessionId, event.subagentKey)
+      }
+      if (event.revision > current.status_revision) {
+        this.db.prepare(`
+          UPDATE session_subagent
+          SET status_revision = ?
+          WHERE parent_session_id = ? AND subagent_key = ?
+        `).run(event.revision, parentSessionId, event.subagentKey)
+      }
     }
     for (const [field, column] of [
       ["providerKind", "provider_kind"],

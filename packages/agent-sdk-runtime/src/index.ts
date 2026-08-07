@@ -127,6 +127,7 @@ export type PromptInput = {
   format?: PromptFormat
   system?: string
   variant?: string
+  permissionMode?: string
 }
 
 export type ProcessHarnessConnection = {

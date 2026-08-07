@@ -20,7 +20,11 @@ export type AcpSubagentUpdate =
   | { kind: "child"; correlationKey: string }
   | { kind: "lifecycle"; correlationKey: string; observation: AcpSubagentObservation }
 
-export function classifyAcpSubagentUpdate(client: string, update: SessionUpdate): AcpSubagentUpdate | undefined {
+export function classifyAcpSubagentUpdate(
+  client: string,
+  update: SessionUpdate,
+  prior?: AcpSubagentObservation,
+): AcpSubagentUpdate | undefined {
   const row = update as unknown as Record<string, unknown>
   const meta = object(row._meta)
   const claude = object(meta?.claudeCode)
@@ -28,10 +32,33 @@ export function classifyAcpSubagentUpdate(client: string, update: SessionUpdate)
   if (parentToolUseId) return { kind: "child", correlationKey: parentToolUseId }
   if (update.sessionUpdate !== "tool_call" && update.sessionUpdate !== "tool_call_update") return
 
-  if (client === "claude-acp" && claude?.subagent === true) {
-    const rawInput = object(update.rawInput)
+  if (prior) {
+    return lifecycle(update, {
+      toolCallRole: prior.toolCallRole,
+      ...(prior.mode ? { mode: prior.mode } : {}),
+      ...(acpStatus(update.status) ? { status: acpStatus(update.status) } : {}),
+      ...(prior.label ? { label: prior.label } : {}),
+      ...(prior.subagentType ? { subagentType: prior.subagentType } : {}),
+      ...(prior.description ? { description: prior.description } : {}),
+      ...(prior.providerId ? { providerId: prior.providerId } : {}),
+      ...(prior.providerKind ? { providerKind: prior.providerKind } : {}),
+      transcript: prior.transcript,
+    })
+  }
+
+  const rawInput = object(update.rawInput)
+  const title = update.title?.trim().toLowerCase()
+  if (client === "claude-acp" && (
+    claude?.subagent === true ||
+    title === "agent" ||
+    title === "task" ||
+    title?.startsWith("task ") ||
+    !!text(rawInput?.subagentType) ||
+    !!text(rawInput?.subagent_type)
+  )) {
     return lifecycle(update, {
       toolCallRole: "spawn",
+      mode: rawInput?.run_in_background === true ? "background" : "foreground",
       status: acpStatus(update.status) ?? (update.sessionUpdate === "tool_call" ? "running" : undefined),
       label: update.title ?? undefined,
       subagentType: text(rawInput?.subagentType) ?? text(rawInput?.subagent_type),
@@ -41,7 +68,6 @@ export function classifyAcpSubagentUpdate(client: string, update: SessionUpdate)
   }
 
   if (client === "codex-acp") {
-    const rawInput = object(update.rawInput)
     const codexSubagent = object(object(meta?.codex)?.subagent)
     const activity = text(rawInput?.activityKind) ?? text(codexSubagent?.activity) ?? codexActivity(update.title)
     if (!activity) return

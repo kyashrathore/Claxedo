@@ -143,7 +143,7 @@ function canonicalItemType(raw: unknown) {
 }
 
 function toolNameForItem(itemType: string, row: Record<string, unknown>) {
-  return text(row.toolName) ?? text(row.name) ?? text(row.title) ?? (
+  return text(row.tool) ?? text(row.toolName) ?? text(row.name) ?? text(row.title) ?? (
     itemType === "command_execution"
       ? "command"
       : itemType === "file_change"
