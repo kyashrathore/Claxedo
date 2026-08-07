@@ -159,6 +159,14 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   private auth: SdkRuntimeAuth = {}
   private codexAuth: JsonRecord | undefined
   private process: CodexAppServerProcess | null = null
+  /**
+   * The in-flight start, shared by every joiner.
+   *
+   * Cleared in `finally` rather than only on success: a cached rejected start
+   * would make one failed spawn permanent for the life of the driver, which is
+   * the same defect the OpenCode adapter carried.
+   */
+  private processStart: Promise<CodexAppServerProcess> | undefined
   private processError: string | null = null
   private currentMcp: Record<string, ResolvedMcpServer> = {}
   private activeThreads = new Map<string, CodexActiveThread>()
@@ -505,8 +513,27 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     log.warn("codex app-server process died; cleared interactive state", { err })
   }
 
-  private async ensureProcess(directory: string) {
-    if (this.process?.alive) return this.process
+  /**
+   * Start the app-server at most once, however many operations ask at once.
+   *
+   * Without this, two concurrent operations both saw a dead process and both
+   * called `start(...)`: two `codex app-server` children, the second
+   * overwriting `this.process`, and the first leaked — its `onClose` guard
+   * (`this.process === started`) no longer matched, so nothing ever disposed
+   * it. The symptom is orphaned codex processes accumulating under load, which
+   * looks like a leak in the binary rather than in this method.
+   */
+  private ensureProcess(directory: string): Promise<CodexAppServerProcess> {
+    if (this.process?.alive) return Promise.resolve(this.process)
+    if (this.processStart) return this.processStart
+    const pending = this.startProcess(directory).finally(() => {
+      if (this.processStart === pending) this.processStart = undefined
+    })
+    this.processStart = pending
+    return pending
+  }
+
+  private async startProcess(directory: string) {
     this.process?.dispose()
     let started: CodexAppServerProcess | undefined
     started = await CodexAppServerProcess.start({
