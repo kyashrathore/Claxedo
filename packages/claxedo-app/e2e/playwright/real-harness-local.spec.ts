@@ -824,29 +824,21 @@ function expectScriptedTraffic(dialect: ScriptedDialect, turns: number) {
  * caught that the CHAT endpoint saw zero calls. Without this the "opencode"
  * scenario silently exercised the anthropic dialect.
  *
- * Note the control is `prompt-model`, not `prompt-harness-model`: the latter
- * renders only in harness mode (`agent-harness-selector.tsx:586`), which is
- * false for opencode by definition.
+ * OpenCode uses the same `prompt-harness-model` control as every other
+ * harness; the picker owns harness, model, and effort selection together.
  *
  * Driven through the real picker rather than seeded, so the scenario exercises
  * the user's own model-selection path. Harness scenarios need none of this — a
  * harness owns its catalog and `waitForHarnessReady` already gates on it.
  */
 async function selectScriptedModel(page: Page) {
-  const standalone = page.locator('[data-action="prompt-model"]').last()
-  const unified = page.locator('[data-action="prompt-harness-model"]').last()
-  const control = (await standalone.count()) > 0 ? standalone : unified
+  const control = page.locator('[data-action="prompt-harness-model"]').last()
   await expect(control).toBeVisible({ timeout: 30_000 })
   // `disabled` (not `aria-disabled`) while the provider catalog loads; a click
   // then is a no-op that leaves the default model in place.
   await expect(control).toBeEnabled({ timeout: 45_000 })
   await control.click()
-  if ((await standalone.count()) === 0) {
-    const picker = page.locator('[data-component="harness-model-picker"]')
-    await expect(picker).toBeVisible({ timeout: 20_000 })
-    await picker.locator('[data-slot="harness-picker-section"]').filter({ hasText: /^Harness/ }).click()
-    await picker.getByRole("button", { name: "OpenCode", exact: true }).click()
-  }
+  await expect(page.locator('[data-component="harness-model-picker"]')).toBeVisible({ timeout: 20_000 })
   // ~180 providers, virtualized: the entry is not in the DOM until the search
   // narrows to it.
   const search = page.getByRole("textbox", { name: /Search models/i }).last()
@@ -946,9 +938,7 @@ async function runRealHarnessJourney(page: Page, dir: string, harness: HarnessCa
     await selectScriptedModel(page)
   }
 
-  const modelControl = page.locator(
-    '[data-action="prompt-harness-model"]:visible, [data-action="prompt-model"]:visible',
-  ).last()
+  const modelControl = page.locator('[data-action="prompt-harness-model"]:visible').last()
   const modelLabel = modelControl.locator('[data-slot="composer-control-label"]')
   await expect(modelLabel, `${harness.id} did not expose a model label`).toHaveText(/\S/, { timeout: 20_000 })
   const selectedModel = (await modelLabel.textContent())!.trim()

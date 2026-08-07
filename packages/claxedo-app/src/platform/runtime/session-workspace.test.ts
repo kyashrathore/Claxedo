@@ -2,6 +2,18 @@ import { describe, expect, test } from "bun:test"
 import { sessionPaneWorkspaceKey, sessionWorkspaceRuntimeRef } from "./session-workspace"
 
 describe("session workspace key", () => {
+  test("keys a directory-less central pane by its canonical session id", () => {
+    expect(sessionPaneWorkspaceKey({
+      directory: "",
+      sessionRef: {
+        sessionId: "ses_pi",
+        host: "central",
+        harness: { id: "pi" },
+        toolSandbox: { kind: "virtual" },
+      },
+    })).toBe("ses_pi")
+  })
+
   test("uses typed workspace backing before directory shape", () => {
     const ref = {
       sessionId: "ses_1",

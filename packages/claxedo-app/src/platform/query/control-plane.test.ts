@@ -5,6 +5,7 @@ import {
   projectCatalogMissingWorkspace,
   projectListQuery,
   providerAuthQuery,
+  providerDetailsQuery,
   providerListQuery,
 } from "./control-plane"
 import { mergeProviderIndexWithDetails, normalizeProviderList } from "./provider-list"
@@ -189,5 +190,29 @@ describe("control-plane query helpers", () => {
     expect(query.queryKey).toEqual(["controlPlane", "http://example.test", "providers", "workspace:ws_1", "pi"])
     await query.queryFn()
     expect(calls).toEqual(["http://example.test/provider?harness=pi&directory=workspace%3Aws_1"])
+  })
+
+  test("provider detail queries qualify the canonical provider route", async () => {
+    const calls: string[] = []
+    const query = providerDetailsQuery({
+      baseUrl: "http://example.test",
+      providerId: "anthropic",
+      directory: "workspace:ws_1",
+      harnessType: "pi",
+      request: async (url) => {
+        calls.push(String(url))
+        return Response.json({
+          all: [{ id: "anthropic", name: "Anthropic", source: "api", env: [], options: {}, models: {} }],
+          connected: ["anthropic"],
+          default: {},
+        })
+      },
+    })
+
+    expect(query.queryKey).toEqual(["controlPlane", "http://example.test", "providers", "workspace:ws_1", "pi"])
+    expect((await query.queryFn()).all.has("anthropic")).toBe(true)
+    expect(calls).toEqual([
+      "http://example.test/provider?provider=anthropic&harness=pi&directory=workspace%3Aws_1",
+    ])
   })
 })

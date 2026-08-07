@@ -1496,7 +1496,7 @@ async function publishAdmissionPlan(fixture: Awaited<ReturnType<typeof setup>>, 
   const runtime = createSqliteSourcePlanningRuntime({
     database: fixture.database,
     workerId: "test-source-planner",
-    sessionDirectory: "/repo",
+    resolveSessionDirectory: () => "/repo",
     sessions: {
       async admit(input) { return String(input.sessionId) },
       async result() { return { state: "succeeded", summary: JSON.stringify(plan), artifacts: [] } },

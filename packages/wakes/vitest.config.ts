@@ -6,8 +6,6 @@ export default defineConfig({
     // past vitest's 5s default; budget for starvation like claxedo-server does.
     testTimeout: 30_000,
     hookTimeout: 30_000,
-  },
-  test: {
     globals: true,
   },
 })

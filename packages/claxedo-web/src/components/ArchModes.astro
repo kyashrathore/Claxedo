@@ -1,9 +1,12 @@
 ---
-// The three composition modes of the runtime topology. `variant="toggle"`
-// shows a segmented control that swaps one diagram at a time; `variant="row"`
-// shows all three side by side. Same visual language as ArchitectureMap.
+// The three composition modes of the runtime topology. The toggle variant
+// shows one diagram at a time; the row variant shows all three side by side.
 import { archModes } from "./arch-stages"
-interface Props { variant?: "toggle" | "row" }
+
+interface Props {
+  variant?: "toggle" | "row"
+}
+
 const { variant = "toggle" } = Astro.props
 ---
 
@@ -24,7 +27,7 @@ const { variant = "toggle" } = Astro.props
       <div class:list={["am-panel", i === 0 && "is-active"]} data-mode={m.id}>
         {variant === "row" && <div class="am-label">{m.label}</div>}
         <div class="am-viz">
-          {/* ---- LOCAL ---- */}
+          {/* Local mode */}
           {m.id === "local" && (
             <svg viewBox="0 0 760 158" xmlns="http://www.w3.org/2000/svg" class="am-svg" role="img" aria-label="Local mode: clients, control plane, and an embedded workspace runtime all on your machine, connected over loopback with no relay.">
               <rect class="am-zone" x="24" y="24" width="712" height="78" rx="12"/>
@@ -41,7 +44,7 @@ const { variant = "toggle" } = Astro.props
               <text class="am-pkg" x="580" y="139" text-anchor="middle">@claxedo/workspace-runtime</text>
             </svg>
           )}
-          {/* ---- CLOUD ---- */}
+          {/* Cloud mode */}
           {m.id === "cloud" && (
             <svg viewBox="0 0 760 158" xmlns="http://www.w3.org/2000/svg" class="am-svg" role="img" aria-label="Cloud mode: clients reach the control plane, which routes across a trust boundary through the secure relay to a remote workspace host.">
               <path class="am-flow" d="M132 64 H268" marker-end="url(#amAr)"/>
@@ -62,7 +65,7 @@ const { variant = "toggle" } = Astro.props
               <text class="am-pkg" x="552" y="139" text-anchor="middle">@claxedo/workspace-runtime</text>
             </svg>
           )}
-          {/* ---- SHARED ---- */}
+          {/* Shared mode */}
           {m.id === "shared" && (
             <svg viewBox="0 0 760 158" xmlns="http://www.w3.org/2000/svg" class="am-svg" role="img" aria-label="Shared mode: a signed-in client on another device reaches your laptop's workspace host through the relay.">
               <path class="am-flow" d="M132 64 H268" marker-end="url(#amAr)"/>

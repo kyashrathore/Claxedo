@@ -148,3 +148,24 @@ export function providerAuthQuery(input: {
     },
   }
 }
+
+export function providerDetailsQuery(input: {
+  baseUrl: string
+  providerId: string
+  directory?: string | null
+  harnessType?: string
+  request: (url: URL, init?: RequestInit) => Promise<Response>
+}) {
+  return {
+    queryKey: queryKeys.controlPlane.providers(input.baseUrl, input.directory ?? undefined, input.harnessType),
+    queryFn: async () => {
+      const url = new URL("/provider", input.baseUrl)
+      url.searchParams.set("provider", input.providerId)
+      if (input.harnessType) url.searchParams.set("harness", input.harnessType)
+      if (input.directory) url.searchParams.set("directory", input.directory)
+      const response = await input.request(url, { headers: { Accept: "application/json" } })
+      if (!response.ok) throw new Error((await response.text()) || `Failed to load ${input.providerId} models`)
+      return normalizeProviderList(await response.json() as ProviderListResponse)
+    },
+  }
+}

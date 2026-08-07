@@ -46,7 +46,7 @@ This table records every measured action from the investigation. Each delta belo
 | 14 | Split desktop-local and hosted packages | Measured during U9 | No advance memory credit | Makes the local/cloud composition enforceable in source, bundles, and packaged resources. |
 | V1 | Revalidate default-off WorkGraph and Documents against clean `dev` with three fresh paired runs | Post-idle median 556 → 469 MiB; empty-shell median 743 → 712 MiB | -87 MiB post-idle; -31 MiB empty-shell | Confirms the feature boundary on the current tree. Every candidate post-idle sample (447–507 MiB) is below every baseline sample (553–614 MiB). |
 | V2 | Build the default-off and feature-on renderer compositions | Eager main chunk 3,737.28 → 3,411.87 kB raw and 1,097.30 → 989.92 kB gzip | -325.41 kB raw; -107.38 kB gzip | Places Documents (152.65 kB) and WorkGraph (262.46 kB) in demand-loaded chunks while retaining a feature-on build proof. |
-| V3 | Run all five real-browser performance flows against clean `dev` and the candidate | 0 failed flows in both cohorts; 5 warnings in both cohorts | No attributable regression | The disabled controls exceed the stored physical-frame budgets, so the cohort is preliminary evidence. A repeated five-iteration session-switch run showed the candidate's enabled path faster than its same-build control. |
+| V3 | Establish the five-flow production-renderer evidence contract | Launch, session, terminal, and workspace flows require further deadline work; the progressively rendered 500-file review passes at 15.7 ms worst with 0/723 misses | Defines the performance qualification rather than a memory delta | The browser lane measures semantic readiness, retains raw intervals, includes the first interaction interval, pools p95 from the interval population, matches Long Animation Frames to rAF gaps by timestamp, and states its synthetic-data and compositor boundaries. |
 
 The measured investigation spans 865 → 292 MiB in the controlled workload and starts from a user-visible process total above 1,000 MB. The implementation acceptance comparison uses fresh cohorts from current `dev` while retaining the same workload and gates.
 
@@ -72,8 +72,12 @@ Two complementary lanes cover the complete product path:
 
 | Lane | Target | Workloads | Primary evidence |
 |---|---|---|---|
-| Real-browser interaction lane | `packages/claxedo-app/perf-harness` | Launch project, session switch, live terminal switch, large diff toggle, workspace switch | p95 frame time, worst frame, frames below 60 Hz, completion latency |
+| Production-renderer interaction lane | `packages/claxedo-app/perf-harness` | Launch project, session switch, attached-terminal switch, large diff toggle, workspace switch | Pooled rAF interval p95, worst attributed renderer interval, 60 Hz renderer-deadline misses, completion latency |
 | Desktop lifecycle lane | Production Electron app, local server, Workspace Runtime, and deterministic harness fixture | Health readiness, store-only session list, provider first use, PTY first output, cold harness start, warm harness operation, idle restart, active-session stress | p50/p95 completion latency, local-server event-loop delay, CPU time, GC pause evidence, process lifecycle |
+
+The renderer lane serves the production web bundle in headless Chromium and supplies deterministic route-level API fixtures over loopback. It exercises the compiled application, state transitions, DOM construction, JavaScript, style, and layout. It excludes the production server, filesystem, sandbox, relay, WAN behavior, native input dispatch, Electron compositor, GPU raster, display presentation, and input-to-photon latency. Its result is a renderer scheduling capability signal rather than an FPS measurement.
+
+The desktop lane owns the displayed-performance claim. It records packaged Electron compositor and presentation evidence on the target macOS hardware alongside native input-to-visible readiness. A browser-lane pass is necessary for this claim because renderer stalls can make the display target impossible; it is not sufficient by itself.
 
 ### Browser Harness Modes
 
@@ -81,12 +85,35 @@ The performance harness retains its diagnostics ABBA mode and adds a base-app co
 
 The browser lane uses these gates:
 
-- Interaction p95 frame time targets 8.33 ms and must remain at or below the 16.67 ms 60 Hz floor.
-- At most two frames per interaction may exceed 16.67 ms.
-- Worst-frame time remains within the stored per-flow budget.
+- Pooled renderer-interval p95 targets 8.33 ms.
+- Every application-attributed renderer interval remains at or below the 16.67 ms 60 Hz deadline.
+- A rAF gap at or above 50 ms enters the application gate when Chromium supplies a corresponding Long Animation Frame. An excess long rAF gap without LoAF attribution is preserved as host/browser scheduling evidence and produces a measurement-quality warning.
+- Worst attributed renderer interval remains within the stored per-flow budget.
 - Candidate p95 completion latency remains within `max(10% of baseline, 50 ms)` for interactions and `max(10% of baseline, 200 ms)` for launch.
-- A comparison is valid only when both baseline runs satisfy the physical frame floor and their completion-time spread is within 15%.
+- A comparison is valid only when both baseline runs satisfy the renderer deadline and their completion-time spread is within 15%.
 - Diagnostics-enabled ABBA runs continue to enforce their separate retained-memory and frame-overhead contract.
+
+Each normal flow runs disabled → enabled → enabled → disabled across two browser processes. The report retains each raw repetition and each gated interval. The merged p95 is calculated from the pooled interval population; the worst interval and every deadline miss remain visible independently. The measured action begins with an in-page DOM click, so native input delivery and Playwright actionability overhead do not enter the renderer window.
+
+### Renderer Performance Evidence
+
+The current candidate has one stable passing renderer flow and four active optimization paths. Values below are diagnostics-enabled results; paired disabled controls remain part of every gate.
+
+| Experiment | Fixture | Pooled p95 | Worst attributed interval | 60 Hz misses | Finding |
+|---|---:|---:|---:|---:|---|
+| Cold launch to usable session and 20-session inventory | 20 sessions, 80-message first fold | 0.1 ms | 88.3 ms | 13/7,928 | Application-attributed launch Long Animation Frames remain. |
+| Session cold+warm stress | Two 80-message first folds, six switches | 16.5 ms | 36.7 ms | 9/199 | The cold SessionPage/first-fold construction is the dominant cost. |
+| Session cold+warm stress | Two one-message histories, six switches | 16.3 ms | 17.6 ms | 6/210 | Data scale explains the larger stalls, while the shell transition remains near the deadline. |
+| Session retained-only stress | Two one-message histories pre-mounted | 13.1 ms | 14.4 ms | 0/91 | The enabled retained-pane path satisfies the 60 Hz renderer deadline. |
+| Session retained-only stress | Two 80-message first folds pre-mounted | 13.8 ms | 16.3 ms | 0/95 | Loaded history size does not materially worsen retained switching. |
+| Session prefetch-settle measurement | One-message histories, 1 s unmeasured settle | 16.7 ms | 20.0 ms | 6/110 | Cold construction remains the governing cost after data is available. |
+| Core session without environment metadata card | One-message histories | 16.2 ms | 34.3 ms | 10/286 | Core SessionPage and pane construction owns the remaining deadline work independently of environment metadata. |
+| One-turn initial history measurement | 10k-message history, one recent turn initially | 181.9 ms | 232.7 ms | 34/112 | The four-turn history window remains the rendering basis because it preserves stable reactive commits and scroll anchoring. |
+| Attached-terminal retained switch | Three already-open surfaces, six repetitions per mode | 12.5 ms | 32.5 ms | 1/80 | In-page semantic switching removes Playwright/layout-driver cost; one renderer miss remains. |
+| Progressive 500-file review toggle | 20 headers initially, one open two-line diff | 1.6 ms | 15.7 ms | 0/723 | Progressive header mounting satisfies the renderer gate. |
+| Minimal cross-workspace switch | 2 sessions, 2 workspaces, 1 message, 1 file | 16.6 ms | 21.3 ms | 6/148 | Inventory size is not the primary cause; cold workspace/session construction remains. |
+
+The session optimization therefore preserves the four-turn history window and targets staged cold SessionPage construction while keeping already-activated panes mounted. The next experiment separates shell, provider, controller, and timeline construction into independently scheduled boundaries and requires each boundary to remain within 16.67 ms.
 
 Planned final commands:
 
@@ -95,7 +122,6 @@ cd packages/claxedo-app
 bun run build
 cd perf-harness
 bun test
-bun run run:compare --baseline-worktree <clean-dev-worktree> --candidate-worktree <implementation-worktree> --all --iterations 3
 bun run run:all --iterations 3
 ```
 
@@ -204,12 +230,12 @@ Session inventory, title updates, workspace metadata, and canonical events stay 
 
 - **PR1.** A clean `dev` production build supplies the immutable browser and desktop performance baselines before U2 begins.
 - **PR2.** Browser comparison runs all five real-app flows in baseline → candidate → candidate → baseline order using isolated contexts and three iterations per position.
-- **PR3.** Every interactive browser flow satisfies the 60 Hz physical floor, the two-frame allowance, its stored worst-frame budget, and its baseline-relative completion ceiling.
+- **PR3.** Every interactive browser flow has zero application-attributed renderer intervals above 16.67 ms, satisfies its stored worst-interval budget, and meets its baseline-relative completion ceiling.
 - **PR4.** Launch performance satisfies its stored worst-frame budget and baseline-relative completion ceiling; launch frame drops remain visible in the report.
 - **PR5.** Desktop lifecycle comparison covers health readiness, store-only session list, provider first use, PTY first output, cold harness start, warm harness use, idle restart, and active-session stress.
 - **PR6.** V8 policy changes satisfy active-workload latency, event-loop, CPU, GC-pause, route, mutation, and stream gates before they contribute to the memory target.
 - **PR7.** Every performance report identifies both commits, production build identities, tool versions, machine and thermal state, sample order, raw samples, and gate outcomes.
-- **PR8.** Final acceptance runs the browser comparison, diagnostics ABBA suite, and desktop lifecycle comparison against the packaged candidate.
+- **PR8.** Final acceptance runs the production-renderer ABBA suite and the packaged desktop lifecycle/presentation comparison against the candidate.
 
 #### Empty-shell composition
 
@@ -552,7 +578,7 @@ Run tests and typechecks from their package directories.
 - Hosted product capabilities pass their existing tests under hosted composition.
 - Development, production, and packaged launches use the same local-server and adapter contracts.
 - The production unsigned app passes all correctness gates and both idle-memory cohorts.
-- All browser flows preserve the physical frame floor, stored worst-frame budgets, and baseline-relative completion ceilings.
+- All browser flows preserve the renderer deadline, stored worst-interval budgets, and baseline-relative completion ceilings; the packaged desktop lane satisfies the display-presentation contract.
 - Local health, session inventory, provider first use, PTY first output, harness cold start, warm use, idle restart, active workload, event-loop delay, CPU, and GC evidence satisfy the desktop performance contract.
 
 ## Evidence Locations

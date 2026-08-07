@@ -50,12 +50,9 @@
  *     (`src/session-client/harness/selection.ts:47-55`; for `opencode`,
  *     `providerID/modelID` come from the plain model picker instead — out of scope
  *     here, see `core-model-effort-agent-controls`).
- *   - Existing session: harness is LOCKED — `sessionLocked` in
- *     `src/session-client/composer/composer.tsx:731` is
- *     `harnessSessionId() !== undefined && harnessSessionId() !== "new"`, which disables
- *     the harness `<Select>` (`harnessDisabled` in
- *     `agent-harness-selector.tsx:180`); nothing in this codebase migrates an existing
- *     session's backing harness.
+ *   - Existing session: harness is LOCKED. The unified picker remains available for
+ *     model inspection while its Harness section is disabled; nothing in this codebase
+ *     migrates an existing session's backing harness.
  *   - Readiness — `harnessStatusPatch`
  *     (`src/features/session/harness/store-state.ts:103-148`) is NOT a binary. It
  *     resolves the 4-member `HarnessReadiness` union
@@ -102,20 +99,14 @@
  *     turn (no abort capability) nor send a new one (still busy).
  *
  * ANATOMY —
- *   `[data-action="prompt-model"]` — the plain-OpenCode model control; renders only
- *     when `!harnessMode` (`src/components/prompt-input/model-control.tsx:40`).
- *   `[data-action="prompt-harness-model"]` — the harness model control (inside
- *     `AgentHarnessSelector`); renders only when `selection().isHarnessMode`
- *     (`harness !== "opencode"`) — text is the resolved model name, "Loading models",
+ *   `[data-action="prompt-harness-model"]` — the unified harness/model/effort control
+ *     for OpenCode, ACP, native SDK, and Pi. Its text is the resolved model name,
+ *     "Loading models",
  *     "No Pi models available", or "Select model" depending on state
  *     (`agent-harness-selector.tsx`, `modelLabel`). It names a model or says there is
  *     none; it never reports an error — that is the notice row's job.
- *   Harness `<Select>` trigger — a button showing the current harness's display label
- *     ("OpenCode", "Claude", "Codex", "Cursor", "Pi" — `HARNESS_DISPLAY_NAMES` /
- *     `HARNESS_OPTION_LABELS`, `agent-harness-selector.tsx:10-33`); `disabled` once
- *     `sessionLocked()` is true. ACP and native-SDK variants of the same provider share
- *     a label ("Claude" for both `claude-acp` and `claude-sdk`) but render in different
- *     `<Select>` groups ("ACP" vs "Native SDK") — see HARNESS NOTES for disambiguation.
+ *     The popover's Harness section groups same-label ACP and native-SDK variants under
+ *     distinct headings, and that section is disabled once `sessionLocked()` is true.
  *   `[data-component="composer-notice"]` — the composer's ONE error surface, a row
  *     that peeks above the project/worktree context row (`composer-notice.tsx`,
  *     published by `AgentHarnessSelector` via `resolveHarnessNotice`). Carries
@@ -136,17 +127,14 @@
  *     (`src/features/session/composer/ui/frame.tsx:245` — the only `contenteditable`
  *     write in the file, a literal). Per T5 §4 (`dev-docs/CLAXEDO_ERROR_PROPOSAL.md`)
  *     the composer gates the SUBMIT, not the typing: a dead-looking box teaches nothing.
- *     The editor is therefore NOT a signal for `harnessPending()` — the harness `<Select>`
- *     trigger and `[data-action="prompt-submit"]` are (see BEHAVIORS #6).
+ *     The editor is therefore not a signal for `harnessPending()`; the submit control is.
  *   `[data-action="prompt-submit"]` — submit/stop control; `data-icon="stop"` only
  *     while `stoppable()` (`working() && canAbort()`); `disabled` per
  *     `submitDisabled` above.
  *
  * BEHAVIORS —
- *   1. Exactly one model control exists in the DOM at any time: `[data-action=
- *      "prompt-model"]` while the draft harness is `opencode` (the default), or
- *      `[data-action="prompt-harness-model"]` once any other harness is selected —
- *      never both.
+ *   1. Exactly one unified `[data-action="prompt-harness-model"]` control owns harness,
+ *      model, and effort selection for every harness.
  *   2. For each configurable harness (`claude-acp`, `claude-sdk`, `codex-acp`,
  *      `codex-app-server`, `cursor-acp`, `cursor-sdk`): a workspace whose backend
  *      already reports that harness auto-hydrates the draft harness `<Select>` to its
@@ -155,16 +143,16 @@
  *      `providerID`/`modelID`/`agent` through draft hydration → first send → a second
  *      send → reload → a third send. Behavior 1's test separately proves the
  *      complementary manual-switch path (a).
- *   3. Once a session exists (any message sent), the harness `<Select>` is disabled —
- *      the harness cannot be changed mid-session.
+ *   3. Once a session exists, the unified picker's Harness section is disabled — the
+ *      harness cannot be changed mid-session.
  *   4. Pi issues zero `/api/claxedo/agent-config/harness/options` requests, resolves a
  *      concrete model from its configured provider catalog, persists that exact pair
  *      for the next workspace draft, and submits the selected provider/model identity.
  *   5. A workspace hydrated onto an unavailable/auth-error harness renders exactly one
  *      notice row stating the failure and its error message in words, keeps the submit
  *      control disabled, and sends zero session/prompt requests even after the user
- *      types and attempts to submit — and the plain-OpenCode model control
- *      (`[data-action="prompt-model"]`) never reappears as a silent fallback. FIXED:
+ *      types and attempts to submit — and the unified picker never changes to the
+ *      OpenCode harness as a silent fallback. FIXED:
  *      a fresh draft used to never even reach this state — `applyStatus`
  *      (`src/claxedo-ui/harness/harness-status-actions.ts`) silently dropped the
  *      failed-harness status against the store's seeded "opencode" placeholder
@@ -177,12 +165,9 @@
  *      failure (`status:"applying"`, i.e. still starting up) resolves readiness to
  *      `"polling"`, NOT `"error"` — so the pulsing `[title="Connecting to agent
  *      runtime..."]` pill renders and the `[title="Agent runtime unreachable after
- *      timeout"]` dot does not. While polling, the harness `<Select>` trigger and the
- *      submit control are both `disabled` (`harness-polling` is deliberately NOT in
- *      `submit-block-reason.ts`'s `ACTIONABLE` set, unlike behavior 5's `harness-error`),
- *      zero session/prompt requests are sent, and the plain-OpenCode model control never
- *      reappears. The composer editor stays live and typeable throughout (see ANATOMY) —
- *      it is the submit that is gated, not the typing.
+ *      timeout"]` dot does not. While polling, the unified picker remains inspectable,
+ *      the submit control is disabled, zero session/prompt requests are sent, and the
+ *      harness never changes to OpenCode. The composer editor stays live and typeable.
  *   6b. `"polling"` is a transient state, not a dead end. Hydration is one-shot (the
  *      hydrator stamps a per-scope "seen" key and early-returns forever), so a harness
  *      that first answered `ready:false` would once have stayed on the "Connecting" pill
@@ -308,6 +293,7 @@ async function switchDraftHarness(page: Page, optionName: RegExp, optionIndex: n
   const picker = page.locator('[data-component="harness-model-picker"]')
   await picker.locator('[data-slot="harness-picker-section"]').first().click()
   await picker.getByRole("button", { name: optionName }).nth(optionIndex).click()
+  await page.keyboard.press("Escape")
 }
 
 async function expectOnlyHarnessModelControl(page: Page, modelName: string | RegExp) {
@@ -347,8 +333,9 @@ async function expectHarnessLocked(page: Page, optionLabel: RegExp) {
 }
 
 async function expectOnlyOpenCodeModelControl(page: Page) {
-  await expect(page.locator('[data-action="prompt-model"]')).toHaveCount(1)
-  await expect(page.locator('[data-action="prompt-harness-model"]')).toHaveCount(0)
+  await expect(page.locator('[data-action="prompt-harness-model"]')).toHaveCount(1)
+  await expect(page.locator('[data-action="prompt-harness-model"]')).toHaveAttribute("data-harness", "opencode")
+  await expect(page.locator('[data-action="prompt-model"]')).toHaveCount(0)
 }
 
 test.describe("core harness ownership (local) @core", () => {
@@ -361,7 +348,7 @@ test.describe("core harness ownership (local) @core", () => {
     testInfo.setTimeout(120_000)
   })
 
-  test("draft starts on OpenCode's model control and switching harness swaps it for exactly one harness control — behavior 1", async ({
+  test("the unified picker owns OpenCode and harness model selection without duplicate controls — behavior 1", async ({
     page,
   }) => {
     await seedOneProject(page, DIR)
@@ -674,7 +661,7 @@ test.describe("core harness ownership (local) @core", () => {
     const input = await openDraftPrompt(page, DIR)
 
     await switchDraftHarness(page, /^Pi$/, 0)
-    await expect(page.getByRole("button", { name: /^Pi$/ }).last()).toBeVisible({ timeout: 20_000 })
+    await expect(page.locator('[data-action="prompt-harness-model"][data-harness="pi"]').last()).toBeVisible({ timeout: 20_000 })
     await expectOnlyHarnessModelControl(page, /Virtual|virtual/i)
     await expect.poll(() => page.evaluate(() => Object.entries(localStorage)
       .find(([key]) => key.includes("session.draft-default.v1"))?.[1])).toContain('"harness":"pi"')
@@ -698,7 +685,7 @@ test.describe("core harness ownership (local) @core", () => {
 
     await page.goto(`/${slug(DIR)}/session`)
     await page.waitForLoadState("domcontentloaded")
-    await expect(page.getByRole("button", { name: /^Pi$/ }).last()).toBeVisible({ timeout: 20_000 })
+    await expect(page.locator('[data-action="prompt-harness-model"][data-harness="pi"]').last()).toBeVisible({ timeout: 20_000 })
     await expectOnlyHarnessModelControl(page, /Virtual|virtual/i)
 
     // Zero config-options requests for the entire scenario — pi has no config options.
@@ -782,7 +769,7 @@ test.describe("core harness ownership (local) @core", () => {
       // Never silently falls back to plain OpenCode.
       await expect(page.locator('[data-action="prompt-model"]')).toHaveCount(0)
       await expect(page.locator('[data-action="prompt-harness-model"]')).toHaveCount(1)
-      await expect(page.getByRole("button", { name: /^OpenCode$/ })).toHaveCount(0)
+      await expect(page.locator('[data-action="prompt-harness-model"][data-harness="opencode"]')).toHaveCount(0)
 
       // Zero session/prompt requests were ever sent — the click flashed the
       // explain-on-intent tooltip but never actually submitted, since
@@ -794,11 +781,7 @@ test.describe("core harness ownership (local) @core", () => {
   )
 
   test(
-    // Title corrected 2026-07-25: it used to promise "composer fade + attach-disabled",
-    // neither of which this test asserts (nor should — the editor is unconditionally
-    // editable now, see ANATOMY). What it actually pins is the pill + the Select/submit
-    // gate + zero requests.
-    "Connecting pill, harness Select and submit both disabled, zero requests while readiness is polling — behavior 6",
+    "Connecting keeps the unified picker inspectable while submit stays disabled and sends zero requests — behavior 6",
     async ({ page }) => {
       // Fixed in Wave 2 (WP-B9): `harnessStatusPatch`
       // (src/session-client/harness/store-state.ts) now maps a non-opencode
@@ -824,13 +807,9 @@ test.describe("core harness ownership (local) @core", () => {
       // the typing." The editor is UNCONDITIONALLY `contenteditable="true"` now (no
       // `aria-disabled` is ever set on it) — a dead-looking box teaches nothing, so
       // the composer stays a live, typeable peek even while connecting. What DOES
-      // stay gated is the harness Select trigger (dimmed + `disabled` — see
-      // `harnessDisabled`/`harnessTriggerStyle`, agent-harness-selector.tsx:308-313)
-      // and the submit control (`harness-polling` is NOT in submit-block-reason.ts's
-      // `ACTIONABLE` set, so it stays hard-disabled, unlike behavior 5's
-      // `harness-error`). This no longer needs the old FADED-editor caveat, but the
-      // inline navigation is kept anyway to assert the polling contract directly
-      // without any intermediate ready-harness assumption.
+      // stay gated is the submit control (`harness-polling` is not actionable).
+      // The unified picker remains enabled so its resolved harness/model state can
+      // still be inspected while readiness catches up.
       await page.goto(`/${slug(DIR)}/session`)
       await page.waitForLoadState("domcontentloaded")
       await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
@@ -845,15 +824,15 @@ test.describe("core harness ownership (local) @core", () => {
       await expect(page.locator('[title="Connecting to agent runtime..."]')).toBeVisible({ timeout: 20_000 })
       await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toHaveCount(0)
 
-      // The editor stays live and typeable; the harness Select trigger (still
-      // showing the polling harness's label) and submit are what's gated.
+      // The editor stays live and typeable, and the picker remains inspectable;
+      // submit is the action that stays gated.
       await expect(input).toHaveAttribute("contenteditable", "true")
       await expect(input).not.toHaveAttribute("aria-disabled")
-      await expect(page.locator('[data-action="prompt-harness-model"]:visible').last()).toBeDisabled()
+      await expect(page.locator('[data-action="prompt-harness-model"]:visible').last()).toBeEnabled()
       await expect(page.locator(SELECTORS.submitControl).last()).toBeDisabled()
 
       // Never silently falls back to plain OpenCode, and no requests are sent.
-      await expect(page.getByRole("button", { name: /^OpenCode$/ })).toHaveCount(0)
+      await expect(page.locator('[data-action="prompt-harness-model"][data-harness="opencode"]')).toHaveCount(0)
       expect(mock.requests.promptCount).toBe(0)
       expect(mock.requests.createSessionCount).toBe(0)
     },
@@ -863,7 +842,7 @@ test.describe("core harness ownership (local) @core", () => {
     // Title corrected 2026-07-25: dropped "composer unlocks" — the composer is never
     // locked (see ANATOMY); the pill clearing and the Select/submit unlocking are the
     // real settle signals.
-    "a slow harness that starts polling settles under the bounded re-probe loop: Connecting pill clears, harness Select and submit unlock — behavior 6b",
+    "a slow harness settles under the bounded re-probe loop: Connecting clears, readiness becomes ready, and submit unlocks — behavior 6b",
     async ({ page }) => {
       // The polling readiness used to be a DEAD-END: hydration is one-shot
       // (src/features/session/harness/harness-hydrator.ts stamps a per-scope "seen" key
@@ -908,19 +887,21 @@ test.describe("core harness ownership (local) @core", () => {
       await expectHarnessAutoHydrated(page, /^Claude$/)
       const harnessTrigger = page.locator('[data-action="prompt-harness-model"]:visible').last()
 
-      // Phase 1 — still connecting: pill shown, harness Select trigger disabled
-      // (dimmed), editor stays live/typeable, never the "Unavailable" notice row.
+      // Phase 1 — still connecting: pill shown, picker remains inspectable,
+      // editor stays live/typeable, never the "Unavailable" notice row.
       await expect(page.locator('[title="Connecting to agent runtime..."]')).toBeVisible({ timeout: 20_000 })
       await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toHaveCount(0)
       await expect(input).toHaveAttribute("contenteditable", "true")
-      await expect(harnessTrigger).toBeDisabled()
+      await expect(harnessTrigger).toBeEnabled()
+      await expect(harnessTrigger).toHaveAttribute("data-readiness", "polling")
 
       // Phase 2 — the bounded re-probe loop drives the harness to settle: the
       // "Connecting" pill clears on its own (no user action, no reload), the
-      // harness Select trigger re-enables, and it never degrades to "Unavailable".
+      // picker reports ready, and it never degrades to "Unavailable".
       await expect(page.locator('[title="Connecting to agent runtime..."]')).toHaveCount(0, { timeout: 30_000 })
       await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toHaveCount(0)
       await expect(harnessTrigger).toBeEnabled({ timeout: 10_000 })
+      await expect(harnessTrigger).toHaveAttribute("data-readiness", "ready")
 
       // The harness model resolves and submit unlocks once the user types.
       await expectOnlyHarnessModelControl(page, /Sonnet 4\.6|claude-sonnet-4-6/i)

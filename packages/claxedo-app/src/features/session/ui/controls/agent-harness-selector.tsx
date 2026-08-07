@@ -590,6 +590,10 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
 
   const activeModelLoading = createMemo(() =>
     (isHarnessMode() ? modelLoading() : props.openCode?.loading() ?? false) || harnessSwitching())
+  const activeModelDisabled = createMemo(() => {
+    if (isHarnessMode()) return modelDisabled()
+    return activeModelLoading() || (props.openCode?.model().list().length ?? 0) === 0
+  })
 
   publishComposerNotice(notice)
 
@@ -632,7 +636,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         model={activePicker}
         modelLabel={activeModelLabel}
         modelLoading={activeModelLoading}
-        modelDisabled={modelDisabled}
+        modelDisabled={activeModelDisabled}
         showEffort={activeShowEffort}
         variants={activeVariants}
         currentVariant={activeCurrentVariant}
@@ -644,7 +648,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
           }
           props.openCode?.onVariantSelect(value)
         }}
-        triggerStyle={() => modelTriggerStyle()}
+        triggerStyle={() => style(activeModelDisabled())}
         triggerHint={modelHint}
         triggerLabel={modelHint() ? `Select harness and model — ${modelHint()}` : "Select harness and model"}
         triggerState={() => ({

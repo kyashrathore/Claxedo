@@ -233,6 +233,7 @@ describe("AgentRuntimeClient", () => {
       sessionRef: {
         sessionId: "ses_central",
         host: "central",
+        harness: { id: "pi" },
         toolSandbox: { kind: "virtual" },
       },
       request: async (input, init) => {
@@ -284,6 +285,23 @@ describe("AgentRuntimeClient", () => {
       sessionID: "ses_central",
     })])
     expect(page.maxEventOrdinal).toBe(5)
+  })
+
+  it("rejects directory-less central sessions on non-Pi harnesses", async () => {
+    const client = createAgentRuntimeClient({
+      sessionRef: {
+        sessionId: "ses_opencode",
+        host: "central",
+        harness: { id: "opencode" },
+        toolSandbox: { kind: "virtual" },
+      },
+    })
+
+    await expect(client.getMessages({
+      directory: "",
+      sessionID: "ses_opencode",
+      limit: 20,
+    })).rejects.toThrow("Directory-less central sessions require the Pi harness")
   })
 
   it("uses explicit workspace backing without inspecting directory string shape", async () => {
@@ -461,6 +479,7 @@ describe("AgentRuntimeClient", () => {
   it("routes signed default-loopback workspace-id message reads through workspace-runtime", async () => {
     const calls: string[] = []
     const client = createAgentRuntimeClient({
+      serverUrl: "http://127.0.0.1:3001/",
       signedControlPlane: true,
       request: async (input, init) => {
         const req = input instanceof Request ? input : new Request(String(input), init)

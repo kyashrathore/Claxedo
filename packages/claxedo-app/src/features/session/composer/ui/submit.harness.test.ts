@@ -31,6 +31,7 @@
  */
 import { expect, test } from "bun:test"
 import { createStore } from "solid-js/store"
+import { normalizeHarnessIdentity } from "../../../../../../agent-sdk-runtime/src/harness-types"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
 import type { Prompt } from "@/features/session/providers/prompt"
 import { createMockApi } from "@/architecture/test-support/mock-api"
@@ -41,6 +42,18 @@ import type { HarnessType } from "../../harness/profile"
 
 /** Structural view of `bun:test`'s `mock`, so this file needs no bun:test value type. */
 type ModuleMocker = { module: (specifier: string, factory: () => unknown) => void }
+
+function canonicalSessionConfig(rawBody: string) {
+  const body = JSON.parse(rawBody) as Record<string, unknown>
+  const harness = normalizeHarnessIdentity(body.harness)
+  if (!harness) throw new Error("session config fixture requires a canonical harness identity")
+  return {
+    harness,
+    ...(Object.hasOwn(body, "model") ? { model: body.model } : {}),
+    ...(Object.hasOwn(body, "variant") ? { variant: body.variant } : {}),
+    ...(Object.hasOwn(body, "agent") ? { agent: body.agent } : {}),
+  }
+}
 
 export type StartupState = { status?: string; id?: string; err?: string }
 
@@ -141,6 +154,7 @@ export const state: {
   commandError: Error | undefined
   commandListResponse: unknown[]
   runtimeProviderResponse: unknown
+  runtimeSessionConfig: unknown
   claxedoServerUrl: string
   syncProject: SyncProject | undefined
   globalProjects: SyncProject[]
@@ -168,6 +182,7 @@ export const state: {
   commandError: undefined,
   commandListResponse: [],
   runtimeProviderResponse: undefined,
+  runtimeSessionConfig: undefined,
   claxedoServerUrl: "http://localhost:3001",
   syncProject: undefined,
   globalProjects: [],
@@ -550,8 +565,8 @@ export async function installSubmitMocks(mock: ModuleMocker) {
       })
       if (/\/session\/[^/]+\/config$/.test(new URL(request.url).pathname)) {
         return request.method === "PATCH" && init?.body
-          ? new Response(String(init.body), { status: 200, headers: { "Content-Type": "application/json" } })
-          : Response.json({ harness: { type: "opencode" } })
+          ? Response.json(canonicalSessionConfig(String(init.body)))
+          : Response.json({ harness: { id: "opencode", access: "native" } })
       }
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
@@ -570,6 +585,14 @@ export async function installSubmitMocks(mock: ModuleMocker) {
             status: 200,
             headers: { "Content-Type": "application/json" },
           })
+        }
+        if (/^\/session\/[^/]+\/config(?:\?|$)/.test(path)) {
+          if ((init?.method ?? "GET") === "GET" && state.runtimeSessionConfig !== undefined) {
+            return Response.json(state.runtimeSessionConfig)
+          }
+          if (init?.method === "PATCH" && typeof init.body === "string") {
+            return Response.json(canonicalSessionConfig(init.body))
+          }
         }
         if (path.includes("/prompt_async") || (path.includes("/message") && init?.method === "POST")) {
           if (state.transportPromptAsyncError) {
@@ -928,6 +951,7 @@ export function resetSubmitHarness() {
   state.commandError = undefined
   state.commandListResponse = []
   state.runtimeProviderResponse = undefined
+  state.runtimeSessionConfig = undefined
   state.claxedoServerUrl = "http://localhost:3001"
   state.syncProject = { id: "project-1", worktree: "/repo/main", sandboxes: [], workspaces: { "/repo/main": { kind: "local" } } }
   state.globalProjects = [state.syncProject]

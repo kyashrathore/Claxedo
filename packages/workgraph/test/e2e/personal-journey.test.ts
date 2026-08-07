@@ -235,7 +235,7 @@ function setup() {
         database,
         clock: { now: () => now },
         workerId: "e2e-source-planner",
-        sessionDirectory: "/repo",
+        resolveSessionDirectory: () => "/repo",
         sessions: {
           async admit(input) { return String(input.sessionId) },
           async result() { return { state: "succeeded", summary: JSON.stringify(plan), artifacts: [] } },

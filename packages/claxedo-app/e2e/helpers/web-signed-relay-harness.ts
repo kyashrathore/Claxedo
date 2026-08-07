@@ -416,21 +416,9 @@ export async function composeText(page: Page, input: Locator, text: string) {
 /**
  * Picks "Scripted Model" in the composer's model control.
  *
- * MEASURED LIVE 2026-08-06 against this exact web build, correcting an
- * assumption carried over from `real-harness-local.spec.ts` (whose LOCAL,
- * non-relay-backed workspace defaults to the "opencode" harness with a
- * SEPARATE `[data-action="prompt-model"]` trigger): a signed, relay-backed
- * workspace's fresh draft defaults straight to a real bundled HARNESS
- * ("Claude Sonnet 4.6" observed, not "opencode"), rendering the MERGED
- * `[data-action="prompt-harness-model"]` trigger instead —
- * `desktop-unsigned-embedded.spec.ts`'s identical selector, which that file's
- * own comment mis-attributed to a desktop-only build difference. It is not:
- * the actual axis is whether "opencode" is the active harness, and every
- * relay-backed workspace this task's two lanes drive starts on a non-opencode
- * harness by default, same as the packaged desktop lane. A run that skipped
- * this step would render a real bundled model's reply while the scripted
- * server logged zero requests — the exact false-green owner decision 1
- * ("only the AI endpoint may be faked") exists to prevent.
+ * Every harness uses the unified `[data-action="prompt-harness-model"]` picker.
+ * A run that skipped this step could render a bundled model's reply while the
+ * scripted server logged zero requests, so the selection is asserted directly.
  */
 export async function selectScriptedModel(page: Page) {
   const control = page.locator('[data-action="prompt-harness-model"]').last()
@@ -483,48 +471,6 @@ export async function selectScriptedModel(page: Page) {
   await expect(control, 'harness+model control never adopted "Scripted Model"').toContainText(/Scripted Model/i, {
     timeout: 20_000,
   })
-}
-
-/** Trigger label for a harness id — `agent-harness-selector.tsx`'s `HARNESS_OPTION_LABELS`, mirrored from `real-harness-local.spec.ts`. */
-function expectedTriggerLabel(harnessKey: string) {
-  if (harnessKey.startsWith("claude")) return /^Claude$/
-  if (harnessKey.startsWith("codex")) return /^Codex$/
-  if (harnessKey.startsWith("cursor")) return /^Cursor$/
-  return new RegExp(`^${harnessKey}$`, "i")
-}
-
-/**
- * C4's harness switch. Reused verbatim from `real-harness-local.spec.ts`'s
- * `switchDraftHarness` (identical DOM contract on the web build) — the
- * bounded retry exists because a click can be accepted by the listbox and
- * still not commit when a hydration for the freshly-created workspace lands
- * between open and click; that is a real app race documented there, not
- * something this helper should paper over silently.
- */
-export async function switchDraftHarness(page: Page, harnessKey: string) {
-  const trigger = page.locator('[data-action="prompt-harness"]').last()
-  const option = page.locator(`[role="option"][data-key="${harnessKey}"]`)
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    await expect(trigger).toBeEnabled({ timeout: 30_000 })
-    await trigger.click()
-    await expect(option).toBeVisible({ timeout: 30_000 })
-    await option.click()
-    const landed = await expect(trigger)
-      .toHaveText(expectedTriggerLabel(harnessKey), { timeout: 10_000 })
-      .then(() => true)
-      .catch(() => false)
-    if (landed) return
-    await page.keyboard.press("Escape").catch(() => undefined)
-  }
-  throw new Error(`GATING: the draft harness never settled on "${harnessKey}" after 3 attempts.`)
-}
-
-/** See `real-harness-local.spec.ts`'s `waitForHarnessReady` for the 45s/`claude-sdk` rationale this mirrors. */
-export async function waitForHarnessReady(page: Page) {
-  await expect(page.locator('[data-action="prompt-harness-model"]').last()).not.toContainText(
-    /Loading models|Select model/i,
-    { timeout: 45_000 },
-  )
 }
 
 export function submitControl(page: Page): Locator {

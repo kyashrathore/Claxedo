@@ -58,6 +58,9 @@ const STATUS_ATTRS = ["data-sidebar-status", "data-switcher-status"] as const
  *                                equality (not presence) is its entire purpose --
  *                                routing that through rail-oracle.ts (sidebar-only) would
  *                                make the switcher half of the comparison impossible.
+ *   helpers/*-oracle.mutation.test.ts -- mutation tests deliberately construct or alter
+ *                                the raw status attributes to prove the shared oracles
+ *                                reject broken DOM states.
  *   playwright/core-sidebar-tree.spec.ts          -- predates rail-oracle.ts (landed
  *                                2026-08-06 Phase 1); this spec's own status-dot
  *                                assertions (lines 648-745) are the ones the plan's B7/B9
@@ -88,8 +91,11 @@ const STATUS_ATTRS = ["data-sidebar-status", "data-switcher-status"] as const
  */
 const ALLOWED: { file: string; reason: string }[] = [
   { file: "helpers/rail-oracle.ts", reason: "is the oracle every other file routes through" },
+  { file: "helpers/rail-oracle.mutation.test.ts", reason: "constructs raw status mutations to test the rail oracle" },
   { file: "helpers/geometry-oracle.ts", reason: "Phase 1 D3/E1 oracle -- geometry read on the same node, not a status assertion" },
+  { file: "helpers/geometry-oracle.mutation.test.ts", reason: "constructs raw status geometry to test the geometry oracle" },
   { file: "helpers/surface-parity.ts", reason: "Phase 1 B9 oracle -- equality across both surfaces is its entire purpose" },
+  { file: "helpers/surface-parity.mutation.test.ts", reason: "constructs divergent raw statuses to test the parity oracle" },
   { file: "playwright/core-sidebar-tree.spec.ts", reason: "predates rail-oracle.ts; migration out of scope for this guard" },
   { file: "playwright/core-claude-native-sdk-rail.spec.ts", reason: "predates rail-oracle.ts; migration out of scope for this guard" },
   { file: "playwright/core-terminal.spec.ts", reason: "predates rail-oracle.ts; asserts terminal rows, a shape the oracle does not cover" },

@@ -896,7 +896,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     expect(runtime.contentWrites(document.summary.id)).toHaveLength(0)
   })
 
-  test("truthful autosave exposes failure and Retry recovers the preserved draft — behavior 4", async ({
+  test("truthful autosave exhausts bounded retries before manual Retry recovers the preserved draft — behavior 4", async ({
     page,
   }, testInfo) => {
     annotate(testInfo)
@@ -911,7 +911,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await expect(page.getByRole("status").filter({ hasText: "Unsaved changes" })).toBeVisible()
     await expect(page.getByRole("status").filter({ hasText: "Saving" })).toBeVisible({ timeout: 10_000 })
     await expect(page.getByRole("status").filter({ hasText: "Save failed" })).toBeVisible()
-    expect(runtime.contentWrites(document.summary.id)).toHaveLength(1)
+    await expect.poll(() => runtime.contentWrites(document.summary.id).length, { timeout: 15_000 }).toBe(4)
     await expect(source).toHaveValue("Heading\n=======\n\nkeep this draft\n")
     await proveGeometry(
       page,

@@ -51,13 +51,8 @@
  *     GET that a mock server would have to fake livenes for.
  *
  * ANATOMY —
- *   `[data-action="prompt-model"]` — model control trigger. A `ModelSelectorPopover`
- *     trigger in every state, however many providers are connected
- *     (`src/features/session/composer/ui/model-control.tsx`). The one exception is the
- *     server's legacy `big-pickle` placeholder model, which has no serving path and so
- *     renders a plain Connect `Button` instead. Hidden entirely when the composer is in
- *     harness mode (ACP/SDK) — `core-harness-ownership-local` owns that surface via
- *     `AgentHarnessSelector`.
+ *   `[data-action="prompt-harness-model"]` — the unified harness/model/effort trigger.
+ *     For this OpenCode-focused spec it opens the ordinary searchable model list.
  *   `[data-slot="list-item"]` (inside the model popover's `List`) — one row per
  *     visible+matching model; text = model name.
  *   `[data-action="prompt-add"]` — the `+` trigger (`add-menu.tsx`); `disabled` while
@@ -71,12 +66,8 @@
  *     BELOW a separator, under the four flat action entries the menu now leads with.
  *     There is no inline agent trigger any more, so the current agent is only
  *     observable by reopening the menu and reading `data-checked`.
- *   `[data-action="prompt-model-variant"]` — the effort/variant `Select` trigger. It now
- *     sits flush against `[data-action="prompt-model"]` so the two read as one control
- *     (`model-control.tsx`), and owns the pair's single chevron; it is still its own
- *     trigger with its own `[data-slot="select-select-item"]` options. Rendered only when
- *     `!harnessMode && variants().length > 1`, where `variants = ["default",
- *     ...currentModel.variants keys]` (`toolbar-state.ts:75`).
+ *   The unified popover adds an Effort section only when the current model has multiple
+ *     variants. Its button rows commit the same variant carried by prompt payloads.
  *   `[data-slot="select-select-item"]` / `[data-slot="select-select-item-label"]` — agent
  *     and variant option rows once a `Select` trigger is opened.
  *   `[data-slot="toast-title"]` — toast title text (`showToast` from `@opencode-ai/ui/
@@ -335,29 +326,20 @@ function paidProviderBody() {
   }
 }
 
-/** Adds a connected, priced "anthropic" provider so the picker has real models and
- * variants to offer. Registered AFTER installMockRuntime so it wins (Playwright
- * matches most-recently-registered first).
- *
- * STILL LIVE (re-verified 2026-07-25 at its current path) — worth noting for the shared
- * helper: `bootstrap.ts#fetchProvider` issues a
- * SEPARATE directory-scoped refetch to `/provider?harness=<type>` (query string) after
- * the initial bootstrap-seeded provider data lands, and unconditionally overwrites the
- * query cache with whatever that returns (`setProviderQuery` only preserves the
- * existing cache when the NEW payload is empty, not when it merely differs) — see
- * `src/app/boot/data/bootstrap.ts:369-415` (`setProviderQuery` at :375-384; the
- * empty-only guard is the explicit `if (empty) { … return }` at :376-382).
- * `mock-runtime.ts` and earlier versions of this
- * fixture used the bare glob "star-star-slash-provider" (no trailing wildcard), which
- * does NOT match a URL carrying a query string (verified empirically: Playwright's
- * glob-to-regex anchors the pattern's end), so that refetch silently fell through to
- * the REAL shared dev server and clobbered the mocked paid-provider list with the real
- * backend's single-provider response — the exact cause of "Sonnet 4.6"/"Opus 4.7" never
- * appearing in the popover. Fixed here with a trailing wildcard so both the bare and
- * query-string forms are intercepted; the underlying gap in the shared helper is
- * reported in this task's findings, not fixed here (out of scope — see task rules). */
+/** Adds a connected, priced Anthropic provider. Bootstrap supplies the canonical
+ * compact index (one configured default per connected provider); `/provider` supplies
+ * full details for explicit detail loading. Registered after the shared runtime so both
+ * routes own the catalog used by this scenario. */
 async function installPaidProviderFixture(page: Page, mock: MockRuntimeHandles) {
   const body = paidProviderBody()
+  const defaults: Record<string, string> = body.default
+  const index = {
+    ...body,
+    all: body.all.map((provider) => ({
+      ...provider,
+      models: Object.fromEntries(Object.entries(provider.models).filter(([id]) => defaults[provider.id] === id)),
+    })),
+  }
   await page.route("**/provider**", (route) => {
     if (!isApiRequest(route)) return route.continue()
     if (new URL(route.request().url()).pathname !== "/provider") return route.fallback()
@@ -373,7 +355,7 @@ async function installPaidProviderFixture(page: Page, mock: MockRuntimeHandles) 
         version: "1.0.0-test",
         path: { state: "", config: "", worktree: mock.session.dir, directory: mock.session.dir, home: "/tmp" },
         project: [{ id: mock.session.projectId, worktree: mock.session.dir, name: "mock-runtime", time: { created: Date.now(), updated: Date.now() } }],
-        provider: body,
+        provider: index,
         provider_auth: { opencode: [{ type: "api", label: "API key" }], anthropic: [{ type: "api", label: "API key" }] },
         config: { provider: { id: "opencode", model: "big-pickle-1" }, agent: { id: "build" } },
       }),
@@ -408,7 +390,7 @@ async function installNoModelFixture(page: Page, mock: MockRuntimeHandles) {
 }
 
 function modelTrigger(page: Page) {
-  return page.locator('[data-action="prompt-model"]').last()
+  return page.locator('[data-action="prompt-harness-model"]').last()
 }
 
 async function openModelPopover(page: Page) {
@@ -451,29 +433,32 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     expect(mock.requests.promptBodies[0]?.modelID).toBe("claude-sonnet-4-6")
   })
 
-  test("variant selector only renders for a multi-variant model, and the pick reaches the payload — behaviors 2", async ({ page }) => {
+  test("the Effort section only renders for a multi-variant model, and the pick reaches the payload — behavior 2", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await installPaidProviderFixture(page, mock)
     await seedOneProject(page, DIR)
     const input = await openDraftPrompt(page, DIR)
 
-    // Opus has zero variants configured in the fixture — no variant selector.
-    await pickModelFromPopover(page, "Opus 4.7")
-    await expect(modelTrigger(page)).toContainText("Opus 4.7", { timeout: 10_000 })
-    await expect(page.locator('[data-action="prompt-model-variant"]')).toHaveCount(0)
+    // Big Pickle has zero variants configured in the bootstrap index — no effort section.
+    await pickModelFromPopover(page, "Big Pickle")
+    await expect(modelTrigger(page)).toContainText("Big Pickle", { timeout: 10_000 })
+    await modelTrigger(page).click()
+    const opusPicker = page.locator('[data-component="harness-model-picker"]')
+    await expect(opusPicker.locator('[data-slot="harness-picker-section"]', { hasText: /^Effort/ })).toHaveCount(0)
+    await page.keyboard.press("Escape")
 
-    // Sonnet has {high, low} — the variant selector appears once it's current.
+    // Sonnet has {high, low} — the effort section appears once it's current.
     await pickModelFromPopover(page, "Sonnet 4.6")
     await expect(modelTrigger(page)).toContainText("Sonnet 4.6", { timeout: 10_000 })
-    const variantTrigger = page.locator('[data-action="prompt-model-variant"]').last()
-    await expect(variantTrigger).toBeVisible({ timeout: 10_000 })
-    await expect(variantTrigger).toContainText(/Default/i)
-
-    await variantTrigger.click()
-    const highOption = page.locator('[data-slot="select-select-item"]', { hasText: /^high$/i }).first()
+    await modelTrigger(page).click()
+    const picker = page.locator('[data-component="harness-model-picker"]')
+    const effortSection = picker.locator('[data-slot="harness-picker-section"]', { hasText: /^Effort/ })
+    await expect(effortSection).toContainText(/Default/i)
+    await effortSection.click()
+    const highOption = picker.getByRole("button", { name: /^high$/i })
     await expect(highOption).toBeVisible({ timeout: 10_000 })
     await highOption.click()
-    await expect(variantTrigger).toContainText(/high/i, { timeout: 10_000 })
+    await expect(modelTrigger(page)).toContainText(/high/i, { timeout: 10_000 })
 
     const promptText = "how hard did you think about this"
     await input.click()
@@ -499,14 +484,14 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     await expectAssistantReplyVisible(page, `ack 1: ${promptText}`)
 
     const patchesBeforeSwap = mock.requests.configPatchCount
-    await pickModelFromPopover(page, "Opus 4.7")
-    await expect(modelTrigger(page)).toContainText("Opus 4.7", { timeout: 10_000 })
+    await pickModelFromPopover(page, "Big Pickle")
+    await expect(modelTrigger(page)).toContainText("Big Pickle", { timeout: 10_000 })
 
     await expect
       .poll(() => mock.requests.configPatchCount, { timeout: 15_000 })
       .toBeGreaterThan(patchesBeforeSwap)
     const swapPatch = mock.requests.configPatchBodies.at(-1)?.body as { model?: { providerID?: string; modelID?: string } } | undefined
-    expect(swapPatch?.model).toMatchObject({ providerID: "anthropic", modelID: "claude-opus-4-7" })
+    expect(swapPatch?.model).toMatchObject({ providerID: "opencode", modelID: "big-pickle-1" })
   })
 
   test("a freshly picked model survives a page reload of the same draft — behavior 4", async ({ page }) => {
@@ -515,8 +500,8 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     await seedOneProject(page, DIR)
     await openDraftPrompt(page, DIR)
 
-    await pickModelFromPopover(page, "Opus 4.7")
-    await expect(modelTrigger(page)).toContainText("Opus 4.7", { timeout: 10_000 })
+    await pickModelFromPopover(page, "Big Pickle")
+    await expect(modelTrigger(page)).toContainText("Big Pickle", { timeout: 10_000 })
 
     // The pick is persisted into the catalog's global "recent" list — wait for the
     // actual localStorage write (deterministic poll, not a sleep) before reloading.
@@ -527,7 +512,7 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
           if (!raw) return null
           try {
             const parsed = JSON.parse(raw) as { recent?: Array<{ modelID?: string }> }
-            return parsed.recent?.some((m) => m.modelID === "claude-opus-4-7") ?? false
+            return parsed.recent?.some((m) => m.modelID === "big-pickle-1") ?? false
           } catch {
             return null
           }
@@ -538,7 +523,7 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
 
     await page.reload({ waitUntil: "domcontentloaded" })
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
-    await expect(modelTrigger(page)).toContainText("Opus 4.7", { timeout: 20_000 })
+    await expect(modelTrigger(page)).toContainText("Big Pickle", { timeout: 20_000 })
   })
 
   test("zero-paid-provider path still opens the standard model picker — behavior 5", async ({ page }) => {
@@ -602,6 +587,37 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     await expect.poll(() => mock.requests.promptCount, { timeout: 15_000 }).toBe(1)
     await expectAssistantReplyVisible(page, `ack 1: ${promptText}`)
     expect(mock.requests.promptBodies[0]?.agent).toBe("review")
+  })
+
+  test("session config rejects a harness identity change with the canonical 409 contract", async ({ page }) => {
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    await seedOneProject(page, DIR)
+    await openDraftPrompt(page, DIR)
+
+    const result = await page.evaluate(async ({ directory, sessionID }) => {
+      const response = await fetch(`/session/${sessionID}/config?directory=${encodeURIComponent(directory)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ harness: { type: "claude-acp" } }),
+      })
+      return { status: response.status, body: await response.json() }
+    }, { directory: DIR, sessionID: SESSION_ID })
+
+    expect(result).toEqual({
+      status: 409,
+      body: {
+        ok: false,
+        error: {
+          code: "unsupported_operation",
+          operation: "harness_switch",
+          capability: "session_harness",
+          harness: "opencode",
+          transport: "opencode",
+          reason: "harness_switch_not_supported",
+          message: "opencode sessions cannot switch to claude through session config patch",
+        },
+      },
+    })
   })
 
   // Behavior 7 (former fixme, deleted): the agent picker is now positively gated to the

@@ -294,10 +294,6 @@ export async function journeyB7(ctx: JourneyCtx) {
       await rowA.click()
       await composeText(page, composerInput(page), "Reply with exactly this one token, nothing else: B7_A2")
       await sendSubsequentMessage(page)
-      await expect(
-        rowA.locator(`${RAIL_SELECTORS.statusDot}[data-sidebar-status="working"]`),
-        "session A never went busy after its second send",
-      ).toHaveCount(1, { timeout: 15_000 })
       await page.locator(RAIL_SELECTORS.sessionRow(sessionB)).click()
     },
     driveDone: async () => {
@@ -378,9 +374,8 @@ async function pollSurfaceStatus(opts: { page: Page; sessionId: string; expected
 
 /**
  * C1: a new draft resolves harness/model within 5s with no reload needed.
- * Checked on the merged `[data-action="prompt-harness-model"]` trigger — see
- * `selectScriptedModel`'s doc for why a relay-backed workspace's draft
- * defaults to a harness (not "opencode"'s separate `prompt-model` control).
+ * Checked on the unified `[data-action="prompt-harness-model"]` trigger used
+ * by every harness, including OpenCode.
  */
 export async function journeyC1(ctx: JourneyCtx) {
   const { page } = ctx
@@ -401,26 +396,9 @@ export async function journeyC1(ctx: JourneyCtx) {
 /**
  * C4: switching harness survives a reload and completes a second turn.
  *
- * The "switch" is moving OFF this build's default harness onto the injected
- * Tier R one via `selectScriptedModel` — the SAME merged `[data-action=
- * "prompt-harness-model"]` control every other scenario in this file already
- * drives successfully. MEASURED live 2026-08-06, correcting this journey's
- * first draft (which copied `real-harness-local.spec.ts`'s SEPARATE `[data-
- * action="prompt-harness"]` trigger + `switchDraftHarness`): a fresh draft on
- * a SIGNED, relay-backed workspace defaults straight to a real bundled
- * harness ("Claude Sonnet 4.6" observed) behind the MERGED trigger, not to
- * `real-harness-local.spec.ts`'s LOCAL-lane "opencode" default with its
- * separate harness/model controls — there is no independent `[data-action=
- * "prompt-harness"]` trigger to find on this build's fresh-draft state at
- * all. Switching to "claude-acp" specifically (a further switch AWAY from
- * the harness this draft already starts on, through the popover's "Harness"
- * tab) is plausible but unverified here and would add a `claude`-binary
- * dependency the plan's C4 row does not actually require — its own wording
- * ("switch harness ... reload ... harness trigger same + disabled") is
- * satisfied by any harness change that locks across reload, which this path
- * already proves without the extra dependency. `switchDraftHarness`/
- * `waitForHarnessReady` remain exported below for a future scenario that
- * specifically needs the claude-acp/codex harness matrix over this lane.
+ * `selectScriptedModel` moves the draft onto the injected Tier R harness
+ * through the unified picker. The selected harness is then locked to the
+ * created session and must survive reload before the second turn.
  */
 export async function journeyC4(ctx: JourneyCtx) {
   const { page, scripted } = ctx

@@ -71,7 +71,7 @@ afterEach(() => {
 })
 
 describe("SessionContent", () => {
-  test("renders workspace-less central sessions in a global pane scope", () => {
+  test("does not invent a directory for workspace-less non-Pi central sessions", () => {
     render(() => (
       <SessionContent
         meta={{
@@ -93,7 +93,37 @@ describe("SessionContent", () => {
       />
     ))
 
-    expect(screen.getByTestId("session-pane-scope")).toHaveAttribute("data-directory", "global")
+    expect(screen.getByTestId("central-session-content")).toHaveTextContent("Session unavailable")
+    expect(screen.queryByTestId("session-pane-scope")).toBeNull()
+    expect(screen.queryByTestId("session-page")).toBeNull()
+    expect(calls.directoryScope).not.toHaveBeenCalled()
+    expect(calls.sessionPage).not.toHaveBeenCalled()
+  })
+
+  test("renders a directory-less Pi central session without synthesizing a directory", () => {
+    render(() => (
+      <SessionContent
+        meta={{
+          id: "central-pi-surface",
+          type: "session",
+          scope: "global",
+          sessionId: "ses_pi",
+          content: {
+            type: "session",
+            sessionId: "ses_pi",
+            sessionRef: {
+              sessionId: "ses_pi",
+              host: "central",
+              harness: { id: "pi" },
+              toolSandbox: { kind: "virtual" },
+            },
+          },
+        }}
+        ctx={{ paneId: "pane-1", isVisible: () => true }}
+      />
+    ))
+
+    expect(screen.getByTestId("session-pane-scope")).toHaveAttribute("data-directory", "")
     expect(screen.getByTestId("session-page")).toBeTruthy()
     expect(calls.directoryScope).toHaveBeenCalledOnce()
     expect(calls.sessionPage).toHaveBeenCalledOnce()

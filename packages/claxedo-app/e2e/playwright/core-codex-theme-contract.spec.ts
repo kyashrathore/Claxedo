@@ -29,27 +29,27 @@ test.describe("Codex theme contract @core", () => {
         const overlay = add({ "data-surface": "overlay", "data-overlay-shell": "menu" })
         const card = add({}, "ui-context-card is-floating")
         const root = getComputedStyle(document.documentElement)
+        const stroke = "0 0 0 0.5px color-mix(in oklab, var(--text-strong) 12%, transparent)"
+        const prominent = `${stroke}, 0 3px 7.5px #0000000a, 0 0 20px #0000000d`
+        const sidebar = `${stroke}, 0 3px 7.5px #00000008, 0 0 16px #00000005`
 
         return {
           scheme: root.colorScheme,
-          textStrong: root.getPropertyValue("--text-strong").trim(),
-          stroke: root.getPropertyValue("--elevation-stroke").trim(),
-          prominent: root.getPropertyValue("--elevation-prominent").trim(),
-          sidebar: root.getPropertyValue("--elevation-sidebar").trim(),
+          stroke: resolveShadow(root.getPropertyValue("--elevation-stroke")),
+          prominent: resolveShadow(root.getPropertyValue("--elevation-prominent")),
+          sidebar: resolveShadow(root.getPropertyValue("--elevation-sidebar")),
           overlay: getComputedStyle(overlay).boxShadow,
           card: getComputedStyle(card).boxShadow,
-          expectedProminent: resolveShadow(
-            "0 0 0 .5px color-mix(in oklab, var(--text-strong) 12%, transparent), " +
-              "0 3px 7.5px #0000000a, 0 0 20px #0000000d",
-          ),
+          expectedStroke: resolveShadow(stroke),
+          expectedProminent: resolveShadow(prominent),
+          expectedSidebar: resolveShadow(sidebar),
         }
       })
 
-      const expectedStrokeToken = `0 0 0 0.5px color-mix(in oklab, ${result.textStrong} 12%, transparent)`
       expect(result.scheme).toBe(scheme)
-      expect(result.stroke).toBe(expectedStrokeToken)
-      expect(result.prominent).toBe(`${expectedStrokeToken}, 0 3px 7.5px #0000000a, 0 0 20px #0000000d`)
-      expect(result.sidebar).toBe(`${expectedStrokeToken}, 0 3px 7.5px #00000008, 0 0 16px #00000005`)
+      expect(result.stroke).toBe(result.expectedStroke)
+      expect(result.prominent).toBe(result.expectedProminent)
+      expect(result.sidebar).toBe(result.expectedSidebar)
       expect(result.overlay).toBe(result.expectedProminent)
       expect(result.card).toBe(result.expectedProminent)
     })

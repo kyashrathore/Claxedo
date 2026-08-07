@@ -14,6 +14,8 @@
 // why (Playwright's `route.fulfill` cannot drip a body over time, so we use the app's
 // own SSE-reconnect loop as the delivery mechanism).
 import type { Page, Route } from "@playwright/test"
+import type { SessionHarness } from "../../../agent-sdk-runtime/src"
+import { normalizeHarnessIdentity } from "../../../agent-sdk-runtime/src/harness-types"
 import {
   assistantIdForUserMessage,
   parseSessionPromptRequest,
@@ -412,7 +414,6 @@ export type MockRuntimeOptions = {
    * enforces "a harness is locked once the session is created" (e2e/INVARIANTS.md
    * cross-cutting invariant #1) with zero e2e coverage.
    */
-  configPatchHarnessSwitchFailure?: boolean
   /** Stage timings, in ms, all optional — sane defaults keep specs fast. */
   timingsMs?: { busy?: number; pending?: number; delta?: number; completed?: number; idle?: number }
   /**
@@ -690,6 +691,41 @@ function providerIdFor(harness: Harness): string {
   return harness === "opencode" ? "opencode" : harness
 }
 
+function sessionHarnessFor(harness: Harness) {
+  const identity = normalizeHarnessIdentity(harness)
+  if (!identity) throw new Error(`Invalid mock harness identity: ${harness}`)
+  return identity
+}
+
+function sameSessionHarness(current: SessionHarness, requested: SessionHarness) {
+  return current.id === requested.id
+    && current.access === requested.access
+    && (requested.connection === undefined
+      || JSON.stringify(current.connection ?? null) === JSON.stringify(requested.connection))
+}
+
+export function providerCatalogIndex(input: {
+  all: Array<{ id: string; name: string; models: Record<string, unknown> }>
+  connected: string[]
+  default: Record<string, string>
+}) {
+  const connected = new Set(input.connected)
+  return {
+    all: input.all.map((provider) => {
+      const modelID = input.default[provider.id]
+      return {
+        id: provider.id,
+        name: provider.name,
+        models: connected.has(provider.id) && modelID && provider.models[modelID]
+          ? { [modelID]: provider.models[modelID] }
+          : {},
+      }
+    }),
+    connected: input.connected,
+    default: input.default,
+  }
+}
+
 function defaultReplyText(turn: number, promptText: string) {
   return `ack ${turn}: ${promptText}`
 }
@@ -742,6 +778,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // hydrate GET path (behaviors 2-9, which DO pre-seed) never sends a body, so this
   // reassignment is a no-op for every other scenario in this file.
   let harness = options.harness ?? "opencode"
+  let savedModel: { providerID: string; modelID: string } | null | undefined
+  let savedAgent: string | null | undefined
+  let savedVariant: string | null | undefined
   const harnessModels = { ...DEFAULT_HARNESS_MODELS, ...options.harnessModels }
   const replyTextFn = options.replyText ?? defaultReplyText
   const timings = {
@@ -891,20 +930,14 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   }
 
   function sessionConfig() {
-    const model = harnessModel()
-    if (harness === "opencode") {
-      return {
-        harness: { type: "opencode", model: model.id, status: "ready", ready: true },
-        model: { providerID: "opencode", modelID: model.id },
-        provider: { id: "opencode", model: model.id },
-        agent: "build",
-      }
-    }
+    const model = savedModel === undefined
+      ? { providerID: providerIdFor(harness), modelID: harnessModel().id }
+      : savedModel
     return {
-      harness: { type: harness, model: model.id, ...harnessStatusPayload() },
-      model: { providerID: providerIdFor(harness), modelID: model.id },
-      provider: { id: providerIdFor(harness), model: model.id },
-      agent: "build",
+      harness: sessionHarnessFor(harness),
+      ...(model ? { model } : {}),
+      agent: savedAgent === undefined ? "build" : savedAgent,
+      ...(savedVariant === undefined ? {} : { variant: savedVariant }),
     }
   }
 
@@ -1204,6 +1237,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   const CLOUD_PROJECT_NAME = cloud?.projectName ?? `cloud-${CLOUD_WORKSPACE_ID}`
   const CLOUD_SESSION_ID = `ses_cloud_${CLOUD_WORKSPACE_ID}`
   let cloudHarness: Harness = cloud?.harness ?? "opencode"
+  let cloudSavedModel: { providerID: string; modelID: string } | null | undefined
+  let cloudSavedAgent: string | null | undefined
+  let cloudSavedVariant: string | null | undefined
   let cloudMessages: MockMessageRow[] = []
   let cloudSessionCreated = false
 
@@ -1216,20 +1252,14 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // is unconditionally "ready" the instant a harness is picked, so there is
   // no draft-time "applying"/"error" state to model here.
   function cloudSessionConfig() {
-    const model = cloudHarnessModel()
-    if (cloudHarness === "opencode") {
-      return {
-        harness: { type: "opencode", model: model.id, status: "ready", ready: true },
-        model: { providerID: "opencode", modelID: model.id },
-        provider: { id: "opencode", model: model.id },
-        agent: "build",
-      }
-    }
+    const model = cloudSavedModel === undefined
+      ? { providerID: providerIdFor(cloudHarness), modelID: cloudHarnessModel().id }
+      : cloudSavedModel
     return {
-      harness: { type: cloudHarness, model: model.id, status: "ready", ready: true },
-      model: { providerID: providerIdFor(cloudHarness), modelID: model.id },
-      provider: { id: providerIdFor(cloudHarness), model: model.id },
-      agent: "build",
+      harness: sessionHarnessFor(cloudHarness),
+      ...(model ? { model } : {}),
+      agent: cloudSavedAgent === undefined ? "build" : cloudSavedAgent,
+      ...(cloudSavedVariant === undefined ? {} : { variant: cloudSavedVariant }),
     }
   }
 
@@ -1488,7 +1518,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
           version: "1.0.0-test",
           path: { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" },
           project: [localProjectRow(), ...(cloud ? [cloudProjectRow()] : [])],
-          provider: providerResponse(),
+          provider: providerCatalogIndex(providerResponse()),
           provider_auth: { [providerIdFor(harness)]: [{ type: "api", label: "API key" }] },
           config: { provider: { id: providerIdFor(harness), model: harnessModel().id }, agent: { id: "build" } },
         })
@@ -2197,32 +2227,29 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       } catch {
         body = undefined
       }
-      requests.configPatchBodies.push({ body: parseSessionConfigPatch(body, url) })
+      const update = parseSessionConfigPatch(body, url)
+      requests.configPatchBodies.push({ body: update })
+      const currentHarness = sessionHarnessFor(harness)
       if (options.configPatchFailure) {
         // Deliberately NOT the route's 409: this option simulates an adapter/transport
         // blowup, which really can surface as a 500. The route's own 409 harness-switch
-        // failure is a separate path — see `configPatchHarnessSwitchFailure` below.
+        // failure is enforced by the canonical identity check below.
         return json(route, { error: "could not save session config" }, 500)
       }
-      if (options.configPatchHarnessSwitchFailure) {
-        // CONTRACT: the route's ONE self-generated failure. The client sends
-        // `harness.type` on EVERY save (submit-transport.ts:186-193), so the real
-        // server runs `sameSessionHarness` on every PATCH and answers a mismatch with
-        // this exact 409 envelope. Nothing exercised it before.
+      if (update.harness && !sameSessionHarness(currentHarness, update.harness)) {
         return json(
           route,
           sessionConfigPatchHarnessSwitchBody({
-            currentHarnessId: harness,
-            requestedHarnessId: String(
-              (body as { harness?: { type?: unknown; id?: unknown } } | undefined)?.harness?.id
-                ?? (body as { harness?: { type?: unknown } } | undefined)?.harness?.type
-                ?? "unknown",
-            ),
-            transport: "local",
+            currentHarnessId: currentHarness.id,
+            requestedHarnessId: update.harness.id,
+            transport: currentHarness.id,
           }),
           SESSION_CONFIG_PATCH_HARNESS_SWITCH_STATUS,
         )
       }
+      if (update.model !== undefined) savedModel = update.model
+      if (update.agent !== undefined) savedAgent = update.agent
+      if (update.variant !== undefined) savedVariant = update.variant
       // CONTRACT: the real route returns the full `SessionConfig`
       // (`c.json(config)`, session-core.ts:571) — NOT `{ ok: true }`. The old
       // acknowledgement was doubly wrong: it is the wrong shape, and its `ok` key
@@ -2613,7 +2640,28 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
 
     await page.route(`${base}/session/*/config**`, async (route) => {
       if (!api(route)) return route.continue()
-      if (route.request().method() === "PATCH") return json(route, { ok: true })
+      if (route.request().method() === "PATCH") {
+        const url = route.request().url()
+        const update = parseSessionConfigPatch(route.request().postDataJSON(), url)
+        const currentHarness = sessionHarnessFor(cloudHarness)
+        if (update.harness && !sameSessionHarness(currentHarness, update.harness)) {
+          return json(
+            route,
+            sessionConfigPatchHarnessSwitchBody({
+              currentHarnessId: currentHarness.id,
+              requestedHarnessId: update.harness.id,
+              transport: currentHarness.id,
+            }),
+            SESSION_CONFIG_PATCH_HARNESS_SWITCH_STATUS,
+          )
+        }
+        if (update.model !== undefined) cloudSavedModel = update.model
+        if (update.agent !== undefined) cloudSavedAgent = update.agent
+        if (update.variant !== undefined) cloudSavedVariant = update.variant
+        const saved = cloudSessionConfig()
+        assertSessionConfigPatchResponse(saved, url)
+        return json(route, saved, SESSION_CONFIG_PATCH_SUCCESS_STATUS)
+      }
       return json(route, cloudSessionConfig())
     })
     await page.route(`${base}/session/*/capabilities**`, (r) =>

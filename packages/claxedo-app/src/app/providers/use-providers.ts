@@ -3,9 +3,10 @@ import { createMemo } from "solid-js"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
 import { useWorkspaceQuery } from "../../features/workspaces/data/use-workspace-query"
 import type { NormalizedProviderListResponse } from "@/platform/query/provider-list"
-import { popularProviders, normalizeProviderList, type ProviderListResponse } from "@/platform/query/provider-list"
+import { popularProviders } from "@/platform/query/provider-list"
 import { loadProviderDetailsOnce, updateProviderQueryData } from "@/platform/query/provider-cache"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
+import { providerDetailsQuery } from "@/platform/query/control-plane"
 
 export { popularProviders } from "@/platform/query/provider-list"
 
@@ -103,15 +104,15 @@ export function useProviders(harnessType?: string | (() => string | undefined)) 
   const load = (providerId: string) => {
     const queryKey = providerOptions().queryKey
     return loadProviderDetailsOnce(queryKey, providerId, async () => {
-      const params = new URLSearchParams({ provider: providerId })
-      if (harness()) params.set("harness", harness()!)
-      if (dir()) params.set("directory", dir())
-      const pathname = `/provider?${params.toString()}`
-      const response = sdk
-        ? await sdk.request(pathname, { headers: { Accept: "application/json" } })
-        : await authFetch(new URL(pathname, getClaxedoServerUrl()), { headers: { Accept: "application/json" } })
-      if (!response.ok) throw new Error((await response.text()) || `Failed to load ${providerId} models`)
-      const detail = normalizeProviderList(await response.json() as ProviderListResponse)
+      const detail = await providerDetailsQuery({
+        baseUrl: getClaxedoServerUrl(),
+        providerId,
+        directory: dir() || null,
+        harnessType: harness(),
+        request: sdk
+          ? (url, init) => sdk.request(`${url.pathname}${url.search}`, init)
+          : authFetch,
+      }).queryFn()
       const provider = detail.all.get(providerId)
       if (!provider) throw new Error(`Provider ${providerId} was not returned by the runtime`)
       mergeProviderQuery({

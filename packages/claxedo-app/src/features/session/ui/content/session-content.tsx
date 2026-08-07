@@ -4,7 +4,7 @@ import { useClaxedoState } from "@/features/session/app-ports"
 import type { PaneCtx } from "@/features/session/app-ports"
 import { SessionPaneScope } from "../components/session-pane-scope"
 import SessionPage from "@/features/session/ui/session-screen"
-import { hasBacking, localSessionRefForDirectory, retargetSessionRef } from "@/platform/identity/session-ref"
+import { hasBacking, isDirectorylessPiSession, localSessionRefForDirectory, retargetSessionRef } from "@/platform/identity/session-ref"
 import { SessionLoadingSurface } from "./session-loading-surface"
 import { SessionEnvironmentCardMount } from "./session-environment-card"
 
@@ -64,8 +64,14 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
     return dir && dir !== "/workspace" ? dir : undefined
   })
   const paneDirectory = () => {
-    if (effectiveSessionRef()?.host === "central") return directory() ?? fallbackDirectory() ?? "global"
-    if (canRenderWorkspaceScope()) return directory()
+    const ref = effectiveSessionRef()
+    if (ref?.host === "central") {
+      const value = directory() ?? fallbackDirectory()
+      if (value !== undefined) return { value }
+      if (isDirectorylessPiSession({ sessionRef: ref })) return { value: "" }
+      return
+    }
+    if (canRenderWorkspaceScope() && directory() !== undefined) return { value: directory()! }
     return undefined
   }
   const [centralFallbackExpired, setCentralFallbackExpired] = createSignal(false)
@@ -142,7 +148,7 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
           >
             {(dir) => (
               <SessionPaneScope
-                directory={dir()}
+                directory={dir().value}
                 sessionRef={effectiveSessionRef}
                 active={activeForHydration}
                 sessionId={() => sessionId()}
@@ -151,7 +157,7 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
                 leafId={() => meta().id}
                 connectionFallback={requiresSessionRef() ? realSessionLoading() : undefined}
                 onNavigateToSession={(nextSessionId) =>
-                  state.layout.openSession(dir(), nextSessionId, "Session", {
+                  state.layout.openSession(dir().value, nextSessionId, "Session", {
                     sessionRef: retargetSessionRef({
                       sessionId: nextSessionId,
                       source: effectiveSessionRef(),
@@ -163,7 +169,7 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
                   data-testid="session-content"
                   data-content-id={meta().id}
                   data-session-id={sessionId() ?? ""}
-                  data-session-directory={dir()}
+                  data-session-directory={dir().value}
                 >
                   <div class="session-envcard-primary">{sessionPage()}</div>
                   {/* Not on a draft session. The card reports on a session that

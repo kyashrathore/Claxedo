@@ -1159,7 +1159,10 @@ describe("workspace runtime route audit", () => {
     expect(appShellStateText).toMatch(/sessionInventoryQueryOptions/)
     expect(routeBridgeText).toMatch(/inventory: \(\) => \(\{/)
     expect(routeBridgeText).toMatch(/routeSessionCacheQuery\.data\?\.session\.find\(\(s\) => s\.id === id\)/)
-    expect(routeBridgeText).toMatch(/sessionTitleFromSources\(\{[\s\S]*directorySessions,[\s\S]*inventory: \{/)
+    expect(routeBridgeText).toMatch(/const sessionTitleFromInventory/)
+    expect(routeBridgeText).toMatch(
+      /sessionTitleFromSources\(\{[\s\S]*directorySessions,[\s\S]*inventoryIndex: sessionTitleInventoryIndex\(\)/,
+    )
     expect(sessionTitleSyncText).toMatch(
       /input\.directorySessions\?\.\(input\.directory\)\.find\(\(session\) => session\.id === input\.sessionId\)/,
     )
@@ -2964,7 +2967,9 @@ describe("workspace runtime route audit", () => {
     // mounts only through Workbench's DirectoryScope (per pane) and the
     // review workspace, never through the route subtree.
     expect(directoryLayout).not.toMatch(/<PromptProvider/)
-    expect(directoryScopeText).toMatch(/<PromptProvider directory=\{props\.directory\} sessionId=\{props\.sessionId\}>/)
+    expect(directoryScopeText).toMatch(
+      /<PromptProvider directory=\{props\.directory\} sessionId=\{props\.sessionId\} draftId=\{props\.surfaceId\}>/,
+    )
     expect(reviewWorkspace).toMatch(/<PromptProvider directory=\{props\.directory\} sessionId=\{props\.sessionId\}>/)
   })
 

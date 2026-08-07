@@ -5,7 +5,7 @@ import { Tag } from "@opencode-ai/ui/tag"
 import { showToast } from "@opencode-ai/ui/toast"
 import { popularProviders } from "@/platform/query/provider-list"
 import { DialogAIConnect, DialogConnectProvider, DialogCustomProvider, DialogSelectProvider, useGlobalSDK, useProviders, useShellQueryOptions as useQueryOptions } from "@/features/settings/app-ports"
-import { createMemo, type Component, For, Show } from "solid-js"
+import { createEffect, createMemo, type Component, For, Show } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import type { Config } from "@opencode-ai/sdk/v2/client"
 import type { NormalizedProviderListResponse } from "@/platform/query/provider-list"
@@ -61,6 +61,20 @@ export const SettingsProviders: Component = () => {
     if (value === "env" || value === "api" || value === "config" || value === "custom") return value
     return
   }
+
+  createEffect(() => {
+    const ids = providerList().connected.filter((id) => {
+      const provider = providerList().all.get(id)
+      return provider && source(provider) === undefined
+    })
+    if (ids.length === 0) return
+    void Promise.all(ids.map((id) => providers.load(id))).catch((err: unknown) => {
+      showToast({
+        title: language.t("common.requestFailed"),
+        description: err instanceof Error ? err.message : String(err),
+      })
+    })
+  })
 
   const type = (item: ProviderItem) => {
     const current = source(item)

@@ -51,7 +51,7 @@ describe("Existing-session config persistence (rubric C1 dedupe)", () => {
       model: { providerID: "new-provider", modelID: "new-model" },
     })
     expect(queryClient.getQueryData(sessionConfigRawQueryKey("session-existing"))).toEqual({
-      harness: { type: "opencode" },
+      harness: { id: "opencode", access: "native" },
       agent: "review",
       model: { providerID: "new-provider", modelID: "new-model" },
     })

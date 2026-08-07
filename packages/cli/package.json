@@ -32,6 +32,7 @@
     "@opencode-ai/script": "workspace:*",
     "@tsconfig/bun": "catalog:",
     "@types/bun": "catalog:",
+    "@types/node": "catalog:",
     "@typescript/native-preview": "catalog:",
     "@tsconfig/node-lts": "22.0.4"
   }

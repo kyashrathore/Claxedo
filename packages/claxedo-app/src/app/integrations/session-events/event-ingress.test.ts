@@ -40,6 +40,41 @@ function claxedoEventSource() {
 }
 
 describe("global sync event ingress", () => {
+  test("invalidates the paginated session list for a plain session.created event", () => {
+    queryClient.clear()
+    const globalEvents = eventSource()
+    const key = ["shell", "default", "sessionList", { directory: "/repo" }] as const
+    queryClient.setQueryData(key, { session: [], total: 0 })
+    const dispose = createGlobalSyncEventIngress({
+      globalEvents: globalEvents.source,
+      claxedoEvents: undefined,
+      projects: () => [],
+      projectFor: () => undefined,
+      children: {
+        directories: () => [],
+        has: () => false,
+        mark: () => undefined,
+        sessionCache: () => ({ session: [], total: 0, limit: 0, at: 0 }),
+      },
+      push: () => undefined,
+      refresh: () => undefined,
+      setGlobalProject: () => undefined,
+      sessionInventoryLoaded: () => false,
+      applySessionEvent: () => undefined,
+      draftWasRolledBack: () => false,
+      cacheSessions: () => undefined,
+      sessionCacheLimit: (_directory, fallback) => fallback,
+    })
+
+    globalEvents.emit({
+      name: "/repo",
+      details: { type: "session.created", properties: { info: { id: "ses_created" } } },
+    })
+
+    expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true)
+    dispose()
+  })
+
   test("projects targeted session todo events even when the directory is not a registered child", () => {
     queryClient.clear()
     const globalEvents = eventSource()

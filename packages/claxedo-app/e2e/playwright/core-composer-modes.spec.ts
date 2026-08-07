@@ -721,15 +721,12 @@ test.describe("core composer modes @core", () => {
     await expect(page.locator('img[alt="draft-image.png"]')).toBeVisible({ timeout: 10_000 })
   })
 
-  test("a draft survives navigating away to a different page and back — behavior 21", async ({ page }) => {
+  test("draft text is scoped to its surface and does not leak into a later draft surface — behavior 21", async ({ page }) => {
     test.setTimeout(120_000)
-    // "Different workspace" is realized here as a navigation from the draft ("new
-    // session") composer scope to an existing, already-created session's own composer
-    // scope in the SAME project (`Persist.scoped(dir, id, "prompt")` keys on `id`, so a
-    // real session is a genuinely different draft scope) and back — this exercises a real
-    // in-app route change without the two-project bootstrap/localStorage reconciliation
-    // this mock does not model (see mock-runtime.ts's single-`dir` `sessionRow`/`project`
-    // shape).
+    // Draft persistence is keyed by the workbench surface identity. Navigating to an
+    // existing session and then opening a new draft creates distinct surfaces, so neither
+    // composer may inherit text from the first draft even though all three routes share a
+    // project directory.
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await seedProjects(page, [DIR])
 
@@ -758,6 +755,6 @@ test.describe("core composer modes @core", () => {
     await expect(editorSession).toHaveText("", { timeout: 10_000 })
 
     const editorAAgain = await openDraftPrompt(page, DIR)
-    await expect(editorAAgain).toContainText("draft in the new-session composer", { timeout: 30_000 })
+    await expect(editorAAgain).toHaveText("", { timeout: 30_000 })
   })
 })

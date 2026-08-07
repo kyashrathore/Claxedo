@@ -78,17 +78,12 @@
  *     toast (`@opencode-ai/ui/toast`), title is the literal string
  *     `"Failed to create cloud workspace"` (hardcoded in `submit-directory.ts`, not
  *     translated) for BOTH failure shapes.
- *   The composer's new-session workspace picker (`session-new-design-view.tsx`) — the
- *     Local/Cloud environment control, currently mid-redesign and therefore present in
- *     TWO shapes that `selectCloudEnvironment` (below) drives interchangeably: the
- *     committed `role="group" aria-label="Workspace environment"` segmented control
- *     (paired with `role="group" aria-label="Workspace source"`, both sharing
- *     `data-slot="workspace-segmented-control"`), and the in-flight `SessionContextRow`
- *     chip (`[data-slot="context-chip-environment"]` popover trigger over
- *     `[data-slot="list-item"][data-key="local"|"cloud"]` rows). Either way, picking
- *     "cloud" on a project with zero existing cloud workspaces auto-selects "Create new"
- *     (`creatingWorkspace` in `session-new-workspace-options.ts`), showing
- *     "New cloud sandbox".
+ *   The composer's new-session workspace picker (`session-new-design-view.tsx`) uses the
+ *     `[data-slot="context-chip-environment"]` popover trigger over
+ *     `[data-slot="list-item"][data-key="local"|"cloud"]` rows. Picking "cloud" on a
+ *     project with zero existing cloud workspaces auto-selects "Create new"
+ *     (`creatingWorkspace` in `session-new-workspace-options.ts`), showing "New cloud
+ *     sandbox".
  *
  * BEHAVIORS —
  *   1. Landing on a cloud workspace whose runtime is not yet ready renders the 4-step
@@ -136,7 +131,12 @@
  */
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test"
 import { expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"
-import { installMockRuntime } from "../helpers/mock-runtime"
+import { installMockRuntime, providerCatalogIndex } from "../helpers/mock-runtime"
+import {
+  assertSessionConfigPatchResponse,
+  parseSessionConfigPatch,
+  SESSION_CONFIG_PATCH_SUCCESS_STATUS,
+} from "../helpers/contracts/session-config"
 
 const DIR = "/tmp/e2e-core-cloud-provisioning"
 const PROJECT_ID = "proj_core_cloud_provisioning"
@@ -195,82 +195,17 @@ function wait(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
-// The empty-draft composer's Local/Cloud environment picker exists in TWO
-// shapes right now, and this spec has to run against both:
-//
-//   "segmented" (committed `dev`) — `session-new-design-view.tsx` renders a
-//     `role="group" aria-label="Workspace environment"` segmented control
-//     (`data-slot="workspace-segmented-control"`) holding two `aria-pressed`
-//     buttons whose accessible names are "Local workspace"/"Cloud workspace"
-//     and whose text is the bare kind. NOTE the same `data-slot` is ALSO used
-//     by the sibling "Workspace source" group, so the group must be addressed
-//     by its role+aria-label, never by that slot alone.
-//   "chip" (in-flight, uncommitted `session-context-row.tsx` redesign) — the
-//     picker becomes a `SessionContextRow` chip: a Kobalte `Popover` whose
-//     trigger carries `data-slot="context-chip-environment"` and a STATIC
-//     `aria-label="Workspace environment"` (so it is a BUTTON with that name,
-//     never a group), over `@opencode-ai/ui` `List` rows keyed by `data-key`
-//     with no ARIA listbox/option roles — hence the structural selectors,
-//     matching how core-harness-ownership-cloud.spec.ts drives the same row.
-//
-// TODO(cleanup): DELETE the "segmented" branch — and collapse
-// `resolveEnvironmentPicker` back into a plain locator — once
-// `src/features/session/ui/components/session-context-row.tsx` is committed and
-// the segmented control is gone from `dev`. This dual-shape support is a
-// deliberately temporary bridge, not a permanent contract.
-type EnvironmentPicker =
-  | { readonly shape: "segmented"; readonly group: Locator }
-  | { readonly shape: "chip"; readonly trigger: Locator }
-
-// Requires EXACTLY ONE shape to be present. Two shapes at once, or zero, throws
-// with both counts — a silent fall-through to the other branch would let this
-// spec "pass" against a picker that never rendered at all, which is precisely
-// the failure mode (a 120s timeout on a deleted `role="group"`) that this
-// helper exists to make legible.
-async function resolveEnvironmentPicker(page: Page): Promise<EnvironmentPicker> {
-  const group = page.getByRole("group", { name: "Workspace environment" }).filter({ visible: true })
-  const trigger = page.locator('[data-slot="context-chip-environment"]').filter({ visible: true })
-  const deadline = Date.now() + 20_000
-  let seen = "not polled"
-  for (;;) {
-    const [segmented, chip] = await Promise.all([group.count(), trigger.count()])
-    if (segmented === 1 && chip === 0) return { shape: "segmented", group }
-    if (chip === 1 && segmented === 0) return { shape: "chip", trigger }
-    seen = `segmented=${segmented}, chip=${chip}`
-    if (Date.now() >= deadline) break
-    await page.waitForTimeout(250)
-  }
-  throw new Error(
-    `Workspace environment picker: expected EXACTLY ONE supported shape, found ${seen}. ` +
-      `Looked for the legacy segmented control (role="group" aria-label="Workspace environment") ` +
-      `and the context-chip trigger ([data-slot="context-chip-environment"]). ` +
-      `If the picker was redesigned again, teach selectCloudEnvironment the new shape — ` +
-      `do not relax this gate.`,
-  )
-}
-
-// Switch the empty-draft composer's workspace environment to "cloud". In BOTH
-// shapes the human-readable "Cloud" label is asserted as a FACT (on the button
-// / on the row), never used as the match condition, and the switch is proven to
-// have TAKEN EFFECT afterwards — via `aria-pressed="true"` on the segmented
-// button, or via the popover trigger's own label flipping to "Cloud" (a trigger
-// carries no pressed state).
+// Switch the empty-draft composer's canonical environment chip to "cloud" and
+// prove the selected value is reflected by the trigger.
 async function selectCloudEnvironment(page: Page) {
-  const picker = await resolveEnvironmentPicker(page)
-  if (picker.shape === "segmented") {
-    const cloud = picker.group.getByRole("button", { name: "cloud" })
-    await expect(cloud).toHaveCount(1, { timeout: 20_000 })
-    await expect(cloud).toContainText(/cloud/i)
-    await cloud.click()
-    await expect(cloud).toHaveAttribute("aria-pressed", "true", { timeout: 10_000 })
-    return
-  }
-  await picker.trigger.click()
+  const trigger = page.locator('[data-slot="context-chip-environment"]').filter({ visible: true })
+  await expect(trigger).toHaveCount(1, { timeout: 20_000 })
+  await trigger.click()
   const row = page.locator('[data-slot="list-item"][data-key="cloud"]').filter({ visible: true })
   await expect(row).toHaveCount(1, { timeout: 20_000 })
   await expect(row).toContainText("Cloud")
   await row.click()
-  await expect(picker.trigger).toContainText("Cloud", { timeout: 10_000 })
+  await expect(trigger).toContainText("Cloud", { timeout: 10_000 })
 }
 
 function api(route: Route) {
@@ -295,34 +230,40 @@ function textOf(parts: unknown): string {
     .trim()
 }
 
-// Minimal SSE delivery bus, same delivery mechanism as
-// e2e/helpers/mock-runtime.ts's EventBus ("How streaming works" there): each
-// GET blocks until an event is pending (or idles out), fulfills with the
-// queued batch, then ends — the app's own SSE-reconnect loop drives further
-// polls. Duplicated here (not imported) because mock-runtime.ts's cloud/relay
-// support is explicitly "best-effort scaffolding" (see its own comment) and
-// does not model the `/api/wr/events` central provision stream or the
-// `/workspaces/:id/...` proxy lane this spec needs — see FINDINGS in the task
-// report for the follow-up to fold this back into the shared helper.
+// Cursor-resumed SSE event log, matching e2e/helpers/mock-runtime.ts's EventBus:
+// every concurrent reader receives each event in order and reconnects with its
+// own Last-Event-ID. Duplicated here because mock-runtime.ts's cloud/relay
+// support does not model the `/api/wr/events` central provision stream or the
+// `/workspaces/:id/...` proxy lane this spec needs.
 class Bus<T> {
-  private pending: T[] = []
+  private log: Array<{ id: number; payload: T }> = []
+  private sequence = 0
   private waiters: Array<() => void> = []
   emit(payload: T) {
-    this.pending.push(payload)
+    this.sequence += 1
+    this.log.push({ id: this.sequence, payload })
     const waiters = this.waiters
     this.waiters = []
     for (const resolve of waiters) resolve()
   }
-  private async waitForPending(idleTimeoutMs: number) {
-    if (this.pending.length > 0) return
+  private async waitForPending(idleTimeoutMs: number, cursor: number) {
+    if (this.sequence > cursor) return
     await Promise.race([new Promise<void>((resolve) => this.waiters.push(resolve)), wait(idleTimeoutMs)])
   }
-  async drain(idleTimeoutMs: number) {
-    await this.waitForPending(idleTimeoutMs)
-    const batch = this.pending
-    this.pending = []
-    return batch
+  async drain(idleTimeoutMs: number, cursor = 0) {
+    await this.waitForPending(idleTimeoutMs, cursor)
+    return this.log.filter((entry) => entry.id > cursor)
   }
+}
+
+function lastEventId(route: Route) {
+  const value = Number(route.request().headers()["last-event-id"])
+  return Number.isFinite(value) && value > 0 ? value : 0
+}
+
+function eventStream<T>(events: Array<{ id: number; payload: T }>) {
+  if (events.length === 0) return ": heartbeat\n\n"
+  return events.map((event) => `id: ${event.id}\ndata: ${JSON.stringify(event.payload)}\n\n`).join("")
 }
 
 async function seedCloudProject(page: Page, opts: { registerWorkspace: boolean }) {
@@ -372,9 +313,32 @@ async function installCloudRuntimeMock(
   const provisionBus = new Bus<Record<string, unknown>>()
   const sessionBus = new Bus<Record<string, unknown>>()
   let sessionCreated = false
+  let sessionBusy = false
   let messages: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }> = []
   let promptCount = 0
   const requests = { createSessionCount: 0, promptCount: 0, workspaceCreateCount: 0 }
+
+  const providerCatalog = () => ({
+    all: [{ id: "opencode", name: "opencode", env: [], models: { [BIG_PICKLE.id]: { id: BIG_PICKLE.id, name: BIG_PICKLE.name, release_date: "2026-01-01", attachment: true, reasoning: true, temperature: true, tool_call: true, limit: { context: 200000, output: 8192 }, cost: { input: 0, output: 0 }, options: {} } } }],
+    default: { opencode: BIG_PICKLE.id },
+    connected: ["opencode"],
+  })
+  const sessionConfig = () => ({
+    harness: { id: "opencode", access: "native" },
+    model: { providerID: "opencode", modelID: BIG_PICKLE.id },
+    agent: "build",
+  })
+  const sessionRow = () => ({
+    id: SESSION_ID,
+    slug: SESSION_ID,
+    projectID: PROJECT_ID,
+    directory: WORKSPACE_ID,
+    title: textOf(messages[0]?.parts) || "",
+    version: "2",
+    time: { created: 1, updated: Date.now() },
+    summary: { additions: 0, deletions: 0, files: 0 },
+    config: sessionConfig(),
+  })
 
   const emitProvision = (step: Exclude<PipelineStep, "ready">, message?: string) =>
     provisionBus.emit({ type: "provision", workspaceId: WORKSPACE_ID, step, message, ts: Date.now() })
@@ -435,9 +399,8 @@ async function installCloudRuntimeMock(
 
     // ---- Central Claxedo event bus (pty/provision/lifecycle events) ----
     if (url.pathname === "/api/wr/events") {
-      const batch = await provisionBus.drain(4000)
-      const body = batch.length === 0 ? ": heartbeat\n\n" : batch.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("")
-      await route.fulfill({ status: 200, contentType: "text/event-stream", body }).catch(() => {})
+      const batch = await provisionBus.drain(4000, lastEventId(route))
+      await route.fulfill({ status: 200, contentType: "text/event-stream", body: eventStream(batch) }).catch(() => {})
       return
     }
 
@@ -448,16 +411,12 @@ async function installCloudRuntimeMock(
         version: "1.0.0-test",
         path: { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" },
         project: [projectRow()],
-        provider: {
-          all: [{ id: "opencode", name: "opencode", env: [], models: { [BIG_PICKLE.id]: { id: BIG_PICKLE.id, name: BIG_PICKLE.name, release_date: "2026-01-01", attachment: true, reasoning: true, temperature: true, tool_call: true, limit: { context: 200000, output: 8192 }, cost: { input: 0, output: 0 }, options: {} } } }],
-          default: { opencode: BIG_PICKLE.id },
-          connected: ["opencode"],
-        },
+        provider: providerCatalogIndex(providerCatalog()),
         provider_auth: {},
         config: { provider: { id: "opencode", model: BIG_PICKLE.id }, agent: { id: "build" } },
       })
     }
-    if (url.pathname === "/provider") return json(route, { all: [], connected: [], default: {} })
+    if (url.pathname === "/provider") return json(route, providerCatalog())
     if (url.pathname === "/provider/auth") return json(route, {})
     if (url.pathname === "/path") return json(route, { worktree: DIR })
     if (url.pathname === "/config") return json(route, { provider: { id: "opencode", model: BIG_PICKLE.id }, agent: { id: "build" } })
@@ -581,27 +540,21 @@ async function installCloudRuntimeMock(
       if (runtimePath === "/permission") return json(route, [])
       if (runtimePath === "/question") return json(route, [])
       if (runtimePath === "/provider") {
-        return json(route, {
-          all: [{ id: "opencode", name: "opencode", env: [], models: { [BIG_PICKLE.id]: { id: BIG_PICKLE.id, name: BIG_PICKLE.name, release_date: "2026-01-01", attachment: true, reasoning: true, temperature: true, tool_call: true, limit: { context: 200000, output: 8192 }, cost: { input: 0, output: 0 }, options: {} } } }],
-          default: { opencode: BIG_PICKLE.id },
-          connected: ["opencode"],
-        })
+        return json(route, providerCatalog())
       }
       if (runtimePath === "/api/wr/health") return json(route, { healthy: true })
       if (runtimePath === "/api/wr/harness-config-options") {
         return json(route, { source: "runner", stale: false, options: [{ id: "model", name: "Model", category: "model", type: "select", currentValue: BIG_PICKLE.id, selectOptions: [BIG_PICKLE] }] })
       }
-      // Session-scoped event channels all carry the same turn traffic — the app
-      // subscribes to whichever one its transport resolves (`/api/wr/events` is
-      // the `/global/event` rewrite target; `/api/wr/runtime-events` is the
-      // runtime-native channel). Draining the bus on each keeps the heartbeat-
-      // only channel from starving the timeline of turn deltas.
+      // Session-scoped event channels all carry the same cursor-resumed turn log.
+      // The app subscribes to whichever channel its transport resolves.
       if (runtimePath === "/api/wr/events" || runtimePath === "/api/claxedo/runtime-events" || runtimePath === "/api/wr/runtime-events" || runtimePath === "/global/event" || runtimePath === "/event") {
-        const batch = await sessionBus.drain(4000)
-        const body = batch.length === 0 ? ": heartbeat\n\n" : batch.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("")
-        return route.fulfill({ status: 200, contentType: "text/event-stream", body }).catch(() => {})
+        const batch = await sessionBus.drain(4000, lastEventId(route))
+        return route.fulfill({ status: 200, contentType: "text/event-stream", body: eventStream(batch) }).catch(() => {})
       }
-      if (runtimePath === "/session/status") return json(route, sessionCreated ? { [SESSION_ID]: { type: "idle" } } : {})
+      if (runtimePath === "/session/status") {
+        return json(route, sessionCreated && sessionBusy ? { [SESSION_ID]: { type: "busy" } } : {})
+      }
       // Draft-submit worktree admission (`prepareWorkspaceSessionWorktree`): a
       // cloud draft's first turn admits a session worktree before prompt_async.
       // `path` becomes the session directory — keep it the workspace ref so every
@@ -617,23 +570,16 @@ async function installCloudRuntimeMock(
         requests.createSessionCount += 1
         sessionCreated = true
         messages = []
-        return json(route, {
-          id: SESSION_ID,
-          slug: SESSION_ID,
-          projectID: PROJECT_ID,
-          directory: WORKSPACE_ID,
-          title: "",
-          version: "2",
-          time: { created: Date.now(), updated: Date.now() },
-          summary: { additions: 0, deletions: 0, files: 0 },
-          config: { harness: { type: "opencode", model: BIG_PICKLE.id, status: "ready", ready: true }, model: { providerID: "opencode", modelID: BIG_PICKLE.id }, provider: { id: "opencode", model: BIG_PICKLE.id }, agent: "build" },
-        })
+        return json(route, sessionRow())
       }
-      if (runtimePath === "/session") return json(route, sessionCreated ? [{ id: SESSION_ID, directory: WORKSPACE_ID, title: "" }] : [])
-      if (/^\/session\/[^/]+$/.test(runtimePath)) return json(route, { id: SESSION_ID, directory: WORKSPACE_ID, title: textOf(messages[0]?.parts) || "" })
+      if (runtimePath === "/session") return json(route, sessionCreated ? [sessionRow()] : [])
+      if (/^\/session\/[^/]+$/.test(runtimePath)) return json(route, sessionRow())
       if (/^\/session\/[^/]+\/config$/.test(runtimePath)) {
-        if (method === "GET") return json(route, { harness: { type: "opencode", model: BIG_PICKLE.id, status: "ready", ready: true }, model: { providerID: "opencode", modelID: BIG_PICKLE.id }, provider: { id: "opencode", model: BIG_PICKLE.id }, agent: "build" })
-        return json(route, { ok: true })
+        if (method === "GET") return json(route, sessionConfig())
+        parseSessionConfigPatch(request.postDataJSON(), request.url())
+        const saved = sessionConfig()
+        assertSessionConfigPatchResponse(saved, request.url())
+        return json(route, saved, SESSION_CONFIG_PATCH_SUCCESS_STATUS)
       }
       if (/^\/session\/[^/]+\/capabilities$/.test(runtimePath)) {
         return json(route, { transport: "opencode", abort: true, reconnect: true, replay: true, permissions: true, questions: true, todos: true, commands: true, fork: true, revert: true, unrevert: true, configOptions: false })
@@ -655,6 +601,7 @@ async function installCloudRuntimeMock(
 
         void (async () => {
           await wait(20)
+          sessionBusy = true
           sessionBus.emit({ directory: WORKSPACE_ID, payload: { type: "session.status", properties: { sessionID: SESSION_ID, status: { type: "busy" } } } })
           await wait(40)
           const pendingInfo = { id: assistantID, sessionID: SESSION_ID, role: "assistant", time: { created: Date.now() }, parentID: userID, agent: "build", providerID: "opencode", modelID: BIG_PICKLE.id, mode: "code", path: { cwd: WORKSPACE_ID, root: WORKSPACE_ID }, cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }
@@ -674,6 +621,7 @@ async function installCloudRuntimeMock(
           messages = messages.map((row) => (row.info.id === assistantID ? { ...row, info: completedInfo } : row))
           sessionBus.emit({ directory: WORKSPACE_ID, payload: { type: "message.updated", properties: { sessionID: SESSION_ID, info: completedInfo } } })
           await wait(30)
+          sessionBusy = false
           sessionBus.emit({ directory: WORKSPACE_ID, payload: { type: "session.idle", properties: { sessionID: SESSION_ID } } })
         })()
         return
@@ -732,7 +680,7 @@ test.describe("core cloud provisioning @core", () => {
     // the model control first, matching the pattern every other cloud spec
     // that sends a first turn already uses (e.g. core-harness-ownership-
     // cloud.spec.ts's `expectOnlyOpenCodeModelControl`).
-    await expect(page.locator('[data-action="prompt-model"]')).toContainText(/Big Pickle|big-pickle/i, { timeout: 20_000 })
+    await expect(page.locator('[data-action="prompt-harness-model"]')).toContainText(/Big Pickle|big-pickle/i, { timeout: 20_000 })
 
     // Behavior 3/4: a send dispatches through the workspace-scoped relay lane
     // and the oracle proves the reply renders; exactly one user + one
@@ -830,7 +778,7 @@ test.describe("core cloud provisioning @core", () => {
       // `createCloudWorkspace`) is ever reached, so the create-failure path
       // under test never fires at all. Wait for a real model first, matching
       // core-cloud-provisioning's other send scenarios.
-      await expect(page.locator('[data-action="prompt-model"]')).toContainText(/Big Pickle|big-pickle/i, { timeout: 20_000 })
+      await expect(page.locator('[data-action="prompt-harness-model"]')).toContainText(/Big Pickle|big-pickle/i, { timeout: 20_000 })
       const promptText = "should not create a cloud vm"
       await input.click()
       await input.fill(promptText)
@@ -889,7 +837,7 @@ test.describe("core cloud provisioning @core", () => {
     // catalog can still be resolving right after the environment switch, and
     // sending before it settles hits the composer's own "no-model" submit
     // block instead of ever reaching `createCloudWorkspace`.
-    await expect(page.locator('[data-action="prompt-model"]')).toContainText(/Big Pickle|big-pickle/i, { timeout: 20_000 })
+    await expect(page.locator('[data-action="prompt-harness-model"]')).toContainText(/Big Pickle|big-pickle/i, { timeout: 20_000 })
     const promptText = "should not create a cloud vm either"
     await input.click()
     await input.fill(promptText)

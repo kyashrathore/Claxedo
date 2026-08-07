@@ -114,6 +114,7 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
     }
 
     const sessionEventType = globalSessionEventType(event)
+    if (sessionEventType === "created") void invalidateSessionListQueries()
     if (input.sessionInventoryLoaded() && sessionEventType) {
       const raw = (event.properties as { info?: LifecycleSession }).info
       if (raw) {

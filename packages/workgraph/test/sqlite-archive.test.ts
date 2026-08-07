@@ -206,7 +206,7 @@ describe("SQLite canonical WorkGraph archive", () => {
     await expect(createSqliteSourcePlanningRuntime({
       database: source,
       workerId: "archive-source-planner",
-      sessionDirectory: "/repo",
+      resolveSessionDirectory: () => "/repo",
       sessions: {
         async admit(input) { return String(input.sessionId) },
         async result() { return { state: "succeeded", summary: JSON.stringify(plan), artifacts: [] } },

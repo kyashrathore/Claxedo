@@ -8,6 +8,7 @@ import {
   removeDirectorySession,
   removeDirectorySessionTree,
   refreshDirectorySessionCache,
+  reconcileUnrevertedDirectorySession,
   setDirectorySessionCache,
   updateDirectorySession,
   upsertDirectorySession,
@@ -114,6 +115,23 @@ describe("directory session-cache shell-data boundary", () => {
     expect(directorySessions("/workspace/project")).toMatchObject([
       { id: "ses_2", title: "Updated" },
     ])
+  })
+
+  test("clears a stale revert marker from an authoritative unrevert response", () => {
+    setDirectorySessionCache("/workspace/project", {
+      at: 1,
+      limit: 10,
+      total: 1,
+      session: [{ ...session({ id: "ses_1" }), revert: { messageID: "msg_2" }, title: "Current" }],
+    })
+
+    reconcileUnrevertedDirectorySession({
+      directory: "/workspace/project",
+      canonical: { ...session({ id: "ses_1" }), title: "Canonical" },
+    })
+
+    expect(directorySessions("/workspace/project")[0]).toMatchObject({ id: "ses_1", title: "Canonical" })
+    expect(directorySessions("/workspace/project")[0]?.revert).toBeUndefined()
   })
 
   test("removes child sessions with a deleted root", () => {

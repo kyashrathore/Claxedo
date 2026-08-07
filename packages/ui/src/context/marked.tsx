@@ -539,6 +539,26 @@ async function highlightCodeBlocks(html: string): Promise<string> {
 
 export type NativeMarkdownParser = (markdown: string) => Promise<string>
 
+export function escapeRawMarkdownHtml(text: string) {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
+function renderMarkdownHtml(token: Tokens.HTML | Tokens.Tag) {
+  if (/^ {0,3}(?:```|~~~)/.test(token.raw) && token.text !== token.raw) return token.text
+  return escapeRawMarkdownHtml(token.text)
+}
+
+export const rawMarkdownHtmlDisabled: MarkedExtension = {
+  renderer: {
+    html: renderMarkdownHtml,
+  },
+}
+
 export const { use: useMarked, provider: MarkedProvider } = createSimpleContext({
   name: "Marked",
   init: (props: { nativeParser?: NativeMarkdownParser }) => {
@@ -546,6 +566,7 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
       markedCodeSpanBoundary,
       {
         renderer: {
+          html: renderMarkdownHtml,
           link({ href, title, text }) {
             const titleAttr = title ? ` title="${title}"` : ""
             return `<a href="${href}"${titleAttr} class="external-link" target="_blank" rel="noopener noreferrer">${text}</a>`

@@ -141,7 +141,9 @@ function createSession(
   let dispose: () => void
   createRoot((d) => {
     dispose = d
-    session = createTerminalSession(sdk, input?.dir ?? "/workspace")
+    session = createTerminalSession(sdk, input?.dir ?? "/workspace", {
+      claxedoServerUrl: "http://127.0.0.1:3001",
+    })
   })
   return { session: session!, dispose: dispose! }
 }

@@ -73,9 +73,8 @@
  *     is untouched and restores on the way back. That round trip is what behavior 5
  *     asserts, key-for-key.
  *
- * ANATOMY — same selectors as spec 3 (`[data-action="prompt-model"]`,
- *   `[data-action="prompt-harness-model"]`, the harness `<Select>` trigger/options, submit
- *   control) plus:
+ * ANATOMY — the unified `[data-action="prompt-harness-model"]` picker and submit control,
+ *   plus:
  *   - relay lane path prefix `/workspaces/<workspaceId>/...` — every session/prompt/
  *     message/config/capabilities/provider/harness-options request for a relay-backed
  *     session lands here, never on the bare `/session/...`/`/api/claxedo/...` paths.
@@ -101,7 +100,7 @@
  *      submit payload's `providerID`/`modelID`/`agent` through draft → first send
  *      (session create, relay lane) → reload → a second send — all dispatched through
  *      `/workspaces/:workspaceId/...`, never the bare `/session/...` paths. The harness
- *      `<Select>` is disabled once the session exists, identically to local.
+ *      picker's Harness section is disabled once the session exists, identically to local.
  *   2. Pi uses its provider catalog on a cloud workspace, makes zero
  *      `/api/wr/harness-config-options` requests, and reuses the exact eligible
  *      OpenCode pair when that is the unambiguous configured choice.
@@ -116,8 +115,8 @@
  *   5. Picking a non-OpenCode harness while the draft pane's directory is a plain local
  *      project, then client-side-navigating (via the project chip picker, no page reload)
  *      that SAME pane to a cloud workspace's directory, leaves the cloud draft on its OWN
- *      OpenCode default BEFORE any cloud request is made: exactly one model control
- *      (`[data-action="prompt-model"]`) is present immediately after the navigation
+ *      OpenCode default BEFORE any cloud request is made: exactly one unified picker
+ *      with `data-harness="opencode"` is present immediately after the navigation
  *      settles, and the prompt subsequently sent through the cloud workspace carries
  *      `providerID: "opencode"` — the local harness/model selection never reaches the
  *      relay lane. The local choice is not discarded either: it stays in ITS OWN
@@ -126,7 +125,7 @@
  *      its harness model control.
  *
  * INVARIANTS — harness ownership (#1 in e2e/INVARIANTS.md): the selected harness owns
- *   model/effort/payload at every stage, exactly one model control exists at a time, a
+ *   model/effort/payload at every stage, exactly one unified picker exists at a time, a
  *   harness is locked once the session is created. No silent fallback (#3): the OpenCode
  *   selection behavior 5 observes on the cloud draft is NOT a fallback at all — it is the
  *   cloud directory's OWN unset draft-default resolving to the default harness, proven by
@@ -216,53 +215,24 @@ function sessionUrlPattern(sessionId: string) {
   return new RegExp(`(?:/s/${sessionId}|/w/[^/]+/session/${sessionId})$`)
 }
 
-// `fromLabel` is the harness trigger's CURRENT accessible name — it defaults to
-// "OpenCode" (the draft's initial state) but callers switching harness a second time
-// in the same test must pass the label the trigger now carries (e.g. "Claude"), since
-// the trigger's accessible name changes to whatever harness is currently selected.
-async function switchDraftHarness(page: Page, optionName: RegExp, optionIndex: number, fromLabel: RegExp = /^OpenCode$/) {
-  await page.getByRole("button", { name: fromLabel }).last().click()
-  await page.getByRole("option", { name: optionName }).nth(optionIndex).click()
+async function switchDraftHarness(page: Page, optionName: RegExp, optionIndex: number) {
+  await page.locator('[data-action="prompt-harness-model"]:visible').last().click()
+  const picker = page.locator('[data-component="harness-model-picker"]')
+  await picker.locator('[data-slot="harness-picker-section"]').first().click()
+  await picker.getByRole("button", { name: optionName }).nth(optionIndex).click()
+  await page.keyboard.press("Escape")
 }
 
-// The empty-draft header's project picker, which is mid-migration between two shapes:
-//
-//   CHIP  — `SessionContextRow` (`src/features/session/ui/components/session-context-row.tsx`)
-//           renders a Kobalte `Popover` whose trigger carries `data-slot="context-chip-project"`
-//           and a STATIC `aria-label="Project"`; the project's own name is only inner text
-//           (`[data-slot="context-chip-label"]`) and collapses to an avatar monogram in a
-//           narrow pane. Its rows are `@opencode-ai/ui`'s `List` buttons —
-//           `[data-slot="list-item"][data-key="<directory>"]` — with NO ARIA listbox roles
-//           (`packages/ui/src/components/list.tsx:338-341`).
-//   SELECT — the shape it replaces: `@opencode-ai/ui`'s `Select` with
-//           `triggerClass="claxedo-new-session-project-picker"`, whose trigger's accessible
-//           name IS the current project label and whose entries are real `role="option"`s.
-//
-// Both are addressed structurally, and BOTH branches assert the human-readable project name
-// rather than using it as the selector — so the label stays a checked fact. The count poll
-// below requires EXACTLY ONE shape to be on screen: zero (a renamed hook) must fail loudly
-// instead of silently falling through to the other branch. Delete the SELECT branch once
-// `session-context-row.tsx` is committed and the `Select` header is gone for good.
+// The canonical SessionContextRow project chip. Rows are `@opencode-ai/ui` List
+// buttons keyed by directory; the readable project name remains an asserted fact.
 async function openProjectFromChip(page: Page, directory: string, projectName: string) {
   const chip = page.locator('[data-slot="context-chip-project"]').filter({ visible: true })
-  const select = page.locator(".claxedo-new-session-project-picker").filter({ visible: true })
-  await expect
-    .poll(async () => (await chip.count()) + (await select.count()), { timeout: 20_000 })
-    .toBe(1)
-
-  if ((await chip.count()) === 1) {
-    await chip.click()
-    const row = page.locator(`[data-slot="list-item"][data-key="${directory}"]`).filter({ visible: true })
-    await expect(row).toHaveCount(1, { timeout: 20_000 })
-    await expect(row).toContainText(projectName)
-    await row.click()
-    return
-  }
-
-  await select.click()
-  const option = page.getByRole("option", { name: projectName })
-  await expect(option).toHaveCount(1, { timeout: 20_000 })
-  await option.click()
+  await expect(chip).toHaveCount(1, { timeout: 20_000 })
+  await chip.click()
+  const row = page.locator(`[data-slot="list-item"][data-key="${directory}"]`).filter({ visible: true })
+  await expect(row).toHaveCount(1, { timeout: 20_000 })
+  await expect(row).toContainText(projectName)
+  await row.click()
 }
 
 // Every draft-default record currently in localStorage, key -> raw JSON. The key is
@@ -279,8 +249,8 @@ function readDraftDefaults(page: Page) {
   )
 }
 
-function visibleHarnessTrigger(page: Page, name: RegExp) {
-  return page.getByRole("button", { name }).filter({ visible: true })
+function visibleHarnessTrigger(page: Page, harness: Harness) {
+  return page.locator(`[data-action="prompt-harness-model"][data-harness="${harness}"]:visible`)
 }
 
 // `:visible` (not a bare count): a same-pane cross-workspace navigation (behavior
@@ -298,8 +268,17 @@ async function expectOnlyHarnessModelControl(page: Page, modelName: string | Reg
 }
 
 async function expectOnlyOpenCodeModelControl(page: Page) {
-  await expect(page.locator('[data-action="prompt-model"]:visible')).toHaveCount(1, { timeout: 20_000 })
-  await expect(page.locator('[data-action="prompt-harness-model"]:visible')).toHaveCount(0)
+  await expect(visibleHarnessTrigger(page, "opencode")).toHaveCount(1, { timeout: 20_000 })
+  await expect(page.locator('[data-action="prompt-model"]:visible')).toHaveCount(0)
+}
+
+async function expectHarnessLocked(page: Page, harness: Harness) {
+  const control = visibleHarnessTrigger(page, harness)
+  await expect(control).toHaveCount(1, { timeout: 20_000 })
+  await control.click()
+  const section = page.locator('[data-component="harness-model-picker"] [data-slot="harness-picker-section"]').first()
+  await expect(section).toBeDisabled()
+  await page.keyboard.press("Escape")
 }
 
 test.describe("core harness ownership (cloud) @core", () => {
@@ -327,9 +306,8 @@ test.describe("core harness ownership (cloud) @core", () => {
       await expectOnlyOpenCodeModelControl(page)
 
       await switchDraftHarness(page, harnessCase.option, harnessCase.optionIndex)
-      await expect(page.getByRole("button", { name: harnessCase.option }).last()).toBeVisible({ timeout: 20_000 })
+      await expect(visibleHarnessTrigger(page, harnessCase.harness)).toHaveCount(1, { timeout: 20_000 })
       await expectOnlyHarnessModelControl(page, harnessCase.modelLabel)
-      await expect(page.getByRole("button", { name: harnessCase.option }).last()).toBeEnabled()
 
       const first = `core harness cloud ${harnessCase.harness} first turn`
       await input.click()
@@ -345,12 +323,12 @@ test.describe("core harness ownership (cloud) @core", () => {
       await expectOnlyHarnessModelControl(page, harnessCase.modelLabel)
 
       // Harness Select is locked now that the cloud session exists.
-      await expect(page.getByRole("button", { name: harnessCase.option }).last()).toBeDisabled()
+      await expectHarnessLocked(page, harnessCase.harness)
 
       await page.reload({ waitUntil: "domcontentloaded" })
       await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
       await expectOnlyHarnessModelControl(page, harnessCase.modelLabel)
-      await expect(page.getByRole("button", { name: harnessCase.option }).last()).toBeDisabled()
+      await expectHarnessLocked(page, harnessCase.harness)
 
       const second = `core harness cloud ${harnessCase.harness} resumed turn`
       const inputAfterReload = page.getByRole("textbox", { name: /Ask anything/i }).last()
@@ -379,9 +357,8 @@ test.describe("core harness ownership (cloud) @core", () => {
     const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await expect(input).toBeVisible({ timeout: 20_000 })
 
-    await page.getByRole("button", { name: /^OpenCode$/ }).last().click()
-    await page.getByRole("option", { name: /^Pi$/ }).click()
-    await expect(page.getByRole("button", { name: /^Pi$/ }).last()).toBeVisible({ timeout: 20_000 })
+    await switchDraftHarness(page, /^Pi$/, 0)
+    await expect(visibleHarnessTrigger(page, "pi")).toHaveCount(1, { timeout: 20_000 })
     await expectOnlyHarnessModelControl(page, /Big Pickle|big-pickle/i)
     await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toHaveCount(0)
     await expect(page.locator('[title="Connecting to agent runtime..."]')).toHaveCount(0)
@@ -418,8 +395,7 @@ test.describe("core harness ownership (cloud) @core", () => {
     await expectOnlyHarnessModelControl(page, /Sonnet 4\.6|claude-sonnet-4-6/i)
     await expect.poll(() => mock.requests.cloudHarnessOptionsHarnesses.includes("claude-acp"), { timeout: 10_000 }).toBe(true)
 
-    await page.getByRole("button", { name: /^Claude$/ }).last().click()
-    await page.getByRole("option", { name: /^Codex$/ }).nth(1).click()
+    await switchDraftHarness(page, /^Codex$/, 1)
     await expectOnlyHarnessModelControl(page, /GPT-5\.5|gpt-5\.5/i)
     await expect.poll(() => mock.requests.cloudHarnessOptionsHarnesses.includes("codex-app-server"), { timeout: 10_000 }).toBe(true)
 
@@ -448,15 +424,8 @@ test.describe("core harness ownership (cloud) @core", () => {
     await page.waitForLoadState("domcontentloaded")
     await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeVisible({ timeout: 20_000 })
 
-    // Each switch's trigger label is whatever the PREVIOUS switch just landed on — the
-    // trigger's accessible name tracks the currently-selected harness (see
-    // switchDraftHarness's fromLabel param), so this loop must thread it through instead
-    // of re-opening a selector still labeled "OpenCode" after the first switch.
-    let currentLabel: RegExp = /^OpenCode$/
     for (const [option, index] of [[/^Claude$/, 0], [/^Codex$/, 1], [/^Cursor$/, 0]] as const) {
-      await switchDraftHarness(page, option, index, currentLabel)
-      await expect(page.getByRole("button", { name: option }).last()).toBeVisible({ timeout: 20_000 })
-      currentLabel = option
+      await switchDraftHarness(page, option, index)
     }
     await expect.poll(() => mock.requests.cloudHarnessOptionsCount, { timeout: 10_000 }).toBeGreaterThan(0)
 
@@ -517,7 +486,7 @@ test.describe("core harness ownership (cloud) @core", () => {
     // The cloud workspace draft shows its OWN OpenCode default — exactly one plain model
     // control, no relay options ever fetched for a carried-over "claude-acp".
     await expectOnlyOpenCodeModelControl(page)
-    await expect(visibleHarnessTrigger(page, /^OpenCode$/)).toHaveCount(1, { timeout: 20_000 })
+    await expect(visibleHarnessTrigger(page, "opencode")).toHaveCount(1, { timeout: 20_000 })
     expect(mock.requests.cloudHarnessOptionsHarnesses.includes("claude-acp")).toBe(false)
 
     // ...and the user's local Claude choice is NOT lost — it stays under the LOCAL
@@ -548,23 +517,22 @@ test.describe("core harness ownership (cloud) @core", () => {
     // equivalent entry points to the same local directory, and the harness assertions below
     // are what prove this one really resolved the local (non-cloud) scope.
     await expect(page).toHaveURL(new RegExp(`/w/${encodeURIComponent(DIR)}/session$`), { timeout: 20_000 })
-    await expect(visibleHarnessTrigger(page, /^Claude$/)).toHaveCount(1, { timeout: 20_000 })
+    await expect(visibleHarnessTrigger(page, "claude-acp")).toHaveCount(1, { timeout: 20_000 })
     await expectOnlyHarnessModelControl(page, /Sonnet 4\.6|claude-sonnet-4-6/i)
 
     await openProjectFromChip(page, WORKSPACE_ID, WORKSPACE_PROJECT_NAME)
     await expect(page).toHaveURL(new RegExp(`/w/${WORKSPACE_ID}/session$`), { timeout: 20_000 })
     await expectOnlyOpenCodeModelControl(page)
-    await expect(visibleHarnessTrigger(page, /^OpenCode$/)).toHaveCount(1, { timeout: 20_000 })
+    await expect(visibleHarnessTrigger(page, "opencode")).toHaveCount(1, { timeout: 20_000 })
 
     // `filter({visible: true})`, not `.last()`: the round trip above leaves the prior
     // directories' composers mounted-but-hidden, and DOM order does not guarantee the live
     // one is last.
     const cloudInput = page.getByRole("textbox", { name: /Ask anything/i }).filter({ visible: true })
     await expect(cloudInput).toHaveCount(1, { timeout: 20_000 })
-    // `expectOnlyOpenCodeModelControl` above only proves a plain (non-harness) model
-    // control is showing, not that it has RESOLVED a real model yet — the cloud workspace's
-    // own provider/model catalog is a fresh relay request fired on this first-ever visit.
-    await expect(page.locator('[data-action="prompt-model"]:visible')).toContainText(/Big Pickle|big-pickle/i, { timeout: 20_000 })
+    // The unified OpenCode control is present before its model label resolves. The cloud
+    // workspace's provider/model catalog is a fresh relay request on this first visit.
+    await expect(page.locator('[data-action="prompt-harness-model"]:visible')).toContainText(/Big Pickle|big-pickle/i, { timeout: 20_000 })
     const text = "core harness cloud own-default turn"
     await cloudInput.click()
     await cloudInput.fill(text)

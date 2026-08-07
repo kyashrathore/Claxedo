@@ -105,6 +105,16 @@ export function updateDirectorySession(directory: string, sessionID: string, upd
   )
 }
 
+export function reconcileUnrevertedDirectorySession(input: {
+  directory: Parameters<typeof updateDirectorySession>[0]
+  canonical: Session
+}) {
+  updateDirectorySession(input.directory, input.canonical.id, (session) => {
+    const { revert: _revert, ...current } = session
+    return { ...current, ...input.canonical }
+  })
+}
+
 export function removeDirectorySession(directory: string, sessionID: string) {
   queryClient.setQueryData<DirectorySessionCacheValue>(
     directorySessionCacheQueryOptions({ directory }).queryKey,

@@ -64,7 +64,7 @@ import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace
 import { retargetSessionRef } from "@/platform/identity/session-ref"
 import { SessionConversationOwner } from "@/features/session/conversation/session-conversation-owner"
 import { registeredConversationSnapshot } from "@/features/session/conversation/conversation-registry"
-import { removeDirectorySession, updateDirectorySession, useDirectorySessionCacheActions } from "@/features/session/data/sync/directory-session-cache"
+import { reconcileUnrevertedDirectorySession, removeDirectorySession, updateDirectorySession, useDirectorySessionCacheActions } from "@/features/session/data/sync/directory-session-cache"
 import { directorySessionCacheQueryOptions, emptySessionInventory, sessionInventoryQueryOptions } from "@/features/session/data/sync/queries"
 import { queryClient } from "@/platform/query/query-client"
 import { indexSessionTitleInventory, selectSessionTitleInventoryRow, stableSessionTitle } from "@/features/session/lib/session-title-sync"
@@ -1221,7 +1221,8 @@ export default function SessionPage() {
         ? Promise.resolve()
         : halt(currentSessionID)
             .then(() => sdk.client.session.unrevert({ sessionID: currentSessionID }))
-            .then(() => {
+            .then((result) => {
+              if (result.data) reconcileUnrevertedDirectorySession({ directory: dir(), canonical: result.data })
               prompt.reset()
             })
       : !supports("revert")

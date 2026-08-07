@@ -411,7 +411,7 @@
  *   pins).
  */
 import { expect, test, type Page } from "@playwright/test"
-import { installMockRuntime } from "../helpers/mock-runtime"
+import { installMockRuntime, providerCatalogIndex } from "../helpers/mock-runtime"
 
 const DIR = "/tmp/e2e-core-settings-auth"
 const SESSION_ID = "ses_core_settings_auth"
@@ -717,6 +717,30 @@ type ProviderFixture = {
 
 async function mockProviderCatalog(page: Page, input: { connected: ProviderFixture[]; popular: ProviderFixture[] }) {
   const all = [...input.connected, ...input.popular]
+  const provider = {
+    all: all.map((p) => ({
+      id: p.id,
+      name: p.name,
+      source: p.source,
+      env: [],
+      models: p.models ?? { "m-1": { id: "m-1", name: "Model 1", cost: {} } },
+    })),
+    default: {},
+    connected: input.connected.map((p) => p.id),
+  }
+  // Bootstrap owns the initial provider index. Install this route after the shared
+  // runtime so the settings page starts from the same canonical catalog that a real
+  // control plane supplies. The /provider route below supplies detail metadata after
+  // the settings surface identifies which connected providers need it.
+  await page.route("**/api/claxedo/bootstrap**", (route) => json(route, {
+    healthy: true,
+    version: "1.0.0-test",
+    path: { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" },
+    project: [{ id: "proj_mock_runtime", worktree: DIR, name: "mock-runtime", time: { created: Date.now(), updated: Date.now() } }],
+    provider: providerCatalogIndex(provider),
+    provider_auth: {},
+    config: {},
+  }))
   // NOT `"**/provider"` (bare, no trailing wildcard): the real request is
   // `/provider?harness=<id>` (see `src/context/global-sync/bootstrap.ts` /
   // `useProviders`'s `queryOptions.providers()`) and Playwright glob route
@@ -733,20 +757,7 @@ async function mockProviderCatalog(page: Page, input: { connected: ProviderFixtu
     if (route.request().method() !== "GET" && route.request().resourceType() !== "fetch" && route.request().resourceType() !== "xhr") {
       return route.continue()
     }
-    return json(route, {
-      // `useProviders`' `providerMap()` only recognizes an ARRAY for `.all`
-      // (falls back to an empty Map for anything else) — see
-      // src/hooks/use-providers.ts.
-      all: all.map((p) => ({
-        id: p.id,
-        name: p.name,
-        source: p.source,
-        env: [],
-        models: p.models ?? { "m-1": { id: "m-1", name: "Model 1", cost: {} } },
-      })),
-      default: {},
-      connected: input.connected.map((p) => p.id),
-    })
+    return json(route, provider)
   })
 }
 

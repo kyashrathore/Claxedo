@@ -10,10 +10,8 @@
 // RESPONSE body are the same domain object — `SessionConfigUpdate` in, `SessionConfig`
 // out (`c.json(config)`, `session-core.ts:571`; the value comes from
 // `opts.updateSessionConfig`, typed `Promise<SessionConfig>` at `session-core.ts:133-139`).
-// The mock does neither: it stores the body as an opaque `{ body: unknown }` and
-// answers `{ ok: true }` (`mock-runtime.ts:1350-1366`), a shape the real server never
-// produces. See CONTRACT DIVERGENCES at the bottom of this file — that list is the
-// most valuable output of writing this module.
+// The shared mock validates both sides through this module and stores the normalized
+// update before returning the canonical SessionConfig response.
 //
 // Three enforceable surfaces here:
 //
@@ -45,13 +43,8 @@
 // get merged, the shared piece is the per-field `check` functions, not the
 // `consumedBy`/`whenPresent` prose, which is route-specific.
 //
-// KNOWN LIMIT
-// -----------
-// `normalizeSessionConfigUpdate` is exported from `workspace-runtime/src/session-config.ts`
-// but is NOT re-exported through `@claxedo/workspace-runtime/routes`, so this module
-// cannot call it and mirrors its rules with a citation per rule. Same limitation, and
-// same remedy, as `session-create.ts`: if it is ever exported, delete the mirrors.
 import type { SessionConfigUpdate } from "@claxedo/agent-sdk-runtime"
+import { normalizeSessionConfigUpdate } from "../../../../workspace-runtime/src/session-config"
 
 // ---------------------------------------------------------------------------
 // (1) Compile-time drift tripwire
@@ -279,21 +272,9 @@ export function parseSessionConfigPatch(rawBody: unknown, url: string): SessionC
 
   if (problems.length > 0) throw new SessionConfigPatchContractError(url, problems)
 
-  // Mirror the normalizer's OUTPUT, not the input: only the keys it would keep. A
-  // caller inspecting the return value therefore sees what the adapter would have
-  // received, not what the client happened to type.
-  const update: SessionConfigUpdate = {}
-  if (body.harness !== undefined || body.runner !== undefined) {
-    update.harness = (body.harness ?? body.runner) as SessionConfigUpdate["harness"]
-  }
-  if ("model" in body) update.model = body.model as SessionConfigUpdate["model"]
-  if ("variant" in body && (typeof body.variant === "string" || body.variant === null)) {
-    update.variant = body.variant
-  }
-  if ("agent" in body && (typeof body.agent === "string" || body.agent === null)) {
-    update.agent = body.agent
-  }
-  return update
+  // Delegate the accepted body to the authoritative normalizer so connection
+  // metadata and future normalization details cannot drift in this test binding.
+  return normalizeSessionConfigUpdate(body)
 }
 
 // ---------------------------------------------------------------------------
@@ -336,11 +317,8 @@ export function assertSessionConfigPatchResponse(config: unknown, url: string): 
     problems.push("response.harness must be an object — SessionConfig.harness is REQUIRED (index.ts:143-148)")
   } else {
     const identity = harness as Record<string, unknown>
-    // Accept the legacy `type` alias here, because `normalizeHarnessIdentity`
-    // (harness-types.ts:116) accepts it wherever a harness is re-read.
-    if (typeof identity.id !== "string" && typeof identity.type !== "string") {
-      problems.push("response.harness.id must be a string (or the legacy `type` alias)")
-    }
+    if (typeof identity.id !== "string") problems.push("response.harness.id must be a string")
+    if (typeof identity.access !== "string") problems.push("response.harness.access must be a string")
   }
 
   if (row.model !== undefined && row.model !== null) {
@@ -440,63 +418,3 @@ export function assertSessionConfigPatchFailureResponse(body: unknown, status: n
   }
   if (problems.length > 0) throw new SessionConfigPatchContractError(url, problems)
 }
-
-// ---------------------------------------------------------------------------
-// CONTRACT DIVERGENCES found while writing this binding
-// ---------------------------------------------------------------------------
-//
-// Recorded, not silently fixed — wiring this module into `mock-runtime.ts` is another
-// process's job, and each of these is a decision about which specs are allowed to
-// change. Every one is a case where a green `@core` spec proves nothing.
-//
-// D1  SUCCESS BODY IS WRONG SHAPE (highest impact).
-//     Mock (`mock-runtime.ts:1364`) answers `json(route, { ok: true })`. The real route
-//     answers a full `SessionConfig` (`session-core.ts:571`). Anything in the app that
-//     reads the PATCH response — rather than re-GETting the config — is completely
-//     unexercised. Worse, `{ ok: true }` is byte-identical to the SHAPE of the FAILURE
-//     envelope's discriminant (`{ ok: false, error }`), so a client that branches on
-//     `body.ok` looks correct under the mock by accident.
-//
-// D2  FAILURE STATUS AND BODY ARE BOTH INVENTED.
-//     `options.configPatchFailure` makes the mock answer `500` with
-//     `{ error: "could not save session config" }` (`mock-runtime.ts:1361-1362`), used by
-//     `core-model-effort-agent-controls.spec.ts:622`. The route's only self-generated
-//     failure is `409` with `{ ok: false, error: { code: "unsupported_operation", … } }`.
-//     The spec's error-toast assertion is therefore driven by a status/shape pair the
-//     server never emits. The app's `saveSessionConfig` happens to be shape-agnostic
-//     (`submit-transport.ts:211` does `res.text()` on any `!res.ok`), so this is
-//     currently a coverage gap rather than a live bug — but nothing pins it that way.
-//
-// D3  THE HARNESS-SWITCH GUARD IS ENTIRELY UNMOCKED.
-//     The client sends `harness: { type: configInput.harnessType }` on EVERY config
-//     save (`submit-transport.ts:186-193`) — it is never omitted. So the real server
-//     runs `sameSessionHarness` on every single PATCH (`session-core.ts:555-567`) and
-//     409s on a mismatch. The mock accepts any harness unconditionally. A spec that
-//     drives a harness swap through the composer gets a green 200 where production
-//     gets a 409 and a toast.
-//
-// D4  THE BODY IS NEVER VALIDATED, ONLY RECORDED.
-//     `requests.configPatchBodies.push({ body })` stores `unknown`
-//     (`mock-runtime.ts:1360`, type at `mock-runtime.ts:119`). Assertions like
-//     `core-model-effort-agent-controls.spec.ts:509` cast it back to
-//     `{ model?: { providerID?: string; modelID?: string } }` at the call site. A
-//     half-filled `model` — `providerID` present, `modelID` missing — passes that
-//     assertion's optional-chained read and is a SILENT no-op server-side
-//     (`promptModel`, `session-config.ts:74`). `parseSessionConfigPatch` above closes
-//     exactly this hole.
-//
-// D5  THE CLOUD LANE IS EVEN THINNER THAN THE LOCAL ONE.
-//     `mock-runtime.ts:1651-1654` answers `{ ok: true }` WITHOUT reading the body at
-//     all — no `configPatchCount`, no recorded body, no failure switch. The relay
-//     forwards to the SAME workspace-runtime route, so the cloud lane must not be
-//     allowed to accept what the local lane rejects; `session-create.ts`'s bindings are
-//     already applied to both lanes (`mock-runtime.ts:1634-1636`) and this route should
-//     follow.
-//
-// D6  ADJACENT: THE GET LANE RETURNS A NON-`SessionConfig`.
-//     Out of scope for this PATCH binding but found on the same route pattern: the
-//     mock's `sessionConfig()` (`mock-runtime.ts:603-619`) returns
-//     `{ harness: { type, model, status, ready }, model, provider, agent }`. Real
-//     `SessionConfig` has no `provider` and no `harness.model`/`status`/`ready`, and its
-//     harness carries `access`. Only `harness.type` survives, via the legacy alias at
-//     `harness-types.ts:116`. Worth a `session-config-get` binding of its own.

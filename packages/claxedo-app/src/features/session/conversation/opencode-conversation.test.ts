@@ -298,6 +298,33 @@ describe("opencode conversation chat adapter", () => {
     }])
   })
 
+  test("does not collapse an announced reply into an ambiguous multi-step assistant turn", () => {
+    const first = message("msg_step_1")
+    const second = { ...message("msg_step_2"), time: { created: 3 } } as Message
+    const announced = {
+      ...message("msg_user_r"),
+      time: { created: 4, completed: 5 },
+    } as Message
+    const live = opencodeConversationSnapshot({
+      messages: [first, second],
+      parts: {
+        msg_step_1: [{ ...toolPart("part_task", "msg_step_1", "completed"), tool: "task" } as Part],
+        msg_step_2: [textPart("part_step_2", "msg_step_2", "continued")],
+      },
+    })
+    const fetched = opencodeConversationSnapshot({
+      messages: [announced],
+      parts: { msg_user_r: [textPart("part_final", "msg_user_r", "finished")] },
+    })
+
+    const merged = mergeConversationSnapshot(live, fetched)
+
+    expect(merged.map((item) => item.id)).toEqual(["msg_step_1", "msg_step_2", "msg_user_r"])
+    expect(merged.find((item) => item.id === "msg_step_1")?.parts).toMatchObject([
+      { type: "tool-call", name: "task", state: "complete" },
+    ])
+  })
+
   test("snapshot merge preserves chat-owned live deltas for matching parts", () => {
     const snapshot = opencodeConversationSnapshot({
       messages: [message("msg_assistant")],

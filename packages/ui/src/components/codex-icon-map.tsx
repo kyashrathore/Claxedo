@@ -138,8 +138,10 @@ export const UI_CODEX_ICON_TRANSFORMS = {
   "chevron-down": "rotate(90 10 10)",
   "chevron-grabber-vertical": "rotate(90 10 10)",
   "chevron-left": "rotate(180 10 10)",
+  copy: "translate(-2 -2) scale(1.2)",
   "layout-right": "rotate(180 10 10)",
   "layout-right-full": "rotate(180 10 10)",
   "layout-right-partial": "rotate(180 10 10)",
+  "outline-copy": "translate(-2 -2) scale(1.2)",
   selector: "rotate(90 10 10)",
 } as const satisfies Partial<Record<keyof typeof UI_CODEX_ICON_ALIASES, string>>

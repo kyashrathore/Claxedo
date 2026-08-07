@@ -168,6 +168,11 @@
  */
 import { expect, test, type Page, type Route } from "@playwright/test"
 import { expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"
+import {
+  assertSessionConfigPatchResponse,
+  parseSessionConfigPatch,
+  SESSION_CONFIG_PATCH_SUCCESS_STATUS,
+} from "../helpers/contracts/session-config"
 
 const PROJECT_ID = "proj_core_user_hosted_workspace"
 const WORKSPACE_ID = "ws_core_user_hosted_workspace"
@@ -178,7 +183,7 @@ const WORKSPACE_ID = "ws_core_user_hosted_workspace"
 // returns `false` for any `ses_`-prefixed id (those are OpenCode-legacy sessions
 // whose compat frames arrive on the classic `/global/event` loop instead). A
 // `ses_` id here would make the runtime consumer `continue` past every frame, so
-// the contract-v3 lane below could never render. Real user-hosted runtime
+// the contract-v4 lane below could never render. Real user-hosted runtime
 // sessions are runtime-native, so this matches production, not just the gate.
 const SESSION_ID = "run_core_user_hosted_workspace"
 const DIR = "/tmp/e2e-core-user-hosted-workspace"
@@ -228,33 +233,40 @@ function textOf(parts: unknown): string {
     .trim()
 }
 
-// Minimal SSE delivery bus — same delivery mechanism documented in
-// e2e/helpers/mock-runtime.ts's EventBus and reused verbatim by core-cloud-
-// provisioning.spec.ts: each GET blocks until an event is pending (or idles
-// out), fulfills with the queued batch, then ends; the app's own SSE-
-// reconnect loop drives further polls. Duplicated here rather than imported
-// because mock-runtime.ts's cloud/relay support is explicitly "best-effort
-// scaffolding" and does not model the user-hosted mint/health sequence this
-// spec needs — see the finding filed in this spec's task report.
+// Cursor-resumed SSE event log matching e2e/helpers/mock-runtime.ts's EventBus
+// and core-cloud-provisioning.spec.ts. Each concurrent reader receives every
+// event in order and resumes with its own Last-Event-ID. Duplicated here
+// because mock-runtime.ts's cloud/relay support does not model the user-hosted
+// mint/health sequence this spec needs.
 class Bus<T> {
-  private pending: T[] = []
+  private log: Array<{ id: number; payload: T }> = []
+  private sequence = 0
   private waiters: Array<() => void> = []
   emit(payload: T) {
-    this.pending.push(payload)
+    this.sequence += 1
+    this.log.push({ id: this.sequence, payload })
     const waiters = this.waiters
     this.waiters = []
     for (const resolve of waiters) resolve()
   }
-  private async waitForPending(idleTimeoutMs: number) {
-    if (this.pending.length > 0) return
+  private async waitForPending(idleTimeoutMs: number, cursor: number) {
+    if (this.sequence > cursor) return
     await Promise.race([new Promise<void>((resolve) => this.waiters.push(resolve)), wait(idleTimeoutMs)])
   }
-  async drain(idleTimeoutMs: number) {
-    await this.waitForPending(idleTimeoutMs)
-    const batch = this.pending
-    this.pending = []
-    return batch
+  async drain(idleTimeoutMs: number, cursor = 0) {
+    await this.waitForPending(idleTimeoutMs, cursor)
+    return this.log.filter((entry) => entry.id > cursor)
   }
+}
+
+function lastEventId(route: Route) {
+  const value = Number(route.request().headers()["last-event-id"])
+  return Number.isFinite(value) && value > 0 ? value : 0
+}
+
+function eventStream<T>(events: Array<{ id: number; payload: T }>) {
+  if (events.length === 0) return ": heartbeat\n\n"
+  return events.map((event) => `id: ${event.id}\ndata: ${JSON.stringify(event.payload)}\n\n`).join("")
 }
 
 type HealthOutcome = 200 | 409 | 503
@@ -305,7 +317,7 @@ async function installUserHostedRuntimeMock(
 ) {
   const provisioningBus = new Bus<Record<string, unknown>>()
   const sessionBus = new Bus<Record<string, unknown>>()
-  // The contract-v3 runtime-events lane. A ready user-hosted (workspace-relay)
+  // The contract-v4 runtime-events lane. A ready user-hosted (workspace-relay)
   // session consumes live turn events ONLY through global-sdk's runtime loop
   // (`startRuntimeEvents`, src/context/global-sdk.tsx), which fetches
   // `${relayUrl}/workspaces/:id/api/wr/runtime-events` and reads each frame with
@@ -318,6 +330,7 @@ async function installUserHostedRuntimeMock(
   // route shape — the exact gap the fixme pinned).
   const runtimeBus = new Bus<Record<string, unknown>>()
   let sessionCreated = false
+  let sessionBusy = false
   let messages: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }> = []
   let promptCount = 0
   let healthAttempt = 0
@@ -328,12 +341,31 @@ async function installUserHostedRuntimeMock(
     mintCount: 0,
     /** GETs of `/workspaces/:id/api/wr/runtime-events` — proof the emitter is actually consumed. */
     runtimeEventsPollCount: 0,
-    /** Contract-v3 frames actually pushed onto `runtimeBus`. */
+    /** Contract-v4 frames actually pushed onto `runtimeBus`. */
     runtimeFramesEmitted: [] as Array<Record<string, unknown>>,
     relayHits: [] as string[],
     bareHitsDuringReady: [] as string[],
   }
   let ready = false
+
+  provisioningBus.emit({ directory: "global", payload: { type: "server.connected", properties: {} } })
+
+  const sessionConfig = () => ({
+    harness: { id: "opencode", access: "native" },
+    model: { providerID: "opencode", modelID: BIG_PICKLE.id },
+    agent: "build",
+  })
+  const sessionRow = () => ({
+    id: SESSION_ID,
+    slug: SESSION_ID,
+    projectID: PROJECT_ID,
+    directory: WORKSPACE_ID,
+    title: textOf(messages[0]?.parts) || "",
+    version: "2",
+    time: { created: 1, updated: Date.now() },
+    summary: { additions: 0, deletions: 0, files: 0 },
+    config: sessionConfig(),
+  })
 
   const projectRow = () => ({
     id: PROJECT_ID,
@@ -374,11 +406,8 @@ async function installUserHostedRuntimeMock(
       return json(route, projectRow())
     }
     if (url.pathname === "/global/event" || url.pathname === "/event") {
-      const batch = await provisioningBus.drain(4000)
-      const body = batch.length === 0
-        ? `data: ${JSON.stringify({ directory: "global", payload: { type: "server.connected", properties: {} } })}\n\n`
-        : batch.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("")
-      return route.fulfill({ status: 200, contentType: "text/event-stream", body }).catch(() => {})
+      const batch = await provisioningBus.drain(4000, lastEventId(route))
+      return route.fulfill({ status: 200, contentType: "text/event-stream", body: eventStream(batch) }).catch(() => {})
     }
     // ---- Control-plane session inventory + central event stream (bare
     // origin, ALWAYS — independent of any workspace's connect/ready state;
@@ -480,20 +509,14 @@ async function installUserHostedRuntimeMock(
       if (runtimePath === "/api/wr/harness-config-options") {
         return json(route, { source: "runner", stale: false, options: [{ id: "model", name: "Model", category: "model", type: "select", currentValue: BIG_PICKLE.id, selectOptions: [BIG_PICKLE] }] })
       }
-      // The contract-v3 turn lane (see `runtimeBus` above). Each GET blocks until
-      // a frame is pending (or idles out with a heartbeat), then fulfills with the
-      // queued batch and ends — the runtime loop reconnects for the next batch,
-      // exactly like the `/global/event` delivery mechanism documented in
-      // e2e/helpers/mock-runtime.ts. Frames are already the full
+      // The contract-v4 turn lane (see `runtimeBus` above). Frames are served from
+      // the cursor-resumed log and already carry the full
       // `{contractVersion, directory, sessionId, assistantMessageId, payload}`
       // envelope the consumer expects, so they go on the wire verbatim.
       if (runtimePath === "/api/wr/runtime-events") {
         requests.runtimeEventsPollCount += 1
-        const batch = await runtimeBus.drain(4000)
-        const body = batch.length === 0
-          ? ": heartbeat\n\n"
-          : batch.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join("")
-        return route.fulfill({ status: 200, contentType: "text/event-stream", body }).catch(() => {})
+        const batch = await runtimeBus.drain(4000, lastEventId(route))
+        return route.fulfill({ status: 200, contentType: "text/event-stream", body: eventStream(batch) }).catch(() => {})
       }
       // ClaxedoEventsProvider's central stream + the legacy runtime-events alias:
       // neither carries this spec's turn, so a bare heartbeat is correct.
@@ -501,32 +524,26 @@ async function installUserHostedRuntimeMock(
         return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": heartbeat\n\n" }).catch(() => {})
       }
       if (runtimePath === "/global/event" || runtimePath === "/event") {
-        const batch = await sessionBus.drain(4000)
-        const body = batch.length === 0 ? ": heartbeat\n\n" : batch.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("")
-        return route.fulfill({ status: 200, contentType: "text/event-stream", body }).catch(() => {})
+        const batch = await sessionBus.drain(4000, lastEventId(route))
+        return route.fulfill({ status: 200, contentType: "text/event-stream", body: eventStream(batch) }).catch(() => {})
       }
-      if (runtimePath === "/session/status") return json(route, sessionCreated ? { [SESSION_ID]: { type: "idle" } } : {})
+      if (runtimePath === "/session/status") {
+        return json(route, sessionCreated && sessionBusy ? { [SESSION_ID]: { type: "busy" } } : {})
+      }
       if (runtimePath === "/session" && method === "POST") {
         requests.createSessionCount += 1
         sessionCreated = true
         messages = []
-        return json(route, {
-          id: SESSION_ID,
-          slug: SESSION_ID,
-          projectID: PROJECT_ID,
-          directory: WORKSPACE_ID,
-          title: "",
-          version: "2",
-          time: { created: Date.now(), updated: Date.now() },
-          summary: { additions: 0, deletions: 0, files: 0 },
-          config: { harness: { type: "opencode", model: BIG_PICKLE.id, status: "ready", ready: true }, model: { providerID: "opencode", modelID: BIG_PICKLE.id }, provider: { id: "opencode", model: BIG_PICKLE.id }, agent: "build" },
-        })
+        return json(route, sessionRow())
       }
-      if (runtimePath === "/session") return json(route, sessionCreated ? [{ id: SESSION_ID, directory: WORKSPACE_ID, title: "" }] : [])
-      if (/^\/session\/[^/]+$/.test(runtimePath)) return json(route, { id: SESSION_ID, directory: WORKSPACE_ID, title: textOf(messages[0]?.parts) || "" })
+      if (runtimePath === "/session") return json(route, sessionCreated ? [sessionRow()] : [])
+      if (/^\/session\/[^/]+$/.test(runtimePath)) return json(route, sessionRow())
       if (/^\/session\/[^/]+\/config$/.test(runtimePath)) {
-        if (method === "GET") return json(route, { harness: { type: "opencode", model: BIG_PICKLE.id, status: "ready", ready: true }, model: { providerID: "opencode", modelID: BIG_PICKLE.id }, provider: { id: "opencode", model: BIG_PICKLE.id }, agent: "build" })
-        return json(route, { ok: true })
+        if (method === "GET") return json(route, sessionConfig())
+        parseSessionConfigPatch(request.postDataJSON(), request.url())
+        const saved = sessionConfig()
+        assertSessionConfigPatchResponse(saved, request.url())
+        return json(route, saved, SESSION_CONFIG_PATCH_SUCCESS_STATUS)
       }
       if (/^\/session\/[^/]+\/capabilities$/.test(runtimePath)) {
         return json(route, { transport: "opencode", abort: true, reconnect: true, replay: true, permissions: true, questions: true, todos: true, commands: true, fork: true, revert: true, unrevert: true, configOptions: false })
@@ -590,6 +607,7 @@ async function installUserHostedRuntimeMock(
 
         void (async () => {
           await wait(20)
+          sessionBusy = true
           emitFrame({ type: "session-status", status: "busy" })
           const fullText = `user-hosted ack ${promptCount}: ${text}`
           const midpoint = Math.max(1, Math.floor(fullText.length / 2))
@@ -605,6 +623,7 @@ async function installUserHostedRuntimeMock(
           messages = [...messages, { info: completedInfo, parts: [finalPart] }]
           await wait(40)
           // `finish` projects to `message.completed` + `session.idle`, settling the turn.
+          sessionBusy = false
           emitFrame({ type: "finish", sessionId: SESSION_ID })
         })()
         return
@@ -696,8 +715,7 @@ test.describe("core user-hosted workspace @core", () => {
   // settles the turn, and the settle re-fetches the message list over the relay lane
   // (now carrying the `${userID}_r` assistant row) — see `installUserHostedRuntimeMock`
   // above. The runtime-native session id (`SESSION_ID` = `run_...`, not `ses_...`) is
-  // what lets the frames pass `runtimeProjectionOwnsCompat`. Un-pinned from the
-  // leader's `test.fixme` once the contract-v3 lane above was built.
+  // what lets the frames pass `runtimeProjectionOwnsCompat`.
   test("ready unlocks the composer and a send is proven by the oracle through the relay lane — behaviors 2,3", async ({ page }) => {
     test.setTimeout(120_000)
     const mock = await installUserHostedRuntimeMock(page, { health: [200] })
@@ -717,7 +735,7 @@ test.describe("core user-hosted workspace @core", () => {
     // block, which no-ops the click — wait for a real model to land in the
     // model control first, matching core-cloud-provisioning.spec.ts and
     // core-harness-ownership-cloud.spec.ts's established pattern.
-    await expect(page.locator('[data-action="prompt-model"]')).toContainText(/Big Pickle|big-pickle/i, {
+    await expect(page.locator('[data-action="prompt-harness-model"]')).toContainText(/Big Pickle|big-pickle/i, {
       timeout: CONTENTION_TIMEOUT,
     })
 
@@ -737,7 +755,7 @@ test.describe("core user-hosted workspace @core", () => {
     expect(mock.requests.relayHits.some((h) => h.includes("/session") && h.startsWith("POST"))).toBe(true)
     expect(mock.requests.bareHitsDuringReady).toEqual([])
 
-    // Consumption proof: the contract-v3 emitter is actually drained by the app —
+    // Consumption proof: the contract-v4 emitter is actually drained by the app —
     // the relay `/api/wr/runtime-events` stream was polled (> 0), and the frames the
     // reply was reconstructed from were really pushed onto that lane.
     expect(mock.requests.runtimeEventsPollCount).toBeGreaterThan(0)

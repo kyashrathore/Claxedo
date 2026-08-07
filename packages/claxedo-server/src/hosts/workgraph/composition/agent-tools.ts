@@ -147,36 +147,59 @@ export async function createLocalWorkGraphAgentTools(
       ]
     }),
   )
+  const operationId = z.string().trim().min(1)
+  const streamId = z.string().trim().min(1)
+  const title = z.string().trim().min(1)
+  const description = z.string().optional()
+  const priority = z.number().int().nonnegative().optional()
+  const dependencyIds = z.array(z.string().trim().min(1)).optional()
+  const completionContract = z.object({
+    version: z.literal(1),
+    mode: z.enum(["all", "any"]),
+    requirements: z.array(z.object({
+      id: z.string().trim().min(1),
+      kind: z.enum(["test", "artifact", "review", "integration", "verification", "owner_confirmation"]),
+      description: z.string().trim().min(1),
+    }).passthrough()).min(1),
+  })
+  const summary = z.string().trim().min(1).max(10_000)
+  const artifacts = z.array(z.string().trim().min(1)).max(100).optional()
+  const evidence = z.array(z.strictObject({
+    requirement_id: z.string().trim().min(1).optional(),
+    evidence: z.record(z.string(), z.unknown()),
+  })).min(1).max(100)
   const ledger = z.discriminatedUnion("action", [
     z.strictObject({
       action: z.enum(["create_task", "file_discovered"]),
-      operation_id: z.string().trim().min(1),
-      stream_id: z.string().trim().min(1),
-      title: z.string().trim().min(1),
-      description: z.string().optional(),
-      priority: z.number().int().nonnegative().optional(),
-      dependency_ids: z.array(z.string().trim().min(1)).optional(),
-      completion_contract: z.object({
-        version: z.literal(1),
-        mode: z.enum(["all", "any"]),
-        requirements: z.array(z.object({
-          id: z.string().trim().min(1),
-          kind: z.enum(["test", "artifact", "review", "integration", "verification", "owner_confirmation"]),
-          description: z.string().trim().min(1),
-        }).passthrough()).min(1),
-      }),
+      operation_id: operationId,
+      stream_id: streamId,
+      title,
+      description,
+      priority,
+      dependency_ids: dependencyIds,
+      completion_contract: completionContract,
     }),
     z.strictObject({
       action: z.literal("mark_done"),
-      operation_id: z.string().trim().min(1),
-      summary: z.string().trim().min(1).max(10_000),
-      artifacts: z.array(z.string().trim().min(1)).max(100).optional(),
-      evidence: z.array(z.strictObject({
-        requirement_id: z.string().trim().min(1).optional(),
-        evidence: z.record(z.string(), z.unknown()),
-      })).min(1).max(100),
+      operation_id: operationId,
+      summary,
+      artifacts,
+      evidence,
     }),
   ])
+  const ledgerInput = z.strictObject({
+    action: z.enum(["create_task", "file_discovered", "mark_done"]),
+    operation_id: operationId,
+    stream_id: streamId.optional().describe("Required for create_task and file_discovered"),
+    title: title.optional().describe("Required for create_task and file_discovered"),
+    description,
+    priority,
+    dependency_ids: dependencyIds,
+    completion_contract: completionContract.optional().describe("Required for create_task and file_discovered"),
+    summary: summary.optional().describe("Required for mark_done"),
+    artifacts,
+    evidence: evidence.optional().describe("Required for mark_done"),
+  })
   const requireMasterBinding = async (
     toolContext: WorkGraphContext,
     invocation: Readonly<{ sessionID: string }>,
@@ -244,7 +267,7 @@ export async function createLocalWorkGraphAgentTools(
     },
     workgraph_ledger: {
       description: "Create human-directed Tasks, file discovered work for approval, or complete the current Task with evidence.",
-      inputSchema: z.toJSONSchema(ledger) as Record<string, unknown>,
+      inputSchema: z.toJSONSchema(ledgerInput) as Record<string, unknown>,
       execute: async (value: unknown, invocation: Readonly<{ sessionID: string; toolCallID: string }>) => {
         const parsed = ledger.parse(value)
         // `action` selects which WorkGraph tool to forward to; it is not a field

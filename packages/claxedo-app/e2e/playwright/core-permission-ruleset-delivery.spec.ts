@@ -316,7 +316,7 @@ test.describe("core permission ruleset delivery @core", () => {
     // Cross-cutting #1: the harness is opencode, asserted positively — otherwise
     // behavior 5's negative twin could pass for the wrong reason and this one could
     // fail for the wrong reason.
-    await expect(page.getByRole("button", { name: /^OpenCode$/ }).last()).toBeVisible({ timeout: 20_000 })
+    await expect(page.locator('[data-action="prompt-harness-model"][data-harness="opencode"]').last()).toBeVisible({ timeout: 20_000 })
 
     const control = await approveSwitch(page)
     expect(mock.requests.sessionUpdateBodies).toHaveLength(0)
@@ -368,7 +368,7 @@ test.describe("core permission ruleset delivery @core", () => {
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harness: "opencode" })
 
     await openExistingSession(page, DIR, SESSION_ID)
-    await expect(page.getByRole("button", { name: /^OpenCode$/ }).last()).toBeVisible({ timeout: 20_000 })
+    await expect(page.locator('[data-action="prompt-harness-model"][data-harness="opencode"]').last()).toBeVisible({ timeout: 20_000 })
 
     const control = await approveSwitch(page)
     await setApprove(page, control, true)
@@ -417,9 +417,9 @@ test.describe("core permission ruleset delivery @core", () => {
     await captureSwitchEvidence(page, "disabling-withdraws-every-grant")
   })
 
-  const nonOpencode: { harness: Harness; label: RegExp; note: string }[] = [
-    { harness: "claude-acp", label: /^Claude$/, note: "ACP — Claxedo answers locally, mode ids are open strings" },
-    { harness: "claude-sdk", label: /^Claude$/, note: "native SDK permission mode — not sent from this control" },
+  const nonOpencode: { harness: Harness; note: string }[] = [
+    { harness: "claude-acp", note: "ACP — Claxedo answers locally, mode ids are open strings" },
+    { harness: "claude-sdk", note: "native SDK permission mode — not sent from this control" },
   ]
 
   for (const harnessCase of nonOpencode) {
@@ -434,8 +434,8 @@ test.describe("core permission ruleset delivery @core", () => {
       const input = await openDraftPrompt(page, DIR)
       // Cross-cutting #1: the seeded harness auto-adopts on mount, so the control
       // already reads the harness's own label rather than "OpenCode".
-      await expect(page.getByRole("button", { name: harnessCase.label }).last()).toBeVisible({ timeout: 20_000 })
-      await expect(page.getByRole("button", { name: /^OpenCode$/ })).toHaveCount(0)
+      await expect(page.locator(`[data-action="prompt-harness-model"][data-harness="${harnessCase.harness}"]`).last()).toBeVisible({ timeout: 20_000 })
+      await expect(page.locator('[data-action="prompt-harness-model"][data-harness="opencode"]')).toHaveCount(0)
 
       const first = `permission ruleset ${harnessCase.harness} first turn`
       await composePrompt(page, input, first)
@@ -444,7 +444,7 @@ test.describe("core permission ruleset delivery @core", () => {
       await expectAssistantReplyVisible(page, `ack 1: ${first}`)
       // The harness survived the create/navigate handoff — the session really is this
       // harness's, so "no write" below is a statement about this harness.
-      await expect(page.getByRole("button", { name: harnessCase.label }).last()).toBeVisible({ timeout: 20_000 })
+      await expect(page.locator(`[data-action="prompt-harness-model"][data-harness="${harnessCase.harness}"]`).last()).toBeVisible({ timeout: 20_000 })
       expect(mock.requests.sessionUpdateBodies).toHaveLength(0)
 
       // Claxedo offers NOTHING here: this harness reports its own modes, so the
@@ -526,7 +526,7 @@ test.describe("core permission ruleset delivery @core", () => {
     const mock = await installMockRuntime(page, { dir: DIR, sessionId, harness: "opencode" })
 
     const input = await openDraftPrompt(page, DIR)
-    await expect(page.getByRole("button", { name: /^OpenCode$/ }).last()).toBeVisible({ timeout: 20_000 })
+    await expect(page.locator('[data-action="prompt-harness-model"][data-harness="opencode"]').last()).toBeVisible({ timeout: 20_000 })
 
     // opencode IS the ruleset harness here — the only reason nothing is written is that
     // a draft has no session id to scope a ruleset to.

@@ -450,7 +450,23 @@ function trackSessionMutations(page: Page) {
           failNextPatch = false
           return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "failed" }) })
         }
-        return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) })
+        const title = body && typeof body === "object" && "title" in body && typeof body.title === "string"
+          ? body.title
+          : id
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            id,
+            slug: id,
+            projectID: PROJECT_ID,
+            directory: DIR,
+            title,
+            version: "2",
+            time: { created: Date.now(), updated: Date.now() },
+            summary: { additions: 0, deletions: 0, files: 0 },
+          }),
+        })
       }
       if (method === "DELETE") {
         deletes.push(id)
@@ -744,8 +760,9 @@ test.describe("core session actions: revert / unrevert @core", () => {
     await page.route("**/session/*/unrevert", async (route) => {
       if (route.request().method() !== "POST") return route.fallback()
       unrevertCount += 1
-      await route.fulfill({ status: 200, contentType: "application/json", body: "{}" })
-      mock.emit({ type: "session.updated", properties: { info: await sessionRowWithRevert(mock, undefined) } })
+      const canonical = await sessionRowWithRevert(mock, undefined)
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(canonical) })
+      mock.emit({ type: "session.updated", properties: { info: canonical } })
     })
 
     const firstUserRow = page.locator('[data-component="user-message"]').first()

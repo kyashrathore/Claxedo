@@ -50,6 +50,7 @@ let piRefreshCalls = 0
 let piDefaults: Record<string, string> = {}
 let draftDefaultState: "ready" | "choose-model" | "saved-model-unavailable" | "unsupported-placement" | undefined = "ready"
 let draftDefaultLabels: { provider?: string; model?: string } | undefined
+let harnessMode = true
 
 vi.mock("@/features/session/app-ports", () => ({
   useProviders: () => ({
@@ -172,7 +173,7 @@ function harnessController(): HarnessSelectionController {
     read: () => ({
       harness: harnessType as ReturnType<HarnessSelectionController["read"]>["harness"],
       readiness: readiness as ReturnType<HarnessSelectionController["read"]>["readiness"],
-      isHarnessMode: true,
+      isHarnessMode: harnessMode,
       models,
       selectedModel,
       selectedModelKey: selectedModel ? { providerID: selectedModelProvider ?? harnessType, modelID: selectedModel } : undefined,
@@ -233,6 +234,7 @@ afterEach(() => {
 })
 
 beforeEach(() => {
+  harnessMode = true
   readiness = "ready"
   harnessType = "claude-acp"
   models = []
@@ -258,6 +260,34 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("AgentHarnessSelector — sessionLocked guard", () => {
+  test("keeps the OpenCode model picker enabled while only harness switching is locked", () => {
+    harnessMode = false
+    const model = {
+      list: () => [{ id: "model-1", name: "Model 1", provider: { id: "provider-1", name: "Provider 1" } }],
+      current: () => undefined,
+      visible: () => true,
+      set: () => undefined,
+    }
+    const { container } = render(() => (
+      <TestAgentHarnessSelector
+        sessionLocked
+        openCode={{
+          model: () => model,
+          label: () => "Model 1",
+          loading: () => false,
+          showVariantSelector: () => false,
+          variants: () => [],
+          currentVariant: () => undefined,
+          variantLabel: (value) => value,
+          onVariantSelect: () => undefined,
+        }}
+      />
+    ))
+
+    expect(container.querySelector("[data-testid='select']")?.getAttribute("data-disabled")).toBe("true")
+    expect(container.querySelector("[data-testid='model-selector']")?.getAttribute("data-disabled")).toBe("false")
+  })
+
   test("trigger is enabled when sessionLocked is false (new session)", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
     const trigger = container.querySelector("[data-testid='select-trigger']") as HTMLButtonElement

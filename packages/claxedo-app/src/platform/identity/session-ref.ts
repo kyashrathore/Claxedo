@@ -65,6 +65,16 @@ export function sessionHarness(ref: SessionRef): HarnessRef {
   return ref.harness ?? { id: "opencode" }
 }
 
+export function isDirectorylessPiSession(input: { directory?: string | null; sessionRef?: SessionRef }) {
+  return !input.directory &&
+    input.sessionRef?.host === "central" &&
+    sessionHarness(input.sessionRef).id === "pi"
+}
+
+export function supportsSessionDirectory(input: { directory?: string | null; sessionRef?: SessionRef }) {
+  return !!input.directory || input.sessionRef?.host !== "central" || isDirectorylessPiSession(input)
+}
+
 export function centralSessionRef(input: {
   sessionId?: string
   workspaceId?: string

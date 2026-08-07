@@ -76,6 +76,24 @@ describe("embedded WorkGraph agent tools", () => {
     ).rejects.toThrow()
   })
 
+  test("publishes an explicit provider-safe ledger schema while enforcing branch requirements at execution", async () => {
+    const tools = await createLocalWorkGraphAgentTools(embedded(vi.fn()) as never, {
+      organizationId: "organization-a",
+      ownerUserId: "owner-a",
+    })
+    const schema = tools.workgraph_ledger!.inputSchema
+
+    expect(schema.type).toBe("object")
+    expect(schema).not.toHaveProperty("oneOf")
+    expect(schema).not.toHaveProperty("anyOf")
+    expect(schema).not.toHaveProperty("allOf")
+    expect(schema.properties).toMatchObject({ action: {}, stream_id: {}, summary: {}, evidence: {} })
+    await expect(tools.workgraph_ledger!.execute(
+      { action: "mark_done", operation_id: "operation-3" },
+      { sessionID: "session-1", agent: "build", assistantMessageID: "message-1", toolCallID: "call-3" },
+    )).rejects.toThrow()
+  })
+
   test("ledger creation is owner-directed from a plain Session and discovered work stays agent-staged", async () => {
     const execute = vi.fn(async (_context, request) => ({
       ok: true as const,

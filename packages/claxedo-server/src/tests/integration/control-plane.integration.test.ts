@@ -162,6 +162,16 @@ const upstreamProvider = {
   connected: ["upstream"],
 }
 
+const indexedUpstreamProvider = {
+  all: [{
+    id: "upstream",
+    name: "Upstream",
+    models: { "up-model": upstreamProvider.all[0]!.models["up-model"] },
+  }],
+  default: upstreamProvider.default,
+  connected: upstreamProvider.connected,
+}
+
 const upstreamConfigProviders = {
   providers: upstreamProvider.all,
   default: upstreamProvider.default,
@@ -373,7 +383,7 @@ describe("control plane integration", () => {
       directory: "",
     })
     expect(body.project).toEqual([])
-    expect(body.provider).toEqual(upstreamProvider)
+    expect(body.provider).toEqual(indexedUpstreamProvider)
     expect(body.provider_auth).toMatchObject({
       "claude-acp": [{ type: "api", label: "API Key" }],
       "codex-acp": [
@@ -929,7 +939,7 @@ describe("control plane integration", () => {
 
     const provider = await fetch(`${base()}/provider`)
     expect(provider.status).toBe(200)
-    expect(await provider.json()).toEqual(upstreamProvider)
+    expect(await provider.json()).toEqual(indexedUpstreamProvider)
 
     // The default OpenCode harness proxies its engine provider catalog.
     const providers = await fetch(`${base()}/config/providers`)

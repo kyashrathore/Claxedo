@@ -41,6 +41,7 @@ import {
 } from "../conversation/conversation-registry"
 import { queryClient } from "@/platform/query/query-client"
 import { directorySessionCacheQueryOptions, type DirectorySessionCacheValue } from "../data/sync/queries"
+import { reconcileUnrevertedDirectorySession } from "../data/sync/directory-session-cache"
 import { workspaceSessionRoute, workspaceTerminalRoute } from "@/platform/identity/route"
 import { sessionViewKey } from "@/platform/identity/session-view-key"
 import { createModelSelectionPicker } from "../commands/model-selection"
@@ -513,7 +514,8 @@ export const useSessionCommands = (args: SessionCommandContext) => {
         if (!revertMessageID) return
         const nextMessage = userMessages().find((x) => x.id > revertMessageID)
         if (!nextMessage) {
-          await sdk.client.session.unrevert({ sessionID })
+          const result = await sdk.client.session.unrevert({ sessionID })
+          if (result.data) reconcileUnrevertedDirectorySession({ directory: args.directory(), canonical: result.data })
           prompt.reset()
           const lastMsg = findLast(userMessages(), (x) => x.id >= revertMessageID)
           args.setActiveMessage(lastMsg)

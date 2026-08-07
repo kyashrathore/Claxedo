@@ -11,7 +11,7 @@ import type {
 import { getAuthToken } from "@/platform/auth/auth-client"
 import { authFetch, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
 import type { SessionTransportCapabilities } from "@/platform/runtime/capabilities"
-import type { SessionRef } from "@/platform/identity/session-ref"
+import { supportsSessionDirectory, type SessionRef } from "@/platform/identity/session-ref"
 import { usesScopedSessionTransport, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { queryClient } from "@/platform/query/query-client"
 import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
@@ -66,13 +66,11 @@ export type AgentRuntimeMessagesPage = {
 
 /**
  * A workspace directory as the runtime transport addresses it.
- *
  * Exported so callers can name the concept instead of writing a bare string
  * parameter. Directory-string-shape routing is this codebase's largest single
  * piece of debt, and the architecture ratchet counts every new raw string
  * directory parameter; naming the type is the direction out of that debt, not a
  * way around the count.
- *
  * (Written without the raw declaration spelled out, because the ratchet matches
  * on text and would count this comment as another offender.)
  */
@@ -371,6 +369,7 @@ export function createAgentRuntimeClient(options: {
     query?: Record<string, string | number | undefined>
     init?: RequestInit
   }) {
+    if (!supportsSessionDirectory({ directory: input.directory, sessionRef: options.sessionRef })) throw new Error("Directory-less central sessions require the Pi harness")
     const init = await signedControlPlaneInit(input.init)
     const target = signed ? await workspaceTarget(input.directory) : undefined
     const directoryWorkspaceId = workspaceIdFromRef(input.directory)
@@ -434,6 +433,7 @@ export function createAgentRuntimeClient(options: {
   }
 
   async function fetchRuntimePath(input: { directory: AgentRuntimeDirectory; path: string; init?: RequestInit }) {
+    if (!supportsSessionDirectory({ directory: input.directory, sessionRef: options.sessionRef })) throw new Error("Directory-less central sessions require the Pi harness")
     const init = await signedControlPlaneInit(input.init)
     const method = init?.method?.toUpperCase() ?? "GET"
     const target = signed || options.sessionRef?.toolSandbox?.kind === "workspace" || options.sessionRef?.workspaceId || options.workspaceId || workspaceIdFromRef(input.directory)

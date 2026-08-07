@@ -291,10 +291,13 @@ function assistantTurnIndex(current: UIMessage[], message: Message) {
   // Either the incoming message IS the announced envelope and the engine's
   // arrived first, or vice versa. Anything else is a genuinely separate message.
   if (message.id === announced) {
-    return current.findIndex((item) => {
+    const candidates = current.flatMap((item, index) => {
       const stored = storedMessage(item)
       return stored?.role === "assistant" && (stored as { parentID?: unknown }).parentID === parentID
+        ? [index]
+        : []
     })
+    return candidates.length === 1 ? candidates[0]! : -1
   }
   return current.findIndex((item) => item.id === announced)
 }

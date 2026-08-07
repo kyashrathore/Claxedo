@@ -81,30 +81,10 @@ const File: Component<any> = (props) => (
 // preload promise before revealing children. The chunk downloads during the
 // connection handshake, and the existing splash remains continuous until both
 // server health and the layout chunk are ready.
-type ClaxedoAppShellComponent = Component<ParentProps>
-const [claxedoAppShell, setClaxedoAppShell] = createSignal<ClaxedoAppShellComponent>()
-const [claxedoAppShellPainted, setClaxedoAppShellPainted] = createSignal(false)
-let claxedoAppShellLoad: Promise<ClaxedoAppShellComponent> | undefined
-
-const preloadClaxedoAppShell = () => {
-  claxedoAppShellLoad ??= import("@/app/app-shell").then((m) => {
-    setClaxedoAppShell(() => m.ClaxedoAppShell)
-    return m.ClaxedoAppShell
-  })
-  return claxedoAppShellLoad
-}
-void preloadClaxedoAppShell().catch(() => undefined)
-
-function ClaxedoAppShellHost(props: ParentProps) {
-  const AppShell = claxedoAppShell()
-  let didSignalPaint = false
-  createEffect(() => {
-    if (!AppShell || didSignalPaint) return
-    didSignalPaint = true
-    void waitForLayoutRevealFrame().then(() => setClaxedoAppShellPainted(true))
-  })
-  return AppShell ? <AppShell>{props.children}</AppShell> : null
-}
+const ClaxedoAppShellHost = lazy(() =>
+  import("@/app/app-shell").then((module) => ({ default: module.ClaxedoAppShell })),
+)
+void ClaxedoAppShellHost.preload().catch(() => undefined)
 
 /**
  * Wait one frame before revealing the shell, but never wait forever.
@@ -113,8 +93,8 @@ function ClaxedoAppShellHost(props: ParentProps) {
  * because `requestAnimationFrame` does not fire at all in a hidden document —
  * browsers suspend it for background tabs and occluded windows. The previous
  * fallback only covered rAF being ABSENT, so when it was present-but-suspended
- * this promise never settled, `claxedoAppShellPainted` stayed false, and the
- * blocking splash covered the app indefinitely. Loading while backgrounded was
+ * this promise never settled and the blocking splash covered the app
+ * indefinitely. Loading while backgrounded was
  * enough to reproduce it; it self-heals on focus, which is why it reads as a
  * mystery rather than a hang.
  *
@@ -178,8 +158,7 @@ declare global {
 }
 
 function MarkedProviderWithNativeParser(props: ParentProps) {
-  const platform = usePlatform()
-  return <MarkedProvider nativeParser={platform.parseMarkdown}>{props.children}</MarkedProvider>
+  return <MarkedProvider>{props.children}</MarkedProvider>
 }
 
 export function AppBaseProviders(props: ParentProps) {
@@ -218,7 +197,7 @@ function ConnectionGate(props: ParentProps) {
   const [mode, setMode] = createSignal<"blocking" | "background">("blocking")
 
   const [startup, actions] = createResource(async () => {
-    const layoutReady = preloadClaxedoAppShell()
+    const layoutReady = ClaxedoAppShellHost.preload()
     if (!server.current) {
       await layoutReady
       await waitForLayoutRevealFrame()
@@ -262,7 +241,7 @@ function ConnectionGate(props: ParentProps) {
   })
 
   const readyToRender = () => mode() === "blocking" ? !startup.loading : startup.state !== "pending"
-  const showBlockingSplash = () => mode() === "blocking" && (!readyToRender() || (startup() === true && !claxedoAppShellPainted()))
+  const showBlockingSplash = () => mode() === "blocking" && !readyToRender()
 
   return (
     <>

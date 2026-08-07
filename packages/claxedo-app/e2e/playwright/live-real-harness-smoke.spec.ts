@@ -44,11 +44,8 @@
  *     `submitControlReady` asserts `data-icon !== "stop"` once settled).
  *   `[data-slot="session-turn-assistant-content"]` (not `aria-hidden="true"`) — the
  *     oracle's DOM-truth target (`e2e/helpers/turn-oracle.ts`).
- *   Harness `<Select>` trigger (`getByRole("button", { name: /^OpenCode$/ })` before
- *     any switch) + `getByRole("option", { name: <label> }).nth(<index>)` — same
- *     ACP-before-native-SDK group ordering as `core-harness-ownership-local`
- *     (`agent-harness-selector.tsx`'s `HARNESS_OPTIONS`).
- *   `[data-action="prompt-harness-model"]` — harness model control; this spec only
+ *   `[data-action="prompt-harness-model"]` — the unified harness/model picker,
+ *     with ACP-before-native-SDK group ordering from `HARNESS_OPTIONS`. This spec only
  *     asserts it stops reading "Loading models"/"Select model" (real catalog
  *     resolution), never a specific model name — model catalogs are live data that
  *     can change server-side; asserting exact names is `core-harness-ownership-
@@ -419,8 +416,11 @@ function sessionUrlPattern() {
 }
 
 async function switchDraftHarness(page: Page, optionName: RegExp, optionIndex: number) {
-  await page.getByRole("button", { name: /^OpenCode$/ }).last().click()
-  await page.getByRole("option", { name: optionName }).nth(optionIndex).click()
+  await page.locator('[data-action="prompt-harness-model"]').last().click()
+  const picker = page.locator('[data-component="harness-model-picker"]')
+  await picker.locator('[data-slot="harness-picker-section"]').first().click()
+  await picker.getByRole("button", { name: optionName }).nth(optionIndex).click()
+  await page.keyboard.press("Escape")
 }
 
 async function waitForHarnessReady(page: Page) {

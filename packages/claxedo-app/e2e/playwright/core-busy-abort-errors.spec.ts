@@ -745,7 +745,7 @@ test.describe("core busy / abort / errors @core", () => {
     expect(mock.requests.promptCount).toBe(1)
 
     const original = mock.requests.promptBodies[0]
-    await errorCard.getByRole("button", { name: "Try again" }).click()
+    await errorCard.getByRole("button", { name: "Resend last prompt" }).click()
 
     await expect.poll(() => mock.requests.promptCount, {
       timeout: 15_000,

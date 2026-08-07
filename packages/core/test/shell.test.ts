@@ -40,7 +40,7 @@ describe("shell", () => {
     expect(Shell.posix("C:/tools/pwsh.exe")).toBe(false)
   })
 
-  test("falls back when configured shell cannot be resolved", async () => {
+  test("selects the system default when the configured shell cannot be resolved", async () => {
     await withShell(undefined, async () => {
       const preferred = Shell.preferred()
       const acceptable = Shell.acceptable()
@@ -49,7 +49,7 @@ describe("shell", () => {
     })
   })
 
-  test("falls back for terminal-only acceptable shells", () => {
+  test("selects an execution-safe shell for terminal-only configured shells", () => {
     expect(Shell.name(Shell.acceptable("fish"))).not.toBe("fish")
     expect(Shell.name(Shell.acceptable("nu"))).not.toBe("nu")
   })

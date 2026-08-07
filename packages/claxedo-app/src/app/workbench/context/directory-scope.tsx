@@ -25,7 +25,7 @@ import { DataProvider } from "@/ui/session-kit"
 import { SessionSyncProvider } from "@/features/session/providers/session-sync"
 import { WorkspaceSDKProvider } from "./workspace-sdk-provider"
 import { sessionRoute } from "@/platform/identity/route"
-import type { SessionRef } from "@/platform/identity/session-ref"
+import { isDirectorylessPiSession, type SessionRef } from "@/platform/identity/session-ref"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { fetchSessionMessagesByTransport } from "../../../features/session/store/session-transport"
 import { registeredConversationSnapshot } from "../../../features/session/conversation/conversation-registry"
@@ -195,7 +195,9 @@ export function DirectoryScope(props: ParentProps<{
   const canUseDraftCacheFallback = () => active() && draftSession()
   const canUseRouteSessionFallback = () => {
     const sessionId = props.sessionId?.()
-    return active() && !!sessionId && sessionId !== "new" && !!runtimeRef()
+    return active() && !!sessionId && sessionId !== "new" && (
+      !!runtimeRef() || isDirectorylessPiSession({ directory: props.directory, sessionRef: props.sessionRef?.() })
+    )
   }
   const data = () => props.workspaceReady()
     ? sessionCacheQuery.data ?? (canUseDraftCacheFallback() || canUseRouteSessionFallback() ? draftCacheData() : undefined)

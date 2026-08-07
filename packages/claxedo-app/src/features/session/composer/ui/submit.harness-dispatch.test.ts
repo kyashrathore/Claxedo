@@ -161,7 +161,7 @@ describe("Harness + demo dispatch and abort", () => {
       info: () => ({
         id: "session-1",
         config: {
-          harness: { type: "claude-acp" },
+          harness: { id: "claude", access: "acp" },
           agent: "build",
           model: { providerID: "claude-acp", modelID: "opus" },
           variant: "high",
@@ -340,10 +340,14 @@ describe("Harness + demo dispatch and abort", () => {
   })
 
 
-  test("signed harness existing session sends even when runtime get cannot hydrate the session", async () => {
+  test("signed harness existing session sends from its canonical runtime config when session hydration misses", async () => {
     state.demoMode = false
     state.harnessMode = true
     state.transportGetSession = false
+    state.runtimeSessionConfig = {
+      harness: { id: "claude", access: "acp" },
+      model: { providerID: "claude-acp", modelID: "opus" },
+    }
 
     const submit = createPromptSubmit({
       info: () => undefined,

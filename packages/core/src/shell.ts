@@ -117,7 +117,7 @@ function select(file: string | undefined, opts?: { acceptable?: boolean }) {
     if (shell) return shell
   }
   if (process.platform === "win32") return win()[0]
-  return fallback()
+  return systemDefault()
 }
 
 export function gitbash() {
@@ -129,7 +129,7 @@ export function gitbash() {
   if (stat(file)?.size) return file
 }
 
-function fallback() {
+function systemDefault() {
   if (process.platform === "darwin") return "/bin/zsh"
   const bash = which("bash")
   if (bash) return bash

@@ -407,9 +407,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
   /**
    * Picks "Scripted Model" in the composer's combined harness+model picker
    * (`[data-action="prompt-harness-model"]`, `aria-label="Select harness and
-   * model"` — this build merges what `real-harness-local.spec.ts`'s web lane
-   * knows as two separate controls, `prompt-harness` and `prompt-model`, into
-   * one; confirmed live 2026-08-06 by dumping the composer DOM).
+   * model"`), the canonical control shared by desktop and web surfaces.
    *
    * REQUIRED before the first send in every draft, not optional. Verified
    * live 2026-08-06: a fresh draft's harness+model control defaults to a REAL

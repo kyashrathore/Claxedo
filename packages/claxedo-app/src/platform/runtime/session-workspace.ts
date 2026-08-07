@@ -65,7 +65,7 @@ export function sessionWorkspaceRuntimeRef(input: SessionWorkspaceRuntimeInput) 
 }
 
 export function sessionPaneWorkspaceKey(input: SessionWorkspaceRuntimeInput) {
-  return sessionWorkspaceRuntimeRef(input)?.workspaceId ?? input.directory
+  return (sessionWorkspaceRuntimeRef(input)?.workspaceId ?? input.directory) || input.sessionRef?.sessionId || ""
 }
 
 // Resolve the WorkspaceConnection authority inputs (workspaceId + kind) for a

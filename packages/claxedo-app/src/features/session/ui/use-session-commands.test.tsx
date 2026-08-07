@@ -6,7 +6,7 @@ import {
 } from "../conversation/conversation-registry"
 import type { ConversationChatHandle } from "../conversation/opencode-conversation"
 import { queryClient } from "@/platform/query/query-client"
-import { directorySessionCacheQueryOptions } from "../data/sync/queries"
+import { directorySessionCacheQueryOptions, type DirectorySessionCacheValue } from "../data/sync/queries"
 import { workspaceSessionRoute } from "@/platform/identity/route"
 import { composerFocus } from "../composer/ui/composer-focus"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
@@ -241,7 +241,7 @@ mock.module("@/app/providers/sdk/sdk", () => ({
         },
         unrevert: async () => {
           sdkCalls.unrevert += 1
-          return { data: undefined }
+          return { data: { id: "session-1", time: { created: 1, updated: 2 } } }
         },
         summarize: async () => {
           sdkCalls.summarize += 1
@@ -461,6 +461,18 @@ describe("upstream contract", async () => {
     const byId = new Map(collectCommands().map((command) => [command.id, command]))
 
     expect(byId.get("session.redo")?.disabled).toBe(false)
+  })
+
+  test("clears the cached revert point after the authoritative unrevert response", async () => {
+    setSessionInfo({ id: "session-1", revert: { messageID: "msg-2" } })
+    const byId = new Map(collectCommands().map((command) => [command.id, command]))
+
+    await byId.get("session.redo")?.onSelect()
+
+    expect(sdkCalls.unrevert).toBe(1)
+    expect(queryClient.getQueryData<DirectorySessionCacheValue>(
+      directorySessionCacheQueryOptions({ directory: "/repo" }).queryKey,
+    )?.session[0]?.revert).toBeUndefined()
   })
 
   // Claxedo drops upstream's session sharing: no `session.share`/`session.unshare`

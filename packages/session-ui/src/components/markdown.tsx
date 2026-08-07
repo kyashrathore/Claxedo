@@ -209,8 +209,13 @@ function createMermaidViewButton(source: string) {
   button.title = "Open full screen"
   button.setAttribute("aria-label", "Open diagram full screen")
   button.setAttribute("data-slot", "mermaid-view-button")
-  button.innerHTML =
-    '<svg aria-hidden="true" viewBox="0 0 16 16"><path d="M6 2.5H2.5V6M10 2.5h3.5V6M6 13.5H2.5V10M10 13.5h3.5V10"/></svg>'
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+  svg.setAttribute("aria-hidden", "true")
+  svg.setAttribute("viewBox", "0 0 16 16")
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path")
+  path.setAttribute("d", "M6 2.5H2.5V6M10 2.5h3.5V6M6 13.5H2.5V10M10 13.5h3.5V10")
+  svg.appendChild(path)
+  button.appendChild(svg)
   button.addEventListener("click", () => mermaidViewer?.(source))
   return button
 }
@@ -259,7 +264,7 @@ function renderMermaidBlocks(root: HTMLElement) {
           diagram.setAttribute("data-slot", "mermaid-diagram")
           wrapper.appendChild(diagram)
         }
-        diagram.innerHTML = safe
+        replaceSanitizedMarkup(diagram, safe)
         wrapper.setAttribute("data-mermaid-state", "rendered")
         ensureMermaidViewButton(wrapper, source)
       })
@@ -567,7 +572,7 @@ export function Markdown(
     if (isServer) return
     if (content.length === 0) {
       disposeCopyButtons(container)
-      container.innerHTML = ""
+      container.replaceChildren()
       return
     }
 
@@ -674,7 +679,7 @@ function updateBlock(container: HTMLDivElement, index: number, block: RenderedBl
   next.dataset.markdownKey = block.key
   next.dataset.markdownHash = block.hash
   next.style.display = "contents"
-  next.innerHTML = block.html
+  replaceSanitizedMarkup(next, block.html)
   decorate(next, labels)
 
   if (!(current instanceof HTMLDivElement)) {
@@ -700,6 +705,11 @@ function updateBlock(container: HTMLDivElement, index: number, block: RenderedBl
       return true
     },
   })
+}
+
+function replaceSanitizedMarkup(element: Element, html: string) {
+  const parsed = new DOMParser().parseFromString(html, "text/html")
+  element.replaceChildren(...Array.from(parsed.body.childNodes, (node) => document.importNode(node, true)))
 }
 
 function updateCodeBlock(
