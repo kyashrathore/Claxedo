@@ -31,6 +31,7 @@ import {
 } from "@claxedo/agent-event-runtime"
 import {
   createAcpEventTranslator,
+  classifyAcpSubagentUpdate,
   translateStopReason,
 } from "@claxedo/agent-event-runtime/harnesses/acp"
 import {
@@ -76,8 +77,13 @@ import { ACP_RECOVER } from "./recovery"
 import { recovering } from "../../status"
 import { toAcpMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
 import { createTurnEventProjector } from "../shared/turn-projection"
-import { createChildEventRouter } from "../shared/child-event-routing"
+import { createChildEventRouter, type ChildProjectionTarget } from "../shared/child-event-routing"
 import { createSessionTurnLifecycle, type SessionTurnLifecycle } from "../shared/turn-lifecycle"
+import {
+  createMemorySubagentAdmissionStore,
+  createSubagentAdmissionBoundary,
+  type SubagentAdmissionStore,
+} from "../../subagent-admission"
 import { requireWorkspaceDirectory } from "../../target"
 import {
   createStdioACPTransport,
@@ -121,6 +127,14 @@ export type AcpHarnessAdapterOptions = AgentHarnessAdapterProcessOptions & {
   createStore?: (storeRoot?: string) => AcpRuntimeStore
   eventHub?: RuntimeEventHub
   createTransport?: ACPTransportFactory
+  subagentAdmissionStore?: SubagentAdmissionStore
+  materializeSubagent?: (input: {
+    parentSessionId: string
+    parentAgentSessionId: string
+    directory: string
+    event: import("@claxedo/agent-event-runtime").SubagentUpdatedEvent
+    prompt: Pick<PromptInput, "userMessageId" | "agent" | "model" | "variant">
+  }) => Promise<ChildProjectionTarget | undefined> | ChildProjectionTarget | undefined
 }
 
 export {
@@ -231,6 +245,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
   private permissionOwners = new Map<string, ACPProcess>()
   private probe: ProbeEntry | null = null
   private configRestartPending = false
+  private subagentAdmissions?: SubagentAdmissionStore
 
   constructor(private readonly options: AcpHarnessAdapterOptions) {
     this.store = options.store ?? options.createStore?.(options.storeRoot) ?? missingStore()
@@ -249,6 +264,10 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
   private lifecycle(): SessionTurnLifecycle<ActiveAcpTurn> {
     this.turnLifecycle ??= createSessionTurnLifecycle<ActiveAcpTurn>()
     return this.turnLifecycle
+  }
+
+  private subagentAdmissionStore() {
+    return this.options.subagentAdmissionStore ?? (this.subagentAdmissions ??= createMemorySubagentAdmissionStore())
   }
 
   private processMap() {
@@ -993,6 +1012,48 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
         payload,
       }),
     })
+    const subagentAdmission = createSubagentAdmissionBoundary({
+      store: this.subagentAdmissionStore(),
+      publish: (_parentSessionId, event) => router.project(event, {
+        dir: "in",
+        method: "sessionUpdate.subagent",
+        frame: event,
+      }),
+    })
+    const pendingSubagentUpdates = new Set<Promise<void>>()
+    const scheduleSubagentUpdate = (update: SessionUpdate) => {
+      const classified = classifyAcpSubagentUpdate(this.acpClient(), update)
+      if (!classified || classified.kind === "child") return classified
+      const task = subagentAdmission.admit(id, {
+        ...classified.observation,
+        harnessExecutionId: agentSessionId,
+      }).then(async (event) => {
+        if (event.transcript?.kind === "none") return
+        const target = await this.options.materializeSubagent?.({
+          parentSessionId: id,
+          parentAgentSessionId: agentSessionId,
+          directory,
+          event,
+          prompt: input,
+        })
+        if (target) router.associate(classified.correlationKey, target)
+      }).catch((err) => router.project({
+        type: "diagnostic",
+        diagnostic: {
+          code: "acp_subagent_admission_failed",
+          message: errorMessage(err),
+          severity: "warn",
+          source: "acp-adapter",
+        },
+      }, {
+        dir: "in",
+        method: "sessionUpdate.subagent.error",
+        frame: update,
+      }))
+      pendingSubagentUpdates.add(task)
+      void task.finally(() => pendingSubagentUpdates.delete(task))
+      return classified
+    }
 
     const wait = () =>
       new Promise<void>((resolve) => {
@@ -1060,6 +1121,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
 
     if (!promptError) {
       const forward = (update: SessionUpdate) => {
+        const subagent = scheduleSubagentUpdate(update)
         const result = eventRuntime.ingest({
           source: "acp.jsonrpc",
           method: "session/update",
@@ -1070,8 +1132,10 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
             dir: "in",
             method: "sessionUpdate",
             frame: update,
-          })
-          if (runtimeEvent.type !== "step-start") continue
+          }, subagent?.kind === "child"
+            ? { kind: "child", correlationKey: subagent.correlationKey }
+            : { kind: "parent" })
+          if (subagent?.kind === "child" || runtimeEvent.type !== "step-start") continue
           assistantMsgId = router.assistantMessageId()
           created = router.created()
         }
@@ -1196,6 +1260,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       }
     } finally {
       await promptPromise
+      await Promise.allSettled([...pendingSubagentUpdates])
       router.dispose()
       this.lifecycle().delete(id, turn)
     }

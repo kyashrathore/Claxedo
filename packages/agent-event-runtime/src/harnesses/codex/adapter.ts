@@ -1,4 +1,8 @@
-import type { AgentRuntimeEvent } from "../../contracts/agent-runtime-event"
+import type {
+  AgentRuntimeEvent,
+  SubagentStatus,
+  SubagentToolCallRole,
+} from "../../contracts/agent-runtime-event"
 import { runtimeDiagnostic } from "../../contracts/diagnostics"
 import type { HarnessEventAdapter, HarnessEventAdapterContext } from "../../core/adapter"
 import { toolDisplayFromInput } from "../tool-display"
@@ -41,6 +45,67 @@ function eventText(event: { payload: unknown }) {
 
 function item(event: { payload: unknown }) {
   return object(payload(event).item)
+}
+
+export type CodexCollabAgentCall = {
+  id: string
+  tool: string
+  toolCallRole: SubagentToolCallRole
+  senderThreadId: string
+  receiverThreadIds: string[]
+  prompt?: string
+  model?: string
+  statuses: Record<string, SubagentStatus>
+}
+
+export function codexCollabAgentCall(value: unknown): CodexCollabAgentCall | undefined {
+  const row = object(value)
+  if (row?.type !== "collabAgentToolCall") return
+  const id = text(row.id)
+  const tool = text(row.tool)
+  const senderThreadId = text(row.senderThreadId)
+  if (!id || !tool || !senderThreadId || !Array.isArray(row.receiverThreadIds)) return
+  const receiverThreadIds = row.receiverThreadIds.filter((value): value is string => typeof value === "string" && value.length > 0)
+  const agentsStates = object(row.agentsStates) ?? {}
+  return {
+    id,
+    tool,
+    toolCallRole: tool === "spawnAgent" || tool === "spawn_agent" ? "spawn" : "interaction",
+    senderThreadId,
+    receiverThreadIds,
+    ...(text(row.prompt) ? { prompt: text(row.prompt) } : {}),
+    ...(text(row.model) ? { model: text(row.model) } : {}),
+    statuses: Object.fromEntries(receiverThreadIds.flatMap((threadId) => {
+      const status = codexCollabAgentStatus(object(agentsStates[threadId])?.status)
+      return status ? [[threadId, status]] : []
+    })),
+  }
+}
+
+export function codexCollabAgentStatus(value: unknown): SubagentStatus | undefined {
+  const status = text(value)
+  if (status === "pendingInit") return "pending"
+  if (status === "running") return "running"
+  if (status === "interrupted") return "interrupted"
+  if (status === "completed") return "completed"
+  if (status === "errored" || status === "notFound") return "failed"
+  if (status === "shutdown") return "killed"
+}
+
+export function codexStartedSubagent(value: unknown) {
+  const thread = object(object(value)?.thread)
+  const id = text(thread?.id)
+  const parentThreadId = text(thread?.parentThreadId)
+  if (!id || !parentThreadId) return
+  const status = text(object(thread?.status)?.type)
+  return {
+    id,
+    parentThreadId,
+    status: status === "active" ? "running" as const : status === "systemError" ? "failed" as const : "pending" as const,
+    ...(text(thread?.agentNickname) ? { label: text(thread?.agentNickname) } : {}),
+    ...(text(thread?.agentRole) ? { subagentType: text(thread?.agentRole) } : {}),
+    ...(text(thread?.preview) ? { description: text(thread?.preview) } : {}),
+  }
 }
 
 function itemId(event: { payload: unknown }, fallback: string) {
@@ -735,9 +800,12 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
         case "thread/goal/cleared":
         case "thread/goal/updated":
         case "thread/settings/updated":
-        case "thread/started":
         case "thread/unarchived":
           return unmappedCodexAppServerEvent(event)
+
+        case "thread/started":
+          codexStartedSubagent(row)
+          return []
 
         // Hook and review lifecycle: chat-adjacent, but AgentRuntimeEvent has no hook/review surface yet.
         case "hook/completed":

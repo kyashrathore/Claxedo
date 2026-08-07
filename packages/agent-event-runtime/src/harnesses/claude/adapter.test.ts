@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { createAgentEventRuntime } from "../../core/runtime"
 import type { RuntimeSnapshot } from "../../core/state"
-import { claudeSdkAdapter, type ClaudeSdkAdapterState } from "./adapter"
+import {
+  claudeChildCorrelationKey,
+  claudeSdkAdapter,
+  claudeSubagentObservations,
+  type ClaudeSdkAdapterState,
+} from "./adapter"
 
 function runtime(initialSnapshot?: RuntimeSnapshot<ClaudeSdkAdapterState>) {
   return createAgentEventRuntime({
@@ -280,6 +285,173 @@ describe("claudeSdkAdapter", () => {
       toolCallId: "tool-grep-array-1",
       output: "first\nsecond",
     }])
+  })
+
+  test("U5: registers complete Agent tool blocks and renders the structured result", () => {
+    const agent = runtime()
+
+    expect(agent.ingest({
+      source: "claude.sdk.message",
+      payload: {
+        type: "assistant",
+        uuid: "assistant-agent-1",
+        session_id: "sdk-session-1",
+        parent_tool_use_id: null,
+        message: {
+          content: [{
+            type: "tool_use",
+            id: "tool-agent-complete-1",
+            name: "Agent",
+            input: { description: "Review auth", subagent_type: "code-reviewer" },
+          }],
+        },
+      },
+    }).events).toMatchObject([
+      { type: "tool-start", toolCallId: "tool-agent-complete-1", toolName: "Agent" },
+      { type: "tool-input", toolCallId: "tool-agent-complete-1" },
+    ])
+
+    expect(agent.ingest({
+      source: "claude.sdk.message",
+      payload: {
+        type: "user",
+        uuid: "user-agent-1",
+        session_id: "sdk-session-1",
+        parent_tool_use_id: null,
+        message: {
+          content: [{
+            type: "tool_result",
+            tool_use_id: "tool-agent-complete-1",
+            content: [{ type: "text", text: "model-directed trailer" }],
+          }],
+        },
+        tool_use_result: {
+          status: "completed",
+          agentId: "agent-42",
+          content: [{ type: "text", text: "Found one issue" }],
+          totalTokens: 321,
+          totalToolUseCount: 4,
+          totalDurationMs: 900,
+          usage: { input_tokens: 250, output_tokens: 71 },
+          toolStats: { readCount: 2, searchCount: 1 },
+        },
+      },
+    }).events).toMatchObject([{
+      type: "tool-output",
+      toolCallId: "tool-agent-complete-1",
+      output: "Found one issue",
+      metadata: {
+        claude: {
+          subagent: {
+            agentId: "agent-42",
+            totalTokens: 321,
+            totalToolUseCount: 4,
+            totalDurationMs: 900,
+            toolStats: { readCount: 2, searchCount: 1 },
+          },
+        },
+      },
+    }])
+  })
+
+  test("U5: registers complete child-owned tool blocks for child transcript routing", () => {
+    const payload = {
+      type: "assistant",
+      uuid: "assistant-child-1",
+      session_id: "sdk-session-1",
+      parent_tool_use_id: "tool-agent-parent-1",
+      message: {
+        content: [{ type: "tool_use", id: "tool-read-child-1", name: "Read", input: { file_path: "src/a.ts" } }],
+      },
+    }
+
+    expect(claudeChildCorrelationKey(payload)).toBe("tool-agent-parent-1")
+    expect(runtime().ingest({ source: "claude.sdk.message", payload }).events).toMatchObject([
+      { type: "tool-start", toolCallId: "tool-read-child-1", toolName: "Read" },
+      { type: "tool-input", toolCallId: "tool-read-child-1", input: { file_path: "src/a.ts" } },
+    ])
+  })
+
+  test("U5: normalizes Claude task lifecycle without requiring a tool use id", () => {
+    expect(claudeSubagentObservations({
+      type: "system",
+      subtype: "task_started",
+      uuid: "task-start-1",
+      session_id: "sdk-session-1",
+      task_id: "task-1",
+      description: "Ambient review",
+      subagent_type: "code-reviewer",
+    })).toEqual([{
+      observationId: "claude:task_started:task-start-1",
+      harnessExecutionId: "sdk-session-1",
+      stableCorrelationId: "task-1",
+      status: "running",
+      label: "Ambient review",
+      description: "Ambient review",
+      subagentType: "code-reviewer",
+      providerKind: "claude-agent",
+      transcript: { kind: "messages" },
+    }])
+
+    expect(claudeSubagentObservations({
+      type: "system",
+      subtype: "task_updated",
+      uuid: "task-update-1",
+      session_id: "sdk-session-1",
+      task_id: "task-1",
+      patch: { status: "paused", is_backgrounded: true },
+    })[0]).toMatchObject({
+      stableCorrelationId: "task-1",
+      status: "paused",
+      mode: "background",
+    })
+
+    expect(claudeSubagentObservations({
+      type: "system",
+      subtype: "task_notification",
+      uuid: "task-done-1",
+      session_id: "sdk-session-1",
+      task_id: "task-1",
+      status: "stopped",
+      summary: "Stopped",
+    })[0]).toMatchObject({ stableCorrelationId: "task-1", status: "killed" })
+  })
+
+  test("U5: treats background_tasks_changed as replacement-level membership, not completion edges", () => {
+    expect(claudeSubagentObservations({
+      type: "system",
+      subtype: "background_tasks_changed",
+      uuid: "background-1",
+      session_id: "sdk-session-1",
+      tasks: [{ task_id: "task-1", task_type: "agent", description: "Review" }],
+    })[0]).toMatchObject({
+      stableCorrelationId: "task-1",
+      status: "running",
+      mode: "background",
+    })
+    expect(claudeSubagentObservations({
+      type: "system",
+      subtype: "background_tasks_changed",
+      uuid: "background-2",
+      session_id: "sdk-session-1",
+      tasks: [],
+    })).toEqual([])
+  })
+
+  test("U5: subagent progress usage does not update the parent context gauge", () => {
+    expect(runtime().ingest({
+      source: "claude.sdk.message",
+      payload: {
+        type: "system",
+        subtype: "task_progress",
+        uuid: "task-progress-1",
+        session_id: "sdk-session-1",
+        task_id: "task-1",
+        description: "Review",
+        usage: { total_tokens: 5000, tool_uses: 8, duration_ms: 2000 },
+        summary: "Checking files",
+      },
+    }).events).not.toContainEqual(expect.objectContaining({ type: "usage" }))
   })
 
   test("maps non-question canUseTool callbacks to permission requests", () => {

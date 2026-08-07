@@ -560,7 +560,11 @@ export function translateSessionUpdate(
         return chunks
       }
 
-      chunks.push(projectToolStart(update.toolCallId, next, tool.kind ?? undefined))
+      chunks.push(projectToolStart(
+        update.toolCallId,
+        next,
+        classification.kind === "task" ? "collab_agent_tool_call" : tool.kind ?? undefined,
+      ))
       if (emitInput("start", next.input, rawInput, update.title, update.kind, content)) {
         chunks.push({ type: "tool-input", toolCallId: update.toolCallId, input: next.input, display: next.display, metadata: next.metadata })
       }

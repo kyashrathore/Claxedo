@@ -7,6 +7,7 @@ export type AcpIntent = ToolIntent
 export type AcpRule = {
   client: AcpClient
   titles?: string[]
+  titlePrefixes?: string[]
   names?: string[]
   kinds?: ToolKind[]
   short: string
@@ -185,6 +186,14 @@ export const ACP_TOOL_REGISTRY: AcpRule[] = [
     intent: "computer",
     extractor: "cursor-computer",
     evidence: ["rawInput.action", "rawOutput"],
+  },
+  {
+    client: "codex-acp",
+    titlePrefixes: ["Start subagent ", "Interact with subagent ", "Interrupt subagent "],
+    short: "task",
+    intent: "task",
+    extractor: "codex-subagent",
+    evidence: ["rawInput.agentThreadId", "_meta.codex.subagent.threadId"],
   },
   {
     client: "codex-acp",
@@ -417,7 +426,7 @@ export const ACP_TOOL_REGISTRY: AcpRule[] = [
   {
     client: "claude-acp",
     names: ["agent", "task"],
-    titles: ["Task"],
+    titles: ["Agent", "Task"],
     short: "task",
     intent: "task",
     extractor: "claude-task",
@@ -466,6 +475,8 @@ export function findAcpRule(client: AcpClient, title?: string, name?: string, ki
   if (text) {
     const match = candidates.find((item) => item.titles?.some((row) => row.toLowerCase() === text))
     if (match) return match
+    const prefix = candidates.find((item) => item.titlePrefixes?.some((row) => text.startsWith(row.toLowerCase())))
+    if (prefix) return prefix
   }
 
   // 3. Kind match (lowest precedence)

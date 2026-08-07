@@ -1,6 +1,7 @@
 import type { CompatEvent } from "../../compat-events"
 import type { AgentTurnOutcome, SessionConfig, SessionConfigUpdate } from "../../index"
 import type { RuntimeAppendSource } from "./turn-projection"
+import type { AdmittedSubagentObservation, SubagentObservation } from "../../subagent-admission"
 
 export type AgentRuntimeSessionBinding = {
   sessionId: string
@@ -8,6 +9,7 @@ export type AgentRuntimeSessionBinding = {
   title?: string
   agentSessionId: string
   ownerKey?: string
+  parentSessionId?: string
 }
 
 export type AgentRuntimeCommittedCompatOutput = {
@@ -54,7 +56,14 @@ export type AgentRuntimeStoreCore = {
   getTodos(sessionId: string): Array<{ content: string; status: string; priority: string }>
   listPermissions(directory: string): Array<{ id: string; sessionID: string }>
   listQuestions(directory: string): Array<{ id: string; sessionID: string; questions: unknown[] }>
+  listSubagents?(parentSessionId: string): unknown[]
   stalePermission(id: string): void
+  admit?(input: {
+    parentSessionId: string
+    observation: SubagentObservation
+    allocateKey: () => string
+  }): AdmittedSubagentObservation
+  markPublished?(parentSessionId: string, observationId: string): void
   close?: () => void
 }
 

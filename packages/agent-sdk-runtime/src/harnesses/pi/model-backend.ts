@@ -31,7 +31,7 @@ export type PiModelBackend = {
   streamFn?: StreamFn
   /**
    * Extra AgentTools joined to the SessionEnv bash tool (e.g. the host's
-   * spawn_session dispatch tool). Applied at Agent creation and preserved
+   * native subagent dispatch tool). Applied at Agent creation and preserved
    * across placement swaps.
    */
   extraTools?: AgentTool[]

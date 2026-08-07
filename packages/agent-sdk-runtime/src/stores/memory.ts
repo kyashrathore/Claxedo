@@ -16,9 +16,15 @@ import type {
   AgentRuntimeStoreWithRecovery,
   AgentRuntimeTurnStartOutput,
 } from "../harnesses/shared/runtime-store"
+import {
+  createMemorySubagentAdmissionStore,
+  type AdmittedSubagentObservation,
+  type SubagentObservation,
+} from "../subagent-admission"
 
 type SessionRow = {
   id: string
+  parentID?: string | null
   directory: string
   title?: string | null
   agentSessionId?: string | null
@@ -47,6 +53,11 @@ export type MemoryRuntimeStoreSnapshot = {
   todos: Array<{ sessionId: string; rows: Array<{ content: string; status: string; priority: string }> }>
   recoveryErrors: Array<{ sessionId: string; message: string }>
   seq: Array<{ sessionId: string; seq: number }>
+  subagents: Array<{
+    parentSessionId: string
+    observation: SubagentObservation
+    published: boolean
+  }>
 }
 
 /** @internal */
@@ -59,6 +70,8 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   private todos = new Map<string, Array<{ content: string; status: string; priority: string }>>()
   private recoveryErrors = new Map<string, string>()
   private seq = new Map<string, number>()
+  private subagentAdmission = createMemorySubagentAdmissionStore()
+  private subagents: MemoryRuntimeStoreSnapshot["subagents"] = []
 
   listSessions(directory: string) {
     return [...this.sessions.values()]
@@ -77,6 +90,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     const prev = this.sessions.get(input.sessionId)
     this.sessions.set(input.sessionId, {
       id: input.sessionId,
+      parentID: input.parentSessionId ?? prev?.parentID ?? null,
       directory: input.directory,
       title: input.title ?? prev?.title ?? null,
       agentSessionId: input.agentSessionId,
@@ -123,6 +137,9 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
         ...(updates.time?.archived !== undefined ? { archived: updates.time.archived } : {}),
       },
     })
+    if (updates.time?.archived !== undefined) {
+      this.interruptSubagents(id, "archive", updates.time.archived)
+    }
     this.afterChange()
     return this.getSession(id)
   }
@@ -132,12 +149,17 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   }
 
   deleteSession(id: string) {
+    for (const child of [...this.sessions.values()].filter((session) => session.parentID === id)) {
+      this.deleteSession(child.id)
+    }
     this.sessions.delete(id)
     this.configs.delete(id)
     this.messages.delete(id)
     this.todos.delete(id)
     this.recoveryErrors.delete(id)
     this.seq.delete(id)
+    this.subagents = this.subagents.filter((row) => row.parentSessionId !== id)
+    this.hydrateSubagents()
     this.deleteSessionInteractions(id)
     this.afterChange()
   }
@@ -276,6 +298,84 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     this.afterChange()
   }
 
+  admit(input: {
+    parentSessionId: string
+    observation: SubagentObservation
+    allocateKey: () => string
+  }): AdmittedSubagentObservation {
+    const existing = this.subagents.find((row) =>
+      row.parentSessionId === input.parentSessionId &&
+      row.observation.observationId === input.observation.observationId
+    )
+    const admitted = this.subagentAdmission.admit(input)
+    if (!existing) {
+      this.subagents.push({
+        parentSessionId: input.parentSessionId,
+        observation: { ...input.observation, subagentKey: admitted.event.subagentKey },
+        published: false,
+      })
+      this.afterChange()
+    }
+    return admitted
+  }
+
+  markPublished(parentSessionId: string, observationId: string) {
+    this.subagentAdmission.markPublished(parentSessionId, observationId)
+    const row = this.subagents.find((item) =>
+      item.parentSessionId === parentSessionId && item.observation.observationId === observationId
+    )
+    if (!row) throw new Error(`unknown subagent observation ${observationId}`)
+    row.published = true
+    this.afterChange()
+  }
+
+  listSubagentEvents(parentSessionId: string) {
+    return this.subagentAdmission.records()
+      .filter((row) => row.parentSessionId === parentSessionId)
+      .map((row) => row.event)
+  }
+
+  listSubagents(parentSessionId: string) {
+    const states = new Map<string, {
+      parentSessionId: string
+      subagentKey: string
+      revision: number
+      mode?: string
+      status?: string
+      label?: string
+      subagentType?: string
+      description?: string
+      providerId?: string
+      providerKind?: string
+      childSessionId?: string
+      transcript: { kind: string; ref?: string }
+      toolCallEdges: Array<{ toolCallId: string; role: string; revision: number }>
+    }>()
+    for (const event of this.listSubagentEvents(parentSessionId)) {
+      const state = states.get(event.subagentKey) ?? {
+        parentSessionId,
+        subagentKey: event.subagentKey,
+        revision: 0,
+        status: "pending",
+        transcript: { kind: "none" },
+        toolCallEdges: [],
+      }
+      state.revision = Math.max(state.revision, event.revision)
+      for (const field of ["mode", "status", "label", "subagentType", "description"] as const) {
+        if (event[field] !== undefined) state[field] = event[field]
+      }
+      for (const field of ["providerId", "providerKind", "childSessionId"] as const) {
+        if (state[field] === undefined && event[field] !== undefined) state[field] = event[field]
+      }
+      if (event.transcript) state.transcript = event.transcript
+      if (event.toolCallId && event.toolCallRole && !state.toolCallEdges.some((edge) => edge.toolCallId === event.toolCallId)) {
+        state.toolCallEdges.push({ toolCallId: event.toolCallId, role: event.toolCallRole, revision: event.revision })
+      }
+      states.set(event.subagentKey, state)
+    }
+    return [...states.values()]
+  }
+
   markRecovering(sessionId: string, message = "Agent session is recovering") {
     this.recoveryErrors.set(sessionId, message)
     this.touch(sessionId, "recovering", message)
@@ -322,6 +422,11 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       todos: [...this.todos.entries()].map(([sessionId, rows]) => ({ sessionId, rows })),
       recoveryErrors: [...this.recoveryErrors.entries()].map(([sessionId, message]) => ({ sessionId, message })),
       seq: [...this.seq.entries()].map(([sessionId, seq]) => ({ sessionId, seq })),
+      subagents: this.subagents.map((row) => ({
+        parentSessionId: row.parentSessionId,
+        observation: { ...row.observation },
+        published: row.published,
+      })),
     }
   }
 
@@ -340,14 +445,48 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     this.todos = new Map((snapshot.todos ?? []).map((row) => [row.sessionId, row.rows]))
     this.recoveryErrors = new Map((snapshot.recoveryErrors ?? []).map((row) => [row.sessionId, row.message]))
     this.seq = new Map((snapshot.seq ?? []).map((row) => [row.sessionId, row.seq]))
+    this.subagents = (snapshot.subagents ?? []).map((row) => ({
+      parentSessionId: row.parentSessionId,
+      observation: { ...row.observation },
+      published: row.published,
+    }))
+    this.hydrateSubagents()
   }
 
   protected afterChange() {}
+
+  private hydrateSubagents() {
+    this.subagentAdmission = createMemorySubagentAdmissionStore()
+    for (const row of this.subagents) {
+      this.subagentAdmission.admit({
+        parentSessionId: row.parentSessionId,
+        observation: row.observation,
+        allocateKey: () => row.observation.subagentKey!,
+      })
+      if (row.published) {
+        this.subagentAdmission.markPublished(row.parentSessionId, row.observation.observationId)
+      }
+    }
+  }
+
+  private interruptSubagents(parentSessionId: string, reason: "archive", occurrence: number) {
+    for (const child of this.listSubagents(parentSessionId)) {
+      if (!["pending", "running", "paused"].includes(child.status ?? "")) continue
+      const observationId = `host:${reason}:${occurrence}:${child.subagentKey}:${child.revision}`
+      this.admit({
+        parentSessionId,
+        observation: { observationId, subagentKey: child.subagentKey, status: "interrupted" },
+        allocateKey: () => child.subagentKey,
+      })
+      this.markPublished(parentSessionId, observationId)
+    }
+  }
 
   private sessionRow(session: SessionRow) {
     return {
       id: session.id,
       slug: session.id,
+      ...(session.parentID ? { parentID: session.parentID } : {}),
       directory: session.directory,
       title: session.title,
       time: session.time,

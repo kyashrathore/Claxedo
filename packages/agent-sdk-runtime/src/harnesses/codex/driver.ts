@@ -7,7 +7,11 @@ import {
   createAgentEventRuntime,
   type AgentEventRuntime,
 } from "@claxedo/agent-event-runtime"
-import { codexAppServerAdapter } from "@claxedo/agent-event-runtime/harnesses/codex"
+import {
+  codexAppServerAdapter,
+  codexCollabAgentCall,
+  codexStartedSubagent,
+} from "@claxedo/agent-event-runtime/harnesses/codex"
 import type { AgentConfigOptionRow, PromptInput } from "../../index"
 import type { AgentHarnessAdapterHealth, FetchLike } from "../../adapter-contract"
 import type { ResolvedMcpServer } from "../../mcp-resolver"
@@ -250,7 +254,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       codexAppServerModel(input.input.model.modelID),
       input.input.variant,
     )
-    const project = (method: string, payload: JsonRecord, frame: unknown) => input.ingest({
+    const project = (method: string, payload: JsonRecord, frame: unknown, route?: { kind: "parent" } | { kind: "child"; correlationKey: string }) => input.ingest({
       source: CODEX_SOURCE,
       method,
       payload,
@@ -258,25 +262,78 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       dir: "in",
       method,
       frame,
-    })
+    }, route)
     this.activeThreads.set(threadId, {
       sessionId: input.sessionId,
       agentSessionId: threadId,
       project,
     })
+    let messageQueue = Promise.resolve()
     const unsubscribe = proc.onMessage((message) => {
       const method = text(message.method)
       const params = record(message.params) ?? {}
       if (!method) return
-      const eventThreadId = text(params.threadId) ?? text(record(params.thread)?.id)
-      if (eventThreadId && eventThreadId !== threadId) return
-      if (method === "turn/started") {
-        turnId = text(record(params.turn)?.id) ?? turnId
-        const active = this.host.lifecycle().get(input.sessionId)
-        if (active) active.turnId = turnId
-      }
-      if (method === "turn/completed") resolveCompleted?.()
-      project(method, params, message)
+      messageQueue = messageQueue.then(async () => {
+        const startedSubagent = method === "thread/started" ? codexStartedSubagent(params) : undefined
+        if (startedSubagent?.parentThreadId === threadId) {
+          await input.observeSubagent({
+            observation: {
+              observationId: `codex:thread-started:${startedSubagent.id}:${startedSubagent.status}`,
+              harnessExecutionId: threadId,
+              stableCorrelationId: startedSubagent.id,
+              providerId: startedSubagent.id,
+              providerKind: "codex",
+              status: startedSubagent.status,
+              transcript: { kind: "live" },
+              ...(startedSubagent.label ? { label: startedSubagent.label } : {}),
+              ...(startedSubagent.subagentType ? { subagentType: startedSubagent.subagentType } : {}),
+              ...(startedSubagent.description ? { description: startedSubagent.description } : {}),
+            },
+            correlationKeys: [startedSubagent.id],
+            source: { dir: "in", method, frame: message },
+          })
+        }
+
+        const call = codexCollabAgentCall(record(params.item))
+        if (call?.senderThreadId === threadId) {
+          await Promise.all(call.receiverThreadIds.map((receiverThreadId) => input.observeSubagent({
+            observation: {
+              observationId: `codex:${method}:${call.id}:${receiverThreadId}:${call.statuses[receiverThreadId] ?? "edge"}`,
+              harnessExecutionId: threadId,
+              stableCorrelationId: receiverThreadId,
+              toolCallId: call.id,
+              toolCallRole: call.toolCallRole,
+              providerId: receiverThreadId,
+              providerKind: "codex",
+              transcript: { kind: "live" },
+              ...(call.statuses[receiverThreadId]
+                ? { status: call.statuses[receiverThreadId] }
+                : call.toolCallRole === "spawn" && method === "item/started"
+                  ? { status: "pending" as const }
+                  : {}),
+              ...(call.prompt ? { description: call.prompt } : {}),
+              subagentType: call.model ?? "codex",
+            },
+            correlationKeys: [receiverThreadId],
+            source: { dir: "in", method, frame: message },
+          })))
+        }
+
+        const eventThreadId = text(params.threadId) ?? text(record(params.thread)?.id)
+        const parentOwned = !eventThreadId || eventThreadId === threadId
+        if (method === "turn/started" && parentOwned) {
+          turnId = text(record(params.turn)?.id) ?? turnId
+          const active = this.host.lifecycle().get(input.sessionId)
+          if (active) active.turnId = turnId
+        }
+        project(
+          method,
+          params,
+          message,
+          parentOwned ? { kind: "parent" } : { kind: "child", correlationKey: eventThreadId },
+        )
+        if (method === "turn/completed" && parentOwned) resolveCompleted?.()
+      }).catch((err: unknown) => failTurn(new Error(errorMessage(err))))
     })
     const unsubscribeStderr = proc.onStderr(onStderr)
     input.abort.signal.addEventListener("abort", onAbort, { once: true })

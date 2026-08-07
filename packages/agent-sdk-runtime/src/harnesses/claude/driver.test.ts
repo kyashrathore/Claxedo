@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import { claudeSpawnEnv, createClaudeSdkDriver } from "./driver"
+import {
+  CLAUDE_FORWARD_SUBAGENT_TEXT,
+  claudeSpawnEnv,
+  createClaudeSdkDriver,
+  ingestClaudeSdkMessage,
+} from "./driver"
 import { SDK_MODEL_CATALOG } from "../../sdk-model-catalog"
 
 function driver() {
@@ -12,6 +17,127 @@ function driver() {
 }
 
 describe("Claude SDK driver", () => {
+  test("U5: forwards representative nested text below the measured volume threshold", () => {
+    const parentFrames = 7
+    const childText = [
+      "Inspecting authentication entry points.",
+      "Reading the session middleware.",
+      "Searching for token validation.",
+      "Checking the failure path.",
+      "Found one stale authorization branch.",
+      "The child review is complete.",
+    ]
+
+    expect(childText).toHaveLength(6)
+    expect(childText.length / parentFrames).toBeLessThan(2)
+    expect(new TextEncoder().encode(childText.join("")).byteLength).toBe(193)
+    expect(new TextEncoder().encode(childText.join("")).byteLength).toBeLessThan(5 * 1024 * 1024)
+    expect(CLAUDE_FORWARD_SUBAGENT_TEXT).toBe(true)
+  })
+
+  test("U5: admits tool and task observations before routing child-owned SDK messages", async () => {
+    const observed: unknown[] = []
+    const ingested: unknown[][] = []
+    const rebound: string[] = []
+    const input = {
+      observeSubagent(value: unknown) {
+        observed.push(value)
+        return Promise.resolve({ event: {} })
+      },
+      ingest(...value: unknown[]) {
+        ingested.push(value)
+      },
+      rebindAgentSession(value: string) {
+        rebound.push(value)
+      },
+    } as never
+
+    await ingestClaudeSdkMessage(input, {
+      type: "assistant",
+      uuid: "assistant-parent-1",
+      session_id: "sdk-session-1",
+      parent_tool_use_id: null,
+      message: {
+        content: [{
+          type: "tool_use",
+          id: "tool-agent-1",
+          name: "Agent",
+          input: { description: "Review auth", subagent_type: "code-reviewer" },
+        }],
+      },
+    } as never)
+    expect(observed).toMatchObject([{
+      observation: {
+        toolCallId: "tool-agent-1",
+        toolCallRole: "spawn",
+        status: "pending",
+        transcript: { kind: "messages" },
+      },
+      correlationKeys: ["tool-agent-1"],
+    }])
+    expect(ingested[0]?.[2]).toEqual({ kind: "parent" })
+
+    await ingestClaudeSdkMessage(input, {
+      type: "system",
+      subtype: "task_started",
+      uuid: "task-start-1",
+      session_id: "sdk-session-1",
+      task_id: "task-1",
+      tool_use_id: "tool-agent-1",
+      description: "Review auth",
+      subagent_type: "code-reviewer",
+    } as never)
+    expect(observed[1]).toMatchObject({
+      observation: { stableCorrelationId: "task-1", toolCallId: "tool-agent-1", status: "running" },
+      correlationKeys: ["task-1", "tool-agent-1"],
+    })
+
+    await ingestClaudeSdkMessage(input, {
+      type: "assistant",
+      uuid: "assistant-child-1",
+      session_id: "sdk-session-1",
+      parent_tool_use_id: "tool-agent-1",
+      message: { content: [{ type: "tool_use", id: "tool-read-1", name: "Read", input: {} }] },
+    } as never)
+    expect(ingested[2]?.[2]).toEqual({ kind: "child", correlationKey: "tool-agent-1" })
+    expect(rebound).toEqual(["sdk-session-1", "sdk-session-1", "sdk-session-1"])
+  })
+
+  test("U5: admits the structured Agent identity without parsing the tool-result text", async () => {
+    const observed: unknown[] = []
+    await ingestClaudeSdkMessage({
+      observeSubagent(value: unknown) {
+        observed.push(value)
+        return Promise.resolve({ event: {} })
+      },
+      ingest() {},
+      rebindAgentSession() {},
+    } as never, {
+      type: "user",
+      uuid: "agent-result-1",
+      session_id: "sdk-session-1",
+      parent_tool_use_id: null,
+      message: {
+        content: [{ type: "tool_result", tool_use_id: "tool-agent-1", content: "opaque trailer" }],
+      },
+      tool_use_result: {
+        status: "completed",
+        agentId: "agent-42",
+        content: [{ type: "text", text: "Review complete" }],
+        totalTokens: 321,
+      },
+    } as never)
+
+    expect(observed).toMatchObject([{
+      observation: {
+        toolCallId: "tool-agent-1",
+        providerId: "agent-42",
+        providerKind: "claude-agent",
+        status: "completed",
+      },
+    }])
+  })
+
   test("scrubs the local document installation secret from the child environment", () => {
     expect(claudeSpawnEnv({
       PATH: "/bin",

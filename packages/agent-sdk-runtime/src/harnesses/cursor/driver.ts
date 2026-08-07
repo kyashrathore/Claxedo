@@ -2,10 +2,15 @@ import {
   createAgentEventRuntime,
   type AgentEventRuntime,
 } from "@claxedo/agent-event-runtime"
-import { cursorSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/cursor"
+import {
+  cursorRuntimeMessage,
+  cursorSdkAdapter,
+  cursorSubagentObservations,
+} from "@claxedo/agent-event-runtime/harnesses/cursor"
 import type {
   McpServerConfig as CursorMcpServerConfig,
   SDKAgent as CursorSDKAgent,
+  SDKMessage,
 } from "@cursor/sdk"
 import type { AgentConfigOptionRow } from "../../index"
 import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
@@ -25,6 +30,7 @@ import {
   type SdkRuntimeAuth,
   type SdkRuntimeDriver,
   type SdkRuntimeDriverHost,
+  type SdkRuntimeTranscriptRegistrar,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
 import {
@@ -148,17 +154,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     })
     try {
       for await (const message of run.stream()) {
-        const sdkSessionId = text(record(message)?.agent_id)
-        if (sdkSessionId) input.rebindAgentSession(sdkSessionId)
-        input.ingest({
-          source: "cursor.sdk.message",
-          method: `cursor/${message.type}`,
-          payload: message,
-        }, {
-          dir: "in",
-          method: `cursor.${message.type}`,
-          frame: message,
-        })
+        await ingestCursorSdkMessage(input, message, this.host.transcriptRegistrar)
       }
       const result = await run.wait()
       input.ingest({
@@ -341,6 +337,65 @@ class CursorSdkDriver implements SdkRuntimeDriver {
       },
     }
   }
+}
+
+export async function ingestCursorSdkMessage(
+  input: Pick<SdkRuntimeTurnInput, "sessionId" | "ingest" | "observeSubagent" | "rebindAgentSession">,
+  message: SDKMessage,
+  transcriptRegistrar?: SdkRuntimeTranscriptRegistrar,
+) {
+  const sdkSessionId = text(record(message)?.agent_id)
+  if (sdkSessionId) input.rebindAgentSession(sdkSessionId)
+  const frame = cursorRuntimeMessage(message)
+  const observations = cursorSubagentObservations(message)
+  const transcript = observations.length
+    ? await cursorTranscript(input.sessionId, message, transcriptRegistrar)
+    : { kind: "none" as const }
+  await Promise.all(observations.map((observation) => input.observeSubagent({
+    observation: { ...observation, transcript },
+    correlationKeys: [observation.toolCallId, observation.providerId]
+      .filter((key): key is string => !!key),
+    source: {
+      dir: "in",
+      method: `cursor.${message.type}`,
+      frame,
+    },
+  })))
+  input.ingest({
+    source: "cursor.sdk.message",
+    method: `cursor/${message.type}`,
+    payload: frame,
+  }, {
+    dir: "in",
+    method: `cursor.${message.type}`,
+    frame,
+  }, { kind: "parent" })
+}
+
+function cursorTranscript(
+  parentSessionId: string,
+  message: SDKMessage,
+  registrar?: SdkRuntimeTranscriptRegistrar,
+) {
+  const filePath = cursorTaskTranscriptPath(message)
+  if (!registrar || !filePath) return Promise.resolve({ kind: "none" } as const)
+  return registrar.register({
+    parentSessionId,
+    providerKind: "cursor-agent",
+    filePath,
+  }).then(
+    (result) => result.state === "ready"
+      ? { kind: "file" as const, ref: result.handle }
+      : { kind: "none" as const },
+    () => ({ kind: "none" as const }),
+  )
+}
+
+function cursorTaskTranscriptPath(message: SDKMessage) {
+  if (message.type !== "tool_call" || message.name.toLowerCase() !== "task" || message.status !== "completed") return
+  const result = record(message.result)
+  if (result?.status !== "success") return
+  return text(record(result.value)?.transcriptPath)
 }
 
 function cursorMcpServers(input: Record<string, ResolvedMcpServer>): Record<string, CursorMcpServerConfig> {

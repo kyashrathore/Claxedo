@@ -37,6 +37,27 @@ describe("PiHarnessAdapter", () => {
     expect(capabilities.subagents).toBe(false)
   })
 
+  test("U9: subagents require a model-backed native tool extension", async () => {
+    const model = getModel("anthropic", "claude-sonnet-4-5")
+    const backend = {
+      model,
+      getApiKey: () => "test-key",
+      extraTools: [{ name: "subagent" } as never],
+    }
+    const adapter = new PiHarnessAdapter({
+      modelBackend: async () => backend,
+      toolExtensionProvider: { providesSubagentTool: () => true },
+    })
+    const session = await adapter.createSession(undefined)
+    await adapter.updateSessionConfig(session.id, {
+      model: { providerID: model.provider, modelID: model.id },
+    }, undefined)
+
+    expect((await adapter.readHarnessCapabilities(undefined, { sessionId: session.id })).subagents).toBe(true)
+    backend.extraTools = [{ name: "another-tool" } as never]
+    expect((await adapter.readHarnessCapabilities(undefined, { sessionId: session.id })).subagents).toBe(false)
+  })
+
   test("adopts a requested deterministic Session idempotently", async () => {
     const adapter = new PiHarnessAdapter()
 

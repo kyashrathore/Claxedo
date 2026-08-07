@@ -379,10 +379,10 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
       this.modelBackend &&
       this.toolExtensionProvider?.providesSubagentTool({ sessionId: session.id, model })
     )
-    const subagents = !!(supportsSubagentTool && session && model && await this.modelBackend?.({
-      sessionId: session.id,
-      model,
-    }))
+    const backend = supportsSubagentTool && session && model
+      ? await this.modelBackend?.({ sessionId: session.id, model })
+      : undefined
+    const subagents = !!backend?.extraTools?.some((tool) => tool.name === "subagent")
     return harnessCapabilities({
       harness: "pi",
       abort: true,

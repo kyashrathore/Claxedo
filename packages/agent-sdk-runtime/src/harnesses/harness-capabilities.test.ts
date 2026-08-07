@@ -134,7 +134,11 @@ describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
   test("model-backed Pi advertises subagents only with the configured tool-extension provider", async () => {
     const model = getModel("openai-codex", "gpt-5.1-codex-mini")
     const configured = new PiHarnessAdapter({
-      modelBackend: () => ({ model, getApiKey: () => "test-key" }),
+      modelBackend: () => ({
+        model,
+        getApiKey: () => "test-key",
+        extraTools: [{ name: "subagent" } as never],
+      }),
       toolExtensionProvider: { providesSubagentTool: () => true },
     })
     const withoutProvider = new PiHarnessAdapter({

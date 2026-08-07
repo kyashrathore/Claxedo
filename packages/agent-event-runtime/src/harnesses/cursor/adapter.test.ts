@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { createAgentEventRuntime } from "../../core/runtime"
 import type { RuntimeSnapshot } from "../../core/state"
-import { cursorSdkAdapter, type CursorSdkAdapterState } from "./adapter"
+import {
+  cursorSdkAdapter,
+  cursorRuntimeMessage,
+  cursorSubagentObservations,
+  type CursorSdkAdapterState,
+} from "./adapter"
 
 function runtime(initialSnapshot?: RuntimeSnapshot<CursorSdkAdapterState>) {
   return createAgentEventRuntime({
@@ -150,6 +155,180 @@ describe("cursorSdkAdapter", () => {
       { type: "tool-input", toolCallId: "task-1", input: { description: "Review", subagentType: { kind: "code-reviewer" } } },
       { type: "tool-status", toolCallId: "task-1", status: "running" },
     ])
+  })
+
+  test("U8: concurrent same-type tasks produce distinct spawn observations", () => {
+    const task = (callId: string) => cursorSubagentObservations({
+      type: "tool_call",
+      agent_id: "parent-agent",
+      run_id: "run-1",
+      call_id: callId,
+      name: "Task",
+      status: "running",
+      args: {
+        description: "Review",
+        prompt: "Review the code",
+        subagentType: { kind: "code-reviewer" },
+      },
+    })[0]
+
+    expect(task("task-a")).toMatchObject({
+      toolCallId: "task-a",
+      toolCallRole: "spawn",
+      status: "running",
+      subagentType: "code-reviewer",
+      transcript: { kind: "none" },
+    })
+    expect(task("task-b")?.observationId).not.toBe(task("task-a")?.observationId)
+  })
+
+  test("U8: re-entry adopts an optional provider handle at spawn", () => {
+    expect(cursorSubagentObservations({
+      type: "tool_call",
+      run_id: "run-1",
+      call_id: "task-resume",
+      name: "Task",
+      status: "running",
+      args: { description: "Continue", prompt: "Continue", resume: "cursor-agent-7" },
+    })).toMatchObject([{
+      toolCallId: "task-resume",
+      toolCallRole: "interaction",
+      providerId: "cursor-agent-7",
+      providerKind: "cursor-agent",
+      status: "running",
+    }])
+  })
+
+  test("U8: completion accepts a late or permanently absent provider handle", () => {
+    expect(cursorSubagentObservations({
+      type: "tool_call",
+      run_id: "run-1",
+      call_id: "task-late",
+      name: "Task",
+      status: "completed",
+      args: { description: "Review", prompt: "Review" },
+      result: {
+        status: "success",
+        value: {
+          agentId: "cursor-agent-9",
+          isBackground: true,
+          backgroundReason: "agentRequest",
+          transcriptPath: "/private/provider/transcript.jsonl",
+        },
+      },
+    })).toMatchObject([{
+      toolCallId: "task-late",
+      providerId: "cursor-agent-9",
+      mode: "background",
+      status: "completed",
+      transcript: { kind: "none" },
+    }])
+
+    expect(cursorSubagentObservations({
+      type: "tool_call",
+      run_id: "run-1",
+      call_id: "task-no-handle",
+      name: "Task",
+      status: "completed",
+      args: { description: "Review", prompt: "Review" },
+      result: {
+        status: "success",
+        value: { isBackground: false, backgroundReason: "unspecified" },
+      },
+    })[0]).toEqual(expect.objectContaining({
+      toolCallId: "task-no-handle",
+      status: "completed",
+      transcript: { kind: "none" },
+    }))
+    expect(cursorSubagentObservations({
+      type: "tool_call",
+      run_id: "run-1",
+      call_id: "task-no-handle",
+      name: "Task",
+      status: "completed",
+      args: { description: "Review", prompt: "Review" },
+      result: {
+        status: "success",
+        value: { isBackground: false, backgroundReason: "unspecified" },
+      },
+    })[0]).not.toHaveProperty("providerId")
+  })
+
+  test("U8: error results never inspect a success value or expose a transcript path", () => {
+    const message = {
+      type: "tool_call",
+      agent_id: "parent-agent",
+      run_id: "run-1",
+      call_id: "task-error",
+      name: "Task",
+      status: "error",
+      args: { description: "Review", prompt: "Review" },
+      result: {
+        status: "error",
+        error: { transcriptPath: "/secret/error.jsonl", value: { agentId: "invalid" } },
+      },
+    }
+
+    expect(cursorSubagentObservations(message)).toMatchObject([{
+      toolCallId: "task-error",
+      status: "failed",
+      transcript: { kind: "none" },
+    }])
+    expect(cursorSubagentObservations(message)[0]).not.toHaveProperty("providerId")
+    expect(JSON.stringify(runtime().ingest({ source: "cursor.sdk.message", payload: cursorRuntimeMessage(message) }).events))
+      .not.toContain("/secret/error.jsonl")
+  })
+
+  test("U8: completion promotes task payload metadata without crossing raw transcript data", () => {
+    const agent = runtime()
+    agent.ingest({
+      source: "cursor.sdk.message",
+      payload: {
+        type: "tool_call",
+        agent_id: "parent-agent",
+        run_id: "run-1",
+        call_id: "task-complete",
+        name: "Task",
+        status: "running",
+        args: { description: "Review", prompt: "Review" },
+      },
+    })
+
+    const events = agent.ingest({
+      source: "cursor.sdk.message",
+      payload: cursorRuntimeMessage({
+        type: "tool_call",
+        agent_id: "parent-agent",
+        run_id: "run-1",
+        call_id: "task-complete",
+        name: "Task",
+        status: "completed",
+        args: { description: "Review", prompt: "Review", agentId: "cursor-agent-10" },
+        result: {
+          status: "success",
+          value: {
+            agentId: "cursor-agent-10",
+            isBackground: false,
+            durationMs: 25,
+            backgroundReason: "unspecified",
+            conversationSteps: [{ private: "child transcript" }],
+            transcriptPath: "/private/provider/transcript.jsonl",
+          },
+        },
+      }),
+    }).events
+
+    expect(events).toMatchObject([
+      { type: "tool-input", toolCallId: "task-complete", input: { agentId: "cursor-agent-10" } },
+      {
+        type: "tool-output",
+        toolCallId: "task-complete",
+        output: { agentId: "cursor-agent-10", isBackground: false, durationMs: 25 },
+        metadata: { cursor: { subagent: { agentId: "cursor-agent-10", transcript: "unavailable" } } },
+      },
+    ])
+    expect(JSON.stringify(events)).not.toContain("/private/provider/transcript.jsonl")
+    expect(JSON.stringify(events)).not.toContain("child transcript")
   })
 
   test("maps status and local stream terminal events", () => {

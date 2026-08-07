@@ -4,6 +4,7 @@ import {
   methods,
   PROTOCOL_VERSION,
   type ClientConnection,
+  type ClientCapabilities,
   type ClientContext,
   type InitializeResponse,
   type McpServer,
@@ -37,6 +38,16 @@ import type { AgentProcessObserverHandle } from "../../process-observer"
 const log = Log.create({ service: "acp-adapter" })
 
 export type SessionUpdate = SessionNotification["update"]
+
+export function acpClientCapabilities(): ClientCapabilities & { _meta: { "subagent-transcript": true } } {
+  return {
+    auth: { terminal: false },
+    fs: { readTextFile: true, writeTextFile: true },
+    plan: {},
+    terminal: true,
+    _meta: { "subagent-transcript": true },
+  }
+}
 /**
  * `tool` is the agent's human-readable `toolCall.title` ("Read file src/index.ts");
  * `kind` is the protocol's machine-readable `ToolKind` classification. Both are
@@ -295,15 +306,9 @@ export class ACPProcess {
       this.agent.request(methods.agent.initialize, {
         protocolVersion: PROTOCOL_VERSION,
         clientInfo: { name: "claxedo-workspace-runtime", version: "0.1.0" },
-        clientCapabilities: {
-          auth: { terminal: false },
-          // Allow filesystem and terminal — the ACP binary will call requestPermission
-          // before executing sensitive operations. Setting these false causes the binary
-          // to auto-fail those tool calls without ever asking for permission.
-          fs: { readTextFile: true, writeTextFile: true },
-          plan: {},
-          terminal: true,
-        },
+        // Filesystem and terminal capabilities let the ACP binary request permission
+        // instead of failing sensitive tool calls before the host can decide.
+        clientCapabilities: acpClientCapabilities(),
       }),
       this.waitForExit(),
     ])

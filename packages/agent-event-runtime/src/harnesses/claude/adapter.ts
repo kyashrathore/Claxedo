@@ -1,5 +1,10 @@
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
-import type { AgentRuntimeEvent } from "../../contracts/agent-runtime-event"
+import type {
+  AgentRuntimeEvent,
+  SubagentMode,
+  SubagentStatus,
+  SubagentToolCallRole,
+} from "../../contracts/agent-runtime-event"
 import { runtimeDiagnostic } from "../../contracts/diagnostics"
 import type { HarnessEventAdapter, HarnessEventAdapterContext, HarnessEventAdapterResult } from "../../core/adapter"
 import { toolDisplayFromInput } from "../tool-display"
@@ -17,8 +22,25 @@ type ClaudeBlockState = {
 
 export type ClaudeSdkAdapterState = {
   blocksByIndex: Record<string, ClaudeBlockState>
+  toolsById: Record<string, ClaudeBlockState>
   emittedAssistantText: string
   lastKnownContextWindow?: number
+}
+
+export type ClaudeSubagentObservation = {
+  observationId: string
+  harnessExecutionId?: string
+  stableCorrelationId?: string
+  toolCallId?: string
+  toolCallRole?: SubagentToolCallRole
+  mode?: SubagentMode
+  status?: SubagentStatus
+  label?: string
+  subagentType?: string
+  description?: string
+  providerId?: string
+  providerKind?: string
+  transcript?: { kind: "messages" }
 }
 
 type ClaudeSdkSystemMessage = Extract<SDKMessage, { type: "system" }>
@@ -201,18 +223,185 @@ function toolResultBlocks(message: Record<string, unknown>) {
       block,
       text: toolResultText(block),
       isError: block.is_error === true,
+      structured: object(message.tool_use_result),
     }]
   })
 }
 
-function assistantSnapshotText(message: Record<string, unknown>) {
+function assistantContent(message: Record<string, unknown>) {
   const row = object(message.message) ?? {}
-  const content = Array.isArray(row.content) ? row.content : []
-  return content.flatMap((item) => {
+  return Array.isArray(row.content) ? row.content : []
+}
+
+function assistantSnapshotText(message: Record<string, unknown>) {
+  return assistantContent(message).flatMap((item) => {
     const block = object(item)
     if (!block || block.type !== "text") return []
     return text(block.text) ?? []
   }).join("")
+}
+
+function assistantToolBlocks(message: Record<string, unknown>) {
+  return assistantContent(message).flatMap((item) => {
+    const block = object(item)
+    if (!block || block.type !== "tool_use") return []
+    const toolCallId = text(block.id)
+    const toolName = text(block.name)
+    if (!toolCallId || !toolName) return []
+    return [{
+      block,
+      tool: {
+        type: "tool" as const,
+        toolCallId,
+        toolName,
+        input: toolInput(block.input),
+      },
+    }]
+  })
+}
+
+function agentResultMetadata(result: Record<string, unknown> | undefined) {
+  if (!result || !text(result.agentId)) return {}
+  return {
+    agentId: text(result.agentId),
+    status: text(result.status),
+    totalTokens: number(result.totalTokens),
+    totalToolUseCount: number(result.totalToolUseCount),
+    totalDurationMs: number(result.totalDurationMs),
+    usage: object(result.usage),
+    toolStats: object(result.toolStats),
+  }
+}
+
+function agentResultText(result: Record<string, unknown> | undefined, fallback: string) {
+  if (!result) return fallback
+  const content = Array.isArray(result.content) ? result.content : []
+  return content.flatMap((item) => text(object(item)?.text) ?? []).join("\n") || fallback
+}
+
+export function claudeChildCorrelationKey(value: unknown) {
+  return text(object(value)?.parent_tool_use_id)
+}
+
+export function claudeSubagentObservations(value: unknown): ClaudeSubagentObservation[] {
+  const message = object(value)
+  if (!message) return []
+  const harnessExecutionId = text(message.session_id)
+  const wrapperId = text(message.uuid) ?? harnessExecutionId ?? "unknown"
+
+  if (message.type === "assistant" && !claudeChildCorrelationKey(message)) {
+    return assistantToolBlocks(message).flatMap(({ tool }) => {
+      if (!isTaskTool(tool.toolName) || !tool.toolCallId) return []
+      return [{
+        observationId: `claude:agent-tool:${wrapperId}:${tool.toolCallId}`,
+        ...(harnessExecutionId ? { harnessExecutionId } : {}),
+        toolCallId: tool.toolCallId,
+        toolCallRole: "spawn" as const,
+        mode: tool.input?.run_in_background === true ? "background" as const : "foreground" as const,
+        status: "pending" as const,
+        label: text(tool.input?.description) ?? "Subagent",
+        ...(text(tool.input?.subagent_type) ? { subagentType: text(tool.input?.subagent_type) } : {}),
+        ...(text(tool.input?.description) ?? text(tool.input?.prompt)
+          ? { description: text(tool.input?.description) ?? text(tool.input?.prompt) }
+          : {}),
+        providerKind: "claude-agent",
+        transcript: { kind: "messages" as const },
+      }]
+    })
+  }
+
+  if (message.type === "user") {
+    const result = object(message.tool_use_result)
+    const agentId = text(result?.agentId)
+    if (!agentId) return []
+    return toolResultBlocks(message).map((tool) => ({
+      observationId: `claude:agent-result:${wrapperId}:${tool.toolCallId}`,
+      ...(harnessExecutionId ? { harnessExecutionId } : {}),
+      toolCallId: tool.toolCallId,
+      toolCallRole: "spawn" as const,
+      status: result?.status === "completed" ? "completed" as const : "running" as const,
+      ...(result?.status === "async_launched" ? { mode: "background" as const } : {}),
+      providerId: agentId,
+      providerKind: "claude-agent",
+      transcript: { kind: "messages" as const },
+    }))
+  }
+
+  if (message.type !== "system") return []
+
+  switch (message.subtype) {
+    case "task_started":
+      return [taskObservation(message, wrapperId, {
+        status: "running",
+        description: text(message.description),
+        subagentType: text(message.subagent_type) ?? text(message.task_type),
+      })]
+    case "task_progress":
+      return [taskObservation(message, wrapperId, {
+        status: "running",
+        description: text(message.description),
+        subagentType: text(message.subagent_type),
+      })]
+    case "task_notification":
+      return [taskObservation(message, wrapperId, {
+        status: message.status === "completed" ? "completed" : message.status === "failed" ? "failed" : "killed",
+        description: text(message.summary),
+      })]
+    case "task_updated": {
+      const patch = object(message.patch) ?? {}
+      const status = taskStatus(patch.status)
+      return [taskObservation(message, wrapperId, {
+        ...(status ? { status } : {}),
+        ...(patch.is_backgrounded === true ? { mode: "background" } : {}),
+        ...(patch.is_backgrounded === false ? { mode: "foreground" } : {}),
+        description: text(patch.description),
+      })]
+    }
+    case "background_tasks_changed": {
+      const tasks = Array.isArray(message.tasks) ? message.tasks : []
+      return tasks.flatMap((value) => {
+        const task = object(value)
+        if (!task || !text(task.task_id)) return []
+        return [taskObservation(task, `${wrapperId}:${text(task.task_id)}`, {
+          status: "running",
+          mode: "background",
+          description: text(task.description),
+          subagentType: text(task.task_type),
+          harnessExecutionId,
+        })]
+      })
+    }
+    default:
+      return []
+  }
+}
+
+function taskObservation(
+  message: Record<string, unknown>,
+  observationId: string,
+  update: Omit<ClaudeSubagentObservation, "observationId" | "stableCorrelationId" | "toolCallId" | "toolCallRole" | "providerKind" | "transcript">,
+): ClaudeSubagentObservation {
+  const taskId = text(message.task_id)
+  return {
+    observationId: `claude:${text(message.subtype) ?? "background-task"}:${observationId}`,
+    ...(update.harnessExecutionId ?? text(message.session_id)
+      ? { harnessExecutionId: update.harnessExecutionId ?? text(message.session_id) }
+      : {}),
+    ...(taskId ? { stableCorrelationId: taskId } : {}),
+    ...(text(message.tool_use_id)
+      ? { toolCallId: text(message.tool_use_id), toolCallRole: "spawn" }
+      : {}),
+    ...(update.mode ? { mode: update.mode } : {}),
+    ...(update.status ? { status: update.status } : {}),
+    ...(update.subagentType ? { subagentType: update.subagentType } : {}),
+    ...(update.description ? { description: update.description, label: update.description } : {}),
+    providerKind: "claude-agent",
+    transcript: { kind: "messages" },
+  }
+}
+
+function taskStatus(value: unknown): ClaudeSubagentObservation["status"] {
+  if (value === "pending" || value === "running" || value === "completed" || value === "failed" || value === "killed" || value === "paused") return value
 }
 
 function slashCommandEvents(message: Record<string, unknown>) {
@@ -321,7 +510,7 @@ function permissionFromToolUse(message: Record<string, unknown>, context: Harnes
 export function claudeSdkAdapter(): HarnessEventAdapter<ClaudeSdkAdapterState> {
   return {
     name: "claude-sdk",
-    createInitialState: () => ({ blocksByIndex: {}, emittedAssistantText: "" }),
+    createInitialState: () => ({ blocksByIndex: {}, toolsById: {}, emittedAssistantText: "" }),
     translate({ state, event, context }) {
       const rawMessage = sdkMessage(event)
 
@@ -391,6 +580,7 @@ export function claudeSdkAdapter(): HarnessEventAdapter<ClaudeSdkAdapterState> {
                     state: {
                       ...state,
                       blocksByIndex: { ...state.blocksByIndex, [index]: nextTool },
+                      toolsById: { ...state.toolsById, [toolCallId]: nextTool },
                     },
                     events: [...toolStartEvents(blockRow), ...todoEvents],
                   }
@@ -529,19 +719,30 @@ export function claudeSdkAdapter(): HarnessEventAdapter<ClaudeSdkAdapterState> {
 
         case "user": {
           const byToolId = Object.fromEntries(
-            Object.values(state.blocksByIndex).flatMap((block) =>
+            [...Object.values(state.blocksByIndex), ...Object.values(state.toolsById)].flatMap((block) =>
               block.type === "tool" && block.toolCallId ? [[block.toolCallId, block]] : [],
             ),
           )
           return toolResultBlocks(rawMessage).flatMap((result): AgentRuntimeEvent[] => {
             const tool = byToolId[result.toolCallId]
             if (!tool?.toolName) return []
-            const metadata = { claude: { itemType: toolKind(tool.toolName) } }
+            const metadata = {
+              claude: {
+                itemType: toolKind(tool.toolName),
+                ...(isTaskTool(tool.toolName) ? { subagent: agentResultMetadata(result.structured) } : {}),
+              },
+            }
             const display = toolDisplay(tool.toolName, tool.input ?? {})
             if (result.isError) {
               return [{ type: "tool-error", toolCallId: result.toolCallId, error: result.text, display, metadata }]
             }
-            return [{ type: "tool-output", toolCallId: result.toolCallId, output: result.text, display, metadata }]
+            return [{
+              type: "tool-output",
+              toolCallId: result.toolCallId,
+              output: isTaskTool(tool.toolName) ? agentResultText(result.structured, result.text) : result.text,
+              display,
+              metadata,
+            }]
           })
         }
 
@@ -552,17 +753,33 @@ export function claudeSdkAdapter(): HarnessEventAdapter<ClaudeSdkAdapterState> {
               { type: "error", error: `Claude assistant message failed: ${message.error}` },
             ] satisfies AgentRuntimeEvent[]
           }
+          const completeTools = assistantToolBlocks(rawMessage)
+          const completeToolEvents = completeTools.flatMap(({ block, tool }): AgentRuntimeEvent[] => {
+            if (!state.toolsById[tool.toolCallId]) {
+              return isTodoTool(tool.toolName) ? toolInputEvents(tool, tool.input ?? {}) : toolStartEvents(block)
+            }
+            return Object.keys(tool.input ?? {}).length ? toolInputEvents(tool, tool.input ?? {}) : []
+          })
+          const toolsById = Object.fromEntries(completeTools.map(({ tool }) => [tool.toolCallId, tool]))
           const snapshot = assistantSnapshotText(rawMessage)
-          if (!snapshot) return []
-          const deltaText = snapshot.startsWith(state.emittedAssistantText)
-            ? snapshot.slice(state.emittedAssistantText.length)
-            : state.emittedAssistantText.endsWith(snapshot)
-              ? ""
-              : snapshot
-          if (!deltaText) return []
+          const childOwned = !!claudeChildCorrelationKey(rawMessage)
+          const deltaText = childOwned
+            ? snapshot
+            : snapshot.startsWith(state.emittedAssistantText)
+              ? snapshot.slice(state.emittedAssistantText.length)
+              : state.emittedAssistantText.endsWith(snapshot)
+                ? ""
+                : snapshot
           return {
-            state: { ...state, emittedAssistantText: snapshot },
-            events: [{ type: "text-delta", delta: deltaText }],
+            state: {
+              ...state,
+              toolsById: { ...state.toolsById, ...toolsById },
+              ...(snapshot && !childOwned ? { emittedAssistantText: snapshot } : {}),
+            },
+            events: [
+              ...completeToolEvents,
+              ...(deltaText ? [{ type: "text-delta", delta: deltaText } satisfies AgentRuntimeEvent] : []),
+            ],
           }
         }
 
@@ -573,6 +790,7 @@ export function claudeSdkAdapter(): HarnessEventAdapter<ClaudeSdkAdapterState> {
             state: {
               ...state,
               blocksByIndex: {},
+              toolsById: {},
               emittedAssistantText: "",
               ...(nextContextWindow ? { lastKnownContextWindow: nextContextWindow } : {}),
             },
@@ -644,14 +862,9 @@ function translateSystemMessage(
 ): HarnessEventAdapterResult<ClaudeSdkAdapterState> | AgentRuntimeEvent[] {
   switch (message.subtype) {
     case "task_progress": {
-      const usage = usageSnapshot({ usage: rawMessage.usage }, state.lastKnownContextWindow)
       return {
-        state: {
-          ...state,
-          ...(usage ? { lastKnownContextWindow: usage.contextSize } : {}),
-        },
+        state,
         events: [
-          ...(usage ? [usage] : []),
           ...(text(rawMessage.summary)
             ? [{
               type: "diagnostic",
@@ -704,11 +917,7 @@ function translateSystemMessage(
       })
 
     case "task_started":
-      return unmappedSdkEvent({
-        sdkEvent: "SDKTaskStartedMessage",
-        reason: "subagent lifecycle observations are admitted by the host boundary",
-        event,
-      })
+      return []
 
     case "task_notification":
       if (message.tool_use_id && message.status === "failed") {
@@ -717,11 +926,7 @@ function translateSystemMessage(
       if (message.tool_use_id) {
         return [{ type: "tool-status", toolCallId: message.tool_use_id, status: "completed" }]
       }
-      return unmappedSdkEvent({
-        sdkEvent: "SDKTaskNotificationMessage",
-        reason: "task notification without a parent tool use has no dedicated AgentRuntimeEvent equivalent",
-        event,
-      })
+      return []
 
     case "files_persisted":
       return unmappedSdkEvent({
@@ -750,7 +955,6 @@ function translateSystemMessage(
       return [{ type: "tool-error", toolCallId: message.tool_use_id, error: message.message }]
 
     case "api_retry":
-    case "background_tasks_changed":
     case "control_request_progress":
     case "informational":
     case "memory_recall":
@@ -760,7 +964,6 @@ function translateSystemMessage(
     case "notification":
     case "plugin_install":
     case "session_state_changed":
-    case "task_updated":
     case "thinking_tokens":
     case "worker_shutting_down":
       return unmappedSdkEvent({
@@ -768,6 +971,10 @@ function translateSystemMessage(
         reason: "system metadata has no dedicated AgentRuntimeEvent equivalent",
         event,
       })
+
+    case "background_tasks_changed":
+    case "task_updated":
+      return []
 
     default:
       return assertNever(message)

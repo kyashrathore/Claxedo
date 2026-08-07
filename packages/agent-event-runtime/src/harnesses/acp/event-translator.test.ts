@@ -316,6 +316,29 @@ describe("createAcpEventTranslator", () => {
     })
   })
 
+  test("U7: recognizes Claude ACP subagent metadata as a task tool", () => {
+    const agent = runtime("claude-acp")
+
+    const event = agent.ingest({
+      source: "acp.jsonrpc",
+      method: "session/update",
+      payload: {
+        sessionUpdate: "tool_call",
+        toolCallId: "agent-1",
+        title: "Agent",
+        rawInput: { description: "Inspect the cache" },
+        _meta: { claudeCode: { subagent: true } },
+      },
+    }).events.find((item) => item.type === "tool-start")
+
+    expect(event).toMatchObject({
+      type: "tool-start",
+      toolName: "task",
+      kind: "collab_agent_tool_call",
+      display: { intent: "task" },
+    })
+  })
+
   test("U7: recognizes the Cursor ACP subagent title while declaring no child transcript", () => {
     const agent = runtime("cursor-acp")
 
