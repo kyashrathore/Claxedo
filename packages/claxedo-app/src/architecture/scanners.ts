@@ -181,15 +181,46 @@ export function unguardedHistoryUrlWrites(files: SourceFile[]): Finding[] {
     .flatMap((file) => findMatches(file, historyUrlWriteRe))
 }
 
-export const WORKGRAPH_SURFACE_FILE = "app/integrations/first-party-content-surfaces.tsx"
+export const WORKGRAPH_SURFACE_FILE = "app/integrations/hosted-content-surfaces.tsx"
+export const LOCAL_SURFACE_FILE = "app/integrations/first-party-content-surfaces.tsx"
 
+/**
+ * WorkGraph stays eager WITHIN the hosted surface module, and the hosted module
+ * stays out of the local one.
+ *
+ * Both halves are load-bearing and they pull in opposite directions, which is
+ * why they are checked together.
+ *
+ * Eager inside the hosted module: a `lazy(() => import(...))` around
+ * `WorkGraphContent` puts a visible "Loading WorkGraph" flash between opening
+ * the tab and seeing anything. The hosted contribution set is ALREADY loaded
+ * lazily as a unit, so a second layer of laziness buys nothing and costs a
+ * frame of spinner on every tab open.
+ *
+ * Absent from the local module: the whole point of the split. A static
+ * `WorkGraphContent` import in the local surface list would put
+ * `@claxedo/workgraph` back in the unsigned desktop's dependency closure, and
+ * lazy-loading the renderer would not have helped — the module still has to be
+ * reachable for `lazy()` to name it.
+ */
 export function workGraphEagerSurfaceViolations(files: SourceFile[]): Finding[] {
   const file = files.find((item) => item.path === WORKGRAPH_SURFACE_FILE)
   if (!file) return [{ file: WORKGRAPH_SURFACE_FILE, line: 1, match: "WorkGraph surface file is missing" }]
+
   const findings = [
     ...findMatches(file, /const\s+WorkGraphContent\s*=\s*lazy/g),
     ...findMatches(file, /Loading WorkGraph/g),
   ]
+
+  const local = files.find((item) => item.path === LOCAL_SURFACE_FILE)
+  if (local && /features\/workgraph/.test(local.text)) {
+    findings.push({
+      file: local.path,
+      line: 1,
+      match: "the local surface module must not reach features/workgraph",
+    })
+  }
+
   if (/import\s+\{\s*WorkGraphContent\s*\}\s+from\s+["']\.\.\/\.\.\/features\/workgraph["']/.test(file.text)) {
     return findings
   }

@@ -9,6 +9,8 @@ import { appExtensions } from "../../features/extensions/index"
 import { serverExtensions } from "../../features/extensions/index"
 import { initializeClerk } from "@/platform/auth/auth-client"
 import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "@/platform/api/local-server"
+import { configureProductContributions, hostedContributionLoader } from "@/app/composition/product-contributions"
+import { localContentSurfaces, registerContentSurface } from "@/app/integrations/first-party-content-surfaces"
 
 /**
  * Configuration for initializing Claxedo cloud extensions.
@@ -71,9 +73,28 @@ export function initClaxedo(config: ClaxedoConfig): void {
     server: serverExtensions(config),
   })
 
+  const contributions = configureProductContributions({
+    local: localContentSurfaces,
+    register: registerContentSurface,
+  })
+
   // Only initialize auth if authEnabled (fire-and-forget)
   if (config.authEnabled) {
     initializeClerk().catch(() => {})
+    // Hosted composition: WorkGraph and Documents arrive as one lazily
+    // imported contribution set rather than as static imports of this entry.
+    //
+    // `expectHosted()` runs synchronously and `activateHosted` resolves later,
+    // and the split matters: restored-state pruning must know that WorkGraph
+    // tabs are legal in this build BEFORE the dynamic import lands, or a hosted
+    // reload would drop every restored WorkGraph tab in the gap.
+    //
+    // `config.authEnabled` is the hosted signal available today. Unit 11
+    // replaces it with the Electron account port, so signed desktop activates
+    // the same contribution entry from a real account state instead of a build
+    // -time environment variable.
+    contributions.expectHosted()
+    void contributions.activateHosted(hostedContributionLoader()).catch(() => {})
   }
 }
 

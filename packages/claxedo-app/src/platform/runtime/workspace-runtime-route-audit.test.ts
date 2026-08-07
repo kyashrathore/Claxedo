@@ -1635,7 +1635,10 @@ describe("workspace runtime route audit", () => {
     expect(renderer).not.toMatch(/firstPartyContentSurface/)
     expect(contentSurfaces).toMatch(/createContributionRegistry\(\{ surfaces: surfaces as SurfaceContribution\[\] \}\)/)
     expect(contentSurfaces).toMatch(/registerContentSurface/)
-    expect(contentSurfaces).toMatch(/surface:\s*ContentType \| string/)
+    // The surface shape moved to its own type-only module so the hosted set can
+    // depend on the contract without importing the local surface list.
+    const surfaceContract = await Bun.file(path.join(root, "app/integrations/content-surface-contract.ts")).text()
+    expect(surfaceContract).toMatch(/surface:\s*ContentType \| string/)
     expect(contentSurfaceTest).toMatch(/surface\.content\.agent-review/)
     expect(contentSurfaceTest).toMatch(/slot:\s*"ext:agent-review"/)
     expect(contentSurfaceTest).toMatch(/gate:\s*\{ backing: "real" \}/)
@@ -1734,7 +1737,7 @@ describe("workspace runtime route audit", () => {
     // What still matters is that the overrides dir is gone and every config
     // resolves @/ to claxedo-app's own src (asserted below).
     expect(overrideFiles).toEqual([])
-    expect(contentSurfaces).toMatch(/firstPartyContentSurfaces/)
+    expect(contentSurfaces).toMatch(/localContentSurfaces/)
 
     for (const config of [appViteConfig, appVitestConfig, desktopRenderer]) {
       expect(config).not.toMatch(/name:\s*"claxedo-override-resolver"/)

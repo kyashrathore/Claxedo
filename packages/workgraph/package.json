@@ -30,7 +30,7 @@
     "typecheck:test": "bun x tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
-    "@claxedo/workspace-runtime": "workspace:0.7.0",
+    "@claxedo/workspace-runtime": "0.7.0",
     "@hono/node-server": "1.19.11",
     "@noble/hashes": "2.2.0",
     "better-sqlite3": "13.0.1",

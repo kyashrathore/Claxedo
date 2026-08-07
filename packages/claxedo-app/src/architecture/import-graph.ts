@@ -11,6 +11,11 @@ const testSupportPathPatterns = [
   /(?:^|\/)[^/]*test-helpers?\.tsx?$/,
 ]
 const typeContractCandidates = new Set([
+  // The content-surface shape, shared by the local and hosted surface sets.
+  // Both import it type-only ON PURPOSE — that is what keeps the hosted set out
+  // of the local runtime graph — so it is reachable by types alone and would
+  // otherwise read as orphaned.
+  "app/integrations/content-surface-contract.ts",
   "features/extensions/data/types.ts",
   "features/session/data/session-lifecycle.ts",
   // Doorbell event mirrors: the feature owns the event
