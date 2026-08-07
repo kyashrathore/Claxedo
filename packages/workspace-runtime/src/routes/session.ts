@@ -108,6 +108,10 @@ export function SessionRoutes(
     listPermissions?: (c: unknown, directory: string) => Promise<AgentPermissionRow[]>
     listQuestions?: (c: unknown, directory: string) => Promise<AgentQuestionRow[]>
     listSessions?: (c: unknown, directory: string) => Promise<AgentSessionRow[]>
+    listSubagents?: (input: {
+      directory: string
+      parentSessionId: string
+    }) => Promise<unknown[]> | unknown[]
     getMessages?: (input: {
       directory: string
       sessionId: string
@@ -146,6 +150,7 @@ export function SessionRoutes(
       sessionId: string
       update: SessionConfigUpdate
     }) => Promise<SessionConfig>
+    afterDeleteSession?: (input: { directory: string; sessionId: string }) => Promise<void> | void
     opencodeHeaders?: HeadersInit
   },
 ) {
@@ -200,6 +205,12 @@ export function SessionRoutes(
       : undefined,
     listSessions: options?.listSessions
       ? (c, directory) => options.listSessions!(c, requiredDirectory(directory))
+      : undefined,
+    listSubagents: options?.listSubagents
+      ? (_c, directory, parentSessionId) => options.listSubagents!({
+          directory: requiredDirectory(directory),
+          parentSessionId,
+        })
       : undefined,
     getMessages: options?.getMessages
       ? (_c, directory, sessionId) => options.getMessages!({ directory: requiredDirectory(directory), sessionId })
@@ -258,6 +269,12 @@ export function SessionRoutes(
           directory: requiredDirectory(directory),
           sessionId,
           update,
+        })
+      : undefined,
+    afterDeleteSession: options?.afterDeleteSession
+      ? (_c, directory, sessionId) => options.afterDeleteSession!({
+          directory: requiredDirectory(directory),
+          sessionId,
         })
       : undefined,
   })

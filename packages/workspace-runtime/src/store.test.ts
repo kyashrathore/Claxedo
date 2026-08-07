@@ -3,6 +3,7 @@ import assert from "node:assert/strict"
 import fs from "fs"
 import os from "os"
 import path from "path"
+import { createSubagentAdmissionBoundary } from "@claxedo/agent-sdk-runtime"
 import {
   messagePartUpdated,
   messageUpdated,
@@ -80,7 +81,218 @@ describe("RuntimeStore", () => {
     const columns = sessionColumns(store)
     assert(columns.includes("harness_id"))
     assert(columns.includes("harness_access"))
+    assert(columns.includes("parent_id"))
     assert(!columns.some((name) => name.startsWith("runner_")))
+  })
+
+  it("persists explicit child Session ownership across updates and reopen", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({ sessionId: "parent", directory: "/work", agentSessionId: "provider-parent", createdAt: 1 })
+    store.bindSession({
+      sessionId: "child",
+      parentSessionId: "parent",
+      directory: "/work",
+      agentSessionId: "provider-child",
+      createdAt: 2,
+    })
+    store.updateSession("child", { title: "Child transcript", time: { archived: 3 } })
+    store.bindSession({ sessionId: "child", directory: "/work", agentSessionId: "provider-child", createdAt: 4 })
+
+    assert.partialDeepStrictEqual(store.getSession("child"), {
+      id: "child",
+      parentID: "parent",
+      title: "Child transcript",
+      time: { archived: 3 },
+    })
+    store.close()
+
+    const reopened = new RuntimeStore(root)
+    assert.equal((reopened.getSession("child") as { parentID?: string } | null)?.parentID, "parent")
+    reopened.close()
+  })
+
+  it("durably admits revisioned subagents and rehydrates correlation after reopen", async () => {
+    const root = tmp()
+    const published: Array<{ parentSessionId: string; revision: number }> = []
+    const store = new RuntimeStore(root)
+    const boundary = createSubagentAdmissionBoundary({
+      store,
+      allocateKey: () => "host-child",
+      publish: (parentSessionId, event) => {
+        published.push({ parentSessionId, revision: event.revision })
+      },
+    })
+    const spawn = await boundary.admit("parent", {
+      observationId: "spawn",
+      harnessExecutionId: "run",
+      toolCallId: "tool-1",
+      toolCallRole: "spawn",
+      status: "running",
+      transcript: { kind: "messages", ref: "handle-1" },
+    })
+    const bound = await boundary.admit("parent", {
+      observationId: "bound",
+      harnessExecutionId: "run",
+      toolCallId: "tool-1",
+      toolCallRole: "spawn",
+      providerKind: "claude-agent",
+      providerId: "agent-1",
+      childSessionId: "child-session",
+      status: "completed",
+    })
+
+    assert.equal(bound.subagentKey, spawn.subagentKey)
+    assert.equal(bound.revision, 2)
+    assert.deepEqual(published, [
+      { parentSessionId: "parent", revision: 1 },
+      { parentSessionId: "parent", revision: 2 },
+    ])
+    store.close()
+
+    const reopened = new RuntimeStore(root)
+    const next = createSubagentAdmissionBoundary({
+      store: reopened,
+      allocateKey: () => "replacement-must-not-be-used",
+      publish: () => {},
+    })
+    const interaction = await next.admit("parent", {
+      observationId: "interaction",
+      harnessExecutionId: "run",
+      providerKind: "claude-agent",
+      providerId: "agent-1",
+      toolCallId: "send-1",
+      toolCallRole: "interaction",
+      status: "completed",
+    })
+
+    assert.equal(interaction.subagentKey, spawn.subagentKey)
+    assert.equal(interaction.revision, 3)
+    const rows = reopened.listSubagents("parent")
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0]?.subagentKey, spawn.subagentKey)
+    assert.equal(rows[0]?.revision, 3)
+    assert.equal(rows[0]?.providerId, "agent-1")
+    assert.equal(rows[0]?.childSessionId, "child-session")
+    assert.deepEqual(rows[0]?.transcript, { kind: "messages", ref: "handle-1" })
+    assert.deepEqual(rows[0]?.toolCallEdges, [
+      { toolCallId: "tool-1", role: "spawn", revision: 1 },
+      { toolCallId: "send-1", role: "interaction", revision: 3 },
+    ])
+    reopened.close()
+  })
+
+  it("serializes key and revision admission across concurrently open stores", () => {
+    const root = tmp()
+    const first = new RuntimeStore(root)
+    const second = new RuntimeStore(root)
+    const spawn = first.admit({
+      parentSessionId: "parent",
+      observation: {
+        observationId: "spawn",
+        stableCorrelationId: "task-1",
+        status: "running",
+      },
+      allocateKey: () => "first-key",
+    })
+    const completion = second.admit({
+      parentSessionId: "parent",
+      observation: {
+        observationId: "completion",
+        stableCorrelationId: "task-1",
+        status: "completed",
+      },
+      allocateKey: () => "second-key",
+    })
+
+    assert.equal(completion.event.subagentKey, spawn.event.subagentKey)
+    assert.equal(completion.event.revision, 2)
+    first.close()
+    second.close()
+  })
+
+  it("interrupts active children on archive while preserving durable history", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({ sessionId: "parent", directory: "/work", agentSessionId: "provider-parent", createdAt: 1 })
+    store.bindSession({
+      sessionId: "child-session",
+      parentSessionId: "parent",
+      directory: "/work",
+      agentSessionId: "provider-child",
+      createdAt: 2,
+    })
+    const admitted = store.admit({
+      parentSessionId: "parent",
+      observation: {
+        observationId: "spawn",
+        subagentKey: "child-key",
+        mode: "background",
+        status: "running",
+        childSessionId: "child-session",
+        transcript: { kind: "live", ref: "opaque-handle" },
+      },
+      allocateKey: () => "unused",
+    })
+    store.markPublished("parent", "spawn")
+
+    store.updateSession("parent", { time: { archived: 50 } })
+
+    const rows = store.listSubagents("parent")
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0]?.subagentKey, "child-key")
+    assert.equal(rows[0]?.revision, admitted.event.revision + 1)
+    assert.equal(rows[0]?.status, "interrupted")
+    assert.equal(rows[0]?.childSessionId, "child-session")
+    assert.deepEqual(rows[0]?.transcript, { kind: "live", ref: "opaque-handle" })
+    assert.equal((store.getSession("child-session") as { parentID?: string } | null)?.parentID, "parent")
+    store.close()
+
+    const reopened = new RuntimeStore(root)
+    assert.equal((reopened.listSubagents("parent")[0] as { status?: string }).status, "interrupted")
+    assert.ok(reopened.getSession("child-session"))
+    reopened.close()
+  })
+
+  it("reconciles disconnected foreground children and deletes child ownership atomically", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({ sessionId: "parent", directory: "/work", agentSessionId: "provider-parent", createdAt: 1 })
+    store.bindSession({
+      sessionId: "child-session",
+      parentSessionId: "parent",
+      directory: "/work",
+      agentSessionId: "provider-child",
+      createdAt: 2,
+    })
+    store.admit({
+      parentSessionId: "parent",
+      observation: {
+        observationId: "spawn",
+        subagentKey: "child-key",
+        mode: "foreground",
+        status: "running",
+        childSessionId: "child-session",
+        toolCallId: "tool-1",
+        toolCallRole: "spawn",
+      },
+      allocateKey: () => "unused",
+    })
+    store.markPublished("parent", "spawn")
+    store.close()
+
+    const reopened = new RuntimeStore(root)
+    assert.equal((reopened.listSubagents("parent")[0] as { status?: string }).status, "interrupted")
+    reopened.deleteSession("parent")
+
+    assert.deepEqual(reopened.listSubagents("parent"), [])
+    assert.equal(reopened.getSession("parent"), null)
+    assert.equal(reopened.getSession("child-session"), null)
+    const edgeCount = db(reopened)
+      .prepare("SELECT COUNT(*) AS count FROM session_subagent_tool_call WHERE parent_session_id = ?")
+      .get("parent") as { count: number }
+    assert.equal(edgeCount.count, 0)
+    reopened.close()
   })
 
   it("migrates legacy runner columns into harness session config fields", () => {

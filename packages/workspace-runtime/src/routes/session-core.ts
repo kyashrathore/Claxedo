@@ -120,6 +120,7 @@ type Opts = {
     },
   ) => Promise<RuntimeDirectory> | RuntimeDirectory
   listSessions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentSessionRow[]>
+  listSubagents?: (c: Ctx, directory: RuntimeDirectory, parentSessionId: string) => Promise<unknown[]> | unknown[]
   createSession?: (c: Ctx, directory: RuntimeDirectory, title?: string, id?: string) => Promise<{ id: string }>
   listPermissions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentPermissionRow[]>
   listQuestions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentQuestionRow[]>
@@ -139,7 +140,12 @@ type Opts = {
   ) => Promise<SessionConfig>
   getMessages?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<AgentMessageRow[] | undefined> | AgentMessageRow[] | undefined
   getMessageSnapshot?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<MessageSnapshot | undefined> | MessageSnapshot | undefined
-  afterUpdateSession?: (c: Ctx, directory: RuntimeDirectory, session: unknown) => Promise<void> | void
+  afterUpdateSession?: (
+    c: Ctx,
+    directory: RuntimeDirectory,
+    session: unknown,
+    updates: { title?: string; time?: { archived?: number } },
+  ) => Promise<void> | void
   afterDeleteSession?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<void> | void
   afterMessageCheckpoint?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, messages: AgentMessageRow[]) => Promise<void> | void
   flushSessionDocuments?: (sessionId: string) => Promise<void>
@@ -585,6 +591,13 @@ export function createSessionRoutes(opts: Opts) {
       const caps = await adapter.readHarnessCapabilities(directory, { sessionId })
       return noStoreJson(c, caps)
     })
+    .get("/session/:id/subagents", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "list_subagents")
+      if (guarded) return guarded
+      const directory = await opts.resolveDirectory(c, { sessionId })
+      return noStoreJson(c, await opts.listSubagents?.(c, directory, sessionId) ?? [])
+    })
     .get("/session/:id", async (c) => {
       const sessionId = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, sessionId, "get_session")
@@ -618,7 +631,7 @@ export function createSessionRoutes(opts: Opts) {
       const body = (await c.req.json().catch(() => ({}))) as { title?: string; time?: { archived?: number } }
       const session = await adapter.updateSession(sessionId, body, directory)
       if (!session) return c.json(sessionNotFound(), 404)
-      await after(opts.afterUpdateSession?.(c, directory, session))
+      await after(opts.afterUpdateSession?.(c, directory, session, body))
       return c.json(normalizeSession(session, directory))
     })
     .patch("/session/:id/config", async (c) => {

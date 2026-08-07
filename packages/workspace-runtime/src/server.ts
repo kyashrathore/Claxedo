@@ -45,6 +45,8 @@ import {
 import { runtimeEnvText } from "./env"
 import { retainedWorkspaceRuntimeInternalSecrets, type WorkspaceRuntimeInternalSecrets } from "./internal-secrets"
 import type { ProcessObserver } from "./managed-processes/process-observer"
+import type { RuntimeEventAuthorization } from "./routes/events"
+import type { WorkspaceTranscriptRoutesOptions } from "./workspace/core"
 
 type Host = ReturnType<typeof createWorkspaceHost>
 export type WorkspaceRuntimeApp = {
@@ -71,6 +73,8 @@ export type WorkspaceRuntimeServiceExposure = {
 export type WorkspaceRuntimeServerOptions = {
   /** Optional local owner observer. Remote/relay compositions omit it. */
   processObserver?: ProcessObserver
+  runtimeEventAuthorization?: RuntimeEventAuthorization
+  transcripts?: WorkspaceTranscriptRoutesOptions
   relayHostAuth?: RelayHostAuthOptions
   hostTunnel?: WorkspaceRelayHostTunnelOptions
   configToken?: string
@@ -429,6 +433,8 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.agentExtensionStateRoot ? { agentExtensionStateRoot: options.agentExtensionStateRoot } : {}),
     ...(options.configApplyReceiptDir ? { configApplyReceiptDir: options.configApplyReceiptDir } : {}),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
+    ...(options.runtimeEventAuthorization ? { runtimeEventAuthorization: options.runtimeEventAuthorization } : {}),
+    ...(options.transcripts ? { transcripts: options.transcripts } : {}),
   })
   const worktrees = options.target
       ? new WorkspaceWorktreeManager({

@@ -99,6 +99,17 @@ export type {
 export type { WorkspaceCapabilities } from "./capabilities"
 export type { WorkspaceProfile } from "./profile"
 export { createProcessObserver } from "./managed-processes/process-observer"
+export {
+  createMemoryTranscriptHandleStore,
+  createTranscriptResolver,
+} from "./transcript-resolver"
+export type {
+  TranscriptHandleStore,
+  TranscriptHandleBinding,
+  TranscriptProvider,
+  TranscriptResolution,
+  TranscriptUnavailable,
+} from "./transcript-resolver"
 export { WorkspaceWorktreeManager, workspaceStorageRoot } from "./worktree"
 export type { WorkspaceWorktreeRecord } from "./store"
 export type {

@@ -3,16 +3,19 @@ import { createRequire } from "module"
 import path from "path"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
 import { ACP_RECOVER } from "@claxedo/agent-sdk-runtime/adapters"
-import { firstTurnErrorData, normalizeAgentHarnessTransport, normalizeHarnessIdentity }
+import { createMemorySubagentAdmissionStore, firstTurnErrorData, normalizeAgentHarnessTransport, normalizeHarnessIdentity }
   from "@claxedo/agent-sdk-runtime"
 import type {
+  AdmittedSubagentObservation,
   AgentMessageRow,
   AgentTurnOutcome,
   HarnessConnection,
   SessionConfig,
   SessionConfigUpdate,
   SessionHarness,
+  SubagentObservation,
 } from "@claxedo/agent-sdk-runtime"
+import type { SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
 import {
   type CompatEvent,
   buildAssistantMessage,
@@ -39,6 +42,7 @@ type Bind = {
   title?: string
   agentSessionId: string
   ownerKey?: string
+  parentSessionId?: string
   processKey?: string
   createdAt: number
 }
@@ -266,6 +270,20 @@ function str(input: unknown): string | undefined {
   return typeof input === "string" ? input : undefined
 }
 
+function subagentCorrelationKeys(observation: SubagentObservation) {
+  return [
+    observation.providerId && observation.providerKind
+      ? `provider:${observation.providerKind}:${observation.providerId}`
+      : undefined,
+    observation.stableCorrelationId
+      ? `stable:${observation.harnessExecutionId ?? ""}:${observation.stableCorrelationId}`
+      : undefined,
+    observation.toolCallId
+      ? `tool:${observation.harnessExecutionId ?? ""}:${observation.toolCallId}`
+      : undefined,
+  ].filter((key): key is string => !!key)
+}
+
 function num(input: unknown): number | undefined {
   return typeof input === "number" ? input : undefined
 }
@@ -472,6 +490,7 @@ export class RuntimeStore {
   private root: string
   private sessions: string
   private db: SqliteDatabase
+  private subagentAdmission = createMemorySubagentAdmissionStore()
   private closed = false
 
   constructor(root = workspaceRuntimeStoreDir()) {
@@ -484,7 +503,9 @@ export class RuntimeStore {
     this.db.exec("PRAGMA busy_timeout = 5000")
     this.db.exec("PRAGMA foreign_keys = ON")
     this.migrate()
+    this.hydrateSubagentAdmission()
     this.replay()
+    this.reconcileOrphanedSubagents()
   }
 
   close() {
@@ -534,6 +555,7 @@ export class RuntimeStore {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS session (
         id TEXT PRIMARY KEY,
+        parent_id TEXT,
         directory TEXT NOT NULL,
         title TEXT,
         agent_session_id TEXT,
@@ -553,6 +575,95 @@ export class RuntimeStore {
         status TEXT,
         recovery_error TEXT,
         archived_at INTEGER
+      )
+    `)
+    if (!hasColumn(this.db, "session", "parent_id")) {
+      try {
+        this.db.exec("ALTER TABLE session ADD COLUMN parent_id TEXT")
+      } catch (error) {
+        if (!hasColumn(this.db, "session", "parent_id")) throw error
+      }
+    }
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS session_parent_idx
+      ON session (parent_id, created_at)
+    `)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS session_subagent (
+        parent_session_id TEXT NOT NULL,
+        subagent_key TEXT NOT NULL,
+        child_session_id TEXT,
+        revision INTEGER NOT NULL DEFAULT 0,
+        mode TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        label TEXT,
+        subagent_type TEXT,
+        description TEXT,
+        provider_kind TEXT,
+        provider_id TEXT,
+        transcript_kind TEXT NOT NULL DEFAULT 'none',
+        transcript_ref TEXT,
+        mode_revision INTEGER NOT NULL DEFAULT 0,
+        status_revision INTEGER NOT NULL DEFAULT 0,
+        label_revision INTEGER NOT NULL DEFAULT 0,
+        subagent_type_revision INTEGER NOT NULL DEFAULT 0,
+        description_revision INTEGER NOT NULL DEFAULT 0,
+        provider_kind_revision INTEGER NOT NULL DEFAULT 0,
+        provider_id_revision INTEGER NOT NULL DEFAULT 0,
+        child_session_id_revision INTEGER NOT NULL DEFAULT 0,
+        transcript_revision INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (parent_session_id, subagent_key)
+      )
+    `)
+    this.db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS session_subagent_child_idx
+      ON session_subagent (child_session_id)
+      WHERE child_session_id IS NOT NULL
+    `)
+    this.db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS session_subagent_provider_idx
+      ON session_subagent (parent_session_id, provider_kind, provider_id)
+      WHERE provider_id IS NOT NULL
+    `)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS session_subagent_tool_call (
+        parent_session_id TEXT NOT NULL,
+        subagent_key TEXT NOT NULL,
+        tool_call_id TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('spawn', 'interaction')),
+        revision INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (parent_session_id, subagent_key, tool_call_id)
+      )
+    `)
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS session_subagent_tool_call_lookup_idx
+      ON session_subagent_tool_call (parent_session_id, tool_call_id)
+    `)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS session_subagent_observation (
+        parent_session_id TEXT NOT NULL,
+        observation_id TEXT NOT NULL,
+        subagent_key TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        observation_json TEXT NOT NULL,
+        event_json TEXT NOT NULL,
+        published INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (parent_session_id, observation_id)
+      )
+    `)
+    if (!hasColumn(this.db, "session_subagent_observation", "observation_json")) {
+      this.db.exec("ALTER TABLE session_subagent_observation ADD COLUMN observation_json TEXT NOT NULL DEFAULT '{}'")
+    }
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS session_subagent_correlation (
+        parent_session_id TEXT NOT NULL,
+        correlation_key TEXT NOT NULL,
+        subagent_key TEXT NOT NULL,
+        PRIMARY KEY (parent_session_id, correlation_key, subagent_key)
       )
     `)
     this.db.exec(`
@@ -672,6 +783,246 @@ export class RuntimeStore {
     }
     this.migrateLegacyRunnerColumns()
     this.importJsonlJournals()
+  }
+
+  private hydrateSubagentAdmission() {
+    this.subagentAdmission = createMemorySubagentAdmissionStore()
+    const rows = this.db.prepare(`
+      SELECT parent_session_id, observation_id, subagent_key, revision, observation_json, published
+      FROM session_subagent_observation
+      ORDER BY parent_session_id, subagent_key, revision
+    `).all() as Array<{
+      parent_session_id: string
+      observation_id: string
+      subagent_key: string
+      revision: number
+      observation_json: string
+      published: number
+    }>
+    for (const row of rows) {
+      const observation = {
+        ...(JSON.parse(row.observation_json) as SubagentObservation),
+        observationId: row.observation_id,
+        subagentKey: row.subagent_key,
+      }
+      const admitted = this.subagentAdmission.admit({
+        parentSessionId: row.parent_session_id,
+        observation,
+        allocateKey: () => row.subagent_key,
+      })
+      if (admitted.event.revision !== row.revision) {
+        throw new Error(`subagent revision replay mismatch for ${row.parent_session_id}/${row.subagent_key}`)
+      }
+      if (row.published) this.subagentAdmission.markPublished(row.parent_session_id, row.observation_id)
+    }
+  }
+
+  admit(input: {
+    parentSessionId: string
+    observation: SubagentObservation
+    allocateKey: () => string
+  }): AdmittedSubagentObservation {
+    this.db.exec("BEGIN IMMEDIATE")
+    try {
+      // Another host instance may have admitted an observation since this
+      // process last touched its in-memory index. Refresh only after taking
+      // SQLite's write lock so key association and revision assignment share
+      // the same serialization point as the durable insert.
+      this.hydrateSubagentAdmission()
+      const admitted = this.subagentAdmission.admit(input)
+      const existing = this.db.prepare(`
+        SELECT event_json, published
+        FROM session_subagent_observation
+        WHERE parent_session_id = ? AND observation_id = ?
+      `).get(input.parentSessionId, input.observation.observationId) as {
+        event_json: string
+        published: number
+      } | null
+      if (existing) {
+        this.db.exec("COMMIT")
+        return { ...admitted, published: !!existing.published }
+      }
+      this.persistSubagentEvent(input.parentSessionId, admitted.event)
+      for (const correlationKey of subagentCorrelationKeys(input.observation)) {
+        this.db.prepare(`
+          INSERT OR IGNORE INTO session_subagent_correlation (
+            parent_session_id, correlation_key, subagent_key
+          ) VALUES (?, ?, ?)
+        `).run(input.parentSessionId, correlationKey, admitted.event.subagentKey)
+      }
+      this.db.prepare(`
+        INSERT INTO session_subagent_observation (
+          parent_session_id, observation_id, subagent_key, revision,
+          observation_json, event_json, published, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+      `).run(
+        input.parentSessionId,
+        input.observation.observationId,
+        admitted.event.subagentKey,
+        admitted.event.revision,
+        JSON.stringify(input.observation),
+        JSON.stringify(admitted.event),
+        Date.now(),
+      )
+      this.db.exec("COMMIT")
+      return admitted
+    } catch (error) {
+      try {
+        this.db.exec("ROLLBACK")
+      } catch {}
+      this.hydrateSubagentAdmission()
+      throw error
+    }
+  }
+
+  markPublished(parentSessionId: string, observationId: string) {
+    const result = this.db.prepare(`
+      UPDATE session_subagent_observation
+      SET published = 1
+      WHERE parent_session_id = ? AND observation_id = ?
+    `).run(parentSessionId, observationId) as { changes?: number }
+    if (result.changes === 0) throw new Error(`unknown subagent observation ${observationId}`)
+    this.subagentAdmission.markPublished(parentSessionId, observationId)
+  }
+
+  listSubagents(parentSessionId: string) {
+    const rows = this.db.prepare(`
+      SELECT *
+      FROM session_subagent
+      WHERE parent_session_id = ?
+      ORDER BY created_at, subagent_key
+    `).all(parentSessionId) as Array<Record<string, string | number | null>>
+    const edges = this.db.prepare(`
+      SELECT subagent_key, tool_call_id, role, revision
+      FROM session_subagent_tool_call
+      WHERE parent_session_id = ?
+      ORDER BY created_at, tool_call_id
+    `).all(parentSessionId) as Array<{
+      subagent_key: string
+      tool_call_id: string
+      role: "spawn" | "interaction"
+      revision: number
+    }>
+    return rows.map((row) => ({
+      parentSessionId,
+      subagentKey: String(row.subagent_key),
+      revision: Number(row.revision),
+      ...(row.mode ? { mode: String(row.mode) } : {}),
+      ...(row.status ? { status: String(row.status) } : {}),
+      ...(row.label ? { label: String(row.label) } : {}),
+      ...(row.subagent_type ? { subagentType: String(row.subagent_type) } : {}),
+      ...(row.description ? { description: String(row.description) } : {}),
+      ...(row.provider_kind ? { providerKind: String(row.provider_kind) } : {}),
+      ...(row.provider_id ? { providerId: String(row.provider_id) } : {}),
+      ...(row.child_session_id ? { childSessionId: String(row.child_session_id) } : {}),
+      transcript: {
+        kind: String(row.transcript_kind),
+        ...(row.transcript_ref ? { ref: String(row.transcript_ref) } : {}),
+      },
+      toolCallEdges: edges
+        .filter((edge) => edge.subagent_key === row.subagent_key)
+        .map((edge) => ({ toolCallId: edge.tool_call_id, role: edge.role, revision: edge.revision })),
+    }))
+  }
+
+  private reconcileOrphanedSubagents() {
+    const parents = this.db.prepare(`
+      SELECT DISTINCT child.parent_session_id
+      FROM session_subagent child
+      LEFT JOIN session parent ON parent.id = child.parent_session_id
+      WHERE child.mode != 'background'
+        AND child.status IN ('pending', 'running', 'paused')
+        AND COALESCE(parent.status, 'idle') != 'busy'
+    `).all() as Array<{ parent_session_id: string }>
+    for (const parent of parents) this.interruptSubagents(parent.parent_session_id, "orphan")
+  }
+
+  private interruptSubagents(parentSessionId: string, reason: "archive" | "orphan", occurrence = Date.now()) {
+    for (const child of this.listSubagents(parentSessionId)) {
+      if (!["pending", "running", "paused"].includes(child.status ?? "")) continue
+      if (reason === "orphan" && child.mode === "background") continue
+      const observationId = `host:${reason}:${occurrence}:${child.subagentKey}:${child.revision}`
+      this.admit({
+        parentSessionId,
+        observation: {
+          observationId,
+          subagentKey: child.subagentKey,
+          status: "interrupted",
+        },
+        allocateKey: () => child.subagentKey,
+      })
+      this.markPublished(parentSessionId, observationId)
+    }
+  }
+
+  private persistSubagentEvent(parentSessionId: string, event: SubagentUpdatedEvent) {
+    const now = Date.now()
+    this.db.prepare(`
+      INSERT OR IGNORE INTO session_subagent (
+        parent_session_id, subagent_key, revision, status, transcript_kind, created_at, updated_at
+      ) VALUES (?, ?, 0, 'pending', 'none', ?, ?)
+    `).run(parentSessionId, event.subagentKey, now, now)
+    this.db.prepare(`
+      UPDATE session_subagent
+      SET revision = MAX(revision, ?), updated_at = ?
+      WHERE parent_session_id = ? AND subagent_key = ?
+    `).run(event.revision, now, parentSessionId, event.subagentKey)
+    for (const [field, column] of [
+      ["mode", "mode"],
+      ["status", "status"],
+      ["label", "label"],
+      ["subagentType", "subagent_type"],
+      ["description", "description"],
+    ] as const) {
+      const value = event[field]
+      if (value === undefined) continue
+      this.db.prepare(`
+        UPDATE session_subagent
+        SET ${column} = ?, ${column}_revision = ?
+        WHERE parent_session_id = ? AND subagent_key = ? AND ${column}_revision < ?
+      `).run(value, event.revision, parentSessionId, event.subagentKey, event.revision)
+    }
+    for (const [field, column] of [
+      ["providerKind", "provider_kind"],
+      ["providerId", "provider_id"],
+      ["childSessionId", "child_session_id"],
+    ] as const) {
+      const value = event[field]
+      if (value === undefined) continue
+      this.db.prepare(`
+        UPDATE session_subagent
+        SET ${column} = ?, ${column}_revision = ?
+        WHERE parent_session_id = ? AND subagent_key = ? AND ${column} IS NULL
+      `).run(value, event.revision, parentSessionId, event.subagentKey)
+    }
+    if (event.transcript) {
+      this.db.prepare(`
+        UPDATE session_subagent
+        SET transcript_kind = ?, transcript_ref = ?, transcript_revision = ?
+        WHERE parent_session_id = ? AND subagent_key = ? AND transcript_revision < ?
+      `).run(
+        event.transcript.kind,
+        event.transcript.ref ?? null,
+        event.revision,
+        parentSessionId,
+        event.subagentKey,
+        event.revision,
+      )
+    }
+    if (event.toolCallId && event.toolCallRole) {
+      this.db.prepare(`
+        INSERT OR IGNORE INTO session_subagent_tool_call (
+          parent_session_id, subagent_key, tool_call_id, role, revision, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `).run(
+        parentSessionId,
+        event.subagentKey,
+        event.toolCallId,
+        event.toolCallRole,
+        event.revision,
+        now,
+      )
+    }
   }
 
   private migrateLegacyRunnerColumns() {
@@ -1256,11 +1607,13 @@ export class RuntimeStore {
     updatedAt: number
     status?: string
     recoveryError?: string | null
+    parentSessionId?: string
   }) {
     const prev = this.db
       .prepare(`
         SELECT
           created_at,
+          parent_id,
           title,
           recovery_error,
           agent_session_id,
@@ -1280,6 +1633,7 @@ export class RuntimeStore {
       `)
       .get(input.id) as {
       created_at: number
+      parent_id: string | null
       title: string | null
       recovery_error: string | null
       agent_session_id: string | null
@@ -1296,8 +1650,9 @@ export class RuntimeStore {
       agent: string | null
     } | null
     this.db.prepare(
-      `INSERT OR REPLACE INTO session (
+      `INSERT INTO session (
         id,
+        parent_id,
         directory,
         title,
         agent_session_id,
@@ -1316,9 +1671,29 @@ export class RuntimeStore {
         updated_at,
         status,
         recovery_error
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        parent_id = COALESCE(excluded.parent_id, session.parent_id),
+        directory = excluded.directory,
+        title = excluded.title,
+        agent_session_id = excluded.agent_session_id,
+        process_key = excluded.process_key,
+        harness_id = excluded.harness_id,
+        harness_access = excluded.harness_access,
+        harness_binary = excluded.harness_binary,
+        harness_transport = excluded.harness_transport,
+        harness_url = excluded.harness_url,
+        harness_headers_json = excluded.harness_headers_json,
+        model_provider_id = excluded.model_provider_id,
+        model_id = excluded.model_id,
+        variant = excluded.variant,
+        agent = excluded.agent,
+        updated_at = excluded.updated_at,
+        status = excluded.status,
+        recovery_error = excluded.recovery_error`,
     ).run(
         input.id,
+        input.parentSessionId ?? prev?.parent_id ?? null,
         input.directory,
         input.title ?? prev?.title ?? null,
         input.agentSessionId ?? prev?.agent_session_id ?? null,
@@ -1346,6 +1721,10 @@ export class RuntimeStore {
   }
 
   private deleteSessionProjection(id: string) {
+    this.db.prepare("DELETE FROM session_subagent_observation WHERE parent_session_id = ?").run(id)
+    this.db.prepare("DELETE FROM session_subagent_correlation WHERE parent_session_id = ?").run(id)
+    this.db.prepare("DELETE FROM session_subagent_tool_call WHERE parent_session_id = ?").run(id)
+    this.db.prepare("DELETE FROM session_subagent WHERE parent_session_id = ?").run(id)
     this.db.prepare("DELETE FROM journal_checkpoint WHERE session_id = ?").run(id)
     this.db.prepare("DELETE FROM pending_question WHERE session_id = ?").run(id)
     this.db.prepare("DELETE FROM pending_permission WHERE session_id = ?").run(id)
@@ -1375,6 +1754,7 @@ export class RuntimeStore {
         title: control.title,
         agentSessionId: control.agentSessionId,
         processKey: control.ownerKey ?? control.processKey,
+        parentSessionId: control.parentSessionId,
         createdAt: control.createdAt,
         updatedAt: row.ts,
       })
@@ -1650,6 +2030,7 @@ export class RuntimeStore {
     title?: string
     agentSessionId: string
     ownerKey?: string
+    parentSessionId?: string
     createdAt?: number
   }) {
     const ts = input.createdAt ?? Date.now()
@@ -1665,6 +2046,7 @@ export class RuntimeStore {
         title: input.title,
         agentSessionId: input.agentSessionId,
         ...(input.ownerKey ? { ownerKey: input.ownerKey } : {}),
+        ...(input.parentSessionId ? { parentSessionId: input.parentSessionId } : {}),
         createdAt: ts,
       },
     }
@@ -1959,6 +2341,7 @@ export class RuntimeStore {
 
   private session(row: {
     id: string
+    parent_id?: string | null
     directory: string
     title: string | null
     harness_id?: string | null
@@ -2004,6 +2387,7 @@ export class RuntimeStore {
       ...(row.status ? { status: row.status } : {}),
       ...(row.recovery_error ? { recovery_error: row.recovery_error } : {}),
       ...(row.agent_session_id ? { agent_session_id: row.agent_session_id } : {}),
+      ...(row.parent_id ? { parentID: row.parent_id } : {}),
       ...(row.process_key ? { process_key: row.process_key } : {}),
       ...(this.lastTurn(row.id) ? { lastTurn: this.lastTurn(row.id) } : {}),
     }
@@ -2071,6 +2455,7 @@ export class RuntimeStore {
       .prepare(`
         SELECT
           id,
+          parent_id,
           directory,
 	          title,
 	          agent_session_id,
@@ -2096,6 +2481,7 @@ export class RuntimeStore {
       `)
       .all(directory) as Array<{
       id: string
+      parent_id: string | null
       directory: string
       title: string | null
       agent_session_id: string | null
@@ -2197,6 +2583,7 @@ export class RuntimeStore {
       .prepare(`
         SELECT
           id,
+          parent_id,
           directory,
 	          title,
 	          process_key,
@@ -2221,6 +2608,7 @@ export class RuntimeStore {
       `)
       .get(id) as {
       id: string
+      parent_id: string | null
       directory: string
       title: string | null
       harness_id: string | null
@@ -2352,6 +2740,10 @@ export class RuntimeStore {
 
   deleteSession(id: string) {
     if (!this.getSession(id)) return
+    const children = (this.db
+      .prepare("SELECT id FROM session WHERE parent_id = ? ORDER BY created_at ASC")
+      .all(id) as Array<{ id: string }>).map((row) => row.id)
+    for (const child of children) this.deleteSession(child)
     this.commit({
       seq: this.next(id),
       ts: Date.now(),
@@ -2375,6 +2767,9 @@ export class RuntimeStore {
         updates,
       },
     })
+    if (updates.time?.archived !== undefined) {
+      this.interruptSubagents(id, "archive", updates.time.archived)
+    }
     return this.getSession(id)
   }
 
