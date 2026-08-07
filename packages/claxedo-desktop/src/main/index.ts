@@ -61,6 +61,7 @@ import { runRestart } from "../shared/restart-policy"
 import type { DiagnosticsWebContents } from "./diagnostics/ipc"
 import { createElectronSource } from "./diagnostics/electron-source"
 import { createProcessMetricsSource } from "./diagnostics/process-metrics-source"
+import { claxedoServerExecArgv } from "./server-runtime-policy"
 import { createProfiler } from "./diagnostics/profiler"
 import { createSessionMemoryScanner } from "./diagnostics/session-memory-worker"
 import { createOwnerOperationBridge } from "./diagnostics/owner-operation-bridge"
@@ -325,7 +326,7 @@ async function startClaxedoServer(): Promise<{ url: string }> {
     const serverLaunchId = `claxedo-server-${crypto.randomUUID()}`
     const serverGeneration = `server-generation-${crypto.randomUUID()}`
     const child = utilityProcess.fork(serverPath, [], {
-      execArgv: ["--expose-gc"],
+      execArgv: claxedoServerExecArgv(),
       stdio: "inherit",
       serviceName: "Claxedo Server",
       env: {
