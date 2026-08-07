@@ -11,8 +11,8 @@ import type { DesktopTheme, HexColor } from "./types"
  */
 const approved = {
   light: {
-    "shell-surface-sidebar": "#f3f3f3",
-    "shell-surface-header": "#f7f7f7",
+    "shell-surface-sidebar": "#f9f9f9",
+    "shell-surface-header": "#ffffff",
     "shell-surface-composer": "#ffffff",
     "shell-surface-context-card": "#f7f7f7",
     "overlay-surface": "#ffffff",
@@ -67,6 +67,24 @@ describe("Codex theme", () => {
   test("keeps the workbench backdrop continuous with the shell", () => {
     expect(theme.light["background-stronger"]).toBe(theme.light["background-base"])
     expect(theme.dark["background-stronger"]).toBe(theme.dark["background-base"])
+  })
+
+  /*
+   * The installed app uses gray-0 for both its main surface and prominent
+   * cards. A gray canvas behind a white card adds a visible edge before the
+   * elevation is even painted, making the correct half-pixel stroke look too
+   * thick. Its sidebar is the separate gray-50 application surface.
+   */
+  test("keeps light overlays on Codex's white main surface", () => {
+    expect(theme.light).toMatchObject({
+      "background-base": "#ffffff",
+      "background-stronger": "#ffffff",
+      "surface-base": "#ffffff",
+      "shell-surface-header": "#ffffff",
+      "overlay-surface": "#ffffff",
+      "shell-surface-sidebar": "#f9f9f9",
+    })
+    expect(theme.light["background-base"]).toBe(theme.light["overlay-surface"])
   })
 
   /*

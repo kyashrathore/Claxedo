@@ -489,63 +489,38 @@ html[data-theme="codex"] {
   -webkit-font-smoothing: antialiased;
 
   /*
-   * Elevation follows Codex's own scale, read from the shipped app:
-   * `--elevation-200-geo` (0 2px 4px -1px) at 8% light / 20% dark for raised
-   * surfaces, `--shadow` (0 10px 15px -3px, 0 4px 6px -4px) at 10% / 20% for
-   * overlays, and a sidebar ambient down at 3-5%. These are quiet on purpose —
-   * the hairline carries the edge, not the shadow.
-   *
-   * They live here rather than in the theme's `overrides` because those are
-   * validated as color values by desktop-theme.schema.json, and a shadow is a
-   * geometry-plus-color string.
+   * These live here rather than in the theme's `overrides` because those are
+   * validated as color values by desktop-theme.schema.json, while a shadow is
+   * a geometry-plus-color string.
    */
   --radius-overlay: 10px;
   --elevation-shadow-raised: 0 2px 4px -1px light-dark(#00000014, #00000033);
-  --elevation-shadow-overlay: 0 10px 15px -3px light-dark(#0000001a, #00000033),
-    0 4px 6px -4px light-dark(#0000001a, #00000033);
+
   /*
-   * Elevation, read out of the shipped app's own bundle rather than eyeballed.
-   * There it is built from one stroke plus two very light washes:
+   * Electron elevation copied from the installed Codex bundle. Prominent
+   * surfaces are one semantic half-pixel stroke plus two fixed, very light
+   * black washes; Codex does not strengthen those washes in dark mode:
    *
    *   --elevation-stroke:    0 0 0 .5px var(--color-token-border-heavy)
    *   --elevation-prominent: var(--elevation-stroke), 0 3px 7.5px #0000000a, 0 0 20px #0000000d
    *   --elevation-sidebar:   var(--elevation-stroke), 0 3px 7.5px #00000008, 0 0 16px #00000005
    *
-   * and `--color-border-heavy` is an alpha of the foreground — 12% in light,
-   * #ffffff29 in dark — not a solid grey. The stroke is 0.5px and OUTSET; a 1px
-   * inset edge is twice as thick and sits on the wrong side of the boundary,
-   * which is what made our cards read heavier than theirs.
-   *
-   * Dark washes are scaled the way the app scales its own `--shadow` between
-   * schemes (#0000001a -> #0003); only the light values are extracted.
+   * Codex derives `--color-token-border-heavy` from its primary foreground at
+   * 12%. `--text-strong` is the matching semantic foreground in this theme.
+   * Keeping that color relationship matters: a hard-coded black/white ring is
+   * visibly heavier even when its alpha is numerically identical.
    */
-  /*
-   * Two strokes, because the app has two.
-   *
-   * Elevation carries `--color-border-heavy` (12% of the foreground in light,
-   * #ffffff29 in dark); overlays carry `--shadow-hairline-color`, which is a
-   * flat 10% in both schemes:
-   *
-   *   --shadow-hairline-color: #0000001a / #ffffff1a
-   *   --shadow-hairline-width: .5px
-   *
-   * Two percent apart on a half-pixel line, and the dark ends diverge by more —
-   * 16% against 10% — which is the half worth keeping separate.
-   */
-  --elevation-ring-card: 0 0 0 0.5px light-dark(#0000001f, #ffffff29);
-  --elevation-ring-overlay: 0 0 0 0.5px light-dark(#0000001a, #ffffff1a);
-  --elevation-shadow-card: var(--elevation-ring-card), 0 3px 7.5px light-dark(#0000000a, #00000029),
-    0 0 20px light-dark(#0000000d, #00000033);
-  --elevation-shadow-sidebar: var(--elevation-ring-card), 0 3px 7.5px light-dark(#00000008, #00000021),
-    0 0 16px light-dark(#00000005, #00000014);
+  --elevation-stroke: 0 0 0 0.5px color-mix(in oklab, var(--text-strong) 12%, transparent);
+  --elevation-prominent: var(--elevation-stroke), 0 3px 7.5px #0000000a, 0 0 20px #0000000d;
+  --elevation-sidebar: var(--elevation-stroke), 0 3px 7.5px #00000008, 0 0 16px #00000005;
   --surface-overlay-radius: var(--radius-overlay);
   --surface-overlay-border: 0;
-  --surface-overlay-shadow: var(--elevation-shadow-overlay), var(--elevation-ring-overlay);
+  --surface-overlay-shadow: var(--elevation-prominent);
   --surface-card-radius: var(--radius-overlay);
   --surface-card-border: 0;
-  --surface-card-shadow: var(--elevation-shadow-card);
+  --surface-card-shadow: var(--elevation-prominent);
   --surface-composer-shadow: inset 0 0 0 1px var(--composer-border), var(--elevation-shadow-raised);
-  --surface-sidebar-shadow: var(--elevation-shadow-sidebar);
+  --surface-sidebar-shadow: var(--elevation-sidebar);
 }
 
 html[data-theme="codex"] body {

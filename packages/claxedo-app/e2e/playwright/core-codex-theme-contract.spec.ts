@@ -1,49 +1,59 @@
 import { expect, test } from "@playwright/test"
 
 test.describe("Codex theme contract @core", () => {
-  test("ring and shadow composition stays valid for every enabled combination", async ({ page }) => {
-    await page.addInitScript(() => {
-      localStorage.setItem("opencode-theme-id", "codex")
-      localStorage.setItem("opencode-color-scheme", "dark")
-    })
-    await page.goto("/demo/index.html")
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "codex")
+  for (const scheme of ["light", "dark"] as const) {
+    test(`prominent surfaces match the installed Codex elevation in ${scheme} mode`, async ({ page }) => {
+      await page.addInitScript((nextScheme) => {
+        localStorage.setItem("opencode-theme-id", "codex")
+        localStorage.setItem("opencode-color-scheme", nextScheme)
+      }, scheme)
+      await page.goto("/demo/index.html")
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "codex")
 
-    const result = await page.evaluate(() => {
-      const styles = getComputedStyle(document.documentElement)
-      const ring = styles.getPropertyValue("--elevation-ring-overlay").trim()
-      const shadow = styles.getPropertyValue("--elevation-shadow-overlay").trim()
-      const disabled = "0 0 #0000"
-
-      return {
-        ring,
-        shadow,
-        combinations: [
-          [ring, disabled],
-          [disabled, shadow],
-          [ring, shadow],
-          [disabled, disabled],
-        ].map(([nextRing, nextShadow]) => {
-          const probe = document.createElement("div")
-          probe.style.setProperty("--theme-test-ring", nextRing)
-          probe.style.setProperty("--theme-test-shadow", nextShadow)
-          probe.style.boxShadow = "var(--theme-test-ring), var(--theme-test-shadow)"
-          document.body.append(probe)
-          const value = getComputedStyle(probe).boxShadow
+      const result = await page.evaluate(() => {
+        const add = (attributes: Record<string, string>, className?: string) => {
+          const node = document.createElement("div")
+          Object.entries(attributes).forEach(([name, value]) => node.setAttribute(name, value))
+          if (className) node.className = className
+          document.body.append(node)
+          return node
+        }
+        const resolveShadow = (value: string) => {
+          const probe = add({})
+          probe.style.boxShadow = value
+          const resolved = getComputedStyle(probe).boxShadow
           probe.remove()
-          return value
-        }),
-      }
-    })
+          return resolved
+        }
 
-    expect(result.ring).not.toBe("")
-    expect(result.shadow).not.toBe("")
-    expect(result.combinations).toHaveLength(4)
-    for (const value of result.combinations) {
-      expect(value).not.toBe("")
-      expect(value).not.toBe("none")
-    }
-  })
+        const overlay = add({ "data-surface": "overlay", "data-overlay-shell": "menu" })
+        const card = add({}, "ui-context-card is-floating")
+        const root = getComputedStyle(document.documentElement)
+
+        return {
+          scheme: root.colorScheme,
+          textStrong: root.getPropertyValue("--text-strong").trim(),
+          stroke: root.getPropertyValue("--elevation-stroke").trim(),
+          prominent: root.getPropertyValue("--elevation-prominent").trim(),
+          sidebar: root.getPropertyValue("--elevation-sidebar").trim(),
+          overlay: getComputedStyle(overlay).boxShadow,
+          card: getComputedStyle(card).boxShadow,
+          expectedProminent: resolveShadow(
+            "0 0 0 .5px color-mix(in oklab, var(--text-strong) 12%, transparent), " +
+              "0 3px 7.5px #0000000a, 0 0 20px #0000000d",
+          ),
+        }
+      })
+
+      const expectedStrokeToken = `0 0 0 0.5px color-mix(in oklab, ${result.textStrong} 12%, transparent)`
+      expect(result.scheme).toBe(scheme)
+      expect(result.stroke).toBe(expectedStrokeToken)
+      expect(result.prominent).toBe(`${expectedStrokeToken}, 0 3px 7.5px #0000000a, 0 0 20px #0000000d`)
+      expect(result.sidebar).toBe(`${expectedStrokeToken}, 0 3px 7.5px #00000008, 0 0 16px #00000005`)
+      expect(result.overlay).toBe(result.expectedProminent)
+      expect(result.card).toBe(result.expectedProminent)
+    })
+  }
 
   test("component-owned geometry preserves Codex and non-Codex contracts", async ({ page }) => {
     await page.addInitScript(() => {
@@ -106,7 +116,7 @@ test.describe("Codex theme contract @core", () => {
           const style = getComputedStyle(node)
           return { radius: style.borderRadius, border: style.borderTopWidth, shadow: style.boxShadow }
         }),
-        expectedShadow: resolveShadow(`${root.getPropertyValue("--elevation-shadow-overlay")}, ${root.getPropertyValue("--elevation-ring-overlay")}`),
+        expectedShadow: resolveShadow(root.getPropertyValue("--elevation-prominent")),
         card: getComputedStyle(card).boxShadow,
         expectedCard: resolveShadow(root.getPropertyValue("--surface-card-shadow")),
         composer: getComputedStyle(composer).boxShadow,
