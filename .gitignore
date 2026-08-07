@@ -81,6 +81,7 @@ packages/claxedo-app/e2e/playwright/test-results/
 packages/claxedo-desktop/resources/acp/
 packages/claxedo-desktop/resources/claxedo-server/
 packages/claxedo-desktop/resources/claxedo-server.js
+packages/claxedo-desktop/resources/claxedo-engine-worker/
 packages/claxedo-desktop/resources/opencode-cli
 
 # Build artifacts

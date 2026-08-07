@@ -239,7 +239,11 @@ export async function ensureEmbeddedWorkspaceRuntime(
   }
 
   let activeHost: EmbeddedRuntime["host"] | undefined
-  const created = createWorkspaceRuntimeApp(options(ws, configuredOpencodeRequest, {
+  let startSessionEvents = () => {}
+  const created = createWorkspaceRuntimeApp(options(ws, async (request) => {
+    if (!["GET", "HEAD"].includes(request.method)) startSessionEvents()
+    return configuredOpencodeRequest(request)
+  }, {
     exists: (sessionId) => activeHost?.hasSession(sessionId) ?? false,
     parentSessionIdFor: (sessionId) => activeHost?.parentSessionIdFor(sessionId),
   }))
@@ -270,9 +274,10 @@ export async function ensureEmbeddedWorkspaceRuntime(
     // `server.ts`) instead of duplicating SSE-parsing/reconnect logic — just
     // pointed at THIS runtime's own in-process app (an ordinary in-memory
     // `fetch`, never a real socket) instead of a real network URL.
-    const sessionEvents = createOpencodeEvents(async (req) => await runtime.app.fetch(req))
+    const sessionEvents = createOpencodeEvents(async (req) => await runtime.app.fetch(req), { autoStart: false })
     sessionEvents.on(configuredOnSessionMetaEvent)
     runtime.sessionEvents = sessionEvents
+    startSessionEvents = sessionEvents.start
   }
   if (config === "sync") await configure(runtime)
   runtime.diagnosticsOwner?.update({ lifecycle: "ready" })

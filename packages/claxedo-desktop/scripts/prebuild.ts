@@ -13,7 +13,7 @@ import * as fs from "fs"
 import { createRequire } from "node:module"
 import * as path from "path"
 
-import { bundleClaxedoServer } from "./bundle-claxedo-server"
+import { bundleClaxedoEngineWorker, bundleClaxedoServer } from "./bundle-claxedo-server"
 import { buildMemoryImpactHelper } from "./build-memory-impact-helper"
 import { buildRichContentRenderer } from "./build-rich-content-renderer"
 import { copyIcons as copyChannelIcons } from "./utils"
@@ -55,6 +55,11 @@ async function bundleServer() {
   log("Bundling claxedo-server...")
   const bundled = await bundleClaxedoServer(src, dest)
   log(`claxedo-server bundled to ${bundled.entry} (${Math.ceil(bundled.outputBytes / 1024 / 1024)} MB split)`)
+  await bundleClaxedoEngineWorker(
+    path.resolve(SCRIPT_DIR, "claxedo-engine-worker-entry.ts"),
+    path.resolve(RESOURCES_DIR, "claxedo-engine-worker"),
+  )
+  log("claxedo engine worker bundled")
 }
 
 // ── ACP binaries ──

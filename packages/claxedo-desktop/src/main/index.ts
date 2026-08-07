@@ -272,17 +272,27 @@ function getOpenCodeEmbedPath(): string {
     : join(MAIN_DIR, "../../../opencode/dist/node/node.js")
 }
 
+function getOpenCodeWorkerPath(): string {
+  return IS_PACKAGED
+    ? join(MAIN_DIR, "claxedo-engine-worker/index.js")
+    : join(MAIN_DIR, "../../resources/claxedo-engine-worker/index.js")
+}
+
 async function startClaxedoServer(): Promise<{ url: string }> {
   const claxedoPort = await findFreePort(resolveBaseServerPort())
   const serverPath = getClaxedoServerPath()
   const openCodeEmbedPath = getOpenCodeEmbedPath()
-  logger.log("starting claxedo-server with embedded OpenCode", { serverPath, claxedoPort, openCodeEmbedPath })
+  const openCodeWorkerPath = getOpenCodeWorkerPath()
+  logger.log("starting claxedo-server with on-demand OpenCode", { serverPath, claxedoPort, openCodeEmbedPath, openCodeWorkerPath })
 
   if (!existsSync(serverPath)) {
     throw new Error(`Claxedo server bundle was not found at ${serverPath}. Rebuild the desktop app and try again.`)
   }
   if (!existsSync(openCodeEmbedPath)) {
     throw new Error(`OpenCode engine artifact was not found at ${openCodeEmbedPath}. Rebuild the desktop app and try again.`)
+  }
+  if (!existsSync(openCodeWorkerPath)) {
+    throw new Error(`OpenCode worker artifact was not found at ${openCodeWorkerPath}. Rebuild the desktop app and try again.`)
   }
 
   const acpDir = IS_PACKAGED
@@ -336,6 +346,7 @@ async function startClaxedoServer(): Promise<{ url: string }> {
         CLAXEDO_DATA_DIR: serverDataDir,
         CLAXEDO_DESKTOP_PARENT_PID: String(process.pid),
         CLAXEDO_CHILD_OPENCODE_EMBED_PATH: openCodeEmbedPath,
+        CLAXEDO_CHILD_OPENCODE_WORKER_PATH: openCodeWorkerPath,
         CLAXEDO_DIAGNOSTICS_LAUNCH_ID: serverLaunchId,
         CLAXEDO_DIAGNOSTICS_GENERATION: serverGeneration,
       }),
