@@ -1,71 +1,61 @@
-/**
- * Verifies that:
- *  1. node-pty fails with "posix_spawnp" when spawn-helper lacks the execute bit
- *  2. Restoring the execute bit makes node-pty spawn work again
- *  3. ensureSpawnHelper() programmatically fixes the permission
- */
-import { describe, test, expect, afterAll } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import * as fs from "fs"
-import { ensureSpawnHelper, spawnHelperCandidates, spawnHelperPath } from "./spawn-helper-fix"
+import * as os from "os"
+import * as path from "path"
+import { ensureSpawnHelper, spawnHelperCandidates } from "./spawn-helper-fix"
 
-// spawnHelperPath() answers "where WOULD it be", not "does it exist" — some
-// node-pty prebuilds (linux-x64 among them) ship without spawn-helper, and the
-// module-level statSync then threw outside any test as an unhandled error.
-const candidate = spawnHelperPath()
-const helper = candidate && fs.existsSync(candidate) ? candidate : undefined
-const originalMode = helper ? fs.statSync(helper).mode : 0
+const tempDirs: string[] = []
 
-afterAll(() => {
-  if (!helper) return
-  try {
-    fs.chmodSync(helper, originalMode)
-  } catch {}
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map((dir) => fs.promises.rm(dir, { recursive: true, force: true })))
 })
 
-const isLinux = process.platform === "linux"
+async function helper(mode: number) {
+  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "spawn-helper-fix-"))
+  tempDirs.push(dir)
+  const file = path.join(dir, "spawn-helper")
+  await fs.promises.writeFile(file, "fixture")
+  await fs.promises.chmod(file, mode)
+  return file
+}
 
-describe.skipIf(!helper || process.platform === "win32")("spawn-helper permission fix", () => {
-  test.skipIf(!isLinux)("node-pty fails when spawn-helper has no execute bit", async () => {
-    fs.chmodSync(helper!, 0o644)
-    const { spawn } = await import("node-pty")
-    expect(() => {
-      const pty = spawn("/bin/echo", ["hello"], {
-        name: "xterm-256color",
-        cwd: "/tmp",
-      })
-      pty.kill()
-    }).toThrow(/posix_spawnp/)
+describe("spawn-helper permission fix", () => {
+  test("restores missing execute permission", async () => {
+    const file = await helper(0o644)
+
+    await ensureSpawnHelper(file)
+
+    expect((await fs.promises.stat(file)).mode & 0o111).not.toBe(0)
   })
 
-  test.skipIf(!isLinux)("node-pty succeeds after restoring execute bit", async () => {
-    fs.chmodSync(helper!, 0o755)
-    const { spawn } = await import("node-pty")
-    const pty = spawn("/bin/echo", ["hello"], {
-      name: "xterm-256color",
-      cwd: "/tmp",
-    })
-    expect(pty.pid).toBeGreaterThan(0)
-    pty.kill()
+  test("leaves an executable helper unchanged", async () => {
+    const file = await helper(0o755)
+    const before = (await fs.promises.stat(file)).mode
+
+    await ensureSpawnHelper(file)
+
+    expect((await fs.promises.stat(file)).mode).toBe(before)
   })
 
-  test("ensureSpawnHelper() fixes missing execute permission", async () => {
-    fs.chmodSync(helper!, 0o644)
-    expect(fs.statSync(helper!).mode & 0o111).toBe(0)
+  test("repairs both archive and unpacked helpers in packaged apps", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "spawn-helper-asar-"))
+    tempDirs.push(dir)
+    const archived = path.join(dir, "app.asar", "node_modules", "node-pty", "spawn-helper")
+    const unpacked = path.join(dir, "app.asar.unpacked", "node_modules", "node-pty", "spawn-helper")
+    await Promise.all([archived, unpacked].map(async (file) => {
+      await fs.promises.mkdir(path.dirname(file), { recursive: true })
+      await fs.promises.writeFile(file, "fixture")
+      await fs.promises.chmod(file, 0o644)
+    }))
 
-    await ensureSpawnHelper()
+    await ensureSpawnHelper(archived)
 
-    const mode = fs.statSync(helper!).mode
-    expect(mode & 0o111).not.toBe(0)
+    expect((await fs.promises.stat(archived)).mode & 0o111).not.toBe(0)
+    expect((await fs.promises.stat(unpacked)).mode & 0o111).not.toBe(0)
   })
 
-  test("ensureSpawnHelper() is a no-op when permission is already correct", async () => {
-    fs.chmodSync(helper!, 0o755)
-    const modeBefore = fs.statSync(helper!).mode
-
-    await ensureSpawnHelper()
-
-    const modeAfter = fs.statSync(helper!).mode
-    expect(modeAfter).toBe(modeBefore)
+  test("ignores a missing helper", async () => {
+    await expect(ensureSpawnHelper("/missing/spawn-helper")).resolves.toBeUndefined()
   })
 })
 

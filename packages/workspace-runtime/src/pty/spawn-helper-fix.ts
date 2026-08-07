@@ -20,9 +20,8 @@ export function spawnHelperPath(): string | undefined {
   }
 }
 
-export async function ensureSpawnHelper() {
+export async function ensureSpawnHelper(helper = spawnHelperPath()) {
   if (process.platform === "win32") return
-  const helper = spawnHelperPath()
   if (!helper) return
   for (const candidate of spawnHelperCandidates(helper)) {
     try {

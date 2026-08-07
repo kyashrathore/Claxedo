@@ -1118,6 +1118,13 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
 
     expect(calls).not.toContain("restart")
     expect(item.configRestartPending).toBe(true)
+    let configReady = false
+    const readiness = item.waitForConfigReady().then(() => {
+      configReady = true
+    })
+    await Bun.sleep(0)
+    expect(configReady).toBe(false)
+    expect(calls).not.toContain("restart")
     item.turnLifecycle.drain("s1", "test cleanup")
 
     const events: string[] = []
@@ -1130,12 +1137,12 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     expect(events).toContain("session.error")
     expect(calls).toContain("cancel")
     expect(calls).toContain("dispose")
-    expect(calls).not.toContain("restart")
     expect(item.turnLifecycle.busySessions.has("s1")).toBe(false)
     expect(item.turnLifecycle.activeTurns.size).toBe(0)
 
-    await item.applyConfig({ mcp: {}, auth: { OPENAI_API_KEY: "sk-new" } })
+    await readiness
 
+    expect(configReady).toBe(true)
     expect(calls).toContain("restart")
     expect(calls).toContain("forget")
     expect(item.configRestartPending).toBe(false)

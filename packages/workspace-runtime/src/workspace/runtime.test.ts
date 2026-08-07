@@ -440,6 +440,43 @@ describe("workspace runtime auth helpers", () => {
     }
   })
 
+  test("retries obsolete Codex credential cleanup after a filesystem failure", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-auth-cleanup-retry-"))
+    tempDirs.push(dir)
+    process.env.HOME = dir
+    const authPath = path.join(dir, ".codex", "auth.json")
+    const host = createWorkspaceHost({ harness: { id: "opencode", access: "native" } })
+
+    await host.apply({
+      version: 1,
+      mcp: {},
+      auth: { "codex-app-server": codexAuth() },
+      runner: { type: "opencode" },
+    })
+    expect(await fs.promises.readFile(authPath, "utf8")).toContain("access-token")
+
+    const originalRm = fs.promises.rm
+    let failures = 0
+    fs.promises.rm = (async (target, options) => {
+      if (String(target) === authPath && failures++ === 0) throw new Error("cleanup failed")
+      return await originalRm(target, options)
+    }) as typeof fs.promises.rm
+    try {
+      const snapshot = {
+        version: 1 as const,
+        mcp: {},
+        auth: {},
+        runner: { type: "opencode" as const },
+      }
+      await expect(host.apply(snapshot)).rejects.toThrow("cleanup failed")
+      await host.apply(snapshot)
+      expect(await fs.promises.stat(authPath).then(() => true, () => false)).toBe(false)
+    } finally {
+      fs.promises.rm = originalRm
+      host.dispose()
+    }
+  })
+
   test("checkpoint scrub excludes runtime-owned Codex credentials and resume re-injects them", async () => {
     const home = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-checkpoint-auth-"))
     tempDirs.push(home)
@@ -826,6 +863,139 @@ describe("workspace runtime auth helpers", () => {
     }
   })
 
+  test("runtime config push defers a newly active ACP promotion until its next safe use", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-acp-promote-active-"))
+    tempDirs.push(dir)
+    process.env.HOME = dir
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const receiptDir = path.join(dir, "runtime-config")
+    const authPath = path.join(dir, ".codex", "auth.json")
+    await fs.promises.mkdir(path.dirname(authPath), { recursive: true })
+    await fs.promises.writeFile(authPath, "previous-auth\n")
+
+    let sendStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      sendStarted = resolve
+    })
+    let releaseSend!: () => void
+    const released = new Promise<void>((resolve) => {
+      releaseSend = resolve
+    })
+    const originalGetSessionConfig = AcpHarnessAdapter.prototype.getSessionConfig
+    const originalGetMessages = AcpHarnessAdapter.prototype.getMessages
+    const originalSendMessage = AcpHarnessAdapter.prototype.sendMessage
+    const originalSetAuth = AcpHarnessAdapter.prototype.setAuth
+    const originalApplyConfig = AcpHarnessAdapter.prototype.applyConfig
+    const originalCreateSession = AcpHarnessAdapter.prototype.createSession
+    const originalWriteFile = fs.promises.writeFile
+    const configEvents: string[] = []
+    let receiptWriteStarted!: () => void
+    const writingReceipt = new Promise<void>((resolve) => {
+      receiptWriteStarted = resolve
+    })
+    let releaseReceiptWrite!: () => void
+    const receiptWriteReleased = new Promise<void>((resolve) => {
+      releaseReceiptWrite = resolve
+    })
+
+    AcpHarnessAdapter.prototype.getSessionConfig = async () => ({
+      harness: { id: "claude", access: "acp" as const },
+      model: { providerID: "claude-acp", modelID: "sonnet" },
+      variant: null,
+      agent: null,
+    })
+    AcpHarnessAdapter.prototype.getMessages = async () => []
+    AcpHarnessAdapter.prototype.sendMessage = async function*() {
+      sendStarted()
+      await released
+    }
+    AcpHarnessAdapter.prototype.setAuth = function() {
+      configEvents.push("setAuth")
+    }
+    AcpHarnessAdapter.prototype.applyConfig = async function() {
+      configEvents.push("applyConfig")
+    }
+    AcpHarnessAdapter.prototype.createSession = async () => {
+      configEvents.push("createSession")
+      return { id: "s-after-config" }
+    }
+    fs.promises.writeFile = (async (...args: Parameters<typeof fs.promises.writeFile>) => {
+      if (String(args[0]) === path.join(receiptDir, "accepted-snapshot.json")) {
+        receiptWriteStarted()
+        await receiptWriteReleased
+      }
+      return await originalWriteFile(...args)
+    }) as typeof fs.promises.writeFile
+
+    try {
+      const app = new Hono()
+      const host = mountTestHost(app, {
+        harness: { id: "opencode", access: "native" },
+        configApplyReceiptDir: receiptDir,
+      })
+      const configPending = pushRuntimeConfig(app, {
+        version: 1,
+        mcp: {},
+        auth: {
+          "claude-acp": "sk-new",
+          "codex-app-server": codexAuth(),
+        },
+        runner: { type: "claude-acp" },
+      })
+      await writingReceipt
+
+      // The runner-scoped ACP adapter appears only after applySnapshot's first
+      // safety check, while its receipt I/O is suspended.
+      const message = app.request(
+        `http://localhost/session/s-promoted/message?directory=${encodeURIComponent(dir)}&runner=claude-acp`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            parts: [],
+            agent: "build",
+            model: { providerID: "claude-acp", modelID: "sonnet" },
+          }),
+        },
+      )
+      await started
+      releaseReceiptWrite()
+      const config = await configPending
+
+      expect(config.status).toBe(200)
+      expect(host.detail().harness).toEqual({ id: "claude", access: "acp" })
+      expect(await fs.promises.readFile(authPath, "utf8")).toContain("access-token")
+      expect(configEvents).toEqual([])
+
+      let creationFinished = false
+      const creation = Promise.resolve(app.request(`http://localhost/session?directory=${encodeURIComponent(dir)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "After config" }),
+      })).then((response) => {
+        creationFinished = true
+        return response
+      })
+      await Bun.sleep(10)
+      expect(creationFinished).toBe(false)
+      expect(configEvents).toEqual([])
+
+      releaseSend()
+      expect((await message).status).toBe(200)
+      expect((await creation).status).toBe(201)
+      expect(configEvents).toEqual(["setAuth", "applyConfig", "createSession"])
+      host.dispose()
+    } finally {
+      AcpHarnessAdapter.prototype.getSessionConfig = originalGetSessionConfig
+      AcpHarnessAdapter.prototype.getMessages = originalGetMessages
+      AcpHarnessAdapter.prototype.sendMessage = originalSendMessage
+      AcpHarnessAdapter.prototype.setAuth = originalSetAuth
+      AcpHarnessAdapter.prototype.applyConfig = originalApplyConfig
+      AcpHarnessAdapter.prototype.createSession = originalCreateSession
+      fs.promises.writeFile = originalWriteFile
+    }
+  })
+
   test("routes persisted sessions through their owning runner adapter", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-runner-mismatch-"))
     tempDirs.push(dir)
@@ -1062,9 +1232,7 @@ describe("workspace runtime auth helpers", () => {
     }
   })
 
-  // Boots a real `opencode serve` (native access); CI unit runners have no
-  // opencode binary on PATH, so skip there rather than fail on absence.
-  test.skipIf(!Bun.which("opencode"))("persists OpenCode session config through mounted workspace host routes", async () => {
+  test("persists OpenCode session config through mounted workspace host routes", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-opencode-config-"))
     tempDirs.push(dir)
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
@@ -1075,10 +1243,19 @@ describe("workspace runtime auth helpers", () => {
       variant: null,
       agent: "build",
     } satisfies SessionConfig
+    const registry: WorkspaceHarnessRegistry = [{
+      match: (runner) => runner.id === "opencode" && runner.access === "native",
+      create: () => ({
+        getSessionConfig: async () => config,
+        updateSessionConfig: async () => config,
+        dispose() {},
+      }) as unknown as AgentHarnessAdapter,
+    }]
 
     const firstApp = new Hono()
     const firstHost = mountTestHost(firstApp, {
       harness: { id: "opencode", access: "native" },
+      harnesses: registry,
       storeRoot,
     })
 
@@ -1103,6 +1280,7 @@ describe("workspace runtime auth helpers", () => {
     const secondApp = new Hono()
     const secondHost = mountTestHost(secondApp, {
       harness: { id: "opencode", access: "native" },
+      harnesses: registry,
       storeRoot,
     })
     const replayed = await secondApp.request(
@@ -2106,6 +2284,226 @@ describe("workspace runtime auth helpers", () => {
 // the lazy RuntimeStore, host.dispose(), and the config apply queue, so a later
 // unit can extract the adapter/store factories without silently changing them.
 describe("workspace host adapter + store caching (characterization)", () => {
+  test("promotes the cached session adapter when its harness becomes the workspace default", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-adapter-promote-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+
+    const seen = new Set<CodexHarnessAdapter>()
+    const models: string[] = []
+    const originalListSessions = CodexHarnessAdapter.prototype.listSessions
+    const originalSetModel = CodexHarnessAdapter.prototype.setModel
+    const originalCreateSession = CodexHarnessAdapter.prototype.createSession
+    CodexHarnessAdapter.prototype.listSessions = async function (this: CodexHarnessAdapter) {
+      seen.add(this)
+      return []
+    }
+    CodexHarnessAdapter.prototype.setModel = function (this: CodexHarnessAdapter, model) {
+      seen.add(this)
+      models.push(model)
+      return originalSetModel.call(this, model)
+    }
+    CodexHarnessAdapter.prototype.createSession = async function (this: CodexHarnessAdapter) {
+      seen.add(this)
+      return { id: "s-promoted" }
+    }
+
+    try {
+      const app = new Hono()
+      const host = mountTestHost(app, {
+        harness: { id: "opencode", access: "native" },
+        harnesses: [{
+          match: (runner) => runner.id === "opencode" && runner.access === "native",
+          create: () => ({
+            listSessions: async () => [],
+            dispose() {},
+          }) as unknown as AgentHarnessAdapter,
+        }, ...defaultWorkspaceHarnessRegistry()],
+      })
+
+      const scoped = await app.request(`http://localhost/session?runner=codex&directory=${encodeURIComponent(dir)}`)
+      await host.apply({
+        version: 1,
+        mcp: {},
+        runner: { type: "codex-app-server", model: "gpt-5.4" },
+        auth: {},
+      })
+      const workspaceDefault = await app.request(`http://localhost/session?directory=${encodeURIComponent(dir)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Promoted session" }),
+      })
+
+      expect(scoped.status).toBe(200)
+      expect(workspaceDefault.status).toBe(201)
+      expect(seen.size).toBe(1)
+      expect(models).toContain("gpt-5.4")
+      host.dispose()
+    } finally {
+      CodexHarnessAdapter.prototype.listSessions = originalListSessions
+      CodexHarnessAdapter.prototype.setModel = originalSetModel
+      CodexHarnessAdapter.prototype.createSession = originalCreateSession
+    }
+  })
+
+  test("applies the workspace model when an active session adapter is next used", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-active-adapter-model-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+
+    let sendStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      sendStarted = resolve
+    })
+    let releaseSend!: () => void
+    const released = new Promise<void>((resolve) => {
+      releaseSend = resolve
+    })
+    const models: string[] = []
+    const originalGetSessionConfig = CodexHarnessAdapter.prototype.getSessionConfig
+    const originalGetMessages = CodexHarnessAdapter.prototype.getMessages
+    const originalSendMessage = CodexHarnessAdapter.prototype.sendMessage
+    const originalSetModel = CodexHarnessAdapter.prototype.setModel
+    const originalApplyConfig = CodexHarnessAdapter.prototype.applyConfig
+    const originalListSessions = CodexHarnessAdapter.prototype.listSessions
+
+    CodexHarnessAdapter.prototype.getSessionConfig = async () => ({
+      harness: { id: "codex", access: "native" as const },
+      model: { providerID: "codex-app-server", modelID: "gpt-5" },
+      variant: null,
+      agent: null,
+    })
+    CodexHarnessAdapter.prototype.getMessages = async () => []
+    CodexHarnessAdapter.prototype.sendMessage = async function*() {
+      sendStarted()
+      await released
+    }
+    CodexHarnessAdapter.prototype.setModel = function(model) {
+      models.push(model)
+      return originalSetModel.call(this, model)
+    }
+    CodexHarnessAdapter.prototype.applyConfig = async () => {}
+    CodexHarnessAdapter.prototype.listSessions = async () => []
+
+    try {
+      const app = new Hono()
+      const host = mountTestHost(app, {
+        harness: { id: "opencode", access: "native" },
+        harnesses: [{
+          match: (runner) => runner.id === "opencode" && runner.access === "native",
+          create: () => ({
+            listSessions: async () => [],
+            dispose() {},
+          }) as unknown as AgentHarnessAdapter,
+        }, ...defaultWorkspaceHarnessRegistry()],
+      })
+      const message = app.request(
+        `http://localhost/session/s-active-codex/message?directory=${encodeURIComponent(dir)}&runner=codex`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            parts: [],
+            agent: "build",
+            model: { providerID: "codex-app-server", modelID: "gpt-5" },
+          }),
+        },
+      )
+      await started
+
+      await host.apply({
+        version: 1,
+        mcp: {},
+        auth: {},
+        runner: { type: "opencode", model: "gpt-5.4" },
+      })
+      expect(models).toEqual([])
+
+      releaseSend()
+      expect((await message).status).toBe(200)
+      await host.apply({
+        version: 1,
+        mcp: {},
+        auth: {},
+        runner: { type: "codex-app-server" },
+      })
+      const sessions = await app.request(`http://localhost/session?directory=${encodeURIComponent(dir)}`)
+
+      expect(sessions.status).toBe(200)
+      expect(models).toEqual(["gpt-5.4"])
+      host.dispose()
+    } finally {
+      CodexHarnessAdapter.prototype.getSessionConfig = originalGetSessionConfig
+      CodexHarnessAdapter.prototype.getMessages = originalGetMessages
+      CodexHarnessAdapter.prototype.sendMessage = originalSendMessage
+      CodexHarnessAdapter.prototype.setModel = originalSetModel
+      CodexHarnessAdapter.prototype.applyConfig = originalApplyConfig
+      CodexHarnessAdapter.prototype.listSessions = originalListSessions
+    }
+  })
+
+  test("promotes sessions persisted with the historical explicit Codex binary", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-codex-historical-binary-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const storeRoot = path.join(dir, ".claxedo", "store")
+    const seed = new RuntimeStore(storeRoot)
+    seed.bindSession({ sessionId: "s-historical", directory: dir, agentSessionId: "thread-historical", createdAt: 1 })
+    seed.updateSessionConfig("s-historical", {
+      harness: {
+        id: "codex",
+        access: "native",
+        connection: { kind: "process", binary: "codex" },
+      },
+      model: { providerID: "codex-app-server", modelID: "gpt-5" },
+    }, { directory: dir })
+    seed.close()
+
+    let created = 0
+    const registry: WorkspaceHarnessRegistry = [{
+      match: (runner) => runner.id === "codex" && runner.access === "native",
+      create: () => {
+        created++
+        return {
+          listSessions: async () => [],
+          readHarnessCapabilities: () => ({
+            harness: "codex",
+            abort: false,
+            reconnect: false,
+            replay: true,
+            permissions: false,
+            questions: false,
+            todos: false,
+            commands: false,
+            fork: false,
+            revert: false,
+            unrevert: false,
+            configOptions: false,
+            subagents: false,
+          }),
+          dispose() {},
+        } as unknown as AgentHarnessAdapter
+      },
+    }]
+    const app = new Hono()
+    const host = mountTestHost(app, {
+      harness: { id: "opencode", access: "native" },
+      harnesses: registry,
+      storeRoot,
+      target: { workspaceId: "workspace-history", directory: dir },
+    })
+
+    await host.registerSessionTools({
+      sessionId: "s-historical",
+      callbackUrl: "http://127.0.0.1/callback",
+      tools: [],
+    })
+    await host.apply({ version: 1, mcp: {}, runner: { type: "codex-app-server" }, auth: {} })
+    expect((await app.request(`http://localhost/session?runner=codex&directory=${encodeURIComponent(dir)}`)).status).toBe(200)
+    expect(created).toBe(1)
+    host.dispose()
+  })
+
   test("reuses a single adapter instance for repeated same-runner access", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-adapter-cache-"))
     tempDirs.push(dir)
@@ -2826,6 +3224,20 @@ describe("workspace host harness registry seam (Unit 3)", () => {
     } finally {
       PiHarnessAdapter.prototype.listSessions = originalPiList
     }
+  })
+
+  test("keeps the implicit native Codex binary out of persisted harness identity", async () => {
+    const runner = { id: "codex", access: "native" } as const
+    const entry = defaultWorkspaceHarnessRegistry().find((candidate) => candidate.match(runner))
+    if (!entry) throw new Error("Expected the Codex registry entry")
+    const adapter = entry.create({ runner, options: {} })
+
+    expect(await adapter.getSessionConfig("missing", "/safe/workspace")).toEqual({
+      harness: runner,
+      variant: null,
+      agent: null,
+    })
+    adapter.dispose()
   })
 
   test("adapts safe harness lifecycle records into the host process observer", async () => {

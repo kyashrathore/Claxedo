@@ -175,6 +175,7 @@ type ActiveAcpTurn = {
 }
 
 const activePromptCounts = new Map<AcpHarnessId, number>()
+const activePromptWaiters = new Map<AcpHarnessId, Set<() => void>>()
 
 function activePromptCount(harness: AcpHarnessId) {
   return activePromptCounts.get(harness) ?? 0
@@ -189,7 +190,18 @@ function enterActivePrompt(harness: AcpHarnessId) {
       return
     }
     activePromptCounts.delete(harness)
+    for (const resolve of activePromptWaiters.get(harness) ?? []) resolve()
+    activePromptWaiters.delete(harness)
   }
+}
+
+function waitForNoActivePrompts(harness: AcpHarnessId) {
+  if (activePromptCount(harness) === 0) return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    const waiters = activePromptWaiters.get(harness) ?? new Set<() => void>()
+    waiters.add(resolve)
+    activePromptWaiters.set(harness, waiters)
+  })
 }
 
 function root() {
@@ -1714,6 +1726,20 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     this.forgetSessionProcessBindings()
     log.info("Applied config in-memory, restarted ACP process", {
       keys: Object.keys(config),
+      harness: this.harnessId(),
+      binary: this.options.binary,
+    })
+  }
+
+  async waitForConfigReady(): Promise<void> {
+    while (this.configRestartPending && activePromptCount(this.harnessId()) > 0) {
+      await waitForNoActivePrompts(this.harnessId())
+    }
+    if (!this.configRestartPending) return
+    this.configRestartPending = false
+    this.restart()
+    this.forgetSessionProcessBindings()
+    log.info("Applied deferred ACP config after active prompts completed", {
       harness: this.harnessId(),
       binary: this.options.binary,
     })
