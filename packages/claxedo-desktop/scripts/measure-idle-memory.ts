@@ -14,7 +14,10 @@ const mainPath = path.join(packageDir, "out/main/index.js")
 const cdpPort = Number(Bun.env.CLAXEDO_DESKTOP_CDP_PORT ?? "9460")
 const serverPort = Number(Bun.env.CLAXEDO_SERVER_PORT ?? String(cdpPort + 1_000))
 const idleMs = Number(Bun.env.CLAXEDO_MEMORY_IDLE_MS ?? "5000")
-const fixture = await Bun.file(path.join(import.meta.dir, "fixtures/memory-profile/state.json")).json()
+const fixturePath = Bun.env.CLAXEDO_MEMORY_FIXTURE
+  ? path.resolve(packageDir, Bun.env.CLAXEDO_MEMORY_FIXTURE)
+  : path.join(import.meta.dir, "fixtures/memory-profile/state.json")
+const fixture = await Bun.file(fixturePath).json()
 
 if (Bun.env.CLAXEDO_MEMORY_REBUILD === "1" || !(await Bun.file(mainPath).exists())) {
   const build = Bun.spawnSync(["bun", "run", "build:inner"], {
@@ -95,13 +98,18 @@ try {
     main: processes.find((process) => process.pid === app.pid),
     gpu: processes.find((process) => process.command.includes("--type=gpu-process")),
     renderer: processes.find((process) => process.command.includes("--type=renderer")),
-    server: processes.find((process) => process.command.includes("--utility-sub-type=node.mojom.NodeService")),
+    server: processes.find(
+      (process) =>
+        process.command.includes("--utility-sub-type=node.mojom.NodeService") ||
+        process.command.includes("claxedo-server/index.js"),
+    ),
     metrics: processes.find((process) => process.command.includes("process-metrics-worker.js")),
   }
   const footprint = nativeFootprint(processes)
   const rssMiB = (process?: ProcessRow) => round((process?.rssKiB ?? 0) / 1024)
 
   console.log(JSON.stringify({
+    profile: path.basename(path.dirname(fixturePath)),
     total_rss_mib: round(processes.reduce((total, process) => total + process.rssKiB, 0) / 1024),
     renderer_ready: Number(page.rendererReady ?? 0),
     restored_content_count: Number(page.restoredContentCount ?? 0),
@@ -112,6 +120,7 @@ try {
     renderer_rss_mib: rssMiB(roles.renderer),
     server_rss_mib: rssMiB(roles.server),
     metrics_worker_rss_mib: rssMiB(roles.metrics),
+    main_footprint_mib: footprint.byPid.get(roles.main?.pid ?? -1) ?? 0,
     gpu_footprint_mib: footprint.byPid.get(roles.gpu?.pid ?? -1) ?? 0,
     renderer_footprint_mib: footprint.byPid.get(roles.renderer?.pid ?? -1) ?? 0,
     server_footprint_mib: footprint.byPid.get(roles.server?.pid ?? -1) ?? 0,
