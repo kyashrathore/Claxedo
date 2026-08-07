@@ -68,8 +68,12 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       "workspace:%2Frepo%2Fmain:session:session-1",
     ])
     expect(sessionCreateCalls.at(-1)?.options?.headers?.["x-claxedo-draft-id"]).toBe("draft-1")
-    expect(sessionCreateCalls.at(-1)?.input).toEqual({ directory: "/repo/main" })
-    expect(sessionPromotionCalls).toEqual([{ sessionID: "session-1", configWrites: 1 }])
+    expect(sessionCreateCalls.at(-1)?.input).toEqual({
+      directory: "/repo/main",
+      agent: "agent",
+      model: { providerID: "provider", id: "model" },
+    })
+    expect(sessionPromotionCalls).toEqual([{ sessionID: "session-1", configWrites: 0 }])
     expect(stateAtSubmit).toEqual([{ resetCount: 2, optimisticCount: 1 }])
   })
 
@@ -143,7 +147,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     expect(optimisticAdds).toEqual([])
     expect(calls.prompt + calls.async + calls.transportAsync).toBe(0)
     expect(toasts).toContainEqual({
-      title: "prompt.toast.sessionConfigSaveFailed.title",
+      title: "prompt.toast.sessionCreateFailed.title",
       description: "config unavailable",
     })
   })
@@ -245,13 +249,9 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
 
-    const configCall = runtimeCalls.find((call) =>
-      call.input === "/session/session-1/config?directory=ws_1&harness=opencode"
-    )
-    expect(configCall?.method).toBe("PATCH")
-    expect(JSON.parse(configCall?.body ?? "{}")).toMatchObject({
-      harness: { type: "opencode" },
-      model: { providerID: "openai", modelID: "gpt-5.5-pro" },
+    expect(sessionCreateCalls.at(-1)?.input).toMatchObject({
+      directory: "ws_1",
+      model: { providerID: "openai", id: "gpt-5.5-pro" },
     })
     expect(transportPromptAsyncCalls.at(-1)).toMatchObject({
       model: { providerID: "openai", modelID: "gpt-5.5-pro" },
@@ -300,15 +300,11 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     await new Promise<void>((r) => setTimeout(r, 0))
 
     expect(runtimeCalls.some((call) => call.input.startsWith("/provider?"))).toBe(true)
-    const configCall = runtimeCalls.find((call) =>
-      call.input === "/session/session-1/config?directory=ws_1&harness=opencode"
-    )
-    expect(configCall?.method).toBe("PATCH")
     // `opencode` is the zero-key gateway and is connected everywhere, so the
     // credentialed provider (google) supplies the model — see model-strategy.
-    expect(JSON.parse(configCall?.body ?? "{}")).toMatchObject({
-      harness: { type: "opencode" },
-      model: { providerID: "google", modelID: "gemini-3-pro-image-preview" },
+    expect(sessionCreateCalls.at(-1)?.input).toMatchObject({
+      directory: "ws_1",
+      model: { providerID: "google", id: "gemini-3-pro-image-preview" },
     })
     expect(transportPromptAsyncCalls.at(-1)).toMatchObject({
       model: { providerID: "google", modelID: "gemini-3-pro-image-preview" },

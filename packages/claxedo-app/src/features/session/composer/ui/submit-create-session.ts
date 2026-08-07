@@ -24,7 +24,11 @@ export type SubmitProjectionScheduler = typeof scheduleSessionProjectionPull
 export type SubmitSessionCreateClient = {
   readonly session: SubmitSessionGetClient["session"] & {
     create(
-      input: { readonly directory: SubmitDirectory },
+      input: {
+        readonly directory: SubmitDirectory
+        readonly agent: string
+        readonly model: { readonly providerID: string; readonly id: string; readonly variant?: string }
+      },
       init?: { readonly headers?: Record<string, string> },
     ): Promise<{ readonly data?: SubmitSessionTarget }>
   }
@@ -43,6 +47,11 @@ export type SubmitSessionTargetAcquisitionInput = {
   readonly scope: string
   readonly draftId: string | undefined
   readonly sessionHarnessType: string
+  readonly sessionConfig: {
+    readonly agent: string
+    readonly model: { readonly providerID: string; readonly modelID: string }
+    readonly variant: string | undefined
+  }
   readonly events: ClaxedoLifecycleListener | undefined
   readonly boot: (sessionID?: string) => void
   readonly createSessionClient: (input: {
@@ -157,7 +166,15 @@ async function createOpencodeSession(input: SubmitSessionTargetAcquisitionInput)
   return await createOpencodeSessionWithLifecycle({
     perform: async () => {
       const res = await client.session.create(
-        { directory: input.sessionDirectory },
+        {
+          directory: input.sessionDirectory,
+          agent: input.sessionConfig.agent,
+          model: {
+            providerID: input.sessionConfig.model.providerID,
+            id: input.sessionConfig.model.modelID,
+            ...(input.sessionConfig.variant ? { variant: input.sessionConfig.variant } : {}),
+          },
+        },
         Object.keys(headers).length > 0 ? { headers } : undefined,
       )
       if (!res.data?.id) throw new Error("Failed to create session")

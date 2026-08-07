@@ -68,13 +68,11 @@ test.describe.serial("deployed WorkGraph", () => {
     await page.getByRole("button", { name: "New stream" }).click()
     const create = page.getByRole("dialog", { name: "New stream" })
     await create.getByRole("textbox", { name: "What are you trying to ship?" }).fill(streamTitle)
-    // The New-stream dialog fetches the execution capability catalog lazily when
-    // it opens (~13s on deployed staging), and hosted web drafts default to the
-    // cloud environment once that catalog resolves: the trigger settles on
-    // "Cloud workspace" and the repository field renders beneath it. Local is
-    // gated off web, so the settled trigger is the catalog-arrived signal —
-    // the Select never needs to open.
-    await expect(create.getByRole("button", { name: "Cloud workspace" })).toBeVisible({ timeout: 90_000 })
+    // The trigger has a display-only Cloud value while the capability request is
+    // pending, so visibility is not a readiness signal. Create is enabled only
+    // after the real catalog admits the selected environment and all fields are
+    // valid; wait on that product state with the deployed endpoint's latency budget.
+    await expect(create.getByRole("button", { name: "Cloud workspace" })).toBeVisible()
     await create.getByRole("textbox", { name: "GitHub repository URL" }).fill(smokeRepositoryURL)
     // Base revision is a chip popover that portals out of the modal dialog; open it,
     // then commit the raw ref through its free-text field.
@@ -82,7 +80,7 @@ test.describe.serial("deployed WorkGraph", () => {
     const baseRevisionField = page.getByRole("textbox", { name: "Base revision", includeHidden: true })
     await baseRevisionField.fill(smokeBaseRevision)
     await baseRevisionField.press("Enter")
-    await expect(create.getByRole("button", { name: "Create" })).toBeEnabled()
+    await expect(create.getByRole("button", { name: "Create" })).toBeEnabled({ timeout: 90_000 })
     await create.getByRole("button", { name: "Create" }).click()
     await expect(create).toBeHidden()
 

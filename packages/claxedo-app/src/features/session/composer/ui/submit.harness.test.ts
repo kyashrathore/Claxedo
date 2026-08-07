@@ -453,6 +453,7 @@ export async function installSubmitMocks(mock: ModuleMocker) {
           create: async (createInput: unknown, options?: { headers?: Record<string, string> }) => {
             calls.create += 1
             sessionCreateCalls.push({ input: createInput, options })
+            if (state.sessionConfigSaveError) throw new Error(state.sessionConfigSaveError)
             return { data: { id: "session-1" } }
           },
           get: async ({ sessionID }: { sessionID: string }) => ({ data: state.transportGetSession ? { id: sessionID } : undefined }),
