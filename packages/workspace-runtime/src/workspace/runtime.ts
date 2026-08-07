@@ -1909,7 +1909,18 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           const adapterConfig = await adapter.updateSessionConfig(sessionId, update, directory)
           return store().updateSessionConfig(sessionId, adapterConfig, { directory }) ?? adapterConfig
         },
+        afterUpdateSession: ({ sessionId, updates }) => {
+          // Renames and archives have to reach the durable store, or a
+          // store-owned inventory serves the old title and keeps handing back
+          // sessions the user archived.
+          store().updateSession(sessionId, updates)
+        },
         afterDeleteSession: ({ sessionId }) => {
+          // Deletion was invalidating the transcript cache and leaving the
+          // store row in place. Harmless while listing fanned out to the
+          // adapter — the adapter no longer returned it — but a store-owned
+          // inventory would resurrect every deleted session.
+          store().deleteSession(sessionId)
           hostOptions.transcripts?.resolver.invalidateParent?.(hostOptions.transcripts.workspaceId, sessionId)
         },
         ...(hostOptions.opencodeHeaders ? { opencodeHeaders: hostOptions.opencodeHeaders } : {}),

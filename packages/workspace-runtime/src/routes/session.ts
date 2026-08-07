@@ -162,6 +162,18 @@ export function SessionRoutes(
       update: SessionConfigUpdate
     }) => Promise<SessionConfig>
     afterDeleteSession?: (input: { directory: string; sessionId: string }) => Promise<void> | void
+    /**
+     * Observe a session update (title, archive) after the adapter applies it.
+     *
+     * Exposed for the same reason as `createSession`: without it the durable
+     * store never sees a rename or an archive, so a store-owned inventory would
+     * serve stale titles and resurrect archived sessions (U8-F7).
+     */
+    afterUpdateSession?: (input: {
+      directory: string
+      sessionId: string
+      updates: { title?: string; time?: { archived?: number } }
+    }) => Promise<void> | void
     opencodeHeaders?: HeadersInit
   },
 ) {
@@ -283,6 +295,13 @@ export function SessionRoutes(
           directory: requiredDirectory(directory),
           sessionId,
           update,
+        })
+      : undefined,
+    afterUpdateSession: options?.afterUpdateSession
+      ? (_c, directory, session, updates) => options.afterUpdateSession!({
+          directory: requiredDirectory(directory),
+          sessionId: String((session as { id?: unknown }).id ?? ""),
+          updates,
         })
       : undefined,
     afterDeleteSession: options?.afterDeleteSession
