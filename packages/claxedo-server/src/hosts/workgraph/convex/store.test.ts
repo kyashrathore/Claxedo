@@ -1616,13 +1616,8 @@ describe("Convex WorkGraph store", () => {
         connectionIds: [],
       },
     }), "streamId")
-    await execute(harness, "owner_a", "paused_item", {
-      type: "create_work_item",
-      streamId,
-      title: "Approved but held by pause",
-      completionContract: ownerConfirmationContract(),
-    })
-    // Pause the Stream (the launch gate); the approved Task must not admit.
+    // Pause the Stream before creating ready work: creation itself owns the
+    // exact-Stream admission transition when the launch gate is open.
     await expect(execute(harness, "owner_a", "paused_pause", {
       type: "set_stream_lifecycle",
       streamId,
@@ -1630,6 +1625,12 @@ describe("Convex WorkGraph store", () => {
       expectedVersion: 1,
       reason: "Hold launches",
     })).resolves.toMatchObject({ ok: true })
+    await execute(harness, "owner_a", "paused_item", {
+      type: "create_work_item",
+      streamId,
+      title: "Approved but held by pause",
+      completionContract: ownerConfirmationContract(),
+    })
     await drainConvexReadyStreams(harness, testOrganizationId, "owner_a")
     expect(harness.rowsFor("workgraph_runs")).toEqual([])
 
@@ -1806,7 +1807,7 @@ describe("Convex WorkGraph store", () => {
     expect(harness.rowsFor("workgraph_work_items").find((row) => row.id === secondId)).toMatchObject({ state: "pending_approval" })
   })
 
-  test("service-path user commands keep their user actor: Tasks are born approved and the drain admits them", async () => {
+  test("service-path user commands keep their user actor and admit the exact approved Task at creation", async () => {
     // Regression (staging smoke, 2026-07-19): the hosted Worker executes user
     // commands through `executeForService`, whose args only accepted
     // agent/system actors, so the store downgraded user→agent. The approval
@@ -1858,15 +1859,16 @@ describe("Convex WorkGraph store", () => {
     if (!task.ok) throw new Error(`Service-path create_work_item failed: ${JSON.stringify(task)}`)
     const workItemId = (task.value as { workItemId: string }).workItemId
 
-    // Born approved with the authenticated owner as its creating actor.
+    // Born approved with the authenticated owner as its creating actor, then
+    // atomically promoted to active by the exact-Stream admission.
     expect(harness.rowsFor("workgraph_work_items").find((row) => row.id === workItemId)).toMatchObject({
-      state: "pending",
+      state: "active",
       created_by_actor_type: "user",
       created_by_actor_id: "owner_a",
     })
 
-    // The continuous drain admits it without any execute/approve command.
-    await drainConvexReadyStreams(harness, testOrganizationId, "owner_a")
+    // Creation owns this readiness transition. Admission is already durable;
+    // no bounded tenant scan or later execute/approve command is required.
     expect(harness.rowsFor("workgraph_runs").filter((row) => row.work_item_id === workItemId)).toHaveLength(1)
   })
 
