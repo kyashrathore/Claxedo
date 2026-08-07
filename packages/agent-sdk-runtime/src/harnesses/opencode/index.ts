@@ -232,11 +232,22 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
    */
   private async requestFn(): Promise<OpenCodeRequestFn> {
     if (this.injectedRequest) return this.injectedRequest
-    const url = await this.ensureServer()
+    const { url, authorization } = await this.server.ensureConnection()
     return (req) => {
       const src = new URL(req.url)
       const target = new URL(src.pathname + src.search, url)
-      return fetch(new Request(target.toString(), req)).then((response) => {
+      // The spawned server requires this launch's credential. Attached HERE,
+      // at the one seam every adapter call passes through, rather than at each
+      // call site — a missed site would be a 401 in one feature and nowhere
+      // else. A caller that already set its own Authorization keeps it.
+      // Built from the original Request first so method, body, and duplex are
+      // carried verbatim; spreading a Request drops all of them, because its
+      // fields are prototype getters rather than own properties.
+      const forwarded = new Request(target.toString(), req)
+      if (authorization && !forwarded.headers.has("authorization")) {
+        forwarded.headers.set("authorization", authorization)
+      }
+      return fetch(forwarded).then((response) => {
         if (!response.headers.has("content-encoding")) return response
         const headers = new Headers(response.headers)
         headers.delete("content-encoding")

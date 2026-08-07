@@ -144,3 +144,23 @@ const ACP_BIN_NAMES: Record<AcpHarnessId, string> = {
 function defaultAcpBinary(id: AcpHarnessId) {
   return resolveAcpBinary(ACP_BIN_NAMES[id])
 }
+
+/**
+ * The lifecycle semantics every adapter shares.
+ *
+ * Exported from the harness barrel because an adapter living outside this
+ * package still has to obey them — single-flight startup, lease-suspended idle
+ * teardown, generation-scoped stops — and reimplementing them is how the five
+ * in-tree adapters drifted apart in the first place.
+ */
+export {
+  createProcessLifecycle,
+  terminateOnParentLoss,
+  ProcessLifecycleDisposedError,
+  type ActivityLease,
+  type ProcessLifecycle,
+  type ProcessLifecycleEvent,
+  type ProcessLifecycleOptions,
+  type ProcessLifecycleState,
+  type StopReason,
+} from "./shared/process-lifecycle"
