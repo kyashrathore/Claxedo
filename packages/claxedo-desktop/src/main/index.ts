@@ -1,11 +1,11 @@
 import { EventEmitter } from "node:events"
-import { spawn } from "node:child_process"
+import { fork, spawn } from "node:child_process"
 import { existsSync, renameSync, writeFileSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { Event, IpcMainInvokeEvent, MessageBoxOptions } from "electron"
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, session, utilityProcess } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, session } from "electron"
 import { trustMainRendererOrigin } from "./renderer-origin"
 import pkg from "electron-updater"
 import treeKill from "tree-kill"
@@ -61,7 +61,7 @@ import { runRestart } from "../shared/restart-policy"
 import type { DiagnosticsWebContents } from "./diagnostics/ipc"
 import { createElectronSource } from "./diagnostics/electron-source"
 import { createProcessMetricsSource } from "./diagnostics/process-metrics-source"
-import { claxedoServerExecArgv } from "./server-runtime-policy"
+import { claxedoServerForkOptions } from "./server-child-process"
 import { createProfiler } from "./diagnostics/profiler"
 import { createSessionMemoryScanner } from "./diagnostics/session-memory-worker"
 import { createOwnerOperationBridge } from "./diagnostics/owner-operation-bridge"
@@ -325,11 +325,10 @@ async function startClaxedoServer(): Promise<{ url: string }> {
   try {
     const serverLaunchId = `claxedo-server-${crypto.randomUUID()}`
     const serverGeneration = `server-generation-${crypto.randomUUID()}`
-    const child = utilityProcess.fork(serverPath, [], {
-      execArgv: claxedoServerExecArgv(),
-      stdio: "inherit",
-      serviceName: "Claxedo Server",
-      env: {
+    const child = fork(
+      serverPath,
+      [],
+      claxedoServerForkOptions({
         ...Object.fromEntries(
           Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
         ),
@@ -339,8 +338,8 @@ async function startClaxedoServer(): Promise<{ url: string }> {
         CLAXEDO_CHILD_OPENCODE_EMBED_PATH: openCodeEmbedPath,
         CLAXEDO_DIAGNOSTICS_LAUNCH_ID: serverLaunchId,
         CLAXEDO_DIAGNOSTICS_GENERATION: serverGeneration,
-      },
-    })
+      }),
+    )
     let ownerBridge: ReturnType<typeof createOwnerOperationBridge> | undefined
     const connectOwnerBridge = () => {
       if (!child.pid || ownerBridge) return
@@ -351,8 +350,8 @@ async function startClaxedoServer(): Promise<{ url: string }> {
             generation: serverGeneration,
           },
           send: (message) => {
-            child.postMessage(message)
-            return true
+            if (!child.connected) return false
+            return child.send(message)
           },
         })
     }
@@ -388,7 +387,7 @@ async function startClaxedoServer(): Promise<{ url: string }> {
       role: "server",
       label: "Claxedo server",
     })
-    const exited = defer<number>()
+    const exited = defer<number | null>()
     const handle = {
       close: async () => {
         if (!child.pid) return
@@ -403,11 +402,14 @@ async function startClaxedoServer(): Promise<{ url: string }> {
       },
     }
     claxedoServerHandle = handle
+    child.on("error", (error) => {
+      logger.error("claxedo-server child process failed", { error: String(error) })
+    })
     child.once("exit", (code) => {
       ownerBridge?.dispose()
       exited.resolve(code)
       if (claxedoServerHandle === handle) claxedoServerHandle = null
-      if (!quitting && code !== 0) logger.error("claxedo-server utility process exited", { code })
+      if (!quitting && code !== 0) logger.error("claxedo-server child process exited", { code })
     })
 
     const claxedoUrl = `http://127.0.0.1:${claxedoPort}`

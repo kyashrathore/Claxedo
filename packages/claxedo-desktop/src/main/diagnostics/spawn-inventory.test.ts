@@ -129,7 +129,6 @@ function childProcessNames(text: string) {
 
 function specialSeams(): Array<readonly [string, number]> {
   return [
-    ["packages/claxedo-desktop/src/main/index.ts:utilityProcessFork", 1],
     ["packages/workspace-runtime/src/pty/index.ts:ptySpawn", 1],
     ["packages/agent-sdk-runtime/src/harnesses/claude/driver.ts:sdkQuery", 2],
     ["packages/agent-sdk-runtime/src/harnesses/cursor/driver.ts:agentCreate", 2],
@@ -139,7 +138,6 @@ function specialSeams(): Array<readonly [string, number]> {
 }
 
 function expression(callee: string) {
-  if (callee === "utilityProcessFork") return /\butilityProcess\.fork\s*\(/g
   if (callee === "ptySpawn") return /\bconst\s+ptyProcess\s*=\s*spawn\s*\(/g
   if (callee === "sdkQuery") return /\bquery\s*\(/g
   if (callee === "agentCreate") return /\bAgent\.create\s*\(/g
