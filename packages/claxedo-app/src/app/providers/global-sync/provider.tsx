@@ -73,6 +73,7 @@ import { setDirectorySessionCache } from "../../../features/session/data/sync/di
 import { useClaxedoEventsOptional } from "../../integrations/claxedo-events"
 import { bootstrapRequestPrefix, createBootstrapOrchestrator, globalBootstrapFreshKey, sessionLoadMetaKey, sessionLoadRequestKey, type QueryOptionsApi } from "../../boot/data/bootstrap-orchestrator"
 import { createGlobalSyncEventIngress } from "../../integrations/session-events/event-ingress"
+import { bootstrapInitialShell } from "./shell-bootstrap"
 import {
   createInventoryPageSource,
   createSignedInventorySource,
@@ -730,7 +731,9 @@ function createGlobalSync() {
     queueMicrotask(() => {
       void globalSDK.event.start()
     })
-    void bootstrap()
+    void (centralTransportForServer(globalSDK.url) === "loopback"
+      ? bootstrapInitialShell({ baseUrl: globalSDK.url, request: globalThis.fetch, setGlobalState, fallback: bootstrap })
+      : bootstrap())
   })
 
   function projectMeta(directory: string, patch: ProjectMeta) {
