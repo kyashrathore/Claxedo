@@ -23,7 +23,7 @@
     border-radius: 0;
     border: 1px solid var(--border-weak-base);
     background: color-mix(in oklch, var(--background-base) 74%, var(--background-stronger) 26%);
-    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.24);
+    box-shadow: var(--shadow-floating-strong);
     padding: 0;
     backdrop-filter: blur(8px);
   }
@@ -45,7 +45,7 @@
     left: 50%;
     width: 2px;
     height: 44px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     transform: translate(-50%, -50%);
     background: color-mix(in oklch, var(--text-weaker) 45%, transparent);
     transition: background 120ms ease, height 120ms ease;
@@ -157,8 +157,8 @@
     border-radius: 0;
     background: transparent;
     color: var(--text-base);
-    font-size: 11px;
-    line-height: 1;
+    font-size: var(--font-size-x-small);
+    line-height: var(--line-height-none);
     padding: 0 12px;
     min-height: 40px;
     display: inline-flex;
@@ -191,11 +191,11 @@
     border-radius: 0;
     background: color-mix(in oklch, var(--text-danger) 12%, transparent);
     color: color-mix(in oklch, var(--text-danger) 90%, var(--text-strong) 10%);
-    font-size: 12px;
+    font-size: var(--font-size-small);
     padding: 8px 10px;
   }
   .notion-arena-loading {
-    font-size: 12px;
+    font-size: var(--font-size-small);
     color: var(--text-weaker);
     padding: 10px;
   }
@@ -206,7 +206,7 @@
     min-height: 0;
   }
   .notion-arena-setup-label {
-    font-size: 12px;
+    font-size: var(--font-size-small);
     color: var(--text-weaker);
     padding: 0 2px;
   }
@@ -220,7 +220,7 @@
     border-radius: 0;
     background: color-mix(in oklch, var(--surface-inset-base) 66%, transparent);
     color: var(--text-base);
-    font-size: 12px;
+    font-size: var(--font-size-small);
     padding: 6px 8px;
     min-width: 0;
   }
@@ -238,9 +238,9 @@
     border-radius: 0;
     background: color-mix(in oklch, var(--surface-inset-base) 56%, transparent);
     color: var(--text-base);
-    font-size: 12px;
+    font-size: var(--font-size-small);
     padding: 6px 9px;
-    line-height: 1;
+    line-height: var(--line-height-none);
     cursor: pointer;
   }
   .notion-arena-btn:disabled {
@@ -290,8 +290,8 @@
     border-radius: 0;
     background: color-mix(in oklch, var(--surface-inset-base) 45%, transparent);
     color: var(--text-weaker);
-    font-size: 11px;
-    line-height: 1;
+    font-size: var(--font-size-x-small);
+    line-height: var(--line-height-none);
     padding: 6px 9px;
     display: inline-flex;
     align-items: center;
@@ -314,7 +314,7 @@
     background: color-mix(in oklch, var(--text-weaker) 58%, transparent);
   }
   .notion-arena-tab-dot-live {
-    background: color-mix(in oklch, var(--surface-brand-base) 78%, #fff 22%);
+    background: color-mix(in oklch, var(--surface-brand-base) 78%, var(--white) 22%);
     box-shadow: none;
   }
   .notion-arena-tab-close {
@@ -325,8 +325,8 @@
     height: 14px;
     border: 1px solid transparent;
     color: var(--text-weaker);
-    font-size: 10px;
-    line-height: 1;
+    font-size: var(--font-size-2x-small);
+    line-height: var(--line-height-none);
     flex-shrink: 0;
     cursor: pointer;
   }
@@ -338,12 +338,12 @@
     outline: none;
   }
   .notion-arena-wave {
-    font-size: 12px;
+    font-size: var(--font-size-small);
     color: var(--text-weaker);
     padding: 0;
   }
   .notion-arena-activity {
-    font-size: 11px;
+    font-size: var(--font-size-x-small);
     color: var(--text-base);
     padding: 0;
     opacity: 0.92;
@@ -376,12 +376,12 @@
     flex-wrap: wrap;
   }
   .notion-arena-who {
-    font-size: 11px;
+    font-size: var(--font-size-x-small);
     color: var(--text-strong);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
   .notion-arena-signal {
-    font-size: 10px;
+    font-size: var(--font-size-2x-small);
     color: var(--text-weaker);
     border: 1px solid var(--border-weak-base);
     border-radius: 0;
@@ -392,15 +392,15 @@
     border: none;
     background: transparent;
     color: var(--text-weaker);
-    font-size: 11px;
+    font-size: var(--font-size-x-small);
     cursor: pointer;
     padding: 0;
   }
   .notion-arena-text {
-    font-size: 13px;
+    font-size: var(--font-size-compact);
     color: var(--text-base);
     white-space: pre-wrap;
-    line-height: 1.45;
+    line-height: var(--line-height-prose-compact);
   }
   .notion-arena-tools {
     border-top: 1px solid var(--border-weak-base);
@@ -416,12 +416,12 @@
     background: color-mix(in oklch, var(--surface-inset-base) 22%, transparent);
   }
   .notion-arena-tool-title {
-    font-size: 11px;
+    font-size: var(--font-size-x-small);
     color: var(--text-strong);
   }
   .notion-arena-tool-output {
     margin-top: 4px;
-    font-size: 11px;
+    font-size: var(--font-size-x-small);
     color: var(--text-weaker);
     white-space: pre-wrap;
   }
@@ -443,8 +443,8 @@
     min-height: 36px;
     max-height: 160px;
     resize: none;
-    font-size: 13px;
-    line-height: 1.4;
+    font-size: var(--font-size-compact);
+    line-height: var(--line-height-prose-tight);
     padding: 7px 8px;
     outline: none;
   }
@@ -460,7 +460,7 @@
     content: "";
     position: absolute;
     inset: -2px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     border: 1px solid color-mix(in oklch, var(--surface-brand-base) 55%, transparent);
     animation: notion-arena-spin 1s linear infinite;
     pointer-events: none;
@@ -504,10 +504,10 @@
     background: transparent;
     border: none;
     outline: none;
-    font-size: 40px;
-    font-weight: 700;
-    line-height: 1.2;
-    letter-spacing: 0;
+    font-size: var(--font-size-display);
+    font-weight: var(--font-weight-bold);
+    line-height: var(--line-height-heading);
+    letter-spacing: var(--letter-spacing-normal);
     color: var(--text-strong);
     padding: 0;
     margin-top: 80px;
@@ -520,8 +520,8 @@
   /* ── Body placeholder ── */
   .notion-body-placeholder {
     color: var(--text-weaker);
-    font-size: 16px;
-    line-height: 1.5;
+    font-size: var(--font-size-large);
+    line-height: var(--line-height-large);
     pointer-events: none;
     position: absolute;
     user-select: none;
@@ -531,33 +531,33 @@
   .notion-editor .tiptap {
     outline: none;
     min-height: 200px;
-    font-size: 16px;
-    line-height: 1.625;
+    font-size: var(--font-size-large);
+    line-height: var(--line-height-more-relaxed);
     color: var(--text-base);
     caret-color: var(--text-strong);
   }
   .notion-editor .tiptap > *:first-child { margin-top: 2px; }
   .notion-editor .tiptap p { margin: 2px 0; }
   .notion-editor .tiptap h1 {
-    font-size: 30px;
-    font-weight: 600;
-    line-height: 1.3;
+    font-size: var(--font-size-document-heading);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-compact);
     margin-top: 32px;
     margin-bottom: 4px;
     color: var(--text-strong);
   }
   .notion-editor .tiptap h2 {
-    font-size: 24px;
-    font-weight: 600;
-    line-height: 1.3;
+    font-size: var(--font-size-2x-large);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-compact);
     margin-top: 22px;
     margin-bottom: 1px;
     color: var(--text-strong);
   }
   .notion-editor .tiptap h3 {
-    font-size: 20px;
-    font-weight: 600;
-    line-height: 1.3;
+    font-size: var(--font-size-x-large);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-compact);
     margin-top: 16px;
     margin-bottom: 1px;
     color: var(--text-strong);
@@ -582,20 +582,20 @@
   }
   .notion-editor .tiptap pre {
     background: var(--surface-inset-base);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: 16px 20px;
     font-family: var(--font-mono);
-    font-size: 14px;
-    line-height: 1.5;
+    font-size: var(--font-size-base);
+    line-height: var(--line-height-large);
     overflow-x: auto;
     margin: 4px 0;
   }
   .notion-editor .tiptap code {
     background: var(--surface-inset-base);
-    border-radius: 3px;
+    border-radius: var(--radius-3);
     padding: 2px 5px;
     font-family: var(--font-mono);
-    font-size: 0.9em;
+    font-size: var(--font-size-document-code);
     color: inherit;
   }
   .notion-editor .tiptap pre code {
@@ -619,7 +619,7 @@
     display: block;
     max-width: 100%;
     height: auto;
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     margin: 8px 0;
   }
   .notion-editor .tiptap .tableWrapper {
@@ -644,7 +644,7 @@
   }
   .notion-editor .tiptap table th {
     background: color-mix(in oklch, var(--surface-inset-base) 70%, transparent);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
   .notion-editor .tiptap .column-resize-handle {
     position: absolute;
@@ -690,7 +690,7 @@
     height: 16px;
     cursor: pointer;
     accent-color: var(--surface-brand-base);
-    border-radius: 3px;
+    border-radius: var(--radius-3);
   }
   .notion-editor .tiptap ul[data-type="taskList"] li > div {
     flex: 1;
@@ -776,7 +776,7 @@
   .notion-link-title {
     font-size: var(--font-size-small);
     font-weight: var(--font-weight-medium);
-    letter-spacing: 0.05em;
+    letter-spacing: var(--letter-spacing-wider);
     text-transform: uppercase;
     color: var(--text-weaker);
     padding: 2px 2px 0;
@@ -788,7 +788,7 @@
     background: var(--surface-inset-base);
     color: var(--text-strong);
     font: inherit;
-    line-height: 1.4;
+    line-height: var(--line-height-prose-tight);
     padding: 8px 9px;
     outline: none;
   }
@@ -808,7 +808,7 @@
     background: transparent;
     color: var(--text-base);
     font: inherit;
-    line-height: 1;
+    line-height: var(--line-height-none);
     padding: 7px 9px;
     cursor: pointer;
     transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
@@ -859,7 +859,7 @@
   .notion-convert-menu-title {
     font-size: var(--font-size-small);
     font-weight: var(--font-weight-medium);
-    letter-spacing: 0.05em;
+    letter-spacing: var(--letter-spacing-wider);
     text-transform: uppercase;
     color: var(--text-weaker);
     padding: 6px 8px 5px;
@@ -894,7 +894,7 @@
   }
   .notion-convert-menu-check {
     color: var(--text-info);
-    font-size: 12px;
+    font-size: var(--font-size-small);
   }
   .notion-table-menu {
     position: absolute;
@@ -921,7 +921,7 @@
   .notion-table-menu-title {
     font-size: var(--font-size-small);
     font-weight: var(--font-weight-medium);
-    letter-spacing: 0.05em;
+    letter-spacing: var(--letter-spacing-wider);
     text-transform: uppercase;
     color: var(--text-weaker);
     padding: 6px 8px 5px;
@@ -958,7 +958,7 @@
   .slash-command-menu {
     background: var(--background-stronger);
     border: 1px solid var(--border-weak-base);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     padding: 4px;
     max-height: 320px;
     overflow-y: auto;
@@ -967,12 +967,12 @@
   }
   .slash-command-menu::-webkit-scrollbar { width: 4px; }
   .slash-command-menu::-webkit-scrollbar-track { background: transparent; }
-  .slash-command-menu::-webkit-scrollbar-thumb { background: var(--border-strong-base); border-radius: 4px; }
+  .slash-command-menu::-webkit-scrollbar-thumb { background: var(--border-strong-base); border-radius: var(--radius-sm); }
   .slash-command-group {
-    font-size: 11px;
-    font-weight: 600;
+    font-size: var(--font-size-x-small);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-weaker);
-    letter-spacing: 0.05em;
+    letter-spacing: var(--letter-spacing-wider);
     text-transform: uppercase;
     padding: 8px 8px 4px;
   }
@@ -986,7 +986,7 @@
     width: 100%;
     padding: 6px 8px;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: transparent;
     cursor: pointer;
     text-align: left;
@@ -1004,10 +1004,10 @@
     justify-content: center;
     width: 36px;
     height: 36px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-weak-base);
     background: var(--surface-inset-base);
-    font-size: 16px;
+    font-size: var(--font-size-large);
     flex-shrink: 0;
     color: var(--text-weak);
   }
@@ -1019,19 +1019,19 @@
     flex: 1;
   }
   .slash-command-title {
-    font-size: 14px;
-    font-weight: 500;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-medium);
     color: var(--text-strong);
   }
   .slash-command-description {
-    font-size: 12px;
+    font-size: var(--font-size-small);
     color: var(--text-weaker);
   }
   .slash-command-shortcut {
-    font-size: 11px;
+    font-size: var(--font-size-x-small);
     color: var(--text-weaker);
     padding: 2px 6px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     border: 1px solid var(--border-weak-base);
     background: var(--surface-inset-base);
     flex-shrink: 0;
@@ -1043,11 +1043,11 @@
     padding: 8px;
   }
   .slash-command-empty-title {
-    font-size: 13px;
+    font-size: var(--font-size-compact);
     color: var(--text-strong);
   }
   .slash-command-empty-description {
-    font-size: 12px;
+    font-size: var(--font-size-small);
     color: var(--text-weaker);
   }
 
@@ -1075,7 +1075,7 @@
   .notion-toc-mark {
     height: 3px;
     border: none;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: color-mix(in oklch, var(--text-weaker) 70%, transparent);
     opacity: 0.65;
     cursor: pointer;
@@ -1100,7 +1100,7 @@
     max-height: 72vh;
     overflow-y: auto;
     border: 1px solid var(--border-weak-base);
-    border-radius: 10px;
+    border-radius: var(--radius-xl);
     background: color-mix(in oklch, var(--background-stronger) 92%, transparent);
     backdrop-filter: blur(8px);
     box-shadow: var(--shadow-lg);
@@ -1119,9 +1119,9 @@
     top: 0;
     z-index: 1;
     padding: 8px 10px 6px;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
+    font-size: var(--font-size-x-small);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--letter-spacing-label);
     text-transform: uppercase;
     color: var(--text-weaker);
     background: color-mix(in oklch, var(--background-stronger) 94%, transparent);
@@ -1134,7 +1134,7 @@
     background: transparent;
     text-align: left;
     padding: 6px 10px;
-    font-size: 12px;
+    font-size: var(--font-size-small);
     color: var(--text-weak);
     cursor: pointer;
     white-space: nowrap;
@@ -1149,7 +1149,7 @@
   .notion-toc-menu-item-active {
     background: var(--surface-base-hover);
     color: var(--text-strong);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
   /* --bp-lg (1024 = BP_LG) — side-dock collapses to a bottom sheet. */
   @media (max-width: 1024px) {
@@ -1198,7 +1198,7 @@
       width: 100%;
       overflow: hidden;
       transition: all 200ms ease-out;
-      border-radius: 14px;
+      border-radius: var(--radius-3xl);
       border: 1px solid var(--border-base);
       background: var(--background-stronger);
       max-height: 12rem;
@@ -1226,29 +1226,29 @@
       min-height: 112px;
     }
     .notion-title {
-      font-size: 32px;
+      font-size: var(--font-size-4x-large);
       margin-top: 28px;
       margin-bottom: 8px;
-      line-height: 1.18;
+      line-height: var(--line-height-short);
     }
     .notion-body-placeholder {
-      font-size: 15px;
+      font-size: var(--font-size-intermediate);
       margin-top: 1px;
     }
     .notion-editor .tiptap {
-      font-size: 16px;
-      line-height: 1.6;
+      font-size: var(--font-size-large);
+      line-height: var(--line-height-relaxed);
     }
     .notion-editor .tiptap h1 {
-      font-size: 27px;
+      font-size: var(--font-size-3x-large);
       margin-top: 22px;
     }
     .notion-editor .tiptap h2 {
-      font-size: 22px;
+      font-size: var(--font-size-heading-large);
       margin-top: 18px;
     }
     .notion-editor .tiptap h3 {
-      font-size: 18px;
+      font-size: var(--font-size-heading);
       margin-top: 14px;
     }
     .notion-floating-toolbar {
@@ -1303,11 +1303,11 @@
       padding: 0 12px;
     }
     .notion-title {
-      font-size: 30px;
+      font-size: var(--font-size-document-heading);
       margin-top: 24px;
     }
     .notion-editor .tiptap {
-      font-size: 15px;
+      font-size: var(--font-size-intermediate);
     }
   }
 
@@ -1316,7 +1316,7 @@
   .mermaid-block {
     position: relative;
     border: 1px solid var(--border-weak-base);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: var(--surface-inset-base);
     margin: 8px 0;
     overflow: hidden;
@@ -1333,13 +1333,13 @@
   }
 
   .mermaid-lang-label {
-    font-size: 12px;
-    font-weight: 500;
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-medium);
     color: var(--text-weak);
     margin-right: auto;
     font-family: var(--font-mono);
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: var(--letter-spacing-caption);
   }
 
   .mermaid-btn {
@@ -1349,7 +1349,7 @@
     width: 28px;
     height: 28px;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: transparent;
     color: var(--text-weak);
     cursor: pointer;
@@ -1368,7 +1368,7 @@
   }
 
   .mermaid-btn-delete:hover {
-    color: var(--text-danger, #ef4444);
+    color: var(--text-on-critical-base);
   }
 
   .mermaid-code {
@@ -1378,8 +1378,8 @@
     background: transparent !important;
     padding: 16px 20px !important;
     font-family: var(--font-mono);
-    font-size: 14px;
-    line-height: 1.5;
+    font-size: var(--font-size-base);
+    line-height: var(--line-height-large);
     overflow-x: auto;
   }
 
@@ -1441,7 +1441,7 @@
     width: 26px;
     height: 26px;
     border: 1px solid var(--border-weak-base);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: var(--background-base);
     color: var(--text-weak);
     cursor: pointer;
@@ -1461,8 +1461,8 @@
 
   .mermaid-error {
     padding: 12px 16px;
-    color: var(--text-danger, #ef4444);
-    font-size: 13px;
+    color: var(--text-on-critical-base);
+    font-size: var(--font-size-compact);
     font-family: var(--font-mono);
     white-space: pre-wrap;
     word-break: break-word;
@@ -1487,7 +1487,7 @@
     width: 36px;
     height: 36px;
     border: 1px solid var(--border-weak-base);
-    border-radius: 8px;
+    border-radius: var(--radius-lg);
     background: var(--background-base);
     color: var(--text-base);
     cursor: pointer;
@@ -1516,7 +1516,7 @@
     z-index: 1;
     background: var(--background-base);
     border: 1px solid var(--border-weak-base);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: 4px;
     opacity: 0.7;
     transition: opacity 150ms ease;

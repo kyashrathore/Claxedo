@@ -30,7 +30,7 @@
   gap: 4px;
   min-width: 14px;
   height: 14px;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   flex: none;
   flex-grow: 0;
 }
@@ -53,11 +53,11 @@
   padding: 0;
   flex: none;
   font-style: normal;
-  font-weight: 530;
-  font-size: 11px;
-  line-height: 1;
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-x-small);
+  line-height: var(--line-height-none);
   text-align: center;
-  letter-spacing: 0.05px;
+  letter-spacing: var(--letter-spacing-micro-wide);
   text-transform: uppercase;
   font-variant-numeric: tabular-nums;
   font-feature-settings:

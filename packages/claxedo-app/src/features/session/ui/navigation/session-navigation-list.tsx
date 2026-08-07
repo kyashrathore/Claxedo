@@ -86,7 +86,7 @@ function SessionNavigationItem(props: {
         <div class="relative z-[1] pointer-events-none flex items-baseline gap-1.5 flex-1 min-w-0 overflow-hidden">
           <span
             data-slot="session-navigation-title"
-            class="text-[13px] leading-tight truncate flex-1 min-w-0"
+            class="text-compact leading-tight truncate flex-1 min-w-0"
             classList={{
               "text-text-strong font-semibold": props.row.active,
               "text-text-weak": !props.row.active,
@@ -114,7 +114,7 @@ function SessionNavigationItem(props: {
         <div class="size-6 shrink-0 relative z-10 flex items-center justify-end self-stretch">
           <span
             data-slot="session-navigation-time"
-            class="flex items-center justify-end text-[11px] tabular-nums group-hover/session:opacity-0 group-focus-within/session:opacity-0 transition-opacity duration-100"
+            class="flex items-center justify-end text-xs tabular-nums group-hover/session:opacity-0 group-focus-within/session:opacity-0 transition-opacity duration-100"
             classList={{
               "text-text-base/70": props.row.active,
               "text-text-weaker": !props.row.active,

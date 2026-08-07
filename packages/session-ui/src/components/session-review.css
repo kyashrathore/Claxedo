@@ -49,13 +49,13 @@
     [data-slot="radio-group-wrapper"],
     [data-slot="radio-group-indicator"],
     [data-slot="radio-group-item-control"] {
-      border-radius: 6px;
+      border-radius: var(--radius-md);
     }
 
     [data-slot="radio-group-item-input"]:not([data-checked], [data-disabled])
       + [data-slot="radio-group-item-label"]:hover
       [data-slot="radio-group-item-control"] {
-      border-radius: 4px;
+      border-radius: var(--radius-sm);
     }
   }
 
@@ -141,7 +141,7 @@
     background: transparent;
     color: var(--text-base);
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     opacity: 0;
     will-change: opacity;
     transform: translateZ(0);
@@ -173,7 +173,7 @@
   }
   [data-slot="session-review-trigger-actions"] [data-slot="diff-changes-additions"],
   [data-slot="session-review-trigger-actions"] [data-slot="diff-changes-deletions"] {
-    font-size: 12px;
+    font-size: var(--font-size-small);
     font-variant-numeric: tabular-nums;
     color: var(--text-weaker);
     transition: color 0.15s ease;

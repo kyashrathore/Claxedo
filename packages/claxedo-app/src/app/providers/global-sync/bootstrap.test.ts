@@ -262,6 +262,61 @@ describe("bootstrapGlobal", () => {
     })
   })
 
+  test("a compact opencode bootstrap preserves provider details loaded on demand", async () => {
+    const baseUrl = "http://localhost:4098"
+    queryClient.setQueryData(
+      queryKeys.controlPlane.providers(baseUrl),
+      normalizeProviderList(providers({
+        all: [provider({
+          id: "anthropic",
+          name: "Anthropic",
+          env: ["ANTHROPIC_API_KEY"],
+          models: {
+            sonnet: { id: "sonnet", name: "Sonnet" },
+            opus: { id: "opus", name: "Opus" },
+          },
+        })],
+        connected: ["anthropic"],
+        default: { anthropic: "sonnet" },
+      })),
+    )
+
+    await bootstrapGlobal({
+      baseUrl,
+      globalSDK: globalSdk(),
+      fetch: async () => new Response(JSON.stringify({
+        healthy: true,
+        path: { state: "", config: "", worktree: "/tmp/ws", directory: "/tmp/ws", home: "" },
+        project: [],
+        provider: {
+          all: [{
+            id: "anthropic",
+            name: "Anthropic",
+            env: [],
+            models: { sonnet: { id: "sonnet", name: "Sonnet" } },
+          }],
+          connected: ["anthropic"],
+          default: { anthropic: "sonnet" },
+        },
+        provider_auth: {},
+        config: {},
+      }), { status: 200 }),
+      connectErrorTitle: "",
+      connectErrorDescription: "",
+      requestFailedTitle: "",
+      translate: (key: string) => key,
+      formatMoreCount: (count: number) => String(count),
+      setGlobalState: () => undefined,
+      harnessType: "opencode",
+    })
+
+    const cached = queryClient.getQueryData<NormalizedProviderListResponse>(
+      queryKeys.controlPlane.providers(baseUrl),
+    )
+    expect(Object.keys(cached?.all.get("anthropic")?.models ?? {})).toEqual(["sonnet", "opus"])
+    expect(cached?.all.get("anthropic")?.env).toEqual(["ANTHROPIC_API_KEY"])
+  })
+
   test("hydrates provider auth through the non-persisted control-plane query bucket on fallback boot", async () => {
     const globalState: Partial<GlobalBootstrapState> = {
       ready: false,

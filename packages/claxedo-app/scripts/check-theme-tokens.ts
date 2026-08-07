@@ -13,7 +13,20 @@ const appRoot = path.resolve(import.meta.dir, "..")
 const workspaceRoot = path.resolve(appRoot, "../..")
 const appSrc = path.join(appRoot, "src")
 const uiSrc = path.join(workspaceRoot, "packages/ui/src")
+const sessionUiSrc = path.join(workspaceRoot, "packages/session-ui/src")
 const tailwindColors = path.join(workspaceRoot, "packages/ui/src/styles/tailwind/colors.css")
+const typographyUtilities = path.join(workspaceRoot, "packages/ui/src/styles/utilities.css")
+const rawThemeDefinitionFiles = new Set([
+  "packages/ui/src/styles/colors.css",
+  "packages/ui/src/styles/theme.css",
+  "packages/ui/src/v2/styles/colors.css",
+  "packages/ui/src/v2/styles/theme.css",
+])
+const allowedRawThemeProperties = new Set([
+  "--elevation-shadow-raised",
+  "--elevation-prominent",
+  "--elevation-sidebar",
+])
 
 const colorPrefixes = [
   "ring-offset",
@@ -96,7 +109,7 @@ const structuralByPrefix: Record<string, RegExp> = {
   text: /^(\d+|\d+-.+|xs|sm|base|lg|xl|[2-9]xl|left|center|right|justify|start|end|wrap|nowrap|balance|pretty|ellipsis|clip|\[[-.0-9a-zA-Z%/]+\])$/,
   ring: /^(0|1|2|4|8|inset|\[[-.0-9a-zA-Z%]+\])$/,
   "ring-offset": /^(0|1|2|4|8|\[[-.0-9a-zA-Z%]+\])$/,
-  outline: /^(none|0|1|2|4|8|dashed|dotted|double|\[[-.0-9a-zA-Z%]+\])$/,
+  outline: /^(none|0|1|2|4|8|solid|dashed|dotted|double|offset-|\[[-.0-9a-zA-Z%]+\])/,
   from: /^[-.0-9]+%?$/,
   via: /^[-.0-9]+%?$/,
   to: /^[-.0-9]+%?$/,
@@ -104,50 +117,80 @@ const structuralByPrefix: Record<string, RegExp> = {
 
 const allowedNonTokenColors = new Set(["transparent", "current", "inherit", "none"])
 
-// Pre-existing token debt in files vendored verbatim from upstream packages/app
-// (divorce plan 006). These classes were already live in production via the
-// old `@/` upstream fallback; the lint simply never scanned packages/app.
-// Keyed by `<file>|<value>` so NEW violations in these files still fail.
-const vendoredUpstreamDebt = new Set(
-  [
-    ["packages/claxedo-app/src/app/workbench/controls/file-tree.tsx", "text-icon-weak"],
-    // Video pause/play overlay: contrast is against video CONTENT, not the app theme.
-    ["packages/claxedo-app/src/app/dialogs/release-notes.tsx", "bg-black/45"],
-    ["packages/claxedo-app/src/app/dialogs/release-notes.tsx", "text-white"],
-    ["packages/claxedo-app/src/app/dialogs/release-notes.tsx", "hover:bg-black/60"],
-    ["packages/claxedo-app/src/features/session/ui/model/model-tooltip.tsx", "text-text-invert-base"],
-    ["packages/claxedo-app/src/app/workbench/titlebar/titlebar.tsx", "focus-within:outline-offset-2"],
-    ["packages/claxedo-app/src/app/workbench/titlebar/titlebar.tsx", "text-[#FFF]"],
-    ["packages/claxedo-app/src/features/workspaces/ui/dialog-edit-project.tsx", "hover:border-border-strong"],
-    ["packages/claxedo-app/src/app/connection/server-row.tsx", "text-text-invert-weak"],
-    ["packages/claxedo-app/src/features/settings/ui/keybinds.tsx", "text-text-subtle"],
-    ["packages/claxedo-app/src/features/session/composer/ui/image-attachments.tsx", "text-white"],
-    ["packages/claxedo-app/src/features/session/composer/ui/context-items.tsx", "text-text-invert-base"],
-    ["packages/claxedo-app/src/features/session/composer/ui/slash-popover.tsx", "text-text-subtle"],
-    ["packages/ui/src/context/marked.tsx", "var(--color-background-stronger"],
-    ["packages/ui/src/components/markdown.css", "var(--color-background-stronger"],
-    ["packages/ui/src/components/scroll-view.css", ".dark"],
-    ["packages/ui/src/components/scroll-view.css", "[data-theme=\"dark\"]"],
-    ["packages/ui/src/components/toast.css", "var(--color-primary"],
-    ["packages/ui/src/components/avatar.css", "var(--color-surface-info-base"],
-    ["packages/ui/src/components/avatar.css", "var(--color-text-base"],
-    ["packages/ui/src/components/avatar.css", "var(--color-border-weak-base"],
-  ].map(([file, value]) => `${file}|${value}`),
-)
 const sourceExtensions = new Set([".css", ".ts", ".tsx"])
+
+const arbitraryDesignPrefixes = new Set(["text", "font", "leading", "tracking", "rounded", "shadow"])
+const cssDesignProperties = new Set([
+  "color",
+  "background",
+  "background-color",
+  "border",
+  "border-top",
+  "border-right",
+  "border-bottom",
+  "border-left",
+  "border-color",
+  "border-top-color",
+  "border-right-color",
+  "border-bottom-color",
+  "border-left-color",
+  "outline-color",
+  "outline",
+  "fill",
+  "stroke",
+  "font-family",
+  "font",
+  "font-size",
+  "font-weight",
+  "line-height",
+  "letter-spacing",
+  "border-radius",
+  "box-shadow",
+  "text-shadow",
+])
+
+const cssKeywordValues = new Set([
+  "0",
+  "currentcolor",
+  "inherit",
+  "initial",
+  "none",
+  "normal",
+  "bolder",
+  "canvastext",
+  "revert",
+  "transparent",
+  "unset",
+])
+const rawColorPattern = /#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)|hsla?\([^)]*\)|oklch\([^)]*\)/
 
 const tokenAliases = new Set(
   Array.from((await Bun.file(tailwindColors).text()).matchAll(/--color-([a-z0-9-]+):/g)).map((match) => match[1]),
 )
+const definedTypographyUtilities = new Set(
+  Array.from((await Bun.file(typographyUtilities).text()).matchAll(/\.(text-\d+-(?:regular|medium|mono))\s*\{/g)).map(
+    (match) => match[1],
+  ),
+)
 
 const findings: Finding[] = []
 
-for (const file of listFiles([appSrc, uiSrc])) {
+for (const file of listFiles([appSrc, uiSrc, sessionUiSrc])) {
   const relative = path.relative(workspaceRoot, file)
   const content = await Bun.file(file).text()
   const searchable = stripComments(content)
 
-  if (file.endsWith(".tsx")) scanClasses(relative, searchable)
+  if (file.endsWith(".tsx")) {
+    scanClasses(relative, searchable)
+  }
+  if (file.endsWith(".ts") || file.endsWith(".tsx")) {
+    scanInlineStyles(relative, searchable)
+    scanEmbeddedCss(relative, searchable)
+  }
+  if (file.endsWith(".css")) {
+    scanCssDesignDeclarations(relative, searchable)
+    scanCssRawColors(relative, searchable, searchable, 0, !rawThemeDefinitionFiles.has(relative))
+  }
   scanRuntimeVars(relative, searchable)
   scanThemeSelectors(relative, searchable)
 }
@@ -192,9 +235,114 @@ function scanClasses(file: string, content: string) {
   for (const match of content.matchAll(/!?[A-Za-z0-9_\-/[\]&.#()=%:!]+-(?:[A-Za-z0-9_[\]().#%:/!,=&-]+)/g)) {
     const value = match[0]
     if (!isClassContext(content, match.index ?? 0)) continue
-    const result = validateClass(value)
+    const result = validateClass(value) ?? validateArbitraryDesignClass(value)
     if (!result) continue
     addFinding(file, content, match.index ?? 0, result, value)
+  }
+
+  for (const match of content.matchAll(/\btext-\d+-(?:regular|medium|mono)\b/g)) {
+    if (!isClassContext(content, match.index ?? 0)) continue
+    if (definedTypographyUtilities.has(match[0])) continue
+    addFinding(file, content, match.index ?? 0, "Undefined typography utility", match[0])
+  }
+
+  for (const match of content.matchAll(/\[(?:font-family|font-size|font-weight|line-height|letter-spacing):[^\]]+\]/g)) {
+    if (!isClassContext(content, match.index ?? 0)) continue
+    if (/var\(--[a-z0-9-]+\)/.test(match[0])) continue
+    addFinding(file, content, match.index ?? 0, "Arbitrary typography must reference a theme token", match[0])
+  }
+}
+
+function validateArbitraryDesignClass(value: string) {
+  const utility = stripModifier(stripVariants(value).replace(/^!/, ""))
+  const prefix = utility.slice(0, utility.indexOf("-["))
+  if (!arbitraryDesignPrefixes.has(prefix) || !utility.includes("-[")) return
+  const body = utility.slice(prefix.length + 2, -1)
+  if (/var\(--[a-z0-9-]+\)/.test(body)) return
+  return "Arbitrary design utility must reference a theme token"
+}
+
+function scanInlineStyles(file: string, content: string) {
+  const property =
+    "color|background(?:-color|Color)?|border(?:-color|Color)|font(?:-family|-size|-weight|Family|Size|Weight)|line(?:-height|Height)|letter(?:-spacing|Spacing)|border(?:-radius|Radius)|box(?:-shadow|Shadow)"
+  for (const match of content.matchAll(
+    new RegExp(`(?:${property})["']?\\s*:\\s*(?:["']([^"']+)["']|(-?\\d+(?:\\.\\d+)?))`, "g"),
+  )) {
+    const value = (match[1] ?? match[2]).trim()
+    if ((value.includes("var(--") && !rawColorPattern.test(value)) || cssKeywordValues.has(value.toLowerCase())) continue
+    if (!isStyleContext(content, match.index ?? 0)) continue
+    addFinding(file, content, match.index ?? 0, "Inline design value must reference a theme token", value)
+  }
+
+  for (const match of content.matchAll(
+    new RegExp(`\\.style\\.(?:${property})\\s*=\\s*["']([^"']+)["']`, "g"),
+  )) {
+    const value = match[1].trim()
+    if ((value.includes("var(--") && !rawColorPattern.test(value)) || cssKeywordValues.has(value.toLowerCase())) continue
+    addFinding(file, content, match.index ?? 0, "Imperative design value must reference a theme token", value)
+  }
+}
+
+function isStyleContext(content: string, index: number) {
+  const before = content.slice(Math.max(0, index - 1200), index)
+  return /style\s*=\s*\{\{[^}]*$/s.test(before) || /Object\.assign\([^,]+\.style\s*,\s*\{[^}]*$/s.test(before)
+}
+
+function scanEmbeddedCss(file: string, content: string) {
+  for (const match of content.matchAll(/\b(?:export\s+)?const\s+\w*(?:CSS|Styles)\s*=\s*`([\s\S]*?)`/g)) {
+    const css = match[1]
+    const offset = (match.index ?? 0) + match[0].indexOf(css)
+    scanCssDesignDeclarations(file, css, content, offset)
+    scanCssRawColors(file, css, content, offset, true)
+  }
+}
+
+function scanCssDesignDeclarations(file: string, content: string, source = content, offset = 0) {
+  for (const match of content.matchAll(/(^|[;{]\s*)([a-z-]+)\s*:\s*([^;}{]+)(?=;|})/gm)) {
+    const property = match[2]
+    if (!cssDesignProperties.has(property)) continue
+    const value = match[3].trim()
+    const normalized = value.replace(/!important\s*$/, "").trim().toLowerCase()
+    if (value.includes("var(--") || cssKeywordValues.has(normalized)) continue
+    if (
+      /^border(?:-(?:top|right|bottom|left))?$/.test(property) &&
+      /^(?:0(?:\s+solid)?|[\d.]+px\s+solid\s+(?:transparent|canvastext))$/.test(normalized)
+    )
+      continue
+    if (property === "outline" && /^(?:auto|[\d.]+px\s+solid\s+transparent)$/.test(normalized)) continue
+    if (property === "color" && /^color-mix\([^)]*currentcolor[^)]*transparent[^)]*\)$/i.test(value)) continue
+    if (property === "font-family") {
+      const before = content.slice(0, match.index ?? 0)
+      if (before.lastIndexOf("@font-face") > before.lastIndexOf("}")) continue
+    }
+    if (property === "border-radius" && ["0", "50%"].includes(normalized)) continue
+    addFinding(
+      file,
+      source,
+      offset + (match.index ?? 0) + match[1].length,
+      "CSS design declaration must reference a theme token",
+      `${property}: ${value}`,
+    )
+  }
+}
+
+function scanCssRawColors(file: string, content: string, source = content, offset = 0, scanCustomProperties = false) {
+  for (const match of content.matchAll(/(^|[;{]\s*)([a-z-]+)\s*:\s*([^;}{]+)(?=;|})/gm)) {
+    const property = match[2]
+    const value = match[3].trim()
+    if (property.startsWith("--") && (!scanCustomProperties || allowedRawThemeProperties.has(property))) continue
+    if (property.includes("mask")) continue
+    if (cssDesignProperties.has(property) && !value.includes("var(--")) continue
+    const valueWithoutRelativeTokenColors = value.replace(/(?:hsl|rgb)\(from\s+var\(--[^)]+\)[^)]*\)/gi, "")
+    const raw = valueWithoutRelativeTokenColors.match(rawColorPattern)
+    if (!raw) continue
+    addFinding(
+      file,
+      source,
+      offset + (match.index ?? 0) + match[1].length,
+      "CSS colors must reference a theme token without raw fallbacks",
+      `${property}: ${value}`,
+    )
   }
 }
 
@@ -230,6 +378,8 @@ function validateClass(value: string) {
 
 function isClassContext(content: string, index: number) {
   const before = content.slice(0, index)
+  const currentLine = content.slice(before.lastIndexOf("\n") + 1, index)
+  if (/\b(?:name|icon)\s*=\s*["'][^"']*$/.test(currentLine)) return false
   const lines = before.split("\n")
   const context = lines.slice(Math.max(lines.length - 4, 0)).join("\n")
   return /class(List|Name)?\s*=|classList\s*={{|cn\(|tw\(/.test(context)
@@ -289,7 +439,6 @@ function scanThemeSelectors(file: string, content: string) {
 }
 
 function addFinding(file: string, content: string, index: number, message: string, value: string) {
-  if (vendoredUpstreamDebt.has(`${file}|${value}`)) return
   const prefix = content.slice(0, index)
   const lines = prefix.split("\n")
   findings.push({

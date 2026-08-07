@@ -44,21 +44,44 @@
   --font-mono: var(--font-family-mono);
   --font-mono--font-feature-settings: var(--font-family-mono--font-feature-settings);
 
+  --text-minuscule: var(--font-size-minuscule);
+  --text-micro: var(--font-size-micro);
+  --text-2xs: var(--font-size-2x-small);
+  --text-xs: var(--font-size-x-small);
   --text-sm: var(--font-size-small);
+  --text-compact: var(--font-size-compact);
   --text-base: var(--font-size-base);
+  --text-intermediate: var(--font-size-intermediate);
   --text-lg: var(--font-size-large);
+  --text-title-sm: var(--font-size-title-small);
+  --text-heading: var(--font-size-heading);
+  --text-heading-lg: var(--font-size-heading-large);
   --text-xl: var(--font-size-x-large);
+  --text-2xl: var(--font-size-2x-large);
+  --text-3xl: var(--font-size-3x-large);
+  --text-4xl: var(--font-size-4x-large);
+  --text-display: var(--font-size-display);
 
+  --font-weight-body: var(--font-weight-body);
   --font-weight-regular: var(--font-weight-regular);
   --font-weight-medium: var(--font-weight-medium);
+  --font-weight-semibold: var(--font-weight-semibold);
+  --font-weight-bold: var(--font-weight-bold);
 
+  --leading-none: var(--line-height-none);
+  --leading-tight: var(--line-height-tight);
+  --leading-snug: var(--line-height-snug);
   --leading-lg: var(--line-height-large);
   --leading-xl: var(--line-height-x-large);
   --leading-2xl: var(--line-height-2x-large);
 
   --tracking-normal: var(--letter-spacing-normal);
+  --tracking-ui: var(--letter-spacing-ui);
   --tracking-tight: var(--letter-spacing-tight);
   --tracking-tightest: var(--letter-spacing-tightest);
+  --tracking-wide: var(--letter-spacing-wide);
+  --tracking-wider: var(--letter-spacing-wider);
+  --tracking-widest: var(--letter-spacing-widest);
 
   --radius-xs: 0.125rem;
   --radius-sm: 0.25rem;

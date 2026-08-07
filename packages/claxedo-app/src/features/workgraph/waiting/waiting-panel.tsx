@@ -79,8 +79,8 @@ export function WaitingPanelBody(props: {
             <Icon name="check" size="small" />
           </div>
           <div class="workgraph-waiting-empty-copy">
-            <h2 class="text-[13px] font-semibold text-text-strong">Nothing needs you right now</h2>
-            <p class="text-[11px] leading-4 text-text-base">No decisions, proposals, or follow-ups are waiting. We’ll buzz you when that changes.</p>
+            <h2 class="text-compact font-semibold text-text-strong">Nothing needs you right now</h2>
+            <p class="text-xs leading-4 text-text-base">No decisions, proposals, or follow-ups are waiting. We’ll buzz you when that changes.</p>
           </div>
         </div>
       </Match>
@@ -88,18 +88,18 @@ export function WaitingPanelBody(props: {
         <div class="workgraph-waiting">
           <div class="workgraph-waiting-intro">
             <div class="workgraph-waiting-intro-head">
-              <span class="text-[12px] font-semibold text-text-strong">Needs you</span>
+              <span class="text-sm font-semibold text-text-strong">Needs you</span>
               <span class="workgraph-card-gap" aria-hidden="true" />
               <button type="button" class="workgraph-waiting-action" disabled={props.unread === 0} onClick={props.onMarkAllRead}>Mark all read</button>
               <button type="button" class="workgraph-waiting-action" onClick={props.onClear}>Clear</button>
             </div>
-            <p class="text-[11px] leading-4 text-text-base">Decisions, proposed work, and discovered candidates. Open one to act on it.</p>
+            <p class="text-xs leading-4 text-text-base">Decisions, proposed work, and discovered candidates. Open one to act on it.</p>
           </div>
           <For each={stagedGroups()}>
             {(group) => (
               <div class="workgraph-staged-group" aria-label="Staged tasks awaiting approval">
                 <div class="workgraph-staged-group-head">
-                  <span class="text-[11px] font-semibold text-text-strong">Staged · {group.items.length} awaiting approval</span>
+                  <span class="text-xs font-semibold text-text-strong">Staged · {group.items.length} awaiting approval</span>
                   <span class="workgraph-card-gap" aria-hidden="true" />
                   <button
                     type="button"

@@ -13,7 +13,7 @@
   height: 28px;
   background: var(--v2-background-bg-layer-01);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   box-shadow: 0 0 0 0.5px var(--v2-border-border-base);
   flex: none;
 }
@@ -30,15 +30,15 @@
   height: 28px;
   margin: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: transparent;
   box-shadow: none;
   cursor: pointer;
   font-style: normal;
-  font-weight: 440;
-  font-size: 13px;
-  line-height: 100%;
-  letter-spacing: -0.04px;
+  font-weight: var(--font-weight-body);
+  font-size: var(--font-size-compact);
+  line-height: var(--line-height-none);
+  letter-spacing: var(--letter-spacing-ui);
   font-variant-numeric: tabular-nums;
   font-variation-settings: "slnt" 0;
   color: var(--v2-text-text-muted);

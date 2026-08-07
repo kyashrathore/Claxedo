@@ -79,7 +79,7 @@ function SectionHeader(props: {
         size="small"
         class="shrink-0 text-icon-base transition-transform duration-200 ease-out group-data-[expanded=true]/section:rotate-90"
       />
-      <span class="shrink-0 text-[11px] font-medium uppercase tracking-[0.06em] text-text-weaker">{props.label}</span>
+      <span class="shrink-0 text-xs font-medium uppercase tracking-[var(--letter-spacing-label)] text-text-weaker">{props.label}</span>
       {/* The summary fades once the panel below is showing the same thing —
           still there for orientation, no longer competing with the list. */}
       {/* Loading belongs to the SECTION whose contents are loading, not to the
@@ -94,7 +94,7 @@ function SectionHeader(props: {
           />
         </Show>
         <span
-          class="min-w-0 truncate text-right text-[13px] transition-colors duration-150"
+          class="min-w-0 truncate text-right text-compact transition-colors duration-150"
           classList={{
             "text-text-base": !props.expanded && !props.loading,
             "text-text-weaker": props.expanded || props.loading,
@@ -132,7 +132,7 @@ function OptionRow(props: { selected: boolean; icon?: JSX.Element; label: string
     <button
       type="button"
       aria-current={props.selected ? "true" : undefined}
-      class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] outline-none transition-colors duration-100 hover:bg-surface-base-hover focus-visible:bg-surface-base-hover"
+      class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-compact outline-none transition-colors duration-100 hover:bg-surface-base-hover focus-visible:bg-surface-base-hover"
       onClick={props.onSelect}
     >
       <Show when={props.icon}>
@@ -379,7 +379,7 @@ export function HarnessModelPicker<H extends string>(props: {
               <For each={groupedHarnesses()}>
                 {([group, options]) => (
                   <>
-                    <div class="px-2 pb-0.5 pt-2 text-[11px] font-medium uppercase tracking-[0.06em] text-text-weaker first:pt-0.5">
+                    <div class="px-2 pb-0.5 pt-2 text-xs font-medium uppercase tracking-[var(--letter-spacing-label)] text-text-weaker first:pt-0.5">
                       {group}
                     </div>
                     <For each={options}>
@@ -430,10 +430,10 @@ export function HarnessModelPicker<H extends string>(props: {
                   <div data-slot="harness-picker-model-error" class="flex min-h-0 flex-1 flex-col items-start gap-2 px-3 py-4">
                     <div class="flex items-center gap-2">
                       <span aria-hidden="true" class="size-1.5 shrink-0 rounded-full bg-icon-critical-base" />
-                      <span class="text-[13px] font-medium text-text-base">{failure().message}</span>
+                      <span class="text-compact font-medium text-text-base">{failure().message}</span>
                     </div>
                     <Show when={failure().detail}>
-                      <p class="line-clamp-3 text-[12px] leading-snug text-text-weak" title={failure().detail}>
+                      <p class="line-clamp-3 text-sm leading-snug text-text-weak" title={failure().detail}>
                         {failure().detail}
                       </p>
                     </Show>
@@ -441,7 +441,7 @@ export function HarnessModelPicker<H extends string>(props: {
                       {(action) => (
                         <button
                           type="button"
-                          class="mt-0.5 rounded-md px-2 py-1 text-[13px] text-text-base outline-none transition-colors duration-100 hover:bg-surface-base-hover focus-visible:bg-surface-base-hover"
+                          class="mt-0.5 rounded-md px-2 py-1 text-compact text-text-base outline-none transition-colors duration-100 hover:bg-surface-base-hover focus-visible:bg-surface-base-hover"
                           onClick={() => action().run()}
                         >
                           {action().label}

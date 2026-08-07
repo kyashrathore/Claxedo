@@ -12,7 +12,11 @@ import {
   WINDOWS_SNAPSHOT_LIMIT,
   windowsCimCommand,
 } from "./process-metrics-worker"
-import { createPosixProcessMetricsWorker } from "./process-metrics-worker-runtime"
+import {
+  createPosixProcessMetricsWorker,
+  parseLinuxPssBytes,
+  parseMacMemoryImpact,
+} from "./process-metrics-worker-runtime"
 
 describe("process metrics worker", () => {
   test("runs host collectors below the UI process priority", () => {
@@ -47,15 +51,69 @@ describe("process metrics worker", () => {
       ]) as never,
       readLinuxStat: async (pid) =>
         `${String(pid)} (worker secret-free) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 ${String(pid * 100)} 20`,
+      readLinuxSmapsRollup: async (pid) => `Rss: ${String(pid)} kB\nPss: ${String(pid * 2)} kB\n`,
     })
     const tree = await worker.reconcile([10])
     const samples = await worker.sample(tree.entries, 0)
     expect(calls).toEqual([[10, 11]])
     expect(samples.map((sample) => sample.cpuMachinePercent)).toEqual([100, 50])
     expect(samples.map((sample) => sample.rssBytes)).toEqual([8_192, 4_096])
+    expect(samples.map((sample) => sample.memoryImpact)).toEqual([
+      { kind: "pss", bytes: 20 * 1_024 },
+      { kind: "pss", bytes: 22 * 1_024 },
+    ])
     expect(samples[0]?.creation).toMatchObject({ state: "available", source: "linux-proc" })
     worker.dispose()
     expect(clears).toBe(1)
+  })
+
+  test("parses native memory impact without accepting unrelated totals", () => {
+    expect(parseLinuxPssBytes("Rss: 200 kB\nPss: 125 kB\nPss_Anon: 100 kB\n")).toBe(128_000)
+    expect(parseMacMemoryImpact("50161 2456765232\n69239 2736560\nsummary 2459452640\n")).toEqual(
+      new Map([[50161, 2_456_765_232], [69239, 2_736_560]]),
+    )
+  })
+
+  test("reuses macOS physical-footprint samples between bounded probe intervals", async () => {
+    let probes = 0
+    const worker = createPosixProcessMetricsWorker({
+      platform: "darwin",
+      usage: Object.assign(
+        async () => ({ 10: { pid: 10, ppid: 1, cpu: 1, memory: 8_192 } }),
+        { clear: () => undefined },
+      ),
+      readMacMemoryImpact: async () => {
+        probes++
+        return new Map([[10, 7_000 + probes]])
+      },
+      memoryImpactIntervalMs: 10_000,
+    })
+    const entries = [{ pid: 10, ppid: 1, rootPid: 10 }]
+
+    expect((await worker.sample(entries, 0))[0]?.memoryImpact?.bytes).toBe(7_001)
+    expect((await worker.sample(entries, 2_000))[0]?.memoryImpact?.bytes).toBe(7_001)
+    expect((await worker.sample(entries, 10_000))[0]?.memoryImpact?.bytes).toBe(7_002)
+    expect(probes).toBe(2)
+  })
+
+  test("reuses Linux proportional-set-size samples between bounded probe intervals", async () => {
+    let probes = 0
+    const worker = createPosixProcessMetricsWorker({
+      platform: "linux",
+      usage: Object.assign(
+        async () => ({ 10: { pid: 10, ppid: 1, cpu: 1, memory: 8_192 } }),
+        { clear: () => undefined },
+      ),
+      readLinuxStat: async () => "10 (worker) S 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 1000 20",
+      readLinuxSmapsRollup: async () => `Pss: ${String(++probes)} kB\n`,
+      memoryImpactIntervalMs: 10_000,
+    })
+    const entries = [{ pid: 10, ppid: 1, rootPid: 10 }]
+
+    expect((await worker.sample(entries, 0))[0]?.memoryImpact?.bytes).toBe(1_024)
+    expect((await worker.sample(entries, 2_000))[0]?.memoryImpact?.bytes).toBe(1_024)
+    expect((await worker.sample(entries, 10_000))[0]?.memoryImpact?.bytes).toBe(2_048)
+    expect(probes).toBe(2)
   })
 
   test("isolates an exited PID without degrading every live process sample", async () => {
@@ -72,6 +130,7 @@ describe("process metrics worker", () => {
       platform: "darwin",
       logicalProcessors: 2,
       usage,
+      readMacMemoryImpact: async () => new Map([[10, 7_000]]),
     })
 
     expect(await worker.sample([
@@ -84,6 +143,7 @@ describe("process metrics worker", () => {
       creation: { state: "unavailable", reason: "identity-unavailable" },
       cpuMachinePercent: 10,
       rssBytes: 8_192,
+      memoryImpact: { kind: "physical-footprint", bytes: 7_000 },
     }])
     expect(calls).toEqual([[10, 11], [10], [11]])
   })
@@ -216,6 +276,7 @@ describe("process metrics worker", () => {
           kernelTicks: String(ticks),
           userTicks: String(ticks),
           rssBytes: "8589934592",
+          memoryImpactBytes: "4294967296",
         },
       ],
       logicalProcessors: 2,
@@ -225,6 +286,7 @@ describe("process metrics worker", () => {
     expect((await worker.sample(entries, 0))[0]).toMatchObject({
       cpuMachinePercent: undefined,
       rssBytes: 8_589_934_592,
+      memoryImpact: { kind: "private-working-set", bytes: 4_294_967_296 },
     })
     time = 1_000
     ticks = 10_000_000
@@ -232,6 +294,34 @@ describe("process metrics worker", () => {
     creation = "11"
     time = 2_000
     expect((await worker.sample(entries, 2_000))[0]?.cpuMachinePercent).toBeUndefined()
+  })
+
+  test("queries Windows private working set only on the bounded memory-impact cadence", async () => {
+    const impactFlags: boolean[] = []
+    const worker = createWindowsProcessMetricsWorker({
+      query: async (_, options) => {
+        impactFlags.push(options?.memoryImpact === true)
+        return [{
+          pid: 10,
+          ppid: 1,
+          creationTicks: "10",
+          kernelTicks: "0",
+          userTicks: "0",
+          rssBytes: "8192",
+          ...(options?.memoryImpact ? { memoryImpactBytes: "4096" } : {}),
+        }]
+      },
+      memoryImpactIntervalMs: 10_000,
+    })
+    const entries = [{ pid: 10, ppid: 1, rootPid: 10 }]
+
+    expect((await worker.sample(entries, 0))[0]?.memoryImpact).toEqual({
+      kind: "private-working-set",
+      bytes: 4_096,
+    })
+    expect((await worker.sample(entries, 2_000))[0]?.memoryImpact?.bytes).toBe(4_096)
+    expect((await worker.sample(entries, 10_000))[0]?.memoryImpact?.bytes).toBe(4_096)
+    expect(impactFlags).toEqual([true, false, true])
   })
 
   test("prunes Windows CPU history when a process leaves the owned closure", async () => {
@@ -270,6 +360,8 @@ describe("process metrics worker", () => {
   test("keeps the reviewed CIM protocol bounded, property-limited, and shape-invariant", async () => {
     const script = await Bun.file(new URL("./windows-cim-worker.ps1", import.meta.url)).text()
     expect(script).toContain("$inputPids.Count -gt 512")
+    expect(script).toContain("Win32_PerfRawData_PerfProc_Process")
+    expect(script).toContain("WorkingSetPrivate")
     expect(script).toContain('ProcessId = "')
     expect(script).toContain(
       "-Property ProcessId,ParentProcessId,CreationDate,KernelModeTime,UserModeTime,WorkingSetSize",

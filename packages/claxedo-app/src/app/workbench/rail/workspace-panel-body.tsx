@@ -220,7 +220,7 @@ export function WorkspacePanelBody(props: {
       keyed
       when={directory()}
       fallback={
-        <div class="flex h-full items-center justify-center px-6 text-center text-[13px] text-text-weak">
+        <div class="flex h-full items-center justify-center px-6 text-center text-compact text-text-weak">
           Select a workspace to use this panel.
         </div>
       }
@@ -311,7 +311,7 @@ export function WorkspacePanelBody(props: {
                         <Show when={reviewWorkspaceMountedKey() === reviewWorkspaceKey() && reviewArmed().showPending}>
                           <div
                             data-testid="workspace-review-pending"
-                            class="absolute inset-0 z-10 flex min-w-0 items-center justify-center bg-background-base px-6 text-center text-[13px] text-text-weak"
+                            class="absolute inset-0 z-10 flex min-w-0 items-center justify-center bg-background-base px-6 text-center text-compact text-text-weak"
                           >
                             <Show
                               when={!workspaceOffline(reviewWorkspaceId())}

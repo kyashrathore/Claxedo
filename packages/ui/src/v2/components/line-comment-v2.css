@@ -21,7 +21,7 @@
 
 [data-component="line-comment-v2"] [data-slot="line-comment-v2-shell"] {
   background: var(--v2-background-bg-layer-01);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   box-shadow: var(--v2-elevation-raised);
 }
 
@@ -46,21 +46,21 @@
 [data-component="line-comment-v2"][data-variant="display"] [data-slot="line-comment-v2-text"] {
   margin: 0;
   width: 100%;
-  font-size: 13px;
+  font-size: var(--font-size-compact);
   font-style: normal;
-  font-weight: 440;
-  line-height: 1;
-  letter-spacing: -0.04px;
+  font-weight: var(--font-weight-body);
+  line-height: var(--line-height-none);
+  letter-spacing: var(--letter-spacing-ui);
   color: var(--v2-text-text-base);
   font-variation-settings: "slnt" 0;
 }
 
 [data-component="line-comment-v2"][data-variant="display"] [data-slot="line-comment-v2-meta"] {
-  font-size: 11px;
+  font-size: var(--font-size-x-small);
   font-style: normal;
-  font-weight: 530;
-  line-height: 1;
-  letter-spacing: 0.05px;
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-none);
+  letter-spacing: var(--letter-spacing-micro-wide);
   color: var(--v2-text-text-faint);
   font-variation-settings: "slnt" 0;
 }
@@ -83,7 +83,7 @@
   gap: 3px;
   margin: 0;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--v2-icon-icon-muted);
   cursor: pointer;
@@ -135,11 +135,11 @@
   flex-direction: row;
   align-items: center;
   width: 100%;
-  font-size: 13px;
+  font-size: var(--font-size-compact);
   font-style: normal;
-  font-weight: 530;
-  line-height: 1;
-  letter-spacing: -0.04px;
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-none);
+  letter-spacing: var(--letter-spacing-ui);
   color: var(--v2-text-text-base);
   user-select: none;
 }
@@ -153,14 +153,14 @@
   margin: 0;
   resize: vertical;
   border: 1px solid var(--v2-border-border-base);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background:
     linear-gradient(180deg, var(--v2-alpha-light-2) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-base);
-  font-size: 13px;
+  font-size: var(--font-size-compact);
   font-style: normal;
-  font-weight: 440;
-  line-height: 1.35;
-  letter-spacing: -0.04px;
+  font-weight: var(--font-weight-body);
+  line-height: var(--line-height-compact-relaxed);
+  letter-spacing: var(--letter-spacing-ui);
   color: var(--v2-text-text-base);
   font-variation-settings: "slnt" 0;
   outline: none;
@@ -187,11 +187,11 @@
 [data-component="line-comment-v2"][data-variant="editor"] [data-slot="line-comment-v2-footer-meta"] {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 11px;
+  font-size: var(--font-size-x-small);
   font-style: normal;
-  font-weight: 530;
-  line-height: 1;
-  letter-spacing: 0.05px;
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-none);
+  letter-spacing: var(--letter-spacing-micro-wide);
   color: var(--v2-text-text-faint);
   font-variation-settings: "slnt" 0;
 }
@@ -213,7 +213,7 @@
   margin-top: 8px;
   padding: 4px;
   border: 0.5px solid var(--v2-border-border-muted);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--v2-background-bg-layer-02);
 }
 
@@ -225,7 +225,7 @@
   min-width: 0;
   padding: 6px 8px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--v2-text-text-base);
   text-align: left;
@@ -240,8 +240,8 @@
   display: flex;
   align-items: center;
   min-width: 0;
-  font-size: 12px;
-  line-height: 16px;
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-16);
 }
 
 [data-component="line-comment-v2"][data-variant="editor"] [data-slot="line-comment-v2-mention-dir"] {

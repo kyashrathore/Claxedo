@@ -39,7 +39,7 @@ function NavigationRow(props: { icon: "plus-small" | "page" | "dot-grid" | "mark
       type="button"
       data-testid={props.testId}
       aria-current={props.active ? "page" : undefined}
-      class="w-full flex items-center gap-2 h-7 px-2.5 rounded-md text-[13px] leading-4 font-medium transition-[background-color,color] duration-100 active:scale-[0.98]"
+      class="w-full flex items-center gap-2 h-7 px-2.5 rounded-md text-compact leading-4 font-medium transition-[background-color,color] duration-100 active:scale-[0.98]"
       classList={{
         "bg-surface-base-hover text-text-strong": props.active,
         "text-text-base/80 hover:text-text-base hover:bg-surface-base-hover/35": !props.active,

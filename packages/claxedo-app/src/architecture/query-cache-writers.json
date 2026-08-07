@@ -57,7 +57,7 @@
     },
     {
       "family": "provider catalog query cache",
-      "writer": "app/providers/use-providers.ts",
+      "writer": "platform/query/provider-cache.ts",
       "status": "live"
     }
   ],

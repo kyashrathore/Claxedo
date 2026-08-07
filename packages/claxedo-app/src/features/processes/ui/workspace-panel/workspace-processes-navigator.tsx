@@ -66,7 +66,7 @@ function ProcessSubtitle(props: {
   const launchError = () => props.process?.launchError
 
   return (
-    <div class="truncate text-[11px] text-text-weaker">
+    <div class="truncate text-xs text-text-weaker">
       <Switch fallback={<span class="font-mono">{commandPreview()}</span>}>
         <Match when={status() === "running" || status() === "starting" || status() === "restarting"}>
           <Show when={namedHost()} fallback={<span class="font-mono">:{port() ?? "—"}</span>}>
@@ -119,7 +119,7 @@ export function WorkspaceProcessesNavigator(props: {
     <div class="flex size-full min-w-0 flex-col bg-background-base">
       <div class="flex h-9 shrink-0 items-center gap-1 border-b border-border-weak-base px-2">
         <Icon name="console" size="small" />
-        <div class="min-w-0 flex-1 truncate text-[12px] font-medium text-text-base">Processes</div>
+        <div class="min-w-0 flex-1 truncate text-sm font-medium text-text-base">Processes</div>
         <Show when={canMutate() && configs().length > 0}>
           <Tooltip value={hasRunning() ? "Stop all processes" : "Start all processes"}>
             <IconButton
@@ -149,7 +149,7 @@ export function WorkspaceProcessesNavigator(props: {
         <Show
           when={processPane.loaded()}
           fallback={
-            <div class="flex h-full items-center justify-center px-4 text-center text-[12px] text-text-weak">
+            <div class="flex h-full items-center justify-center px-4 text-center text-sm text-text-weak">
               Loading processes...
             </div>
           }
@@ -157,13 +157,13 @@ export function WorkspaceProcessesNavigator(props: {
           <Show
             when={configs().length > 0}
             fallback={
-              <div class="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-[12px] text-text-weak">
+              <div class="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-sm text-text-weak">
                 <Icon name="console" size="medium" />
                 <div>No processes configured.</div>
                 <Show when={canMutate()}>
                   <button
                     type="button"
-                    class="rounded bg-surface-base-hover px-3 py-1.5 text-[12px] font-medium text-text-base hover:bg-surface-base-active"
+                    class="rounded bg-surface-base-hover px-3 py-1.5 text-sm font-medium text-text-base hover:bg-surface-base-active"
                     onClick={openAddDialog}
                   >
                     Add process
@@ -183,7 +183,7 @@ export function WorkspaceProcessesNavigator(props: {
                 return (
                   <button
                     type="button"
-                    class="group flex w-full min-w-0 items-center gap-2 px-2 py-1.5 text-left text-[12px] text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base"
+                    class="group flex w-full min-w-0 items-center gap-2 px-2 py-1.5 text-left text-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base"
                     classList={{
                       "bg-surface-base-hover text-text-base": isActive(),
                     }}
@@ -194,7 +194,7 @@ export function WorkspaceProcessesNavigator(props: {
                       <div class="flex items-baseline gap-1.5 min-w-0">
                         <span class="truncate font-medium">{config.name}</span>
                         <Show when={config.port?.name}>
-                          <span class="shrink-0 text-[10px] tabular-nums text-text-weaker">
+                          <span class="shrink-0 text-2xs tabular-nums text-text-weaker">
                             {config.port!.name}
                           </span>
                         </Show>

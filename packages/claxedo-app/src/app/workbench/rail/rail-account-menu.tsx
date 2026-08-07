@@ -13,7 +13,6 @@ export type RailAccountMenuProps = {
   onHelp?: () => void
   onRailLockChange: (locked: boolean) => void
   onSettings?: () => void
-  railWidth?: number
   utilities?: () => JSX.Element
 }
 
@@ -144,6 +143,9 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
       open={open()}
       placement="top-start"
       gutter={6}
+      // Pin the panel to the trigger's own width — the rail is resizable, so any
+      // computed width drifts out of alignment the moment it is dragged.
+      sameWidth
       onOpenChange={changeOpen}
     >
       <DropdownMenu.Trigger
@@ -175,18 +177,19 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
       </DropdownMenu.Trigger>
 
       <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          class="z-[220]"
-          style={{
-            width: `${Math.max(220, (props.railWidth ?? 260) - 20)}px`,
-            "max-width": "calc(100vw - 16px)",
-          }}
-        >
-          <div class="flex items-center gap-2 px-2 py-1.5" aria-hidden="true">
+        <DropdownMenu.Content class="z-[220]" style={{ "max-width": "calc(100vw - 16px)" }}>
+          {/*
+            The identity row is the only thing the divider separates — every
+            action below it is one continuous list, so it gets exactly one
+            separator. The avatar sets this row's height, so the signed-out
+            fallback badge matches the Avatar's own 20px box; a larger circle
+            here made the header noticeably taller than the rows beneath it.
+          */}
+          <div class="flex items-center gap-2 px-2 py-1" aria-hidden="true">
             <Show
               when={signed()}
               fallback={
-                <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-inset-base text-icon-base">
+                <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-surface-inset-base text-icon-base">
                   <Icon name={local() ? "laptop" : "arrow-right"} size="small" />
                 </span>
               }
@@ -196,8 +199,9 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
             <span class="min-w-0 flex-1 truncate text-13-medium text-text-strong" title={label()}>{label()}</span>
           </div>
 
+          <DropdownMenu.Separator />
+
           <Show when={!!props.utilities}>
-            <DropdownMenu.Separator />
             <RailAccountMenuContext.Provider value={{
               preserveRootOnClose: () => {
                 preserveRootOnClose = true
@@ -208,7 +212,6 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
             </RailAccountMenuContext.Provider>
           </Show>
 
-          <DropdownMenu.Separator />
           <DropdownMenu.Group>
             <Show when={usePlatform().platform === "desktop"}>
               <DropdownMenu.Item onSelect={() => select(props.onDiagnostics)}>
@@ -227,7 +230,6 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
           </DropdownMenu.Group>
 
           <Show when={authAction()}>
-            <DropdownMenu.Separator />
             <DropdownMenu.Item
               onSelect={() => {
                 if (authAction() === "signin") {

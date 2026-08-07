@@ -29,4 +29,5 @@ resources/opencode-cli*
 resources/claxedo-mcp*
 resources/claxedo-server.js
 resources/acp/
+resources/diagnostics/macos-memory-impact
 resources/icons

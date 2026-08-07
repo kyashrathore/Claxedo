@@ -42,10 +42,10 @@ export function DiagnosticsTimeline(props: {
     PLOT_BOTTOM - (value / top) * (PLOT_BOTTOM - PLOT_TOP)
 
   const cpuAxis = createMemo(() => niceAxis(peak(props.points, "cpu"), "percent"))
-  const rssAxis = createMemo(() => niceAxis(peak(props.points, "rssBytes"), "bytes"))
+  const memoryAxis = createMemo(() => niceAxis(peak(props.points, "memoryImpactBytes"), "bytes"))
   const axisFor = (metric: LocalDiagnostics.SpikeMarker["metric"]) =>
-    metric === "cpu" ? cpuAxis() : rssAxis()
-  const points = (field: "cpu" | "rssBytes", top: number) =>
+    metric === "cpu" ? cpuAxis() : memoryAxis()
+  const points = (field: "cpu" | "memoryImpactBytes", top: number) =>
     props.points
       .filter((point) => point[field] !== undefined)
       .map((point) => `${String(x(point.at))},${String(y(point[field]!, top))}`)
@@ -88,8 +88,8 @@ export function DiagnosticsTimeline(props: {
   return (
     <section aria-labelledby="diagnostics-timeline-title" class="rounded-lg border border-border-weak-base bg-surface-raised-base p-3">
       <div class="mb-2">
-        <h2 id="diagnostics-timeline-title" class="text-[13px] font-medium text-text-strong">CPU and memory history</h2>
-        <p class="mt-0.5 text-[11px] text-text-weak">
+        <h2 id="diagnostics-timeline-title" class="text-compact font-medium text-text-strong">CPU and memory history</h2>
+        <p class="mt-0.5 text-xs text-text-weak">
           Hover the chart to read a sample. Dots mark resource spikes; filled dots carry an attribution.
         </p>
       </div>
@@ -100,7 +100,7 @@ export function DiagnosticsTimeline(props: {
           height={HEIGHT}
           class="block h-[232px] w-full touch-none select-none [font-variant-numeric:tabular-nums]"
           role="img"
-          aria-label={chartLabel(props.bounds, cpuAxis(), rssAxis(), props.points, props.spikes ?? [])}
+          aria-label={chartLabel(props.bounds, cpuAxis(), memoryAxis(), props.points, props.spikes ?? [])}
           onPointerMove={trackPointer}
           onPointerLeave={() => setHoveredAt(undefined)}
         >
@@ -152,7 +152,7 @@ export function DiagnosticsTimeline(props: {
           </Show>
 
           <polyline
-            points={points("rssBytes", rssAxis().top)}
+            points={points("memoryImpactBytes", memoryAxis().top)}
             fill="none"
             stroke="var(--icon-interactive-base)"
             stroke-width="2"
@@ -193,10 +193,10 @@ export function DiagnosticsTimeline(props: {
           <Show when={hovered()}>
             {(point) => (
               <>
-                <Show when={point().rssBytes !== undefined}>
+                <Show when={point().memoryImpactBytes !== undefined}>
                   <circle
                     cx={x(point().at)}
-                    cy={y(point().rssBytes!, rssAxis().top)}
+                    cy={y(point().memoryImpactBytes!, memoryAxis().top)}
                     r="3"
                     fill="var(--icon-interactive-base)"
                     stroke="var(--surface-base)"
@@ -245,7 +245,7 @@ export function DiagnosticsTimeline(props: {
             stroke-width="1"
             shape-rendering="crispEdges"
           />
-          {/* Value labels: CPU reads off the left axis, RSS off the right. */}
+          {/* Value labels: CPU reads off the left axis, memory impact off the right. */}
           <For each={cpuAxis().values}>
             {(value) => (
               <text
@@ -259,16 +259,16 @@ export function DiagnosticsTimeline(props: {
               </text>
             )}
           </For>
-          <For each={rssAxis().values}>
+          <For each={memoryAxis().values}>
             {(value) => (
               <text
                 x={plotRight() + 8}
-                y={y(value, rssAxis().top) + 3.5}
+                y={y(value, memoryAxis().top) + 3.5}
                 text-anchor="start"
                 font-size="10"
                 fill="var(--text-weak)"
               >
-                {rssAxis().format(value)}
+                {memoryAxis().format(value)}
               </text>
             )}
           </For>
@@ -291,7 +291,7 @@ export function DiagnosticsTimeline(props: {
             CPU
           </text>
           <text x={plotRight() + 8} y={PLOT_TOP - 10} text-anchor="start" font-size="10" fill="var(--icon-interactive-base)">
-            {rssAxis().unit}
+            {memoryAxis().unit}
           </text>
         </svg>
 
@@ -299,7 +299,7 @@ export function DiagnosticsTimeline(props: {
           {(point) => (
             <div
               data-testid="diagnostics-hover-readout"
-              class="pointer-events-none absolute top-2 rounded-md border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 py-2 text-[11px] shadow-md-border-base"
+              class="pointer-events-none absolute top-2 rounded-md border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 py-2 text-xs shadow-md-border-base"
               style={{ width: `${String(TOOLTIP_WIDTH)}px`, left: `${String(tooltipLeft(x(point().at), width()))}px` }}
             >
               <div class="font-medium tabular-nums text-text-strong">{formatTime(point().at)}</div>
@@ -309,9 +309,11 @@ export function DiagnosticsTimeline(props: {
                 </dt>
                 <dd class="text-right tabular-nums text-text-base">{formatCpuValue(point().cpu)}</dd>
                 <dt class="flex items-center gap-1.5 text-text-weak">
-                  <span class="inline-block size-1.5 rounded-full bg-icon-interactive-base" />RSS
+                  <span class="inline-block size-1.5 rounded-full bg-icon-interactive-base" />Memory impact
                 </dt>
-                <dd class="text-right tabular-nums text-text-base">{formatRssValue(point().rssBytes)}</dd>
+                <dd class="text-right tabular-nums text-text-base">
+                  {formatRssValue(point().memoryImpactBytes)}{point().memoryImpactComplete ? "" : " (partial)"}
+                </dd>
               </dl>
               <Show when={hoveredSpikes().length > 0}>
                 <div class="mt-2 border-t border-border-weak-base pt-1.5">
@@ -320,7 +322,7 @@ export function DiagnosticsTimeline(props: {
                       <div data-testid="diagnostics-hover-attribution" class="mt-1 first:mt-0">
                         <div class="flex items-center gap-1.5 text-text-base">
                           <span class="inline-block size-1.5 shrink-0 rounded-full bg-icon-critical-base" />
-                          {spike.metric === "cpu" ? "CPU" : "RSS"} spike {formatSpikeDelta(spike)}
+                          {{ cpu: "CPU", rss: "RSS", "memory-impact": "Memory impact" }[spike.metric]} spike {formatSpikeDelta(spike)}
                         </div>
                         <Show when={spike.context} fallback={<div class="mt-0.5 pl-3 text-text-weak">No attribution captured</div>}>
                           {(context) => (
@@ -359,7 +361,7 @@ type ValueAxis = {
 }
 
 /** The plotted maximum for a field, or 0 when the field was never sampled. */
-function peak(points: DiagnosticsSeriesPoint[], field: "cpu" | "rssBytes") {
+function peak(points: DiagnosticsSeriesPoint[], field: "cpu" | "memoryImpactBytes") {
   return Math.max(0, ...points.flatMap((point) => point[field] === undefined ? [] : [point[field]!]))
 }
 
@@ -398,7 +400,7 @@ function niceStep(rough: number) {
 function chartLabel(
   bounds: DiagnosticsRange,
   cpu: ValueAxis,
-  rss: ValueAxis,
+  memory: ValueAxis,
   points: DiagnosticsSeriesPoint[],
   spikes: LocalDiagnostics.SpikeMarker[],
 ) {
@@ -406,7 +408,7 @@ function chartLabel(
   return [
     `CPU and memory timeline from ${formatTime(bounds.startAt)} to ${formatTime(bounds.endAt)}`,
     `CPU axis 0 to ${cpu.format(cpu.top)}, peak ${cpu.format(peak(points, "cpu"))}`,
-    `Memory axis 0 to ${rss.format(rss.top)} ${rss.unit}, peak ${rss.format(peak(points, "rssBytes"))} ${rss.unit}`,
+    `Memory impact axis 0 to ${memory.format(memory.top)} ${memory.unit}, peak ${memory.format(peak(points, "memoryImpactBytes"))} ${memory.unit}`,
     `${String(spikes.length)} marked spikes, ${String(attributed)} attributed`,
   ].join(". ")
 }

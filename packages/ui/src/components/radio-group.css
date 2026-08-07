@@ -89,7 +89,7 @@
     font-weight: var(--font-weight-medium);
     flex: 1;
     height: 100%;
-    line-height: 1;
+    line-height: var(--line-height-none);
     padding: var(--radio-group-padding);
     position: relative;
     transition:
@@ -167,7 +167,7 @@
     --radio-group-padding: 2px;
 
     [data-slot="radio-group-item-label"] {
-      font-size: 12px;
+      font-size: var(--font-size-small);
     }
 
     [data-slot="radio-group-item-control"] {

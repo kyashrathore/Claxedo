@@ -9,20 +9,20 @@
     align-items: center;
     user-select: none;
     color: var(--v2-text-text-faint);
-    font-size: 11px;
+    font-size: var(--font-size-x-small);
     font-style: normal;
-    font-weight: 440;
-    line-height: 1;
-    letter-spacing: 0.05px;
+    font-weight: var(--font-weight-body);
+    line-height: var(--line-height-none);
+    letter-spacing: var(--letter-spacing-micro-wide);
     font-variation-settings: "slnt" 0;
   }
 
   [data-slot="radio-v2-description"] {
     color: var(--v2-text-text-faint);
-    font-size: 11px;
-    font-weight: 440;
-    line-height: 1.2;
-    letter-spacing: 0.05px;
+    font-size: var(--font-size-x-small);
+    font-weight: var(--font-weight-body);
+    line-height: var(--line-height-heading);
+    letter-spacing: var(--letter-spacing-micro-wide);
   }
 
   [data-slot="radio-v2-items"] {
@@ -33,7 +33,7 @@
 
   [data-slot="radio-v2-error"] {
     color: var(--v2-state-fg-danger);
-    font-size: 12px;
+    font-size: var(--font-size-small);
     font-weight: var(--font-weight-regular);
     line-height: var(--line-height-normal);
     letter-spacing: var(--letter-spacing-normal);
@@ -85,7 +85,7 @@
     left: 0;
     top: calc(50% - 16px / 2);
 
-    border-radius: 9999px;
+    border-radius: var(--radius-pill);
     border: none;
     box-shadow: inset 0 0 0 0.5px var(--v2-border-border-strong);
 
@@ -144,13 +144,11 @@
     height: 6px;
     left: calc(50% - 6px / 2);
     top: calc(50% - 6px / 2);
-    border-radius: 9999px;
+    border-radius: var(--radius-pill);
 
     background: var(--v2-grey-300);
     border: none;
-    box-shadow:
-      inset 0 0 0 0.5px var(--v2-overlay-gradient-depth-overlay-depth-top),
-      0px 0.5px 0.5px rgba(0, 0, 0, 0.4);
+    box-shadow: var(--shadow-radio-indicator);
   }
 
   [data-slot="radio-v2-item-text"] {
@@ -167,7 +165,7 @@
     user-select: none;
     color: inherit;
     font-style: normal;
-    font-weight: 440;
+    font-weight: var(--font-weight-body);
     font-variant-numeric: tabular-nums;
     font-variation-settings: "slnt" 0;
   }
@@ -177,17 +175,17 @@
     align-items: center;
     user-select: none;
     color: var(--v2-text-text-base);
-    font-size: 13px;
-    line-height: 20px;
-    letter-spacing: -0.04px;
+    font-size: var(--font-size-compact);
+    line-height: var(--line-height-20);
+    letter-spacing: var(--letter-spacing-ui);
   }
 
   [data-slot="radio-v2-item-description"] {
     color: var(--v2-text-text-muted);
-    font-size: 11px;
-    font-weight: 440;
-    line-height: 1;
-    letter-spacing: 0.05px;
+    font-size: var(--font-size-x-small);
+    font-weight: var(--font-weight-body);
+    line-height: var(--line-height-none);
+    letter-spacing: var(--letter-spacing-micro-wide);
     font-variant-numeric: tabular-nums;
     user-select: none;
   }

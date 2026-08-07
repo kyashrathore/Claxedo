@@ -37,6 +37,7 @@ import type { SessionFilter } from "@/platform/sync/global-sync/session-filter"
 import { GLOBAL_SESSION_PAGE_SIZE } from "@/platform/sync/global-sync/session-pagination"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
+import { setProviderQueryData } from "@/platform/query/provider-cache"
 import { type SessionInventoryStoredValue, type SessionInventoryValue } from "../../../features/session/data/sync/queries"
 import {
   applySessionInventoryLifecycle,
@@ -133,7 +134,7 @@ function createGlobalSync() {
     if ("error" in patch) setError(patch.error as InitError | undefined)
     if (patch.path) queryClient.setQueryData(queryKeys.directory.path(globalSDK.url, ""), patch.path)
     if (patch.project) setProjects(patch.project)
-    if (patch.provider) queryClient.setQueryData(queryKeys.controlPlane.providers(globalSDK.url), patch.provider)
+    if (patch.provider) setProviderQueryData(queryKeys.controlPlane.providers(globalSDK.url), patch.provider)
     if (patch.provider_auth) queryClient.setQueryData(queryKeys.controlPlane.providerAuth(globalSDK.url), patch.provider_auth)
     if (patch.config) queryClient.setQueryData(["global", globalSDK.url ?? "", "config"], patch.config)
     if ("reload" in patch) setReload(patch.reload)

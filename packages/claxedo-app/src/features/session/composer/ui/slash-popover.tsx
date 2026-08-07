@@ -96,7 +96,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                           <Icon name="prompt" size="small" class="text-icon-base shrink-0" />
                           <span class="text-14-regular text-text-strong truncate">{item.display}</span>
                         </span>
-                        <span class="text-11-regular text-text-subtle shrink-0">{item.status}</span>
+                        <span class="text-11-regular text-text-weak shrink-0">{item.status}</span>
                       </button>
                     )
                   }
@@ -172,7 +172,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
                       <Show when={cmd.type === "custom" && cmd.source !== "command"}>
-                        <span class="text-11-regular text-text-subtle px-1.5 py-0.5 bg-surface-base rounded">
+                        <span class="text-11-regular text-text-weak px-1.5 py-0.5 bg-surface-base rounded">
                           {cmd.source === "skill"
                             ? props.t("prompt.slash.badge.skill")
                             : cmd.source === "mcp"
@@ -181,7 +181,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                         </span>
                       </Show>
                       <Show when={props.commandKeybind(cmd.id)}>
-                        <span class="text-12-regular text-text-subtle">{props.commandKeybind(cmd.id)}</span>
+                        <span class="text-12-regular text-text-weak">{props.commandKeybind(cmd.id)}</span>
                       </Show>
                     </div>
                   </button>

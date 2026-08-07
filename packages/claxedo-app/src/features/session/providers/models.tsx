@@ -1,14 +1,10 @@
 import { createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
-import { filter, firstBy, flat, groupBy, mapValues, pipe, uniqueBy, values } from "remeda"
+import { uniqueBy } from "remeda"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useProviders } from "@/features/session/app-ports"
 import { Persist, persisted } from "@/platform/persistence/persist"
 import type { ModelKey } from "@/features/session/composer/model-strategy"
-
-// luxon's DateTime.diffNow().as("months") uses a 30-day "casual" month (2,592,000,000 ms).
-// Replicated here so the "released within 6 months" filter stays byte-identical without luxon.
-const MS_PER_MONTH = 2_592_000_000
 
 type Visibility = "show" | "hide"
 type User = ModelKey & { visibility: Visibility; favorite?: boolean }
@@ -22,6 +18,16 @@ const RECENT_LIMIT = 5
 
 function modelKey(model: ModelKey) {
   return `${model.providerID}:${model.modelID}`
+}
+
+export function resolveModelVisibility(input: {
+  model: ModelKey
+  defaults: Record<string, string>
+  user?: Visibility
+}) {
+  if (input.user === "hide") return false
+  if (input.user === "show") return true
+  return input.defaults[input.model.providerID] === input.model.modelID
 }
 
 const modelsContextInput = {
@@ -46,49 +52,6 @@ const modelsContextInput = {
         })),
       ),
     )
-
-    const release = createMemo(
-      () =>
-        new Map(
-          available().map((model) => {
-            const parsed = Date.parse(model.release_date) // NaN if invalid — mirrors DateTime.invalid
-            return [modelKey({ providerID: model.provider.id, modelID: model.id }), parsed] as const
-          }),
-        ),
-    )
-
-    const latest = createMemo(() =>
-      pipe(
-        available(),
-        filter(
-          (x) =>
-            Math.abs(
-              ((release().get(modelKey({ providerID: x.provider.id, modelID: x.id })) ?? NaN) - Date.now()) /
-                MS_PER_MONTH,
-            ) < 6,
-        ),
-        groupBy((x) => x.provider.id),
-        mapValues((models) =>
-          pipe(
-            models,
-            // remeda's groupBy excludes an item entirely when the callback returns
-            // undefined (rather than bucketing it), so models without a `family`
-            // need a stable fallback key or they silently vanish from `latestSet`.
-            groupBy((x) => x.family ?? x.id),
-            values(),
-            (groups) =>
-              groups.flatMap((g) => {
-                const first = firstBy(g, [(x) => x.release_date, "desc"])
-                return first ? [{ modelID: first.id, providerID: first.provider.id }] : []
-              }),
-          ),
-        ),
-        values(),
-        flat(),
-      ),
-    )
-
-    const latestSet = createMemo(() => new Set(latest().map((x) => modelKey(x))))
 
     const visibility = createMemo(() => {
       const map = new Map<string, Visibility>()
@@ -116,14 +79,11 @@ const modelsContextInput = {
     }
 
     const visible = (model: ModelKey) => {
-      const key = modelKey(model)
-      const state = visibility().get(key)
-      if (state === "hide") return false
-      if (state === "show") return true
-      if (latestSet().has(key)) return true
-      const date = release().get(key)
-      if (date === undefined || Number.isNaN(date)) return true // unknown/invalid release date — mirrors !DateTime.isValid
-      return false
+      return resolveModelVisibility({
+        model,
+        defaults: providers.default(),
+        user: visibility().get(modelKey(model)),
+      })
     }
 
     const setVisibility = (model: ModelKey, state: boolean) => {

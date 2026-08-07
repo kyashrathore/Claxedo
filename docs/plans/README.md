@@ -22,8 +22,11 @@ explain a maintained package or cross-package delivery contract.
     server-side and parent-keyed, so forwarding nested events without routing
     them corrupts the parent transcript rather than revealing subagents.
     Replaces the degenerate one-field `subagent-spawned` event with one
-    idempotent `subagent-updated` upsert keyed on `(parentSessionId,
-    toolCallId)`, survivable across replay gaps and reconnects.
+    idempotent `subagent-updated` upsert keyed on the subagent itself
+    (`(parentSessionId, subagentKey)`), treating the spawning tool call as a
+    many-to-many edge — because one Codex call can address several subagents,
+    several calls can address one, and a backgrounded Claude task has no call
+    id at all.
 
 - [Follow-up steer and queue](./2026-08-07-001-feat-followup-steer-queue-plan.md)
   - Active plan (U1–U11) making a message sent while the agent is working a

@@ -54,8 +54,8 @@ export function WorkGraphSettingsView(props: {
   return (
     <div class="workgraph-settings-view">
       <header class="workgraph-settings-heading">
-        <h2 class="text-[12px] font-semibold text-text-strong">WorkGraph settings</h2>
-        <p class="text-[11px] leading-4 text-text-base">Default harness, agent, model, effort, and connections used by Streams.</p>
+        <h2 class="text-sm font-semibold text-text-strong">WorkGraph settings</h2>
+        <p class="text-xs leading-4 text-text-base">Default harness, agent, model, effort, and connections used by Streams.</p>
       </header>
       <DetailState resource={detail} retry={refetch}>
         {(current) => (
@@ -107,8 +107,8 @@ export function StreamSettingsView(props: StreamSettingsProps & { active: boolea
   return (
     <div class="workgraph-settings-view">
       <header class="workgraph-settings-heading">
-        <h2 class="text-[12px] font-semibold text-text-strong">Stream settings</h2>
-        <p class="text-[11px] leading-4 text-text-base">{props.stream?.title}</p>
+        <h2 class="text-sm font-semibold text-text-strong">Stream settings</h2>
+        <p class="text-xs leading-4 text-text-base">{props.stream?.title}</p>
       </header>
       <StreamSettingsContent {...props} active={props.active} />
     </div>
@@ -605,7 +605,7 @@ function SettingsFormBody(props: SettingsFormProps) {
           </>
         }
       >
-        <p class="text-[12px] leading-5 text-text-base">
+        <p class="text-sm leading-5 text-text-base">
           This Stream will proceed without approval under its promotion policy, within a budget when one is set.
         </p>
       </WorkGraphDialog>
@@ -759,7 +759,7 @@ function ConnectionRow(props: {
           when={props.editable}
           fallback={
             <div class="workgraph-setting-tools">
-              <For each={props.selected} fallback={<span class="text-text-weaker text-[12px]">none</span>}>
+              <For each={props.selected} fallback={<span class="text-text-weaker text-sm">none</span>}>
                 {(id) => <span class="workgraph-tool-pill">{id}</span>}
               </For>
             </div>
@@ -777,7 +777,7 @@ function ConnectionRow(props: {
               <option value="inherit">{props.emptyLabel}</option>
               <option value="explicit">{props.selected.length ? "Custom" : "None"}</option>
             </select>
-            <For each={merged()} fallback={<span class="text-text-weaker text-[12px]">none</span>}>
+            <For each={merged()} fallback={<span class="text-text-weaker text-sm">none</span>}>
               {(item) => (
                 <label class="workgraph-tool-pill">
                   <input type="checkbox" checked={props.selected.includes(item.id)} onChange={(event) => props.onToggle(item.id, event.currentTarget.checked)} />{" "}

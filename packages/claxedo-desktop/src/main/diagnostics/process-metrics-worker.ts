@@ -40,6 +40,7 @@ export type ProcessMetricSample = ProcessTreeEntry & {
   creation: LocalDiagnostics.CreationIdentity
   cpuMachinePercent: number | undefined
   rssBytes: number | undefined
+  memoryImpact?: { kind: LocalDiagnostics.MemoryImpactKind; bytes: number }
 }
 
 export type ProcessMetricsWorker = {
@@ -66,6 +67,7 @@ export function createIsolatedPosixProcessMetricsWorker(options: {
   workerPath?: string
   requestTimeoutMs?: number
   random?: () => number
+  memoryHelperPath?: string
 }): ProcessMetricsWorker {
   const policy = diagnosticsWorkerProcessOptions(options.platform)
   let child: ReturnType<typeof spawn> | undefined
@@ -152,6 +154,7 @@ export function createIsolatedPosixProcessMetricsWorker(options: {
         ...policy.env,
         ELECTRON_RUN_AS_NODE: "1",
         CLAXEDO_DIAGNOSTICS_WORKER_PLATFORM: options.platform,
+        ...(options.memoryHelperPath ? { CLAXEDO_DIAGNOSTICS_MEMORY_HELPER: options.memoryHelperPath } : {}),
       },
       stdio: ["pipe", "pipe", "ignore"],
     })
@@ -242,13 +245,16 @@ export function createWindowsProcessMetricsWorker(options: {
    * query continues unaffected.
    */
   addon?: WindowsAncestryAddon
-  query(rows: number[]): Promise<unknown[]>
+  query(rows: number[], options?: { memoryImpact?: boolean }): Promise<unknown[]>
   logicalProcessors?: number
   monotonicNow?: () => number
+  memoryImpactIntervalMs?: number
 }): ProcessMetricsWorker {
   const logicalProcessors = options.logicalProcessors ?? Math.max(1, cpus().length)
   const monotonicNow = options.monotonicNow ?? (() => performance.now())
   const history = new Map<number, { row: WindowsCimRow; at: number }>()
+  const memoryImpact = new Map<number, number>()
+  let nextMemoryImpactAt = Number.NEGATIVE_INFINITY
   let disposed = false
 
   return {
@@ -267,22 +273,41 @@ export function createWindowsProcessMetricsWorker(options: {
       }
       return collectWindowsAncestry(options.addon, rootPids)
     },
-    async sample(entries) {
+    async sample(entries, at) {
       if (disposed) return []
       const selected = uniqueEntries(entries).slice(0, MAX_DIAGNOSTICS_PIDS)
       const selectedPids = new Set(selected.map((entry) => entry.pid))
       history.forEach((_, pid) => {
         if (!selectedPids.has(pid)) history.delete(pid)
       })
-      const raw = await options.query(selected.map((entry) => entry.pid))
+      memoryImpact.forEach((_, pid) => {
+        if (!selectedPids.has(pid)) memoryImpact.delete(pid)
+      })
+      const refreshMemoryImpact = at >= nextMemoryImpactAt
+      const raw = await options.query(
+        selected.map((entry) => entry.pid),
+        { memoryImpact: refreshMemoryImpact },
+      )
+      if (refreshMemoryImpact) {
+        memoryImpact.clear()
+        nextMemoryImpactAt = at + (options.memoryImpactIntervalMs ?? 10_000)
+      }
       const byPid = new Map(selected.map((entry) => [entry.pid, entry]))
       const sampledAt = monotonicNow()
       return raw.slice(0, MAX_DIAGNOSTICS_PIDS).flatMap((value) => {
         const row = parseWindowsCimRow(value)
         const entry = row ? byPid.get(row.pid) : undefined
-        if (!row || !entry || row.rssBytes > BigInt(Number.MAX_SAFE_INTEGER)) return []
+        if (
+          !row ||
+          !entry ||
+          row.rssBytes > BigInt(Number.MAX_SAFE_INTEGER) ||
+          (row.memoryImpactBytes !== undefined && row.memoryImpactBytes > BigInt(Number.MAX_SAFE_INTEGER))
+        ) return []
         const previous = history.get(row.pid)
         history.set(row.pid, { row, at: sampledAt })
+        if (refreshMemoryImpact && row.memoryImpactBytes !== undefined) {
+          memoryImpact.set(row.pid, Number(row.memoryImpactBytes))
+        }
         const cpu = windowsCpuMachinePercent({
           previous: previous?.row,
           current: row,
@@ -295,6 +320,9 @@ export function createWindowsProcessMetricsWorker(options: {
             creation: windowsCreationIdentity(row),
             cpuMachinePercent: cpu.state === "available" ? cpu.value : undefined,
             rssBytes: Number(row.rssBytes),
+            memoryImpact: memoryImpact.get(row.pid) === undefined
+              ? { kind: "rss-fallback" as const, bytes: Number(row.rssBytes) }
+              : { kind: "private-working-set" as const, bytes: memoryImpact.get(row.pid)! },
           },
         ]
       })
@@ -308,10 +336,13 @@ export function createWindowsProcessMetricsWorker(options: {
     },
     clear() {
       history.clear()
+      memoryImpact.clear()
+      nextMemoryImpactAt = Number.NEGATIVE_INFINITY
     },
     dispose() {
       disposed = true
       history.clear()
+      memoryImpact.clear()
     },
   }
 }
@@ -375,7 +406,7 @@ export function createWindowsCimQuery(
   }> = []
 
   return {
-    query(pids: number[]) {
+    query(pids: number[], options?: { memoryImpact?: boolean }) {
       const selected = boundedPids(pids)
       if (selected.length === 0) return Promise.resolve([])
       if (Date.now() < restartAfter) return Promise.reject(new Error("Windows metrics source is recovering"))
@@ -394,7 +425,7 @@ export function createWindowsCimQuery(
           }, childWarmed ? timeoutMs : coldStartTimeoutMs),
         }
         pending.push(request)
-        child!.stdin!.write(`${JSON.stringify(selected)}\n`)
+        child!.stdin!.write(`${JSON.stringify({ pids: selected, memoryImpact: options?.memoryImpact === true })}\n`)
       })
     },
     dispose() {

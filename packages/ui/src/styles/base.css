@@ -120,7 +120,7 @@ pre {
   font-family: var(--font-family-mono); /* 1 */
   font-feature-settings: var(--font-family-mono--font-feature-settings, normal); /* 2 */
   font-variation-settings: var(--font-family-mono--font-variation-settings, normal); /* 3 */
-  font-size: 1em; /* 4 */
+  font-size: var(--font-size-relative); /* 4 */
 }
 
 /*
@@ -128,7 +128,7 @@ pre {
 */
 
 small {
-  font-size: 80%;
+  font-size: var(--font-size-relative-small);
 }
 
 /*
@@ -137,8 +137,8 @@ small {
 
 sub,
 sup {
-  font-size: 75%;
-  line-height: 0;
+  font-size: var(--font-size-relative-smaller);
+  line-height: var(--line-height-none);
   position: relative;
   vertical-align: baseline;
 }
@@ -351,7 +351,7 @@ textarea {
 */
 
 ::-webkit-calendar-picker-indicator {
-  line-height: 1;
+  line-height: var(--line-height-none);
 }
 
 /*
@@ -399,6 +399,6 @@ input:where([type="button"], [type="reset"], [type="submit"]),
   select,
   textarea,
   [contenteditable="true"] {
-    font-size: 16px !important;
+    font-size: var(--font-size-large) !important;
   }
 }

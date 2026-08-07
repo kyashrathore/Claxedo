@@ -372,11 +372,13 @@ export const SettingsKeybinds: Component = () => {
   })
 
   return (
-    <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
-      <div class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
+    <div class="flex flex-col h-full overflow-y-auto no-scrollbar bg-inherit px-4 pb-10 sm:px-10 sm:pb-10">
+      {/* Search stays pinned; `bg-inherit` keeps it the exact colour of the pane behind it
+          (a fixed token drifts from the pane background in themes that repaint it). */}
+      <div class="sticky top-0 z-10 bg-inherit">
         <div class="flex flex-col gap-4 pt-6 pb-6 max-w-[720px]">
           <div class="flex items-center justify-between gap-4">
-            <h2 class="text-16-medium text-text-strong">{language.t("settings.shortcuts.title")}</h2>
+            <h2 class="text-18-medium text-text-strong">{language.t("settings.shortcuts.title")}</h2>
             <Button size="small" variant="secondary" onClick={resetAll} disabled={!hasOverrides()}>
               {language.t("settings.shortcuts.reset.button")}
             </Button>
@@ -419,7 +421,7 @@ export const SettingsKeybinds: Component = () => {
                           data-keybind-id={id}
                           classList={{
                             "h-8 px-3 rounded-md text-12-regular": true,
-                            "bg-surface-base text-text-subtle hover:bg-surface-raised-base-hover active:bg-surface-raised-base-active":
+                            "bg-surface-base text-text-weak hover:bg-surface-raised-base-hover active:bg-surface-raised-base-active":
                               store.active !== id,
                             "border border-border-weak-base bg-surface-inset-base text-text-weak": store.active === id,
                           }}

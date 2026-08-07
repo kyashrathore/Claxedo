@@ -144,14 +144,14 @@
    white surface it is a no-op, so the lift never dims light mode. */
 .session-envcard.is-floating {
   background:
-    linear-gradient(rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.04)), var(--surface-raised-stronger-non-alpha);
+    linear-gradient(var(--surface-light-wash), var(--surface-light-wash)), var(--surface-raised-stronger-non-alpha);
 }
 
 /* Framing labels stay visibly subordinate to both metadata and actions. */
 .session-envcard .ui-context-card-label,
 .session-envcard .ui-context-card-section-label {
   color: var(--text-weaker);
-  font-weight: 400;
+  font-weight: var(--font-weight-body);
 }
 
 /* Clickable rows are the card's primary foreground. */
@@ -234,14 +234,14 @@
 
 .session-envcard-proc-name {
   overflow: hidden;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-compact);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .session-envcard-proc-port {
   flex-shrink: 0;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-x-small);
   font-variant-numeric: tabular-nums;
   color: var(--text-weaker);
 }
@@ -271,7 +271,7 @@
   padding: 0.35rem;
   border-top: 1px solid var(--border-weak-base);
   border-radius: 0 0 var(--radius-md) var(--radius-md);
-  font-size: 0.75rem;
+  font-size: var(--font-size-small);
   text-align: left;
   color: var(--text-weak);
   transition: color 110ms ease;

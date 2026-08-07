@@ -14,7 +14,7 @@
   height: 28px;
   max-width: 12rem;
   padding: 0 8px 0 6px;
-  border-radius: 9999px;
+  border-radius: var(--radius-pill);
   border: 0.5px solid var(--border-weak-base);
   background: color-mix(in srgb, var(--background-stronger) 88%, transparent);
   cursor: pointer;
@@ -30,14 +30,14 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-family: var(--font-family-sans);
-    font-size: 13px;
+    font-size: var(--font-size-compact);
     font-weight: var(--font-weight-medium);
     text-transform: capitalize;
   }
 
   [data-slot="subagent-chip-status"] {
     flex-shrink: 0;
-    font-size: 12px;
+    font-size: var(--font-size-small);
     color: var(--text-weaker);
   }
 
@@ -59,7 +59,7 @@
 }
 
 [data-slot="subagent-chip-overflow"] {
-  font-size: 13px;
+  font-size: var(--font-size-compact);
   color: var(--text-weak);
   text-decoration: underline;
   text-underline-offset: 2px;

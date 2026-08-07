@@ -82,7 +82,7 @@
   flex-shrink: 0;
   place-items: center;
   border: 1px solid var(--border-weak-base);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--surface-base) 72%, transparent);
   color: var(--icon-weak-base);
 }
@@ -111,7 +111,7 @@
   padding: 0.25rem 0.35rem;
   border-radius: var(--radius-md);
   color: var(--text-base);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-x-small);
   transition: background 110ms ease, color 110ms ease;
 }
 
@@ -145,7 +145,7 @@
 
 .workgraph-staged-conflict {
   padding: 0 0.85rem 0.4rem;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-x-small);
 }
 
 .workgraph-staged-actions {
@@ -189,7 +189,7 @@
 
 .workgraph-waiting-more {
   padding: 0.6rem 0.85rem;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-x-small);
 }
 
 .workgraph-waiting-row {
@@ -240,14 +240,14 @@
 
 .workgraph-waiting-row-title {
   overflow: hidden;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-compact);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .workgraph-waiting-row-meta {
   overflow: hidden;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-x-small);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -255,7 +255,7 @@
 .workgraph-waiting-row-tag {
   flex-shrink: 0;
   font-family: var(--font-family-mono);
-  font-size: 0.625rem;
+  font-size: var(--font-size-2x-small);
   text-transform: lowercase;
 }
 
@@ -373,7 +373,7 @@
 }
 
 .workgraph-session-link:focus-visible {
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   outline: 2px solid var(--border-selected);
   outline-offset: 2px;
 }
@@ -390,7 +390,7 @@
 .workgraph-dialog-footer-error {
   margin-right: auto;
   color: var(--icon-critical-base);
-  font-size: 0.75rem;
+  font-size: var(--font-size-small);
 }
 
 .workgraph-detail {
@@ -401,9 +401,9 @@
 }
 
 .workgraph-detail-lede {
-  font-size: 0.9375rem;
-  font-weight: 600;
-  line-height: 1.3;
+  font-size: var(--font-size-intermediate);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-compact);
 }
 
 /* Task detail header — mirrors the New-stream dialog's borderless title +
@@ -416,15 +416,15 @@
 
 .workgraph-detail-title {
   padding: 0.25rem 0;
-  font-size: 1.125rem;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  line-height: 1.3;
+  font-size: var(--font-size-heading);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--letter-spacing-heading);
+  line-height: var(--line-height-compact);
 }
 
 .workgraph-detail-desc {
-  font-size: 0.8125rem;
-  line-height: 1.5;
+  font-size: var(--font-size-compact);
+  line-height: var(--line-height-large);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -449,7 +449,7 @@
   background: var(--surface-raised-base);
   color: var(--text-base);
   font-size: var(--font-size-base);
-  line-height: 1;
+  line-height: var(--line-height-none);
   white-space: nowrap;
 }
 
@@ -458,7 +458,7 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.7rem 0.1rem;
-  font-size: 0.75rem;
+  font-size: var(--font-size-small);
   color: var(--text-weak);
 }
 
@@ -468,14 +468,14 @@
 
 .workgraph-detail-retry {
   color: var(--text-base);
-  font-size: 0.75rem;
+  font-size: var(--font-size-small);
   text-decoration: underline;
 }
 
 .workgraph-detail-retry:focus-visible {
   outline: 2px solid var(--border-selected);
   outline-offset: 2px;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
 }
 
 .workgraph-dsection {
@@ -494,8 +494,8 @@
 
 .workgraph-dsection-title {
   font-family: var(--font-family-mono);
-  font-size: 0.625rem;
-  letter-spacing: 0.1em;
+  font-size: var(--font-size-2x-small);
+  letter-spacing: var(--letter-spacing-widest);
   text-transform: uppercase;
 }
 
@@ -504,12 +504,12 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 1rem;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-compact);
 }
 
 .workgraph-dfield-label {
   flex-shrink: 0;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-x-small);
 }
 
 .workgraph-dfield-value {
@@ -546,7 +546,7 @@
   flex-direction: column;
   gap: 0.1rem;
   padding: 0.3rem 0;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-compact);
 }
 
 .workgraph-detail-plan-item + .workgraph-detail-plan-item {
@@ -688,8 +688,8 @@
 .workgraph-settings-section-title {
   padding: 0.75rem 0.85rem 0.3rem;
   font-family: var(--font-family-mono);
-  font-size: 0.625rem;
-  letter-spacing: 0.1em;
+  font-size: var(--font-size-2x-small);
+  letter-spacing: var(--letter-spacing-widest);
   text-transform: uppercase;
   color: var(--text-weaker);
 }
@@ -712,8 +712,8 @@
 
 .workgraph-settings-charter-defaults {
   color: var(--text-weaker);
-  font-size: 0.6875rem;
-  line-height: 1.5;
+  font-size: var(--font-size-x-small);
+  line-height: var(--line-height-large);
 }
 
 .workgraph-settings-charter-defaults ul {
@@ -736,8 +736,8 @@
 }
 
 .workgraph-setting-label {
-  font-size: 0.8125rem;
-  font-weight: 500;
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-medium);
   color: var(--text-strong);
 }
 
@@ -764,13 +764,13 @@
 }
 
 .workgraph-setting-value {
-  font-size: 0.75rem;
+  font-size: var(--font-size-small);
 }
 
 .workgraph-setting-desc,
 .workgraph-setting-inherit {
-  font-size: 0.6875rem;
-  line-height: 1.35;
+  font-size: var(--font-size-x-small);
+  line-height: var(--line-height-compact-relaxed);
 }
 
 .workgraph-setting-desc {
@@ -778,8 +778,8 @@
 }
 
 .workgraph-setting-note {
-  font-size: 0.625rem;
-  line-height: 1.35;
+  font-size: var(--font-size-2x-small);
+  line-height: var(--line-height-compact-relaxed);
 }
 
 .workgraph-setting-select,
@@ -791,7 +791,7 @@
   border-radius: var(--radius-md);
   background: var(--surface-base);
   color: var(--text-base);
-  font-size: 0.75rem;
+  font-size: var(--font-size-small);
   outline: none;
 }
 
@@ -809,9 +809,9 @@
 .workgraph-tool-pill {
   padding: 0.1rem 0.45rem;
   border: 1px solid var(--border-weak-base);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-base);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-x-small);
   color: var(--text-base);
 }
 
@@ -832,7 +832,7 @@
 }
 
 .workgraph-settings-error {
-  font-size: 0.75rem;
+  font-size: var(--font-size-small);
   color: var(--icon-critical-base);
 }
 

@@ -42,7 +42,7 @@
   [data-slot="basic-tool-v2-trigger"]:focus-visible {
     outline: 2px solid var(--v2-border-border-focus);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
   }
 
   [data-slot="basic-tool-v2-labels"] {
@@ -58,10 +58,10 @@
     display: flex;
     align-items: center;
     flex-shrink: 0;
-    font-size: 13px;
-    font-weight: 440;
-    line-height: 1;
-    letter-spacing: -0.04px;
+    font-size: var(--font-size-compact);
+    font-weight: var(--font-weight-body);
+    line-height: var(--line-height-none);
+    letter-spacing: var(--letter-spacing-ui);
     color: var(--bt-title);
     font-variation-settings: "slnt" 0;
     user-select: none;
@@ -72,10 +72,10 @@
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    font-size: 11px;
-    font-weight: 530;
-    line-height: 12px;
-    letter-spacing: 0.05px;
+    font-size: var(--font-size-x-small);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-12);
+    letter-spacing: var(--letter-spacing-micro-wide);
     color: var(--bt-sep);
     font-variation-settings: "slnt" 0;
     user-select: none;
@@ -89,10 +89,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 13px;
-    font-weight: 440;
-    line-height: 1;
-    letter-spacing: -0.04px;
+    font-size: var(--font-size-compact);
+    font-weight: var(--font-weight-body);
+    line-height: var(--line-height-none);
+    letter-spacing: var(--letter-spacing-ui);
     color: var(--bt-subtitle);
     font-variation-settings: "slnt" 0;
     user-select: none;
@@ -102,10 +102,10 @@
     display: flex;
     align-items: center;
     flex-shrink: 0;
-    font-size: 13px;
-    font-weight: 440;
-    line-height: 1;
-    letter-spacing: -0.04px;
+    font-size: var(--font-size-compact);
+    font-weight: var(--font-weight-body);
+    line-height: var(--line-height-none);
+    letter-spacing: var(--letter-spacing-ui);
     color: var(--bt-args);
     font-variation-settings: "slnt" 0;
     user-select: none;
@@ -128,7 +128,7 @@
     width: 20px;
     height: 20px;
     padding: 2px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     color: var(--bt-chevron);
     user-select: none;
   }
@@ -153,9 +153,9 @@
   }
 
   [data-slot="basic-tool-v2-content-inner"] {
-    font-size: 15px;
-    font-weight: 440;
-    line-height: 24px;
+    font-size: var(--font-size-intermediate);
+    font-weight: var(--font-weight-body);
+    line-height: var(--line-height-24);
     letter-spacing: 0;
     color: var(--bt-content);
     font-variation-settings: "slnt" 0;

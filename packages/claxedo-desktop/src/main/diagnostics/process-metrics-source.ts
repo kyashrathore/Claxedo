@@ -17,6 +17,7 @@ import type { DiagnosticsObservation, DiagnosticsSource } from "./profiler"
 import type { WslDiagnosticsSource } from "./wsl-source"
 
 const RECONCILE_INTERVAL_MS = 30_000
+const MEMORY_IMPACT_INTERVAL_MS = 10_000
 
 /**
  * Base64 of the reviewed CIM script, injected at build time by
@@ -62,12 +63,17 @@ export function createProcessMetricsSource(options: {
   wsl?: WslDiagnosticsSource
   reconcileIntervalMs?: number
   random?: () => number
+  memoryHelperPath?: string
 }): ProcessMetricsSource {
   const platform = options.platform ?? process.platform
   const worker =
     options.worker ??
     (platform === "darwin" || platform === "linux"
-      ? createIsolatedPosixProcessMetricsWorker({ platform, workerPath: options.workerPath })
+      ? createIsolatedPosixProcessMetricsWorker({
+          platform,
+          workerPath: options.workerPath,
+          memoryHelperPath: options.memoryHelperPath,
+        })
       : platform === "win32"
         ? createLazyWindowsWorker()
         : unsupportedWorker)
@@ -84,6 +90,7 @@ export function createProcessMetricsSource(options: {
   let rootsRevision = 0
   let hostInFlight = false
   let hostRetryAt = Number.NEGATIVE_INFINITY
+  let nextElectronMemoryImpactAt = Number.NEGATIVE_INFINITY
   let consecutiveHostFailures = 0
   let disposed = false
   const stats = {
@@ -194,6 +201,15 @@ export function createProcessMetricsSource(options: {
         observation.point.cpuMachinePercent.state !== "available" ||
         observation.point.rssBytes.state !== "available",
     )
+    const electronMemoryImpact = at >= nextElectronMemoryImpactAt
+      ? [...electronByPid.values()].filter(
+          (observation) => observation.point.memoryImpact?.bytes.state !== "available",
+        )
+      : []
+    const supplementalPids = new Set([
+      ...electronFallback.map((observation) => observation.process.identity.pid),
+      ...electronMemoryImpact.map((observation) => observation.process.identity.pid),
+    ])
     if (
       disposed ||
       hostInFlight ||
@@ -201,16 +217,16 @@ export function createProcessMetricsSource(options: {
       hostStatus.state === "unsupported"
     )
       return
-    if (roots.size === 0 && electronFallback.length === 0) {
+    if (roots.size === 0 && supplementalPids.size === 0) {
       hostStatus = { ...sourceStatusBase(), state: "healthy", lastSuccessAt: at }
       return
     }
     hostInFlight = true
+    if (electronMemoryImpact.length > 0) nextElectronMemoryImpactAt = at + MEMORY_IMPACT_INTERVAL_MS
     const reconcile =
       roots.size > 0 &&
       (rootsDirty || entries.length === 0 || at - reconcileAt >= (options.reconcileIntervalMs ?? RECONCILE_INTERVAL_MS))
     const electronAtStart = new Map(electronByPid)
-    const fallbackPids = new Set(electronFallback.map((observation) => observation.process.identity.pid))
     const revisionAtStart = rootsRevision
     const rootsAtStart = new Map(roots)
     const hostStartedAt = performance.now()
@@ -274,7 +290,7 @@ export function createProcessMetricsSource(options: {
       try {
         const sampledEntries = [
           ...entries,
-          ...[...fallbackPids].map((pid) => ({ pid, ppid: 0, rootPid: pid })),
+          ...[...supplementalPids].map((pid) => ({ pid, ppid: 0, rootPid: pid })),
         ]
         const samples = await worker.sample(
           [...new Map(sampledEntries.map((entry) => [entry.pid, entry])).values()],
@@ -287,7 +303,7 @@ export function createProcessMetricsSource(options: {
             if (electron && electronByPid.get(sample.pid)?.process.identity.id !== electron.process.identity.id)
               return []
             const root = roots.get(sample.rootPid)
-            if (!root && !fallbackPids.has(sample.pid)) return []
+            if (!root && !supplementalPids.has(sample.pid)) return []
             const darwinSeries =
               platform === "darwin" && sample.creation.state === "unavailable" && root
                 ? `${root.launchId}:darwin:${String(darwinGenerations.get(sample.pid) ?? 1)}`
@@ -368,6 +384,7 @@ export function createProcessMetricsSource(options: {
             processId: observation.point.processId,
             cpuMachinePercent: { state: "unavailable", reason: "not-sampled" } as const,
             rssBytes: { state: "unavailable", reason: "not-sampled" } as const,
+            ...(observation.point.memoryImpact ? { memoryImpact: observation.point.memoryImpact } : {}),
           },
         },
       ]
@@ -448,6 +465,18 @@ function observationFor(
         sample.rssBytes === undefined
           ? ({ state: "unavailable", reason: "not-sampled" } as const)
           : ({ state: "available", value: sample.rssBytes } as const),
+      memoryImpact: sample.memoryImpact
+        ? {
+            kind: sample.memoryImpact.kind,
+            bytes: { state: "available" as const, value: sample.memoryImpact.bytes },
+          }
+        : {
+            kind: "rss-fallback" as const,
+            bytes:
+              sample.rssBytes === undefined
+                ? ({ state: "unavailable", reason: "not-sampled" } as const)
+                : ({ state: "available", value: sample.rssBytes } as const),
+          },
     },
   } satisfies DiagnosticsObservation
 }
@@ -497,6 +526,10 @@ export function mergeByProcess(
             ? current.point.cpuMachinePercent
             : observation.point.cpuMachinePercent,
         rssBytes: current.point.rssBytes.state === "available" ? current.point.rssBytes : observation.point.rssBytes,
+        memoryImpact:
+          current.point.memoryImpact?.bytes.state === "available"
+            ? current.point.memoryImpact
+            : observation.point.memoryImpact,
       },
     })
   })

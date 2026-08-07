@@ -149,7 +149,7 @@ export const PromptInputFrame: Component<{
       return (
         <div class="flex items-center gap-2">
           <span>{props.t("prompt.action.stop")}</span>
-          <span class="text-icon-base text-12-medium text-[10px]!">{props.t("common.key.esc")}</span>
+          <span class="text-icon-base text-12-medium text-2xs!">{props.t("common.key.esc")}</span>
         </div>
       )
     }
@@ -307,7 +307,7 @@ export const PromptInputFrame: Component<{
               // What the user typed reads at full strength; only the placeholder
               // below is dimmed. These were both `text-faint`, which made real
               // input look like a leftover hint.
-              "min-h-[52px] w-full px-4 pt-4 pb-2 focus:outline-none whitespace-pre-wrap leading-5 text-[13px] font-[440] text-v2-text-text-base [font-family:Inter,var(--font-family-sans)]": true,
+              "min-h-[52px] w-full px-4 pt-4 pb-2 focus:outline-none whitespace-pre-wrap leading-5 text-compact font-body text-v2-text-text-base [font-family:var(--font-family-sans)]": true,
               "[&_[data-type=file]]:text-syntax-property": true,
               "[&_[data-type=agent]]:text-syntax-type": true,
               "font-mono!": props.mode() === "shell",
@@ -315,7 +315,7 @@ export const PromptInputFrame: Component<{
           />
           <div
             data-component={props.newSession() ? "session-new-design-text" : "session-composer-text"}
-            class="absolute top-0 inset-x-0 px-4 pt-4 pointer-events-none whitespace-nowrap truncate leading-5 text-[13px] font-[440] text-v2-text-text-faint [font-family:Inter,var(--font-family-sans)]"
+            class="absolute top-0 inset-x-0 px-4 pt-4 pointer-events-none whitespace-nowrap truncate leading-5 text-compact font-body text-v2-text-text-faint [font-family:var(--font-family-sans)]"
             classList={{ "font-mono!": props.mode() === "shell", hidden: props.dirty() }}
           >
             {props.designPlaceholder()}

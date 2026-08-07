@@ -11,6 +11,7 @@ import { createRequire } from "node:module"
 import * as path from "path"
 
 import { bundleClaxedoServer } from "./bundle-claxedo-server"
+import { buildMemoryImpactHelper } from "./build-memory-impact-helper"
 import { copyIcons, copyWorkspaceRuntimeTemplates } from "./utils"
 
 const SCRIPT_DIR = import.meta.dir
@@ -44,6 +45,7 @@ try {
 }
 
 await ensureElectronNativeModules()
+await buildMemoryImpactHelper()
 
 async function patchDevBundleMetadata() {
   if (process.platform !== "darwin") return

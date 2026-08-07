@@ -28,8 +28,8 @@
   height: 6px;
 }
 [data-scrollable-pane]::-webkit-scrollbar-thumb {
-  background: var(--border-weak-base, rgba(0, 0, 0, 0.15));
-  border-radius: 3px;
+  background: var(--border-weak-base);
+  border-radius: var(--radius-3);
 }
 [data-scrollable-pane]::-webkit-scrollbar-track {
   background: transparent;
@@ -80,7 +80,7 @@
 .tl-dot-wave span {
   width: 4px;
   height: 4px;
-  border-radius: 9999px;
+  border-radius: var(--radius-pill);
   background: var(--icon-base);
   animation: tl-dot-wave 1s ease-in-out infinite;
 }
@@ -389,7 +389,7 @@
 .codex-model-picker [data-slot="list-search"],
 .claxedo-composer-menu [data-slot="list-search"] {
   background-color: var(--overlay-surface-input);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 
 /*
@@ -484,6 +484,20 @@ html[data-theme="codex"] {
   --v2-font-family-sans:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
   font-family: var(--font-family-sans);
+  --font-weight-body: 400;
+  --font-weight-regular: 400;
+  --menu-item-font-size: var(--font-size-base);
+  --menu-item-font-weight: var(--font-weight-body);
+  --menu-item-line-height: var(--line-height-large);
+  --letter-spacing-ui: 0;
+  --letter-spacing-navigation: 0;
+  --letter-spacing-body-tight: 0;
+  --letter-spacing-heading: 0;
+  --letter-spacing-display: 0;
+  --letter-spacing-title: 0;
+  --letter-spacing-chat: 0;
+  --letter-spacing-tight: 0;
+  --letter-spacing-tightest: 0;
   font-synthesis: none;
   text-rendering: geometricPrecision;
   -webkit-font-smoothing: antialiased;
@@ -519,13 +533,27 @@ html[data-theme="codex"] {
   --surface-card-radius: var(--radius-overlay);
   --surface-card-border: 0;
   --surface-card-shadow: var(--elevation-prominent);
-  --surface-composer-shadow: inset 0 0 0 1px var(--composer-border), var(--elevation-shadow-raised);
+  /*
+   * Installed Codex composer (`app-initial`): `border: 0`, `radius-3xl`
+   * (20px), input background at 90% opacity over a 16px backdrop blur, and
+   * `--elevation-prominent`. The half-pixel stroke already lives inside that
+   * elevation; adding a CSS border or inset ring makes the shell look doubled.
+   */
+  --surface-composer-background: color-mix(in oklab, var(--shell-surface-composer) 90%, transparent);
+  --surface-composer-backdrop-filter: blur(16px);
+  --surface-composer-radius: 20px;
+  --surface-composer-shadow: var(--elevation-prominent);
+  /* Installed Codex user bubble: foreground/5, rounded-2xl (16px), no stroke. */
+  --surface-user-message: color-mix(in oklab, var(--text-strong) 5%, transparent);
+  --surface-user-message-radius: 16px;
   --surface-sidebar-shadow: var(--elevation-sidebar);
 }
 
 html[data-theme="codex"] body {
   font-family: var(--font-family-sans);
-  letter-spacing: -0.006em;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-body);
+  letter-spacing: var(--letter-spacing-normal);
 }
 
 /*
@@ -557,36 +585,57 @@ html[data-theme="codex"] [data-testid="global-navigation"] {
 html[data-theme="codex"] [data-testid="global-navigation"] button,
 html[data-theme="codex"] [data-testid="project-header"],
 html[data-theme="codex"] [data-testid="workspace-project-header"] {
-  font-size: 14px;
-  font-weight: 400;
-  letter-spacing: -0.008em;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-body);
+  letter-spacing: var(--letter-spacing-navigation);
+}
+
+html[data-theme="codex"][data-color-scheme="light"] [data-testid="global-navigation"] button,
+html[data-theme="codex"][data-color-scheme="light"] [data-testid="project-header"],
+html[data-theme="codex"][data-color-scheme="light"] [data-testid="workspace-project-header"],
+html[data-theme="codex"][data-color-scheme="light"] [data-slot="session-navigation-title"] {
+  color: var(--text-strong);
+}
+
+/* Installed Codex navigation rows are 30px with its 10px `radius-lg`. */
+html[data-theme="codex"] [data-testid="global-navigation"] button,
+html[data-theme="codex"] [data-testid="project-header"],
+html[data-theme="codex"] [data-testid="workspace-project-header"],
+html[data-theme="codex"] [data-testid="rail-sidebar-session-row"],
+html[data-theme="codex"] [data-testid="rail-sidebar-terminal-row"] {
+  min-height: 30px;
+  border-radius: var(--radius-xl);
+}
+
+html[data-theme="codex"] [data-testid="rail-sidebar-session-row"] [data-slot="navigation-row-activate"],
+html[data-theme="codex"] [data-testid="rail-sidebar-terminal-row"] [data-slot="navigation-row-activate"] {
+  border-radius: var(--radius-xl);
 }
 
 html[data-theme="codex"] [data-slot="rail-section-label"] {
   color: var(--text-weak);
-  font-size: 13px;
-  font-weight: 400;
-  letter-spacing: -0.006em;
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-body);
+  letter-spacing: var(--letter-spacing-body-tight);
   text-transform: none;
 }
 
 html[data-theme="codex"] [data-slot="session-navigation-title"] {
-  font-size: 14px;
-  font-weight: 400;
-  letter-spacing: -0.008em;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-body);
+  letter-spacing: var(--letter-spacing-navigation);
 }
 
 html[data-theme="codex"] [data-testid="rail-sidebar-session-row"][data-active="true"] [data-slot="session-navigation-title"] {
-  font-weight: 500;
+  font-weight: var(--font-weight-body);
 }
 
 html[data-theme="codex"] [data-slot="session-navigation-time"] {
-  font-size: 12px;
+  font-size: var(--font-size-small);
 }
 
-html[data-theme="codex"] [data-testid="rail-sidebar"] [aria-current="page"],
-html[data-theme="codex"] [data-testid="project-header"][data-active="true"],
-html[data-theme="codex"] [data-testid="workspace-project-header"][data-active="true"] {
+html[data-theme="codex"] [data-testid="rail-sidebar-session-row"][data-active="true"],
+html[data-theme="codex"] [data-testid="rail-sidebar-terminal-row"][data-active="true"] {
   background-color: var(--row-surface-selected);
 }
 
@@ -609,7 +658,21 @@ html[data-theme="codex"] [data-slot="workspace-tab"][data-selected="true"] {
 
 html[data-theme="codex"] [data-component="session-new-composer"],
 html[data-theme="codex"] [data-component="session-composer"] {
-  background-color: var(--shell-surface-composer);
+  background-color: var(--surface-composer-background);
+  border: 0;
+  border-radius: var(--surface-composer-radius);
+  backdrop-filter: var(--surface-composer-backdrop-filter);
+}
+
+/*
+ * The legacy session layout otherwise replaces the modern user bubble with a
+ * white card, a full 1px border, and a 6px radius. Codex uses the same bubble
+ * treatment in both layouts, so keep that legacy branch from changing it.
+ */
+html[data-theme="codex"] body:not([data-new-layout]) [data-component="user-message"] [data-slot="user-message-text"] {
+  background: var(--surface-user-message);
+  border: 0;
+  border-radius: var(--surface-user-message-radius);
 }
 
 /*
@@ -689,9 +752,9 @@ html[data-theme="codex"] [data-component="toast-v2"] {
 html[data-theme="codex"] [data-component="prompt-input"] {
   color: var(--text-strong);
   font-family: var(--font-family-sans);
-  font-size: 14px;
-  font-weight: 400;
-  letter-spacing: -0.006em;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-body);
+  letter-spacing: var(--letter-spacing-body-tight);
 }
 
 html[data-theme="codex"] [data-component="prompt-input"][data-placeholder]::before {
@@ -736,23 +799,115 @@ html[data-theme="codex"] [data-component="icon"] [data-slot="icon-svg"] {
   shape-rendering: geometricPrecision;
 }
 
-html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-item"] + [data-slot="accordion-item"] {
-  margin-top: -0.5px;
-}
-
-html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-trigger"],
-html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-content"] {
-  border-width: 0.5px;
-  border-color: var(--border-weak-base);
-}
-
-html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-diff-chevron"] {
-  color: var(--icon-weak-base);
+html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] {
+  gap: 2px;
 }
 
 html[data-theme="codex"]
   .claxedo-workspace-review
-  [data-slot="accordion-trigger"]:hover
-  [data-slot="session-review-diff-chevron"] {
+  [data-component="accordion"]
+  [data-slot="accordion-item"]
+  + [data-slot="accordion-item"] {
+  margin-top: 0;
+}
+
+html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-trigger"],
+html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-content"] {
+  border: 0;
+  border-radius: var(--radius-md);
+}
+
+html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-trigger"] {
+  height: 30px;
+  padding: 6px 12px;
+  background-color: transparent;
+}
+
+html[data-theme="codex"][data-color-scheme="dark"]
+  .claxedo-workspace-review
+  [data-component="accordion"]
+  [data-slot="accordion-trigger"] {
+  background-color: var(--surface-base);
+}
+
+html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-file-info"] {
+  gap: 10px;
+}
+
+html[data-theme="codex"] .claxedo-workspace-review [data-component="file-icon"] {
+  width: 14px;
+  height: 14px;
+}
+
+html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-trigger-actions"] {
+  position: relative;
+  min-width: 68px;
+  gap: 0;
+}
+
+html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-row-summary"] {
+  margin-left: auto;
+  opacity: 1;
+  transition: opacity 0.12s ease;
+}
+
+html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-row-controls"] {
+  position: absolute;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+html[data-theme="codex"]
+  .claxedo-workspace-review
+  [data-slot="accordion-trigger"]:is(:hover, :focus-within)
+  [data-slot="session-review-row-summary"] {
+  opacity: 0;
+}
+
+html[data-theme="codex"]
+  .claxedo-workspace-review
+  [data-slot="accordion-trigger"]:is(:hover, :focus-within)
+  [data-slot="session-review-row-controls"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-copy-button"],
+html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-view-button"],
+html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-diff-chevron"] {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  padding: 3px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--icon-weak-base);
+  opacity: 1;
+}
+
+html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-copy-button"],
+html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-view-button"] {
+  cursor: pointer;
+}
+
+html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-copy-button"]:hover,
+html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-view-button"]:hover {
+  background: var(--row-surface-hover);
   color: var(--icon-base);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-row-summary"],
+  html[data-theme="codex"] .claxedo-workspace-review [data-slot="session-review-row-controls"] {
+    transition: none;
+  }
 }

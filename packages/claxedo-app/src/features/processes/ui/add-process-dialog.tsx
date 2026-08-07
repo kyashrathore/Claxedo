@@ -323,7 +323,7 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
           </For>
           <button
             type="button"
-            class="flex items-center gap-1.5 text-[11px] font-medium text-text-weak hover:text-text-base px-1.5 py-1 rounded hover:bg-surface-base-hover transition-colors self-start"
+            class="flex items-center gap-1.5 text-xs font-medium text-text-weak hover:text-text-base px-1.5 py-1 rounded hover:bg-surface-base-hover transition-colors self-start"
             onClick={addEnvEntry}
           >
             <Icon name="plus-small" size="small" />
@@ -392,7 +392,7 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
               />
               <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-surface-inset-base border border-border-weak-base">
                 <Icon name="console" size="small" class="text-text-weaker shrink-0" />
-                <p class="text-[11px] font-mono text-text-weak">
+                <p class="text-xs font-mono text-text-weak">
                   <Show
                     when={store.portInject.trim().startsWith("-")}
                     fallback={
@@ -420,9 +420,9 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
               <Show when={effectivePortName()}>
                 <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-surface-inset-base border border-border-weak-base">
                   <Icon name="bubble-5" size="small" class="text-text-weaker shrink-0" />
-                  <p class="text-[11px] text-text-weak leading-relaxed">
+                  <p class="text-xs text-text-weak leading-relaxed">
                     Other processes can use{" "}
-                    <code class="px-1 py-0.5 rounded bg-surface-base-hover text-text-base font-mono text-[10px]">
+                    <code class="px-1 py-0.5 rounded bg-surface-base-hover text-text-base font-mono text-2xs">
                       {`{{port:${effectivePortName()}}}`}
                     </code>
                     {" "}in their env vars to resolve this port number at startup.
@@ -441,7 +441,7 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
             when={!showDeleteConfirm()}
             fallback={
               <>
-                <span class="text-[12px] text-text-weak">Are you sure you want to delete this process?</span>
+                <span class="text-sm text-text-weak">Are you sure you want to delete this process?</span>
                 <div class="flex-1" />
                 <Button
                   type="button"

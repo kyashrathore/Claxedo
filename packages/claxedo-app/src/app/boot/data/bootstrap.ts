@@ -13,6 +13,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { formatServerError } from "@/lib/server-errors"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
+import { setProviderQueryData } from "@/platform/query/provider-cache"
 import {
   normalizeProjectList,
   projectCatalogMissingWorkspace,
@@ -209,7 +210,7 @@ function setBootstrapProviderQueries(input: {
   setGlobalState: (patch: Partial<GlobalBootstrapState>) => void
 }) {
   const harness = providerQueryHarness(input.harnessType)
-  queryClient.setQueryData(queryKeys.controlPlane.providers(input.baseUrl, undefined, harness), input.providers)
+  setProviderQueryData(queryKeys.controlPlane.providers(input.baseUrl, undefined, harness), input.providers)
   if (!harness) input.setGlobalState({ provider: input.providers })
 }
 
@@ -460,7 +461,7 @@ export async function bootstrapDirectory(input: {
         const existing = queryClient.getQueryData<NormalizedProviderListResponse>(providerQueryKey)
         if (existing?.all && existing.all.size > 0) return
       }
-      queryClient.setQueryData(providerQueryKey, data)
+      setProviderQueryData(providerQueryKey, data)
     }
     const baseUrl = input.baseUrl
     const runtime = runtimeRequest(workspace)

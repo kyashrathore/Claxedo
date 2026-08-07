@@ -17,7 +17,7 @@
   "queryMirrorEffects": 6,
   "runtimeGatewayOutsideTransport": 0,
   "sdkImportingFiles": 86,
-  "setQueryDataCalls": 90,
+  "setQueryDataCalls": 88,
   "setQueryDataFiles": 37,
   "signedControlPlaneAccess": 0,
   "suppressionFlags": 7,

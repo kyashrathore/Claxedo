@@ -42,9 +42,9 @@
     outline: none;
 
     font-family: var(--font-family-sans);
-    font-size: var(--font-size-small);
-    font-weight: var(--font-weight-medium);
-    line-height: var(--line-height-large);
+    font-size: var(--menu-item-font-size);
+    font-weight: var(--menu-item-font-weight);
+    line-height: var(--menu-item-line-height);
     letter-spacing: var(--letter-spacing-normal);
     color: var(--overlay-text);
 
@@ -90,19 +90,27 @@
     color: var(--overlay-text-muted);
   }
 
+  /*
+   * Kobalte renders this as an <hr>, so the UA's `border: 1px inset` applies on
+   * all four sides and stacks with `height` — the rule below used to paint a
+   * ~3px slab bleeding past the panel padding. Zero the border first, then draw
+   * the single hairline, and inset it so it reads as a divider between rows
+   * rather than a band across the whole panel.
+   */
   [data-slot="dropdown-menu-separator"] {
-    height: 1px;
-    margin: 4px -4px;
-    border-top-color: var(--overlay-border);
+    height: 0;
+    margin: 4px;
+    border: 0;
+    border-top: 1px solid var(--overlay-border);
   }
 
   [data-slot="dropdown-menu-group-label"] {
     display: block;
     padding: 4px 8px;
     font-family: var(--font-family-sans);
-    font-size: var(--font-size-x-small);
-    font-weight: var(--font-weight-medium);
-    line-height: var(--line-height-large);
+    font-size: var(--menu-group-font-size);
+    font-weight: var(--menu-group-font-weight);
+    line-height: var(--menu-group-line-height);
     letter-spacing: var(--letter-spacing-normal);
     color: var(--overlay-text-muted);
   }

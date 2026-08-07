@@ -7,6 +7,7 @@ export type WindowsCimRow = {
   kernelTicks: bigint
   userTicks: bigint
   rssBytes: bigint
+  memoryImpactBytes?: bigint
 }
 
 export function parseLinuxStartTicks(stat: string) {
@@ -35,9 +36,11 @@ export function parseWindowsCimRow(input: unknown): WindowsCimRow | undefined {
   const kernelTicks = decimal(row.kernelTicks)
   const userTicks = decimal(row.userTicks)
   const rssBytes = decimal(row.rssBytes)
+  const memoryImpactBytes = row.memoryImpactBytes === undefined ? undefined : decimal(row.memoryImpactBytes)
   if (creationTicks === undefined || kernelTicks === undefined || userTicks === undefined || rssBytes === undefined)
     return
-  return { pid: row.pid, ppid: row.ppid, creationTicks, kernelTicks, userTicks, rssBytes }
+  if (row.memoryImpactBytes !== undefined && memoryImpactBytes === undefined) return
+  return { pid: row.pid, ppid: row.ppid, creationTicks, kernelTicks, userTicks, rssBytes, ...(memoryImpactBytes === undefined ? {} : { memoryImpactBytes }) }
 }
 
 export function windowsCreationIdentity(row: WindowsCimRow): LocalDiagnostics.CreationIdentity {

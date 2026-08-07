@@ -13,8 +13,8 @@
   left: 0;
   pointer-events: none;
   color: var(--text-weaker);
-  font-size: 0.875rem;
-  line-height: 1.55;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-prose);
 }
 
 .richtext-frame:not(.is-empty) .richtext-placeholder {
@@ -24,8 +24,8 @@
 .richtext-surface {
   min-height: 6.5rem;
   color: var(--text-base);
-  font-size: 0.875rem;
-  line-height: 1.55;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-prose);
   outline: none;
 }
 
@@ -38,19 +38,19 @@
 }
 
 .richtext-surface h1 {
-  font-size: 1.15rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: var(--font-size-rich-heading-one);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-heading);
 }
 
 .richtext-surface h2 {
-  font-size: 1.05rem;
-  font-weight: 600;
+  font-size: var(--font-size-rich-heading-two);
+  font-weight: var(--font-weight-semibold);
 }
 
 .richtext-surface h3 {
-  font-size: 0.95rem;
-  font-weight: 600;
+  font-size: var(--font-size-rich-heading-three);
+  font-weight: var(--font-weight-semibold);
 }
 
 .richtext-surface ul,
@@ -75,7 +75,7 @@
   border-radius: var(--radius-sm);
   background: var(--surface-base);
   font-family: var(--font-family-mono);
-  font-size: 0.85em;
+  font-size: var(--font-size-inline-code);
 }
 
 .richtext-surface pre {

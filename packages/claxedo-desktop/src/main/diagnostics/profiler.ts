@@ -280,6 +280,15 @@ export function createProfiler(options: {
   function recordSpikes(observation: DiagnosticsObservation, previous: LocalDiagnostics.MetricPoint | undefined) {
     if (!previous) return
     recordSpike("cpu", observation.point.cpuMachinePercent, previous.cpuMachinePercent, DIAGNOSTICS_CPU_SPIKE_DELTA)
+    if (observation.point.memoryImpact && previous.memoryImpact) {
+      recordSpike(
+        "memory-impact",
+        observation.point.memoryImpact.bytes,
+        previous.memoryImpact.bytes,
+        DIAGNOSTICS_RSS_SPIKE_DELTA_BYTES,
+      )
+      return
+    }
     recordSpike("rss", observation.point.rssBytes, previous.rssBytes, DIAGNOSTICS_RSS_SPIKE_DELTA_BYTES)
 
     function recordSpike(
@@ -796,9 +805,15 @@ export function compactMetricPoints(
   })
   const rollups = [...buckets.values()].flatMap((bucket) => {
     const snapshots = Map.groupBy(bucket, (sample) => sample.at)
-    const peakCpuAt = peakSnapshotAt(snapshots, "cpuMachinePercent")
-    const peakRssAt = peakSnapshotAt(snapshots, "rssBytes")
-    return [...new Set([peakCpuAt, peakRssAt])].flatMap((at) => snapshots.get(at) ?? [])
+    const peakCpuAt = peakSnapshotAt(snapshots, (sample) => sample.cpuMachinePercent)
+    const peakRssAt = peakSnapshotAt(snapshots, (sample) => sample.rssBytes)
+    const memoryImpactSnapshots = new Map([...snapshots].filter(([, samples]) =>
+      samples.some((sample) => sample.memoryImpact?.bytes.state === "available")))
+    const peakMemoryImpactAt = memoryImpactSnapshots.size > 0
+      ? peakSnapshotAt(memoryImpactSnapshots, (sample) => sample.memoryImpact?.bytes)
+      : undefined
+    return [...new Set([peakCpuAt, peakRssAt, peakMemoryImpactAt].filter((at): at is number => at !== undefined))]
+      .flatMap((at) => snapshots.get(at) ?? [])
   })
   samples.splice(0, samples.length, ...[...rollups, ...raw].sort(
     (left, right) => left.at - right.at || left.processId.localeCompare(right.processId),
@@ -811,12 +826,15 @@ function sameContext(left: LocalDiagnostics.Context | undefined, right: LocalDia
 
 function peakSnapshotAt(
   snapshots: Map<number, LocalDiagnostics.MetricPoint[]>,
-  metric: "cpuMachinePercent" | "rssBytes",
+  readingFor: (sample: LocalDiagnostics.MetricPoint) =>
+    | { state: "available"; value: number }
+    | { state: "unavailable" }
+    | undefined,
 ) {
   return [...snapshots].reduce((peak, candidate) => {
     const total = candidate[1].reduce((sum, sample) => {
-      const reading = sample[metric]
-      return reading.state === "available" ? sum + reading.value : sum
+      const reading = readingFor(sample)
+      return reading?.state === "available" ? sum + reading.value : sum
     }, 0)
     return total > peak.total ? { at: candidate[0], total } : peak
   }, { at: snapshots.keys().next().value!, total: Number.NEGATIVE_INFINITY }).at
@@ -923,6 +941,8 @@ function mergeMetricPoints(
     cpuMachinePercent:
       current.cpuMachinePercent.state === "available" ? current.cpuMachinePercent : incoming.cpuMachinePercent,
     rssBytes: current.rssBytes.state === "available" ? current.rssBytes : incoming.rssBytes,
+    memoryImpact:
+      current.memoryImpact?.bytes.state === "available" ? current.memoryImpact : incoming.memoryImpact,
   }
 }
 

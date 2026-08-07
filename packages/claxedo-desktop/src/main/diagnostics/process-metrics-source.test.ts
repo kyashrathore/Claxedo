@@ -156,7 +156,7 @@ describe("process metrics source", () => {
     expect(source.collect(2_000)[0]?.point.rssBytes).toEqual({ state: "available", value: 8_192 })
   })
 
-  test("does not invoke the host worker for complete native Electron readings", async () => {
+  test("refreshes missing Electron memory impact on a bounded cadence without resampling CPU and RSS", async () => {
     let samples = 0
     const source = createProcessMetricsSource({
       platform: "linux",
@@ -165,9 +165,15 @@ describe("process metrics source", () => {
         async reconcile() {
           return { entries: [], truncated: false }
         },
-        async sample() {
+        async sample(entries) {
           samples++
-          return []
+          return entries.map((entry) => ({
+            ...entry,
+            creation: { state: "available" as const, value: "linux-start", source: "linux-proc" as const },
+            cpuMachinePercent: 99,
+            rssBytes: 9_999,
+            memoryImpact: { kind: "pss" as const, bytes: 800 },
+          }))
         },
         async probeCreation() {
           return { state: "unavailable", reason: "identity-unavailable" }
@@ -179,7 +185,17 @@ describe("process metrics source", () => {
 
     source.collect(0)
     await Bun.sleep(0)
-    expect(samples).toBe(0)
+    expect(source.collect(500)[0]?.point).toMatchObject({
+      cpuMachinePercent: { state: "available", value: 1 },
+      rssBytes: { state: "available", value: 1_000 },
+      memoryImpact: { kind: "pss", bytes: { state: "available", value: 800 } },
+    })
+    source.collect(5_000)
+    await Bun.sleep(0)
+    expect(samples).toBe(1)
+    source.collect(10_000)
+    await Bun.sleep(0)
+    expect(samples).toBe(2)
   })
 
   test("keeps a root registered during reconciliation dirty for the next pass", async () => {

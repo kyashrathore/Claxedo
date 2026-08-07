@@ -116,6 +116,20 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     },
   }),
   product({
+    id: "macos-memory-impact-probe",
+    family: "Bounded macOS physical-footprint probe",
+    owner: "diagnostics",
+    linkage: "app",
+    observation: "host-tree",
+    stop: "supported",
+    kill: "supported",
+    source: {
+      file: "packages/claxedo-desktop/src/main/diagnostics/process-metrics-worker-runtime.ts",
+      callee: "execFileAsync",
+      calls: 1,
+    },
+  }),
+  product({
     id: "diagnostics-wsl",
     family: "Bounded WSL metrics probe",
     classification: "registered-root",

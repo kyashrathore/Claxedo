@@ -2,6 +2,8 @@ import type { Configuration } from "electron-builder"
 import { existsSync, readdirSync } from "node:fs"
 import { join, resolve } from "node:path"
 
+import { resolveTargetOsArch } from "./scripts/target-platform"
+
 const channel = (() => {
   const raw = process.env.CLAXEDO_CHANNEL
   if (raw === "dev" || raw === "beta" || raw === "prod") return raw
@@ -10,19 +12,7 @@ const channel = (() => {
 
 // Node-style os-arch for the build TARGET, so the native module set below
 // can include platform-conditional entries (Windows-only process tree).
-const targetOsArch = (() => {
-  const map: Record<string, string> = {
-    "aarch64-apple-darwin": "darwin-arm64",
-    "x86_64-apple-darwin": "darwin-x64",
-    "x86_64-pc-windows-msvc": "win32-x64",
-    "x86_64-unknown-linux-gnu": "linux-x64",
-    "aarch64-unknown-linux-gnu": "linux-arm64",
-  }
-  const rust = process.env.RUST_TARGET
-  if (rust && map[rust]) return map[rust]
-  const arch = process.arch === "arm64" ? "arm64" : "x64"
-  return `${process.platform}-${arch}`
-})()
+const targetOsArch = resolveTargetOsArch()
 // Everything the app executes is bundled from entry points at build time
 // (electron-vite main/preload/renderer, Bun.build for claxedo-server), so no
 // node_modules ship — except native modules, which cannot be bundled. This is
@@ -153,6 +143,9 @@ const getBase = (): Configuration => ({
   ],
   asarUnpack: NATIVE_MODULES.map((name) => `**/node_modules/${name}/**`),
   extraResources: [
+    ...(targetOsArch.startsWith("darwin-")
+      ? [{ from: "resources/diagnostics/", to: "diagnostics/", filter: ["macos-memory-impact"] }]
+      : []),
     {
       from: "resources/acp/",
       to: "acp/",

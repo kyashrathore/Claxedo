@@ -91,7 +91,7 @@ function SourceRevisionContext(props: { previousSource: WorkSourceRevisionRef; s
       <Show when={props.diffSummary}>
         {(summary) => (
           <DialogSection title="What changed">
-            <p class="text-[12px] leading-5 text-text-weak">{summary()}</p>
+            <p class="text-sm leading-5 text-text-weak">{summary()}</p>
           </DialogSection>
         )}
       </Show>
@@ -104,17 +104,17 @@ function ProposalPlan(props: { proposal: ReviewableProposal }) {
   return (
     <>
       <DialogSection title={`Outcomes (${props.proposal.proposedOutcomes.length})`}>
-        <For each={props.proposal.proposedOutcomes} fallback={<span class="text-[12px] text-text-weaker">No outcomes proposed.</span>}>
+        <For each={props.proposal.proposedOutcomes} fallback={<span class="text-sm text-text-weaker">No outcomes proposed.</span>}>
           {(outcome) => (
             <div class="workgraph-detail-plan-item">
               <span class="text-text-base">{outcome.title}</span>
-              <span class="text-[11px] text-text-base">{outcome.successCriteria.join(" · ")}</span>
+              <span class="text-xs text-text-base">{outcome.successCriteria.join(" · ")}</span>
             </div>
           )}
         </For>
       </DialogSection>
       <DialogSection title={`Tasks (${props.proposal.proposedWorkItems.length})`}>
-        <For each={props.proposal.proposedWorkItems} fallback={<span class="text-[12px] text-text-weaker">No tasks proposed.</span>}>
+        <For each={props.proposal.proposedWorkItems} fallback={<span class="text-sm text-text-weaker">No tasks proposed.</span>}>
           {(workItem) => <div class="workgraph-detail-plan-item text-text-base">{workItem.title}</div>}
         </For>
       </DialogSection>
@@ -124,7 +124,7 @@ function ProposalPlan(props: { proposal: ReviewableProposal }) {
             {(match) => (
               <div class="workgraph-detail-plan-item">
                 <span class="text-text-base">{match.title}</span>
-                <span class="text-[11px] text-text-base">{match.reason}</span>
+                <span class="text-xs text-text-base">{match.reason}</span>
               </div>
             )}
           </For>
@@ -212,7 +212,7 @@ function RevisionActions(props: {
                   {(target) => (
                     <div class="workgraph-detail-plan-item">
                       <span class="text-text-base">{target.title}</span>
-                      <span class="text-[11px] text-text-base">{target.state.replaceAll("_", " ")} · {target.workItemId}</span>
+                      <span class="text-xs text-text-base">{target.state.replaceAll("_", " ")} · {target.workItemId}</span>
                     </div>
                   )}
                 </For>

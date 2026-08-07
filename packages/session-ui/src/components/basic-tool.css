@@ -80,7 +80,7 @@
     flex: 0 1 auto;
     min-width: 0;
     max-width: 100%;
-    font-size: 14px;
+    font-size: var(--font-size-base);
   }
 
   [data-slot="basic-tool-tool-info-structured"] {
@@ -105,7 +105,7 @@
   [data-slot="basic-tool-tool-title"] {
     flex-shrink: 0;
     font-family: var(--font-family-sans);
-    font-size: 14px;
+    font-size: var(--font-size-base);
     font-style: normal;
     font-weight: var(--font-weight-medium);
     line-height: var(--line-height-large);
@@ -130,7 +130,7 @@
     white-space: nowrap;
     font-family: var(--font-family-sans);
     font-variant-numeric: tabular-nums;
-    font-size: 14px;
+    font-size: var(--font-size-base);
     font-style: normal;
     font-weight: var(--font-weight-regular);
     line-height: var(--line-height-large);
@@ -176,7 +176,7 @@
     white-space: nowrap;
     font-family: var(--font-family-sans);
     font-variant-numeric: tabular-nums;
-    font-size: 14px;
+    font-size: var(--font-size-base);
     font-style: normal;
     font-weight: var(--font-weight-regular);
     line-height: var(--line-height-large);
@@ -197,7 +197,7 @@
     padding-left: 8px;
     font-family: var(--font-family-sans);
     font-variant-numeric: tabular-nums;
-    font-size: 14px;
+    font-size: var(--font-size-base);
     line-height: var(--line-height-large);
     color: var(--text-weaker);
   }
@@ -210,8 +210,8 @@
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border-radius: 6px;
-  border: 0.5px solid var(--border-weak-base, rgba(255, 255, 255, 0.08));
+  border-radius: var(--radius-md);
+  border: 0.5px solid var(--border-weak-base);
   background: color-mix(in srgb, var(--background-base) 92%, transparent);
   transition:
     border-color 0.15s ease,
@@ -265,7 +265,7 @@
   [data-component="task-tool-title"] {
     flex-shrink: 0;
     font-family: var(--font-family-sans);
-    font-size: 14px;
+    font-size: var(--font-size-base);
     font-style: normal;
     font-weight: var(--font-weight-medium);
     line-height: var(--line-height-large);
@@ -280,7 +280,7 @@
 
   &:hover,
   &:focus-visible {
-    border-color: var(--border-weak-base, rgba(255, 255, 255, 0.08));
+    border-color: var(--border-weak-base);
     background: color-mix(in srgb, var(--background-stronger) 88%, transparent);
 
     [data-component="task-tool-action"] {
@@ -301,7 +301,7 @@ body[data-new-layout] {
 
     [data-component="task-tool-surface"] {
       padding: 8px 12px;
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       background: var(--v2-background-bg-layer-01);
     }
 
@@ -321,10 +321,10 @@ body[data-new-layout] {
       height: 20px;
       font-family: var(--v2-font-family-sans, "Inter", sans-serif);
       font-style: normal;
-      font-weight: 530;
-      font-size: 13px;
-      line-height: 20px;
-      letter-spacing: -0.04px;
+      font-weight: var(--font-weight-medium);
+      font-size: var(--font-size-compact);
+      line-height: var(--line-height-20);
+      letter-spacing: var(--letter-spacing-ui);
       color: var(--v2-text-text-base);
       flex: none;
       flex-grow: 0;
@@ -333,10 +333,10 @@ body[data-new-layout] {
     [data-slot="basic-tool-tool-subtitle"] {
       font-family: var(--v2-font-family-sans, "Inter", sans-serif);
       font-style: normal;
-      font-weight: 440;
-      font-size: 13px;
-      line-height: 20px;
-      letter-spacing: -0.04px;
+      font-weight: var(--font-weight-body);
+      font-size: var(--font-size-compact);
+      line-height: var(--line-height-20);
+      letter-spacing: var(--letter-spacing-ui);
       color: var(--v2-text-text-base);
       font-variation-settings: "slnt" 0;
       flex: none;
@@ -344,7 +344,7 @@ body[data-new-layout] {
     }
 
     [data-component="session-progress-indicator-v2"] {
-      color: var(--task-agent-color, light-dark(var(--v2-text-text-base), #ffffff));
+      color: var(--task-agent-color, var(--v2-text-text-base));
     }
 
     &:hover,

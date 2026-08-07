@@ -2,14 +2,10 @@ $ErrorActionPreference = "Stop"
 
 while ($null -ne ($line = [Console]::In.ReadLine())) {
   try {
-    # Assignment, never @(... $line | ConvertFrom-Json ...): on Windows
-    # PowerShell 5.1 ConvertFrom-Json emits the JSON array as ONE pipeline
-    # object, and wrapping it in @() nests it — @(@(pid)) — so the [int]
-    # cast below throws InvalidCast on every query. A bare assignment stays
-    # flat under both behaviors (5.1 single-object, 7 unrolled scalar); the
-    # trailing @() then normalizes scalar-vs-array without ever nesting.
+    # Parse the bounded request object once. Wrapping only its pids property
+    # in @() normalizes one PID and many PIDs under both PowerShell 5.1 and 7.
     $parsed = $line | ConvertFrom-Json
-    $inputPids = @($parsed)
+    $inputPids = @($parsed.pids)
     if ($inputPids.Count -gt 512) {
       throw "too many process identifiers"
     }
@@ -26,10 +22,21 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
     }
 
     $filter = (($pids | ForEach-Object { "ProcessId = " + $_.ToString([Globalization.CultureInfo]::InvariantCulture) }) -join " OR ")
+    $impactByPid = @{}
+    if ($parsed.memoryImpact -eq $true) {
+      try {
+      $impactFilter = (($pids | ForEach-Object { "IDProcess = " + $_.ToString([Globalization.CultureInfo]::InvariantCulture) }) -join " OR ")
+      Get-CimInstance -ClassName Win32_PerfRawData_PerfProc_Process -Filter $impactFilter -Property IDProcess,WorkingSetPrivate |
+        ForEach-Object { $impactByPid[[int]$_.IDProcess] = [uint64]$_.WorkingSetPrivate }
+      } catch {
+        # WorkingSetSize remains an explicit RSS fallback when the performance
+        # provider is unavailable; a missing private value never fails CPU/RSS.
+      }
+    }
     $rows = @(
       Get-CimInstance -ClassName Win32_Process -Filter $filter -Property ProcessId,ParentProcessId,CreationDate,KernelModeTime,UserModeTime,WorkingSetSize |
         ForEach-Object {
-          [ordered]@{
+          $row = [ordered]@{
             pid = [int]$_.ProcessId
             ppid = [int]$_.ParentProcessId
             creationTicks = $_.CreationDate.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
@@ -37,6 +44,10 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
             userTicks = ([uint64]$_.UserModeTime).ToString([Globalization.CultureInfo]::InvariantCulture)
             rssBytes = ([uint64]$_.WorkingSetSize).ToString([Globalization.CultureInfo]::InvariantCulture)
           }
+          if ($impactByPid.ContainsKey([int]$_.ProcessId)) {
+            $row["memoryImpactBytes"] = $impactByPid[[int]$_.ProcessId].ToString([Globalization.CultureInfo]::InvariantCulture)
+          }
+          $row
         }
     )
     [Console]::Out.WriteLine(([ordered]@{ ok = $true; rows = @($rows) } | ConvertTo-Json -Compress -Depth 3))

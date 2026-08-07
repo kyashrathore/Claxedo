@@ -20,10 +20,10 @@
   border-radius: var(--surface-overlay-radius, 4px);
 
   font-style: normal;
-  font-weight: 530;
-  font-size: 11px;
-  line-height: 12px;
-  letter-spacing: 0.05px;
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-x-small);
+  line-height: var(--line-height-12);
+  letter-spacing: var(--letter-spacing-micro-wide);
   color: var(--v2-text-text-base);
   font-variant-numeric: tabular-nums;
   font-variation-settings: "slnt" 0;

@@ -637,7 +637,7 @@ function TitlebarUpdatePill(props: { update?: TitlebarUpdate }) {
     <Show when={version() !== undefined}>
       <button
         type="button"
-        class="h-5 shrink-0 rounded-[27px] bg-[var(--v2-background-bg-accent)] px-2.5 text-[11px] font-[530] leading-[1.1] tracking-[-0.04px] text-[var(--v2-text-text-contrast)] disabled:opacity-60"
+        class="h-5 shrink-0 rounded-[var(--radius-pill)] bg-[var(--v2-background-bg-accent)] px-2.5 text-xs font-medium leading-[var(--line-height-denser)] tracking-ui text-[var(--v2-text-text-contrast)] disabled:opacity-60"
         onClick={() => props.update?.install()}
         disabled={props.update?.installing()}
         aria-label={language.t("toast.update.action.installRestart")}
@@ -661,12 +661,12 @@ function TabNavItem(props: {
   const isActive = () => !!match()
   return (
     <div
-      class="group relative flex h-7 min-w-24 max-w-60 flex-row items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-[6px] bg-[var(--tab-bg)] pl-1.5 [--tab-bg:var(--v2-background-bg-deep)] hover:[--tab-bg:var(--v2-background-bg-layer-02)] data-[active='true']:[--tab-bg:var(--v2-background-bg-layer-02)]"
+      class="group relative flex h-7 min-w-24 max-w-60 flex-row items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-md bg-[var(--tab-bg)] pl-1.5 [--tab-bg:var(--v2-background-bg-deep)] hover:[--tab-bg:var(--v2-background-bg-layer-02)] data-[active='true']:[--tab-bg:var(--v2-background-bg-layer-02)]"
       data-active={isActive()}
     >
       <a
         href={props.href}
-        class="flex h-full min-w-0 flex-1 flex-row items-center gap-1.5 overflow-hidden text-[13px] font-medium text-v2-text-text-faint group-data-[active='true']:text-v2-text-text-base"
+        class="flex h-full min-w-0 flex-1 flex-row items-center gap-1.5 overflow-hidden text-compact font-medium text-v2-text-text-faint group-data-[active='true']:text-v2-text-text-base"
       >
         <ProjectTabAvatar project={props.project} directory={props.directory} />
         <span class="text-clip">{props.title}</span>
@@ -707,11 +707,11 @@ function ProjectTabAvatar(props: { project?: LocalProject; directory: string }) 
 
 function NewSessionTabItem(props: { href: string; title: string; onClose: () => void }) {
   return (
-    <div class="group relative flex h-7 max-w-60 flex-row items-center gap-1.5 overflow-hidden rounded-[6px] bg-[var(--v2-overlay-simple-overlay-pressed)] pl-1.5 pr-8 whitespace-nowrap focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[var(--v2-border-border-focus)]">
+    <div class="group relative flex h-7 max-w-60 flex-row items-center gap-1.5 overflow-hidden rounded-md bg-[var(--v2-overlay-simple-overlay-pressed)] pl-1.5 pr-8 whitespace-nowrap focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[var(--v2-border-border-focus)]">
       <a
         href={props.href}
         aria-current="page"
-        class="flex h-full min-w-0 flex-1 flex-row items-center gap-1.5 overflow-hidden text-[13px] font-medium leading-none text-[var(--v2-text-text-base)]"
+        class="flex h-full min-w-0 flex-1 flex-row items-center gap-1.5 overflow-hidden text-compact font-medium leading-none text-[var(--v2-text-text-base)]"
       >
         <span class="flex size-4 shrink-0 rotate-90 items-center justify-center">
           <TitlebarEditIcon />
@@ -743,7 +743,7 @@ function ChannelIndicator() {
   return (
     <>
       {["beta", "dev"].includes(import.meta.env.VITE_OPENCODE_CHANNEL) && (
-        <div class="bg-icon-interactive-base text-[#FFF] font-medium px-2 rounded-sm uppercase font-mono">
+        <div class="bg-icon-interactive-base text-text-invert-strong font-medium px-2 rounded-sm uppercase font-mono">
           {import.meta.env.VITE_OPENCODE_CHANNEL.toUpperCase()}
         </div>
       )}

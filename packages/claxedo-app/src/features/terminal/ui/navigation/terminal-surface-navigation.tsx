@@ -130,7 +130,7 @@ function TerminalSurfaceNavigationRow(props: {
         </NavigationRowGlyph>
       </Show>
       <span
-        class="relative z-[1] pointer-events-none font-mono text-[12px] leading-tight truncate flex-1 min-w-0"
+        class="relative z-[1] pointer-events-none font-mono text-sm leading-tight truncate flex-1 min-w-0"
         classList={{
           "text-text-strong font-semibold": props.row.active,
           "text-text-weak": !props.row.active,

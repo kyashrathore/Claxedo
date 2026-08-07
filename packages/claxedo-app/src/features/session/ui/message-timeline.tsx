@@ -226,7 +226,7 @@ function TurnFoldRow(props: {
           event.stopPropagation()
           props.onToggle()
         }}
-        class="group/turn-fold flex items-center gap-1.5 h-8 rounded-[4px] px-1 -mx-1 text-text-weak hover:text-text-strong focus-visible:text-text-strong focus-visible:outline-none transition-colors"
+        class="group/turn-fold flex items-center gap-1.5 h-8 rounded-sm px-1 -mx-1 text-text-weak hover:text-text-strong focus-visible:text-text-strong focus-visible:outline-none transition-colors"
       >
         <span class="text-14-medium tabular-nums">{label()}</span>
         <span
@@ -372,7 +372,7 @@ function DiffHoverCard(props: { diff: SummaryDiff; children: JSX.Element }) {
         {props.children}
       </KobalteTooltip.Trigger>
       <KobalteTooltip.Portal>
-        <KobalteTooltip.Content class="z-[95] max-w-[min(560px,80vw)] max-h-80 overflow-auto rounded-[10px] border-[0.5px] border-border-weak-base bg-background-stronger shadow-xl">
+        <KobalteTooltip.Content class="z-[95] max-w-[min(560px,80vw)] max-h-80 overflow-auto rounded-xl border-[0.5px] border-border-weak-base bg-background-stronger shadow-xl">
           <div class="flex items-center justify-between gap-3 px-3 py-2 border-b-[0.5px] border-border-weak-base text-12-regular text-text-weak">
             <span class="truncate">{props.diff.file}</span>
             <DiffChanges changes={props.diff} />
@@ -1400,7 +1400,7 @@ export function MessageTimeline(props: {
                 <div class="flex w-max min-w-full justify-end gap-2">
                   <Index each={comments()}>
                     {(comment) => (
-                      <div class="shrink-0 max-w-[260px] rounded-[6px] border border-border-weak-base bg-background-stronger px-2.5 py-2">
+                      <div class="shrink-0 max-w-[260px] rounded-md border border-border-weak-base bg-background-stronger px-2.5 py-2">
                         <div class="flex items-center gap-1.5 min-w-0 text-11-medium text-text-strong">
                           <FileIcon node={{ path: comment().path, type: "file" }} class="size-3.5 shrink-0" />
                           <span class="truncate">{getFilename(comment().path)}</span>
@@ -1686,7 +1686,7 @@ export function MessageTimeline(props: {
             >
               <button
                 type="button"
-                class="flex w-full items-center gap-2 rounded-[6px] px-2 h-9 text-13-regular text-text-base hover:bg-surface-base-active"
+                class="flex w-full items-center gap-2 rounded-md px-2 h-9 text-13-regular text-text-base hover:bg-surface-base-active"
                 onClick={() => {
                   openFileInPanel(menu().path)
                   setContextMenu(undefined)
@@ -1696,7 +1696,7 @@ export function MessageTimeline(props: {
               </button>
               <button
                 type="button"
-                class="flex w-full items-center gap-2 rounded-[6px] px-2 h-9 text-13-regular text-text-base hover:bg-surface-base-active"
+                class="flex w-full items-center gap-2 rounded-md px-2 h-9 text-13-regular text-text-base hover:bg-surface-base-active"
                 onClick={() => {
                   void navigator.clipboard?.writeText(resolveTimelineFilePath(menu().path, sdk.directory))
                   setContextMenu(undefined)
@@ -1707,7 +1707,7 @@ export function MessageTimeline(props: {
               <Show when={platform.showItemInFolder}>
                 <button
                   type="button"
-                  class="flex w-full items-center gap-2 rounded-[6px] px-2 h-9 text-13-regular text-text-base hover:bg-surface-base-active"
+                  class="flex w-full items-center gap-2 rounded-md px-2 h-9 text-13-regular text-text-base hover:bg-surface-base-active"
                   onClick={() => {
                     void platform.showItemInFolder?.(resolveTimelineFilePath(menu().path, sdk.directory))
                     setContextMenu(undefined)
@@ -1857,7 +1857,7 @@ export function MessageTimeline(props: {
                         data-slot="session-title-child"
                         value={title.draft}
                         disabled={titleMutation.isPending}
-                        class="text-14-medium text-text-strong grow-1 min-w-0 rounded-[6px] pl-1 -ml-1"
+                        class="text-14-medium text-text-strong grow-1 min-w-0 rounded-md pl-1 -ml-1"
                         style={{ "--inline-input-shadow": "var(--shadow-xs-border-select)" }}
                         onInput={(event) => setTitle("draft", event.currentTarget.value)}
                         onKeyDown={(event) => {

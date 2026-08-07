@@ -65,9 +65,9 @@
 }
 
 .ui-context-card-label {
-  font-size: 0.75rem;
-  font-weight: 500;
-  letter-spacing: 0.01em;
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--letter-spacing-wide);
 }
 
 /* The label-as-action variant: same quiet type, hover reveals it's clickable. */
@@ -89,7 +89,7 @@
 
 .ui-context-card-count {
   min-width: 1rem;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-x-small);
   font-variant-numeric: tabular-nums;
   color: var(--text-weaker);
   text-align: right;
@@ -102,7 +102,7 @@
 .ui-context-card-dot {
   width: 0.45rem;
   height: 0.45rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--icon-critical-base);
 }
 
@@ -174,9 +174,9 @@
 .ui-context-card-section-label {
   padding: 0 0.35rem;
   margin-bottom: 0.25rem;
-  font-size: 0.75rem;
-  font-weight: 500;
-  letter-spacing: 0.01em;
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--letter-spacing-wide);
 }
 
 /* ── Generic rows ───────────────────────────────────────── */
@@ -219,13 +219,13 @@
 .ui-context-card-row-label {
   min-width: 0;
   overflow: hidden;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-compact);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .ui-context-card-row-meta {
   flex-shrink: 0;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-x-small);
   font-variant-numeric: tabular-nums;
 }

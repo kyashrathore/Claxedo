@@ -39,12 +39,10 @@ async function run(line: string) {
 function pathsInput(value: unknown): SessionMemoryScanPaths {
   if (!value || typeof value !== "object") throw new Error("invalid scan paths")
   const input = value as Partial<SessionMemoryScanPaths>
-  if (typeof input.codexHome !== "string" || typeof input.claudeHome !== "string" || !Array.isArray(input.databases)) {
+  if (!Array.isArray(input.databases)) {
     throw new Error("invalid scan paths")
   }
   return {
-    codexHome: input.codexHome,
-    claudeHome: input.claudeHome,
     databases: input.databases.flatMap((item) =>
       item && typeof item.path === "string" && typeof item.profile === "string" ? [item] : []),
   }

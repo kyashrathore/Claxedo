@@ -155,12 +155,12 @@ export function TerminalNewView(props: TerminalNewViewProps) {
       >
         <div class="flex items-center gap-2 border-b border-border-weaker-base px-3.5 py-2.5">
           <ClaxedoIcon name="terminal" size="small" class="text-icon-weak-base" />
-          <span class="text-[12px] font-medium text-text-weak">Start a terminal</span>
+          <span class="text-sm font-medium text-text-weak">Start a terminal</span>
           {/* The chips above say WHERE, but a pending "create" is the one choice
               that has not happened yet — so it is restated at the point of
               action, where the consequence lands. */}
           <Show when={creatingWorkspace()}>
-            <span data-slot="terminal-new-create-note" class="truncate text-[11px] text-v2-text-text-faint">
+            <span data-slot="terminal-new-create-note" class="truncate text-xs text-v2-text-text-faint">
               · in a new {workspaceKind() === "cloud" ? "cloud sandbox" : "worktree"}
             </span>
           </Show>
@@ -190,10 +190,10 @@ export function TerminalNewView(props: TerminalNewViewProps) {
                   <span class="flex size-6 shrink-0 items-center justify-center rounded-md bg-surface-raised-base text-icon-base">
                     <ClaxedoIcon name={launcher.icon} size="small" />
                   </span>
-                  <span class="truncate text-[13px] font-medium text-text-base">{launcher.name}</span>
+                  <span class="truncate text-compact font-medium text-text-base">{launcher.name}</span>
                   <span
                     aria-hidden="true"
-                    class="ml-auto shrink-0 text-[11px] text-v2-text-text-faint opacity-0 transition-opacity group-hover/launcher:opacity-100 group-focus-visible/launcher:opacity-100"
+                    class="ml-auto shrink-0 text-xs text-v2-text-text-faint opacity-0 transition-opacity group-hover/launcher:opacity-100 group-focus-visible/launcher:opacity-100"
                   >
                     ↵
                   </span>
@@ -201,7 +201,7 @@ export function TerminalNewView(props: TerminalNewViewProps) {
                 {/* The exact command is the honest detail a terminal launcher
                     owes you: these are user-editable settings, so "Claude" alone
                     does not tell you what will run. */}
-                <code class="w-full truncate font-mono text-[10px] text-v2-text-text-faint">
+                <code class="w-full truncate font-mono text-2xs text-v2-text-text-faint">
                   {starting() === launcher.id ? "Starting…" : (launcher.command ?? "login shell")}
                 </code>
               </button>
@@ -213,7 +213,7 @@ export function TerminalNewView(props: TerminalNewViewProps) {
           {(message) => (
             <div
               data-slot="terminal-new-error"
-              class="border-t border-border-weaker-base px-3.5 py-2.5 text-[11px] text-icon-critical-base"
+              class="border-t border-border-weaker-base px-3.5 py-2.5 text-xs text-icon-critical-base"
             >
               {message()}
             </div>

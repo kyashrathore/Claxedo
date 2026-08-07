@@ -140,8 +140,15 @@
     --v2-illustration-illustration-layer-02: var(--v2-grey-400);
     --v2-illustration-illustration-layer-03: var(--v2-grey-500);
 
-    --font-family-text: "Inter", sans-serif;
-    --v2-font-family-sans: "Inter", sans-serif;
+    --font-family-text: var(--font-family-sans);
+    --v2-font-family-sans: var(--font-family-sans);
+    --v2-font-size-xs: var(--font-size-x-small);
+    --v2-font-size-sm: var(--font-size-small);
+    --v2-font-size-compact: var(--font-size-compact);
+    --v2-font-size-base: var(--font-size-base);
+    --v2-font-weight-regular: var(--font-weight-body);
+    --v2-font-weight-medium: var(--font-weight-medium);
+    --v2-font-weight-semibold: var(--font-weight-semibold);
   }
 
   /* OS preference fallback (no JS needed) */

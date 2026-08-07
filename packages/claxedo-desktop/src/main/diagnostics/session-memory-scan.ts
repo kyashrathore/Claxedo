@@ -1,7 +1,4 @@
-import { createReadStream, existsSync, statSync } from "node:fs"
-import { opendir } from "node:fs/promises"
-import { basename, join } from "node:path"
-import { createInterface } from "node:readline"
+import { existsSync } from "node:fs"
 import type { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
 
 export type SessionMemoryDatabase = {
@@ -10,8 +7,6 @@ export type SessionMemoryDatabase = {
 }
 
 export type SessionMemoryScanPaths = {
-  codexHome: string
-  claudeHome: string
   databases: Array<{ path: string; profile: string }>
 }
 
@@ -22,11 +17,9 @@ export async function scanSessionMemoryStores(input: {
   now?: () => number
 }) {
   const startedAt = (input.now ?? Date.now)()
-  const scans = await Promise.all([
-    scanCodex(input.paths.codexHome),
-    scanClaude(input.paths.claudeHome),
-    ...input.paths.databases.map((database) => scanDatabase(database, input.openDatabase)),
-  ])
+  const scans = await Promise.all(
+    input.paths.databases.map((database) => scanDatabase(database, input.openDatabase)),
+  )
   const sessions = scans.flatMap((scan) => scan.sessions).sort(
     (left, right) => right.buckets.totalBytes - left.buckets.totalBytes || left.sessionId.localeCompare(right.sessionId),
   ).slice(0, 10_000)
@@ -43,127 +36,6 @@ export async function scanSessionMemoryStores(input: {
     sessions,
     warmSessions: input.warmSessions,
   } satisfies LocalDiagnostics.SessionMemoryScanResult
-}
-
-async function scanCodex(home: string) {
-  const harness = "codex" as const
-  if (!existsSync(home)) return emptyScan(harness, "native", "unavailable")
-  try {
-    const titles = await codexTitles(join(home, "session_index.jsonl"))
-    const files = (await Promise.all([
-      jsonlFiles(join(home, "sessions")),
-      jsonlFiles(join(home, "archived_sessions")),
-    ])).flat()
-    const sessions = await mapSeries(files, async (file) => {
-      const result = await scanJsonl(file, "codex")
-      const sessionId = basename(file, ".jsonl").match(/([0-9a-f]{8}-[0-9a-f-]{27})$/i)?.[1] ?? basename(file, ".jsonl")
-      return {
-        sessionId,
-        ...(titles.get(sessionId) ? { title: safeLabel(titles.get(sessionId)!) } : {}),
-        harness,
-        profile: "native",
-        updatedAt: Math.max(0, Math.floor(statSync(file).mtimeMs)),
-        buckets: result.buckets,
-      } satisfies LocalDiagnostics.StoredSessionMemory
-    })
-    return completedScan(harness, "native", sessions)
-  } catch {
-    return emptyScan(harness, "native", "failed")
-  }
-}
-
-async function scanClaude(home: string) {
-  const harness = "claude" as const
-  const projects = join(home, "projects")
-  if (!existsSync(projects)) return emptyScan(harness, "native", "unavailable")
-  try {
-    const files = await jsonlFiles(projects)
-    const sessions = await mapSeries(files, async (file) => {
-      const result = await scanJsonl(file, "claude")
-      return {
-        sessionId: basename(file, ".jsonl"),
-        ...(result.title ? { title: safeLabel(result.title) } : {}),
-        harness,
-        profile: "native",
-        updatedAt: Math.max(0, Math.floor(statSync(file).mtimeMs)),
-        buckets: result.buckets,
-      } satisfies LocalDiagnostics.StoredSessionMemory
-    })
-    return completedScan(harness, "native", sessions)
-  } catch {
-    return emptyScan(harness, "native", "failed")
-  }
-}
-
-async function scanJsonl(file: string, harness: "codex" | "claude") {
-  const buckets = zeroBuckets()
-  let title: string | undefined
-  const lines = createInterface({ input: createReadStream(file), crlfDelay: Infinity })
-  for await (const line of lines) {
-    const totalBytes = Buffer.byteLength(line) + 1
-    const imageBytes = embeddedImageBytes(line, harness)
-    const remaining = Math.max(0, totalBytes - imageBytes)
-    buckets.imageBytes += imageBytes
-    if (compactionLine(line, harness)) buckets.compactionBytes += remaining
-    else buckets.chatBytes += remaining
-    if (harness === "claude" && (line.includes('"customTitle"') || line.includes('"aiTitle"'))) {
-      try {
-        const item = JSON.parse(line) as { customTitle?: unknown; aiTitle?: unknown }
-        const next = typeof item.customTitle === "string" ? item.customTitle : typeof item.aiTitle === "string" ? item.aiTitle : undefined
-        if (next) title = next
-      } catch {}
-    }
-  }
-  buckets.totalBytes = buckets.chatBytes + buckets.imageBytes + buckets.compactionBytes
-  return { buckets, title }
-}
-
-function embeddedImageBytes(line: string, harness: "codex" | "claude") {
-  if (!line.includes("data:image/") && (harness !== "claude" || !line.includes('"base64"'))) return 0
-  try {
-    return imageStrings(JSON.parse(line), false)
-  } catch {
-    return 0
-  }
-}
-
-function imageStrings(value: unknown, imageContext: boolean): number {
-  if (typeof value === "string") {
-    if (value.startsWith("data:image/")) return Buffer.byteLength(value)
-    return imageContext && value.length > 256 && /^[A-Za-z0-9+/]+=*$/.test(value) ? Buffer.byteLength(value) : 0
-  }
-  if (!value || typeof value !== "object") return 0
-  if (Array.isArray(value)) return value.reduce((total, item) => total + imageStrings(item, imageContext), 0)
-  const item = value as Record<string, unknown>
-  const mime = typeof item.mime === "string"
-    ? item.mime
-    : typeof item.media_type === "string"
-      ? item.media_type
-      : typeof item.type === "string" && item.type.startsWith("image/")
-        ? item.type
-        : undefined
-  const next = imageContext || item.type === "image" || mime?.startsWith("image/") === true || ("base64" in item && "file" in item)
-  return Object.values(item).reduce<number>((total, child) => total + imageStrings(child, next), 0)
-}
-
-function compactionLine(line: string, harness: "codex" | "claude") {
-  if (harness === "codex") return line.includes('"type":"compacted"')
-  return line.includes('"subtype":"compact_boundary"') ||
-    line.includes('"isCompactSummary":true') ||
-    line.includes('"type":"summary"')
-}
-
-async function codexTitles(file: string) {
-  const titles = new Map<string, string>()
-  if (!existsSync(file)) return titles
-  const lines = createInterface({ input: createReadStream(file), crlfDelay: Infinity })
-  for await (const line of lines) {
-    try {
-      const item = JSON.parse(line) as { id?: unknown; thread_name?: unknown }
-      if (typeof item.id === "string" && typeof item.thread_name === "string") titles.set(item.id, item.thread_name)
-    } catch {}
-  }
-  return titles
 }
 
 async function scanDatabase(
@@ -237,30 +109,6 @@ SELECT session.id, session.title, session.time_updated AS updatedAt,
   coalesce(totals.totalBytes, 0) AS totalBytes
 FROM session LEFT JOIN totals ON totals.sessionId = session.id
 ORDER BY totalBytes DESC`
-
-async function jsonlFiles(root: string) {
-  if (!existsSync(root)) return []
-  const files: string[] = []
-  const visit = async (directory: string) => {
-    const entries = await opendir(directory)
-    for await (const entry of entries) {
-      const path = join(directory, entry.name)
-      if (entry.isDirectory()) {
-        await visit(path)
-        continue
-      }
-      if (entry.isFile() && entry.name.endsWith(".jsonl")) files.push(path)
-    }
-  }
-  await visit(root)
-  return files.sort()
-}
-
-async function mapSeries<T, U>(items: T[], fn: (item: T) => Promise<U>) {
-  const result: U[] = []
-  for (const item of items) result.push(await fn(item))
-  return result
-}
 
 function completedScan(
   harness: LocalDiagnostics.SessionMemoryHarness,

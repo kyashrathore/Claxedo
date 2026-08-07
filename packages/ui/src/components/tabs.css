@@ -51,7 +51,7 @@
 
     /* text-14-medium */
     font-family: var(--font-family-sans);
-    font-size: 14px;
+    font-size: var(--font-size-base);
     font-style: normal;
     font-weight: var(--font-weight-medium);
     line-height: var(--line-height-large); /* 142.857% */
@@ -301,12 +301,12 @@
     }
 
     [data-slot="terminal-tab-title"] {
-      font-family: Inter, sans-serif;
+      font-family: var(--font-family-sans);
       font-style: normal;
-      font-weight: 440;
-      font-size: 13px;
-      line-height: 16px;
-      letter-spacing: -0.04px;
+      font-weight: var(--font-weight-body);
+      font-size: var(--font-size-compact);
+      line-height: var(--line-height-16);
+      letter-spacing: var(--letter-spacing-ui);
       color: var(--v2-text-text-base);
       font-variation-settings: "slnt" 0;
       font-variant-numeric: tabular-nums;
@@ -501,7 +501,7 @@
       width: 100%;
       height: 32px;
       border: none;
-      border-radius: 8px;
+      border-radius: var(--radius-lg);
       background-color: transparent;
 
       [data-slot="tabs-trigger"] {
@@ -540,7 +540,7 @@
       [data-slot="tabs-trigger-wrapper"] {
         height: 32px;
         border: none;
-        border-radius: 8px;
+        border-radius: var(--radius-lg);
 
         [data-slot="tabs-trigger"] {
           border: none;
@@ -737,12 +737,12 @@ body[data-new-layout] #review-panel [data-component="tabs"][data-variant="normal
   }
 
   [data-slot="tabs-trigger"] {
-    font-family: Inter, sans-serif;
+    font-family: var(--font-family-sans);
     font-style: normal;
-    font-weight: 440;
-    font-size: 13px;
-    line-height: 16px;
-    letter-spacing: -0.04px;
+    font-weight: var(--font-weight-body);
+    font-size: var(--font-size-compact);
+    line-height: var(--line-height-16);
+    letter-spacing: var(--letter-spacing-ui);
     color: var(--v2-text-text-muted);
     font-variation-settings: "slnt" 0;
     font-variant-numeric: tabular-nums;

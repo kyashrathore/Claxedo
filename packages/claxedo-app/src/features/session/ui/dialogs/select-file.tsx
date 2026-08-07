@@ -473,7 +473,7 @@ export function DialogSelectFile(props: {
                     </Show>
                   </div>
                   <Show when={item.keybind}>
-                    <Keybind class="rounded-[4px]">{formatKeybind(item.keybind ?? "")}</Keybind>
+                    <Keybind class="rounded-sm">{formatKeybind(item.keybind ?? "")}</Keybind>
                   </Show>
                 </div>
               </Match>

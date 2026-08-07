@@ -9,7 +9,7 @@ export const CategoryButton: Component<{
 }> = (props) => (
   <button
     type="button"
-    class="flex h-7 items-center justify-between rounded px-2 text-left text-[12px] transition-colors"
+    class="flex h-7 items-center justify-between rounded px-2 text-left text-sm transition-colors"
     classList={{
       "text-text-strong font-medium": props.active,
       "text-text-weak hover:text-text-base": !props.active,
@@ -18,7 +18,7 @@ export const CategoryButton: Component<{
   >
     <span>{props.label}</span>
     <Show when={typeof props.count === "number" && props.count > 0}>
-      <span class="text-[10px] tabular-nums text-text-weaker">{props.count}</span>
+      <span class="text-2xs tabular-nums text-text-weaker">{props.count}</span>
     </Show>
   </button>
 )

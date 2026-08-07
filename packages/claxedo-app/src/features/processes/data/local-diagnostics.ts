@@ -56,6 +56,19 @@ export namespace LocalDiagnostics {
   export const ByteChangeReading = numericReading(z.number().int())
   export type ByteChangeReading = z.infer<typeof ByteChangeReading>
 
+  export const MemoryImpactKind = z.enum([
+    "physical-footprint",
+    "private-working-set",
+    "pss",
+    "rss-fallback",
+  ])
+  export type MemoryImpactKind = z.infer<typeof MemoryImpactKind>
+
+  export const MemoryImpactReading = z
+    .object({ kind: MemoryImpactKind, bytes: ByteReading })
+    .strict()
+  export type MemoryImpactReading = z.infer<typeof MemoryImpactReading>
+
   export const PercentReading = numericReading(z.number().finite().min(0).max(100))
   export type PercentReading = z.infer<typeof PercentReading>
 
@@ -217,6 +230,7 @@ export namespace LocalDiagnostics {
       processId: Identifier,
       cpuMachinePercent: CpuMachinePercent,
       rssBytes: ByteReading,
+      memoryImpact: MemoryImpactReading.optional(),
     })
     .strict()
   export type MetricPoint = z.infer<typeof MetricPoint>
@@ -375,7 +389,7 @@ export namespace LocalDiagnostics {
       type: z.literal("spike"),
       id: Identifier,
       at: Timestamp,
-      metric: z.enum(["cpu", "rss"]),
+      metric: z.enum(["cpu", "rss", "memory-impact"]),
       value: z.number().finite().nonnegative(),
       delta: z.number().finite().positive(),
       ownerId: Identifier.optional(),
@@ -538,7 +552,7 @@ export namespace LocalDiagnostics {
     .strict()
   export type SessionMemoryScanRequest = z.infer<typeof SessionMemoryScanRequest>
 
-  export const SessionMemoryHarness = z.enum(["claxedo", "codex", "claude"])
+  export const SessionMemoryHarness = z.literal("claxedo")
   export type SessionMemoryHarness = z.infer<typeof SessionMemoryHarness>
 
   export const StoredSessionMemory = z

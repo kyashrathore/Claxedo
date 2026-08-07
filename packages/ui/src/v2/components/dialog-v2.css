@@ -24,7 +24,7 @@
     height: 368px;
     background: var(--v2-background-bg-layer-01);
     box-shadow: var(--v2-elevation-overlay);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     overflow: hidden;
     pointer-events: auto;
 
@@ -60,10 +60,10 @@
           flex: 1;
           min-width: 0;
           user-select: none;
-          font-weight: 530;
-          font-size: 13px;
-          line-height: 16px;
-          letter-spacing: -0.04px;
+          font-weight: var(--font-weight-medium);
+          font-size: var(--font-size-compact);
+          line-height: var(--line-height-16);
+          letter-spacing: var(--letter-spacing-ui);
           color: var(--v2-text-text-base);
           font-variation-settings: "slnt" 0;
         }
@@ -82,10 +82,10 @@
           flex: none;
           flex-grow: 0;
           user-select: none;
-          font-weight: 530;
-          font-size: 15px;
-          line-height: 20px;
-          letter-spacing: -0.13px;
+          font-weight: var(--font-weight-medium);
+          font-size: var(--font-size-intermediate);
+          line-height: var(--line-height-20);
+          letter-spacing: var(--letter-spacing-chat);
           color: var(--v2-text-text-base);
           font-variation-settings: "slnt" 0;
         }
@@ -94,10 +94,10 @@
           flex: none;
           flex-grow: 0;
           user-select: none;
-          font-weight: 440;
-          font-size: 13px;
-          line-height: 20px;
-          letter-spacing: -0.04px;
+          font-weight: var(--font-weight-body);
+          font-size: var(--font-size-compact);
+          line-height: var(--line-height-20);
+          letter-spacing: var(--letter-spacing-ui);
           color: var(--v2-text-text-muted);
           font-variation-settings: "slnt" 0;
         }
@@ -111,7 +111,7 @@
           margin-top: -2px;
           margin-right: -2px;
           margin-left: auto;
-          border-radius: 4px;
+          border-radius: var(--radius-sm);
           flex-shrink: 0;
           cursor: pointer;
           color: var(--v2-icon-icon-muted);

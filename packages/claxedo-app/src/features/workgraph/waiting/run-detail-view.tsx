@@ -36,8 +36,8 @@ export function RunDetailView(props: {
       <Show when={run().parkedReason}>
         {(reason) => (
           <div class="workgraph-run-error" role="alert">
-            <span class="text-[11px] font-semibold text-text-strong">{run().state === "failed" ? "Run failed" : "Run needs attention"}</span>
-            <span class="text-[12px] leading-5 text-text-base">{reason()}</span>
+            <span class="text-xs font-semibold text-text-strong">{run().state === "failed" ? "Run failed" : "Run needs attention"}</span>
+            <span class="text-sm leading-5 text-text-base">{reason()}</span>
           </div>
         )}
       </Show>
@@ -87,15 +87,15 @@ export function RunDetailView(props: {
         {(result) => (
           <div class="workgraph-detail-result">
             <span class="workgraph-dfield-label text-text-weaker">Result</span>
-            <p class="text-[12px] leading-5 text-text-base">{result().summary}</p>
+            <p class="text-sm leading-5 text-text-base">{result().summary}</p>
           </div>
         )}
       </Show>
       <Show when={props.masterStatus?.receiptRefs.length}><DialogSection title="Master activity">
-        <p class="text-[12px] leading-5 text-text-base">{props.masterStatus!.message}</p>
+        <p class="text-sm leading-5 text-text-base">{props.masterStatus!.message}</p>
         <ul class="workgraph-detail-artifacts">
           <For each={props.masterStatus!.receiptRefs}>{(reference, index) => (
-            <li class="flex items-center justify-between gap-3 text-[11px] text-text-weaker">
+            <li class="flex items-center justify-between gap-3 text-xs text-text-weaker">
               <span>Master action {index() + 1}</span>
               <MasterReceiptLink
                 reference={reference}
@@ -107,7 +107,7 @@ export function RunDetailView(props: {
         </ul>
       </DialogSection></Show>
       <Show when={receipts().length}><DialogSection title="Receipts">
-        <ul class="workgraph-detail-artifacts"><For each={receipts()}>{(ref) => <li class="font-mono text-[11px] text-text-weaker">{ref}</li>}</For></ul>
+        <ul class="workgraph-detail-artifacts"><For each={receipts()}>{(ref) => <li class="font-mono text-xs text-text-weaker">{ref}</li>}</For></ul>
       </DialogSection></Show>
     </div>
   )

@@ -39,7 +39,7 @@
   top: 0;
   bottom: 0;
   width: 4px;
-  border-radius: 9999px;
+  border-radius: var(--radius-pill);
   background-color: var(--border-weak-base);
   backdrop-filter: blur(4px);
   transition: background-color 150ms ease;
@@ -50,15 +50,12 @@
   background-color: var(--border-strong-base);
 }
 
-.dark .scroll-view__thumb::after,
-[data-theme="dark"] .scroll-view__thumb::after {
+[data-color-scheme="dark"] .scroll-view__thumb::after {
   background-color: var(--border-weak-base);
 }
 
-.dark .scroll-view__thumb:hover::after,
-[data-theme="dark"] .scroll-view__thumb:hover::after,
-.dark .scroll-view__thumb[data-dragging="true"]::after,
-[data-theme="dark"] .scroll-view__thumb[data-dragging="true"]::after {
+[data-color-scheme="dark"] .scroll-view__thumb:hover::after,
+[data-color-scheme="dark"] .scroll-view__thumb[data-dragging="true"]::after {
   background-color: var(--border-strong-base);
 }
 

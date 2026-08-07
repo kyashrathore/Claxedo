@@ -130,7 +130,7 @@ export function DialogReleaseNotes(props: { highlights: Highlight[] }) {
                     onClick={() => setIndex(i)}
                   >
                     <div
-                      class="w-full h-0.5 rounded-[1px] transition-colors duration-200"
+                      class="w-full h-0.5 rounded-[var(--radius-2xs)] transition-colors duration-200"
                       classList={{
                         "bg-icon-strong-base": i === index(),
                         "bg-icon-weak-base": i !== index(),
@@ -172,7 +172,7 @@ export function DialogReleaseNotes(props: { highlights: Highlight[] }) {
                   aria-label={language.t(
                     videoPaused() ? "dialog.releaseNotes.media.play" : "dialog.releaseNotes.media.pause",
                   )}
-                  class="absolute bottom-2 right-2 flex size-7 items-center justify-center rounded-md border-none bg-black/45 text-white backdrop-blur-sm transition-colors hover:bg-black/60"
+                  class="absolute bottom-2 right-2 flex size-7 items-center justify-center rounded-md border-none bg-[var(--media-control-surface)] text-[var(--media-control-text)] backdrop-blur-sm transition-colors hover:bg-[var(--media-control-surface-hover)]"
                 >
                   <Show
                     when={videoPaused()}

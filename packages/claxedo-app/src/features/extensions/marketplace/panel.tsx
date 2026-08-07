@@ -443,7 +443,7 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
             horizontal chip strip above the content (marketplace.css); they do
             not render a second copy. */}
         <aside class="marketplace-sidebar" aria-label="Marketplace categories">
-          <div class="marketplace-sidebar-heading mb-3 px-2 text-[12px] font-medium text-text-weak">Marketplace</div>
+          <div class="marketplace-sidebar-heading mb-3 px-2 text-sm font-medium text-text-weak">Marketplace</div>
           <CategoryButton
             label="Featured"
             active={activeCategory() === "featured"}
@@ -479,7 +479,7 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
           <div class="marketplace-sidebar-rule bg-border-weak-base/20" />
           <button
             type="button"
-            class="group flex h-7 items-center gap-1.5 rounded px-2 text-left text-[12px] text-text-weak transition-colors hover:text-text-base disabled:opacity-50"
+            class="group flex h-7 items-center gap-1.5 rounded px-2 text-left text-sm text-text-weak transition-colors hover:text-text-base disabled:opacity-50"
             onClick={scanLocal}
             disabled={scanLoading()}
             title={props.directory ? `Scan ${props.directory} for existing config` : "Open a project to enable scan"}
@@ -493,7 +493,7 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
           <label class="flex min-h-11 items-center gap-2.5 rounded-lg border border-border-weak-base/40 bg-surface-raised-base/20 px-3.5 transition-colors focus-within:border-border-weak-base/80">
             <Icon name="magnifying-glass" size="small" class="text-icon-weak-base" />
             <input
-              class="min-w-0 flex-1 bg-transparent text-[13px] text-text-base outline-none placeholder:text-text-weaker"
+              class="min-w-0 flex-1 bg-transparent text-compact text-text-base outline-none placeholder:text-text-weaker"
               placeholder="Search skills, plugins, MCPs…"
               value={search()}
               onInput={(event) => setSearch(event.currentTarget.value)}
@@ -523,12 +523,12 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
 
             <Show when={catalog.loading}>
               <div class="grid place-items-center py-24 text-text-weak">
-                <span class="text-[12px]">Loading marketplace…</span>
+                <span class="text-sm">Loading marketplace…</span>
               </div>
             </Show>
             <Show when={catalog.error}>
               <div class="grid place-items-center py-24 text-text-weak">
-                <span class="text-[12px]">Failed to load catalog. {String(catalog.error)}</span>
+                <span class="text-sm">Failed to load catalog. {String(catalog.error)}</span>
               </div>
             </Show>
 
@@ -536,8 +536,8 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
               <Show when={showFeaturedRow()}>
                 <section class="flex flex-col gap-2.5">
                   <div class="flex items-baseline justify-between px-2">
-                    <h2 class="text-[13px] font-semibold tracking-tight text-text-strong">Featured</h2>
-                    <span class="marketplace-section-detail text-[11px] text-text-weaker">Hand-picked to start with.</span>
+                    <h2 class="text-compact font-semibold tracking-tight text-text-strong">Featured</h2>
+                    <span class="marketplace-section-detail text-xs text-text-weaker">Hand-picked to start with.</span>
                   </div>
                   <div class="marketplace-grid grid gap-0.5">
                     <For each={featuredEntries()}>
@@ -561,10 +561,10 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
               <Show when={!showFeaturedRow() && activeCategory() !== "on-machine"}>
                 <section class="flex flex-col gap-2.5">
                   <div class="flex items-baseline justify-between px-2">
-                    <h2 class="text-[13px] font-semibold tracking-tight text-text-strong">
+                    <h2 class="text-compact font-semibold tracking-tight text-text-strong">
                       {sectionTitle(activeCategory(), catalog()?.categories ?? [])}
                     </h2>
-                    <span class="marketplace-section-detail text-[11px] text-text-weaker">
+                    <span class="marketplace-section-detail text-xs text-text-weaker">
                       {visibleEntries().length} {visibleEntries().length === 1 ? "extension" : "extensions"}
                     </span>
                   </div>
@@ -572,7 +572,7 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
                     when={visibleEntries().length > 0}
                     fallback={
                       <div class="grid place-items-center rounded-md border border-dashed border-border-weak-base/40 px-6 py-12 text-text-weak">
-                        <span class="text-[12px]">
+                        <span class="text-sm">
                           {activeCategory() === "installed"
                             ? "No extensions installed yet. Pick one above."
                             : "No extensions match this view."}

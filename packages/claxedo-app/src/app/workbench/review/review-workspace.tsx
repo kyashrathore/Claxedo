@@ -98,7 +98,7 @@ function ReviewWorkspaceProcessSection(props: { processId: string; directory: st
             fallback={<div class="size-6 rounded-full border-2 border-text-weak border-t-transparent animate-spin" />}
           >
             <Icon name="console" size="medium" />
-            <span class="text-[12px]">Process not found</span>
+            <span class="text-sm">Process not found</span>
           </Show>
         </div>
       }

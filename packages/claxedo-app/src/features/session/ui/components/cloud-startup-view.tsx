@@ -163,7 +163,7 @@ export function WorkspaceStateShell(
       class="flex size-full items-center justify-center px-6 py-10"
     >
       <div class="w-full max-w-[440px] text-left">
-        <div class="flex items-center gap-2 text-[11px] font-medium text-text-weaker">
+        <div class="flex items-center gap-2 text-xs font-medium text-text-weaker">
           <span
             classList={{
               // Monochrome by design: a settled (failed) state holds still, a live
@@ -178,7 +178,7 @@ export function WorkspaceStateShell(
 
         <div class="mt-3 flex items-start justify-between gap-4">
           <div class="min-w-0">
-            <div class="text-[17px] font-medium leading-6 text-text-strong">{props.title}</div>
+            <div class="text-title-sm font-medium leading-6 text-text-strong">{props.title}</div>
             <Show when={props.detail}>
               <div class="mt-1 text-13-regular text-text-weak">{props.detail}</div>
             </Show>
@@ -346,13 +346,13 @@ export function CloudStartupView(props: {
         detail={detail()}
         aside={
           <Show when={elapsed()}>
-            <span class="shrink-0 rounded-md border border-border-weak-base/50 px-2 py-1 text-[11px] tabular-nums text-text-weaker">
+            <span class="shrink-0 rounded-md border border-border-weak-base/50 px-2 py-1 text-xs tabular-nums text-text-weaker">
               {elapsed()}s
             </span>
           </Show>
         }
       >
-        <div class="mt-6 flex flex-col text-[13px]">
+        <div class="mt-6 flex flex-col text-compact">
           <For each={pipeline()}>
             {(step, i) => {
               const state = () => stepState(i())
@@ -376,7 +376,7 @@ export function CloudStartupView(props: {
                     {label()}
                   </span>
                   <Show when={state() === "done" && duration()}>
-                    <span class="text-[11px] tabular-nums text-text-weaker">{duration()}s</span>
+                    <span class="text-xs tabular-nums text-text-weaker">{duration()}s</span>
                   </Show>
                 </StepRow>
               )
@@ -386,7 +386,7 @@ export function CloudStartupView(props: {
             <StepRow connector={false} state="done">
               <span class="text-text-on-success-base">Ready</span>
               <Show when={totalElapsed()}>
-                <span class="text-[11px] tabular-nums text-text-on-success-base/70">{totalElapsed()}s</span>
+                <span class="text-xs tabular-nums text-text-on-success-base/70">{totalElapsed()}s</span>
               </Show>
             </StepRow>
           </Show>
@@ -398,14 +398,14 @@ export function CloudStartupView(props: {
         <Show when={props.logs.length > 0}>
           <WorkspaceStateNote>
             <span class="mt-1 size-1.5 shrink-0 rounded-full bg-text-weaker/70 animate-pulse motion-reduce:animate-none" />
-            <span class="min-w-0 truncate font-mono text-[11px] leading-5 text-text-weak">{latestLog()}</span>
+            <span class="min-w-0 truncate font-mono text-xs leading-5 text-text-weak">{latestLog()}</span>
           </WorkspaceStateNote>
         </Show>
 
         <Show when={cleaned()}>
           <WorkspaceStateNote tone="critical">
             <Icon name="warning" size="small" class="mt-0.5 shrink-0 text-icon-base" />
-            <span class="min-w-0 break-words font-mono text-[11px] leading-5 text-text-strong">{cleaned()}</span>
+            <span class="min-w-0 break-words font-mono text-xs leading-5 text-text-strong">{cleaned()}</span>
           </WorkspaceStateNote>
         </Show>
       </WorkspaceStateShell>

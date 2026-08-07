@@ -534,14 +534,59 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
                                     <span data-slot="session-review-directory">{`\u202A${getDirectory(file)}\u202C`}</span>
                                   </Show>
                                   <span data-slot="session-review-filename">{getFilename(file)}</span>
+                                </div>
+                              </div>
+                              <div data-slot="session-review-trigger-actions">
+                                <div data-slot="session-review-row-summary">
+                                  <Switch>
+                                    <Match when={isAdded()}>
+                                      <div data-slot="session-review-change-group" data-type="added">
+                                        <span data-slot="session-review-change" data-type="added">
+                                          {i18n.t("ui.sessionReview.change.added")}
+                                        </span>
+                                        <DiffChanges changes={diff} />
+                                      </div>
+                                    </Match>
+                                    <Match when={isDeleted()}>
+                                      <span data-slot="session-review-change" data-type="removed">
+                                        {i18n.t("ui.sessionReview.change.removed")}
+                                      </span>
+                                    </Match>
+                                    <Match when={!!mediaKind()}>
+                                      <span data-slot="session-review-change" data-type="modified">
+                                        {i18n.t("ui.sessionReview.change.modified")}
+                                      </span>
+                                    </Match>
+                                    <Match when={true}>
+                                      <DiffChanges changes={diff} />
+                                    </Match>
+                                  </Switch>
+                                </div>
+                                <div data-slot="session-review-row-controls">
+                                  <Tooltip value={i18n.t("ui.message.copy")} placement="top" gutter={4}>
+                                    <button
+                                      data-slot="session-review-copy-button"
+                                      type="button"
+                                      aria-label={i18n.t("ui.message.copy")}
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        void navigator.clipboard?.writeText(file)
+                                      }}
+                                    >
+                                      <Icon name="copy" size="small" />
+                                    </button>
+                                  </Tooltip>
+                                  <span data-slot="session-review-diff-chevron" aria-hidden="true">
+                                    <IconV2 name="chevron-down" size="small" />
+                                  </span>
                                   <Show when={props.onViewFile}>
                                     <Tooltip value={openFileLabel()} placement="top" gutter={4}>
                                       <button
                                         data-slot="session-review-view-button"
                                         type="button"
                                         aria-label={openFileLabel()}
-                                        onClick={(e) => {
-                                          e.stopPropagation()
+                                        onClick={(event) => {
+                                          event.stopPropagation()
                                           props.onViewFile?.(file)
                                         }}
                                       >
@@ -550,34 +595,6 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
                                     </Tooltip>
                                   </Show>
                                 </div>
-                              </div>
-                              <div data-slot="session-review-trigger-actions">
-                                <Switch>
-                                  <Match when={isAdded()}>
-                                    <div data-slot="session-review-change-group" data-type="added">
-                                      <span data-slot="session-review-change" data-type="added">
-                                        {i18n.t("ui.sessionReview.change.added")}
-                                      </span>
-                                      <DiffChanges changes={diff} />
-                                    </div>
-                                  </Match>
-                                  <Match when={isDeleted()}>
-                                    <span data-slot="session-review-change" data-type="removed">
-                                      {i18n.t("ui.sessionReview.change.removed")}
-                                    </span>
-                                  </Match>
-                                  <Match when={!!mediaKind()}>
-                                    <span data-slot="session-review-change" data-type="modified">
-                                      {i18n.t("ui.sessionReview.change.modified")}
-                                    </span>
-                                  </Match>
-                                  <Match when={true}>
-                                    <DiffChanges changes={diff} />
-                                  </Match>
-                                </Switch>
-                                <span data-slot="session-review-diff-chevron">
-                                  <IconV2 name="chevron-down" size="small" />
-                                </span>
                               </div>
                             </div>
                           </Accordion.Trigger>

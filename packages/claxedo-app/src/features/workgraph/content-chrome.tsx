@@ -26,7 +26,7 @@ export function PanelTab(props: { active: boolean; onClick: () => void; children
       type="button"
       role="tab"
       aria-selected={props.active}
-      class="flex h-6 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors"
+      class="flex h-6 items-center gap-1.5 rounded-md px-2 text-sm transition-colors"
       classList={{
         "bg-surface-base text-text-strong": props.active,
         "text-text-base hover:bg-surface-base-hover hover:text-text-base": !props.active,
@@ -139,8 +139,8 @@ export function EmptyState(props: { title: string; copy: string }) {
       <div class="mx-auto mb-4 grid size-10 place-items-center rounded-full border border-border-weak-base bg-surface-base">
         <Icon name="dot-grid" size="small" class="text-icon-weak-base" />
       </div>
-      <h2 class="text-[14px] font-medium text-text-strong">{props.title}</h2>
-      <p class="mx-auto mt-1 max-w-md text-[11px] leading-5 text-text-weaker">{props.copy}</p>
+      <h2 class="text-base font-medium text-text-strong">{props.title}</h2>
+      <p class="mx-auto mt-1 max-w-md text-xs leading-5 text-text-weaker">{props.copy}</p>
     </div>
   )
 }
@@ -148,7 +148,7 @@ export function EmptyState(props: { title: string; copy: string }) {
 export function StatusBanner(props: { error: WorkGraphApiError; retry: () => void; retryLabel?: string }) {
   const copy = () => (props.error.kind === "unauthorized" || props.error.kind === "forbidden" ? "You do not have access to this WorkGraph." : props.error.kind === "conflict" ? "This work changed elsewhere. Reload before trying again." : props.error.kind === "offline" ? "WorkGraph is offline. Your existing view is preserved while we reconnect." : props.error.kind === "cursor_invalid" ? "WorkGraph changed while you were away. A fresh snapshot is required." : props.error.message)
   return (
-    <div class="mb-6 flex items-center justify-between gap-4 border-y border-border-weak-base bg-background-stronger px-3 py-2 text-[12px]" role="alert">
+    <div class="mb-6 flex items-center justify-between gap-4 border-y border-border-weak-base bg-background-stronger px-3 py-2 text-sm" role="alert">
       <span>{copy()}</span>
       <Button size="small" variant="ghost" onClick={props.retry}>
         {props.retryLabel ?? (props.error.kind === "offline" ? "Reconnect" : "Reload")}

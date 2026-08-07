@@ -60,11 +60,11 @@ const snapshot = {
     },
   ],
   samples: [
-    point(1_000, "host:42:100", 10, 100),
-    point(1_000, "host:50:200", 20, 200),
-    point(2_000, "host:42:100", 80, 300),
-    point(2_000, "host:50:200", 5, 250),
-    point(3_000, "host:42:100", 2, 200),
+    point(1_000, "host:42:100", 10, 100, 80),
+    point(1_000, "host:50:200", 20, 200, 170),
+    point(2_000, "host:42:100", 80, 300, 240),
+    point(2_000, "host:50:200", 5, 250, 210),
+    point(3_000, "host:42:100", 2, 200, 160),
   ],
   sources: [],
   markers: [{
@@ -99,14 +99,16 @@ describe("diagnostics view model", () => {
     const model = buildDiagnosticsModel(snapshot)
     expect(model.bounds).toEqual({ startAt: 1_000, endAt: 3_000 })
     expect(model.series).toEqual([
-      { at: 1_000, cpu: 30, rssBytes: 300 },
-      { at: 2_000, cpu: 85, rssBytes: 550 },
-      { at: 3_000, cpu: 2, rssBytes: 200 },
+      { at: 1_000, cpu: 30, rssBytes: 300, memoryImpactBytes: 250, memoryImpactComplete: true },
+      { at: 2_000, cpu: 85, rssBytes: 550, memoryImpactBytes: 450, memoryImpactComplete: true },
+      { at: 3_000, cpu: 2, rssBytes: 200, memoryImpactBytes: 160, memoryImpactComplete: true },
     ])
+    expect(model.memoryImpactKinds).toEqual(["pss"])
     expect(model.contributors.map((item) => item.owner.id)).toEqual(["owner-harness", "owner-server"])
     expect(model.contributors[0]).toMatchObject({
       peakCpu: 80,
       currentRssBytes: 200,
+      currentMemoryImpactBytes: 160,
       rssChangeBytes: 100,
       confidence: "direct",
       actionEligibility: { state: "eligible" },
@@ -114,6 +116,16 @@ describe("diagnostics view model", () => {
     expect(model.churn).toEqual([
       { ownerId: "owner-harness", launched: 1, exited: 1, resourceMeasurement: "unmeasured" },
     ])
+  })
+
+  test("marks an aggregate as partial instead of silently presenting a smaller total", () => {
+    const samples = snapshot.samples.map((sample) =>
+      sample.at === 2_000 && sample.processId === "host:50:200"
+        ? { ...sample, memoryImpact: { kind: "pss" as const, bytes: { state: "unavailable" as const, reason: "permission-denied" as const } } }
+        : sample)
+    const model = buildDiagnosticsModel({ ...snapshot, samples })
+
+    expect(model.series[1]).toMatchObject({ memoryImpactBytes: 240, memoryImpactComplete: false })
   })
 
   test("shows only process generations sampled inside the retained window", () => {
@@ -151,11 +163,12 @@ describe("diagnostics view model", () => {
   })
 })
 
-function point(at: number, processId: string, cpu: number, rssBytes: number) {
+function point(at: number, processId: string, cpu: number, rssBytes: number, memoryImpactBytes: number) {
   return {
     at,
     processId,
     cpuMachinePercent: { state: "available", value: cpu },
     rssBytes: { state: "available", value: rssBytes },
+    memoryImpact: { kind: "pss", bytes: { state: "available", value: memoryImpactBytes } },
   } as const
 }

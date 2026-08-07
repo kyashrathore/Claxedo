@@ -16,7 +16,7 @@
 
 .usage-meta {
   font-family: var(--font-family-sans);
-  font-size: 11px;
+  font-size: var(--font-size-x-small);
   font-weight: var(--font-weight-regular);
   line-height: var(--line-height-large);
   color: var(--text-weaker);
@@ -33,12 +33,23 @@
 
 /* ── Head zone ─────────────────────────────────────────── */
 
+/* The panel runs edge to edge inside the menu shell (`p-0` on the sub-content),
+   so `--usage-inset` is the one gutter every zone answers to. Rows take it from
+   their container and pay only their own 4px, so a section header and the
+   options nested under it are the same box with the same hover — and the head
+   and foot rules stop exactly where those rows do. */
+.usage-panel {
+  --usage-inset: 6px;
+  --usage-row-pad: 4px;
+}
+
 .usage-head {
   display: flex;
   flex-shrink: 0;
   align-items: center;
   gap: 8px;
-  padding: 2px 4px 8px;
+  margin: 0 var(--usage-inset);
+  padding: 8px var(--usage-row-pad);
   border-bottom: 1px solid color-mix(in srgb, var(--border-weak-base) 60%, transparent);
 }
 
@@ -73,106 +84,189 @@
 
 /* ── Body zone ─────────────────────────────────────────── */
 
+/* No vertical padding: the section headers are panel-level rows, so they sit
+   flush against the head and foot rules the way the head's own title does. A
+   gap there reads as the list floating loose inside the panel. */
 .usage-body {
   flex: 1;
   min-height: 0;
+  padding: 0 var(--usage-inset);
   overflow-y: auto;
 }
 
-.usage-provider + .usage-provider {
-  border-top: 1px solid color-mix(in srgb, var(--border-weak-base) 60%, transparent);
-}
+/* No rule between rows. The head and foot hairlines mark the panel's three
+   zones; a third hairline repeated between every row turns a list into a
+   ledger. Row identity comes from padding and the hover fill, which is how the
+   account menu this panel lives inside reads too. */
 
-/* The whole summary line is the disclosure target — a 3px bar is far too small
-   a hit area to ask anyone to aim at. */
-.usage-provider-summary {
+/* ── Disclosure: harness, then its limits ──────────────── */
+
+/* Two sections, one open at a time, exactly like the composer's harness/model
+   picker. The open header holds its background so the panel beneath reads as
+   that row's contents rather than a block that merely follows it. */
+/* Same box as `.usage-option` — same width, padding, radius and hover. A toggle
+   that opens a list should not be a differently-shaped row from the things it
+   opens. */
+.usage-section {
   display: flex;
   width: 100%;
   align-items: center;
   gap: 6px;
-  padding: 8px 4px;
+  padding: 6px var(--usage-row-pad);
   border-radius: var(--radius-sm);
   text-align: left;
   transition: background 110ms ease;
 }
 
-.usage-provider-summary:hover {
+/* Hover only. An open section holds no fill: the rotated chevron, the dimmed
+   value and the content sitting under it already say which one is open, and a
+   permanent band across a full-bleed row read as a selected item rather than an
+   expanded one. */
+.usage-section:hover {
   background: var(--surface-base-hover);
 }
 
-.usage-provider-summary:focus-visible {
+.usage-section:focus-visible {
   outline: 2px solid var(--border-selected);
   outline-offset: -2px;
 }
 
-.usage-provider-chevron {
+/* Full-strength: the chevron is the only thing telling you the row opens. */
+.usage-section-chevron {
   flex-shrink: 0;
-  color: var(--icon-weak-base);
+  color: var(--icon-base);
   transition: transform 200ms cubic-bezier(0.2, 0, 0, 1);
 }
 
-.usage-provider[data-expanded] .usage-provider-chevron {
+.usage-section[data-expanded] .usage-section-chevron {
   transform: rotate(90deg);
 }
 
-.usage-provider-name {
+.usage-section-label {
+  flex-shrink: 0;
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-x-small);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-large);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-label);
+  color: var(--text-weaker);
+}
+
+/* The summary steps back once the panel below is showing the same thing. */
+.usage-section-value {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  color: var(--text-base);
+  font-variant-numeric: tabular-nums;
+  transition: color 150ms ease;
+}
+
+.usage-section[data-expanded] .usage-section-value {
+  color: var(--text-weaker);
+}
+
+/* Inset to the header's label, past the chevron column, so the arrow becomes a
+   visible spine down the open section. Enters from the header it hangs off. */
+/* No gutter of its own — the body already pays it, and doubling it would make a
+   nested row narrower than the header that opened it. Depth is carried by
+   `--usage-step` alone: a 12px nudge on the row's own left padding, which moves
+   the CONTENT without shrinking the box its hover fills. */
+.usage-disclosure {
+  --usage-step: 12px;
+  padding-bottom: 6px;
+  animation: usage-disclosure-in 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.usage-disclosure .usage-option {
+  padding-left: calc(var(--usage-row-pad) + var(--usage-step));
+}
+
+/* Sits INSIDE `.usage-disclosure`, so these are the same numbers an option row
+   pays — which is what puts a window label and a harness name in one column. */
+.usage-windows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px var(--usage-row-pad) 2px calc(var(--usage-row-pad) + var(--usage-step));
+}
+
+@keyframes usage-disclosure-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── Harness options ───────────────────────────────────── */
+
+.usage-option {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 6px;
+  padding: 6px var(--usage-row-pad);
+  border-radius: var(--radius-sm);
+  text-align: left;
+  transition: background 110ms ease;
+}
+
+.usage-option:hover {
+  background: var(--surface-base-hover);
+}
+
+.usage-option:focus-visible {
+  outline: 2px solid var(--border-selected);
+  outline-offset: -2px;
+}
+
+.usage-option-name {
   color: var(--text-strong);
 }
 
-/* Plan tag: hairline outline, not a filled chip. A filled pill competes with
-   the bars for attention and the plan is the least actionable thing here. */
-.usage-plan {
-  flex-shrink: 0;
-  padding: 0 5px;
-  border: 1px solid var(--border-weak-base);
-  border-radius: var(--radius-xs);
-  color: var(--text-weaker);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.usage-provider-gap {
+.usage-option-gap {
   flex: 1;
 }
 
-/* Collapsed, a provider still has to answer "how used is this?" at a glance —
-   the peak window's bar stands in for the set. It fades out on expand, where
-   the full per-window list supersedes it. */
+.usage-option-check {
+  flex-shrink: 0;
+  color: var(--icon-base);
+}
+
+/* Plan tag: hairline outline, not a filled chip. A filled pill competes with
+   the bars for attention and the plan is the least actionable thing here.
+   The chip is sized by its LINE BOX, not its glyphs: at `.usage-meta`'s
+   `--line-height-large` it stood 20px tall against a 30px row and read as a
+   second, competing label rather than an annotation on the name. Tight leading
+   plus 4px of inline padding brings it to 16px without dropping the text below
+   the shared scale's 11px floor. */
+.usage-plan {
+  flex-shrink: 0;
+  padding: 0 4px;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-xs);
+  font-size: var(--font-size-x-small);
+  line-height: var(--line-height-tight);
+  color: var(--text-weaker);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-caption);
+}
+
+/* Each option answers "how much is left here?" while you are still choosing —
+   the peak window's bar stands in for the set. */
 .usage-peak {
   display: flex;
   flex-shrink: 0;
   align-items: center;
   gap: 6px;
-  transition: opacity 160ms ease;
-}
-
-.usage-provider[data-expanded] .usage-peak {
-  opacity: 0;
-}
-
-/* Accordion: grid-template-rows animates to and from intrinsic height without
-   measuring, so a provider with two windows and one with five both open at the
-   same rate. */
-.usage-provider-detail {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 200ms cubic-bezier(0.2, 0, 0, 1);
-}
-
-.usage-provider[data-expanded] .usage-provider-detail {
-  grid-template-rows: 1fr;
-}
-
-.usage-provider-detail > div {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.usage-provider[data-expanded] .usage-provider-detail > div {
-  padding: 2px 4px 10px;
 }
 
 .usage-window {
@@ -197,7 +291,7 @@
   display: block;
   height: 3px;
   width: 100%;
-  border-radius: 9999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-inset-base);
   overflow: hidden;
 }
@@ -210,13 +304,13 @@
   width: 2.5rem;
 }
 
-/* Neutral by default — a quota that is merely *being used* is not a status
-   event, and a green bar per row turns the panel into a traffic light. Colour
-   is reserved for the two states worth interrupting for. */
+/* Monochrome, at every level of consumption. Amber-then-red made the panel
+   read as an alarm board: the numbers are already the signal, and a quota being
+   spent is the expected case, not an incident. Length carries the magnitude. */
 .usage-fill {
   display: block;
   height: 100%;
-  border-radius: 9999px;
+  border-radius: var(--radius-pill);
   background: var(--icon-base);
   transition: width 450ms cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -225,22 +319,6 @@
   .usage-fill {
     width: 0;
   }
-}
-
-.usage-fill.is-warning {
-  background: var(--icon-warning-base);
-}
-
-.usage-fill.is-critical {
-  background: var(--icon-critical-base);
-}
-
-.usage-percent.is-warning {
-  color: var(--icon-warning-base);
-}
-
-.usage-percent.is-critical {
-  color: var(--icon-critical-base);
 }
 
 /* ── Foot zone ─────────────────────────────────────────── */
@@ -252,7 +330,8 @@
   align-items: center;
   gap: 6px;
   min-height: 1.6rem;
-  padding: 4px 4px 0;
+  margin: 0 var(--usage-inset);
+  padding: 6px var(--usage-row-pad);
   border-top: 1px solid color-mix(in srgb, var(--border-weak-base) 60%, transparent);
   white-space: nowrap;
 }
@@ -304,7 +383,7 @@
   min-height: 1.4rem;
   padding: 0 4px;
   border-radius: var(--radius-sm);
-  color: var(--icon-warning-base);
+  color: var(--icon-weak-base);
   transition: background 110ms ease;
 }
 
@@ -376,16 +455,8 @@
   height: 5px;
   width: 5px;
   flex-shrink: 0;
-  border-radius: 9999px;
+  border-radius: var(--radius-pill);
   background: var(--icon-weak-base);
-}
-
-.usage-status-dot.is-warning {
-  background: var(--icon-warning-base);
-}
-
-.usage-status-dot.is-critical {
-  background: var(--icon-critical-base);
 }
 
 /* ── States ────────────────────────────────────────────── */
@@ -417,11 +488,16 @@
 
 @media (prefers-reduced-motion: reduce) {
   .usage-fill,
-  .usage-provider-detail,
-  .usage-provider-chevron,
-  .usage-peak,
+  .usage-section,
+  .usage-section-chevron,
+  .usage-section-value,
+  .usage-option,
   .usage-issues-fan-row {
     transition: none;
+  }
+
+  .usage-disclosure {
+    animation: none;
   }
 
   .usage-skeleton {

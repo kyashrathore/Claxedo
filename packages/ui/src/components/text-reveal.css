@@ -34,7 +34,7 @@
   [data-slot="text-reveal-track"] {
     display: grid;
     min-height: 20px;
-    line-height: 20px;
+    line-height: var(--line-height-20);
     justify-items: start;
     align-items: center;
     overflow: visible;
@@ -44,7 +44,7 @@
   [data-slot="text-reveal-entering"],
   [data-slot="text-reveal-leaving"] {
     grid-area: 1 / 1;
-    line-height: 20px;
+    line-height: var(--line-height-20);
     white-space: nowrap;
     justify-self: start;
     text-align: start;

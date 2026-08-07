@@ -615,7 +615,7 @@ export function WorkGraphContent(props: {
                 )}
               </Show>
               <Show when={reconnecting()}>
-                <div class="mb-6 border-y border-border-weak-base px-3 py-2 text-[12px] text-text-weak" role="status">
+                <div class="mb-6 border-y border-border-weak-base px-3 py-2 text-sm text-text-weak" role="status">
                   Reconnecting to WorkGraph…
                 </div>
               </Show>

@@ -168,7 +168,7 @@
    concentric with the highlighted row inside it. */
 .command-palette-dialog {
   padding: 8px;
-  border-radius: 14px;
+  border-radius: var(--radius-3xl);
 }
 
 /* Kobalte portals the overlay as a sibling of the dialog layer, so the palette
@@ -328,7 +328,7 @@ body:has([data-slot="dialog-content"].claxedo-diagnostics-dialog)
     cursor: pointer;
     color: var(--text-base);
     font-family: var(--font-family-sans);
-    font-size: 14px;
+    font-size: var(--font-size-base);
     font-weight: var(--font-weight-medium);
     background: var(--surface-raised-stronger-non-alpha);
     flex-shrink: 0;

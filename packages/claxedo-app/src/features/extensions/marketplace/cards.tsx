@@ -33,8 +33,8 @@ export const MachineSection: Component<{
     <section class="flex flex-col gap-4">
       <div class="flex items-baseline justify-between">
         <div class="flex flex-col">
-          <h2 class="text-[13px] font-semibold tracking-tight text-text-strong">On this machine</h2>
-          <p class="text-[11px] text-text-weaker">
+          <h2 class="text-compact font-semibold tracking-tight text-text-strong">On this machine</h2>
+          <p class="text-xs text-text-weaker">
             {props.search
               ? `${props.items.length} of ${props.totalCount} matching "${props.search}"`
               : `${props.totalCount} skill${props.totalCount === 1 ? "" : "s"} and plugins discovered across Claude, Codex, Cursor, and Agents.`}
@@ -45,7 +45,7 @@ export const MachineSection: Component<{
         when={props.items.length > 0}
         fallback={
           <div class="grid place-items-center rounded-md border border-dashed border-border-weak-base/40 px-6 py-12 text-text-weak">
-            <span class="text-[12px]">
+            <span class="text-sm">
               {props.search ? "No machine items match the search." : "No skills detected under ~/.claude, ~/.codex, ~/.cursor, or ~/.agents."}
             </span>
           </div>
@@ -55,8 +55,8 @@ export const MachineSection: Component<{
           {([harness, items]) => (
             <div class="flex flex-col gap-2">
               <div class="flex items-baseline gap-2 px-2">
-                <h3 class="text-[12px] font-medium text-text-base">{HARNESS_LABEL[harness]}</h3>
-                <span class="text-[10px] text-text-weaker">{items.length}</span>
+                <h3 class="text-sm font-medium text-text-base">{HARNESS_LABEL[harness]}</h3>
+                <span class="text-2xs text-text-weaker">{items.length}</span>
               </div>
               <div class="marketplace-grid grid gap-0.5">
                 <For each={items}>
@@ -89,25 +89,25 @@ export const MachineCard: Component<{
   return (
     // Same flat two-line row shape as ExtensionCard: hover surface only.
     <div class="marketplace-row group/machine relative flex items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-surface-base-hover/40">
-      <div class="grid size-7 shrink-0 place-items-center rounded bg-surface-base text-[12px] text-text-weak">
+      <div class="grid size-7 shrink-0 place-items-center rounded bg-surface-base text-sm text-text-weak">
         {props.item.kind === "skill" ? "📘" : props.item.kind === "mcp" ? "🔌" : "🧩"}
       </div>
       <div class="marketplace-row-lines min-w-0 flex-1">
         <div class="marketplace-row-line flex items-baseline gap-2">
-          <span class="truncate text-[12px] font-medium text-text-strong">{props.item.name}</span>
-          <span class="shrink-0 rounded bg-surface-base px-1.5 py-px text-[9px] uppercase tracking-wider text-text-weak">
+          <span class="truncate text-sm font-medium text-text-strong">{props.item.name}</span>
+          <span class="shrink-0 rounded bg-surface-base px-1.5 py-px text-micro uppercase tracking-wider text-text-weak">
             {props.item.kind === "native-plugin" ? "Plugin" : props.item.kind === "mcp" ? "MCP" : "Skill"}
           </span>
         </div>
-        <div class="marketplace-row-line mt-0.5 truncate font-mono text-[10px] text-text-weaker">{shortPath()}</div>
+        <div class="marketplace-row-line mt-0.5 truncate font-mono text-2xs text-text-weaker">{shortPath()}</div>
       </div>
-      <span class="flex h-6 shrink-0 items-center gap-1 rounded border border-border-weak-base/40 bg-surface-base px-1.5 text-[10px] font-medium text-text-weak group-hover/machine:hidden">
+      <span class="flex h-6 shrink-0 items-center gap-1 rounded border border-border-weak-base/40 bg-surface-base px-1.5 text-2xs font-medium text-text-weak group-hover/machine:hidden">
         <Icon name="check-small" size="small" class="text-icon-success-base" />
         Local
       </span>
       <button
         type="button"
-        class="hidden h-6 shrink-0 items-center gap-1 rounded border border-border-weak-base/40 bg-surface-base px-1.5 text-[10px] font-medium text-text-weak transition-colors hover:border-border-critical-base hover:bg-surface-critical-base/10 hover:text-text-on-critical-base disabled:opacity-60 group-hover/machine:flex"
+        class="hidden h-6 shrink-0 items-center gap-1 rounded border border-border-weak-base/40 bg-surface-base px-1.5 text-2xs font-medium text-text-weak transition-colors hover:border-border-critical-base hover:bg-surface-critical-base/10 hover:text-text-on-critical-base disabled:opacity-60 group-hover/machine:flex"
         onClick={(event) => {
           event.stopPropagation()
           props.onDelete()
@@ -132,12 +132,12 @@ export const DiscoveredSection: Component<{
   <section class="mb-6 flex flex-col gap-2 rounded-md border border-border-weak-base/40 bg-surface-raised-base/30 px-4 py-3">
     <div class="flex items-baseline justify-between">
       <div class="flex flex-col">
-        <h2 class="text-[13px] font-semibold tracking-tight text-text-strong">Already on this machine</h2>
-        <p class="text-[11px] text-text-weaker">{props.items.length} item{props.items.length === 1 ? "" : "s"} detected in the active project.</p>
+        <h2 class="text-compact font-semibold tracking-tight text-text-strong">Already on this machine</h2>
+        <p class="text-xs text-text-weaker">{props.items.length} item{props.items.length === 1 ? "" : "s"} detected in the active project.</p>
       </div>
       <button
         type="button"
-        class="text-[11px] text-text-weak hover:text-text-base"
+        class="text-xs text-text-weak hover:text-text-base"
         onClick={props.onDismiss}
       >
         Dismiss
@@ -161,15 +161,15 @@ const DiscoveredRow: Component<{
   const isIgnored = () => props.item.state === "ignored"
   const isPending = () => props.pending !== undefined
   return (
-    <li class="group/discovered flex items-center justify-between gap-3 rounded px-2 py-1.5 text-[12px] hover:bg-surface-base-hover/40">
+    <li class="group/discovered flex items-center justify-between gap-3 rounded px-2 py-1.5 text-sm hover:bg-surface-base-hover/40">
       <div class="min-w-0 truncate font-mono text-text-base">{props.item.path}</div>
-      <div class="flex shrink-0 items-center gap-2 text-[10px] text-text-weak">
+      <div class="flex shrink-0 items-center gap-2 text-2xs text-text-weak">
         <span class="rounded bg-surface-base px-1.5 py-0.5 uppercase tracking-wider">{DISCOVERY_LABEL[props.item.kind]}</span>
         <span class="w-14 text-right group-hover/discovered:hidden" classList={{ "text-icon-success-base": isAdopted() }}>{props.item.state}</span>
         <div class="hidden items-center gap-1 group-hover/discovered:flex">
           <button
             type="button"
-            class="flex h-6 items-center gap-1 rounded border border-border-weak-base/40 bg-surface-base px-1.5 text-[10px] font-medium text-text-base transition-colors hover:border-border-weak-base/80 hover:bg-surface-base-hover disabled:opacity-60"
+            class="flex h-6 items-center gap-1 rounded border border-border-weak-base/40 bg-surface-base px-1.5 text-2xs font-medium text-text-base transition-colors hover:border-border-weak-base/80 hover:bg-surface-base-hover disabled:opacity-60"
             onClick={(event) => {
               event.stopPropagation()
               props.onAdopt()
@@ -182,7 +182,7 @@ const DiscoveredRow: Component<{
           </button>
           <button
             type="button"
-            class="flex h-6 items-center gap-1 rounded border border-border-weak-base/40 bg-surface-base px-1.5 text-[10px] font-medium text-text-weak transition-colors hover:border-border-weak-base/80 hover:bg-surface-base-hover disabled:opacity-60"
+            class="flex h-6 items-center gap-1 rounded border border-border-weak-base/40 bg-surface-base px-1.5 text-2xs font-medium text-text-weak transition-colors hover:border-border-weak-base/80 hover:bg-surface-base-hover disabled:opacity-60"
             onClick={(event) => {
               event.stopPropagation()
               props.onIgnore()
@@ -231,7 +231,7 @@ export const ExtensionCard: Component<{
       class="marketplace-row group flex items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-surface-base-hover/40"
       title={`${sourceLabel()} · ${scopeLabel()} scope`}
     >
-      <div class="grid size-9 shrink-0 place-items-center rounded-md bg-surface-base text-[16px]">
+      <div class="grid size-9 shrink-0 place-items-center rounded-md bg-surface-base text-lg">
         <Show
           when={props.entry.icon}
           fallback={
@@ -261,20 +261,20 @@ export const ExtensionCard: Component<{
       </div>
       <div class="marketplace-row-lines min-w-0 flex-1">
         <div class="marketplace-row-line flex items-baseline gap-2">
-          <span class="truncate text-[13px] font-medium text-text-strong">{props.entry.name}</span>
-          <span class="shrink-0 rounded bg-surface-base px-1.5 py-px text-[9px] uppercase tracking-wider text-text-weak">
+          <span class="truncate text-compact font-medium text-text-strong">{props.entry.name}</span>
+          <span class="shrink-0 rounded bg-surface-base px-1.5 py-px text-micro uppercase tracking-wider text-text-weak">
             {KIND_LABEL[props.entry.kind]}
           </span>
           {/* Scope + source used to own a third line. Folded onto the name line
               and hidden in a narrow pane, where the row's title attribute is
               the only place they remain. */}
-          <span class="marketplace-row-meta flex min-w-0 items-baseline gap-1.5 text-[10px] text-text-weaker">
+          <span class="marketplace-row-meta flex min-w-0 items-baseline gap-1.5 text-2xs text-text-weaker">
             <span class="shrink-0">{scopeLabel()}</span>
             <span class="shrink-0 text-text-weaker/60">·</span>
             <span class="truncate font-mono">{sourceLabel()}</span>
           </span>
         </div>
-        <div class="marketplace-row-line mt-0.5 line-clamp-1 text-[12px] text-text-weak">{props.entry.description}</div>
+        <div class="marketplace-row-line mt-0.5 line-clamp-1 text-sm text-text-weak">{props.entry.description}</div>
       </div>
       <InstallButton
         installed={props.installed}
@@ -309,7 +309,7 @@ export const InstallButton: Component<{
       fallback={
         <div class="group/install relative flex shrink-0">
           <span
-            class="flex h-7 items-center gap-1 rounded-md border border-border-weak-base/40 bg-surface-base px-2 text-[11px] font-medium text-text-base group-hover/install:hidden"
+            class="flex h-7 items-center gap-1 rounded-md border border-border-weak-base/40 bg-surface-base px-2 text-xs font-medium text-text-base group-hover/install:hidden"
             classList={{ "text-text-weak": isDisabled() }}
           >
             <Icon
@@ -322,7 +322,7 @@ export const InstallButton: Component<{
           <div class="hidden shrink-0 items-center gap-1 group-hover/install:flex">
             <button
               type="button"
-              class="flex h-7 items-center gap-1 rounded-md border border-border-weak-base/40 bg-surface-base px-2 text-[11px] font-medium text-text-base transition-colors hover:border-border-weak-base/80 hover:bg-surface-base-hover disabled:opacity-60"
+              class="flex h-7 items-center gap-1 rounded-md border border-border-weak-base/40 bg-surface-base px-2 text-xs font-medium text-text-base transition-colors hover:border-border-weak-base/80 hover:bg-surface-base-hover disabled:opacity-60"
               onClick={(event) => {
                 event.stopPropagation()
                 props.onToggleEnablement()
@@ -339,7 +339,7 @@ export const InstallButton: Component<{
             </button>
             <button
               type="button"
-              class="flex h-7 items-center gap-1 rounded-md border border-border-weak-base/40 bg-surface-base px-2 text-[11px] font-medium text-text-base transition-colors hover:border-border-critical-base hover:bg-surface-critical-base/10 hover:text-text-on-critical-base disabled:opacity-60"
+              class="flex h-7 items-center gap-1 rounded-md border border-border-weak-base/40 bg-surface-base px-2 text-xs font-medium text-text-base transition-colors hover:border-border-critical-base hover:bg-surface-critical-base/10 hover:text-text-on-critical-base disabled:opacity-60"
               onClick={(event) => {
                 event.stopPropagation()
                 props.onUninstall()
@@ -356,7 +356,7 @@ export const InstallButton: Component<{
     >
       <button
         type="button"
-        class="h-7 shrink-0 rounded-md border border-border-weak-base/40 bg-surface-base px-3 text-[11px] font-medium text-text-base outline-none transition-colors hover:border-border-weak-base/80 hover:bg-surface-base-hover focus:outline-none disabled:opacity-60"
+        class="h-7 shrink-0 rounded-md border border-border-weak-base/40 bg-surface-base px-3 text-xs font-medium text-text-base outline-none transition-colors hover:border-border-weak-base/80 hover:bg-surface-base-hover focus:outline-none disabled:opacity-60"
         onClick={(event) => {
           event.stopPropagation()
           props.onClick()

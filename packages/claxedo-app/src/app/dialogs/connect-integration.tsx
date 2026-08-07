@@ -107,7 +107,7 @@ export function DialogConnectIntegration(props: {
                     <span class="text-13-medium text-text-strong">Enter this code to authorize</span>
                     <span
                       data-testid="device-user-code"
-                      class="select-all font-mono text-18-medium tracking-[0.2em] text-text-strong"
+                      class="select-all font-mono text-18-medium tracking-[var(--letter-spacing-code)] text-text-strong"
                     >
                       {code()}
                     </span>

@@ -157,7 +157,7 @@ export function DialogEditProject(props: { project: LocalProject }) {
                         <Avatar
                           fallback={store.name || defaultName()}
                           {...getAvatarColors(store.color)}
-                          class="size-full text-[32px]"
+                          class="size-full text-4xl"
                         />
                       </div>
                     }
@@ -170,7 +170,7 @@ export function DialogEditProject(props: { project: LocalProject }) {
                   </Show>
                 </div>
                 <div
-                  class="absolute inset-0 size-16 bg-surface-raised-stronger-non-alpha/90 rounded-[6px] z-10 pointer-events-none flex items-center justify-center transition-opacity"
+                  class="absolute inset-0 size-16 bg-surface-raised-stronger-non-alpha/90 rounded-md z-10 pointer-events-none flex items-center justify-center transition-opacity"
                   classList={{
                     "opacity-100": store.iconHover && !store.iconUrl,
                     "opacity-0": !(store.iconHover && !store.iconUrl),
@@ -179,7 +179,7 @@ export function DialogEditProject(props: { project: LocalProject }) {
                   <Icon name="cloud-upload" size="large" class="text-icon-on-interactive-base drop-shadow-sm" />
                 </div>
                 <div
-                  class="absolute inset-0 size-16 bg-surface-raised-stronger-non-alpha/90 rounded-[6px] z-10 pointer-events-none flex items-center justify-center transition-opacity"
+                  class="absolute inset-0 size-16 bg-surface-raised-stronger-non-alpha/90 rounded-md z-10 pointer-events-none flex items-center justify-center transition-opacity"
                   classList={{
                     "opacity-100": store.iconHover && !!store.iconUrl,
                     "opacity-0": !(store.iconHover && !!store.iconUrl),

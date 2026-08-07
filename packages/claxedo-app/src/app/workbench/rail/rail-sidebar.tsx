@@ -114,7 +114,7 @@ export function SessionListNotice(props: {
   return (
     <div
       data-testid={`rail-sidebar-session-list-${props.variant}`}
-      class="flex items-center gap-2 pl-9 pr-2.5 py-1 text-[11px]"
+      class="flex items-center gap-2 pl-9 pr-2.5 py-1 text-xs"
       classList={{
         "text-text-weaker": props.variant !== "error",
         "text-text-base": props.variant === "error",
@@ -127,7 +127,7 @@ export function SessionListNotice(props: {
       <Show when={props.actionLabel && props.onAction}>
         <button
           type="button"
-          class="shrink-0 text-[11px] text-text-weak hover:text-text-base transition-colors duration-100"
+          class="shrink-0 text-xs text-text-weak hover:text-text-base transition-colors duration-100"
           onClick={(e: MouseEvent) => {
             e.stopPropagation()
             void props.onAction?.()
@@ -1496,8 +1496,10 @@ export function RailSidebar(props: RailSidebarProps) {
       icon="gauge"
       label="Usage limits"
       // Height and scrolling belong to the panel, not the menu shell: its head
-      // and foot stay pinned while only the provider list scrolls.
-      contentClass="z-[220] w-[19rem] p-2"
+      // and foot stay pinned while only the provider list scrolls. No shell
+      // padding either — this panel's head/foot rules and row highlights run
+      // edge to edge, which a padded shell would inset into a floating card.
+      contentClass="z-[220] w-[19rem] p-0"
     >
       <UsageLimitsPanel />
     </RailAccountSubmenu>
@@ -1825,7 +1827,7 @@ export function RailSidebar(props: RailSidebarProps) {
               />
             </span>
             <div class="flex flex-col gap-0 min-w-0 flex-1">
-              <span class="text-[12px] font-medium text-text-base/80 truncate">{section.label}</span>
+              <span class="text-sm font-medium text-text-base/80 truncate">{section.label}</span>
             </div>
           </div>
         </div>
@@ -1855,7 +1857,7 @@ export function RailSidebar(props: RailSidebarProps) {
             <Show when={more()}>
               <button
                 type="button"
-                class="text-[12px] text-text-weaker hover:text-text-weak pl-9 pr-2.5 py-1 text-left transition-colors duration-100"
+                class="text-sm text-text-weaker hover:text-text-weak pl-9 pr-2.5 py-1 text-left transition-colors duration-100"
                 disabled={sessionListLoadingMore()}
                 classList={{ "opacity-60": sessionListLoadingMore() }}
                 onClick={(e: MouseEvent) => {
@@ -1876,7 +1878,7 @@ export function RailSidebar(props: RailSidebarProps) {
               </SessionListNotice>
             </Show>
             <Show when={count() > sectionRows().length && !more()}>
-              <span class="pl-9 pr-2.5 py-1 text-[10px] text-text-weaker tabular-nums">
+              <span class="pl-9 pr-2.5 py-1 text-2xs text-text-weaker tabular-nums">
                 {count()} total
               </span>
             </Show>
@@ -2107,7 +2109,7 @@ export function RailSidebar(props: RailSidebarProps) {
             <div class="flex items-baseline gap-1.5 min-w-0 flex-1 overflow-hidden">
               <span
                 title={section.workspaceDir}
-                class="text-[13px] font-medium truncate flex-1 min-w-0"
+                class="text-compact font-medium truncate flex-1 min-w-0"
                 classList={{
                   "text-text-strong": active(),
                   "text-text-base/80": !active(),
@@ -2116,7 +2118,7 @@ export function RailSidebar(props: RailSidebarProps) {
                 {section.label}
               </span>
               <Show when={workspaceMeta().length > 0}>
-                <span class="text-[10px] text-text-weaker truncate shrink-0 max-w-[42%]">
+                <span class="text-2xs text-text-weaker truncate shrink-0 max-w-[42%]">
                   {workspaceMeta().join(" · ")}
                 </span>
               </Show>
@@ -2163,7 +2165,7 @@ export function RailSidebar(props: RailSidebarProps) {
             <Show when={more()}>
               <button
                 type="button"
-                class="text-[12px] text-text-weaker hover:text-text-weak pl-9 pr-2.5 py-1 text-left transition-colors duration-100"
+                class="text-sm text-text-weaker hover:text-text-weak pl-9 pr-2.5 py-1 text-left transition-colors duration-100"
                 disabled={sessionListLoadingMore()}
                 classList={{ "opacity-60": sessionListLoadingMore() }}
                 onClick={(e: MouseEvent) => {
@@ -2184,7 +2186,7 @@ export function RailSidebar(props: RailSidebarProps) {
               </SessionListNotice>
             </Show>
             <Show when={count() > sectionRows().length && !more()}>
-              <span class="pl-9 pr-2.5 py-1 text-[10px] text-text-weaker tabular-nums">
+              <span class="pl-9 pr-2.5 py-1 text-2xs text-text-weaker tabular-nums">
                 {count()} total
               </span>
             </Show>
@@ -2376,7 +2378,7 @@ export function RailSidebar(props: RailSidebarProps) {
             </span>
             <span
               title={projectCaption(section.project)}
-              class="text-[13px] font-medium truncate min-w-0"
+              class="text-compact font-medium truncate min-w-0"
               classList={{
                 "text-text-strong": active(),
                 "text-text-base/85": !active(),
@@ -2427,7 +2429,7 @@ export function RailSidebar(props: RailSidebarProps) {
             <Show when={more()}>
               <button
                 type="button"
-                class="text-[12px] text-text-weaker hover:text-text-weak pl-9 pr-2.5 py-1 text-left transition-colors duration-100"
+                class="text-sm text-text-weaker hover:text-text-weak pl-9 pr-2.5 py-1 text-left transition-colors duration-100"
                 disabled={sessionListLoadingMore()}
                 classList={{ "opacity-60": sessionListLoadingMore() }}
                 onClick={(e: MouseEvent) => {
@@ -2448,7 +2450,7 @@ export function RailSidebar(props: RailSidebarProps) {
               </SessionListNotice>
             </Show>
             <Show when={count() > sectionRows().length && !more()}>
-              <span class="pl-9 pr-2.5 py-1 text-[10px] text-text-weaker tabular-nums">
+              <span class="pl-9 pr-2.5 py-1 text-2xs text-text-weaker tabular-nums">
                 {count()} total
               </span>
             </Show>
@@ -2505,7 +2507,7 @@ export function RailSidebar(props: RailSidebarProps) {
             </span>
             <span
               title={projectCaption(group.project)}
-              class="text-[13px] font-medium truncate min-w-0"
+              class="text-compact font-medium truncate min-w-0"
               classList={{
                 "text-text-strong": active(),
                 "text-text-base/85": !active(),
@@ -2578,7 +2580,7 @@ export function RailSidebar(props: RailSidebarProps) {
         class="flex-1 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden rail-sidebar-scroll"
         style={{
           "scrollbar-width": "thin",
-          "scrollbar-color": "rgba(128, 128, 128, 0.3) transparent",
+          "scrollbar-color": "var(--scrollbar-thumb) transparent",
         }}
       >
         <GlobalNavigation
@@ -2594,12 +2596,12 @@ export function RailSidebar(props: RailSidebarProps) {
           <Show
             when={props.projects.length > 0 || globals().length > 0}
             fallback={
-              <div class="flex px-4 py-8 text-[13px] text-text-weak">
+              <div class="flex px-4 py-8 text-compact text-text-weak">
                 No sessions match the current view.
               </div>
             }
           >
-            <div data-slot="rail-section-label" class="px-4 pt-1 pb-1 text-[11px] font-medium uppercase tracking-normal text-text-weaker">
+            <div data-slot="rail-section-label" class="px-4 pt-1 pb-1 text-xs font-medium uppercase tracking-normal text-text-weaker">
               {view().group === "project" ? "Projects" : "Workspaces"}
             </div>
             <For each={globals().map((section) => section.id)}>
@@ -2632,7 +2634,6 @@ export function RailSidebar(props: RailSidebarProps) {
         <div class="px-2.5 py-2">
           <div class="border-t border-border-weak-base/15 pt-2">
             <RailAccountMenu
-              railWidth={width()}
               onRailLockChange={handleRailMenuOpenChange}
               onDiagnostics={props.onDiagnostics}
               onSettings={props.onSettings}

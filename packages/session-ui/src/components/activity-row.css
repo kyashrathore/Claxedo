@@ -27,7 +27,7 @@
   border: 0;
   background: transparent;
   cursor: inherit;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 @media (hover: hover) {
@@ -75,8 +75,8 @@
 .activity-row__verb {
   flex-shrink: 0;
   font-family: var(--font-family-sans);
-  font-size: 14px;
-  font-weight: 500;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
   line-height: var(--line-height-large);
   color: var(--text-weak);
   transition: color 0.15s ease;
@@ -90,7 +90,7 @@
   white-space: nowrap;
   font-family: var(--font-family-sans);
   font-variant-numeric: tabular-nums;
-  font-size: 14px;
+  font-size: var(--font-size-base);
   font-weight: var(--font-weight-regular);
   line-height: var(--line-height-large);
   color: var(--text-weak);

@@ -20,7 +20,7 @@
     display: inline-block;
     width: 1ch;
     height: 1em;
-    line-height: 1em;
+    line-height: var(--line-height-none);
     overflow: hidden;
     vertical-align: baseline;
     -webkit-mask-image: linear-gradient(
@@ -60,7 +60,7 @@
     justify-content: center;
     width: 1ch;
     height: 1em;
-    line-height: 1em;
+    line-height: var(--line-height-none);
   }
 }
 

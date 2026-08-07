@@ -130,21 +130,21 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
         />
       </Show>
       <StatusDot status={status()} />
-      <span class="text-[12px] font-medium text-text-weak whitespace-nowrap overflow-hidden text-ellipsis flex-1 min-w-0 flex items-center gap-1.5">
+      <span class="text-sm font-medium text-text-weak whitespace-nowrap overflow-hidden text-ellipsis flex-1 min-w-0 flex items-center gap-1.5">
         {props.config.name}
         <Show when={primaryUrl() && isActive()}>
           <a
             href={primaryUrl()}
             target="_blank"
             rel="noopener noreferrer"
-            class="text-[11px] text-text-interactive-base hover:underline font-normal truncate"
+            class="text-xs text-text-interactive-base hover:underline font-normal truncate"
             onClick={(event) => event.stopPropagation()}
           >
             {primaryUrl()}
           </a>
           <Show when={showLocalSecondary()}>
             <span
-              class="text-[10px] text-text-weak font-normal tabular-nums truncate"
+              class="text-2xs text-text-weak font-normal tabular-nums truncate"
               title="Local port (raw)"
             >
               {localUrl()}
@@ -216,10 +216,10 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
                 when={!isActive()}
                 fallback={
                   <div class="flex flex-col items-center gap-4 text-text-weak max-w-md w-full">
-                    <span class="text-[18px] animate-pulse tracking-widest">…</span>
-                    <span class="text-[12px]">{live() ? PROCESS_STATUS_LABELS[status()] : "Inactive"}</span>
+                    <span class="text-heading animate-pulse tracking-widest">…</span>
+                    <span class="text-sm">{live() ? PROCESS_STATUS_LABELS[status()] : "Inactive"}</span>
                     <Show when={live() && commandLine()}>
-                      <code class="px-3 py-1.5 rounded bg-surface-base-hover text-[11px] font-mono text-text-weaker truncate max-w-full">
+                      <code class="px-3 py-1.5 rounded bg-surface-base-hover text-xs font-mono text-text-weaker truncate max-w-full">
                         {commandLine()}
                       </code>
                     </Show>
@@ -236,16 +236,16 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
                           <>
                             <Icon name="console" size="medium" />
                             <div class="flex flex-col items-center gap-1.5">
-                              <span class="text-[13px] text-text-base font-medium">{props.config.name}</span>
-                              <span class="text-[11px] text-text-weaker">Process not running</span>
+                              <span class="text-compact text-text-base font-medium">{props.config.name}</span>
+                              <span class="text-xs text-text-weaker">Process not running</span>
                             </div>
                             <Show when={commandLine()}>
-                              <code class="px-3 py-1.5 rounded bg-surface-base-hover text-[11px] font-mono text-text-weaker truncate max-w-full">
+                              <code class="px-3 py-1.5 rounded bg-surface-base-hover text-xs font-mono text-text-weaker truncate max-w-full">
                                 {commandLine()}
                               </code>
                             </Show>
                             <Show when={props.config.port?.name}>
-                              <div class="text-[10px] text-text-weaker tabular-nums">
+                              <div class="text-2xs text-text-weaker tabular-nums">
                                 port: <span class="font-mono">{props.config.port!.name}</span>
                                 <Show when={props.config.port?.preferred}>
                                   <span> · preferred {props.config.port!.preferred}</span>
@@ -255,7 +255,7 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
                             <Show when={canStart() && live()}>
                               <button
                                 type="button"
-                                class="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-[12px] font-medium bg-surface-base-hover hover:bg-surface-base-active text-text-base transition-colors"
+                                class="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium bg-surface-base-hover hover:bg-surface-base-active text-text-base transition-colors"
                                 onClick={props.onStart}
                                 data-process-action="start-fallback"
                               >
@@ -267,28 +267,28 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
                         }
                       >
                         <div class="flex flex-col items-center gap-1.5">
-                          <span class="text-[13px] font-medium" style={{ color: "var(--surface-critical-strong)" }}>
+                          <span class="text-compact font-medium" style={{ color: "var(--surface-critical-strong)" }}>
                             {launchError() ? "Failed to start" : "Crashed"}
                             <Show when={props.process?.exitCode !== undefined}>
                               <span class="text-text-weaker font-normal"> · exit {props.process?.exitCode}</span>
                             </Show>
                           </span>
-                          <span class="text-[11px] text-text-weaker">{props.config.name}</span>
+                          <span class="text-xs text-text-weaker">{props.config.name}</span>
                         </div>
                         <Show when={launchError()}>
-                          <span class="max-w-full truncate text-[11px] text-text-weaker" title={launchError()}>
+                          <span class="max-w-full truncate text-xs text-text-weaker" title={launchError()}>
                             {launchError()}
                           </span>
                         </Show>
                         <Show when={commandLine()}>
-                          <code class="px-3 py-1.5 rounded bg-surface-base-hover text-[11px] font-mono text-text-weaker truncate max-w-full">
+                          <code class="px-3 py-1.5 rounded bg-surface-base-hover text-xs font-mono text-text-weaker truncate max-w-full">
                             {commandLine()}
                           </code>
                         </Show>
                         <Show when={canStart() && live()}>
                           <button
                             type="button"
-                            class="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-[12px] font-medium bg-surface-base-hover hover:bg-surface-base-active text-text-base transition-colors"
+                            class="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium bg-surface-base-hover hover:bg-surface-base-active text-text-base transition-colors"
                             onClick={props.onStart}
                             data-process-action="start-fallback"
                           >
@@ -300,7 +300,7 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
                     }
                   >
                     <Icon name="console" size="medium" />
-                    <span class="text-[12px]">Process hidden while tab is inactive</span>
+                    <span class="text-sm">Process hidden while tab is inactive</span>
                   </Show>
                 </div>
               </Show>
@@ -311,11 +311,11 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
         </Show>
         <Show when={hit()}>
           <div class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 text-text-weak bg-background-base cursor-default px-6 max-w-md mx-auto">
-            <span class="text-[12px]">
+            <span class="text-sm">
               Port <span class="font-mono font-medium text-text-base">{hit()!.port}</span> is in use
             </span>
             <Show when={!props.config.port?.inject}>
-              <p class="text-[11px] text-text-weaker text-center max-w-xs">
+              <p class="text-xs text-text-weaker text-center max-w-xs">
                 This process has no <code class="font-mono text-text-weak">port.inject</code> in its config.
                 Add a <code class="font-mono text-text-weak">port</code> block in
                 <code class="font-mono text-text-weak"> .workspace-runtime/processes.jsonc</code> if the command
@@ -324,14 +324,14 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
             </Show>
             <button
               type="button"
-              class="px-3 py-1.5 rounded text-[12px] font-medium bg-surface-base-hover hover:bg-surface-base-active text-text-base transition-colors cursor-pointer"
+              class="px-3 py-1.5 rounded text-sm font-medium bg-surface-base-hover hover:bg-surface-base-active text-text-base transition-colors cursor-pointer"
               onClick={() => props.onResolveConflict?.("pick-new")}
             >
               Use another port
             </button>
             <button
               type="button"
-              class="text-[11px] text-text-weaker hover:text-text-weak transition-colors cursor-pointer"
+              class="text-xs text-text-weaker hover:text-text-weak transition-colors cursor-pointer"
               onClick={() => props.onResolveConflict?.("kill-existing")}
             >
               Kill process &amp; reclaim
@@ -340,19 +340,19 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
         </Show>
         <Show when={routeHit() && !hit()}>
           <div class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 text-text-weak bg-background-base cursor-default">
-            <span class="text-[12px]">
+            <span class="text-sm">
               Route <span class="font-mono font-medium text-text-base">{routeHit()!.hostname}</span> is in use
             </span>
             <button
               type="button"
-              class="px-3 py-1.5 rounded text-[12px] font-medium bg-surface-base-hover hover:bg-surface-base-active text-text-base transition-colors cursor-pointer"
+              class="px-3 py-1.5 rounded text-sm font-medium bg-surface-base-hover hover:bg-surface-base-active text-text-base transition-colors cursor-pointer"
               onClick={() => props.onResolveRouteConflict?.("pick-new")}
             >
               Use another name
             </button>
             <button
               type="button"
-              class="text-[11px] text-text-weaker hover:text-text-weak transition-colors cursor-pointer"
+              class="text-xs text-text-weaker hover:text-text-weak transition-colors cursor-pointer"
               onClick={() => props.onResolveRouteConflict?.("kill-existing")}
             >
               Kill process &amp; reclaim

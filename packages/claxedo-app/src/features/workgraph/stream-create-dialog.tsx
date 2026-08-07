@@ -197,7 +197,7 @@ export function StreamCreateDialog(props: {
           </>
         }
       >
-        <p class="text-[12px] leading-5 text-text-base">
+        <p class="text-sm leading-5 text-text-base">
           {budget()
             ? `This creates a standing child master and carves ${props.budgetCarve || "0"} ${budget()!.unit} from ${props.parent?.title}.`
             : `This creates a standing child master under ${props.parent?.title}.`}

@@ -12,7 +12,7 @@
   color: var(--v2-text-text-base);
   font-family: var(--font-family-sans);
   font-size: var(--font-size-base); /* 14px */
-  line-height: 160%;
+  line-height: var(--line-height-relaxed);
 
   /* Spacing for flow */
   > *:first-child {
@@ -30,25 +30,25 @@
 
   /* Headings: Sized by level, distinguished by color and spacing */
   h1 {
-    font-size: 17px;
+    font-size: var(--font-size-title-small);
     color: var(--v2-text-text-base);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin-top: 28px;
     margin-bottom: 12px;
     line-height: var(--line-height-large);
   }
 
   h2 {
-    font-size: 15px;
+    font-size: var(--font-size-intermediate);
     color: var(--v2-text-text-base);
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     margin-top: 24px;
     margin-bottom: 10px;
     line-height: var(--line-height-large);
   }
 
   h3 {
-    font-size: 13px;
+    font-size: var(--font-size-compact);
     color: var(--v2-text-text-base);
     font-weight: var(--font-weight-medium);
     margin-top: 20px;
@@ -59,7 +59,7 @@
   h4,
   h5,
   h6 {
-    font-size: 13px;
+    font-size: var(--font-size-compact);
     color: var(--v2-text-text-muted);
     font-weight: var(--font-weight-medium);
     margin-top: 20px;
@@ -171,11 +171,11 @@
   }
 
   .shiki {
-    background: var(--color-background-stronger);
+    background: var(--background-stronger);
     color: var(--text-base);
-    font-size: 13px;
+    font-size: var(--font-size-compact);
     padding: 12px;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     border: 0.5px solid var(--v2-border-border-base);
   }
 
@@ -221,7 +221,7 @@
     place-items: center;
     padding: 0;
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     background: transparent;
     color: var(--v2-text-text-muted, var(--text-weak));
     opacity: 0;
@@ -297,7 +297,7 @@
     color: var(--v2-text-text-base, var(--text-strong));
     font-weight: var(--font-weight-medium);
     padding: 1px 0.3rem;
-    border-radius: 0.25rem;
+    border-radius: var(--radius-sm);
     /* Pill (D§3.12): hairline inset ring on a legacy token so it reads as an object in
        both themes even when the v2 palette is absent. */
     box-shadow: inset 0 0 0 0.5px var(--border-weak-base);
@@ -359,7 +359,7 @@
   img {
     max-width: 100%;
     height: auto;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     margin: 1.5rem 0;
     display: block;
   }
@@ -374,15 +374,15 @@ body[data-new-layout] [data-component="markdown"] {
     gap: 6px;
     padding: 5px 6px;
     border: 0;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: var(--v2-background-bg-layer-01);
     box-shadow: var(--v2-elevation-floating);
     color: var(--v2-text-text-base);
     user-select: none;
-    font-size: 11px;
-    font-weight: 530;
-    line-height: 12px;
-    letter-spacing: 0.05px;
+    font-size: var(--font-size-x-small);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-12);
+    letter-spacing: var(--letter-spacing-micro-wide);
     font-variant-numeric: tabular-nums;
     font-variation-settings: "slnt" 0;
   }
@@ -397,7 +397,7 @@ body:not([data-new-layout]) [data-component="markdown"] {
   h4,
   h5,
   h6 {
-    font-size: 14px;
+    font-size: var(--font-size-base);
     color: var(--text-strong);
     font-weight: var(--font-weight-medium);
   }
@@ -429,7 +429,7 @@ body:not([data-new-layout]) [data-component="markdown"] {
   :not(pre) > code {
     color: var(--text-strong);
     padding: 1px 0.3rem;
-    border-radius: 0.25rem;
+    border-radius: var(--radius-sm);
     box-shadow: inset 0 0 0 0.5px var(--border-weak-base);
     background: color-mix(in oklch, var(--text-base) 8%, transparent);
   }

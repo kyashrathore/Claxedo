@@ -20,14 +20,14 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background:
     linear-gradient(180deg, var(--v2-alpha-light-16) 0%, var(--v2-alpha-light-0) 100%), var(--project-avatar-bg);
   box-shadow: inset 0 0 0 0.5px var(--project-avatar-border);
-  font-weight: 530;
-  font-size: 11px;
-  line-height: 1;
-  letter-spacing: 0.05px;
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-x-small);
+  line-height: var(--line-height-none);
+  letter-spacing: var(--letter-spacing-micro-wide);
   font-variant-numeric: tabular-nums;
   text-transform: uppercase;
   color: var(--v2-avatar-fg);
@@ -116,7 +116,7 @@
   height: 6px;
   right: -2px;
   top: -2px;
-  border-radius: 9999px;
+  border-radius: var(--radius-pill);
   background: var(--v2-background-bg-accent);
   pointer-events: none;
 }

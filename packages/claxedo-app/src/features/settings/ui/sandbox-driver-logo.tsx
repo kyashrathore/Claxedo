@@ -66,7 +66,7 @@ const Daytona: Component<LogoProps> = (props) =>
 const Monogram: Component<LogoProps & { label: string }> = (props) => (
   <span
     aria-hidden="true"
-    class={`grid place-items-center rounded-[5px] border border-border-base text-11-medium ${props.class ?? ""}`}
+    class={`grid place-items-center rounded-[var(--radius-5)] border border-border-base text-11-medium ${props.class ?? ""}`}
   >
     {props.label.slice(0, 1).toUpperCase()}
   </span>

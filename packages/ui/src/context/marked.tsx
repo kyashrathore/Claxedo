@@ -8,10 +8,10 @@ import { getSharedHighlighter, registerCustomTheme, ThemeRegistrationResolved } 
 
 export const OpenCodeTheme = {
   name: "OpenCode",
-  bg: "var(--color-background-stronger)",
+  bg: "var(--background-stronger)",
   fg: "var(--text-base)",
   colors: {
-    "editor.background": "var(--color-background-stronger)",
+    "editor.background": "var(--background-stronger)",
     "editor.foreground": "var(--text-base)",
     "gitDecoration.addedResourceForeground": "var(--syntax-diff-add)",
     "gitDecoration.deletedResourceForeground": "var(--syntax-diff-delete)",

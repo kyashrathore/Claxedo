@@ -42,7 +42,7 @@
   pointer-events: auto;
   transition: transform 140ms ease-out;
 
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   border: 1px solid transparent;
   color: var(--v2-text-text-base);
   background: var(--v2-background-bg-layer-01);
@@ -115,11 +115,11 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 13px;
+    font-size: var(--font-size-compact);
     font-style: normal;
-    font-weight: 530;
-    line-height: 20px;
-    letter-spacing: -0.04px;
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-20);
+    letter-spacing: var(--letter-spacing-ui);
     font-synthesis: none;
     margin: 0;
   }
@@ -129,11 +129,11 @@
     text-wrap-style: pretty;
     overflow-wrap: anywhere;
     word-break: break-word;
-    font-size: 13px;
+    font-size: var(--font-size-compact);
     font-style: normal;
-    font-weight: 440;
-    line-height: 20px;
-    letter-spacing: -0.04px;
+    font-weight: var(--font-weight-body);
+    line-height: var(--line-height-20);
+    letter-spacing: var(--letter-spacing-ui);
     font-synthesis: none;
     margin: 0;
   }
@@ -147,11 +147,11 @@
 
   [data-slot="toast-v2-actions"] [data-component="button-v2"] {
     min-height: 24px;
-    font-size: 13px;
+    font-size: var(--font-size-compact);
     font-style: normal;
-    font-weight: 530;
-    line-height: 20px;
-    letter-spacing: -0.04px;
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-20);
+    letter-spacing: var(--letter-spacing-ui);
     font-synthesis: none;
   }
 
@@ -163,7 +163,7 @@
     min-height: 20px;
     padding: 0;
     border: 0;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     background: transparent;
     color: var(--v2-icon-icon-muted);
     cursor: pointer;

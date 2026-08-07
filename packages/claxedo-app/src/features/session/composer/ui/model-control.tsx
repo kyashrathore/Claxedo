@@ -53,7 +53,7 @@ export function PromptModelControl(props: {
   )
 
   const buttonClass =
-    "min-w-0 max-w-[220px] max-md:max-w-[128px] justify-start text-[13px] font-[440] leading-4 text-v2-text-text-base group"
+    "min-w-0 max-w-[220px] max-md:max-w-[128px] justify-start text-compact font-body leading-4 text-v2-text-text-base group"
 
   const content = () => (
     <>
@@ -164,7 +164,7 @@ export function PromptModelControl(props: {
                 if (value !== undefined && value !== (props.currentVariant() ?? "default")) props.onVariantSelect(value)
               }}
               class="capitalize max-w-[120px] max-md:hidden"
-              valueClass="truncate text-[13px] font-[440] leading-4 text-v2-text-text-faint"
+              valueClass="truncate text-compact font-body leading-4 text-v2-text-text-faint"
               triggerStyle={props.controlStyle()}
               contentClass={COMPOSER_COMPACT_MENU_CLASS}
               triggerProps={{ "data-action": "prompt-model-variant" }}

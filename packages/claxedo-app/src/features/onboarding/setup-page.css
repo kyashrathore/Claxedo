@@ -53,7 +53,7 @@
 .setup-rail-segment {
   flex: 1;
   height: 2px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--border-weak-base);
   transition: background-color 220ms ease-out;
 }
@@ -125,16 +125,16 @@
   display: block;
   margin-bottom: 0.75rem;
   color: var(--text-weaker);
-  font-size: 0.6875rem;
-  font-weight: 500;
-  letter-spacing: 0.08em;
+  font-size: var(--font-size-x-small);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--letter-spacing-section);
   text-transform: uppercase;
 }
 
 .setup-title {
-  font-size: 1.75rem;
-  line-height: 1.15;
-  letter-spacing: -0.02em;
+  font-size: var(--font-size-3x-large);
+  line-height: var(--line-height-display);
+  letter-spacing: var(--letter-spacing-display);
   color: var(--text-strong);
 }
 
@@ -248,7 +248,7 @@ button.setup-row:disabled {
   }
 
   .setup-title {
-    font-size: 1.5rem;
+    font-size: var(--font-size-2x-large);
   }
 
   /* Primary action first in DOM order and full-width on narrow screens. */

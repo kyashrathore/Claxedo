@@ -296,7 +296,7 @@ function DecisionContent(props: {
         <div class="workgraph-detail">
           <p class="workgraph-detail-lede text-text-strong">{decision.question}</p>
           <Show when={decision.rationale}>
-            <p class="text-[12px] leading-5 text-text-base">{decision.rationale}</p>
+            <p class="text-sm leading-5 text-text-base">{decision.rationale}</p>
           </Show>
           <DialogSection title="Options">
             <div class="workgraph-detail-options">
@@ -421,7 +421,7 @@ function TaskContent(props: {
                 {String((latest.error as { message?: string })?.message ?? "Runs could not be loaded.")}
               </div>
             </Show>
-            <Show when={latest()} fallback={<Show when={!latest.loading && !latest.error}><span class="text-[12px] text-text-weaker">No run has run yet.</span></Show>}>
+            <Show when={latest()} fallback={<Show when={!latest.loading && !latest.error}><span class="text-sm text-text-weaker">No run has run yet.</span></Show>}>
               {(detail) => <RunDetailView detail={detail()} masterStatus={props.masterStatus} streamRuns={props.streamRuns} onOpenSession={props.onOpenSession} />}
             </Show>
           </DialogSection>
@@ -533,13 +533,13 @@ function TaskActivity(props: {
   }
   onMount(() => void load())
   return (
-    <DialogSection title="Activity" trailing={<span class="text-[10px] text-text-weaker">{props.granularity}</span>}>
+    <DialogSection title="Activity" trailing={<span class="text-2xs text-text-weaker">{props.granularity}</span>}>
       <Show when={error()}>{(message) => <div class="workgraph-detail-status is-error" role="alert">{message()}</div>}</Show>
       <Show when={loading() && !loaded()}>
         <div class="workgraph-detail-status" role="status">Loading activity…</div>
       </Show>
       <Show when={loaded() && entries().length === 0}>
-        <span class="text-[12px] text-text-weaker">No activity yet.</span>
+        <span class="text-sm text-text-weaker">No activity yet.</span>
       </Show>
       <ol class="workgraph-activity-list">
         <For each={entries()}>{(entry) => <TaskActivityRow entry={entry} />}</For>
@@ -562,12 +562,12 @@ function TaskActivityRow(props: { entry: TaskActivityEntry }) {
         <Icon name={activityIcon(props.entry.category)} size="small" />
       </span>
       <div class="workgraph-activity-copy">
-        <span class="text-[12px] leading-5 text-text-base">{props.entry.summary}</span>
-        <span class="font-mono text-[10px] text-text-weaker">
+        <span class="text-sm leading-5 text-text-base">{props.entry.summary}</span>
+        <span class="font-mono text-2xs text-text-weaker">
           {props.entry.category.replaceAll("_", " ")} · {new Date(props.entry.occurredAt).toLocaleString()}
         </span>
       </div>
-      <span class="workgraph-activity-source font-mono text-[10px] text-text-weaker">{props.entry.source.id}</span>
+      <span class="workgraph-activity-source font-mono text-2xs text-text-weaker">{props.entry.source.id}</span>
     </li>
   )
 }
@@ -639,11 +639,11 @@ function CandidatesContent(props: { source: WorkGraphWaitingSource; onResolved: 
         {(candidate) => (
           <div class="workgraph-detail-candidate">
             <div class="min-w-0">
-              <div class="text-[12px] text-text-base">
+              <div class="text-sm text-text-base">
                 {candidate.candidateKind === "external_issue" && candidate.externalKey ? `${candidate.externalKey} · ` : ""}
                 {candidate.title}
               </div>
-              <div class="text-[11px] text-text-weaker">
+              <div class="text-xs text-text-weaker">
                 {candidate.candidateKind === "external_issue" ? `${candidate.provider} · ${candidate.externalStatus}` : "AI session"} · {candidate.state}
               </div>
             </div>
@@ -686,7 +686,7 @@ function ConfigRequiredContent(props: { item: AttentionItem; onOpenSettings?: ()
                   <DialogField label="Purpose">{requirement.purpose.replaceAll("_", " ")}</DialogField>
                   <DialogField label="Reason">{requirement.reason}</DialogField>
                   <DialogField label="Job" mono>{requirement.jobId}</DialogField>
-                  <p class="text-[12px] leading-5 text-text-weak">Open WorkGraph settings to configure the execution defaults this background work needs.</p>
+                  <p class="text-sm leading-5 text-text-weak">Open WorkGraph settings to configure the execution defaults this background work needs.</p>
                   <Show when={props.onOpenSettings}>
                     <div class="workgraph-detail-actions">
                       <Button
@@ -715,7 +715,7 @@ function ConfigRequiredContent(props: { item: AttentionItem; onOpenSettings?: ()
                 <DialogField label="Account">{requirement.accountLabel}</DialogField>
               </Show>
               <DialogField label="Connection" mono>{requirement.connectionId}</DialogField>
-              <p class="text-[12px] leading-5 text-text-weak">
+              <p class="text-sm leading-5 text-text-weak">
                 Reconnect this integration from Connections settings to clear this item. Configuration lives outside WorkGraph, so it is not changed here.
               </p>
             </div>

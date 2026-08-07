@@ -1,5 +1,7 @@
-import { cpus } from "node:os"
+import { execFile } from "node:child_process"
 import { readFile } from "node:fs/promises"
+import { cpus } from "node:os"
+import { promisify } from "node:util"
 
 import pidtree from "pidtree"
 // Static import, NOT createRequire: the worker entry is bundled with
@@ -15,6 +17,7 @@ import packageUsageModule from "pidusage"
 import { linuxCreationIdentity } from "./process-identity"
 import {
   boundedPids,
+  diagnosticsWorkerProcessOptions,
   MAX_DIAGNOSTICS_PIDS,
   type ProcessMetricSample,
   type ProcessMetricsWorker,
@@ -23,6 +26,7 @@ import {
 } from "./process-metrics-worker"
 
 const packageUsage = packageUsageModule as unknown as Pidusage
+const execFileAsync = promisify(execFile)
 
 type PidusageStats = {
   cpu: number
@@ -40,12 +44,18 @@ export function createPosixProcessMetricsWorker(options: {
   platform: "darwin" | "linux"
   logicalProcessors?: number
   readLinuxStat?: (pid: number) => Promise<string>
+  readLinuxSmapsRollup?: (pid: number) => Promise<string>
+  readMacMemoryImpact?: (pids: number[]) => Promise<Map<number, number>>
+  memoryHelperPath?: string
+  memoryImpactIntervalMs?: number
   usage?: Pidusage
   tree?: typeof pidtree
 }): ProcessMetricsWorker {
   const usage = options.usage ?? packageUsage
   const tree = options.tree ?? pidtree
   const logicalProcessors = options.logicalProcessors ?? Math.max(1, cpus().length)
+  const memoryImpact = new Map<number, ProcessMetricSample["memoryImpact"]>()
+  let nextMemoryImpactAt = Number.NEGATIVE_INFINITY
   let disposed = false
 
   return {
@@ -75,7 +85,7 @@ export function createPosixProcessMetricsWorker(options: {
           settled.flatMap((result) => (result.status === "fulfilled" ? result.value : [])).length > entries.length,
       }
     },
-    async sample(entries) {
+    async sample(entries, at) {
       if (disposed) return []
       const bounded = uniqueEntries(entries).slice(0, MAX_DIAGNOSTICS_PIDS)
       if (bounded.length === 0) return []
@@ -85,6 +95,32 @@ export function createPosixProcessMetricsWorker(options: {
         options.platform === "darwin",
       )
       if (Object.keys(stats).length === 0) throw new Error("process metrics sampling failed")
+      if (at >= nextMemoryImpactAt) {
+        const pids = bounded.map((entry) => entry.pid)
+        const measured = options.platform === "darwin"
+          ? await (options.readMacMemoryImpact
+              ? options.readMacMemoryImpact(pids)
+              : collectMacMemoryImpact(pids, options.memoryHelperPath))
+            .then((readings) => new Map([...readings].map(([pid, bytes]) => [
+              pid,
+              { kind: "physical-footprint" as const, bytes },
+            ])))
+            .catch(() => new Map())
+          : new Map((await Promise.all(pids.map(async (pid) => {
+              try {
+                const rollup = await (options.readLinuxSmapsRollup
+                  ? options.readLinuxSmapsRollup(pid)
+                  : readFile(`/proc/${String(pid)}/smaps_rollup`, "utf8"))
+                const bytes = parseLinuxPssBytes(rollup)
+                return bytes === undefined ? undefined : [pid, { kind: "pss" as const, bytes }] as const
+              } catch {
+                return
+              }
+            }))).filter((reading): reading is readonly [number, { kind: "pss"; bytes: number }] => !!reading))
+        memoryImpact.clear()
+        measured.forEach((reading, pid) => memoryImpact.set(pid, reading))
+        nextMemoryImpactAt = at + (options.memoryImpactIntervalMs ?? 10_000)
+      }
       return (
         await Promise.all(
           bounded.map(async (entry) => {
@@ -98,6 +134,10 @@ export function createPosixProcessMetricsWorker(options: {
                   : ({ state: "unavailable", reason: "identity-unavailable" } as const),
               cpuMachinePercent: Math.min(100, Math.max(0, value.cpu / logicalProcessors)),
               rssBytes: Math.max(0, Math.trunc(value.memory)),
+              memoryImpact: memoryImpact.get(entry.pid) ?? {
+                kind: "rss-fallback" as const,
+                bytes: Math.max(0, Math.trunc(value.memory)),
+              },
             }
           }),
         )
@@ -111,12 +151,53 @@ export function createPosixProcessMetricsWorker(options: {
     },
     clear() {
       usage.clear()
+      memoryImpact.clear()
+      nextMemoryImpactAt = Number.NEGATIVE_INFINITY
     },
     dispose() {
       disposed = true
       usage.clear()
+      memoryImpact.clear()
     },
   }
+
+}
+
+export function parseLinuxPssBytes(rollup: string) {
+  const match = /^Pss:\s+(\d+)\s+kB$/m.exec(rollup)
+  if (!match) return
+  const kib = Number(match[1])
+  if (!Number.isSafeInteger(kib)) return
+  return kib * 1_024
+}
+
+export function parseMacMemoryImpact(output: string) {
+  return new Map(
+    output
+      .split("\n")
+      .flatMap((line) => {
+        const match = /^(\d+) (\d+)$/.exec(line.trim())
+        if (!match) return []
+        const pid = Number(match[1])
+        const bytes = Number(match[2])
+        return Number.isInteger(pid) && pid > 0 && Number.isSafeInteger(bytes) && bytes >= 0
+          ? [[pid, bytes] as const]
+          : []
+      }),
+  )
+}
+
+async function collectMacMemoryImpact(pids: number[], helperPath?: string) {
+  if (!helperPath || pids.length === 0) return new Map<number, number>()
+  const policy = diagnosticsWorkerProcessOptions("darwin")
+  const result = await execFileAsync(helperPath, pids.map(String), {
+    cwd: policy.cwd,
+    env: policy.env,
+    timeout: 2_000,
+    maxBuffer: 64 * 1_024,
+    encoding: "utf8",
+  })
+  return parseMacMemoryImpact(result.stdout)
 }
 
 async function resilientUsage(

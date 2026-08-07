@@ -227,7 +227,7 @@ describe("local performance diagnostics dialog", () => {
     )
     expect(chart).toHaveAttribute(
       "aria-label",
-      expect.stringContaining("Memory axis 0 to 8 KiB, peak 8 KiB"),
+      expect.stringContaining("Memory impact axis 0 to 8 KiB, peak 8 KiB"),
     )
     expect(screen.queryByRole("slider")).not.toBeInTheDocument()
   })
@@ -430,6 +430,7 @@ function taskPoint(at: number, processId: string, cpu: number, rssBytes: number)
     processId,
     cpuMachinePercent: { state: "available" as const, value: cpu },
     rssBytes: { state: "available" as const, value: rssBytes },
+    memoryImpact: { kind: "pss" as const, bytes: { state: "available" as const, value: rssBytes } },
   }
 }
 
@@ -545,6 +546,7 @@ function point(at: number, cpu: number, rssBytes: number) {
     processId: "host:42:100",
     cpuMachinePercent: { state: "available" as const, value: cpu },
     rssBytes: { state: "available" as const, value: rssBytes },
+    memoryImpact: { kind: "pss" as const, bytes: { state: "available" as const, value: rssBytes } },
   }
 }
 

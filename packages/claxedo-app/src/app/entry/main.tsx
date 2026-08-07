@@ -280,8 +280,8 @@ function renderStartupFailure(error: unknown) {
   if (!(root instanceof HTMLElement)) return
   const message = error instanceof Error && error.message ? error.message : "Unknown startup failure"
   root.replaceChildren()
-  root.style.backgroundColor = "var(--background-base, #101010)"
-  root.style.color = "var(--text-base, #a0a0a0)"
+  root.style.backgroundColor = "var(--background-base)"
+  root.style.color = "var(--text-base)"
   root.style.minHeight = "100dvh"
   root.style.display = "grid"
   root.style.placeItems = "center"
@@ -289,21 +289,21 @@ function renderStartupFailure(error: unknown) {
   const panel = document.createElement("div")
   panel.style.maxWidth = "520px"
   panel.style.padding = "24px"
-  panel.style.fontFamily = "var(--font-family-sans, system-ui, sans-serif)"
-  panel.style.lineHeight = "1.5"
+  panel.style.fontFamily = "var(--font-family-sans)"
+  panel.style.lineHeight = "var(--line-height-relaxed)"
 
   const title = document.createElement("div")
   title.textContent = "Claxedo failed to start"
-  title.style.color = "var(--text-strong, #f2f2f2)"
-  title.style.fontSize = "14px"
-  title.style.fontWeight = "600"
+  title.style.color = "var(--text-strong)"
+  title.style.fontSize = "var(--font-size-base)"
+  title.style.fontWeight = "var(--font-weight-semibold)"
 
   const body = document.createElement("pre")
   body.textContent = message
   body.style.margin = "12px 0 0"
   body.style.whiteSpace = "pre-wrap"
-  body.style.color = "var(--text-weak, #b8b8b8)"
-  body.style.fontSize = "12px"
+  body.style.color = "var(--text-weak)"
+  body.style.fontSize = "var(--font-size-small)"
 
   panel.append(title, body)
   root.append(panel)

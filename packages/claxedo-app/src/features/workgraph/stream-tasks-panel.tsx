@@ -28,9 +28,9 @@ export function StreamTasksPanelBody(props: {
   return (
     <div class="workgraph-tasks-panel" aria-label={`All tasks for ${props.stream.title}`}>
       <div class="workgraph-tasks-panel-head">
-        <span class="text-[12px] font-semibold text-text-strong">{props.stream.title}</span>
+        <span class="text-sm font-semibold text-text-strong">{props.stream.title}</span>
         <Show when={completed()}>
-          <span class="text-[11px] text-text-weaker">{completed()} done</span>
+          <span class="text-xs text-text-weaker">{completed()} done</span>
         </Show>
       </div>
       <div class="workgraph-tasks-panel-list">

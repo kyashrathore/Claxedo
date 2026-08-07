@@ -30,7 +30,7 @@ export const DialogSettings: Component = () => {
     <Dialog size="x-large" transition flush class="flex-1 settings-dialog-shell" aria-label={language.t("sidebar.settings")}>
       <div class="flex flex-col h-full min-h-0">
         <div class="hidden h-10 shrink-0 items-center justify-between border-b border-border-weak-base/60 px-3 max-sm:flex">
-          <span class="text-[13px] font-medium text-text-base">Settings</span>
+          <span class="text-compact font-medium text-text-base">Settings</span>
           <button
             type="button"
             aria-label="Close settings"

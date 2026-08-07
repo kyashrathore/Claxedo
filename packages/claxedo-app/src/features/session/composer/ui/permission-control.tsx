@@ -79,7 +79,7 @@ export function PromptPermissionControl(props: {
             disabled={props.disabled()}
             tabIndex={props.disabled() ? -1 : undefined}
             style={props.style()}
-            class="flex h-7 min-w-0 shrink items-center gap-1.5 rounded-md px-2.5 text-[13px] font-[440] leading-4 transition-colors duration-150 hover:bg-v2-overlay-simple-overlay-hover disabled:pointer-events-none disabled:opacity-50 data-[expanded]:bg-v2-overlay-simple-overlay-hover"
+            class="flex h-7 min-w-0 shrink items-center gap-1.5 rounded-md px-2.5 text-compact font-body leading-4 transition-colors duration-150 hover:bg-v2-overlay-simple-overlay-hover disabled:pointer-events-none disabled:opacity-50 data-[expanded]:bg-v2-overlay-simple-overlay-hover"
             classList={{
               "text-v2-text-text-base": shieldActive(),
               "text-v2-text-text-faint hover:text-v2-text-text-muted": !shieldActive(),
@@ -134,7 +134,7 @@ export function PromptPermissionControl(props: {
                     fallback={
                       <p
                         data-slot="permission-modes-unavailable"
-                        class="text-balance px-2.5 py-2 text-[12px] leading-[1.45] text-v2-text-text-faint"
+                        class="text-balance px-2.5 py-2 text-sm leading-[var(--line-height-prose-compact)] text-v2-text-text-faint"
                         classList={{ "mt-1 border-t border-border-base pt-2.5": groups().claxedo.length > 0 }}
                       >
                         {groups().harness.unavailable}
@@ -238,13 +238,13 @@ function ModeRow(props: {
             }}
           />
           <span class="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span data-slot="menu-v2-item-content" class="text-[13px] leading-4 text-v2-text-text-base">
+            <span data-slot="menu-v2-item-content" class="text-compact leading-4 text-v2-text-text-base">
               {option().name}
             </span>
             <Show when={detail()}>
               <span
                 data-slot="permission-mode-description"
-                class="line-clamp-2 whitespace-normal text-[11px] leading-[15px] text-v2-text-text-faint"
+                class="line-clamp-2 whitespace-normal text-xs leading-[var(--line-height-15)] text-v2-text-text-faint"
               >
                 {detail()}
               </span>
@@ -252,7 +252,7 @@ function ModeRow(props: {
             <Show when={caveat()}>
               <span
                 data-slot="permission-mode-caveat"
-                class="whitespace-normal text-[11px] leading-[15px]"
+                class="whitespace-normal text-xs leading-[var(--line-height-15)]"
                 // The composer is v2 UI, so this is the v2 warning foreground.
                 // Not `--text-danger`: that token is not defined by the theme
                 // layer these menus render under, so it silently resolves to

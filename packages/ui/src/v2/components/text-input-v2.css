@@ -8,7 +8,7 @@
   width: 280px;
   height: 28px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   outline: 1px solid transparent;
   outline-offset: 0;
   background:
@@ -88,10 +88,10 @@
   background: transparent;
   outline: none;
   font-style: normal;
-  font-weight: 440;
-  font-size: 13px;
-  line-height: 1;
-  letter-spacing: -0.04px;
+  font-weight: var(--font-weight-body);
+  font-size: var(--font-size-compact);
+  line-height: var(--line-height-none);
+  letter-spacing: var(--letter-spacing-ui);
   color: var(--v2-text-text-base);
   font-variation-settings: "slnt" 0;
 }
@@ -123,7 +123,7 @@
   padding: 2px;
   gap: 3px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--v2-icon-icon-muted);
   cursor: pointer;
@@ -164,7 +164,7 @@
   width: 28px;
   height: 28px;
   padding: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   margin-right: -8px;
 }
 

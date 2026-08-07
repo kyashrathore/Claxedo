@@ -16,7 +16,7 @@
   padding-right: 8px;
   overflow: visible;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background-color: transparent;
   color: var(--v2-text-text-muted);
   text-align: left;
@@ -112,10 +112,10 @@
   justify-content: center;
   width: 16px;
   height: 16px;
-  font-size: 11px;
-  font-weight: 530;
-  line-height: 1;
-  letter-spacing: -0.04px;
+  font-size: var(--font-size-x-small);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-none);
+  letter-spacing: var(--letter-spacing-ui);
   text-align: center;
   text-transform: uppercase;
   font-variant-numeric: tabular-nums lining-nums;

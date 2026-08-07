@@ -14,9 +14,9 @@
   height: 28px;
   border-radius: var(--avatar-radius);
   border: 0.5px solid var(--v2-border-border-base);
-  font-weight: 530;
+  font-weight: var(--font-weight-medium);
   font-size: var(--avatar-font-size);
-  line-height: 1;
+  line-height: var(--line-height-none);
   letter-spacing: var(--avatar-tracking);
   text-transform: uppercase;
   background-color: var(--avatar-bg);

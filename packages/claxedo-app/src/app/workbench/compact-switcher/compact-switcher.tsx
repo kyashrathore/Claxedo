@@ -88,9 +88,9 @@ function MetadataRow(props: { icon: ClaxedoIconProps["name"]; label: string; val
         of the other fifteen locales, and it truncated. Sentence case at 11px is
         narrower, quieter, and leaves the value as the thing being read.
       */}
-      <span class="text-[11px] text-text-weaker">{props.label}</span>
+      <span class="text-xs text-text-weaker">{props.label}</span>
       <span
-        class="min-w-0 truncate text-[12px]"
+        class="min-w-0 truncate text-sm"
         classList={{
           "text-text-base": !!value(),
           // Absence is not a value. An em dash says "nothing here" without
@@ -128,10 +128,10 @@ function SwitcherMetadataCard(props: { item: SwitcherItem }) {
           class="size-8 shrink-0"
         />
         <div class="min-w-0 flex-1">
-          <div class="truncate text-[13px] font-semibold leading-tight text-text-base">
+          <div class="truncate text-compact font-semibold leading-tight text-text-base">
             {fallback(props.item.title, "Untitled session")}
           </div>
-          <div class="mt-1 truncate text-[11px] leading-tight text-text-weaker">
+          <div class="mt-1 truncate text-xs leading-tight text-text-weaker">
             {fallback(props.item.projectLabel, "Global")} · {fallback(props.item.workspaceLabel, "Global")}
           </div>
         </div>
@@ -283,7 +283,7 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
                 <div
                   data-slot="workbench-tab"
                   data-selected={item().active ? "true" : undefined}
-                  class="flex h-7 w-full min-w-0 max-w-[220px] shrink-0 items-stretch gap-0 rounded-md border border-transparent py-0 pl-1.5 pr-1.5 text-left text-[12px] leading-none transition-[background-color,color] duration-100"
+                  class="flex h-7 w-full min-w-0 max-w-[220px] shrink-0 items-stretch gap-0 rounded-md border border-transparent py-0 pl-1.5 pr-1.5 text-left text-sm leading-none transition-[background-color,color] duration-100"
                   classList={{
                     "bg-surface-base-hover text-text-base":
                       item().active,
@@ -342,7 +342,7 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
                       if (event.button !== 1 || !item().closable) return
                       close(event, item())
                     }}
-                    class="ml-1 flex h-full min-w-0 flex-1 items-center border-none bg-transparent p-0 text-left text-[12px] leading-none text-inherit outline-none"
+                    class="ml-1 flex h-full min-w-0 flex-1 items-center border-none bg-transparent p-0 text-left text-sm leading-none text-inherit outline-none"
                   >
                     {/* Ellipsis, not a fade mask. The tab caps at 220px, and a
                         gradient that dissolves the last 16px reads as a render

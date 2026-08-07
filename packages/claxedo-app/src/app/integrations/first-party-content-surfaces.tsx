@@ -189,18 +189,18 @@ function TaskComposerSurface(props: { context: ContentSurfaceRenderContext }) {
       fallback={
         <main class="flex size-full items-center justify-center bg-background-base p-6" aria-label="Choose a project for the task">
           <section class="w-full max-w-md rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-sm">
-            <h1 class="text-[14px] font-medium text-text-base">Where should this task live?</h1>
-            <p class="mt-1 text-[12px] text-text-weaker">Choose a project before composing the task.</p>
+            <h1 class="text-base font-medium text-text-base">Where should this task live?</h1>
+            <p class="mt-1 text-sm text-text-weaker">Choose a project before composing the task.</p>
             <div class="mt-3 space-y-1">
               <For each={projectsQuery.data ?? []}>
                 {(project) => (
                   <button
                     type="button"
-                    class="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-[12px] text-text-base hover:bg-surface-base-hover"
+                    class="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm text-text-base hover:bg-surface-base-hover"
                     onClick={() => retarget(project.worktree)}
                   >
                     <span class="truncate">{project.name?.trim() || project.worktree.split("/").filter(Boolean).at(-1)}</span>
-                    <span class="ml-3 truncate text-[11px] text-text-weaker">{project.worktree}</span>
+                    <span class="ml-3 truncate text-xs text-text-weaker">{project.worktree}</span>
                   </button>
                 )}
               </For>

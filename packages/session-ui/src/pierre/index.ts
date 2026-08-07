@@ -16,7 +16,7 @@ export type DiffProps<T = {}> = FileDiffOptions<T> & {
 
 const unsafeCSS = `
 :host {
-  --diffs-bg: var(--opencode-diffs-bg, var(--color-background-stronger));
+  --diffs-bg: var(--opencode-diffs-bg, var(--background-stronger));
 }
 
 [data-diff],
@@ -32,7 +32,7 @@ const unsafeCSS = `
   );
   --diffs-selection-base: var(--surface-warning-strong);
   --diffs-selection-border: var(--border-warning-base);
-  --diffs-selection-number-fg: #1c1917;
+  --diffs-selection-number-fg: var(--text-strong);
   /* Use explicit alpha instead of color-mix(..., transparent) to avoid Safari's non-premultiplied interpolation bugs. */
   --diffs-bg-selection: var(--diffs-bg-selection-override, rgb(from var(--surface-warning-base) r g b / 0.65));
   --diffs-bg-selection-number: var(
@@ -44,11 +44,11 @@ const unsafeCSS = `
 
 :host([data-color-scheme='dark']) [data-diff],
 :host([data-color-scheme='dark']) [data-file] {
-  --diffs-selection-number-fg: #fdfbfb;
-  --diffs-bg-selection: var(--diffs-bg-selection-override, rgb(from var(--solaris-dark-6) r g b / 0.65));
+  --diffs-selection-number-fg: var(--text-strong);
+  --diffs-bg-selection: var(--diffs-bg-selection-override, rgb(from var(--surface-warning-base) r g b / 0.65));
   --diffs-bg-selection-number: var(
     --diffs-bg-selection-number-override,
-    rgb(from var(--solaris-dark-6) r g b / 0.85)
+    rgb(from var(--surface-warning-base) r g b / 0.85)
   );
 }
 
@@ -177,7 +177,7 @@ export function createDefaultOptions<T>(style: FileDiffOptions<T>["diffStyle"]) 
 export const styleVariables = {
   "--diffs-font-family": "var(--font-family-mono)",
   "--diffs-font-size": "var(--font-size-small)",
-  "--diffs-line-height": "24px",
+  "--diffs-line-height": "var(--line-height-24)",
   "--diffs-tab-size": 2,
   "--diffs-font-features": "var(--font-family-mono--font-feature-settings)",
   "--diffs-header-font-family": "var(--font-family-sans)",

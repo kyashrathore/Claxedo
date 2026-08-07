@@ -120,6 +120,14 @@ const electronDiagnosticsSource = createElectronSource({
 const diagnosticsSource = createProcessMetricsSource({
   electron: electronDiagnosticsSource,
   workerPath: join(import.meta.dirname, "process-metrics-worker.js"),
+  ...(process.platform === "darwin"
+    ? {
+        memoryHelperPath: join(
+          IS_PACKAGED ? process.resourcesPath : app.getAppPath(),
+          IS_PACKAGED ? "diagnostics/macos-memory-impact" : "resources/diagnostics/macos-memory-impact",
+        ),
+      }
+    : {}),
   wsl: createWslSource({
     enabled: process.platform === "win32" && getWslConfig().enabled,
     ...(process.platform === "win32" ? { collect: createWindowsWslCollector() } : {}),
@@ -129,8 +137,6 @@ const diagnosticsProfiler = createProfiler({ source: diagnosticsSource })
 const scanSessionMemory = createSessionMemoryScanner({
   workerPath: join(import.meta.dirname, "session-memory-worker.js"),
   paths: {
-    codexHome: process.env.CODEX_HOME ?? join(app.getPath("home"), ".codex"),
-    claudeHome: process.env.CLAUDE_CONFIG_DIR ?? join(app.getPath("home"), ".claude"),
     databases: [
       ...(["prod", "beta", "dev"] as const).map((channel) => ({
         path: join(resolveDesktopServerDataDir({ channel, home: app.getPath("home") }), "opencode-engine", "opencode.db"),

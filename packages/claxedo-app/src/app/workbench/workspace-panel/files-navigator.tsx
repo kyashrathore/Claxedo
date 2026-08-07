@@ -219,7 +219,7 @@ export function WorkspaceFilesNavigator(props: {
             value={search()}
             placeholder={props.mode === "changes" ? "Filter changes..." : "Search files..."}
             autofocus
-            class="flex-1 min-w-0 bg-transparent text-[12px] text-text-base placeholder:text-text-weak/60 outline-none"
+            class="flex-1 min-w-0 bg-transparent text-sm text-text-base placeholder:text-text-weak/60 outline-none"
             onInput={(e) => setSearch(e.currentTarget.value)}
             onKeyDown={(e) => {
               if (e.key === "Escape") {
@@ -241,7 +241,7 @@ export function WorkspaceFilesNavigator(props: {
           </button>
         </Show>
         <Show when={props.mode === "changes"}>
-          <span class="shrink-0 text-[11px] text-text-weak">
+          <span class="shrink-0 text-xs text-text-weak">
             {totalChanged()}
           </span>
         </Show>

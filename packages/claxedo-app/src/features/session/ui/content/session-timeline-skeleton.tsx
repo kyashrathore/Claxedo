@@ -78,7 +78,7 @@ export function SessionTimelineSkeleton(props: { centered?: boolean }) {
             <div class="w-full px-4 pt-8 md:px-5">
               <div class="flex flex-col items-end">
                 <div
-                  class="flex flex-col gap-2.5 rounded-[6px] border border-border-weak-base bg-surface-base px-3 py-2.5"
+                  class="flex flex-col gap-2.5 rounded-md border border-border-weak-base bg-surface-base px-3 py-2.5"
                   style={{ width: turn().bubble }}
                 >
                   <Index each={turn().user}>{(bar) => <SkeletonLine bar={bar()} />}</Index>
@@ -98,7 +98,7 @@ export function SessionTimelineSkeleton(props: { centered?: boolean }) {
 function SkeletonLine(props: { bar: SkeletonBar }) {
   return (
     <div
-      class="session-skeleton-bar h-3 rounded-[4px]"
+      class="session-skeleton-bar h-3 rounded-sm"
       style={{ width: `${props.bar.width}%`, "animation-delay": props.bar.delay }}
     />
   )

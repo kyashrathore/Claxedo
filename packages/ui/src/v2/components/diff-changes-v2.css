@@ -6,11 +6,11 @@
 
   [data-slot="diff-changes-additions"],
   [data-slot="diff-changes-deletions"] {
-    font-size: 11px;
+    font-size: var(--font-size-x-small);
     font-style: normal;
-    font-weight: 440;
-    line-height: 1;
-    letter-spacing: 0.05px;
+    font-weight: var(--font-weight-body);
+    line-height: var(--line-height-none);
+    letter-spacing: var(--letter-spacing-micro-wide);
     text-align: right;
   }
 

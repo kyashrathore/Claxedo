@@ -7,7 +7,7 @@
   width: 280px;
   min-height: 80px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   outline: 1px solid transparent;
   outline-offset: 0;
   background:
@@ -55,10 +55,10 @@
   outline: none;
   resize: vertical;
   font-style: normal;
-  font-weight: 440;
-  font-size: 13px;
-  line-height: 1.35;
-  letter-spacing: -0.04px;
+  font-weight: var(--font-weight-body);
+  font-size: var(--font-size-compact);
+  line-height: var(--line-height-compact-relaxed);
+  letter-spacing: var(--letter-spacing-ui);
   color: var(--v2-text-text-base);
   font-variation-settings: "slnt" 0;
 }

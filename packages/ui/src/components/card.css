@@ -45,7 +45,7 @@
     top: var(--card-line-pad);
     bottom: var(--card-line-pad);
     width: 2px;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     background-color: var(--card-accent);
   }
 

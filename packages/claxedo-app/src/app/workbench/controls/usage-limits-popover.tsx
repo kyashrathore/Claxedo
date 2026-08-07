@@ -19,6 +19,8 @@ import "./usage-limits-popover.css"
 
 type Bar = { label: string; percent: number; resetsAt: string | null }
 type Entry = { name: string; label: string; provider: UsageProvider; bars: Bar[]; peak: number }
+/** `null` = both sections shut, which is the only state that shows both values. */
+type UsageSection = "harness" | "limits" | null
 
 // tokentracker exposes utilization two ways: Claude windows carry `utilization`
 // (0-100), Codex-style windows carry `used_percent`. Normalize to one number.
@@ -94,14 +96,12 @@ function formatAge(updatedAt: number): string {
   return `${mins}m ago`
 }
 
-// Severity by utilization: neutral until the quota is actually worth reacting
-// to, amber approaching the cap, red once nearly exhausted. Returned as a state
-// suffix so the bar fill and the percent numeral stay in lockstep (see the
-// `.usage-fill.is-*` / `.usage-percent.is-*` pairs in the stylesheet).
-function tone(percent: number): "" | " is-warning" | " is-critical" {
-  if (percent >= 90) return " is-critical"
-  if (percent >= 70) return " is-warning"
-  return ""
+// The panel reports headroom, not consumption: a quota is something you spend
+// down, so "13% remaining" is the number a person acts on. The bar still fills
+// with what has been USED — a track that empties as you work reads as a broken
+// progress bar — so fill and numeral are deliberately complementary.
+function remaining(percent: number): number {
+  return 100 - percent
 }
 
 function isProvider(v: UsageProvider | string): v is UsageProvider {
@@ -109,21 +109,20 @@ function isProvider(v: UsageProvider | string): v is UsageProvider {
 }
 
 // A short, human status for a provider that has no renderable bars.
-function issueStatus(p: UsageProvider): { dot: string; text: string } {
-  if (p.auth_action_required === "reauth") return { dot: " is-warning", text: "Sign in again" }
+function issueStatus(p: UsageProvider): string {
+  if (p.auth_action_required === "reauth") return "Sign in again"
   if (typeof p.retry_at === "string") {
     // This is a 429 on the provider's usage-*stats* endpoint (e.g. Anthropic's
     // oauth/usage), NOT the user's model quota — say so, so it doesn't read as
     // "your Claude is capped". The countdown is the stats endpoint's reset.
     const at = formatReset(p.retry_at)
-    return { dot: " is-warning", text: at ? `Usage check throttled · retry ${at}` : "Usage check throttled" }
+    return at ? `Usage check throttled · retry ${at}` : "Usage check throttled"
   }
-  if (p.error) return { dot: " is-critical", text: p.error }
-  return { dot: "", text: "No active limits" }
+  if (p.error) return p.error
+  return "No active limits"
 }
 
 function UsageBar(props: { bar: Bar }): JSX.Element {
-  const state = createMemo(() => tone(props.bar.percent))
   const reset = createMemo(() => formatReset(props.bar.resetsAt))
   // Width binds straight to the value; the transition animates when the number
   // changes on refresh. `@starting-style` gives a one-shot 0→value grow on first
@@ -138,64 +137,71 @@ function UsageBar(props: { bar: Bar }): JSX.Element {
           <Show when={reset()}>
             <span class="usage-meta">resets {reset()}</span>
           </Show>
-          <span class={`text-12-medium usage-percent${state()}`}>{props.bar.percent}%</span>
+          <span class="text-12-medium usage-percent">{remaining(props.bar.percent)}% left</span>
         </div>
       </div>
       <div class="usage-track">
-        <div class={`usage-fill${state()}`} style={{ width: `${props.bar.percent}%` }} />
+        <div class="usage-fill" style={{ width: `${props.bar.percent}%` }} />
       </div>
     </div>
   )
 }
 
-// One provider = one disclosure. Collapsed it still answers "how consumed is
-// this?" via the peak window's bar; expanded it lists every window. Only one is
-// open at a time, so the panel's height stays roughly stable as you browse.
-function ProviderCard(props: { entry: Entry; expanded: boolean; onToggle: () => void }): JSX.Element {
-  const peakState = createMemo(() => tone(props.entry.peak))
+/**
+ * Disclosure header, borrowed wholesale from the composer's harness/model
+ * picker: uppercase label, current value on the right, and a held background
+ * while open so the panel beneath reads as this row's contents rather than a
+ * block that happens to follow it.
+ */
+function SectionHeader(props: { label: string; value: string; expanded: boolean; onToggle: () => void }): JSX.Element {
   return (
-    <div class="usage-provider" data-expanded={props.expanded ? "" : undefined}>
-      <button
-        type="button"
-        class="usage-provider-summary"
-        aria-expanded={props.expanded}
-        onClick={props.onToggle}
-      >
-        <Icon name="chevron-right" size="small" class="usage-provider-chevron" />
-        <span class="text-12-medium usage-provider-name">{props.entry.label}</span>
-        <Show when={props.entry.provider.plan_label}>
-          <span class="usage-meta usage-plan">{props.entry.provider.plan_label}</span>
-        </Show>
-        <span class="usage-provider-gap" />
-        {/* aria-hidden: the expanded rows carry the same numbers with their
-            window labels, so a screen reader would otherwise hear the peak
-            twice with no way to tell which window it belonged to. */}
-        <span class="usage-peak" aria-hidden="true">
-          <span class="usage-track usage-peak-track">
-            <span class={`usage-fill${peakState()}`} style={{ width: `${props.entry.peak}%` }} />
-          </span>
-          <span class={`text-12-medium usage-percent${peakState()}`}>{props.entry.peak}%</span>
+    <button
+      type="button"
+      class="usage-section"
+      data-expanded={props.expanded ? "" : undefined}
+      aria-expanded={props.expanded}
+      onClick={props.onToggle}
+    >
+      <Icon name="chevron-right" size="small" class="usage-section-chevron" />
+      <span class="usage-section-label">{props.label}</span>
+      <span class="usage-section-value text-12-regular">{props.value}</span>
+    </button>
+  )
+}
+
+/**
+ * One selectable harness. Carries its own headroom so the picking step is not
+ * a blind menu — you choose the harness you are about to run out of, which is
+ * the whole reason this panel gets opened.
+ */
+function OptionRow(props: { entry: Entry; selected: boolean; onSelect: () => void }): JSX.Element {
+  return (
+    <button type="button" class="usage-option" aria-current={props.selected ? "true" : undefined} onClick={props.onSelect}>
+      <span class="text-12-medium usage-option-name">{props.entry.label}</span>
+      <Show when={props.entry.provider.plan_label}>
+        <span class="usage-meta usage-plan">{props.entry.provider.plan_label}</span>
+      </Show>
+      <span class="usage-option-gap" />
+      {/* aria-hidden: the windows inside the Limits section carry these numbers
+          with their own labels, so a reader would otherwise hear the peak twice
+          with no way to tell which window it belonged to. */}
+      <span class="usage-peak" aria-hidden="true">
+        <span class="usage-track usage-peak-track">
+          <span class="usage-fill" style={{ width: `${props.entry.peak}%` }} />
         </span>
-      </button>
-      <div class="usage-provider-detail">
-        <div>
-          <Index each={props.entry.bars}>
-            {(bar) => <UsageBar bar={bar()} />}
-          </Index>
-        </div>
-      </div>
-    </div>
+        <span class="text-12-medium usage-percent">{remaining(props.entry.peak)}% left</span>
+      </span>
+      <Icon name="check" size="small" class="usage-option-check" classList={{ invisible: !props.selected }} />
+    </button>
   )
 }
 
 function SkeletonRow(): JSX.Element {
   return (
-    <div class="usage-provider">
-      <div class="usage-provider-summary">
-        <div class="usage-skeleton h-3 w-20" />
-        <span class="usage-provider-gap" />
-        <div class="usage-skeleton h-[3px] w-10" />
-      </div>
+    <div class="usage-option">
+      <div class="usage-skeleton h-3 w-20" />
+      <span class="usage-option-gap" />
+      <div class="usage-skeleton h-[3px] w-10" />
     </div>
   )
 }
@@ -233,17 +239,28 @@ export function UsageLimitsPanel(): JSX.Element {
     return { healthy, issues }
   })
 
-  // Tri-state disclosure: `undefined` means untouched, so the default tracks the
-  // data (the most-consumed provider opens itself). Once the user picks, their
-  // choice sticks — including an explicit "all collapsed" (`null`), which a
-  // plain `string | null` signal could not distinguish from untouched.
-  const [choice, setChoice] = createSignal<string | null | undefined>(undefined)
-  const expandedName = createMemo(() => {
-    const picked = choice()
-    if (picked !== undefined) return picked
-    return partition().healthy[0]?.name ?? null
+  /*
+   * Two sections, one open at a time — the composer's harness/model picker in
+   * miniature. Pick the harness, and the choice hands you its windows in the
+   * same motion. Five stacked disclosures (one per harness) made "which harness
+   * am I looking at?" a thing you answered by scanning, and put the panel's
+   * height at the mercy of how many providers happen to be signed in.
+   *
+   * It always opens on Harness, the selecting step. Reopening wherever the last
+   * visit ended is how a menu opens "wrong" more often than it opens helpfully.
+   */
+  const [section, setSection] = createSignal<UsageSection>("harness")
+  // Clicking the open header shuts it. Sections that can only be swapped, never
+  // closed, leave no state in which both headers show their current value.
+  const toggle = (next: UsageSection) => setSection((current) => (current === next ? null : next))
+
+  // Untouched means "track the data" — the most-consumed harness is the one
+  // this panel gets opened for. Once the user picks, their choice sticks.
+  const [choice, setChoice] = createSignal<string | undefined>(undefined)
+  const selected = createMemo(() => {
+    const list = partition().healthy
+    return list.find((entry) => entry.name === choice()) ?? list[0]
   })
-  const toggle = (name: string) => setChoice(expandedName() === name ? null : name)
 
   const isFirstLoad = createMemo(() => query.isPending && !query.data)
   const total = createMemo(() => partition().healthy.length + partition().issues.length)
@@ -297,7 +314,7 @@ export function UsageLimitsPanel(): JSX.Element {
           </Match>
           <Match when={query.isError}>
             <div class="usage-empty">
-              <Icon name="warning" size="small" class="text-icon-critical-base" />
+              <Icon name="warning" size="small" class="text-icon-weak-base" />
               <span class="text-12-regular text-text-weak">{(query.error as Error)?.message ?? "Failed to load usage"}</span>
             </div>
           </Match>
@@ -309,15 +326,52 @@ export function UsageLimitsPanel(): JSX.Element {
             </div>
           </Match>
           <Match when={total() > 0}>
-            <Index each={partition().healthy}>
+            <SectionHeader
+              label="Harness"
+              value={selected()?.label ?? "—"}
+              expanded={section() === "harness"}
+              onToggle={() => toggle("harness")}
+            />
+            <Show when={section() === "harness"}>
+              <div class="usage-disclosure">
+                <Index each={partition().healthy}>
+                  {(entry) => (
+                    <OptionRow
+                      entry={entry()}
+                      selected={selected()?.name === entry().name}
+                      onSelect={() => {
+                        setChoice(entry().name)
+                        // The point of the two sections: choosing a harness
+                        // hands you its windows, one motion.
+                        setSection("limits")
+                      }}
+                    />
+                  )}
+                </Index>
+              </div>
+            </Show>
+
+            <SectionHeader
+              label="Limits"
+              value={selected() ? `${remaining(selected()!.peak)}% left` : "—"}
+              expanded={section() === "limits"}
+              onToggle={() => toggle("limits")}
+            />
+            <Show when={section() === "limits" && selected()}>
               {(entry) => (
-                <ProviderCard
-                  entry={entry()}
-                  expanded={expandedName() === entry().name}
-                  onToggle={() => toggle(entry().name)}
-                />
+                <div class="usage-disclosure">
+                  {/* Nested, not merged: `.usage-windows` on the same element
+                      would REPLACE the disclosure's inset rather than sit
+                      inside it, and the windows would hang 6px wider than the
+                      option rows they are supposed to share a column with. */}
+                  <div class="usage-windows">
+                    <Index each={entry().bars}>
+                      {(bar) => <UsageBar bar={bar()} />}
+                    </Index>
+                  </div>
+                </div>
               )}
-            </Index>
+            </Show>
           </Match>
         </Switch>
       </div>
@@ -342,9 +396,9 @@ export function UsageLimitsPanel(): JSX.Element {
                     const status = createMemo(() => issueStatus(entry().provider))
                     return (
                       <div class="usage-issues-fan-row" style={{ "--fan-slot": i + 1 }}>
-                        <span class={`usage-status-dot${status().dot}`} />
+                        <span class="usage-status-dot" />
                         <span class="usage-meta usage-issues-fan-label">{entry().label}</span>
-                        <span class="usage-meta">{status().text}</span>
+                        <span class="usage-meta">{status()}</span>
                       </div>
                     )
                   }}

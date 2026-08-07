@@ -29,32 +29,32 @@
   align-items: center;
   gap: 0.4rem;
   font-family: var(--font-family-mono);
-  font-size: 0.625rem;
-  letter-spacing: 0.16em;
+  font-size: var(--font-size-2x-small);
+  letter-spacing: var(--letter-spacing-eyebrow);
   text-transform: uppercase;
 }
 
 .workgraph-mark {
   width: 0.4rem;
   height: 0.4rem;
-  border-radius: 1px;
+  border-radius: var(--radius-2xs);
   background: color-mix(in srgb, var(--surface-brand-base) 75%, transparent);
   transform: rotate(45deg);
 }
 
 .workgraph-title {
   margin-top: 0.4rem;
-  font-size: 1.25rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 1.15;
+  font-size: var(--font-size-x-large);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-heading);
+  line-height: var(--line-height-display);
 }
 
 .workgraph-lede {
   margin-top: 0.3rem;
   max-width: 44rem;
-  font-size: 0.8125rem;
-  line-height: 1.5;
+  font-size: var(--font-size-compact);
+  line-height: var(--line-height-large);
 }
 
 .workgraph-rule {
@@ -73,7 +73,7 @@
   flex-wrap: wrap;
   gap: 0.35rem 1.25rem;
   padding: 0.15rem 0 0.9rem;
-  font-size: 0.75rem;
+  font-size: var(--font-size-small);
   border-bottom: 1px solid var(--border-weak-base);
 }
 
@@ -84,7 +84,7 @@
 }
 
 .workgraph-stat-value {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-variant-numeric: tabular-nums;
 }
 
@@ -132,9 +132,9 @@
 
 .workgraph-project-name {
   flex-shrink: 0;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-wide);
   white-space: nowrap;
 }
 
@@ -147,7 +147,7 @@
   min-width: 0;
   overflow: hidden;
   font-family: var(--font-family-mono);
-  font-size: 0.625rem;
+  font-size: var(--font-size-2x-small);
   text-overflow: ellipsis;
   white-space: nowrap;
   opacity: 0;
@@ -228,7 +228,7 @@
   gap: 0.35rem;
   border: 1px dashed var(--border-base);
   color: var(--text-weaker);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-compact);
   transition:
     color 130ms ease,
     border-color 130ms ease,
@@ -263,11 +263,11 @@
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  font-size: 0.875rem;
-  font-weight: 600;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
   color: var(--text-strong);
-  letter-spacing: -0.006em;
-  line-height: 1.4;
+  letter-spacing: var(--letter-spacing-body-tight);
+  line-height: var(--line-height-prose-tight);
   white-space: normal;
 }
 
@@ -275,8 +275,8 @@
   overflow: hidden;
   color: var(--text-weaker);
   font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  line-height: 1.3;
+  font-size: var(--font-size-x-small);
+  line-height: var(--line-height-compact);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -287,7 +287,7 @@
   gap: 0.2rem;
   min-width: 0;
   color: var(--text-weak);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-x-small);
 }
 
 .workgraph-streamcard-parent span {
@@ -311,15 +311,15 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   color: var(--text-weak);
-  font-size: 0.75rem;
-  line-height: 1.4;
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-prose-tight);
 }
 
 .workgraph-streamcard-spend {
   padding-top: 0.3rem;
   color: var(--text-weak);
   font-family: var(--font-mono);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-x-small);
 }
 
 /* Fixed header controls reserve their own width. They never overlay the title
@@ -363,8 +363,8 @@
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  font-size: 0.8125rem;
-  line-height: 1.45;
+  font-size: var(--font-size-compact);
+  line-height: var(--line-height-prose-compact);
   white-space: normal;
 }
 
@@ -387,7 +387,7 @@
   align-items: center;
   gap: 0.5rem;
   color: var(--text-base);
-  font-size: 0.75rem;
+  font-size: var(--font-size-small);
 }
 
 /* The overflow tail: a demoted row that continues the list, indented to the
@@ -406,7 +406,7 @@
   /* Same wash as a task row: full-bleed and radius-md, never a square. */
   border-radius: var(--radius-md);
   color: var(--text-weaker);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-compact);
   white-space: nowrap;
   transition:
     color 110ms ease,
@@ -445,14 +445,14 @@
   margin-inline: -0.55rem;
   padding: 0.3rem 0.55rem;
   border-radius: var(--radius-md);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-compact);
 }
 
 /* A Stream with no usable execution target flags exactly that, quietly. */
 .workgraph-streamcard-flag {
   padding-top: 0.35rem;
   color: var(--text-weak);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-x-small);
 }
 
 /* Deliberately quiet: no colour and no glyph. This used to paint itself with
@@ -463,14 +463,14 @@
 .workgraph-streamcard-needs-you {
   flex-shrink: 0;
   color: var(--text-base);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 .workgraph-streamcard-paused {
   flex-shrink: 0;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-x-small);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--letter-spacing-caption);
 }
 
 .workgraph-streamcard-master {
@@ -478,7 +478,7 @@
   align-items: center;
   gap: 0.35rem;
   min-width: 0;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-x-small);
 }
 
 .workgraph-streamcard-master-label {
@@ -500,7 +500,7 @@
 }
 
 .workgraph-master-receipt-link:focus-visible {
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   outline: 2px solid var(--border-selected);
   outline-offset: 2px;
 }
@@ -524,7 +524,7 @@
   margin-top: 0.3rem;
   border-top: 1px solid color-mix(in srgb, var(--border-weak-base) 60%, transparent);
   padding-top: 0.3rem;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-x-small);
   white-space: nowrap;
 }
 
@@ -561,8 +561,8 @@
 
 .workgraph-streamcard-notes {
   color: var(--text-weak);
-  font-size: 11px;
-  line-height: 1;
+  font-size: var(--font-size-x-small);
+  line-height: var(--line-height-none);
 }
 
 .workgraph-streamcard-notes:hover,
@@ -580,8 +580,8 @@
   overflow-wrap: anywhere;
   color: var(--text-base);
   font: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-relaxed);
 }
 
 /* The lifecycle control: at rest a stack glyph plus the total, holding the
@@ -656,8 +656,8 @@
   background: var(--surface-raised-stronger-non-alpha);
   box-shadow: var(--shadow-xxs-border);
   color: var(--text-base);
-  font-size: 0.6875rem;
-  line-height: 1.4;
+  font-size: var(--font-size-x-small);
+  line-height: var(--line-height-prose-tight);
   white-space: nowrap;
   transform: scale(0.94);
   transform-origin: bottom left;
@@ -706,7 +706,7 @@
    Linear-style title + description body. */
 
 .workgraph-dialog-scope [data-component="dialog-overlay"] {
-  background: color-mix(in srgb, black 55%, transparent);
+  background: var(--overlay-scrim-strong);
 }
 
 .workgraph-dialog-scope [data-component="dialog"] {
@@ -727,9 +727,9 @@
   background: transparent;
   padding: 0.25rem 0;
   color: var(--text-strong);
-  font-size: 1.125rem;
-  font-weight: 500;
-  letter-spacing: -0.01em;
+  font-size: var(--font-size-heading);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--letter-spacing-heading);
   outline: none;
 }
 
@@ -773,13 +773,13 @@
   gap: 0.35rem;
   margin-top: 0.85rem;
   color: var(--text-base);
-  font-size: 0.75rem;
+  font-size: var(--font-size-small);
 }
 
 .workgraph-create-target input {
   width: 100%;
   border: 1px solid var(--border-weak-base);
-  border-radius: 0.375rem;
+  border-radius: var(--radius-md);
   background: var(--surface-base);
   padding: 0.5rem 0.625rem;
   color: var(--text-strong);
@@ -792,7 +792,7 @@
 
 .workgraph-create-target small {
   color: var(--text-weaker);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-x-small);
 }
 
 /* The base-revision chip trigger — a 28px ghost chip matching the shared Select
@@ -808,10 +808,10 @@
   background: transparent;
   color: var(--text-weak);
   font-size: var(--font-size-base);
-  line-height: 1;
+  line-height: var(--line-height-none);
   white-space: nowrap;
   text-transform: none;
-  letter-spacing: 0;
+  letter-spacing: var(--letter-spacing-normal);
   outline: none;
   transition: background 120ms ease;
 }
@@ -875,7 +875,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  font-size: 0.6875rem;
+  font-size: var(--font-size-x-small);
 }
 
 .workgraph-create-hint kbd {
@@ -885,8 +885,8 @@
   border-radius: var(--radius-sm);
   background: var(--surface-base);
   font-family: var(--font-family-mono);
-  font-size: 0.625rem;
-  line-height: 1.1rem;
+  font-size: var(--font-size-2x-small);
+  line-height: var(--line-height-code);
   text-align: center;
 }
 
@@ -903,8 +903,8 @@
   flex-shrink: 0;
   max-width: min(50%, 32rem);
   overflow: hidden;
-  font-size: 0.8125rem;
-  font-weight: 450;
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-body);
   color: var(--text-base);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -912,7 +912,7 @@
 }
 
 .workgraph-stream-title:focus-visible {
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   box-shadow: 0 0 0 2px var(--border-selected);
 }
 
@@ -943,7 +943,7 @@
 .workgraph-stream-time {
   flex-shrink: 0;
   font-family: var(--font-family-mono);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-x-small);
 }
 
 /* ── Children: outcomes & tasks ─────────────────────────── */
@@ -964,13 +964,13 @@
   height: 0.55rem;
   flex-shrink: 0;
   border: 1.5px solid var(--border-strong-base);
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   transform: rotate(45deg);
 }
 
 .workgraph-outcome-marker.is-orphan {
   border-style: dashed;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   transform: none;
 }
 
@@ -980,8 +980,8 @@
 }
 
 .workgraph-outcome-title {
-  font-size: 0.8125rem;
-  font-weight: 550;
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-medium);
 }
 
 .workgraph-outcome-title.is-shipped {
@@ -992,15 +992,15 @@
 
 .workgraph-outcome-crit {
   font-family: var(--font-family-mono);
-  font-size: 0.625rem;
+  font-size: var(--font-size-2x-small);
 }
 
 .workgraph-chip {
   padding: 0.05rem 0.4rem;
-  border-radius: 999px;
-  font-size: 0.625rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-2x-small);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-badge);
   text-transform: uppercase;
 }
 
@@ -1107,7 +1107,7 @@
 .workgraph-leaf-title {
   min-width: 0;
   overflow: hidden;
-  font-size: 0.8125rem;
+  font-size: var(--font-size-compact);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1120,14 +1120,14 @@
   flex-shrink: 0;
   padding: 0 0.35rem;
   border: 1px solid var(--border-weak-base);
-  border-radius: 999px;
-  font-size: 0.625rem;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-2x-small);
 }
 
 .workgraph-leaf-state {
   flex-shrink: 0;
   font-family: var(--font-family-mono);
-  font-size: 0.625rem;
+  font-size: var(--font-size-2x-small);
   text-transform: lowercase;
 }
 
@@ -1140,7 +1140,7 @@
   padding: 0 0.3rem;
   border-radius: var(--radius-sm);
   color: var(--text-weak);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-x-small);
   transition:
     color 110ms ease,
     background 110ms ease;
@@ -1159,12 +1159,12 @@
 .workgraph-leaf-session-error {
   flex-shrink: 0;
   color: var(--icon-critical-base);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-x-small);
 }
 
 .workgraph-leaf-empty {
   padding: 0.3rem 0 0.3rem 0.4rem;
-  font-size: 0.75rem;
+  font-size: var(--font-size-small);
 }
 
 .workgraph-stream-add {
@@ -1179,7 +1179,7 @@
   padding: 0 0.3rem;
   border-radius: var(--radius-sm);
   color: var(--text-weaker);
-  font-size: 0.75rem;
+  font-size: var(--font-size-small);
   transition: color 110ms ease;
 }
 
@@ -1208,7 +1208,7 @@
   border: 0;
   background: transparent;
   color: var(--text-base);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-compact);
   outline: none;
 }
 
@@ -1279,13 +1279,13 @@
 }
 
 .workgraph-confirm-text {
-  font-size: 0.75rem;
-  line-height: 1.45;
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-prose-compact);
   color: var(--text-base);
 }
 
 .workgraph-confirm-text b {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--text-strong);
 }
 
@@ -1347,7 +1347,7 @@
   width: 0.4rem;
   height: 0.4rem;
   border: 1px solid var(--border-strong-base);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   content: "";
 }
 
@@ -1378,7 +1378,7 @@
   background: var(--background-base);
   padding: 0.5rem 0.7rem;
   color: var(--text-base);
-  font-size: 0.8125rem;
+  font-size: var(--font-size-compact);
   outline: none;
   transition:
     border-color 130ms ease,

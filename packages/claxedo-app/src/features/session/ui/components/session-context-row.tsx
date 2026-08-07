@@ -149,7 +149,7 @@ function ContextChipPicker(props: { chip: ContextChip }) {
         // a workspace now lives inside this picker, so disabling it on an empty
         // list would make the create path unreachable — the empty state plus that
         // action is the useful surface.
-        class="flex h-7 min-w-0 shrink items-center gap-1.5 rounded-md px-2 text-[13px] font-[440] leading-4 text-v2-text-text-muted transition-colors duration-150 hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base disabled:pointer-events-none disabled:opacity-50 data-[expanded]:bg-v2-overlay-simple-overlay-hover data-[expanded]:text-v2-text-text-base"
+        class="flex h-7 min-w-0 shrink items-center gap-1.5 rounded-md px-2 text-compact font-body leading-4 text-v2-text-text-muted transition-colors duration-150 hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base disabled:pointer-events-none disabled:opacity-50 data-[expanded]:bg-v2-overlay-simple-overlay-hover data-[expanded]:text-v2-text-text-base"
       >
         <Show
           when={chip().avatar}
@@ -314,7 +314,7 @@ export function SessionContextRow(props: { chips: ContextChip[]; pin?: ContextPi
             class="flex h-7 min-w-0 items-center gap-2 px-2"
           >
             <span class="size-1.5 shrink-0 rounded-full bg-surface-success-strong" aria-hidden="true" />
-            <span class="truncate text-[13px] font-[440] leading-4 text-v2-text-text-base">{pin().label}</span>
+            <span class="truncate text-compact font-body leading-4 text-v2-text-text-base">{pin().label}</span>
             <span data-slot="self-hosted-detail" class="shrink-0 text-12-medium text-v2-text-text-faint">
               {pin().detail}
             </span>

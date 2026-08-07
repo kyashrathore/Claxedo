@@ -109,7 +109,7 @@ export function PromptInputV2(props: PromptInputV2Props) {
         class="group/prompt-input relative min-h-[96px] w-full rounded-xl bg-v2-background-bg-base"
         classList={{
           "shadow-[var(--v2-elevation-raised)]": !props.borderUnderlay,
-          "border border-v2-icon-icon-info border-dashed": state.drag === "active",
+          "border border-v2-state-border-info border-dashed": state.drag === "active",
         }}
         onSubmit={(event) => {
           event.preventDefault()
@@ -156,7 +156,7 @@ export function PromptInputV2(props: PromptInputV2Props) {
             spellcheck={state.mode === "normal"}
             // @ts-expect-error
             autocomplete="off"
-            class="relative z-10 block min-h-[60px] max-h-[180px] w-full overflow-y-auto whitespace-pre-wrap bg-transparent px-4 pt-4 pb-2 text-[13px] font-[440] leading-5 text-v2-text-text-base focus:outline-none empty:before:content-['\200B'] [&_[data-mention=file]]:text-syntax-property [&_[data-mention=agent]]:text-syntax-type [&_[data-mention=reference]]:text-syntax-keyword"
+            class="relative z-10 block min-h-[60px] max-h-[180px] w-full overflow-y-auto whitespace-pre-wrap bg-transparent px-4 pt-4 pb-2 text-compact font-body leading-5 text-v2-text-text-base focus:outline-none empty:before:content-['\200B'] [&_[data-mention=file]]:text-syntax-property [&_[data-mention=agent]]:text-syntax-type [&_[data-mention=reference]]:text-syntax-keyword"
             classList={{ "font-mono!": state.mode === "shell", "opacity-50": props.disabled }}
             onInput={(event) => {
               const cursor = promptInputV2Cursor(event.currentTarget)
@@ -180,7 +180,7 @@ export function PromptInputV2(props: PromptInputV2Props) {
           />
           <Show when={!props.controller.value()}>
             <div
-              class="pointer-events-none absolute inset-x-0 top-0 px-4 pt-4 text-[13px] font-[440] leading-5 text-v2-text-text-faint"
+              class="pointer-events-none absolute inset-x-0 top-0 px-4 pt-4 text-compact font-body leading-5 text-v2-text-text-faint"
               classList={{ "font-mono!": state.mode === "shell" }}
             >
               {view.placeholder?.() ??
@@ -425,10 +425,10 @@ export function PromptInputV2Attachments(props: {
                     <img
                       src={attachment.dataUrl}
                       alt={attachment.filename}
-                      class="w-[58px] h-[46px] rounded-[6px] object-cover"
+                      class="w-[58px] h-[46px] rounded-md object-cover"
                       onClick={() => props.onAttachmentClick?.(attachment)}
                     />
-                    <div class="absolute inset-0 rounded-[6px] shadow-[inset_0_0_0_0.5px_var(--v2-border-border-base)] pointer-events-none" />
+                    <div class="absolute inset-0 rounded-md shadow-[inset_0_0_0_0.5px_var(--v2-border-border-base)] pointer-events-none" />
                   </Show>
                 </TooltipV2>
                 <button
@@ -556,7 +556,7 @@ export function PromptInputV2Select(props: {
           as={ButtonV2}
           variant="ghost-muted"
           size="normal"
-          class={`max-w-[220px] justify-start ![font-weight:440] ${props.class ?? ""}`}
+          class={`max-w-[220px] justify-start !font-body ${props.class ?? ""}`}
           aria-label={props.title}
         >
           {props.currentIcon}
@@ -612,7 +612,7 @@ export function PromptInputV2Popover(props: {
               value={search().value}
               aria-label={search().label}
               placeholder={search().placeholder}
-              class="w-full bg-transparent text-[13px] leading-5 text-v2-text-text-base outline-none placeholder:text-v2-text-text-faint"
+              class="w-full bg-transparent text-compact leading-5 text-v2-text-text-base outline-none placeholder:text-v2-text-text-faint"
               onInput={(event) => search().onValueChange(event.currentTarget.value)}
               onKeyDown={(event) => search().onKeyDown(event)}
               onMouseDown={(event) => event.stopPropagation()}

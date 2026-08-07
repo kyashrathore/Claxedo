@@ -54,7 +54,7 @@
   height: 28px;
   padding: 0 12px;
   background: transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   outline: none;
   cursor: default;
   user-select: none;
@@ -71,10 +71,10 @@
     gap: 8px;
     min-width: 0;
 
-    font-size: 13px;
-    font-weight: 440;
-    line-height: 100%;
-    letter-spacing: -0.04px;
+    font-size: var(--font-size-compact);
+    font-weight: var(--font-weight-body);
+    line-height: var(--line-height-none);
+    letter-spacing: var(--letter-spacing-ui);
     color: var(--menu-v2-fg);
   }
 
@@ -84,10 +84,10 @@
     flex: none;
     height: 11px;
 
-    font-size: 11px;
-    font-weight: 530;
-    line-height: 100%;
-    letter-spacing: 0.05px;
+    font-size: var(--font-size-x-small);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-none);
+    letter-spacing: var(--letter-spacing-micro-wide);
     color: var(--menu-v2-fg-muted);
     white-space: nowrap;
   }
@@ -105,12 +105,12 @@
 
     background: var(--menu-v2-badge-bg);
     border: 0.5px solid var(--menu-v2-badge-border);
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
 
-    font-size: 11px;
-    font-weight: 530;
-    line-height: 100%;
-    letter-spacing: 0.05px;
+    font-size: var(--font-size-x-small);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-none);
+    letter-spacing: var(--letter-spacing-micro-wide);
     color: var(--menu-v2-fg-subtle);
     white-space: nowrap;
   }
@@ -168,7 +168,7 @@
   }
 
   &[data-checked] [data-slot="menu-v2-item-content"] {
-    font-weight: 530;
+    font-weight: var(--font-weight-medium);
     color: var(--menu-v2-accent);
   }
 
@@ -197,10 +197,10 @@
   height: 28px;
   padding: 0 12px;
 
-  font-size: 11px;
-  font-weight: 530;
-  line-height: 100%;
-  letter-spacing: 0.05px;
+  font-size: var(--font-size-x-small);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-none);
+  letter-spacing: var(--letter-spacing-micro-wide);
   color: var(--v2-text-text-faint);
   user-select: none;
   font-variant-numeric: tabular-nums;

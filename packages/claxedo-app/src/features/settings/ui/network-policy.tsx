@@ -57,13 +57,13 @@ function DefaultAllowlistOverlay(props: { groups: NetworkPolicyGroups; onClose: 
       }}
       tabIndex={-1}
       class="fixed inset-0 z-[100] flex items-center justify-center outline-none"
-      style={{ "background-color": "rgba(0,0,0,0.5)" }}
+      style={{ "background-color": "var(--overlay-scrim)" }}
       onKeyDown={handleKeyDown}
       onClick={(e) => { if (e.target === e.currentTarget) props.onClose() }}
     >
       <div
         class="w-full max-w-[560px] mx-4 rounded-lg border border-border-base shadow-xl flex flex-col max-h-[70vh]"
-        style={{ "background-color": "var(--surface-raised-base, #1e1e1e)" }}
+        style={{ "background-color": "var(--surface-raised-base)" }}
         onClick={(e) => e.stopPropagation()}
       >
         <div class="flex items-center justify-between px-5 py-4 border-b border-border-weak-base shrink-0">
@@ -91,7 +91,7 @@ function DefaultAllowlistOverlay(props: { groups: NetworkPolicyGroups; onClose: 
                 <div class="flex flex-wrap gap-1">
                   <For each={hosts}>
                     {(host) => (
-                      <span class="text-[11px] font-mono text-text-weaker bg-surface-inset-base px-1.5 py-0.5 rounded">
+                      <span class="text-xs font-mono text-text-weaker bg-surface-inset-base px-1.5 py-0.5 rounded">
                         {host}
                       </span>
                     )}
@@ -222,13 +222,13 @@ export function NetworkPolicySettings(props: { workspaceId?: string }) {
                         <span class="text-11-regular font-mono text-text-weaker">{entry.target}</span>
                       </Show>
                       <Show when={entry.kind === "domain"}>
-                        <span class="text-[10px] px-1 py-0.5 rounded bg-surface-base text-text-weaker">wildcard</span>
+                        <span class="text-2xs px-1 py-0.5 rounded bg-surface-base text-text-weaker">wildcard</span>
                       </Show>
                       <Show when={entry.kind === "group"}>
-                        <span class="text-[10px] px-1 py-0.5 rounded bg-surface-base text-text-weaker">group</span>
+                        <span class="text-2xs px-1 py-0.5 rounded bg-surface-base text-text-weaker">group</span>
                       </Show>
                       <Show when={entry.constraints.auto}>
-                        <span class="text-[10px] px-1 py-0.5 rounded bg-surface-base text-text-weaker">auto</span>
+                        <span class="text-2xs px-1 py-0.5 rounded bg-surface-base text-text-weaker">auto</span>
                       </Show>
                     </div>
                     <Show when={!entry.constraints.auto}>

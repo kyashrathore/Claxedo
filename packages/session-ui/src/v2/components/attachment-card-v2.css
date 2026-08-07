@@ -7,7 +7,7 @@
   min-width: 160px;
   max-width: 160px;
   padding: 8px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--v2-overlay-simple-overlay-hover);
   box-shadow: inset 0 0 0 0.5px var(--v2-border-border-base);
   cursor: default;
@@ -35,9 +35,9 @@
     max-width: 100%;
     font-family: var(--v2-font-family-sans, "Inter", sans-serif);
     font-style: normal;
-    font-size: 11px;
-    line-height: 12px;
-    letter-spacing: 0.05px;
+    font-size: var(--font-size-x-small);
+    line-height: var(--line-height-12);
+    letter-spacing: var(--letter-spacing-micro-wide);
     font-variation-settings: "slnt" 0;
   }
 
@@ -47,7 +47,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-weight: 530;
+    font-weight: var(--font-weight-medium);
     color: var(--v2-text-text-base);
   }
 
@@ -58,7 +58,7 @@
     min-width: 0;
     overflow: hidden;
     white-space: nowrap;
-    font-weight: 440;
+    font-weight: var(--font-weight-body);
     color: var(--v2-text-text-muted);
 
     [data-component="file-icon"] {

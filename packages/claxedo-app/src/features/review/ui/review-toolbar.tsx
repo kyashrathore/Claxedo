@@ -284,7 +284,7 @@ function ReviewToolbarBody(props: ReviewToolbarProps) {
             <span class="flex items-center gap-1.5">
               <span class="leading-none">{reviewModeLabel[props.mode]}</span>
               <Show when={props.hasReview}>
-                <span class="text-[11px] tabular-nums font-medium leading-none text-text-weak">{props.reviewCount}</span>
+                <span class="text-xs tabular-nums font-medium leading-none text-text-weak">{props.reviewCount}</span>
               </Show>
               <svg class="w-2.5 h-2.5 shrink-0 text-text-weak -ml-0.5" viewBox="0 0 12 12" aria-hidden="true">
                 <path d="M3 5l3 3 3-3" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />

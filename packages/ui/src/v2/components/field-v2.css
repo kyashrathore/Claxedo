@@ -18,10 +18,10 @@
   padding: 0;
   border: 0;
   font-style: normal;
-  font-weight: 530;
-  font-size: 13px;
-  line-height: 1;
-  letter-spacing: -0.04px;
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-compact);
+  line-height: var(--line-height-none);
+  letter-spacing: var(--letter-spacing-ui);
   color: var(--v2-text-text-base);
   font-variation-settings: "slnt" 0;
   cursor: default;
@@ -67,7 +67,7 @@
 [data-component="field-v2"] [data-slot="field-v2-label-info"]:focus-visible {
   outline: 2px solid var(--v2-border-border-focus);
   outline-offset: 1px;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
 }
 
 [data-component="field-v2"] [data-slot="field-v2-prefix"],
@@ -76,10 +76,10 @@
   width: 100%;
   min-height: 11px;
   font-style: normal;
-  font-weight: 440;
-  font-size: 11px;
-  line-height: 1;
-  letter-spacing: 0.05px;
+  font-weight: var(--font-weight-body);
+  font-size: var(--font-size-x-small);
+  line-height: var(--line-height-none);
+  letter-spacing: var(--letter-spacing-micro-wide);
   color: var(--v2-text-text-muted);
   font-variation-settings: "slnt" 0;
   user-select: none;

@@ -2400,11 +2400,7 @@ export type McpStatusNeedsClientRegistration = {
 }
 
 export type McpStatus =
-  | McpStatusConnected
-  | McpStatusDisabled
-  | McpStatusFailed
-  | McpStatusNeedsAuth
-  | McpStatusNeedsClientRegistration
+  McpStatusConnected | McpStatusDisabled | McpStatusFailed | McpStatusNeedsAuth | McpStatusNeedsClientRegistration
 
 export type McpUnsupportedOAuthError = {
   error: string
@@ -3131,14 +3127,7 @@ export type WorkGraphExecutionCapabilitiesUnavailable = {
   error: {
     code: "execution_capabilities_unavailable"
     capability:
-      | "catalog_workspace"
-      | "runtime"
-      | "harnesses"
-      | "agents"
-      | "models"
-      | "tools"
-      | "repository"
-      | "connections"
+      "catalog_workspace" | "runtime" | "harnesses" | "agents" | "models" | "tools" | "repository" | "connections"
     reason:
       | "catalog_workspace_unavailable"
       | "runtime_unavailable"

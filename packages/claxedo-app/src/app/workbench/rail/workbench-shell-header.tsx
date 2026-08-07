@@ -264,7 +264,7 @@ function L2HeaderStrip(props: {
           {(tab) => (
             <div data-l2-context="file" class="flex min-w-0 flex-1 items-center gap-2 px-2">
               <Icon name="file-text" size="small" class="shrink-0 text-icon-weak-base" />
-              <span class="truncate font-mono text-[11px] text-text-weak" title={tab().path}>
+              <span class="truncate font-mono text-xs text-text-weak" title={tab().path}>
                 {tab().path}
               </span>
               <Show when={isMarkdownPath(tab().path)}>
@@ -297,7 +297,7 @@ function L2HeaderStrip(props: {
                 when={tab().kind === "process"}
                 fallback={
                   <>
-                    <span class="truncate text-[12px] text-text-weak">{tab().label}</span>
+                    <span class="truncate text-sm text-text-weak">{tab().label}</span>
                     <span class="flex-1" />
                   </>
                 }
@@ -322,7 +322,7 @@ function L2HeaderStrip(props: {
               hidden={tabKind() !== "page" && tabKind() !== "pages-index"}
               class="min-w-0 max-w-[min(42vw,520px)] overflow-hidden"
             >
-              <span class="block truncate text-[11px] font-mono text-text-weak">
+              <span class="block truncate text-xs font-mono text-text-weak">
                 {focusedContent()?.filePath ?? focusedContent()?.content?.title ?? ""}
               </span>
             </div>
@@ -332,7 +332,7 @@ function L2HeaderStrip(props: {
               hidden={tabKind() !== "session" && tabKind() !== "draft-session"}
               class="min-w-0 max-w-[min(42vw,520px)] overflow-hidden"
             >
-              <span class="block truncate text-[11px] text-text-weak">{focusedContent()?.content?.title ?? ""}</span>
+              <span class="block truncate text-xs text-text-weak">{focusedContent()?.content?.title ?? ""}</span>
             </div>
             <span class="flex-1" />
             <WorkspaceTools />

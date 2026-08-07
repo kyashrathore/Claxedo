@@ -72,8 +72,8 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-medium);
   color: var(--text-strong, var(--v2-text-text-base));
 }
 
@@ -177,8 +177,8 @@
   display: flex;
   align-items: center;
   min-width: 0;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-medium);
   color: var(--text-strong, var(--v2-text-text-base));
 }
 
@@ -193,10 +193,10 @@
   flex-grow: 0;
   font-family: var(--v2-font-family-sans);
   font-style: normal;
-  font-weight: 440;
-  font-size: 11px;
-  line-height: 100%;
-  letter-spacing: 0.05px;
+  font-weight: var(--font-weight-body);
+  font-size: var(--font-size-x-small);
+  line-height: var(--line-height-none);
+  letter-spacing: var(--letter-spacing-micro-wide);
   text-transform: uppercase;
   font-variant-numeric: tabular-nums lining-nums;
   font-feature-settings:
@@ -239,7 +239,7 @@
   height: 28px;
   min-width: 36px;
   min-height: 28px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   color: var(--v2-icon-icon-base);
 }
 
@@ -313,10 +313,10 @@
   width: 16px;
   height: 16px;
   flex-shrink: 0;
-  font-size: 11px;
-  font-weight: 530;
-  line-height: 1;
-  letter-spacing: -0.04px;
+  font-size: var(--font-size-x-small);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-none);
+  letter-spacing: var(--letter-spacing-ui);
   text-transform: uppercase;
   font-variant-numeric: tabular-nums lining-nums;
 }
@@ -335,10 +335,10 @@
 
 [data-component="session-review-v2"] [data-slot="session-review-v2-file-name"] {
   flex: none;
-  font-size: 13px;
-  font-weight: 530;
-  line-height: 1;
-  letter-spacing: -0.04px;
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-none);
+  letter-spacing: var(--letter-spacing-ui);
   font-variant-numeric: tabular-nums lining-nums;
   color: var(--v2-text-text-base);
   white-space: nowrap;
@@ -346,10 +346,10 @@
 
 [data-component="session-review-v2"] [data-slot="session-review-v2-file-path"] {
   flex: none;
-  font-size: 13px;
-  font-weight: 440;
-  line-height: 1;
-  letter-spacing: -0.04px;
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-body);
+  line-height: var(--line-height-none);
+  letter-spacing: var(--letter-spacing-ui);
   font-variant-numeric: tabular-nums lining-nums;
   color: var(--v2-text-text-muted);
   white-space: nowrap;
@@ -408,10 +408,10 @@
 
 [data-slot="session-review-v2-empty-no-git-title"] {
   flex: none;
-  font-size: 13px;
-  font-weight: 530;
-  line-height: 100%;
-  letter-spacing: -0.04px;
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-none);
+  letter-spacing: var(--letter-spacing-ui);
   color: var(--v2-text-text-base);
 }
 
@@ -419,11 +419,11 @@
   flex: none;
   margin: 0 0 4px;
   max-width: 360px;
-  font-size: 13px;
-  font-weight: 440;
-  line-height: 20px;
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-body);
+  line-height: var(--line-height-20);
   text-align: center;
-  letter-spacing: -0.04px;
+  letter-spacing: var(--letter-spacing-ui);
   color: var(--v2-text-text-muted);
 }
 
@@ -447,20 +447,20 @@
 [data-slot="session-review-v2-empty-changes-title"] {
   flex: none;
   margin-top: 4px;
-  font-size: 13px;
-  font-weight: 530;
-  line-height: 100%;
-  letter-spacing: -0.04px;
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-none);
+  letter-spacing: var(--letter-spacing-ui);
   color: var(--v2-text-text-base);
 }
 
 [data-slot="session-review-v2-empty-changes-description"] {
   flex: none;
   max-width: 282px;
-  font-size: 13px;
-  font-weight: 440;
-  line-height: 20px;
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-body);
+  line-height: var(--line-height-20);
   text-align: center;
-  letter-spacing: -0.04px;
+  letter-spacing: var(--letter-spacing-ui);
   color: var(--v2-text-text-muted);
 }

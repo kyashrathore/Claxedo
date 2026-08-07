@@ -22,7 +22,9 @@ const approved = {
     "overlay-text-muted": "#6f6f6f",
     "overlay-border": "#e0e0e0",
     "row-surface-hover": "#0000000a",
-    "row-surface-selected": "#0000000f",
+    "row-surface-selected": "#1a1c1f0d",
+    "shell-border-sidebar": "#ededed",
+    "shell-border-header": "#ededed",
     "composer-border": "#d8d8d8",
   },
   dark: {

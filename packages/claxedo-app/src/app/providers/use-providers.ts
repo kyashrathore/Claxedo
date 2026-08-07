@@ -4,7 +4,7 @@ import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync
 import { useWorkspaceQuery } from "../../features/workspaces/data/use-workspace-query"
 import type { NormalizedProviderListResponse } from "@/platform/query/provider-list"
 import { popularProviders, normalizeProviderList, type ProviderListResponse } from "@/platform/query/provider-list"
-import { queryClient } from "@/platform/query/query-client"
+import { loadProviderDetailsOnce, updateProviderQueryData } from "@/platform/query/provider-cache"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 
 export { popularProviders } from "@/platform/query/provider-list"
@@ -22,20 +22,17 @@ export function mergeProviderQuery(input: {
   default?: NormalizedProviderListResponse["default"]
   ensureConnected?: boolean
 }) {
-  queryClient.setQueryData<NormalizedProviderListResponse | undefined>(
-    input.queryKey,
-    (cached) => {
-      const providerList = cached ?? input.current
-      return {
-        ...providerList,
-        all: new Map(providerList.all).set(input.providerId, input.provider),
-        connected: input.ensureConnected && !providerList.connected.includes(input.providerId)
-          ? [...providerList.connected, input.providerId]
-          : input.connected ?? providerList.connected,
-        default: input.default ?? providerList.default,
-      }
-    },
-  )
+  updateProviderQueryData(input.queryKey, (cached) => {
+    const providerList = cached ?? input.current
+    return {
+      ...providerList,
+      all: new Map(providerList.all).set(input.providerId, input.provider),
+      connected: input.ensureConnected && !providerList.connected.includes(input.providerId)
+        ? [...providerList.connected, input.providerId]
+        : input.connected ?? providerList.connected,
+      default: input.default ?? providerList.default,
+    }
+  })
 }
 
 function providerFromUnknown(input: unknown): Provider | undefined {
@@ -103,13 +100,9 @@ export function useProviders(harnessType?: string | (() => string | undefined)) 
   }
   const all = () => providerMap(state().all)
   const connected = () => connectedIds(state().connected)
-  const detailed = new Set<string>()
-  const pending = new Map<string, Promise<void>>()
   const load = (providerId: string) => {
-    if (detailed.has(providerId)) return Promise.resolve()
-    const existing = pending.get(providerId)
-    if (existing) return existing
-    const task = (async () => {
+    const queryKey = providerOptions().queryKey
+    return loadProviderDetailsOnce(queryKey, providerId, async () => {
       const params = new URLSearchParams({ provider: providerId })
       if (harness()) params.set("harness", harness()!)
       if (dir()) params.set("directory", dir())
@@ -122,17 +115,14 @@ export function useProviders(harnessType?: string | (() => string | undefined)) 
       const provider = detail.all.get(providerId)
       if (!provider) throw new Error(`Provider ${providerId} was not returned by the runtime`)
       mergeProviderQuery({
-        queryKey: providerOptions().queryKey,
+        queryKey,
         current: state(),
         providerId,
         provider,
         connected: detail.connected,
         default: detail.default,
       })
-      detailed.add(providerId)
-    })().finally(() => pending.delete(providerId))
-    pending.set(providerId, task)
-    return task
+    })
   }
   return {
     state,

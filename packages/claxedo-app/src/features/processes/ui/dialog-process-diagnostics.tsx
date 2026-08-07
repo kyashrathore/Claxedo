@@ -116,8 +116,24 @@ export function DialogProcessDiagnostics(props: {
   const current = createMemo(() => model()?.series.at(-1))
   const peakCpu = createMemo(() =>
     Math.max(0, ...(model()?.series.flatMap((point) => point.cpu === undefined ? [] : [point.cpu]) ?? [])))
-  const peakRss = createMemo(() =>
-    Math.max(0, ...(model()?.series.flatMap((point) => point.rssBytes === undefined ? [] : [point.rssBytes]) ?? [])))
+  const peakMemoryImpact = createMemo(() => model()?.series.reduce<ReturnType<typeof current>>(
+    (peak, point) =>
+      point.memoryImpactBytes !== undefined &&
+      (peak?.memoryImpactBytes === undefined || point.memoryImpactBytes > peak.memoryImpactBytes)
+        ? point
+        : peak,
+    undefined,
+  ))
+  const memoryImpactLabel = createMemo(() => {
+    const kinds = model()?.memoryImpactKinds ?? []
+    if (kinds.length === 0) return "Memory impact"
+    return kinds.map((kind) => ({
+      "physical-footprint": "macOS footprint",
+      "private-working-set": "private working set",
+      pss: "proportional set size",
+      "rss-fallback": "RSS fallback",
+    })[kind]).join(" + ")
+  })
   const sessions = createMemo(() => {
     const scan = sessionScan()
     if (!scan) return []
@@ -194,7 +210,7 @@ export function DialogProcessDiagnostics(props: {
       <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border-weak-base px-5 py-3 max-md:px-3">
           <div>
-            <div class="flex items-center gap-2 text-[13px] font-medium text-text-strong">
+            <div class="flex items-center gap-2 text-compact font-medium text-text-strong">
               <span
                 class={`inline-block h-2 w-2 rounded-full ${
                   error() || disconnected() ? "bg-icon-warning-base" : "bg-icon-success-base"
@@ -204,7 +220,7 @@ export function DialogProcessDiagnostics(props: {
             </div>
             <Show when={snapshot()}>
               {(value) => (
-                <p class="mt-1 text-[11px] text-text-weak">
+                <p class="mt-1 text-xs text-text-weak">
                   History starts {formatTime(value().retainedFromAt)} · last sample {formatTime(value().capturedAt)}
                   {value().retention.state === "truncated" ? " · retained history is memory-limited" : ""}
                   <Show when={degradedSources().length > 0}>
@@ -221,7 +237,7 @@ export function DialogProcessDiagnostics(props: {
 
         <Show when={error()}>
           {(value) => (
-            <div role="alert" class="mx-5 mt-3 rounded-md border border-border-critical-base bg-surface-critical-base/10 px-3 py-2 text-[12px] text-text-on-critical-base max-md:mx-3">
+            <div role="alert" class="mx-5 mt-3 rounded-md border border-border-critical-base bg-surface-critical-base/10 px-3 py-2 text-sm text-text-on-critical-base max-md:mx-3">
               {value()}
             </div>
           )}
@@ -237,7 +253,7 @@ export function DialogProcessDiagnostics(props: {
                 aria-selected={tab() === entry.id}
                 aria-controls={`diagnostics-panel-${entry.id}`}
                 tabIndex={tab() === entry.id ? 0 : -1}
-                class="-mb-px border-b-2 px-2.5 py-2 text-[12px] transition-colors"
+                class="-mb-px border-b-2 px-2.5 py-2 text-sm transition-colors"
                 classList={{
                   "border-border-interactive-base font-medium text-text-strong": tab() === entry.id,
                   "border-transparent text-text-weak hover:text-text-base": tab() !== entry.id,
@@ -252,7 +268,7 @@ export function DialogProcessDiagnostics(props: {
 
         <Show
           when={!loading() && snapshot() && model()}
-          fallback={<div class="flex flex-1 items-center justify-center p-8 text-[13px] text-text-weak">Loading retained startup history…</div>}
+          fallback={<div class="flex flex-1 items-center justify-center p-8 text-compact text-text-weak">Loading retained startup history…</div>}
         >
           <div class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-5 py-4 max-md:px-3">
             <div
@@ -270,8 +286,14 @@ export function DialogProcessDiagnostics(props: {
                 >
                   <Metric label="Current CPU" value={formatCpu(current()?.cpu)} />
                   <Metric label="Peak CPU" value={formatCpu(peakCpu())} />
-                  <Metric label="Current RSS" value={formatBytes(current()?.rssBytes)} />
-                  <Metric label="Peak RSS" value={formatBytes(peakRss())} />
+                  <Metric
+                    label={`Current ${memoryImpactLabel()}`}
+                    value={`${formatBytes(current()?.memoryImpactBytes)}${current()?.memoryImpactComplete ? "" : " · partial"}`}
+                  />
+                  <Metric
+                    label={`Peak ${memoryImpactLabel()}`}
+                    value={`${formatBytes(peakMemoryImpact()?.memoryImpactBytes)}${peakMemoryImpact()?.memoryImpactComplete ? "" : " · partial"}`}
+                  />
                 </section>
 
                 <DiagnosticsTimeline
@@ -282,8 +304,8 @@ export function DialogProcessDiagnostics(props: {
 
                 <Show when={model()!.churn.length > 0}>
                   <section aria-labelledby="diagnostics-churn-title" class="rounded-lg border border-border-weak-base p-3">
-                    <h2 id="diagnostics-churn-title" class="text-[13px] font-medium text-text-strong">Short-lived activity</h2>
-                    <ul class="mt-2 grid gap-1 text-[11px] text-text-weak">
+                    <h2 id="diagnostics-churn-title" class="text-compact font-medium text-text-strong">Short-lived activity</h2>
+                    <ul class="mt-2 grid gap-1 text-xs text-text-weak">
                       <For each={model()!.churn}>
                         {(item) => (
                           <li
@@ -299,9 +321,10 @@ export function DialogProcessDiagnostics(props: {
                   </section>
                 </Show>
 
-                <p class="text-[10px] text-text-weak">
-                  Workspace model work shares the Claxedo server process series. Remote runtimes are excluded. Short-lived
-                  launches without a native sample remain visible as unmeasured churn, never as zero usage.
+                <p class="text-2xs text-text-weak">
+                  Workspace model work shares the Claxedo server process series. Memory impact uses macOS physical footprint,
+                  Windows private working set, or Linux PSS; RSS is explicitly marked as a fallback. Remote runtimes are
+                  excluded. Short-lived launches remain unmeasured churn, never as zero usage, and missing helpers make a sample partial.
                 </p>
               </div>
             </div>
@@ -314,7 +337,7 @@ export function DialogProcessDiagnostics(props: {
             >
               <div class="grid gap-4">
                 <div class="flex flex-wrap items-start justify-between gap-3">
-                  <p class="max-w-2xl text-[11px] text-text-weak">
+                  <p class="max-w-2xl text-xs text-text-weak">
                     Triggered only. Scans Claxedo-owned session stores across local profiles and harnesses, then measures
                     conversation payloads currently kept warm by this renderer.
                   </p>
@@ -325,7 +348,7 @@ export function DialogProcessDiagnostics(props: {
 
                 <Show when={sessionScanError()}>
                   {(value) => (
-                    <p role="alert" class="rounded border border-border-critical-base px-3 py-2 text-[11px] text-text-on-critical-base">
+                    <p role="alert" class="rounded border border-border-critical-base px-3 py-2 text-xs text-text-on-critical-base">
                       {value()}
                     </p>
                   )}
@@ -334,7 +357,7 @@ export function DialogProcessDiagnostics(props: {
                 <Show
                   when={sessionScan()}
                   fallback={
-                    <p class="rounded-lg border border-border-weak-base p-6 text-center text-[11px] text-text-weak">
+                    <p class="rounded-lg border border-border-weak-base p-6 text-center text-xs text-text-weak">
                       No background scan runs. Start one to weigh stored sessions, split chat/image/compaction bytes, and
                       identify conversations still held warm by this renderer.
                     </p>
@@ -351,17 +374,17 @@ export function DialogProcessDiagnostics(props: {
 
                       <section aria-labelledby="diagnostics-sessions-title" class="rounded-lg border border-border-weak-base">
                         <div class="border-b border-border-weak-base px-3 py-2">
-                          <h2 id="diagnostics-sessions-title" class="text-[13px] font-medium text-text-strong">Sessions by weight</h2>
-                          <p class="mt-0.5 text-[11px] text-text-weak">
+                          <h2 id="diagnostics-sessions-title" class="text-compact font-medium text-text-strong">Sessions by weight</h2>
+                          <p class="mt-0.5 text-xs text-text-weak">
                             Ranked by serialized payload. Tagged sessions are also held in memory by this renderer —
                             <span class="text-text-base"> Mounted</span> is on screen now, <span class="text-text-base">Cached</span> is
                             retained unmounted for fast switching.
                           </p>
                         </div>
-                        <Show when={sessions().length > 0} fallback={<p class="p-4 text-[12px] text-text-weak">No stored or warm sessions found.</p>}>
+                        <Show when={sessions().length > 0} fallback={<p class="p-4 text-sm text-text-weak">No stored or warm sessions found.</p>}>
                           <div
                             aria-hidden="true"
-                            class="grid grid-cols-[minmax(0,1fr)_repeat(4,minmax(72px,auto))] gap-3 border-b border-border-weak-base bg-surface-base px-3 py-1.5 text-[9px] uppercase tracking-wide text-text-weak max-md:hidden"
+                            class="grid grid-cols-[minmax(0,1fr)_repeat(4,minmax(72px,auto))] gap-3 border-b border-border-weak-base bg-surface-base px-3 py-1.5 text-micro uppercase tracking-wide text-text-weak max-md:hidden"
                           >
                             <span />
                             <span class="text-right">Total</span>
@@ -378,20 +401,20 @@ export function DialogProcessDiagnostics(props: {
                                 class="grid grid-cols-[minmax(0,1fr)_repeat(4,minmax(72px,auto))] items-center gap-3 border-t border-border-weak-base/40 px-3 py-2 first:border-t-0 max-md:grid-cols-[minmax(0,1fr)_auto]"
                               >
                                 <span class="min-w-0">
-                                  <span class="flex items-center gap-1.5 text-[12px] font-medium text-text-strong">
+                                  <span class="flex items-center gap-1.5 text-sm font-medium text-text-strong">
                                     <span class="truncate">{String(index() + 1)}. {session.label}</span>
                                     <Show when={session.warm}>
                                       {(warm) => (
                                         <span
                                           data-testid="diagnostics-session-tag"
-                                          class="shrink-0 rounded border border-border-weak-base px-1.5 py-px text-[9px] font-medium uppercase tracking-wide text-text-weak"
+                                          class="shrink-0 rounded border border-border-weak-base px-1.5 py-px text-micro font-medium uppercase tracking-wide text-text-weak"
                                         >
                                           {warm().mounted ? "Mounted" : "Cached"}
                                         </span>
                                       )}
                                     </Show>
                                   </span>
-                                  <span class="block truncate text-[10px] text-text-weak">
+                                  <span class="block truncate text-2xs text-text-weak">
                                     {session.warm ? `${session.warm.messageCount} messages · ` : ""}
                                     {session.detail} · {session.sessionId}
                                   </span>
@@ -413,7 +436,7 @@ export function DialogProcessDiagnostics(props: {
                         </Show>
                       </section>
 
-                      <p class="text-[10px] text-text-weak">
+                      <p class="text-2xs text-text-weak">
                         Completed in {formatDuration(scan().durationMs)}. Values estimate serialized payload, not exact
                         JavaScript heap or decoded image/GPU memory; live overhead can be higher.
                       </p>
@@ -431,14 +454,14 @@ export function DialogProcessDiagnostics(props: {
             >
               <section aria-labelledby="diagnostics-contributors-title" class="rounded-lg border border-border-weak-base">
                 <div class="border-b border-border-weak-base px-3 py-2">
-                  <h2 id="diagnostics-contributors-title" class="text-[13px] font-medium text-text-strong">Ranked contributors</h2>
-                  <p class="mt-0.5 text-[11px] text-text-weak">Ranked by peak CPU, then peak resident memory, across the retained window.</p>
+                  <h2 id="diagnostics-contributors-title" class="text-compact font-medium text-text-strong">Ranked contributors</h2>
+                  <p class="mt-0.5 text-xs text-text-weak">Ranked by peak CPU, then peak OS-native memory impact, across the retained window.</p>
                 </div>
-                <Show when={grouped().length > 0} fallback={<p class="p-4 text-[12px] text-text-weak">No sampled local contributors in this interval.</p>}>
+                <Show when={grouped().length > 0} fallback={<p class="p-4 text-sm text-text-weak">No sampled local contributors in this interval.</p>}>
                   <For each={grouped()}>
                     {([group, contributors]) => (
                       <div class="border-b border-border-weak-base/60 last:border-b-0">
-                        <h3 class="bg-surface-base px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-text-weak">{group}</h3>
+                        <h3 class="bg-surface-base px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-text-weak">{group}</h3>
                         <For each={contributors}>
                           {(contributor, index) => (
                             <div class="border-t border-border-weak-base/40 first:border-t-0">
@@ -458,22 +481,25 @@ export function DialogProcessDiagnostics(props: {
                                 }))}
                               >
                                 <span class="min-w-0">
-                                  <span class="block truncate text-[12px] font-medium text-text-strong">
+                                  <span class="block truncate text-sm font-medium text-text-strong">
                                     {String(index() + 1)}. {contributor.owner.label}
                                   </span>
-                                  <span class="block text-[10px] text-text-weak">
+                                  <span class="block text-2xs text-text-weak">
                                     {contributor.owner.kind} · {contributor.confidence} attribution · {contributor.processes.length} process{contributor.processes.length === 1 ? "" : "es"}
                                   </span>
                                 </span>
                                 <Value label="Current CPU" value={formatCpu(contributor.currentCpu)} />
                                 <Value label="Peak CPU" value={formatCpu(contributor.peakCpu)} />
-                                <Value label="Current RSS" value={formatBytes(contributor.currentRssBytes)} />
-                                <Value label="RSS change" value={formatDelta(contributor.rssChangeBytes)} />
+                                <Value
+                                  label="Current memory impact"
+                                  value={`${formatBytes(contributor.currentMemoryImpactBytes)}${contributor.currentMemoryImpactComplete ? "" : " · partial"}`}
+                                />
+                                <Value label="Memory impact change" value={formatDelta(contributor.memoryImpactChangeBytes)} />
                               </button>
                               <Show when={expanded()[contributor.owner.id]}>
                                 <div id={`diagnostics-owner-${contributor.owner.id}`} class="bg-surface-base/60 px-3 py-3">
                                   <div class="flex flex-wrap items-center justify-between gap-2">
-                                    <p class="text-[11px] text-text-weak">
+                                    <p class="text-xs text-text-weak">
                                       {contributor.owner.lifecycle} · {contributor.owner.access}
                                       {contributor.owner.workspaceId ? ` · workspace ${contributor.owner.workspaceId}` : ""}
                                     </p>
@@ -487,7 +513,7 @@ export function DialogProcessDiagnostics(props: {
                                   <ul class="mt-2 grid gap-1" aria-label={`${contributor.owner.label} process tree`}>
                                     <For each={contributor.processes}>
                                       {(process) => (
-                                        <li class="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 rounded border border-border-weak-base px-2 py-1.5 text-[11px]">
+                                        <li class="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 rounded border border-border-weak-base px-2 py-1.5 text-xs">
                                           <span class="truncate text-text-base">
                                             {process.parentProcessId ? "↳ " : ""}{process.label}
                                           </span>
@@ -519,8 +545,8 @@ export function DialogProcessDiagnostics(props: {
 function Metric(props: { label: string; value: string }) {
   return (
     <div class="border-r border-border-weak-base p-3 last:border-r-0 max-md:border-b">
-      <div class="text-[10px] uppercase tracking-wide text-text-weak">{props.label}</div>
-      <div class="mt-1 text-[18px] font-medium tabular-nums text-text-strong">{props.value}</div>
+      <div class="text-2xs uppercase tracking-wide text-text-weak">{props.label}</div>
+      <div class="mt-1 text-heading font-medium tabular-nums text-text-strong">{props.value}</div>
     </div>
   )
 }
@@ -530,8 +556,8 @@ function Value(props: { label: string; value: string; headed?: boolean }) {
     <span class="text-right max-md:hidden">
       {/* Under a column header the per-row label is redundant ink, but it still has
           to name the number for anyone reading the row on its own. */}
-      <span class={props.headed ? "sr-only" : "block text-[9px] uppercase text-text-weak"}>{props.label}</span>
-      <span class="block text-[11px] tabular-nums text-text-base">{props.value}</span>
+      <span class={props.headed ? "sr-only" : "block text-micro uppercase text-text-weak"}>{props.label}</span>
+      <span class="block text-xs tabular-nums text-text-base">{props.value}</span>
     </span>
   )
 }
@@ -546,7 +572,7 @@ function ActionControls(props: {
     <Show
       when={props.eligibility.state === "eligible" ? props.eligibility : undefined}
       fallback={
-        <span class="text-[11px] text-text-weak">
+        <span class="text-xs text-text-weak">
           Read only · {props.eligibility.state === "ineligible" ? props.eligibility.reason : "unregistered-owner"}
         </span>
       }

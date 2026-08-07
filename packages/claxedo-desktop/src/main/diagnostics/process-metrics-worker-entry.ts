@@ -8,7 +8,12 @@ const platform = process.env.CLAXEDO_DIAGNOSTICS_WORKER_PLATFORM
 if (platform !== "darwin" && platform !== "linux") process.exit(2)
 
 lowerDiagnosticsWorkerPriority()
-const worker = createPosixProcessMetricsWorker({ platform })
+const worker = createPosixProcessMetricsWorker({
+  platform,
+  ...(process.env.CLAXEDO_DIAGNOSTICS_MEMORY_HELPER
+    ? { memoryHelperPath: process.env.CLAXEDO_DIAGNOSTICS_MEMORY_HELPER }
+    : {}),
+})
 const lines = createInterface({ input: process.stdin, crlfDelay: Infinity })
 
 lines.on("line", (line) => {

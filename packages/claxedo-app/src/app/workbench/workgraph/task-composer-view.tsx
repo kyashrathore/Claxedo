@@ -193,7 +193,7 @@ export function TaskComposerView(props: { directory?: string; request?: typeof f
         <header class="flex items-center justify-between gap-3 border-b border-border-weaker-base px-3.5 py-2.5">
           <div class="flex items-center gap-2">
             <Icon name="checklist" size="small" class="text-icon-weak-base" />
-            <span class="text-[12px] font-medium text-text-base">New task</span>
+            <span class="text-sm font-medium text-text-base">New task</span>
           </div>
           <div role="tablist" aria-label="Task composer" class="flex items-center gap-0.5">
             <PanelTab active={tab() === "compose"} onClick={() => setTab("compose")}>
@@ -206,13 +206,13 @@ export function TaskComposerView(props: { directory?: string; request?: typeof f
         </header>
         <Show when={loadError()}>
           {(text) => (
-            <p role="status" class="border-b border-border-weaker-base bg-surface-base px-3.5 py-2 text-[11px] text-icon-critical-base">
+            <p role="status" class="border-b border-border-weaker-base bg-surface-base px-3.5 py-2 text-xs text-icon-critical-base">
               WorkGraph could not be loaded — {text()}
             </p>
           )}
         </Show>
         <Show when={projectKey()?.startsWith("hosted:")}>
-          <p class="border-b border-border-weaker-base bg-surface-base px-3.5 py-2 text-[11px] text-text-weak">
+          <p class="border-b border-border-weaker-base bg-surface-base px-3.5 py-2 text-xs text-text-weak">
             Hosted project · tasks run in its connected cloud workspace.
           </p>
         </Show>
@@ -221,7 +221,7 @@ export function TaskComposerView(props: { directory?: string; request?: typeof f
           when={tab() === "compose"}
           fallback={
             <div class="max-h-[360px] overflow-y-auto p-3" role="tabpanel" aria-label="Streams">
-              <Show when={streams().length} fallback={<p class="px-2 py-8 text-center text-[12px] text-text-weaker">No Streams belong to this project yet.</p>}>
+              <Show when={streams().length} fallback={<p class="px-2 py-8 text-center text-sm text-text-weaker">No Streams belong to this project yet.</p>}>
                 <div class="space-y-1">
                   <For each={streams()}>
                     {(stream) => (
@@ -263,7 +263,7 @@ export function TaskComposerView(props: { directory?: string; request?: typeof f
                 value={intent()}
                 onInput={(event) => setIntent(event.currentTarget.value)}
                 placeholder="Describe the task and what done looks like…"
-                class="min-h-32 w-full resize-none rounded-lg border border-border-base bg-surface-base px-3.5 py-3 text-[13px] leading-5 text-text-base outline-none transition-colors placeholder:text-text-weaker focus:border-border-interactive-base focus:ring-1 focus:ring-border-interactive-focus"
+                class="min-h-32 w-full resize-none rounded-lg border border-border-base bg-surface-base px-3.5 py-3 text-compact leading-5 text-text-base outline-none transition-colors placeholder:text-text-weaker focus:border-border-interactive-base focus:ring-1 focus:ring-border-interactive-focus"
               />
             </label>
             <div class="mt-2.5 flex flex-wrap items-center gap-2">
@@ -276,7 +276,7 @@ export function TaskComposerView(props: { directory?: string; request?: typeof f
                     setStreamId(event.currentTarget.value)
                     setProfile("")
                   }}
-                  class="h-8 w-full rounded-md border border-border-base bg-surface-base px-2.5 text-[12px] text-text-base outline-none focus:border-border-interactive-base"
+                  class="h-8 w-full rounded-md border border-border-base bg-surface-base px-2.5 text-sm text-text-base outline-none focus:border-border-interactive-base"
                 >
                   <option value="" disabled>
                     Select a Stream
@@ -290,7 +290,7 @@ export function TaskComposerView(props: { directory?: string; request?: typeof f
                   aria-label="Agent profile"
                   value={profile()}
                   onChange={(event) => setProfile(event.currentTarget.value)}
-                  class="h-8 w-full rounded-md border border-border-base bg-surface-base px-2.5 text-[12px] text-text-base outline-none focus:border-border-interactive-base"
+                  class="h-8 w-full rounded-md border border-border-base bg-surface-base px-2.5 text-sm text-text-base outline-none focus:border-border-interactive-base"
                 >
                   <option value="">Default</option>
                   <For each={agents()}>
@@ -303,14 +303,14 @@ export function TaskComposerView(props: { directory?: string; request?: typeof f
                 </select>
               </label>
               <span
-                class="inline-flex h-8 items-center rounded-md border border-border-base bg-surface-base px-2.5 text-[12px] capitalize text-text-weak"
+                class="inline-flex h-8 items-center rounded-md border border-border-base bg-surface-base px-2.5 text-sm capitalize text-text-weak"
                 title="Placement is owned by the target Stream"
               >
                 {placement()}
               </span>
             </div>
             <Show when={selectedStream() && agents().length === 0}>
-              <details class="mt-2 rounded-md border border-border-weaker-base bg-surface-base px-2.5 py-2 text-[11px] text-text-weaker">
+              <details class="mt-2 rounded-md border border-border-weaker-base bg-surface-base px-2.5 py-2 text-xs text-text-weaker">
                 <summary class="cursor-pointer select-none text-text-weak">Execution settings</summary>
                 <div class="mt-2 grid gap-2 sm:grid-cols-2">
                   <label>
@@ -322,7 +322,7 @@ export function TaskComposerView(props: { directory?: string; request?: typeof f
                         setFallbackHarness(event.currentTarget.value)
                         setFallbackModel("")
                       }}
-                      class="h-8 w-full rounded-md border border-border-base bg-surface-raised-base px-2 text-[12px] text-text-base"
+                      class="h-8 w-full rounded-md border border-border-base bg-surface-raised-base px-2 text-sm text-text-base"
                     >
                       <For each={capabilities()?.harnesses ?? []}>{(harness) => <option value={harness.id}>{harness.id}</option>}</For>
                     </select>
@@ -333,7 +333,7 @@ export function TaskComposerView(props: { directory?: string; request?: typeof f
                       aria-label="Execution model"
                       value={selectedModel()}
                       onChange={(event) => setFallbackModel(event.currentTarget.value)}
-                      class="h-8 w-full rounded-md border border-border-base bg-surface-raised-base px-2 text-[12px] text-text-base"
+                      class="h-8 w-full rounded-md border border-border-base bg-surface-raised-base px-2 text-sm text-text-base"
                     >
                       <For each={models()}>{(model) => <option value={`${model.providerId}/${model.modelId}`}>{model.label}</option>}</For>
                     </select>
@@ -342,7 +342,7 @@ export function TaskComposerView(props: { directory?: string; request?: typeof f
               </details>
             </Show>
             <div class="mt-3 flex items-center justify-between gap-3">
-              <label class="flex cursor-pointer items-center gap-2 text-[12px] text-text-weak">
+              <label class="flex cursor-pointer items-center gap-2 text-sm text-text-weak">
                 <input type="checkbox" checked={draft()} onChange={(event) => setDraft(event.currentTarget.checked)} />
                 Save as Draft
               </label>
@@ -354,7 +354,7 @@ export function TaskComposerView(props: { directory?: string; request?: typeof f
               {(status) => (
                 <p
                   role="status"
-                  class="mt-2 text-[11px]"
+                  class="mt-2 text-xs"
                   classList={{
                     "text-icon-critical-base": status().kind === "error",
                     "text-text-weak": status().kind === "success",
