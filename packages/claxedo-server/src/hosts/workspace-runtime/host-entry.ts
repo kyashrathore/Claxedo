@@ -9,8 +9,14 @@
  * deltas (custom stores, exposure guards, config hooks) belong here, not in
  * the public package.
  */
+import fs from "node:fs"
 import { startServer, waitForWorkspaceRuntimeServerPort } from "@claxedo/workspace-runtime"
 import { claxedoWorkspaceRuntimeBootFromEnv } from "./runtime-boot"
+
+if (process.argv[2] === "--version") {
+  console.log(fs.readFileSync(new URL("./workspace-runtime-version", import.meta.url), "utf8").trim())
+  process.exit(0)
+}
 
 const boot = await claxedoWorkspaceRuntimeBootFromEnv()
 // This is Claxedo's runnable host process — it owns the process lifecycle, so

@@ -713,6 +713,12 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # The packaged desktop matrix exercises the real Claude harness through
+      # a scripted endpoint. The CLI must be present even though the scenario
+      # does not require user credentials.
+      - name: Install Claude CLI
+        run: npm install -g @anthropic-ai/claude-code@2.1.150
+
       # Same scoped list as the e2e/e2e-workgraph/e2e-tier-real jobs above --
       # packages/*/dist is gitignored and the desktop build resolves these
       # @claxedo/* workspace packages through their dist exports.

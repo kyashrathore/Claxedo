@@ -45,11 +45,12 @@ RUN npm i -g --min-release-age=2 \
 COPY .build/ /opt/workspace-runtime/
 RUN cd /opt/workspace-runtime && \
     npm install --omit=dev --min-release-age=2 --legacy-peer-deps && \
-    npm install -g --min-release-age=2 --legacy-peer-deps /opt/workspace-runtime/claxedo-workspace-runtime-*.tgz && \
     test -f /opt/workspace-runtime/workspace-runtime-host.mjs && \
     test -x /opt/workspace-runtime/opencode && \
     test -x /opt/workspace-runtime/node_modules/.bin/claude-agent-acp && \
     test -x /opt/workspace-runtime/node_modules/.bin/codex-acp && \
+    chmod 0755 /opt/workspace-runtime/workspace-runtime-host.mjs && \
+    ln -sf /opt/workspace-runtime/workspace-runtime-host.mjs /usr/local/bin/workspace-runtime && \
     install -m 0755 /opt/workspace-runtime/opencode /usr/local/bin/opencode && \
     ln -sf /opt/workspace-runtime/node_modules/.bin/claude-agent-acp /usr/local/bin/claude-agent-acp && \
     ln -sf /opt/workspace-runtime/node_modules/.bin/codex-acp /usr/local/bin/codex-acp && \

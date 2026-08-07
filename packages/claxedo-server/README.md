@@ -20,9 +20,8 @@ must keep `private: true`, run `bun run check:package-boundary`, and inspect
 
 claxedo-server owns the runnable **host composition** for the workspace
 runtime. `@claxedo/workspace-runtime` ships primitives and an env-driven
-composition seam (`claxedoWorkspaceRuntimeBootFromEnv (workspace-runtime-integration/runtime-boot.ts) + the kit's startServer`); claxedo-server composes them
-into its own runnable entrypoint at
-`src/workspace-runtime-integration/host-entry.ts`. Local/embedded launches and
+composition seam; claxedo-server composes it with the kit's `startServer` in
+`src/hosts/workspace-runtime/host-entry.ts`. Local/embedded launches and
 in-sandbox launches share that single entrypoint, so composition cannot drift.
 
 claxedo-server also owns the **sandbox image** (`scripts/sandbox`). Delivery is

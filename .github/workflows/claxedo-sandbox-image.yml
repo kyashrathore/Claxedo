@@ -8,7 +8,7 @@ on:
       - packages/claxedo-server/scripts/sandbox/Dockerfile
       - packages/sandbox-manager/**
       - packages/claxedo-server/scripts/sandbox/build-sandbox-image.ts
-      - packages/claxedo-server/src/workspace-runtime-integration/host-entry.ts
+      - packages/claxedo-server/src/hosts/workspace-runtime/host-entry.ts
       - packages/agent-sdk-runtime/**
       - packages/workspace-runtime/**
       - packages/opencode/**

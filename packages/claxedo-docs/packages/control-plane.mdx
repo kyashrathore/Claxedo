@@ -20,7 +20,7 @@ node --import tsx src/main.ts
 
 ## What it owns
 
-- **Host composition** — composes `@claxedo/workspace-runtime` primitives into a single runnable entrypoint (`src/workspace-runtime-integration/host-entry.ts`) shared by local/embedded and in-sandbox launches.
+- **Host composition** — composes `@claxedo/workspace-runtime` primitives into a single runnable entrypoint (`src/hosts/workspace-runtime/host-entry.ts`) shared by local/embedded and in-sandbox launches.
 - **Sandbox image** — bundle-first delivery (`scripts/sandbox`): esbuilds the host entrypoint into `.build/`, which the Dockerfiles copy and symlink to `/usr/local/bin/workspace-runtime`. Image/snapshot versioning keys off the bundle plus `SNAPSHOT_SCHEMA_VERSION`.
 - **Gateway proxy** — the `/api/claxedo/...` gateway resolves the active workspace target and forwards to `@claxedo/workspace-relay`; the relay's resolver decisions cross the seam as `RuntimeAccessTokenActiveResult`.
 - **Connections host** — the host wiring for `@claxedo/connections` (storage ports, gates, and configuration) lives here, not in the kit.

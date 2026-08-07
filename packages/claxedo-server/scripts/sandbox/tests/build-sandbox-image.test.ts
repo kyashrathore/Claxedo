@@ -10,6 +10,7 @@ import {
   hostBundleDependencies,
   sandboxImageBuildArgs,
   validateBuildFlags,
+  writeWorkspaceRuntimeVersion,
   workspacePackageBuildOrder,
 } from "../build-sandbox-image"
 
@@ -107,17 +108,25 @@ describe("build-sandbox-image", () => {
     expect(deps.zod).toBe("4.4.3")
   })
 
-  test("production image starts the flattened workspace-runtime dependency graph", () => {
+  test("production image starts the checkout-built workspace-runtime host", () => {
     const dockerfiles = ["../Dockerfile", "../cloudflare-worker/Dockerfile"]
       .map((file) => fs.readFileSync(path.resolve(import.meta.dirname, file), "utf8"))
     expect(dockerfiles.every((dockerfile) => dockerfile.includes("setsid env WORKSPACE_RUNTIME_PORT=2593"))).toBe(true)
     expect(dockerfiles.every((dockerfile) => dockerfile.includes("OPENCODE_URL=http://127.0.0.1:4096 workspace-runtime"))).toBe(true)
     expect(dockerfiles.every((dockerfile) =>
-      dockerfile.includes("npm install -g --min-release-age=2 --legacy-peer-deps /opt/workspace-runtime/claxedo-workspace-runtime-*.tgz")
+      dockerfile.includes(`ln -sf /opt/workspace-runtime/${HOST_BUNDLE_FILENAME} /usr/local/bin/workspace-runtime`)
     )).toBe(true)
+    expect(dockerfiles.every((dockerfile) => !dockerfile.includes("claxedo-workspace-runtime-*.tgz"))).toBe(true)
     expect(dockerfiles.every((dockerfile) =>
       dockerfile.includes(`test "$(workspace-runtime --version)" = "$(cat /opt/workspace-runtime/${WORKSPACE_RUNTIME_VERSION_FILENAME})"`)
     )).toBe(true)
+  })
+
+  test("writes the runtime version consumed by the bundled host", () => {
+    const outDir = fs.mkdtempSync(path.join(process.env.TMPDIR ?? "/tmp", "claxedo-workspace-runtime-version-"))
+    const versionFile = writeWorkspaceRuntimeVersion(outDir)
+    expect(versionFile).toBe(path.join(outDir, WORKSPACE_RUNTIME_VERSION_FILENAME))
+    expect(fs.readFileSync(versionFile, "utf8")).toMatch(/^\d+\.\d+\.\d+\n$/)
   })
 
   test("production images install and smoke the checkout's Session V2 OpenCode binary", () => {

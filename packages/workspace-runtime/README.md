@@ -79,7 +79,7 @@ options); guards in claxedo-server's architecture tests ban product strings
 and ambient policy env reads from this package. Deciding how env
 maps to a running server (which exposure when, which defaults) is host policy:
 each host composes its own ladder from the parsers. Claxedo's lives at
-`packages/claxedo-server/src/workspace-runtime-integration/runtime-boot.ts`
+`packages/claxedo-server/src/hosts/workspace-runtime/runtime-boot.ts`
 (used by its `host-entry.ts`); the relay e2e's process fixture
 (`src/workspace-relay-e2e-entry.ts`) composes the minimal ladder its scenarios
 need. An OSS quickstart, when it ships, will be a separate reference-host

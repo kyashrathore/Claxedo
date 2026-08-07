@@ -126,8 +126,7 @@ export function workspacePackageBuildOrder(
  * depends on, dependencies first. The esbuild host bundle resolves each
  * package through its `dist/` (gitignored, nothing else builds it), so a fresh
  * checkout must produce those dists before bundling. Idempotent: re-running
- * simply rebuilds. workspace-runtime is built last here (its dedicated build
- * step in `bundleClaxedoWorkspaceRuntimeHost` is redundant but kept explicit).
+ * simply rebuilds. workspace-runtime is built last.
  */
 export function buildClaxedoWorkspacePackages(exec: Exec = defaultExec, readPackageJson: (dir: string) => PackageJson = readPackageJsonFromDisk) {
   for (const dir of workspacePackageBuildOrder(readPackageJson)) {
@@ -144,13 +143,10 @@ export function buildClaxedoWorkspacePackages(exec: Exec = defaultExec, readPack
   }
 }
 
-export function packWorkspaceRuntime(outDir: string, exec: Exec = defaultExec) {
-  const version = workspaceRuntimeVersion()
-  exec("npm", ["pack", "--pack-destination", outDir], { cwd: workspaceRuntimeRoot() })
-  const packageTarball = path.join(outDir, `claxedo-workspace-runtime-${version}.tgz`)
-  if (!fs.existsSync(packageTarball)) throw new Error(`workspace-runtime package did not emit ${packageTarball}`)
-  fs.writeFileSync(path.join(outDir, WORKSPACE_RUNTIME_VERSION_FILENAME), `${version}\n`)
-  return packageTarball
+export function writeWorkspaceRuntimeVersion(outDir: string) {
+  const versionFile = path.join(outDir, WORKSPACE_RUNTIME_VERSION_FILENAME)
+  fs.writeFileSync(versionFile, `${workspaceRuntimeVersion()}\n`)
+  return versionFile
 }
 
 /**
@@ -239,7 +235,7 @@ export async function bundleClaxedoWorkspaceRuntimeHost(outDir: string, exec: Ex
   // checkout ships the current checkout — not stale local dist, not a missing
   // one. workspace-runtime is the last package built.
   buildClaxedoWorkspacePackages(exec)
-  const packageTarball = packWorkspaceRuntime(outDir, exec)
+  const versionFile = writeWorkspaceRuntimeVersion(outDir)
   const opencodeBinary = buildSandboxOpenCodeBinary(outDir, exec)
   await esbuildBuild(esbuildHostBundleOptions({
     entry: claxedoWorkspaceRuntimeEntry(),
@@ -260,7 +256,7 @@ export async function bundleClaxedoWorkspaceRuntimeHost(outDir: string, exec: Ex
   // gets a distinct tag/snapshot name and actually reaches sandboxes.
   const buildId = createHash("sha256")
     .update(fs.readFileSync(bundlePath))
-    .update(fs.readFileSync(packageTarball))
+    .update(fs.readFileSync(versionFile))
     .update(fs.readFileSync(opencodeBinary))
     .update(packageJson)
     .digest("hex")
@@ -268,7 +264,7 @@ export async function bundleClaxedoWorkspaceRuntimeHost(outDir: string, exec: Ex
   return {
     bundle: bundlePath,
     packageJson: packageJsonPath,
-    packageTarball,
+    versionFile,
     opencodeBinary,
     buildId,
   }
