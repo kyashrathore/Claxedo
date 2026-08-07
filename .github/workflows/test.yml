@@ -495,6 +495,17 @@ jobs:
         env:
           CLAXEDO_E2E_PREBUILT: "1"
 
+      - name: Run onboarding-enabled e2e
+        working-directory: packages/claxedo-app
+        timeout-minutes: 15
+        run: bun run test:e2e:onboarding
+        env:
+          CLAXEDO_E2E_PREBUILT: "1"
+          PLAYWRIGHT_VIDEO: "0"
+          VITE_AUTH_ENABLED: "true"
+          VITE_CLAXEDO_SERVER_URL: "http://127.0.0.1:3001"
+          VITE_CLAXEDO_E2E: "1"
+
       - name: Upload Playwright artifacts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

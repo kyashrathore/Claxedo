@@ -78,13 +78,13 @@ export function createProcessPaneSync(deps: ProcessPaneSyncDeps): () => void {
     const dir = deps.directory()
     deps.setRunning(dir, running)
     deps.setCrashed(dir, crashed)
-    if (crashed) {
-      // Mirror the process.crashed SSE handler: a crash learned about while the
-      // pane is closed must raise the persisted attention badge so the toolbar
-      // dot lights even before the pane is opened (behavior 10).
-      if (!deps.isProcessOpen()) deps.setCrashedWhileClosed(true)
-    } else {
-      deps.setCrashedWhileClosed(false)
-    }
+    // Mirror the process.crashed SSE handler: a crash learned about while the
+    // pane is closed must raise the persisted attention badge so the toolbar
+    // dot lights even before the pane is opened (behavior 10). This is an
+    // acknowledgement flag, not a mirror of one provider's process map: the
+    // workspace mounts multiple same-directory providers, so a sibling with an
+    // empty snapshot must not erase an unseen crash. Opening Processes is the
+    // single acknowledgement path that clears it.
+    if (crashed && !deps.isProcessOpen()) deps.setCrashedWhileClosed(true)
   }
 }

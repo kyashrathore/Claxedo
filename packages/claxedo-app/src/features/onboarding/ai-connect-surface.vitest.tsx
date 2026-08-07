@@ -144,7 +144,15 @@ describe("AIConnectSurface", () => {
       ],
     })])
     const submit = vi.fn()
-    render(() => <Harness destination="local" request={stub.request} registerSubmit={submit} />)
+    const detected = vi.fn()
+    render(() => (
+      <Harness
+        destination="local"
+        request={stub.request}
+        registerSubmit={submit}
+        onLocalHarnessesDetected={detected}
+      />
+    ))
 
     fireEvent.click(screen.getByRole("button", { name: "Check my logins" }))
 
@@ -155,6 +163,7 @@ describe("AIConnectSurface", () => {
     expect(stub.calls).toHaveLength(1)
     expect(stub.calls[0].input).toMatchObject({ action: "discover" })
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument()
+    expect(detected).toHaveBeenCalledWith(["claude"])
   })
 
   test("every harness gets a row, so a missing one is an answer rather than an omission", async () => {

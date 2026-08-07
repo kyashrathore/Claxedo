@@ -929,7 +929,7 @@ test.describe("core session actions: subagent (child session) @core", () => {
   test("a permission raised on the child bubbles into the parent's dock and resolves — behavior 14", async ({
     page,
   }) => {
-    // HISTORY (un-fixme'd, entry #35): this was previously `test.fixme`'d on the
+    // HISTORY (entry #35): this was previously deferred on the
     // theory that a synthetic `permission.asked`'s `directory` — remapped by
     // `eventDirectoryForLiveSession` (src/app/providers/global-sdk/provider.tsx) to
     // the route's resolved workspaceId (`local-ses_core_session_actions_parent`) —

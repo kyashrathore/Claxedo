@@ -862,8 +862,8 @@ test.describe("core cloud offline & roles @core", () => {
   // `src/shell/workspace/workspace-connection.test.ts`, so the logic this behavior
   // describes is covered — only the end-to-end "refresh fires from ambient traffic"
   // wiring is unprovable here.
-  // Behavior 9 was `test.fixme` because its original premise — a near-expiry (500ms)
-  // token racing the app's post-ready relay traffic to fire a real `/connection/refresh`
+  // Behavior 9's original premise — a near-expiry (500ms) token racing the app's
+  // post-ready relay traffic to fire a real `/connection/refresh`
   // carrying the upgraded role — is BOTH non-deterministic AND structurally unreachable
   // from a loopback-served harness: `refreshWorkspaceConnection` is only invoked by the
   // relay-direct fetch path, which is bridged through the central server whenever the

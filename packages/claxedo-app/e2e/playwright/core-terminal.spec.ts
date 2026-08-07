@@ -142,7 +142,8 @@
  *   feature (`cleanupStaleProcessTabs`, `src/claxedo-ui/context/process-pane.tsx:384-416`)
  *   — that reconciliation only runs when the Process feature's `fetchProcesses()` fires,
  *   which requires spec 20's mocks/UI surface (`GET /api/wr/process`) that this spec does
- *   not stand up; see the `test.fixme` below and the returned findings for the citation.
+ *   not stand up. The process-owned cleanup contract runs in `core-processes` and its
+ *   focused unit tests.
  *   Terminal drag-reorder within the tab strip, process-owned terminal dedup, and the
  *   mobile compact-switcher terminal drawer are also out of scope (spec 16/20 territory).
  *   A real PTY backend on :3001 is NOT required — this spec drives PTY REST via a
@@ -915,8 +916,7 @@ test.describe("core terminal panel @core", () => {
   // (src/claxedo-ui/state/agent-status-listener.ts) now batches BOTH
   // `setAgentStatus(ptyId, "idle")` AND `clearSeen(ptyId)` on `pty.exited`,
   // matching the reconnect-reconcile path, so the stale `seen` flag no longer
-  // leaves the sidebar "done" dot stuck. Flipped from test.fixme; awaiting
-  // leader gate run.
+  // leaves the sidebar "done" dot stuck.
   test("an externally exited PTY clears its tracked agent status — behaviors 7", async ({ page }) => {
     const DIR = "/tmp/e2e-core-terminal-external-exit"
     await installAppBootMock(page, DIR)

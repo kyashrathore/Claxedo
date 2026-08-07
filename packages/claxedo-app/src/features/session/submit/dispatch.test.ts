@@ -199,23 +199,6 @@ describe("dispatchShellCommand", () => {
   })
 })
 
-// Rubric T6: per-phase abort coverage for dispatch. The dispatch
-// payloads (`PromptDispatchPayload`, `ShellDispatchPayload`,
-// `SlashCommandDispatchPayload`) do NOT currently carry an
-// `AbortSignal` — the wrapped session client interface does not
-// expose one either. The user-facing abort goes through the
-// pending prompt AbortController in `send.ts`, which short-circuits
-// BEFORE `dispatchPrompt` is ever called. Threading a signal into the
-// dispatch boundary is the documented extension for a future rubric
-// pass (A2/T6 follow-up). The cases are explicitly listed and skipped
-// so the gap is visible.
-describe("dispatch abort coverage", () => {
-  test.skip("dispatchPrompt: AbortSignal in payload forwarded to wrapped client.session.prompt — needs A2/T6 follow-up to extend PromptDispatchPayload", () => {})
-  test.skip("dispatchPrompt: AbortSignal in payload forwarded to wrapped client.session.promptAsync — needs A2/T6 follow-up to extend PromptDispatchPayload", () => {})
-  test.skip("dispatchShellCommand: AbortSignal in payload forwarded to client.session.shell — needs A2/T6 follow-up to extend ShellDispatchPayload", () => {})
-  test.skip("dispatchSlashCommand: AbortSignal in payload forwarded to client.session.command — needs A2/T6 follow-up to extend SlashCommandDispatchPayload", () => {})
-})
-
 describe("dispatchSlashCommand", () => {
   test("forwards the payload to session.command exactly once", async () => {
     let received: SlashCommandDispatchPayload | undefined

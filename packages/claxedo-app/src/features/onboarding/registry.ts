@@ -59,8 +59,7 @@ export type OnboardingStepState = {
 const appliesEverywhere = () => true
 
 function aiLockReason(state: OnboardingState) {
-  if (state.hasUsableCredential) return
-  if (state.destination === undefined) return "Answer the first question to continue."
+  if (!destinationSettled(state)) return "Finish the first step to continue."
 }
 
 /**
@@ -108,7 +107,7 @@ export const onboardingSteps: readonly OnboardingStepDefinition[] = [
     id: "ai",
     title: "Connect your AI",
     appliesTo: appliesEverywhere,
-    isDone: (state) => state.hasUsableCredential,
+    isDone: (state) => state.hasRunnableAI,
     // Which methods this step offers — and whether it stores anything at all —
     // is decided by the first answer, so it cannot render before that exists.
     isLocked: (state) => aiLockReason(state) !== undefined,

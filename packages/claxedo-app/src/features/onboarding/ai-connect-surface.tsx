@@ -105,6 +105,8 @@ export type AIConnectSurfaceProps = {
   onViewChange: (view: AIConnectView) => void
   invalidateQueries?: () => Promise<void>
   onConnected?: (results: AIVerificationResult[]) => void | Promise<void>
+  /** Reports harnesses whose local login probe proved they can run. */
+  onLocalHarnessesDetected?: (harnesses: readonly string[]) => void
   emit?: (event: Extract<OnboardingFunnelEvent, { name: "provider_connected" | "step_verify_failed" }>) => void
   /**
    * Lets the page's action bar drive the save. The detect screen's primary
@@ -171,12 +173,21 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
     props.onViewChange({ kind: "detect" })
     transition({ type: "discovery-started" })
     await discoverAIConnections({ serverUrl: props.serverUrl, request: props.request })
-      .then((result) => transition({
-        type: "discovery-succeeded",
-        discoveryId: result.discoveryId,
-        items: result.items,
-        destination: destination(),
-      }))
+      .then((result) => {
+        transition({
+          type: "discovery-succeeded",
+          discoveryId: result.discoveryId,
+          items: result.items,
+          destination: destination(),
+        })
+        const current = state()
+        if (current.phase !== "confirmed") return
+        props.onLocalHarnessesDetected?.(
+          localHarnessStatuses(current.rows)
+            .filter((harness) => harness.state === "working")
+            .map((harness) => harness.id),
+        )
+      })
       .catch((error: unknown) => transition({ type: "failed", message: errorMessage(error) }))
   }
 

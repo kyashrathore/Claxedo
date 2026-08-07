@@ -461,8 +461,6 @@ describe("resolveSubmitDirectory abort coverage", () => {
     // a successful prepare — an aborted prepare must not publish it.
     expect(handoffMessages).not.toContain("Runtime ready. Loading models.")
   })
-
-  test.skip("cloud path: resolveSubmitDirectory accepts AbortSignal directly — needs A2/T6 follow-up to add signal arg", () => {})
 })
 
 describe("resolveSubmitSessionTarget", () => {

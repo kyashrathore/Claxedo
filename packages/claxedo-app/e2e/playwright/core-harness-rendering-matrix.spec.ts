@@ -323,11 +323,7 @@
  *   raw-Part<->UIMessage projection; reasoning gated behind the opt-in
  *   `showReasoningSummaries` setting) and they are now covered by real tests — see each
  *   test's inline note.
- *   CORRECTED (2026-07-25): this paragraph used to end by claiming "the one remaining
- *   `test.fixme` is the `pi` harness's fixture … missing its promised tool-renderer event
- *   entirely". BOTH halves were stale. There are ZERO `test.fixme` calls in this file
- *   (`grep -n 'test\.fixme'` matches nothing outside this sentence), and
- *   `e2e/fixtures/harness-traces/pi.json` DOES carry its tool envelope — 4 envelopes:
+ *   `e2e/fixtures/harness-traces/pi.json` carries its tool envelope — 4 envelopes:
  *   a text part, its delta, a reasoning part, and a `completed` `read` tool part — which
  *   the "pi — one dedicated tool renderer (config.json subtitle)" test below asserts
  *   against directly.

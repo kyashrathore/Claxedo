@@ -75,6 +75,7 @@ export function OnboardingEmptyState(props: {
   // Set only by the go-further card, which opens the AI step straight on its
   // harness check with no click to start the scan.
   const [harnessCheck, setHarnessCheck] = createSignal(false)
+  const [runnableHarnesses, setRunnableHarnesses] = createSignal<readonly string[]>([])
   const emitted = new Set<string>()
   const credentialsQuery = useQuery(() => ({
     queryKey: ["claxedo", "onboarding", "credentials", server.url, machineId()] as const,
@@ -122,7 +123,7 @@ export function OnboardingEmptyState(props: {
       surface: surface(),
       machineId: machineId(),
       credentials: credentialsQuery.data ?? [],
-      runnableHarnesses: [],
+      runnableHarnesses: runnableHarnesses(),
       hasProject: !!props.projectDirectory,
       ...(destination() ? { destination: destination()! } : {}),
       sandboxProviderConfigured: sandboxQuery.data?.configured === true,
@@ -485,6 +486,7 @@ export function OnboardingEmptyState(props: {
           view={aiView()}
           onViewChange={setAIView}
           registerSubmit={(submit) => setAISubmit(() => submit)}
+          onLocalHarnessesDetected={setRunnableHarnesses}
           onConnected={() => goTo(undefined)}
           emit={funnel().emit}
         />

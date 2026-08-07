@@ -10,6 +10,7 @@ import { getClaxedoServerUrl } from "@/platform/api/api"
 import type { ProcessOwnershipAPI, TerminalTabOps } from "./process-ownership"
 import { createProcessPaneSync, isStaleProcessSnapshot } from "./process-pane-status"
 import { createProcessEventHandlers, type ProcessPaneStore } from "./process-pane-events"
+import { staleProcessTerminalIds } from "./process-pane-cleanup"
 import { afterVisibleWork, createWakeDetector } from "./process-pane-scheduling"
 import { AddProcessDialog } from "@/features/processes/ui"
 import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
@@ -365,13 +366,7 @@ const processPaneContextInput = {
      *    `owner` check in the detection effect is a secondary defense.
      */
     function cleanupStaleProcessTabs(currentPtyIds: Set<string>) {
-      const allProcessOwned = ownership.processOwnedPtyIds()
-      const stale = new Set<string>()
-      for (const id of allProcessOwned) {
-        if (!currentPtyIds.has(id)) {
-          stale.add(id)
-        }
-      }
+      const stale = staleProcessTerminalIds(ownership.processOwnedPtyIds(), currentPtyIds)
       if (stale.size > 0) {
         props.removeStaleTerminals?.(stale)
       }
@@ -491,14 +486,19 @@ const processPaneContextInput = {
       }),
     )
 
-    // Clear the "crashed while closed" attention badge whenever the pane
-    // becomes visible. The toggle() API resets this for explicit open paths,
-    // but the workspace panel button (rail-layout) takes a different path,
-    // so we watch isProcessOpen() directly.
+    // Keep the persisted badge aligned with what the user can currently see.
+    // The toggle API covers explicit opens, but the workspace-panel navigator
+    // takes a different path. Closing that navigator while a reconciled crash
+    // remains must raise attention; opening it acknowledges and clears it.
     createEffect(() => {
       if (isProcessOpen()) {
         props.processPane.setCrashedWhileClosed(false)
+        return
       }
+      // Several process providers can be mounted for one workspace (the review
+      // surface and the navigator). Only a provider holding a real crash may
+      // raise this shared flag; an empty sibling must not erase it.
+      if (anyCrashed()) props.processPane.setCrashedWhileClosed(true)
     })
 
     // ── Exported API ─────────────────────────────────────────────────

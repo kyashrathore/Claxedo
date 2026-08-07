@@ -75,6 +75,8 @@ export type OnboardingState = OnboardingStateInput & {
    * circular: the provider step was hidden until the provider was configured.
    */
   wantsCloud: boolean
+  /** A verified credential or a directly probed local harness can run an agent. */
+  hasRunnableAI: boolean
   hasUsableCredential: boolean
   hasCredentialElsewhere: boolean
   credentialAvailability: "available" | "other-machine" | "none"
@@ -110,10 +112,12 @@ export function onboardingState(input: OnboardingStateInput): OnboardingState {
   // or missing answer — a returning cloud user must not lose their cloud steps
   // because the question predates them.
   const wantsCloud = destinationIncludesCloud(input.destination) || input.hasFirstCloudTurn
+  const hasRunnableAI = hasUsableCredential || (input.destination === "local" && input.runnableHarnesses.length > 0)
 
   return {
     ...input,
     wantsCloud,
+    hasRunnableAI,
     hasUsableCredential,
     hasCredentialElsewhere,
     credentialAvailability: hasUsableCredential ? "available" : hasCredentialElsewhere ? "other-machine" : "none",

@@ -182,12 +182,12 @@
  *   6. `mod+w` on the LAST remaining pane, on the desktop platform, opens the "Quit
  *      Claxedo?" confirmation dialog instead of closing anything. NOT reachable from
  *      this spec's web target: the scenario was DELETED (docs/e2e-decisions.md #37,
- *      2026-07-20) rather than `test.fixme`d — see HARNESS NOTES.
+ *      2026-07-20); see HARNESS NOTES.
  *   7. `mod+\\` / `mod+shift+\\` (the Workbench's own built-in split shortcuts)
  *      split the focused pane by revealing the most-recently-used HIDDEN
  *      surface (`wb.selectors.mruHiddenContent()`) in a new pane on its right/
  *      bottom edge; with no hidden surface to reveal the chord is a no-op.
- *      LIVE, not `test.fixme`: the pre-WP-B2 handler passed the focused pane's
+ *      Executable regression: the pre-WP-B2 handler passed the focused pane's
  *      OWN content id, which the reducer's self-drop guard always rejected
  *      (making the chord dead); `workbench.tsx`'s keyboard-split branch now
  *      passes the MRU hidden content id instead — see INVARIANTS #1.
@@ -205,7 +205,7 @@
  *      `idle` write) rather than freezing on the first transition — the
  *      `enabled:false` + external-query-cache-write reactivity gap in
  *      `useRailHeaderSurfaces`'s `switcherItems` memo was FIXED, so this is a
- *      LIVE test, not a `test.fixme`. NOTE: the working dot is STATUS-driven
+ *      Executable regression. NOTE: the working dot is STATUS-driven
  *      (`sessionSurfaceStatus`: permission > working > done > idle), so
  *      focusing a still-busy tab does NOT clear it; only the unseen `done`
  *      badge is focus-cleared (behavior 12).
@@ -218,17 +218,10 @@
  *   13. Navigating away from a 2-pane split to a third single-pane surface, then
  *      back to one of the split's original tabs, restores the exact split (both
  *      panes, same content) via the saved `layoutSnapshots` entry.
- *   14. A 2-pane split survives a full page reload when the boot URL does not own a
- *      specific session/page/terminal id (`claxedo.state.v5` rehydrates in full).
- *      NOT REACHABLE with this spec's draft+terminal harness — `test.fixme`, see
- *      the fixme's comment: terminal creation always syncs the URL to its own
- *      owning route (so the split never gets a chance to persist), and forcing
- *      a non-owning URL surfaces a separate terminal-metadata-survives-reload
- *      gap that's out of this spec's scope (`core-terminal` owns it).
  *   15. An empty workbench (zero open tabs, a fallback directory available)
  *      auto-opens a draft session composer; explicitly closing that tab's own X
  *      button suppresses the next auto-open for a beat (no instant replacement).
- *      OBSERVABLE and LIVE (no `test.fixme`): `blockNextAutoOpen()`'s 2000ms
+ *      OBSERVABLE and LIVE: `blockNextAutoOpen()`'s 2000ms
  *      window holds, proven by 40 in-page samples at 40ms granularity (~1.6s)
  *      showing zero `[data-workbench-content]` panes and a continuously
  *      present `[data-testid="empty"]` state — Playwright round-trips alone are
@@ -286,9 +279,7 @@
  *      non-fixme tests: the old reactivity gap (`useRailHeaderSurfaces`'s
  *      `switcherItems` memo not reacting to external query-cache writes for a
  *      backgrounded tab after its first transition) is fixed, and behavior 11
- *      pins exactly that second write. The only remaining `test.fixme` in this
- *      file is behavior 14 (split-survives-reload), for the harness reason
- *      documented on the fixme itself.
+ *      pins exactly that second write.
  *   4. `WorkspaceGate`'s connection acquire/release (`workspace-gate.tsx`) is tied
  *      to COMPONENT MOUNT, not pane binding — `wb.split.close(paneId, {
  *      destroyContent: false})` (the pane-chrome X button) never unmounts the
@@ -865,54 +856,6 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     await expect(panedDraft).toBeVisible()
     await expect(panedTerminal).toBeVisible()
   })
-
-  test.fixme(
-    "a 2-pane split survives a full reload on a non-owning URL — behavior 14 (unreachable: terminal creation always syncs the URL to an owning route, and splits built on an owning route never persist)",
-    async () => {
-      // NOT REACHABLE via this app's real UI flows within this spec's harness
-      // constraints (single mocked session + one terminal type) — two
-      // independently-confirmed blockers, either one sufficient on its own:
-      //
-      // (1) `buildDraftPlusTerminalSplit`'s "New Claude Terminal" click makes
-      // the terminal the SOLE active pane (single-pane REPLACE) BEFORE the
-      // drag-split, and the app syncs the URL to whichever surface is
-      // focused — so by the time the drag-split exists, the browser is
-      // already parked on the terminal's OWNING route
-      // (`/w/<dir>/terminal/<ptyId>`), not the bare non-owning
-      // `/<slug>/session` this test's name requires. Confirmed live via
-      // `window.localStorage`: `claxedo.state.v5`'s persisted
-      // `workbench.panes` never gains the second (draft) pane while parked
-      // on that owning URL — it stays pinned to the single pre-split
-      // terminal pane, even though the live in-memory DOM correctly shows
-      // both panes + the divider throughout (`wbOnChange` in
-      // `src/claxedo-ui/state/provider.tsx` isn't committing the
-      // drag-split's state while an owning route is active). The ONLY
-      // documented way to create a split at all is drag-and-drop
-      // (INVARIANTS #1), and dragging is only possible once BOTH surfaces
-      // already exist — which requires the terminal to have been created
-      // first, which is what puts the URL on its owning route in the first
-      // place. There is no UI path that reaches a 2-pane draft+terminal
-      // split while parked on a non-owning URL.
-      //
-      // (2) Forcing the issue by explicitly `page.goto`-ing to the bare
-      // non-owning URL confirms `claxedo.state.v5` DOES correctly rehydrate
-      // `workbench.panes`/`contentIds` (both the draft's and the terminal's
-      // content ids present, one pane pointing at the terminal) — but the
-      // live app then shows a FRESH auto-opened draft in that pane instead
-      // of the terminal (`[data-testid="empty"]` count 0, i.e. `panes.
-      // length > 0`, yet the rendered pane is a draft composer, not the
-      // terminal). This matches `rail-empty-draft-controller.ts`'s
-      // `visibleRenderableSurfaceIds` filtering out any pane whose
-      // `meta.get(contentId)` is missing: the terminal's `ContentMeta`
-      // doesn't survive this rehydration path, so the controller treats the
-      // workbench as "empty" and its auto-open REPLACES the terminal pane
-      // with a new draft (single-pane REPLACE semantics, same mechanism as
-      // behavior 15). A terminal-metadata-survives-reload gap — squarely
-      // "terminal creation's full lifecycle/presets/reattach", which this
-      // spec's own OUT OF SCOPE section assigns to `core-terminal`, not
-      // here. Flagged as a finding, not routed around with a fake pass.
-    },
-  )
 
   test("empty workbench auto-opens a draft, and closing it suppresses the immediate re-open — behavior 15", async ({ page }) => {
     await seedOneProject(page, DIR)

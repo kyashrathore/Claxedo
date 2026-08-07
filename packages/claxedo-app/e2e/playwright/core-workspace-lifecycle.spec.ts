@@ -519,18 +519,6 @@ test.describe("core workspace lifecycle @core", () => {
     expect(createSessionCount).toBe(0)
   })
 
-  test.fixme(
-    "not-a-git-repository toast is permanently unreachable under the web-platform tier — behavior 2",
-    async () => {
-      // project-actions.tsx:113 gates ensureLocalProject()'s "Not a git repository"
-      // toast behind `props.platform.platform !== "web"`. Playwright drives the app
-      // through the Vite dev build, where `usePlatform().platform` is always "web"
-      // (src/context/platform.tsx) — this branch cannot be reached from this tier at
-      // all, regardless of mocking. Only a desktop/Electron-platform harness could
-      // exercise it; no such tier exists in this suite. Reported as a finding.
-    },
-  )
-
   // behaviors 8/9 (New workspace Local/Cloud dialog: dead trigger, hang-forever
   // wait=true branch, and the cloud create dialog reachable only through it) —
   // DELETED per docs/e2e-decisions.md #16 (2026-07-20). The dead code itself

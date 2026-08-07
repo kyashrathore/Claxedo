@@ -288,10 +288,6 @@ describe("sendPromptRequest abort coverage", () => {
     // before dispatch must not pretend the cloud startup completed.
     expect(cleared).toBe(0)
   })
-
-  test.skip("mid-await abort: signal aborted while dispatchPrompt is in flight — needs A2/T6 follow-up to thread AbortSignal through PromptDispatchPayload", () => {})
-
-  test.skip("post-await abort: signal aborted after dispatch resolves — needs A2/T6 follow-up to thread AbortSignal through PromptDispatchPayload", () => {})
 })
 
 describe("rollbackPromptDispatch", () => {

@@ -49,6 +49,8 @@ const LANE_TAGS = ["@core", "@live", "@marketing"] as const
  *     and run by the separate `e2e (tier-real)` CI job. See `e2e/INVARIANTS.md` rule 6.
  *   `@documents-*-canary` — release-canary selectors used by the `test:e2e:documents:*`
  *     scripts to run a subset of an already-laned spec.
+ *   `@onboarding-enabled` — onboarding tests built with their production feature flag
+ *     and executed by the dedicated onboarding CI step.
  *   `@surface-desktop` / `@surface-web` — per-surface selectors from
  *     `docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`'s lane x scenario
  *     matrix: which physical surface (packaged Electron vs a browser) a spec drives,
@@ -64,6 +66,7 @@ const SUB_SELECTOR_TAGS = [
   "@documents-release-canary",
   "@documents-rich-canary",
   "@documents-unsigned-local-canary",
+  "@onboarding-enabled",
   "@surface-desktop",
   "@surface-web",
 ] as const

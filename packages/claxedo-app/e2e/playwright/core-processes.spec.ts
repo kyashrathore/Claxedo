@@ -179,9 +179,7 @@
  *     `src/shell/workspace/workspace-gate.tsx:112-124`). Reproducing that end-to-end
  *     for a purely local Tier-M mock would mean re-building spec 13
  *     (`core-cloud-offline-roles`)'s full relay/role fixture inside this file; it
- *     belongs there instead — FOLDED into `core-cloud-offline-roles`' viewer-role
- *     fixture per docs/e2e-decisions.md #24 (2026-07-20); the local `test.fixme` here
- *     was deleted.
+ *     belongs in `core-cloud-offline-roles`' viewer-role fixture.
  *   - Project-shared process config visibility across two *local* workspaces (same
  *     `.claxedo/processes.jsonc`, sibling port assignment, "no port leaks after stop")
  *     — this is real claxedo-server worktree-sharing + OS-port-allocation behavior that
@@ -856,7 +854,7 @@ test.describe("core processes @core", () => {
     await expect(attentionDot).toBeVisible({ timeout: 10_000 })
   })
 
-  test("a process crashing after launch shows exit code on the next reconcile — behavior 10 (exit-code half)", async ({ page }) => {
+  test("a reconciled process crash shows its exit code and lights the toolbar attention dot — behavior 10", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     const mock = await installProcessMock(page, { directory: DIR })
     await seedOneProject(page, DIR)
@@ -887,6 +885,10 @@ test.describe("core processes @core", () => {
     const overlay2 = await openProcessesNavigator(page)
     const flakyRow = overlay2.getByRole("button", { name: /flaky/ }).first()
     await expect(flakyRow.getByText(/exit\s+17/)).toBeVisible({ timeout: 10_000 })
+    await closeProcessesNavigator(page)
+    await expect(page.locator(
+      'button[aria-label="Open Processes"]:visible span.bg-surface-critical-strong',
+    )).toBeVisible({ timeout: 10_000 })
   })
 
   test("a late start-response never clobbers a crash the client already learned about via SSE — behavior 19 (BUG B regression)", async ({ page }) => {
@@ -1026,45 +1028,6 @@ test.describe("core processes @core", () => {
     const dotColor = await dot.evaluate((el) => getComputedStyle(el).backgroundColor)
     expect(dotColor).not.toBe(runningColor)
   })
-
-  // See SPEC behavior 10 ("...lights the toolbar attention dot even while the
-  // panel is closed") and this file's own INVARIANTS section ("a crashed
-  // process always lights the toolbar attention dot regardless of which panel
-  // is currently focused"). Verified against source AND empirically that this
-  // does not hold for a crash discovered purely via the periodic/next-open GET
-  // /api/wr/process reconcile (as opposed to a live `process.crashed` SSE event
-  // or a start-triggered launch failure — both of those DO light the dot, see
-  // the passing "start-triggered crash..." test above and
-  // `process-pane.tsx:485-492`'s `setCrashedWhileClosed(true)` call inside the
-  // `process.crashed` SSE handler).
-  //
-  // `fetchProcesses()` calls `sync()` synchronously right after its `batch()`
-  // (`process-pane.tsx:183-227`), and `sync()` derives `crashed` from the very
-  // same `store.processes` the row itself renders from
-  // (`anyCrashed()`/`states()`, `process-pane.tsx:120-134`, and
-  // `processForConfig`, `process-pane.tsx:712-714` — both read
-  // `store.processes` directly, no divergent source). The row correctly shows
-  // "exit 17" (see the sibling test above), proving the store DID reconcile to
-  // crashed status and `sync()` DID run with that data — yet
-  // `state.processPane.crashed(directory)` (`state/process-pane.ts:82-86`),
-  // the ONLY input to the toolbar badge besides `crashedWhileClosed()`
-  // (`layouts/workbench-shell-header.tsx:191-194`), never flips the shared
-  // signal: `span.bg-surface-critical-strong` under
-  // `button[aria-label="Open Processes"|"Close Processes"]` stays absent from
-  // the DOM (confirmed 0 matches) both while the Processes list navigator is
-  // open, showing the crashed row, and after closing it — with only ONE
-  // `ProcessPaneProvider` instance mounted for the whole test (the dedicated
-  // per-process panel/tab was deliberately never opened, ruling out the
-  // separate multi-instance-unmount clobber also discovered while
-  // investigating this: `process-pane.tsx:990-994`'s
-  // `onCleanup(() => state.processPane.setCrashed(sdk.directory, false))`
-  // fires unconditionally on ANY `ProcessPaneProvider` unmount, which is a
-  // second, independent bug against the same invariant when the dedicated
-  // panel *is* visited and then closed/navigated away from).
-  test.fixme(
-    "a process crashing after launch lights the toolbar attention dot on the next reconcile — behavior 10 (attention-dot half)",
-    async () => {},
-  )
 
   test("port conflict overlay resolves via pick-new and via kill-existing — behavior 11", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
@@ -1275,30 +1238,6 @@ test.describe("core processes @core", () => {
     const panel2 = await openProcessPanel(page, overlay2, "dev-server")
     await expect(processAction(page, panel2, "stop")).toBeVisible({ timeout: 10_000 })
   })
-
-  // MOVED from core-terminal.spec.ts per docs/e2e-decisions.md #40 (2026-07-20) — the
-  // pruning (`cleanupStaleProcessTabs`/`terminal.removeStale`,
-  // src/features/processes/providers/process-pane.tsx:367-379) only runs when the
-  // Process feature's fetchProcesses() resolves, which needs this file's Process
-  // mocks. Still unimplemented here: the two extra findings from investigating the
-  // move — (1) the original comment's "already covered at the unit level
-  // (src/context/terminal-zombie.test.ts)" is STALE/WRONG — that file does not exist
-  // anywhere in the repo, and `grep -rn "removeStale"` finds zero *.test.ts hits;
-  // `removeStale` has NO test coverage today, unit or e2e. (2) the only way to get a
-  // real terminal tab pointing at a process's ptyId is `processApi.openInTab()`
-  // (process-pane.tsx:762), which has zero UI callers (`grep -rn "openInTab" src`) —
-  // there is no button wired to it, so this scenario cannot currently be driven
-  // through real UI clicks. Seeding the stale ownership state directly would require
-  // reproducing this app's per-directory persisted-storage key (a checksum of the
-  // directory, `src/platform/persistence/persist.ts:220`) — no existing spec seeds
-  // that shape via localStorage, so doing it here would be new, unreviewed
-  // infrastructure rather than a straightforward "move." Reported as a finding for
-  // whoever picks this up next: either wire `openInTab` to a UI affordance first, or
-  // add a dedicated persisted-state seeding helper for this file's checksum scheme.
-  test.fixme(
-    "a stale process-owned terminal tab is pruned instead of resurrected on reload — behavior 12",
-    async () => {},
-  )
 
   // This web harness has no desktop diagnostics capability. Assert both entry points:
   // the zero-project recovery surface and the account menu after a project is loaded.

@@ -11,6 +11,21 @@ import { isWorkspaceReady } from "../../../features/workspaces/data/workspace-co
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { createWorkspacePanelMotionState } from "./workspace-panel-motion-state"
 
+export function workspacePanelMatchesFocusedPane(input: {
+  open: boolean
+  panel: { targetPaneId?: string }
+  target?: WorkspacePanelPaneTarget
+}) {
+  if (!input.open) return false
+  // A targetless panel is attached to the currently focused pane. Providers
+  // can open one before workbench hydration produces a stable pane id.
+  if (input.panel.targetPaneId === undefined) return true
+  // UI ownership is pane-scoped. The panel directory and the focused surface's
+  // tool directory may be canonical aliases of the same local workspace (for
+  // example a resolved local workspace id versus its filesystem cwd).
+  return input.panel.targetPaneId === input.target?.targetPaneId
+}
+
 export function useWorkspacePanelVisualState(input: {
   claxedoState: ReturnType<typeof useClaxedoState>
   focusedPanelTarget: () => WorkspacePanelPaneTarget | undefined
@@ -74,10 +89,7 @@ export function useWorkspacePanelVisualState(input: {
   const workspacePanelForFocusedTarget = () => {
     const target = input.focusedPanelTarget()
     const panel = input.claxedoState.workspacePanel.state()
-    return !!target &&
-      workspacePanelOpen() &&
-      panel.workspaceDir === target.workspaceDir &&
-      panel.targetPaneId === target.targetPaneId
+    return workspacePanelMatchesFocusedPane({ open: workspacePanelOpen(), panel, target })
   }
 
   let lastFocusedPanelTarget: WorkspacePanelPaneTarget | undefined

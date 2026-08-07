@@ -73,8 +73,8 @@
  *     (`src/app/workbench/rail/rail-empty-draft-controller.ts:40`) resolves to
  *     `activeWorkspaceId() ?? projects()[0]?.worktree`, so the canvas instead renders a
  *     live `EmptyDraftSessionComposer` for that project (and `shouldOpenEmptyDraftSession`
- *     can auto-navigate away from `/` entirely). Tests below assert against the visible
- *     workbench surface; the historical recents-list expectation remains `test.fixme()`.
+ *     can auto-navigate away from `/` entirely). Tests below assert against that
+ *     visible workbench surface.
  *   `ConnectionError` (`src/app/entry/app.tsx:267`): "Could not reach {server name}" +
  *     "Retrying automatically…" copy; no interactive retry control. It renders as the
  *     `fallback` of the same `<Show>` that owns `props.children`, so ConnectionError and
@@ -105,12 +105,6 @@
  *      that correspondence explicitly so a mirror line with no network record fails.
  *   2. With zero projects ever registered, the workbench renders the setup shell with
  *      four visible steps, live lock state, and a project action.
- *   3. [test.fixme — see ANATOMY finding] As originally specified: with ≥1 project
- *      registered, Home renders a recents list, and "Open project" opens the
- *      platform-appropriate dialog. Not reachable in the current build — `pages/home.tsx`
- *      is permanently hidden, and the real ≥1-project empty-workbench surface renders a
- *      live draft-session composer instead of a recents list (`rail-empty-draft-
- *      controller.ts`'s `emptyDraftDirectory`), which can auto-navigate away from `/`.
  *   4. A bare `/s/:sessionId` deep link to an already-created session resolves through
  *      the session inventory and materializes the same `session-content` pane
  *      (oracle-proven: the historical reply is visible).
@@ -179,7 +173,6 @@ import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-boot-deep-links-home"
 const ONBOARDING_V1 = process.env.VITE_CLAXEDO_ONBOARDING_V1 === "true"
-const ONBOARDING_DESKTOP_RAMP = process.env.CLAXEDO_ONBOARDING_DESKTOP_E2E === "1"
 const SESSION_ID = "ses_core_boot_deep_links_home"
 
 function slug(value: string) {
@@ -493,15 +486,13 @@ test.describe("core boot, deep links, and home @core", () => {
     expectConsoleMirrorsAreAccountedFor(mock.requests)
   })
 
-  test("the desktop-style ramp hands off from AI verification to the real draft composer — behavior 11", async ({ page }) => {
-    test.skip(!ONBOARDING_V1 || !ONBOARDING_DESKTOP_RAMP, "Requires the onboarding flag and non-sandbox surface")
+  test("the local-only onboarding ramp hands off from AI verification to the real draft composer — behavior 11 @onboarding-enabled", async ({ page }) => {
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
       projectName: "core-boot-onboarding",
       harnessModels: { opencode: [{ id: "gpt-5", name: "GPT-5" }] },
     })
-    let verified = false
     let savedSelection: unknown
     let credentialRequests = 0
     await page.route("**/api/claxedo/credentials**", async (route) => {
@@ -514,8 +505,8 @@ test.describe("core boot, deep links, and home @core", () => {
           body: JSON.stringify({
             discovery_id: "discovery_onboarding",
             items: [
-              { provider_id: "anthropic", kind: "subscription_session", label: "Claude", origin: "local subscription" },
-              { provider_id: "openai", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json" },
+              { provider_id: "anthropic", kind: "subscription_session", label: "Claude", origin: "local subscription", probe: { state: "broken", reason: "Signed out" } },
+              { provider_id: "openai", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "working" } },
             ],
           }),
         })
@@ -530,22 +521,10 @@ test.describe("core boot, deep links, and home @core", () => {
         })
         return
       }
-      if (pathname.endsWith("/cred_onboarding/verify")) {
-        verified = true
-        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ result: "ok" }) })
-        return
-      }
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({
-          credentials: verified ? [{
-            id: "cred_onboarding",
-            provider_id: "anthropic",
-            scope: "shared",
-            health: "ok",
-          }] : [],
-        }),
+        body: JSON.stringify({ credentials: [] }),
       })
     })
 
@@ -556,26 +535,18 @@ test.describe("core boot, deep links, and home @core", () => {
     expect(await page.evaluate(() => localStorage.getItem("opencode.global.dat:onboarding.dismissals.v1"))).toBeNull()
     await expect(page.getByTestId("onboarding-owner")).toHaveAttribute("data-mode", "form")
     await expect(page.getByRole("heading", { name: "Set up Claxedo" })).toBeVisible({ timeout: 20_000 })
-    // The destination is answered and the project step is satisfied, so setup
-    // advances to the AI step's method chooser rather than showing a finished
-    // row. A local destination has exactly three steps and no cloud step.
-    await expect(page.locator("header").getByText("Step 3 of 3")).toBeVisible()
-    await expect(page.getByRole("heading", { name: "Pick how you want to connect" })).toBeVisible()
+    // Web has no remote-access step, so the local flow advances directly to
+    // its second and final step once the project is present.
+    await expect(page.locator("header").getByText("Step 2 of 2")).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Your logins" })).toBeVisible()
 
-    await page.getByRole("button", { name: /Find credentials on this computer/ }).click()
-    await expect(page.getByText("Claude", { exact: true })).toBeVisible()
-    await page.getByRole("checkbox", { name: /Codex/ }).click()
-    // The primary action carries the count of what will actually be saved.
-    await page.getByRole("button", { name: /^Save 1 connection$/ }).click()
+    await page.getByRole("button", { name: "Check my logins" }).click()
 
     await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeVisible({ timeout: 20_000 })
     await expect(page.getByTestId("onboarding-owner")).toHaveAttribute("data-mode", "hidden")
     await expect(page.getByRole("heading", { name: "Set up Claxedo" })).toHaveCount(0)
-    expect(credentialRequests).toBeGreaterThanOrEqual(3)
-    expect(savedSelection).toEqual({
-      discovery_id: "discovery_onboarding",
-      items: [{ provider_id: "anthropic", scope: "shared" }],
-    })
+    expect(credentialRequests).toBeGreaterThanOrEqual(2)
+    expect(savedSelection).toBeUndefined()
     await page.screenshot({ path: "../../docs/plans/evidence/onboarding-project-ai-handoff.png", fullPage: true })
 
     const firstPrompt = "inspect this repository and suggest a first task"
@@ -586,8 +557,7 @@ test.describe("core boot, deep links, and home @core", () => {
     expect(mock.requests.promptCount).toBe(1)
   })
 
-  test("the remote-access deep link is honoured once earlier steps are proven — behavior 12", async ({ page }) => {
-    test.skip(!ONBOARDING_V1 || ONBOARDING_DESKTOP_RAMP, "Requires the flagged web onboarding surface")
+  test("the remote-access deep link is honoured once earlier steps are proven — behavior 12 @onboarding-enabled", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectName: "core-boot-web-onboarding" })
     await page.route("**/api/claxedo/credentials**", async (route) => {
       await route.fulfill({
@@ -625,11 +595,10 @@ test.describe("core boot, deep links, and home @core", () => {
     // Web has no "this machine" to reach, so the step is absent and the deep
     // link lands on the first thing still worth doing rather than on nothing.
     await expect(page.getByRole("heading", { name: "Reach this machine from anywhere" })).toHaveCount(0)
-    await expect(page.getByRole("heading", { name: "Run cloud sessions too?" })).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole("heading", { name: "Do you want to run cloud sessions too?" })).toBeVisible({ timeout: 20_000 })
   })
 
-  test("saying yes to the cloud holds the user until the cloud can actually run", async ({ page }) => {
-    test.skip(!ONBOARDING_V1 || ONBOARDING_DESKTOP_RAMP, "Requires the flagged web onboarding surface")
+  test("saying yes to the cloud holds the user until the cloud can actually run @onboarding-enabled", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectName: "core-boot-web-onboarding" })
     await page.route("**/api/claxedo/credentials**", async (route) => {
       await route.fulfill({
@@ -660,48 +629,11 @@ test.describe("core boot, deep links, and home @core", () => {
     // the question, whose own form is where the missing key is repaired —
     // reachable WITHOUT already having a key, which is the circularity this
     // flow exists to break.
-    await expect(page.getByRole("heading", { name: "Run cloud sessions too?" })).toBeVisible({ timeout: 20_000 })
-    await expect(page.getByLabel("API key")).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Do you want to run cloud sessions too?" })).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByText("Sandbox provider", { exact: true })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Save key" })).toBeVisible()
     await expect(page.getByRole("button", { name: "Next" })).toBeDisabled()
   })
-
-  // FINDING (re-verified 2026-07-25 by reading source — real app behavior, not a test
-  // bug): the `/` route's `<Home/>` component (src/app/routes/home.tsx, mounted at
-  // src/app/entry/app.tsx:484) is unconditionally rendered `display:none` by
-  // `RailWorkbenchShell` (src/app/workbench/rail/rail-workbench-shell.tsx:129,
-  // `<div class="hidden">{props.children}</div>` around all routed page content), so
-  // home.tsx's `language.t("home.recentProjects")` heading/list (home.tsx:97) and its
-  // sandbox-gated `chooseProject()` dialog branch (DialogCreateCloudProject when
-  // config.sandboxEnabled) are dead code — mounted, but never reachable by a real user.
-  // With ≥1 project registered, the REAL surface at `/` (RailWorkbenchCanvas's
-  // `renderEmpty` fallback, src/app/workbench/rail/rail-workbench-canvas.tsx:56-60)
-  // instead renders a live draft-session composer for `projects()[0]?.worktree`
-  // (src/app/workbench/rail/rail-empty-draft-controller.ts:40's `emptyDraftDirectory`
-  // memo), and can auto-navigate away from `/` entirely (`shouldOpenEmptyDraftSession`)
-  // — there is no VISIBLE "recent projects" list anywhere in the current UI to assert
-  // against. The real "+New project" flow (`handleNewProject`) always opens
-  // `DialogSelectDirectory`, never the sandbox/cloud branch this test originally pinned
-  // — that flow's directory-dialog coverage lives in `core-workspace-lifecycle` per this
-  // spec's OUT OF SCOPE.
-  test.fixme(
-    "Home lists recent projects and Open project opens the platform dialog — behavior 3",
-    async ({ page }) => {
-      await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectName: "core-boot-home" })
-      await seedOneProject(page, DIR)
-      await page.goto("/", { waitUntil: "domcontentloaded" })
-      await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
-
-      await expect(page.getByText("Recent projects")).toBeVisible({ timeout: 20_000 })
-      await expect(page.getByText(/e2e-core-boot-deep-links-home/)).toBeVisible()
-
-      await page.getByRole("button", { name: "Open project", exact: true }).first().click()
-      // This build ships VITE_SANDBOX_ENABLED=true on the web platform, so
-      // chooseProject() takes the cloud-project branch (see SPEC OUT OF SCOPE).
-      await expect(page.locator('[data-slot="dialog-title"]')).toHaveText("New Cloud Project", { timeout: 10_000 })
-      await page.keyboard.press("Escape")
-      await expect(page.locator('[data-slot="dialog-title"]')).toHaveCount(0)
-    },
-  )
 
   test("workspace-scoped deep link materializes the pane and a fresh nav discards stale tabs — behaviors 5,6", async ({ page }) => {
     const primaryUrl = await createSessionViaFirstSend(page, "core boot workspace deep link turn")

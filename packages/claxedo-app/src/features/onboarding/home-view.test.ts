@@ -62,9 +62,26 @@ describe("onboarding Home view", () => {
 
   test("returning users keep the existing Home unchanged", () => {
     expect(onboardingHomeView({
-      state: { ...state, hasProject: true, hasUsableCredential: true, credentialAvailability: "available" },
+      state: stateOf({
+        hasProject: true,
+        credentials: [{ id: "cred_1", providerId: "anthropic", verification: "ok", scope: "shared" }],
+      }),
       dismissals: [],
     }).mode).toBe("hidden")
+  })
+
+  test("a web-hosted local destination hands off after a local harness is proven", () => {
+    const view = onboardingHomeView({
+      state: stateOf({
+        surface: "web",
+        destination: "local",
+        hasProject: true,
+        runnableHarnesses: ["codex"],
+      }),
+      dismissals: [],
+    })
+
+    expect(view.mode).toBe("hidden")
   })
 
   test("declining the cloud holds the user on the first step until a project is open", () => {
@@ -98,6 +115,20 @@ describe("onboarding Home view", () => {
     expect(view.location).toEqual({ kind: "step", step: "destination" })
   })
 
+  test("an AI deep link cannot bypass incomplete cloud destination setup", () => {
+    const view = onboardingHomeView({
+      state: stateOf({
+        destination: "both",
+        hasProject: true,
+        credentials: [{ id: "cred_1", providerId: "anthropic", verification: "ok", scope: "shared" }],
+      }),
+      dismissals: [],
+      requestedStep: "ai",
+    })
+    expect(view.location).toEqual({ kind: "step", step: "destination" })
+    expect(view.steps.find((step) => step.id === "ai")?.locked).toBe(true)
+  })
+
   test("an applicable deep link is honoured", () => {
     const view = onboardingHomeView({ state: localOnly, dismissals: [], requestedStep: "ai" })
     expect(view.location).toEqual({ kind: "step", step: "ai" })
@@ -125,15 +156,6 @@ describe("onboarding Home view", () => {
 
     expect(onboardingHomeView({ state: ready, dismissals: [], passedOver: ["remote-access"] }).location)
       .toEqual({ kind: "done" })
-  })
-
-  test("Next on an optional mid-flow step advances to the one after it", () => {
-    // Passing over the cloud question lands on the AI step, not back on itself.
-    const answered = stateOf({ destination: "local" })
-    expect(onboardingHomeView({ state: answered, dismissals: [] }).location)
-      .toEqual({ kind: "step", step: "destination" })
-    expect(onboardingHomeView({ state: answered, dismissals: [], passedOver: ["destination"] }).location)
-      .toEqual({ kind: "step", step: "ai" })
   })
 
   test("passing over is for this pass only — Skip is what stops the asking", () => {

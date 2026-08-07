@@ -46,9 +46,9 @@ describe("onboarding step registry", () => {
   test("the AI step waits for the first answer, because that decides what it offers", () => {
     expect(step("ai")).toMatchObject({
       locked: true,
-      lockReason: "Answer the first question to continue.",
+      lockReason: "Finish the first step to continue.",
     })
-    expect(step("ai", { destination: "local" }).locked).toBe(false)
+    expect(step("ai", { destination: "local", hasProject: true }).locked).toBe(false)
   })
 
   test("declining the cloud still owes a project — agents need somewhere to work", () => {
@@ -145,6 +145,14 @@ describe("onboarding step registry", () => {
     expect(step("ai", {
       destination: "local",
       credentials: [{ ...verified, verification: "rate_capped" }],
+    }).done).toBe(true)
+  })
+
+  test("a proven local harness completes AI without a stored credential", () => {
+    expect(step("ai", {
+      destination: "local",
+      hasProject: true,
+      runnableHarnesses: ["codex"],
     }).done).toBe(true)
   })
 

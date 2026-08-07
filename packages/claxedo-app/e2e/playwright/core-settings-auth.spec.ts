@@ -366,9 +366,8 @@
  *       host, so the anonymous-forced-`/login` half of the signed gate is
  *       permanently untestable here — the pre-existing
  *       `e2e-legacy/login-roundtrip.spec.ts` hit the same wall for a
- *       different reason (authEnabled baked false at the time) and is
- *       superseded by this file's positive-path pin (behavior 30) plus
- *       `test.fixme` for the negative half.
+ *       different reason (authEnabled baked false at the time). The signed
+ *       authentication lane owns that negative contract.
  *     - `platform.checkUpdate` is only implemented by the desktop platform
  *       object; the web platform built in `src/main.tsx` never defines it, so
  *       every update-check affordance is permanently disabled here (behavior
@@ -389,8 +388,8 @@
  *       default-bypass principal is signed-in on EVERY render including the
  *       one right after sign-out, making a full log-out-and-stay-on-/login
  *       round trip permanently unreachable without disabling the bypass
- *       first, which itself removes the "Log out" affordance being tested
- *       (behavior 5, `test.fixme`d below). Compounding this,
+ *       first, which itself removes the "Log out" affordance being tested.
+ *       Compounding this,
  *       `initializeClerk()`'s bypass branch
  *       (`src/utils/auth-client.ts:164-173`) never assigns the module-level
  *       `clerkLoadPromise`, so `signOut()`
@@ -1034,11 +1033,6 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByRole("button", { name: "Log out" })).toBeVisible()
       await expect(page.getByText("test@claxedo.test")).toHaveCount(0)
     })
-
-    test.fixme(
-      "account section is hidden entirely for a `local` principal — unreachable: authEnabled=false is required to reach principal.kind===\"local\" (src/shell/auth/principal-provider.tsx:27), but VITE_AUTH_ENABLED is baked true for the whole shared dev server (.env.local), not flippable per-spec (see SPEC HARNESS NOTES)",
-      async () => {},
-    )
 
     // Entry #17 (decision A). Previously fixme for two reasons, both fixed at
     // the app layer (src/platform/auth/auth-client.ts):
@@ -2060,10 +2054,6 @@ test.describe("core settings + auth @core", () => {
       expect(formSubmitted).toBe(false)
     })
 
-    test.fixme(
-      "double-submit guard: a reactive re-trigger after submitted() is set never re-exchanges — hard to trigger deterministically from outside: the guard is `if (submitted()) return` inside a createEffect keyed on `location.search`/`auth.status()` (src/pages/cli-login.tsx:99-100), and neither of those signals changes again after the first successful run in a normal SPA navigation, so there is no black-box trigger for the re-entrant path without either an app-exposed test hook or white-box reactive-graph poking, which this suite does not do",
-      async () => {},
-    )
   })
 
   test.describe("signed gate (CloudAuthGate)", () => {

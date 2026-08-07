@@ -69,12 +69,6 @@ const BOOT_TIMEOUT = 90_000
 // the same way `real-harness-local.spec.ts` is carved out, so the desktop build
 // cost lands in its own job. `@surface-desktop` selects the surface.
 test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () => {
-  test.skip(
-    !process.env.CLAXEDO_E2E_DESKTOP,
-    "desktop lane: set CLAXEDO_E2E_DESKTOP=1 and build the packaged app first " +
-      "(cd packages/claxedo-desktop && bun run build && npx electron-builder --dir --config electron-builder.config.ts)",
-  )
-
   let packaged: PackagedApp | undefined
   let scripted: ScriptedModelServer | undefined
   let claudeConfigDir: string | undefined
@@ -749,7 +743,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     })
   })
 
-  // B7 — SKIPPED ON THIS LANE, HONESTLY, NOT WEAKLY ASSERTED, after two real
+  // Historical B7 investigation — this timing-dependent observation is not an executable contract. After two real
   // attempts against a real backend. `expectRailStatus`'s own precondition
   // (rail-oracle.ts, "the dot must be ABSENT right now, before any status is
   // driven") needs a row that is genuinely, structurally idle — and on
@@ -787,11 +781,6 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
   // unguarded, only this specific RAIL row/no-second-idle-state combination.
   // An honest fixme beats a fake pass — this task's own instructions permit
   // exactly this when a scenario cannot bite without a weak assertion.
-  test.fixme(
-    "B7: the background status dot transitions working -> done on a row mounted while idle and never focused — sessions have no clearSeen/focus-clear (see comment above); B9 proves the same defect-12 shape on the compact-switcher instead",
-    async () => {},
-  )
-
   test("B8: reload preserves rail title, order, and status", async () => {
     const dir = await makeScratchWorkspace("b8")
     const started = await launchScriptedApp()
@@ -825,7 +814,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     await expectRailStatusAbsent({ page: packaged.page, sessionId })
   })
 
-  // B9 — SKIPPED ON THIS LANE, HONESTLY, NOT WEAKLY ASSERTED, after three
+  // Historical B9 investigation — this failed interaction has no retained executable scenario. After three
   // real, reproducible attempts. Everything up to and including
   // `closeSidebar()` works exactly as designed (verified: the rail row is
   // read correctly, the matching compact-switcher tab is found by title, the
@@ -844,11 +833,6 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
   // `visibleSubmit`/`composerInput` docs already record for the normal
   // (sidebar-open) layout, just not fully solved for this OTHER layout in
   // the time available. An honest fixme beats a fake pass.
-  test.fixme(
-    "B9: sidebar and compact-switcher status dots stay in sync across a live transition on an already-mounted tab — a second send never registers once the sidebar is collapsed (see comment above); reproduced 3/3",
-    async () => {},
-  )
-
 
   test("C1: a new draft resolves harness/model within 5s with no reload needed", async () => {
     const dir = await makeScratchWorkspace("c1")
@@ -1151,7 +1135,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     await expectRowGeometry({ page: packaged.page })
   })
 
-  // D2 — SKIPPED ON THIS LANE, HONESTLY, NOT WEAKLY ASSERTED. This scenario
+  // Historical D2 investigation — no executable regression scenario was retained. This scenario
   // has now been through three real strategy changes, and THREE of its FOUR
   // original suspects are fully resolved. Only one genuinely unexplained
   // blocker remains, and it is narrower and more precise than anything
@@ -1250,18 +1234,6 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
   // (port) with the evidence that overturned it, and a ruled-out timing
   // hypothesis with the exact mechanism (`setReplyDelayMs`) used to rule it
   // out rather than merely re-asserted.
-  test.fixme(
-    "D2: a real claude agent in a real terminal drives the rail terminal row status via the mocked model endpoint — " +
-      "blocked on this machine (see comment above): dialogs stay fully suppressed and auth now resolves correctly " +
-      "(ANTHROPIC_AUTH_TOKEN pre-empts the real claude.ai subscription per TR()'s own precedence — proven live, " +
-      "counter goes non-zero, real scripted reply visible) — CLAXEDO_PORT was a false lead, retracted, the real " +
-      "port matches serverBase exactly — and timing/race was tested and ruled out with a deliberately delayed mock " +
-      "reply (setReplyDelayMs, 5s hold, 8s poll): the rail dot never showed working even once, so the one " +
-      "remaining blocker is a genuine, narrow defect in the notify.sh -> server -> rail-dot pipeline for terminal-" +
-      "hosted agents specifically, not yet root-caused",
-    async () => {},
-  )
-
   test("A2: reload mid-session still renders the transcript and completes a further turn", async () => {
     const dir = await makeScratchWorkspace("a2")
     const started = await launchScriptedApp()
@@ -1318,7 +1290,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     })
   })
 
-  // A3 — SKIPPED ON THIS LANE, HONESTLY, NOT WEAKLY ASSERTED. The plan's
+  // Historical A3 investigation — packaged desktop has no session-by-id deep-link contract. The plan's
   // literal scenario ("Cold deep link `/w/<ws>/session/<id>` — that session
   // loads", docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md line
   // 98) has no real implementation to exercise on the packaged desktop
@@ -1345,8 +1317,4 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
   //      scope (route-deep-links.ts is app source, not e2e).
   // An honest fixme beats a fake pass — this task's own instructions permit
   // exactly this when a scenario cannot bite without a weak assertion.
-  test.fixme(
-    "A3: cold deep link /w/<ws>/session/<id> loads that session — no such deep link exists on this surface (see comment above, plan line 98)",
-    async () => {},
-  )
 })

@@ -160,9 +160,7 @@
  * `cloud` block for the exact route shapes and why they are mounted at
  * `${relayUrl}/workspaces/:workspaceId${path}` (the shape the app's own
  * `workspaceRelayConnection` follows, `src/utils/workspace-relay-connection.ts:352`).
- * Previously every `test()` below was `test.fixme()` behind a documented KNOWN GAP
- * (installMockRuntime's `cloud` catch-all did not model the session lane at all); that
- * gap is now closed and every behavior below runs for real.
+ * The shared runtime models the cloud session lane, so every behavior below executes.
  */
 import { expect, test, type Page } from "@playwright/test"
 import { expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"

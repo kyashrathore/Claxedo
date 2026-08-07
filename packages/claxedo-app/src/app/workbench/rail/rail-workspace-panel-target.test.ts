@@ -3,6 +3,37 @@ import { createRoot } from "solid-js"
 
 import type { ContentMeta } from "../state/types"
 import { useRailWorkspacePanelTarget } from "./rail-workspace-panel-target"
+import { workspacePanelMatchesFocusedPane } from "./workspace-panel-visual-state"
+
+describe("workspacePanelMatchesFocusedPane", () => {
+  test("treats directory aliases in the same pane as one UI target", () => {
+    expect(workspacePanelMatchesFocusedPane({
+      open: true,
+      panel: { targetPaneId: "pane-1" },
+      target: { workspaceDir: "/repo/main", targetPaneId: "pane-1" },
+    })).toBe(true)
+  })
+
+  test("attaches a targetless panel to the focused pane", () => {
+    expect(workspacePanelMatchesFocusedPane({
+      open: true,
+      panel: {},
+      target: { workspaceDir: "/repo/main", targetPaneId: "pane-1" },
+    })).toBe(true)
+  })
+
+  test("keeps a targetless panel active while workbench pane identity is hydrating", () => {
+    expect(workspacePanelMatchesFocusedPane({ open: true, panel: {} })).toBe(true)
+  })
+
+  test("does not attribute another pane's panel to the focused pane", () => {
+    expect(workspacePanelMatchesFocusedPane({
+      open: true,
+      panel: { targetPaneId: "pane-2" },
+      target: { workspaceDir: "/repo/main", targetPaneId: "pane-1" },
+    })).toBe(false)
+  })
+})
 
 describe("useRailWorkspacePanelTarget", () => {
   test("content target wins over route, pinned, and default fallbacks", () => {

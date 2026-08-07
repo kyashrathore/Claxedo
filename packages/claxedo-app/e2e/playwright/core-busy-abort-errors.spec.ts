@@ -130,7 +130,7 @@
  * BEHAVIORS —
  *   1. While a turn is busy, `[data-slot="session-turn-thinking"]` is visible; once the
  *      turn settles it disappears and the reply renders (oracle).
- *   2. PERMANENT, never `test.skip`: "stale-busy" — the assistant message reaches
+ *   2. PERMANENT executable regression: "stale-busy" — the assistant message reaches
  *      `time.completed` but the `session.idle` SSE event is never sent. The reply is
  *      still visibly rendered (DOM+geometric+evidence) and the submit control returns
  *      to ready WITHOUT any user action, reconciled by the REST-polling mechanism in
@@ -164,7 +164,7 @@
  *      `"failed"` stage would otherwise take 5 minutes of real wall clock, so a second
  *      test reaches it by scaling ONLY the four escalation delays through the
  *      dispatcher's gated `__claxedoStatusTimerScale` hook; at that terminal stage BOTH
- *      Cancel and Retry are offered. BOTH tests run LIVE (neither is `test.fixme`): the
+ *      Cancel and Retry are offered. Both tests execute in this lane: the
  *      two app defects that once forced them to be skipped — a duplicate `Session()`
  *      mount surviving the first send, and a non-reactive `statusStage` read in the
  *      composer — are fixed; see the pending/long test's own comment for the fixes.
@@ -765,7 +765,7 @@ test.describe("core busy / abort / errors @core", () => {
   test(
     "escalation ladder: a genuinely silent server surfaces pending then long, and Cancel aborts — behavior 8",
     async ({ page }) => {
-      // FIXED APP BUGS (was test.fixme) — two independent defects:
+      // Two independent fixed app defects are pinned here:
       // 1. Duplicate Session() mount: after the first send from a draft
       //    composer, the submitting draft content stayed at sessionId "new"
       //    forever (route-intent matches contents by (directory, sessionId),

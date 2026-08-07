@@ -31,16 +31,9 @@ const reuse = process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === "1"
 // every spec that drives a browser surface carries `@surface-web`, so a spec can be
 // selected by WHICH SURFACE it exercises independent of which suite (core/live) or
 // which other sub-selector (`@tier-real`, `@workgraph-real`) it also carries.
-// `desktop-unsigned-embedded.spec.ts` is tagged `@core @tier-real @surface-desktop`
-// today; `@tier-real` already carves it out of `test:e2e:core:base`'s sharded run (the
-// desktop build cost cannot live on a shard whose build points at :3001), so
-// `@surface-desktop` does not need its own `--grep-invert` entry there YET. It will need
-// one the moment a `@surface-desktop` spec ships WITHOUT `@tier-real`/`@workgraph-real`
-// alongside it (Phase 4's `desktop-signed-embedded-shared` / `desktop-signed-cloud`) —
-// until then a bare `@surface-desktop` spec would run twice: once in the sharded core
-// lane, once in its own job. `@surface-web` currently selects nothing (no spec carries
-// it yet), the same "reserved, not yet load-bearing" state `@documents-*-canary` was in
-// before `documents-core.spec.ts` landed.
+// Packaged-app specs are collected only when CLAXEDO_E2E_DESKTOP=1. This keeps
+// browser lanes at zero skips while the desktop CI lane still executes every
+// `desktop-*.spec.ts` test against the artifact it requires.
 const suiteGrep = {
   core: /@core/,
   live: /@live/,
@@ -101,7 +94,10 @@ const webServer =
 export default defineConfig({
   testDir: "./e2e",
   testMatch: "**/*.spec.ts",
-  testIgnore: "**/deployed-workgraph.spec.ts",
+  testIgnore: [
+    "**/deployed-workgraph.spec.ts",
+    ...(process.env.CLAXEDO_E2E_DESKTOP === "1" ? [] : ["**/desktop-*.spec.ts"]),
+  ],
   grep,
   outputDir: "./e2e/playwright/test-results",
   timeout: 60_000,
@@ -143,7 +139,11 @@ export default defineConfig({
       // Mobile smoke specs opt into the `mobile` project below (`--project=mobile`);
       // they must never also run at desktop viewport as part of the default/@core
       // suite here.
-      testIgnore: ["**/mobile-*.spec.ts", "**/deployed-workgraph.spec.ts"],
+      testIgnore: [
+        "**/mobile-*.spec.ts",
+        "**/deployed-workgraph.spec.ts",
+        ...(process.env.CLAXEDO_E2E_DESKTOP === "1" ? [] : ["**/desktop-*.spec.ts"]),
+      ],
       use: { ...devices["Desktop Chrome"] },
     },
     {

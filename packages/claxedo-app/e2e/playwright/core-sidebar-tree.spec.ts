@@ -181,7 +181,7 @@
  *       `closeMobileSidebar()` — the row's own navigation stays owned by
  *       `activateSession`, the shell wrapper only dismisses the drawer).
  *       LIVE since WP-C3 §3.1 wired the open path end to end — the previous
- *       "dead code / `test.fixme`" note here was stale.
+ *       former "dead code" note here was stale.
  *   15. A session created with a NON-opencode harness (e.g. Codex via ACP)
  *       becomes visible in the tree once its `session.lifecycle` "created"
  *       event reaches the client, the same way an opencode-native session's

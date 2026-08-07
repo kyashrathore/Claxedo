@@ -67,12 +67,12 @@ describe("createProcessPaneSync", () => {
     expect(calls.crashedWhileClosed).toEqual([]) // open: the badge is not raised
   })
 
-  test("no crash clears both the transient crashed flag and the closed badge", () => {
+  test("a provider without a crash clears only its directory-local transient flag", () => {
     const { sync, calls } = harness({ processes: { a: proc("running") }, isProcessOpen: false })
     sync()
     expect(calls.running).toEqual([["/repo", true]])
     expect(calls.crashed).toEqual([["/repo", false]])
-    expect(calls.crashedWhileClosed).toEqual([false])
+    expect(calls.crashedWhileClosed).toEqual([])
   })
 })
 

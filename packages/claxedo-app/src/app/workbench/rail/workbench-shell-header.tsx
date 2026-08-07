@@ -208,9 +208,9 @@ function L2HeaderStrip(props: {
       changesActive={props.workspacePanelForFocusedTarget() && props.workspacePanelNavigator() === "changes"}
       processesActive={props.workspacePanelForFocusedTarget() && props.workspacePanelNavigator() === "processes"}
       processesAttention={
-        !!props.focusedPanelTarget() &&
-        (claxedoState.processPane.crashed(props.focusedPanelTarget()?.workspaceDir) ||
-          claxedoState.processPane.crashedWhileClosed())
+        claxedoState.processPane.crashedWhileClosed() ||
+        (!!props.focusedPanelTarget() &&
+          claxedoState.processPane.crashed(props.focusedPanelTarget()?.workspaceDir))
       }
       showChanges
       showProcesses

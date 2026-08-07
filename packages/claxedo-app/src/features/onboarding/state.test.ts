@@ -114,6 +114,28 @@ describe("onboardingState", () => {
     expect(state.hasUsableCredential).toBe(true)
   })
 
+  test("a directly probed local harness makes AI runnable without synthesizing a credential", () => {
+    const state = onboardingState({
+      ...base,
+      destination: "local",
+      runnableHarnesses: ["codex"],
+    })
+
+    expect(state.hasRunnableAI).toBe(true)
+    expect(state.hasUsableCredential).toBe(false)
+    expect(state.credentials).toEqual([])
+  })
+
+  test("a local harness cannot satisfy a cloud destination", () => {
+    const state = onboardingState({
+      ...base,
+      destination: "both",
+      runnableHarnesses: ["codex"],
+    })
+
+    expect(state.hasRunnableAI).toBe(false)
+  })
+
   test("separates credentials the cloud can already reach from machine-local ones", () => {
     const state = onboardingState({
       ...base,
