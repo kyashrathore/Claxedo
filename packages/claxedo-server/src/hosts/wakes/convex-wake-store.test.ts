@@ -56,6 +56,9 @@ describe("ConvexWakeStore call mapping", () => {
 
     await store.claimDue(1000, 30_000, 10, "org:a")
     expect(lastCall(calls).args.serial_key).toBe("org:a")
+
+    await store.listFiring("org:a")
+    expect(lastCall(calls).args.serial_key).toBe("org:a")
   })
 
   it("cas forwards the guarded transition and patch", async () => {
@@ -157,7 +160,12 @@ function fakeConvexExecutor() {
       for (const wake of reclaimed) wake.leaseUntil = (args.now as number) + (args.lease_ms as number)
       return reclaimed.map((w) => ({ ...w }))
     }
-    if (name.endsWith("listFiringWakes")) return rows.filter((w) => w.state === "firing").map((w) => ({ ...w }))
+    if (name.endsWith("listFiringWakes")) {
+      return laneScope(
+        rows.filter((w) => w.state === "firing"),
+        "serial_key" in args ? args.serial_key : undefined,
+      ).map((w) => ({ ...w }))
+    }
     if (name.endsWith("listWakesForSession")) {
       return rows.filter((w) => w.sessionId === args.session_id).map((w) => ({ ...w }))
     }
@@ -263,7 +271,7 @@ describe("engine runs end-to-end against ConvexWakeStore", () => {
     })
     await wakes.schedule({ workspaceId: "ws", kind: "workgraph_settle", serialKey: "k", at: clock.t, intent: {} })
     await expect(wakes.runDue("k")).rejects.toThrow("crash")
-    expect((await wakes.runDue("k")).fired).toBe(0) // lease still live: lane held
+    expect(await wakes.runDue("k")).toEqual({ fired: 0, blockedUntil: 1_030_000 })
     clock.t += 60_000
     expect((await wakes.runDue("k")).fired).toBe(1)
     expect(settled).toHaveLength(1)

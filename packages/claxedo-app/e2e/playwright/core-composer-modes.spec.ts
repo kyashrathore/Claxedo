@@ -438,7 +438,7 @@ test.describe("core composer modes @core", () => {
     "Escape aborts an in-flight turn when not in shell mode and no popover is open — behavior 8",
     async ({ page }) => {
       test.setTimeout(120_000)
-      const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, staleBusy: true })
+      const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, holdTurn: true })
       await seedProjects(page, [DIR])
       const editor = await openDraftPrompt(page, DIR)
       const submit = page.locator(SELECTORS.submitControl).last()

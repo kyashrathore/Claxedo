@@ -371,6 +371,8 @@ export type MockRuntimeOptions = {
   replyText?: (turn: number, promptText: string) => string
   /** Message and the live-status route settle, but the `session.idle` event is never sent. */
   staleBusy?: boolean
+  /** Keep the authoritative message and live status busy until the test aborts the turn. */
+  holdTurn?: boolean
   /** Extra delay (ms) inserted before `session.idle`, after the message completes. */
   delayedIdleMs?: number
   /** Emits `session.error` (and marks the assistant message `error`) instead of completing normally. */
@@ -1153,6 +1155,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     })
     messages = [...messages, assistantRow]
     emit({ type: "message.updated", properties: { sessionID: SESSION_ID, info: assistantRow.info } })
+
+    if (options.holdTurn) return
 
     const fullText = replyTextFn(input.turn, input.text)
     if (options.errorMidTurn) {
@@ -2366,6 +2370,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // network, and proving exactly that is what `holdAbort` exists for.
     requests.abortCount += 1
     if (abortGate) await abortGate
+    if (options.holdTurn) {
+      setSessionStatus(SESSION_ID)
+      emit({ type: "session.idle", properties: { sessionID: SESSION_ID } })
+    }
     return json(route, { ok: true, status: "cancelled" })
   })
 

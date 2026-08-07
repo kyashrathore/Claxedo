@@ -396,17 +396,23 @@ export const reclaimFiringWakes = serviceMutation({
 })
 
 export const listFiringWakes = serviceQuery({
-  args: {},
-  handler: async (ctx) => {
+  args: { serial_key: nullableString },
+  handler: async (ctx, args) => {
     // W5: `.filter()` does NOT narrow what Convex reads — it reads the whole
     // table and discards non-matches — so this was a full scan of a table that
     // grows with every wake ever created, to find the few currently firing.
-    // `by_state_expiry` leads with `state`, so its `.eq` prefix is the same
-    // predicate served from the index; no new index is needed.
-    const docs = await ctx.db
-      .query("wakes")
-      .withIndex("by_state_expiry", (q: any) => q.eq("state", "firing"))
-      .collect()
+    // `by_state_expiry` serves the global boot set; `by_lane_state` serves the
+    // exact pushed lane without reading every other tenant's active lease.
+    const docs = args.serial_key === undefined
+      ? await ctx.db
+          .query("wakes")
+          .withIndex("by_state_expiry", (q: any) => q.eq("state", "firing"))
+          .collect()
+      : await ctx.db
+          .query("wakes")
+          .withIndex("by_lane_state", (q: any) =>
+            q.eq("serial_key", args.serial_key ?? undefined).eq("state", "firing"))
+          .collect()
     return docs.map(toWake)
   },
 })

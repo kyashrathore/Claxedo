@@ -842,11 +842,11 @@ export function createSessionController(input: {
               syncSessionHistory(request.sessionID, { force: true, silent: true }), readAcceptedPromptStatus({ sessionID: request.sessionID, client: sdk.client }),
             ])
             if (cancelled) return
-            if (fetchedStatus) dispatchSessionStatusEvent({
+            const settled = synced && fetchedStatus?.type === "idle" && conversationHasAssistantMessage(request.sessionID, assistantMessageIdForUserMessage(request.messageID))
+            if (fetchedStatus && (fetchedStatus.type !== "idle" || settled)) dispatchSessionStatusEvent({
               event: { type: "session.status", source: "server", sessionID: request.sessionID, status: fetchedStatus },
             })
-            const assistantMessageId = assistantMessageIdForUserMessage(request.messageID)
-            if (synced && fetchedStatus?.type === "idle" && conversationHasAssistantMessage(request.sessionID, assistantMessageId)) return true
+            if (settled) return true
           }
         })().catch(() => undefined)
         onCleanup(() => { cancelled = true })
