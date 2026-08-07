@@ -183,16 +183,8 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
   }
 
   const persistSessionConfig = async (configInput: SaveSessionConfigInput) => {
-    const body = {
-      harness: {
-        type: configInput.harnessType,
-      },
-      ...(configInput.agent ? { agent: configInput.agent } : {}),
-      ...(configInput.model ? { model: configInput.model } : {}),
-      ...(configInput.variant ? { variant: configInput.variant } : {}),
-    }
+    const body = sessionConfigBody(configInput)
     const next = JSON.stringify(body)
-    if (sessionConfigSignature(queryClient.getQueryData(sessionConfigRawQueryKey(configInput.sessionID))) === next) return
     const path = sessionConfigPath(configInput)
     const res = await sessionRequest(configInput.directory, path, {
       method: "PATCH",
@@ -204,6 +196,10 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
   }
 
   const saveSessionConfig = async (configInput: SaveSessionConfigInput) => {
+    if (
+      sessionConfigSignature(queryClient.getQueryData(sessionConfigRawQueryKey(configInput.sessionID))) ===
+      JSON.stringify(sessionConfigBody(configInput))
+    ) return
     try {
       await persistSessionConfig(configInput)
     } catch (err) {
@@ -241,6 +237,15 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     readSessionConfig,
     persistSessionConfig,
     saveSessionConfig,
+  }
+}
+
+function sessionConfigBody(input: SaveSessionConfigInput) {
+  return {
+    harness: { type: input.harnessType },
+    ...(input.agent ? { agent: input.agent } : {}),
+    ...(input.model ? { model: input.model } : {}),
+    ...(input.variant ? { variant: input.variant } : {}),
   }
 }
 

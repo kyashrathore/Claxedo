@@ -104,9 +104,9 @@
  *      `showAgentSelector()` and `harnessPending()` are mutually exclusive states, so a
  *      "visible AND disabled" agent selector cannot be produced through the public
  *      composer surface today.
- *   8. A failed `PATCH /session/:id/config` shows a "Could not save session config" toast
- *      while the prompt send still proceeds and the reply still renders — see HARNESS
- *      NOTES for the two bugs this behavior guards against (both fixed 2026-07-10).
+ *   8. A failed first `PATCH /session/:id/config` shows a "Could not save session config"
+ *      toast and keeps the new session unpublished: the draft remains intact and no
+ *      prompt request is made.
  *   9. With zero resolvable model (no connected providers at all), pressing Enter to
  *      submit blocks the send: a "Select an agent and model" toast appears, the composer
  *      text is preserved verbatim, and zero `prompt_async` requests are made.
@@ -127,22 +127,9 @@
  *     picker's model/variant rows — so behaviors 1–4, 6, 10 install an additional
  *     `page.route` override (this spec file only, not the shared helper) adding a
  *     connected `anthropic` provider with priced, multi-variant models.
- *   - Behavior 8, bug #1 (fixed 2026-07-10): `saveSessionConfig`
- *     (`src/components/prompt-input/submit-transport.ts:203-217`) now throws on a non-ok
- *     PATCH response before reaching `queryClient.setQueryData` (previously `sessionRequest`
- *     resolving with a raw non-2xx `Response` — `fetch`/`authFetch`/`unsignedLocalFetch`
- *     only reject on network-level failures — meant the `catch` never ran and the dedupe
- *     cache silently marked a failed payload "saved").
- *   - Behavior 8, bug #2 (fixed 2026-07-10): even with bug #1 fixed, the toast never
- *     rendered because `prompt.toast.sessionConfigSaveFailed.title` had no entry in
- *     `src/i18n/en.ts` — `language.t()` (`@solid-primitives/i18n`'s `translator()`, see
- *     `src/context/language.tsx:222`) has no fallback-argument convention, so the missing
- *     key resolved to `undefined` rather than the `{fallback: "..."}` string passed at the
- *     call site (`submit.ts:233-235`). `showToast`'s `<Toast.Title>` is wrapped in
- *     `<Show when={opts.title}>` (`packages/ui/src/components/toast.tsx:131-133`), so a
- *     falsy title meant the title element — and hence `[data-slot="toast-title"]` — never
- *     mounted at all, even though `toaster.show()` itself ran without error. The key is now
- *     defined in `src/i18n/en.ts` alongside the other `prompt.toast.*.title` entries.
+ *   - Behavior 8 pins the creation boundary: the authoritative config PATCH completes
+ *     before local session promotion. A non-2xx response therefore preserves the draft
+ *     instead of exposing a session whose harness/model contract is incomplete.
  *   - Behavior 7's non-testability: `showAgentSelector()` requires
  *     `toolbarHarnessMode(scope()) === false`; `harnessPending()` requires
  *     `isHarnessMode(scope()) === true` (a strictly narrower predicate than
@@ -629,12 +616,8 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
   // by behavior 6 above; the "hidden for non-OpenCode harnesses" half is
   // core-harness-ownership-local's territory (this spec is plain-OpenCode only).
 
-  // Behavior 8's two bugs (submit-transport.ts ignoring non-2xx on the config PATCH, and
-  // the missing `prompt.toast.sessionConfigSaveFailed.title` i18n key hiding the toast's
-  // title element entirely — see SPEC HARNESS NOTES) were fixed on 2026-07-10 — this test
-  // is now the permanent regression guard.
   test(
-    "failed config PATCH shows a toast while the send still proceeds — behavior 8",
+    "failed first config PATCH preserves the unpublished draft — behavior 8",
     async ({ page }) => {
       const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, configPatchFailure: true })
       await seedOneProject(page, DIR)
@@ -649,42 +632,10 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
       await expect(page.locator('[data-slot="toast-title"]', { hasText: "Could not save session config" })).toBeVisible({
         timeout: 10_000,
       })
-      await expect.poll(() => mock.requests.promptCount, { timeout: 15_000 }).toBe(1)
-      await expectAssistantReplyVisible(page, `ack 1: ${promptText}`)
-      // Regression guard for a second, separate config-PATCH caller
-      // (`src/context/local.tsx#syncSessionSelection`, no `harness` query param) that
-      // shares this endpoint: a permanently-failing PATCH must not retry unboundedly.
-      // A brand-new draft session's first submit only ever produces the one PATCH from
-      // `submit-transport.ts#saveSessionConfig` above (`local.session.promote`'s sync is
-      // gated off by `isOpenCodeSessionScope` until hydration settles, so it never fires
-      // here) — pin that so a future change that fires both unconditionally is caught.
-      // The intent here is the invariant that a *permanently-failing* config
-      // PATCH must not retry unboundedly. Two callers share this endpoint —
-      // `submit-transport.ts#saveSessionConfig` (fires once on submit) and
-      // `src/context/session-selection.tsx#syncSessionSelection` (fires when
-      // hydration settles, and may re-attempt a *bounded* number of times as
-      // the session-config query refetches during hydration). Which of those
-      // have fired by any fixed wall-clock instant is pure timing (a fast run
-      // sees only the transport PATCH; a slower run sees the sync burst too),
-      // so a magic-number ceiling here is inherently racy. Assert the real
-      // invariant instead: the count CONVERGES (goes quiet) rather than
-      // growing without bound. A future change that retries forever, or fires
-      // both callers in an unbounded loop, never stabilizes and times out here.
-      const configPatchSamples: number[] = []
-      await expect
-        .poll(
-          () => {
-            configPatchSamples.push(mock.requests.configPatchCount)
-            const n = configPatchSamples.length
-            return (
-              n >= 3 &&
-              configPatchSamples[n - 1] === configPatchSamples[n - 2] &&
-              configPatchSamples[n - 2] === configPatchSamples[n - 3]
-            )
-          },
-          { intervals: [1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000], timeout: 20_000 },
-        )
-        .toBe(true)
+      await expect(input).toContainText(promptText)
+      await expect.poll(() => mock.requests.promptCount, { intervals: [500, 1000, 1000], timeout: 3_000 }).toBe(0)
+      expect(mock.requests.configPatchCount).toBe(1)
+      expect(mock.requests.createSessionCount).toBe(1)
     },
   )
 
