@@ -6,8 +6,9 @@ import type { PaneCtx } from "../workbench/index"
 import { useClaxedoState } from "../state/index"
 import { contentSurface } from "../../integrations/first-party-content-surfaces"
 import { usePrincipal } from "@/platform/auth/identity-provider"
-import { documentsAccess } from "@/features/documents/access"
+import { documentsFeatureAccess } from "@/app/integrations/optional-feature-access"
 import { useServer } from "@claxedo/app"
+import { useConfigOptional } from "@/app/providers/config"
 
 export type ContentRendererProps = {
   id: string
@@ -27,6 +28,7 @@ export function ContentRenderer(props: ContentRendererProps): JSX.Element {
   const state = useClaxedoState()
   const principal = usePrincipal()
   const server = useServer()
+  const config = useConfigOptional()
   const meta = createMemo(() => {
     state.meta.ids()
     return state.meta.get(props.id)
@@ -55,7 +57,11 @@ export function ContentRenderer(props: ContentRendererProps): JSX.Element {
             meta: current,
             ctx: props.ctx,
             fallbackDirectory: props.fallbackDirectory,
-            canUseDocuments: documentsAccess({ principal: principal(), serverUrl: server.url }),
+            canUseDocuments: documentsFeatureAccess({
+              enabled: config?.documentsEnabled === true,
+              principal: principal(),
+              serverUrl: server.url,
+            }),
           })
         }
         return (

@@ -2,8 +2,6 @@ import { configureSessionAppPorts } from "@/features/session/app-ports"
 import { configureTerminalAppPorts } from "@/features/terminal/app-ports"
 import { configureSettingsAppPorts } from "@/features/settings/app-ports"
 import { configureOnboardingAppPorts } from "@/features/onboarding/app-ports"
-import { configureDocumentsAppPorts } from "@/features/documents/app-ports"
-import { configureWorkGraphAppPorts } from "@/features/workgraph/app-ports"
 import { configureReviewAppPorts } from "@/features/review/app-ports"
 import { configureWorkspacesAppPorts } from "@/features/workspaces/app-ports"
 import * as SDK from "@/app/providers/sdk/sdk"
@@ -47,10 +45,6 @@ import * as ConnectProvider from "@/app/dialogs/connect-provider"
 import * as ConnectAI from "@/app/dialogs/connect-ai"
 import * as SelectProvider from "@/app/dialogs/select-provider"
 import * as CustomProvider from "@/app/dialogs/custom-provider"
-import * as SessionSync from "@/features/session/providers/session-sync"
-import * as MarkdownTab from "@/app/workbench/lib/open-markdown-page-tab"
-import * as ProjectEnsure from "@/features/workspaces/data/query/project-ensure"
-import * as SurfaceRoute from "@/app/workbench/state/surface-route"
 import * as Prompt from "@/features/session/providers/prompt"
 import * as PanePreferences from "@/features/session/preferences/pane"
 import * as ReleaseNotes from "@/app/dialogs/release-notes"
@@ -61,15 +55,14 @@ import * as DialogSelectDirectoryModule from "@/app/dialogs/select-directory"
 import * as SessionQueries from "@/features/session/data/sync/queries"
 import * as SessionCache from "@/features/session/data/sync/directory-session-cache"
 import * as CloudStartup from "@/features/session/ui/components/cloud-startup-view"
-import * as DocWorkGraph from "@/app/integrations/doc-workgraph"
 import * as SettingsSourceViews from "@/app/integrations/settings-source-views"
-import * as DocumentMentions from "@/app/integrations/document-mentions"
 import * as AIConnectResolution from "@/app/integrations/ai-connect-resolution"
 import * as RailGitRemote from "@/app/workbench/rail/rail-git-remote"
 import * as TerminalNew from "@/app/workbench/terminal/terminal-new-view"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { createOnboardingFunnel } from "@/features/onboarding"
 import { capture as captureTelemetry, identityProps } from "@/platform/telemetry/analytics"
+import { optionalFeatureFlags } from "@/app/integrations/optional-feature-flags"
 
 function useOnboardingFunnel() {
   const platform = usePlatform()
@@ -77,8 +70,7 @@ function useOnboardingFunnel() {
   return createOnboardingFunnel({
     deployment: platform.platform === "desktop" || config?.sandboxEnabled ? "hosted" : "self-host",
     // `step_done` carries its own `surface` and overrides the default below.
-    capture: (name, properties) =>
-      captureTelemetry(name, { ...identityProps(), surface: "onboarding", ...properties }),
+    capture: (name, properties) => captureTelemetry(name, { ...identityProps(), surface: "onboarding", ...properties }),
   })
 }
 
@@ -136,8 +128,11 @@ configureSessionAppPorts({
   sourceLabel: Marketplace.sourceLabel,
   targetLabel: Marketplace.targetLabel,
   uninstallMcpDialogEntry: Marketplace.uninstallMcpDialogEntry,
-  listDocumentMentions: DocumentMentions.listDocumentMentions,
-  documentMentionText: DocumentMentions.documentMentionText,
+  listDocumentMentions: async (...args) => {
+    if (!optionalFeatureFlags().documents) return []
+    return (await import("@/app/integrations/document-mentions")).listDocumentMentions(...args)
+  },
+  documentMentionText: (document) => `claxedo://document/${encodeURIComponent(document.documentId)}`,
 })
 
 configureTerminalAppPorts({
@@ -181,25 +176,6 @@ configureOnboardingAppPorts({
   workspaceSandboxDriversUrl: SandboxSectionLogic.workspaceSandboxDriversUrl,
   workspaceSandboxDriverAuthUrl: SandboxSectionLogic.workspaceSandboxDriverAuthUrl,
   SandboxDriverLogo: SandboxDriverLogoModule.SandboxDriverLogo,
-})
-
-configureDocumentsAppPorts({
-  useClaxedoEventsOptional: Events.useClaxedoEventsOptional,
-  useSessionSyncOptional: SessionSync.useSessionSyncOptional,
-  useClaxedoState: State.useClaxedoState,
-  markdownPathFromHref: MarkdownTab.markdownPathFromHref,
-  useShellQueryOptions: QueryOptions.useShellQueryOptions,
-  ensureLocalProject: ProjectEnsure.ensureLocalProject,
-  surfaceRoute: SurfaceRoute.surfaceRoute,
-  SessionPaneScope: SessionScope.SessionPaneScope,
-  turnDocumentIntoWork: DocWorkGraph.turnDocumentIntoWork,
-})
-
-// WorkGraph consumes exactly one shell capability: the central Claxedo events
-// bus, where the server rings the `workgraph.changed` doorbell that replaced the
-// deleted `GET /api/workgraph/changes` long-poll.
-configureWorkGraphAppPorts({
-  useClaxedoEventsOptional: Events.useClaxedoEventsOptional,
 })
 
 configureReviewAppPorts({

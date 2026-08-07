@@ -26,10 +26,11 @@ import { createRailSlice, type RailSliceApi } from "./rail"
 import { createWorkspacePanelSlice, type WorkspacePanelSliceApi } from "./workspace-panel"
 import { createProcessPaneSlice, type ProcessPaneSliceApi } from "@/features/processes/state"
 import { createLayoutOrchestration, type LayoutOrchestrationApi } from "./orchestration"
-import { emptyClaxedoState, validate } from "./persistence"
+import { emptyClaxedoState, pruneDisabledOptionalFeatures, validate } from "./persistence"
 import type { ClaxedoState } from "./types"
 import { parseShellRoute } from "@/platform/identity/route"
 import { clearOpenSessions, openSessionRefsFromMetas, setOpenSessions } from "../../../features/session/store/open-sessions"
+import { optionalFeatureFlags } from "@/app/integrations/optional-feature-flags"
 
 const STORAGE_KEY_V5 = "claxedo.state.v5"
 type IdleWindow = Window & {
@@ -284,8 +285,11 @@ function buildApi(props: InnerProps): ClaxedoStateApi {
 
 /** Provider — wraps `<WorkbenchProvider>` and exposes `useClaxedoState()`. */
 export function ClaxedoStateProvider(props: ClaxedoStateProviderProps): JSX.Element {
-  const initial = props.initialState ?? loadInitialState(
-    typeof window === "undefined" ? undefined : window.location.pathname,
+  const initial = pruneDisabledOptionalFeatures(
+    props.initialState ?? loadInitialState(
+      typeof window === "undefined" ? undefined : window.location.pathname,
+    ),
+    optionalFeatureFlags(),
   )
   const [state, setState] = createStore<ClaxedoState>(initial)
   onCleanup(clearOpenSessions)

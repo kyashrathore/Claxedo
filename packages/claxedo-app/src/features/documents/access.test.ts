@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { documentsAccess } from "./access"
+import { documentsAccess } from "@/app/integrations/optional-feature-access"
 
 describe("documentsAccess", () => {
   test("allows trusted unsigned loopback Documents", () => {

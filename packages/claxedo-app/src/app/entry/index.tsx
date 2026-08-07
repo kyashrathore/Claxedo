@@ -9,6 +9,7 @@ import { appExtensions } from "../../features/extensions/index"
 import { serverExtensions } from "../../features/extensions/index"
 import { initializeClerk } from "@/platform/auth/auth-client"
 import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "@/platform/api/local-server"
+import { optionalFeatureFlags } from "@/app/integrations/optional-feature-flags"
 
 /**
  * Configuration for initializing Claxedo cloud extensions.
@@ -33,6 +34,10 @@ export interface ClaxedoConfig {
   sandboxEnabled?: boolean
   /** Show Global Chat sections in the rail (default: false) */
   globalChatEnabled?: boolean
+  /** Enable Documents surfaces and routes (default: false) */
+  documentsEnabled?: boolean
+  /** Enable WorkGraph surfaces and routes (default: false) */
+  workgraphEnabled?: boolean
   /** Direct Daytona API key for no-auth sandbox mode */
   daytonaApiKey?: string
   /** URL for the standalone claxedo-server (PTY, events, agent hooks) */
@@ -82,6 +87,7 @@ export function initClaxedo(config: ClaxedoConfig): void {
  */
 export function getDefaultConfig(): ClaxedoConfig {
   const envString = (value: unknown) => (typeof value === "string" ? value : undefined)
+  const optionalFeatures = optionalFeatureFlags()
 
   return {
     convexUrl: import.meta.env.VITE_CONVEX_URL ?? "",
@@ -95,6 +101,8 @@ export function getDefaultConfig(): ClaxedoConfig {
     // on every build, so there is no longer a VITE_SANDBOX_ENABLED gate.
     sandboxEnabled: true,
     globalChatEnabled: import.meta.env.VITE_GLOBAL_CHAT_ENABLED === "true",
+    documentsEnabled: optionalFeatures.documents,
+    workgraphEnabled: optionalFeatures.workgraph,
     daytonaApiKey: envString(import.meta.env.VITE_DAYTONA_API_KEY),
     claxedoServerUrl: envString(import.meta.env.VITE_CLAXEDO_SERVER_URL) ?? DEFAULT_LOCAL_CLAXEDO_SERVER_URL,
   }

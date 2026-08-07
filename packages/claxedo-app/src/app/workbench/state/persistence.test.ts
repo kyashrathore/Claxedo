@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { emptyClaxedoState, validate } from "./persistence"
+import { emptyClaxedoState, pruneDisabledOptionalFeatures, validate } from "./persistence"
 import { MAX_OPEN_SURFACES } from "./surface-budget"
 
 const localSessionRef = (sessionId: string) => ({
@@ -10,6 +10,92 @@ const localSessionRef = (sessionId: string) => ({
 })
 
 describe("state/persistence", () => {
+  test("removes disabled optional panes and repairs focus and the WorkGraph panel", () => {
+    const input = emptyClaxedoState()
+    input.workbench = {
+      panes: [
+        { id: "pane_workgraph", contentId: "workgraph" },
+        { id: "pane_document", contentId: "page_1" },
+        { id: "pane_session", contentId: "session_1" },
+      ],
+      split: {
+        direction: "h",
+        sizes: [0.5, 0.5],
+        root: {
+          t: "split",
+          dir: "h",
+          a: { t: "leaf", id: "pane_workgraph" },
+          b: {
+            t: "split",
+            dir: "h",
+            a: { t: "leaf", id: "pane_document" },
+            b: { t: "leaf", id: "pane_session" },
+            size: 0.5,
+          },
+          size: 0.5,
+        },
+      },
+      contentIds: ["workgraph", "page_1", "session_1"],
+      contentRecency: ["workgraph", "page_1", "session_1"],
+      focusedPaneId: "pane_workgraph",
+      layoutSnapshots: {},
+    }
+    input.meta = {
+      workgraph: { id: "workgraph", type: "workgraph", scope: "global" },
+      page_1: { id: "page_1", type: "page", scope: "directory", directory: "/work/foo", pageId: "page_1" },
+      session_1: {
+        id: "session_1",
+        type: "session",
+        scope: "directory",
+        directory: "/work/foo",
+        sessionId: "ses_1",
+        content: {
+          type: "session",
+          directory: "/work/foo",
+          sessionId: "ses_1",
+          sessionRef: localSessionRef("ses_1"),
+        },
+      },
+    }
+    input.workspace.paneWorktree = {
+      pane_workgraph: { default: "/work/foo", pinned: null },
+      pane_document: { default: "/work/foo", pinned: null },
+      pane_session: { default: "/work/foo", pinned: null },
+    }
+    input.workspacePanel = { open: true, mode: "workgraph-attention" }
+
+    const state = pruneDisabledOptionalFeatures(input, { documents: false, workgraph: false })
+
+    expect(state.workbench.panes).toEqual([{ id: "pane_session", contentId: "session_1" }])
+    expect(state.workbench.contentIds).toEqual(["session_1"])
+    expect(state.workbench.focusedPaneId).toBe("pane_session")
+    expect(Object.keys(state.meta)).toEqual(["session_1"])
+    expect(state.workspace.paneWorktree).toEqual({
+      pane_session: { default: "/work/foo", pinned: null },
+    })
+    expect(state.workspacePanel).toEqual({ open: false })
+  })
+
+  test("restores an optional-only persisted fixture as a genuinely empty workbench", () => {
+    const input = emptyClaxedoState()
+    input.workbench = {
+      panes: [{ id: "pane_workgraph", contentId: "workgraph" }],
+      split: { direction: "h", sizes: [1], root: { t: "leaf", id: "pane_workgraph" } },
+      contentIds: ["workgraph"],
+      contentRecency: ["workgraph"],
+      focusedPaneId: "pane_workgraph",
+      layoutSnapshots: {},
+    }
+    input.meta = { workgraph: { id: "workgraph", type: "workgraph", scope: "global" } }
+    input.workspacePanel = { open: true, mode: "workgraph-attention" }
+
+    const state = pruneDisabledOptionalFeatures(input, { documents: false, workgraph: false })
+
+    expect(state.workbench).toEqual(emptyClaxedoState().workbench)
+    expect(state.meta).toEqual({})
+    expect(state.workspacePanel).toEqual({ open: false })
+  })
+
   test("drops deprecated process contents from persisted workbench state", () => {
     const input = emptyClaxedoState()
     input.workbench = {

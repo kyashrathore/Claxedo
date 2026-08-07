@@ -172,6 +172,8 @@ declare global {
       perfPath?: string | null
       perf?: DesktopPerf
       startupIsolationStage?: string
+      documentsEnabled?: boolean
+      workgraphEnabled?: boolean
     }
   }
 }

@@ -8,20 +8,18 @@ import { useLanguage } from "@/platform/i18n/provider"
 import { marketplaceRoute, workGraphRoute } from "@/platform/identity/route"
 import type { AppShellState } from "./app-shell-state"
 
-export function useAppShellActions(input: {
-  shell: AppShellState
-  params: Params
-  navigate: Navigator
-}) {
+export function useAppShellActions(input: { shell: AppShellState; params: Params; navigate: Navigator }) {
   const events = useClaxedoEventsOptional()
   const handleOpenMarketplace = () => {
     input.shell.state.layout.openMarketplace()
     input.navigate(marketplaceRoute())
   }
-  const handleOpenWorkGraph = () => {
-    input.shell.state.layout.openWorkGraph()
-    input.navigate(workGraphRoute())
-  }
+  const handleOpenWorkGraph = input.shell.config?.workgraphEnabled
+    ? () => {
+        input.shell.state.layout.openWorkGraph()
+        input.navigate(workGraphRoute())
+      }
+    : undefined
 
   const actions = createClaxedoLayoutActions({
     params: input.params,

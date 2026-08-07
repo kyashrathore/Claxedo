@@ -20,7 +20,8 @@ import { useDirectorySessionCacheActions } from "../../../features/session/data/
 import { parseShellRoute, shellRouteDirectory, workspaceSessionRoute, workspaceRoute } from "@/platform/identity/route"
 import { hasBacking, sessionRefForWorkspaceSession, type HarnessRef } from "@/platform/identity/session-ref"
 import { usePrincipal } from "@/platform/auth/identity-provider"
-import { documentsAccess } from "@/features/documents/access"
+import { documentsFeatureAccess } from "@/app/integrations/optional-feature-access"
+import { useConfigOptional } from "@/app/providers/config"
 import { queryClient } from "@/platform/query/query-client"
 import type { SessionInventoryRow } from "../../../features/session/data/query/types"
 import { ensureLocalProject } from "../../../features/workspaces/data/query/project-ensure"
@@ -89,7 +90,13 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const principal = usePrincipal()
-  const canUseDocuments = () => documentsAccess({ principal: principal(), serverUrl: server.url })
+  const config = useConfigOptional()
+  const canUseDocuments = () =>
+    documentsFeatureAccess({
+      enabled: config?.documentsEnabled === true,
+      principal: principal(),
+      serverUrl: server.url,
+    })
 
   useAgentHooks()
   const events = useClaxedoEventsOptional()
@@ -384,6 +391,8 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
       }
     },
     canUseDocuments,
+    documentsEnabled: () => config?.documentsEnabled === true,
+    canUseWorkGraph: () => config?.workgraphEnabled === true,
     navigate,
   })
 

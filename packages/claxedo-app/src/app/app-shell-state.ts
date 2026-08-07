@@ -17,7 +17,7 @@ import { useConfigOptional } from "./providers/config"
 import type { SessionInventoryRow } from "../features/session/data/query/types"
 import { canAutoOpenProject } from "@/app/providers/layout-projects"
 import { usePrincipal } from "@/platform/auth/identity-provider"
-import { documentsAccess } from "@/features/documents/access"
+import { documentsFeatureAccess } from "@/app/integrations/optional-feature-access"
 import { useDirectorySessionCacheActions } from "../features/session/data/sync/directory-session-cache"
 import { useGlobalBootstrapActions } from "./integrations/sync/global-bootstrap"
 import { useGlobalShellReady } from "./integrations/sync/global-readiness"
@@ -42,7 +42,13 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
   const dialog = useDialog()
   const globalSDK = useGlobalSDK()
   const principal = usePrincipal()
-  const canUseDocuments = () => documentsAccess({ principal: principal(), serverUrl: globalSDK.url })
+  const config = useConfigOptional()
+  const canUseDocuments = () =>
+    documentsFeatureAccess({
+      enabled: config?.documentsEnabled === true,
+      principal: principal(),
+      serverUrl: globalSDK.url,
+    })
   const sessionInventoryQuery = useQuery(() =>
     sessionInventoryQueryOptions<SessionInventoryRow>({
       baseUrl: globalSDK.url,
@@ -50,7 +56,6 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
   )
   const sessionInventory = createMemo(() => sessionInventoryQuery.data ?? emptySessionInventory<SessionInventoryRow>())
   const notification = useNotification()
-  const config = useConfigOptional()
   const globalChat = () => !!config?.globalChatEnabled
   const layoutProjects = () => layout.projects.list() ?? []
   const flowLog = (...args: unknown[]) => {

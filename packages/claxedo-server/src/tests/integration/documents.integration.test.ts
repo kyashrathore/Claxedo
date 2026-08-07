@@ -11,7 +11,7 @@ const root = await fs.mkdtemp(path.join(os.tmpdir(), "server-documents-"))
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
-const { localDocumentsBackend } = await import("../../deployments/local/server")
+const { localDocumentsBackend } = await import("../../deployments/local/documents-composition")
 const { managedDocumentRelativePath } = await import("../../documents/backends/local/managed")
 const { ensureWorkspace } = await import("../../workspace/store")
 const { ClaxedoDB } = await import("../../platform/db/db")
