@@ -438,8 +438,7 @@
                   },
                   "extractor": "cursor-task",
                   "toolCallId": "tool-task-1"
-                },
-                "sessionId": "ses_child_cursor_task"
+                }
               },
               "time": {
                 "start": 1080,
@@ -459,8 +458,7 @@
                 },
                 "extractor": "cursor-task",
                 "toolCallId": "tool-task-1"
-              },
-              "sessionId": "ses_child_cursor_task"
+              }
             }
           },
           "time": 1080

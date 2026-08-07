@@ -37,17 +37,6 @@
  *     a reduced scenario (Pi's spec 10 coverage only needs to prove it shares the
  *     native rendering path, not repeat the full matrix — see the spec's SPEC block).
  *
- * ONE DELIBERATE POST-GENERATION AUGMENTATION (documented, not a hand-invented shape):
- * the real `subagent-updated` AgentRuntimeEvent is intentionally dropped by the
- * opencode-compat projection (`case "subagent-updated": return []` in projection.ts) —
- * child-session correlation for the `task` tool card happens client-side via a
- * session-list lookup (`taskSession()` in message-part.tsx) that this fixture harness
- * cannot reproduce (it would require a second live session in the store). To still
- * prove the task-tool's child-link affordance (SPEC behavior 15), this script injects
- * `state.metadata.sessionId` directly onto the COMPLETED task tool part after real
- * generation — the one hand-touched field in this entire file, called out here and in
- * the spec's HARNESS NOTES. See `injectTaskChildSessionId` below.
- *
  * Run: `bun run e2e/fixtures/generate-harness-fixtures.ts` from packages/claxedo-app.
  * Commit the resulting JSON under e2e/fixtures/harness-traces/.
  */
@@ -115,27 +104,6 @@ function runAdapter<State>(input: {
     for (const runtimeEvent of events) {
       envelopes.push(...(projection.ingest(runtimeEvent) as CompatEnvelope[]))
     }
-  }
-  return envelopes
-}
-
-/**
- * The one hand-touched field in this file — see the file header's "ONE DELIBERATE
- * POST-GENERATION AUGMENTATION" note. Finds the completed `task` tool part in an
- * already-generated trace and stamps a child session id onto its `state.metadata`,
- * matching exactly what `taskId()` in packages/session-ui/src/components/
- * message-part.tsx reads (`part().state?.metadata.sessionId`).
- */
-function injectTaskChildSessionId(envelopes: CompatEnvelope[], childSessionId: string) {
-  for (const envelope of envelopes) {
-    if (envelope.payload.type !== "message.part.updated") continue
-    const part = (envelope.payload.properties as { part?: Record<string, unknown> } | undefined)?.part
-    if (!part || part.type !== "tool" || part.tool !== "task") continue
-    const state = part.state as Record<string, unknown> | undefined
-    if (!state || state.status !== "completed") continue
-    const metadata = { ...((state.metadata as Record<string, unknown>) ?? {}), sessionId: childSessionId }
-    state.metadata = metadata
-    part.metadata = metadata
   }
   return envelopes
 }
@@ -326,7 +294,9 @@ const CURSOR_ACP_RAW: RawEvent[] = [
   // Terminal -> bash (behavior 16).
   { source: "acp.jsonrpc", method: "session/update", payload: { sessionUpdate: "tool_call", toolCallId: "tool-bash-1", title: "Terminal", kind: "execute", rawInput: { command: "ls" } } },
   { source: "acp.jsonrpc", method: "session/update", payload: { sessionUpdate: "tool_call_update", toolCallId: "tool-bash-1", status: "completed", rawOutput: { stdout: "file.ts" } } },
-  // "Task: Subagent task" -> task, child link (behavior 15).
+  // "Task: Subagent task" -> task classification. Cursor ACP exposes no supported
+  // child transcript identity, so the rendered card remains explicitly unavailable
+  // until a future host contract supplies one (behavior 15).
   {
     source: "acp.jsonrpc",
     method: "session/update",
@@ -564,12 +534,10 @@ function opencodeNativeSessionDiff(harness: "opencode" | "pi"): CompatEnvelope {
 
 function build() {
   const claudeAcp = runAdapter({ harness: "claude-acp", adapter: createAcpEventTranslator({ client: "claude-acp" }), raw: CLAUDE_ACP_RAW })
-  injectTaskChildSessionId(claudeAcp, "ses_child_claude_task")
 
   const codexAcp = runAdapter({ harness: "codex-acp", adapter: createAcpEventTranslator({ client: "codex-acp" }), raw: CODEX_ACP_RAW })
 
   const cursorAcp = runAdapter({ harness: "cursor-acp", adapter: createAcpEventTranslator({ client: "cursor-acp" }), raw: CURSOR_ACP_RAW })
-  injectTaskChildSessionId(cursorAcp, "ses_child_cursor_task")
 
   const codexAppServer = runAdapter({ harness: "codex-app-server", adapter: codexAppServerAdapter(), raw: CODEX_APP_SERVER_RAW })
   const cursorSdk = runAdapter({ harness: "cursor-sdk", adapter: cursorSdkAdapter(), raw: CURSOR_SDK_RAW })
