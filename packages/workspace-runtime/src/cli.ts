@@ -37,7 +37,6 @@ const identity = rawRunner === "acp"
   ? { id: "claude" as const, access: "acp" as const }
   : normalizeHarnessIdentity(rawRunner ?? "opencode") ?? { id: "opencode" as const, access: "native" as const }
 const acpBinary = runtimeEnvText(process.env, "WORKSPACE_RUNTIME_ACP_BINARY")
-const workgraphBroker = runtimeEnvText(process.env, "WORKSPACE_RUNTIME_WORKGRAPH_BROKER_ORIGIN")
 const server = startServer(port, {
   target: { workspaceId: workspaceId(process.env), directory: workspaceDir(process.env) },
   ...relay,
@@ -56,9 +55,10 @@ const server = startServer(port, {
   ...(runtimeEnvText(process.env, "OPENCODE_URL")
     ? { opencodeUrl: runtimeEnvText(process.env, "OPENCODE_URL") }
     : {}),
-  ...(workgraphBroker
-    ? { workgraphConnectionBrokerOrigin: workgraphBroker, workgraphRunBrokerOrigin: workgraphBroker }
-    : {}),
+  // The kit CLI mounts NO route contributions. WorkGraph's tool brokers are a
+  // hosted capability supplied by a host launcher
+  // (`claxedoWorkspaceRuntimeBootFromEnv`), not something a generic runtime
+  // process turns on from an environment variable.
   opencodeCompat: runtimeEnvText(process.env, "WORKSPACE_RUNTIME_OPENCODE_COMPAT") !== "0",
 }, { signals: true })
 

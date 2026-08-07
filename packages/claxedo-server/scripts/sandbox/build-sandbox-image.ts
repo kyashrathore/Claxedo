@@ -86,12 +86,34 @@ const readPackageJsonFromDisk = (dir: string): PackageJson =>
   JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"))
 
 /**
+ * Roots of the host-bundle package closure.
+ *
+ * Was just workspace-runtime, on the assumption that everything the sandbox
+ * host bundle imports is reachable from it. That stopped being true when the
+ * WorkGraph tool routes moved OUT of workspace-runtime and into
+ * `@claxedo/workgraph/runtime-adapter`: the hosted launcher now imports the
+ * adapter directly, so WorkGraph is a sibling of workspace-runtime in the
+ * bundle rather than a dependency of it.
+ *
+ * Seeding the walk from workspace-runtime alone would leave `packages/workgraph`
+ * out of the build order, and since every `dist/` here is gitignored, a fresh
+ * checkout would bundle against a missing or stale WorkGraph dist. That failure
+ * is silent in the worst way — esbuild resolves whatever happens to be on disk.
+ *
+ * Order matters and is handled by the post-order DFS below: WorkGraph depends
+ * on workspace-runtime, so workspace-runtime is still built first.
+ */
+function hostBundlePackageRoots() {
+  return [workspaceRuntimeRoot(), path.join(packagesRoot(), "workgraph")]
+}
+
+/**
  * Return the on-disk directories of every @claxedo workspace package in the
- * transitive dependency graph of workspace-runtime, in build order —
- * dependencies before dependents (post-order DFS). workspace-runtime is always
- * last. Directories are unique and mirror `hostBundleDependencies`' @claxedo
- * traversal, but here we need the packages themselves (their gitignored dist/
- * must exist before esbuild bundles them), not their external npm pins.
+ * transitive dependency graph of the host bundle roots, in build order —
+ * dependencies before dependents (post-order DFS). Directories are unique and
+ * mirror `hostBundleDependencies`' @claxedo traversal, but here we need the
+ * packages themselves (their gitignored dist/ must exist before esbuild bundles
+ * them), not their external npm pins.
  */
 export function workspacePackageBuildOrder(
   readPackageJson: (dir: string) => PackageJson = readPackageJsonFromDisk,
@@ -117,12 +139,12 @@ export function workspacePackageBuildOrder(
     visited.add(dir)
     order.push(dir)
   }
-  visit(workspaceRuntimeRoot())
+  for (const root of hostBundlePackageRoots()) visit(root)
   return order
 }
 
 /**
- * Build every @claxedo workspace package workspace-runtime transitively
+ * Build every @claxedo workspace package the host bundle transitively
  * depends on, dependencies first. The esbuild host bundle resolves each
  * package through its `dist/` (gitignored, nothing else builds it), so a fresh
  * checkout must produce those dists before bundling. Idempotent: re-running

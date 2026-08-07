@@ -9,8 +9,8 @@ import {
   type WorkGraphConnectionOperationRequest,
   type WorkGraphConnectionOperationResponse,
   type WorkGraphConnectionToolName,
-} from "@claxedo/workgraph/contracts"
-import { bearerToken, boundedJsonBody, errorBody } from "./http"
+} from "../contracts"
+import { bearerToken, boundedJsonBody, errorBody } from "@claxedo/workspace-runtime/http"
 
 export const WORKGRAPH_CONNECTION_TOOL_NAMES = WorkGraphConnectionToolNames
 export {

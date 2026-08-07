@@ -13,6 +13,7 @@ import {
 import type { OpencodeEvent } from "../../opencode/events"
 import type { OpenCodeRequestFn } from "../../opencode/engine"
 import type { Workspace } from "../../workspace/store"
+import { noSelfHostedCapabilities, selfHostedCapabilities } from "./self-hosted-capabilities"
 
 async function makeWorkspaceRoot(prefix: string) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), prefix))
@@ -350,7 +351,7 @@ describe("embedded workspace runtime", () => {
     }
   })
 
-  test("passes the trusted WorkGraph Run broker into new embedded runtimes", async () => {
+  test("mounts the WorkGraph Run routes only when a host contributes them", async () => {
     const { root, project } = await makeWorkspaceRoot("claxedo-embedded-run-broker-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
     process.env.CLAXEDO_AGENT_TYPE = "pi"
@@ -358,9 +359,11 @@ describe("embedded workspace runtime", () => {
     try {
       configureEmbeddedWorkspaceRuntime({
         opencodeRequest: async () => new Response(null, { status: 404 }),
-        workgraphRunBroker: async () => {
-          throw new Error("not invoked while binding")
-        },
+        routeContributions: selfHostedCapabilities({
+          workGraphRunBroker: async () => {
+            throw new Error("not invoked while binding")
+          },
+        }).runtimeRouteContributions,
       })
       const ws = workspace("ws_run_broker", project)
       const runtime = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
@@ -388,6 +391,43 @@ describe("embedded workspace runtime", () => {
         }),
       })
       expect(bound.status, await bound.clone().text()).toBe(200)
+    } finally {
+      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      shutdownEmbeddedWorkspaceRuntimes()
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
+  // The Unit 2 acceptance criterion, and the half that was previously
+  // untestable: with no contributed capability the route does not exist. A
+  // runtime flag could only have made it refuse.
+  test("serves no WorkGraph route when the host contributes no capability", async () => {
+    const { root, project } = await makeWorkspaceRoot("claxedo-embedded-no-workgraph-")
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+    process.env.CLAXEDO_AGENT_TYPE = "pi"
+
+    try {
+      configureEmbeddedWorkspaceRuntime({
+        opencodeRequest: async () => new Response(null, { status: 404 }),
+        routeContributions: noSelfHostedCapabilities().runtimeRouteContributions,
+      })
+      const ws = workspace("ws_no_workgraph", project)
+      const runtime = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
+      const query = `directory=${encodeURIComponent(project)}&runner=pi`
+
+      for (const path of [
+        "/api/workgraph/run-binding",
+        "/api/workgraph/run-tools",
+        "/api/workgraph/connection-binding",
+        "/api/workgraph/tools",
+      ]) {
+        const response = await runtime.app.request(`http://localhost${path}?${query}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        })
+        expect(response.status, path).toBe(404)
+      }
     } finally {
       configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
       shutdownEmbeddedWorkspaceRuntimes()

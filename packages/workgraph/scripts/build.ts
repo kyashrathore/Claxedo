@@ -21,6 +21,7 @@ for (const [entry, outfile, target] of [
   ["src/matching.ts", "dist/matching.mjs", "browser"],
   ["src/ports/index.ts", "dist/ports/index.mjs", "browser"],
   ["src/conformance/index.ts", "dist/conformance/index.mjs", "browser"],
+  ["src/runtime-adapter/index.ts", "dist/runtime-adapter/index.mjs", "node"],
 ] as const) {
   execFileSync(
     process.execPath,

@@ -339,6 +339,15 @@ describe("self-hosted product behaviour", () => {
 
     setEnv("CLAXEDO_EMBEDDED_AUTH", "1")
     expect(mountedPaths(selfHostedApp().routes)).toContain("/api/auth/*")
+
+    // Composing the app starts better-auth's schema migration against a SQLite
+    // file under this test's temp data dir. `afterEach` deletes that dir, so
+    // without waiting the migration finishes against a removed file and raises
+    // an unhandled SQLITE_IOERR — attributed to whichever test happens to be
+    // running when it lands, which is a genuinely miserable thing to debug.
+    const { getEmbeddedAuth, resetEmbeddedAuthForTests } = await import("./embedded-auth")
+    await getEmbeddedAuth().ready.catch(() => {})
+    resetEmbeddedAuthForTests()
   })
 
   test("mounts the static web UI only when a built bundle is configured", async () => {

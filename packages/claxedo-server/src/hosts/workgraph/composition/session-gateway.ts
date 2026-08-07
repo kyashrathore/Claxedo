@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
 import type { ConnectionsService } from "@claxedo/connections"
 import type { CodeHostConnector, SourceIssueConnector } from "@claxedo/workgraph/connectors"
-import { WorkGraphRunToolRoutes, WorkGraphConnectionToolRoutes } from "@claxedo/workspace-runtime"
+import { WorkGraphRunToolRoutes, WorkGraphConnectionToolRoutes } from "@claxedo/workgraph/runtime-adapter"
 import {
   WorkGraphRunIdentitySchema,
   WorkGraphRunToolNames,

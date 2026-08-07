@@ -21,14 +21,9 @@ import { SessionEnvRoutes } from "./routes/session-env"
 import { RuntimeDocumentHydrationRoutes } from "./routes/document-hydration"
 import { LocalDocumentBrokerRoutes } from "./routes/local-document-broker"
 import {
-  WorkGraphConnectionToolRoutes,
-  type WorkGraphConnectionBrokerRequestLimits,
-  type WorkGraphConnectionOperationBroker,
-} from "./routes/workgraph-connection-tools"
-import {
-  WorkGraphRunToolRoutes,
-  type WorkGraphRunOperationBroker,
-} from "./routes/workgraph-run-tools"
+  mountRouteContributions,
+  type WorkspaceRuntimeRouteContribution,
+} from "./route-contribution"
 import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER, type WorkspaceRuntimeManagementAuth, type WorkspaceRuntimeManagementTarget } from "./management-auth"
 import { WorkspaceRuntimeRoutes } from "./routes/manifest"
 import { WorktreeRoutes } from "./routes/worktree"
@@ -104,14 +99,17 @@ export type WorkspaceRuntimeServerOptions = {
    * Hosts that need a product whitelist supply it here.
    */
   corsOrigin?: WorkspaceRuntimeCorsOrigin
-  /** Trusted local broker seam. Hosted runtimes forward with the bound RAT. */
-  workgraphConnectionBroker?: WorkGraphConnectionOperationBroker
-  /** Exact central origin allowed to receive a bound Runtime Access Token. */
-  workgraphConnectionBrokerOrigin?: string
-  workgraphConnectionBrokerRequestLimits?: WorkGraphConnectionBrokerRequestLimits
-  /** Trusted Run command broker; hosted runtimes use the exact central origin below. */
-  workgraphRunBroker?: WorkGraphRunOperationBroker
-  workgraphRunBrokerOrigin?: string
+  /**
+   * Host-supplied route groups mounted into this runtime.
+   *
+   * The runtime core owns local execution and nothing else. A host that wants
+   * WorkGraph's tool brokers passes
+   * `workGraphRuntimeRouteContributions()` from
+   * `@claxedo/workgraph/runtime-adapter`; the desktop-local runtime passes
+   * none, which is what makes WorkGraph's absence from an unsigned build a
+   * property of the composition rather than of a runtime flag.
+   */
+  routeContributions?: readonly WorkspaceRuntimeRouteContribution[]
   /** Process-retained authority. It is never projected into a Session or child environment. */
   internalSecrets?: WorkspaceRuntimeInternalSecrets
 }
@@ -580,25 +578,15 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
       }))),
     })
   }
-  const workgraphConnectionTools = WorkGraphConnectionToolRoutes({
-    workspaceId: options.target?.workspaceId ?? workspaceId(),
-    ...(options.workgraphConnectionBroker ? { broker: options.workgraphConnectionBroker } : {}),
-    ...(options.workgraphConnectionBrokerOrigin ? { brokerOrigin: options.workgraphConnectionBrokerOrigin } : {}),
-    ...(options.workgraphConnectionBrokerRequestLimits
-      ? { brokerRequestLimits: options.workgraphConnectionBrokerRequestLimits }
-      : {}),
-    registerSessionTools: registerSessionToolGroup("connections"),
-    unregisterSessionTools: unregisterSessionToolGroup("connections"),
+  const routeContributions = mountRouteContributions({
+    app,
+    contributions: options.routeContributions ?? [],
+    context: {
+      workspaceId: options.target?.workspaceId ?? workspaceId(),
+      registerSessionTools: registerSessionToolGroup,
+      unregisterSessionTools: unregisterSessionToolGroup,
+    },
   })
-  app.route("/", workgraphConnectionTools)
-  const workgraphRunTools = WorkGraphRunToolRoutes({
-    workspaceId: options.target?.workspaceId ?? workspaceId(),
-    ...(options.workgraphRunBroker ? { broker: options.workgraphRunBroker } : {}),
-    ...(options.workgraphRunBrokerOrigin ? { brokerOrigin: options.workgraphRunBrokerOrigin } : {}),
-    registerSessionTools: registerSessionToolGroup("run"),
-    unregisterSessionTools: unregisterSessionToolGroup("run"),
-  })
-  app.route("/", workgraphRunTools)
 
   app.get(WorkspaceRuntimeRoutes.health, (c) =>
     c.json(runtimeLiveness(host, options)),
@@ -618,8 +606,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
       }
       ProcessManager.bindProcessObserver(options.target.directory)
     }
-    workgraphConnectionTools.dispose()
-    workgraphRunTools.dispose()
+    routeContributions.dispose()
     worktrees?.close()
     host.dispose()
   }

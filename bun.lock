@@ -1001,10 +1001,13 @@
       "name": "@claxedo/workgraph",
       "version": "0.4.0",
       "dependencies": {
+        "@claxedo/workspace-runtime": "workspace:0.7.0",
+        "@hono/node-server": "1.19.11",
         "@noble/hashes": "2.2.0",
         "better-sqlite3": "13.0.1",
         "hono": "4.10.7",
         "zod": "4.4.3",
+        "zod-to-json-schema": "3.25.2",
       },
       "devDependencies": {
         "@claxedo/connections": "workspace:*",
@@ -1066,7 +1069,6 @@
         "@claxedo/agent-event-runtime": "0.7.0",
         "@claxedo/agent-extensions": "0.7.0",
         "@claxedo/agent-sdk-runtime": "0.7.0",
-        "@claxedo/workgraph": "0.4.0",
         "@claxedo/workspace-relay": "0.7.0",
         "@claxedo/workspace-relay-protocol": "0.7.0",
         "@hono/node-server": "1.19.11",

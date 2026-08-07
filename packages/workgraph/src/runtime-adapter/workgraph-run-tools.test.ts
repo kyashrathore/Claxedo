@@ -1,5 +1,5 @@
-import { createChangeCursor } from "@claxedo/workgraph/contracts"
-import { afterEach, describe, expect, it } from "bun:test"
+import { createChangeCursor } from "../contracts"
+import { afterEach, describe, expect, it } from "vitest"
 import { WorkGraphRunToolRoutes } from "./workgraph-run-tools"
 
 const handles: Array<{ dispose(): void }> = []

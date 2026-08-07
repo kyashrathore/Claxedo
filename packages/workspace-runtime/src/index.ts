@@ -38,37 +38,6 @@ export type { WorkspaceRuntimeRouteFamily }
   from "./routes/manifest"
 export { flushRuntimeDocument, forgetRuntimeDocuments } from "./routes/document-hydration"
 export {
-  WORKGRAPH_CONNECTION_BINDING_PATH,
-  WORKGRAPH_CONNECTION_TOOL_NAMES,
-  WORKGRAPH_CONNECTION_TOOL_PATH,
-  WORKGRAPH_CONNECTION_TOOL_INPUT_SCHEMAS,
-  WORKGRAPH_CONNECTION_TOOL_SCHEMAS,
-  WorkGraphConnectionOperationRequestSchema,
-  WorkGraphConnectionOperationResponseSchema,
-  WorkGraphConnectionToolRoutes,
-} from "./routes/workgraph-connection-tools"
-export {
-  WORKGRAPH_RUN_BINDING_PATH,
-  WORKGRAPH_RUN_TOOL_INPUT_SCHEMAS,
-  WORKGRAPH_RUN_TOOL_NAMES,
-  WORKGRAPH_RUN_TOOL_PATH,
-  WORKGRAPH_RUN_TOOL_SCHEMAS,
-  WorkGraphRunToolRoutes,
-} from "./routes/workgraph-run-tools"
-export type {
-  WorkGraphRunOperationBroker,
-  WorkGraphRunToolRouteHandle,
-} from "./routes/workgraph-run-tools"
-export type {
-  WorkGraphConnectionBrokerRequestLimits,
-  WorkGraphConnectionOperationBroker,
-  WorkGraphConnectionOperationRequest,
-  WorkGraphConnectionOperationResponse,
-  WorkGraphConnectionToolInput,
-  WorkGraphConnectionToolName,
-  WorkGraphConnectionToolRouteHandle,
-} from "./routes/workgraph-connection-tools"
-export {
   embeddedWorkspaceRuntimeExposure,
   loopbackWorkspaceRuntimeExposure,
   privateNetworkDevUnsafeWorkspaceRuntimeExposure,

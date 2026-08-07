@@ -122,6 +122,8 @@ import { setDocumentChangedSink } from "../../documents/backend"
 import { LocalInstallationDocumentBroker } from "../../documents/backends/local/installation-broker"
 import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "../../hosts/workgraph/local/execution"
 import { createLocalExecutionCapabilities } from "../../hosts/workgraph/local/execution-capabilities"
+import { noSelfHostedCapabilities, type SelfHostedCapabilities } from "./self-hosted-capabilities"
+import type { WorkGraphRunOperationBroker } from "@claxedo/workgraph/runtime-adapter"
 import { createSqlitePullRequestEffects } from "../../hosts/workgraph/sqlite-pull-request-effects"
 import { createLocalWorkGraphAgentTools, localSessionContext, localSessionExecution, localSessionOwnerDirected } from "../../hosts/workgraph/composition/agent-tools"
 import { provisionRegisteredWorktree, releaseRegisteredWorktree, localWorktreeWorkGraphId } from "../../workspace/worktree"
@@ -892,7 +894,29 @@ export type ControlPlaneStackOptions = {
   opencodePassword?: string | null
   opencodeEmbedPath?: string
   processObserver?: ProcessObserver
+  /**
+   * Hosted capabilities this deployment contributes.
+   *
+   * This composition root serves two products. The desktop sidecar omits it and
+   * gets a runtime with no WorkGraph route, tool, timer, or subscription; the
+   * self-hosted single binary passes `selfHostedCapabilities(...)` and keeps
+   * everything it ships today.
+   *
+   * An explicit input rather than a runtime flag on purpose: a flag leaves the
+   * hosted implementation in the desktop's dependency closure and only declines
+   * to call it, which is exactly the thing the package split has to disprove.
+   *
+   * A factory rather than a value because the WorkGraph Run broker is owned by
+   * this composition's own run bookkeeping and cannot exist before it. The
+   * caller decides WHETHER hosted capabilities are composed; the composition
+   * supplies what they need to run.
+   */
+  capabilities?: SelfHostedCapabilitiesFactory
 }
+
+export type SelfHostedCapabilitiesFactory = (input: {
+  workGraphRunBroker: WorkGraphRunOperationBroker
+}) => SelfHostedCapabilities
 
 export function captureControlPlaneStartupTelemetry(
   services: ControlPlaneServices,
@@ -1102,6 +1126,26 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     left.sessionId === right.sessionId &&
     left.workspaceId === right.workspaceId &&
     left.generation === right.generation
+  /**
+   * Hosted capabilities for THIS deployment.
+   *
+   * Absent factory means the desktop-local product: no WorkGraph route
+   * contribution reaches the embedded runtime, so the tools are not merely
+   * disabled, they are not composed.
+   */
+  const capabilities = options.capabilities
+    ? options.capabilities({
+      workGraphRunBroker: async (request, signal) => {
+        if (signal.aborted) throw signal.reason ?? new Error("WorkGraph Run operation was cancelled")
+        const binding = localWorkGraphRuns.get(request.identity.sessionId)
+        if (!binding || !sameRunIdentity(binding.identity, request.identity)) {
+          throw new Error("WorkGraph Run operation identity is not bound to this runtime")
+        }
+        if (!executeWorkGraphRun) throw new Error("WorkGraph Run command broker is not ready")
+        return executeWorkGraphRun(binding.context, request)
+      },
+    })
+    : noSelfHostedCapabilities()
   const recordLocalWorkGraphUsage = (event: OpencodeEvent) => {
     if (event.payload.type !== "message.updated") return
     const info = event.payload.properties?.info
@@ -1167,15 +1211,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     opencodeCompat,
     piModelBackend: centralModelBackend().modelBackend,
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
-    workgraphRunBroker: async (request, signal) => {
-      if (signal.aborted) throw signal.reason ?? new Error("WorkGraph Run operation was cancelled")
-      const binding = localWorkGraphRuns.get(request.identity.sessionId)
-      if (!binding || !sameRunIdentity(binding.identity, request.identity)) {
-        throw new Error("WorkGraph Run operation identity is not bound to this runtime")
-      }
-      if (!executeWorkGraphRun) throw new Error("WorkGraph Run command broker is not ready")
-      return executeWorkGraphRun(binding.context, request)
-    },
+    routeContributions: capabilities.runtimeRouteContributions,
     // See `projectLocalSessionMetaFromEvent` above: a harness session's
     // async auto-title (opencode's own LLM rename, or an ACP harness's
     // post-turn `maybeEmitTitle`) is published only over that workspace's
@@ -1697,7 +1733,20 @@ export function startServer(
   port = DEFAULT_CLAXEDO_SERVER_PORT,
   opencodeUrl?: string,
   opencodePassword?: string | null,
-  options: { processObserver?: ProcessObserver; opencodeEmbedPath?: string } = {},
+  options: {
+    processObserver?: ProcessObserver
+    opencodeEmbedPath?: string
+    /**
+     * Hosted capabilities for this process.
+     *
+     * Two callers reach this function: the desktop server child, which passes
+     * nothing, and the self-hosted entry, which passes
+     * `selfHostedCapabilities`. That single argument is the whole difference
+     * between the two products at this layer, which is exactly where the
+     * difference should be visible.
+     */
+    capabilities?: SelfHostedCapabilitiesFactory
+  } = {},
 ) {
   // `undefined` opencodeUrl => embedded engine (the default local composition).
   // An explicit URL is the external-URL opt-in.
@@ -1708,5 +1757,6 @@ export function startServer(
     opencodePassword,
     ...(options.opencodeEmbedPath ? { opencodeEmbedPath: options.opencodeEmbedPath } : {}),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
+    ...(options.capabilities ? { capabilities: options.capabilities } : {}),
   })
 }

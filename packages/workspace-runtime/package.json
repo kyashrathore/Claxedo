@@ -76,6 +76,20 @@
       "import": "./dist/routes.mjs",
       "default": "./dist/routes.mjs"
     },
+    "./http": {
+      "types": "./dist/http.d.ts",
+      "bun": "./dist/http.mjs",
+      "development": "./dist/http.mjs",
+      "import": "./dist/http.mjs",
+      "default": "./dist/http.mjs"
+    },
+    "./route-contribution": {
+      "types": "./dist/route-contribution.d.ts",
+      "bun": "./dist/route-contribution.mjs",
+      "development": "./dist/route-contribution.mjs",
+      "import": "./dist/route-contribution.mjs",
+      "default": "./dist/route-contribution.mjs"
+    },
     "./testing": {
       "types": "./dist/testing.d.ts",
       "bun": "./dist/testing.mjs",
@@ -114,7 +128,6 @@
     "@claxedo/agent-event-runtime": "0.7.0",
     "@claxedo/agent-extensions": "0.7.0",
     "@claxedo/agent-sdk-runtime": "0.7.0",
-    "@claxedo/workgraph": "0.4.0",
     "@claxedo/workspace-relay": "0.7.0",
     "@claxedo/workspace-relay-protocol": "0.7.0",
     "@hono/node-server": "1.19.11",

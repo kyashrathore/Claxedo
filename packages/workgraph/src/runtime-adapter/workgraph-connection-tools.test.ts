@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { WorkGraphConnectionToolRoutes } from "./workgraph-connection-tools"
-import { createWorkspaceRuntimeApp } from "../server"
-import { loopbackWorkspaceRuntimeExposure } from "../exposure"
+import { createWorkspaceRuntimeApp } from "@claxedo/workspace-runtime"
+import { loopbackWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
+import { workGraphRuntimeRouteContributions } from "./index"
 
 const binding = {
   version: 1,
@@ -17,7 +18,9 @@ describe("WorkGraph Connection tools", () => {
     const runtime = createWorkspaceRuntimeApp({
       exposure: loopbackWorkspaceRuntimeExposure(),
       target: { workspaceId: "workspace-1", directory: process.cwd() },
-      workgraphConnectionBroker: async () => ({ type: "update", ok: true }),
+      routeContributions: workGraphRuntimeRouteContributions({
+        connection: { broker: async () => ({ type: "update", ok: true }) },
+      }),
       opencodeRequest: async (request) => {
         if (new URL(request.url).pathname.endsWith("/tool") && request.method === "POST") {
           callbackUrl = String((await request.json() as { callbackUrl?: string }).callbackUrl)
@@ -32,7 +35,7 @@ describe("WorkGraph Connection tools", () => {
         body: JSON.stringify(binding),
       })
       expect(response.status).toBe(200)
-      expect(callbackUrl).toStartWith("http://127.0.0.1:")
+      expect(callbackUrl.startsWith("http://127.0.0.1:"), callbackUrl).toBe(true)
     } finally {
       runtime.dispose()
     }

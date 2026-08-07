@@ -18,10 +18,6 @@ export const WorkspaceRuntimeRoutes = {
   checkpoint: `${WorkspaceRuntimeApiPrefix}/checkpoint`,
   hook: `${WorkspaceRuntimeApiPrefix}/hook`,
   sessionEnv: `${WorkspaceRuntimeApiPrefix}/session-env`,
-  workgraphConnectionBinding: "/api/workgraph/connection-binding",
-  workgraphConnectionTools: "/api/workgraph/tools",
-  workgraphRunBinding: "/api/workgraph/run-binding",
-  workgraphRunTools: "/api/workgraph/run-tools",
 } as const
 
 export type WorkspaceRuntimeRouteFamily = keyof typeof WorkspaceRuntimeRoutes

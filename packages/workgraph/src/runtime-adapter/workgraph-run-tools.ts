@@ -8,11 +8,11 @@ import {
   type CommandResult,
   type WorkGraphRunOperationRequest,
   type WorkGraphRuntimeToolName,
-} from "@claxedo/workgraph/contracts"
+} from "../contracts"
 import { Hono } from "hono"
 import z from "zod/v3"
 import { zodToJsonSchema } from "zod-to-json-schema"
-import { bearerToken, boundedJsonBody, errorBody } from "./http"
+import { bearerToken, boundedJsonBody, errorBody } from "@claxedo/workspace-runtime/http"
 
 export const WORKGRAPH_RUN_TOOL_NAMES = WorkGraphRunToolNames
 export const WORKGRAPH_RUN_BINDING_PATH = "/api/workgraph/run-binding"

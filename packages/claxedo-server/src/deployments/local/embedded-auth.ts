@@ -156,3 +156,25 @@ let singleton: EmbeddedAuth | undefined
 export function getEmbeddedAuth(): EmbeddedAuth {
   return (singleton ??= createEmbeddedAuth())
 }
+
+/**
+ * Close and forget the process-wide instance.
+ *
+ * Needed because the singleton binds to `CLAXEDO_DATA_DIR` at first use, and
+ * suites run in one process with `fileParallelism: false`. A test that composes
+ * the app with embedded auth under a temporary data dir leaves the singleton
+ * pointing at a directory the next test deletes; its schema migration then
+ * completes against a removed file and raises an unhandled SQLITE_IOERR
+ * attributed to whichever test happens to be running when it lands.
+ *
+ * Production never calls this: the instance lives for the process.
+ */
+export function resetEmbeddedAuthForTests() {
+  const current = singleton
+  singleton = undefined
+  try {
+    current?.close()
+  } catch {
+    // Already closed, or its file is gone. Either way the reference is dropped.
+  }
+}

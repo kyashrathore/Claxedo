@@ -1676,7 +1676,7 @@ describe("U8 registration characterization", () => {
     // window is transient rather than permanent, and why it is easy to miss.
     sockets.at(-1)!.open()
     const replayed = await waitForSent(sockets.at(-1)!, "host.registration.update")
-    expect((replayed as { workspace_ids: string[] }).workspace_ids).toEqual(["ws_a"])
+    expect((replayed as unknown as { workspace_ids: string[] }).workspace_ids).toEqual(["ws_a"])
 
     tunnel.close()
   })

@@ -13,6 +13,7 @@ import {
   relayWorkspaceRuntimeExposure,
 } from "@claxedo/workspace-runtime/exposure"
 import { workspaceRelayRuntimeOptionsFromEnv } from "@claxedo/workspace-runtime/relay"
+import { workGraphRuntimeRouteContributions } from "@claxedo/workgraph/runtime-adapter"
 import { allowedOriginPatterns } from "../../platform/http/cors-origins"
 import {
   sandboxLeaseEnv,
@@ -131,8 +132,16 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
           "WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK local managed-cloud runtime",
         ),
     ...(opencodeUrl ? { opencodeUrl } : {}),
-    ...(workgraphConnectionBrokerOrigin ? { workgraphConnectionBrokerOrigin } : {}),
-    ...(workgraphConnectionBrokerOrigin ? { workgraphRunBrokerOrigin: workgraphConnectionBrokerOrigin } : {}),
+    // WorkGraph is a HOSTED capability, so the hosted launcher is where it
+    // enters the runtime. The kit's own CLI and the desktop-local embedded
+    // runtime pass no contributions, which is what makes WorkGraph's absence
+    // from an unsigned build a composition fact rather than a runtime flag.
+    routeContributions: workGraphRuntimeRouteContributions({
+      ...(workgraphConnectionBrokerOrigin
+        ? { connection: { brokerOrigin: workgraphConnectionBrokerOrigin } }
+        : {}),
+      ...(workgraphConnectionBrokerOrigin ? { run: { brokerOrigin: workgraphConnectionBrokerOrigin } } : {}),
+    }),
     harness: claxedoRuntimeRunnerFromEnv(env),
     corsOrigin: claxedoCorsOrigin,
     // Claxedo keeps OpenCode compat ON unless its env flag disables it. The

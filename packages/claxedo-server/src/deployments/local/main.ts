@@ -1,4 +1,5 @@
 import { startServer } from "./server"
+import { selfHostedCapabilities } from "./self-hosted-capabilities"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "./port"
 import { getPostHog } from "../../platform/telemetry/errors/posthog"
 import { reportError } from "../../platform/telemetry/errors/report"
@@ -43,7 +44,10 @@ const port = parseInt(process.env.CLAXEDO_SERVER_PORT ?? String(DEFAULT_CLAXEDO_
 // Composition root: an explicit OPENCODE_URL is the external-URL opt-in; its
 // ABSENCE now means EMBEDDED engine (in-process), not the retired :4096 default.
 const opencodeUrl = process.env.OPENCODE_URL?.trim() || undefined
-startServer(port, opencodeUrl)
+// The self-hosted single binary ships WorkGraph and Documents. Passing its
+// capability factory here is what keeps them composed after the desktop-local
+// composition stopped contributing any.
+startServer(port, opencodeUrl, undefined, { capabilities: selfHostedCapabilities })
 
 console.log(
   `[claxedo-server] listening on http://${process.env.CLAXEDO_SERVER_HOST?.trim() || "127.0.0.1"}:${port}`,

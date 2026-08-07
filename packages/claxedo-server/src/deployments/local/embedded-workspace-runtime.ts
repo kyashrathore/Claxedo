@@ -8,9 +8,9 @@ import {
   Pty,
   type ProcessObserver,
   type ProcessOwnerHandle,
-  type WorkGraphRunOperationBroker,
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
+import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
 import { agentExtensionStateRoot } from "@claxedo/agent-extensions"
 import { opencodeRequest as defaultOpencodeRequest, type OpenCodeRequestFn } from "../../opencode/engine"
 import type { WorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
@@ -55,7 +55,15 @@ const hosts = new Map<string, EmbeddedRuntime>()
 let configuredOpencodeRequest: OpenCodeRequestFn = defaultOpencodeRequest
 let configuredOpencodeCompat = true
 let configuredPiModelBackend: PiModelBackendResolver | undefined
-let configuredWorkGraphRunBroker: WorkGraphRunOperationBroker | undefined
+/**
+ * Host-supplied route groups for every embedded runtime this process creates.
+ *
+ * Was a `workgraphRunBroker` option, which named a hosted capability inside the
+ * desktop-local composition. Now it is a neutral list: the desktop passes
+ * nothing and the self-hosted composition passes `self-hosted-capabilities.ts`,
+ * so a build that contains no WorkGraph contains no path to it.
+ */
+let configuredRouteContributions: readonly WorkspaceRuntimeRouteContribution[] = []
 let configuredProcessObserver: ProcessObserver | undefined
 // Host-supplied sink for a harness session's async auto-title (and any other
 // session.created/session.updated event). A harness session's title is
@@ -76,7 +84,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   opencodeRequest: OpenCodeRequestFn
   opencodeCompat?: boolean
   piModelBackend?: PiModelBackendResolver
-  workgraphRunBroker?: WorkGraphRunOperationBroker
+  routeContributions?: readonly WorkspaceRuntimeRouteContribution[]
   processObserver?: ProcessObserver
   onSessionMetaEvent?: (event: OpencodeEvent) => void
   onSessionMetaSnapshot?: (workspace: Workspace, sessions: unknown[]) => void | Promise<void>
@@ -84,7 +92,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   configuredOpencodeRequest = input.opencodeRequest
   configuredOpencodeCompat = input.opencodeCompat ?? true
   configuredPiModelBackend = input.piModelBackend
-  configuredWorkGraphRunBroker = input.workgraphRunBroker
+  configuredRouteContributions = input.routeContributions ?? []
   configuredProcessObserver = input.processObserver
   configuredOnSessionMetaEvent = input.onSessionMetaEvent
   configuredOnSessionMetaSnapshot = input.onSessionMetaSnapshot
@@ -126,7 +134,7 @@ function options(
   return {
     opencodeRequest,
     ...(configuredPiModelBackend ? { piModelBackend: configuredPiModelBackend } : {}),
-    ...(configuredWorkGraphRunBroker ? { workgraphRunBroker: configuredWorkGraphRunBroker } : {}),
+    ...(configuredRouteContributions.length ? { routeContributions: configuredRouteContributions } : {}),
     ...(configuredProcessObserver ? { processObserver: configuredProcessObserver } : {}),
     exposure: createClaxedoRuntimeExposure({ kind: "embedded", guard: embeddedRuntimeGuard }),
     target: resolveClaxedoWorkspaceRuntimeTarget(ws),
