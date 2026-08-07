@@ -62,7 +62,7 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     kill: "supported",
     source: {
       file: "packages/claxedo-desktop/src/main/index.ts",
-      callee: "utilityProcessFork",
+      callee: "fork",
       calls: 1,
     },
   }),

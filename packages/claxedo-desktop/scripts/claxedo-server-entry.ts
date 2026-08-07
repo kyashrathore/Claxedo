@@ -9,13 +9,12 @@ watchDesktopParent({
   pid: startup.desktopParentPid,
   onOrphaned: terminate,
 })
-const binding = diagnosticsBinding(process.env)
-const transport = binding && process.parentPort
-  ? createDiagnosticsChildTransport({ binding, send: (message) => process.parentPort.postMessage(message) })
+const parent = diagnosticsParent()
+const binding = diagnosticsBinding(process.env, Boolean(parent))
+const transport = binding && parent
+  ? createDiagnosticsChildTransport({ binding, send: parent.send })
   : undefined
-process.parentPort?.on("message", (event) => {
-  void transport?.onMessage(event.data)
-})
+parent?.listen((message) => void transport?.onMessage(message))
 
 startServer(startup.port, startup.opencodeUrl, startup.opencodePassword, {
   ...(startup.opencodeEmbedPath ? { opencodeEmbedPath: startup.opencodeEmbedPath } : {}),
@@ -30,9 +29,23 @@ setTimeout(() => {
   ;(globalThis as typeof globalThis & { gc?: () => void }).gc?.()
 }, 1_000).unref()
 
-function diagnosticsBinding(env: NodeJS.ProcessEnv): DiagnosticsBinding | undefined {
+function diagnosticsParent() {
+  if (typeof process.send === "function") {
+    return {
+      send: (message: Parameters<NonNullable<typeof process.send>>[0]) => process.send?.(message),
+      listen: (listener: (message: unknown) => void) => process.on("message", listener),
+    }
+  }
+  if (!process.parentPort) return
+  return {
+    send: (message: Parameters<typeof process.parentPort.postMessage>[0]) => process.parentPort.postMessage(message),
+    listen: (listener: (message: unknown) => void) => process.parentPort.on("message", (event) => listener(event.data)),
+  }
+}
+
+function diagnosticsBinding(env: NodeJS.ProcessEnv, connected: boolean): DiagnosticsBinding | undefined {
   const launchId = env.CLAXEDO_DIAGNOSTICS_LAUNCH_ID?.trim()
   const generation = env.CLAXEDO_DIAGNOSTICS_GENERATION?.trim()
-  if (!process.parentPort || !launchId || !generation) return
+  if (!connected || !launchId || !generation) return
   return { pid: process.pid, launchId, generation }
 }
