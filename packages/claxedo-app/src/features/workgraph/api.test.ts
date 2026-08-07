@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { isFetchThrottleBypassed } from "@/lib/fetch-throttle"
 import { WorkGraphApiError, createWorkGraphClient, decodeWorkGraphSnapshot, parseApproveWorkItemsResult } from "./api"
 
 const actor = { type: "user" as const, id: "user_1" }
@@ -57,10 +58,10 @@ describe("WorkGraph API", () => {
   })
 
   test("creates a stream through commands and reloads the snapshot", async () => {
-    const calls: Array<{ path: string; method: string }> = []
+    const calls: Array<{ path: string; method: string; bypassed: boolean }> = []
     const request = async (input: string | URL | Request, init?: RequestInit) => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url)
-      calls.push({ path: url.pathname, method: init?.method ?? "GET" })
+      calls.push({ path: url.pathname, method: init?.method ?? "GET", bypassed: isFetchThrottleBypassed(init) })
       if (url.pathname.endsWith("/commands")) {
         return Response.json({ ok: true, operationId: "op_1", cursor: "cursor_2", value: { streamId: "stream_1" } })
       }
@@ -72,8 +73,8 @@ describe("WorkGraph API", () => {
     expect(result.ok).toBe(true)
     expect(snapshot.records).toHaveLength(1)
     expect(calls).toEqual([
-      { path: "/api/workgraph/commands", method: "POST" },
-      { path: "/api/workgraph/snapshot", method: "GET" },
+      { path: "/api/workgraph/commands", method: "POST", bypassed: true },
+      { path: "/api/workgraph/snapshot", method: "GET", bypassed: true },
     ])
   })
 
