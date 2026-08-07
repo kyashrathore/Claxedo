@@ -701,6 +701,35 @@ describe("bounded desktop profiler", () => {
     profiler.dispose()
   })
 
+  test("activates an on-demand source for the first subscriber and deactivates it after the last", () => {
+    const clock = new FakeClock()
+    const demand: boolean[] = []
+    let calls = 0
+    const profiler = createProfiler({
+      clock,
+      source: {
+        ...source((at) => {
+          calls++
+          return [observation(at, 10, "main", 1, 1_000)]
+        }),
+        setDemanded(value) {
+          demand.push(value)
+        },
+      },
+    })
+
+    expect(calls).toBe(1)
+    const unsubscribeFirst = profiler.subscribe(() => {})
+    expect(demand).toEqual([true])
+    expect(calls).toBe(2)
+    const unsubscribeSecond = profiler.subscribe(() => {})
+    unsubscribeFirst()
+    expect(demand).toEqual([true])
+    unsubscribeSecond()
+    expect(demand).toEqual([true, false])
+    profiler.dispose()
+  })
+
   test("disposal cancels timers and ignores late source completion", async () => {
     const clock = new FakeClock()
     let resolveSlow: ((value: DiagnosticsObservation[]) => void) | undefined
