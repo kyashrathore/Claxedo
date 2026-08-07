@@ -873,7 +873,13 @@ All three depend on list-time CROSS-RUNNER discovery: a session created under on
 
 Both require discovery from an adapter that is NOT yet running, which is exactly the case the explicit selected-harness refresh must take over. That refresh is server- and app-side work (`session/routes/meta-routes.ts`, `claxedo-app` inventory queries).
 
-**Recommended order:** land the no-start variant first (it is a two-line deletion in `sessionListAdapters`, and 2 tests to re-express is a far smaller landing than 6), then the explicit refresh, then store-only listing. Both listing variants are reverted for now; the write-throughs are kept because they stand alone and every suite is green with them.
+**Taken to 1, and the last one is a product gate, not a test.** With the no-start variant applied, the cross-runner isolation test re-expresses cleanly: name the harness to import, then a plain list includes it, which is what that test is actually about. Verified passing.
+
+The single remaining failure is `embedded workspace runtime > reconciles persisted runtime titles when rebuilding a workspace after restart`. It is not a test artifact. On workspace rebuild the runtime lists upstream sessions and delivers them through `onSessionMetaSnapshot` so titles generated before a restart survive. Under the no-start variant nothing is running at rebuild time, so the snapshot is empty — and for a user upgrading, session titles would disappear from the shell until they manually refreshed.
+
+That is precisely the behaviour the unit's "named selected-harness refresh imports historical harness metadata idempotently" is meant to carry, but the APP has to trigger that refresh once for an upgraded profile. Until it does, landing this ships a visible regression.
+
+**Recommended order:** (1) app-side one-time reconciliation refresh for an upgraded profile; (2) the no-start variant plus the two re-expressed tests, which are already written and verified; (3) the explicit-refresh migration of remaining consumers; (4) store-only listing. Steps 2–4 are small once step 1 exists. Both listing variants are reverted for now; the write-throughs are kept because they stand alone and every suite is green with them.
 
 **Where the write-through seam is (probed 2026-08-08).** `POST /session` in `routes/session-core.ts` calls `opts.createSession ?? adapter.createSession(...)`, and `runtime.ts` supplies no `createSession`, so creation lands only in the adapter. `session-core.ts` has no store access by design — the store lives in `runtime.ts`'s closure — so the write-through belongs in a `createSession` handler passed alongside the existing `listSessions` one.
 
