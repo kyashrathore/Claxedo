@@ -33,6 +33,88 @@ const configAliasTargets = new Map([
   ["lru_map", "lib/lru-map.ts"],
 ])
 
+/**
+ * One edge of a product-boundary walk: the module that owned the import, the
+ * literal specifier it wrote, and the in-package module it resolved to (null
+ * for a bare package specifier, which the walk checks but never follows).
+ */
+export type ProductImportRef = { specifier: string; module: string | null }
+
+export type ProductBoundaryBreach = {
+  /** Module chain from the entry to the module that owns the forbidden import. */
+  chain: string[]
+  /** The literal specifier that crossed the boundary. */
+  specifier: string
+  /** The in-package module it resolved to, or null for a bare package. */
+  module: string | null
+}
+
+/**
+ * Walk the transitive VALUE-import graph from one production entry and return
+ * the SHORTEST chain that reaches a forbidden edge, or null when the closure is
+ * clean.
+ *
+ * Shortest, not first-found: a depth-first walk reports whichever chain the
+ * traversal order happened to reach, which for a graph this size is routinely
+ * a twelve-hop path through unrelated modules. Breadth-first makes the reported
+ * chain the actual tightest coupling, which is the one a reader has to break.
+ *
+ * Bare package specifiers are CHECKED but never followed — `@clerk/clerk-js`
+ * is a boundary breach wherever it appears, and its own internals are not this
+ * package's graph. Type-only imports are excluded because the bundler erases
+ * them; an emitted-artifact gate (Unit 12) covers what source scanning cannot.
+ */
+export function shortestForbiddenImportChain(options: {
+  appRoot: string
+  /** Entry module, relative to `<appRoot>/src`. */
+  entry: string
+  isForbidden: (ref: ProductImportRef) => boolean
+}): ProductBoundaryBreach | null {
+  const { appRoot, entry, isForbidden } = options
+  const srcRoot = path.join(appRoot, "src")
+  const entryFile = tryFile(path.join(srcRoot, entry))
+  if (!entryFile) throw new Error(`entry not found: ${entry}`)
+
+  const entryRel = relative(srcRoot, entryFile)
+  const parents = new Map<string, string>()
+  const seen = new Set<string>([entryRel])
+  let frontier = [entryRel]
+
+  while (frontier.length) {
+    const next: string[] = []
+    for (const rel of frontier) {
+      const file = path.join(srcRoot, rel)
+      if (!existsSync(file)) continue
+      for (const specifier of importSpecifiers(readFileSync(file, "utf8"))) {
+        const resolved = resolveImport(appRoot, file, specifier)
+        const module = resolved ? relative(srcRoot, resolved) : null
+        if (isForbidden({ specifier, module })) {
+          return { chain: chainTo(rel, entryRel, parents), specifier, module }
+        }
+        if (!module || seen.has(module)) continue
+        seen.add(module)
+        parents.set(module, rel)
+        next.push(module)
+      }
+    }
+    frontier = next
+  }
+
+  return null
+}
+
+function chainTo(module: string, entry: string, parents: Map<string, string>) {
+  const chain = [module]
+  let cursor = module
+  while (cursor !== entry) {
+    const parent = parents.get(cursor)
+    if (!parent) break
+    chain.unshift(parent)
+    cursor = parent
+  }
+  return chain
+}
+
 export function orphanModules(appRoot: string) {
   const srcRoot = path.join(appRoot, "src")
   const reachable = reachableModules(appRoot)
