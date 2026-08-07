@@ -846,7 +846,13 @@ Terminal states: structural package acceptance with machine-readable inventory a
 
 **Verification:** Workspace Runtime is the sole local harness dispatcher; process inventory is zero before explicit work and after idle; all adapter lifecycle/security/replay tests pass.
 
-- [ ] **Unit 4: Make session inventory and canonical events runtime-owned**
+- [ ] **Unit 4: Make session inventory and canonical events runtime-owned** — *defect located and reproduced; fix reverted pending a proven discovery path*
+
+**Finding (2026-08-08):** `listSessions` in `packages/workspace-runtime/src/workspace/runtime.ts` is the U8-F7 violation, and it is worse than "reads through an adapter". With no `harness` query it calls `sessionListAdapters()`, which invokes `ensure()` AND additionally starts OpenCode whenever the configured runner is something else. So the plainest read in the product — the inventory the empty shell fetches on every launch — starts one or two harness processes before it can answer. An idle desktop cannot be idle.
+
+**Why the obvious fix is not committed:** making generic listing store-only is a two-line change and it passes in isolation, but it makes the explicit `?harness=` path the ONLY route by which sessions predating the store are imported. In a full-suite run that path returned an empty list where the old fan-out returned the upstream session, and I could not establish whether that is test-order contamination or a real gap in `ensureSessionAdapter`'s configuration inheritance. Shipping it unresolved risks a user's historical sessions silently disappearing from their inventory, so the change was reverted rather than landed green-in-isolation.
+
+**Next step:** prove the explicit selected-harness refresh imports historical sessions in a full-suite run (start from `runtime.test.ts` "opencode compatibility default proxies …", which now needs splitting into a store-only assertion and a discovery assertion), then reland the store-only listing on top of it.
 
 **Goal:** Make generic local hydration independent of every harness and compatibility stream, with durable runtime metadata and an explicit selected-harness refresh for historical imports.
 
