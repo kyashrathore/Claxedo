@@ -119,6 +119,7 @@ const electronDiagnosticsSource = createElectronSource({
 })
 const diagnosticsSource = createProcessMetricsSource({
   electron: electronDiagnosticsSource,
+  hostCollection: "on-demand",
   workerPath: join(import.meta.dirname, "process-metrics-worker.js"),
   wsl: createWslSource({
     enabled: process.platform === "win32" && getWslConfig().enabled,
