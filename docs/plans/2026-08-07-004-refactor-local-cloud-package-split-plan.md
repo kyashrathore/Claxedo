@@ -858,11 +858,13 @@ Terminal states: structural package acceptance with machine-readable inventory a
 2. `GET /session?directory=D&harness=opencode` → `200`, upstream `http://opencode.test/session` IS called, and the discovered session IS returned.
 3. `GET /session?directory=D` again → **`[]`**.
 
-So discovery works and returns the row, but the row never becomes visible to `store().listSessions(directory)`. `bindDiscoveredSession` does call `store().bindSession({ sessionId, directory, agentSessionId, ... })` with the right directory, and `listSessions` filters `WHERE directory = ?` on the `session` table — so the gap is between `bindSession` writing a `session.bind` control row into the journal and that row being projected into the `session` table. That projection is where the fix belongs.
+So discovery works and returns the row, but the row never becomes visible to `store().listSessions(directory)`.
 
-Landing the store-only listing before fixing it would make a user's pre-store sessions visible only while a harness is explicitly named, and absent from their normal inventory — a silent data-loss appearance. The change is therefore reverted, not shipped green-in-isolation.
+Where the cause is NOT, having checked: `bindDiscoveredSession` does call `store().bindSession({ sessionId, directory, agentSessionId, ... })` with the same `directory` the route received; `bindSession` commits a `session.bind` control row; `applyControl` projects that row through `upsertSession` with `control.directory`; and `listSessions` filters `WHERE directory = ?` on the resulting `session` table. On inspection that chain is correct. There is also no `realpath`/normalization anywhere in the runtime routes or store, so the macOS `/var` → `/private/var` symlink split that would neatly explain a bind/list mismatch is ruled out.
 
-**Next step:** fix the `bindSession` → `session`-table projection so an explicitly discovered historical session appears in the next generic list; assert steps 1–3 above as a test; then reland the two-line store-only listing on top of it.
+An earlier revision of this note claimed the projection was the fix location. That was inference from the symptom, not something established — corrected here rather than left as a wrong pointer.
+
+**Next step:** instrument the three-step reproduction at the store boundary — log what `bindSession` receives and what rows `listSessions` sees for the same directory — and find where the two diverge. The reproduction is deterministic under the full suite, so this is one probe, not an investigation. Then assert steps 1–3 as a test and reland the two-line store-only listing on top of it.
 
 **Goal:** Make generic local hydration independent of every harness and compatibility stream, with durable runtime metadata and an explicit selected-harness refresh for historical imports.
 
