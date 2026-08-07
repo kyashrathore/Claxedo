@@ -852,19 +852,13 @@ Terminal states: structural package acceptance with machine-readable inventory a
 
 **Why the obvious fix is not committed:** making generic listing store-only is a two-line change, but it makes the explicit `?harness=` path the ONLY route by which sessions predating the store are imported — and that path does not durably import them.
 
-**Diagnosed precisely (2026-08-08).** With the store-only change applied, a full-suite run shows:
+**Root cause found (2026-08-08), and it was not where the symptom pointed.** `bindDiscoveredSession` decided "already imported" from the session ID alone: `store().getSession(id)` returning any row suppressed the bind. A row belonging to a DIFFERENT directory therefore blocked the import, so the session was never associated with the directory being listed and never appeared in its inventory — discovery ran, fetched the upstream row, returned it to the caller, and imported nothing. That bites whenever one agent session ID is reachable from two workspace directories: a moved or re-cloned workspace, or sibling worktrees sharing a harness session.
 
-1. `GET /session?directory=D` → `[]` (correct: store-only, no adapter started).
-2. `GET /session?directory=D&harness=opencode` → `200`, upstream `http://opencode.test/session` IS called, and the discovered session IS returned.
-3. `GET /session?directory=D` again → **`[]`**.
+**Fixed and landed:** the bind now runs when there is no existing row *for this directory*. This is a strict improvement independent of the rest of the unit and breaks no consumer.
 
-So discovery works and returns the row, but the row never becomes visible to `store().listSessions(directory)`.
+**Still not landed — the store-only listing.** With the bind fixed, making generic listing store-only passes the whole workspace-runtime suite, but it fails 6 `claxedo-server` tests including "cross-runner session isolation when duplicate session ids appear across runners" and "lists experimental sessions through the sandbox". Those are not test artifacts: the server's session listing genuinely depends on generic listing performing adapter fan-out. Moving to a runtime-owned inventory therefore requires this unit's app-side work as well — `claxedo-app`'s inventory queries and `session/routes/meta-routes.ts` — landed in the same slice, which is exactly what this unit's file list says and what is still outstanding.
 
-Where the cause is NOT, having checked: `bindDiscoveredSession` does call `store().bindSession({ sessionId, directory, agentSessionId, ... })` with the same `directory` the route received; `bindSession` commits a `session.bind` control row; `applyControl` projects that row through `upsertSession` with `control.directory`; and `listSessions` filters `WHERE directory = ?` on the resulting `session` table. On inspection that chain is correct. There is also no `realpath`/normalization anywhere in the runtime routes or store, so the macOS `/var` → `/private/var` symlink split that would neatly explain a bind/list mismatch is ruled out.
-
-An earlier revision of this note claimed the projection was the fix location. That was inference from the symptom, not something established — corrected here rather than left as a wrong pointer.
-
-**Next step:** instrument the three-step reproduction at the store boundary — log what `bindSession` receives and what rows `listSessions` sees for the same directory — and find where the two diverge. The reproduction is deterministic under the full suite, so this is one probe, not an investigation. Then assert steps 1–3 as a test and reland the two-line store-only listing on top of it.
+**Next step:** move the server and app consumers onto the runtime-owned inventory plus an explicit selected-harness refresh, then land the two-line store-only listing with them in one slice. The six failing server tests name the exact behaviours that must be re-expressed through the explicit refresh.
 
 **Goal:** Make generic local hydration independent of every harness and compatibility stream, with durable runtime metadata and an explicit selected-harness refresh for historical imports.
 

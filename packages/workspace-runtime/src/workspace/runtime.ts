@@ -1249,8 +1249,18 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   function bindDiscoveredSession(session: AgentSessionRow, targetRunner: RuntimeRunner, directory: string) {
     const id = typeof session.id === "string" ? session.id : undefined
     if (!id) return session
-    const existing = store().getSession(id) as { time?: { updated?: number }; updated_at?: number } | null
-    if (!existing) {
+    const existing = store().getSession(id) as
+      | { directory?: string; time?: { updated?: number }; updated_at?: number }
+      | null
+    // "Already imported" means already imported INTO THIS DIRECTORY.
+    //
+    // Keying on session ID alone let a row belonging to another directory
+    // suppress the bind, so the session was never associated with the directory
+    // being listed and never appeared in its inventory — discovery silently
+    // imported nothing. That happens whenever an agent session ID is reachable
+    // from two workspace directories: a moved or re-cloned workspace, or sibling
+    // worktrees sharing a harness session.
+    if (!existing || existing.directory !== directory) {
       store().bindSession({
         sessionId: id,
         directory,
