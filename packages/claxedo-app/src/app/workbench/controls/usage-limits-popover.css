@@ -84,13 +84,14 @@
 
 /* ── Body zone ─────────────────────────────────────────── */
 
-/* No vertical padding: the section headers are panel-level rows, so they sit
-   flush against the head and foot rules the way the head's own title does. A
-   gap there reads as the list floating loose inside the panel. */
+/* 3px top and bottom — just enough that a row's rounded hover clears the head
+   and foot rules instead of butting into them. It was 0 while the rows were
+   full-bleed squares, where touching the rule was correct; a pill has corners,
+   and a corner meeting a hairline reads as a collision. */
 .usage-body {
   flex: 1;
   min-height: 0;
-  padding: 0 var(--usage-inset);
+  padding: 3px var(--usage-inset);
   overflow-y: auto;
 }
 
@@ -142,18 +143,22 @@
   transform: rotate(90deg);
 }
 
+/* The label is what you scan for, so it carries the weight; the value is the
+   answer it currently holds and steps back. Sentence case, not caps: uppercase
+   plus wide tracking turns a two-word label into a legal heading, and at this
+   size it costs legibility for a formality nothing else in the panel keeps. */
 .usage-section-label {
   flex-shrink: 0;
   font-family: var(--font-family-sans);
-  font-size: var(--font-size-x-small);
+  font-size: var(--font-size-small);
   font-weight: var(--font-weight-medium);
   line-height: var(--line-height-large);
-  text-transform: uppercase;
-  letter-spacing: var(--letter-spacing-label);
-  color: var(--text-weaker);
+  letter-spacing: var(--letter-spacing-normal);
+  color: var(--text-base);
 }
 
-/* The summary steps back once the panel below is showing the same thing. */
+/* Dim throughout, and dimmer still once the panel below is showing the same
+   thing. */
 .usage-section-value {
   min-width: 0;
   flex: 1;
@@ -161,7 +166,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: right;
-  color: var(--text-base);
+  color: var(--text-weak);
   font-variant-numeric: tabular-nums;
   transition: color 150ms ease;
 }

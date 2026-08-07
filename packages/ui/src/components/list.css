@@ -205,22 +205,12 @@
         line-height: var(--line-height-large); /* 142.857% */
         letter-spacing: var(--letter-spacing-normal);
 
-        &::after {
-          content: "";
-          position: absolute;
-          top: 100%;
-          left: 0;
-          right: 0;
-          height: 16px;
-          background: linear-gradient(to bottom, var(--surface-raised-stronger-non-alpha), transparent);
-          pointer-events: none;
-          opacity: 0;
-          transition: opacity 0.15s ease;
-        }
-
-        &[data-stuck="true"]::after {
-          opacity: 1;
-        }
+        /* No fade below a stuck header. The header's own background is opaque,
+           so it already occludes the rows scrolling under it; the 16px gradient
+           was decoration, and it is painted in a FIXED surface token — on any
+           list whose container repaints that surface (the composer's picker
+           does) it resolves to a different colour than the header above it and
+           shows as a grey shadow hanging off the provider name. */
       }
 
       [data-slot="list-items"] {

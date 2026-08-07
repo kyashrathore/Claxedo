@@ -393,39 +393,33 @@
 }
 
 /*
- * ...except in the merged harness→model picker, where the search bar is the
- * panel's HEADER rather than a field sitting inside it. A filled, rounded pill
- * on an already-elevated popover reads as a second surface stacked on the
- * first; upstream draws this flush with a hairline beneath and lets the
- * magnifier carry the affordance.
+ * The merged harness→model picker's search is a FIELD, not the panel's header
+ * rule. It was drawn flush and transparent with a hairline under it, which on a
+ * surface this dark left nothing to distinguish an input from a label — the
+ * magnifier was carrying the entire affordance. It gets the same inset fill
+ * every other picker's search has, plus a gap so it is not welded to the
+ * section header directly above it.
  *
- * Specificity is deliberate and has to clear TWO rules: the one above (0,2,0)
- * and `.claxedo-composer-menu.claxedo-composer-menu [data-slot="list-search"]`
- * in index.css (0,3,0), which sets the 4px radius. Doubling the class here and
- * adding the component attribute lands at (0,4,0) — and this file is the later
- * layer, so it also wins the tie it would otherwise lose.
+ * Specificity has to clear `.claxedo-composer-menu.claxedo-composer-menu
+ * [data-slot="list-search"]` in index.css (0,3,0); doubling the class and
+ * adding the component attribute lands at (0,4,0).
  */
 .claxedo-composer-menu.claxedo-composer-menu[data-component="harness-model-picker"] [data-slot="list-search"] {
-  background-color: transparent;
-  border-radius: 0;
-  border-bottom: 1px solid var(--border-weaker-base);
+  background-color: var(--overlay-surface-input);
+  border-radius: var(--radius-sm);
   padding: 5px 10px;
 }
 
-/*
- * The search row's trailing action (Manage models) lives in the WRAPPER, not
- * in the search box — the box stops 24px short and the action sits in the gap.
- * With the panel run full-bleed that put the glyph hard against the surface
- * edge, while the magnifier had a 10px inset on the left. Same inset here so
- * the two read as a matched pair bracketing the field.
- * `index.css` zeroes this wrapper's padding at (0,3,0); doubling the class and
- * adding the component attribute clears it.
- */
 .claxedo-composer-menu.claxedo-composer-menu[data-component="harness-model-picker"] [data-slot="list-search-wrapper"] {
-  /* 12px, not 10: the flush panel starts 6px outside the surface's padding
-     box, and the wrapper's own trailing gap eats 2 of it. Measured against the
-     magnifier's real 10px, which is the number that has to match. */
-  padding-right: 12px;
+  margin-bottom: 6px;
+}
+
+/* The manage-models action now rides INSIDE the field with the clear button, so
+   it takes the magnifier's treatment: same muted tint, same brightening on
+   hover, no button chrome of its own competing with the input's fill. */
+.claxedo-composer-menu.claxedo-composer-menu[data-component="harness-model-picker"]
+  [data-slot="harness-picker-manage"] {
+  flex-shrink: 0;
 }
 
 .theme-model-picker [data-slot="list-search-container"] > [data-component="icon"],

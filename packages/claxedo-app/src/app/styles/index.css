@@ -299,15 +299,6 @@
   }
 }
 
-/* Full-bleed panel: cancels the 6px surface padding so the model list's search
-   bar and footer run edge to edge, the way the upstream picker draws them. An
-   inset there turns those full-width rules into a card floating inside the
-   menu. */
-[data-component="harness-model-picker"] [data-slot="harness-picker-panel"][data-flush] {
-  margin-inline: -6px;
-}
-
-
 @media (prefers-reduced-motion: reduce) {
   .harness-picker-panel {
     animation: none;

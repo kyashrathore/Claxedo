@@ -311,8 +311,12 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
                 aria-label={i18n.t("ui.list.clearFilter")}
               />
             </Show>
+            {/* Inside the field, alongside the clear button — the two trailing
+                controls belong to the input, so they share its fill the way the
+                leading magnifier does. Outside it the action floated on the bare
+                surface and read as unrelated to the search it acts on. */}
+            {searchAction()}
           </div>
-          {searchAction()}
         </div>
       </Show>
       <div ref={setScrollRef} data-slot="list-scroll">

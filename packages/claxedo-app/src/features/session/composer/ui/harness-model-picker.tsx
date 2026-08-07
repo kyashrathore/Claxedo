@@ -37,16 +37,20 @@ import { COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics
 export type HarnessModelPickerSection = "harness" | "model" | "effort"
 
 /**
- * Panel inset. A 6px step past the header's own `px-1.5` edge — enough to read
- * as "indented under that row", not enough to matter.
+ * Every row in this popover — the three section headers, the harness options,
+ * the effort options and the model list's own rows — is this one box. Same
+ * width, same 10px gutter, same radius, same hover.
  *
- * This was 24px (aligning content with the header LABEL, past the chevron
- * column) and that was too greedy: the popover is 304px wide, so every model
- * row paid 8% of the surface for a hierarchy cue that the held header
- * background and the entrance animation already carry between them. The indent
- * is the third and weakest of the three signals, so it is the one that yields.
+ * The panel used to carry a 12px indent (24px before that) so its contents read
+ * as nested. It went for the same reason the held header background went: a row
+ * that is narrower than the row above it looks like a different KIND of row,
+ * and the model list never had the indent anyway, so the two sections disagreed
+ * about their own hierarchy. Depth is carried by the rotated chevron and the
+ * panel's entrance animation, which are the two signals that survive a row
+ * being exactly as wide as its neighbours.
  */
-const PANEL_INSET = "pl-3"
+const ROW_CLASS =
+  "flex min-h-7 w-full items-center gap-2 rounded-[var(--radius-sm)] px-2.5 py-1 text-left outline-none transition-colors duration-150 hover:bg-surface-base-hover focus-visible:bg-surface-base-hover"
 
 function SectionHeader(props: {
   label: string
@@ -68,7 +72,12 @@ function SectionHeader(props: {
       aria-busy={props.loading}
       aria-expanded={props.expanded}
       title={props.hint}
-      class="group/section flex w-full shrink-0 items-center gap-2 rounded-md px-1.5 py-1.5 text-left outline-none transition-colors duration-150 hover:bg-surface-base-hover focus-visible:bg-surface-base-hover disabled:pointer-events-none disabled:opacity-45 data-[expanded=true]:bg-surface-base-hover"
+      /*
+       * The same box as the rows it opens. No held fill while expanded either —
+       * the rotated chevron and the panel underneath already say which section
+       * is showing, and a permanent band reads as "selected", not "open".
+       */
+      class={`group/section shrink-0 disabled:pointer-events-none disabled:opacity-45 ${ROW_CLASS}`}
       onClick={props.onToggle}
     >
       {/* Full-strength icon. At `icon-weak` on a dark surface this chevron was
@@ -79,7 +88,12 @@ function SectionHeader(props: {
         size="small"
         class="shrink-0 text-icon-base transition-transform duration-200 ease-out group-data-[expanded=true]/section:rotate-90"
       />
-      <span class="shrink-0 text-xs font-medium uppercase tracking-[var(--letter-spacing-label)] text-text-weaker">{props.label}</span>
+      {/* The label is what you scan for, so it carries the weight; the value is
+          the answer it currently holds and steps back. This was inverted — a
+          dim label under a bright value made the row read as its value with a
+          caption attached. Sentence case, not caps: uppercase plus wide
+          tracking turns a one-word label into a legal heading. */}
+      <span class="shrink-0 text-compact font-medium text-text-base">{props.label}</span>
       {/* The summary fades once the panel below is showing the same thing —
           still there for orientation, no longer competing with the list. */}
       {/* Loading belongs to the SECTION whose contents are loading, not to the
@@ -96,7 +110,7 @@ function SectionHeader(props: {
         <span
           class="min-w-0 truncate text-right text-compact transition-colors duration-150"
           classList={{
-            "text-text-base": !props.expanded && !props.loading,
+            "text-text-weak": !props.expanded && !props.loading,
             "text-text-weaker": props.expanded || props.loading,
           }}
         >
@@ -107,21 +121,10 @@ function SectionHeader(props: {
   )
 }
 
-/**
- * The open section's body: inset to the header label, entering from it.
- *
- * `flush` drops the inset and cancels the surface padding so the panel runs
- * edge to edge. The model list wants that — its search bar and footer are
- * full-width rules in the upstream picker, and an inset turns them into a card
- * floating inside the menu instead of the menu's own content.
- */
-function SectionPanel(props: { class?: string; flush?: boolean; children: JSX.Element }) {
+/** The open section's body: the surface's own column, entering from its header. */
+function SectionPanel(props: { class?: string; children: JSX.Element }) {
   return (
-    <div
-      data-slot="harness-picker-panel"
-      data-flush={props.flush ? "true" : undefined}
-      class={`harness-picker-panel ${props.flush ? "" : PANEL_INSET} ${props.class ?? ""}`}
-    >
+    <div data-slot="harness-picker-panel" class={`harness-picker-panel ${props.class ?? ""}`}>
       {props.children}
     </div>
   )
@@ -132,7 +135,7 @@ function OptionRow(props: { selected: boolean; icon?: JSX.Element; label: string
     <button
       type="button"
       aria-current={props.selected ? "true" : undefined}
-      class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-compact outline-none transition-colors duration-100 hover:bg-surface-base-hover focus-visible:bg-surface-base-hover"
+      class={`text-compact ${ROW_CLASS}`}
       onClick={props.onSelect}
     >
       <Show when={props.icon}>
@@ -174,17 +177,16 @@ function ModelListPanel(props: {
       surface="composer"
       onSelect={props.onSelect}
       action={props.manage ? (
-        /* In the search row, opposite the magnifier and dimmed to match it.
-           This action belongs to the list it filters, so it rides the list's
-           own header rather than becoming a row. `--overlay-icon-muted` and
-           `size-5` are the lens's own treatment; the button hugs the glyph so
-           the search row's 10px inline padding lands it symmetrically. */
+        /* Inside the field, opposite the magnifier and wearing its treatment —
+           same `--overlay-icon` tint, same 20px glyph — so the two read as a
+           matched pair bracketing the input. The search row's 10px inline
+           padding lands it symmetrically against the lens. */
         <button
           type="button"
           data-slot="harness-picker-manage"
           aria-label={props.manageLabel}
           title={props.manageLabel}
-          class="flex shrink-0 items-center text-[var(--overlay-icon-muted)] outline-none transition-colors duration-100 hover:text-[var(--overlay-icon)] focus-visible:text-[var(--overlay-icon)]"
+          class="flex shrink-0 items-center text-[var(--overlay-icon)] outline-none transition-colors duration-100 hover:text-[var(--overlay-text)] focus-visible:text-[var(--overlay-text)]"
           onClick={props.manage}
         >
           <Icon name="sliders" size="small" class="size-5 shrink-0" />
@@ -414,7 +416,7 @@ export function HarnessModelPicker<H extends string>(props: {
               the cursor is how you mis-click a model. The section opens once
               there is something to open. */}
           <Show when={section() === "model" && !props.modelLoading()}>
-            <SectionPanel flush class="flex min-h-0 flex-1 flex-col">
+            <SectionPanel class="flex min-h-0 flex-1 flex-col">
               <Show
                 when={props.modelError?.()}
                 fallback={
