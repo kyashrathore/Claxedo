@@ -148,5 +148,5 @@ export { initPostHog, shutdownPostHog, capture, getPostHog } from "./platform/te
 export { claxedoBus } from "@claxedo/server-core/platform/runtime/lib/bus"
 export type { ClaxedoEvent, PtyInfo } from "@claxedo/server-core/platform/runtime/lib/bus"
 export { Pty, Process, createProcessClient, ProcessManager } from "@claxedo/workspace-runtime/host"
-export { ClaxedoDB } from "./platform/db/db"
+export { ClaxedoDB } from "./platform/db"
 export { dataDir, stateDir } from "@claxedo/server-core/platform/runtime/lib/paths"

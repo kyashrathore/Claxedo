@@ -5,9 +5,9 @@ import os from "node:os"
 import path from "node:path"
 import { getTableConfig } from "drizzle-orm/sqlite-core"
 import { describe, expect, test } from "vitest"
-import { ClaxedoDB } from "../platform/db/db"
+import { ClaxedoDB } from "../platform/db"
 import { ClaxedoDocumentIndexTable } from "./index.sql"
-import { repair } from "../platform/db/repair"
+import { repair } from "@claxedo/server-core/platform/db/repair"
 
 const resetMigration = "20260716000100_documents_reset"
 const retiredPageTable = ["claxedo", "page"].join("_")

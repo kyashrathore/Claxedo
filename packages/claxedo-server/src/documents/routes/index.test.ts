@@ -34,7 +34,7 @@ import {
 } from "../index-store"
 import type { DocumentIndexEntry } from "../index-store"
 import { setDocumentChangedSink, subscribeDocumentEvents } from "../backend"
-import { ClaxedoDB } from "../../platform/db/db"
+import { ClaxedoDB } from "../../platform/db"
 import { DocumentsRoutes, type DocumentsRouteBackend } from "./index"
 import { peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
 import {

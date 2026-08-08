@@ -21,6 +21,25 @@ import { repair } from "./repair"
 
 declare const CLAXEDO_MIGRATIONS: { sql: string; timestamp: number; name: string }[] | undefined
 
+/**
+ * Where this deployment's migration journal lives.
+ *
+ * The journal is PRODUCT schema — documents, credentials, connections,
+ * channels — so the product supplies it rather than the database engine
+ * carrying it. Resolving it from this module's own directory only worked while
+ * engine and journal shipped together.
+ *
+ * There is no default. An unconfigured database would apply zero migrations and
+ * hand back a working handle to a file with no tables, which is a failure this
+ * product has shipped before: every query fails later, somewhere else, for a
+ * reason the stack trace does not name.
+ */
+let migrationsDir: string | undefined
+
+export function configureClaxedoMigrations(dir: string) {
+  migrationsDir = dir
+}
+
 const log = Log.create({ service: "claxedo-db" })
 const require = createRequire(import.meta.url)
 
@@ -150,6 +169,25 @@ export namespace ClaxedoDB {
     return sql.sort((a, b) => a.timestamp - b.timestamp)
   }
 
+  /**
+   * Fail closed. A bundled journal wins; otherwise the product must have named
+   * its directory, and that directory must actually hold migrations. Returning
+   * an empty list here would open an empty database and report success.
+   */
+  function resolveMigrations(): Journal {
+    if (typeof CLAXEDO_MIGRATIONS !== "undefined") return CLAXEDO_MIGRATIONS
+    if (!migrationsDir) {
+      throw new Error(
+        "claxedo database opened before its migration journal was configured; call configureClaxedoMigrations(dir) from the composition that owns the schema",
+      )
+    }
+    const entries = migrations(migrationsDir)
+    if (entries.length === 0) {
+      throw new Error(`claxedo migration journal at ${migrationsDir} is empty or missing`)
+    }
+    return entries
+  }
+
   export const Drizzle = lazy(() => {
     log.info("opening claxedo database", { path: Path() })
 
@@ -163,10 +201,7 @@ export namespace ClaxedoDB {
     pragma(sqlite, "foreign_keys = ON")
     sqlite.exec("PRAGMA wal_checkpoint(PASSIVE)")
 
-    const entries =
-      typeof CLAXEDO_MIGRATIONS !== "undefined"
-        ? CLAXEDO_MIGRATIONS
-        : migrations(path.join(import.meta.dirname, "claxedo-migration"))
+    const entries = resolveMigrations()
     if (entries.length > 0) {
       log.info("applying claxedo migrations", {
         count: entries.length,

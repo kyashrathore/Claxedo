@@ -37,7 +37,7 @@ const [
 ] = await Promise.all([
   import("../../deployments/local/server"),
   import("../../authority/adapters/sqlite/central-store"),
-  import("../../platform/db/db"),
+  import("../../platform/db"),
 ])
 
 function centralStore() {

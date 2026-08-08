@@ -21,7 +21,7 @@
 
 import { randomUUID } from "crypto"
 import { eq, and, desc, inArray, sql } from "drizzle-orm"
-import { ClaxedoDB } from "../platform/db/db"
+import { ClaxedoDB } from "../platform/db"
 import { ClaxedoProviderCredentialTable, SINGLE_TENANT_ORG } from "./provider-credential.sql"
 import { getBackend } from "./backend-registry"
 import type { CredentialHealth, CredentialMetadata, CredentialScope, CredentialWrite, CredentialStatus } from "./types"

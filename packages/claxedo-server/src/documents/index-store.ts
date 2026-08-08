@@ -3,7 +3,7 @@ import { realpathSync } from "node:fs"
 import path from "node:path"
 import { z } from "zod"
 import { and, desc, eq, isNotNull, isNull } from "drizzle-orm"
-import { ClaxedoDB } from "../platform/db/db"
+import { ClaxedoDB } from "../platform/db"
 import {
   ClaxedoDocumentIndexTable,
   ClaxedoDocumentStatusTable,

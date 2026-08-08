@@ -1,4 +1,4 @@
-import { ClaxedoDB, inArray } from "../../platform/db/db"
+import { ClaxedoDB, inArray } from "../../platform/db"
 import {
   ClaxedoSessionAttachmentTable,
   ClaxedoSessionMetaTable,

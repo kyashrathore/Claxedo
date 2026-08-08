@@ -4,7 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { ClaxedoDB } from "../../../platform/db/db"
+import { ClaxedoDB } from "../../../platform/db"
 import { createLocalDocumentsBackend } from "./backend"
 
 const roots: string[] = []

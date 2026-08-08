@@ -83,7 +83,7 @@ describe("credential org scope migration", () => {
   })
 
   test("repair heals a database whose migration ledger drifted past the org column", async () => {
-    const { repair } = await import("../platform/db/repair")
+    const { repair } = await import("@claxedo/server-core/platform/db/repair")
     const sqlite = legacyTable()
 
     const fixed = repair(sqlite as never)

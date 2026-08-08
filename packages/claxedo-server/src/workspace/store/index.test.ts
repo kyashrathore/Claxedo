@@ -13,7 +13,7 @@ process.env.CLAXEDO_DATA_DIR = root
 
 const mod = await import("./index")
 const hostLease = await import("../../sandbox/stores/sqlite-supervisor-state")
-const { ClaxedoDB } = await import("../../platform/db/db")
+const { ClaxedoDB } = await import("../../platform/db")
 
 function restoreEnv(key: string, value: string | undefined) {
   if (value === undefined) {

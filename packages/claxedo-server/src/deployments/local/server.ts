@@ -131,7 +131,7 @@ import { StreamIDSchema, masterRunId, masterSessionId } from "@claxedo/workgraph
 import type { CommandResult, WorkGraphRunOperationRequest, WorkGraphContext } from "@claxedo/workgraph/contracts"
 import { sessionMeta } from "../../session/meta"
 import { llmTurnRecord, workGraphSessionAttribution } from "../../platform/telemetry/product/metering"
-import { ClaxedoDB } from "../../platform/db/db"
+import { ClaxedoDB } from "../../platform/db"
 import { RemoteAccessRoutes } from "../../routes/remote-access"
 import { createRemoteAccessService, unavailableRemoteAccessService } from "./remote-access-service"
 import { localHostIdentity, registrationPayload, signHostPayload } from "../../workspace/local-host"

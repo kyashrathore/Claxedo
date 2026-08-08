@@ -18,7 +18,7 @@ const [{ createSqliteCentralStore }, , , { ClaxedoDB }, { createProjectionDedupS
   import("./adapters/sqlite/central-store"),
   import("./projection-store"),
   import("../platform/auth/durable-session-log"),
-  import("../platform/db/db"),
+  import("../platform/db"),
   import("../channels/dedup"),
 ])
 

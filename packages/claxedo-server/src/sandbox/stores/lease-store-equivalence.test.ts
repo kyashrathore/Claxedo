@@ -16,7 +16,7 @@ import type { SandboxLeaseStore, SandboxLease } from "@claxedo/sandbox-manager"
 import { createMemoryLeaseStore } from "@claxedo/sandbox-manager/stores/memory"
 import { createConvexLeaseStore } from "./convex"
 import { createSqliteLeaseStore } from "./sqlite"
-import { ClaxedoDB } from "../../platform/db/db"
+import { ClaxedoDB } from "../../platform/db"
 import { deleteLease, getLease, upsertLease } from "./lease.sql"
 import * as convexSandboxLeases from "../../../../../convex/sandboxLeases"
 

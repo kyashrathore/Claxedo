@@ -10,7 +10,7 @@ const retiredPageTable = ["claxedo", "page"].join("_")
 const retiredArenaTable = ["claxedo", "page", "arena"].join("_")
 
 function entries() {
-  const dir = path.join(import.meta.dirname, "claxedo-migration")
+  const dir = path.join(import.meta.dirname, "../../../../claxedo-server/src/platform/db/claxedo-migration")
   return readdirSync(dir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)

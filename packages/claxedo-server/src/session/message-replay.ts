@@ -8,7 +8,7 @@
  * on GET /session/:id/message, not from the adapter.
  */
 
-import { ClaxedoDB, and, desc, eq, gt } from "../platform/db/db"
+import { ClaxedoDB, and, desc, eq, gt } from "../platform/db"
 import { ClaxedoCloudMessageEventTable, ClaxedoCloudMessageTable, ClaxedoCloudSessionTable } from "./cloud.sql"
 import { ClaxedoSessionMetaTable } from "./meta.sql"
 

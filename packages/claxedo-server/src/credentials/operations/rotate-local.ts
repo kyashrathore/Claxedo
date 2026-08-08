@@ -32,7 +32,7 @@
  *    the old KEK, so they count against retiring it.
  */
 
-import { ClaxedoDB } from "../../platform/db/db"
+import { ClaxedoDB } from "../../platform/db"
 import { ClaxedoProviderCredentialTable } from "../provider-credential.sql"
 import { getBackend } from "../backend-registry"
 import { isEnvelopeBackend } from "../envelope"

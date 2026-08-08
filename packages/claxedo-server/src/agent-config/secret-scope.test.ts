@@ -11,7 +11,7 @@ process.env.CLAXEDO_DATA_DIR = root
 
 const { createTestBackend, setBackendOverride } = await import("../credentials/backend-registry")
 const { putCredential } = await import("../credentials/registry")
-const { ClaxedoDB } = await import("../platform/db/db")
+const { ClaxedoDB } = await import("../platform/db")
 const { getRuntimeConfigSnapshot, saveUserConfig } = await import("./index")
 
 describe("runtime config secret scoping", () => {

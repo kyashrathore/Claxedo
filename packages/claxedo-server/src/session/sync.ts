@@ -1,4 +1,4 @@
-import { ClaxedoDB, eq } from "../platform/db/db"
+import { ClaxedoDB, eq } from "../platform/db"
 import { ClaxedoCloudMessageTable } from "./cloud.sql"
 import type { Workspace } from "../workspace/store"
 

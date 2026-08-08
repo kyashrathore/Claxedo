@@ -28,7 +28,7 @@ const { setBackendOverride } = await import("../backend-registry")
 const { putCredential, listCredentials, deleteCredential } = await import("../registry")
 const { createStaticKeyProvider, encryptedSecretBackend, envelopeKeyId } = await import("../envelope")
 const { rotateLocalCredentialKeys, localEnvelopePartition } = await import("./rotate-local")
-const { ClaxedoDB } = await import("../../platform/db/db")
+const { ClaxedoDB } = await import("../../platform/db")
 const { ClaxedoProviderCredentialTable } = await import("../provider-credential.sql")
 ClaxedoDB.Drizzle()
 

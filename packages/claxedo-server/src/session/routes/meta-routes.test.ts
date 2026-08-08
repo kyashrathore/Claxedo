@@ -18,7 +18,7 @@ process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 
 // These modules share the storage and workspace dependency graph. Loading
 // them concurrently deadlocks Vitest's SSR module evaluator before collection.
-const { ClaxedoDB } = await import("../../platform/db/db")
+const { ClaxedoDB } = await import("../../platform/db")
 const { putSessionMeta, sessionMeta } = await import("../meta")
 const { ensureWorkspace } = await import("../../workspace/store")
 const { SessionMetaRoutes } = await import("./meta-routes")

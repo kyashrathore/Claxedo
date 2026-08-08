@@ -14,7 +14,7 @@ process.env.CLAXEDO_DATA_DIR = root
 const { localDocumentsBackend } = await import("../../deployments/local/server")
 const { managedDocumentRelativePath } = await import("../../documents/backends/local/managed")
 const { ensureWorkspace } = await import("../../workspace/store")
-const { ClaxedoDB } = await import("../../platform/db/db")
+const { ClaxedoDB } = await import("../../platform/db")
 
 afterAll(async () => {
   ClaxedoDB.close()

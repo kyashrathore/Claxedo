@@ -12,7 +12,7 @@ import {
   type IntegrationCapability,
 } from "@claxedo/connections"
 import type { ControlPlaneCredentials } from "../authority/services"
-import { ClaxedoDB } from "../platform/db/db"
+import { ClaxedoDB } from "../platform/db"
 import { ClaxedoConnectionTable } from "./connection.sql"
 
 export function createCredentialStoreAdapter(credentials: ControlPlaneCredentials): CredentialStorePort {

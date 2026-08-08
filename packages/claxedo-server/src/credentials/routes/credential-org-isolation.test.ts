@@ -35,7 +35,7 @@ const { createTestBackend, setBackendOverride } = await import("../backend-regis
 const registry = await import("../registry")
 const { defaultControlPlaneCredentials } = await import("../../authority/services")
 const { CredentialRoutes } = await import("./credential")
-const { ClaxedoDB } = await import("../../platform/db/db")
+const { ClaxedoDB } = await import("../../platform/db")
 const { SINGLE_TENANT_ORG } = await import("../provider-credential.sql")
 
 const ORG_A = "org_a"
