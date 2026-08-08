@@ -147,6 +147,11 @@ if (fs.existsSync(serverSource) && outputIsStale(serverEntry, [
   path.resolve(SCRIPT_DIR, "bundle-claxedo-server.ts"),
   serverSource,
   path.resolve(CLAXEDO_SERVER_DIR, "src"),
+  // The two packages `claxedo-server` was split into. Without them, editing
+  // either leaves this bundle looking current and the desktop runs stale code
+  // with nothing said.
+  path.resolve(PACKAGE_DIR, "../claxedo-server-core/src"),
+  path.resolve(PACKAGE_DIR, "../claxedo-local-server/src"),
   path.resolve(PACKAGE_DIR, "../agent-event-runtime/src"),
   path.resolve(PACKAGE_DIR, "../agent-sdk-runtime/src"),
   path.resolve(PACKAGE_DIR, "../sdk-next/src"),

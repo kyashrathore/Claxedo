@@ -32,6 +32,18 @@ export function configureWorkspaceStore(options: { sandboxLease?: WorkspaceSandb
   sandboxLeaseReader = options.sandboxLease
 }
 
+/**
+ * Whether a composition installed a lease reader.
+ *
+ * Exposed so the install is checkable. Without a reader, a cloud workspace in
+ * `acquiring_sandbox` never becomes visible — nothing else moves that status —
+ * so a dropped install hides every provisioned cloud workspace and its whole
+ * project, silently.
+ */
+export function workspaceSandboxLeaseInstalled() {
+  return sandboxLeaseReader !== undefined
+}
+
 export type Workspace = {
   id: string
   org_id?: string

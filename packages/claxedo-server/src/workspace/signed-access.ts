@@ -1,4 +1,5 @@
-import { workspaceSupervisor } from "@claxedo/server-core/workspace/supervisor-port"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import { workspaceSupervisor, workspaceSupervisorInstalled } from "@claxedo/server-core/workspace/supervisor-port"
 import { localWorkspaceRuntime, localWorkspaceRuntimeInstalled } from "@claxedo/server-core/workspace/local-runtime-port"
 import { workspaceAgentExtensionRecords } from "@claxedo/server-core/hosts/agent-extensions/workspace"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
@@ -8,6 +9,9 @@ import type { ControlPlaneServices } from "../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { rec, txt } from "./route-support"
 import { controlPlaneRateLimitError } from "./runtime-token-guards"
+
+const log = Log.create({ service: "signed-workspace-access" })
+
 export function signedWorkspaceJson(result: unknown, workspaceId: string) {
   const workspace = rec(rec(result)?.workspace)
   const resolvedWorkspaceId = txt(workspace?.workspace_id) ?? txt(workspace?.workspaceId) ?? workspaceId
@@ -108,6 +112,25 @@ export async function syncWorkspaceAgentExtensionsForSignedUser(
   // mechanism: such an edge is invisible to tsc, to import rewriters, and to
   // every import-graph gate, and a move of this file had to update them by
   // hand. Ports keep the Worker clean and stay visible.
+  // Both must actually run. This function only executes on a composition that
+  // has a supervisor AND an embedded runtime, so a missing one is a broken
+  // composition, not a mode. The dynamic imports this replaced failed loudly in
+  // that case; a silently-skipped sync would leave a workspace's Agent
+  // Extensions stale with nothing said, which is the failure class the ports
+  // exist to prevent rather than to introduce.
+  // The supervisor is required: it is what syncs a CLOUD workspace's runtime,
+  // and this path only runs for a composition that provisions them. A silently
+  // skipped sync there would leave a workspace's Agent Extensions stale with
+  // nothing said — the failure class these ports exist to prevent, not cause.
+  if (!workspaceSupervisorInstalled()) {
+    throw new Error("signed workspace Agent Extension sync requires a configured workspace supervisor")
+  }
+  // The embedded local runtime is genuinely optional — a hosted composition has
+  // none. Skipping is correct there, but it is logged rather than silent so an
+  // absent local sync on a desktop is visible.
+  if (!localWorkspaceRuntimeInstalled()) {
+    log.info("no local workspace runtime configured; syncing agent extensions to the supervisor only", { workspaceId })
+  }
   await Promise.all([
     workspaceSupervisor().syncAgentExtensions(workspaceId, records, { policyOverrides: overrides }),
     localWorkspaceRuntimeInstalled()

@@ -52,3 +52,21 @@ describe("workspace supervisor port", () => {
     expect(port.workspaceSupervisorInstalled()).toBe(true)
   })
 })
+
+describe("workspace store lease reader", () => {
+  it("is installed by the supervisor composition, or cloud workspaces vanish", async () => {
+    // `visible()` in the workspace store hides a cloud workspace in
+    // `acquiring_sandbox` until its lease reports ready, and the lease reader is
+    // the ONLY thing that flips it — nothing else moves that status. Dropping
+    // this install does not degrade gracefully: every successfully provisioned
+    // cloud workspace, and its whole project, stays permanently invisible.
+    vi.resetModules()
+    const store = await import("@claxedo/server-core/workspace/store/index")
+    expect(store.workspaceSandboxLeaseInstalled()).toBe(false)
+
+    const supervisor = await import("./supervisor")
+    supervisor.configureWorkspaceSupervisor({ server_url: "http://127.0.0.1:3001" })
+
+    expect(store.workspaceSandboxLeaseInstalled()).toBe(true)
+  })
+})

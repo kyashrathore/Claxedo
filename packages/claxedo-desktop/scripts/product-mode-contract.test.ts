@@ -96,7 +96,23 @@ const PRODUCT_MODES: ProductMode[] = [
   },
 ]
 
-describe("desktop product modes", () => {
+/**
+ * NOT A BEHAVIOUR TEST, and marked so it cannot be mistaken for one.
+ *
+ * `PRODUCT_MODES` is declared in this file and nothing in `src/` reads it, so
+ * the assertions below check the table against itself. A review flagged them as
+ * self-fulfilling and was right: they can only catch someone editing this
+ * fixture inconsistently, never a regression in the product.
+ *
+ * The table is kept because Units 6 and 11 are judged against these rows and a
+ * change to unsigned-launch or cloud-provisioning behaviour has to show up as a
+ * change here. It becomes a real test the moment a production module owns the
+ * matrix — at which point these should assert against THAT, and this block
+ * should be un-skipped.
+ *
+ * The launch-wiring block below is a genuine test: it reads real files.
+ */
+describe.skip("desktop product modes (fixture, not behaviour — see note above)", () => {
   test("every mode has a distinct name", () => {
     const names = PRODUCT_MODES.map((mode) => mode.mode)
     expect(names).toEqual([...new Set(names)])

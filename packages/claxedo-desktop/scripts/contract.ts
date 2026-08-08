@@ -130,6 +130,11 @@ export function spec(root = ROOT): Spec {
     "../claxedo-app/src",
     "../claxedo-server/package.json",
     "../claxedo-server/src",
+    // Both halves of the split; the bundled server entry reaches them.
+    "../claxedo-server-core/package.json",
+    "../claxedo-server-core/src",
+    "../claxedo-local-server/package.json",
+    "../claxedo-local-server/src",
     "../opencode/package.json",
     "../opencode/src",
     "../sdk/js/package.json",

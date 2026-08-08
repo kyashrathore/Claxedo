@@ -131,42 +131,17 @@ describe("workspace runtime route contributions", () => {
     expect(disposals).toEqual(["explodes", "clean"])
   })
 
-  test("merges session tool groups so one contribution cannot erase another's tools", async () => {
-    // The reason `registerSessionTools` takes a group name at all. Two
-    // contributions registering for the same session must both survive.
-    const registrations: Array<{ sessionId: string; tools: string[] }> = []
-    const groups = new Map<string, Map<string, string[]>>()
-
-    const runtime: WorkspaceRuntimeRouteContext = {
-      workspaceId: "ws_1",
-      registerSessionTools: (group) => async (registration) => {
-        const bySession = groups.get(registration.sessionId) ?? new Map<string, string[]>()
-        bySession.set(group, registration.tools.map((tool) => tool.name))
-        groups.set(registration.sessionId, bySession)
-        registrations.push({
-          sessionId: registration.sessionId,
-          tools: [...bySession.values()].flat().toSorted(),
-        })
-      },
-      unregisterSessionTools: (group) => async (sessionId) => {
-        groups.get(sessionId)?.delete(group)
-      },
-    }
-
-    await runtime.registerSessionTools("connections")({
-      sessionId: "ses_1",
-      callbackUrl: "http://127.0.0.1:1/callback",
-      tools: [{ name: "connections.list", description: "", inputSchema: {} }],
-    })
-    await runtime.registerSessionTools("run")({
-      sessionId: "ses_1",
-      callbackUrl: "http://127.0.0.1:1/callback",
-      tools: [{ name: "run.report", description: "", inputSchema: {} }],
-    })
-
-    expect(registrations.at(-1)).toEqual({
-      sessionId: "ses_1",
-      tools: ["connections.list", "run.report"],
-    })
-  })
+  // NOT COVERED HERE, deliberately: session-tool group MERGING.
+  //
+  // A test of it lived here and was worthless — it built its own
+  // `registerSessionTools` implementation inline and asserted on that fixture's
+  // own bookkeeping, so breaking the real merge in `server.ts` left it green
+  // (mutation-proven). `mountRouteContributions` only forwards whatever context
+  // it is handed, so there is nothing about merging for a test at THIS layer to
+  // check, and it was removed rather than rewritten.
+  //
+  // Covering it properly needs an observation point that does not exist yet:
+  // `createWorkspaceRuntimeApp` returns `host: { ...host, dispose }` — a COPY —
+  // so a test cannot intercept what `registerSessionToolGroup` actually calls.
+  // The fix is an injectable host on that factory, not another fixture.
 })
