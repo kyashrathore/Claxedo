@@ -21,7 +21,7 @@ import {
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "../platform/auth/auth"
-import { dataDir } from "../platform/runtime/lib/paths"
+import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import {
   AgentExtensionConflictError,
   installGitHubAgentExtension,

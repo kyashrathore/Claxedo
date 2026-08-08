@@ -15,7 +15,7 @@
 import { describe, expect, test, beforeAll, beforeEach, afterEach, vi } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import type { SandboxHoldRow, SandboxLeaseRow } from "@claxedo/sandbox-manager/lease-types"
-import { claxedoBus, type ClaxedoEvent } from "../../platform/runtime/lib/bus"
+import { claxedoBus, type ClaxedoEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 
 let driverId = "daytona"
 const previousRelayHostPublicKey = process.env.CLAXEDO_RELAY_HOST_PUBLIC_KEY_JWK

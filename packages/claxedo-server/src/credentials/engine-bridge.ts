@@ -49,8 +49,8 @@
 import fs from "node:fs"
 import path from "node:path"
 import { OPENCODE_INTERNAL_BASE, opencodeRequest } from "../opencode/engine"
-import { dataDir } from "../platform/runtime/lib/paths"
-import { Log } from "../platform/runtime/lib/log"
+import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { listCredentials, resolveSecret, SINGLE_TENANT_ORG, type CredentialOrgScope } from "./registry"
 import type { CredentialMetadata } from "./types"
 

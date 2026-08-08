@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { convexTest } from "convex-test"
-import type { ClaxedoEvent } from "../../platform/runtime/lib/bus"
+import type { ClaxedoEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import type { LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
 import type { WorkspaceAuthority } from "../../platform/auth/authority"
 import { hostedOrgCredentials } from "../../credentials/worker/index"

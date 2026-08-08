@@ -379,7 +379,7 @@ describe("self-hosted product behaviour", () => {
   })
 
   test("keeps its data root in the product data directory, not the package directory", async () => {
-    const { dataDir: resolveDataDir, stateDir } = await import("../../platform/runtime/lib/paths")
+    const { dataDir: resolveDataDir, stateDir } = await import("@claxedo/server-core/platform/runtime/lib/paths")
     expect(resolveDataDir()).toBe(dataDir)
     expect(stateDir()).toContain(dataDir)
   })

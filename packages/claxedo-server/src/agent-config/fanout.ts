@@ -8,7 +8,7 @@
 import { workspaceSupervisor } from "../workspace/supervisor-port"
 import { syncEmbeddedWorkspaceRuntimes } from "../deployments/local/embedded-workspace-runtime"
 import { syncOpencodeMcpConfig } from "../opencode/mcp-sync"
-import { Log } from "../platform/runtime/lib/log"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 
 const log = Log.create({ service: "config-fanout" })
 

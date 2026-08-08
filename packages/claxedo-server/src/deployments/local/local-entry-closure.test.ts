@@ -14,8 +14,8 @@ const LOCAL_ENTRY = path.join(ROOT, "src/deployments/local/main.ts")
  * hosted surface to the unsigned desktop and must be justified; a change that
  * lowers them is progress and should lower the ceiling with it.
  */
-const CURRENT_MODULE_CEILING = 254
-const CURRENT_PACKAGE_CEILING = 41
+const CURRENT_MODULE_CEILING = 249
+const CURRENT_PACKAGE_CEILING = 42
 
 /**
  * The producers a local-only composition mounts: one per `local-server`-owned
@@ -53,6 +53,13 @@ describe("desktop-local entry closure", () => {
     // Ratcheted on the EXECUTABLE closure. The declared closure counts type-only
     // edges, which cost a build nothing, so ratcheting it would punish adding a
     // type import and reward nothing for cutting one.
+    //
+    // The package ceiling rose by one when `@claxedo/server-core` was extracted,
+    // and that is the shape every extraction has: the walk stops at package
+    // boundaries, so N first-party modules leave the module count and one
+    // package name enters. Read the two numbers together — a rising package
+    // count with a falling module count is a boundary being drawn, not surface
+    // being added.
     const closure = localClosure({ runtimeOnly: true })
     expect(closure.modules.length).toBeLessThanOrEqual(CURRENT_MODULE_CEILING)
     expect(closure.packages.length).toBeLessThanOrEqual(CURRENT_PACKAGE_CEILING)
@@ -146,7 +153,7 @@ describe("desktop-local entry closure", () => {
       }
     }
 
-    expect(reached.size).toBeLessThanOrEqual(110)
+    expect(reached.size).toBeLessThanOrEqual(105)
     expect([...reached].filter((module) => /^src\/(connections|channels|documents|authority\/adapters\/convex|sandbox\/stores|sandbox\/routes|hosts\/workgraph)\//.test(module)))
       .toEqual([])
   })

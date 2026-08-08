@@ -39,7 +39,7 @@ import {
   reconnectDelayMs,
 } from "../providers/claxedo-events-reconnect"
 
-// ─── Event Types (must match claxedo-server/src/platform/runtime/lib/bus.ts) ───────────────────
+// ─── Event Types (must match claxedo-server-core/src/platform/runtime/lib/bus.ts) ─────────────
 
 export type PtyInfo = {
   id: string

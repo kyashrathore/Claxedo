@@ -15,7 +15,7 @@ import { createConvexAuthority } from "../../../authority/adapters/convex/worksp
 import type { WorkspaceAuthority } from "../../../platform/auth/authority"
 import { createHostedWorkGraph } from "./index"
 import type { SettlementDispatcher } from "../settlement-dispatcher"
-import type { ClaxedoEvent } from "../../../platform/runtime/lib/bus"
+import type { ClaxedoEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import type { LiveSyncRoomNamespace } from "../../../deployments/hosted-workerd/live-sync-room.cf"
 
 afterEach(() => vi.unstubAllEnvs())

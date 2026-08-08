@@ -42,7 +42,7 @@ import {
   opencodeRequest,
 } from "../../opencode/engine"
 import { createOpencodeEvents, type OpencodeEvent, type OpencodeEventsHandle } from "../../opencode/events"
-import { claxedoBus, globalBus } from "../../platform/runtime/lib/bus"
+import { claxedoBus, globalBus } from "@claxedo/server-core/platform/runtime/lib/bus"
 import {
   configureWorkspaceSupervisor,
   createWorkspaceSupervisorSandboxManager,
@@ -115,7 +115,7 @@ import {
 } from "../../hosts/workgraph/composition/server-workgraph"
 import { mountLocalOnlyUsageLimits } from "./server-usage-limits"
 import { centralModelBackend } from "../../session/runtime"
-import { dataDir } from "../../platform/runtime/lib/paths"
+import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { withDataDirOwnership } from "../../platform/runtime/lib/data-dir-owner"
 import { createLocalDocumentsBackend } from "../../documents/backends/local/backend"
 import { setDocumentChangedSink } from "../../documents/backend"

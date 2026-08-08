@@ -33,7 +33,7 @@
  *      (`materializers/mcp.ts`'s `mcpTargetPath` + `materializeStandaloneMcp`).
  *   3. `dataRoot` (`installed.json`/`lock.json`/`materialized.json`'s
  *      location) is `<CLAXEDO_DATA_DIR>/agent-extensions`
- *      (`packages/claxedo-server/src/platform/runtime/lib/paths.ts`'s `dataDir()`); `homeDir`
+ *      (`packages/claxedo-server-core/src/platform/runtime/lib/paths.ts`'s `dataDir()`); `homeDir`
  *      (where machine-scope target files land — `~/.claude/skills`,
  *      `~/.claude.json`, `~/.cursor/mcp.json`, `~/.codex/config.toml`,
  *      `~/.config/opencode/opencode.jsonc`) is `os.homedir()` at request time

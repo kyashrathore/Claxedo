@@ -23,7 +23,7 @@ import {
   type Workspace,
 } from "../../workspace/store"
 import { discardSupervisorSandbox, getSupervisorSandboxStatus } from "../../workspace/supervisor"
-import { Log } from "../../platform/runtime/lib/log"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { ControlPlaneAuthError, bearerToken, controlPlaneAuthErrorBody } from "../../platform/auth/auth"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { newWorkspaceId } from "../../platform/auth/workspace-id"

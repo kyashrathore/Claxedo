@@ -317,6 +317,7 @@
         "@claxedo/connections": "0.4.0",
         "@claxedo/mcp": "workspace:0.4.0",
         "@claxedo/sandbox-manager": "workspace:0.7.0",
+        "@claxedo/server-core": "workspace:*",
         "@claxedo/wakes": "workspace:0.3.0",
         "@claxedo/workgraph": "0.4.0",
         "@claxedo/workspace-relay": "workspace:0.7.0",
@@ -357,6 +358,19 @@
         "typescript": "catalog:",
         "vitest": "2.1.9",
         "wrangler": "4.114.0",
+      },
+    },
+    "packages/claxedo-server-core": {
+      "name": "@claxedo/server-core",
+      "version": "0.1.0",
+      "dependencies": {
+        "@claxedo/workspace-runtime": "workspace:*",
+      },
+      "devDependencies": {
+        "@tsconfig/node-lts": "22.0.4",
+        "@types/bun": "1.3.13",
+        "typescript": "catalog:",
+        "vitest": "2.1.9",
       },
     },
     "packages/claxedo-web": {
@@ -1001,7 +1015,7 @@
       "name": "@claxedo/workgraph",
       "version": "0.4.0",
       "dependencies": {
-        "@claxedo/workspace-runtime": "workspace:0.7.0",
+        "@claxedo/workspace-runtime": "0.7.0",
         "@hono/node-server": "1.19.11",
         "@noble/hashes": "2.2.0",
         "better-sqlite3": "13.0.1",
@@ -1605,6 +1619,8 @@
     "@claxedo/sandbox-manager": ["@claxedo/sandbox-manager@workspace:packages/sandbox-manager"],
 
     "@claxedo/server": ["@claxedo/server@workspace:packages/claxedo-server"],
+
+    "@claxedo/server-core": ["@claxedo/server-core@workspace:packages/claxedo-server-core"],
 
     "@claxedo/wakes": ["@claxedo/wakes@workspace:packages/wakes"],
 

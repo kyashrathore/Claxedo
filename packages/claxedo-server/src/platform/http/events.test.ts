@@ -7,7 +7,7 @@ import {
   type ControlPlaneAuthConfig,
   type ControlPlaneAuthContext,
 } from "../auth/auth"
-import { claxedoBus, createBus, type ClaxedoEvent } from "../runtime/lib/bus"
+import { claxedoBus, createBus, type ClaxedoEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 
 // /api/claxedo/events must reject unauthenticated requests when
 // signed cloud auth is enabled, and must remain a pass-through when running

@@ -10,7 +10,7 @@ import fs from "fs"
 import path from "path"
 import { randomBytes, createCipheriv, createDecipheriv, createHash } from "crypto"
 import type { SecretBackend } from "../types"
-import { dataDir } from "../../platform/runtime/lib/paths"
+import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 
 const ALGORITHM = "aes-256-gcm"
 const IV_LEN = 12

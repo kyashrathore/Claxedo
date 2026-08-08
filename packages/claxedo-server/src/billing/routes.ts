@@ -22,7 +22,7 @@
  * → 401 and the state is never applied.
  */
 
-import { cleanString as clean } from "../platform/runtime/lib/strings"
+import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
 import { Hono } from "hono"
 import { z } from "zod"
 import { Polar } from "@polar-sh/sdk"

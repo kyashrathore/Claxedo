@@ -297,7 +297,7 @@ describe("desktop-local product contract", () => {
     // K7: a package move must not relocate durable state. The data root is
     // taken from the product/user directory, so the same env var still selects
     // the same profile after `deployments/local` becomes `@claxedo/local-server`.
-    const { dataDir: resolveDataDir } = await import("../../platform/runtime/lib/paths")
+    const { dataDir: resolveDataDir } = await import("@claxedo/server-core/platform/runtime/lib/paths")
     expect(resolveDataDir()).toBe(dataDir)
   })
 })

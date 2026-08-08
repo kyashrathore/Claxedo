@@ -13,7 +13,7 @@
  */
 
 import type { SecretBackend } from "../types"
-import { Log } from "../../platform/runtime/lib/log"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import {
   encryptedSecretBackend,
   envelopeKeyProviderFromEnv,

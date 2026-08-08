@@ -14,7 +14,7 @@ import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runti
 import { agentExtensionStateRoot } from "@claxedo/agent-extensions"
 import { opencodeRequest as defaultOpencodeRequest, type OpenCodeRequestFn } from "../../opencode/engine"
 import type { WorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
-import { dataDir } from "../../platform/runtime/lib/paths"
+import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import type { Workspace } from "../../workspace/store"
 import type { WorkspaceAgentExtensionRecord } from "../../hosts/agent-extensions/workspace"
 import type { AgentExtensionPolicyOverride } from "../../hosts/agent-extensions/runtime-config"

@@ -23,7 +23,7 @@ const prevPartition = process.env.CLAXEDO_CREDENTIALS_ORG_ID
 process.env.CLAXEDO_DATA_DIR = root
 delete process.env.CLAXEDO_CREDENTIALS_ORG_ID
 
-const { dataDir } = await import("../../platform/runtime/lib/paths")
+const { dataDir } = await import("@claxedo/server-core/platform/runtime/lib/paths")
 const { setBackendOverride } = await import("../backend-registry")
 const { putCredential, listCredentials, deleteCredential } = await import("../registry")
 const { createStaticKeyProvider, encryptedSecretBackend, envelopeKeyId } = await import("../envelope")

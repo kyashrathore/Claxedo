@@ -1,4 +1,4 @@
-import { dataDir } from "../../platform/runtime/lib/paths"
+import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 
 /**
  * Default `dataRoot` to the server's data dir.

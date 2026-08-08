@@ -1,4 +1,4 @@
-import { claxedoBus, globalBus, type ClaxedoEvent, type GlobalEvent } from "./bus"
+import { claxedoBus, globalBus, type ClaxedoEvent, type GlobalEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 
 type Event =
   Extract<ClaxedoEvent, { type: "process.started" }>

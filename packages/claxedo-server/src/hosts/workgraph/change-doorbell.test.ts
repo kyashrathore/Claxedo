@@ -5,7 +5,7 @@ import Database from "better-sqlite3"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { WorkspaceExecutionPort } from "@claxedo/workgraph"
 import { createLocalEmbeddedWorkGraph } from "./composition/server-workgraph"
-import type { WorkgraphChangedEvent } from "../../platform/runtime/lib/bus"
+import type { WorkgraphChangedEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { createWorkGraphChangeDoorbell, createWorkGraphChangeTipWatcher } from "./change-doorbell"
 
 const databases: Database.Database[] = []

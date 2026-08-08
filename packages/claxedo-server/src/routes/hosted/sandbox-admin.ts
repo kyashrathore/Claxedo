@@ -1,4 +1,4 @@
-import { cleanString as clean } from "../../platform/runtime/lib/strings"
+import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
 import { Hono } from "hono"
 import { errorBody } from "../../platform/http/http"
 import type { ControlPlaneTelemetry } from "../../authority/services"

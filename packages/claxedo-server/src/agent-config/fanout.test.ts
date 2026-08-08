@@ -17,7 +17,7 @@ vi.mock("../opencode/mcp-sync", () => ({
   syncOpencodeMcpConfig: mocks.syncOpencodeMcpConfig,
 }))
 
-vi.mock("../platform/runtime/lib/log", () => ({
+vi.mock("@claxedo/server-core/platform/runtime/lib/log", () => ({
   Log: {
     create: () => mocks.log,
   },

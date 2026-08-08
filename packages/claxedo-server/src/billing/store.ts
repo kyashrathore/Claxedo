@@ -9,7 +9,7 @@
  * Worker-safe: ConvexHttpClient is fetch-based; no node:* imports.
  */
 
-import { cleanString as clean } from "../platform/runtime/lib/strings"
+import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
 import { ConvexHttpClient } from "convex/browser"
 import { anyApi, type FunctionReference } from "convex/server"
 import { controlPlaneTimeoutMs, withTimeout } from "../authority/adapters/convex/timeout"

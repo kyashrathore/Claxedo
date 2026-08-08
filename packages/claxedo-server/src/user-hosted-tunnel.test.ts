@@ -75,7 +75,7 @@ vi.mock("./workspace/store", () => ({
   getWorkspace: mocks.getWorkspace,
 }))
 
-vi.mock("./platform/runtime/lib/log", () => ({
+vi.mock("@claxedo/server-core/platform/runtime/lib/log", () => ({
   Log: {
     create: () => mocks.log,
   },

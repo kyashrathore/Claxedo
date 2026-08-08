@@ -10,7 +10,7 @@ import { eq } from "drizzle-orm"
 import { ClaxedoDB } from "../../platform/db/db"
 import { ClaxedoNetworkPolicyTable } from "./policy.sql"
 import { CONTROL_PLANE_HOSTS, DEFAULT_ALLOWLIST, PROVIDER_TO_GROUP, flattenDefaultAllowlist, type NetworkPolicyEntry, type PolicyConstraints, type PolicyKind, type PolicyWrite } from "./types"
-import { Log } from "../../platform/runtime/lib/log"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 
 const log = Log.create({ service: "network-policy" })
 

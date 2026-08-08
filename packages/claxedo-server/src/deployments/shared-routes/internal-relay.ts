@@ -1,4 +1,4 @@
-import { cleanString as clean } from "../../platform/runtime/lib/strings"
+import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
 import { Hono, type Context } from "hono"
 import { isLoopbackLocalRequest } from "../../platform/http/peer-address"
 import { errorBody } from "../../platform/http/http"

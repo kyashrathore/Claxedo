@@ -42,7 +42,7 @@ import {
   type EnvelopeRotationEntry,
   type EnvelopeRotationReport,
 } from "./rotate"
-import { Log } from "../../platform/runtime/lib/log"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 
 const log = Log.create({ service: "credentials-rotate-local" })
 

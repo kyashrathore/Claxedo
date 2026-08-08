@@ -1,4 +1,4 @@
-import type { DocumentChangedEvent } from "../platform/runtime/lib/bus"
+import type { DocumentChangedEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import type { SignedControlPlaneAuth } from "../platform/auth/auth"
 import type { DocumentIndexEntry, DocumentIndexScope } from "./index-store"
 import type {

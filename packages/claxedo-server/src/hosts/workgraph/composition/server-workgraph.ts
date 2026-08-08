@@ -32,7 +32,7 @@ import {
   instrumentAttentionDoorbell,
   instrumentWorkGraphChangeDoorbell,
 } from "../change-doorbell"
-import { claxedoBus, type WorkgraphChangedEvent } from "../../../platform/runtime/lib/bus"
+import { claxedoBus, type WorkgraphChangedEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { createLocalWorkGraphMasterRuntime } from "../local/master-runtime"
 
 export type LocalWorkGraphAuthOptions = Readonly<{

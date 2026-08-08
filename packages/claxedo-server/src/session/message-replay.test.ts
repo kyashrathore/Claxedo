@@ -34,7 +34,7 @@ const [
 ] = await Promise.all([
   import("./message-replay"),
   import("../platform/db/db"),
-  import("../platform/runtime/lib/bus"),
+  import("@claxedo/server-core/platform/runtime/lib/bus"),
   import("./cloud.sql"),
   import("./meta.sql"),
 ])

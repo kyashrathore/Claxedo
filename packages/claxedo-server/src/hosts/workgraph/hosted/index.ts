@@ -57,7 +57,7 @@ import {
   type SettlementTenant,
 } from "../settlement-dispatcher"
 import { liveSyncRoomNameForPrincipal, nudgeLiveSyncRoom, type LiveSyncRoomNamespace } from "../../../platform/http/live-sync-publish"
-import type { WorkgraphChangedEvent } from "../../../platform/runtime/lib/bus"
+import type { WorkgraphChangedEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 
 // Command types whose successful application enqueues a control-effect outbox
 // row (interrupt_run / finalize_stream / cleanup_stream). These get an

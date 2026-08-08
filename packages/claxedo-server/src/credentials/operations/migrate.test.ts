@@ -21,9 +21,9 @@ vi.mock("../../agent-config", () => ({
 }))
 vi.mock("../registry", () => ({ putCredential: mocks.putCredential }))
 vi.mock("../backend-registry", () => ({ getBackend: () => ({ probe: async () => true }) }))
-vi.mock("../../platform/runtime/lib/paths", () => ({ dataDir: () => "/tmp/claxedo-migrate-test" }))
+vi.mock("@claxedo/server-core/platform/runtime/lib/paths", () => ({ dataDir: () => "/tmp/claxedo-migrate-test" }))
 vi.mock("../../sandbox/network/policy", () => ({ syncMcpHosts: vi.fn() }))
-vi.mock("../../platform/runtime/lib/log", () => ({
+vi.mock("@claxedo/server-core/platform/runtime/lib/log", () => ({
   Log: {
     create: () => ({
       info: vi.fn(),

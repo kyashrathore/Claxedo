@@ -40,7 +40,7 @@ const { Hono } = await import("hono")
 const { contains, gitRun, locate, trees } = await import("./git")
 const { OpenCodeCompatRoutes } = await import("./index")
 const { ensureWorkspace } = await import("../../workspace/store")
-const { dataDir } = await import("../../platform/runtime/lib/paths")
+const { dataDir } = await import("@claxedo/server-core/platform/runtime/lib/paths")
 const { unsignedLocalRequestGuard } = await import("../../authority/deployment-mode")
 
 const app = new Hono()

@@ -1,4 +1,4 @@
-import type { ClaxedoEvent } from "../runtime/lib/bus"
+import type { ClaxedoEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 
 /**
  * The PUBLISHER half of live-sync: naming a room and nudging it.

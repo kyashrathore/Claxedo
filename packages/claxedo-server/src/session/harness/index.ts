@@ -6,7 +6,7 @@ import {
   type SessionHarness as AgentSessionHarness,
   normalizeHarnessIdentity,
 } from "@claxedo/agent-sdk-runtime"
-import { dataDir } from "../../platform/runtime/lib/paths"
+import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { defaultHarness, type UserAgentConfig } from "../../agent-config"
 
 export type SessionHarness = NonNullable<UserAgentConfig["harness"]>

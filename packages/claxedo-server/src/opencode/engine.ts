@@ -29,7 +29,7 @@ import {
   type EmbeddedHost,
   type EmbeddedModule,
 } from "@opencode-ai/sdk-next/embedded"
-import { dataDir } from "../platform/runtime/lib/paths"
+import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { opencodeHeaders } from "./auth"
 
 // Re-export so host modules that must NOT depend on @claxedo/agent-sdk-runtime

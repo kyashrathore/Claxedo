@@ -4,8 +4,8 @@ import { randomUUID } from "crypto"
 import { realpathSync } from "node:fs"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
-import { dataDir } from "../../platform/runtime/lib/paths"
-import { Log } from "../../platform/runtime/lib/log"
+import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { dockerSandboxDriverEnabled, type SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
 
 const execFileAsync = promisify(execFile)
