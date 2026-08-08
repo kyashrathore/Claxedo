@@ -34,6 +34,7 @@ export type RailSidebarShellProps = {
   onRailLockChange: (locked: boolean) => void
   onRemoveProject?: (project: ProjectItem) => void
   onSettings?: () => void
+  onUsage?: () => void
   onSidebarMouseLeave: () => void
   onSidebarResize: (width: number) => void
   onSidebarResizeEnd: () => void
@@ -186,6 +187,10 @@ export function RailSidebarShell(props: RailSidebarShellProps) {
             }}
             onSettings={() => {
               props.onSettings?.()
+              props.closeMobileSidebar()
+            }}
+            onUsage={() => {
+              props.onUsage?.()
               props.closeMobileSidebar()
             }}
             onHelp={() => {

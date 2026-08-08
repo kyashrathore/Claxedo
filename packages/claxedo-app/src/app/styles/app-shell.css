@@ -230,6 +230,12 @@ body:has([data-slot="dialog-content"].command-palette-dialog)
 /* --bp-md complement (767 = below BP_MD) — diagnostics dialog full-viewport.
    Declared after the shared box so the equal-specificity narrow override wins. */
 @media (max-width: 767px) {
+  [data-component="dialog"]:has(> [data-slot="dialog-container"] > .usage-dialog-shell)
+    > [data-slot="dialog-container"] {
+    width: 100vw;
+    height: 100dvh;
+  }
+
   [data-component="dialog"]:has(> [data-slot="dialog-container"] > .claxedo-diagnostics-dialog)
     > [data-slot="dialog-container"] {
     width: 100vw;

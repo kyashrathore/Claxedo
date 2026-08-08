@@ -7,6 +7,7 @@ export const usageQueryKey = (input: UsageRequest) => [
   input.until,
   input.timeZone,
   input.group ?? "harness",
+  input.refreshNonce ?? 0,
 ] as const
 
 export function unifiedUsageQuery(input: UsageRequest) {

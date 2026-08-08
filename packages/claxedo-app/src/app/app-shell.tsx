@@ -105,6 +105,7 @@ function ClaxedoAppShellContent(props: ParentProps) {
     handleSessionSelect,
     handleNewProject,
     handleSettings,
+    handleUsage,
     handleHelp,
     handleNewSession,
     handleDeleteSession,
@@ -137,6 +138,7 @@ function ClaxedoAppShellContent(props: ParentProps) {
         onSessionSelect={handleSessionSelect}
         onNewProject={handleNewProject}
         onSettings={handleSettings}
+        onUsage={handleUsage}
         onHelp={handleHelp}
         onOpenMarketplace={handleOpenMarketplace}
         onOpenWorkGraph={handleOpenWorkGraph}

@@ -14,6 +14,7 @@ export type RailAccountMenuProps = {
   onHelp?: () => void
   onRailLockChange: (locked: boolean) => void
   onSettings?: () => void
+  onUsage?: () => void
   utilities?: () => JSX.Element
 }
 
@@ -226,6 +227,10 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
                 <DropdownMenu.ItemLabel>Diagnostics</DropdownMenu.ItemLabel>
               </DropdownMenu.Item>
             </Show>
+            <DropdownMenu.Item onSelect={() => select(props.onUsage)}>
+              <Icon name="gauge" size="small" />
+              <DropdownMenu.ItemLabel>Usage</DropdownMenu.ItemLabel>
+            </DropdownMenu.Item>
             <DropdownMenu.Item onSelect={() => select(props.onSettings)}>
               <Icon name="settings-gear" size="small" />
               <DropdownMenu.ItemLabel>{language.t("sidebar.settings")}</DropdownMenu.ItemLabel>

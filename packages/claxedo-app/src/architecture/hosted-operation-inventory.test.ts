@@ -51,8 +51,6 @@ const HOSTED_CANDIDATE_ROOTS = [
 const LOCAL_AUTHENTICATED_MODULES: Record<string, string> = {
   "app/routes/directory-layout.tsx":
     "Local route shell. Unit 9 replaces its authFetch use with the injected local transport; it never calls Hosted Server.",
-  "features/settings/data/usage-limits-api.ts":
-    "Reads provider usage limits from the LOCAL server. Unit 5 keeps it on local-server; it is not a hosted operation.",
   "features/workspaces/ui/panel/workspace-panel.tsx":
     "Local workspace panel. Its api calls target local-server routes; hosted rows arrive through the injected port.",
 }

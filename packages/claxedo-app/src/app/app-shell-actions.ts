@@ -7,6 +7,7 @@ import { ADD_PROJECT_COMMAND_ID } from "@/features/session/ui/components/session
 import { useLanguage } from "@/platform/i18n/provider"
 import { marketplaceRoute, workGraphRoute } from "@/platform/identity/route"
 import type { AppShellState } from "./app-shell-state"
+import { DialogUsage } from "./dialogs/usage"
 
 export function useAppShellActions(input: {
   shell: AppShellState
@@ -21,6 +22,9 @@ export function useAppShellActions(input: {
   const handleOpenWorkGraph = () => {
     input.shell.state.layout.openWorkGraph()
     input.navigate(workGraphRoute())
+  }
+  const handleUsage = () => {
+    void input.shell.dialog.show(() => DialogUsage({}))
   }
 
   const actions = createClaxedoLayoutActions({
@@ -66,5 +70,6 @@ export function useAppShellActions(input: {
     ...actions,
     handleOpenMarketplace,
     handleOpenWorkGraph,
+    handleUsage,
   }
 }

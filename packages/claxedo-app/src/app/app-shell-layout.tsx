@@ -105,6 +105,7 @@ export type AppShellLayoutProps = ParentProps<{
    * Callback to open settings
    */
   onSettings?: () => void
+  onUsage?: () => void
 
   /**
    * Callback to open help
@@ -381,6 +382,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           onOpenWorkGraph={props.onOpenWorkGraph}
           onRemoveProject={props.onRemoveProject}
           onSettings={props.onSettings}
+          onUsage={props.onUsage}
           onSessionSelect={props.onSessionSelect}
           onTabSelect={props.onTabSelect}
           onWorkspaceSelect={props.onWorkspaceSelect}

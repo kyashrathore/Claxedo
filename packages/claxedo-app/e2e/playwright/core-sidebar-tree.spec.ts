@@ -856,7 +856,7 @@ test.describe("core sidebar tree @core", () => {
     await page.keyboard.press("Enter")
     await expect(trigger).toHaveAttribute("aria-expanded", "true", { timeout: MENU_FOCUS_TIMEOUT })
     await expect(page.getByRole("menuitem", { name: "View options" })).toBeVisible({ timeout: MENU_FOCUS_TIMEOUT })
-    await expect(page.getByRole("menuitem", { name: "Usage limits" })).toBeVisible({ timeout: MENU_FOCUS_TIMEOUT })
+    await expect(page.getByRole("menuitem", { name: "Usage" })).toBeVisible({ timeout: MENU_FOCUS_TIMEOUT })
     // "Diagnostics" is gated by `<Show when={usePlatform().platform === "desktop" ||
     // config?.sandboxEnabled !== true}>` (rail-account-menu.tsx) — this dev harness
     // bakes `VITE_SANDBOX_ENABLED=true` (.env.local) and runs the web platform (never
@@ -874,18 +874,11 @@ test.describe("core sidebar tree @core", () => {
     await expect(page.getByRole("menuitemradio", { name: "All" })).toHaveCount(0, { timeout: MENU_FOCUS_TIMEOUT })
     await expect(page.getByRole("menuitem", { name: "View options" })).toBeVisible({ timeout: MENU_FOCUS_TIMEOUT })
 
-    await page.getByRole("menuitem", { name: "Usage limits" }).focus()
-    await page.keyboard.press("ArrowRight")
-    const refreshUsage = page.getByRole("menuitem", { name: "Refresh usage limits" })
-    await expect(refreshUsage).toBeVisible({ timeout: MENU_FOCUS_TIMEOUT })
-    await expect(refreshUsage).toBeFocused({ timeout: MENU_FOCUS_TIMEOUT })
-
-    await page.keyboard.press("Escape")
-    await expect(refreshUsage).toHaveCount(0, { timeout: MENU_FOCUS_TIMEOUT })
-    await expect(page.getByRole("menuitem", { name: "Usage limits" })).toBeVisible({ timeout: MENU_FOCUS_TIMEOUT })
-
-    await page.keyboard.press("Escape")
+    await page.getByRole("menuitem", { name: "Usage" }).click()
+    await expect(page.getByRole("dialog", { name: "Usage" })).toBeVisible({ timeout: MENU_FOCUS_TIMEOUT })
     await expect(page.getByRole("menu")).toHaveCount(0, { timeout: MENU_FOCUS_TIMEOUT })
+    await page.keyboard.press("Escape")
+    await expect(page.getByRole("dialog", { name: "Usage" })).toHaveCount(0, { timeout: MENU_FOCUS_TIMEOUT })
     await expect(trigger).toBeFocused({ timeout: MENU_FOCUS_TIMEOUT })
     await expect(trigger).toHaveAttribute("aria-expanded", "false", { timeout: MENU_FOCUS_TIMEOUT })
   })

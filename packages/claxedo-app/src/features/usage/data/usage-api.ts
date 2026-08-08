@@ -11,19 +11,28 @@ export type UsageTotals = {
 }
 
 export type UsageSeries = { totals: UsageTotals; daily: Array<UsageTotals & { date: string }> }
+export type UsageCost = {
+  estimatedUsd: number
+  pricedTokens: number
+  unpricedTokens: number
+  catalog: { adapter: string; version: string; source: string }
+}
 
 export type UnifiedUsageResponse = {
   version: 1
   range: { since: number; until: number; timeZone: string }
   quota: { status: "available" | "unavailable" | "degraded"; snapshot?: unknown; error?: string }
-  claxedo: UsageSeries & { status: "available" | "stale" | "degraded"; scope: "local" | "cross-machine"; error?: string }
+  claxedo: UsageSeries & { cost: UsageCost; status: "available" | "stale" | "degraded"; scope: "local" | "cross-machine"; error?: string }
   externalLocal: UsageSeries & {
     status: "available" | "unavailable" | "degraded"
     coverage: Array<{ source: string; status: string; error?: string }>
     unclassified: number
+    cost: UsageCost
     error?: string
   }
   total: UsageSeries
+  totalCost: UsageCost
+  breakdown?: unknown
   sync: { attempted: number; delivered: number; conflicts: number; pending: number }
 }
 
@@ -33,6 +42,7 @@ export type UsageRequest = {
   timeZone: string
   group?: "harness" | "model" | "location" | "session" | "workspace" | "app"
   refresh?: boolean
+  refreshNonce?: number
 }
 
 export async function fetchUnifiedUsage(input: UsageRequest): Promise<UnifiedUsageResponse> {
@@ -42,7 +52,7 @@ export async function fetchUnifiedUsage(input: UsageRequest): Promise<UnifiedUsa
   target.searchParams.set("until", String(input.until))
   target.searchParams.set("timezone", input.timeZone)
   if (input.group) target.searchParams.set("group", input.group)
-  if (input.refresh) target.searchParams.set("refresh", "1")
+  if (input.refresh || input.refreshNonce) target.searchParams.set("refresh", "1")
   const response = await authFetch(String(target))
   if (!response.ok) throw new Error((await response.text()) || `Usage request failed: ${response.status}`)
   const body = await response.json() as UnifiedUsageResponse

@@ -79,6 +79,7 @@ function renderMenu(input: Partial<Parameters<typeof RailAccountMenu>[0]> = {}) 
     onHelp: vi.fn(),
     onRailLockChange: vi.fn(),
     onSettings: vi.fn(),
+    onUsage: vi.fn(),
     ...input,
   }
   render(() => <RailAccountMenu {...props} />)
@@ -215,8 +216,14 @@ describe("RailAccountMenu", () => {
     expect(screen.getByRole("menuitem", { name: "Diagnostics" })).toBeInTheDocument()
   })
 
-  test("delegates settings and help actions", async () => {
+  test("delegates direct usage, settings, and help actions", async () => {
     const props = renderMenu()
+    await openMenu()
+    selectMenuItem("Usage")
+    expect(props.onUsage).toHaveBeenCalledOnce()
+
+    cleanup()
+    renderMenu({ onSettings: props.onSettings })
     await openMenu()
     selectMenuItem("Settings")
     expect(props.onSettings).toHaveBeenCalledOnce()

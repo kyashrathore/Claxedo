@@ -41,11 +41,6 @@
       "status": "planned"
     },
     {
-      "family": "usage-limits snapshot",
-      "writer": "app/workbench/controls/usage-limits-cache.ts",
-      "status": "live"
-    },
-    {
       "family": "terminal-scoped fetch cache",
       "writer": "features/terminal/lib/terminal-scoped-cache.ts",
       "status": "live"

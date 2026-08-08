@@ -28,7 +28,6 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { usePermission } from "@/features/session/providers/permission"
 import { useOptionalTerminal } from "@/features/terminal/providers/provider"
 import { DialogEditProject } from "../../../features/workspaces/ui/dialog-edit-project"
-import { UsageLimitsPanel } from "../controls/usage-limits-popover"
 import { RailAccountMenu, RailAccountSubmenu } from "./rail-account-menu"
 import { getFilename } from "@/lib/path"
 import type { SessionInventoryRow } from "../../../features/session/data/query/types"
@@ -177,6 +176,7 @@ export type RailSidebarProps = {
   onArchiveSession?: (session: SessionItem) => boolean | Promise<boolean>
   onDiagnostics?: () => void
   onSettings?: () => void
+  onUsage?: () => void
   onHelp?: () => void
   onOpenMarketplace?: () => void
   onOpenWorkGraph?: () => void
@@ -1496,20 +1496,6 @@ export function RailSidebar(props: RailSidebarProps) {
     )
   }
 
-  const UsageLimitsMenu = () => (
-    <RailAccountSubmenu
-      icon="gauge"
-      label="Usage limits"
-      // Height and scrolling belong to the panel, not the menu shell: its head
-      // and foot stay pinned while only the provider list scrolls. No shell
-      // padding either — this panel's head/foot rules and row highlights run
-      // edge to edge, which a padded shell would inset into a floating card.
-      contentClass="z-[220] w-[19rem] p-0"
-    >
-      <UsageLimitsPanel />
-    </RailAccountSubmenu>
-  )
-
   const HeaderActions = (input: {
     project: ProjectItem
     workspaceDir: string
@@ -2642,8 +2628,9 @@ export function RailSidebar(props: RailSidebarProps) {
               onRailLockChange={handleRailMenuOpenChange}
               onDiagnostics={props.onDiagnostics}
               onSettings={props.onSettings}
+              onUsage={props.onUsage}
               onHelp={props.onHelp}
-              utilities={() => <><FilterMenu /><UsageLimitsMenu /></>}
+              utilities={() => <FilterMenu />}
             />
           </div>
         </div>
