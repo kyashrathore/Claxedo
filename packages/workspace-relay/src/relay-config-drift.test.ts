@@ -133,11 +133,11 @@ describe("relay wrangler config", () => {
 describe("relay region mapping", () => {
   test("every canonical Claxedo region maps to a Cloudflare location hint", async () => {
     const regionSource = await readFile(
-      new URL("../../claxedo-server/src/platform/runtime/region/index.ts", import.meta.url),
+      new URL("../../claxedo-server-core/src/platform/runtime/region/index.ts", import.meta.url),
       "utf8",
     )
     const declared = regionSource.match(/export const DEFAULT_CLAXEDO_REGIONS = \[([^\]]*)\]/)?.[1]
-    expect(declared, "could not find DEFAULT_CLAXEDO_REGIONS in claxedo-server").toBeDefined()
+    expect(declared, "could not find DEFAULT_CLAXEDO_REGIONS in claxedo-server-core").toBeDefined()
 
     const regions = [...declared!.matchAll(/"([^"]+)"/g)].map((match) => match[1]!)
     expect(regions.length).toBeGreaterThanOrEqual(5)
