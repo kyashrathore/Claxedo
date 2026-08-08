@@ -31,7 +31,9 @@ describe("ClaxedoIcon", () => {
 
     expect(view.container.querySelector('use[href$="#codex-20-068"]')).toBeTruthy()
     expect(view.container.querySelector('use[href$="#codex-20-144"]')).toBeTruthy()
-    expect(view.container.querySelector('use[href$="#codex-20-120"]')).toBeTruthy()
+    // `changes` shares the boxed ± with `review` — see the note on the entry in
+    // `@/ui/icons/codex`. It was codex-20-120 until 5197e0704 re-pointed it.
+    expect(view.container.querySelector('use[href$="#codex-20-071"]')).toBeTruthy()
     expect(view.container.querySelector('use[href$="#codex-20-057"]')).toBeTruthy()
   })
 

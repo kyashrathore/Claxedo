@@ -7,15 +7,6 @@ import { createWorkGraphClient } from "./api"
 import type { WorkGraphEventsApi } from "./sync-lifecycle"
 import { WorkGraphContent, type WorkGraphPanelBridge } from "./workgraph-content"
 
-// jsdom leaves window.scrollTo and Element.prototype.scrollTo unimplemented; the
-// base-revision chip popover (Kobalte) and the shared List it now renders call
-// both while opening/filtering, so shim them to no-ops for the New-stream chip
-// tests.
-window.scrollTo = (() => {}) as typeof window.scrollTo
-if (!Element.prototype.scrollTo) {
-  Element.prototype.scrollTo = (() => {}) as typeof Element.prototype.scrollTo
-}
-
 // The environment and project-directory chips use the shared Kobalte-backed
 // `Select`, which is hard to drive deterministically in happy-dom. Stub it to a
 // flat trigger + always-visible option list: the trigger's accessible name is its

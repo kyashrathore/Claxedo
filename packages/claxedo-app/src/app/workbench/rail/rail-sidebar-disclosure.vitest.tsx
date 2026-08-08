@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
-import { createSignal } from "solid-js"
+import { MemoryRouter, Route } from "@solidjs/router"
+import { createSignal, type JSX } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { ClaxedoStateProvider } from "../state/index"
 import { emptyClaxedoState } from "../state/persistence"
@@ -71,6 +72,19 @@ const project = {
   },
 } satisfies ProjectItem
 
+// `RailSidebar` renders `GlobalNavigation`, which reads `useLocation()` to mark
+// the active surface. That is a Route-scoped primitive, so the sidebar only
+// mounts inside a router — as it does in the app shell.
+function renderInRouter(component: () => JSX.Element) {
+  return render(() => (
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter>
+        <Route path="*" component={component} />
+      </MemoryRouter>
+    </QueryClientProvider>
+  ))
+}
+
 function renderSidebar(input?: {
   group?: "project" | "workspace"
   railDocked?: boolean
@@ -87,9 +101,8 @@ function renderSidebar(input?: {
     }))
   }
 
-  render(() => (
-    <QueryClientProvider client={new QueryClient()}>
-      <ClaxedoStateProvider initialState={emptyClaxedoState()}>
+  renderInRouter(() => (
+    <ClaxedoStateProvider initialState={emptyClaxedoState()}>
         <RailSidebar
           projects={[project]}
           onWorkspaceSelect={input?.onWorkspaceSelect}
@@ -102,8 +115,7 @@ function renderSidebar(input?: {
           railExpanded
           railWidth={260}
         />
-      </ClaxedoStateProvider>
-    </QueryClientProvider>
+    </ClaxedoStateProvider>
   ))
 }
 
@@ -117,23 +129,21 @@ describe("RailSidebar disclosure controls", () => {
       archived: "active",
     }))
     const [activeSessionId, setActiveSessionId] = createSignal("ses_1")
-    render(() => (
-      <QueryClientProvider client={new QueryClient()}>
-        <ClaxedoStateProvider initialState={emptyClaxedoState()}>
-          <RailSidebar
-            projects={activeSessionId() ? [{ ...project }] : []}
-            activeSessionId={activeSessionId()}
-            onRailCancelCollapse={() => undefined}
-            onRailLockChange={() => undefined}
-            onRailMouseLeave={() => undefined}
-            onRailTrackPosition={() => undefined}
-            onToggleSidebar={() => undefined}
-            railDocked
-            railExpanded
-            railWidth={260}
-          />
-        </ClaxedoStateProvider>
-      </QueryClientProvider>
+    renderInRouter(() => (
+      <ClaxedoStateProvider initialState={emptyClaxedoState()}>
+        <RailSidebar
+          projects={activeSessionId() ? [{ ...project }] : []}
+          activeSessionId={activeSessionId()}
+          onRailCancelCollapse={() => undefined}
+          onRailLockChange={() => undefined}
+          onRailMouseLeave={() => undefined}
+          onRailTrackPosition={() => undefined}
+          onToggleSidebar={() => undefined}
+          railDocked
+          railExpanded
+          railWidth={260}
+        />
+      </ClaxedoStateProvider>
     ))
     fireEvent.click(screen.getByRole("button", { name: "Expand project" }))
     const workspaceHeader = screen.getByTestId("workspace-header")
@@ -213,7 +223,14 @@ describe("SessionListNotice variant styling", () => {
     render(() => <SessionListNotice variant="error">Could not load sessions.</SessionListNotice>)
 
     const notice = screen.getByTestId("rail-sidebar-session-list-error")
-    expect(notice.querySelector('use[href="#opencode-icon-warning"]')).not.toBeNull()
+    // Named, not sprite-indexed: `SessionListNotice` renders `ClaxedoIcon`, whose
+    // `use` href follows whichever library `iconLibrary()` is on (codex by
+    // default since 5197e0704). Which glyph each name maps to is pinned in
+    // `ui/controls/claxedo-icon.vitest.tsx`; what this owns is that the error
+    // variant draws the `warning` mark in the critical colour.
+    const glyph = notice.querySelector('[data-component="icon"][data-icon="warning"]')
+    expect(glyph).not.toBeNull()
+    expect(glyph?.querySelector("use")).not.toBeNull()
     expect(notice.querySelector('[data-slot="icon-svg"]')).toHaveClass("text-icon-critical-base")
   })
 
@@ -221,7 +238,7 @@ describe("SessionListNotice variant styling", () => {
     render(() => <SessionListNotice variant="loading">Loading sessions...</SessionListNotice>)
 
     const notice = screen.getByTestId("rail-sidebar-session-list-loading")
-    expect(notice.querySelector('use[href="#opencode-icon-warning"]')).toBeNull()
+    expect(notice.querySelector('[data-icon="warning"]')).toBeNull()
     expect(notice.querySelector('[data-component="icon"]')).toBeNull()
   })
 })

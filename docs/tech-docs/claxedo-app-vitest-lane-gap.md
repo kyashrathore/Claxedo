@@ -1,69 +1,68 @@
-# The `claxedo-app` vitest lane does not run in CI
+# The `claxedo-app` vitest lane
 
-Status: **open finding**, measured 2026-08-08. Nothing is being suppressed; this
-records a gap so it stops being invisible.
+Status: **closed**, 2026-08-09. The lane is green and gated. This records what
+was wrong and how it is wired, so the gap does not reopen quietly.
 
-## What is not running
+## The two runners
 
-`packages/claxedo-app` has two test runners:
+`packages/claxedo-app` has two test runners, and both now run in CI:
 
-| runner | glob | in CI? |
+| runner | glob | how it reaches CI |
 |---|---|---|
-| `bun test --conditions=browser --preload ./happydom.ts ./src` | `*.test.ts(x)` | yes — `.github/workflows/test.yml` via `bun turbo test` |
-| `vitest run --config vitest.config.ts` | `*.vitest.ts(x)` | **no** |
+| `bun test --conditions=browser --preload ./happydom.ts ./src` | `*.test.ts(x)` | `@claxedo/app`'s `test` script → `bun turbo test` |
+| `vitest run --config vitest.config.ts` | `*.vitest.ts(x)` | same script, second command |
 
-The vitest lane collects **107 files / 868 tests**. Exactly **four** reach CI,
-and only incidentally, because two other scripts name them by path:
+Both are one `test` script, chained with `&&`, so a failure in either fails the
+package task. Each writes its own JUnit report — `.artifacts/unit/junit.xml` and
+`.artifacts/unit/junit-vitest.xml` — and `.github/workflows/test.yml` publishes
+both through a `junit*.xml` glob. Deliberately **not** a separate workflow step
+and **never** `continue-on-error`: folding it into the package's own script is
+what makes a newly added `.vitest.tsx` gated the day it lands.
 
-- `test.yml` → `test:diagnostics-release` names `dialog-process-diagnostics.vitest.tsx`
-- `typecheck.yml` → `@claxedo/app#typecheck` → `test:performance` names
-  `directory-scope.vitest.tsx`, `F-mount-retention.vitest.tsx`,
-  `N-reactivity.vitest.tsx`
+## What the gap was
 
-`grep -rn "vitest" .github/workflows/` returns one hit, and it is a
-claxedo-server release-script test. So **roughly 100 Solid component test files
-have never executed in CI.**
+The vitest lane collects **107 files / 868 tests**, and until 2026-08-09 exactly
+four of them reached CI, incidentally, because two other scripts named them by
+path (`test:diagnostics-release`, `test:performance`). Roughly 100 Solid
+component test files — the ones that actually render the workbench rail, the
+process panel, the files navigator and the document editor — had never executed
+on a pull request.
 
-These are the files that render components. The `bun test` lane covers logic and
-architecture; the rendering behaviour of the workbench rail, the process panel,
-the files navigator and the document editor is only covered here.
+It stayed unwired because it was red: 9 files, 51 tests. Those 51 turned out to
+be **five** distinct causes, not fifty-one:
 
-## Why it has not simply been wired
+1. **`vi.mock("@opencode-ai/ui/icon", …)` replaced the whole module** in four
+   files (35 failures). `@/ui/icons/config` re-exports `iconLibrary` from it and
+   `ClaxedoIcon` reads that signal, so every render reaching a Claxedo glyph
+   threw. Fixed with `importOriginal` partial mocks.
+2. **Stale glyph ids** (2 failures). `5197e0704` re-pointed `changes` from
+   `codex-20-120` to `codex-20-071` — the boxed ± it shares with `review` — and
+   two tests still pinned the old id.
+3. **No router around `RailSidebar`** (6 failures). It renders
+   `GlobalNavigation`, which reads `useLocation()`. Fixed by wrapping the
+   harness in `MemoryRouter`/`Route`, matching `global-navigation.vitest.tsx`.
+   A seventh failure in the same file pinned `#opencode-icon-warning`, which
+   stopped being the rendered glyph when codex became the default library.
+4. **jsdom has no `Element.prototype.scrollTo`** (3 unhandled errors + 5
+   failures). `@opencode-ai/ui/list` calls it from a reactive effect, where the
+   miss fails the whole file. The stub now lives in `vitest.setup.ts`; three
+   test files had each carried their own copy.
+5. **Assertions written against surfaces the product had removed** (5
+   failures) — a "New document" button that had become a project picker
+   (`createInProject`), per-agent terminal shortcuts removed by `73d56ab29`, and
+   a per-row document status control removed in favour of the Status filter.
+   Re-pointed at the live surfaces.
 
-The lane is **red**: 9 files, 51 tests failing.
+One of the 51 was a genuine **product defect**, not a harness gap:
+`PageIndex`'s `createInProject` had no disposal guard, so a create still in
+flight when the index closed would call `props.onOpenPage` and drop a document
+tab on a surface the user had already left. Fixed in `document-index.tsx`.
 
-```
-features/processes/ui/workspace-panel/process-pane-panel.vitest.tsx          17
-app/workbench/rail/rail-sidebar-disclosure.vitest.tsx                         7
-features/processes/ui/workspace-panel/workspace-processes-navigator.vitest.tsx 7
-features/session/ui/components/session-status-stage.vitest.tsx                6
-app/workbench/workspace-panel/files-navigator.vitest.tsx                      5
-features/documents/editor/document-index.vitest.tsx                           5
-app/workbench/rail/rail-workspace-tools.vitest.tsx                            2
-ui/controls/claxedo-icon.vitest.tsx                                           1
-app/workbench/workspace-panel/workspace-tool-buttons.vitest.tsx               1
-```
+## Known remaining gap
 
-The failures are `iconLibrary` mock gaps, a router `invariant`, an icon sprite,
-and `scroll.scrollTo` — test-harness problems, not product defects, as far as
-anyone has looked. That is a guess until someone reads them.
-
-## Why this is worse than a red lane
-
-A red lane is visible. A lane nobody runs is not: the 51 failures have been
-treated as a "known baseline" by every change that touched this package,
-including all of the local/cloud split work, and nothing distinguishes those 51
-from a 52nd introduced yesterday.
-
-## What to do, in order
-
-1. **Fix the 51.** They are the reason the lane cannot be wired, and they are
-   almost certainly four or five harness fixes rather than fifty-one.
-2. **Then wire it** — a `test:vitest` step in `test.yml`, or fold it into the
-   package's `test` script so `bun turbo test` picks it up automatically like
-   every other package.
-3. Do **not** wire it first with `continue-on-error`. That produces a lane that
-   is green when it fails, which is how this gap started.
+`tsconfig.json` excludes `src/**/*.vitest.ts(x)`, so these files are never
+typechecked — `tsgo -b` passing says nothing about them. They are only validated
+by running them.
 
 ## Related
 
@@ -71,4 +70,4 @@ from a 52nd introduced yesterday.
 its closure from a hardcoded 13-entry `PRODUCERS` array rather than the
 package's declared entry surface. A producer added without editing that array is
 not measured, and its assertions stay vacuously green for it — the same shape of
-problem one layer down.
+problem one layer down. Still open.

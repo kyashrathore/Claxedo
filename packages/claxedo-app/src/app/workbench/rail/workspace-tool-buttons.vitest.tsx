@@ -42,7 +42,9 @@ describe("WorkspaceToolButtons", () => {
     const processes = screen.getByRole("button", { name: "Open Processes" })
 
     expect(files.querySelector("use")?.getAttribute("href")).toMatch(/#codex-20-057$/)
-    expect(changes.querySelector("use")?.getAttribute("href")).toMatch(/#codex-20-120$/)
+    // The boxed ±, shared with `review` — see the note on the `changes` entry in
+    // `@/ui/icons/codex`. It was codex-20-120 until 5197e0704 re-pointed it.
+    expect(changes.querySelector("use")?.getAttribute("href")).toMatch(/#codex-20-071$/)
     expect(processes.querySelector("use")?.getAttribute("href")).toMatch(/#codex-20-050$/)
     expect(files.className).toContain("!size-3.5")
     expect(files).toHaveAttribute("data-icon-interaction", "binary")

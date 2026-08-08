@@ -39,7 +39,6 @@ vi.mock("@claxedo/app", () => ({
 import { RailAccountMenu } from "./rail-account-menu"
 
 beforeEach(() => {
-  window.scrollTo = vi.fn()
   state.authEnabled = true
   state.sandboxEnabled = false
   state.platform = "web"

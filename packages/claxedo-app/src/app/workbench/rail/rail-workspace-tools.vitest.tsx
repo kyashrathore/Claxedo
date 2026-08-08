@@ -153,8 +153,13 @@ describe("RailLayout workspace tool gates", () => {
       },
     })
 
-    expect(screen.queryByRole("button", { name: "New Claude Terminal" })).toBeNull()
-    expect(screen.queryByRole("button", { name: "New Codex Terminal" })).toBeNull()
+    // The header's terminal control is role-gated, not surface-gated, so it is
+    // present on every surface including this one. It used to be a pair of
+    // per-agent shortcuts ("New Claude Terminal" / "New Codex Terminal"); 73d56ab29
+    // replaced them with one button that opens the creator, because the header's
+    // directory is an inferred fallback chain rather than a choice. The surface
+    // gate this file is about is the Files/Changes/Processes trio below.
+    expect(screen.getByRole("button", { name: "New Terminal" })).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
 
@@ -186,8 +191,7 @@ describe("RailLayout workspace tool gates", () => {
       },
     })
 
-    expect(screen.getByRole("button", { name: "New Claude Terminal" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "New Codex Terminal" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "New Terminal" })).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
 
@@ -219,8 +223,7 @@ describe("RailLayout workspace tool gates", () => {
       },
     })
 
-    expect(screen.getByRole("button", { name: "New Claude Terminal" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "New Codex Terminal" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "New Terminal" })).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
 

@@ -42,6 +42,17 @@ const doc = (over: Record<string, unknown>) => ({
   ...over,
 })
 
+// "New document" is a project picker, not a create button: it opens a searchable
+// list of the inventory's projects and files the document against the one you
+// pick. There is deliberately no path that infers a destination, so every create
+// test has to go through the menu.
+async function createInPickedProject(projectLabel: string) {
+  const trigger = await screen.findByRole("button", { name: "New document" })
+  fireEvent.click(trigger)
+  fireEvent.click(await screen.findByRole("button", { name: projectLabel }))
+  return trigger
+}
+
 describe("PageIndex", () => {
   beforeEach(() => {
     api.create.mockReset()
@@ -77,12 +88,22 @@ describe("PageIndex", () => {
         onOpenPage={onOpenPage}
       />
     ))
-    const create = await screen.findByRole("button", { name: "New document" })
+    const create = await createInPickedProject("repo")
 
-    fireEvent.click(create)
+    // Filed against the picked project's OWN worktree — never the surface's.
+    await waitFor(() =>
+      expect(api.create).toHaveBeenCalledWith({
+        projectId: "project_1",
+        directory: "/repo",
+        displayName: "Untitled document",
+      }),
+    )
+    expect(api.create).toHaveBeenCalledTimes(1)
+    // While the request is in flight the trigger will not even open the menu, so
+    // a second create cannot be started.
+    expect(create).toBeDisabled()
     fireEvent.click(create)
     expect(api.create).toHaveBeenCalledTimes(1)
-    expect(create).toBeDisabled()
 
     const document = { id: "document_1", display_name: "Untitled document", project_id: "project_1" }
     resolveCreate(document)
@@ -109,7 +130,7 @@ describe("PageIndex", () => {
         onOpenPage={onOpenPage}
       />
     ))
-    fireEvent.click(await screen.findByRole("button", { name: "New document" }))
+    await createInPickedProject("repo")
     await waitFor(() => expect(api.create).toHaveBeenCalledTimes(1))
     view.unmount()
     resolveCreate({ id: "late_document", display_name: "Late", project_id: "project_1" })
@@ -170,8 +191,14 @@ describe("PageIndex", () => {
       />
     ))
     expect(await screen.findByRole("alert")).toHaveTextContent("Choose a project")
-    expect(screen.getByRole("button", { name: "New document" })).toBeDisabled()
     expect(api.list).not.toHaveBeenCalled()
+    // Failing closed is about the DESTINATION, not the control. The surface's
+    // directory maps to no project, so nothing is listed and nothing may be
+    // filed against an inferred project — but the trigger stays usable, because
+    // it is a picker: it creates only where you explicitly point it, and the
+    // inventory's projects are still legitimate destinations.
+    expect(screen.getByRole("button", { name: "New document" })).toBeEnabled()
+    expect(api.create).not.toHaveBeenCalled()
   })
 
   test("starts from delayed inventory and loads with the resolved signed identities", async () => {
@@ -310,7 +337,14 @@ describe("PageIndex project grouping", () => {
   })
 })
 
-describe("PageIndex row status", () => {
+/**
+ * Status used to be a per-row control that opened onto the server's allowed
+ * transitions. It was removed — it read as a redundant tag on every card — and
+ * the vocabulary `listStatuses` returns now surfaces in one place only: the
+ * Status filter above the list. These tests follow it there, because nothing
+ * else covers that fetch reaching the UI at all.
+ */
+describe("PageIndex status vocabulary", () => {
   const projects = [{ id: "project_1", worktree: "/code/alpha", workspaceId: "workspace_1" }]
   const statuses = [
     { id: "draft", name: "Draft", color: "#888", position: 0, transitions: ["review"] },
@@ -318,32 +352,42 @@ describe("PageIndex row status", () => {
   ]
 
   beforeEach(() => {
-    api.list.mockReset().mockResolvedValue([doc({ id: "d1", display_name: "Alpha plan" })])
+    api.list.mockReset().mockResolvedValue([
+      doc({ id: "d1", display_name: "Alpha plan", status: "draft" }),
+      doc({ id: "d2", display_name: "Beta memo", status: "review" }),
+    ])
     api.listStatuses.mockReset().mockResolvedValue(statuses)
     api.transitionStatus.mockReset().mockResolvedValue({})
     events.centralConnected.mockReset().mockReturnValue(true)
     events.on.mockReset().mockImplementation(() => () => undefined)
   })
 
-  test("moves a document through a server-allowed transition", async () => {
+  test("offers exactly the statuses the server declared, and no row control", async () => {
     render(() => <PageIndex scope="project" directory="/code/alpha" projects={projects} onOpenPage={() => undefined} />)
+    await screen.findByText("Alpha plan")
 
-    const status = await screen.findByRole("button", { name: "Status for Alpha plan" })
-    expect(status).toHaveTextContent("Draft")
-    fireEvent.click(status)
-    fireEvent.click(await screen.findByRole("menuitem", { name: "In review" }))
+    await waitFor(() =>
+      expect(api.listStatuses).toHaveBeenCalledWith({ projectId: "project_1", directory: "/code/alpha" }),
+    )
+    // Status is a filter, not a tag on the card.
+    expect(screen.queryByLabelText("Status for Alpha plan")).not.toBeInTheDocument()
 
-    await waitFor(() => expect(api.transitionStatus).toHaveBeenCalledWith("d1", "review"))
+    fireEvent.click(screen.getByRole("button", { name: "Filter by status" }))
+
+    expect(await screen.findByRole("menuitemradio", { name: "Draft" })).toBeInTheDocument()
+    expect(screen.getByRole("menuitemradio", { name: "In review" })).toBeInTheDocument()
+    // Not a status the server returned, so it must not be offered.
+    expect(screen.queryByRole("menuitemradio", { name: "Archived" })).not.toBeInTheDocument()
   })
 
-  // Only the transitions the server allows are offered — a terminal status is a
-  // label, not a dropdown that opens onto nothing.
-  test("renders a status with no onward transition as plain text", async () => {
-    api.list.mockResolvedValue([doc({ id: "d1", display_name: "Alpha plan", status: "review" })])
+  test("filtering by a status narrows the list to the documents holding it", async () => {
     render(() => <PageIndex scope="project" directory="/code/alpha" projects={projects} onOpenPage={() => undefined} />)
-
     await screen.findByText("Alpha plan")
-    expect(screen.queryByRole("button", { name: "Status for Alpha plan" })).not.toBeInTheDocument()
-    expect(screen.getByLabelText("Status for Alpha plan")).toHaveTextContent("In review")
+
+    fireEvent.click(screen.getByRole("button", { name: "Filter by status" }))
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: "In review" }))
+
+    await waitFor(() => expect(screen.queryByText("Alpha plan")).not.toBeInTheDocument())
+    expect(screen.getByText("Beta memo")).toBeInTheDocument()
   })
 })

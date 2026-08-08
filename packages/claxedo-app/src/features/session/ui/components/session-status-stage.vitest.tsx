@@ -10,7 +10,11 @@ vi.mock("@opencode-ai/ui/spinner", () => ({
   Spinner: (props: any) => <div data-testid="spinner" class={props.class} />,
 }))
 
-vi.mock("@opencode-ai/ui/icon", () => ({
+// Partial mock: `@/ui/icons/config` re-exports `iconLibrary` from this module and
+// `ClaxedoIcon` reads it, so replacing the module wholesale breaks every render
+// that reaches a Claxedo glyph. Keep the real exports and override only `Icon`.
+vi.mock("@opencode-ai/ui/icon", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   Icon: (props: any) => <span data-testid="icon" data-name={props.name} />,
 }))
 
