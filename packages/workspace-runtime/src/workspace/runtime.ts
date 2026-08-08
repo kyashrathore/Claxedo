@@ -44,6 +44,7 @@ import {
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { attachSseFanout, createSseReplayBuffer, encodeSseData, sseHeaders } from "@claxedo/agent-sdk-runtime/sse"
 import { isTerminalCompatEvent, type CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
+import type { SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime/subagent-admission"
 import type { Context, Hono } from "hono"
 import { workspaceCapabilities } from "../capabilities"
 import { runGit } from "../git"
@@ -198,6 +199,17 @@ export type WorkspaceHostOptions = {
    * {@link WorkspaceRuntimeStoreFactory}.
    */
   storeFactory?: WorkspaceRuntimeStoreFactory
+  /**
+   * Durable subagent admission the OpenCode adapter records delegations into.
+   *
+   * Adapters that own a store (the native-SDK and ACP rails) admit through it
+   * directly; the OpenCode adapter keeps no store of its own because its
+   * sessions live in the engine, so the host hands it exactly the two methods
+   * the admission boundary needs. `createWorkspaceHost` fills this in from its
+   * own store — the same one `/session/:id/subagents` reads — so an omitted
+   * value means "no host behind this adapter", not "use a second store".
+   */
+  subagentAdmission?: SubagentAdmissionStore
   /**
    * Host-supplied harness-adapter registry. `createAdapter` dispatches through
    * it (first matching entry wins). Defaults to
@@ -767,6 +779,7 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
         ...(options.opencodeHeaders ? { headers: options.opencodeHeaders } : {}),
         ...(options.opencodeRequest ? { request: options.opencodeRequest } : {}),
         eventHub: options.eventHub,
+        ...(options.subagentAdmission ? { subagents: options.subagentAdmission } : {}),
         ...(options.processObserver ? { processObserver: agentProcessObserver(options.processObserver) } : {}),
         // Adapter mechanism (upstream list/status proxying) stays on unless the
         // host explicitly opts out. The root compat ROUTE surface is separately
@@ -1043,7 +1056,20 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   const cleanupGlobalEventReplay = eventHub.subscribeGlobal((event) => {
     globalEventReplay.push(event)
   })
-  const hostOptions = { ...options, eventHub }
+  // `store()` is the host's own session-config store — the same instance
+  // `/session/:id/subagents` lists from — so an OpenCode delegation admitted
+  // through this port is immediately readable on the host read path and
+  // survives a reload. Bound lazily: `store()` opens SQLite on first use, and a
+  // host that never runs a turn should never open it.
+  const hostOptions = {
+    ...options,
+    eventHub,
+    subagentAdmission: options.subagentAdmission ?? {
+      admit: (input: Parameters<SubagentAdmissionStore["admit"]>[0]) => subagentStore().admit(input),
+      markPublished: (parentSessionId: string, observationId: string) =>
+        subagentStore().markPublished(parentSessionId, observationId),
+    },
+  }
   let runner = options.harness ?? { id: "opencode" as const, access: "native" as const }
   let state: "ready" | "applying" | "error" = "ready"
   let err = ""
@@ -1414,6 +1440,21 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     // the host-supplied factory, defaulting to the SQLite RuntimeStore.
     sessionConfigStore ??= storeFactory({ storeRoot: options.storeRoot })
     return sessionConfigStore
+  }
+
+  /**
+   * The host store, narrowed to the two subagent-admission methods. Both are
+   * optional on {@link WorkspaceRuntimeStore} because a host may back the
+   * runtime with any store shape; one that cannot persist subagents fails the
+   * individual delegation loudly rather than letting a card silently vanish
+   * after reload.
+   */
+  function subagentStore(): SubagentAdmissionStore {
+    const target = store()
+    if (!target.admit || !target.markPublished) {
+      throw new Error("workspace runtime store does not support subagent admission")
+    }
+    return { admit: target.admit.bind(target), markPublished: target.markPublished.bind(target) }
   }
 
   function createActiveTurnScope(input: { adapter: AgentHarnessAdapter; directory: string; sessionId: string }) {
@@ -1989,11 +2030,22 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             ...(requested ? { harness: { id: requested.id, access: requested.access } } : {}),
           })
           const session = await adapter.createSession(directory, title, id)
+          // The agent session id belongs to the HARNESS, never to this
+          // write-through. An adapter that persists into this store has
+          // already bound the id its process answers to: a codex
+          // `thread/start` id, an ACP `session/new` id, or the `claude-sdk:`
+          // sentinel that means "no SDK conversation exists yet". Re-binding
+          // `session.id` over it told the harness to resume a conversation
+          // that never existed, so the FIRST turn of every native-SDK session
+          // died with `thread not found` / `No conversation found with session
+          // ID` (ACP hid it by booting a replacement session). `session.id` is
+          // only the placeholder for adapters that keep their sessions
+          // elsewhere and left nothing here to preserve.
           store().bindSession({
             sessionId: session.id,
             directory,
             ...(title ? { title } : {}),
-            agentSessionId: session.id,
+            agentSessionId: store().getAgentSessionId(session.id) ?? session.id,
           })
           return session
         },

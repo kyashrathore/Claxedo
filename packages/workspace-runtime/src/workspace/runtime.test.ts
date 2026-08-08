@@ -1416,6 +1416,61 @@ describe("workspace runtime auth helpers", () => {
     }
   })
 
+  /**
+   * The session-create write-through must never overwrite the agent session id
+   * the harness adapter just bound.
+   *
+   * `POST /session` calls `adapter.createSession`, which for every store-backed
+   * adapter persists the id the harness process actually answers to — a codex
+   * `thread/start` id, an ACP `session/new` id, or the claude native driver's
+   * `claude-sdk:<uuid>` sentinel meaning "no SDK conversation exists yet". The
+   * write-through then re-bound `session.id` over it, and `bindSession` upserts
+   * `agent_session_id = excluded.agent_session_id`, so the harness identity was
+   * silently replaced by the claxedo session id.
+   *
+   * The first turn then resumed a conversation that never existed: measured on
+   * Tier R 2026-08-08, claude-sdk died with `No conversation found with session
+   * ID: <session id>` and codex-app-server with `thread not found` → `no rollout
+   * found for thread id <session id>`. Both ACP harnesses hid the same clobber
+   * because `_sendMessage`'s `replace()` boots a fresh ACP session when the old
+   * one is unrestorable.
+   *
+   * Driven through the REAL claude native adapter and driver — `createAgentSession`
+   * there is pure (it mints the sentinel, no subprocess), so this exercises the
+   * production path with nothing stubbed.
+   */
+  test("session create keeps the harness-owned agent session id", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-agent-session-bind-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const storeRoot = path.join(dir, ".claxedo", "store")
+
+    const app = new Hono()
+    const host = mountTestHost(app, {
+      harness: { id: "claude", access: "native" },
+      storeRoot,
+    })
+    try {
+      const res = await app.request(`http://localhost/session?directory=${encodeURIComponent(dir)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Native claude session" }),
+      })
+      expect(res.status).toBe(201)
+      const sessionId = (await res.json() as { id: string }).id
+
+      const store = new RuntimeStore(storeRoot)
+      const agentSessionId = store.getAgentSessionId(sessionId)
+      // The sentinel is what tells `ClaudeSdkDriver.runTurn` to START a
+      // conversation instead of sending `resume: <id>`.
+      expect(agentSessionId).toMatch(/^claude-sdk:/)
+      expect(agentSessionId).not.toBe(sessionId)
+      store.close()
+    } finally {
+      host.dispose()
+    }
+  })
+
   test("host dispose closes adapter-created runtime stores once", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-host-store-"))
     tempDirs.push(dir)
