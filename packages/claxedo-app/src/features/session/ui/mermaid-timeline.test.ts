@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { openMermaidViewer } from "./mermaid-viewer"
+import { openMermaidViewer } from "./markdown-viewer"
 
 const renderedDiagram =
   '<svg xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width: 120px" viewBox="0 0 120 80"><rect width="120" height="80"/><text x="10" y="20">Ready</text></svg>'
@@ -71,9 +71,7 @@ describe("timeline Mermaid dialog viewer", () => {
     viewport?.dispatchEvent(
       new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerId: 7, clientX: 10, clientY: 20 }),
     )
-    viewport?.dispatchEvent(
-      new PointerEvent("pointermove", { bubbles: true, pointerId: 7, clientX: 30, clientY: 35 }),
-    )
+    viewport?.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerId: 7, clientX: 30, clientY: 35 }))
     viewport?.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 7 }))
     expect(content?.style.transform).toContain("translate(20px, 15px)")
 

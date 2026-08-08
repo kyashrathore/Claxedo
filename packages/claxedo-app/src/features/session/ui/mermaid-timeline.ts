@@ -1,5 +1,5 @@
 import { sanitizeSvg, setMermaidRenderer, setMermaidViewer } from "@/ui/session-kit"
-import { openMermaidViewer } from "./mermaid-viewer"
+import { openMermaidViewer } from "./markdown-viewer"
 
 /**
  * Timeline mermaid renderer (T14). Lazily loads mermaid on the first diagram, renders with

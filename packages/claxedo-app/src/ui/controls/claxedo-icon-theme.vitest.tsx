@@ -16,6 +16,10 @@ function Harness() {
       <div data-testid="shared"><Icon name="folder" /></div>
       <div data-testid="app"><ClaxedoIcon name="folder" /></div>
       <div data-testid="app-v2"><ClaxedoIconV2 name="folder" /></div>
+      <div data-testid="shared-copy"><Icon name="copy" /></div>
+      <div data-testid="app-copy"><ClaxedoIcon name="copy" /></div>
+      <div data-testid="shared-expand"><Icon name="expand" /></div>
+      <div data-testid="app-expand"><ClaxedoIcon name="expand" /></div>
     </>
   )
 }
@@ -75,6 +79,18 @@ describe("theme-driven icon libraries", () => {
     setIconLibraryPreference("auto")
     await assertTheme(view, "codex", "codex")
   })
+
+  test("keeps shared Markdown controls on the app's Codex copy and expand geometry", async () => {
+    const view = render(() => (
+      <ThemeProvider defaultTheme="codex" onThemeApplied={syncIconLibraryWithTheme}>
+        <Harness />
+      </ThemeProvider>
+    ))
+
+    await assertTheme(view, "codex", "codex")
+    expect(symbolMarkup(view, "shared-copy")).toBe(symbolMarkup(view, "app-copy"))
+    expect(symbolMarkup(view, "shared-expand")).toBe(symbolMarkup(view, "app-expand"))
+  })
 })
 
 async function assertTheme(view: ReturnType<typeof render>, theme: string, library: "codex" | "opencode") {
@@ -84,4 +100,10 @@ async function assertTheme(view: ReturnType<typeof render>, theme: string, libra
       expect(view.getByTestId(id).querySelector("[data-library]")?.getAttribute("data-library")).toBe(library)
     }
   })
+}
+
+function symbolMarkup(view: ReturnType<typeof render>, id: string) {
+  const href = view.getByTestId(id).querySelector("use")?.getAttribute("href")
+  expect(href).toMatch(/^#.+/)
+  return document.querySelector(href!)?.innerHTML
 }

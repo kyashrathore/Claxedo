@@ -1,45 +1,17 @@
 /*
- * Visibility of the compact turn rail.
- *
- * The rail is absolutely positioned OVER the timeline, so it only reads as a
- * gutter affordance while the centered content column clears it. Once the
- * column runs under the ticks, the rail — and the turn preview it opens — sits
- * on top of the conversation instead of beside it.
- *
- * This is a CONTAINER query, not a media query: a split workspace narrows one
- * timeline without changing the viewport, so the rail has to follow the pane it
- * actually lives in.
- *
- * The container is this wrapper rather than `[data-session-timeline-root]`
- * because `container-type` applies layout containment, which would make the
- * root a containing block for `position: fixed` descendants — the file context
- * menu is one, and it positions from viewport `clientX`/`clientY`.
+ * The compact rail reaches 48px into the pane (`left-3` plus its 36px width).
+ * Reserve 60px in the scroll viewport so every timeline row—including a rich
+ * table or diagram—starts with 12px of breathing room after it. The component
+ * only mounts the rail when its ResizeObserver confirms the pane can afford
+ * this gutter, so a narrow split does not retain empty padding.
  */
-[data-slot="message-nav-gutter"] {
-  container: session-timeline / inline-size;
+[data-session-timeline-root]:has([data-slot="message-nav-gutter"]) .scroll-view__viewport {
+  padding-left: 60px;
+  transition: padding-left 150ms ease;
 }
 
-/*
- * Rows cap at `md:max-w-192` (768px) and center with `md:mx-auto`, so the
- * gutter on each side is `(container - 768) / 2`. The rail reaches 48px in
- * (`left-3` plus its 36px width) and wants 12px of breathing room, so the
- * column starts crowding it below 768 + 2 * 60.
- */
-@container session-timeline (width < 888px) {
-  [data-component="message-nav"][data-size="compact"] {
-    display: none;
-  }
-}
-
-/*
- * `2xl:max-w-[880px]` widens the column and eats that gutter back. The
- * breakpoint driving it is a viewport media query, so the threshold it implies
- * has to be nested under the same one.
- */
-@media (width >= 1536px) {
-  @container session-timeline (width < 1000px) {
-    [data-component="message-nav"][data-size="compact"] {
-      display: none;
-    }
+@media (prefers-reduced-motion: reduce) {
+  [data-session-timeline-root]:has([data-slot="message-nav-gutter"]) .scroll-view__viewport {
+    transition: none;
   }
 }

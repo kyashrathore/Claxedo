@@ -970,6 +970,7 @@ export default function SessionPage() {
   let scrollStateFrame: number | undefined
   let scrollStateTarget: HTMLDivElement | undefined
   let scrollToEnd = () => {}
+  let scrollToTimelineMessage = (_id: string, _behavior: ScrollBehavior) => false
 
   const updateScrollState = (el: HTMLDivElement) => {
     const { overflow, bottom, jump } = computeScrollState({
@@ -1276,7 +1277,9 @@ export default function SessionPage() {
       },
     },
     scroller: () => scroller,
+    scrollToMessageOffset: (id, behavior) => scrollToTimelineMessage(id, behavior),
     anchor,
+    revealMessage: historyWindow.revealTurn,
     scheduleScrollState,
     consumePendingMessage: layout.pendingMessage.consume,
   })
@@ -1414,13 +1417,15 @@ export default function SessionPage() {
                         currentMessage={activeMessage()}
                         onMessageSelect={(message) => {
                           autoScroll.pause()
-                          historyWindow.revealTurn(message.id)
                           scrollToMessage(message)
                         }}
                         status={sessionController.status}
                         anchor={anchor}
                         setScrollToEnd={(fn) => {
                           scrollToEnd = fn
+                        }}
+                        setScrollToMessage={(fn) => {
+                          scrollToTimelineMessage = fn ?? (() => false)
                         }}
                         setHistoryAnchor={(handlers) => {
                           captureHistoryAnchor = handlers.capture
