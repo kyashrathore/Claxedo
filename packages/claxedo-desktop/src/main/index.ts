@@ -76,6 +76,9 @@ import { registerHostConnectorIpc } from "./host-connector/ipc"
 import { publishHostConnectorStatus } from "./host-connector/status-channel"
 import { initLogging } from "./logging"
 import { createMenu } from "./menu"
+import { createNativeMarkdownRenderer } from "./native-markdown"
+import { createNativeMermaidRenderer } from "./native-mermaid"
+import { resolveRichContentRendererPath } from "./rich-content-renderer-path"
 import {
   checkHealth,
   checkHealthOrAskRetry,
@@ -118,6 +121,13 @@ const pendingDeepLinks: string[] = []
 
 const serverReady = defer<ServerReadyData>()
 const logger = initLogging()
+const richContentRendererPath = resolveRichContentRendererPath({
+  packaged: IS_PACKAGED,
+  resourcesPath: process.resourcesPath,
+  appPath: app.getAppPath(),
+  override: process.env.CLAXEDO_RICH_CONTENT_RENDERER_PATH,
+})
+if (richContentRendererPath) process.env.CLAXEDO_RICH_CONTENT_RENDERER_PATH = richContentRendererPath
 const startAtLogin = createStartAtLogin(app)
 const electronDiagnosticsSource = createElectronSource({
   process,
@@ -706,6 +716,8 @@ const diagnosticsIpc = registerIpcHandlers({
   installUpdate: async () => installUpdate(),
   getStartAtLogin: () => startAtLogin.get(),
   setStartAtLogin: (enabled) => startAtLogin.set(enabled),
+  parseMarkdown: createNativeMarkdownRenderer(process.env.CLAXEDO_MARKDOWN_RENDERER_PATH ?? richContentRendererPath),
+  renderMermaid: createNativeMermaidRenderer(process.env.CLAXEDO_MERMAID_RENDERER_PATH ?? richContentRendererPath),
   browser: browserRegistry,
   processDiagnostics: {
     profiler: diagnosticsProfiler,
