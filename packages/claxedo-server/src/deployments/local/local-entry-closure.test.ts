@@ -195,6 +195,13 @@ describe("desktop-local entry closure", () => {
     // is a hosted capability implementation.
     expect(shared.filter((module) => /^src\/(connections|channels|documents|authority\/adapters\/convex|sandbox\/stores|sandbox\/routes|hosts\/workgraph)\//.test(module)))
       .toEqual([])
+
+    // And it is IMPORT-CLOSED: nothing in it reaches a module outside it. That
+    // is what makes extracting it a move rather than an untangling — the set
+    // can leave this package whole, with no dangling edge back into either
+    // product. If this ever fails, the escaping module is the one to place
+    // before the move, not after.
+    expect([...union(shared)].filter((module) => !shared.includes(module))).toEqual([])
   })
 
   it("shrinks once type-only edges are discounted", () => {
