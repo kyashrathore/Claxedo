@@ -50,6 +50,7 @@ import {
 } from "../hosts/agent-extensions/workspace"
 import { ControlPlaneAuthError } from "../platform/auth/auth"
 import type { WorkspaceAuthority } from "../platform/auth/authority"
+import { deploymentMode } from "../authority/deployment-mode"
 import { convexAuthorityUrlFromEnv, createConvexAuthority } from "../authority/adapters/convex/workspace-authority"
 import { createSqliteWorkspaceAuthority } from "../authority/adapters/sqlite/workspace-authority"
 
@@ -125,6 +126,7 @@ export type HarnessType = AgentHarnessId
 export type AgentConfigOptions = {
   acpDir?: string
   platform?: NodeJS.Platform
+  workspaceAuthority?: RuntimeWorkspaceAuthority
 }
 
 let agentConfigOptions: AgentConfigOptions = {}
@@ -367,15 +369,24 @@ async function runtimeMcp(
   }).mcp
 }
 
-// Default workspace authority for RUNTIME snapshot hydration (sandbox
-// provisioning / broadcast config pushes). Mirrors the server composition
-// rule (server.ts): Convex when a backend URL is configured, otherwise the
-// local SQLite authority — so a self-host deploy (no Convex env) still
-// hydrates workspace Agent Extensions into the snapshot pushed to sandboxes
-// instead of silently pushing an empty install set.
+// Runtime snapshot hydration normally reuses the authority composed by the
+// server. The fallback keeps standalone agent-config mounts functional while
+// preserving the same trust contract: local mode is always SQLite; only an
+// explicitly hosted deployment may construct a Convex authority.
 let localRuntimeWorkspaceAuthority: { dataRoot: string; authority: RuntimeWorkspaceAuthority } | undefined
 function defaultRuntimeWorkspaceAuthority(): RuntimeWorkspaceAuthority {
-  if (convexAuthorityUrlFromEnv(process.env)) return createConvexAuthority()
+  if (agentConfigOptions.workspaceAuthority) return agentConfigOptions.workspaceAuthority
+  if (deploymentMode(process.env) === "hosted") {
+    const url = convexAuthorityUrlFromEnv(process.env)
+    if (!url) {
+      throw new ControlPlaneAuthError(
+        503,
+        "workspace_authority_unavailable",
+        "Hosted runtime configuration requires CLAXEDO_WORKSPACE_AUTHORITY_URL",
+      )
+    }
+    return createConvexAuthority({ url })
+  }
   // Memoized per data root so repeated config pushes reuse one SQLite
   // connection (same authority.db file the server composition opens).
   const dataRoot = dataDir()

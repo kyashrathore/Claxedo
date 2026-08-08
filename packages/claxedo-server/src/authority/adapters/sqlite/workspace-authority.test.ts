@@ -514,26 +514,29 @@ describe("sqlite workspace authority store transactions", () => {
 })
 
 describe("default local composition", () => {
-  test("no Convex/Clerk env still composes a workspace authority (no 503)", async () => {
+  test("local mode uses SQLite even when an ambient Convex URL is configured", async () => {
     const previous = {
       dataDir: process.env.CLAXEDO_DATA_DIR,
+      deploymentMode: process.env.CLAXEDO_DEPLOYMENT_MODE,
       signed: process.env.CLAXEDO_SIGNED_CLOUD_AUTH,
       authorityUrl: process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL,
     }
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-authority-"))
     process.env.CLAXEDO_DATA_DIR = dir
+    process.env.CLAXEDO_DEPLOYMENT_MODE = "local"
     delete process.env.CLAXEDO_SIGNED_CLOUD_AUTH
-    delete process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
+    process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL = "http://127.0.0.1:1"
     try {
       const { createDefaultLocalControlPlaneServices } = await import("../../../deployments/local/server")
       const services = createDefaultLocalControlPlaneServices()
-      // The whole point of the SQLite authority: `requireAuthority` must never
-      // throw its 503 in an unconfigured self-host deployment.
+      // Local trust owns local storage. A stale hosted-development URL must not
+      // turn the offline desktop/server into a Convex client.
       expect(services.authority).toBeDefined()
       await expect(services.authority!.listWorkspaces(localControlPlaneAuth())).resolves.toEqual([])
     } finally {
       for (const [key, value] of [
         ["CLAXEDO_DATA_DIR", previous.dataDir],
+        ["CLAXEDO_DEPLOYMENT_MODE", previous.deploymentMode],
         ["CLAXEDO_SIGNED_CLOUD_AUTH", previous.signed],
         ["CLAXEDO_WORKSPACE_AUTHORITY_URL", previous.authorityUrl],
       ] as const) {

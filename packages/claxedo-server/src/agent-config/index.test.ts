@@ -9,6 +9,9 @@ import { randomUUID } from "crypto"
 const root = path.join(realpathSync(os.tmpdir()), `agent-config-test-${randomUUID().slice(0, 8)}`)
 const prev = process.env.CLAXEDO_DATA_DIR
 const prevAcpDir = process.env.CLAXEDO_ACP_DIR
+const prevDeploymentMode = process.env.CLAXEDO_DEPLOYMENT_MODE
+const prevWorkspaceAuthorityUrl = process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
+const prevControlPlaneServiceToken = process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN
 process.env.CLAXEDO_DATA_DIR = root
 
 const mod = await import("./index")
@@ -49,6 +52,12 @@ describe("agent config", () => {
     process.env.CLAXEDO_DATA_DIR = prev
     if (prevAcpDir === undefined) delete process.env.CLAXEDO_ACP_DIR
     else process.env.CLAXEDO_ACP_DIR = prevAcpDir
+    if (prevDeploymentMode === undefined) delete process.env.CLAXEDO_DEPLOYMENT_MODE
+    else process.env.CLAXEDO_DEPLOYMENT_MODE = prevDeploymentMode
+    if (prevWorkspaceAuthorityUrl === undefined) delete process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
+    else process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL = prevWorkspaceAuthorityUrl
+    if (prevControlPlaneServiceToken === undefined) delete process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN
+    else process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN = prevControlPlaneServiceToken
   })
 
   // ── defaultHarness ────────────────────────────────────────────────────
@@ -444,6 +453,37 @@ describe("agent config", () => {
       authority: unavailableWorkspaceAuthority(),
     })
     expect(normalizeRuntimeSnapshot(snap)).toBeDefined()
+  })
+
+  test("local workspace snapshot hydrates from SQLite despite an ambient Convex URL", async () => {
+    const project = path.join(root, "project")
+    await fs.mkdir(project, { recursive: true })
+    await mod.saveUserConfig({ mcp: {}, auth: {} })
+    const deploymentMode = process.env.CLAXEDO_DEPLOYMENT_MODE
+    const authorityUrl = process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
+    const serviceToken = process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN
+    process.env.CLAXEDO_DEPLOYMENT_MODE = "local"
+    process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL = "http://127.0.0.1:9"
+    process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN = "test-service-token"
+    try {
+      const snap = await mod.getRuntimeConfigSnapshot(undefined, {
+        secretScope: "shared",
+        workspaceDir: project,
+        workspaceId: "ws_local",
+      })
+
+      expect(snap.agent_extensions).toMatchObject({
+        version: 1,
+        installs: [],
+      })
+    } finally {
+      if (deploymentMode === undefined) delete process.env.CLAXEDO_DEPLOYMENT_MODE
+      else process.env.CLAXEDO_DEPLOYMENT_MODE = deploymentMode
+      if (authorityUrl === undefined) delete process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
+      else process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL = authorityUrl
+      if (serviceToken === undefined) delete process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN
+      else process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN = serviceToken
+    }
   })
 
   test("shared workspace Agent Extensions snapshot fails closed when Control Plane hydration is unavailable", async () => {
