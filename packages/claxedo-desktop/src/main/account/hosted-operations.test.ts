@@ -63,6 +63,43 @@ describe("HOSTED_OPERATIONS", () => {
       expect(operation.path).not.toContain("://")
     }
   })
+
+  test("declares no caller-selected query", () => {
+    // A query may be part of a fixed path (`?access=cloud`), and the two
+    // workspace-list rows are. It may never be SUBSTITUTED: `resolveHostedOperation`
+    // fills a `:name` wherever it appears, query string included, so
+    // `?access=:access` would compile, run, and quietly turn one reviewed
+    // operation into a family of requests the renderer chooses between. That is
+    // the closed set opening by one character, which is why it is asserted
+    // rather than left to review.
+    const substitutedQuery = Object.entries(HOSTED_OPERATIONS)
+      .filter(([, operation]) => /:[A-Za-z]/.test(operation.path.split("?")[1] ?? ""))
+      .map(([name]) => name)
+
+    expect(substitutedQuery).toEqual([])
+    // Positive control: the check must be able to see one.
+    expect(/:[A-Za-z]/.test("/api/workspace?access=:access".split("?")[1] ?? "")).toBe(true)
+  })
+
+  test("lists workspaces per access kind, with the kind fixed in the path", () => {
+    // The defect this pair replaced: `GET /api/workspace` with no `access`
+    // answers `{ workspaces: [] }` unconditionally, so the single access-less
+    // row could never return a workspace. Pinned here as well as in the matrix
+    // because the value is load-bearing — `cloud` and `user-hosted` are the only
+    // two the hosted handler acts on.
+    expect(resolveHostedOperation("workspace.list.cloud")).toEqual({
+      method: "GET",
+      path: "/api/workspace?access=cloud",
+    })
+    expect(resolveHostedOperation("workspace.list.userHosted")).toEqual({
+      method: "GET",
+      path: "/api/workspace?access=user-hosted",
+    })
+    // And the kind cannot be talked out of the path by a caller.
+    expect(resolveHostedOperation("workspace.list.cloud", { access: "user-hosted" }).path).toBe(
+      "/api/workspace?access=cloud",
+    )
+  })
 })
 
 describe("resolveHostedOperation", () => {

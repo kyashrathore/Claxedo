@@ -27,7 +27,7 @@ import {
  * hand-written fixture. A fixture copied from a reading of the route agrees
  * with that reading forever, including when the route stops agreeing.
  *
- * So this file writes no response fixtures. For each of the fifteen named
+ * So this file writes no response fixtures. For each of the sixteen named
  * operations it takes the METHOD and PATH from the desktop's real table
  * (`claxedo-desktop/.../account/hosted-operations.ts`), drives the REAL hosted
  * app built by `createHostedApp`, and hands the body the route actually
@@ -49,6 +49,8 @@ import {
 
 const SUBJECT = "user_1"
 const WORKSPACE_ID = "ws_1"
+/** A second workspace, of the OTHER access kind, so the list rows can be told apart. */
+const USER_HOSTED_WORKSPACE_ID = "ws_2"
 const CHECKPOINT_ID = "cp_1"
 const ISSUER = "https://clerk.operation-contract.test"
 const JWKS_URL = `${ISSUER}/jwks`
@@ -61,7 +63,7 @@ const JWKS_URL = `${ISSUER}/jwks`
  * verifier through. The checkpoint and lifecycle routes do not: they build
  * their auth from `services.auth.config` alone, so an injected verifier never
  * runs and every call 401s. Signing a token the production verifier accepts
- * reaches all fifteen operations through the same door a browser uses, which is
+ * reaches all sixteen operations through the same door a browser uses, which is
  * the only door this file is allowed to care about.
  */
 const signing = {
@@ -157,7 +159,7 @@ function fakeSandboxManager() {
 /**
  * One hosted plane wired for every operation at once.
  *
- * Deliberately one plane rather than fifteen: a per-case plane is a per-case
+ * Deliberately one plane rather than sixteen: a per-case plane is a per-case
  * opportunity to shape the world until the assertion passes, which is the
  * fixture problem again wearing a different hat.
  */
@@ -181,8 +183,17 @@ function contractPlane(sandboxManager: SandboxManager = fakeSandboxManager()): H
       resolveOrgId: vi.fn(async () => "org_1"),
       auditAllow: vi.fn(async () => ({})),
       auditDeny: vi.fn(async () => ({})),
+      // One of each access kind. A single-kind authority cannot tell an
+      // operation that filters from one that returns everything, which is the
+      // difference the two list operations exist to make.
       listWorkspaces: vi.fn(async () => [
         { workspace_id: WORKSPACE_ID, access: "cloud", display_name: "Widgets", remote_directory: "/workspace" },
+        {
+          workspace_id: USER_HOSTED_WORKSPACE_ID,
+          access: "user-hosted",
+          display_name: "Laptop",
+          remote_directory: "/home/dev/widgets",
+        },
       ]),
       openWorkspace: vi.fn(async () => ({
         allowed: true,
@@ -249,7 +260,9 @@ const OPERATION_INPUT: Record<HostedOperationName, Record<string, unknown>> = {
   "account.mode": {},
   "account.compatibility": {},
   "account.cliExchange": { code: "device_code_1" },
-  "workspace.list": {},
+  // No parameters: the access kind each of these lists is fixed in its path.
+  "workspace.list.cloud": {},
+  "workspace.list.userHosted": {},
   "workspace.resolve": {},
   "workspace.create": {
     projectId: "proj_1",
@@ -284,20 +297,32 @@ const OPERATION_INPUT: Record<HostedOperationName, Record<string, unknown>> = {
  * `workspace.lifecycle` sat declaring no body against routes that answer 409
  * without one.
  */
-async function callOperation(name: HostedOperationName, sandboxManager?: SandboxManager) {
+async function callRequest(
+  request: { method: string; path: string; body?: Record<string, unknown> },
+  sandboxManager?: SandboxManager,
+) {
   stubFetch()
   const plane = contractPlane(sandboxManager)
   const app = createHostedApp(plane, { entitlementGate: async () => undefined })
-  const resolved = resolveHostedOperation(name, OPERATION_INPUT[name])
   const response = await app.fetch(
-    new Request(`http://cp.test${resolved.path}`, {
-      method: resolved.method,
+    new Request(`http://cp.test${request.path}`, {
+      method: request.method,
       headers: { authorization: `Bearer ${signing.bearer}`, "content-type": "application/json" },
-      ...(resolved.body ? { body: JSON.stringify(resolved.body) } : {}),
+      ...(request.body ? { body: JSON.stringify(request.body) } : {}),
     }),
   )
   const text = await response.text()
   return { response, text, parsed: text === "" ? undefined : (JSON.parse(text) as unknown) }
+}
+
+async function callOperation(name: HostedOperationName, sandboxManager?: SandboxManager) {
+  return await callRequest(resolveHostedOperation(name, OPERATION_INPUT[name]), sandboxManager)
+}
+
+/** The `workspaces` envelope this route answers, as rows. */
+function listedWorkspaces(parsed: unknown) {
+  const rows = (parsed as { workspaces?: unknown[] } | undefined)?.workspaces
+  return (Array.isArray(rows) ? rows : []) as Record<string, unknown>[]
 }
 
 describe("hosted operation response contract", () => {
@@ -327,6 +352,33 @@ describe("hosted operation response contract", () => {
     expect(missing).toEqual([])
   })
 
+  test("every query a path declares changes what the route answers", async () => {
+    // The counterpart to the check above, for the other kind of declared thing,
+    // and it has to ask a different question. A declared body field can fail to
+    // REACH the route; a query written into the path always reaches it. What a
+    // query can do instead is nothing at all — and an ignored query is
+    // invisible, because the answer still decodes.
+    //
+    // The workspace list shipped the mirror image of that: no query where the
+    // route required one, so it answered `{ workspaces: [] }` for its whole
+    // life and every decoder was happy. So each declared query must be
+    // load-bearing — strip it, and the route must answer something else.
+    const withQuery = (Object.keys(OPERATION_ROUTES) as HostedOperationName[]).filter((name) =>
+      OPERATION_ROUTES[name].path.includes("?"),
+    )
+
+    expect(withQuery.length, "no operation declares a query, so this check holds nothing").toBeGreaterThan(0)
+
+    for (const name of withQuery) {
+      const declared = resolveHostedOperation(name, OPERATION_INPUT[name])
+      const answered = await callRequest(declared)
+      const stripped = await callRequest({ ...declared, path: declared.path.split("?")[0]! })
+
+      expect(answered.response.status, `${name} -> ${answered.text.slice(0, 400)}`).toBe(200)
+      expect(stripped.text, `${name}: the declared query changes nothing about the answer`).not.toBe(answered.text)
+    }
+  })
+
   for (const name of Object.keys(OPERATION_ROUTES) as HostedOperationName[]) {
     test(`${name} answers a body its decoder accepts`, async () => {
       const { response, text, parsed } = await callOperation(name)
@@ -334,6 +386,26 @@ describe("hosted operation response contract", () => {
       expect(() => decodeHostedResult(name, parsed)).not.toThrow()
     })
   }
+
+  test("the workspace list answers ROWS, one operation per access kind", async () => {
+    // The assertion the empty list survived. "Decodes without throwing" is
+    // satisfied by `{ workspaces: [] }`, which is what `GET /api/workspace`
+    // answers to any caller that does not name an access kind — so the old
+    // single access-less operation passed the case above while never once
+    // returning a workspace. Only a non-empty list can tell the two apart.
+    const cloud = await callOperation("workspace.list.cloud")
+    expect(cloud.response.status, cloud.text.slice(0, 400)).toBe(200)
+    expect(listedWorkspaces(cloud.parsed).length).toBeGreaterThan(0)
+    expect(listedWorkspaces(cloud.parsed).map((row) => row["workspace_id"])).toContain(WORKSPACE_ID)
+
+    // And the other kind is a different answer, not the same one twice: this
+    // route filters to user-hosted rows for this access kind, which is the only
+    // reason two operations are worth having.
+    const userHosted = await callOperation("workspace.list.userHosted")
+    expect(userHosted.response.status, userHosted.text.slice(0, 400)).toBe(200)
+    expect(listedWorkspaces(userHosted.parsed).length).toBeGreaterThan(0)
+    expect(listedWorkspaces(userHosted.parsed).map((row) => row["workspace_id"])).toEqual([USER_HOSTED_WORKSPACE_ID])
+  })
 
   for (const name of ["workspace.connection.mint", "workspace.connection.refresh"] as const) {
     test(`${name} accepts the cold start, not just the settled connection`, async () => {
@@ -352,10 +424,10 @@ describe("hosted operation response contract", () => {
   test("a decoder that stops matching its route fails", async () => {
     // Mutation check on the binding itself. Every assertion above is a
     // NEGATIVE — "does not throw" — and a decoder set that accepted anything
-    // would satisfy all fifteen. So take a real route body and hand it to a
+    // would satisfy all sixteen. So take a real route body and hand it to a
     // different operation's decoder: if the bodies were not really reaching the
     // decoders, this would pass too.
-    const { parsed } = await callOperation("workspace.list")
+    const { parsed } = await callOperation("workspace.list.cloud")
     expect(() => decodeHostedResult("workspace.checkpoints.list", parsed)).not.toThrow()
     expect(() => decodeHostedResult("workspace.connection.mint", parsed)).toThrow(/relayUrl/)
     expect(() => decodeHostedResult("host.enrollCurrentMachine", parsed)).toThrow(/enrollment/)

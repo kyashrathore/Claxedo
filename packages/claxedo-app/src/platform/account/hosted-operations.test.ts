@@ -18,7 +18,7 @@ import {
  * A fourth way is NOT tested here and cannot be: a decoder that is internally
  * consistent and simply wrong about what its route returns. Every shape below
  * is written by hand, so it agrees with whatever reading of the routes produced
- * it — which is how `workspace.list`, `workspace.resolve`,
+ * it — which is how the workspace list, `workspace.resolve`,
  * `host.enrollCurrentMachine` and three more shipped mismatched. What binds
  * these decoders to real route output is
  * `claxedo-server/src/deployments/hosted-shared/hosted-operation-response-contract.test.ts`,
@@ -88,8 +88,9 @@ describe("decodeHostedResult", () => {
 
   test("rejects a list where an object is required, and the reverse", () => {
     expect(() => decodeHostedResult("account.get", [])).toThrow(/expected an object/)
-    expect(() => decodeHostedResult("workspace.list", [])).toThrow(/expected an object/)
-    expect(() => decodeHostedResult("workspace.list", {})).toThrow(/expected an array "workspaces"/)
+    expect(() => decodeHostedResult("workspace.list.cloud", [])).toThrow(/expected an object/)
+    expect(() => decodeHostedResult("workspace.list.cloud", {})).toThrow(/expected an array "workspaces"/)
+    expect(() => decodeHostedResult("workspace.list.userHosted", {})).toThrow(/expected an array "workspaces"/)
   })
 
   test("rejects an empty string in a required field, not just a missing one", () => {
@@ -104,8 +105,11 @@ describe("decodeHostedResult", () => {
       relayUrl: "wss://relay.test",
       token: "x",
     })
-    expect(decodeHostedResult("workspace.list", { workspaces: [{ id: "ws_1" }] })).toEqual({
+    expect(decodeHostedResult("workspace.list.cloud", { workspaces: [{ id: "ws_1" }] })).toEqual({
       workspaces: [{ id: "ws_1" }],
+    })
+    expect(decodeHostedResult("workspace.list.userHosted", { workspaces: [{ id: "ws_2" }] })).toEqual({
+      workspaces: [{ id: "ws_2" }],
     })
   })
 
@@ -165,7 +169,12 @@ describe("isSafeOperation", () => {
   })
 
   test("marks plain reads as safe", () => {
-    for (const safe of ["account.get", "workspace.list", "workspace.checkpoints.list"] as const) {
+    for (const safe of [
+      "account.get",
+      "workspace.list.cloud",
+      "workspace.list.userHosted",
+      "workspace.checkpoints.list",
+    ] as const) {
       expect(isSafeOperation(safe), safe).toBe(true)
     }
   })

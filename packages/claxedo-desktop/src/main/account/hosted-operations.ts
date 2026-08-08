@@ -6,12 +6,19 @@
  * The renderer supplies an operation NAME and parameters; it never supplies a
  * url, a method, or a header, because if it could, a renderer compromise would
  * be able to spend main's credential on any route the server exposes rather
- * than the fifteen the product actually uses.
+ * than the sixteen the product actually uses.
  *
  * Parameters are substituted into the path by name and encoded. They cannot
  * introduce a new segment: `:id` is replaced by one `encodeURIComponent`d
  * value, so `../../admin` becomes a literal path component rather than a
  * traversal.
+ *
+ * A path may carry a QUERY, and where it does the query is written out here in
+ * full — `?access=cloud`, never `?access=:access`. The substitution above would
+ * happily fill a `:name` inside a query string, which is exactly why the table
+ * must not contain one: a caller-selected query is a caller-selected request,
+ * and then the set of calls main can make is no longer the set written down
+ * here. `hosted-operations.test.ts` holds that property.
  *
  * Adding an operation means adding a matrix row AND an entry here.
  * `hosted-operations.test.ts` holds the two equal.
@@ -39,7 +46,29 @@ export const HOSTED_OPERATIONS = {
   // renderer cannot reach it — see `RENDERER_WITHHELD_OPERATIONS` — and no
   // main-side caller exists.
   "account.cliExchange": { method: "POST", path: "/api/auth/cli/exchange", body: ["code"] },
-  "workspace.list": { method: "GET", path: "/api/workspace" },
+  // TWO operations, one per access kind, each with the access FIXED in the path.
+  //
+  // `GET /api/workspace` with no `?access=` is not a broader list — it is
+  // `{ workspaces: [] }`, always. The hosted handler (`routes/hosted/workspace.ts`)
+  // only requires a signed caller, only asks the authority, and only answers
+  // rows when `access` is `cloud` or `user-hosted`; every other value falls
+  // through to the empty envelope. The single access-less row this replaces
+  // could therefore never return a workspace, and never did.
+  //
+  // Not one row with an `access` PARAMETER, which this table could express
+  // today — `?access=:access` would substitute like any other `:name`. Two
+  // reasons it must not:
+  //   - Nothing chooses a kind at runtime. The caller wants BOTH and merges
+  //     them (`claxedo-app/.../features/session/data/sync/inventory-source.ts`,
+  //     `fetchSignedWorkspaceSnapshotUncached`), so the kind is a constant at
+  //     each call site. A parameter would buy no caller flexibility and would
+  //     cost the closed set its enumerability: what main can request would stop
+  //     being readable here and start depending on what the renderer passes.
+  //   - Withholding is per NAME (`RENDERER_WITHHELD_OPERATIONS`). One
+  //     parameterized row cannot be withheld for one access kind and allowed
+  //     for the other; two rows can.
+  "workspace.list.cloud": { method: "GET", path: "/api/workspace?access=cloud" },
+  "workspace.list.userHosted": { method: "GET", path: "/api/workspace?access=user-hosted" },
   "workspace.resolve": { method: "GET", path: "/api/workspace/resolve" },
   // `projectName`/`workspaceName`, not `displayName`. The create body is a
   // strict schema, so an undeclared field is a 400 for the whole request rather

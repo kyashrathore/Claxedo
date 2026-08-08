@@ -135,7 +135,14 @@ export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec>
   // uses. Validated and passed through rather than unwrapped, because every
   // other row here validates without transforming and one decoder that quietly
   // reshapes its answer is a decoder nobody can read the registry to predict.
-  "workspace.list": { safe: true, decode: withArray("workspaces") },
+  //
+  // Two rows, one per access kind, answering the same envelope: the hosted list
+  // route returns rows only for `cloud` or `user-hosted`, and the caller that
+  // needs the whole picture asks for both and merges them. Two names rather
+  // than one operation taking an access argument, so the set of calls stays
+  // enumerable by name — the property the closed set rests on.
+  "workspace.list.cloud": { safe: true, decode: withArray("workspaces") },
+  "workspace.list.userHosted": { safe: true, decode: withArray("workspaces") },
   // Nullable: the hosted control plane answers `null` on purpose.
   "workspace.resolve": { safe: true, decode: nullable(object) },
   // Provisions a cloud VM. Without a key, an uncertain response creates a

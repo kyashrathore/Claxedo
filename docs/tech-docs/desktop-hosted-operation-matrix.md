@@ -86,7 +86,8 @@ is the authoritative source for this column.
 
 | Operation ID | Owner module | Method + path | Transport | Retry | Notes |
 |---|---|---|---|---|---|
-| `workspace.list` | `features/workspaces/data/workspace-connection.ts` | `GET /api/workspace` | unary | safe | Includes both laptop and cloud-VM rows; placement is a field, not a route. |
+| `workspace.list.cloud` | `features/session/data/sync/inventory-source.ts` | `GET /api/workspace?access=cloud` | unary | safe | The access kind is fixed in the path, not a parameter — see below. |
+| `workspace.list.userHosted` | `features/session/data/sync/inventory-source.ts` | `GET /api/workspace?access=user-hosted` | unary | safe | The laptop rows. A caller wanting the whole picture runs both operations and merges, which is what `fetchSignedWorkspaceSnapshotUncached` already does. |
 | `workspace.resolve` | `features/workspaces/data/workspace-connection.ts` | `GET /api/workspace/resolve` | unary | safe | |
 | `workspace.create` | `features/workspaces/ui/dialogs/create-cloud-project.tsx` | `POST /api/workspace/create` | unary | unsafe | Provisions a cloud VM. Without a key, an uncertain response creates a second VM — and there is no key to replay. `createCloudBody` in `claxedo-server/src/routes/hosted/workspace.ts` is `.strict()` with no idempotency field, so a key sent from a client 400s the whole request. Classified `unsafe` until the route accepts one; an uncertain response must be surfaced, never retried. |
 | `workspace.lifecycle` | `features/workspaces/actions/project-actions.tsx` | `POST /api/workspace/:id/lifecycle/:operation` | unary | unsafe | Stop/replace/cleanup/destroy. The route reads only `approved` and `checkpointId` and accepts no key. `stop`, `cleanup` and `destroy` converge on a state and tolerate a retry; `replace` provisions, so it does not — classified by its worst member. Every operation but `stop` refuses with 409 unless `approved: true` is in the body. |
@@ -94,6 +95,25 @@ is the authoritative source for this column.
 | `workspace.checkpoints.restore` | `features/workspaces/actions/project-actions.tsx` | `POST /api/workspace/:id/checkpoints/:checkpointId/restore` | unary | unsafe | Destructive to working state. |
 | `workspace.connection.mint` | `platform/runtime/cloud/workspace-runtime-store.ts` | `GET /api/workspace/:id/connection` | unary | safe | Returns `relayUrl` plus a scoped Runtime Access Token, and no laptop address. |
 | `workspace.connection.refresh` | `platform/runtime/cloud/workspace-runtime-store.ts` | `POST /api/workspace/:id/connection/refresh` | unary | safe | Called before expiry and after a Relay 401. |
+
+**Why the workspace list is two operations.** `GET /api/workspace` with no
+`?access=` is not a wider list: the hosted handler
+(`claxedo-server/src/routes/hosted/workspace.ts`) requires a signed caller,
+reaches the authority, and answers rows only when `access` is `cloud` or
+`user-hosted`. Every other value — including absent — falls through to
+`{ workspaces: [] }`. A single access-less `workspace.list` row therefore
+returned an empty list for its whole life, which no test noticed because an
+empty envelope decodes perfectly.
+
+The fix could have been an `access` PARAMETER, and the desktop table could
+express one: its `:name` substitution fills a query string as readily as a path
+segment. It is two operations instead because nothing picks a kind at runtime —
+the one caller wants both and merges them — and because the two properties this
+document exists for are per-name. The set of requests main can make stays
+readable in the table rather than depending on what the renderer passes, and
+`RENDERER_WITHHELD_OPERATIONS` can withhold one access kind without withholding
+the other. So where a row carries a query, that query is written out in full and
+contains no `:name`; `hosted-operations.test.ts` enforces it.
 
 ### Machine remote access (user-hosted)
 

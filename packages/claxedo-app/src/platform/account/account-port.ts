@@ -72,7 +72,11 @@ export type HostedOperationName =
   | "account.mode"
   | "account.compatibility"
   | "account.cliExchange"
-  | "workspace.list"
+  // One per access kind, because the hosted list route answers rows only for
+  // `cloud` or `user-hosted` and the access-less call is always empty. See the
+  // rows in `claxedo-desktop/src/main/account/hosted-operations.ts`.
+  | "workspace.list.cloud"
+  | "workspace.list.userHosted"
   | "workspace.resolve"
   | "workspace.create"
   | "workspace.lifecycle"
