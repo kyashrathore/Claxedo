@@ -1,5 +1,5 @@
 import type { Component, JSX } from "solid-js"
-import { createMemo, createUniqueId, onMount, splitProps, Show } from "solid-js"
+import { createEffect, createMemo, createUniqueId, splitProps, Show } from "solid-js"
 import spriteURL from "./file-icons/sprite.svg?url"
 import type { IconName } from "./file-icons/types"
 import { createLazyInlineSvgSprite } from "./inline-svg-sprite"
@@ -20,7 +20,7 @@ export const FileIcon: Component<FileIconProps> = (props) => {
   const [local, rest] = splitProps(props, ["node", "class", "classList", "expanded", "mono"])
   const name = createMemo(() => chooseIconName(local.node.path, local.node.type, local.expanded || false))
   const id = `file-icon-mono-${createUniqueId()}`
-  onMount(() => fileIconSprite.ensure(name()))
+  createEffect(() => fileIconSprite.ensure(name()))
   return (
     <svg
       data-component="file-icon"
