@@ -150,7 +150,9 @@ type CentralSessionRuntimeOptions = {
    */
   usageLedger?: UsageLedger
   /** Durable local fact/outbox store. Deployment compositions must provide it. */
-  usageRevisionStore?: UsageRevisionWriter & Partial<UsageRevisionReader>
+  usageRevisionStore?: UsageRevisionWriter & Partial<UsageRevisionReader> & {
+    markDelivered?: (fact: TurnUsageRevision) => Promise<void>
+  }
   resolveUsageHostIdentity?: () => Promise<{ hostId: string }>
   /** Product-plane `deployment_mode` for turn metering; defaults to self-host. */
   productDeploymentMode?: ProductDeploymentMode
@@ -445,6 +447,9 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
         ledgerResult = {
           activated: acknowledgement.activated,
           ledger_write: acknowledgement.status === "conflict" ? "failed" : "ok",
+        }
+        if (acknowledgement.status !== "conflict") {
+          await options.usageRevisionStore?.markDelivered?.(fact)
         }
       } catch {
         ledgerResult = { activated: false, ledger_write: "failed" }

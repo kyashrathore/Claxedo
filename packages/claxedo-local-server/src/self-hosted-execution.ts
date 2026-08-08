@@ -38,7 +38,7 @@ export { NetworkPolicyRoutes } from "./sandbox/network/network-policy-routes"
 export { BootstrapRoutes } from "./deployments/shared-routes/bootstrap"
 export { createWorkspaceRuntimeProxy } from "./workspace/runtime-dispatch/middleware"
 export { mountWorkspaceRuntimePtyWebSocketProxy } from "./deployments/local/server-workspace-pty-proxy"
-export { mountLocalOnlyUsageLimits } from "./deployments/local/server-usage-limits"
+export { getLocalUsageLimits, mountLocalOnlyUsageLimits } from "./deployments/local/server-usage-limits"
 
 // ── Local execution services ────────────────────────────────────────────────
 export { resolveHarnessId } from "./opencode/compat-routes/provider-config"

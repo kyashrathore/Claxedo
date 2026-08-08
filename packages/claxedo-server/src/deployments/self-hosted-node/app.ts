@@ -1,5 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
+import os from "node:os"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import Database from "better-sqlite3"
@@ -117,7 +118,7 @@ import {
   mountLazyEmbeddedWorkGraph,
   recordLocalWorkGraphLlmUsage,
 } from "../../hosts/workgraph/composition/server-workgraph"
-import { mountLocalOnlyUsageLimits } from "@claxedo/local-server/self-hosted-execution"
+import { getLocalUsageLimits, mountLocalOnlyUsageLimits } from "@claxedo/local-server/self-hosted-execution"
 import { centralModelBackend } from "../../session/runtime"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { withDataDirOwnership } from "@claxedo/server-core/platform/runtime/lib/data-dir-owner"
@@ -143,6 +144,12 @@ import { hasUserHostedMachineTunnel, startUserHostedMachineTunnel, stopUserHoste
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/self-hosted-execution"
 import { createSqliteUsageLedger } from "../../usage/adapters/sqlite-usage-ledger"
 import { createTurnMeter } from "../../usage/turn-meter"
+import { createConvexUsageLedger } from "../../authority/adapters/convex/usage-ledger"
+import type { UsageLedger } from "../../platform/telemetry/product/metering"
+import { createUsageOutboxSync } from "../../usage/outbox-sync"
+import { LocalUsageRoutes } from "../../usage/routes"
+import { scanTokenTrackerLocalHistory } from "../../usage/adapters/token-tracker-local-history"
+import { createUsageProvenanceClassifier } from "../../usage/provenance"
 
 const execFileAsync = promisify(execFile)
 
@@ -461,6 +468,7 @@ export function createSelfHostedApp(
      */
     posture?: SelfHostedPosture
     usageRevisionStore?: ReturnType<typeof createSqliteUsageLedger>
+    usageLedger?: UsageLedger
     resolveUsageHostIdentity?: () => Promise<{ hostId: string }>
   } = {},
 ) {
@@ -532,6 +540,7 @@ export function createSelfHostedApp(
     },
     turnCredentials,
     ...(options.usageRevisionStore ? { usageRevisionStore: options.usageRevisionStore } : {}),
+    ...(options.usageLedger ? { usageLedger: options.usageLedger } : {}),
     ...(options.resolveUsageHostIdentity ? { resolveUsageHostIdentity: options.resolveUsageHostIdentity } : {}),
     ...(options.beforeLocalSessionList ? { beforeLocalSessionList: options.beforeLocalSessionList } : {}),
   })
@@ -820,6 +829,46 @@ export function createSelfHostedApp(
     isDirectory: async (directory) => (await fs.promises.stat(directory).catch(() => undefined))?.isDirectory() ?? false,
   }))
   mountLocalOnlyUsageLimits(app, authRouteOptions(services))
+  if (options.usageRevisionStore) {
+    const outbox = createUsageOutboxSync({
+      local: options.usageRevisionStore,
+      ...(options.usageLedger ? { central: options.usageLedger } : {}),
+    })
+    app.route("/api/claxedo/usage", LocalUsageRoutes({
+      local: options.usageRevisionStore,
+      ...(options.usageLedger ? { central: options.usageLedger } : {}),
+      outbox,
+      identity: async (request) => {
+        const auth = await controlPlaneAuthContext(request, authRouteOptions(services))
+        return auth.mode === "signed" && auth.user.orgId
+          ? { org_id: auth.user.orgId, user_id: auth.user.subject }
+          : undefined
+      },
+      quota: async (refresh) => await getLocalUsageLimits({ refresh }),
+      history: async ({ since, until }) => {
+        const facts = await options.usageRevisionStore!.current()
+        const entries = facts.flatMap((fact) => {
+          const source = fact.harness === "opencode" ? "opencode" : fact.harness === "pi" ? "pi" : undefined
+          return source ? [{
+            source,
+            nativeSessionId: fact.sessionId,
+            sessionRef: fact.sessionRef,
+            harness: fact.harness,
+            ...(fact.workspaceId ? { workspaceId: fact.workspaceId } : {}),
+            startedAt: fact.observedAt,
+            ...(fact.completedAt ? { endedAt: fact.completedAt } : {}),
+          }] : []
+        })
+        return await scanTokenTrackerLocalHistory({
+          sourceHome: os.homedir(),
+          stateDir: path.join(dataDir(), "usage-scanner"),
+          since,
+          until,
+          classify: createUsageProvenanceClassifier(entries),
+        })
+      },
+    }))
+  }
   mountControlPlaneChannels(app, {
     services,
     runtime: centralControl.runtime,
@@ -1073,6 +1122,10 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   const opencodeCompat = process.env.CLAXEDO_DISABLE_OPENCODE_COMPAT !== "1"
   const services = options.services
   const usageRevisionStore = createSqliteUsageLedger()
+  const authorityUrl = convexAuthorityUrlFromEnv(process.env)
+  const usageLedger = authorityUrl && process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN?.trim()
+    ? createConvexUsageLedger({ url: authorityUrl })
+    : undefined
   const localUsageHost = localHostIdentity()
   const localTurnMeter = createTurnMeter({
     writer: usageRevisionStore,
@@ -1303,6 +1356,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   let localSessionProjectionReady: Promise<void> | undefined
   const built = createSelfHostedApp(services, {
     usageRevisionStore,
+    ...(usageLedger ? { usageLedger } : {}),
     resolveUsageHostIdentity: localHostIdentity,
     onOpencodeAccess: () => upstreamEvents?.start(),
     beforeLocalSessionList: async () => {

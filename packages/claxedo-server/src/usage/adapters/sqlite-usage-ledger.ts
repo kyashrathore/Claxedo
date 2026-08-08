@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { and, asc, eq } from "drizzle-orm"
+import { and, asc, eq, sql } from "drizzle-orm"
 import { ClaxedoDB } from "../../platform/db"
 import {
   assertTurnUsageRevision,
@@ -105,6 +105,7 @@ function fact(row: UsageRow): TurnUsageRevision {
 
 export type SqliteUsageLedger = UsageRevisionWriter & UsageRevisionReader & {
   markDelivered(fact: Pick<TurnUsageRevision, "hostId" | "sessionRef" | "messageId" | "revision">): Promise<void>
+  markConflict(fact: Pick<TurnUsageRevision, "hostId" | "sessionRef" | "messageId" | "revision">): Promise<void>
 }
 
 export function createSqliteUsageLedger(input: {
@@ -187,6 +188,18 @@ export function createSqliteUsageLedger(input: {
     async markDelivered(item) {
       database.use((db) => db.update(ClaxedoUsageOutboxTable).set({
         state: "delivered",
+        updated_at: now(),
+      }).where(and(
+        eq(ClaxedoUsageOutboxTable.host_id, item.hostId),
+        eq(ClaxedoUsageOutboxTable.session_ref, item.sessionRef),
+        eq(ClaxedoUsageOutboxTable.message_id, item.messageId),
+        eq(ClaxedoUsageOutboxTable.revision, item.revision),
+      )).run())
+    },
+    async markConflict(item) {
+      database.use((db) => db.update(ClaxedoUsageOutboxTable).set({
+        state: "conflict",
+        attempts: sql`${ClaxedoUsageOutboxTable.attempts} + 1`,
         updated_at: now(),
       }).where(and(
         eq(ClaxedoUsageOutboxTable.host_id, item.hostId),

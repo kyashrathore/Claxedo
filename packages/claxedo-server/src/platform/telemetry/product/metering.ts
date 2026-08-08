@@ -106,6 +106,13 @@ export type UsageLedger = {
     currentRevision?: number
     activated: boolean
   }>
+  recordTurnUsageBatch?: (
+    input: { org_id: string; user_id: string; revisions: TurnUsageRevision[] },
+  ) => Promise<Array<{
+    status: "accepted" | "duplicate" | "stale" | "conflict"
+    currentRevision?: number
+    activated: boolean
+  }>>
   usageDashboard?: (input: {
     org_id: string
     user_id: string

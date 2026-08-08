@@ -41,7 +41,9 @@ export type CentralControlAppOptions = {
   beforeLocalSessionList?: () => Promise<void>
   /** W5: authoritative destination for completed-turn token counts (plan D1). */
   usageLedger?: UsageLedger
-  usageRevisionStore?: UsageRevisionWriter & Partial<UsageRevisionReader>
+  usageRevisionStore?: UsageRevisionWriter & Partial<UsageRevisionReader> & {
+    markDelivered?: (fact: import("./usage/contracts").TurnUsageRevision) => Promise<void>
+  }
   resolveUsageHostIdentity?: () => Promise<{ hostId: string }>
   /** Product-plane `deployment_mode` for turn metering; defaults to self-host. */
   productDeploymentMode?: ProductDeploymentMode
@@ -171,11 +173,13 @@ export function createCentralControlApp(services: ControlPlaneServices, options:
     createHybridSession: runtime.createHybridSession,
   }))
   if (options.usageLedger) {
-    app.route("/api/control/usage", UsageRoutes({
+    const usageOptions = {
       ledger: options.usageLedger,
       ...(options.authConfig ? { authConfig: options.authConfig } : {}),
       ...(options.verifier ? { verifier: options.verifier } : {}),
-    }))
+    }
+    app.route("/api/control/usage", UsageRoutes(usageOptions))
+    app.route("/api/claxedo/usage", UsageRoutes(usageOptions))
   }
   const forwardRuntimeRequest = async (request: Request) => {
     const access = await centralRuntimeAccess(request, services, options)

@@ -13,6 +13,7 @@ import { requireExecutor, requireServiceToken } from "../../../authority/adapter
 import type { ConvexExecutor } from "../../../authority/adapters/convex/workspace-authority/types"
 import { controlPlaneTimeoutMs, withTimeout } from "../../../authority/adapters/convex/timeout"
 import type { LlmTurnRecord, UsageLedger } from "../../../platform/telemetry/product/metering"
+import type { TurnUsageRevision } from "../../../usage/contracts"
 
 const usageApi = anyApi as unknown as {
   usageMetering: {
@@ -29,6 +30,58 @@ export type ConvexUsageLedgerInput = {
   url?: string
   executor?: ConvexExecutor
   serviceToken?: string
+}
+
+function revisionArgs(fact: TurnUsageRevision) {
+  return {
+    host_id: fact.hostId,
+    session_ref: fact.sessionRef,
+    session_id: fact.sessionId,
+    message_id: fact.messageId,
+    revision: fact.revision,
+    observed_at: fact.observedAt,
+    ...(fact.completedAt === undefined ? {} : { completed_at: fact.completedAt }),
+    settlement: fact.settlement,
+    status: fact.status,
+    location: fact.location,
+    harness: fact.harness,
+    provider_id: fact.providerId,
+    model_id: fact.modelId,
+    ...(fact.workspaceId ? { workspace_id: fact.workspaceId } : {}),
+    input_tokens: fact.tokens.input,
+    output_tokens: fact.tokens.output,
+    reasoning_tokens: fact.tokens.reasoning,
+    cache_read_tokens: fact.tokens.cache.read,
+    cache_write_tokens: fact.tokens.cache.write,
+    quality: {
+      source: fact.quality.source,
+      ...(fact.quality.observationKind ? { observation_kind: fact.quality.observationKind } : {}),
+      ...(fact.quality.providerObservationId ? { provider_observation_id: fact.quality.providerObservationId } : {}),
+      known_categories: fact.quality.knownCategories,
+    },
+  }
+}
+
+type UsageAcknowledgement = {
+  status: "accepted" | "duplicate" | "stale" | "conflict"
+  currentRevision?: number
+  activated: boolean
+}
+
+function acknowledgements(result: unknown): UsageAcknowledgement[] {
+  const rows = (result as { results?: Array<{ status?: unknown; current_revision?: unknown; activated?: unknown }> })?.results
+  if (!rows) throw new Error("Convex usage ingest returned no acknowledgements")
+  return rows.map((item) => {
+    const status = item.status
+    if (status !== "accepted" && status !== "duplicate" && status !== "stale" && status !== "conflict") {
+      throw new Error("Convex usage ingest returned an invalid acknowledgement")
+    }
+    return {
+      status,
+      ...(typeof item.current_revision === "number" ? { currentRevision: item.current_revision } : {}),
+      activated: item.activated === true,
+    } satisfies UsageAcknowledgement
+  })
 }
 
 export function createConvexUsageLedger(input: ConvexUsageLedgerInput = {}): UsageLedger {
@@ -65,48 +118,22 @@ export function createConvexUsageLedger(input: ConvexUsageLedgerInput = {}): Usa
         execute().mutation(usageApi.usageMetering.ingestTurnUsageBatch, serviceArgs({
           org_id,
           user_id,
-          revisions: [{
-            host_id: fact.hostId,
-            session_ref: fact.sessionRef,
-            session_id: fact.sessionId,
-            message_id: fact.messageId,
-            revision: fact.revision,
-            observed_at: fact.observedAt,
-            ...(fact.completedAt === undefined ? {} : { completed_at: fact.completedAt }),
-            settlement: fact.settlement,
-            status: fact.status,
-            location: fact.location,
-            harness: fact.harness,
-            provider_id: fact.providerId,
-            model_id: fact.modelId,
-            ...(fact.workspaceId ? { workspace_id: fact.workspaceId } : {}),
-            input_tokens: fact.tokens.input,
-            output_tokens: fact.tokens.output,
-            reasoning_tokens: fact.tokens.reasoning,
-            cache_read_tokens: fact.tokens.cache.read,
-            cache_write_tokens: fact.tokens.cache.write,
-            quality: {
-              source: fact.quality.source,
-              ...(fact.quality.observationKind ? { observation_kind: fact.quality.observationKind } : {}),
-              ...(fact.quality.providerObservationId ? { provider_observation_id: fact.quality.providerObservationId } : {}),
-              known_categories: fact.quality.knownCategories,
-            },
-          }],
+          revisions: [revisionArgs(fact)],
         })),
         controlPlaneTimeoutMs("mutation"),
-      ) as { results?: Array<{ status?: unknown; current_revision?: unknown; activated?: unknown }> }
-      const item = result.results?.[0]
-      const status = item?.status
-      if (status !== "accepted" && status !== "duplicate" && status !== "stale" && status !== "conflict") {
-        throw new Error("Convex usage ingest returned an invalid acknowledgement")
-      }
+      )
+      const item = acknowledgements(result)[0]
       if (!item) throw new Error("Convex usage ingest returned no acknowledgement")
-      return {
-        status,
-        ...(typeof item.current_revision === "number" ? { currentRevision: item.current_revision } : {}),
-        activated: item.activated === true,
-      }
+      return item
     },
+    recordTurnUsageBatch: async ({ org_id, user_id, revisions }) => acknowledgements(await withTimeout(
+      execute().mutation(usageApi.usageMetering.ingestTurnUsageBatch, serviceArgs({
+        org_id,
+        user_id,
+        revisions: revisions.map(revisionArgs),
+      })),
+      controlPlaneTimeoutMs("mutation"),
+    )),
     usageDashboard: async (args) => await withTimeout(
       execute().query(usageApi.usageMetering.usageDashboard, serviceArgs(args)),
       controlPlaneTimeoutMs("read"),

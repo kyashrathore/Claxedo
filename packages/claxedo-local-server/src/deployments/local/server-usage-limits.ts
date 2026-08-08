@@ -33,19 +33,17 @@ function loadUsageLimits(): Promise<UsageLimitsModule> {
   return import("tokentracker-cli/src/lib/usage-limits.js")
 }
 
+export async function getLocalUsageLimits(input: { refresh?: boolean } = {}) {
+  const mod = await (loaded ??= loadUsageLimits())
+  if (input.refresh) mod.resetUsageLimitsCache()
+  return await mod.getUsageLimits({ home: os.homedir(), env: process.env })
+}
+
 export function mountLocalOnlyUsageLimits(app: HonoType, options: UsageLimitsRouteOptions) {
   app.use("/api/claxedo/usage-limits", localOnlyProjection({ ...options, label: "UsageLimits" }))
   app.get("/api/claxedo/usage-limits", async (c) => {
     try {
-      const mod = await (loaded ??= loadUsageLimits())
-      // The lib keeps a short in-memory cache with single-flight dedup, so the
-      // client can poll freely; ?refresh=1 forces a live re-probe.
-      if (c.req.query("refresh") === "1") mod.resetUsageLimitsCache()
-      // CRITICAL: tokentracker does NOT default the home dir — without `home`,
-      // every credential file under ~ (Codex ~/.codex, Gemini ~/.gemini, Cursor
-      // state.vscdb, ...) reads as "not configured". Only Keychain-based Claude
-      // survives argless. Always pass home + env.
-      return c.json(await mod.getUsageLimits({ home: os.homedir(), env: process.env }))
+      return c.json(await getLocalUsageLimits({ refresh: c.req.query("refresh") === "1" }))
     } catch (err) {
       return c.json(
         errorBody("usage_limits_failed", err instanceof Error ? err.message : String(err)),
