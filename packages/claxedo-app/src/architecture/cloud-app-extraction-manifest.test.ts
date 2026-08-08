@@ -539,8 +539,11 @@ describe("direction 2 — the export surface cloud-app needs from app", () => {
    *  - `ui/controls/claxedo-icon.tsx` (23) and `claxedo-icon-button.tsx` (7) are
    *    plain shared UI. Cheap: one `./components` style export covers both.
    *  - `platform/api/api.ts` (17) is NOT cheap and is NOT on the plan's move
-   *    list. It is the authenticated transport, and it imports `auth-client.ts`
-   *    — which DOES move. See the auth-leak test below.
+   *    list. It is the authenticated transport. It no longer imports
+   *    `auth-client.ts` — which DOES move — but 17 hosted importers still make
+   *    its SHAPE the most repeated decision on the surface, and
+   *    `cloud-app-export-surface.test.ts` refuses to export it. See the
+   *    auth-leak test below.
    *  - `platform/i18n/provider.tsx` (11) already has an `./i18n` export subpath
    *    pointed at `cloud-strings.ts`, not at the provider.
    */
@@ -588,7 +591,13 @@ describe("the plan's move list versus the candidate manifest", () => {
     // modules: its one remaining importer, `app/entry/main.tsx`, is itself on
     // the list. The thirteen other files that dropped out did so because the
     // record reader they actually wanted moved to `platform/runtime/`.
-    stayingModulesThatImportThem: 42,
+    //
+    // 42 -> 41: `platform/api/api.ts` dropped out. `auth-client.ts` was its
+    // ONLY edge into the move set, and the transport now takes a bearer through
+    // `configureApiRuntime({ bearerToken })` rather than importing the provider.
+    // `movedModulesImportedByStaying` does NOT fall with it — auth-client.ts is
+    // still imported by three other staying modules, listed below.
+    stayingModulesThatImportThem: 41,
     movedModulesImportedByStaying: 41,
     exportSurface: 58,
   }
@@ -643,16 +652,23 @@ describe("the plan's move list versus the candidate manifest", () => {
    * AFTER the plan's move list is applied.
    *
    * Unit 10's own security scenario reads: "a source-graph test rejects any
-   * surviving app import of `auth-client.ts` or `auth-session.ts`". These nine
+   * surviving app import of `auth-client.ts` or `auth-session.ts`". These eight
    * modules are exactly what stands between the plan and that assertion, and
-   * none of them is on the move list. Two are structural rather than cosmetic:
+   * none of them is on the move list.
    *
-   *  - `platform/api/api.ts` is the authenticated transport that 17 hosted
-   *    modules depend on. It imports `auth-client.ts` and stays. That is a
-   *    cycle across the new package boundary, and Unit 9's account port is what
-   *    is supposed to break it.
-   *  - `platform/runtime/agent/agent-runtime-client.ts` does the same thing for
-   *    the runtime client.
+   * The STRUCTURAL one is gone. `platform/api/api.ts` — the authenticated
+   * transport 17 hosted modules depend on — imported `auth-client.ts` while
+   * staying, which is a cycle across the new package boundary rather than an
+   * import to update. It now names a bearer source
+   * (`configureApiRuntime({ bearerToken })`) that the hosted entry and the
+   * desktop renderer bind, so app publishes no transport that depends on
+   * cloud-app for its credential.
+   *
+   * `platform/runtime/agent/agent-runtime-client.ts` is the same defect in the
+   * runtime client and is still here: it calls `getAuthToken()` directly in one
+   * function. It is cheaper than api.ts was (one call site, and the module is
+   * not on the export surface), which is why it was not bundled into the same
+   * change.
    *
    * Empty here would mean the move list is sufficient on its own. It is not, and
    * the counts below say by how much.
@@ -666,7 +682,6 @@ describe("the plan's move list versus the candidate manifest", () => {
       // what the local product entry was doing.
       "app/entry/auth.ts",
       "features/workspaces/actions/project-actions.tsx",
-      "platform/api/api.ts",
       "platform/runtime/agent/agent-runtime-client.ts",
     ],
     "platform/auth/auth-session.ts": [

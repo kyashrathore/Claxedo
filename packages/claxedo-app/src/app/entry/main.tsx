@@ -11,7 +11,7 @@ import { AppBaseProviders, AppInterface } from "@/app/entry/app"
 import { PlatformProvider, type Platform } from "@claxedo/app"
 import { initClaxedo, getDefaultConfig } from "./index"
 import { getAuthToken, initializeClerk } from "@/platform/auth/auth-client"
-import { authFetch } from "@/platform/api/api"
+import { authFetch, configureApiRuntime } from "@/platform/api/api"
 import {
   initPostHog,
   capture as phCapture,
@@ -39,6 +39,23 @@ import { cloudWorkspaceStartup } from "@/platform/runtime/cloud/workspace-runtim
  * wake, so the port stays unbound and reaching it throws instead of pretending.
  */
 configureWorkspaceStartup(cloudWorkspaceStartup)
+
+/**
+ * Bind the identity provider to the authenticated transport.
+ *
+ * `platform/api/api.ts` used to import `getAuthToken` itself. It stays in
+ * `@claxedo/app` while `auth-client.ts` moves to `@claxedo/cloud-app`, so that
+ * import was a cycle across the package boundary — and it was the chain by
+ * which `local.tsx` reached Clerk through `app.tsx`. The transport now names a
+ * bearer source and the hosted entry supplies one; `local.tsx` supplies none,
+ * which is why an unsigned build talks to its loopback server with no
+ * Authorization header at all rather than with a stub that returns null.
+ *
+ * At module scope, not inside a component: `authFetch` is called from plain
+ * modules during bootstrap, and a binding installed during render would leave
+ * the earliest calls unauthenticated.
+ */
+configureApiRuntime({ bearerToken: getAuthToken })
 
 // Initialize cloud extensions before rendering
 const config = getDefaultConfig()

@@ -46,6 +46,23 @@ type Platform = AppPlatform & {
   setDisplayBackend?(backend: LinuxDisplayBackend | null): Promise<void>
 }
 
+/**
+ * Bind the identity provider to the authenticated transport.
+ *
+ * `@claxedo/app`'s `platform/api/api.ts` used to import `getAuthToken` itself;
+ * it now names a bearer source and each composition root supplies one, so the
+ * transport can stay in `@claxedo/app` while the Clerk producer moves to
+ * `@claxedo/cloud-app`. This renderer already holds `getAuthToken` for the
+ * platform descriptor below — the same function, now also handed to the
+ * transport explicitly.
+ *
+ * At module scope rather than in the `configureApiRuntime` call inside
+ * `ServerGate`: that one runs during render, once the sidecar URL and password
+ * are known, and anything that reached `authFetch` before then would lose the
+ * bearer it has today.
+ */
+configureApiRuntime({ bearerToken: getAuthToken })
+
 const root = document.getElementById("root")
 if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
   throw new Error(t("error.dev.rootNotFound"))

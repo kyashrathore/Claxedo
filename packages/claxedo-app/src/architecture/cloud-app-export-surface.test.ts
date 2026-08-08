@@ -409,15 +409,27 @@ const REQUIRED_EXPORTS: Record<string, Disposition> = {
 
   // c1-c3: the authenticated transports. This is the structural half of the
   // group. `platform/api/api.ts` has 54 staying importers and 13 moving ones,
-  // so it cannot move — and it imports `platform/auth/auth-client.ts`, which
-  // does move. Exporting it would freeze that cycle into the package boundary:
-  // app would publish a transport whose credential source lives in cloud-app.
+  // so it cannot move.
+  //
+  // The CYCLE it used to carry is gone: it imported
+  // `platform/auth/auth-client.ts`, which moves, and the test below now asserts
+  // that it imports nothing on the move list at all. The transport takes a
+  // bearer through `configureApiRuntime({ bearerToken })`, bound by
+  // `app/entry/main.tsx` and the desktop renderer.
+  //
+  // The refusal STANDS, and cutting the cycle is what makes it honest rather
+  // than what makes it unnecessary. Exporting api.ts would publish app's whole
+  // fetch policy — base-URL resolution, the throttle, the 401/403 retry ladder,
+  // the desktop basic-auth fallback — as a contract cloud-app pins, and hand
+  // cloud-app a transport it would then feed its own credential into from
+  // outside the package. That is the confused-deputy shape
+  // `platform/account/account-port.ts` exists to prevent.
   "platform/api/api.ts": {
     group: "c",
     reason:
-      "Boundary cycle. api.ts stays (54 app importers) but imports `auth-client.ts`, which moves — so publishing it makes `@claxedo/app` export a transport that depends on cloud-app for its credential. It is also the single largest entry on the surface, so a wrong shape here is repeated 13 times.",
+      "App's private fetch policy, not a contract. api.ts stays (54 app importers) and is the single largest entry on the surface, so a wrong shape here is repeated 13 times. It no longer imports `auth-client.ts` — the boundary cycle is cut — but publishing it would still export base-URL resolution, the throttle and the auth-retry ladder as a pinnable contract, and let cloud-app inject its credential into an app-owned transport instead of naming an operation.",
     alternative:
-      "cloud-app owns its Hosted Server client, built on the tokenless `AccountPort` and the declarative operation set the unit already requires (`required-hosted-operations.ts`). app keeps api.ts private and drops `getAuthToken` in favour of the port, which is what breaks the cycle.",
+      "cloud-app owns its Hosted Server client, built on the tokenless `AccountPort` and the declarative operation set the unit already requires (`required-hosted-operations.ts`). app keeps api.ts private; it names a bearer source rather than importing one, which is what already broke the cycle.",
     alternativeModules: ["platform/account/account-port.ts"],
   },
   "platform/runtime/transport.ts": {
@@ -782,9 +794,9 @@ describe("group (c) — the exports being refused", () => {
     expect(check(["features/documents/app-ports.ts"])).toEqual([])
   })
 
-  test("the two transports are refused for a cycle the graph really contains", () => {
-    // The reason text claims api.ts imports a module that moves. Assert it from
-    // resolved specifiers rather than trusting the prose next to it.
+  test("the transport that carried the boundary cycle no longer does", () => {
+    // The reason text claims api.ts imports NOTHING on the move list. Assert it
+    // from resolved specifiers rather than trusting the prose next to it.
     const importsOf = (module: string) => {
       const file = path.join(srcRoot, module)
       const text = readFileSync(file, "utf8")
@@ -795,15 +807,23 @@ describe("group (c) — the exports being refused", () => {
     }
 
     expect(REQUIRED_EXPORTS["platform/api/api.ts"]?.group).toBe("c")
-    expect(importsOf("platform/api/api.ts").filter(isLeaving)).toEqual(["platform/auth/auth-client.ts"])
+    // The whole point of the change that cut it: a module app publishes to
+    // nobody must at least not DEPEND on the package being carved out of it.
+    expect(importsOf("platform/api/api.ts").filter(isLeaving)).toEqual([])
 
+    // And `transport.ts` inherits the improvement, since its only route to the
+    // identity provider was through api.ts.
     expect(REQUIRED_EXPORTS["platform/runtime/transport.ts"]?.group).toBe("c")
     expect(importsOf("platform/runtime/transport.ts")).toContain("platform/api/api.ts")
+    expect(importsOf("platform/runtime/transport.ts").filter(isLeaving)).toEqual([])
 
-    // Positive control: the resolver is returning real edges for these files,
-    // so "imports a leaving module" is a measured fact and not an empty scan.
+    // Positive control for both emptinesses: the resolver is returning real
+    // edges for these files, and the SAME predicate does report a leaving
+    // import on a module that has one — otherwise an `isLeaving` that matched
+    // nothing would make every line above pass.
     expect(importsOf("platform/api/api.ts").length).toBeGreaterThan(2)
     expect(importsOf("platform/runtime/transport.ts").length).toBeGreaterThan(2)
+    expect(importsOf("app/entry/main.tsx").filter(isLeaving)).toContain("platform/auth/auth-client.ts")
   })
 
   test("the type-only refusals really are type-only", () => {

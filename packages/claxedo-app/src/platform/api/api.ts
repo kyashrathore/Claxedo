@@ -1,15 +1,44 @@
 /**
  * Shared API helpers for web and desktop.
  */
-import { getAuthToken } from "@/platform/auth/auth-client";
 import { throttledFetch } from "@/lib/fetch-throttle";
 import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "@/platform/api/local-server"
 export { isDemoMode, isDemoPath, isEmbedMode } from "@/lib/runtime-mode"
 import { isDemoMode } from "@/lib/runtime-mode"
 
+/**
+ * How a build hands this transport a bearer, without this transport knowing
+ * who issues one.
+ *
+ * This module used to call `getAuthToken` from `@/platform/auth/auth-client`
+ * directly, and that single import was the cycle across the cloud-app package
+ * boundary: `auth-client.ts` is on Unit 10's move list, this file is NOT (54
+ * `@claxedo/app` modules import it), so `@claxedo/app` would have published a
+ * transport whose credential source lived in `@claxedo/cloud-app`.
+ * `cloud-app-export-surface.test.ts` classifies `api.ts` as group (c) — never
+ * exported — for exactly that reason, and the refusal is only honest once the
+ * edge is gone.
+ *
+ * Deliberately NOT a `*-port.ts` contract module in the shape of
+ * `platform/runtime/workspace-startup-port.ts`. That seam names three hosted
+ * OPERATIONS a local build cannot perform, so `workspaceStartup()` throws when
+ * unbound — a local build reaching it is a wiring bug. A bearer is the
+ * opposite: "there is no token" is the local product's NORMAL state (the local
+ * server authenticates by loopback, and `authFetch` already falls through to
+ * the configured desktop basic-auth password). So it belongs with the
+ * credential this module already owns, behind the binder it already has —
+ * `configureApiRuntime`, which is where `password` is installed by exactly the
+ * same composition roots.
+ *
+ * `skipCache` is the only option any caller passes: the force-refresh retry
+ * below asks for a fresh JWT after the server rejects a cached one.
+ */
+export type BearerTokenSource = (options?: { skipCache?: boolean }) => Promise<string | null>
+
 const cfg = {
   base: undefined as string | undefined,
   password: "",
+  bearerToken: undefined as BearerTokenSource | undefined,
 }
 
 function envString(input: unknown) {
@@ -21,6 +50,7 @@ function envString(input: unknown) {
 export function configureApiRuntime(input: {
   baseUrl?: string | null
   password?: string | null
+  bearerToken?: BearerTokenSource | null
 }) {
   if ("baseUrl" in input) {
     cfg.base = normalized(input.baseUrl ?? undefined)
@@ -28,11 +58,15 @@ export function configureApiRuntime(input: {
   if ("password" in input) {
     cfg.password = input.password?.trim() ?? ""
   }
+  if ("bearerToken" in input) {
+    cfg.bearerToken = input.bearerToken ?? undefined
+  }
 }
 
 export function resetApiRuntime() {
   cfg.base = undefined
   cfg.password = ""
+  cfg.bearerToken = undefined
 }
 
 // Claxedo's own hosted app only. This used to also match `opencode.ai` and its
@@ -277,6 +311,11 @@ export function getDefaultBaseUrl(): string {
  * Make an authenticated fetch request.
  * Prefers cloud bearer auth and falls back to configured desktop basic auth.
  *
+ * The bearer comes from whatever `configureApiRuntime({ bearerToken })`
+ * installed. A build that installed none — the local product — simply has no
+ * token, which is the same state a signed build is in before sign-in, so every
+ * branch below already handled it.
+ *
  * When the server rejects the cached Clerk token as expired
  * (`invalid_bearer_token`), force-refresh the JWT once and retry. This
  * avoids the "everything stuck in loading" mode where a stale token
@@ -292,7 +331,7 @@ export async function authFetch(
   const apiFetchDebug = beginApiFetchDebug(input)
   const cache = localUrl(apiFetchUrl(input)) ? "no-store" as const : init?.cache
   const buildRequest = async (forceRefreshToken: boolean): Promise<{ request: Request | string | URL; init?: RequestInit; token: string | null }> => {
-    const token = await getAuthToken(forceRefreshToken ? { skipCache: true } : undefined)
+    const token = (await cfg.bearerToken?.(forceRefreshToken ? { skipCache: true } : undefined)) ?? null
 
     const setAuth = (headers: Headers) => {
       if (headers.has("Authorization") && !forceRefreshToken) return

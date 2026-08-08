@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
-import { shortestForbiddenImportChain } from "./import-graph"
+import { importSpecifiers, resolveImport, shortestForbiddenImportChain } from "./import-graph"
 
 const appRoot = path.resolve(import.meta.dir, "../..")
+const srcRoot = path.join(appRoot, "src")
 
 /**
  * What the local entry actually pulls in.
@@ -11,14 +12,20 @@ const appRoot = path.resolve(import.meta.dir, "../..")
  * The local product exists so an unsigned desktop does not ship an identity
  * provider it can never use. A separate entry file is the necessary first step
  * and — measured here — NOT a sufficient one: `app/entry/local.tsx` imports no
- * auth module directly, and Clerk still reaches its bundle, because
- * `AppInterface` mounts `PrincipalProvider`, which imports `auth-client`,
- * which imports `@clerk/clerk-js/headless`.
+ * auth module directly, and Clerk still reaches its bundle through the shell's
+ * provider tree.
  *
- * That chain is recorded below as a BASELINE rather than asserted away. The
- * remaining work is making the provider tree local; until then the honest
- * statement is "one chain, and here it is", not silence. The test fails if a
- * SECOND chain appears, so the gap can only shrink.
+ * That reach is recorded below as a BASELINE rather than asserted away, and it
+ * is recorded TWICE, because the two measurements answer different questions
+ * and only one of them was here originally:
+ *
+ *  - The shortest chain names the tightest coupling — the one a reader has to
+ *    break next.
+ *  - `LOCAL_AUTH_CLIENT_IMPORTERS` names EVERY module in the local closure that
+ *    imports `auth-client.ts`. This file used to claim "the test fails if a
+ *    SECOND chain appears"; it did not. A shortest-path walk reports one chain
+ *    and hides the rest, and there were four the whole time. Cutting the
+ *    shortest one only promoted the next.
  */
 
 /** Packages a local build has no way to use. */
@@ -36,6 +43,71 @@ function chainTo(entry: string) {
     isForbidden: ({ specifier }) => FORBIDDEN.some((name) => specifier === name || specifier.startsWith(`${name}/`)),
   })
 }
+
+/**
+ * Every module in an entry's VALUE closure that imports `target`.
+ *
+ * The whole closure, not the first route to it: `shortestForbiddenImportChain`
+ * answers "what is the tightest coupling" and is silent about the rest, so a
+ * baseline built on it alone reads as progress every time one route is cut
+ * while the others sit untouched.
+ *
+ * Value imports only, matching the walk above: the bundler erases `import
+ * type`, and a type edge to the identity provider does not put Clerk in the
+ * bundle.
+ */
+function importersOf(entry: string, target: string) {
+  const seen = new Set([entry])
+  const found = new Set<string>()
+  let frontier = [entry]
+
+  while (frontier.length) {
+    const next: string[] = []
+    for (const rel of frontier) {
+      const file = path.join(srcRoot, rel)
+      if (!existsSync(file)) continue
+      for (const specifier of importSpecifiers(readFileSync(file, "utf8"))) {
+        const resolved = resolveImport(appRoot, file, specifier)
+        if (!resolved) continue
+        const module = path.relative(srcRoot, resolved).split(path.sep).join("/")
+        if (module === target) found.add(rel)
+        if (seen.has(module)) continue
+        seen.add(module)
+        next.push(module)
+      }
+    }
+    frontier = next
+  }
+
+  return [...found].toSorted()
+}
+
+/**
+ * The local closure's remaining routes to Clerk, by the module that owns each.
+ *
+ * Was four. `platform/api/api.ts` — the authenticated transport, imported by
+ * `app/entry/app.tsx` two hops from the entry, and the shortest of the four —
+ * is gone: it takes its bearer from `configureApiRuntime({ bearerToken })`,
+ * which the hosted entry and the desktop renderer bind and `local.tsx`
+ * deliberately does not.
+ *
+ * The three below are separate work, and each is a different shape:
+ *
+ *  - `platform/auth/auth-session.ts` is the provider tree, reached from
+ *    `app/entry/app.tsx`. It is on Unit 10's move list; the shell must stop
+ *    mounting it in a local build.
+ *  - `platform/runtime/agent/agent-runtime-client.ts` calls `getAuthToken`
+ *    directly, exactly as `api.ts` did. Same remedy, different transport.
+ *  - `features/workspaces/actions/project-actions.tsx` calls it in one action.
+ *
+ * DOWN is the only acceptable direction. A module appearing here is a new route
+ * to the identity provider from local code.
+ */
+const LOCAL_AUTH_CLIENT_IMPORTERS = [
+  "features/workspaces/actions/project-actions.tsx",
+  "platform/auth/auth-session.ts",
+  "platform/runtime/agent/agent-runtime-client.ts",
+]
 
 describe("the local entry", () => {
   test("exists and is what index.local.html loads", () => {
@@ -64,7 +136,7 @@ describe("the local entry", () => {
     }
   })
 
-  test("reaches Clerk through exactly one chain, and that chain is the shell's provider tree", () => {
+  test("reaches Clerk through the shell's provider tree, and that is the shortest route left", () => {
     // MEASURED, not assumed. If this shrinks to null the assertion below
     // should be replaced with `toBeNull()` — that is the goal state, and this
     // test is how anyone knows whether it has been reached.
@@ -73,23 +145,64 @@ describe("the local entry", () => {
     expect(breach, "expected the known Clerk chain; if it is gone, tighten this test").not.toBeNull()
     expect(breach!.specifier).toContain("@clerk/clerk-js")
     // The chain is now
-    // `local.tsx -> app/entry/app.tsx -> platform/api/api.ts -> auth-client.ts`.
+    // `local.tsx -> app/entry/app.tsx -> platform/auth/auth-session.ts -> auth-client.ts`.
     //
     // It used to run through `app/entry/index.tsx`, which re-exported the auth
     // surface and started Clerk inside the shared `initClaxedo`. Both are gone:
     // the auth surface moved to `@claxedo/app/auth`, and starting the identity
     // provider is the hosted entry's job.
     //
-    // What is left is the edge the cloud-app extraction measurement named as
-    // structural: `platform/api/api.ts` is the authenticated transport, 17
-    // hosted modules import it, and it imports `auth-client`. Breaking it is a
-    // design decision about that transport — the account port is the presumed
-    // answer — not another entry split, and it is why this is still a baseline
-    // rather than `toBeNull()`.
+    // Then it ran through `platform/api/api.ts` — the authenticated transport,
+    // which the cloud-app extraction measurement named as the structural edge
+    // because api.ts STAYS in `@claxedo/app` while `auth-client.ts` moves. That
+    // hop is gone too: the transport takes a bearer from
+    // `configureApiRuntime({ bearerToken })` instead of importing the provider,
+    // and only a build with an identity provider binds one.
     //
-    // Naming the waypoint means a NEW route to Clerk, through some other
-    // module, fails here rather than blending into a known failure.
-    expect(breach!.chain).toContain("platform/api/api.ts")
+    // What is left is what the top of this file described from the beginning —
+    // the shell's provider tree, mounted by `app/entry/app.tsx`. Making it
+    // local is a different unit's work.
+    expect(breach!.chain).toContain("platform/auth/auth-session.ts")
+    // The transport is still in the local closure — it is the local product's
+    // fetch path too — it just no longer leads anywhere near Clerk.
+    expect(breach!.chain).not.toContain("platform/api/api.ts")
+  })
+
+  test("records every remaining route to the identity provider, not just the shortest", () => {
+    expect(importersOf("app/entry/local.tsx", "platform/auth/auth-client.ts")).toEqual(LOCAL_AUTH_CLIENT_IMPORTERS)
+  })
+
+  test("the importer walk sees the closure it is supposed to be measuring", () => {
+    // Positive control for the assertion above. A walk that resolved nothing
+    // would report an empty importer list and read as a finished migration.
+    // `platform/api/api.ts` is the right probe: it is unquestionably in the
+    // local closure (`app/entry/app.tsx` imports it) and it is the module whose
+    // auth edge was just cut, so this fails loudly if the edge comes back under
+    // some other name.
+    expect(importersOf("app/entry/local.tsx", "platform/api/api.ts")).toContain("app/entry/app.tsx")
+    expect(importersOf("app/entry/main.tsx", "platform/auth/auth-client.ts")).toContain("app/entry/main.tsx")
+  })
+
+  test("the asymmetry that keeps the transport out of the chain is a call site, not a type", () => {
+    // WHY api.ts dropped off the chain above, and the one way it comes back.
+    //
+    // `platform/api/api.ts` takes its bearer from
+    // `configureApiRuntime({ bearerToken })`. Nothing forces a build to bind
+    // one — that is the point, since the local product has no identity
+    // provider to bind — so the hosted binding is a call site with no type to
+    // protect it. Delete it and `app/entry/main.tsx` still compiles, still
+    // renders, and sends every hosted request with no Authorization header.
+    // `app-ports-wiring.guard.test.ts` records the same failure shape costing
+    // WorkGraph its entire live-sync doorbell with a green suite.
+    const hosted = readFileSync(path.join(appRoot, "src/app/entry/main.tsx"), "utf8")
+
+    expect(hosted).toMatch(/configureApiRuntime\(\{\s*bearerToken:\s*getAuthToken\s*\}\)/)
+    expect(importSpecifiers(hosted)).toContain("@/platform/auth/auth-client")
+
+    // And the local entry cannot bind one even by accident: it imports neither
+    // the transport nor the provider (asserted above, over specifiers).
+    const local = readFileSync(path.join(appRoot, "src/app/entry/local.tsx"), "utf8")
+    expect(local).not.toMatch(/configureApiRuntime\s*\(/)
   })
 
   test("the hosted entry reaches it too, so the measurement is not local-specific", () => {

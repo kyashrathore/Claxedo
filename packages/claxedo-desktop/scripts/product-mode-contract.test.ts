@@ -188,6 +188,27 @@ describe("desktop server launch wiring", () => {
     expect(renderer).not.toContain("../../claxedo-app/src")
   })
 
+  test("the renderer supplies the bearer to the shared transport, at module scope", () => {
+    // `@claxedo/app`'s `platform/api/api.ts` used to import `getAuthToken`
+    // itself. It stays in `@claxedo/app` while the Clerk producer moves to
+    // `@claxedo/cloud-app`, so that import was a cycle across the package
+    // boundary; the transport now NAMES a bearer source and each composition
+    // root supplies one.
+    //
+    // Which makes this a call site, not a type — exactly the failure shape the
+    // WorkGraph doorbell shipped with. Drop this line and the signed desktop
+    // keeps compiling, keeps launching, and silently sends every Hosted Server
+    // request without an Authorization header.
+    const renderer = read("src/renderer/index.tsx")
+
+    expect(renderer).toMatch(/configureApiRuntime\(\{\s*bearerToken:\s*getAuthToken\s*\}\)/)
+    // Module scope, not inside a component: the other `configureApiRuntime`
+    // call runs during `ServerGate`'s render, once the sidecar URL and password
+    // are known, and anything reaching `authFetch` before then would have no
+    // bearer at all.
+    expect(renderer).toMatch(/^configureApiRuntime\(\{ bearerToken: getAuthToken \}\)$/m)
+  })
+
   test("declares its server dependency, rather than reaching into a source tree", () => {
     // The asymmetry this contract was written to hold onto, now resolved.
     //
