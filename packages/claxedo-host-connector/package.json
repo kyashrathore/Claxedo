@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "description": "The laptop side of machine-wide remote access: a signing identity, the enrollment handshake, and a heartbeat — with no server, no routes, and no account credential",
+  "description": "The laptop side of machine-wide remote access: a signing identity, the enrollment handshake, and a heartbeat \u2014 with no server, no routes, and no account credential",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -21,7 +21,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default"
+    "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default",
+    "verify:closure": "bun ../../script/product-boundary/verify.ts"
   },
   "devDependencies": {
     "@tsconfig/node-lts": "22.0.4",

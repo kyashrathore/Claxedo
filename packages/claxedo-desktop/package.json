@@ -33,7 +33,8 @@
     "package:win": "bun ./scripts/package.ts --win",
     "package:win:inner": "electron-builder --win --config electron-builder.config.ts",
     "package:linux": "bun ./scripts/package.ts --linux",
-    "package:linux:inner": "electron-builder --linux --config electron-builder.config.ts"
+    "package:linux:inner": "electron-builder --linux --config electron-builder.config.ts",
+    "verify:closure": "bun ../../script/product-boundary/verify.ts"
   },
   "main": "./out/main/index.js",
   "dependencies": {

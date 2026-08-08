@@ -69,7 +69,8 @@
     "test:e2e:core:video": "PLAYWRIGHT_VIDEO=1 bun run test:e2e:core",
     "test:e2e:all:video": "CLAXEDO_E2E_SUITE=all PLAYWRIGHT_VIDEO=1 npx playwright test --config playwright.config.ts",
     "test:e2e:deployed-workgraph": "npx playwright test --config playwright.deployed.config.ts",
-    "typecheck:e2e": "tsgo -p tsconfig.e2e.json"
+    "typecheck:e2e": "tsgo -p tsconfig.e2e.json",
+    "verify:closure": "bun ../../script/product-boundary/verify.ts"
   },
   "license": "MIT",
   "devDependencies": {
