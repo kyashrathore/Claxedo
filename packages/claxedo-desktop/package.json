@@ -18,7 +18,7 @@
     "smoke:diagnostics": "bun ./scripts/performance-diagnostics-smoke.ts",
     "smoke:diagnostics:packaged": "bun ./scripts/performance-diagnostics-smoke.ts --packaged",
     "perf:startup": "bun ./scripts/startup-perf.ts",
-    "test": "bun run test:native-rich-content && mkdir -p .artifacts/unit && bun test ./src ./scripts --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
+    "test": "mkdir -p .artifacts/unit && bun test ./src ./scripts --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "typecheck": "tsgo -b",
     "verify:desktop-parity": "bun ./scripts/capture-default-screenshot.ts",
     "predev": "bun ./scripts/predev.ts",

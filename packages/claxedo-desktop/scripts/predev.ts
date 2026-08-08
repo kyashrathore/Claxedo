@@ -19,7 +19,7 @@ import {
   localServerPackageDir,
   resolveLocalServerEntry,
 } from "./local-server"
-import { buildRichContentRenderer } from "./build-rich-content-renderer"
+import { prepareRichContentRenderer } from "./build-rich-content-renderer"
 import { copyIcons, copyWorkspaceRuntimeTemplates } from "./utils"
 
 const SCRIPT_DIR = import.meta.dir
@@ -59,7 +59,7 @@ try {
 await ensureElectronNativeModules()
 const [, , hostConnector] = await Promise.all([
   buildMemoryImpactHelper(),
-  buildRichContentRenderer(),
+  prepareRichContentRenderer(),
   bundleHostConnector(),
 ])
 console.log(`[predev] Host Connector child bundled (${hostConnector.manifest.sha256})`)
@@ -148,6 +148,7 @@ const serverSource = path.resolve(SCRIPT_DIR, "claxedo-server-entry.ts")
 const serverEntry = localServerBundleEntry(PACKAGE_DIR)
 const serverDest = path.dirname(serverEntry)
 const workerSource = path.resolve(SCRIPT_DIR, "claxedo-engine-worker-entry.ts")
+const workerPolicySource = path.resolve(SCRIPT_DIR, "claxedo-engine-worker-policy.ts")
 const workerDest = path.resolve(PACKAGE_DIR, "resources/claxedo-engine-worker")
 const workerEntry = path.join(workerDest, "index.js")
 const embeddedOpenCode = path.resolve(OPENCODE_DIR, "dist/node/node.js")
@@ -190,7 +191,7 @@ if (fs.existsSync(serverSource) && outputIsStale(serverEntry, [
   console.warn(`[predev] claxedo-server source not found at ${serverSource}, skipping`)
 }
 
-if (outputIsStale(workerEntry, [workerSource, path.resolve(SCRIPT_DIR, "bundle-claxedo-server.ts")])) {
+if (outputIsStale(workerEntry, [workerSource, workerPolicySource, path.resolve(SCRIPT_DIR, "bundle-claxedo-server.ts")])) {
   console.log(`[predev] Bundling claxedo engine worker...`)
   await bundleClaxedoEngineWorker(workerSource, workerDest)
 } else {
