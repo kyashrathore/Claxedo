@@ -1719,11 +1719,47 @@ something true, currently red, and directly tied to the product outcome.
 
 - [ ] **Unit 11: Rewire desktop to local composition, optional account auth, and Host Connector**
 
+**Scope corrected 2026-08-09, before starting.** This unit was written before
+Units 6 and 9 existed, and both delivered most of its substance. Six of the
+seven `src/main/*.ts` files its Files list names to modify DO NOT EXIST; the
+work landed under different paths:
+
+| Files list says | Actually landed as |
+|---|---|
+| `src/main/account-auth.ts`, `account-callback.ts` | `src/main/account/oauth-flow.ts` |
+| `src/main/account-credentials.ts` | `src/main/account/credential-store.ts` |
+| `src/main/host-connector.ts`, `host-connector-credentials.ts` | `src/main/host-connector/{index,machine-identity}.ts` |
+| `src/main/hosted-operation-handlers.ts` | `src/main/account/hosted-operations.ts` |
+| `src/renderer/hosted-contributions.ts` | the app-side `hostedContributionPort` |
+
+So the Approach bullets that say "reuse Unit 6's sole Electron-main producer"
+and "rebind Unit 6's Host Connector port" are already satisfied: PKCE OAuth in
+main, `safeStorage` credentials, serialized refresh, the closed
+named-operation IPC with a tokenless boundary, the Host Connector port and its
+zero-arity IPC all exist and are tested.
+
+**The dependency on Unit 10 is void** — that unit is DEFERRED (see its status),
+so the "dynamically import `@claxedo/cloud-app`'s hosted-contribution subpath"
+bullet is not executable as written. The hosted contribution seam it describes
+already exists as `hostedContributionPort`; what is missing is a cloud-app to
+import, and the measurement says that package is not the way to the goal.
+
+**What actually remains, and it is the point of the whole plan:** the desktop
+still loads the HOSTED renderer. `src/main/windows.ts` loads `index.html`,
+while `packages/claxedo-app/index.local.html` and `app/entry/local.tsx` exist
+with a closure proven to reach neither Clerk nor Convex. The guard is green and
+the user still gets Clerk, because nothing ships the clean entry. Remaining
+work is therefore: (1) select the renderer entry by product mode, noting the
+desktop has its OWN third composition root in `src/renderer/index.tsx`; (2)
+make build preparation, packaging and the contract fingerprint follow that
+selection; (3) prove the unsigned closure at RUNTIME, not only in the source
+graph.
+
 **Goal:** Point desktop development, production build preparation, renderer boot, local-server startup, optional Electron-main account auth, hosted-contribution activation, and linked-host startup at the separated package contracts.
 
 **Requirements:** U8-R6, U8-R7, U8-R9, U8-R10, U8-R13, U8-R15, U8-R16, U8-R17, U8-R18, U8-R19, U8-R20, U8-R21, U8-R22, U8-R23
 
-**Dependencies:** Units 5, 6, and 10
+**Dependencies:** Units 5, 6, and 9. (Was "5, 6, and 10" — corrected 2026-08-09 when Unit 10 was deferred. Unit 9 supplies the hosted-contribution seam this unit actually binds against.)
 
 **Files:**
 
