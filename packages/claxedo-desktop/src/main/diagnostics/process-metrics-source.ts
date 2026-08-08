@@ -59,24 +59,31 @@ export function createProcessMetricsSource(options: {
   electron: ElectronDiagnosticsSource
   platform?: NodeJS.Platform
   worker?: ProcessMetricsWorker
+  workerFactory?: () => ProcessMetricsWorker
   workerPath?: string
   wsl?: WslDiagnosticsSource
   reconcileIntervalMs?: number
   random?: () => number
   memoryHelperPath?: string
+  hostCollection?: "always" | "on-demand"
 }): ProcessMetricsSource {
   const platform = options.platform ?? process.platform
-  const worker =
-    options.worker ??
-    (platform === "darwin" || platform === "linux"
-      ? createIsolatedPosixProcessMetricsWorker({
-          platform,
-          workerPath: options.workerPath,
-          memoryHelperPath: options.memoryHelperPath,
-        })
-      : platform === "win32"
-        ? createLazyWindowsWorker()
-        : unsupportedWorker)
+  const createWorker =
+    options.workerFactory ??
+    (() =>
+      options.worker ??
+      (platform === "darwin" || platform === "linux"
+        ? createIsolatedPosixProcessMetricsWorker({
+            platform,
+            workerPath: options.workerPath,
+            memoryHelperPath: options.memoryHelperPath,
+          })
+        : platform === "win32"
+          ? createLazyWindowsWorker()
+          : unsupportedWorker))
+  let worker = options.hostCollection === "on-demand" ? undefined : createWorker()
+  let hostDemanded = options.hostCollection !== "on-demand"
+  let hostDemandGeneration = 0
   const sourceId: LocalDiagnostics.SourceId =
     platform === "darwin" ? "macos-ps" : platform === "linux" ? "linux-proc" : "windows-cim"
   const roots = new Map<number, ElectronRoot>()
@@ -135,13 +142,40 @@ export function createProcessMetricsSource(options: {
           stats.reconciliations > 0 ? stats.totalReconciliationDurationMs / stats.reconciliations : 0,
       }
     },
+    setDemanded(demanded) {
+      if (disposed || options.hostCollection !== "on-demand" || hostDemanded === demanded) return
+      hostDemanded = demanded
+      hostDemandGeneration++
+      if (demanded) {
+        worker = createWorker()
+        rootsDirty = true
+        return
+      }
+      worker?.dispose()
+      worker = undefined
+      entries = []
+      last.clear()
+      pending.clear()
+      reconcileAt = Number.NEGATIVE_INFINITY
+      hostRetryAt = Number.NEGATIVE_INFINITY
+      consecutiveHostFailures = 0
+      hostStatus = supported
+        ? { ...sourceStatusBase(), state: "warming-up" }
+        : { ...sourceStatusBase(), accuracy: "unsupported", state: "unsupported", reason: "unsupported" }
+      ancestryStatus =
+        platform === "win32"
+          ? { ...ancestryStatusBase(), state: "warming-up" }
+          : undefined
+    },
     collect(at) {
       const electron = options.electron.collect(at)
       if (electron instanceof Promise) throw new Error("Electron diagnostics must collect synchronously")
       electronByPid.clear()
       electron.forEach((observation) => electronByPid.set(observation.process.identity.pid, observation))
-      triggerHost(at)
-      options.wsl?.requestCollection(at)
+      if (hostDemanded) {
+        triggerHost(at)
+        options.wsl?.requestCollection(at)
+      }
       const external = drainExternal(at)
       return mergeByProcess(electron, [...external, ...(options.wsl?.drain(at) ?? [])])
     },
@@ -167,6 +201,7 @@ export function createProcessMetricsSource(options: {
     },
     async revalidateIdentity(identity) {
       if (
+        disposed ||
         identity.domain !== "host" ||
         identity.creation.state !== "available" ||
         !(
@@ -174,7 +209,7 @@ export function createProcessMetricsSource(options: {
           (platform === "win32" && identity.creation.source === "windows-cim")
         )
       ) return false
-      const current = await worker.probeCreation(identity.pid)
+      const current = await (worker ??= createWorker()).probeCreation(identity.pid)
       return (
         current.state === "available" &&
         current.source === identity.creation.source &&
@@ -185,7 +220,7 @@ export function createProcessMetricsSource(options: {
     dispose() {
       if (disposed) return
       disposed = true
-      worker.dispose()
+      worker?.dispose()
       options.electron.dispose?.()
       options.wsl?.dispose()
       roots.clear()
@@ -212,6 +247,8 @@ export function createProcessMetricsSource(options: {
     ])
     if (
       disposed ||
+      !hostDemanded ||
+      !worker ||
       hostInFlight ||
       at < hostRetryAt ||
       hostStatus.state === "unsupported"
@@ -223,6 +260,8 @@ export function createProcessMetricsSource(options: {
     }
     hostInFlight = true
     if (electronMemoryImpact.length > 0) nextElectronMemoryImpactAt = at + MEMORY_IMPACT_INTERVAL_MS
+    const activeWorker = worker
+    const demandGeneration = hostDemandGeneration
     const reconcile =
       roots.size > 0 &&
       (rootsDirty || entries.length === 0 || at - reconcileAt >= (options.reconcileIntervalMs ?? RECONCILE_INTERVAL_MS))
@@ -235,8 +274,8 @@ export function createProcessMetricsSource(options: {
       if (reconcile) {
         const reconciliationStartedAt = performance.now()
         try {
-          const result = await worker.reconcile([...rootsAtStart.keys()])
-          if (disposed) return
+          const result = await activeWorker.reconcile([...rootsAtStart.keys()])
+          if (disposed || demandGeneration !== hostDemandGeneration) return
           const reconciledEntries = result.entries.filter((entry) => {
             const started = rootsAtStart.get(entry.rootPid)
             return !!started && roots.get(entry.rootPid)?.launchId === started.launchId
@@ -292,11 +331,11 @@ export function createProcessMetricsSource(options: {
           ...entries,
           ...[...supplementalPids].map((pid) => ({ pid, ppid: 0, rootPid: pid })),
         ]
-        const samples = await worker.sample(
+        const samples = await activeWorker.sample(
           [...new Map(sampledEntries.map((entry) => [entry.pid, entry])).values()],
           at,
         )
-        if (disposed) return
+        if (disposed || demandGeneration !== hostDemandGeneration) return
         const contexts = samples
           .flatMap((sample) => {
             const electron = electronAtStart.get(sample.pid)
@@ -336,7 +375,7 @@ export function createProcessMetricsSource(options: {
             ? { ...sourceStatusBase(), state: "degraded", reason: "source-failed", lastSuccessAt: at }
             : { ...sourceStatusBase(), state: "healthy", lastSuccessAt: at }
       } catch (error) {
-        if (disposed) return
+        if (disposed || demandGeneration !== hostDemandGeneration) return
         // The status enum ("source-failed") is the contract; the underlying
         // error is not, and swallowing it entirely cost five release rounds
         // of guessing at a Windows-only CIM failure. Diagnostics must never

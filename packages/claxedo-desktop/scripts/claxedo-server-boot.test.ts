@@ -1,10 +1,12 @@
 import { expect, test } from "bun:test"
+import { fork, type ChildProcess } from "node:child_process"
 import { createRequire } from "node:module"
 import * as fs from "node:fs"
 import * as net from "node:net"
 import * as os from "node:os"
 import * as path from "node:path"
 
+import { claxedoServerForkOptions } from "../src/main/server-child-process"
 import { localServerBundleEntry, requireLocalServerBundle } from "./local-server"
 
 // Boot-level coverage for the desktop server composition. Unit tests run from
@@ -99,11 +101,13 @@ test("bundled claxedo-server boots the embedded engine and serves engine-backed 
 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-boot-test-"))
   const port = await freePort()
-  const child = Bun.spawn({
-    cmd: [process.execPath, require.resolve("electron/cli.js"), SERVER_BUNDLE],
-    env: {
-      ...Bun.env,
-      ELECTRON_RUN_AS_NODE: "1",
+  const launchId = "server-boot-test"
+  const generation = "server-boot-generation"
+  const child = fork(SERVER_BUNDLE, [], {
+    ...claxedoServerForkOptions({
+      ...Object.fromEntries(
+        Object.entries(Bun.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+      ),
       // Hermetic HOME: no user config, credentials, or caches leak in.
       HOME: root,
       CLAXEDO_CHILD_PORT: String(port),
@@ -111,14 +115,25 @@ test("bundled claxedo-server boots the embedded engine and serves engine-backed 
       // First launch hands the server a profile path that does not exist yet.
       CLAXEDO_DATA_DIR: path.join(root, "data"),
       CLAXEDO_CHILD_OPENCODE_EMBED_PATH: ENGINE_ARTIFACT,
-    },
-    stdout: "pipe",
-    stderr: "pipe",
+      CLAXEDO_DIAGNOSTICS_LAUNCH_ID: launchId,
+      CLAXEDO_DIAGNOSTICS_GENERATION: generation,
+    }),
+    execPath: require("electron"),
+    stdio: ["ignore", "pipe", "pipe", "ipc"],
   })
+  const exited = new Promise<number | null>((resolve) => child.once("exit", resolve))
+  let stderr = ""
+  child.stderr?.setEncoding("utf8")
+  child.stderr?.on("data", (chunk) => {
+    stderr += String(chunk)
+  })
+  const messages: unknown[] = []
+  child.on("message", (message) => messages.push(message))
 
   try {
     const base = `http://127.0.0.1:${port}`
-    await waitForHealth(base, child)
+    await waitForHealth(base, child, () => stderr)
+    expect(child.connected).toBe(true)
 
     // Mirror the app's open-workspace flow: registering the workspace first is
     // what makes engine-backed session routes answer for that directory.
@@ -132,9 +147,47 @@ test("bundled claxedo-server boots the embedded engine and serves engine-backed 
     const sessions = await fetch(`${base}/session?directory=${directory}&roots=true`)
     expect(sessions.status).toBe(200)
     expect(await sessions.json()).toBeArray()
+
+    expect((await fetch(`${base}/global/config`)).status).toBe(200)
+    expect((await fetch(`${base}/provider?view=index`)).status).toBe(200)
+
+    const createPty = await fetch(`${base}/api/wr/pty?directory=${directory}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "ipc-smoke", initialCommand: "printf ipc-smoke" }),
+    })
+    expect(createPty.status).toBe(200)
+    const pty = await createPty.json() as { id: string }
+    const registered = await waitForMessage(messages, (message) => {
+      if (!message || typeof message !== "object" || !("type" in message)) return false
+      return message.type === "owner-registered"
+    }) as {
+      binding: { pid: number; launchId: string; generation: string }
+      descriptor: { ownerOperationId: string; ownerGeneration: string; pid?: number }
+    }
+    expect(registered.binding).toEqual({ pid: child.pid!, launchId, generation })
+
+    child.send({
+      type: "owner-operation-request",
+      binding: registered.binding,
+      requestId: "boot-test-stale-operation",
+      ownerOperationId: registered.descriptor.ownerOperationId,
+      ownerGeneration: "stale-generation",
+      operation: "stop",
+      identity: { pid: registered.descriptor.pid ?? child.pid!, creation: "not-needed-for-stale-generation" },
+    })
+    expect(await waitForMessage(messages, (message) => {
+      if (!message || typeof message !== "object") return false
+      return "type" in message && message.type === "owner-operation-result" &&
+        "requestId" in message && message.requestId === "boot-test-stale-operation"
+    })).toMatchObject({ result: "owner-unavailable" })
+
+    expect((await fetch(`${base}/api/wr/pty/${encodeURIComponent(pty.id)}?directory=${directory}`, {
+      method: "DELETE",
+    })).status).toBe(200)
   } finally {
     child.kill()
-    await child.exited
+    expect(await Promise.race([exited.then(() => true), Bun.sleep(5_000).then(() => false)])).toBe(true)
   }
 }, 90_000)
 
@@ -148,16 +201,25 @@ async function freePort() {
   return port
 }
 
-async function waitForHealth(base: string, child: { exited: Promise<number>; stderr: Bun.ReadableStream }) {
+async function waitForHealth(base: string, child: ChildProcess, stderr: () => string) {
   const deadline = Date.now() + 60_000
   while (Date.now() < deadline) {
-    const exited = await Promise.race([child.exited.then(() => true), Bun.sleep(250).then(() => false)])
-    if (exited) {
-      const stderr = await new Response(child.stderr).text()
-      throw new Error(`claxedo-server exited before becoming healthy:\n${stderr.slice(-2000)}`)
+    if (child.exitCode !== null || child.signalCode !== null) {
+      throw new Error(`claxedo-server exited before becoming healthy:\n${stderr().slice(-2000)}`)
     }
+    await Bun.sleep(250)
     const res = await fetch(`${base}/api/claxedo/health`, { signal: AbortSignal.timeout(1_000) }).catch(() => undefined)
     if (res?.ok) return
   }
   throw new Error("claxedo-server did not become healthy in time")
+}
+
+async function waitForMessage(messages: unknown[], match: (message: unknown) => boolean) {
+  const deadline = Date.now() + 10_000
+  while (Date.now() < deadline) {
+    const message = messages.find(match)
+    if (message) return message
+    await Bun.sleep(25)
+  }
+  throw new Error("claxedo-server IPC message did not arrive in time")
 }

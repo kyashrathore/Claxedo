@@ -5,6 +5,59 @@ import { createProcessMetricsSource, mergeByProcess } from "./process-metrics-so
 import type { DiagnosticsObservation } from "./profiler"
 
 describe("process metrics source", () => {
+  test("creates the host worker only while platform metrics are demanded", async () => {
+    let workers = 0
+    let samples = 0
+    let disposals = 0
+    const source = createProcessMetricsSource({
+      platform: "linux",
+      hostCollection: "on-demand",
+      electron: electron(() => [observation(50, "electron", undefined, undefined)]),
+      workerFactory: () => {
+        workers++
+        return {
+          async reconcile() {
+            return { entries: [{ pid: 50, ppid: 1, rootPid: 50 }], truncated: false }
+          },
+          async sample(entries) {
+            samples++
+            return entries.map((entry) => ({
+              ...entry,
+              creation: { state: "available" as const, value: "linux-start", source: "linux-proc" as const },
+              cpuMachinePercent: 1,
+              rssBytes: 1_000,
+            }))
+          },
+          clear() {},
+          dispose() {
+            disposals++
+          },
+        }
+      },
+    })
+    source.registerRoot(root(50))
+
+    source.collect(0)
+    await Bun.sleep(0)
+    expect({ workers, samples, disposals }).toEqual({ workers: 0, samples: 0, disposals: 0 })
+
+    source.setDemanded?.(true)
+    source.collect(500)
+    await Bun.sleep(0)
+    expect({ workers, samples, disposals }).toEqual({ workers: 1, samples: 1, disposals: 0 })
+
+    source.setDemanded?.(false)
+    source.collect(1_000)
+    await Bun.sleep(0)
+    expect({ workers, samples, disposals }).toEqual({ workers: 1, samples: 1, disposals: 1 })
+
+    source.setDemanded?.(true)
+    source.collect(1_500)
+    await Bun.sleep(0)
+    expect({ workers, samples, disposals }).toEqual({ workers: 2, samples: 2, disposals: 1 })
+    source.dispose?.()
+  })
+
   test("keeps Electron cadence independent while a platform call is stalled", async () => {
     electronCallsForProof = 0
     let resolveTree: ((value: { entries: []; truncated: false }) => void) | undefined
