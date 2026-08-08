@@ -75,3 +75,7 @@ export { sessionMetaProjectionTap } from "./session/session-meta-tap"
 /** Migrates legacy plaintext provider credentials into the managed backend. */
 export { migrateCredentials } from "./credentials/operations/migrate"
 export { projectLocalSessionMetaFromEvent } from "./session/session-meta-tap"
+
+/** Starts the desktop-local server: composition plus lifecycle. */
+export { startLocalServer, type LocalServer, type StartLocalServerOptions } from "./app/start-local-server"
+export { createLocalApp, mountLocalRouteFamilies, localSecurityHeaders, type LocalAppOptions } from "./app/local-app"
