@@ -209,6 +209,21 @@ describe("desktop server launch wiring", () => {
     expect(renderer).toMatch(/^configureApiRuntime\(\{ bearerToken: getAuthToken \}\)$/m)
   })
 
+  test("binds machine remote access to the Host Connector, with no HTTP fallback", () => {
+    // Another call site, not a type, and the one that already shipped broken.
+    // `/api/claxedo/remote-access/*` moved from the sidecar to the Host
+    // Connector; `@claxedo/local-server` serves none of those paths, so without
+    // this line "Enable remote access" posts into a 404 and every suite stays
+    // green because nothing was watching the transport.
+    const renderer = read("src/renderer/index.tsx")
+
+    expect(renderer).toMatch(/^configureDesktopMachineRemoteAccess\(\)$/m)
+    // And never the browser one. The desktop binding refuses rather than falls
+    // back when the preload exposes no bridge; a root that also bound the HTTP
+    // implementation would reintroduce the bug in the shape of resilience.
+    expect(renderer).not.toContain("configureHttpMachineRemoteAccess")
+  })
+
   test("declares its server dependency, rather than reaching into a source tree", () => {
     // The asymmetry this contract was written to hold onto, now resolved.
     //

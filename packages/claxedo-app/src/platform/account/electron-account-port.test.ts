@@ -32,8 +32,10 @@ function bridge(overrides: Partial<AccountBridge> = {}) {
       calls.push({ method: "run", args: [operation, input] })
       // A shape the registry's decoder accepts for this operation. Returning
       // something arbitrary would make the port's decode step fail here, which
-      // is the decode step working.
-      return operation === "workspace.checkpoints.list" ? [{ ran: operation }] : { ran: operation }
+      // is the decode step working. `workspace.checkpoints.list` answers the
+      // lifecycle SNAPSHOT, not a list — the name is about the route, not the
+      // shape.
+      return { ran: operation }
     },
     ...overrides,
   }

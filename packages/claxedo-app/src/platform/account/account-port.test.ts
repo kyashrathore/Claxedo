@@ -99,4 +99,3 @@ describe("AccountPort", () => {
     expect(type).toContain("getToken")
   })
 })
-
