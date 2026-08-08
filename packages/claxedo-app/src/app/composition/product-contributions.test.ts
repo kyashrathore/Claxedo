@@ -94,3 +94,60 @@ describe("product contributions", () => {
     expect(registered).toEqual([])
   })
 })
+
+describe("hosted activation failure and duplicate handling", () => {
+  test("a failed activation can be retried", async () => {
+    // The caching bug this covers: keeping the REJECTED promise disabled
+    // hosted mode for the life of the window, so one transient chunk-load
+    // failure left a signed user in a local-only app until they reloaded.
+    let attempts = 0
+    const registered: string[] = []
+    const contributions = createProductContributions({
+      local: [],
+      register: (surface) => registered.push(surface.id),
+    })
+
+    await expect(
+      contributions.activateHosted(async () => {
+        attempts++
+        throw new Error("chunk load failed")
+      }),
+    ).rejects.toThrow(/chunk load failed/)
+
+    await contributions.activateHosted(async () => {
+      attempts++
+      return { contentSurfaces: [{ id: "workgraph" } as never] }
+    })
+
+    expect(attempts).toBe(2)
+    expect(registered).toEqual(["workgraph"])
+  })
+
+  test("two hosted contributions sharing an id are rejected, and nothing registers", () => {
+    // The previous check compared every hosted surface against the LOCAL ids
+    // before adding any of them, so a collision between two HOSTED surfaces
+    // passed and the second silently overwrote the first — the destination
+    // reordering stable ids exist to prevent.
+    const registered: string[] = []
+    const contributions = createProductContributions({
+      local: [],
+      register: (surface) => registered.push(surface.id),
+    })
+
+    const activation = contributions.activateHosted(async () => ({
+      contentSurfaces: [{ id: "documents" } as never, { id: "documents" } as never],
+    }))
+
+    return activation.then(
+      () => expect.unreachable("duplicate ids must be rejected"),
+      (error) => {
+        // On the CODE, not the message. The message is prose that may be
+        // reworded; the code is what a caller branches on.
+        expect((error as { code?: string }).code).toBe("duplicate_contribution_id")
+        // All-or-nothing: a partial registration would leave the first surface
+        // installed with no way to remove it.
+        expect(registered).toEqual([])
+      },
+    )
+  })
+})

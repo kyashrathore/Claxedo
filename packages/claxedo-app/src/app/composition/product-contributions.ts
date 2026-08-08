@@ -109,22 +109,46 @@ export function createProductContributions(input: {
       // Not `if (activation) return activation` inside an async function: the
       // await points would let a second caller enter before the first assigns,
       // and both would register.
-      activation ??= (async () => {
+      // Checked and assigned with no await between, which is what makes this
+      // safe: `activateHosted` is synchronous and returns the promise, so a
+      // second caller cannot arrive mid-assignment. (An `if` inside an ASYNC
+      // function would have that bug, which is what the previous `??=` was
+      // guarding against.)
+      if (activation) return activation
+
+      const attempt = (async () => {
         const hosted = await loader()
+        // Validated against a set that grows as we check, not only against the
+        // local ids. The previous version compared every hosted surface to
+        // `registered` before adding any of them, so TWO HOSTED surfaces
+        // sharing an id both passed and the second silently overwrote the
+        // first — which is precisely the destination-reordering that stable
+        // contribution ids exist to prevent.
+        const claimed = new Set(registered)
         for (const surface of hosted.contentSurfaces) {
-          if (registered.has(surface.id)) {
+          if (claimed.has(surface.id)) {
             throw new ProductContributionError(
               "duplicate_contribution_id",
               `Hosted contribution "${surface.id}" is already registered; it would shadow the existing surface`,
             )
           }
+          claimed.add(surface.id)
         }
         for (const surface of hosted.contentSurfaces) {
           registered.add(surface.id)
           register(surface)
         }
       })()
-      return activation
+
+      // Caching only on success. `activation ??= …` kept the REJECTED promise,
+      // so one transient chunk-load failure disabled hosted mode for the life
+      // of the window with no way back — a signed user staring at a local-only
+      // app until they reloaded.
+      activation = attempt
+      attempt.catch(() => {
+        if (activation === attempt) activation = undefined
+      })
+      return attempt
     },
   }
 }
