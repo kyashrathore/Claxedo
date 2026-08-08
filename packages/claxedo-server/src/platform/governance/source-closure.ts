@@ -1,0 +1,189 @@
+/**
+ * The transitive source closure of an entry module.
+ *
+ * A deployment's real ownership is not what its composition file says it mounts
+ * — it is what its entry graph can reach. Emitted-artifact checks catch what a
+ * bundler injects; this catches the architecture edge that put it there, and it
+ * does so without a build. Every product-boundary gate in this repository is
+ * ultimately a question about this set.
+ */
+
+import fs from "node:fs"
+import path from "node:path"
+
+export type SourceModule = {
+  /** Absolute path of the resolved module. */
+  file: string
+  /** Path relative to the package root that owns it. */
+  relative: string
+}
+
+export type SourceClosure = {
+  /** Every first-party module reachable from the entry, including the entry. */
+  modules: SourceModule[]
+  /** Bare specifiers the closure depends on, deduped to their package name. */
+  packages: string[]
+  /** Specifiers that could not be resolved to a file on disk. */
+  unresolved: string[]
+}
+
+const SOURCE_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs"]
+
+/**
+ * Import specifiers, in source order.
+ *
+ * Deliberately regex-based rather than AST-based: this runs as a test gate over
+ * hundreds of modules, and the shapes that matter here — static `import`,
+ * `export ... from`, and dynamic `import()` — are unambiguous in this
+ * repository's source. A comment containing something that looks like an import
+ * would over-report, which fails safe for a boundary check.
+ */
+export function importSpecifiers(source: string): string[] {
+  const found: string[] = []
+  const patterns = [
+    /\bimport\s+[^"';]*?\bfrom\s*["']([^"']+)["']/g,
+    /\bexport\s+[^"';]*?\bfrom\s*["']([^"']+)["']/g,
+    /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g,
+    /\bimport\s+["']([^"']+)["']/g,
+    /\brequire\s*\(\s*["']([^"']+)["']\s*\)/g,
+  ]
+  for (const pattern of patterns) {
+    for (const match of source.matchAll(pattern)) {
+      const specifier = match[1]
+      if (specifier) found.push(specifier)
+    }
+  }
+  return found
+}
+
+function resolveFile(candidate: string): string | null {
+  if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate
+  for (const extension of SOURCE_EXTENSIONS) {
+    const withExtension = `${candidate}${extension}`
+    if (fs.existsSync(withExtension)) return withExtension
+  }
+  for (const extension of SOURCE_EXTENSIONS) {
+    const asIndex = path.join(candidate, `index${extension}`)
+    if (fs.existsSync(asIndex)) return asIndex
+  }
+  return null
+}
+
+/**
+ * Resolve a relative specifier the way the TypeScript sources mean it: an
+ * extensionless path, an explicit `.js` that stands for a `.ts` source, or a
+ * directory with an index.
+ */
+export function resolveRelative(fromFile: string, specifier: string): string | null {
+  const base = path.resolve(path.dirname(fromFile), specifier)
+  const direct = resolveFile(base)
+  if (direct) return direct
+  const rewritten = base.replace(/\.(m|c)?js$/, "")
+  return rewritten === base ? null : resolveFile(rewritten)
+}
+
+/** The package name a bare specifier belongs to (`@scope/name` or `name`). */
+export function packageNameOf(specifier: string): string {
+  const parts = specifier.split("/")
+  if (specifier.startsWith("@")) return parts.slice(0, 2).join("/")
+  return parts[0] ?? specifier
+}
+
+function isBare(specifier: string) {
+  return !specifier.startsWith(".") && !specifier.startsWith("/")
+}
+
+/**
+ * Walk every first-party module reachable from `entry`.
+ *
+ * `root` is the package root the returned relative paths are expressed against.
+ * Bare specifiers are recorded as package dependencies rather than followed:
+ * the question this answers is "what does THIS package's source reach", and a
+ * dependency's own internals are governed by its own manifest.
+ */
+export function sourceClosure(input: { entry: string; root: string }): SourceClosure {
+  const entry = path.resolve(input.entry)
+  const root = path.resolve(input.root)
+  const seen = new Set<string>()
+  const packages = new Set<string>()
+  const unresolved = new Set<string>()
+  const queue = [entry]
+
+  while (queue.length > 0) {
+    const file = queue.pop()!
+    if (seen.has(file)) continue
+    seen.add(file)
+    let source: string
+    try {
+      source = fs.readFileSync(file, "utf8")
+    } catch {
+      continue
+    }
+    for (const specifier of importSpecifiers(source)) {
+      if (isBare(specifier)) {
+        packages.add(packageNameOf(specifier))
+        continue
+      }
+      const resolved = resolveRelative(file, specifier)
+      if (!resolved) {
+        unresolved.add(`${path.relative(root, file)} -> ${specifier}`)
+        continue
+      }
+      queue.push(resolved)
+    }
+  }
+
+  return {
+    modules: [...seen]
+      .map((file) => ({ file, relative: path.relative(root, file) }))
+      .sort((a, b) => a.relative.localeCompare(b.relative)),
+    packages: [...packages].sort(),
+    unresolved: [...unresolved].sort(),
+  }
+}
+
+/**
+ * The shortest import chain from `entry` to the first module matching
+ * `isForbidden`, or `null` when the closure is clean.
+ *
+ * Breadth-first on purpose. A depth-first walk reports whichever chain it
+ * happened to descend, which can be many hops long and sends a reader to the
+ * wrong place; the shortest chain names the tightest actual coupling, which is
+ * the edge worth cutting.
+ */
+export function shortestForbiddenChain(input: {
+  entry: string
+  root: string
+  isForbidden: (module: SourceModule) => boolean
+}): SourceModule[] | null {
+  const entry = path.resolve(input.entry)
+  const root = path.resolve(input.root)
+  const seen = new Set<string>([entry])
+  let frontier: Array<{ file: string; chain: string[] }> = [{ file: entry, chain: [entry] }]
+
+  while (frontier.length > 0) {
+    const next: Array<{ file: string; chain: string[] }> = []
+    for (const { file, chain } of frontier) {
+      let source: string
+      try {
+        source = fs.readFileSync(file, "utf8")
+      } catch {
+        continue
+      }
+      for (const specifier of importSpecifiers(source)) {
+        if (isBare(specifier)) continue
+        const resolved = resolveRelative(file, specifier)
+        if (!resolved || seen.has(resolved)) continue
+        seen.add(resolved)
+        const module = { file: resolved, relative: path.relative(root, resolved) }
+        const nextChain = [...chain, resolved]
+        if (input.isForbidden(module)) {
+          return nextChain.map((item) => ({ file: item, relative: path.relative(root, item) }))
+        }
+        next.push({ file: resolved, chain: nextChain })
+      }
+    }
+    frontier = next
+  }
+  return null
+}
