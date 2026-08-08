@@ -57,6 +57,40 @@ const DEFAULT_TTL_MS = 60_000
 const MAX_TTL_MS = 5 * 60_000
 const CHALLENGE_TTL_MS = 60_000
 
+/**
+ * Machine-enrollment retention policy — ONE canonical set of bounds, mirrored
+ * verbatim in `convex/hostEnrollments.ts`.
+ *
+ * The two authorities are two implementations of one contract, so the numbers
+ * are not adapter defaults to be tuned independently: a self-hosted SQLite
+ * deployment and Convex Cloud must retire the same row at the same age or
+ * "same bounds" is a claim nobody checks. `host-enrollment-policy-drift.test.ts`
+ * reads both source files and fails when a value moves on one side only.
+ *
+ * ENROLLMENT_CHALLENGE_TTL_MS — how long an unconsumed nonce may be signed.
+ *   60s, deliberately STRICTER than the plan's two minutes. The nonce is
+ *   already one-use, owner-bound and host-bound, so its lifetime is
+ *   defence-in-depth rather than the primary control; what the number really
+ *   buys is a bound on how many live unconsumed rows an attacker can hold at
+ *   once (steady-state rows = per-account budget x TTL). A client that takes
+ *   longer than a minute — a first enrollment blocked on an OS keychain prompt,
+ *   say — simply asks for another nonce, and `POST /requests` mutates no
+ *   enrollment, so the retry is free. See the plan's Unit 6 retention bullet.
+ *
+ * ENROLLMENT_CONSUMED_RETENTION_MS — how long a CONSUMED request row is kept.
+ *   The evidence a future exact-retry answer would be reconstructed from, so
+ *   the sweep must never collect a consumed row earlier than this. Implemented
+ *   by pushing `expires_at` out at consumption (see `enrollHost`), which is the
+ *   same device `convex/connectionAttempts.ts` uses for its retention window.
+ *
+ * ENROLLMENT_REQUEST_SWEEP_LIMIT — rows one prune may retire. Level-triggered:
+ *   a saturated pass leaves the rest for the next writer, and nothing is
+ *   skipped forever because an expired row stays expired.
+ */
+const ENROLLMENT_CHALLENGE_TTL_MS = 60_000
+const ENROLLMENT_CONSUMED_RETENTION_MS = 10 * 60_000
+const ENROLLMENT_REQUEST_SWEEP_LIMIT = 500
+
 function ttl(input?: number) {
   if (!input || !Number.isFinite(input)) return DEFAULT_TTL_MS
   return Math.max(5_000, Math.min(input, MAX_TTL_MS))
@@ -680,11 +714,35 @@ export function createSqliteWorkspaceAuthority(options: SqliteWorkspaceAuthority
       const now = Date.now()
       const nonce = base64url(crypto.getRandomValues(new Uint8Array(32)))
       const requestId = base64url(crypto.getRandomValues(new Uint8Array(16)))
+      // Prune BEFORE inserting, on the one path that grows this table.
+      //
+      // This adapter has no scheduler — nothing here corresponds to
+      // `convex/crons.ts`, so a sweep has to ride a write or it never runs. The
+      // request row is server-random-keyed and nothing else ever deletes it, so
+      // without this the table grew monotonically for the life of the
+      // deployment: every issued nonce, kept forever, whether it was ever used
+      // or not.
+      //
+      // Bounded by `ENROLLMENT_REQUEST_SWEEP_LIMIT` so one unlucky caller never
+      // pays for an arbitrarily large backlog, and ranged on
+      // `host_enrollment_requests_by_expires_at` so the scan is over collectable
+      // rows rather than the whole table.
+      //
+      // `expires_at` is the COLLECTABLE-AT clock, not just challenge validity:
+      // `enrollHost` pushes it out to `used_at + ENROLLMENT_CONSUMED_RETENTION_MS`
+      // when it claims the nonce, so consumed evidence survives this delete for
+      // its full retention window. Validity is decided by `used_at`, which is
+      // checked first.
+      db.prepare(`
+        DELETE FROM host_enrollment_requests WHERE request_id IN (
+          SELECT request_id FROM host_enrollment_requests WHERE expires_at <= ? LIMIT ?
+        )
+      `).run(now, ENROLLMENT_REQUEST_SWEEP_LIMIT)
       db.prepare(`
         INSERT INTO host_enrollment_requests (request_id, owner_token_identifier, host_id, nonce, expires_at, created_at)
         VALUES (?, ?, ?, ?, ?, ?)
-      `).run(requestId, who.token_identifier, args.hostId, nonce, now + CHALLENGE_TTL_MS, now)
-      return { request_id: requestId, nonce, expires_at: now + CHALLENGE_TTL_MS }
+      `).run(requestId, who.token_identifier, args.hostId, nonce, now + ENROLLMENT_CHALLENGE_TTL_MS, now)
+      return { request_id: requestId, nonce, expires_at: now + ENROLLMENT_CHALLENGE_TTL_MS }
     },
     async enrollHost(auth: SignedControlPlaneAuth, args) {
       const db = database()
@@ -716,9 +774,17 @@ export function createSqliteWorkspaceAuthority(options: SqliteWorkspaceAuthority
       return db.transaction(() => {
         const claimedAt = Date.now()
         const claimed = db.prepare(`
-          UPDATE host_enrollment_requests SET used_at = ?
+          UPDATE host_enrollment_requests SET used_at = ?, expires_at = ?
           WHERE request_id = ? AND used_at IS NULL AND expires_at > ?
-        `).run(claimedAt, args.requestId, claimedAt)
+        `).run(claimedAt, claimedAt + ENROLLMENT_CONSUMED_RETENTION_MS, args.requestId, claimedAt)
+        // Claiming REWRITES `expires_at` from "the nonce is signable until" to
+        // "this evidence is collectable at", starting the ten-minute consumed
+        // retention window the prune in `createHostEnrollmentRequest` reads.
+        // Extending it cannot extend validity: `used_at` is now set, and every
+        // read of this row — the guard above and this statement's own
+        // `used_at IS NULL` — rejects a claimed request before it ever looks at
+        // the expiry. The WHERE still sees the pre-update value, so a nonce
+        // that had already lapsed is not resurrected by its own claim.
         // One-use, enforced by the UPDATE's own WHERE rather than by the read
         // above: two concurrent enrollments race through that read, and only
         // one can win here.

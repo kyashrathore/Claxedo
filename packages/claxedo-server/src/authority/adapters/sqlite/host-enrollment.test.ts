@@ -1,5 +1,9 @@
 import { generateKeyPairSync, sign as signData, type KeyObject } from "node:crypto"
-import { describe, expect, test } from "vitest"
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
+import Database from "better-sqlite3"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
 
@@ -325,5 +329,127 @@ describe("pause", () => {
     await enroll(api, { hostId, keys })
 
     expect(await api.activeHostEnrollment!(owner)).toMatchObject({ active: true })
+  })
+})
+
+/**
+ * Retention bounds for `host_enrollment_requests` — the SQLite half of one
+ * policy. `convex/host-enrollments.policy.test.ts` makes the same claims
+ * against the Convex authority, and `host-enrollment-policy-drift.policy.test.ts`
+ * fails if the two files stop agreeing on the numbers.
+ *
+ * These read the TABLE, not the API. Nothing this authority returns is a
+ * function of how many request rows exist, which is exactly why the table grew
+ * forever without anyone noticing: every behavioural test passed throughout. So
+ * the assertion has to be a row count, taken over a second connection to the
+ * same file.
+ */
+describe("host_enrollment_requests retention", () => {
+  const CHALLENGE_TTL_MS = 60_000
+  const CONSUMED_RETENTION_MS = 10 * 60_000
+
+  function fileAuthority() {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-enrollment-")), "authority.db")
+    return { api: createSqliteWorkspaceAuthority({ path: file }), reader: new Database(file, { readonly: false }) }
+  }
+
+  function requestRows(reader: InstanceType<typeof Database>) {
+    return reader
+      .prepare(`SELECT request_id, used_at, expires_at FROM host_enrollment_requests ORDER BY expires_at`)
+      .all() as Array<{ request_id: string; used_at: number | null; expires_at: number }>
+  }
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  test("an unconsumed request is signable for exactly the canonical challenge TTL", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    const { api } = fileAuthority()
+
+    const request = await api.createHostEnrollmentRequest!(owner, { hostId: "host_ttl" })
+
+    expect(request.expires_at).toBe(1_000_000 + CHALLENGE_TTL_MS)
+  })
+
+  test("creating a request prunes requests that have passed their challenge TTL", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    const { api, reader } = fileAuthority()
+    for (const hostId of ["host_a", "host_b", "host_c"]) {
+      await api.createHostEnrollmentRequest!(owner, { hostId })
+    }
+    expect(requestRows(reader)).toHaveLength(3)
+
+    // One tick past the TTL — the first instant at which every row above is
+    // collectable — then one more nonce to carry the prune.
+    vi.setSystemTime(1_000_000 + CHALLENGE_TTL_MS + 1)
+    await api.createHostEnrollmentRequest!(owner, { hostId: "host_d" })
+
+    // Only the new one. Before the prune this was 4, then 5, then 6 — the
+    // table's whole history, forever.
+    const rows = requestRows(reader)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.expires_at).toBe(1_000_000 + CHALLENGE_TTL_MS + 1 + CHALLENGE_TTL_MS)
+  })
+
+  test("a live request is not pruned by another account's request", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    const { api, reader } = fileAuthority()
+    await api.createHostEnrollmentRequest!(owner, { hostId: "host_live" })
+
+    vi.setSystemTime(1_000_000 + CHALLENGE_TTL_MS - 1)
+    await api.createHostEnrollmentRequest!(other, { hostId: "host_other" })
+
+    // A prune that collected un-expired nonces would break enrollment for
+    // everyone whose handshake straddled someone else's request.
+    expect(requestRows(reader)).toHaveLength(2)
+  })
+
+  test("consumed evidence survives the prune for the full retention window", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    const { api, reader } = fileAuthority()
+    const { request } = await enroll(api, { hostId: "host_consumed" })
+
+    // Consumption rewrites `expires_at` from challenge deadline to
+    // collectable-at. That rewrite IS the retention window.
+    const consumed = requestRows(reader).find((row) => row.request_id === request.request_id)!
+    expect(consumed.used_at).toBe(1_000_000)
+    expect(consumed.expires_at).toBe(1_000_000 + CONSUMED_RETENTION_MS)
+
+    // Well past the challenge TTL, well inside retention: a prune here would
+    // destroy the evidence an exact retry has to be answered from.
+    vi.setSystemTime(1_000_000 + CONSUMED_RETENTION_MS - 1)
+    await api.createHostEnrollmentRequest!(owner, { hostId: "host_carrier" })
+    expect(requestRows(reader).map((row) => row.request_id)).toContain(request.request_id)
+
+    vi.setSystemTime(1_000_000 + CONSUMED_RETENTION_MS + 1)
+    await api.createHostEnrollmentRequest!(owner, { hostId: "host_carrier_2" })
+    expect(requestRows(reader).map((row) => row.request_id)).not.toContain(request.request_id)
+  })
+
+  test("a consumed request is still refused inside its retention window", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    const { api } = fileAuthority()
+    const { request, keys, hostId } = await enroll(api, { hostId: "host_replay" })
+
+    // The extended `expires_at` must not read as extended VALIDITY. `used_at`
+    // is the gate, and it is checked before the expiry.
+    vi.setSystemTime(1_000_000 + CHALLENGE_TTL_MS + 1)
+    await expect(
+      api.enrollHost!(owner, {
+        hostId,
+        publicKey: keys.publicKey,
+        requestId: request.request_id,
+        signature: signPayload(
+          keys.privateKey,
+          enrollmentPayload({ hostId, requestId: request.request_id, nonce: request.nonce }),
+        ),
+      }),
+    ).rejects.toThrow(/Invalid host enrollment request/)
   })
 })

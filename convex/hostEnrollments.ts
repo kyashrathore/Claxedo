@@ -2,6 +2,7 @@ import { v } from "convex/values"
 import {
   authedMutation,
   authedQuery,
+  cronMutation,
   serviceMutation,
   serviceQuery,
   upsertServiceUser,
@@ -26,7 +27,30 @@ import {
 
 const DEFAULT_TTL_MS = 60_000
 const MAX_TTL_MS = 5 * 60_000
-const REQUEST_TTL_MS = 60_000
+
+/**
+ * Machine-enrollment retention policy — ONE canonical set of bounds, mirrored
+ * verbatim in the SQLite authority
+ * (`packages/claxedo-server-core/src/authority/adapters/sqlite/workspace-authority.ts`),
+ * whose header carries the full reasoning for each number. Kept as literals in
+ * both files rather than imported from one, because a Convex function module is
+ * deployed on its own and cannot reach into a workspace package;
+ * `host-enrollment-policy-drift.test.ts` reads both sources and fails when a
+ * value moves on one side only.
+ *
+ * The short version:
+ *  - 60s challenge TTL, deliberately stricter than the plan's two minutes: the
+ *    nonce is one-use, owner-bound and host-bound, and a lapsed one costs the
+ *    client a free `createRequest` retry.
+ *  - 10 minutes of consumed-evidence retention, which is what makes a future
+ *    exact-retry answer reconstructable. The sweep must never collect a
+ *    consumed row before that window closes.
+ */
+export const ENROLLMENT_CHALLENGE_TTL_MS = 60_000
+export const ENROLLMENT_CONSUMED_RETENTION_MS = 10 * 60_000
+
+/** Rows one sweep tick may retire. Bounds the transaction read set. */
+export const ENROLLMENT_REQUEST_SWEEP_LIMIT = 500
 
 const serviceUser = v.object({
   token_identifier: v.string(),
@@ -124,10 +148,10 @@ async function createRequestForUser(ctx: any, user: { _id: unknown }, args: { ho
     owner_user_id: user._id,
     host_id: args.host_id,
     nonce,
-    expires_at: now + REQUEST_TTL_MS,
+    expires_at: now + ENROLLMENT_CHALLENGE_TTL_MS,
     created_at: now,
   })
-  return { request_id, nonce, expires_at: now + REQUEST_TTL_MS }
+  return { request_id, nonce, expires_at: now + ENROLLMENT_CHALLENGE_TTL_MS }
 }
 
 async function enrollForUser(
@@ -171,7 +195,11 @@ async function enrollForUser(
     payload: enrollmentPayload({ host_id: args.host_id, request_id: args.request_id, nonce: request.nonce }),
     signature: args.signature,
   })
-  await ctx.db.patch(request._id, { used_at: now })
+  // Claiming REWRITES `expires_at` from "the nonce is signable until" to "this
+  // evidence is collectable at", starting the consumed-retention window
+  // `sweepExpired` reads. It cannot extend validity: `used_at` is now set, and
+  // the guard above rejects a claimed request before it looks at the expiry.
+  await ctx.db.patch(request._id, { used_at: now, expires_at: now + ENROLLMENT_CONSUMED_RETENTION_MS })
 
   const expires_at = now + ttl(args.ttl_ms)
   const existing = await enrollmentByOwnerHost(ctx, user, args.host_id)
@@ -331,6 +359,49 @@ export const heartbeatForService = serviceMutation({
 export const pauseForService = serviceMutation({
   args: { user: serviceUser, host_id: v.optional(v.string()), paused: v.boolean() },
   handler: async (ctx, args) => pauseForUser(ctx, await upsertServiceUser(ctx, args.user), args),
+})
+
+/**
+ * Retire collectable enrollment requests.
+ *
+ * Without this the table grew monotonically: `createRequestForUser` inserts a
+ * server-random-keyed row on every `POST /requests` and nothing ever deleted
+ * one. It is deliberately excluded from the org-deletion cascade
+ * (`orgs.ORG_RETAINED_TABLES`, "user-owned and short-lived") — that note
+ * describes the `expires_at` predicate, and until this sweep existed nothing
+ * acted on it.
+ *
+ * Same shape and reasoning as `idempotency.sweepExpired` and
+ * `connectionAttempts.sweepExpired`: level-triggered, so a saturated tick
+ * leaves the rest for the next one and nothing is skipped forever; ranged on
+ * `by_expires_at` so the read set is bounded by collectable rows rather than by
+ * table size (W5's no-unbounded-read invariant).
+ *
+ * One clock covers both kinds of row because `expires_at` MEANS "collectable
+ * at": an unconsumed nonce reaches it at creation + ENROLLMENT_CHALLENGE_TTL_MS,
+ * and `enrollForUser` pushes a consumed one out to
+ * `used_at + ENROLLMENT_CONSUMED_RETENTION_MS`. So a consumed row is never
+ * collected inside its retention window, which is the property a future
+ * exact-retry answer depends on.
+ *
+ * Correctness never depends on a tick having run — a stale row is inert, since
+ * `enrollForUser` rejects on `used_at` and on `expires_at <= now`. This only
+ * reclaims storage, which is why the cadence is loose.
+ */
+export const sweepExpired = cronMutation({
+  // `now` optional so the cron can call with no clock argument; tests pass one
+  // to drive expiry deterministically. Same convention as the two sweeps above.
+  args: { now: v.optional(v.number()), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const now = args.now ?? Date.now()
+    const limit = Math.min(args.limit ?? ENROLLMENT_REQUEST_SWEEP_LIMIT, ENROLLMENT_REQUEST_SWEEP_LIMIT)
+    const stale = await ctx.db
+      .query("host_enrollment_requests")
+      .withIndex("by_expires_at", (q: any) => q.lte("expires_at", now))
+      .take(limit)
+    for (const doc of stale) await ctx.db.delete(doc._id)
+    return { swept: stale.length }
+  },
 })
 
 export const activeForService = serviceQuery({

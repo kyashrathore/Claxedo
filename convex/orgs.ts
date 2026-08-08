@@ -693,7 +693,11 @@ export const ORG_RETAINED_TABLES: Readonly<Record<string, string>> = {
   // resulting session can reach is re-resolved through `workspace_memberships`
   // and org grants per request, and the cascade destroys those.
   host_enrollments: "user-owned machine identity, not org-owned",
-  host_enrollment_requests: "one-use nonces for the above; user-owned and short-lived",
+  // Short-lived is a claim about the SWEEP, not about the predicate: rows are
+  // retired by `hostEnrollments.sweepExpired` (crons, every 15 minutes). Before
+  // that cron existed this line described an `expires_at` nothing acted on, and
+  // the table grew forever.
+  host_enrollment_requests: "one-use nonces for the above; user-owned, swept by hostEnrollments.sweepExpired",
   // Same class as `users` above, and the reasoning matters because these rows
   // ARE live credentials — the usual argument for purging.
   //

@@ -1,7 +1,7 @@
 import { createPrivateKey, generateKeyPairSync, sign } from "node:crypto"
 import { describe, expect, test } from "vitest"
 import { convexTest } from "convex-test"
-import { api } from "./_generated/api"
+import { api, internal } from "./_generated/api"
 import schema from "./schema"
 
 declare global {
@@ -284,5 +284,127 @@ describe("Convex host enrollment pause", () => {
     await enroll(owner, { hostId, key })
 
     expect(await owner.query(api.hostEnrollments.active, {})).toMatchObject({ active: true })
+  })
+})
+
+/**
+ * Retention bounds for `host_enrollment_requests` — the Convex half of one
+ * policy. `packages/claxedo-server/src/authority/adapters/sqlite/host-enrollment.test.ts`
+ * makes the same claims against the SQLite authority, and
+ * `host-enrollment-policy-drift.policy.test.ts` fails if the two files stop
+ * agreeing on the numbers.
+ *
+ * These read the TABLE, not the API. Nothing this module returns is a function
+ * of how many request rows exist, which is exactly why the table grew forever
+ * without anyone noticing: every behavioural test above passed throughout.
+ *
+ * convex-test does not run crons, so the sweep is invoked directly — the
+ * documented way to exercise a scheduled function, and the same thing
+ * `idempotency` and `connectionAttempts` do.
+ */
+describe("host_enrollment_requests retention", () => {
+  const CHALLENGE_TTL_MS = 60_000
+  const CONSUMED_RETENTION_MS = 10 * 60_000
+
+  function requestRows(t: ReturnType<typeof convexTest>) {
+    return t.run(async (ctx) => ctx.db.query("host_enrollment_requests").collect())
+  }
+
+  test("an unconsumed request is signable for exactly the canonical challenge TTL", async () => {
+    const t = convexTest(schema, modules)
+    const before = Date.now()
+
+    const request = await asOwner(t).mutation(api.hostEnrollments.createRequest, { host_id: "host_ttl" })
+
+    // A window, because the module reads its own clock: the assertion is on the
+    // TTL, not on the instant.
+    expect(request.expires_at - before).toBeGreaterThanOrEqual(CHALLENGE_TTL_MS)
+    expect(request.expires_at - before).toBeLessThan(CHALLENGE_TTL_MS + 5_000)
+  })
+
+  test("the sweep retires requests past their challenge TTL", async () => {
+    const t = convexTest(schema, modules)
+    const owner = asOwner(t)
+    for (const host_id of ["host_a", "host_b", "host_c"]) {
+      await owner.mutation(api.hostEnrollments.createRequest, { host_id })
+    }
+    expect(await requestRows(t)).toHaveLength(3)
+
+    const swept = await t.mutation(internal.hostEnrollments.sweepExpired, { now: Date.now() + CHALLENGE_TTL_MS + 1 })
+
+    expect(swept).toEqual({ swept: 3 })
+    expect(await requestRows(t)).toEqual([])
+  })
+
+  test("the sweep leaves a live request alone", async () => {
+    const t = convexTest(schema, modules)
+    await asOwner(t).mutation(api.hostEnrollments.createRequest, { host_id: "host_live" })
+
+    // A sweep that collected un-expired nonces would break enrollment for
+    // anyone whose handshake straddled a tick.
+    const swept = await t.mutation(internal.hostEnrollments.sweepExpired, { now: Date.now() })
+
+    expect(swept).toEqual({ swept: 0 })
+    expect(await requestRows(t)).toHaveLength(1)
+  })
+
+  test("consumed evidence survives the sweep for the full retention window", async () => {
+    const t = convexTest(schema, modules)
+    const owner = asOwner(t)
+    const { request } = await enroll(owner, { hostId: "host_consumed" })
+
+    // Consumption rewrites `expires_at` from challenge deadline to
+    // collectable-at. That rewrite IS the retention window.
+    const [consumed] = await requestRows(t)
+    expect(consumed!.used_at).toBeDefined()
+    expect(consumed!.expires_at - consumed!.used_at!).toBe(CONSUMED_RETENTION_MS)
+
+    // Well past the challenge TTL, well inside retention: sweeping here would
+    // destroy the evidence an exact retry has to be answered from.
+    const inside = await t.mutation(internal.hostEnrollments.sweepExpired, {
+      now: consumed!.used_at! + CONSUMED_RETENTION_MS - 1,
+    })
+    expect(inside).toEqual({ swept: 0 })
+    expect((await requestRows(t)).map((row) => row.request_id)).toContain(request.request_id)
+
+    const after = await t.mutation(internal.hostEnrollments.sweepExpired, {
+      now: consumed!.used_at! + CONSUMED_RETENTION_MS + 1,
+    })
+    expect(after).toEqual({ swept: 1 })
+    expect(await requestRows(t)).toEqual([])
+  })
+
+  test("a consumed request is still refused inside its retention window", async () => {
+    const t = convexTest(schema, modules)
+    const owner = asOwner(t)
+    const key = hostKey()
+    const { request, hostId } = await enroll(owner, { hostId: "host_replay", key })
+
+    // The extended `expires_at` must not read as extended VALIDITY. `used_at`
+    // is the gate, and it is checked before the expiry.
+    await expect(
+      owner.mutation(api.hostEnrollments.enroll, {
+        host_id: hostId,
+        public_key: key.publicKey,
+        request_id: request.request_id,
+        signature: key.sign(enrollmentPayload({ hostId, requestId: request.request_id, nonce: request.nonce })),
+      }),
+    ).rejects.toThrow(/Invalid host enrollment request/)
+  })
+
+  test("one tick retires at most `limit` rows, and the rest drain on the next", async () => {
+    const t = convexTest(schema, modules)
+    const owner = asOwner(t)
+    for (const host_id of ["host_a", "host_b", "host_c"]) {
+      await owner.mutation(api.hostEnrollments.createRequest, { host_id })
+    }
+    const now = Date.now() + CHALLENGE_TTL_MS + 1
+
+    // Level-triggered, not fire-and-forget: a saturated tick must leave the
+    // remainder collectable rather than skipping it forever.
+    expect(await t.mutation(internal.hostEnrollments.sweepExpired, { now, limit: 2 })).toEqual({ swept: 2 })
+    expect(await requestRows(t)).toHaveLength(1)
+    expect(await t.mutation(internal.hostEnrollments.sweepExpired, { now, limit: 2 })).toEqual({ swept: 1 })
+    expect(await requestRows(t)).toEqual([])
   })
 })

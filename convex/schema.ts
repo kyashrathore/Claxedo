@@ -355,7 +355,12 @@ export default defineSchema({
     created_at: v.number(),
   })
     .index("by_request_id", ["request_id"])
-    .index("by_owner", ["owner_user_id"]),
+    .index("by_owner", ["owner_user_id"])
+    // `hostEnrollments.sweepExpired`'s range. `expires_at` is the
+    // COLLECTABLE-AT clock, not just challenge validity: consumption pushes it
+    // out to `used_at + ENROLLMENT_CONSUMED_RETENTION_MS` so one index answers
+    // for both live nonces and retained consumed evidence.
+    .index("by_expires_at", ["expires_at"]),
 
   host_attestation_challenges: defineTable({
     challenge_id: v.string(),

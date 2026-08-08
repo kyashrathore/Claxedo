@@ -156,6 +156,14 @@ CREATE INDEX IF NOT EXISTS host_enrollments_by_expires_at ON host_enrollments (e
 -- The one-use nonce a machine signs to prove it holds the private key. Separate
 -- table from host_attestation_challenges because that one is keyed by workspace
 -- and this flow has no workspace to key by.
+--
+-- expires_at carries TWO meanings over a row's life, and the transition is what
+-- bounds the table: while used_at is NULL it is the challenge deadline
+-- (ENROLLMENT_CHALLENGE_TTL_MS from creation); once claimed, enrollHost
+-- rewrites it to used_at + ENROLLMENT_CONSUMED_RETENTION_MS so the consumed
+-- evidence outlives the nonce. Either way it answers one question for the prune
+-- in createHostEnrollmentRequest — when may this row be collected — which is
+-- why that prune needs no second clock and no status column.
 CREATE TABLE IF NOT EXISTS host_enrollment_requests (
   request_id TEXT PRIMARY KEY,
   owner_token_identifier TEXT NOT NULL,
@@ -166,6 +174,10 @@ CREATE TABLE IF NOT EXISTS host_enrollment_requests (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS host_enrollment_requests_by_owner ON host_enrollment_requests (owner_token_identifier);
+-- The prune's range. Without it the bounded delete still deletes the right
+-- rows, but it scans every row to find them — which is the growth it exists to
+-- stop, paid on the create path instead of in storage.
+CREATE INDEX IF NOT EXISTS host_enrollment_requests_by_expires_at ON host_enrollment_requests (expires_at);
 CREATE TABLE IF NOT EXISTS runtime_access_tokens (
   jti TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL,

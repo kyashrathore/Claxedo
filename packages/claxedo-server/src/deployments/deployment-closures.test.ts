@@ -45,13 +45,19 @@ const ROOT = path.resolve(import.meta.dirname, "../..")
  * it gets read when it changes. Growth is a deliberate one-line bump; a fall
  * should lower the number with it.
  */
+// +1 module on EVERY entry on 2026-08-09:
+// `authority/adapters/convex/workspace-authority/host-enrollment.ts`, the
+// Convex half of machine enrollment. It moves all three because every entry
+// composes `createConvexAuthority`, and it is one module rather than three:
+// the five methods live in one file, importing only what the adapter's other
+// modules already do (`./api`, `./executor`, the auth types). No new package.
 const ENTRIES = [
-  { name: "hosted-node", entry: "src/deployments/hosted-node/index.ts", modules: 131, packages: 25 },
-  { name: "hosted-workerd", entry: "src/deployments/hosted-workerd/worker.ts", modules: 107, packages: 13 },
+  { name: "hosted-node", entry: "src/deployments/hosted-node/index.ts", modules: 132, packages: 25 },
+  { name: "hosted-workerd", entry: "src/deployments/hosted-workerd/worker.ts", modules: 108, packages: 13 },
   // +1 module (139 -> 140) on 2026-08-08: `deployments/route-ownership.ts`,
   // the composition guard the self-hosted app now installs alongside the
   // hosted core. One dependency-free module, no new package.
-  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 140, packages: 32 },
+  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 141, packages: 32 },
 ] as const
 
 /** The two cloud compositions. Neither runs a workspace on its own box. */

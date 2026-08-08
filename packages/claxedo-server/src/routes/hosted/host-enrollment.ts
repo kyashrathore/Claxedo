@@ -33,6 +33,8 @@ import {
 } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "../../authority/services"
+import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
+import { controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
 import { parsedBody, signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
 
 const hostId = z.string().trim().min(1).max(200)
@@ -73,8 +75,65 @@ function unsupported() {
 
 class EnrollmentUnsupported extends Error {}
 
-export function HostEnrollmentRoutes(services: ControlPlaneServices, options: WorkspaceRouteOptions) {
+/**
+ * Per-account budget for `POST /requests`, the one route here that WRITES a row
+ * per call.
+ *
+ * Not covered by the app-wide `defaultRequestGuard` in
+ * `deployments/hosted-shared/hosted-app.ts`, and the difference is the point:
+ * that guard is IP-keyed by design, so it bounds one network path and says
+ * nothing about one ACCOUNT. A signed caller behind rotating addresses — a
+ * cloud function, a residential proxy pool — passes it while minting enrollment
+ * requests without limit; the plan's Unit 6 abuse-control bullet asks for
+ * per-account, per-host and per-peer limits for exactly that reason.
+ *
+ * Sized against the human action rather than round: enrolling a machine happens
+ * once per machine, and even a user setting up several laptops back to back,
+ * retrying a couple of times each, stays far under ten a minute. A legitimate
+ * client that trips this has a bug.
+ *
+ * The budget also bounds `host_enrollment_requests` in steady state: with the
+ * authorities' 60s challenge TTL and their prune, live unconsumed rows per
+ * account can not exceed roughly limit x TTL.
+ */
+const DEFAULT_ENROLLMENT_REQUEST_LIMIT = 10
+const DEFAULT_ENROLLMENT_REQUEST_WINDOW_MS = 60_000
+
+/**
+ * Shared per-account budget for the routes that do NOT create rows: enroll,
+ * renewal (heartbeat), pause, list.
+ *
+ * Its own ceiling rather than a slice of the one above, the same split
+ * `routes/hosted/workspace.ts` makes between `createWorkspaceRateLimiter` and
+ * `controlPlaneRateLimiter`: a heartbeat storm must not consume the budget that
+ * lets a user enroll a new machine, and a create flood must not hide inside the
+ * traffic every enrolled connector generates. 120/min matches that file's
+ * control-plane budget and sits well above any honest connector, which
+ * heartbeats on the order of once per TTL.
+ */
+const DEFAULT_ENROLLMENT_CONTROL_PLANE_LIMIT = 120
+const DEFAULT_ENROLLMENT_CONTROL_PLANE_WINDOW_MS = 60_000
+
+export type HostEnrollmentRouteOptions = WorkspaceRouteOptions & {
+  /** Overridable so tests can drive the budget without issuing ten real calls. */
+  enrollmentRequestRateLimiter?: ConnectionRateLimiter
+}
+
+export function HostEnrollmentRoutes(services: ControlPlaneServices, options: HostEnrollmentRouteOptions) {
   const app = new Hono()
+
+  const enrollmentRequestRateLimiter =
+    options.enrollmentRequestRateLimiter ??
+    createFixedWindowConnectionRateLimiter({
+      limit: DEFAULT_ENROLLMENT_REQUEST_LIMIT,
+      windowMs: DEFAULT_ENROLLMENT_REQUEST_WINDOW_MS,
+    })
+  const controlPlaneRateLimiter =
+    options.controlPlaneRateLimiter ??
+    createFixedWindowConnectionRateLimiter({
+      limit: DEFAULT_ENROLLMENT_CONTROL_PLANE_LIMIT,
+      windowMs: DEFAULT_ENROLLMENT_CONTROL_PLANE_WINDOW_MS,
+    })
 
   /**
    * Authenticate, resolve the authority, run the handler, map the failures.
@@ -91,6 +150,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Wo
       authority: ReturnType<typeof requireAuthority>
     }) => Promise<unknown>,
     method: "GET" | "POST",
+    budget: { limiter: ConnectionRateLimiter; key: string; action: string },
   ) =>
     async (c: Context) => {
       const authResult = await signedOrError(
@@ -107,6 +167,21 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Wo
       // an unsigned request already returned 401 from `signedOrError`. Removing
       // this line fails no test, because nothing can reach it.
       if (!auth) return c.json(missingBearer(), 401)
+
+      // Keyed on the verified account (`controlPlaneRateLimitError` reads
+      // `auth.user.subject`), so it is spent BEFORE the body is read and long
+      // before any authority round-trip or signature verification — a flood
+      // must be rejected while rejecting it is still cheap. It is deliberately
+      // NOT an argument to this call: there is exactly one correct value for
+      // it, and making it a parameter would only create the chance to omit it.
+      //
+      // Every route takes a budget, so adding one here cannot be forgotten the
+      // way it was when this file had none.
+      const limited = await controlPlaneRateLimitError(services, budget.limiter, auth, {
+        key: budget.key,
+        action: budget.action,
+      })
+      if (limited) return c.json(limited.body, limited.status)
 
       const parsed = method === "GET"
         ? ({ ok: true, body: {} as Body } as const)
@@ -137,7 +212,11 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Wo
         const create = required(authority.createHostEnrollmentRequest)
         await authority.usersMe(auth)
         return create(auth, { hostId: body.hostId })
-      }, "POST"),
+      }, "POST", {
+        limiter: enrollmentRequestRateLimiter,
+        key: "host.enrollments.requests",
+        action: "host_enrollment.request.denied",
+      }),
     )
     .post(
       "/",
@@ -157,7 +236,11 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Wo
         })
         await authority.auditAllow(auth, { action: "host_enrollment.enabled", metadata: { hostId: body.hostId } })
         return { enrollment }
-      }, "POST"),
+      }, "POST", {
+        limiter: controlPlaneRateLimiter,
+        key: "host.enrollments.enroll",
+        action: "host_enrollment.enroll.denied",
+      }),
     )
     .post(
       "/heartbeat",
@@ -168,7 +251,11 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Wo
           signature: body.signature,
           ...(body.ttlMs === undefined ? {} : { ttlMs: body.ttlMs }),
         })
-      }, "POST"),
+      }, "POST", {
+        limiter: controlPlaneRateLimiter,
+        key: "host.enrollments.heartbeat",
+        action: "host_enrollment.heartbeat.denied",
+      }),
     )
     .post(
       "/pause",
@@ -183,10 +270,18 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Wo
           metadata: { ...(body.hostId ? { hostId: body.hostId } : {}) },
         })
         return result
-      }, "POST"),
+      }, "POST", {
+        limiter: controlPlaneRateLimiter,
+        key: "host.enrollments.pause",
+        action: "host_enrollment.pause.denied",
+      }),
     )
     .get(
       "/",
-      handle<Record<string, never>>(pauseBody, async ({ auth, authority }) => required(authority.activeHostEnrollment)(auth), "GET"),
+      handle<Record<string, never>>(pauseBody, async ({ auth, authority }) => required(authority.activeHostEnrollment)(auth), "GET", {
+        limiter: controlPlaneRateLimiter,
+        key: "host.enrollments.active",
+        action: "host_enrollment.active.denied",
+      }),
     )
 }

@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest"
 import type { ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
+import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { HostEnrollmentRoutes } from "./host-enrollment"
 
 /**
@@ -38,10 +39,10 @@ function authority(overrides: Record<string, unknown> = {}) {
   }
 }
 
-function routes(overrides: Record<string, unknown> = {}) {
+function routes(overrides: Record<string, unknown> = {}, routeOptions: Record<string, unknown> = {}) {
   const api = authority(overrides)
   const services = { authority: api } as unknown as ControlPlaneServices
-  const app = HostEnrollmentRoutes(services, { authConfig, verifier } as never)
+  const app = HostEnrollmentRoutes(services, { authConfig, verifier, ...routeOptions } as never)
   const call = (path: string, init: RequestInit = {}) =>
     app.request(`http://control.test${path}`, {
       headers: { authorization: "Bearer user_1", "content-type": "application/json", ...(init.headers ?? {}) },
@@ -228,5 +229,108 @@ describe("an authority without enrollment", () => {
     expect((await post("/requests", { hostId: "host_1" })).status).toBe(501)
     expect((await post("/", { hostId: "host_1", publicKey: "{}", requestId: "r", signature: "s" })).status).toBe(501)
     expect((await call("/", { method: "GET" })).status).toBe(501)
+  })
+})
+
+/**
+ * Per-account abuse budget.
+ *
+ * The app-wide `defaultRequestGuard` in `deployments/hosted-shared/hosted-app.ts`
+ * already limits this route, and empirically fires on it — but it is IP-keyed
+ * BY DESIGN, so it bounds one network path and says nothing about one account.
+ * These tests are about the other axis, the one the plan's Unit 6 abuse-control
+ * bullet asks for and this file had none of.
+ *
+ * The default budget is used deliberately rather than an injected tiny one: an
+ * excessive-traffic test that only proves "a limiter I supplied limits" would
+ * pass with the production default set to a million.
+ */
+describe("per-account budget", () => {
+  test("excessive enrollment-request traffic from ONE account is cut off", async () => {
+    const { api, post } = routes()
+
+    const statuses: number[] = []
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      statuses.push((await post("/requests", { hostId: `host_${attempt}` })).status)
+    }
+
+    // Ten allowed, the rest refused — the shipped default, not a test fixture.
+    expect(statuses.filter((status) => status === 200)).toHaveLength(10)
+    expect(statuses.filter((status) => status === 429)).toHaveLength(30)
+    expect(statuses.slice(0, 10).every((status) => status === 200)).toBe(true)
+    // The budget is spent BEFORE the authority is touched: a flood must be
+    // rejected while rejecting it is still cheap, and the whole point is that
+    // no row is written for the refused calls.
+    expect(api.createHostEnrollmentRequest).toHaveBeenCalledTimes(10)
+  })
+
+  test("the refusal names the limit rather than looking like a server fault", async () => {
+    const { post } = routes()
+    for (let attempt = 0; attempt < 10; attempt += 1) await post("/requests", { hostId: "host_x" })
+
+    const response = await post("/requests", { hostId: "host_x" })
+
+    expect(response.status).toBe(429)
+    expect(await response.json()).toMatchObject({
+      error: { code: "control_plane_rate_limited", retryAfterMs: expect.any(Number) },
+    })
+  })
+
+  test("one account's flood does not spend another account's budget", async () => {
+    // PER-ACCOUNT is the claim. A limiter keyed on anything shared — the route,
+    // the deployment — would fail here, and an IP-keyed one cannot make this
+    // distinction at all, which is why the global guard does not satisfy it.
+    const { call } = routes()
+    const requestFor = (subject: string) =>
+      call("/requests", {
+        method: "POST",
+        body: JSON.stringify({ hostId: "host_1" }),
+        headers: { authorization: `Bearer ${subject}` },
+      })
+    for (let attempt = 0; attempt < 20; attempt += 1) await requestFor("user_flood")
+
+    expect((await requestFor("user_flood")).status).toBe(429)
+    expect((await requestFor("user_quiet")).status).toBe(200)
+  })
+
+  test("a request flood does not consume the budget that enrolls or renews", async () => {
+    // Separate buckets, the same split `routes/hosted/workspace.ts` makes: an
+    // exhausted nonce budget must not lock a user out of completing the
+    // enrollment they already have a nonce for, or out of keeping a live
+    // machine alive.
+    const { post } = routes()
+    for (let attempt = 0; attempt < 20; attempt += 1) await post("/requests", { hostId: "host_1" })
+
+    expect(
+      (await post("/", { hostId: "host_1", publicKey: "{}", requestId: "req_1", signature: "sig" })).status,
+    ).toBe(200)
+    expect((await post("/heartbeat", { hostId: "host_1", signature: "sig" })).status).toBe(200)
+  })
+
+  test("renewal traffic is bounded too", async () => {
+    // The confirmed defect named enrollment AND renewal. 120/min per account,
+    // the deployment's control-plane budget — far above any honest connector,
+    // which heartbeats about once per TTL.
+    const { api, post } = routes()
+
+    const statuses: number[] = []
+    for (let attempt = 0; attempt < 130; attempt += 1) {
+      statuses.push((await post("/heartbeat", { hostId: "host_1", signature: "sig" })).status)
+    }
+
+    expect(statuses.filter((status) => status === 200)).toHaveLength(120)
+    expect(statuses.filter((status) => status === 429)).toHaveLength(10)
+    expect(api.heartbeatHostEnrollment).toHaveBeenCalledTimes(120)
+  })
+
+  test("the budget is overridable, so a deployment can tighten it", async () => {
+    const { api, post } = routes(
+      {},
+      { enrollmentRequestRateLimiter: createFixedWindowConnectionRateLimiter({ limit: 1, windowMs: 60_000 }) },
+    )
+
+    expect((await post("/requests", { hostId: "host_1" })).status).toBe(200)
+    expect((await post("/requests", { hostId: "host_1" })).status).toBe(429)
+    expect(api.createHostEnrollmentRequest).toHaveBeenCalledTimes(1)
   })
 })
