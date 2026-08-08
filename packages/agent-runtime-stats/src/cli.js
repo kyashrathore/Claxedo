@@ -4,6 +4,7 @@ import path from "node:path"
 import { analyzeSessions } from "./analyze.js"
 import { createScanProgress } from "./progress.js"
 import { renderTable, sharePrompt } from "./render.js"
+import { PUBLIC_ORIGIN } from "./share-contract.js"
 import { discoverSources, HARNESSES, loadSessions } from "./sources.js"
 
 const HELP = `agent-runtime-stats [options]
@@ -106,7 +107,11 @@ export async function main(args, io = { stdout: process.stdout, stderr: process.
   else {
     const colors = io.stdout.isTTY === true && !("NO_COLOR" in environment)
     io.stdout.write(`${renderTable(report, io.stdout.columns, colors)}\n\n`)
-    const sharing = sharePrompt(report, environment.AGENT_RUNTIME_STATS_SHARE_URL, io.stdout.isTTY === true)
+    const sharing = sharePrompt(
+      report,
+      environment.AGENT_RUNTIME_STATS_SHARE_URL ?? PUBLIC_ORIGIN,
+      io.stdout.isTTY === true,
+    )
     if (sharing) io.stdout.write(`${sharing}\n`)
   }
   return report.errors.length ? 2 : 0

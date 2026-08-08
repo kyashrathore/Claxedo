@@ -9,7 +9,7 @@ import {
 } from "./report"
 
 const sample = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   sessionsAnalyzed: 2_178,
   executionCalls: 347_214,
   sessionsWithoutFullMachinePercent: 18.25,
@@ -17,6 +17,9 @@ const sample = {
   turnCoveragePercent: 91.6,
   turnsWithoutFullMachinePercent: 37.5,
   repeatFullMachineTurnPercent: 72.4,
+  fullMachineReturnIntervalSamples: 89_320,
+  medianFullMachineReturnIntervalMs: 10_800,
+  p95FullMachineReturnIntervalMs: 98_100,
   medianCallsAfterFirstFullMachine: 6,
   medianObservedSpanAfterFirstFullMachineMs: 45_500,
   p95ObservedSpanAfterFirstFullMachineMs: 301_200,
@@ -33,6 +36,9 @@ describe("report contract", () => {
       ["Execution-call turn coverage", "91.60%"],
       ["Turns completed without full machine", "37.50%"],
       ["Full-machine turns needing it again", "72.40%"],
+      ["Measured full-machine return intervals", "89,320"],
+      ["Median interval before full machine needed again", "10.8s"],
+      ["p95 interval before full machine needed again", "98.1s"],
       ["Median calls after first full-machine need", "6"],
       ["Median observed span after first full-machine need", "45.5s"],
       ["p95 observed span after first full-machine need", "301.2s"],
@@ -42,7 +48,7 @@ describe("report contract", () => {
   })
 
   test("rejects identifying, obsolete, and internally inconsistent payloads", () => {
-    expect(() => parseReport({ ...sample, schemaVersion: 1 })).toThrow("schemaVersion must be 2")
+    expect(() => parseReport({ ...sample, schemaVersion: 2 })).toThrow("schemaVersion must be 3")
     expect(() => parseReport({ ...sample, sessionsAnalyzed: -1 })).toThrow(InvalidReportError)
     expect(() => parseReport({ ...sample, repository: "secret/project" })).toThrow("Unexpected report field")
     expect(() => parseReport({ ...sample, justBashPercent: 64.84 })).toThrow("Unexpected report field")
@@ -54,6 +60,28 @@ describe("report contract", () => {
         ...sample,
         medianObservedSpanAfterFirstFullMachineMs: 400_000,
         p95ObservedSpanAfterFirstFullMachineMs: 300_000,
+      }),
+    ).toThrow("cannot be greater")
+    expect(() =>
+      parseReport({
+        ...sample,
+        fullMachineReturnIntervalSamples: 0,
+        medianFullMachineReturnIntervalMs: 10_800,
+        p95FullMachineReturnIntervalMs: 98_100,
+      }),
+    ).toThrow("must be null")
+    expect(() =>
+      parseReport({
+        ...sample,
+        fullMachineReturnIntervalSamples: 1,
+        medianFullMachineReturnIntervalMs: null,
+      }),
+    ).toThrow("are required")
+    expect(() =>
+      parseReport({
+        ...sample,
+        medianFullMachineReturnIntervalMs: 100_000,
+        p95FullMachineReturnIntervalMs: 98_100,
       }),
     ).toThrow("cannot be greater")
     expect(formatDuration(null)).toBe("Unavailable")

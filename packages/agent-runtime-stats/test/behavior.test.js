@@ -316,7 +316,7 @@ test("CLI rejects unknown harnesses and does not share empty reports", () => {
   assert.doesNotMatch(empty.stdout, /100%/)
 })
 
-test("CLI has no default share endpoint", () => {
+test("CLI defaults to the branded review endpoint", () => {
   const binary = fileURLToPath(new URL("../bin/agent-runtime-stats.js", import.meta.url))
   const fixtureHome = mkdtempSync(path.join(os.tmpdir(), "agent-runtime-share-"))
   const sessions = path.join(fixtureHome, ".codex", "sessions")
@@ -336,7 +336,9 @@ test("CLI has no default share endpoint", () => {
     env: environment,
   })
   assert.equal(result.status, 0)
-  assert.doesNotMatch(result.stdout, /workers\.dev|Share these anonymous aggregate stats/)
+  assert.match(result.stdout, /Share these anonymous aggregate stats/)
+  assert.match(result.stdout, /https:\/\/claxedo\.com\/agent-runtime-share#data=/)
+  assert.doesNotMatch(result.stdout, /workers\.dev/)
 })
 
 test("parses cross-platform CLI paths", () => {
@@ -371,6 +373,9 @@ test("share prompt carries only canonical aggregate metrics and becomes clickabl
     "turnCoveragePercent",
     "turnsWithoutFullMachinePercent",
     "repeatFullMachineTurnPercent",
+    "fullMachineReturnIntervalSamples",
+    "medianFullMachineReturnIntervalMs",
+    "p95FullMachineReturnIntervalMs",
     "medianCallsAfterFirstFullMachine",
     "medianObservedSpanAfterFirstFullMachineMs",
     "p95ObservedSpanAfterFirstFullMachineMs",
@@ -382,13 +387,16 @@ test("share prompt carries only canonical aggregate metrics and becomes clickabl
   assert.equal(payload.turnCoveragePercent, 100)
   assert.equal(payload.turnsWithoutFullMachinePercent, 100)
   assert.equal(payload.repeatFullMachineTurnPercent, null)
+  assert.equal(payload.fullMachineReturnIntervalSamples, 0)
+  assert.equal(payload.medianFullMachineReturnIntervalMs, null)
+  assert.equal(payload.p95FullMachineReturnIntervalMs, null)
   assert.equal(payload.medianCallsAfterFirstFullMachine, null)
   assert.equal(payload.medianObservedSpanAfterFirstFullMachineMs, null)
   assert.equal(payload.p95ObservedSpanAfterFirstFullMachineMs, null)
-  assert.equal(payload.schemaVersion, 2)
+  assert.equal(payload.schemaVersion, 3)
   const escape = String.fromCharCode(27)
   const interactive = sharePrompt(analysis, "https://stats.example", true)
   assert.equal(plain.includes(escape), false)
-  assert.equal(interactive.includes(`${escape}]8;;https://stats.example/share#data=`), true)
+  assert.equal(interactive.includes(`${escape}]8;;https://stats.example/agent-runtime-share#data=`), true)
   assert.match(interactive, /\[ Share results \]/)
 })

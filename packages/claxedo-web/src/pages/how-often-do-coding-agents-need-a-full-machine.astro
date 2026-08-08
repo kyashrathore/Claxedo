@@ -1,0 +1,254 @@
+---
+import Layout from "../layouts/Layout.astro"
+import Nav from "../components/Nav.astro"
+import Footer from "../components/Footer.astro"
+import { requireClaim } from "../content/claims"
+import { routes } from "../content/routes"
+import study from "../../../agent-runtime-stats/data/2026-08-09-runtime-study.json"
+
+const studyClaim = requireClaim("agent-runtime-study")
+const discussionUrl = "https://x.com/kyashrathore/status/2082195455107268983"
+const integer = new Intl.NumberFormat("en-US")
+const percent = (value: number) => `${value.toFixed(2)}%`
+const seconds = (value: number) => `${(value / 1000).toFixed(1)}s`
+const command = "npx @claxedo/agent-runtime-stats"
+const title = "How often do coding agents need a full machine? — Claxedo"
+const description = `Across ${integer.format(study.scope.executionCalls)} coding-agent execution calls, the median interval before a full machine was needed again was ${seconds(study.metrics.medianFullMachineReturnIntervalMs)}.`
+---
+
+<Layout title={title} description={description} image="/agent-runtime-study-og.png" canonicalPath={routes.agentRuntimeStudy} bodyClass="runtime-study-page">
+  <div class="shell">
+    <Nav />
+    <main id="main-content">
+      <article>
+        <header class="study-hero">
+          <div class="study-wrap hero-grid">
+            <div class="hero-copy">
+              <p class="eyebrow">Claxedo research · 09 Aug 2026</p>
+              <h1>How often do coding agents need a full machine?</h1>
+              <p class="hero-lede">After an agent finished one full-machine call, it needed the machine again a median of {seconds(study.metrics.medianFullMachineReturnIntervalMs)} later.</p>
+              <div class="hero-actions">
+                <div class="hero-command"><code>{command}</code><button class="btn-primary" type="button" data-copy-command data-label="Copy">Copy</button></div>
+                <a class="text-link" href={discussionUrl} target="_blank" rel="noopener noreferrer">Original discussion on X <span aria-hidden="true">↗</span></a>
+              </div>
+            </div>
+            <aside class="hero-finding" aria-label="Primary finding">
+              <span class="finding-label">Median interval before the full machine was needed again</span>
+              <span class="finding-prefix">Every</span>
+              <strong>{seconds(study.metrics.medianFullMachineReturnIntervalMs)}</strong>
+              <p>{integer.format(study.metrics.fullMachineReturnIntervalSamples)} measured intervals · p95 {seconds(study.metrics.p95FullMachineReturnIntervalMs)}</p>
+            </aside>
+          </div>
+        </header>
+
+        <section class="study-section dark-study" aria-labelledby="finding-title">
+          <div class="study-wrap narrow-copy">
+            <p class="eyebrow">The finding</p>
+            <h2 id="finding-title">Your agent needs the machine again too soon to shut it down between calls.</h2>
+            <p>The median gap between machine-required calls was {seconds(study.metrics.medianFullMachineReturnIntervalMs)}. Ninety-five percent of measured gaps were under {seconds(study.metrics.p95FullMachineReturnIntervalMs)}. Any system that releases the machine between calls has only that interval to provision another machine, synchronize changes, restore state, and become ready.</p>
+          </div>
+        </section>
+
+        <section class="study-section" aria-labelledby="break-even-title">
+          <div class="study-wrap break-even-layout">
+            <div class="section-heading">
+              <p class="eyebrow">The break-even test</p>
+              <h2 id="break-even-title">Your handoff must be faster than the gap.</h2>
+              <p>Let <code>y</code> be the time required to provision a machine, synchronize files, restore processes, and become ready. Let <code>x</code> be the time before the agent needs the machine again.</p>
+            </div>
+            <div class="equation-card">
+              <span class="mono-label">Required condition</span>
+              <p><var>y</var> <b>&lt;</b> <var>x</var></p>
+              <dl><div><dt>Median x</dt><dd>{seconds(study.metrics.medianFullMachineReturnIntervalMs)}</dd></div><div><dt>p95 x</dt><dd>{seconds(study.metrics.p95FullMachineReturnIntervalMs)}</dd></div></dl>
+            </div>
+            <div class="threshold-copy">
+              <p>If <code>y ≥ {seconds(study.metrics.medianFullMachineReturnIntervalMs)}</code>, the machine will not be ready for at least half of the observed returns. Turning it off between calls would slow the agent instead of saving useful capacity.</p>
+              <p>Even when <code>y &lt; {seconds(study.metrics.medianFullMachineReturnIntervalMs)}</code>, actual savings still depend on VM billing, minimum billing periods, and idle-retention policy.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="study-section dark-study" aria-labelledby="prevalence-title">
+          <div class="study-wrap">
+            <div class="section-heading">
+              <p class="eyebrow">Not a rare edge case</p>
+              <h2 id="prevalence-title">Full-machine demand appears across most sessions and most turns.</h2>
+              <p>Full-machine operations represented {percent(study.metrics.fullMachineExecutionCallPercent)} of execution calls, but appeared in {percent(study.metrics.turnsRequiringFullMachinePercent)} of resolved turns and {percent(100 - study.metrics.sessionsWithoutFullMachinePercent)} of classified sessions. Among turns that needed a full machine, {percent(study.metrics.repeatFullMachineTurnPercent)} called it again.</p>
+            </div>
+            <dl class="prevalence-grid">
+              <div><dt>Classified sessions requiring a full machine</dt><dd>{percent(100 - study.metrics.sessionsWithoutFullMachinePercent)}</dd></div>
+              <div><dt>Resolved turns requiring a full machine</dt><dd>{percent(study.metrics.turnsRequiringFullMachinePercent)}</dd></div>
+              <div><dt>Full-machine turns calling it again</dt><dd>{percent(study.metrics.repeatFullMachineTurnPercent)}</dd></div>
+              <div><dt>Execution calls requiring a full machine</dt><dd>{percent(study.metrics.fullMachineExecutionCallPercent)}</dd></div>
+            </dl>
+          </div>
+        </section>
+
+        <section class="study-section" aria-labelledby="implication-title">
+          <div class="study-wrap implication-layout">
+            <div class="section-heading">
+              <p class="eyebrow">What this means for architecture</p>
+              <h2 id="implication-title">A lightweight shell can reduce machine work. It cannot make the machine disappear.</h2>
+            </div>
+            <div class="body-copy">
+              <p>A hybrid runtime helps when lightweight operations genuinely avoid a machine call. But the full machine remains part of the agent’s active execution path, and the measured return interval leaves very little time to discard and reconstruct it.</p>
+              <p>Unless your complete handoff is comfortably below the observed interval, keeping a machine available during active work is simpler and faster than repeatedly rebuilding machine state.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="study-section boundary-section" aria-labelledby="boundary-title">
+          <div class="study-wrap">
+            <div class="section-heading">
+              <p class="eyebrow">Classification boundary</p>
+              <h2 id="boundary-title">A call is machine-required when a lightweight virtual shell cannot faithfully execute it.</h2>
+              <p>Calls supported by <a href="https://github.com/vercel-labs/just-bash" target="_blank" rel="noopener noreferrer">Vercel Labs’ just-bash ↗</a> remain classified as lightweight. Calls that cannot be classified honestly remain unresolved and are excluded from placement percentages.</p>
+            </div>
+            <ul class="boundary-list" aria-label="Full-machine call categories">
+              <li><span>01 / Host</span><strong>Native executables</strong><p>System binaries outside the lightweight shell’s supported command set.</p></li>
+              <li><span>02 / Build</span><strong>Package and development runners</strong><p>Builds, tests, and development servers that invoke a host runtime.</p></li>
+              <li><span>03 / State</span><strong>Git repository operations</strong><p>Commands that depend on native Git and the repository’s live state.</p></li>
+              <li><span>04 / Browser</span><strong>Browser testing</strong><p>Local browsers, automation processes, services, and their ports.</p></li>
+              <li><span>05 / Process</span><strong>Interactive processes</strong><p>Commands requiring a TTY or a long-running process lifecycle.</p></li>
+              <li><span>06 / Isolation</span><strong>Generated code execution</strong><p>Running agent-generated programs crosses the isolation boundary.</p></li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="study-section" id="methodology" aria-labelledby="methodology-title">
+          <div class="study-wrap methodology-layout">
+            <div class="section-heading">
+              <p class="eyebrow">Methodology</p>
+              <h2 id="methodology-title">Local transcripts. Aggregate results.</h2>
+              <p>The analyzer classified {integer.format(study.scope.executionCalls)} execution calls from {integer.format(study.scope.transcriptStores)} local transcript stores. It measured {integer.format(study.metrics.fullMachineReturnIntervalSamples)} intervals from the completion of one machine-required call to the start of the next within the same agent turn.</p>
+            </div>
+            <div class="method-cards">
+              <article><span>Coverage</span><strong>{percent(study.metrics.turnCoveragePercent)}</strong><p>Execution-call turn coverage. Unresolved calls were reported separately rather than counted as lightweight or machine-required.</p></article>
+              <article><span>Privacy</span><strong>Local first</strong><p>Raw transcripts, prompts, commands, paths, tool inputs, repository names, and user identifiers remain local.</p></article>
+              <article><span>Measured</span><strong>Execution demand</strong><p>Observed runtime requirements and intervals between full-machine calls inside the same turn.</p></article>
+              <article><span>Not measured</span><strong>Environment readiness</strong><p>Provisioning, synchronization, restoration time, VM billing, and idle-retention cost require execution-platform telemetry.</p></article>
+            </div>
+            <p class="claim-note">Verified public claim: {studyClaim.publicWording}</p>
+          </div>
+        </section>
+
+        <section class="run-section" id="run" aria-labelledby="run-title">
+          <div class="study-wrap run-panel">
+            <div><p class="eyebrow">Measure your own agents</p><h2 id="run-title">How often does your agent need a full machine?</h2><p>Run the analyzer locally against supported coding-agent transcripts. Review the aggregate results before publishing anything.</p></div>
+            <div class="command-block"><span>Terminal</span><code>{command}</code><button class="btn-primary" type="button" data-copy-command data-label="Copy command">Copy command</button></div>
+          </div>
+        </section>
+      </article>
+    </main>
+    <Footer />
+  </div>
+</Layout>
+
+<script define:vars={{ command }}>
+  document.querySelectorAll("[data-copy-command]").forEach((element) => {
+    if (!(element instanceof HTMLButtonElement)) return
+    element.addEventListener("click", async () => {
+      const label = element.dataset.label ?? "Copy command"
+      try {
+        await navigator.clipboard.writeText(command)
+        element.textContent = "Copied to clipboard"
+      } catch {
+        element.textContent = "Copy failed"
+      }
+      window.setTimeout(() => { element.textContent = label }, 1800)
+    })
+  })
+</script>
+
+<style>
+  :global(.runtime-study-page) { --study-accent:var(--brand); }
+  .study-wrap { width:min(100%,72rem); margin-inline:auto; padding-inline:var(--gutter); }
+  .study-hero { position:relative; padding:clamp(4rem,9vw,8rem) 0 clamp(4rem,8vw,7rem); overflow:hidden; }
+  .study-hero::after { content:""; position:absolute; width:34rem; height:34rem; right:-10rem; top:-13rem; border-radius:50%; background:color-mix(in srgb,var(--study-accent) 10%,transparent); filter:blur(90px); pointer-events:none; }
+  .hero-grid { position:relative; z-index:1; display:grid; grid-template-columns:minmax(0,1.22fr) minmax(18rem,.78fr); gap:clamp(3rem,8vw,7rem); align-items:end; }
+  .hero-copy h1 { max-width:13ch; margin:0 0 1.5rem; font:500 clamp(3rem,6.5vw,5.7rem)/.96 var(--font-display); letter-spacing:-.055em; text-wrap:balance; }
+  .hero-lede { max-width:43rem; margin:0; color:var(--ink-soft); font-size:clamp(1.05rem,1.45vw,1.23rem); line-height:1.65; }
+  .hero-actions { display:flex; flex-wrap:wrap; align-items:center; gap:1.2rem; margin-top:2rem; }
+  .hero-actions button { cursor:pointer; }
+  .hero-command { display:flex; align-items:center; gap:.9rem; min-width:0; padding:.42rem; padding-left:1rem; border:1px solid var(--line-strong); border-radius:var(--radius-md); background:#0a0a0a; }
+  .hero-command code { color:var(--study-accent); font:.72rem var(--font-mono); white-space:nowrap; }
+  .hero-command button { flex:none; padding:.72rem 1rem; }
+  .hero-finding { min-width:0; display:grid; gap:.8rem; padding:1.5rem; border:1px solid var(--line-strong); border-radius:var(--radius-lg); background:linear-gradient(145deg,var(--surface),color-mix(in srgb,var(--study-accent) 7%,var(--surface))); box-shadow:var(--shadow-panel); overflow:hidden; }
+  .hero-finding::before { content:""; width:2.75rem; height:.2rem; margin-bottom:.3rem; background:var(--study-accent); }
+  .finding-label,.mono-label { max-width:30ch; color:var(--ink-faint); font:.66rem/1.45 var(--font-mono); letter-spacing:.07em; text-transform:uppercase; }
+  .finding-prefix { margin-top:.5rem; color:var(--ink); font:500 clamp(1.6rem,3vw,2.35rem)/1 var(--font-display); letter-spacing:-.04em; }
+  .hero-finding strong { min-width:0; color:var(--study-accent); font:500 clamp(4rem,7.4vw,6.6rem)/.8 var(--font-display); letter-spacing:-.075em; white-space:nowrap; }
+  .hero-finding p { max-width:31ch; margin:.5rem 0 0; color:var(--ink-faint); font:.7rem/1.6 var(--font-mono); }
+  .study-section { padding:var(--section) 0; border-block-start:1px solid var(--line); }
+  .dark-study { background:#0a0a0a; color:#ededed; border-color:#282828; }
+  .narrow-copy { max-width:60rem; }
+  .narrow-copy h2,.section-heading h2 { margin:0 0 1.25rem; font:500 clamp(2rem,4.5vw,3.5rem)/1.05 var(--font-display); letter-spacing:-.04em; text-wrap:balance; }
+  .narrow-copy > p:last-child,.section-heading > p:last-child,.body-copy p { margin:0; color:var(--ink-soft); font-size:clamp(1rem,1.3vw,1.12rem); line-height:1.72; }
+  .dark-study .narrow-copy > p:last-child,.dark-study .section-heading > p:last-child { color:#a0a0a0; }
+  .section-heading { max-width:48rem; }
+  .break-even-layout { display:grid; grid-template-columns:minmax(0,.9fr) minmax(20rem,1.1fr); gap:clamp(2.5rem,7vw,6rem); align-items:start; }
+  .equation-card { display:grid; gap:1rem; padding:1.6rem; border:1px solid var(--line-strong); border-radius:var(--radius-lg); background:var(--surface); box-shadow:var(--shadow-panel); }
+  .equation-card > p { margin:1rem 0; color:var(--study-accent); font:500 clamp(4rem,8vw,7rem)/.8 var(--font-display); letter-spacing:-.08em; }
+  .equation-card var { font-style:normal; }
+  .equation-card b { color:var(--ink-faint); font-weight:400; }
+  .equation-card dl { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin:0; padding-top:1.2rem; border-top:1px solid var(--line); }
+  .equation-card dl div { display:grid; gap:.4rem; }
+  .equation-card dt { color:var(--ink-faint); font:.65rem var(--font-mono); text-transform:uppercase; }
+  .equation-card dd { margin:0; font:500 1.45rem var(--font-display); }
+  .threshold-copy { grid-column:1/-1; display:grid; grid-template-columns:1fr 1fr; gap:2rem; padding-top:1.5rem; border-top:1px solid var(--line); }
+  .threshold-copy p { margin:0; color:var(--ink-soft); line-height:1.7; }
+  code { color:var(--ink); font-size:.92em; }
+  .prevalence-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); margin:3.5rem 0 0; border:1px solid #323232; border-radius:var(--radius-lg); overflow:hidden; }
+  .prevalence-grid div { min-height:13rem; display:flex; flex-direction:column; justify-content:space-between; gap:2rem; padding:1.4rem; background:#151515; }
+  .prevalence-grid div + div { border-left:1px solid #323232; }
+  .prevalence-grid dt { color:#a0a0a0; font-size:.78rem; line-height:1.5; }
+  .prevalence-grid dd { margin:0; color:var(--study-accent); font:500 clamp(2.2rem,4.5vw,3.8rem)/1 var(--font-display); letter-spacing:-.06em; }
+  .implication-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:clamp(3rem,8vw,7rem); }
+  .body-copy { display:grid; gap:1.4rem; }
+  .boundary-section { background:var(--surface); }
+  .boundary-section a { color:var(--ink); }
+  .boundary-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); margin:3rem 0 0; padding:0; border:1px solid var(--line); border-radius:var(--radius-lg); overflow:hidden; list-style:none; }
+  .boundary-list li { min-height:11.5rem; display:flex; flex-direction:column; align-items:flex-start; padding:1.3rem; color:var(--ink-soft); background:var(--bg); }
+  .boundary-list li + li { border-left:1px solid var(--line); }
+  .boundary-list li:nth-child(4) { border-left:0; }
+  .boundary-list li:nth-child(n+4) { border-top:1px solid var(--line); }
+  .boundary-list span { color:var(--study-accent); font:.61rem var(--font-mono); letter-spacing:.08em; text-transform:uppercase; }
+  .boundary-list strong { display:block; margin-top:auto; color:var(--ink); font:500 1rem/1.25 var(--font-display); letter-spacing:-.02em; }
+  .boundary-list p { margin:.55rem 0 0; color:var(--ink-faint); font-size:.76rem; line-height:1.5; }
+  .methodology-layout { display:grid; grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr); gap:clamp(3rem,8vw,7rem); align-items:start; }
+  .method-cards { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); border:1px solid var(--line); border-radius:var(--radius-lg); overflow:hidden; }
+  .method-cards article { min-height:14rem; padding:1.35rem; background:var(--surface); }
+  .method-cards article:nth-child(even) { border-left:1px solid var(--line); }
+  .method-cards article:nth-child(n+3) { border-top:1px solid var(--line); }
+  .method-cards span { color:var(--ink-faint); font:.65rem var(--font-mono); letter-spacing:.06em; text-transform:uppercase; }
+  .method-cards strong { display:block; margin:2rem 0 .75rem; font:500 1.35rem var(--font-display); letter-spacing:-.03em; }
+  .method-cards p { margin:0; color:var(--ink-soft); font-size:.84rem; line-height:1.6; }
+  .claim-note { grid-column:2; margin:1.25rem 0 0; color:var(--ink-faint); font:.7rem/1.6 var(--font-mono); }
+  .run-section { padding:var(--section) 0; border-top:1px solid var(--line); }
+  .run-panel { display:grid; grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr); gap:clamp(2rem,6vw,5rem); align-items:center; }
+  .run-panel h2 { margin:0 0 1rem; font:500 clamp(2rem,4vw,3rem)/1.05 var(--font-display); letter-spacing:-.04em; }
+  .run-panel p:last-child { max-width:37rem; margin:0; color:var(--ink-soft); }
+  .command-block { display:grid; gap:1.2rem; padding:1.5rem; border:1px solid var(--line-strong); border-radius:var(--radius-lg); background:#0a0a0a; box-shadow:var(--shadow-panel); }
+  .command-block span { color:#8f8f8f; font:.64rem var(--font-mono); letter-spacing:.08em; text-transform:uppercase; }
+  .command-block code { color:var(--study-accent); font-size:clamp(.78rem,1.7vw,1.05rem); overflow-wrap:anywhere; }
+  .command-block button { width:fit-content; cursor:pointer; }
+  @media (max-width:60rem) {
+    .hero-grid,.break-even-layout,.implication-layout,.methodology-layout,.run-panel { grid-template-columns:1fr; }
+    .hero-finding { max-width:34rem; }
+    .threshold-copy,.claim-note { grid-column:1; }
+    .prevalence-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .prevalence-grid div:nth-child(3) { border-left:0; }
+    .prevalence-grid div:nth-child(n+3) { border-top:1px solid #323232; }
+  }
+  @media (max-width:40rem) {
+    .hero-actions { align-items:stretch; flex-direction:column; }
+    .hero-command { width:100%; justify-content:space-between; }
+    .hero-command code { min-width:0; white-space:normal; overflow-wrap:anywhere; }
+    .hero-finding strong { font-size:clamp(3.9rem,21vw,5.2rem); }
+    .threshold-copy,.prevalence-grid,.boundary-list,.method-cards { grid-template-columns:1fr; }
+    .threshold-copy { gap:1.25rem; }
+    .prevalence-grid div + div,.boundary-list li + li,.method-cards article:nth-child(even) { border-left:0; border-top:1px solid var(--line); }
+    .prevalence-grid div + div { border-color:#323232; }
+    .boundary-list li { min-height:10rem; }
+  }
+</style>

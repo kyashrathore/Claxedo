@@ -4,6 +4,11 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-08-08",
   "workers_dev": true,
+  "routes": [
+    { "pattern": "claxedo.com/r/*", "zone_name": "claxedo.com" },
+    { "pattern": "claxedo.com/agent-runtime-share", "zone_name": "claxedo.com" },
+    { "pattern": "claxedo.com/api/agent-runtime-reports*", "zone_name": "claxedo.com" },
+  ],
   "observability": {
     "enabled": true,
   },

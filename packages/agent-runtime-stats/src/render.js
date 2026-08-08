@@ -1,3 +1,5 @@
+import { SHARE_PATH } from "./share-contract.js"
+
 function percent(value, total) {
   return total ? `${((value * 100) / total).toFixed(2)}%` : "—"
 }
@@ -244,7 +246,7 @@ export function sharePrompt(analysis, baseUrl, hyperlinks = false) {
   const resolvedSessions = analysis.sessions.requiring_full_machine + analysis.sessions.just_bash_only
   const resolvedTurns = analysis.turns.with_resolved_runtime
   const payload = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     sessionsAnalyzed: resolvedSessions,
     executionCalls: analysis.calls.total,
     sessionsWithoutFullMachinePercent: ratio(analysis.sessions.just_bash_only, resolvedSessions),
@@ -255,13 +257,16 @@ export function sharePrompt(analysis, baseUrl, hyperlinks = false) {
       analysis.turns.with_repeated_full_machine_calls,
       analysis.turns.requiring_full_machine,
     ),
+    fullMachineReturnIntervalSamples: analysis.full_machine_demand.time_between_calls.samples,
+    medianFullMachineReturnIntervalMs: analysis.full_machine_demand.time_between_calls.median_ms,
+    p95FullMachineReturnIntervalMs: analysis.full_machine_demand.time_between_calls.p95_ms,
     medianCallsAfterFirstFullMachine: analysis.full_machine_demand.calls_after_first_full_machine.median,
     medianObservedSpanAfterFirstFullMachineMs:
       analysis.full_machine_demand.observed_span_after_first_full_machine.median_ms,
     p95ObservedSpanAfterFirstFullMachineMs: analysis.full_machine_demand.observed_span_after_first_full_machine.p95_ms,
   }
   const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url")
-  const url = `${baseUrl.replace(/\/$/, "")}/share#data=${encoded}`
+  const url = `${baseUrl.replace(/\/$/, "")}${SHARE_PATH}#data=${encoded}`
   const action = hyperlinks ? `\u001B]8;;${url}\u001B\\[ Share results ]\u001B]8;;\u001B\\` : url
   return `Share these anonymous aggregate stats:\n${action}\nNothing uploads until you press Share results in the browser.`
 }

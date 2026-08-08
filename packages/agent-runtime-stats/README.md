@@ -47,7 +47,7 @@ The report also measures the local execution-demand pattern:
 
 These are local demand measurements only. The report does not estimate sandbox provisioning, workspace synchronization, cache restoration, service startup, or total environment-readiness time; those require telemetry from the execution platform.
 
-Set `AGENT_RUNTIME_STATS_SHARE_URL` to a trusted deployment if you want table output to include a browser share link. The CLI has no default upload endpoint. The ten aggregate placement metrics are encoded in the URL fragment, which browsers do not send in the request. Nothing is uploaded until the user reviews the summary and presses **Share results** on the page. The resulting public URL includes a generated social preview image for X and other Open Graph consumers.
+Table output links to Claxedo's browser review page. The thirteen aggregate placement metrics are encoded in the URL fragment, which browsers do not send in the request. Nothing is uploaded until the user reviews the summary and presses **Publish anonymous snapshot** on the page. The resulting `claxedo.com/r/:id` URL includes a generated social preview image for X and other Open Graph consumers. Set `AGENT_RUNTIME_STATS_SHARE_URL` to use another compatible deployment.
 
 ## Harness coverage
 

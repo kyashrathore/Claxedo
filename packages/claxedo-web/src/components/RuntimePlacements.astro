@@ -2,6 +2,8 @@
 // The workspace runtime placed different ways — framed by the capability each
 // placement unlocks. Toggle sits at the very top and swaps heading + copy +
 // diagram in place. Heading/copy heights are reserved so nothing shifts.
+import { routes } from "../content/routes"
+
 const modes = [
   {
     id: "embedded",
@@ -71,6 +73,7 @@ const modes = [
         </div>
       </div>
     ))}
+    <a class="rp-study-link" href={routes.agentRuntimeStudy}>Read the coding-agent full-machine study <span aria-hidden="true">→</span></a>
   </div>
 </section>
 
@@ -90,6 +93,10 @@ const modes = [
   .rp-lede { margin: 0; min-height: 4.8em; max-width: 38ch; color: var(--ink-soft); font-size: clamp(1rem, 1.3vw, 1.1rem); line-height: 1.6; }
 
   .rp-viz { display: grid; align-content: center; min-height: 13rem; padding: clamp(1.5rem, 3vw, 2.5rem); border: 1px solid var(--line); border-radius: var(--radius); background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 40%, var(--bg-deep)), var(--bg-deep)); }
+  .rp-study-link { display:inline-flex; align-items:center; gap:.45rem; margin-top:2rem; color:var(--ink-soft); font:500 .78rem var(--font-sans); text-decoration:none; }
+  .rp-study-link:hover { color:var(--ink); }
+  .rp-study-link span { transition:transform .18s ease; }
+  .rp-study-link:hover span { transform:translateX(3px); }
   .viz-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: .5rem; }
   .viz-box { display: grid; align-content: center; justify-items: center; gap: .3rem; min-height: 5.25rem; padding: 1rem; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--surface) 55%, transparent); text-align: center; }
   .viz-box b { font: 500 .96rem var(--font-sans); color: var(--ink); letter-spacing: -.01em; }

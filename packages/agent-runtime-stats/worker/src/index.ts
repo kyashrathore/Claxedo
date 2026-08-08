@@ -1,6 +1,13 @@
-import { renderLandingPage, renderOgCard, renderReportPage, renderSharePage } from "./html"
+import { renderOgCard, renderReportPage, renderSharePage } from "./html"
 import { bytesFromD1 } from "./blob"
 import { InvalidReportError, parseReport, type ReportMetrics, type StoredReport } from "./report"
+import {
+  PUBLIC_ORIGIN,
+  RESEARCH_PATH,
+  REPORT_API_PATH,
+  SHARE_PATH,
+  reportPath,
+} from "../../src/share-contract.js"
 
 interface Env {
   REPORTS: D1Database
@@ -19,6 +26,9 @@ interface ReportRow {
   turn_coverage_percent: number | null
   turns_without_full_machine_percent: number | null
   repeat_full_machine_turn_percent: number | null
+  full_machine_return_interval_samples: number
+  median_full_machine_return_interval_ms: number | null
+  p95_full_machine_return_interval_ms: number | null
   median_calls_after_first_full_machine: number | null
   median_observed_span_after_first_full_machine_ms: number | null
   p95_observed_span_after_first_full_machine_ms: number | null
@@ -30,6 +40,8 @@ interface ReportRow {
 const REPORT_SELECT = `SELECT id, created_at, schema_version, sessions_analyzed, execution_calls,
   sessions_without_full_machine_percent, turns_analyzed, turn_coverage_percent,
   turns_without_full_machine_percent, repeat_full_machine_turn_percent,
+  full_machine_return_interval_samples, median_full_machine_return_interval_ms,
+  p95_full_machine_return_interval_ms,
   median_calls_after_first_full_machine, median_observed_span_after_first_full_machine_ms,
   p95_observed_span_after_first_full_machine_ms, og_png, og_retry_after
   FROM reports WHERE id = ?1`
@@ -38,7 +50,7 @@ function fromRow(row: ReportRow): StoredReport {
   return {
     id: row.id,
     createdAt: row.created_at,
-    schemaVersion: 2,
+    schemaVersion: 3,
     sessionsAnalyzed: row.sessions_analyzed,
     executionCalls: row.execution_calls,
     sessionsWithoutFullMachinePercent: row.sessions_without_full_machine_percent,
@@ -46,6 +58,9 @@ function fromRow(row: ReportRow): StoredReport {
     turnCoveragePercent: row.turn_coverage_percent,
     turnsWithoutFullMachinePercent: row.turns_without_full_machine_percent,
     repeatFullMachineTurnPercent: row.repeat_full_machine_turn_percent,
+    fullMachineReturnIntervalSamples: row.full_machine_return_interval_samples,
+    medianFullMachineReturnIntervalMs: row.median_full_machine_return_interval_ms,
+    p95FullMachineReturnIntervalMs: row.p95_full_machine_return_interval_ms,
     medianCallsAfterFirstFullMachine: row.median_calls_after_first_full_machine,
     medianObservedSpanAfterFirstFullMachineMs: row.median_observed_span_after_first_full_machine_ms,
     p95ObservedSpanAfterFirstFullMachineMs: row.p95_observed_span_after_first_full_machine_ms,
@@ -67,12 +82,13 @@ function securityHeaders(pageNonce?: string): HeadersInit {
   }
 }
 
-function html(body: string, pageNonce: string, status = 200): Response {
+function html(body: string, pageNonce: string, status = 200, noindex = false): Response {
   return new Response(body, {
     status,
     headers: {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "public, max-age=60",
+      ...(noindex ? { "x-robots-tag": "noindex, follow" } : {}),
       ...securityHeaders(pageNonce),
     },
   })
@@ -88,6 +104,15 @@ function json(value: unknown, status = 200): Response {
 function reportId(pathname: string, suffix = ""): string | null {
   const expression = suffix ? new RegExp(`^/r/([a-f0-9]{32})/${suffix}$`) : /^\/r\/([a-f0-9]{32})$/
   return pathname.match(expression)?.[1] ?? null
+}
+
+function apiReportId(pathname: string): string | null {
+  for (const prefix of [REPORT_API_PATH, "/api/reports"]) {
+    if (!pathname.startsWith(`${prefix}/`)) continue
+    const id = pathname.slice(prefix.length + 1)
+    if (/^[a-f0-9]{32}$/.test(id)) return id
+  }
+  return null
 }
 
 async function findReport(
@@ -175,9 +200,11 @@ async function createReport(request: Request, env: Env): Promise<Response> {
     id, schema_version, sessions_analyzed, execution_calls,
     sessions_without_full_machine_percent, turns_analyzed, turn_coverage_percent,
     turns_without_full_machine_percent, repeat_full_machine_turn_percent,
+    full_machine_return_interval_samples, median_full_machine_return_interval_ms,
+    p95_full_machine_return_interval_ms,
     median_calls_after_first_full_machine, median_observed_span_after_first_full_machine_ms,
     p95_observed_span_after_first_full_machine_ms
-  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
+  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)`,
   )
     .bind(
       id,
@@ -189,6 +216,9 @@ async function createReport(request: Request, env: Env): Promise<Response> {
       report.turnCoveragePercent,
       report.turnsWithoutFullMachinePercent,
       report.repeatFullMachineTurnPercent,
+      report.fullMachineReturnIntervalSamples,
+      report.medianFullMachineReturnIntervalMs,
+      report.p95FullMachineReturnIntervalMs,
       report.medianCallsAfterFirstFullMachine,
       report.medianObservedSpanAfterFirstFullMachineMs,
       report.p95ObservedSpanAfterFirstFullMachineMs,
@@ -202,29 +232,30 @@ async function createReport(request: Request, env: Env): Promise<Response> {
   } catch (error) {
     console.error("Initial OG generation failed", { id, error: error instanceof Error ? error.message : String(error) })
   }
-  const url = new URL(`/r/${id}`, request.url).toString()
+  const url = new URL(reportPath(id), request.url).toString()
   return json({ id, url, ogReady }, 201)
 }
 
 async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url)
   if (request.method === "GET" && url.pathname === "/") {
-    const pageNonce = nonce()
-    return html(renderLandingPage(pageNonce), pageNonce)
+    return Response.redirect(`${PUBLIC_ORIGIN}${RESEARCH_PATH}`, 308)
   }
-  if (request.method === "GET" && url.pathname === "/share") {
+  if (request.method === "GET" && [SHARE_PATH, "/share"].includes(url.pathname)) {
     const pageNonce = nonce()
-    return html(renderSharePage(pageNonce), pageNonce)
+    return html(renderSharePage(pageNonce), pageNonce, 200, true)
   }
   if (request.method === "GET" && url.pathname === "/health") return json({ ok: true })
-  if (request.method === "POST" && url.pathname === "/api/reports") return createReport(request, env)
+  if (request.method === "POST" && [REPORT_API_PATH, "/api/reports"].includes(url.pathname)) {
+    return createReport(request, env)
+  }
 
   const id = reportId(url.pathname)
   if (request.method === "GET" && id) {
     const stored = await findReport(env, id)
     if (!stored) return json({ error: "Report not found." }, 404)
     const pageNonce = nonce()
-    return html(renderReportPage(stored.report, url.origin, pageNonce), pageNonce)
+    return html(renderReportPage(stored.report, url.origin, pageNonce), pageNonce, 200, true)
   }
 
   const imageId = reportId(url.pathname, "og\\.png")
@@ -262,13 +293,15 @@ async function route(request: Request, env: Env): Promise<Response> {
     })
   }
 
-  const apiMatch = url.pathname.match(/^\/api\/reports\/([a-f0-9]{32})$/)
-  if (request.method === "GET" && apiMatch) {
-    const stored = await findReport(env, apiMatch[1])
+  const apiId = apiReportId(url.pathname)
+  if (request.method === "GET" && apiId) {
+    const stored = await findReport(env, apiId)
     return stored ? json(stored.report) : json({ error: "Report not found." }, 404)
   }
   if (request.method === "GET" && url.pathname === "/robots.txt") {
-    return new Response("User-agent: *\nAllow: /\n", { headers: { "content-type": "text/plain; charset=utf-8" } })
+    return new Response("User-agent: *\nDisallow: /\n", {
+      headers: { "content-type": "text/plain; charset=utf-8" },
+    })
   }
   return json({ error: "Not found." }, 404)
 }

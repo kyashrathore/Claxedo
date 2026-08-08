@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-09",
+  "scope": {
+    "transcriptStores": 4531,
+    "sessionsDiscovered": 2250,
+    "resolvedSessions": 1317,
+    "resolvedTurns": 13561,
+    "executionCalls": 416467,
+    "fullMachineExecutionCalls": 128275
+  },
+  "metrics": {
+    "sessionsWithoutFullMachinePercent": 20.197418375094912,
+    "fullMachineExecutionCallPercent": 30.800759724059766,
+    "turnsRequiringFullMachinePercent": 64.01445321141509,
+    "turnsWithoutFullMachinePercent": 35.98554678858491,
+    "repeatFullMachineTurnPercent": 68.9206312636793,
+    "turnCoveragePercent": 99.98991516734819,
+    "fullMachineReturnIntervalSamples": 92390,
+    "medianFullMachineReturnIntervalMs": 10791.5,
+    "p95FullMachineReturnIntervalMs": 98101.65000000001,
+    "medianCallsAfterFirstFullMachine": 12,
+    "medianObservedSpanAfterFirstFullMachineMs": 106570,
+    "p95ObservedSpanAfterFirstFullMachineMs": 1508896
+  },
+  "methodology": {
+    "runtimeBoundary": "A turn requires a full machine when any observed execution call cannot run in the supported just-bash capability set.",
+    "resolvedPopulation": "Percentages exclude turns and sessions whose execution calls could not all be classified.",
+    "fullMachineReturnInterval": "Within one agent turn, from a full-machine call ending until the next full-machine call starts.",
+    "observedSpan": "The interval from the first full-machine call to the last timestamped execution call in the turn; it is not total turn duration.",
+    "privacy": "Raw transcripts, prompts, paths, tool inputs, commands, and user identifiers were not included in this aggregate artifact."
+  }
+}

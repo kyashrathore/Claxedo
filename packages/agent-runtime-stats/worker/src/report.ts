@@ -1,5 +1,5 @@
 export interface ReportMetrics {
-  schemaVersion: 2
+  schemaVersion: 3
   sessionsAnalyzed: number
   executionCalls: number
   sessionsWithoutFullMachinePercent: number | null
@@ -7,6 +7,9 @@ export interface ReportMetrics {
   turnCoveragePercent: number | null
   turnsWithoutFullMachinePercent: number | null
   repeatFullMachineTurnPercent: number | null
+  fullMachineReturnIntervalSamples: number
+  medianFullMachineReturnIntervalMs: number | null
+  p95FullMachineReturnIntervalMs: number | null
   medianCallsAfterFirstFullMachine: number | null
   medianObservedSpanAfterFirstFullMachineMs: number | null
   p95ObservedSpanAfterFirstFullMachineMs: number | null
@@ -52,16 +55,19 @@ export function parseReport(value: unknown): ReportMetrics {
     "turnCoveragePercent",
     "turnsWithoutFullMachinePercent",
     "repeatFullMachineTurnPercent",
+    "fullMachineReturnIntervalSamples",
+    "medianFullMachineReturnIntervalMs",
+    "p95FullMachineReturnIntervalMs",
     "medianCallsAfterFirstFullMachine",
     "medianObservedSpanAfterFirstFullMachineMs",
     "p95ObservedSpanAfterFirstFullMachineMs",
   ])
   const unexpected = Object.keys(input).filter((key) => !allowed.has(key))
   if (unexpected.length > 0) throw new InvalidReportError(`Unexpected report field: ${unexpected[0]}.`)
-  if (input.schemaVersion !== 2) throw new InvalidReportError("schemaVersion must be 2.")
+  if (input.schemaVersion !== 3) throw new InvalidReportError("schemaVersion must be 3.")
 
   const report: ReportMetrics = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     sessionsAnalyzed: integer(input.sessionsAnalyzed, "sessionsAnalyzed", 1_000_000_000),
     executionCalls: integer(input.executionCalls, "executionCalls", 1_000_000_000_000),
     sessionsWithoutFullMachinePercent: optionalNumber(
@@ -80,6 +86,21 @@ export function parseReport(value: unknown): ReportMetrics {
       input.repeatFullMachineTurnPercent,
       "repeatFullMachineTurnPercent",
       100,
+    ),
+    fullMachineReturnIntervalSamples: integer(
+      input.fullMachineReturnIntervalSamples,
+      "fullMachineReturnIntervalSamples",
+      1_000_000_000_000,
+    ),
+    medianFullMachineReturnIntervalMs: optionalNumber(
+      input.medianFullMachineReturnIntervalMs,
+      "medianFullMachineReturnIntervalMs",
+      31_536_000_000,
+    ),
+    p95FullMachineReturnIntervalMs: optionalNumber(
+      input.p95FullMachineReturnIntervalMs,
+      "p95FullMachineReturnIntervalMs",
+      31_536_000_000,
     ),
     medianCallsAfterFirstFullMachine: optionalNumber(
       input.medianCallsAfterFirstFullMachine,
@@ -106,6 +127,25 @@ export function parseReport(value: unknown): ReportMetrics {
   }
   if (report.turnsAnalyzed === 0 && report.turnsWithoutFullMachinePercent !== null) {
     throw new InvalidReportError("turnsWithoutFullMachinePercent must be null when turnsAnalyzed is zero.")
+  }
+  if (
+    report.fullMachineReturnIntervalSamples === 0 &&
+    (report.medianFullMachineReturnIntervalMs !== null || report.p95FullMachineReturnIntervalMs !== null)
+  ) {
+    throw new InvalidReportError("Full-machine return intervals must be null when their sample count is zero.")
+  }
+  if (
+    report.fullMachineReturnIntervalSamples > 0 &&
+    (report.medianFullMachineReturnIntervalMs === null || report.p95FullMachineReturnIntervalMs === null)
+  ) {
+    throw new InvalidReportError("Full-machine return intervals are required when their sample count is greater than zero.")
+  }
+  if (
+    report.medianFullMachineReturnIntervalMs !== null &&
+    report.p95FullMachineReturnIntervalMs !== null &&
+    report.medianFullMachineReturnIntervalMs > report.p95FullMachineReturnIntervalMs
+  ) {
+    throw new InvalidReportError("medianFullMachineReturnIntervalMs cannot be greater than p95FullMachineReturnIntervalMs.")
   }
   if (
     report.medianObservedSpanAfterFirstFullMachineMs !== null &&
@@ -153,6 +193,9 @@ export function detailMetricRows(report: ReportMetrics): ReadonlyArray<readonly 
     ["Execution-call turn coverage", formatPercent(report.turnCoveragePercent)],
     ["Turns completed without full machine", formatPercent(report.turnsWithoutFullMachinePercent)],
     ["Full-machine turns needing it again", formatPercent(report.repeatFullMachineTurnPercent)],
+    ["Measured full-machine return intervals", formatInteger(report.fullMachineReturnIntervalSamples)],
+    ["Median interval before full machine needed again", formatDuration(report.medianFullMachineReturnIntervalMs)],
+    ["p95 interval before full machine needed again", formatDuration(report.p95FullMachineReturnIntervalMs)],
     ["Median calls after first full-machine need", formatNumber(report.medianCallsAfterFirstFullMachine)],
     [
       "Median observed span after first full-machine need",

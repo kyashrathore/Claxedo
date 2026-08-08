@@ -24,6 +24,7 @@ describe("conversion analytics contract", () => {
   test("classifies detail pages without retaining sensitive paths", () => {
     expect(conversionRoute("/framework/cookbook/01-hello-agent")).toBe("/framework")
     expect(conversionRoute("/compare/matrix-os/")).toBe("/compare")
+    expect(conversionRoute("/how-often-do-coding-agents-need-a-full-machine")).toBe("/how-often-do-coding-agents-need-a-full-machine")
     expect(conversionRoute("/unknown")).toBeUndefined()
   })
 
