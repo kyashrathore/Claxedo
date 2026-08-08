@@ -66,6 +66,7 @@ on:
     paths:
       - convex/**
       - packages/claxedo-server/**
+      - packages/claxedo-server-core/**
       - packages/claxedo-connections/**
       - packages/workgraph/**
       - packages/agent-sdk-runtime/**
