@@ -392,6 +392,27 @@ describe("control-plane services", () => {
     }
   })
 
+  test("the composition records local session metadata, and does it before the runtime proxy", () => {
+    // The control plane is the source of truth for the local session list, and
+    // the tap is what fills it. It adds no route, so dropping it changes
+    // nothing about the route table and no other test in this repository
+    // notices — verified by mutation: deleting the call fails nothing else.
+    //
+    // Order is load-bearing too: the workspace runtime proxy ANSWERS
+    // `/session` itself, so a tap registered after it never sees the call and
+    // the session list silently stops filling.
+    const text = fs.readFileSync(
+      path.resolve(import.meta.dirname, "../deployments/local/server.ts"),
+      "utf8",
+    )
+    const tap = text.indexOf("app.use(sessionMetaProjectionTap(")
+    const proxy = text.indexOf("app.use(workspaceRuntimeProxy)")
+
+    expect(tap, "createApp must record local session metadata").toBeGreaterThan(-1)
+    expect(proxy, "createApp must mount the workspace runtime proxy").toBeGreaterThan(-1)
+    expect(tap, "the session-meta tap must be registered BEFORE the runtime proxy").toBeLessThan(proxy)
+  })
+
   test("server composition uses createApp with explicit services", () => {
     const file = path.resolve(import.meta.dirname, "../deployments/local/server.ts")
     const text = fs.readFileSync(file, "utf8")

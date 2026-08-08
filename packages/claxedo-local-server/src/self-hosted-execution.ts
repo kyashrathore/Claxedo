@@ -68,3 +68,6 @@ export {
   proxy,
   type RuntimeProxyOptions,
 } from "./workspace/runtime-dispatch/internals"
+
+/** Records local session metadata from proxied `/session` responses. */
+export { sessionMetaProjectionTap } from "./session/session-meta-tap"

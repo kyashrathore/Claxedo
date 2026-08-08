@@ -24,7 +24,7 @@ import { createConnectionsHost } from "../../connections"
 import { createConnectionTurnCredentials } from "../../connections/turn-credentials"
 import { mirrorProcessEvents } from "../../platform/runtime/lib/process-events"
 import { DocumentsRoutes } from "../../documents/routes/index"
-import { AgentConfigRoutes } from "@claxedo/local-server/self-hosted-execution"
+import { AgentConfigRoutes, sessionMetaProjectionTap } from "@claxedo/local-server/self-hosted-execution"
 import { SessionMetaRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { WorkspaceRoutes } from "../../workspace/routes/index"
 import { OpenCodeCompatRoutes } from "@claxedo/local-server/self-hosted-execution"
@@ -679,54 +679,12 @@ export function createApp(
   app.all("/workspaces/:workspaceId", localWorkspaceRelayProxy)
   app.all("/workspaces/:workspaceId/*", localWorkspaceRelayProxy)
 
-  // Record local session metadata into the SQLite control-plane store
-  // (claxedo_session_meta) as sessions are created / updated / deleted, so the
-  // control plane is the source of truth for the session list on local
-  // workspaces — with no dependence on querying the opencode server. Cloud
-  // workspaces are owned by the workspace authority and skipped here. Best-effort:
-  // Recording never blocks or alters the proxied response. Registered before
-  // workspaceRuntimeProxy so it taps the proxied `/session` response.
-  app.use(async (c, next) => {
-    await next()
-    try {
-      const url = new URL(c.req.url)
-      const method = c.req.method
-      const sessionMatch = url.pathname.match(/^\/session\/([^/]+)$/)
-      const isCreate = method === "POST" && url.pathname === "/session"
-      const isUpdate = method === "PATCH" && !!sessionMatch
-      const isDelete = method === "DELETE" && !!sessionMatch
-      if (!isCreate && !isUpdate && !isDelete) return
-      const res = c.res
-      if (!res || res.status < 200 || res.status >= 300) return
-      const rawDir = c.req.query("directory") || c.req.header("x-opencode-directory") || undefined
-      const directory = rawDir ? decodeURIComponent(rawDir) : undefined
-      const workspaceId =
-        c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id") || undefined
-      const ws = await resolveWorkspace({ workspaceId, directory }).catch(() => undefined)
-      // Cloud sessions are owned by the Convex control plane.
-      if (ws?.kind === "cloud") return
-      if (isDelete) {
-        const sessionId = sessionMatch?.[1]
-        if (!sessionId) return
-        await services.projectionStore.delete_session_meta(decodeURIComponent(sessionId))
-        return
-      }
-      const body = (await res
-        .clone()
-        .json()
-        .catch(() => undefined)) as Record<string, any> | undefined
-      if (!body || typeof body.id !== "string") return
-      await services.projectionStore.put_session_meta(body.id, {
-        ws: ws ?? undefined,
-        directory: ws?.directory ?? directory ?? (typeof body.directory === "string" ? body.directory : null),
-        title: typeof body.title === "string" ? body.title : null,
-        parentID: typeof body.parentID === "string" ? body.parentID : null,
-        archived: typeof body?.time?.archived === "number" ? body.time.archived : null,
-      })
-    } catch {
-      // best-effort: never break the proxied response
-    }
-  })
+  // Record local session metadata into the control-plane store as sessions are
+  // created / updated / deleted, so the control plane is the source of truth
+  // for the local session list. Registered before `workspaceRuntimeProxy`
+  // because the proxy answers `/session` itself — a tap after it never sees the
+  // call. Shared with the desktop-local composition rather than duplicated.
+  app.use(sessionMetaProjectionTap(services.projectionStore))
 
   // Route workspace-owned traffic before route matching. This keeps scoped
   // `/global/event`, `/api/claxedo/events`, and `/api/wr/runtime-events`
