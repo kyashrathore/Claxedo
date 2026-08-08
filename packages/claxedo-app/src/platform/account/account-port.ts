@@ -81,6 +81,8 @@ export type HostedOperationName =
   | "workspace.connection.mint"
   | "workspace.connection.refresh"
   | "host.enrollCurrentMachine"
+  | "host.enrollmentNonce"
+  | "host.enrollmentHeartbeat"
 
 export type AccountPort = {
   /** Current account state. Reactive in the renderer; a snapshot here. */

@@ -103,7 +103,7 @@ describe("the transport", () => {
     const request = await accountConnectorTransport(runner.run).createRequest({ hostId: "host_a" })
 
     expect(request).toEqual({ request_id: "req_1", nonce: "nonce_1", expires_at: 9_999 })
-    expect(runner.calls[0]).toEqual({ name: "host.enrollmentRequest", input: { hostId: "host_a" } })
+    expect(runner.calls[0]).toEqual({ name: "host.enrollmentNonce", input: { hostId: "host_a" } })
   })
 
   test("enrolls through the matrix's operation and unwraps the envelope", async () => {
@@ -139,10 +139,10 @@ describe("the transport", () => {
   })
 
   test("rejects a nonce response missing a field rather than signing undefined", async () => {
-    const runner = fakeRunner({ "host.enrollmentRequest": { request_id: "req_1", expires_at: 1 } })
+    const runner = fakeRunner({ "host.enrollmentNonce": { request_id: "req_1", expires_at: 1 } })
 
     await expect(accountConnectorTransport(runner.run).createRequest({ hostId: "host_a" })).rejects.toThrow(
-      /host\.enrollmentRequest.*nonce/,
+      /host\.enrollmentNonce.*nonce/,
     )
   })
 
@@ -179,25 +179,35 @@ describe("the operation table", () => {
   })
 
   /**
-   * A tripwire, not an approval.
+   * All three, declared.
    *
-   * The nonce and heartbeat routes exist on the server and are signed-only, so
-   * the connector cannot reach them without an account operation — but neither
-   * is a row in `docs/tech-docs/desktop-hosted-operation-matrix.md` yet, and
-   * adding one is a reviewed change to a security document that this unit does
-   * not make. This test pins the CURRENT gap so that whoever adds those rows is
-   * forced back here to finish the wiring rather than discovering at runtime
-   * that enrollment never worked.
+   * This began as a tripwire pinning the OPPOSITE — the nonce and heartbeat
+   * routes existed on the server but had no row in the reviewed operation
+   * matrix, so the connector could not reach them and enrollment could never
+   * have worked. The rows now exist, and this is the assertion that keeps them.
+   *
+   * Kept rather than deleted: the failure it guards against is silent. A
+   * connector missing one operation still constructs, still starts, and simply
+   * never enrolls.
    */
-  test("the nonce and heartbeat operations are still undeclared", () => {
-    expect(Object.keys(HOSTED_OPERATIONS)).toContain(HOST_ENROLLMENT_OPERATIONS.enroll)
-    expect(Object.keys(HOSTED_OPERATIONS)).not.toContain(HOST_ENROLLMENT_OPERATIONS.createRequest)
-    expect(Object.keys(HOSTED_OPERATIONS)).not.toContain(HOST_ENROLLMENT_OPERATIONS.heartbeat)
+  test("every enrollment operation is declared in the reviewed table", () => {
+    for (const name of Object.values(HOST_ENROLLMENT_OPERATIONS)) {
+      expect(Object.keys(HOSTED_OPERATIONS), name).toContain(name)
+    }
   })
 
-  test("start() fails visibly on the undeclared operation instead of inventing a path", async () => {
-    // The real table as the runner: exactly what Electron main will do once
-    // this is wired to the account service.
+  test("start() stops with the operation named when the runner returns the wrong shape", async () => {
+    // The real resolver as the runner, which returns a REQUEST DESCRIPTOR
+    // rather than a server response — so this exercises the transport's own
+    // validation, and the assertion is that the failure names which operation
+    // produced it.
+    //
+    // It was written when the nonce operation was undeclared and the resolver
+    // threw for that reason. The rows now exist, so it passes for a different
+    // reason than it was written for; the name says the new one. What it still
+    // guards is the property that matters either way: a connector that cannot
+    // complete the handshake STOPS and says which step failed, rather than
+    // signing `undefined` and enrolling something meaningless.
     const errors: unknown[] = []
     const connector = setupHostConnector({
       run: async (name, params) => resolveHostedOperation(name, params),
@@ -211,7 +221,7 @@ describe("the operation table", () => {
     const status = await connector.start()
 
     expect(status).toMatchObject({ status: "stopped", reason: "error" })
-    expect(String((status as { detail: string }).detail)).toContain("host.enrollmentRequest")
+    expect(String((status as { detail: string }).detail)).toContain("host.enrollmentNonce")
     expect(errors).toHaveLength(1)
   })
 })
@@ -231,7 +241,7 @@ describe("setup", () => {
     const status = await connector.start()
 
     expect(status).toMatchObject({ status: "enrolled", enrollment: { enrollment_id: "enr_1" } })
-    expect(calls.map((call) => call.name)).toEqual(["host.enrollmentRequest", "host.enrollCurrentMachine"])
+    expect(calls.map((call) => call.name)).toEqual(["host.enrollmentNonce", "host.enrollCurrentMachine"])
     expect(ticks).toHaveLength(1)
 
     ticks[0]!()

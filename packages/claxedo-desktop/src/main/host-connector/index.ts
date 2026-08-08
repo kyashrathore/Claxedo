@@ -59,7 +59,7 @@ export type AccountOperationRunner = (name: string, input?: Record<string, unkno
  * than inventing a generic request path around the table.
  */
 export const HOST_ENROLLMENT_OPERATIONS = {
-  createRequest: "host.enrollmentRequest",
+  createRequest: "host.enrollmentNonce",
   enroll: "host.enrollCurrentMachine",
   heartbeat: "host.enrollmentHeartbeat",
 } as const

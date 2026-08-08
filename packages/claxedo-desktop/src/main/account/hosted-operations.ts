@@ -43,6 +43,21 @@ export const HOSTED_OPERATIONS = {
     path: "/api/claxedo/host/enrollments",
     body: ["hostId", "publicKey", "requestId", "signature", "displayName"],
   },
+  // `enrollmentNonce`, not `enrollmentRequest`: an operation name ending in
+  // "Request" trips the generic-passthrough guard, which is watching for
+  // exactly the `proxyRequest`/`hostedFetch` shape this whole table exists to
+  // prevent. The guard was right and "nonce" is the more accurate word.
+  //
+  // The nonce the machine signs, and the presence beat. Both are signed-only
+  // routes, so the connector reaches them through the account rather than
+  // holding a bearer of its own — the machine key proves the MACHINE, the
+  // account bearer proves the owner, and enrollment needs both.
+  "host.enrollmentNonce": { method: "POST", path: "/api/claxedo/host/enrollments/requests", body: ["hostId"] },
+  "host.enrollmentHeartbeat": {
+    method: "POST",
+    path: "/api/claxedo/host/enrollments/heartbeat",
+    body: ["hostId", "signature", "ttlMs"],
+  },
 } as const satisfies Record<string, HostedOperation>
 
 export type HostedOperationName = keyof typeof HOSTED_OPERATIONS

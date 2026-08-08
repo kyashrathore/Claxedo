@@ -88,6 +88,14 @@ export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec>
   "workspace.connection.mint": { safe: true, decode: withStrings("relayUrl") },
   "workspace.connection.refresh": { safe: true, decode: withStrings("relayUrl") },
   "host.enrollCurrentMachine": { safe: false, decode: withStrings("host_id") },
+  // Unsafe: each call mints a nonce, so a retry burns one. The nonce itself is
+  // public and worthless without the machine's private key.
+  "host.enrollmentNonce": { safe: false, decode: withStrings("request_id", "nonce") },
+  // Safe: the server extends an existing enrollment rather than creating
+  // anything, and a heartbeat that arrives twice is a heartbeat. A REJECTED one
+  // is not retried at all — the connector stops, because re-enrolling would be
+  // it overruling a revocation.
+  "host.enrollmentHeartbeat": { safe: true, decode: object },
 }
 
 export function hostedOperationNames(): HostedOperationName[] {
