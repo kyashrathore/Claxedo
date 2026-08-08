@@ -42,7 +42,10 @@ function mount(store: { put_session_meta: ReturnType<typeof vi.fn>; delete_sessi
 }
 
 function store() {
-  return { put_session_meta: vi.fn(async () => {}), delete_session_meta: vi.fn(async () => {}) }
+  return {
+    put_session_meta: vi.fn(async (_id: string, _meta: Record<string, unknown>) => {}),
+    delete_session_meta: vi.fn(async (_id: string) => {}),
+  }
 }
 
 describe("session meta projection tap", () => {

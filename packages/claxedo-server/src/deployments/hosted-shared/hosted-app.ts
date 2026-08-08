@@ -33,7 +33,7 @@
 import { Hono, type Context } from "hono"
 import { cors } from "hono/cors"
 import { allowedOriginPatterns } from "@claxedo/server-core/platform/http/cors-origins"
-import { securityHeaders } from "../../platform/http/security-headers"
+import { securityHeaders } from "@claxedo/server-core/platform/http/security-headers"
 import { JwksRoutes } from "../../authority/routes/jwks"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../shared-routes/internal-relay"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"

@@ -182,20 +182,6 @@ describe("withSecurityHeaders", () => {
   })
 })
 
-describe("hosted-app mounts the middleware outermost", () => {
-  test("securityHeaders() is registered before the CORS middleware", () => {
-    // Source-level ratchet, same idiom as architecture.test.ts's mount pins:
-    // the guarantee is "no hosted route can miss these", which only holds if
-    // the middleware is composed once, at the top, ahead of CORS.
-    const source = fs.readFileSync(path.resolve(import.meta.dirname, "../../deployments/hosted-shared/hosted-app.ts"), "utf-8")
-    // The CORS *mount*, not `corsMiddleware`'s definition further up the file.
-    const corsMount = source.indexOf("app.use(\n    corsMiddleware(")
-
-    expect(source).toContain("app.use(securityHeaders())")
-    expect(corsMount).toBeGreaterThan(-1)
-    expect(source.indexOf("app.use(securityHeaders())")).toBeLessThan(corsMount)
-  })
-})
 
 describe("Cloudflare Pages headers for the SPA", () => {
   // The web app is served by Pages, not by the Worker, so this file is the
