@@ -12,7 +12,18 @@ export function createScanProgress(stream, total, timing = {}) {
 
   if (!stream.isTTY) {
     stream.write(`Scanning ${total.toLocaleString("en-US")} local transcript stores…\n`)
-    return { update() {}, stop() {} }
+    let completed = 0
+    return {
+      update(progress) {
+        completed = progress.completed
+      },
+      stop(errors = 0) {
+        const issue = errors ? ` · ${errors.toLocaleString("en-US")} read errors` : ""
+        stream.write(
+          `Scanned ${completed.toLocaleString("en-US")} transcript stores in ${elapsed(started, now())}${issue}\n`,
+        )
+      },
+    }
   }
 
   let completed = 0

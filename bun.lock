@@ -72,10 +72,6 @@
       "bin": {
         "agent-runtime-stats": "./bin/agent-runtime-stats.js",
       },
-    },
-    "packages/agent-runtime-stats-share": {
-      "name": "@claxedo/agent-runtime-stats-share-worker",
-      "version": "0.1.0",
       "devDependencies": {
         "@cloudflare/workers-types": "5.20260724.1",
         "@types/bun": "1.3.14",
@@ -1604,8 +1600,6 @@
     "@claxedo/agent-extensions": ["@claxedo/agent-extensions@workspace:packages/agent-extensions"],
 
     "@claxedo/agent-runtime-stats": ["@claxedo/agent-runtime-stats@workspace:packages/agent-runtime-stats"],
-
-    "@claxedo/agent-runtime-stats-share-worker": ["@claxedo/agent-runtime-stats-share-worker@workspace:packages/agent-runtime-stats-share"],
 
     "@claxedo/agent-sdk-runtime": ["@claxedo/agent-sdk-runtime@workspace:packages/agent-sdk-runtime"],
 

@@ -26,7 +26,7 @@ test("parses Codex call and completion timestamps", async () => {
     {
       timestamp: "2026-01-01T00:00:03.000Z",
       type: "response_item",
-      payload: { type: "function_call_output", call_id: "c1" },
+      payload: { type: "function_call_output", call_id: "c1", output: "zsh: command not found: git" },
     },
   ])
   const { session } = await parseJsonlFile("codex", file)
@@ -34,6 +34,12 @@ test("parses Codex call and completion timestamps", async () => {
   assert.equal(session.calls[0].turn_id, "t1")
   assert.equal(session.calls[0].end - session.calls[0].start, 1000)
   assert.equal(session.calls[0].classification.tier, "vm")
+  assert.deepEqual(session.calls[0].result_evidence, {
+    has_output: true,
+    command_not_found: true,
+    permission_denied: false,
+    network_error: false,
+  })
 })
 
 test("preserves missing tool completion timestamps", async () => {
@@ -47,6 +53,40 @@ test("preserves missing tool completion timestamps", async () => {
   ])
   const { session } = await parseJsonlFile("codex", file)
   assert.equal(session.calls[0].end, null)
+})
+
+test("classifies Codex codemode and generated JavaScript through the parser boundary", async () => {
+  const file = await jsonlFixture([
+    { timestamp: "2026-01-01T00:00:00.000Z", type: "turn_context", payload: { turn_id: "t1" } },
+    {
+      timestamp: "2026-01-01T00:00:01.000Z",
+      type: "response_item",
+      payload: {
+        type: "custom_tool_call",
+        call_id: "exec-1",
+        name: "exec",
+        input: 'const r = await tools.exec_command({cmd:"git status"}); text(r.output);',
+      },
+    },
+    {
+      timestamp: "2026-01-01T00:00:02.000Z",
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        call_id: "js-1",
+        name: "js",
+        arguments: JSON.stringify({ code: "await import('node:fs')" }),
+      },
+    },
+  ])
+  const { session } = await parseJsonlFile("codex", file)
+  assert.deepEqual(
+    session.calls.map((item) => item.classification),
+    [
+      { tier: "vm", bucket: "Git repository operations" },
+      { tier: "vm", bucket: "generated code execution*" },
+    ],
+  )
 })
 
 test("parses Claude and Kimi tool results", async () => {
@@ -112,6 +152,7 @@ test("parses Gemini embedded tool calls", async () => {
   )
   const { session } = parseJsonFile("gemini", file)
   assert.equal(session.id, "s3")
+  assert.equal(session.calls.length, 1)
   assert.equal(session.calls[0].name, "grep_search")
   assert.equal(session.calls[0].turn_id, "u1")
   assert.equal(session.calls[0].end, null)

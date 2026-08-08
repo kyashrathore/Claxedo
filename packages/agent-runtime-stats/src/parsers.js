@@ -4,6 +4,7 @@ import readline from "node:readline"
 import { DatabaseSync } from "node:sqlite"
 
 import { classifyToolCall } from "./classify.js"
+import { commandFrom } from "./command.js"
 
 function at(value, keys) {
   for (const key of keys) {
@@ -41,19 +42,38 @@ function parseInput(value) {
   }
 }
 
-function commandFrom(input) {
-  if (typeof input === "string") return input
-  if (!input || typeof input !== "object" || Array.isArray(input)) return ""
-  for (const key of ["command", "cmd", "script"]) if (typeof input[key] === "string") return input[key]
-  return commandFrom(input.input)
-}
-
 function compactInput(name, input) {
   const normalized = name.toLowerCase().replaceAll("-", "_")
-  if (normalized === "exec" && typeof input === "string") return input
   if (["apply_patch", "edit", "patch", "replace", "write"].some((value) => normalized.includes(value))) return {}
   const command = commandFrom(input)
   return command ? { command } : {}
+}
+
+function resultEvidence(value) {
+  const parts = []
+  let length = 0
+  const visit = (item) => {
+    if (length >= 4_096 || item == null) return
+    if (typeof item === "string") {
+      const part = item.slice(0, 4_096 - length)
+      parts.push(part)
+      length += part.length
+    } else if (Array.isArray(item)) for (const child of item) visit(child)
+    else if (typeof item === "object") {
+      for (const key of ["text", "content", "output", "result", "error", "message", "stderr", "stdout"]) {
+        if (key in item) visit(item[key])
+      }
+    }
+  }
+  visit(value)
+  const text = parts.join("\n")
+  if (!text) return null
+  return {
+    has_output: true,
+    command_not_found: /command not found|not recognized as an internal or external command|\bENOENT\b/i.test(text),
+    permission_denied: /permission denied|operation not permitted|\bEACCES\b/i.test(text),
+    network_error: /network is unreachable|connection refused|could not resolve host|\bENETUNREACH\b/i.test(text),
+  }
 }
 
 class ParserState {
@@ -74,17 +94,18 @@ class ParserState {
       start,
       end: null,
       turn_id: this.turn,
-      classification: classifyToolCall({ name, input: compact }),
+      classification: classifyToolCall({ name, input: compact, harness: this.session.harness }),
     }
     this.session.calls.push(call)
     this.pending.set(id, call)
   }
 
-  complete(id, end) {
+  complete(id, end, output) {
     const call = this.pending.get(id)
     if (!call) return
     this.pending.delete(id)
     if (Number.isFinite(end)) call.end = end
+    call.result_evidence = resultEvidence(output)
   }
 }
 
@@ -105,7 +126,7 @@ function parseCodex(row, state) {
   }
   if (type === "function_call_output" || type === "custom_tool_call_output") {
     const id = stringAt(row, ["payload", "call_id"])
-    if (id) state.complete(id, timestamp(row.timestamp))
+    if (id) state.complete(id, timestamp(row.timestamp), at(row, ["payload", "output"]))
   }
 }
 
@@ -116,7 +137,7 @@ function parseClaude(row, state) {
   if (row.type === "user") {
     if (Array.isArray(content))
       for (const item of content)
-        if (item.type === "tool_result" && item.tool_use_id) state.complete(item.tool_use_id, time)
+        if (item.type === "tool_result" && item.tool_use_id) state.complete(item.tool_use_id, time, item.content)
     state.turn = row.promptId ?? row.uuid ?? state.turn
   }
   if (row.type !== "assistant" || !Array.isArray(content)) return
@@ -133,7 +154,7 @@ function parseOpenAI(row, state) {
       if (item.id && fn.name) state.addCall(item.id, fn.name, parseInput(fn.arguments ?? fn.input), time)
     }
   }
-  if (row.role === "tool" && row.tool_call_id) state.complete(row.tool_call_id, time)
+  if (row.role === "tool" && row.tool_call_id) state.complete(row.tool_call_id, time, row.content)
 }
 
 function parsePi(row, state) {
@@ -152,7 +173,7 @@ function parsePi(row, state) {
       state.addCall(item.id ?? item.toolCallId, item.name ?? item.toolName, object(item.arguments ?? item.input), time)
     } else if (item.type === "toolResult" || item.type === "tool_result") {
       const id = item.toolCallId ?? item.tool_use_id
-      if (id) state.complete(id, time)
+      if (id) state.complete(id, time, item.content ?? item.output ?? item.result)
     }
   }
 }
@@ -170,7 +191,9 @@ function parseGrok(row, state) {
         (typeof metaTool === "string" ? metaTool : metaTool?.name) ?? update.title ?? update.tool_name ?? "tool"
       state.addCall(id, name, object(update.rawInput), time)
     }
-    if (["completed", "failed", "cancelled"].includes(String(update.status).toLowerCase())) state.complete(id, time)
+    if (["completed", "failed", "cancelled"].includes(String(update.status).toLowerCase())) {
+      state.complete(id, time, update.rawOutput ?? update.output ?? update.result)
+    }
     return
   }
   const time = timestamp(row.ts ?? row.timestamp)
@@ -188,7 +211,7 @@ function parseGrok(row, state) {
     if (!queue) return
     const id = queue.values[queue.head++]
     if (queue.head === queue.values.length) state.grokPending.delete(row.tool_name)
-    if (id) state.complete(id, time)
+    if (id) state.complete(id, time, row.output ?? row.result ?? row.content)
   }
 }
 
@@ -202,7 +225,7 @@ function parseGemini(row, state) {
     const started = timestamp(item.timestamp) ?? time
     state.addCall(id, item.name, object(item.args), started)
     const completed = timestamp(item.endTimestamp ?? item.endTime ?? item.completedAt ?? item.end_time)
-    if (completed != null) state.complete(id, completed)
+    if (completed != null) state.complete(id, completed, item.result)
   }
 }
 
@@ -268,7 +291,8 @@ export function parseOpenCodeDatabase(file) {
         start,
         end: timestamp(at(value, ["state", "time", "end"])),
         turn_id: row.message_id,
-        classification: classifyToolCall({ name, input: compact }),
+        classification: classifyToolCall({ name, input: compact, harness: "opencode" }),
+        result_evidence: resultEvidence(at(value, ["state", "output"])),
       })
     }
     return [...sessions.values()]

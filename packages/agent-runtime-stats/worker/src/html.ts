@@ -64,11 +64,11 @@ function table(report: ReportMetrics): string {
   const rows = metricRows(report)
     .map(([metric, result]) => `<tr><td>${escapeHtml(metric)}</td><td>${escapeHtml(result)}</td></tr>`)
     .join("")
-  return `<div class="panel"><div class="panel-head"><span>Runtime profile</span><span>Aggregate only</span></div><table><thead><tr><th>Metric</th><th>Result</th></tr></thead><tbody>${rows}</tbody></table></div>${justBashDefinition()}`
+  return `<div class="panel"><div class="panel-head"><span>Runtime placement</span><span>Aggregate only</span></div><table><thead><tr><th>Metric</th><th>Result</th></tr></thead><tbody>${rows}</tbody></table></div>${placementDefinition()}`
 }
 
-function justBashDefinition(): string {
-  return `<p class="definition">“Can run in just-bash” means the call can be powered by <a href="https://github.com/vercel-labs/just-bash" target="_blank" rel="noopener noreferrer">Vercel Labs’ just-bash ↗</a>, including its virtual filesystem, JavaScript, configured network/API access, and emulated host commands.</p>`
+function placementDefinition(): string {
+  return `<p class="definition">A turn “completed without full machine” only when every observed execution call had a resolved lightweight runtime. The observed span starts at the first full-machine call and ends at the last timestamped execution call; it is not the complete turn duration. Lightweight calls can be powered by <a href="https://github.com/vercel-labs/just-bash" target="_blank" rel="noopener noreferrer">Vercel Labs’ just-bash ↗</a>.</p>`
 }
 
 function documentShell(title: string, body: string, nonce: string, head = ""): string {
@@ -82,7 +82,7 @@ function mast(): string {
 export function renderLandingPage(nonce: string): string {
   return documentShell(
     "Agent Runtime Stats",
-    `<main class="shell"><div class="reveal">${mast()}<p class="eyebrow">Measure the execution boundary</p><h1>Where do your agents actually run?</h1><p class="lede">Analyze local coding-agent sessions, then publish only the aggregate runtime split. Raw transcripts, prompts, paths, and tool inputs stay on your machine.</p><div class="panel"><div class="panel-head"><span>Run locally</span><span>01 command</span></div><div class="command">npx @claxedo/agent-runtime-stats</div></div></div></main>`,
+    `<main class="shell"><div class="reveal">${mast()}<p class="eyebrow">Measure the execution boundary</p><h1>Does your agent need a machine for the whole turn?</h1><p class="lede">Analyze local coding-agent sessions and measure placement at the turn and session level. Raw transcripts, prompts, paths, and tool inputs stay on your machine.</p><div class="panel"><div class="panel-head"><span>Run locally</span><span>01 command</span></div><div class="command">npx @claxedo/agent-runtime-stats</div></div></div></main>`,
     nonce,
   )
 }
@@ -91,7 +91,11 @@ const shareScript = `
   const errorBox = document.querySelector("#error");
   const button = document.querySelector("#publish");
   const body = document.querySelector("#metrics");
-  const names = [["sessionsAnalyzed","Sessions analyzed",v=>v.toLocaleString("en-US")],["executionCalls","Execution calls",v=>v.toLocaleString("en-US")],["justBashPercent","Can run in just-bash",v=>v==null?"Unavailable":v.toFixed(2)+"%"],["fullVmPercent","Full VM required",v=>v==null?"Unavailable":v.toFixed(2)+"%"],["medianTimeBeforeFullMachineMs","Median time before agent needs full machine again",v=>v==null?"Unavailable":(v/1000).toFixed(1)+"s"],["p95TimeBeforeFullMachineMs","p95 time before agent needs full machine again",v=>v==null?"Unavailable":(v/1000).toFixed(1)+"s"]];
+  const integer = v => v.toLocaleString("en-US");
+  const percent = v => v==null?"Unavailable":v.toFixed(2)+"%";
+  const number = v => v==null?"Unavailable":v.toFixed(1).replace(/\\.0$/,"");
+  const duration = v => v==null?"Unavailable":v<1000?Math.round(v)+"ms":(v/1000).toFixed(1)+"s";
+  const names = [["sessionsAnalyzed","Sessions analyzed",integer],["executionCalls","Execution calls",integer],["sessionsWithoutFullMachinePercent","Sessions completed without full machine",percent],["turnsAnalyzed","Turns analyzed",integer],["turnCoveragePercent","Execution-call turn coverage",percent],["turnsWithoutFullMachinePercent","Turns completed without full machine",percent],["repeatFullMachineTurnPercent","Full-machine turns needing it again",percent],["medianCallsAfterFirstFullMachine","Median calls after first full-machine need",number],["medianObservedSpanAfterFirstFullMachineMs","Median observed span after first full-machine need",duration],["p95ObservedSpanAfterFirstFullMachineMs","p95 observed span after first full-machine need",duration]];
   let report;
   const fail = message => { errorBox.textContent = message; errorBox.classList.add("visible"); button.disabled = true; };
   try {
@@ -119,7 +123,7 @@ const shareScript = `
 export function renderSharePage(nonce: string): string {
   return documentShell(
     "Review your anonymous runtime report",
-    `<main class="shell"><div class="reveal">${mast()}<p class="eyebrow">Review before publishing</p><h1>Your data stays local until this click.</h1><p class="lede">Only the six aggregate values below will be stored. No transcripts, prompts, repository names, file paths, or account identifiers are included.</p></div><div class="reveal two"><div class="panel"><div class="panel-head"><span>Runtime profile</span><span>Not uploaded</span></div><table><thead><tr><th>Metric</th><th>Result</th></tr></thead><tbody id="metrics"></tbody></table></div>${justBashDefinition()}</div><div class="reveal three actions"><button id="publish" disabled>Publish anonymous snapshot</button><a class="button secondary" href="/">Cancel</a></div><p class="privacy">Publishing creates an unlisted-but-public URL. Anyone with the URL can view and share it.</p><div id="error" class="error" role="alert"></div></main><script nonce="${nonce}">${shareScript}</script>`,
+    `<main class="shell"><div class="reveal">${mast()}<p class="eyebrow">Review before publishing</p><h1>Your data stays local until this click.</h1><p class="lede">Only the ten aggregate values below will be stored. No transcripts, prompts, repository names, file paths, or account identifiers are included.</p></div><div class="reveal two"><div class="panel"><div class="panel-head"><span>Runtime placement</span><span>Not uploaded</span></div><table><thead><tr><th>Metric</th><th>Result</th></tr></thead><tbody id="metrics"></tbody></table></div>${placementDefinition()}</div><div class="reveal three actions"><button id="publish" disabled>Publish anonymous snapshot</button><a class="button secondary" href="/">Cancel</a></div><p class="privacy">Publishing creates an unlisted-but-public URL. Anyone with the URL can view and share it.</p><div id="error" class="error" role="alert"></div></main><script nonce="${nonce}">${shareScript}</script>`,
     nonce,
   )
 }
@@ -127,11 +131,17 @@ export function renderSharePage(nonce: string): string {
 export function renderReportPage(report: StoredReport, origin: string, nonce: string): string {
   const pageUrl = `${origin}/r/${report.id}`
   const imageUrl = `${pageUrl}/og.png`
-  const fullMachineInterval =
-    report.medianTimeBeforeFullMachineMs === null
-      ? "My agent’s median interval between full-machine calls was unavailable."
-      : `My agent needs to call a full machine every ${formatDuration(report.medianTimeBeforeFullMachineMs)} (median).`
-  const postText = `${fullMachineInterval} ${formatPercent(report.justBashPercent)} can run in just-bash and ${formatPercent(report.fullVmPercent)} need a full VM.`
+  const fullMachineTurnPercent =
+    report.turnsWithoutFullMachinePercent === null ? null : 100 - report.turnsWithoutFullMachinePercent
+  const turnPlacement =
+    fullMachineTurnPercent === null
+      ? "My agent’s turn-level full-machine rate was unavailable."
+      : `My agent needs a full machine in ${formatPercent(fullMachineTurnPercent)} of analyzed turns.`
+  const repeat =
+    report.repeatFullMachineTurnPercent === null
+      ? ""
+      : ` Once a turn reaches one, ${formatPercent(report.repeatFullMachineTurnPercent)} need it again.`
+  const postText = `${turnPlacement}${repeat}`
   const xUrl = `https://x.com/intent/post?text=${encodeURIComponent(postText)}&url=${encodeURIComponent(pageUrl)}`
   const head = `<meta name="description" content="Anonymous aggregate coding-agent runtime analysis"><meta property="og:type" content="website"><meta property="og:title" content="Agent Runtime Report"><meta property="og:description" content="${escapeHtml(postText)}"><meta property="og:url" content="${escapeHtml(pageUrl)}"><meta property="og:image" content="${escapeHtml(imageUrl)}"><meta property="og:image:type" content="image/png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Agent Runtime Report"><meta name="twitter:description" content="${escapeHtml(postText)}"><meta name="twitter:image" content="${escapeHtml(imageUrl)}">`
   const created = new Date(report.createdAt).toLocaleDateString("en-US", {
@@ -148,9 +158,11 @@ export function renderReportPage(report: StoredReport, origin: string, nonce: st
 }
 
 export function renderOgCard(report: ReportMetrics): string {
+  const fullMachineTurnPercent =
+    report.turnsWithoutFullMachinePercent === null ? null : 100 - report.turnsWithoutFullMachinePercent
   const split = [
-    ["Can run in just-bash", formatPercent(report.justBashPercent)],
-    ["Full VM", formatPercent(report.fullVmPercent)],
+    ["Turns need full machine", formatPercent(fullMachineTurnPercent)],
+    ["VM turns need it again", formatPercent(report.repeatFullMachineTurnPercent)],
   ]
     .map(
       ([label, value]) =>
@@ -158,8 +170,8 @@ export function renderOgCard(report: ReportMetrics): string {
     )
     .join("")
   const headline =
-    report.medianTimeBeforeFullMachineMs === null
+    fullMachineTurnPercent === null
       ? `<em>${formatInteger(report.executionCalls)}</em> execution calls, mapped.`
-      : `Full machine needed every <em>${formatDuration(report.medianTimeBeforeFullMachineMs)}</em>.`
-  return `<!doctype html><html><head><meta charset="utf-8"><style>*{box-sizing:border-box}html,body{margin:0;width:1200px;height:630px;overflow:hidden}body{padding:54px 62px;background:radial-gradient(circle at 88% 12%,#263015 0,transparent 30%),linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px),#0b0d0a;background-size:auto,34px 34px,34px 34px,auto;color:#eff0e6;font-family:ui-monospace,"SFMono-Regular",Consolas,monospace}.top{display:flex;justify-content:space-between;align-items:center;color:#9aa08f;font-size:18px;letter-spacing:.12em;text-transform:uppercase}.brand{color:#d9ff43;font-weight:700}.headline{margin:66px 0 48px;font-family:Georgia,"Times New Roman",serif;font-size:76px;line-height:.92;letter-spacing:-.05em;font-weight:400;max-width:980px}.headline em{color:#d9ff43;font-style:normal}.grid{display:grid;grid-template-columns:repeat(2,1fr);border:1px solid #3a4034}.stat{padding:25px 28px;border-right:1px solid #3a4034}.stat:last-child{border:0}.stat strong{display:block;color:#d9ff43;font-size:42px;line-height:1;margin-bottom:10px}.stat span{color:#aeb4a4;font-size:16px;text-transform:uppercase;letter-spacing:.1em}.foot{display:flex;justify-content:space-between;margin-top:28px;color:#8d9385;font-size:15px}.foot b{color:#eff0e6}</style></head><body><div class="top"><span class="brand">● Agent Runtime Stats</span><span>Anonymous aggregate</span></div><h1 class="headline">${headline}</h1><div class="grid">${split}</div><div class="foot"><span><b>${formatInteger(report.executionCalls)}</b> execution calls</span><span><b>${formatInteger(report.sessionsAnalyzed)}</b> sessions</span><span>p95 full-machine interval <b>${formatDuration(report.p95TimeBeforeFullMachineMs)}</b></span></div></body></html>`
+      : `<em>${formatPercent(fullMachineTurnPercent)}</em> of turns need a full machine.`
+  return `<!doctype html><html><head><meta charset="utf-8"><style>*{box-sizing:border-box}html,body{margin:0;width:1200px;height:630px;overflow:hidden}body{padding:54px 62px;background:radial-gradient(circle at 88% 12%,#263015 0,transparent 30%),linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px),#0b0d0a;background-size:auto,34px 34px,34px 34px,auto;color:#eff0e6;font-family:ui-monospace,"SFMono-Regular",Consolas,monospace}.top{display:flex;justify-content:space-between;align-items:center;color:#9aa08f;font-size:18px;letter-spacing:.12em;text-transform:uppercase}.brand{color:#d9ff43;font-weight:700}.headline{margin:58px 0 38px;font-family:Georgia,"Times New Roman",serif;font-size:72px;line-height:.92;letter-spacing:-.05em;font-weight:400;max-width:980px}.headline em{color:#d9ff43;font-style:normal}.grid{display:grid;grid-template-columns:repeat(2,1fr);border:1px solid #3a4034}.stat{padding:22px 25px;border-right:1px solid #3a4034}.stat:last-child{border:0}.stat strong{display:block;color:#d9ff43;font-size:38px;line-height:1;margin-bottom:9px}.stat span{color:#aeb4a4;font-size:14px;text-transform:uppercase;letter-spacing:.08em}.foot{display:flex;justify-content:space-between;margin-top:22px;color:#8d9385;font-size:14px}.foot b{color:#eff0e6}</style></head><body><div class="top"><span class="brand">● Agent Runtime Stats</span><span>Anonymous aggregate</span></div><h1 class="headline">${headline}</h1><div class="grid">${split}</div><div class="foot"><span><b>${formatInteger(report.executionCalls)}</b> execution calls</span><span><b>${formatInteger(report.turnsAnalyzed)}</b> turns</span><span>turn coverage <b>${formatPercent(report.turnCoveragePercent)}</b></span><span>p95 observed span <b>${formatDuration(report.p95ObservedSpanAfterFirstFullMachineMs)}</b></span></div></body></html>`
 }

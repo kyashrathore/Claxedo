@@ -1,11 +1,13 @@
 # Agent Runtime Stats
 
-Dependency-free Node.js CLI for analyzing local coding-agent transcripts and answering two questions:
+Dependency-free Node.js CLI for analyzing local coding-agent transcripts and answering four placement questions:
 
-1. What percentage of tool calls can run in a virtual Bash environment, and what percentage need a full workspace VM?
-2. How much time passes before an agent needs a full workspace VM again?
+1. What percentage of whole sessions and agent turns complete without a full machine?
+2. Once a turn needs a full machine, how often does it need that machine again?
+3. How much observed execution remains after the first full-machine need?
+4. What percentage of individual calls cannot be classified honestly?
 
-Every discovered session is included.
+Every discovered session is reported. The analyzed-session sample includes only sessions with at least one observed execution call.
 
 ```sh
 npx @claxedo/agent-runtime-stats
@@ -29,11 +31,14 @@ The same JavaScript package runs on macOS, Linux, and Windows, on both ARM64 and
 --list-harnesses
 ```
 
-Interactive scans show live file counts, elapsed time, and the active harness. The report adapts to wide, compact, and narrow terminals, with a minimum 30-column layout, while printing the runtime split, VM action buckets, and the median and p95 reasoning/editing gap from one VM-required call finishing until the next starts in the same agent turn. `--format json` prints the same model as formatted JSON for automation.
+Interactive scans show live file counts, elapsed time, and the active harness. The report adapts to wide, compact, and narrow terminals while printing session/turn placement, turn-ID coverage, the three-way call classification, full-machine action buckets, and timing diagnostics. Table output also reports every selected source's status and any read warnings or errors. `--format json` prints the same model as formatted JSON for automation.
 
 The report also measures the local execution-demand pattern:
 
-- Sessions with observed execution calls, split into full-machine and just-bash-only sessions; discovered sessions with no readable execution calls remain separate.
+- Sessions with observed execution calls, split into full-machine, just-bash-only, and unresolved-runtime-only sessions; discovered sessions with no readable execution calls remain separate.
+- Turns with stable IDs, split into full-machine, just-bash-only, and unresolved-runtime turns.
+- The share of full-machine turns that issue another full-machine call.
+- Median execution-call count and median/p95 observed execution span after the first full-machine call in a turn. The observed span ends at the last timestamped execution call, not at the true end of the agent turn.
 - Median and p95 full-machine calls per session that requires one.
 - Median and p95 lead time from the first timestamped execution call to the first full-machine call in the same agent turn.
 - Median and p95 duration of full-machine calls with observed start and completion timestamps.
@@ -42,7 +47,7 @@ The report also measures the local execution-demand pattern:
 
 These are local demand measurements only. The report does not estimate sandbox provisioning, workspace synchronization, cache restoration, service startup, or total environment-readiness time; those require telemetry from the execution platform.
 
-Table output also prints a browser share link. The aggregate report is encoded in the URL fragment, which browsers do not send in the request. Nothing is uploaded until the user reviews the summary and presses **Share results** on the page. The resulting public URL includes a generated social preview image for X and other Open Graph consumers. Set `AGENT_RUNTIME_STATS_SHARE_URL` to point local builds at another compatible share service.
+Set `AGENT_RUNTIME_STATS_SHARE_URL` to a trusted deployment if you want table output to include a browser share link. The CLI has no default upload endpoint. The ten aggregate placement metrics are encoded in the URL fragment, which browsers do not send in the request. Nothing is uploaded until the user reviews the summary and presses **Share results** on the page. The resulting public URL includes a generated social preview image for X and other Open Graph consumers.
 
 ## Harness coverage
 
@@ -62,9 +67,14 @@ Absent and partially readable stores are reported explicitly; they are not silen
 
 ## Classification
 
-The two headline tiers are mutually exclusive and represent the minimum sufficient runtime:
+The three headline tiers are mutually exclusive:
 
-- **just-bash:** calls that can be powered by [Vercel Labs' just-bash](https://github.com/vercel-labs/just-bash), including file operations, patches, text search, shell utilities, JavaScript, configured HTTP/API requests, and emulated host bindings.
-- **Full workspace VM:** package/dev runners, local Git state, interactive processes, local browser testing, and native executables.
+- **just-bash:** every resolved command segment is present in [Vercel Labs' just-bash](https://github.com/vercel-labs/just-bash) Node-hosted command manifest, assuming configured and allowlisted network access. File tools and explicit host capabilities are also included.
+- **Full workspace VM / isolation boundary\*:** package/dev runners, local Git state, interactive processes, local browser testing, native executables, and generated code execution.
+- **Unknown:** the tool or executable cannot be resolved from the persisted transcript. Unknowns are never folded into either headline tier; the report prints classified coverage.
 
-Control-plane calls such as planning, subagent coordination, waiting, and task/thread management are excluded from the execution-call denominator.
+\* Generated code execution is deliberately counted as full-machine because running agent-generated code crosses the isolation boundary, even when an optional just-bash runtime exists.
+
+Control-plane calls such as planning, subagent coordination, waiting, and task/thread management are excluded from the execution-call denominator across Codex, Claude Code, and OpenCode naming conventions.
+
+The Cloudflare Worker, D1 migrations, report site, and social-image renderer live in this package under `worker/`; deployment commands are documented in `worker/README.md`.

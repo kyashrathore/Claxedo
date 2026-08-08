@@ -14,29 +14,41 @@ interface ReportRow {
   schema_version: number
   sessions_analyzed: number
   execution_calls: number
-  just_bash_percent: number | null
-  full_vm_percent: number | null
-  median_x_ms: number | null
-  p95_x_ms: number | null
+  sessions_without_full_machine_percent: number | null
+  turns_analyzed: number
+  turn_coverage_percent: number | null
+  turns_without_full_machine_percent: number | null
+  repeat_full_machine_turn_percent: number | null
+  median_calls_after_first_full_machine: number | null
+  median_observed_span_after_first_full_machine_ms: number | null
+  p95_observed_span_after_first_full_machine_ms: number | null
   // D1 maps SQLite BLOB values back to JavaScript number arrays.
   og_png: number[] | null
+  og_retry_after: string | null
 }
 
 const REPORT_SELECT = `SELECT id, created_at, schema_version, sessions_analyzed, execution_calls,
-  just_bash_percent, full_vm_percent, median_x_ms, p95_x_ms, og_png
+  sessions_without_full_machine_percent, turns_analyzed, turn_coverage_percent,
+  turns_without_full_machine_percent, repeat_full_machine_turn_percent,
+  median_calls_after_first_full_machine, median_observed_span_after_first_full_machine_ms,
+  p95_observed_span_after_first_full_machine_ms, og_png, og_retry_after
   FROM reports WHERE id = ?1`
 
 function fromRow(row: ReportRow): StoredReport {
   return {
     id: row.id,
     createdAt: row.created_at,
-    schemaVersion: 1,
+    schemaVersion: 2,
     sessionsAnalyzed: row.sessions_analyzed,
     executionCalls: row.execution_calls,
-    justBashPercent: row.just_bash_percent,
-    fullVmPercent: row.full_vm_percent,
-    medianTimeBeforeFullMachineMs: row.median_x_ms,
-    p95TimeBeforeFullMachineMs: row.p95_x_ms,
+    sessionsWithoutFullMachinePercent: row.sessions_without_full_machine_percent,
+    turnsAnalyzed: row.turns_analyzed,
+    turnCoveragePercent: row.turn_coverage_percent,
+    turnsWithoutFullMachinePercent: row.turns_without_full_machine_percent,
+    repeatFullMachineTurnPercent: row.repeat_full_machine_turn_percent,
+    medianCallsAfterFirstFullMachine: row.median_calls_after_first_full_machine,
+    medianObservedSpanAfterFirstFullMachineMs: row.median_observed_span_after_first_full_machine_ms,
+    p95ObservedSpanAfterFirstFullMachineMs: row.p95_observed_span_after_first_full_machine_ms,
   }
 }
 
@@ -83,25 +95,59 @@ async function findReport(
   id: string,
 ): Promise<{ report: StoredReport; image: Uint8Array<ArrayBuffer> | null } | null> {
   const row = await env.REPORTS.prepare(REPORT_SELECT).bind(id).first<ReportRow>()
-  return row ? { report: fromRow(row), image: bytesFromD1(row.og_png) } : null
+  return row
+    ? {
+        report: fromRow(row),
+        image: bytesFromD1(row.og_png),
+      }
+    : null
 }
 
+class OgGenerationUnavailable extends Error {}
+
 async function generateOg(env: Env, id: string, report: ReportMetrics): Promise<ArrayBuffer> {
-  const response = await env.BROWSER.quickAction("screenshot", {
-    html: renderOgCard(report),
-    viewport: { width: 1200, height: 630, deviceScaleFactor: 1 },
-    screenshotOptions: { type: "png" },
-  })
-  if (!response.ok) throw new Error(`Browser Run returned ${response.status}: ${await response.text()}`)
-  const image = await response.arrayBuffer()
-  if (image.byteLength === 0 || image.byteLength > 2_000_000)
-    throw new Error("Browser Run returned an invalid image size.")
-  await env.REPORTS.prepare(
-    "UPDATE reports SET og_png = ?1, og_generated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?2",
+  const claim = await env.REPORTS.prepare(
+    `UPDATE reports
+     SET og_retry_after = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+5 minutes')
+     WHERE id = ?1 AND og_png IS NULL
+       AND (og_retry_after IS NULL OR og_retry_after <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`,
   )
-    .bind(image, id)
+    .bind(id)
     .run()
-  return image
+  if (claim.meta.changes !== 1) throw new OgGenerationUnavailable("OG generation is already running or backed off.")
+  try {
+    const response = await env.BROWSER.quickAction("screenshot", {
+      html: renderOgCard(report),
+      viewport: { width: 1200, height: 630, deviceScaleFactor: 1 },
+      screenshotOptions: { type: "png" },
+    })
+    if (!response.ok) throw new Error(`Browser Run returned ${response.status}: ${await response.text()}`)
+    const image = await response.arrayBuffer()
+    if (image.byteLength === 0 || image.byteLength > 2_000_000) {
+      throw new Error("Browser Run returned an invalid image size.")
+    }
+    await env.REPORTS.prepare(
+      `UPDATE reports SET og_png = ?1,
+       og_generated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), og_retry_after = NULL
+       WHERE id = ?2`,
+    )
+      .bind(image, id)
+      .run()
+    return image
+  } catch (error) {
+    await env.REPORTS.prepare(
+      "UPDATE reports SET og_retry_after = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+1 hour') WHERE id = ?1",
+    )
+      .bind(id)
+      .run()
+    throw error
+  }
+}
+
+async function rateLimitKey(request: Request): Promise<string> {
+  const address = request.headers.get("cf-connecting-ip") ?? "missing-client-address"
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(address))
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
 }
 
 async function createReport(request: Request, env: Env): Promise<Response> {
@@ -110,7 +156,7 @@ async function createReport(request: Request, env: Env): Promise<Response> {
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
     return json({ error: "Content-Type must be application/json." }, 415)
   }
-  const limited = await env.CREATE_REPORT_LIMITER.limit({ key: "anonymous-reports" })
+  const limited = await env.CREATE_REPORT_LIMITER.limit({ key: await rateLimitKey(request) })
   if (!limited.success) return json({ error: "Too many reports are being published. Try again in a minute." }, 429)
 
   const raw = await request.text()
@@ -127,18 +173,25 @@ async function createReport(request: Request, env: Env): Promise<Response> {
   await env.REPORTS.prepare(
     `INSERT INTO reports (
     id, schema_version, sessions_analyzed, execution_calls,
-    just_bash_percent, full_vm_percent, median_x_ms, p95_x_ms
-  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
+    sessions_without_full_machine_percent, turns_analyzed, turn_coverage_percent,
+    turns_without_full_machine_percent, repeat_full_machine_turn_percent,
+    median_calls_after_first_full_machine, median_observed_span_after_first_full_machine_ms,
+    p95_observed_span_after_first_full_machine_ms
+  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
   )
     .bind(
       id,
       report.schemaVersion,
       report.sessionsAnalyzed,
       report.executionCalls,
-      report.justBashPercent,
-      report.fullVmPercent,
-      report.medianTimeBeforeFullMachineMs,
-      report.p95TimeBeforeFullMachineMs,
+      report.sessionsWithoutFullMachinePercent,
+      report.turnsAnalyzed,
+      report.turnCoveragePercent,
+      report.turnsWithoutFullMachinePercent,
+      report.repeatFullMachineTurnPercent,
+      report.medianCallsAfterFirstFullMachine,
+      report.medianObservedSpanAfterFirstFullMachineMs,
+      report.p95ObservedSpanAfterFirstFullMachineMs,
     )
     .run()
 
@@ -178,7 +231,28 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (request.method === "GET" && imageId) {
     const stored = await findReport(env, imageId)
     if (!stored) return json({ error: "Report not found." }, 404)
-    const image = stored.image ?? (await generateOg(env, imageId, stored.report))
+    let image = stored.image
+    if (!image) {
+      try {
+        image = new Uint8Array(await generateOg(env, imageId, stored.report))
+      } catch (error) {
+        if (!(error instanceof OgGenerationUnavailable)) {
+          console.error("OG generation failed", {
+            id: imageId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+        return new Response("Social preview generation is temporarily unavailable.", {
+          status: 503,
+          headers: {
+            "content-type": "text/plain; charset=utf-8",
+            "cache-control": "public, max-age=300",
+            "retry-after": "300",
+            ...securityHeaders(),
+          },
+        })
+      }
+    }
     return new Response(image, {
       headers: {
         "content-type": "image/png",

@@ -32,8 +32,12 @@ export function parseArgs(args, cwd = process.cwd()) {
     if (argument === "-h" || argument === "--help") options.action = "help"
     else if (argument === "-V" || argument === "--version") options.action = "version"
     else if (argument === "--list-harnesses") options.action = "list"
-    else if (argument === "--harness") options.selected = take(args, index++, argument).split(",").filter(Boolean)
-    else if (argument === "--home") options.home = path.resolve(cwd, take(args, index++, argument))
+    else if (argument === "--harness") {
+      options.selected = take(args, index++, argument).split(",").filter(Boolean)
+      if (!options.selected.length) throw new Error("--harness requires at least one harness name")
+      const invalid = options.selected.find((harness) => !HARNESSES.includes(harness))
+      if (invalid) throw new Error(`Unknown harness: ${invalid}. Valid harnesses: ${HARNESSES.join(", ")}`)
+    } else if (argument === "--home") options.home = path.resolve(cwd, take(args, index++, argument))
     else if (argument === "--format") {
       options.format = take(args, index++, argument)
       if (!new Set(["table", "json"]).has(options.format)) throw new Error("--format must be table or json")
@@ -43,6 +47,9 @@ export function parseArgs(args, cwd = process.cwd()) {
       if (separator <= 0 || separator === value.length - 1)
         throw new Error("--path must use harness=/absolute/or/relative/path")
       const harness = value.slice(0, separator)
+      if (!HARNESSES.includes(harness)) {
+        throw new Error(`Unknown harness: ${harness}. Valid harnesses: ${HARNESSES.join(", ")}`)
+      }
       const paths = options.paths.get(harness) ?? []
       paths.push(path.resolve(cwd, value.slice(separator + 1)))
       options.paths.set(harness, paths)
@@ -98,7 +105,8 @@ export async function main(args, io = { stdout: process.stdout, stderr: process.
   if (options.format === "json") io.stdout.write(`${JSON.stringify(report, null, 2)}\n`)
   else {
     io.stdout.write(`${renderTable(report, io.stdout.columns)}\n\n`)
-    io.stdout.write(`${sharePrompt(report, environment.AGENT_RUNTIME_STATS_SHARE_URL, io.stdout.isTTY === true)}\n`)
+    const sharing = sharePrompt(report, environment.AGENT_RUNTIME_STATS_SHARE_URL, io.stdout.isTTY === true)
+    if (sharing) io.stdout.write(`${sharing}\n`)
   }
   return report.errors.length ? 2 : 0
 }

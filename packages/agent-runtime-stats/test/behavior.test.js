@@ -1,5 +1,7 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import os from "node:os"
 import path from "node:path"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
@@ -32,6 +34,43 @@ test("classifies calls by minimum runtime", () => {
     "vm",
   )
   assert.equal(classifyToolCall(call("11", "shell", { command: "gh api repos/openai/codex && fly deploy" })).tier, "vm")
+  assert.equal(
+    classifyToolCall(call("12", "shell", { command: 'grep -n "playwright" packages/e2e/playwright/test.ts' })).tier,
+    "bash",
+  )
+  assert.equal(classifyToolCall(call("13", "shell", { command: "kubectl apply -f deploy.yaml" })).tier, "vm")
+  assert.equal(classifyToolCall(call("14", "shell", { command: "echo ready && git status" })).tier, "vm")
+  assert.equal(classifyToolCall(call("15", "shell", { command: "$RUNNER test" })).tier, "unknown")
+  assert.deepEqual(classifyToolCall(call("16", "shell", { command: "python3 generated.py" })), {
+    tier: "vm",
+    bucket: "generated code execution*",
+  })
+  assert.equal(classifyToolCall(call("17", "shell", { command: "sqlite3 data.db '.tables'" })).tier, "bash")
+  assert.equal(classifyToolCall(call("18", "shell", { command: "xargs node" })).tier, "vm")
+  assert.equal(classifyToolCall(call("18b", "shell", { command: "xargs -0 -n 1 echo" })).tier, "bash")
+  assert.deepEqual(classifyToolCall(call("19", "shell", { command: "./generated-program" })), {
+    tier: "vm",
+    bucket: "generated code execution*",
+  })
+  assert.equal(classifyToolCall({ ...call("20", "exec", "ls"), harness: "claude" }).tier, "bash")
+  assert.equal(classifyToolCall(call("21", "shell", { command: "cat <<'EOF'\nnode is text\nEOF" })).tier, "bash")
+  assert.equal(classifyToolCall(call("22", "shell", { command: "echo $(node -e '1 + 1')" })).tier, "vm")
+  assert.equal(classifyToolCall(call("23", "shell", { command: "time node generated.js" })).tier, "vm")
+  assert.equal(classifyToolCall(call("24", "shell", { command: "env -u DEBUG echo ready" })).tier, "bash")
+  assert.equal(classifyToolCall(call("25", "shell", { command: "sudo echo ready" })).tier, "vm")
+  assert.equal(classifyToolCall(call("26", "shell", { command: "eval 'echo generated'" })).tier, "vm")
+  for (const name of [
+    "TaskUpdate",
+    "Agent",
+    "SendMessage",
+    "StructuredOutput",
+    "TodoWrite",
+    "question",
+    "Skill",
+    "EnterPlanMode",
+  ]) {
+    assert.equal(classifyToolCall(call(name, name, {})).tier, "control")
+  }
 })
 
 test("measures local full-machine demand without estimating environment readiness", () => {
@@ -55,7 +94,17 @@ test("measures local full-machine demand without estimating environment readines
   assert.equal(result.sessions.with_execution_calls, 2)
   assert.equal(result.sessions.requiring_full_machine, 1)
   assert.equal(result.sessions.just_bash_only, 1)
+  assert.equal(result.sessions.unresolved_runtime_only, 0)
   assert.equal(result.sessions.without_execution_calls, 1)
+  assert.deepEqual(result.turns, {
+    total: 2,
+    requiring_full_machine: 1,
+    just_bash_only: 1,
+    unresolved_runtime_only: 0,
+    execution_calls_covered: 6,
+    with_repeated_full_machine_calls: 1,
+    with_resolved_runtime: 2,
+  })
   assert.deepEqual(result.full_machine_demand.calls_per_requiring_session, {
     samples: 1,
     median: 4,
@@ -79,7 +128,27 @@ test("measures local full-machine demand without estimating environment readines
     "60000_ms": { count: 0, percent: 0 },
     "120000_ms": { count: 0, percent: 0 },
   })
+  assert.deepEqual(result.full_machine_demand.calls_after_first_full_machine, {
+    samples: 1,
+    median: 3,
+    p95: 3,
+  })
+  assert.deepEqual(result.full_machine_demand.observed_span_after_first_full_machine, {
+    samples: 1,
+    median_ms: 101000,
+    p95_ms: 101000,
+  })
   assert.equal("environment_readiness" in result, false)
+})
+
+test("keeps unresolved runtime calls out of both headline tiers", () => {
+  const result = analyzeSessions([
+    { id: "unknown", harness: "claude", calls: [call("1", "mystery_tool", {})] },
+    { id: "known", harness: "codex", calls: [call("2", "apply_patch", {})] },
+  ])
+  assert.deepEqual(result.calls, { total: 2, bash: 1, vm: 0, unknown: 1 })
+  assert.equal(result.sessions.unresolved_runtime_only, 1)
+  assert.equal(result.sessions.just_bash_only, 1)
 })
 
 test("excludes invalid and unfinished timestamps from duration and gap samples", () => {
@@ -107,6 +176,14 @@ test("excludes invalid and unfinished timestamps from duration and gap samples",
 
 test("renders the report as terminal tables", () => {
   const analysis = analyzeSessions([])
+  analysis.sources = [
+    {
+      harness: "cursor",
+      status: "partial",
+      stores: 1,
+      note: "Some proprietary records are unavailable.",
+    },
+  ]
   const output = renderTable(analysis)
   assert.match(output, /Median full-machine interval/)
   assert.match(output, /p95 full-machine interval/)
@@ -117,10 +194,22 @@ test("renders the report as terminal tables", () => {
   assert.match(output, /Gaps longer than 120s/)
   assert.match(output, /Environment readiness is not measured/)
   assert.match(output, /Can run in just-bash/)
+  assert.match(output, /Runtime unresolved/)
+  assert.match(output, /Generated code execution is counted as full-machine/)
   assert.doesNotMatch(output, /workerd/i)
   assert.doesNotMatch(output, /CI\/E2E/)
-  assert.match(output, /Partial coverage: Cursor/)
+  assert.match(output, /Partial coverage: cursor/)
+  assert.match(output, /No transcript sessions were found/)
   assert.doesNotMatch(output, /Harness.*Status.*Stores/)
+})
+
+test("derives source caveats and suppresses empty-report sharing", () => {
+  const analysis = analyzeSessions([])
+  const output = renderTable(analysis)
+  assert.doesNotMatch(output, /Partial coverage/)
+  assert.doesNotMatch(output, /100%/)
+  assert.equal(sharePrompt(analysis, "https://stats.example"), null)
+  assert.equal(sharePrompt(analyzeSessions([{ id: "s", harness: "codex", calls: [call("1", "read", {})] }])), null)
 })
 
 test("keeps report lines within wide, compact, and narrow terminals", () => {
@@ -132,17 +221,20 @@ test("keeps report lines within wide, compact, and narrow terminals", () => {
     assert.ok(Math.max(...output.split("\n").map((line) => line.length)) <= columns, `exceeded ${columns} columns`)
     if (columns === 50) {
       const normalized = output.replace(/\s+/g, " ")
-      assert.match(normalized, /100\.00% of observed/)
+      assert.match(normalized, /100\.00% of resolved sessions/)
       assert.match(normalized, /1 turn/)
       assert.doesNotMatch(normalized, /of tier/)
     }
   }
+  const narrow = renderTable(analysis, 20)
+  assert.ok(Math.max(...narrow.split("\n").map((line) => line.length)) <= 20)
+  const longToken = { ...analysis, sources: [{ harness: "x".repeat(80), status: "partial", stores: 1 }] }
   assert.ok(
     Math.max(
-      ...renderTable(analysis, 20)
+      ...renderTable(longToken, 20)
         .split("\n")
         .map((line) => line.length),
-    ) <= 30,
+    ) <= 20,
   )
 })
 
@@ -176,8 +268,11 @@ test("shows live scan progress only in interactive terminals", () => {
   const plain = []
   const nonInteractive = createScanProgress({ isTTY: false, write: (value) => plain.push(value) }, 10)
   nonInteractive.update({ completed: 10, harness: "codex" })
-  nonInteractive.stop()
-  assert.deepEqual(plain, ["Scanning 10 local transcript stores…\n"])
+  nonInteractive.stop(2)
+  assert.deepEqual(plain, [
+    "Scanning 10 local transcript stores…\n",
+    "Scanned 10 transcript stores in 0.0s · 2 read errors\n",
+  ])
 })
 
 test("CLI suppresses Node's SQLite experimental warning", () => {
@@ -187,11 +282,53 @@ test("CLI suppresses Node's SQLite experimental warning", () => {
   assert.doesNotMatch(result.stderr, /ExperimentalWarning/)
 })
 
+test("CLI rejects unknown harnesses and does not share empty reports", () => {
+  const binary = fileURLToPath(new URL("../bin/agent-runtime-stats.js", import.meta.url))
+  const invalid = spawnSync(process.execPath, [binary, "--harness", "codx"], { encoding: "utf8" })
+  assert.equal(invalid.status, 1)
+  assert.match(invalid.stderr, /Unknown harness: codx.*codex/)
+
+  const emptyHome = mkdtempSync(path.join(os.tmpdir(), "agent-runtime-empty-"))
+  const empty = spawnSync(process.execPath, [binary, "--home", emptyHome], {
+    encoding: "utf8",
+    env: { ...process.env, AGENT_RUNTIME_STATS_SHARE_URL: "https://stats.example" },
+  })
+  assert.equal(empty.status, 0)
+  assert.match(empty.stdout, /No transcript sessions were found/)
+  assert.doesNotMatch(empty.stdout, /Share these anonymous aggregate stats/)
+  assert.doesNotMatch(empty.stdout, /100%/)
+})
+
+test("CLI has no default share endpoint", () => {
+  const binary = fileURLToPath(new URL("../bin/agent-runtime-stats.js", import.meta.url))
+  const fixtureHome = mkdtempSync(path.join(os.tmpdir(), "agent-runtime-share-"))
+  const sessions = path.join(fixtureHome, ".codex", "sessions")
+  mkdirSync(sessions, { recursive: true })
+  writeFileSync(
+    path.join(sessions, "fixture.jsonl"),
+    `${JSON.stringify({
+      timestamp: "2026-01-01T00:00:00.000Z",
+      type: "response_item",
+      payload: { type: "function_call", call_id: "c1", name: "apply_patch", arguments: "{}" },
+    })}\n`,
+  )
+  const environment = { ...process.env }
+  delete environment.AGENT_RUNTIME_STATS_SHARE_URL
+  const result = spawnSync(process.execPath, [binary, "--home", fixtureHome], {
+    encoding: "utf8",
+    env: environment,
+  })
+  assert.equal(result.status, 0)
+  assert.doesNotMatch(result.stdout, /workers\.dev|Share these anonymous aggregate stats/)
+})
+
 test("parses cross-platform CLI paths", () => {
   const options = parseArgs(["--harness", "codex,claude", "--path", "codex=fixtures", "--format", "json"], "/workspace")
   assert.deepEqual(options.selected, ["codex", "claude"])
   assert.equal(options.paths.get("codex")[0], path.resolve("/workspace", "fixtures"))
   assert.equal(options.format, "json")
+  assert.throws(() => parseArgs(["--harness", "codx"]), /Unknown harness: codx.*codex/)
+  assert.throws(() => parseArgs(["--path", "codx=fixtures"]), /Unknown harness: codx/)
 })
 
 test("resolves Unix and Windows home environment variables", () => {
@@ -212,16 +349,26 @@ test("share prompt carries only canonical aggregate metrics and becomes clickabl
     "schemaVersion",
     "sessionsAnalyzed",
     "executionCalls",
-    "justBashPercent",
-    "fullVmPercent",
-    "medianTimeBeforeFullMachineMs",
-    "p95TimeBeforeFullMachineMs",
+    "sessionsWithoutFullMachinePercent",
+    "turnsAnalyzed",
+    "turnCoveragePercent",
+    "turnsWithoutFullMachinePercent",
+    "repeatFullMachineTurnPercent",
+    "medianCallsAfterFirstFullMachine",
+    "medianObservedSpanAfterFirstFullMachineMs",
+    "p95ObservedSpanAfterFirstFullMachineMs",
   ])
   assert.equal(payload.sessionsAnalyzed, 1)
   assert.equal(payload.executionCalls, 2)
-  assert.equal(payload.justBashPercent, 100)
-  assert.equal(payload.fullVmPercent, 0)
-  assert.equal(payload.justBashPercent + payload.fullVmPercent, 100)
+  assert.equal(payload.sessionsWithoutFullMachinePercent, 100)
+  assert.equal(payload.turnsAnalyzed, 1)
+  assert.equal(payload.turnCoveragePercent, 100)
+  assert.equal(payload.turnsWithoutFullMachinePercent, 100)
+  assert.equal(payload.repeatFullMachineTurnPercent, null)
+  assert.equal(payload.medianCallsAfterFirstFullMachine, null)
+  assert.equal(payload.medianObservedSpanAfterFirstFullMachineMs, null)
+  assert.equal(payload.p95ObservedSpanAfterFirstFullMachineMs, null)
+  assert.equal(payload.schemaVersion, 2)
   const escape = String.fromCharCode(27)
   const interactive = sharePrompt(analysis, "https://stats.example", true)
   assert.equal(plain.includes(escape), false)
