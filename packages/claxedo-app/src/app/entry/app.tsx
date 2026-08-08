@@ -47,6 +47,7 @@ import { useConfigOptional } from "@/app/providers/config"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { useAuthSession } from "@/platform/auth/auth-session"
 import { PrincipalProvider } from "@/platform/auth/principal-provider"
+import { AccountPortProvider } from "@/platform/account/account-provider"
 import { queryClient } from "@/platform/query/query-client"
 import { installQueryPersister } from "@/platform/query/persister"
 import { installSessionStatusTelemetryDevtools } from "../../features/session/store/session-status-telemetry"
@@ -358,6 +359,9 @@ function AuthenticatedProviders(props: ParentProps) {
 
   return (
     <PrincipalProvider authEnabled={config?.authEnabled === true}>
+      {/* Inside PrincipalProvider so both read one session, and above every
+          account surface so none of them reaches the session directly. */}
+      <AccountPortProvider>
       <TelemetryIdentityRecorder />
       <RemoteAccessMarkerRecorder />
       <CloudAuthGate>
@@ -365,6 +369,7 @@ function AuthenticatedProviders(props: ParentProps) {
           <CloudAutoSwitch>{props.children}</CloudAutoSwitch>
         </Show>
       </CloudAuthGate>
+      </AccountPortProvider>
     </PrincipalProvider>
   )
 }

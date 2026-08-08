@@ -24,6 +24,7 @@ const liveTypeContracts = [
   "platform/runtime/session.ts",
   "platform/runtime/workspace-log.ts",
   "platform/query/project-meta.ts",
+  "platform/account/account-port.ts",
 ]
 
 describe("import graph orphan guard", () => {

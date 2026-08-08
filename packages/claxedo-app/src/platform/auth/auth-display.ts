@@ -1,4 +1,6 @@
 export type AuthDisplayUser = {
+  /** Stable account id. Present on a real user; absent mid-hydration. */
+  id?: string | null
   fullName?: string | null
   username?: string | null
   imageUrl?: string | null

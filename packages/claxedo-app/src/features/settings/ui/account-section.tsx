@@ -1,16 +1,7 @@
 import { type Component, type JSX, Show, createMemo } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { Button } from "@opencode-ai/ui/button"
-import { useAuthSession } from "@/platform/auth/auth-session"
-import { authDisplayEmail, type AuthDisplayUser } from "@/platform/auth/auth-display"
-
-function readMethod(user: AuthDisplayUser | null): string {
-  const provider = user?.externalAccounts?.find((account) => account.provider)?.provider
-  if (!provider) return "Email code"
-  // Clerk provider ids look like "oauth_google" → "Google".
-  const name = provider.replace(/^oauth_/, "").replace(/_/g, " ")
-  return name.charAt(0).toUpperCase() + name.slice(1)
-}
+import { useAccountPort } from "@/platform/account/account-provider"
 
 type AccountSettingsSectionProps = {
   t: (key: string) => string
@@ -33,18 +24,22 @@ const SettingsRow: Component<{
 }
 
 export const AccountSettingsSection: Component<AccountSettingsSectionProps> = (props) => {
-  const auth = useAuthSession()
+  // Reads the account through the port, not the session. On desktop the same
+  // component will be reading state that arrived over IPC from a process this
+  // one cannot borrow a credential from, and nothing here changes.
+  const account = useAccountPort()
   const navigate = useNavigate()
 
   const identity = createMemo(() => {
-    const current = auth.user() as AuthDisplayUser | null
-    const email = authDisplayEmail(current)
-    if (!email && !current) return undefined
-    return { email, name: current?.fullName ?? current?.username ?? undefined, method: readMethod(current) }
+    const state = account.state()
+    if (state.status !== "signed") return undefined
+    const { email, displayName, method } = state.identity
+    if (!email && !displayName) return undefined
+    return { email, name: displayName, method: method ?? "Email code" }
   })
 
   const handleSignOut = async () => {
-    await auth.signOut()
+    await account.signOut()
     navigate("/login", { replace: true })
   }
 

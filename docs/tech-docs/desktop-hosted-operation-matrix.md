@@ -96,6 +96,7 @@ Unit 6 moves the laptop side of this into Host Connector. The rows below are the
 | `hostLink.heartbeat` | `features/onboarding/remote-access-controller.ts` | `POST /api/workspace/:id/user-hosted/heartbeat` | unary | safe | Presence only. |
 | `hostLink.pause` | `features/onboarding/remote-access-controller.ts` | `POST /api/workspace/:id/user-hosted/pause` | unary | safe | Idempotent by design; pausing twice is pausing. |
 | `hostLink.secondDeviceOpen` | `features/onboarding/remote-access-marker.tsx` | `POST /api/claxedo/remote-access/workspaces/:workspaceId/second-device-open` | unary | safe | |
+| `host.enrollCurrentMachine` | `platform/account/account-port.ts` | `POST /api/claxedo/host/enrollments` | unary | idempotency-key | Unit 6's replacement for `hostLink.register`: enrolls the MACHINE once, with no workspace in the path. Enrolling twice from the same machine must return the existing enrollment rather than a second one, so the key is the machine identity. The renderer names the operation and receives an enrollment record; the credential and the machine key stay in Electron main. |
 
 ### Sessions
 

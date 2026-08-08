@@ -32,6 +32,10 @@ const typeContractCandidates = new Set([
   "platform/runtime/capabilities.ts",
   "platform/runtime/session.ts",
   "platform/runtime/workspace-log.ts",
+  // The account port: the tokenless account contract. The provider and the
+  // browser binding both import it type-only, which is the whole shape — the
+  // port declares what may be asked for, and implementations supply it.
+  "platform/account/account-port.ts",
   "platform/query/project-meta.ts",
 ])
 const configAliasTargets = new Map([
