@@ -22,7 +22,7 @@ import {
   workspaceAgentExtensionRecords,
 } from "../../hosts/agent-extensions/workspace"
 import { workspaceSupervisor } from "../../workspace/supervisor-port"
-import { errorBody } from "../../platform/http/http"
+import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { localAgentConfigAllowed } from "../local-auth"
 import {
   agentExtensionPolicyOverrides,

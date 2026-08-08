@@ -1,11 +1,11 @@
 import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
 import { Hono, type Context } from "hono"
-import { isLoopbackLocalRequest } from "../../platform/http/peer-address"
-import { errorBody } from "../../platform/http/http"
+import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
+import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { createConvexAuthority } from "../../authority/adapters/convex/workspace-authority"
 import { ControlPlaneRequestTimeoutError } from "../../platform/runtime/timeout"
 import type { WorkspaceAuthority } from "../../authority/services"
-import { timingSafeEqualStrings } from "../../platform/auth/web-crypto"
+import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
 
 
 function authorized(request: Request, expected: string | undefined) {

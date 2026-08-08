@@ -13,9 +13,9 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../../platform/auth/auth"
+} from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
-import { requireAuthority } from "../../platform/auth/authority"
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {
   createPolicy,
   deletePolicy,
@@ -26,7 +26,7 @@ import {
   isTargetAllowed,
 } from "./policy"
 import { DEFAULT_ALLOWLIST } from "../network/types"
-import { errorBody } from "../../platform/http/http"
+import { errorBody } from "@claxedo/server-core/platform/http/http"
 
 const createBody = z.object({
   workspace_id: z.string().optional(),

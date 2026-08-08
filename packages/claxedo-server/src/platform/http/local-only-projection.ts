@@ -7,7 +7,7 @@ import {
   controlPlaneAuthErrorBody,
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
-} from "../auth/auth"
+} from "@claxedo/server-core/platform/auth/auth"
 
 type Options = {
   authConfig?: ControlPlaneAuthConfig
@@ -27,7 +27,7 @@ function localOnlyBody(label: string) {
 
 import {
   isLoopbackLocalRequest,
-} from "./peer-address"
+} from "@claxedo/server-core/platform/http/peer-address"
 
 
 export async function localOnlyProjectionResponse(request: Request, options: Options) {

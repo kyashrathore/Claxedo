@@ -22,7 +22,7 @@
  */
 import { afterAll, beforeEach, describe, expect, test } from "vitest"
 import { HostedShellRoutes } from "./shell"
-import type { ControlPlaneAuthConfig, SignedControlPlaneAuth } from "../../platform/auth/auth"
+import type { ControlPlaneAuthConfig, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 
 // An unverifiable bearer falls back to `verifyCliAccessBearer`, which reads
 // these from process.env. Clear them so "invalid token" is deterministic here

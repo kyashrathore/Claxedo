@@ -6,7 +6,7 @@ import {
   resolveWorkspaceRuntimeHitForWorkspaceId,
   type RuntimeProxyOptions,
 } from "../../workspace/runtime-dispatch/internals"
-import { isLoopbackLocalRequest } from "../../platform/http/peer-address"
+import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { resolveWorkspace, type Workspace } from "../../workspace/store"
 
 type UpgradeWebSocket = ReturnType<typeof createNodeWebSocket>["upgradeWebSocket"]

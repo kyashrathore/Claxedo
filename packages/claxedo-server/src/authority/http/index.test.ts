@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { ControlPlaneAuthError, localOnlyAuthAdapter, type ClerkVerifier } from "../../platform/auth/auth"
+import { ControlPlaneAuthError, localOnlyAuthAdapter, type ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../services"
 
 const mocks = vi.hoisted(() => ({

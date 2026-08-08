@@ -8,9 +8,9 @@ import {
 } from "../provider-auth/service"
 import { controlPlaneRouteAuth, type ControlPlaneRouteAuthOptions } from "../../platform/http/control-plane-route-auth"
 import { requestOrg } from "./credential"
-import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "../../platform/auth/auth"
+import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import { SINGLE_TENANT_ORG } from "../provider-credential.sql"
-import { errorBody } from "../../platform/http/http"
+import { errorBody } from "@claxedo/server-core/platform/http/http"
 
 const authorizeBody = z.object({
   method: z.number().optional(),

@@ -3,7 +3,7 @@ import { type SessionEnvFactory } from "@claxedo/agent-sdk-runtime"
 import { runtimeEventsHandler } from "@claxedo/workspace-runtime/routes"
 import { createCentralSessionRuntime } from "./session/runtime"
 import { ControlPlaneSessionRoutes } from "./session/routes/control-plane-session"
-import { isLoopbackLocalRequest } from "./platform/http/peer-address"
+import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,
@@ -13,16 +13,16 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthAdapter,
   type ControlPlaneAuthConfig,
-} from "./platform/auth/auth"
+} from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "./authority/services"
-import { requireAuthority } from "./platform/auth/authority"
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ConnectionTurnCredentials } from "./connections/turn-credentials"
 import type { WorkspaceSessionAdmission } from "./hosts/workspace-runtime/session-env"
 import type { UsageLedger } from "./platform/telemetry/product/metering"
 import type { ProductDeploymentMode } from "./platform/telemetry/product/product"
 
 export { createCentralSessionRuntime } from "./session/runtime"
-export { ControlPlaneAuthError, localOnlyAuthAdapter, type ControlPlaneAuthAdapter } from "./platform/auth/auth"
+export { ControlPlaneAuthError, localOnlyAuthAdapter, type ControlPlaneAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 export { createControlPlaneServices } from "./authority/services"
 export type { ControlPlaneServices } from "./authority/services"
 

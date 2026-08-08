@@ -401,7 +401,7 @@ export const HARNESS_POST_SUCCESS = { status: 200, body: { ok: true } } as const
 
 /**
  * `errorBody(code, message)` produces `{ error: { code, message } }`
- * (`claxedo-server/src/platform/http/http.ts:3-11`). The two failure codes this route can
+ * (`claxedo-server-core/src/platform/http/http.ts:3-11`). The two failure codes this route can
  * produce:
  */
 export const HARNESS_POST_MISSING_HARNESS = {

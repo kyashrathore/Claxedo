@@ -1,7 +1,7 @@
 import type {
   ClerkVerifier,
   ControlPlaneAuthConfig,
-} from "../platform/auth/auth"
+} from "@claxedo/server-core/platform/auth/auth"
 import { localOnlyProjectionResponse } from "../platform/http/local-only-projection"
 
 export async function localAgentConfigAllowed(input: {

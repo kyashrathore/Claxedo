@@ -15,7 +15,7 @@ import path from "node:path"
 import { Hono } from "hono"
 import { z } from "zod"
 import { localOnlyProjection } from "../../platform/http/local-only-projection"
-import { errorBody } from "../../platform/http/http"
+import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { deriveRemote, parseRemotes, type DerivedRemote } from "../git-remote-derivation"
 
 const query = z.object({

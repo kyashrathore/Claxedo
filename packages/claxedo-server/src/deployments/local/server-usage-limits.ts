@@ -18,7 +18,7 @@
 import os from "node:os"
 import type { Hono as HonoType } from "hono"
 import { localOnlyProjection } from "../../platform/http/local-only-projection"
-import { errorBody } from "../../platform/http/http"
+import { errorBody } from "@claxedo/server-core/platform/http/http"
 
 type UsageLimitsRouteOptions = Omit<Parameters<typeof localOnlyProjection>[0], "label">
 

@@ -48,8 +48,8 @@ import {
   workspaceAgentExtensionRecords,
   type WorkspaceAgentExtensionRecord,
 } from "../hosts/agent-extensions/workspace"
-import { ControlPlaneAuthError } from "../platform/auth/auth"
-import type { WorkspaceAuthority } from "../platform/auth/authority"
+import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
+import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createSqliteWorkspaceAuthority } from "../authority/adapters/sqlite/workspace-authority"
 
 const log = Log.create({ service: "agent-config" })

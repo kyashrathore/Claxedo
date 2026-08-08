@@ -19,8 +19,8 @@
 
 import type { Context } from "hono"
 import { resolveWorkspace } from "../store"
-import { isLoopbackLocalRequest } from "../../platform/http/peer-address"
-import { errorBody } from "../../platform/http/http"
+import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
+import { errorBody } from "@claxedo/server-core/platform/http/http"
 import {
   embedded,
   ensureCloudRuntime,

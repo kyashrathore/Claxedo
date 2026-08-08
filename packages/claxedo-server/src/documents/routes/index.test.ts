@@ -7,8 +7,8 @@ import { randomUUID } from "node:crypto"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { Hono } from "hono"
-import { localOnlyAuthAdapter, type ClerkVerifier, type ControlPlaneAuthConfig } from "../../platform/auth/auth"
-import type { ProjectAction, WorkspaceAuthority } from "../../platform/auth/authority"
+import { localOnlyAuthAdapter, type ClerkVerifier, type ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
+import type { ProjectAction, WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from "../backends/local/managed"
 import {
   createLocalRepositoryFileAuthority,
@@ -36,7 +36,7 @@ import type { DocumentIndexEntry } from "../index-store"
 import { setDocumentChangedSink, subscribeDocumentEvents } from "../backend"
 import { ClaxedoDB } from "../../platform/db/db"
 import { DocumentsRoutes, type DocumentsRouteBackend } from "./index"
-import { peerAddressStamp } from "../../platform/http/peer-address"
+import { peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
 import {
   disposeHydratedSessionDocuments,
   hydrateSessionDocument,

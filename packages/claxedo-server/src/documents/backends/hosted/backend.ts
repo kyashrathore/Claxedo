@@ -6,7 +6,7 @@ import {
   type R2BucketBinding,
 } from "./managed"
 import { mintDocumentSessionToken, verifyDocumentSessionToken } from "../../../platform/auth/runtime-access-token"
-import type { SignedControlPlaneAuth } from "../../../platform/auth/auth"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { DocumentIndexEntry } from "../../index-store"
 
 export function createHostedDocumentsBackend(

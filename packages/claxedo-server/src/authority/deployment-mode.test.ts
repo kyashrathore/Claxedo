@@ -9,7 +9,7 @@ import {
   hostedBootRequirementFailures,
   unsignedLocalRequestGuard,
 } from "./deployment-mode"
-import type { ControlPlaneAuthConfig } from "../platform/auth/auth"
+import type { ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 
 /**
  * Deployment mode and the global unsigned-local gate.

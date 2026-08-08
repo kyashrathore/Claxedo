@@ -1,9 +1,9 @@
 import { Hono } from "hono"
 import { serve } from "@hono/node-server"
 import { describe, expect, test } from "vitest"
-import type { ClerkVerifier, ControlPlaneAuthConfig } from "../auth/auth"
+import type { ClerkVerifier, ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import { localOnlyProjection } from "./local-only-projection"
-import { isLoopbackLocalRequest, peerAddressStamp, requestPeerAddress, stampRequestPeerAddress } from "./peer-address"
+import { isLoopbackLocalRequest, peerAddressStamp, requestPeerAddress, stampRequestPeerAddress } from "@claxedo/server-core/platform/http/peer-address"
 
 const signed = {
   enabled: true,

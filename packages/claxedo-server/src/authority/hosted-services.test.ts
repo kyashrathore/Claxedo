@@ -6,7 +6,7 @@ import {
   sandboxRelayTargetLookup,
 } from "./hosted-services"
 import { composeWorkerSandboxManager } from "./adapters/worker/hosted-compose"
-import { localOnlyAuthAdapter } from "../platform/auth/auth"
+import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { pullHostedControlSession, pullHostedControlSessionMessages } from "./hosted-session-pull"
 import type { ControlPlaneServices } from "./services"
 import type {

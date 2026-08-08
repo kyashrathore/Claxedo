@@ -37,7 +37,7 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "authority",
-    module: "platform/auth/authority.ts",
+    module: "../../claxedo-server-core/src/platform/auth/authority.ts",
     status: OwnershipStatus.Canonical,
     owner: "control-plane authority port",
     tests: [

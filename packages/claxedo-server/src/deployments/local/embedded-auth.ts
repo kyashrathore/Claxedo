@@ -6,7 +6,7 @@ import { betterAuth, type BetterAuthOptions } from "better-auth"
 import { bearer } from "better-auth/plugins"
 import { getMigrations } from "better-auth/db/migration"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
-import type { BetterAuthVerifier } from "../../platform/auth/auth"
+import type { BetterAuthVerifier } from "@claxedo/server-core/platform/auth/auth"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "./port"
 
 /**

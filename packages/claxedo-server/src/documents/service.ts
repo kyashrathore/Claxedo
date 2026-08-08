@@ -1,4 +1,4 @@
-import type { SignedControlPlaneAuth } from "../platform/auth/auth"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import {
   DocumentAgentOpenError,
   publishDocumentEvent,

@@ -1,5 +1,5 @@
-import type { ClaxedoRegion } from "../../platform/runtime/region"
-import { regionValue } from "../../platform/runtime/region"
+import type { ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
+import { regionValue } from "@claxedo/server-core/platform/runtime/region/index"
 import {
   clampTtlSeconds,
   HOST_TUNNEL_TOKEN_TTL_BOUNDS_SECONDS,

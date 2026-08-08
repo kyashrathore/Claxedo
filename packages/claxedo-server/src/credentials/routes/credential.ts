@@ -11,8 +11,8 @@ import {
   defaultControlPlaneCredentials,
   type ControlPlaneCredentials,
 } from "../../authority/services"
-import { errorBody } from "../../platform/http/http"
-import { timingSafeEqualStrings } from "../../platform/auth/web-crypto"
+import { errorBody } from "@claxedo/server-core/platform/http/http"
+import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
 import { CredentialVerificationError, verifyCredential } from "../operations/verify"
 import { CredentialDiscoveryError } from "../operations/discovery"
 import {
@@ -22,7 +22,7 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type ControlPlaneAuthContext,
-} from "../../platform/auth/auth"
+} from "@claxedo/server-core/platform/auth/auth"
 import { SINGLE_TENANT_ORG } from "../provider-credential.sql"
 
 const putBody = z.object({

@@ -10,7 +10,7 @@ import {
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import { loadUserConfig, sandboxDriverConfig } from "../../agent-config"
 import { type ControlPlaneServices } from "../../authority/services"
-import { requireAuthority } from "../../platform/auth/authority"
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { workspaceBacking } from "../../workspace/store/backing"
 import { ensureHostForRepo } from "../../sandbox/network/policy"
 import {
@@ -24,7 +24,7 @@ import {
 } from "../../workspace/store"
 import { discardSupervisorSandbox, getSupervisorSandboxStatus } from "../../workspace/supervisor"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import { ControlPlaneAuthError, bearerToken, controlPlaneAuthErrorBody } from "../../platform/auth/auth"
+import { ControlPlaneAuthError, bearerToken, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
 import { apiError, captureWorkspaceTelemetry, parsedBody, rec, signedOrError, type WorkspaceRouteOptions } from "../route-support"

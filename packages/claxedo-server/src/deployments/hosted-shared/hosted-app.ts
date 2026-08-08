@@ -32,7 +32,7 @@
 
 import { Hono, type Context } from "hono"
 import { cors } from "hono/cors"
-import { allowedOriginPatterns } from "../../platform/http/cors-origins"
+import { allowedOriginPatterns } from "@claxedo/server-core/platform/http/cors-origins"
 import { securityHeaders } from "../../platform/http/security-headers"
 import { JwksRoutes } from "../../authority/routes/jwks"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../shared-routes/internal-relay"
@@ -46,7 +46,7 @@ import { HostedSandboxAdminRoutes } from "../../routes/hosted/sandbox-admin"
 import { HostedWorkGraphAdminRoutes, type WorkGraphReconcileResult } from "../../routes/hosted/workgraph-admin"
 import { HostedControlRoutes } from "../../routes/hosted/control"
 import { HostedWorkerCompositionError, type HostedControlPlane } from "../../authority/hosted-services"
-import { configureCliSessionTokenRegistry } from "../../platform/auth/cli-session-registry"
+import { configureCliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
 import type { ControlPlaneServices } from "../../authority/services"
 import {
   createFixedWindowConnectionRateLimiter,
@@ -56,7 +56,7 @@ import {
 import { defaultRequestGuard, hostedRouteGuardExemptions } from "../../platform/auth/request-guard"
 import { BILLING_WEBHOOK_GUARD_EXEMPTION, BillingRoutes } from "../../billing/routes"
 import { createEntitlementGate, type EntitlementGate } from "../../billing/entitlement"
-import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPlaneAuth } from "../../platform/auth/auth"
+import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { deploymentCompatibilityReport } from "../../platform/governance/deployment-compatibility"
 import {
   DEPLOYMENT_MODE_ENV,

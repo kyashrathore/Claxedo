@@ -1,4 +1,4 @@
-import { ClaxedoError } from "../../errors/base"
+import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"

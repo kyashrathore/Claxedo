@@ -10,7 +10,7 @@
  * which the control plane always fills in from a VERIFIED auth context.
  */
 
-import type { CliSessionTokenAuthority } from "../../../platform/auth/cli-session-registry"
+import type { CliSessionTokenAuthority } from "@claxedo/server-core/platform/auth/cli-session-registry"
 import { convexApi } from "./workspace-authority/api"
 import { requireExecutor, requireServiceToken } from "./workspace-authority/executor"
 import type { ConvexAuthorityInput } from "./workspace-authority/types"

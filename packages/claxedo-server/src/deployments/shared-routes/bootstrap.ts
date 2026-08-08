@@ -20,9 +20,9 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../../platform/auth/auth"
-import { requireAuthority } from "../../platform/auth/authority"
-import { isLoopbackLocalRequest } from "../../platform/http/peer-address"
+} from "@claxedo/server-core/platform/auth/auth"
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 
 type Options = {
   authConfig?: ControlPlaneAuthConfig

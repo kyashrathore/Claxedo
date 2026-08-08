@@ -1,6 +1,6 @@
 import { ConvexHttpClient } from "convex/browser"
 import { z } from "zod"
-import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../../../platform/auth/auth"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { controlPlaneTimeoutMs, withTimeout } from "../timeout"
 import { withConvexRetry, type ConvexRetryOptions } from "../retry"
 import type { ConvexExecutor, OrgId, ProjectRole, ProjectRoleResult } from "./types"

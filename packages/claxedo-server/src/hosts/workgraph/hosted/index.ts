@@ -17,7 +17,7 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../../../platform/auth/auth"
+} from "@claxedo/server-core/platform/auth/auth"
 import {
   HostedWorkerCompositionError,
   clean,
@@ -39,9 +39,9 @@ import type { ControlPlaneCredentials } from "../../../authority/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { createConvexWorkGraphOwnerDeletionPort } from "../convex/owner-deletion"
 import { createHostedOwnerDeletionExecution } from "./owner-deletion-execution"
-import type { WorkspaceAuthority } from "../../../platform/auth/authority"
+import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { RelayProvider } from "../../../adapters/relay"
-import type { ClaxedoRegion } from "../../../platform/runtime/region"
+import type { ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import { createHostedExecutionCapabilities } from "./execution-capabilities"
 import { anyApi, type FunctionReference } from "convex/server"
 import { workGraphConvexApi } from "../convex/api"

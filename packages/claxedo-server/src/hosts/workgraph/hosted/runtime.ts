@@ -1,6 +1,6 @@
 import { ConvexHttpClient } from "convex/browser"
 import { anyApi, type FunctionReference } from "convex/server"
-import { defaultHomeRegion } from "../../../platform/runtime/region"
+import { defaultHomeRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { ControlPlaneServices } from "../../../authority/services"
 import {
   AdmissionAgentPlanSchema,

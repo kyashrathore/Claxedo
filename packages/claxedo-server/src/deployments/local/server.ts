@@ -19,7 +19,7 @@ import { reportError } from "../../platform/telemetry/errors/report"
 import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "../../platform/http/security-headers"
 import { configureAgentConfig, defaultHarness, loadUserConfig } from "../../agent-config"
 import { eventsHandler } from "../../platform/http/events"
-import { peerAddressStamp } from "../../platform/http/peer-address"
+import { peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
 import { createConnectionsHost } from "../../connections"
 import { createConnectionTurnCredentials } from "../../connections/turn-credentials"
 import { mirrorProcessEvents } from "../../platform/runtime/lib/process-events"
@@ -74,7 +74,7 @@ import {
   controlPlaneAuthContext,
   ControlPlaneAuthError,
   signedCloudAuthRequested,
-} from "../../platform/auth/auth"
+} from "@claxedo/server-core/platform/auth/auth"
 import {
   assertHostedBootRequirements,
   deploymentMode,
@@ -101,7 +101,7 @@ import {
   resolveWorkspace,
   subscribeLocalWorkspaceChanges,
 } from "../../workspace/store"
-import { defaultHomeRegion, relayEndpointsFromEnv } from "../../platform/runtime/region"
+import { defaultHomeRegion, relayEndpointsFromEnv } from "@claxedo/server-core/platform/runtime/region/index"
 import { createControlPlaneChannels, mountControlPlaneChannels } from "../../channels/control-plane"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "./server-workspace-pty-proxy"
 import {

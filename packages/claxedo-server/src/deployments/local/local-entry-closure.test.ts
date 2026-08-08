@@ -14,8 +14,8 @@ const LOCAL_ENTRY = path.join(ROOT, "src/deployments/local/main.ts")
  * hosted surface to the unsigned desktop and must be justified; a change that
  * lowers them is progress and should lower the ceiling with it.
  */
-const CURRENT_MODULE_CEILING = 249
-const CURRENT_PACKAGE_CEILING = 42
+const CURRENT_MODULE_CEILING = 238
+const CURRENT_PACKAGE_CEILING = 41
 
 /**
  * The producers a local-only composition mounts: one per `local-server`-owned
@@ -153,7 +153,7 @@ describe("desktop-local entry closure", () => {
       }
     }
 
-    expect(reached.size).toBeLessThanOrEqual(105)
+    expect(reached.size).toBeLessThanOrEqual(95)
     expect([...reached].filter((module) => /^src\/(connections|channels|documents|authority\/adapters\/convex|sandbox\/stores|sandbox\/routes|hosts\/workgraph)\//.test(module)))
       .toEqual([])
   })

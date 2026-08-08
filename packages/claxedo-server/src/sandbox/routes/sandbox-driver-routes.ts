@@ -10,7 +10,7 @@ import {
   controlPlaneAuthConfig,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
-} from "../../platform/auth/auth"
+} from "@claxedo/server-core/platform/auth/auth"
 import {
   isSandboxDriverID,
   listSandboxDrivers as listSandboxDriverCatalog,
@@ -24,7 +24,7 @@ import {
   saveUserConfig,
   setSandboxDriverConfig,
 } from "../../agent-config"
-import { isLoopbackLocalRequest } from "../../platform/http/peer-address"
+import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { apiError, type WorkspaceRouteOptions } from "../../workspace/route-support"
 import { sandboxDriverVerifiable, verifySandboxDriverAuth } from "../../credentials/operations/sandbox-verify"
 import { CredentialVerificationError } from "../../credentials/verification-error"

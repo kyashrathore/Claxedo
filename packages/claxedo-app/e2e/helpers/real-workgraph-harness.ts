@@ -27,7 +27,7 @@ import {
   type WorkGraphContext,
   type WorkSourceRevisionRef,
 } from "@claxedo/workgraph/contracts"
-import type { WorkspaceAuthority } from "../../../claxedo-server/src/platform/auth/authority"
+import type { WorkspaceAuthority } from "../../../claxedo-server-core/src/platform/auth/authority"
 import {
   createLocalEmbeddedWorkGraph,
   type LocalEmbeddedWorkGraph,

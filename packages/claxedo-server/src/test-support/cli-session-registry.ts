@@ -31,7 +31,7 @@ import {
   rotate,
 } from "../../../../convex/cliSessionTokens"
 import { cliSessionTokenAuthority } from "../authority/adapters/convex/cli-session-tokens"
-import { authorityCliSessionTokenRegistry } from "../platform/auth/cli-session-registry"
+import { authorityCliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
 
 type Row = Record<string, any> & { _id: string }
 

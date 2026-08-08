@@ -1,11 +1,11 @@
 import { Hono } from "hono"
-import type { ClerkVerifier, ControlPlaneAuthConfig, SignedControlPlaneAuth } from "../../platform/auth/auth"
+import type { ClerkVerifier, ControlPlaneAuthConfig, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import {
   pullHostedControlSession as pullControlSession,
   pullHostedControlSessionMessages as pullControlSessionMessages,
 } from "../../authority/hosted-session-pull"
 import type { ControlPlaneServices } from "../../authority/services"
-import { requireAuthority } from "../../platform/auth/authority"
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {
   cachedIdempotency,
   idempotencyCacheKey,

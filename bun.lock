@@ -364,7 +364,10 @@
       "name": "@claxedo/server-core",
       "version": "0.1.0",
       "dependencies": {
+        "@claxedo/workspace-relay-protocol": "workspace:0.7.0",
         "@claxedo/workspace-runtime": "workspace:*",
+        "hono": "4.10.7",
+        "jose": "6.2.4",
       },
       "devDependencies": {
         "@tsconfig/node-lts": "22.0.4",

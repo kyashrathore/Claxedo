@@ -10,7 +10,7 @@ import type {
 import { createVirtualSessionEnv } from "@claxedo/agent-sdk-runtime"
 import type { SandboxFetchOptions } from "../../workspace/http/sandbox-target-fetch"
 import { sandboxFetch } from "../../workspace/http/sandbox-target-fetch"
-import { normalizeClaxedoRegion } from "../../platform/runtime/region"
+import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import { resolveWorkspace } from "../../workspace/store"
 import type { Workspace } from "../../workspace/store"
 import { CONNECTION_TURN_HEADER, type ConnectionTurnCredentials } from "../../connections/turn-credentials"

@@ -5,7 +5,7 @@ import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 import { Hono } from "hono"
-import { localOnlyAuthAdapter, type ClerkVerifier } from "../../platform/auth/auth"
+import { localOnlyAuthAdapter, type ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
 
 const root = path.join(realpathSync(os.tmpdir()), `network-policy-routes-${randomUUID().slice(0, 8)}`)

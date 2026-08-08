@@ -15,7 +15,7 @@ import { HostedDeviceAuthRoutes, type HostedDeviceAuthProvider } from "../../rou
 import {
   configureCliSessionTokenRegistry,
   type CliSessionTokenRegistry,
-} from "../../platform/auth/cli-session-registry"
+} from "@claxedo/server-core/platform/auth/cli-session-registry"
 import { durableCliSessionTokenRegistry } from "../../test-support/cli-session-registry"
 import { LiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
 import { mintRuntimeAccessToken } from "@claxedo/workspace-relay"

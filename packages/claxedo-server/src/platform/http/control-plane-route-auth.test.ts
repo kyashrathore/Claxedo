@@ -20,7 +20,7 @@ process.env.CLAXEDO_DATA_DIR = root
 process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 
 const { ProviderAuthRoutes } = await import("../../credentials/routes/provider-auth")
-type ControlPlaneAuthConfig = import("../auth/auth").ControlPlaneAuthConfig
+type ControlPlaneAuthConfig = import("@claxedo/server-core/platform/auth/auth").ControlPlaneAuthConfig
 
 afterAll(async () => {
   process.env.CLAXEDO_DATA_DIR = prev.CLAXEDO_DATA_DIR

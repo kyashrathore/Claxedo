@@ -25,8 +25,8 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../platform/auth/auth"
-import { isLoopbackLocalRequest, stampRequestPeerAddress } from "../platform/http/peer-address"
+} from "@claxedo/server-core/platform/auth/auth"
+import { isLoopbackLocalRequest, stampRequestPeerAddress } from "@claxedo/server-core/platform/http/peer-address"
 import type { ControlPlaneCredentials } from "../authority/services"
 import { githubIntegrationForEnv } from "./github-oauth"
 import { createConnectionStoreAdapter, createCredentialStoreAdapter } from "./store-adapter"

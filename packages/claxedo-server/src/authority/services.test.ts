@@ -5,7 +5,7 @@ import type { SessionMeta } from "../session/meta"
 import type { SessionWriteMode } from "../platform/runtime/profile"
 import { createDurableSessionLog } from "../platform/auth/durable-session-log"
 import { createProjectionStore } from "./projection-store"
-import { ControlPlaneAuthError, controlPlaneAuthContext, customVerifierAuthAdapter, localOnlyAuthAdapter } from "../platform/auth/auth"
+import { ControlPlaneAuthError, controlPlaneAuthContext, customVerifierAuthAdapter, localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import {
   ControlPlaneCompositionError,
   createControlPlaneServices,

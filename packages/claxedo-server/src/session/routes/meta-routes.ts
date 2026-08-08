@@ -9,9 +9,9 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../../platform/auth/auth"
+} from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
-import { requireAuthority } from "../../platform/auth/authority"
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { parseSessionMeta, putSessionMeta, sessionMeta, type SessionMeta } from "../meta"
 import { resolveWorkspace } from "../../workspace/store"
 

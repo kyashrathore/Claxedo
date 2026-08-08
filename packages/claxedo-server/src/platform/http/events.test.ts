@@ -6,7 +6,7 @@ import {
   ControlPlaneAuthError,
   type ControlPlaneAuthConfig,
   type ControlPlaneAuthContext,
-} from "../auth/auth"
+} from "@claxedo/server-core/platform/auth/auth"
 import { claxedoBus, createBus, type ClaxedoEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 
 // /api/claxedo/events must reject unauthenticated requests when

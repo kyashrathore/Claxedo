@@ -12,7 +12,7 @@ import {
 } from "@claxedo/agent-extensions"
 import { loadAgentExtensionsCatalog } from "./extensions/catalog"
 import type { ControlPlaneServices } from "../authority/services"
-import { requireAuthority } from "../platform/auth/authority"
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,
@@ -20,7 +20,7 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../platform/auth/auth"
+} from "@claxedo/server-core/platform/auth/auth"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import {
   AgentExtensionConflictError,
@@ -40,7 +40,7 @@ import {
 } from "../hosts/agent-extensions/runtime-config"
 import { workspaceSupervisor } from "../workspace/supervisor-port"
 import { syncEmbeddedWorkspaceRuntimeAgentExtensions } from "../deployments/local/embedded-workspace-runtime"
-import { errorBody } from "../platform/http/http"
+import { errorBody } from "@claxedo/server-core/platform/http/http"
 
 type WorkspaceExtensionScope = {
   id: ""

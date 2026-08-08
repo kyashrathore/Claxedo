@@ -3,7 +3,7 @@ import path from "path"
 import Database from "better-sqlite3"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { lazy } from "@claxedo/server-core/platform/runtime/lib/lazy"
-import { randomToken } from "../../../platform/auth/web-crypto"
+import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
 
 // Claxedo's LOCAL workspace-authority storage: the SQLite tables and the
 // user/org/project/role model behind `createSqliteWorkspaceAuthority`. The

@@ -1,4 +1,4 @@
-import type { SignedControlPlaneAuth } from "../../../../platform/auth/auth"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 
 // The neutral authority contract is owned by the control-plane port; the Convex
 // adapter re-exports the shared identity types so its return shape stays
@@ -13,7 +13,7 @@ export type {
   ProjectRoleArgs,
   ProjectRoleResult,
   WorkspaceId,
-} from "../../../../platform/auth/authority"
+} from "@claxedo/server-core/platform/auth/authority"
 
 export type ConvexExecutor = {
   query: (fn: unknown, args: Record<string, unknown>) => Promise<unknown>

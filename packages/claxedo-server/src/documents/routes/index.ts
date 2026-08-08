@@ -7,20 +7,20 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../../platform/auth/auth"
+} from "@claxedo/server-core/platform/auth/auth"
 import {
   requireAuthority,
   type ProjectAction,
   type ProjectId,
   type WorkspaceAuthority,
-} from "../../platform/auth/authority"
+} from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "../../authority/services"
 import { DocumentAgentOpenError, type DocumentChangedSink, type DocumentsBackend } from "../backend"
 import type { DocumentIndexEntry } from "../index-store"
 import { DocumentVersionConflictError, DocumentWorkspaceError } from "../errors"
 import type { DocumentHandle, DocumentVersion, SnapshotID } from "../port"
 import { createDocumentsService, DocumentsServiceError, type DocumentsServiceScope } from "../../documents/service"
-import { isLoopbackLocalRequest } from "../../platform/http/peer-address"
+import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 
 export { DocumentAgentOpenError } from "../backend"
 export type { DocumentsBackend as DocumentsRouteBackend } from "../backend"

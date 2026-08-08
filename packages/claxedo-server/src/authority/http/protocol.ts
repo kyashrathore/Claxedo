@@ -7,7 +7,7 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type ControlPlaneAuthContext,
-} from "../../platform/auth/auth"
+} from "@claxedo/server-core/platform/auth/auth"
 import type { Workspace } from "../../workspace/store"
 import { verifyWorkspaceRuntimeControlToken } from "../../workspace/supervisor"
 import {

@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 import { exportJWK, importSPKI, type JWK } from "jose"
-import { sha256Hex16 } from "../../platform/auth/web-crypto"
+import { sha256Hex16 } from "@claxedo/server-core/platform/auth/web-crypto"
 import {
   RUNTIME_ACCESS_TOKEN_ALGORITHM,
   RuntimeAccessTokenConfigurationError,

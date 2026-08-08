@@ -1,5 +1,5 @@
 import { Hono, type Context } from "hono"
-import { timingSafeEqualStrings } from "../../../platform/auth/web-crypto"
+import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
 import { withDocumentOperation, type DocumentsBackend } from "../../backend"
 import type { DocumentIndexEntry } from "../../index-store"
 import type { DocumentVersion } from "../../port"

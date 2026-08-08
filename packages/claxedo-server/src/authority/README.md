@@ -2,10 +2,10 @@
 
 The Control Plane is `claxedo-server`'s authority layer. It owns:
 
-- `../platform/auth/auth.ts` — Clerk JWT verification through
+- `@claxedo/server-core/platform/auth/auth` — Clerk JWT verification through
   `@claxedo/workspace-relay-protocol/createClerkTokenVerifier`,
   `controlPlaneAuthContext()`, `tokenVerifierAsClerk()` adapter (P-shared.2)
-- `../platform/auth/authority.ts` — the neutral `WorkspaceAuthority` port (typed capability for
+- `@claxedo/server-core/platform/auth/authority` — the neutral `WorkspaceAuthority` port (typed capability for
   workspace, project, session, and org operations) plus `requireAuthority()`
 - `adapters/convex/*` — Claxedo's Convex-backed implementation of the authority
   port; the only control-plane files permitted to name the storage backend

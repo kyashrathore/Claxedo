@@ -12,7 +12,7 @@
 import { describe, expect, test, vi } from "vitest"
 import { buildAssistantMessage, messageUpdated } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { ControlPlaneServices } from "../../../authority/services"
-import { localOnlyAuthAdapter } from "../../auth/auth"
+import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { createCentralSessionRuntime } from "../../../session/runtime"
 import { createConnectionTurnCredentials } from "../../../connections/turn-credentials"
 import {

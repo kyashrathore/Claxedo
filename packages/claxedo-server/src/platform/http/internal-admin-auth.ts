@@ -1,4 +1,4 @@
-import { timingSafeEqualStrings } from "../auth/web-crypto"
+import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
 
 export function internalAdminAuthorized(request: Request, expected: string | undefined) {
   const header = request.headers.get("authorization")

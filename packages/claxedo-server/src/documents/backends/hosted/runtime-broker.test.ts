@@ -9,7 +9,7 @@ import {
   forgetRuntimeDocuments,
   relayWorkspaceRuntimeExposure,
 } from "../../../../../workspace-runtime/src/index"
-import type { SignedControlPlaneAuth } from "../../../platform/auth/auth"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../../authority/services"
 import { createHostedDocumentRuntimeBroker } from "./runtime-broker"
 import type { DocumentIndexEntry } from "../../index-store"

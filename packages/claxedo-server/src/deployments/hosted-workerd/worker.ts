@@ -54,7 +54,7 @@ import { createHostedDocumentsBackend } from "../../documents/backends/hosted/ba
 import { createHostedDocumentRuntimeBroker } from "../../documents/backends/hosted/runtime-broker"
 import { createHostedLocalDocumentRelay } from "../../documents/backends/hosted/local-relay"
 import type { R2BucketBinding } from "../../documents/backends/hosted/managed"
-import type { SignedControlPlaneAuth } from "../../platform/auth/auth"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { DocumentIndexEntry } from "../../documents/index-store"
 
 export { WorkGraphSettler }

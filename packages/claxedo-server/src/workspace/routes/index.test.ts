@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { ControlPlaneAuthError } from "../../platform/auth/auth"
-import type { ClerkVerifier } from "../../platform/auth/auth"
+import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
+import type { ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { CredentialMetadata } from "../../credentials/types"
 
@@ -165,7 +165,7 @@ vi.mock("../../user-hosted-tunnel", () => ({
   stopAllUserHostedWorkspaceTunnels: mocks.stopAllUserHostedWorkspaceTunnels,
 }))
 
-const { localOnlyAuthAdapter } = await import("../../platform/auth/auth")
+const { localOnlyAuthAdapter } = await import("@claxedo/server-core/platform/auth/auth")
 const { WorkspaceRoutes } = await import("./index")
 const { createFixedWindowConnectionRateLimiter } = await import("../../platform/auth/rate-limit")
 

@@ -3,17 +3,17 @@ import type { AgentExtensionPolicyOverride } from "../hosts/agent-extensions/run
 import type { SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
 import type { CredentialHealth, CredentialMetadata, CredentialScope, CredentialStatus, CredentialWrite } from "../credentials/types"
 import type { CredentialDiscoveryPreview, CredentialDiscoverySelection } from "../credentials/operations/discovery"
-import { clerkAuthAdapter, type ControlPlaneAuthAdapter, type SignedControlPlaneAuth } from "../platform/auth/auth"
+import { clerkAuthAdapter, type ControlPlaneAuthAdapter, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { DurableSessionLog } from "../platform/auth/durable-session-log"
 import type { SessionWriteMode } from "../platform/runtime/profile"
 import type { ProjectionStore } from "./projection-store"
-import type { WorkspaceAuthority } from "../platform/auth/authority"
+import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "../platform/auth/runtime-access-token"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
-import type { ClaxedoRegion, ClaxedoRegionMap } from "../platform/runtime/region"
+import type { ClaxedoRegion, ClaxedoRegionMap } from "@claxedo/server-core/platform/runtime/region/index"
 import type { RelayProvider } from "../adapters/relay"
 
-export type { WorkspaceAuthority } from "../platform/auth/authority"
+export type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 
 export class ControlPlaneCompositionError extends Error {
   constructor(

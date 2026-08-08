@@ -15,7 +15,7 @@ import {
   localOnlyAuthAdapter,
   signedCloudAuthRequested,
   tokenVerifierAsClerk,
-} from "./auth"
+} from "@claxedo/server-core/platform/auth/auth"
 import {
   assertHostedBootRequirements,
   deploymentMode,

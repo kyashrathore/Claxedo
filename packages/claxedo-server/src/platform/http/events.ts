@@ -9,15 +9,15 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "../auth/auth"
-import { isLoopbackLocalRequest } from "./peer-address"
+} from "@claxedo/server-core/platform/auth/auth"
+import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 
 // The per-event visibility predicate lives in the Worker-safe `event-visibility`
 // module so the hosted `LiveSyncRoom` Durable Object can share the exact same
 // scoping. Re-exported here for back-compat (events.test.ts imports it).
 export { eventVisibleTo } from "./event-visibility"
 import { eventScopePrincipal, eventVisibleTo, type EventScopePrincipal } from "./event-visibility"
-import { isTerminalClaxedoEvent } from "./event-retention"
+import { isTerminalClaxedoEvent } from "@claxedo/server-core/platform/http/event-retention"
 
 /**
  * Synthetic frame written in place of a replay when the requested cursor has

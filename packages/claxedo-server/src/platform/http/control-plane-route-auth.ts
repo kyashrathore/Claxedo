@@ -6,7 +6,7 @@ import {
   controlPlaneAuthErrorBody,
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
-} from "../auth/auth"
+} from "@claxedo/server-core/platform/auth/auth"
 
 /**
  * The per-route bearer gate for control-plane routers that have no finer-grained

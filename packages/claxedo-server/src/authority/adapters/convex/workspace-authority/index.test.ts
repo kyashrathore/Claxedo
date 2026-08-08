@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../../../platform/auth/auth"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { convexAuthorityUrlFromEnv, createConvexAuthority } from "./index"
 
 const auth: SignedControlPlaneAuth = {

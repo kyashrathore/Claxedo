@@ -1,11 +1,11 @@
 import { Hono } from "hono"
 import { z } from "zod"
 import type { ControlPlaneServices } from "../../authority/services"
-import { requireAuthority } from "../../platform/auth/authority"
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthErrorBody,
-} from "../../platform/auth/auth"
+} from "@claxedo/server-core/platform/auth/auth"
 import { apiError, signedOrError, type WorkspaceRouteOptions } from "../route-support"
 const shareBody = z.object({
   role: z.union([z.literal("viewer"), z.literal("editor"), z.literal("admin")]),

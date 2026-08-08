@@ -36,7 +36,7 @@ export {
   type ControlPlaneAuthAdapter,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "./platform/auth/auth"
+} from "@claxedo/server-core/platform/auth/auth"
 export {
   hostTunnelTokenSigner,
   runtimeAccessTokenSigner,

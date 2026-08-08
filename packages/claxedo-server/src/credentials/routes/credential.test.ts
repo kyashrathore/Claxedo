@@ -3,7 +3,7 @@ import { CredentialRoutes } from "./credential"
 import type { ControlPlaneCredentials } from "../../authority/services"
 import type { CredentialHealth, CredentialMetadata } from "../types"
 import { CredentialDiscoveryError } from "../operations/discovery"
-import { ControlPlaneAuthError } from "../../platform/auth/auth"
+import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { SINGLE_TENANT_ORG } from "../provider-credential.sql"
 
 function providerFetch(response: () => Response) {

@@ -14,7 +14,7 @@ import {
 } from "@claxedo/workspace-runtime/exposure"
 import { workspaceRelayRuntimeOptionsFromEnv } from "@claxedo/workspace-runtime/relay"
 import { workGraphRuntimeRouteContributions } from "@claxedo/workgraph/runtime-adapter"
-import { allowedOriginPatterns } from "../../platform/http/cors-origins"
+import { allowedOriginPatterns } from "@claxedo/server-core/platform/http/cors-origins"
 import {
   sandboxLeaseEnv,
   workspaceRuntimeDirectAuthEnv,

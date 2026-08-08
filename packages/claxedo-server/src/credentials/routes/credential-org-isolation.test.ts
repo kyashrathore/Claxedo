@@ -20,7 +20,7 @@ import os from "node:os"
 import path from "node:path"
 import { randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest"
-import type { ClerkVerifier, ControlPlaneAuthConfig } from "../../platform/auth/auth"
+import type { ClerkVerifier, ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 
 const root = path.join(realpathSync(os.tmpdir()), `credential-org-isolation-${randomUUID().slice(0, 8)}`)
 mkdirSync(root, { recursive: true })

@@ -1,6 +1,6 @@
-import { ClaxedoError } from "../errors/base"
+import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { exportJWK, importJWK, importPKCS8, importSPKI, jwtVerify, SignJWT } from "jose"
-import { randomToken, sha256Hex16 } from "./web-crypto"
+import { randomToken, sha256Hex16 } from "@claxedo/server-core/platform/auth/web-crypto"
 
 type ExportableKey = Parameters<typeof exportJWK>[0]
 // jose's jwtVerify is overloaded — the static-key form accepts any of these.
@@ -12,7 +12,7 @@ import {
   runtimeAccessTokenIssuer,
   type RelayRole,
 } from "@claxedo/workspace-relay"
-import { ControlPlaneAuthError } from "./auth"
+import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 
 export const RUNTIME_ACCESS_TOKEN_ALGORITHM = "EdDSA" as const
 
