@@ -378,12 +378,12 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "platform/http/events.ts",
+    module: "../../claxedo-server-core/src/platform/http/events.ts",
     status: OwnershipStatus.Canonical,
     owner: "local control-plane events SSE route (Claxedo local adapter)",
     reason:
       "Unit 5 verdict flipped VERIFY→WRAP→DOCUMENT: imports claxedoBus from ../bus → @claxedo/workspace-runtime/host (FORBIDDEN_BARE, process-local). Process-local + Worker-forbidden, so it stays in place with no barrel.",
-    tests: ["platform/http/events.test.ts"],
+    tests: ["../../claxedo-server-core/src/platform/http/events.test.ts"],
   },
   {
     area: "route",

@@ -46,7 +46,7 @@
  */
 
 import { createSseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
-import { eventVisibleTo, type EventScopePrincipal } from "../../platform/http/event-visibility"
+import { eventVisibleTo, type EventScopePrincipal } from "@claxedo/server-core/platform/http/event-visibility"
 import { isTerminalClaxedoEvent } from "@claxedo/server-core/platform/http/event-retention"
 import type { ClaxedoEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { liveSyncRoomNameForPrincipal, type LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"

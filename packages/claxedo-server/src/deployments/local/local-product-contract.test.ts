@@ -10,7 +10,7 @@ import {
   pathsByOwner,
   routeFamilyFor,
   unclassifiedPaths,
-} from "./product-route-families"
+} from "@claxedo/server-core/deployments/product-route-families"
 
 /**
  * Desktop-local product contract.

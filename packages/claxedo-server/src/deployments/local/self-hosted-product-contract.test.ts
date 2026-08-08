@@ -9,7 +9,7 @@ import { createControlPlaneServices, type ControlPlaneServices } from "../../aut
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
 import { sandboxRelayTargetLookup, type HostedControlPlane } from "../../authority/hosted-services"
 import { durableCliSessionTokenRegistry } from "../../test-support/cli-session-registry"
-import { mountedPaths } from "./product-route-families"
+import { mountedPaths } from "@claxedo/server-core/deployments/product-route-families"
 
 /**
  * Self-hosted single-binary product contract.
