@@ -41,7 +41,9 @@ import { Log } from "../../log"
 import { requireWorkspaceDirectory } from "../../target"
 import { toOpencodeConfig, type ResolvedMcpServer } from "../../mcp-resolver"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
+import { createSubagentAdmissionBoundary, type SubagentAdmissionStore } from "../../subagent-admission"
 import { createLegacyOpenCodeRuntimePublisher, drainEventStream, openEventStream } from "./events"
+import { opencodeSubagentObservations } from "./subagent"
 import { opencodeAuthContent } from "./env"
 import { OpenCodeServerProcess, type OpenCodeServerConnection } from "./process"
 import type { ActivityLease } from "../shared/process-lifecycle"
@@ -181,18 +183,30 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
   private mcpObservations: AgentProcessObserverHandle[] = []
   private rootOwnerId: string | undefined
   private processObserver: AgentProcessObserver | undefined
+  // Host-owned subagent persistence. The engine creates the child Session; the
+  // HOST owns the `(parentSessionId, subagentKey)` association that survives a
+  // reload, so the adapter never keeps subagent state of its own. Absent (a
+  // bare adapter with no host behind it) the rail degrades to no cards rather
+  // than to a fabricated association.
+  private subagents: SubagentAdmissionStore | undefined
+  // Admissions assign monotonic per-subagent revisions, so they must not
+  // interleave. One chain per adapter keeps them ordered without blocking the
+  // event stream the turn is draining.
+  private subagentAdmissions = Promise.resolve()
   constructor(opencodeUrl?: string, input?: {
     headers?: HeadersInit
     eventHub?: RuntimeEventHub
     compat?: boolean
     request?: OpenCodeRequestFn
     processObserver?: AgentProcessObserver
+    subagents?: SubagentAdmissionStore
   }) {
     this.compat = input?.compat ?? true
     this.base = new Headers(input?.headers)
     this.eventHub = input?.eventHub
     this.injectedRequest = input?.request
     this.processObserver = input?.processObserver
+    this.subagents = input?.subagents
     this.server = new OpenCodeServerProcess(opencodeUrl, {
       config: () => this.cfg,
       auth: () => this.auth,
@@ -514,9 +528,11 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     for await (const event of drainEventStream(stream, id)) {
       if (eventHasVisibleAssistantContent(event)) sawVisibleAssistantContent = true
       if (eventIsError(event)) sawError = true
+      this.observeSubagents(event, id, directory)
       publishRuntime(event)
       yield event
     }
+    await this.subagentAdmissions
 
     if (!sawError && !sawVisibleAssistantContent) {
       const error = sessionError("OpenCode completed without visible assistant content", id)
@@ -526,6 +542,36 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     }
 
     if (!sawError) yield messageCompleted(id, input.assistantMessageId)
+  }
+
+  /**
+   * Record every delegation the engine published on this turn.
+   *
+   * The engine is the authoritative producer of the association (see
+   * `./subagent`), the host store is the authority for the row, and the
+   * resulting `subagent-updated` event is what the app's registry consumes
+   * live. A failure here must never break the turn the caller is streaming, so
+   * the chain swallows its own errors: a lost card is recoverable on reload,
+   * an aborted turn is not.
+   */
+  private observeSubagents(event: CompatEvent, sessionId: string, directory: string) {
+    const store = this.subagents
+    if (!store) return
+    const observations = opencodeSubagentObservations(event)
+    if (observations.length === 0) return
+    const admission = createSubagentAdmissionBoundary({
+      store,
+      publish: (parentSessionId, payload) => {
+        this.eventHub?.publishRuntime({ directory, sessionId: parentSessionId, payload })
+      },
+    })
+    this.subagentAdmissions = this.subagentAdmissions.then(async () => {
+      for (const observation of observations) {
+        await admission.admit(sessionId, observation).catch((error: unknown) => {
+          log.error("failed to admit opencode subagent observation", { sessionId, error })
+        })
+      }
+    })
   }
 
   // ── Remaining API methods ────────────────────────────────────────────────────
