@@ -77,6 +77,16 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     source: { file: "packages/claxedo-desktop/src/main/ipc.ts", callee: "execFile", calls: 1 },
   }),
   product({
+    id: "desktop-rich-content-renderer",
+    family: "One-shot native rich-content renderer",
+    owner: "desktop",
+    linkage: "session",
+    observation: "host-tree",
+    stop: "owner-dependent",
+    kill: "owner-dependent",
+    source: { file: "packages/claxedo-desktop/src/main/native-renderer.ts", callee: "spawn", calls: 1 },
+  }),
+  product({
     id: "desktop-app-probes",
     family: "WSL and installed-application probes",
     owner: "desktop",
