@@ -17,6 +17,7 @@ import { bundleClaxedoEngineWorker, bundleClaxedoServer } from "./bundle-claxedo
 import { bundleHostConnector } from "./bundle-host-connector"
 import { buildMemoryImpactHelper } from "./build-memory-impact-helper"
 import { LOCAL_SERVER_ENTRY, resolveLocalServerEntry } from "./local-server"
+import { buildRichContentRenderer } from "./build-rich-content-renderer"
 import { copyIcons as copyChannelIcons } from "./utils"
 
 // ── Paths ──
@@ -138,7 +139,14 @@ async function copyAcpBinaries() {
 
 // ── Main ──
 
-// Optional child and server are separate bundles and fingerprint independently.
-await Promise.all([copyIcons(), copyAcpBinaries(), bundleServer(), bundleHostConnector(), buildMemoryImpactHelper()])
+// Optional children, native helpers, and the server are independent build outputs.
+await Promise.all([
+  copyIcons(),
+  copyAcpBinaries(),
+  bundleServer(),
+  bundleHostConnector(),
+  buildMemoryImpactHelper(),
+  buildRichContentRenderer(),
+])
 
 log("Done.")

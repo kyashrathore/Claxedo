@@ -24,6 +24,7 @@
 
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { spawnSync } from "node:child_process"
 
 import { ALL_NATIVE_MODULES, isDeclaredStructuralEntry, requiredPackagedBoundaryEntries } from "./package-structure"
 import { verifyHostConnectorChildArtifact } from "../src/main/host-connector/child-artifact"
@@ -125,6 +126,36 @@ export function verifyPackageContents(root = path.resolve(import.meta.dir, "..")
     } catch (error) {
       failures.push(`${archive}: ${String(error)}`)
     }
+    const richContent = path.join(path.dirname(archive), "rich-content")
+    const binaries = [
+      path.join(richContent, "claxedo-rich-content-renderer"),
+      path.join(richContent, "claxedo-rich-content-renderer.exe"),
+    ].filter((entry) => fs.existsSync(entry) && fs.statSync(entry).isFile())
+    if (binaries.length !== 1) {
+      failures.push(`${archive}: expected one packaged rich-content renderer in ${richContent}`)
+      continue
+    }
+    if (!binaries[0]!.endsWith(".exe") && (fs.statSync(binaries[0]!).mode & 0o111) === 0) {
+      failures.push(`${archive}: packaged rich-content renderer is not executable: ${binaries[0]}`)
+      continue
+    }
+    const markdown = spawnSync(binaries[0]!, ["markdown"], {
+      input: JSON.stringify({ source: "# Packaged renderer\n\n| a | b |\n|---|---|\n| 1 | 2 |" }),
+      encoding: "utf8",
+    })
+    if (markdown.status !== 0 || !markdown.stdout.includes("<table>")) {
+      failures.push(`${archive}: packaged rich-content renderer failed its Markdown smoke`)
+    }
+    const mermaid = spawnSync(binaries[0]!, ["mermaid"], {
+      input: JSON.stringify({ source: "flowchart LR\nA --> B", theme: { primaryColor: "#123456" } }),
+      encoding: "utf8",
+    })
+    const svg = mermaid.stdout
+    if (mermaid.status !== 0 || !svg.startsWith("<svg") || !svg.includes("#123456")) {
+      failures.push(`${archive}: packaged rich-content renderer failed its Mermaid smoke`)
+    }
+  }
+  for (const archive of asars) {
     const found = inspectLocales(archive)
     // Only assert when a locale directory is actually present: some targets
     // (and the asar-only fixtures in tests) have no Chromium resources beside
@@ -185,5 +216,7 @@ if (import.meta.main) {
     console.error(`[verify-package-contents] packaging invariant violated:\n${failures.join("\n")}`)
     process.exit(1)
   }
-  console.log(`[verify-package-contents] ok — ${asars.length} asar(s) contain only bundled output + native modules`)
+  console.log(
+    `[verify-package-contents] ok — ${asars.length} package(s) contain only bundled output + native modules and a working rich-content renderer`,
+  )
 }

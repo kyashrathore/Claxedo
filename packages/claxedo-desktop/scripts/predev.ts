@@ -19,6 +19,7 @@ import {
   localServerPackageDir,
   resolveLocalServerEntry,
 } from "./local-server"
+import { buildRichContentRenderer } from "./build-rich-content-renderer"
 import { copyIcons, copyWorkspaceRuntimeTemplates } from "./utils"
 
 const SCRIPT_DIR = import.meta.dir
@@ -56,8 +57,11 @@ try {
 }
 
 await ensureElectronNativeModules()
-await buildMemoryImpactHelper()
-const hostConnector = await bundleHostConnector()
+const [, , hostConnector] = await Promise.all([
+  buildMemoryImpactHelper(),
+  buildRichContentRenderer(),
+  bundleHostConnector(),
+])
 console.log(`[predev] Host Connector child bundled (${hostConnector.manifest.sha256})`)
 
 async function patchDevBundleMetadata() {
