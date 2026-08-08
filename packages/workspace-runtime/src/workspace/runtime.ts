@@ -1,3 +1,4 @@
+import { Log } from "../log"
 import fs from "fs"
 import os from "os"
 import path from "path"
@@ -78,6 +79,9 @@ import type { WorkspaceTranscriptRoutesOptions } from "./core"
  * host may back the runtime with any store that satisfies this shape — e.g. the
  * in-memory store from `@claxedo/agent-sdk-runtime/stores/memory`.
  */
+
+const sessionInventoryLog = Log.create({ service: "session-inventory" })
+
 export type WorkspaceRuntimeStore =
   & Omit<AgentRuntimeStoreWithRecovery, "getSession" | "getMessages" | "bindSession" | "updateSessionConfig">
   & {
@@ -1231,8 +1235,32 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     // created outside Claxedo after that point arrive through the explicit
     // `?harness=` refresh above.
     if (!store().sessionInventoryImported?.(directory)) {
-      const rows = await Promise.all((await sessionListAdapters()).map((item) => listSessionsForAdapter(item.adapter, item.runner, directory)))
-      store().markSessionInventoryImported?.(directory)
+      // Mark imported only when EVERY adapter actually answered.
+      //
+      // "This adapter has no sessions" and "this adapter could not be asked"
+      // are different facts that both arrive as an empty array — the OpenCode
+      // adapter returns `[]` for any non-2xx, so a transient 5xx from a
+      // just-spawned server looks exactly like a fresh install. Writing the
+      // durable marker on that would hide a user's existing sessions from
+      // generic listing forever, with no retry and no error.
+      //
+      // A failed adapter still lets the healthy ones contribute; the directory
+      // simply stays unimported and tries again on the next list.
+      let complete = true
+      const rows = await Promise.all((await sessionListAdapters()).map(async (item) => {
+        try {
+          return await listSessionsForAdapter(item.adapter, item.runner, directory)
+        } catch (error) {
+          complete = false
+          sessionInventoryLog.warn("session inventory import skipped an adapter", {
+            directory,
+            harness: item.runner.id,
+            error: error instanceof Error ? error.message : String(error),
+          })
+          return [] as AgentSessionRow[]
+        }
+      }))
+      if (complete) store().markSessionInventoryImported?.(directory)
       return mergeSessionRows([
         ...(store().listSessions(directory) as AgentSessionRow[]),
         ...rows.flat(),
@@ -1809,8 +1837,20 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
               lease?.release()
               return closedSse()
             }
-            c.req.raw.signal.addEventListener("abort", () => lease?.release(), { once: true })
-            return new Response(res.body, { status: res.status, headers: res.headers })
+            // Released on BOTH ends of the stream's life. Wiring only the
+            // client's abort leaks the lease whenever the upstream ends first —
+            // an OpenCode restart on config change, or the child exiting — and
+            // a held lease stops the idle countdown from ever starting again,
+            // so the harness this change exists to reap could never be reaped.
+            // `ActivityLease.release` is idempotent, so both firing is fine.
+            // `flush` covers a clean end; a client-side cancel propagates back
+            // as an abort on the request signal, which the listener catches.
+            const release = () => lease?.release()
+            c.req.raw.signal.addEventListener("abort", release, { once: true })
+            return new Response(
+              res.body.pipeThrough(new TransformStream({ flush: release })),
+              { status: res.status, headers: res.headers },
+            )
           } catch {
             lease?.release()
             return closedSse()

@@ -3150,6 +3150,55 @@ describe("global compatibility stream (Unit 4)", () => {
     host.dispose()
   })
 
+  test("releases the lease when the UPSTREAM stream ends, not only when the client leaves", async () => {
+    // The leak that matters more, because nothing reports it. An OpenCode
+    // restart on config change ends the upstream body while the browser is
+    // still connected; wiring release only to the client's abort holds the
+    // lease forever, and a held lease stops the idle countdown from ever
+    // starting again — so the harness this whole change exists to reap can
+    // never be reaped.
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-compat-sse-upstream-end-"))
+    tempDirs.push(dir)
+    let released = 0
+    let closeUpstream!: () => void
+    const adapter = {
+      adapterCapabilities: ["http-proxy"] as const,
+      listSessions: async () => [],
+      transportLive: () => true,
+      acquireRequestFn: async () => ({
+        request: async () => new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode("data: {}\n\n"))
+              closeUpstream = () => controller.close()
+            },
+          }),
+          { headers: { "content-type": "text/event-stream" } },
+        ),
+        lease: { release: () => { released++ } },
+      }),
+      getRequestFn: async () => async () => new Response(null, { status: 404 }),
+      dispose: () => {},
+    } as unknown as AgentHarnessAdapter
+
+    const { app, host } = await mountOpencode(dir, adapter)
+    const response = await app.request("http://localhost/global/event")
+    expect(response.status).toBe(200)
+    expect(released).toBe(0)
+
+    // Drain the stream to completion — the client never disconnects.
+    const reader = response.body!.getReader()
+    await reader.read()
+    closeUpstream()
+    for (;;) {
+      const next = await reader.read()
+      if (next.done) break
+    }
+
+    expect(released).toBe(1)
+    host.dispose()
+  })
+
   test("rides an already-live transport under a lease it releases when the client leaves", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-compat-sse-warm-"))
     tempDirs.push(dir)
@@ -3171,6 +3220,51 @@ describe("global compatibility stream (Unit 4)", () => {
     controller.abort()
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(released).toBe(1)
+
+    host.dispose()
+  })
+})
+
+// ── Unit 4: an import that could not ask must not claim it did ──────────────
+describe("session inventory import completeness (Unit 4)", () => {
+  test("does not mark a directory imported when an adapter could not answer", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-inventory-partial-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+
+    // "No sessions" and "could not be asked" both arrive as an empty array from
+    // some adapters. Writing the durable marker on the second one hides a
+    // user's existing sessions from generic listing forever, with no retry and
+    // no error — so a failed adapter has to leave the directory unimported.
+    let failNext = true
+    const upstream = [{ id: "ses_recovered", title: "Present all along", time: { created: 1, updated: 2 } }]
+    const registry: WorkspaceHarnessRegistry = [{
+      match: () => true,
+      create: () => ({
+        listSessions: async () => {
+          if (failNext) throw new Error("upstream unavailable")
+          return upstream
+        },
+        dispose: () => {},
+      }) as unknown as AgentHarnessAdapter,
+    }]
+
+    const app = new Hono()
+    const host = mountTestHost(app, { harness: { id: "pi", access: "native" }, harnesses: registry })
+
+    const list = async () => {
+      const response = await app.request(`http://localhost/session?directory=${encodeURIComponent(dir)}`)
+      expect(response.status).toBe(200)
+      return (await response.json() as Array<{ id: string }>).map((row) => row.id)
+    }
+
+    // The failing import answers from the store rather than 500-ing...
+    expect(await list()).toEqual([])
+
+    // ...and crucially did NOT record itself as done, so the next list retries
+    // and the session appears.
+    failNext = false
+    expect(await list()).toContain("ses_recovered")
 
     host.dispose()
   })
