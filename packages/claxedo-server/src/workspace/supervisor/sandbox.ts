@@ -8,14 +8,8 @@ import {
   type SandboxEnsureResult,
   type SandboxManager,
 } from "@claxedo/sandbox-manager"
-import { createBoxSandboxDriver } from "@claxedo/sandbox-manager/drivers/box"
-import { createCloudflareSandboxDriver } from "@claxedo/sandbox-manager/drivers/cloudflare"
-import { createDaytonaSandboxDriver } from "@claxedo/sandbox-manager/drivers/daytona"
-import { createDockerSandboxDriver } from "@claxedo/sandbox-manager/drivers/docker"
-import { createModalSandboxDriver } from "@claxedo/sandbox-manager/drivers/modal"
-import { createVercelSandboxDriver } from "@claxedo/sandbox-manager/drivers/vercel"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
-import { SNAPSHOT_NAME } from "@claxedo/sandbox-manager/image"
+import { defaultSnapshotName } from "@claxedo/sandbox-manager/image-name"
 import type { SandboxLeaseRow } from "@claxedo/sandbox-manager/lease-types"
 import {
   decideSandboxHealthFailure,
@@ -417,10 +411,13 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
   if (driverId === "daytona") {
     const auth = await sandboxDriverAuthAsync(cfg, "daytona")
     if (auth?.api_key) {
+      const { createDaytonaSandboxDriver } = await import("@claxedo/sandbox-manager/drivers/daytona")
       return createDaytonaSandboxDriver({
         apiKey: auth.api_key,
         baseSnapshot:
-          clean(process.env.CLAXEDO_DAYTONA_SNAPSHOT) ?? SNAPSHOT_NAME,
+          clean(process.env.CLAXEDO_DAYTONA_SNAPSHOT) ??
+          clean(process.env.CLAXEDO_SNAPSHOT_NAME) ??
+          defaultSnapshotName(),
         ...(clean(process.env.DAYTONA_API_URL) ? { apiUrl: clean(process.env.DAYTONA_API_URL) } : {}),
         ...(clean(process.env.DAYTONA_ORGANIZATION_ID)
           ? { organizationId: clean(process.env.DAYTONA_ORGANIZATION_ID) }
@@ -439,6 +436,7 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
   if (driverId === "cloudflare") {
     const auth = await sandboxDriverAuthAsync(cfg, "cloudflare")
     if (auth?.api_token && auth.worker_url) {
+      const { createCloudflareSandboxDriver } = await import("@claxedo/sandbox-manager/drivers/cloudflare")
       return createCloudflareSandboxDriver({
         workerUrl: auth.worker_url,
         apiToken: auth.api_token,
@@ -455,6 +453,7 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
   if (driverId === "modal") {
     const auth = await sandboxDriverAuthAsync(cfg, "modal")
     if (auth?.token_id && auth.token_secret) {
+      const { createModalSandboxDriver } = await import("@claxedo/sandbox-manager/drivers/modal")
       return createModalSandboxDriver({
         tokenId: auth.token_id,
         tokenSecret: auth.token_secret,
@@ -473,6 +472,7 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
   if (driverId === "vercel") {
     const auth = await sandboxDriverAuthAsync(cfg, "vercel")
     if (auth?.access_token && auth.team_id && auth.project_id) {
+      const { createVercelSandboxDriver } = await import("@claxedo/sandbox-manager/drivers/vercel")
       return createVercelSandboxDriver({
         token: auth.access_token,
         teamId: auth.team_id,
@@ -493,6 +493,7 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
   if (driverId === "box") {
     const auth = await sandboxDriverAuthAsync(cfg, "box")
     if (auth?.api_key) {
+      const { createBoxSandboxDriver } = await import("@claxedo/sandbox-manager/drivers/box")
       return createBoxSandboxDriver({
         apiKey: auth.api_key,
         ...(clean(process.env.CLAXEDO_BOX_API_URL) ? { baseUrl: clean(process.env.CLAXEDO_BOX_API_URL) } : {}),
@@ -510,6 +511,7 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
   if (driverId === "docker") {
     const auth = await sandboxDriverAuthAsync(cfg, "docker")
     if (auth?.image) {
+      const { createDockerSandboxDriver } = await import("@claxedo/sandbox-manager/drivers/docker")
       return createDockerSandboxDriver({
         image: auth.image,
         ...(clean(process.env.CLAXEDO_RUNTIME_COMMAND)
