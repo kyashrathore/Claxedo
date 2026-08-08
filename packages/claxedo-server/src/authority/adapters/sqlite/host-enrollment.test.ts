@@ -100,7 +100,7 @@ describe("host enrollment", () => {
     const { enrollment } = await enroll(api)
 
     expect(Object.keys(enrollment)).not.toContain("workspace_id")
-    expect(await api.listWorkspaces(owner, {})).toEqual([])
+    expect(await api.listWorkspaces(owner)).toEqual([])
   })
 
   test("rejects a signature that does not match the request nonce", async () => {

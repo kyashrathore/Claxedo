@@ -64,6 +64,7 @@
     "smoke:workgraph": "bun run scripts/smoke/smoke-workgraph.ts",
     "stress:workgraph": "node ./node_modules/vitest/vitest.mjs run --config vitest.stress.config.ts --reporter=default",
     "check:package-boundary": "bun run scripts/maintenance/check-package-boundary.ts",
+    "maintenance:cutover-host-enrollments": "bun run scripts/maintenance/cutover-host-enrollments.ts",
     "maintenance:normalize-sandbox-leases": "bun run scripts/maintenance/normalize-convex-sandbox-leases.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.convex-tests.json",
     "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit.xml && bun run test:convex",
