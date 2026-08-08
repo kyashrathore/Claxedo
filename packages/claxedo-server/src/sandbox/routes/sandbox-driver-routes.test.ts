@@ -159,7 +159,7 @@ describe("sandbox driver credential codec round trip", () => {
 // API key as a side effect of a settings click they'd read as narrow.
 describe("sandbox driver credential removal is scoped to its own kind", () => {
   test("Remove deletes the sandbox credential and spares the model provider key", async () => {
-    const registry = await import("../../credentials/registry")
+    const registry = await import("@claxedo/server-core/credentials/registry")
 
     await registry.putCredential({
       provider_id: "vercel",
@@ -185,7 +185,7 @@ describe("sandbox driver credential removal is scoped to its own kind", () => {
   })
 
   test("a sandbox lookup never resolves a model provider credential", async () => {
-    const registry = await import("../../credentials/registry")
+    const registry = await import("@claxedo/server-core/credentials/registry")
 
     // A dedicated id: the round-trip suite above writes a sandbox_driver row
     // for every real driver into this same temp registry, so asserting the

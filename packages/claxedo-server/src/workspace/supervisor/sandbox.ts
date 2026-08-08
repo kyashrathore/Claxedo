@@ -30,10 +30,10 @@ import { defaultSandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
 import type { SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { defaultHomeRegion } from "@claxedo/server-core/platform/runtime/region/index"
-import { listPolicies } from "../../sandbox/network/policy"
+import { listPolicies } from "@claxedo/server-core/sandbox/network/policy"
 import { resolveSandboxNetworkPolicy } from "../../sandbox/network/resolve"
 import { insertSnapshot } from "./prepared-image.sql"
-import { updateWorkspace } from "../store"
+import { updateWorkspace } from "@claxedo/server-core/workspace/store/index"
 import {
   configToken,
   configTokenHeaders,

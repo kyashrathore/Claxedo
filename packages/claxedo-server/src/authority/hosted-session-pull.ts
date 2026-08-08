@@ -1,5 +1,5 @@
 import { defaultHomeRegion, normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
-import type { Workspace } from "../workspace/store"
+import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "./services"

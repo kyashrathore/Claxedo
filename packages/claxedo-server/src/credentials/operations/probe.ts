@@ -2,7 +2,7 @@ import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import type { LocalCredentialItem } from "./sync"
 import type { CredentialProbe } from "./discovery"
 import { CredentialVerificationError, verifyCredential } from "./verify"
-import type { CredentialMetadata } from "../types"
+import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 
 const log = Log.create({ service: "credentials-probe" })
 

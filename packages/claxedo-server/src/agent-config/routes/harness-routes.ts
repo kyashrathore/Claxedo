@@ -12,9 +12,9 @@ import {
 } from "../../agent-config"
 import { fanOutConfig } from "../fanout"
 import { getSessionConfig, getSessionHarness, normalize, setSessionConfig, setSessionHarness } from "../../session/harness"
-import { resolveWorkspace } from "../../workspace/store"
+import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { resolveHarnessForRequest } from "../../session/harness/resolution"
-import { sessionMeta } from "../../session/meta"
+import { sessionMeta } from "@claxedo/server-core/session/meta/index"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import {
   cloudRuntimeSessionHarness,
@@ -34,7 +34,7 @@ import { localAgentConfigAllowed } from "../local-auth"
 import type { AgentConfigRouteOptions } from "../extension-support"
 import type { SandboxFetchOptions } from "../../workspace/http/sandbox-target-fetch"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
-import { validatePiPromptModel } from "../../credentials/pi-provider-catalog"
+import { validatePiPromptModel } from "@claxedo/server-core/credentials/pi-provider-catalog"
 
 export function agentConfigHarnessRoutes(options: AgentConfigRouteOptions = {}) {
   return new Hono()

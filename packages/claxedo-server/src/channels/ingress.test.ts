@@ -5,7 +5,7 @@ import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
 import { createCentralControlApp } from "../central-runtime"
 import { createControlPlaneChannels } from "./control-plane"
-import { ensureWorkspace } from "../workspace/store"
+import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import type { ChannelRunAuditInput, ChannelRunAuditRecord } from "./run-audit"
 

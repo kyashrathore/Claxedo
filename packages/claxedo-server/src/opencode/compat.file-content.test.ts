@@ -12,7 +12,7 @@ process.env.CLAXEDO_DATA_DIR = root
 
 const { Hono } = await import("hono")
 const { OpenCodeCompatRoutes } = await import("./compat-routes/index")
-const { ensureWorkspace } = await import("../workspace/store")
+const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
 
 const app = new Hono()
 app.route("/", OpenCodeCompatRoutes())

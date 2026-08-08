@@ -6,7 +6,7 @@ import {
   controlPlaneAuthErrorBody,
 } from "@claxedo/server-core/platform/auth/auth"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
-import { resolveWorkspace } from "../../workspace/store"
+import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { cloudConnectionInfo, localLoopbackCloudConnectionInfo } from "../cloud-connection"
 import { userHostedConnectionInfo } from "../user-hosted-connection"

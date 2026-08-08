@@ -6,7 +6,7 @@ import {
   loadUserConfig,
 } from "../../agent-config"
 import { providerAuthMethods } from "../../credentials/provider-auth/service"
-import { listProjects } from "../../workspace/store"
+import { listProjects } from "@claxedo/server-core/workspace/store/index"
 import { dataDir, stateDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { OPENCODE_INTERNAL_BASE, opencodeEngineMode, opencodeRequest } from "../../opencode/engine"
 import { providerCatalogView } from "../../opencode/provider-catalog-view"

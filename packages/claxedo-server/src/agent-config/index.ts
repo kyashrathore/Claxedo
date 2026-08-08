@@ -36,7 +36,7 @@ import {
   toOpencodeConfig,
   type ResolvedMcpServer,
 } from "@claxedo/workspace-runtime/config"
-import { resolveSecretsForScope } from "../credentials/registry"
+import { resolveSecretsForScope } from "@claxedo/server-core/credentials/registry"
 import {
   getRuntimeAgentExtensionsSnapshot,
   type AgentExtensionPolicyOverride,

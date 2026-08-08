@@ -1,10 +1,10 @@
 import { describe, expect, test, vi } from "vitest"
 import { CredentialRoutes } from "./credential"
 import type { ControlPlaneCredentials } from "../../authority/services"
-import type { CredentialHealth, CredentialMetadata } from "../types"
+import type { CredentialHealth, CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import { CredentialDiscoveryError } from "../operations/discovery"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
-import { SINGLE_TENANT_ORG } from "../provider-credential.sql"
+import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
 
 function providerFetch(response: () => Response) {
   return vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => response())

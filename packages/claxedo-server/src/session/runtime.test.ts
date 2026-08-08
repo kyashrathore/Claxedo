@@ -8,7 +8,7 @@ import { requirePiModel, type PiModelBackend, type PiModelBackendResolver } from
 import { createCentralSessionRuntime } from "./runtime"
 import { createCentralControlApp } from "../central-runtime"
 import { createConnectionTurnCredentials } from "../connections/turn-credentials"
-import { piProviderCatalog } from "../credentials/pi-provider-catalog"
+import { piProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-catalog"
 
 function services(): ControlPlaneServices {
   return {

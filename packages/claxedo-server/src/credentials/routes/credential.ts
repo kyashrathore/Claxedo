@@ -23,7 +23,7 @@ import {
   type ControlPlaneAuthConfig,
   type ControlPlaneAuthContext,
 } from "@claxedo/server-core/platform/auth/auth"
-import { SINGLE_TENANT_ORG } from "../provider-credential.sql"
+import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
 
 const putBody = z.object({
   provider_id: z.string().min(1),

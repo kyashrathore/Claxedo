@@ -303,14 +303,14 @@ function lease(workspaceId: string, driverId = "daytona"): SandboxLeaseRow {
 
 // ── Module mocks (must be before import) ─────────────────────────────────
 
-vi.mock("../store", () => ({
+vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   getWorkspace: (...args: unknown[]) => (mockGetWorkspace as any)(...args),
   updateWorkspace: (...args: unknown[]) => (mockUpdateWorkspace as any)(...args),
   // The supervisor composition teaches the store to read sandbox leases.
   configureWorkspaceStore: vi.fn(),
 }))
 
-vi.mock("../../sandbox/network/policy", () => ({
+vi.mock("@claxedo/server-core/sandbox/network/policy", () => ({
   listPolicies: vi.fn(() => []),
 }))
 
@@ -806,7 +806,7 @@ describe("workspace-supervisor", () => {
     })
 
     test("passes resolved Daytona network policy CIDRs into SandboxManager", async () => {
-      const policy = await import("../../sandbox/network/policy")
+      const policy = await import("@claxedo/server-core/sandbox/network/policy")
       const resolve = await import("../../sandbox/network/resolve")
       ;(policy.listPolicies as any).mockReturnValueOnce([
         { target: "api.example.test", kind: "host" },

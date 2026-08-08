@@ -70,6 +70,9 @@ async function productionFiles() {
   const directories = [
     "packages/claxedo-desktop/src",
     "packages/claxedo-server/src",
+    // The shared core the local server composes over. A spawn seam that moves
+    // here would otherwise stop being audited without anything saying so.
+    "packages/claxedo-server-core/src",
     "packages/workspace-runtime/src",
     "packages/agent-sdk-runtime/src",
   ]

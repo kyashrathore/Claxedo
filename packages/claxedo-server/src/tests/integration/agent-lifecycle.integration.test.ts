@@ -131,7 +131,7 @@ delete process.env.CURSOR_API_KEY
 const [serverMod, supervisor, store, agent, embedded] = await Promise.all([
   import("../../deployments/local/server.js"),
   import("../../workspace/supervisor/index.js"),
-  import("../../workspace/store/index.js"),
+  import("@claxedo/server-core/workspace/store/index"),
   import("../../agent-config/index.js"),
   import("../../deployments/local/embedded-workspace-runtime.js"),
 ])

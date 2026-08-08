@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import * as cloudflare from "./cloudflare"
-import { CREDENTIALS_KEK_ENV } from "../envelope"
+import * as cloudflare from "@claxedo/server-core/credentials/backends/cloudflare"
+import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 
 /**
  * The Cloudflare KV backend must be impossible to use unwrapped.

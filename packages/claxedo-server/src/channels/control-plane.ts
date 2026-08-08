@@ -33,7 +33,7 @@ import type { ControlPlaneServices } from "../authority/services"
 import type { ProjectAction } from "@claxedo/server-core/platform/auth/authority"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
-import { resolveWorkspace, resolveWorkspaceByRepo, type Workspace } from "../workspace/store"
+import { resolveWorkspace, resolveWorkspaceByRepo, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import { createCredentialWhatsAppBaileysAuthStateStore } from "./whatsapp-baileys-auth-state"
 
 type CentralRuntime = ReturnType<typeof createCentralControlApp>["runtime"]

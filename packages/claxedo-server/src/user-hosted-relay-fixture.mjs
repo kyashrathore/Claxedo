@@ -1,7 +1,7 @@
 import { importJWK } from "jose"
 import { createWorkspaceRelayBun, createWorkspaceRelayDirectory } from "@claxedo/workspace-relay"
 import { getLease } from "./sandbox/stores/lease.sql"
-import { resolveWorkspace } from "./workspace/store/index.ts"
+import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { sandboxLeaseUrl } from "./sandbox/stores/sqlite-supervisor-state.ts"
 
 // 2026-08-06 plan Phase 3 (docs/plans/2026-08-06-001-test-full-matrix-real-

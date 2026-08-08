@@ -12,7 +12,7 @@ import {
 } from "./embedded-workspace-runtime"
 import type { OpencodeEvent } from "../../opencode/events"
 import type { OpenCodeRequestFn } from "../../opencode/engine"
-import type { Workspace } from "../../workspace/store"
+import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { noSelfHostedCapabilities, selfHostedCapabilities } from "./self-hosted-capabilities"
 
 async function makeWorkspaceRoot(prefix: string) {

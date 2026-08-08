@@ -1,5 +1,5 @@
-import type { Workspace } from "../workspace/store"
-import type { SessionAttachment, SessionMeta, SessionMetaNavigationListInput, SessionToolSandbox } from "../session/meta"
+import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import type { SessionAttachment, SessionMeta, SessionMetaNavigationListInput, SessionToolSandbox } from "@claxedo/server-core/session/meta/index"
 import type { ChannelDeliveryClaimInput, ChannelDeliveryDecision } from "../channels/delivery"
 import type { ChannelRunAuditInput, ChannelRunAuditRecord } from "../channels/run-audit"
 

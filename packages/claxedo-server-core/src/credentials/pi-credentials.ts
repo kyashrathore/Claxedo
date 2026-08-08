@@ -1,4 +1,4 @@
-import { requireCredentialRegistryLookup } from "./registry"
+import { requireCredentialRegistryLookup } from "@claxedo/server-core/credentials/registry"
 
 export const PI_LAUNCH_PROVIDERS = ["openai-codex", "anthropic", "openai"] as const
 

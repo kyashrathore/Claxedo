@@ -36,7 +36,7 @@ const [
   import("../platform/db"),
   import("@claxedo/server-core/platform/runtime/lib/bus"),
   import("./cloud.sql"),
-  import("./meta.sql"),
+  import("@claxedo/server-core/session/meta.sql"),
 ])
 
 beforeEach(async () => {

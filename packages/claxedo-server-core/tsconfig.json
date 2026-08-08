@@ -6,7 +6,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "noUncheckedIndexedAccess": false,
-    "lib": ["ESNext"],
+    "lib": ["ESNext", "DOM"],
     "types": ["bun"]
   },
   "include": ["src"]

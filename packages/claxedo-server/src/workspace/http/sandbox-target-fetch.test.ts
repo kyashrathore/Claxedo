@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { createServer } from "node:http"
-import type { Workspace } from "../../workspace/store"
+import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 
 import { sandboxFetch } from "./sandbox-target-fetch"
 

@@ -1,8 +1,8 @@
 import { createHmac, randomBytes, randomUUID } from "crypto"
 import { collectLocalCredentialItems, type LocalCredentialItem } from "./sync"
 import { probeDiscoveredCredential } from "./probe"
-import { listCredentials, putCredential } from "../registry"
-import type { CredentialScope, CredentialWrite } from "../types"
+import { listCredentials, putCredential } from "@claxedo/server-core/credentials/registry"
+import type { CredentialScope, CredentialWrite } from "@claxedo/server-core/credentials/types"
 
 const ttl = 5 * 60 * 1000
 

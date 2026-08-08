@@ -19,10 +19,10 @@ vi.mock("../../agent-config", () => ({
   sandboxDriverConfig: vi.fn(() => ({})),
   setSandboxDriverConfig: vi.fn(),
 }))
-vi.mock("../registry", () => ({ putCredential: mocks.putCredential }))
-vi.mock("../backend-registry", () => ({ getBackend: () => ({ probe: async () => true }) }))
+vi.mock("@claxedo/server-core/credentials/registry", () => ({ putCredential: mocks.putCredential }))
+vi.mock("@claxedo/server-core/credentials/backend-registry", () => ({ getBackend: () => ({ probe: async () => true }) }))
 vi.mock("@claxedo/server-core/platform/runtime/lib/paths", () => ({ dataDir: () => "/tmp/claxedo-migrate-test" }))
-vi.mock("../../sandbox/network/policy", () => ({ syncMcpHosts: vi.fn() }))
+vi.mock("@claxedo/server-core/sandbox/network/policy", () => ({ syncMcpHosts: vi.fn() }))
 vi.mock("@claxedo/server-core/platform/runtime/lib/log", () => ({
   Log: {
     create: () => ({

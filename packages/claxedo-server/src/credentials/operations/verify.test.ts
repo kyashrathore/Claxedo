@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
 import { CredentialVerificationError, verifyCredential } from "./verify"
-import type { CredentialMetadata } from "../types"
+import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 
 const NOW = 1_700_000_000_000
 const TOKEN_URL = "https://auth.openai.com/oauth/token"

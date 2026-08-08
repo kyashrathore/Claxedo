@@ -30,7 +30,7 @@ import { startLocalJwksIssuer } from "./e2e-local-jwks-issuer.mjs"
 // returns nothing; `workspace/supervisor/index.ts` exports every symbol below.
 import { configureWorkspaceSupervisor, createWorkspaceSupervisorSandboxManager, injectRuntime, shutdownWorkspaceSupervisor } from "./workspace/supervisor/index.ts"
 import { recordSupervisorSandboxLeaseReady } from "./sandbox/stores/sqlite-supervisor-state.ts"
-import { ensureWorkspace, updateWorkspace } from "./workspace/store/index.ts"
+import { ensureWorkspace, updateWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { startUserHostedWorkspaceTunnel, stopAllUserHostedWorkspaceTunnels, stopUserHostedWorkspaceTunnel } from "./user-hosted-tunnel.ts"
 
 const execFileAsync = promisify(execFile)

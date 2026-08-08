@@ -100,7 +100,7 @@ import {
   listWorkspaces,
   resolveWorkspace,
   subscribeLocalWorkspaceChanges,
-} from "../../workspace/store"
+} from "@claxedo/server-core/workspace/store/index"
 import { defaultHomeRegion, relayEndpointsFromEnv } from "@claxedo/server-core/platform/runtime/region/index"
 import { createControlPlaneChannels, mountControlPlaneChannels } from "../../channels/control-plane"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "./server-workspace-pty-proxy"
@@ -129,7 +129,7 @@ import { createLocalWorkGraphAgentTools, localSessionContext, localSessionExecut
 import { provisionRegisteredWorktree, releaseRegisteredWorktree, localWorktreeWorkGraphId } from "../../workspace/worktree"
 import { StreamIDSchema, masterRunId, masterSessionId } from "@claxedo/workgraph/contracts"
 import type { CommandResult, WorkGraphRunOperationRequest, WorkGraphContext } from "@claxedo/workgraph/contracts"
-import { sessionMeta } from "../../session/meta"
+import { sessionMeta } from "@claxedo/server-core/session/meta/index"
 import { llmTurnRecord, workGraphSessionAttribution } from "../../platform/telemetry/product/metering"
 import { ClaxedoDB } from "../../platform/db"
 import { RemoteAccessRoutes } from "../../routes/remote-access"

@@ -1,5 +1,5 @@
 import type { SandboxManager } from "@claxedo/sandbox-manager"
-import type { Workspace } from "../../workspace/store"
+import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { RelayProvider, RelayTokenInput } from "../../adapters/relay"
 

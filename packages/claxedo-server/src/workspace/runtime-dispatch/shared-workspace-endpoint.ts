@@ -18,7 +18,7 @@
  */
 
 import type { Context } from "hono"
-import { resolveWorkspace } from "../store"
+import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import {

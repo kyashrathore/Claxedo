@@ -8,7 +8,7 @@ import {
   type ControlPlaneAuthConfig,
   type ControlPlaneAuthContext,
 } from "@claxedo/server-core/platform/auth/auth"
-import type { Workspace } from "../../workspace/store"
+import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { verifyWorkspaceRuntimeControlToken } from "../../workspace/supervisor"
 import {
   IdempotencyCapacityError,

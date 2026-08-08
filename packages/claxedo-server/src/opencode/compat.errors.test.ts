@@ -16,7 +16,7 @@ const { Hono } = await import("hono")
 const { OpenCodeCompatRoutes } = await import("./compat-routes/index")
 const { configureOpenCodeEngine } = await import("./engine")
 const { saveCommand } = await import("../agent-config")
-const { ensureWorkspace } = await import("../workspace/store")
+const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
 
 const app = new Hono()
 app.route("/", OpenCodeCompatRoutes())

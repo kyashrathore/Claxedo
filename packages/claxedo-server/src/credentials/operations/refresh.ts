@@ -1,5 +1,5 @@
 import { OPENAI_CLIENT_ID, OPENAI_TOKEN_URL } from "../provider-auth/openai-oauth"
-import type { CredentialMetadata } from "../types"
+import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 
 /**
  * Non-interactive refresh for imported OAuth credentials.

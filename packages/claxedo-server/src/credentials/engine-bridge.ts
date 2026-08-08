@@ -51,8 +51,8 @@ import path from "node:path"
 import { OPENCODE_INTERNAL_BASE, opencodeRequest } from "../opencode/engine"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import { listCredentials, resolveSecret, SINGLE_TENANT_ORG, type CredentialOrgScope } from "./registry"
-import type { CredentialMetadata } from "./types"
+import { listCredentials, resolveSecret, SINGLE_TENANT_ORG, type CredentialOrgScope } from "@claxedo/server-core/credentials/registry"
+import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 
 const log = Log.create({ service: "credentials-engine-bridge" })
 

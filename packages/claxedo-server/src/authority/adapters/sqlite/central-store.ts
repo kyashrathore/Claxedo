@@ -22,7 +22,7 @@ import {
   syncSessionMetas,
   sourceChannelSessionCountsByWeek,
   taggedSessionMetas,
-} from "../../../session/meta"
+} from "@claxedo/server-core/session/meta/index"
 import {
   persistMessageEvent,
   readSessionMessages,

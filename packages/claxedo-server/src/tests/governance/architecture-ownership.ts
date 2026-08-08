@@ -157,11 +157,11 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "registry",
-    module: "credentials/registry.ts",
+    module: "../../claxedo-server-core/src/credentials/registry.ts",
     status: OwnershipStatus.Canonical,
     owner: "local credential registry",
     tests: [
-      "credentials/registry.test.ts",
+      "../../claxedo-server-core/src/credentials/registry.test.ts",
       "credentials/operations/sync.test.ts",
     ],
   },
@@ -425,12 +425,12 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "registry",
-    module: "credentials/backends/local.ts",
+    module: "../../claxedo-server-core/src/credentials/backends/local.ts",
     status: OwnershipStatus.Canonical,
     owner: "local credential secret backend",
     reason:
       "Unit 5 verdict DOCUMENT: local registry file backend (fs + crypto). The neutral port is services.credentials; this is a Worker-forbidden local adapter that stays in place.",
-    tests: ["credentials/registry.test.ts"],
+    tests: ["../../claxedo-server-core/src/credentials/registry.test.ts"],
   },
 ] as const satisfies readonly ArchitectureOwnershipEntry[]
 

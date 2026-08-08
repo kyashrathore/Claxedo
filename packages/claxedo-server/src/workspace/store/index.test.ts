@@ -11,7 +11,7 @@ const root = path.join(realpathSync(os.tmpdir()), `workspace-store-test-${random
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
-const mod = await import("./index")
+const mod = await import("@claxedo/server-core/workspace/store/index")
 const hostLease = await import("../../sandbox/stores/sqlite-supervisor-state")
 const { ClaxedoDB } = await import("../../platform/db")
 

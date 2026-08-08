@@ -16,7 +16,7 @@
  */
 
 import type { Context, Next } from "hono"
-import { resolveWorkspace } from "../store"
+import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import {
   embedded,
   noWr,

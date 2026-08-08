@@ -61,7 +61,7 @@ vi.mock("../../workspace/supervisor", () => ({
   })),
 }))
 
-vi.mock("../../workspace/store", () => ({
+vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   resolveWorkspace: vi.fn(async (input: { workspaceId?: string; directory?: string }) =>
     workspaceRows.get(input.workspaceId ?? "") ?? workspaceRows.get(input.directory ?? "")),
   resolveWorkspaceByRepo: vi.fn(async () => undefined),

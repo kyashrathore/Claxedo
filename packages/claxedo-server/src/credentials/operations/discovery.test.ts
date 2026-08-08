@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest"
 import { createCredentialDiscovery, type CredentialProbe } from "./discovery"
 import type { LocalCredentialItem } from "./sync"
-import type { CredentialWrite } from "../types"
+import type { CredentialWrite } from "@claxedo/server-core/credentials/types"
 
 const items: LocalCredentialItem[] = [
   {

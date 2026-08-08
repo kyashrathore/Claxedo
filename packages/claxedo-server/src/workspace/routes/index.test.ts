@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import type { ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
-import type { CredentialMetadata } from "../../credentials/types"
+import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 
 type WorkspaceTestRow = Record<string, unknown> & {
   id: string
@@ -107,17 +107,17 @@ vi.mock("../../agent-config", () => ({
   getEffectiveConfig: vi.fn(async () => ({})),
 }))
 
-vi.mock("../../credentials/registry", () => ({
+vi.mock("@claxedo/server-core/credentials/registry", () => ({
   getCredentialByProvider: mocks.getCredentialByProvider,
   putCredential: mocks.putCredential,
   deleteCredentialsByProvider: mocks.deleteCredentialsByProvider,
 }))
 
-vi.mock("../../sandbox/network/policy", () => ({
+vi.mock("@claxedo/server-core/sandbox/network/policy", () => ({
   ensureHostForRepo: mocks.ensureHostForRepo,
 }))
 
-vi.mock("../../workspace/store", () => ({
+vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   resolveWorkspace: mocks.resolveWorkspace,
   workspaceIdFromDirectoryRef: (input: string | undefined) => {
     const value = input?.trim()

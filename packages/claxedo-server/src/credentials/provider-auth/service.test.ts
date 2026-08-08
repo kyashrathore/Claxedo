@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest"
 import type { ControlPlaneCredentials, ControlPlaneServices } from "../../authority/services"
-import type { CredentialWrite } from "../types"
-import { SINGLE_TENANT_ORG } from "../provider-credential.sql"
+import type { CredentialWrite } from "@claxedo/server-core/credentials/types"
+import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
 import { createProviderAuthService, ProviderAuthError } from "./service"
 import { ProviderAuthRoutes } from "../routes/provider-auth"
 

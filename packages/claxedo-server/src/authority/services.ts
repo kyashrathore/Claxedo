@@ -1,7 +1,7 @@
 import type { ControlPlaneTelemetry } from "../platform/telemetry/ports"
 import type { AgentExtensionPolicyOverride } from "../hosts/agent-extensions/runtime-config"
 import type { SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
-import type { CredentialHealth, CredentialMetadata, CredentialScope, CredentialStatus, CredentialWrite } from "../credentials/types"
+import type { CredentialHealth, CredentialMetadata, CredentialScope, CredentialStatus, CredentialWrite } from "@claxedo/server-core/credentials/types"
 import type { CredentialDiscoveryPreview, CredentialDiscoverySelection } from "../credentials/operations/discovery"
 import { clerkAuthAdapter, type ControlPlaneAuthAdapter, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { DurableSessionLog } from "../platform/auth/durable-session-log"
@@ -99,7 +99,7 @@ export type ControlPlaneCredentials = {
 }
 
 async function credentialRegistry() {
-  return await import("../credentials/registry")
+  return await import("@claxedo/server-core/credentials/registry")
 }
 
 /**

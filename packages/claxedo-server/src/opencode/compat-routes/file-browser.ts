@@ -1,6 +1,6 @@
 import fs from "fs"
 import path from "path"
-import { resolveWorkspace } from "../../workspace/store"
+import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { workspaceInput, workspacePath, workspaceRoot, type OpenCodeCompatRequestContext } from "./context"
 import { fileStatus, gitListAll, globSearch, grepSearch, walkAll } from "./files"
 

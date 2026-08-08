@@ -1,7 +1,7 @@
 import type { Context, Next } from "hono"
 import { workspaceSupervisor } from "../supervisor-port"
 import type { SandboxManager, SandboxEnsureResult } from "@claxedo/sandbox-manager"
-import { resolveWorkspace } from "../store"
+import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { opencodeHeaders } from "../../opencode/auth"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { errorBody } from "@claxedo/server-core/platform/http/http"

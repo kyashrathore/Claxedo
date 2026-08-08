@@ -168,7 +168,7 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     observation: "lifecycle-only",
     stop: "owner-dependent",
     kill: "unsupported",
-    source: { file: "packages/claxedo-server/src/workspace/store/index.ts", callee: "execFileAsync", calls: 1 },
+    source: { file: "packages/claxedo-server-core/src/workspace/store/index.ts", callee: "execFileAsync", calls: 1 },
   }),
   product({
     id: "server-opencode-compat-git",

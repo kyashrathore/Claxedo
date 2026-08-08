@@ -1,6 +1,6 @@
 import type { ControlPlaneServices } from "../../authority/services"
 import { OPENCODE_INTERNAL_BASE, opencodeRequest } from "../../opencode/engine"
-import { resolveWorkspace } from "../../workspace/store"
+import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneRouteAuthOptions } from "../../platform/http/control-plane-route-auth"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { requestHarnessId, workspaceInput, type OpenCodeCompatRequestContext } from "./context"

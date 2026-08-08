@@ -84,7 +84,7 @@ async function loadBridge() {
     OPENCODE_INTERNAL_BASE: "http://opencode.internal",
     opencodeRequest: (request: Request) => stubEngineFetch(request),
   }))
-  const registry = await import("./registry")
+  const registry = await import("@claxedo/server-core/credentials/registry")
   const bridge = await import("./engine-bridge")
   return { registry, bridge }
 }

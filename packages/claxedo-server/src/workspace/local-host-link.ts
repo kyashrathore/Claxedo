@@ -4,7 +4,7 @@ import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPla
 import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
 import type { ControlPlaneServices } from "../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { resolveWorkspace } from "./store"
+import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { startUserHostedWorkspaceTunnel, stopUserHostedWorkspaceTunnel } from "../user-hosted-tunnel"
 import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, hostTunnelCredential, rec, signedOrError, type WorkspaceRouteOptions } from "./route-support"
 import { controlPlaneRateLimitError } from "./runtime-token-guards"

@@ -1,6 +1,6 @@
 import { ClaxedoDB, eq } from "../platform/db"
 import { ClaxedoCloudMessageTable } from "./cloud.sql"
-import type { Workspace } from "../workspace/store"
+import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 
 function now() {
   return Date.now()

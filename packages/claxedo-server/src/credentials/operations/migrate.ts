@@ -13,12 +13,12 @@ import {
   saveUserConfig,
   setSandboxDriverConfig,
 } from "../../agent-config"
-import { putCredential } from "../registry"
-import { getBackend } from "../backend-registry"
+import { putCredential } from "@claxedo/server-core/credentials/registry"
+import { getBackend } from "@claxedo/server-core/credentials/backend-registry"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import { syncMcpHosts } from "../../sandbox/network/policy"
-import type { CredentialKind } from "../types"
+import { syncMcpHosts } from "@claxedo/server-core/sandbox/network/policy"
+import type { CredentialKind } from "@claxedo/server-core/credentials/types"
 import { sandboxDriverIds } from "@claxedo/sandbox-manager/driver-catalog"
 
 const log = Log.create({ service: "credentials-migrate" })

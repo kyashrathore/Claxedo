@@ -7,11 +7,11 @@ import {
   type RefreshedCredentialSecret,
 } from "./refresh"
 import { verifySandboxDriverCredential } from "./sandbox-verify"
-import type { CredentialHealth, CredentialMetadata } from "../types"
+import type { CredentialHealth, CredentialMetadata } from "@claxedo/server-core/credentials/types"
 
 const log = Log.create({ service: "credentials-verify" })
 
-export type { CredentialHealth } from "../types"
+export type { CredentialHealth } from "@claxedo/server-core/credentials/types"
 
 export { CredentialVerificationError } from "../verification-error"
 

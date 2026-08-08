@@ -3,7 +3,7 @@ import type { ControlPlaneServices } from "../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { SandboxEnsureResult } from "@claxedo/sandbox-manager"
-import { resolveWorkspace, type Workspace } from "../workspace/store"
+import { resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, configuredRuntimeAccessTokenSigner, relayRole, type WorkspaceRouteOptions } from "../workspace/route-support"
 import { previousRuntimeAccessTokenError, workspaceOpenAuthorizationError } from "../workspace/runtime-token-guards"
 export async function cloudConnectionInfo(

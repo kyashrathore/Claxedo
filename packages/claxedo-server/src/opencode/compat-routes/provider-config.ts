@@ -1,7 +1,7 @@
 import { defaultHarness, loadUserConfig } from "../../agent-config"
 import { OPENCODE_INTERNAL_BASE, opencodeRequest } from "../../opencode/engine"
 import { opencodeCompatDisabled, type OpenCodeCompatRouteOptions } from "./proxy"
-import { piProviderCatalog } from "../../credentials/pi-provider-catalog"
+import { piProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-catalog"
 import { providerAuthMethods } from "../../credentials/provider-auth/service"
 import { providerCatalogView } from "../provider-catalog-view"
 

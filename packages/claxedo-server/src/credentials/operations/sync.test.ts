@@ -31,8 +31,8 @@ const prevCursor = process.env.CURSOR_API_KEY
 const prevXdgData = process.env.XDG_DATA_HOME
 process.env.CLAXEDO_DATA_DIR = root
 
-const { createTestBackend, setBackendOverride } = await import("../backend-registry")
-const { putCredential, resolveSecret, deleteCredentialsByProvider, getCredentialByProvider } = await import("../registry")
+const { createTestBackend, setBackendOverride } = await import("@claxedo/server-core/credentials/backend-registry")
+const { putCredential, resolveSecret, deleteCredentialsByProvider, getCredentialByProvider } = await import("@claxedo/server-core/credentials/registry")
 const { collectLocalCredentialItems, syncLocalCredentials } = await import("./sync")
 const { saveUserConfig } = await import("../../agent-config")
 const { ClaxedoDB } = await import("../../platform/db")

@@ -12,7 +12,7 @@ import { loadUserConfig, sandboxDriverConfig } from "../../agent-config"
 import { type ControlPlaneServices } from "../../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { workspaceBacking } from "../../workspace/store/backing"
-import { ensureHostForRepo } from "../../sandbox/network/policy"
+import { ensureHostForRepo } from "@claxedo/server-core/sandbox/network/policy"
 import {
   deleteWorkspace,
   ensureWorkspace,
@@ -21,7 +21,7 @@ import {
   resolveWorkspace,
   workspaceIdFromDirectoryRef,
   type Workspace,
-} from "../../workspace/store"
+} from "@claxedo/server-core/workspace/store/index"
 import { discardSupervisorSandbox, getSupervisorSandboxStatus } from "../../workspace/supervisor"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { ControlPlaneAuthError, bearerToken, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"

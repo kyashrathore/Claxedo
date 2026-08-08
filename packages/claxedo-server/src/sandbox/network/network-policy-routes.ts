@@ -24,8 +24,8 @@ import {
   resolveEffectivePolicy,
   updatePolicy,
   isTargetAllowed,
-} from "./policy"
-import { DEFAULT_ALLOWLIST } from "../network/types"
+} from "@claxedo/server-core/sandbox/network/policy"
+import { DEFAULT_ALLOWLIST } from "@claxedo/server-core/sandbox/network/types"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 
 const createBody = z.object({

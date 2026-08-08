@@ -12,8 +12,8 @@ import {
 } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { parseSessionMeta, putSessionMeta, sessionMeta, type SessionMeta } from "../meta"
-import { resolveWorkspace } from "../../workspace/store"
+import { parseSessionMeta, putSessionMeta, sessionMeta, type SessionMeta } from "@claxedo/server-core/session/meta/index"
+import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 
 type Options = {
   services?: ControlPlaneServices

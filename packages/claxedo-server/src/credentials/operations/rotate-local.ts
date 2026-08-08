@@ -33,10 +33,10 @@
  */
 
 import { ClaxedoDB } from "../../platform/db"
-import { ClaxedoProviderCredentialTable } from "../provider-credential.sql"
-import { getBackend } from "../backend-registry"
-import { isEnvelopeBackend } from "../envelope"
-import { listCloudflareCredentialRefs } from "../backends/cloudflare"
+import { ClaxedoProviderCredentialTable } from "@claxedo/server-core/credentials/provider-credential.sql"
+import { getBackend } from "@claxedo/server-core/credentials/backend-registry"
+import { isEnvelopeBackend } from "@claxedo/server-core/credentials/envelope"
+import { listCloudflareCredentialRefs } from "@claxedo/server-core/credentials/backends/cloudflare"
 import {
   rotateEnvelopeKeys,
   type EnvelopeRotationEntry,

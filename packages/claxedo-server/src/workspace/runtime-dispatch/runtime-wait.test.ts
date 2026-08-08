@@ -42,7 +42,7 @@ vi.mock("../../workspace/supervisor", () => ({
   listSupervisorSandboxs: mocks.listSupervisorSandboxs,
 }))
 
-vi.mock("../../workspace/store", () => ({
+vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   resolveWorkspace: mocks.resolveWorkspace,
   ensureWorkspace: vi.fn(async (input: { workspaceId?: string; directory?: string; kind?: string; repo_url?: string; status?: string }) => {
     const row = {

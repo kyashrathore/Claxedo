@@ -5,7 +5,7 @@ import {
   isRefreshableCredential,
   refreshCredentialSecret,
 } from "./refresh"
-import type { CredentialMetadata } from "../types"
+import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 
 const NOW = 1_700_000_000_000
 

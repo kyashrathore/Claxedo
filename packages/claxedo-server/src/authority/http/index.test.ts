@@ -21,7 +21,7 @@ function errorShape(err: unknown) {
     : err
 }
 
-vi.mock("../../workspace/store", () => ({
+vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   resolveWorkspace: mocks.resolveWorkspace,
   updateWorkspace: mocks.updateWorkspace,
 }))

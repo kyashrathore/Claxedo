@@ -31,9 +31,9 @@
  */
 
 import type { ControlPlaneCredentials } from "../../authority/services"
-import type { CredentialMetadata, CredentialWrite, SecretBackend } from "../types"
-import { createEncryptedCloudflareBackend } from "../backends/cloudflare"
-import { envelopeKeyProviderFromEnv, type EnvelopeAdmin } from "../envelope"
+import type { CredentialMetadata, CredentialWrite, SecretBackend } from "@claxedo/server-core/credentials/types"
+import { createEncryptedCloudflareBackend } from "@claxedo/server-core/credentials/backends/cloudflare"
+import { envelopeKeyProviderFromEnv, type EnvelopeAdmin } from "@claxedo/server-core/credentials/envelope"
 
 type WorkerCredentialEnv = Record<string, string | undefined>
 type StoredCredential = { meta: CredentialMetadata; secret: string }

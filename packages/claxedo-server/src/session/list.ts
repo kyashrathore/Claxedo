@@ -1,4 +1,4 @@
-import type { SessionMeta } from "./meta"
+import type { SessionMeta } from "@claxedo/server-core/session/meta/index"
 
 export type SessionListScope = "global" | "project" | "workspace"
 export type SessionListGroupBy = "none" | "project" | "workspace"

@@ -12,7 +12,7 @@ import {
   releaseSupervisorSandbox,
   workspaceSupervisorServerUrl,
 } from "./workspace/supervisor"
-import { getWorkspace } from "./workspace/store"
+import { getWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { RouteHandler, routeOwnership } from "./platform/governance/route-ownership"
 
 const log = Log.create({ service: "user-hosted-tunnel" })

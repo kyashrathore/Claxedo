@@ -24,7 +24,7 @@ import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { createLocalWorkspaceRelayProxy } from "./shared-workspace-endpoint"
 
-vi.mock("../store", () => ({
+vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   resolveWorkspace: vi.fn(async ({ workspaceId }: { workspaceId?: string }) =>
     workspaceId === "ws_1"
       ? {

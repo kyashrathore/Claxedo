@@ -1,7 +1,7 @@
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import { now } from "./clock"
 import { runtimes, type WorkspaceRuntimeState } from "./store"
-import type { Workspace } from "../store"
+import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 
 export function runtimeState(ws: Workspace) {
   const hit = runtimes.get(ws.id)

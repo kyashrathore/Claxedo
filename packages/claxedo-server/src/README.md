@@ -43,7 +43,7 @@ and `deployments/hosted-workerd/worker.import-graph.test.ts`:
   `*.sql.ts` table definitions; `platform/db/schema.ts` barrels them for the
   migration generator. Hand-written
   `ClaxedoDB.raw().prepare(...)` in feature code fails the suite. One
-  documented exception (`session/meta/index.ts`, a dynamic cursor query).
+  documented exception (``@claxedo/server-core/session/meta/index``, a dynamic cursor query).
   `authority/adapters/sqlite/` is a *separate* Node-only database with its own
   hand-rolled schema, deliberately kept out of the Worker bundle.
 - **`test-support/` may not be imported by production modules.**
