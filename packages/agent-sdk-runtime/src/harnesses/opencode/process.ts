@@ -164,7 +164,14 @@ export class OpenCodeServerProcess {
       ...(auth ? { OPENCODE_AUTH_CONTENT: auth } : {}),
     })
     await prepareSpawnEnv(env)
-    const proc = (this.input.spawn ?? spawn)("opencode", ["serve", `--hostname=127.0.0.1`, `--port=${port}`], {
+    // Named rather than called inline as `(this.input.spawn ?? spawn)(...)`.
+    // The desktop's spawn inventory counts `\bspawn\s*\(` per declared source
+    // file to prove every child process this app can start is enumerated, and
+    // the inline form hides the call from it — the injectable seam landed and
+    // silently took the OpenCode CLI's row to zero. A local keeps the seam and
+    // keeps the process countable.
+    const spawnChild = this.input.spawn ?? spawn
+    const proc = spawnChild("opencode", ["serve", `--hostname=127.0.0.1`, `--port=${port}`], {
       cwd: directory,
       stdio: ["pipe", "pipe", "pipe"],
       env,

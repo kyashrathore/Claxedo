@@ -10,22 +10,27 @@ const srcRoot = path.join(appRoot, "src")
  * What the local entry actually pulls in.
  *
  * The local product exists so an unsigned desktop does not ship an identity
- * provider it can never use. A separate entry file is the necessary first step
- * and — measured here — NOT a sufficient one: `app/entry/local.tsx` imports no
- * auth module directly, and Clerk still reaches its bundle through the shell's
- * provider tree.
+ * provider it can never use. A separate entry file was the necessary first step
+ * and — measured here — not a sufficient one: `app/entry/local.tsx` imported no
+ * auth module directly, yet Clerk reached its bundle anyway through four other
+ * modules. All four are cut; this file now asserts that rather than recording
+ * it.
  *
- * That reach is recorded below as a BASELINE rather than asserted away, and it
- * is recorded TWICE, because the two measurements answer different questions
- * and only one of them was here originally:
+ * It measures TWICE, and both measurements are load-bearing:
  *
- *  - The shortest chain names the tightest coupling — the one a reader has to
- *    break next.
+ *  - The shortest chain names the tightest coupling — the one a reader would
+ *    have to break next, and the fastest signal when one comes back.
  *  - `LOCAL_AUTH_CLIENT_IMPORTERS` names EVERY module in the local closure that
  *    imports `auth-client.ts`. This file used to claim "the test fails if a
  *    SECOND chain appears"; it did not. A shortest-path walk reports one chain
  *    and hides the rest, and there were four the whole time. Cutting the
- *    shortest one only promoted the next.
+ *    shortest one only promoted the next, so the whole-closure check is the one
+ *    that actually holds the line and the shortest-chain check is the diagnostic.
+ *
+ * A source closure is not an artifact, and this file cannot see the difference.
+ * Rollup config can name a chunk for a dependency no module imports, so the
+ * emitted-bundle check lives separately — a green result here means the SOURCE
+ * graph is clean, nothing more.
  */
 
 /** Packages a local build has no way to use. */
@@ -222,6 +227,36 @@ describe("the local entry", () => {
     const local = readFileSync(path.join(appRoot, "src/app/entry/local.tsx"), "utf8")
     expect(local).not.toMatch(/configureApiRuntime\s*\(/)
     expect(local).not.toMatch(/configureAuthSession\s*\(/)
+  })
+
+  test("each root binds the machine remote access ITS product can perform", () => {
+    // A third seam with the same shape, and the one that already shipped
+    // broken: `/api/claxedo/remote-access/*` moved off the desktop's sidecar to
+    // the Host Connector, and shared app code kept calling the route. Every
+    // suite stayed green because the transport was hardcoded and unowned.
+    //
+    // Three roots, three different correct answers, none of them a default.
+    const hosted = readFileSync(path.join(appRoot, "src/app/entry/main.tsx"), "utf8")
+    const desktopRenderer = readFileSync(
+      path.join(appRoot, "../claxedo-desktop/src/renderer/index.tsx"),
+      "utf8",
+    )
+    const local = readFileSync(path.join(appRoot, "src/app/entry/local.tsx"), "utf8")
+
+    // The browser served BY the server that mounts those routes.
+    expect(hosted).toMatch(/configureHttpMachineRemoteAccess\s*\(/)
+    expect(hosted).not.toMatch(/configureDesktopMachineRemoteAccess\s*\(/)
+
+    // Electron, where the connector and the machine key are. Never the HTTP
+    // one: its sidecar serves none of those paths, so a fallback would post
+    // into a 404 wearing the costume of resilience.
+    expect(desktopRenderer).toMatch(/configureDesktopMachineRemoteAccess\s*\(/)
+    expect(desktopRenderer).not.toMatch(/configureHttpMachineRemoteAccess\s*\(/)
+
+    // And the local browser product binds NOTHING: `@claxedo/local-server`
+    // serves no remote-access route and there is no main process under it, so
+    // the panel reports a capability this build does not have.
+    expect(local).not.toMatch(/configure(Http|Desktop)?MachineRemoteAccess\s*\(/)
   })
 
   test("the hosted entry reaches it too, so the measurement is not local-specific", () => {

@@ -30,7 +30,19 @@ describe("local production spawn inventory", () => {
     for (const file of await productionFiles()) {
       const text = stripComments(await Bun.file(join(root, file)).text())
       const names = childProcessNames(text)
-      const aliases = [...text.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*promisify\(\s*([A-Za-z_$][\w$]*)\s*\)/g)]
+      const aliases = [
+        ...text.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*promisify\(\s*([A-Za-z_$][\w$]*)\s*\)/g),
+        // Injectable seam: `const spawnChild = this.input.spawn ?? spawn`.
+        //
+        // A harness that wants its spawn path testable takes the spawner as an
+        // option and defaults to the real one. Without this rule the injected
+        // form reads as zero calls, and the inventory silently loses a row —
+        // which is exactly what happened when OpenCode's server process gained
+        // its seam: the CLI's entry went to 0 while the process still spawned.
+        // An inventory that under-counts is worse than none, because its whole
+        // claim is that every child this app can start is enumerated here.
+        ...text.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*[^\n]*?\?\?\s*([A-Za-z_$][\w$]*)\s*$/gm),
+      ]
         .filter((match) => names.has(match[2]!))
         .map((match) => match[1]!)
       ;[...names, ...aliases].forEach((name) => {

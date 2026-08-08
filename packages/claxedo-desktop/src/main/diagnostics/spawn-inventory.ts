@@ -313,7 +313,7 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     observation: "host-tree",
     stop: "supported",
     kill: "owner-dependent",
-    source: { file: "packages/agent-sdk-runtime/src/harnesses/opencode/process.ts", callee: "spawn", calls: 1 },
+    source: { file: "packages/agent-sdk-runtime/src/harnesses/opencode/process.ts", callee: "spawnChild", calls: 1 },
   }),
   product({
     id: "claude-sdk-cli",
