@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { InvalidReportError, formatDuration, metricRows, parseReport } from "./report"
+import {
+  InvalidReportError,
+  detailMetricRows,
+  formatDuration,
+  headlineMetricRows,
+  metricRows,
+  parseReport,
+} from "./report"
 
 const sample = {
   schemaVersion: 2,
@@ -30,6 +37,8 @@ describe("report contract", () => {
       ["Median observed span after first full-machine need", "45.5s"],
       ["p95 observed span after first full-machine need", "301.2s"],
     ])
+    expect(headlineMetricRows(report)).toEqual(metricRows(report).slice(0, 3))
+    expect(detailMetricRows(report)).toEqual(metricRows(report).slice(3))
   })
 
   test("rejects identifying, obsolete, and internally inconsistent payloads", () => {

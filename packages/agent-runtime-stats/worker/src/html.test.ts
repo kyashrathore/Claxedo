@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { renderOgCard, renderReportPage } from "./html"
+import { renderOgCard, renderReportPage, renderSharePage } from "./html"
 import type { StoredReport } from "./report"
 
 const report: StoredReport = {
@@ -27,8 +27,17 @@ test("public report exposes X and Open Graph image metadata", () => {
   expect(html).toContain("Once%20a%20turn%20reaches%20one%2C%2072.40%25%20need%20it%20again.")
   expect(html).toContain("https://github.com/vercel-labs/just-bash")
   expect(html).toContain("not the complete turn duration")
+  expect(html).toContain('<details class="metric-details"><summary>More detail <span>7 metrics</span></summary>')
   expect(html).not.toContain("CI/E2E")
   expect(html).toContain("347,214")
+})
+
+test("share review keeps secondary metrics collapsed", () => {
+  const html = renderSharePage("nonce")
+  expect(html).toContain('id="headline-metrics"')
+  expect(html).toContain('<details class="metric-details"><summary>More detail <span>7 metrics</span></summary>')
+  expect(html).toContain('id="detail-metrics"')
+  expect(html).not.toContain('<details class="metric-details" open>')
 })
 
 test("OG card uses the turn placement stats at 1200 by 630", () => {

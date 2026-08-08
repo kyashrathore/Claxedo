@@ -1,8 +1,9 @@
 import {
+  detailMetricRows,
   formatDuration,
   formatInteger,
   formatPercent,
-  metricRows,
+  headlineMetricRows,
   type ReportMetrics,
   type StoredReport,
 } from "./report"
@@ -42,6 +43,13 @@ const baseStyles = `
   td:last-child, th:last-child { text-align:right; }
   td:last-child { color:var(--acid); font-size:18px; font-weight:700; font-variant-numeric:tabular-nums; }
   tr:last-child td { border-bottom:0; }
+  .metric-details { border-top:1px solid var(--line); }
+  .metric-details summary { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:17px 22px; color:var(--paper); cursor:pointer; text-transform:uppercase; letter-spacing:.1em; font-size:11px; font-weight:700; list-style:none; }
+  .metric-details summary::-webkit-details-marker { display:none; }
+  .metric-details summary::after { content:"+"; color:var(--acid); font-size:18px; line-height:1; }
+  .metric-details[open] summary::after { content:"−"; }
+  .metric-details summary span { color:var(--muted); font-weight:500; }
+  .metric-details table { border-top:1px solid var(--line); }
   .actions { display:flex; flex-wrap:wrap; gap:12px; margin-top:28px; }
   button, .button { appearance:none; border:1px solid var(--acid); background:var(--acid); color:#11140d; padding:14px 18px; font:700 13px/1 ui-monospace, monospace; text-decoration:none; text-transform:uppercase; letter-spacing:.08em; cursor:pointer; transition:transform .18s ease, box-shadow .18s ease; }
   button:hover, .button:hover { transform:translate(-3px,-3px); box-shadow:6px 6px 0 rgba(217,255,67,.22); }
@@ -60,11 +68,16 @@ const baseStyles = `
   @media (prefers-reduced-motion:reduce) { .reveal { animation:none; } button,.button { transition:none; } }
 `
 
-function table(report: ReportMetrics): string {
-  const rows = metricRows(report)
+function rows(values: ReadonlyArray<readonly [string, string]>): string {
+  return values
     .map(([metric, result]) => `<tr><td>${escapeHtml(metric)}</td><td>${escapeHtml(result)}</td></tr>`)
     .join("")
-  return `<div class="panel"><div class="panel-head"><span>Runtime placement</span><span>Aggregate only</span></div><table><thead><tr><th>Metric</th><th>Result</th></tr></thead><tbody>${rows}</tbody></table></div>${placementDefinition()}`
+}
+
+function table(report: ReportMetrics): string {
+  const headline = rows(headlineMetricRows(report))
+  const detail = rows(detailMetricRows(report))
+  return `<div class="panel"><div class="panel-head"><span>Runtime placement</span><span>Aggregate only</span></div><table><thead><tr><th>Metric</th><th>Result</th></tr></thead><tbody>${headline}</tbody></table><details class="metric-details"><summary>More detail <span>7 metrics</span></summary><table><tbody>${detail}</tbody></table></details></div>${placementDefinition()}`
 }
 
 function placementDefinition(): string {
@@ -90,12 +103,12 @@ export function renderLandingPage(nonce: string): string {
 const shareScript = `
   const errorBox = document.querySelector("#error");
   const button = document.querySelector("#publish");
-  const body = document.querySelector("#metrics");
   const integer = v => v.toLocaleString("en-US");
   const percent = v => v==null?"Unavailable":v.toFixed(2)+"%";
   const number = v => v==null?"Unavailable":v.toFixed(1).replace(/\\.0$/,"");
   const duration = v => v==null?"Unavailable":v<1000?Math.round(v)+"ms":(v/1000).toFixed(1)+"s";
-  const names = [["sessionsAnalyzed","Sessions analyzed",integer],["executionCalls","Execution calls",integer],["sessionsWithoutFullMachinePercent","Sessions completed without full machine",percent],["turnsAnalyzed","Turns analyzed",integer],["turnCoveragePercent","Execution-call turn coverage",percent],["turnsWithoutFullMachinePercent","Turns completed without full machine",percent],["repeatFullMachineTurnPercent","Full-machine turns needing it again",percent],["medianCallsAfterFirstFullMachine","Median calls after first full-machine need",number],["medianObservedSpanAfterFirstFullMachineMs","Median observed span after first full-machine need",duration],["p95ObservedSpanAfterFirstFullMachineMs","p95 observed span after first full-machine need",duration]];
+  const headlineNames = [["sessionsAnalyzed","Sessions analyzed",integer],["executionCalls","Execution calls",integer],["sessionsWithoutFullMachinePercent","Sessions completed without full machine",percent]];
+  const detailNames = [["turnsAnalyzed","Turns analyzed",integer],["turnCoveragePercent","Execution-call turn coverage",percent],["turnsWithoutFullMachinePercent","Turns completed without full machine",percent],["repeatFullMachineTurnPercent","Full-machine turns needing it again",percent],["medianCallsAfterFirstFullMachine","Median calls after first full-machine need",number],["medianObservedSpanAfterFirstFullMachineMs","Median observed span after first full-machine need",duration],["p95ObservedSpanAfterFirstFullMachineMs","p95 observed span after first full-machine need",duration]];
   let report;
   const fail = message => { errorBox.textContent = message; errorBox.classList.add("visible"); button.disabled = true; };
   try {
@@ -103,9 +116,12 @@ const shareScript = `
     if (!encoded) throw new Error("No report was found in this link. Run the CLI again to create one.");
     const base64 = encoded.replace(/-/g,"+").replace(/_/g,"/").padEnd(Math.ceil(encoded.length/4)*4,"=");
     report = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(base64), c => c.charCodeAt(0))));
-    for (const [key,label,format] of names) {
-      const row = document.createElement("tr"), metric = document.createElement("td"), result = document.createElement("td");
-      metric.textContent = label; result.textContent = format(report[key]); row.append(metric,result); body.append(row);
+    for (const [target,names] of [["headline-metrics",headlineNames],["detail-metrics",detailNames]]) {
+      const body = document.querySelector("#"+target);
+      for (const [key,label,format] of names) {
+        const row = document.createElement("tr"), metric = document.createElement("td"), result = document.createElement("td");
+        metric.textContent = label; result.textContent = format(report[key]); row.append(metric,result); body.append(row);
+      }
     }
     button.disabled = false;
   } catch (error) { fail(error instanceof Error ? error.message : "This share link is invalid."); }
@@ -123,7 +139,7 @@ const shareScript = `
 export function renderSharePage(nonce: string): string {
   return documentShell(
     "Review your anonymous runtime report",
-    `<main class="shell"><div class="reveal">${mast()}<p class="eyebrow">Review before publishing</p><h1>Your data stays local until this click.</h1><p class="lede">Only the ten aggregate values below will be stored. No transcripts, prompts, repository names, file paths, or account identifiers are included.</p></div><div class="reveal two"><div class="panel"><div class="panel-head"><span>Runtime placement</span><span>Not uploaded</span></div><table><thead><tr><th>Metric</th><th>Result</th></tr></thead><tbody id="metrics"></tbody></table></div>${placementDefinition()}</div><div class="reveal three actions"><button id="publish" disabled>Publish anonymous snapshot</button><a class="button secondary" href="/">Cancel</a></div><p class="privacy">Publishing creates an unlisted-but-public URL. Anyone with the URL can view and share it.</p><div id="error" class="error" role="alert"></div></main><script nonce="${nonce}">${shareScript}</script>`,
+    `<main class="shell"><div class="reveal">${mast()}<p class="eyebrow">Review before publishing</p><h1>Your data stays local until this click.</h1><p class="lede">Only the ten aggregate values below will be stored. No transcripts, prompts, repository names, file paths, or account identifiers are included.</p></div><div class="reveal two"><div class="panel"><div class="panel-head"><span>Runtime placement</span><span>Not uploaded</span></div><table><thead><tr><th>Metric</th><th>Result</th></tr></thead><tbody id="headline-metrics"></tbody></table><details class="metric-details"><summary>More detail <span>7 metrics</span></summary><table><tbody id="detail-metrics"></tbody></table></details></div>${placementDefinition()}</div><div class="reveal three actions"><button id="publish" disabled>Publish anonymous snapshot</button><a class="button secondary" href="/">Cancel</a></div><p class="privacy">Publishing creates an unlisted-but-public URL. Anyone with the URL can view and share it.</p><div id="error" class="error" role="alert"></div></main><script nonce="${nonce}">${shareScript}</script>`,
     nonce,
   )
 }

@@ -139,11 +139,16 @@ export function formatDuration(value: number | null): string {
   return `${(value / 1_000).toFixed(1)}s`
 }
 
-export function metricRows(report: ReportMetrics): ReadonlyArray<readonly [string, string]> {
+export function headlineMetricRows(report: ReportMetrics): ReadonlyArray<readonly [string, string]> {
   return [
     ["Sessions analyzed", formatInteger(report.sessionsAnalyzed)],
     ["Execution calls", formatInteger(report.executionCalls)],
     ["Sessions completed without full machine", formatPercent(report.sessionsWithoutFullMachinePercent)],
+  ]
+}
+
+export function detailMetricRows(report: ReportMetrics): ReadonlyArray<readonly [string, string]> {
+  return [
     ["Turns analyzed", formatInteger(report.turnsAnalyzed)],
     ["Execution-call turn coverage", formatPercent(report.turnCoveragePercent)],
     ["Turns completed without full machine", formatPercent(report.turnsWithoutFullMachinePercent)],
@@ -155,4 +160,8 @@ export function metricRows(report: ReportMetrics): ReadonlyArray<readonly [strin
     ],
     ["p95 observed span after first full-machine need", formatDuration(report.p95ObservedSpanAfterFirstFullMachineMs)],
   ]
+}
+
+export function metricRows(report: ReportMetrics): ReadonlyArray<readonly [string, string]> {
+  return [...headlineMetricRows(report), ...detailMetricRows(report)]
 }

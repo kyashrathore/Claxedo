@@ -31,7 +31,7 @@ The same JavaScript package runs on macOS, Linux, and Windows, on both ARM64 and
 --list-harnesses
 ```
 
-Interactive scans show live file counts, elapsed time, and the active harness. The report preserves a bordered table in wide, compact, and narrow terminals, then renders definitions and caveats as spaced, labeled notes with restrained terminal colors. Set `NO_COLOR` to disable ANSI styling. The table includes session/turn placement, turn-ID coverage, the three-way call classification, full-machine action buckets, timing diagnostics, every selected source's status, and any read warnings or errors. `--format json` prints the same model as formatted JSON for automation.
+Interactive scans show live file counts, elapsed time, and the active harness. The report preserves a bordered table in wide, compact, and narrow terminals, then renders definitions and caveats as spaced, labeled notes with restrained terminal colors. Set `NO_COLOR` to disable ANSI styling. The terminal table is deliberately limited to the placement decision, runtime split, full-machine causes, and on-demand timing. Every selected source and any read warnings or errors remain visible below it. `--format json` prints the complete analysis model, including diagnostics omitted from the terminal summary.
 
 The report also measures the local execution-demand pattern:
 
