@@ -7,7 +7,6 @@
 import { setExtensions } from "../../features/extensions/index"
 import { appExtensions } from "../../features/extensions/index"
 import { serverExtensions } from "../../features/extensions/index"
-import { initializeClerk } from "@/platform/auth/auth-client"
 import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "@/platform/api/local-server"
 import { configureProductContributions, hostedContributionLoader } from "@/app/composition/product-contributions"
 import { localContentSurfaces, registerContentSurface } from "@/app/integrations/first-party-content-surfaces"
@@ -78,9 +77,18 @@ export function initClaxedo(config: ClaxedoConfig): void {
     register: registerContentSurface,
   })
 
-  // Only initialize auth if authEnabled (fire-and-forget)
+  // Starting the identity provider is NOT this function's job.
+  //
+  // It used to be, and that put Clerk in the import graph of every build that
+  // calls `initClaxedo` — including the local one, which can never sign in.
+  // Guarding it behind `config.authEnabled` did not help: the branch not
+  // running does not remove the module from the bundle. Making it a dynamic
+  // import only moved it to a lazy chunk that a local build still ships.
+  //
+  // So the hosted entry starts it (`app/entry/main.tsx`), which is where the
+  // decision to have an identity provider is actually made, and this function
+  // keeps only the parts both products share.
   if (config.authEnabled) {
-    initializeClerk().catch(() => {})
     // Hosted composition: WorkGraph and Documents arrive as one lazily
     // imported contribution set rather than as static imports of this entry.
     //
@@ -121,10 +129,10 @@ export function getDefaultConfig(): ClaxedoConfig {
   }
 }
 
-// Re-export utilities and types for direct use
-export { clerk as authClient, waitForClerk, initializeClerk, getAuthToken } from "@/platform/auth/auth-client"
-export { useAuthSession } from "@/platform/auth/auth-session"
-export type { AuthSession, AuthSessionStatus } from "@/platform/auth/auth-session"
+// The authenticated-identity surface lives on `@claxedo/app/auth`, not here.
+// Re-exporting it from the main entry made Clerk a static edge of every build
+// that imports this module for `getDefaultConfig` — including the local one,
+// which can never sign in. See `entry/auth.ts`.
 export { PrincipalProvider } from "@/platform/auth/principal-provider"
 export { applyLayoutCommand } from "../layout/commands"
 export type { LayoutCommand } from "../layout/commands"

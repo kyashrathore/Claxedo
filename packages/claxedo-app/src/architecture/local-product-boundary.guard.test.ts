@@ -59,17 +59,26 @@ export function isHostedCapability(ref: ProductImportRef) {
 }
 
 /**
- * The mixed pre-split reality, recorded exactly.
+ * How the published entry reaches the identity provider, recorded exactly.
  *
- * `app/entry/index.tsx` is the published `@claxedo/app` entry AND the hosted
- * bootstrap, so it calls `initializeClerk()` directly. One hop, no indirection
- * — which is precisely why the split is a package problem rather than something
- * a lazy import could fix.
+ * This began as the pre-split reality: `app/entry/index.tsx` was the published
+ * `@claxedo/app` entry AND the hosted bootstrap, calling `initializeClerk()`
+ * directly — one hop, no indirection, which is why the fix had to be a package
+ * split rather than a lazy import.
+ *
+ * That hop is gone. Starting the identity provider moved to the hosted entry,
+ * and the auth surface moved to `@claxedo/app/auth`. What the published entry
+ * still reaches is `app/routes/login.tsx`, which is a LOGIN ROUTE — genuinely
+ * hosted, on Unit 10's move list, and a much later hop.
+ *
+ * Kept as a recorded chain rather than deleted: the value is that a NEW route
+ * from the published entry to an identity provider fails here instead of
+ * blending into a known one.
  */
 const PRE_SPLIT_HOSTED_REACH = {
   chain: ["app/entry/index.tsx"],
-  specifier: "@/platform/auth/auth-client",
-  module: "platform/auth/auth-client.ts",
+  specifier: "../routes/login",
+  module: "app/routes/login.tsx",
 }
 
 function fixtureApp(files: Record<string, string>) {

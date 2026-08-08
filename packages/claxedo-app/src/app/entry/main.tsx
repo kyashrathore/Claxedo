@@ -10,7 +10,7 @@ import { render } from "solid-js/web"
 import { AppBaseProviders, AppInterface } from "@/app/entry/app"
 import { PlatformProvider, type Platform } from "@claxedo/app"
 import { initClaxedo, getDefaultConfig } from "./index"
-import { getAuthToken } from "@/platform/auth/auth-client"
+import { getAuthToken, initializeClerk } from "@/platform/auth/auth-client"
 import { authFetch } from "@/platform/api/api"
 import {
   initPostHog,
@@ -43,6 +43,11 @@ configureWorkspaceStartup(cloudWorkspaceStartup)
 // Initialize cloud extensions before rendering
 const config = getDefaultConfig()
 initClaxedo(config)
+
+// The hosted entry starts the identity provider. `initClaxedo` deliberately
+// does not — see the note there; a shared init that imports Clerk puts it in
+// the local build too.
+if (config.authEnabled) initializeClerk().catch(() => {})
 
 // Initialize PostHog analytics (no-ops if VITE_POSTHOG_KEY not set)
 if (!isDemoMode()) {

@@ -588,7 +588,7 @@ describe("the plan's move list versus the candidate manifest", () => {
     // modules: its one remaining importer, `app/entry/main.tsx`, is itself on
     // the list. The thirteen other files that dropped out did so because the
     // record reader they actually wanted moved to `platform/runtime/`.
-    stayingModulesThatImportThem: 41,
+    stayingModulesThatImportThem: 42,
     movedModulesImportedByStaying: 41,
     exportSurface: 58,
   }
@@ -659,14 +659,19 @@ describe("the plan's move list versus the candidate manifest", () => {
    */
   const SURVIVING_IDENTITY_IMPORTERS = {
     "platform/auth/auth-client.ts": [
-      "app/entry/index.tsx",
+      // Was `app/entry/index.tsx`, the package's MAIN entry, which re-exported
+      // the auth surface and started Clerk inside the shared `initClaxedo`. Now
+      // a dedicated `@claxedo/app/auth` subpath, so importing the package for
+      // `getDefaultConfig` no longer drags the identity provider — which is
+      // what the local product entry was doing.
+      "app/entry/auth.ts",
       "features/workspaces/actions/project-actions.tsx",
       "platform/api/api.ts",
       "platform/runtime/agent/agent-runtime-client.ts",
     ],
     "platform/auth/auth-session.ts": [
       "app/entry/app.tsx",
-      "app/entry/index.tsx",
+      "app/entry/auth.ts",
       "app/workbench/rail/rail-account-menu.tsx",
       "platform/account/account-provider.tsx",
       "platform/auth/principal-provider.tsx",

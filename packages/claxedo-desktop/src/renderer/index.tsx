@@ -23,7 +23,8 @@ import {
   setDeploymentMode,
 } from "@/platform/telemetry/analytics"
 import { ConfigProvider } from "@/app/providers"
-import { getAuthToken, getDefaultConfig, initClaxedo } from "@claxedo/app"
+import { getDefaultConfig, initClaxedo } from "@claxedo/app"
+import { getAuthToken } from "@claxedo/app/auth"
 import { configureApiRuntime } from "@/platform/api/api"
 import type { LinuxDisplayBackend, ServerReadyData } from "../preload/types"
 import pkg from "../../package.json"

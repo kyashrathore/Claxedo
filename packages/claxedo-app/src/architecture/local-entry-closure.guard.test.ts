@@ -72,17 +72,24 @@ describe("the local entry", () => {
 
     expect(breach, "expected the known Clerk chain; if it is gone, tighten this test").not.toBeNull()
     expect(breach!.specifier).toContain("@clerk/clerk-js")
-    // The chain is `local.tsx -> app/entry/index.tsx -> platform/auth/auth-client.ts`.
+    // The chain is now
+    // `local.tsx -> app/entry/app.tsx -> platform/api/api.ts -> auth-client.ts`.
     //
-    // Measured, and not where I expected: `index.tsx` is the package's public
-    // surface, and the local entry reaches it only for `initClaxedo` and
-    // `getDefaultConfig`. So the remaining work is splitting that surface, not
-    // the provider tree — a distinction worth having before someone starts on
-    // the wrong file.
+    // It used to run through `app/entry/index.tsx`, which re-exported the auth
+    // surface and started Clerk inside the shared `initClaxedo`. Both are gone:
+    // the auth surface moved to `@claxedo/app/auth`, and starting the identity
+    // provider is the hosted entry's job.
+    //
+    // What is left is the edge the cloud-app extraction measurement named as
+    // structural: `platform/api/api.ts` is the authenticated transport, 17
+    // hosted modules import it, and it imports `auth-client`. Breaking it is a
+    // design decision about that transport — the account port is the presumed
+    // answer — not another entry split, and it is why this is still a baseline
+    // rather than `toBeNull()`.
     //
     // Naming the waypoint means a NEW route to Clerk, through some other
     // module, fails here rather than blending into a known failure.
-    expect(breach!.chain).toContain("app/entry/index.tsx")
+    expect(breach!.chain).toContain("platform/api/api.ts")
   })
 
   test("the hosted entry reaches it too, so the measurement is not local-specific", () => {

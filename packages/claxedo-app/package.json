@@ -6,6 +6,7 @@
   "type": "module",
   "exports": {
     ".": "./src/app/entry/index.tsx",
+    "./auth": "./src/app/entry/auth.ts",
     "./context": "./src/app/providers/index.ts",
     "./extensions": "./src/features/extensions/data/index.ts",
     "./extensions/*": "./src/features/extensions/data/*.tsx",
