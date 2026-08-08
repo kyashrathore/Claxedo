@@ -46,4 +46,22 @@ describe("tokentracker-cli deep-import contract", () => {
     expect(typeof subs.readClaudeCodeAccessToken).toBe("function")
     expect(typeof subs.readCodexAuthBundle).toBe("function")
   })
+
+  test("embedded history is inert and fails closed unless cloud and telemetry are disabled", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+    const writeSpy = vi.spyOn(fs, "writeFileSync")
+    const mod = await import("tokentracker-cli/src/lib/embedded-history.js")
+    expect(typeof mod.scanLocalHistory).toBe("function")
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(writeSpy).not.toHaveBeenCalled()
+    await expect(mod.scanLocalHistory({
+      sourceHome: "/fixture",
+      stateDir: "/fixture-state",
+      since: 0,
+      until: 1,
+      upload: true as never,
+      telemetry: false,
+      classify: () => "external",
+    })).rejects.toThrow("upload:false")
+  })
 })

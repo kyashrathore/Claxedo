@@ -38,3 +38,43 @@ declare module "tokentracker-cli/src/lib/subscriptions.js" {
     env?: NodeJS.ProcessEnv
   }): Promise<Record<string, unknown> | undefined>
 }
+
+declare module "tokentracker-cli/src/lib/embedded-history.js" {
+  export type EmbeddedHistoryRow = {
+    app: string
+    source: string
+    model: string
+    bucket_start: number
+    native_session_id: string
+    input_tokens: number
+    output_tokens: number
+    reasoning_output_tokens: number
+    cached_input_tokens: number
+    cache_creation_input_tokens: number
+  }
+  export function scanLocalHistory(options: {
+    sourceHome: string
+    stateDir: string
+    since: number
+    until: number
+    sources?: string[]
+    upload: false
+    telemetry: false
+    classify(input: { source: string; nativeSessionId: string; observedAt: number }): string | Promise<string>
+  }): Promise<{
+    rows: EmbeddedHistoryRow[]
+    coverage: Array<{ source: string; status: "available" | "degraded" | "unavailable" | "unsupported"; error?: string | null }>
+    classified_claxedo: number
+    unclassified: number
+  }>
+}
+
+declare module "tokentracker-cli/src/lib/pricing/index.js" {
+  export function getModelPricing(model: string, options?: { source?: string }): {
+    input: number
+    output: number
+    cache_read?: number
+    cache_write?: number
+  }
+  export function __getStateForTests(): { source?: string | null }
+}

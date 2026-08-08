@@ -1,0 +1,167 @@
+diff --git a/node_modules/tokentracker-cli/src/lib/embedded-history.js b/src/lib/embedded-history.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..476a058a793e54801a7eea1b07de2e10ff5498b1
+--- /dev/null
++++ b/src/lib/embedded-history.js
+@@ -0,0 +1,161 @@
++"use strict";
++
++// Side-effect-free embedding surface for hosts that need local usage without
++// TokenTracker Cloud. This module deliberately imports no command, queue,
++// telemetry, machine-id, runtime-config, or upload code.
++const fs = require("node:fs");
++const path = require("node:path");
++const { parseCodexRolloutFile, listJsonlFiles } = require("./codex-rollout-parser");
++
++const SUPPORTED = new Set(["claude", "codex", "opencode", "pi"]);
++
++function finiteToken(value) {
++  const number = Number(value);
++  return Number.isSafeInteger(number) && number >= 0 ? number : null;
++}
++
++function usage(input = {}) {
++  const cache = input.cache || {};
++  return {
++    input_tokens: finiteToken(input.input_tokens ?? input.input),
++    output_tokens: finiteToken(input.output_tokens ?? input.output),
++    reasoning_output_tokens: finiteToken(input.reasoning_output_tokens ?? input.reasoning),
++    cached_input_tokens: finiteToken(input.cached_input_tokens ?? input.cache_read_input_tokens ?? cache.read),
++    cache_creation_input_tokens: finiteToken(input.cache_creation_input_tokens ?? input.cache_creation ?? cache.write),
++  };
++}
++
++function timestamp(value, fallback) {
++  const millis = typeof value === "number" ? value : Date.parse(String(value || ""));
++  return Number.isFinite(millis) ? millis : fallback;
++}
++
++function readJsonLines(filePath) {
++  let raw;
++  try { raw = fs.readFileSync(filePath, "utf8"); } catch { return []; }
++  const rows = [];
++  for (const line of raw.split("\n")) {
++    if (!line.trim()) continue;
++    try { rows.push(JSON.parse(line)); } catch { /* source-specific degradation is reported by the caller */ }
++  }
++  return rows;
++}
++
++function eventFromRow(source, filePath, row, fallbackTime) {
++  const message = row.message || row.info || row;
++  const role = message.role || row.role || row.type;
++  if (role !== "assistant" && row.type !== "message") return null;
++  const tokens = message.usage || message.tokens || row.usage || row.tokens;
++  if (!tokens || typeof tokens !== "object") return null;
++  return {
++    source,
++    native_session_id: String(row.sessionId || row.session_id || message.sessionID || message.session_id || path.basename(filePath, path.extname(filePath))),
++    model: String(message.model || message.modelID || row.model || "unknown"),
++    observed_at: timestamp(row.timestamp || row.created_at || message.timestamp || message.time?.completed, fallbackTime),
++    project_ref: typeof row.cwd === "string" ? row.cwd : undefined,
++    tokens: usage(tokens),
++  };
++}
++
++async function scanSource(sourceHome, source, since, until) {
++  const roots = {
++    claude: path.join(sourceHome, ".claude", "projects"),
++    codex: path.join(sourceHome, ".codex", "sessions"),
++    opencode: path.join(sourceHome, ".local", "share", "opencode", "storage", "message"),
++    pi: path.join(sourceHome, ".pi", "agent", "sessions"),
++  };
++  const root = roots[source];
++  if (!root || !fs.existsSync(root)) return { events: [], status: "unavailable", error: null };
++  const files = listJsonlFiles(root);
++  const events = [];
++  let malformed = 0;
++  for (const filePath of files) {
++    const stat = fs.statSync(filePath);
++    if (source === "codex") {
++      try {
++        const result = await parseCodexRolloutFile(filePath, {
++          fromIso: new Date(since).toISOString(),
++          toIso: new Date(until).toISOString(),
++        });
++        if (result.totals?.total_tokens > 0) events.push({
++          source,
++          native_session_id: String(result.sessionId || path.basename(filePath, ".jsonl")),
++          model: String(result.model || "unknown"),
++          observed_at: Math.min(until, Math.max(since, stat.mtimeMs)),
++          project_ref: typeof result.cwd === "string" ? result.cwd : undefined,
++          tokens: usage(result.totals),
++        });
++      } catch { malformed += 1; }
++      continue;
++    }
++    const rows = readJsonLines(filePath);
++    if (rows.length === 0 && stat.size > 0) malformed += 1;
++    for (const row of rows) {
++      const event = eventFromRow(source, filePath, row, stat.mtimeMs);
++      if (event && event.observed_at >= since && event.observed_at <= until) events.push(event);
++    }
++  }
++  return { events, status: malformed ? "degraded" : "available", error: malformed ? `${malformed} unreadable files` : null };
++}
++
++function add(target, value) {
++  for (const key of ["input_tokens", "output_tokens", "reasoning_output_tokens", "cached_input_tokens", "cache_creation_input_tokens"]) {
++    if (value[key] !== null) target[key] += value[key];
++  }
++}
++
++async function scanLocalHistory(options = {}) {
++  if (options.upload !== false || options.telemetry !== false) throw new Error("embedded history requires upload:false and telemetry:false");
++  if (!path.isAbsolute(options.sourceHome || "") || !path.isAbsolute(options.stateDir || "")) {
++    throw new Error("embedded history requires absolute sourceHome and stateDir");
++  }
++  if (typeof options.classify !== "function") throw new Error("embedded history requires a provenance classifier");
++  const since = Number(options.since);
++  const until = Number(options.until);
++  if (!Number.isFinite(since) || !Number.isFinite(until) || until < since) throw new Error("embedded history range is invalid");
++  const sources = [...new Set(options.sources || [...SUPPORTED])];
++  const buckets = new Map();
++  const coverage = [];
++  let classified_claxedo = 0;
++  let unclassified = 0;
++  for (const source of sources) {
++    if (!SUPPORTED.has(source)) {
++      coverage.push({ source, status: "unsupported", error: "scanner has no privacy-reviewed parser" });
++      continue;
++    }
++    const scan = await scanSource(options.sourceHome, source, since, until);
++    coverage.push({ source, status: scan.status, error: scan.error });
++    for (const event of scan.events) {
++      const classification = await options.classify({
++        source: event.source,
++        nativeSessionId: event.native_session_id,
++        observedAt: event.observed_at,
++      });
++      if (classification === "claxedo") { classified_claxedo += 1; continue; }
++      if (classification !== "external") { unclassified += 1; continue; }
++      const bucketStart = Math.floor(event.observed_at / 1_800_000) * 1_800_000;
++      const key = `${source}\0${event.model}\0${bucketStart}\0${event.native_session_id}`;
++      let bucket = buckets.get(key);
++      if (!bucket) {
++        bucket = {
++          app: source,
++          source,
++          model: event.model,
++          bucket_start: bucketStart,
++          native_session_id: event.native_session_id,
++          ...(event.project_ref ? { project_ref: event.project_ref } : {}),
++          input_tokens: 0,
++          output_tokens: 0,
++          reasoning_output_tokens: 0,
++          cached_input_tokens: 0,
++          cache_creation_input_tokens: 0,
++        };
++        buckets.set(key, bucket);
++      }
++      add(bucket, event.tokens);
++    }
++  }
++  return { rows: [...buckets.values()], coverage, classified_claxedo, unclassified };
++}
++
++module.exports = { scanLocalHistory };
