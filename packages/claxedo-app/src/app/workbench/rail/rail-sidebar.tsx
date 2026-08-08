@@ -22,7 +22,8 @@ import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-butt
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { showToast } from "@opencode-ai/ui/toast"
-import { useLanguage, useServer } from "@claxedo/app"
+import { useLanguage } from "@/platform/i18n/provider"
+import { useServer } from "@/app/connection/server"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { usePermission } from "@/features/session/providers/permission"
@@ -1237,19 +1238,32 @@ export function RailSidebar(props: RailSidebarProps) {
     setTimeout(task, fastSessionSwitchAnyQuietDelay({ baseDelay: 80 }) + 100)
   }
   const activateSession = (session: Row) => {
+    const phases = typeof window === "undefined" ||
+        (window as unknown as Record<string, unknown>).__claxedoPerfTrace !== true
+      ? undefined
+      : (window as unknown as Record<string, unknown>).__claxedoPerfRendererPhases as
+          | Array<{ name: string; durationMs: number }>
+          | undefined
+    const measure = <T,>(name: string, task: () => T) => {
+      if (!phases) return task()
+      const started = performance.now()
+      const result = task()
+      phases.push({ name, durationMs: performance.now() - started })
+      return result
+    }
     // Notify the shell that a session was picked. `activateSession` itself owns
     // the full navigation (prefetch/fast-switch/workspace-panel restore), so the
     // shell only uses this to close the mobile drawer — it must NOT re-run the
     // parent's navigation here or the two paths would double-open.
-    props.onSessionSelect?.(sessionDirectory(session), session.id)
-    const existingId = existingSessionContentId(session)
+    measure("sessionActivate.onSessionSelect", () => props.onSessionSelect?.(sessionDirectory(session), session.id))
+    const existingId = measure("sessionActivate.findContent", () => existingSessionContentId(session))
     if (existingId) {
       const directory = sessionDirectory(session)
       const serial = ++sessionActivationSerial
-      markFastSessionSwitch(session.id, Date.now(), {
+      measure("sessionActivate.markFastSwitch", () => markFastSessionSwitch(session.id, Date.now(), {
         networkQuiet: hasFreshMessagePrefetch(session.id),
-      })
-      setTimeout(() => {
+      }))
+      measure("sessionActivate.schedule", () => setTimeout(() => {
         if (serial !== sessionActivationSerial) return
         const previousWorkspacePanelSessionId = currentWorkspacePanelSessionId()
         showSessionContent(existingId)
@@ -1262,29 +1276,36 @@ export function RailSidebar(props: RailSidebarProps) {
           const meta = claxedoState.meta.get(existingId)
           if (meta) props.onTabSelect?.(meta)
         })
-      }, 0)
+      }, 0))
       return
     }
 
-    const previousWorkspacePanelSessionId = currentWorkspacePanelSessionId()
-    const directory = sessionDirectory(session)
+    const previousWorkspacePanelSessionId = measure(
+      "sessionActivate.currentWorkspacePanel",
+      currentWorkspacePanelSessionId,
+    )
+    const directory = measure("sessionActivate.directory", () => sessionDirectory(session))
     const serial = ++sessionActivationSerial
-    markFastSessionSwitch(session.id, Date.now(), {
+    measure("sessionActivate.markFastSwitch", () => markFastSessionSwitch(session.id, Date.now(), {
       networkQuiet: hasFreshMessagePrefetch(session.id),
-    })
-    const contentId = claxedoState.layout.openSession(directory, session.id, sessionRowTitle(session.title), {
+    }))
+    const contentId = measure("sessionActivate.openSession", () => claxedoState.layout.openSession(directory, session.id, sessionRowTitle(session.title), {
+      focus: false,
       sessionRef: sessionWorkbenchRef(session),
-    })
-    showSessionContent(contentId)
-    replaceSessionUrl(session)
-    afterVisibleActivation(() => {
+    }))
+    measure("sessionActivate.scheduleColdOpen", () => setTimeout(() => {
       if (serial !== sessionActivationSerial) return
-      claxedoState.workspacePanel.rememberSession(previousWorkspacePanelSessionId)
-      scheduleSidebarStatusPrime(directory)
-      restoreWorkspacePanelSession(session, contentId, directory)
-      const meta = claxedoState.meta.get(contentId)
-      if (meta) props.onTabSelect?.(meta)
-    })
+      measure("sessionActivate.showContent", () => showSessionContent(contentId))
+      measure("sessionActivate.replaceUrl", () => replaceSessionUrl(session))
+      measure("sessionActivate.afterVisible", () => afterVisibleActivation(() => {
+        if (serial !== sessionActivationSerial) return
+        claxedoState.workspacePanel.rememberSession(previousWorkspacePanelSessionId)
+        scheduleSidebarStatusPrime(directory)
+        restoreWorkspacePanelSession(session, contentId, directory)
+        const meta = claxedoState.meta.get(contentId)
+        if (meta) props.onTabSelect?.(meta)
+      }))
+    }, 0))
   }
   const prepareSessionDrag = (session: Row) => {
     const sessionRef = () => sessionWorkbenchRef(session)

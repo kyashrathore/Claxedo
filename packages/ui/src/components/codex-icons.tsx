@@ -31,6 +31,11 @@
  *     licence agreement covers the free tier and forbids redistributing SVG
  *     source, which is exactly what this repo does.
  */
-import sprite from "../assets/icons/codex/sprite.svg"
+import spriteURL from "../assets/icons/codex/sprite.svg?url"
+import { createLazyInlineSvgSprite } from "./inline-svg-sprite"
 
-export const codexIconSprite = sprite
+export const codexIconSprite = createLazyInlineSvgSprite("codex-icon-sprite", async () => {
+  const response = await fetch(spriteURL)
+  if (!response.ok) throw new Error(`Unable to load Codex icon sprite (${response.status})`)
+  return response.text()
+})

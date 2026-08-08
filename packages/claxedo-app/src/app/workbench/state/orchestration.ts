@@ -66,6 +66,18 @@ export type LayoutOrchestrationApi = {
 
 const PINNED_TYPES = PINNED_CONTENT_TYPES
 
+function measureRendererPhase<T>(name: string, task: () => T) {
+  if (
+    typeof window === "undefined" ||
+    (window as unknown as Record<string, unknown>).__claxedoPerfTrace !== true
+  ) return task()
+  const started = performance.now()
+  const result = task()
+  const phases = (window as unknown as Record<string, unknown>).__claxedoPerfRendererPhases
+  if (Array.isArray(phases)) phases.push({ name, durationMs: performance.now() - started })
+  return result
+}
+
 const newId = (type: ContentType) => {
   const prefix =
     type === "marketplace"
@@ -144,11 +156,11 @@ export function createLayoutOrchestration(input: {
       if (opts?.focus !== false) wb.navigation.show(existing.id)
       return existing.id
     }
-    const { meta: nextMeta, payload } = build()
+    const { meta: nextMeta, payload } = measureRendererPhase("openSession.build", build)
     if (payload) nextMeta.content = payload
-    meta.upsert(nextMeta)
-    addContent(nextMeta.id)
-    if (opts?.focus !== false) wb.navigation.show(nextMeta.id)
+    measureRendererPhase("openSession.metaUpsert", () => meta.upsert(nextMeta))
+    measureRendererPhase("openSession.addContent", () => addContent(nextMeta.id))
+    if (opts?.focus !== false) measureRendererPhase("openSession.navigationShow", () => wb.navigation.show(nextMeta.id))
     return nextMeta.id
   }
 

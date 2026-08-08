@@ -1,5 +1,7 @@
 import type { Accessor } from "solid-js"
-import type { useLayout, useGlobalSDK, usePlatform } from "@claxedo/app"
+import type { useLayout } from "@/app/providers/layout"
+import type { useGlobalSDK } from "@/app/providers/global-sdk/provider"
+import type { usePlatform } from "@/platform/runtime/platform-provider"
 import type { useDialog } from "@opencode-ai/ui/context/dialog"
 import type { useConfigOptional } from "../../providers/config"
 import type { useClaxedoEventsOptional } from "../../integrations/claxedo-events"

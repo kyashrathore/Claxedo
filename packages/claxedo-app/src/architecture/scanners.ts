@@ -382,7 +382,7 @@ function deepSessionUiImportMetric(): Metric {
     description: "deep `@opencode-ai/session-ui/*` import lines outside the session-ui barrel",
     scan: (files) =>
       files
-        .filter((file) => file.path !== "ui/session-kit.ts")
+        .filter((file) => file.path !== "ui/session-kit.ts" && file.path !== "ui/session-kit-loaders.ts")
         .flatMap((file) =>
           file.text
             .split("\n")

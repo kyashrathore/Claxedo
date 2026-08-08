@@ -53,6 +53,7 @@ export function RailWorkbenchCanvas(props: {
           <ContentRenderer id={id} ctx={ctx} fallbackDirectory={props.emptyDraftDirectory} />
         )}
         maxMountedContents={12}
+        mountPolicy="visible-once"
         mountCapCandidate={(id) => props.state.meta.get(id)?.type === "session"}
         renderEmpty={() => (
           <Show

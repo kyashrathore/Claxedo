@@ -23,7 +23,7 @@ import {
   hasDiffContent,
   reviewDiffList,
 } from "./review-session-logic"
-import { createComputed, createEffect, createMemo, createSelector, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js"
+import { createComputed, createEffect, createMemo, createSelector, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import type { SelectedLineRange } from "@/app/providers/file"
@@ -39,6 +39,7 @@ import {
 } from "@/ui/session-kit"
 
 const REVIEW_MOUNT_MARGIN = 80
+const REVIEW_RENDER_BATCH = 20
 
 export type SessionReviewDiffStyle = "unified" | "split"
 
@@ -192,6 +193,12 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   const open = () => props.open ?? store.open
   const items = createMemo<ReviewDiff[]>(() => reviewDiffList(props.diffs) as ReviewDiff[])
   const files = createMemo(() => items().map((diff) => diff.file))
+  const [renderLimit, setRenderLimit] = createSignal(REVIEW_RENDER_BATCH)
+  const renderedItems = createMemo(() => {
+    const required = props.focusedFile ?? props.focusedComment?.file
+    const requiredIndex = required ? items().findIndex((diff) => diff.file === required) + 1 : 0
+    return items().slice(0, Math.max(renderLimit(), requiredIndex))
+  })
   const grouped = createMemo(() => groupCommentsByFile(props.comments))
   const diffStyle = () => props.diffStyle ?? (props.split ? "split" : "unified")
   const hasDiffs = () => files().length > 0
@@ -250,6 +257,9 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
 
   const handleScroll: JSX.EventHandler<HTMLDivElement, Event> = (event) => {
     queue()
+    if (scroll && scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - REVIEW_MOUNT_MARGIN) {
+      setRenderLimit((limit) => Math.min(items().length, limit + REVIEW_RENDER_BATCH))
+    }
     const next = props.onScroll
     if (!next) return
     if (Array.isArray(next)) {
@@ -270,6 +280,8 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
     files()
     queue()
   })
+
+  createEffect(on(() => files().join("\0"), () => setRenderLimit(REVIEW_RENDER_BATCH)))
 
   const handleChange = (next: string[]) => {
     props.onOpenChange?.(next)
@@ -404,9 +416,13 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
       >
         <div data-slot="session-review-container" class={props.classes?.container}>
           <Show when={hasDiffs()} fallback={props.empty}>
-            <div class="pb-6">
+            <div
+              class="pb-6"
+              data-review-rendered-files={renderedItems().length}
+              data-review-total-files={items().length}
+            >
               <Accordion multiple value={open()} onChange={handleChange}>
-                <For each={items()}>
+                <For each={renderedItems()}>
                   {(diff) => {
                     let wrapper: HTMLDivElement | undefined
                     const file = diff.file
