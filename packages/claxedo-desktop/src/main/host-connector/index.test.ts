@@ -1,0 +1,421 @@
+import { afterAll, describe, expect, test } from "bun:test"
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import {
+  HOST_ENROLLMENT_OPERATIONS,
+  accountConnectorTransport,
+  machineIdentityFile,
+  setupHostConnector,
+  type AccountOperationRunner,
+} from "./index"
+import { HOSTED_OPERATIONS, resolveHostedOperation } from "../account/hosted-operations"
+import type { SafeStorageApi } from "../account/credential-store"
+
+/**
+ * What this assembly has to get right.
+ *
+ * The protocol is already tested in `@claxedo/host-connector`; repeating it
+ * here would test the dependency. What is only true HERE is the wiring: that
+ * every call travels as a NAMED account operation rather than a URL, that the
+ * account credential never comes near the connector, that an insecure machine
+ * produces no enrollment traffic at all, and that starting twice does not leave
+ * two heartbeat timers beating for one machine.
+ */
+
+const dirs: string[] = []
+afterAll(() => {
+  for (const dir of dirs) rmSync(dir, { recursive: true, force: true })
+})
+
+function tempDir() {
+  const dir = mkdtempSync(join(tmpdir(), "claxedo-host-connector-"))
+  dirs.push(dir)
+  return dir
+}
+
+function fakeSafeStorage(overrides: Partial<SafeStorageApi> = {}): SafeStorageApi {
+  return {
+    isEncryptionAvailable: () => true,
+    encryptString: (plain) => Buffer.from(JSON.stringify({ sealed: plain }), "utf8"),
+    decryptString: (buffer) => {
+      const parsed = JSON.parse(buffer.toString("utf8")) as { sealed?: string }
+      if (typeof parsed.sealed !== "string") throw new Error("not sealed by this backend")
+      return parsed.sealed
+    },
+    getSelectedStorageBackend: () => "gnome_libsecret",
+    ...overrides,
+  }
+}
+
+type Call = { name: string; input: Record<string, unknown> | undefined }
+
+/** A runner that answers the three enrollment operations, and records them. */
+function fakeRunner(responses: Partial<Record<string, unknown>> = {}) {
+  const calls: Call[] = []
+  const run: AccountOperationRunner = async (name, input) => {
+    calls.push({ name, input })
+    if (name in responses) {
+      const answer = responses[name]
+      if (answer instanceof Error) throw answer
+      return answer
+    }
+    if (name === HOST_ENROLLMENT_OPERATIONS.createRequest) {
+      return { request_id: "req_1", nonce: "nonce_1", expires_at: 9_999 }
+    }
+    if (name === HOST_ENROLLMENT_OPERATIONS.enroll) {
+      return { enrollment: { enrollment_id: "enr_1", host_id: String(input?.["hostId"]), expires_at: 1_000 } }
+    }
+    if (name === HOST_ENROLLMENT_OPERATIONS.heartbeat) return { expires_at: 2_000 }
+    throw new Error(`unexpected operation ${name}`)
+  }
+  return { run, calls }
+}
+
+function harness(input: { runner?: ReturnType<typeof fakeRunner>; safeStorage?: SafeStorageApi } = {}) {
+  const runner = input.runner ?? fakeRunner()
+  const ticks: Array<() => void> = []
+  const cancels = { count: 0 }
+  const errors: Array<{ stage: string; error: unknown }> = []
+  const connector = setupHostConnector({
+    run: runner.run,
+    safeStorage: input.safeStorage ?? fakeSafeStorage(),
+    userDataDir: tempDir(),
+    platform: "darwin",
+    displayName: "Work laptop",
+    setInterval: (fn) => {
+      ticks.push(fn)
+      return {
+        cancel: () => {
+          cancels.count++
+        },
+      }
+    },
+    onError: (stage, error) => errors.push({ stage, error }),
+  })
+  return { connector, calls: runner.calls, ticks, cancels, errors }
+}
+
+describe("the transport", () => {
+  test("asks for the enrollment nonce by operation name", async () => {
+    const runner = fakeRunner()
+
+    const request = await accountConnectorTransport(runner.run).createRequest({ hostId: "host_a" })
+
+    expect(request).toEqual({ request_id: "req_1", nonce: "nonce_1", expires_at: 9_999 })
+    expect(runner.calls[0]).toEqual({ name: "host.enrollmentRequest", input: { hostId: "host_a" } })
+  })
+
+  test("enrolls through the matrix's operation and unwraps the envelope", async () => {
+    // `routes/hosted/host-enrollment.ts` returns `{ enrollment }`. Reading the
+    // envelope's own fields would produce an enrollment with no id and an
+    // expiry of NaN, which heartbeats happily forever.
+    const runner = fakeRunner()
+
+    const enrollment = await accountConnectorTransport(runner.run).enroll({
+      hostId: "host_a",
+      publicKey: '{"kty":"EC"}',
+      requestId: "req_1",
+      signature: "sig",
+    })
+
+    expect(enrollment).toEqual({ enrollment_id: "enr_1", host_id: "host_a", expires_at: 1_000 })
+    expect(runner.calls[0]!.name).toBe("host.enrollCurrentMachine")
+  })
+
+  test("rejects an enrollment response that is not wrapped", async () => {
+    const runner = fakeRunner({
+      "host.enrollCurrentMachine": { enrollment_id: "enr_1", host_id: "host_a", expires_at: 1_000 },
+    })
+
+    const attempt = accountConnectorTransport(runner.run).enroll({
+      hostId: "host_a",
+      publicKey: "{}",
+      requestId: "req_1",
+      signature: "sig",
+    })
+
+    await expect(attempt).rejects.toThrow(/host\.enrollCurrentMachine.*enrollment_id/)
+  })
+
+  test("rejects a nonce response missing a field rather than signing undefined", async () => {
+    const runner = fakeRunner({ "host.enrollmentRequest": { request_id: "req_1", expires_at: 1 } })
+
+    await expect(accountConnectorTransport(runner.run).createRequest({ hostId: "host_a" })).rejects.toThrow(
+      /host\.enrollmentRequest.*nonce/,
+    )
+  })
+
+  test("heartbeats by name and decodes the new expiry", async () => {
+    const runner = fakeRunner()
+
+    const beat = await accountConnectorTransport(runner.run).heartbeat({ hostId: "host_a", signature: "sig" })
+
+    expect(beat).toEqual({ expires_at: 2_000 })
+    expect(runner.calls[0]!.name).toBe("host.enrollmentHeartbeat")
+  })
+
+  test("rejects a heartbeat response with a non-numeric expiry", async () => {
+    const runner = fakeRunner({ "host.enrollmentHeartbeat": { expires_at: "soon" } })
+
+    await expect(accountConnectorTransport(runner.run).heartbeat({ hostId: "host_a", signature: "s" })).rejects.toThrow(
+      /host\.enrollmentHeartbeat/,
+    )
+  })
+})
+
+describe("the operation table", () => {
+  test("enrollment resolves to the reviewed method and path", () => {
+    const resolved = resolveHostedOperation(HOST_ENROLLMENT_OPERATIONS.enroll, {
+      hostId: "host_a",
+      publicKey: "{}",
+      requestId: "req_1",
+      signature: "sig",
+    })
+
+    expect(resolved.method).toBe("POST")
+    expect(resolved.path).toBe("/api/claxedo/host/enrollments")
+    expect(resolved.body).toMatchObject({ hostId: "host_a", publicKey: "{}", requestId: "req_1", signature: "sig" })
+  })
+
+  /**
+   * A tripwire, not an approval.
+   *
+   * The nonce and heartbeat routes exist on the server and are signed-only, so
+   * the connector cannot reach them without an account operation — but neither
+   * is a row in `docs/tech-docs/desktop-hosted-operation-matrix.md` yet, and
+   * adding one is a reviewed change to a security document that this unit does
+   * not make. This test pins the CURRENT gap so that whoever adds those rows is
+   * forced back here to finish the wiring rather than discovering at runtime
+   * that enrollment never worked.
+   */
+  test("the nonce and heartbeat operations are still undeclared", () => {
+    expect(Object.keys(HOSTED_OPERATIONS)).toContain(HOST_ENROLLMENT_OPERATIONS.enroll)
+    expect(Object.keys(HOSTED_OPERATIONS)).not.toContain(HOST_ENROLLMENT_OPERATIONS.createRequest)
+    expect(Object.keys(HOSTED_OPERATIONS)).not.toContain(HOST_ENROLLMENT_OPERATIONS.heartbeat)
+  })
+
+  test("start() fails visibly on the undeclared operation instead of inventing a path", async () => {
+    // The real table as the runner: exactly what Electron main will do once
+    // this is wired to the account service.
+    const errors: unknown[] = []
+    const connector = setupHostConnector({
+      run: async (name, params) => resolveHostedOperation(name, params),
+      safeStorage: fakeSafeStorage(),
+      userDataDir: tempDir(),
+      platform: "darwin",
+      setInterval: () => ({ cancel: () => {} }),
+      onError: (_stage, error) => errors.push(error),
+    })
+
+    const status = await connector.start()
+
+    expect(status).toMatchObject({ status: "stopped", reason: "error" })
+    expect(String((status as { detail: string }).detail)).toContain("host.enrollmentRequest")
+    expect(errors).toHaveLength(1)
+  })
+})
+
+describe("setup", () => {
+  test("constructs without enrolling anything", () => {
+    const { connector, calls } = harness()
+
+    expect(connector.status()).toEqual({ status: "not-started" })
+    // An unsigned launch must not enroll a machine as a side effect of booting.
+    expect(calls).toEqual([])
+  })
+
+  test("start enrolls once and begins heartbeating", async () => {
+    const { connector, calls, ticks } = harness()
+
+    const status = await connector.start()
+
+    expect(status).toMatchObject({ status: "enrolled", enrollment: { enrollment_id: "enr_1" } })
+    expect(calls.map((call) => call.name)).toEqual(["host.enrollmentRequest", "host.enrollCurrentMachine"])
+    expect(ticks).toHaveLength(1)
+
+    ticks[0]!()
+    await Bun.sleep(1)
+    expect(calls.map((call) => call.name)).toContain("host.enrollmentHeartbeat")
+  })
+
+  test("enrolls the persisted machine identity, with its display name", async () => {
+    const { connector, calls } = harness()
+
+    await connector.start()
+
+    const enroll = calls.find((call) => call.name === "host.enrollCurrentMachine")!
+    expect(String(enroll.input!["hostId"])).toStartWith("host_")
+    expect(enroll.input!["displayName"]).toBe("Work laptop")
+  })
+
+  test("a second start neither re-enrolls nor starts a second timer", async () => {
+    // Two timers for one machine is the failure that hides: heartbeats keep
+    // working, and `stop()` cancels only one of them.
+    const { connector, calls, ticks } = harness()
+
+    await connector.start()
+    await connector.start()
+
+    expect(calls.filter((call) => call.name === "host.enrollCurrentMachine")).toHaveLength(1)
+    expect(ticks).toHaveLength(1)
+  })
+
+  test("stop cancels the heartbeat timer and says why it stopped", async () => {
+    const { connector, cancels } = harness()
+    await connector.start()
+
+    connector.stop()
+
+    expect(cancels.count).toBe(1)
+    expect(connector.status()).toMatchObject({ status: "stopped", reason: "closed" })
+  })
+
+  test("a stopped connector can be started again for the same machine", async () => {
+    // Pause and resume: the enrollment is re-established, and the machine keeps
+    // the identity it already has rather than appearing as a new laptop.
+    const { connector, calls } = harness()
+    await connector.start()
+    const first = calls.find((call) => call.name === "host.enrollCurrentMachine")!.input!["hostId"]
+    connector.stop()
+
+    const status = await connector.start()
+
+    expect(status).toMatchObject({ status: "enrolled" })
+    const enrolls = calls.filter((call) => call.name === "host.enrollCurrentMachine")
+    expect(enrolls).toHaveLength(2)
+    expect(enrolls[1]!.input!["hostId"]).toBe(first)
+  })
+
+  test("a failed start is reported as stopped and can be retried", async () => {
+    // `createHostConnector().start()` makes the nonce request outside its own
+    // try, so this failure escapes as a rejection. If the half-built connector
+    // were kept, its internal state would still read `idle` — so the status
+    // would lie AND the next start would decide a live connector already
+    // existed and never retry.
+    const failing = { value: true }
+    const inner = fakeRunner()
+    const calls = inner.calls
+    const { connector } = harness({
+      runner: {
+        calls,
+        run: async (name, input) => {
+          if (failing.value && name === HOST_ENROLLMENT_OPERATIONS.createRequest) {
+            calls.push({ name, input })
+            throw new Error("control plane unreachable")
+          }
+          return inner.run(name, input)
+        },
+      },
+    })
+
+    const first = await connector.start()
+
+    expect(first).toMatchObject({ status: "stopped", reason: "error" })
+    expect(connector.status()).toMatchObject({ status: "stopped", reason: "error" })
+
+    failing.value = false
+    expect(await connector.start()).toMatchObject({ status: "enrolled" })
+    expect(calls.filter((call) => call.name === HOST_ENROLLMENT_OPERATIONS.createRequest)).toHaveLength(2)
+  })
+
+  test("a rejected heartbeat stops the loop instead of re-enrolling", async () => {
+    const runner = fakeRunner({ "host.enrollmentHeartbeat": new Error("403 revoked") })
+    const { connector, ticks, calls } = harness({ runner })
+    await connector.start()
+
+    ticks[0]!()
+    await Bun.sleep(1)
+
+    expect(connector.status()).toMatchObject({ status: "stopped", reason: "revoked" })
+    expect(calls.filter((call) => call.name === "host.enrollCurrentMachine")).toHaveLength(1)
+  })
+})
+
+describe("refusing an insecure machine", () => {
+  test("produces no identity, no enrollment traffic, and a reason", async () => {
+    const { connector, calls, ticks } = harness({
+      safeStorage: fakeSafeStorage({ isEncryptionAvailable: () => false }),
+    })
+
+    const status = await connector.start()
+
+    expect(status).toMatchObject({ status: "unavailable", reason: "no-secure-storage" })
+    // The machine never announces itself, so there is no enrollment to
+    // impersonate with a key it could not protect.
+    expect(calls).toEqual([])
+    expect(ticks).toEqual([])
+  })
+})
+
+describe("what never crosses this boundary", () => {
+  test("no account credential reaches the connector", async () => {
+    // The connector signs with the machine key; the bearer is attached inside
+    // the account service. A token arriving here would put the user's session
+    // in a background child process.
+    const { connector, calls } = harness()
+
+    await connector.start()
+
+    const sent = JSON.stringify(calls)
+    expect(sent).not.toMatch(/authorization|bearer|access_?token/i)
+  })
+
+  test("no private key is sent, only the public half", async () => {
+    const { connector, calls } = harness()
+
+    await connector.start()
+
+    const enroll = calls.find((call) => call.name === "host.enrollCurrentMachine")!
+    const publicKey = JSON.parse(String(enroll.input!["publicKey"])) as JsonWebKey
+    // A P-256 private JWK is the public one plus `d`.
+    expect(publicKey.kty).toBe("EC")
+    expect(publicKey).not.toHaveProperty("d")
+  })
+
+  test("only declared parameters are sent", async () => {
+    const { connector, calls } = harness()
+
+    await connector.start()
+
+    for (const call of calls) {
+      for (const key of Object.keys(call.input ?? {})) {
+        expect(["hostId", "publicKey", "requestId", "signature", "displayName", "ttlMs"]).toContain(key)
+      }
+    }
+  })
+})
+
+describe("machineIdentityFile", () => {
+  test("round-trips and clears in the user data directory", () => {
+    const dir = tempDir()
+    const file = machineIdentityFile(dir)
+
+    expect(file.read()).toBeUndefined()
+    file.write("record")
+    expect(file.read()).toBe("record")
+    file.clear()
+    expect(file.read()).toBeUndefined()
+  })
+
+  test("is owner-only on disk", () => {
+    if (process.platform === "win32") return
+    const dir = tempDir()
+
+    machineIdentityFile(dir).write("record")
+
+    const mode = statSync(join(dir, "host-machine-identity.json")).mode & 0o777
+    expect(mode).toBe(0o600)
+  })
+
+  test("does not collide with the account credential", () => {
+    // Same directory, different secrets and different lifetimes. One file
+    // holding both would make an account sign-out able to delete the machine
+    // key, which is a re-enrollment the user did not ask for.
+    const dir = tempDir()
+    machineIdentityFile(dir).write("record")
+
+    expect(readFileSync(join(dir, "host-machine-identity.json"), "utf8")).toBe("record")
+    expect(() => readFileSync(join(dir, "account-credential.json"), "utf8")).toThrow()
+  })
+})

@@ -75,8 +75,14 @@ export function createHostConnector(options: ConnectorOptions) {
     state: () => state,
 
     async start(): Promise<ConnectorState> {
-      const request = await options.transport.createRequest({ hostId: options.hostId })
       try {
+        // Inside the try, not before it. Asking for the nonce is a call to the
+        // control plane and fails for all the usual reasons — offline, 503, a
+        // rejected bearer. Outside, that escaped as a rejection while every
+        // other enrollment failure produced a stopped state, so a caller had to
+        // handle two shapes for one outcome. On Electron startup the escaping
+        // one is an unhandled rejection.
+        const request = await options.transport.createRequest({ hostId: options.hostId })
         const enrollment = await options.transport.enroll({
           hostId: options.hostId,
           publicKey: options.keys.publicKey,

@@ -38,6 +38,7 @@
   "main": "./out/main/index.js",
   "dependencies": {
     "@claxedo/app": "workspace:*",
+    "@claxedo/host-connector": "workspace:*",
     "@claxedo/local-server": "workspace:*",
     "@claxedo/workspace-runtime": "workspace:*",
     "@lydell/node-pty": "catalog:",

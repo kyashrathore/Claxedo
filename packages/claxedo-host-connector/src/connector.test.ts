@@ -224,3 +224,38 @@ describe("host identity", () => {
     )
   })
 })
+
+describe("a control-plane failure before enrollment", () => {
+  test("stops rather than escaping as a rejection", async () => {
+    // `createRequest` is a network call. It used to sit outside the try, so it
+    // rejected while every other enrollment failure returned a stopped state —
+    // two shapes for one outcome, and on Electron startup the rejecting one is
+    // unhandled.
+    const { instance, calls } = await connector({
+      createRequest: async () => {
+        throw new Error("control plane unreachable")
+      },
+    })
+
+    const state = await instance.start()
+
+    expect(state).toMatchObject({ status: "stopped", reason: "error" })
+    expect(String((state as { detail: string }).detail)).toContain("control plane unreachable")
+    expect(calls.enrolls).toEqual([])
+  })
+
+  test("does not start a heartbeat after that failure", async () => {
+    // Beating against an enrollment that was never requested is noise the
+    // control plane has to reject on every tick.
+    const { instance, calls, tick } = await connector({
+      createRequest: async () => {
+        throw new Error("offline")
+      },
+    })
+    await instance.start()
+
+    tick()
+
+    expect(calls.beats).toEqual([])
+  })
+})

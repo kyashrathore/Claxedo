@@ -239,6 +239,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@claxedo/app": "workspace:*",
+        "@claxedo/host-connector": "workspace:*",
         "@claxedo/local-server": "workspace:*",
         "@claxedo/workspace-runtime": "workspace:*",
         "@lydell/node-pty": "catalog:",
