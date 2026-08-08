@@ -2,6 +2,7 @@ import type { Configuration } from "electron-builder"
 import { existsSync, readdirSync } from "node:fs"
 import { join, resolve } from "node:path"
 
+import { NATIVE_MODULES as BASE_NATIVE_MODULES, asarStructuralGlobs } from "./scripts/package-structure"
 import { resolveTargetOsArch } from "./scripts/target-platform"
 
 const channel = (() => {
@@ -16,11 +17,11 @@ const targetOsArch = resolveTargetOsArch()
 // Everything the app executes is bundled from entry points at build time
 // (electron-vite main/preload/renderer, Bun.build for claxedo-server), so no
 // node_modules ship — except native modules, which cannot be bundled. This is
-// the packaging invariant; scripts/verify-package-contents.ts enforces it.
+// the packaging invariant; scripts/verify-package-contents.ts enforces it
+// against the SAME declaration (scripts/package-structure.ts), so the config
+// and the check can no longer disagree about what is allowed to ship.
 const NATIVE_MODULES = [
-  "better-sqlite3",
-  "node-pty",
-  "@lydell/node-pty",
+  ...BASE_NATIVE_MODULES,
   ...(targetOsArch.startsWith("win32-") ? ["@vscode/windows-process-tree"] : []),
 ]
 
@@ -132,8 +133,11 @@ const getBase = (): Configuration => ({
     buildResources: "resources",
   },
   files: [
-    "out/**/*",
-    "resources/icons/**/*",
+    // The declared structural roots — the only build output that goes in the
+    // asar. Everything else under resources/ is an `extraResources` sibling,
+    // because it is executed as a separate process and asar paths are not real
+    // filesystem paths.
+    ...asarStructuralGlobs(),
     "!**/node_modules/**",
     ...NATIVE_MODULES.map((name) => `**/node_modules/${name}/**`),
     "!**/node_modules/better-sqlite3/deps/**",

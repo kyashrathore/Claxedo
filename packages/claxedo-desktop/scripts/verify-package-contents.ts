@@ -8,6 +8,11 @@
  *    modules that cannot be bundled (better-sqlite3, node-pty,
  *    @lydell/node-pty, plus @vscode/windows-process-tree on Windows).
  *
+ * 1b. And nothing else structural: every remaining asar entry must fall under
+ *    a root `electron-builder.config.ts` declares. Both files read that
+ *    declaration from `package-structure.ts`, so a `files` glob added without
+ *    a declaration fails here rather than quietly enlarging the installer.
+ *
  * 2. The English Chromium locale ships. `electronLanguages` DELETES every
  *    locale it does not name exactly, and the mac (`.lproj`, underscores) and
  *    win/linux (`.pak`, hyphens) spellings differ — so a plausible-looking
@@ -20,8 +25,9 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 
-const ALLOWED_TOP_LEVEL = new Set(["better-sqlite3", "node-pty"])
-const ALLOWED_SCOPED = new Set(["@lydell/node-pty", "@vscode/windows-process-tree"])
+import { ALL_NATIVE_MODULES, isDeclaredStructuralEntry } from "./package-structure"
+
+const ALLOWED_NATIVE_MODULES = new Set(ALL_NATIVE_MODULES)
 
 function findAsars(root: string): string[] {
   const dist = path.resolve(root, "dist")
@@ -127,17 +133,34 @@ export function verifyPackageContents(root = path.resolve(import.meta.dir, "..")
     }
   }
   for (const archive of asars) {
-    const offenders = asarHeaderFiles(archive)
+    const entries = asarHeaderFiles(archive)
+    const offenders = entries
       .filter((entry) => entry.startsWith("node_modules/"))
       .map((entry) => {
         const parts = entry.split("/")
         return parts[1]!.startsWith("@") ? parts.slice(1, 3).join("/") : parts[1]!
       })
-      .filter((top) => !ALLOWED_TOP_LEVEL.has(top) && !ALLOWED_SCOPED.has(top))
+      .filter((top) => !ALLOWED_NATIVE_MODULES.has(top))
     for (const offender of new Set(offenders)) {
       failures.push(
         `${archive}: node_modules/${offender} ships but is not a declared native module — ` +
           `bundle it from an entry point instead (electron.vite.config.ts / bundle-claxedo-server.ts)`,
+      )
+    }
+
+    // Everything that is not a native module must be declared build output.
+    // Reported by ROOT rather than per file: an undeclared directory is one
+    // decision, and listing its thousands of members would bury it.
+    const undeclared = new Set(
+      entries
+        .filter((entry) => !entry.startsWith("node_modules/") && !isDeclaredStructuralEntry(entry))
+        .map((entry) => entry.split("/")[0]!),
+    )
+    for (const root of undeclared) {
+      failures.push(
+        `${archive}: ${root} ships but is not a declared structural resource — ` +
+          `add it to ASAR_STRUCTURAL_ROOTS in scripts/package-structure.ts, or remove the ` +
+          `\`files\` glob in electron-builder.config.ts that admitted it`,
       )
     }
   }

@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import path from "node:path"
 
+import { localServerPackageDir, resolveLocalServerEntry } from "./local-server"
+
 /**
  * Desktop product-mode contract.
  *
@@ -16,11 +18,13 @@ import path from "node:path"
  * makes unsigned launch require an account, or lets an unsigned desktop
  * provision a cloud VM, is a change to this table and has to say so.
  *
- * The second half pins the LAUNCH WIRING. Desktop resolves its server through
- * three separate paths — the child entry module, `predev`, and `prebuild` — and
- * Unit 5 must retarget all three to `@claxedo/local-server` in one slice. Two
- * out of three leaves a repository where development works and the packaged
- * build boots the old composition, or vice versa.
+ * The second half pins the LAUNCH WIRING. Desktop used to resolve its server
+ * in four independent places — the child entry module, `predev`, `prebuild`,
+ * and the boot smoke — and three out of four leaves a repository where
+ * development works and the packaged build boots the other composition, or
+ * vice versa. Unit 11 gave that answer one owner, `scripts/local-server.ts`;
+ * `local-server.test.ts` asserts the resolved values, and what remains here is
+ * the composition contract those callers sit inside.
  */
 
 const packageRoot = path.resolve(import.meta.dir, "..")
@@ -163,14 +167,39 @@ describe.skip("desktop product modes (fixture, not behaviour — see note above)
 
 describe("desktop server launch wiring", () => {
   test("the server child imports the declared server entry", () => {
-    expect(read("scripts/claxedo-server-entry.ts")).toContain(`from "${DESKTOP_SERVER_ENTRY}"`)
+    // Anchored to an `import` statement, not a bare substring: this file's own
+    // doc comment names the package, and a guard that a comment can satisfy is
+    // how several checks on this branch stayed green through a real move.
+    expect(read("scripts/claxedo-server-entry.ts")).toMatch(
+      new RegExp(`^import [^\\n]* from "${DESKTOP_SERVER_ENTRY}"$`, "m"),
+    )
   })
 
   test("development and production preparation resolve the same server package", () => {
-    // Both scripts compute the source directory independently. Unit 5 has to
-    // change both; asserting them together is what makes a half-move fail.
-    expect(read("scripts/predev.ts")).toContain(`"${DESKTOP_SERVER_PACKAGE_DIR}"`)
-    expect(read("scripts/prebuild.ts")).toContain(`"${DESKTOP_SERVER_PACKAGE_DIR}"`)
+    // This used to check that each script CONTAINED the string
+    // "../claxedo-local-server". Both did — and in `prebuild.ts` the only thing
+    // that did was a `const` nothing read, left behind when the bundle helper
+    // took over the path. The assertion was green against dead code.
+    //
+    // Now both scripts import one resolver and the assertion is about the
+    // resolved value, which is what the bundler actually consumes.
+    for (const script of ["scripts/predev.ts", "scripts/prebuild.ts"]) {
+      // Comments dropped line-wise: both scripts talk about
+      // `@claxedo/local-server` in prose, and a guard a comment can satisfy is
+      // precisely what let the dead `const` above survive.
+      const code = read(script)
+        .split("\n")
+        .filter((line) => !/^\s*(\/\/|\/?\*)/.test(line))
+        .join("\n")
+      expect(code, script).toContain(`from "./local-server"`)
+      // Each one GATES on the resolution, rather than merely importing the
+      // module for a path constant.
+      expect(code, script).toContain("resolveLocalServerEntry(PACKAGE_DIR)")
+    }
+    expect(localServerPackageDir(packageRoot)).toBe(path.resolve(packageRoot, DESKTOP_SERVER_PACKAGE_DIR))
+    expect(resolveLocalServerEntry(packageRoot).startsWith(localServerPackageDir(packageRoot) + path.sep)).toBe(
+      true,
+    )
   })
 
   test("both preparation paths bundle through the one bundler helper", () => {

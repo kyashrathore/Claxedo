@@ -6,7 +6,13 @@ import log from "electron-log/main.js"
 
 import { isBrowserTabEnabled } from "./browser/flag"
 import { IS_PACKAGED } from "./constants"
-import { navigationDecision, windowOpenDecision, type NavigationDecision } from "./navigation-guard"
+import {
+  navigationDecision,
+  rendererDocument,
+  windowOpenDecision,
+  type DesktopProductMode,
+  type NavigationDecision,
+} from "./navigation-guard"
 import { trustWindowWithBridge } from "./ipc-caller-guard"
 
 type Globals = {
@@ -18,6 +24,31 @@ type Globals = {
 }
 
 const root = dirname(fileURLToPath(import.meta.url))
+
+/**
+ * The product this build is, BAKED at build time — never read from the user's
+ * environment.
+ *
+ * Same mechanism and same reason as `CLAXEDO_CHANNEL` in `./constants`: the
+ * main process runs on an end user's machine, where `VITE_AUTH_ENABLED` simply
+ * does not exist, so a shipped build that resolved its product mode from
+ * `process.env` would resolve a different one than the renderer build did.
+ * `electron.vite.config.ts` computes it once, through the same
+ * `desktopProductMode` this module's neighbour exports, and defines it here.
+ *
+ * An unrecognised or missing value is LOCAL, matching `desktopProductMode`'s
+ * own default: a main process that cannot tell which product it is must not
+ * decide it is the one with hosted surfaces.
+ */
+const PRODUCT_MODE: DesktopProductMode = import.meta.env.CLAXEDO_PRODUCT_MODE === "signed" ? "signed" : "local"
+
+/**
+ * The one document this build's main window may load, and the only one
+ * `isTrustedMainRendererUrl` trusts. The renderer build emits exactly this
+ * document (see `vite.renderer.ts`); the other product's entry module is not in
+ * this artifact at all.
+ */
+const RENDERER_DOCUMENT = rendererDocument(PRODUCT_MODE)
 
 function iconsDir() {
   return IS_PACKAGED ? join(process.resourcesPath, "icons") : join(root, "../../resources/icons")
@@ -106,7 +137,7 @@ export function createMainWindow(globals: Globals, options?: { deferLoad?: boole
 }
 
 export function loadMainWindow(win: BrowserWindow) {
-  loadWindow(win, "index.html")
+  loadWindow(win, RENDERER_DOCUMENT)
 }
 
 /**
@@ -135,8 +166,8 @@ export function wireNavigationGuard(wc: WebContents) {
 export function isTrustedMainRendererUrl(input: string) {
   try {
     const expected = process.env.ELECTRON_RENDERER_URL
-      ? new URL("index.html", process.env.ELECTRON_RENDERER_URL)
-      : pathToFileURL(join(root, "../renderer/index.html"))
+      ? new URL(RENDERER_DOCUMENT, process.env.ELECTRON_RENDERER_URL)
+      : pathToFileURL(join(root, `../renderer/${RENDERER_DOCUMENT}`))
     const actual = new URL(input)
     expected.hash = ""
     expected.search = ""

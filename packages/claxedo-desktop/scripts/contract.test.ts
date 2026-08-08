@@ -3,7 +3,9 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 
-import { verify, write, type Spec } from "./contract"
+import { spec as desktopContractSpec, verify, write, type Spec } from "./contract"
+
+const ROOT = path.resolve(import.meta.dir, "..")
 
 function temp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-contract-"))
@@ -64,4 +66,35 @@ test("verify fails when mirrored outputs diverge", () => {
 
   expect(() => verify(spec(root), "dev")).toThrow("output changed: resources/app.js")
   fs.rmSync(root, { recursive: true, force: true })
+})
+
+test("the packaged output names the renderer document this product mode emits", () => {
+  // The contract lists what a build must produce. It named `index.html`
+  // unconditionally, which was correct only by accident: `VITE_AUTH_ENABLED=true`
+  // is set in `claxedo-app/.env.local` and in `release-claxedo.yml`, so every
+  // build anyone had ever run was the signed one. An unsigned build emits
+  // `index.local.html` and nothing else, and would have failed its own contract
+  // for a file it was never supposed to write.
+  //
+  // Driving `spec()` under both env shapes rather than reading the source: the
+  // first version of this guard grepped `contract.ts` for the helper call, and
+  // the mutation that hard-codes the document back SURVIVED it — the string was
+  // present, the behaviour was not.
+  const documentFor = (authEnabled: string | undefined) => {
+    const previous = process.env.VITE_AUTH_ENABLED
+    if (authEnabled === undefined) delete process.env.VITE_AUTH_ENABLED
+    else process.env.VITE_AUTH_ENABLED = authEnabled
+    try {
+      return desktopContractSpec(ROOT).output.filter((entry) => entry.startsWith("out/renderer/") && entry.endsWith(".html"))
+    } finally {
+      if (previous === undefined) delete process.env.VITE_AUTH_ENABLED
+      else process.env.VITE_AUTH_ENABLED = previous
+    }
+  }
+
+  expect(documentFor("true")).toContain("out/renderer/index.html")
+  expect(documentFor("true")).not.toContain("out/renderer/index.local.html")
+
+  expect(documentFor(undefined)).toContain("out/renderer/index.local.html")
+  expect(documentFor(undefined)).not.toContain("out/renderer/index.html")
 })

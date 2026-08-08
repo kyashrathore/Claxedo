@@ -3,6 +3,11 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 
 import { resolveChannel, type Channel } from "./utils"
+// The renderer document is product-mode dependent and `navigation-guard.ts`
+// owns that answer for main, the vite config and this contract alike. Importing
+// it rather than repeating the mapping is what stops the packaged output list
+// and the thing actually emitted from drifting apart.
+import { desktopProductMode, rendererDocument } from "../src/main/navigation-guard"
 
 export type Spec = {
   file: string
@@ -104,6 +109,7 @@ export function spec(root = ROOT): Spec {
     "icons",
     "package.json",
     "scripts/build.ts",
+    "scripts/build-memory-impact-helper.ts",
     "scripts/bundle-claxedo-server.ts",
     "scripts/claxedo-server-entry.ts",
     "scripts/claxedo-server-startup.ts",
@@ -112,11 +118,17 @@ export function spec(root = ROOT): Spec {
     "scripts/copy-bundles.ts",
     "scripts/contract.ts",
     "scripts/finalize-latest-yml.ts",
+    // How the desktop resolves its server, and what the packaged app may
+    // contain: both decide the artifact, so both belong in its fingerprint.
+    "scripts/local-server.ts",
+    "scripts/package-structure.ts",
     "scripts/package.ts",
     "scripts/prepare.ts",
     "scripts/prebuild.ts",
     "scripts/predev.ts",
+    "scripts/target-platform.ts",
     "scripts/utils.ts",
+    "scripts/verify-package-contents.ts",
     "vite.renderer.ts",
     "src",
     "../agent-event-runtime/package.json",
@@ -135,6 +147,12 @@ export function spec(root = ROOT): Spec {
     "../claxedo-local-server/src",
     "../claxedo-server-core/package.json",
     "../claxedo-server-core/src",
+    // The optional Host Connector child. It is fingerprinted SEPARATELY from
+    // the server and renderer closures — neither imports it — but it ships in
+    // the same artifact, so a change to it must invalidate this contract
+    // rather than pass unnoticed.
+    "../claxedo-host-connector/package.json",
+    "../claxedo-host-connector/src",
     "../opencode/package.json",
     "../opencode/src",
     "../sdk/js/package.json",
@@ -159,7 +177,12 @@ export function spec(root = ROOT): Spec {
       "out/main/index.js",
       "out/preload/index.cjs",
       "out/preload/browser-preload.cjs",
-      "out/renderer/index.html",
+      // Which document this build emits depends on the product mode, so it is
+      // derived rather than named. An unsigned build emits `index.local.html`
+      // and nothing else; hard-coding `index.html` passed only because
+      // `VITE_AUTH_ENABLED=true` is set in `claxedo-app/.env.local` and in the
+      // release workflow, so every build anyone had run was the signed one.
+      `out/renderer/${rendererDocument(desktopProductMode(process.env))}`,
       "out/renderer/loading.html",
       "out/templates",
       "resources/claxedo-server",

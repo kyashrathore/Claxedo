@@ -15,15 +15,13 @@ import * as path from "path"
 
 import { bundleClaxedoServer } from "./bundle-claxedo-server"
 import { buildMemoryImpactHelper } from "./build-memory-impact-helper"
+import { LOCAL_SERVER_ENTRY, resolveLocalServerEntry } from "./local-server"
 import { copyIcons as copyChannelIcons } from "./utils"
 
 // ── Paths ──
 
 const SCRIPT_DIR = import.meta.dir
 const PACKAGE_DIR = path.resolve(SCRIPT_DIR, "..")
-// The desktop server IS `@claxedo/local-server` now. `claxedo-server` is the
-// hosted and self-hosted product; nothing the desktop ships comes from it.
-const CLAXEDO_SERVER_DIR = path.resolve(PACKAGE_DIR, "../claxedo-local-server")
 const OPENCODE_DIR = path.resolve(PACKAGE_DIR, "../opencode")
 const WS_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../workspace-runtime")
 const RESOURCES_DIR = path.resolve(PACKAGE_DIR, "resources")
@@ -47,6 +45,11 @@ async function bundleServer() {
   if (!fs.existsSync(src)) {
     throw new Error(`claxedo-server source not found at ${src}`)
   }
+  // Resolve the declared local-server entry BEFORE the expensive builds. Bun
+  // would report a missing dependency as a bundler log buried under a
+  // multi-minute engine build; this fails in the first second and names the
+  // package the desktop cannot start without.
+  log(`Local server entry: ${LOCAL_SERVER_ENTRY} → ${resolveLocalServerEntry(PACKAGE_DIR)}`)
   log("Building workspace-runtime...")
   await $`bun run build`.cwd(WS_RUNTIME_DIR)
   log("Building SDK-next embedded OpenCode...")
