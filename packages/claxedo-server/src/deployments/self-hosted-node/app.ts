@@ -80,14 +80,15 @@ import {
   deploymentMode,
   unsignedLocalRequestGuard,
 } from "@claxedo/server-core/authority/deployment-mode"
-import { EMBEDDED_AUTH_ISSUER, embeddedAuthEnabled, getEmbeddedAuth } from "../self-hosted-node/embedded-auth"
+import { assertSelfHostedPosture, type SelfHostedPosture } from "./posture"
+import { EMBEDDED_AUTH_ISSUER, embeddedAuthEnabled, getEmbeddedAuth } from "./embedded-auth"
 import { convexAuthorityUrlFromEnv, createConvexAuthority } from "../../authority/adapters/convex/workspace-authority"
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
 import { ControlPlaneHttpRoutes } from "../../authority/http"
 import { createCentralControlApp } from "../../central-runtime"
 import { JwksRoutes } from "../../authority/routes/jwks"
 import { InternalRelayResolverRoutes } from "../shared-routes/internal-relay"
-import { localRelayTargetExists, localRelayTargetLookup } from "../self-hosted-node/internal-relay-node"
+import { localRelayTargetExists, localRelayTargetLookup } from "./internal-relay-node"
 import { BootstrapRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { createControlPlaneRelayProvider } from "@claxedo/server-core/adapters/relay/index"
@@ -122,7 +123,7 @@ import { setDocumentChangedSink } from "../../documents/backend"
 import { LocalInstallationDocumentBroker } from "../../documents/backends/local/installation-broker"
 import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "../../hosts/workgraph/local/execution"
 import { createLocalExecutionCapabilities } from "../../hosts/workgraph/local/execution-capabilities"
-import { noSelfHostedCapabilities, type SelfHostedCapabilities } from "../self-hosted-node/capabilities"
+import { noSelfHostedCapabilities, type SelfHostedCapabilities } from "./capabilities"
 import type { WorkGraphRunOperationBroker } from "@claxedo/workgraph/runtime-adapter"
 import { createSqlitePullRequestEffects } from "../../hosts/workgraph/sqlite-pull-request-effects"
 import { createLocalWorkGraphAgentTools, localSessionContext, localSessionExecution, localSessionOwnerDirected } from "../../hosts/workgraph/composition/agent-tools"
@@ -434,17 +435,33 @@ export function localSecurityHeaders(): MiddlewareHandler {
   }
 }
 
-export function createApp(
+export function createSelfHostedApp(
   services: ControlPlaneServices,
   options: {
     onOpencodeAccess?: () => void
     beforeLocalSessionList?: () => Promise<void>
+    /**
+     * The deployment posture to validate before composing.
+     *
+     * PASSED IN rather than read from the environment, which is what lets this
+     * be a real gate. The process entry supplies what it observed
+     * (`selfHostedPosture(process.env)`); a test supplies what it is exercising.
+     * Reading `process.env` here would instead mean every test either sets six
+     * variables or the gate gets weakened until it accepts an empty
+     * environment — and a gate weakened to pass its own tests is not a gate.
+     *
+     * Absent means "the caller is not booting a deployment": the `localExecution`
+     * check below still runs, because that one is about this function's own
+     * contract rather than about a deployment's configuration.
+     */
+    posture?: SelfHostedPosture
   } = {},
 ) {
+  if (options.posture) assertSelfHostedPosture(options.posture)
   if (!services.localExecution.enabled) {
     throw new ControlPlaneCompositionError(
       "self_host_app_required",
-      "createApp is the self-host composition; use createHostedApp for hosted services",
+      "createSelfHostedApp is the self-host composition; use createHostedApp for hosted services",
     )
   }
   const localDocumentBrokerToken = process.env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN?.trim()
@@ -454,7 +471,7 @@ export function createApp(
   // route — so the preflight CORS short-circuits, the 404 handler and anything
   // `onError` produces are all covered. Which of the two policies a response
   // gets is decided from the SPA-bundle mark set further down; see the block
-  // above `createApp` for why this server needs two.
+  // above `createSelfHostedApp` for why this server needs two.
   app.use(localSecurityHeaders())
   // Record the transport peer address for every request (including
   // @hono/node-ws upgrades, whose Requests lack the node-server internals)
@@ -1221,7 +1238,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   })
 
   let localSessionProjectionReady: Promise<void> | undefined
-  const built = createApp(services, {
+  const built = createSelfHostedApp(services, {
     onOpencodeAccess: () => upstreamEvents?.start(),
     beforeLocalSessionList: async () => {
       if (localSessionProjectionReady) return

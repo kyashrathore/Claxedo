@@ -21,7 +21,7 @@ beforeAll(() => {
   process.env.CLAXEDO_DATA_DIR = tmpDir
   embedded = createEmbeddedAuth({ dbPath: path.join(tmpDir, "embedded-auth.sqlite") })
   app = new Hono()
-  // Exactly the mount shape used by createApp in server.ts.
+  // Exactly the mount shape used by createSelfHostedApp in server.ts.
   app.all("/api/auth/*", (c) => embedded.handler(c.req.raw))
 })
 

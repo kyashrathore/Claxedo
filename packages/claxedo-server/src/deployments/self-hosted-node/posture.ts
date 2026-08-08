@@ -22,9 +22,9 @@
  * these one environment variable at a time otherwise, restarting between each.
  *
  * NOT YET WIRED, and the reason is Unit 7's whole justification. Attempting to
- * call this from today's `deployments/self-hosted-node/app.ts#createApp` fails 24
+ * call this from today's `deployments/self-hosted-node/app.ts#createSelfHostedApp` fails 24
  * tests: that composition also serves a `CLAXEDO_DEPLOYMENT_MODE=local` mode
- * with no embedded auth and no authority. `createApp` is not the self-hosted
+ * with no embedded auth and no authority. `createSelfHostedApp` is not the self-hosted
  * product — it is the self-hosted product AND something else sharing one
  * function, which is precisely what the recomposition separates.
  *

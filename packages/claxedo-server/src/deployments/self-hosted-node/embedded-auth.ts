@@ -149,7 +149,7 @@ let singleton: EmbeddedAuth | undefined
 
 /**
  * Process-wide embedded auth instance. The server composition needs the SAME
- * instance in two places — the `/api/auth/*` route mount (createApp) and the
+ * instance in two places — the `/api/auth/*` route mount (createSelfHostedApp) and the
  * control-plane auth adapter (createDefaultLocalControlPlaneServices) — so it
  * is shared lazily here.
  */

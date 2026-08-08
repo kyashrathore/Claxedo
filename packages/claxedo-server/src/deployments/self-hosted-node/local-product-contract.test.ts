@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
-import { createApp } from "./app"
+import { createSelfHostedApp } from "./app"
 import { createControlPlaneServices } from "../../authority/services"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
 import {
@@ -44,7 +44,7 @@ afterEach(() => {
 
 function localApp() {
   const centralStore = createSqliteCentralStore({ mode: () => "workspace_replicated" })
-  return createApp(
+  return createSelfHostedApp(
     createControlPlaneServices(
       {
         projectionStore: centralStore.projectionStore,

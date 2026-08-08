@@ -13,11 +13,11 @@
  * implementation rather than a shared composition, and this module is the
  * public way in.
  *
- * What has NOT moved yet: the 1,270-line `createApp` body, which still lives
+ * What has NOT moved yet: the 1,270-line `createSelfHostedApp` body, which still lives
  * in `deployments/self-hosted-node/app.ts` and is still reached by ~24 tests that
  * construct it with a `local` deployment mode and no authority. Those tests are
  * why the posture gate cannot simply be added there — see `posture.ts`. They
- * are the remaining migration, and until they move, `createApp` stays exported
+ * are the remaining migration, and until they move, `createSelfHostedApp` stays exported
  * for them and unreachable from production.
  */
 
@@ -68,7 +68,7 @@ export function selfHostedPosture(env: NodeJS.ProcessEnv) {
     authority: true,
     sqliteAuthority: true,
     // The product IS local execution; `createDefaultLocalControlPlaneServices`
-    // composes it, and `createApp` refuses outright without it.
+    // composes it, and `createSelfHostedApp` refuses outright without it.
     localExecution: true,
     ...staticAppPosture(env.CLAXEDO_APP_DIST_DIR?.trim()),
   }
@@ -84,6 +84,10 @@ export function selfHostedPosture(env: NodeJS.ProcessEnv) {
  */
 export function startSelfHostedServer(options: SelfHostedStartOptions) {
   const env = options.env ?? process.env
+  // Asserted here as well as inside `createSelfHostedApp`, and deliberately so:
+  // this runs before the port is bound and before any subsystem is started,
+  // where a refusal costs nothing. The one inside the composition catches a
+  // caller that reaches it another way.
   assertSelfHostedPosture(selfHostedPosture(env))
   return startServer(options.port, options.opencodeUrl, undefined, { capabilities: selfHostedCapabilities })
 }

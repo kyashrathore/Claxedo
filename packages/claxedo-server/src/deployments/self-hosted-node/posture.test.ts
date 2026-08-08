@@ -4,7 +4,7 @@ import { SelfHostedCompositionError, assertSelfHostedPosture, type SelfHostedPos
 /**
  * The self-hosted boot gate.
  *
- * Measured, not assumed: calling this from today's `createApp` fails 24 tests,
+ * Measured, not assumed: calling this from today's `createSelfHostedApp` fails 24 tests,
  * because that function also serves a `CLAXEDO_DEPLOYMENT_MODE=local` mode with
  * no embedded auth and no authority. That is the evidence for recomposing
  * rather than bolting a gate onto the mixed composition — see `posture.ts`.

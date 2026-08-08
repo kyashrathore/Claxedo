@@ -408,16 +408,16 @@ describe("control-plane services", () => {
     const tap = text.indexOf("app.use(sessionMetaProjectionTap(")
     const proxy = text.indexOf("app.use(workspaceRuntimeProxy)")
 
-    expect(tap, "createApp must record local session metadata").toBeGreaterThan(-1)
-    expect(proxy, "createApp must mount the workspace runtime proxy").toBeGreaterThan(-1)
+    expect(tap, "createSelfHostedApp must record local session metadata").toBeGreaterThan(-1)
+    expect(proxy, "createSelfHostedApp must mount the workspace runtime proxy").toBeGreaterThan(-1)
     expect(tap, "the session-meta tap must be registered BEFORE the runtime proxy").toBeLessThan(proxy)
   })
 
-  test("server composition uses createApp with explicit services", () => {
+  test("server composition uses createSelfHostedApp with explicit services", () => {
     const file = path.resolve(import.meta.dirname, "../deployments/self-hosted-node/app.ts")
     const text = fs.readFileSync(file, "utf8")
 
-    expect(text).toContain("export function createApp(")
+    expect(text).toContain("export function createSelfHostedApp(")
     expect(text).toContain("services: ControlPlaneServices")
     expect(text).toContain("export function createDefaultLocalControlPlaneServices()")
     expect(text).toContain("const authorityUrl = convexAuthorityUrlFromEnv(process.env)")
@@ -565,14 +565,14 @@ describe("control-plane services", () => {
     expect(sessionPull).toContain("export async function resolveSessionGateway")
   })
 
-  test("createApp accepts an injected ControlPlaneServices and returns app + websocket", async () => {
-    const { createApp } = await import("../deployments/self-hosted-node/app")
+  test("createSelfHostedApp accepts an injected ControlPlaneServices and returns app + websocket", async () => {
+    const { createSelfHostedApp } = await import("../deployments/self-hosted-node/app")
     const sync = fakeSync()
     const services = createControlPlaneServices(fakePorts(sync), {
       authority: null,
       relay: { resolverToken: "expected-relay-token" },
     })
-    const built = createApp(services)
+    const built = createSelfHostedApp(services)
     expect(typeof built.app.fetch).toBe("function")
     expect(typeof built.injectWebSocket).toBe("function")
 
@@ -623,8 +623,8 @@ describe("control-plane services", () => {
     }
   })
 
-  test("createApp gates remote central runtime routes with signed auth", async () => {
-    const { createApp } = await import("../deployments/self-hosted-node/app")
+  test("createSelfHostedApp gates remote central runtime routes with signed auth", async () => {
+    const { createSelfHostedApp } = await import("../deployments/self-hosted-node/app")
     const sync = fakeSync()
     const authorizeSessionRead = vi.fn(async () => {})
     const services = createControlPlaneServices(fakePorts(sync), {
@@ -643,7 +643,7 @@ describe("control-plane services", () => {
         }),
       }),
     })
-    const built = createApp(services)
+    const built = createSelfHostedApp(services)
 
     const missing = await built.app.request("https://control.example.test/api/control/session/session-1/message", {
       method: "POST",
@@ -820,9 +820,9 @@ describe("control-plane services", () => {
     })
   })
 
-  test("createApp gates remote central runtime events with signed auth", async () => {
-    const { createApp } = await import("../deployments/self-hosted-node/app")
-    const built = createApp(createControlPlaneServices(fakePorts(), { authority: null }))
+  test("createSelfHostedApp gates remote central runtime events with signed auth", async () => {
+    const { createSelfHostedApp } = await import("../deployments/self-hosted-node/app")
+    const built = createSelfHostedApp(createControlPlaneServices(fakePorts(), { authority: null }))
 
     // In an unsigned-local deployment a REMOTE caller is now denied by
     // the global unsigned-local guard before the per-route bearer gate
@@ -836,13 +836,13 @@ describe("control-plane services", () => {
     })
   })
 
-  test("createApp rejects hosted services so hosted security hooks cannot be bypassed", async () => {
-    const { createApp } = await import("../deployments/self-hosted-node/app")
+  test("createSelfHostedApp rejects hosted services so hosted security hooks cannot be bypassed", async () => {
+    const { createSelfHostedApp } = await import("../deployments/self-hosted-node/app")
     expect(() =>
-      createApp(createHostedControlPlaneServices(fakePorts(), hostedOptions()))
+      createSelfHostedApp(createHostedControlPlaneServices(fakePorts(), hostedOptions()))
     ).toThrow(new ControlPlaneCompositionError(
       "self_host_app_required",
-      "createApp is the self-host composition; use createHostedApp for hosted services",
+      "createSelfHostedApp is the self-host composition; use createHostedApp for hosted services",
     ))
   })
 
@@ -911,7 +911,7 @@ describe("control-plane services", () => {
 
     expect(text).toContain("export function startControlPlaneStack(options: ControlPlaneStackOptions)")
     expect(text).toContain("const services = options.services")
-    expect(text).toContain("const built = createApp(services, {")
+    expect(text).toContain("const built = createSelfHostedApp(services, {")
     expect(text).toContain("configureWorkspaceSupervisor({")
     expect(text).toContain("relay_url: services.relay.relayUrl")
     expect(text).toContain("default_sandbox_driver: services.sandbox.defaultDriver")

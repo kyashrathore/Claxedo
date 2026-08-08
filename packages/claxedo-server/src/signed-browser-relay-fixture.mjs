@@ -13,7 +13,7 @@ import {
 } from "@claxedo/workspace-relay"
 import { createWorkspaceRuntimeApp } from "../../workspace-runtime/src/server.ts"
 import { relayWorkspaceRuntimeExposure } from "../../workspace-runtime/src/exposure.ts"
-import { createApp } from "./deployments/self-hosted-node/app"
+import { createSelfHostedApp } from "./deployments/self-hosted-node/app"
 import { opencodeRequest } from "./opencode/engine.ts"
 import { createControlPlaneServices } from "./authority/services.ts"
 import { createSqliteCentralStore } from "./authority/adapters/sqlite/central-store.ts"
@@ -504,7 +504,7 @@ const services = createControlPlaneServices({
   // construct one") and the same object `deployments/self-hosted-node/app.ts:948`
   // composes for production self-host. Replaces the hand-rolled
   // `services.authority = {...}` object literal that used to sit after
-  // `createApp(services)` below — every method there returned a canned value
+  // `createSelfHostedApp(services)` below — every method there returned a canned value
   // and touched no store.
   authority,
   relay: {
@@ -635,7 +635,7 @@ await authority.syncSessionMessages(browserAuth, {
   messages: sessionMessages,
 })
 
-const built = createApp(services)
+const built = createSelfHostedApp(services)
 built.app.get("/__fixture/opencode-requests", (c) => c.json({ requests: opencodeRequests }))
 
 // Debug-only surface for live-user-hosted-relay.spec.ts (Tier L). NOT part of

@@ -6,7 +6,7 @@ import { createSqliteCentralStore } from "../../authority/adapters/sqlite/centra
 import { createControlPlaneServices } from "../../authority/services"
 import { API_CONTENT_SECURITY_POLICY, HSTS_VALUE } from "@claxedo/server-core/platform/http/security-headers"
 import {
-  createApp,
+  createSelfHostedApp,
   SELF_HOST_DOCUMENT_CONTENT_SECURITY_POLICY,
   SELF_HOST_DOCUMENT_FRAME_ANCESTORS,
   selfHostDocumentSecurityHeaderEntries,
@@ -29,7 +29,7 @@ const REQUIRED = ["content-security-policy", "x-content-type-options", "x-frame-
 
 function createTestApp() {
   const centralStore = createSqliteCentralStore({ mode: () => "workspace_replicated" })
-  return createApp(
+  return createSelfHostedApp(
     createControlPlaneServices(
       {
         projectionStore: centralStore.projectionStore,

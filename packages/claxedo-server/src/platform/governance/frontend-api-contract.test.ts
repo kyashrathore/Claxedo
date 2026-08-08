@@ -135,7 +135,7 @@ function seedSyntheticCloudWorkspace() {
 
 function createContractApp() {
   const centralStore = syncMod.createSqliteCentralStore({ mode: () => "workspace_replicated" })
-  return serverMod.createApp(servicesMod.createControlPlaneServices({
+  return serverMod.createSelfHostedApp(servicesMod.createControlPlaneServices({
     projectionStore: centralStore.projectionStore,
     durableSessionLog: centralStore.durableSessionLog,
   }, {

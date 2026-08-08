@@ -1,5 +1,5 @@
 export {
-  createApp,
+  createSelfHostedApp,
   createDefaultLocalControlPlaneServices,
   shutdownControlPlaneRuntime,
   startControlPlaneStack,

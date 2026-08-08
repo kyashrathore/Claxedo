@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { createApp, isConnectionsCredentialPath } from "../../deployments/self-hosted-node/app"
+import { createSelfHostedApp, isConnectionsCredentialPath } from "../../deployments/self-hosted-node/app"
 import { createControlPlaneServices } from "../../authority/services"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
 
@@ -15,7 +15,7 @@ import { createSqliteCentralStore } from "../../authority/adapters/sqlite/centra
 
 function createTestApp() {
   const centralStore = createSqliteCentralStore({ mode: () => "workspace_replicated" })
-  return createApp(
+  return createSelfHostedApp(
     createControlPlaneServices(
       {
         projectionStore: centralStore.projectionStore,

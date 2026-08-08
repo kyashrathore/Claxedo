@@ -14,7 +14,7 @@ describe("Claxedo server WorkGraph reachability", () => {
     expect(composition).not.toContain("loadWorkGraphApp")
     expect(composition).not.toContain("githubAuthFromConnections")
     expect(composition).not.toContain('execFileAsync("gh"')
-    expect(composition).not.toContain("workgraph.createApp")
+    expect(composition).not.toContain("workgraph.createSelfHostedApp")
     expect(composition).not.toContain("mountLazyLocalOnlyWorkGraph")
     expect(composition).not.toContain("localOnlyProjection")
     expect(fs.existsSync(path.join(import.meta.dirname, "../../../workgraph-execution.ts"))).toBe(false)

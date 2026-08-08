@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import type { Hono } from "hono"
-import { createApp } from "./app"
+import { createSelfHostedApp } from "./app"
 import { createHostedApp } from "../hosted-shared/hosted-app"
 import { createControlPlaneServices, type ControlPlaneServices } from "../../authority/services"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
@@ -15,7 +15,7 @@ import { mountedPaths } from "@claxedo/server-core/deployments/product-route-fam
  * Self-hosted single-binary product contract.
  *
  * This is a DIFFERENT product from the desktop-local server, even though today
- * both are `createApp`. It is the signed, internet-reachable, SQLite-backed
+ * both are `createSelfHostedApp`. It is the signed, internet-reachable, SQLite-backed
  * control plane that `bun run start` and the Docker image ship: embedded auth,
  * hosted WorkGraph and Documents, channels, Relay authority, and an optional
  * static web UI.
@@ -56,7 +56,7 @@ afterEach(() => {
 
 function selfHostedApp() {
   const centralStore = createSqliteCentralStore({ mode: () => "workspace_replicated" })
-  return createApp(
+  return createSelfHostedApp(
     createControlPlaneServices(
       {
         projectionStore: centralStore.projectionStore,
