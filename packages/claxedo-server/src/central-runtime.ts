@@ -20,6 +20,7 @@ import type { ConnectionTurnCredentials } from "./connections/turn-credentials"
 import type { WorkspaceSessionAdmission } from "./hosts/workspace-runtime/session-env"
 import type { UsageLedger } from "./platform/telemetry/product/metering"
 import type { ProductDeploymentMode } from "./platform/telemetry/product/product"
+import type { UsageRevisionReader, UsageRevisionWriter } from "./usage/contracts"
 
 export { createCentralSessionRuntime } from "./session/runtime"
 export { ControlPlaneAuthError, localOnlyAuthAdapter, type ControlPlaneAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
@@ -39,6 +40,8 @@ export type CentralControlAppOptions = {
   beforeLocalSessionList?: () => Promise<void>
   /** W5: authoritative destination for completed-turn token counts (plan D1). */
   usageLedger?: UsageLedger
+  usageRevisionStore?: UsageRevisionWriter & Partial<UsageRevisionReader>
+  resolveUsageHostIdentity?: () => Promise<{ hostId: string }>
   /** Product-plane `deployment_mode` for turn metering; defaults to self-host. */
   productDeploymentMode?: ProductDeploymentMode
 }
@@ -143,6 +146,8 @@ export function createCentralControlApp(services: ControlPlaneServices, options:
     ...(options.admitWorkspaceSession ? { admitWorkspaceSession: options.admitWorkspaceSession } : {}),
     ...(options.turnCredentials ? { turnCredentials: options.turnCredentials } : {}),
     ...(options.usageLedger ? { usageLedger: options.usageLedger } : {}),
+    ...(options.usageRevisionStore ? { usageRevisionStore: options.usageRevisionStore } : {}),
+    ...(options.resolveUsageHostIdentity ? { resolveUsageHostIdentity: options.resolveUsageHostIdentity } : {}),
     ...(options.productDeploymentMode ? { productDeploymentMode: options.productDeploymentMode } : {}),
   })
   const app = new Hono()

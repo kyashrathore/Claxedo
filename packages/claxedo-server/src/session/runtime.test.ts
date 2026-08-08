@@ -9,6 +9,7 @@ import { createCentralSessionRuntime } from "./runtime"
 import { createCentralControlApp } from "../central-runtime"
 import { createConnectionTurnCredentials } from "../connections/turn-credentials"
 import { piProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-catalog"
+import type { TurnUsageRevision } from "../usage/contracts"
 
 function services(): ControlPlaneServices {
   return {
@@ -1017,8 +1018,16 @@ describe("createCentralSessionRuntime", () => {
     const turnStarted = new Promise<void>((resolve) => {
       started = resolve
     })
+    const usage: TurnUsageRevision[] = []
     const runtime = createCentralSessionRuntime(services(), {
       createEnv: async () => abortableEnv({ started }),
+      usageRevisionStore: {
+        writeRevision: async (fact) => {
+          usage.push(structuredClone(fact))
+          return { status: "accepted" }
+        },
+      },
+      resolveUsageHostIdentity: async () => ({ hostId: "host-abort" }),
     })
     const events: RuntimeEventEnvelope[] = []
     runtime.eventHub.subscribeRuntime((event) => events.push(event))
@@ -1066,6 +1075,12 @@ describe("createCentralSessionRuntime", () => {
       assistantMessageId: "user-abort_r",
       payload: { type: "error", error: "central turn aborted" },
     }))
+    await runtime.flushUsage()
+    expect(usage.at(-1)).toMatchObject({
+      messageId: "user-abort_r",
+      settlement: "unavailable",
+      status: "stopped",
+    })
   })
 
   /*

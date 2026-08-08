@@ -20,6 +20,7 @@ import {
   type SessionConfig,
   type SessionConfigUpdate,
   type AgentProcessObserver,
+  type AgentTurnOutcome,
 } from "@claxedo/agent-sdk-runtime"
 import { applyRuntimeAgentExtensions } from "@claxedo/agent-extensions"
 import {
@@ -132,6 +133,8 @@ export type WorkspaceRuntimeStoreFactory = (input: { storeRoot?: string }) => Wo
 export type WorkspaceHostOptions = {
   /** Optional, local-only lifecycle observer supplied by an embedding host. */
   processObserver?: ProcessObserver
+  /** Host observer for the durable turn.finish outcome after store commit. */
+  onTurnOutcome?: (input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void
   /** Parent-Session authorization and child ownership used by scoped runtime-event streams. */
   runtimeEventAuthorization?: RuntimeEventAuthorization
   /** Host-mediated resolver endpoint for opaque file-backed transcript handles. */
@@ -665,7 +668,25 @@ async function writeCodexAuth(input: { target: string; content: string }) {
 const defaultStoreFactory: WorkspaceRuntimeStoreFactory = ({ storeRoot }) => new RuntimeStore(storeRoot)
 
 function resolveStoreFactory(options: WorkspaceHostOptions): WorkspaceRuntimeStoreFactory {
-  return options.storeFactory ?? defaultStoreFactory
+  const factory = options.storeFactory ?? defaultStoreFactory
+  if (!options.onTurnOutcome) return factory
+  return (input) => {
+    const store = factory(input)
+    const finish = store.finishTurn?.bind(store)
+    if (finish) {
+      store.finishTurn = (value) => {
+        finish(value)
+        const session = store.getSession(value.sessionId) as { lastTurn?: AgentTurnOutcome } | null
+        options.onTurnOutcome?.({
+          ...value,
+          ...(value.assistantMessageId ?? session?.lastTurn?.assistantMessageId
+            ? { assistantMessageId: value.assistantMessageId ?? session?.lastTurn?.assistantMessageId }
+            : {}),
+        })
+      }
+    }
+    return store
+  }
 }
 
 /**

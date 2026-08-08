@@ -8,7 +8,7 @@ import * as ProcessManager from "./managed-processes/manager"
 import { withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "./target"
 import { WorkspaceWorktreeManager } from "./worktree"
 import type { OpenCodeRequestFn, PiModelBackendResolver } from "@claxedo/agent-sdk-runtime/adapters"
-import { createWorkspaceHost } from "./workspace"
+import { createWorkspaceHost, type WorkspaceHostOptions } from "./workspace"
 import { setupAgentHooks } from "./agent-hooks"
 import { createRelayHostAuthMiddleware, type RelayHostAuthOptions } from "./workspace-host-service-auth"
 import {
@@ -69,6 +69,7 @@ export type WorkspaceRuntimeServiceExposure = {
 export type WorkspaceRuntimeServerOptions = {
   /** Optional local owner observer. Remote/relay compositions omit it. */
   processObserver?: ProcessObserver
+  onTurnOutcome?: WorkspaceHostOptions["onTurnOutcome"]
   runtimeEventAuthorization?: RuntimeEventAuthorization
   transcripts?: WorkspaceTranscriptRoutesOptions
   relayHostAuth?: RelayHostAuthOptions
@@ -425,6 +426,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.agentExtensionStateRoot ? { agentExtensionStateRoot: options.agentExtensionStateRoot } : {}),
     ...(options.configApplyReceiptDir ? { configApplyReceiptDir: options.configApplyReceiptDir } : {}),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
+    ...(options.onTurnOutcome ? { onTurnOutcome: options.onTurnOutcome } : {}),
     ...(options.runtimeEventAuthorization ? { runtimeEventAuthorization: options.runtimeEventAuthorization } : {}),
     ...(options.transcripts ? { transcripts: options.transcripts } : {}),
   })

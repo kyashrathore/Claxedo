@@ -85,6 +85,9 @@ describe("claxedo schema", () => {
     expect(hasColumn(sqlite, "claxedo_workspace_lease", "provider_snapshot_id")).toBe(false)
     expect(hasColumn(sqlite, "claxedo_runtime_snapshot", "driver_snapshot_id")).toBe(true)
     expect(hasColumn(sqlite, "claxedo_runtime_snapshot", "provider_snapshot_id")).toBe(false)
+    expect(hasTable(sqlite, "claxedo_usage_turn_revision")).toBe(true)
+    expect(hasTable(sqlite, "claxedo_usage_turn_current")).toBe(true)
+    expect(hasTable(sqlite, "claxedo_usage_outbox")).toBe(true)
   })
 
   test("sandbox driver credential migration renames old sandbox driver credential kind", () => {
@@ -285,6 +288,13 @@ describe("claxedo schema", () => {
     expect(hasTable(sqlite, "claxedo_page_status")).toBe(true)
     expect(hasTable(sqlite, "claxedo_document_index")).toBe(true)
     expect(hasTable(sqlite, "claxedo_local_project")).toBe(true)
+    expect(fixed).toEqual(expect.arrayContaining([
+      "claxedo_usage_turn_revision",
+      "claxedo_usage_turn_current",
+      "claxedo_usage_outbox",
+    ]))
+    expect(hasTable(sqlite, "claxedo_usage_turn_current")).toBe(true)
+    expect(hasTable(sqlite, "claxedo_usage_outbox")).toBe(true)
     expect(hasTable(sqlite, retiredArenaTable)).toBe(false)
     expect(hasTable(sqlite, retiredPageTable)).toBe(false)
   })

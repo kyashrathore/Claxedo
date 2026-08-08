@@ -31,6 +31,7 @@ import { WorkspaceRoutes } from "../../workspace/routes/index"
 import { OpenCodeCompatRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { resolveHarnessId } from "@claxedo/local-server/self-hosted-execution"
 import { normalizeHarnessIdentity } from "@claxedo/agent-sdk-runtime"
+import { toCompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
 import { createWorkspaceRuntimeProxy } from "@claxedo/local-server/self-hosted-execution"
 import { createLocalWorkspaceRelayProxy } from "../../workspace/runtime-dispatch/shared-workspace-endpoint"
 import { configureOpencodeMcpSync } from "@claxedo/local-server/self-hosted-execution"
@@ -140,6 +141,8 @@ import { createRemoteAccessService, unavailableRemoteAccessService } from "./rem
 import { localHostIdentity, registrationPayload, signHostPayload } from "../../workspace/local-host"
 import { hasUserHostedMachineTunnel, startUserHostedMachineTunnel, stopUserHostedMachineTunnel } from "../../user-hosted-tunnel"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/self-hosted-execution"
+import { createSqliteUsageLedger } from "../../usage/adapters/sqlite-usage-ledger"
+import { createTurnMeter } from "../../usage/turn-meter"
 
 const execFileAsync = promisify(execFile)
 
@@ -457,6 +460,8 @@ export function createSelfHostedApp(
      * contract rather than about a deployment's configuration.
      */
     posture?: SelfHostedPosture
+    usageRevisionStore?: ReturnType<typeof createSqliteUsageLedger>
+    resolveUsageHostIdentity?: () => Promise<{ hostId: string }>
   } = {},
 ) {
   if (options.posture) assertSelfHostedPosture(options.posture)
@@ -526,6 +531,8 @@ export function createSelfHostedApp(
       })
     },
     turnCredentials,
+    ...(options.usageRevisionStore ? { usageRevisionStore: options.usageRevisionStore } : {}),
+    ...(options.resolveUsageHostIdentity ? { resolveUsageHostIdentity: options.resolveUsageHostIdentity } : {}),
     ...(options.beforeLocalSessionList ? { beforeLocalSessionList: options.beforeLocalSessionList } : {}),
   })
   const controlPlaneChannels = createControlPlaneChannels({
@@ -1065,6 +1072,35 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   // An explicit opencodeUrl is the external-URL opt-in. NOTHING listens on :4096.
   const opencodeCompat = process.env.CLAXEDO_DISABLE_OPENCODE_COMPAT !== "1"
   const services = options.services
+  const usageRevisionStore = createSqliteUsageLedger()
+  const localUsageHost = localHostIdentity()
+  const localTurnMeter = createTurnMeter({
+    writer: usageRevisionStore,
+    reader: usageRevisionStore,
+    currentFilter: (fact) => fact.location === "local" || fact.location === "user-hosted",
+    reconcileProvisionalOnStart: true,
+    resolveContext: async ({ sessionId }) => {
+      const [meta, host, config] = await Promise.all([
+        sessionMeta(sessionId),
+        localUsageHost,
+        loadUserConfig(),
+      ])
+      if (!meta?.sessionRef || !meta.workspaceID) {
+        throw new Error(`usage metering requires canonical workspace session metadata for ${sessionId}`)
+      }
+      return {
+        sessionRef: meta.sessionRef,
+        workspaceId: meta.workspaceID,
+        hostId: host.hostId,
+        location: "local",
+        harness: sessionComposerHarness(defaultHarness(config)),
+        ...(meta.model?.providerID ? { providerId: meta.model.providerID } : {}),
+        ...(meta.model?.modelID ? { modelId: meta.model.modelID } : {}),
+      }
+    },
+    onDegraded: (error) => reportError(error, { tags: { source: "local_usage_metering" } }),
+  })
+  void localTurnMeter.start()
   let executeWorkGraphRun:
     | ((context: WorkGraphContext, request: WorkGraphRunOperationRequest) => Promise<CommandResult>)
     | undefined
@@ -1199,7 +1235,17 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
       if (event.payload.type === "session.created" || event.payload.type === "session.updated") {
         void projectLocalSessionMetaFromEvent(services.projectionStore, event)
       }
+      const compat = toCompatEvent({ type: event.payload.type, properties: event.payload.properties })
+      if (compat) void localTurnMeter.consume({ directory: event.directory ?? "", payload: compat })
       recordLocalWorkGraphUsage(event)
+    },
+    onTurnOutcome: ({ sessionId, assistantMessageId, outcome }) => {
+      if (outcome.status !== "cancelled" || !assistantMessageId) return
+      void localTurnMeter.settle({
+        sessionId,
+        messageId: assistantMessageId,
+        status: outcome.reason === "steer" ? "interrupted_by_steer" : "stopped",
+      })
     },
     onSessionMetaSnapshot: async (workspace, sessions) => {
       await Promise.all(sessions.map((session) => services.projectionStore.sync_session_meta(workspace, session)))
@@ -1256,6 +1302,8 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
 
   let localSessionProjectionReady: Promise<void> | undefined
   const built = createSelfHostedApp(services, {
+    usageRevisionStore,
+    resolveUsageHostIdentity: localHostIdentity,
     onOpencodeAccess: () => upstreamEvents?.start(),
     beforeLocalSessionList: async () => {
       if (localSessionProjectionReady) return

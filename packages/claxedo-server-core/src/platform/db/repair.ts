@@ -93,6 +93,37 @@ const sqls = [
   "CREATE TABLE IF NOT EXISTS `claxedo_channel_allow` (`channel` text NOT NULL, `external_user_id` text NOT NULL, `approved_by` text, `approved_at` integer NOT NULL, PRIMARY KEY (`channel`, `external_user_id`))",
   "CREATE TABLE IF NOT EXISTS `claxedo_channel_identity` (`channel` text NOT NULL, `external_user_id` text NOT NULL, `account_id` text, `status` text NOT NULL, `bound_at` integer NOT NULL, `bound_by` text, PRIMARY KEY (`channel`, `external_user_id`))",
   "CREATE INDEX IF NOT EXISTS `claxedo_channel_identity_account_idx` ON `claxedo_channel_identity` (`account_id`)",
+  `CREATE TABLE IF NOT EXISTS \`claxedo_usage_turn_revision\` (
+    \`host_id\` text NOT NULL, \`session_ref\` text NOT NULL, \`session_id\` text NOT NULL,
+    \`message_id\` text NOT NULL, \`revision\` integer NOT NULL, \`payload_hash\` text NOT NULL,
+    \`observed_at\` integer NOT NULL, \`completed_at\` integer, \`settlement\` text NOT NULL,
+    \`status\` text NOT NULL, \`location\` text NOT NULL, \`harness\` text NOT NULL,
+    \`provider_id\` text NOT NULL, \`model_id\` text NOT NULL, \`workspace_id\` text,
+    \`input_tokens\` integer, \`output_tokens\` integer, \`reasoning_tokens\` integer,
+    \`cache_read_tokens\` integer, \`cache_write_tokens\` integer, \`quality_json\` text NOT NULL,
+    PRIMARY KEY (\`host_id\`, \`session_ref\`, \`message_id\`, \`revision\`)
+  )`,
+  "CREATE INDEX IF NOT EXISTS `claxedo_usage_turn_revision_observed_idx` ON `claxedo_usage_turn_revision` (`observed_at`)",
+  `CREATE TABLE IF NOT EXISTS \`claxedo_usage_turn_current\` (
+    \`host_id\` text NOT NULL, \`session_ref\` text NOT NULL, \`session_id\` text NOT NULL,
+    \`message_id\` text NOT NULL, \`revision\` integer NOT NULL, \`payload_hash\` text NOT NULL,
+    \`observed_at\` integer NOT NULL, \`completed_at\` integer, \`settlement\` text NOT NULL,
+    \`status\` text NOT NULL, \`location\` text NOT NULL, \`harness\` text NOT NULL,
+    \`provider_id\` text NOT NULL, \`model_id\` text NOT NULL, \`workspace_id\` text,
+    \`input_tokens\` integer, \`output_tokens\` integer, \`reasoning_tokens\` integer,
+    \`cache_read_tokens\` integer, \`cache_write_tokens\` integer, \`quality_json\` text NOT NULL,
+    PRIMARY KEY (\`host_id\`, \`session_ref\`, \`message_id\`)
+  )`,
+  "CREATE INDEX IF NOT EXISTS `claxedo_usage_turn_current_observed_idx` ON `claxedo_usage_turn_current` (`observed_at`)",
+  "CREATE INDEX IF NOT EXISTS `claxedo_usage_turn_current_workspace_idx` ON `claxedo_usage_turn_current` (`workspace_id`, `observed_at`)",
+  `CREATE TABLE IF NOT EXISTS \`claxedo_usage_outbox\` (
+    \`host_id\` text NOT NULL, \`session_ref\` text NOT NULL, \`message_id\` text NOT NULL,
+    \`revision\` integer NOT NULL, \`payload_hash\` text NOT NULL,
+    \`state\` text NOT NULL DEFAULT 'pending', \`attempts\` integer NOT NULL DEFAULT 0,
+    \`created_at\` integer NOT NULL, \`updated_at\` integer NOT NULL,
+    PRIMARY KEY (\`host_id\`, \`session_ref\`, \`message_id\`, \`revision\`)
+  )`,
+  "CREATE INDEX IF NOT EXISTS `claxedo_usage_outbox_state_created_idx` ON `claxedo_usage_outbox` (`state`, `created_at`)",
 ] as const
 
 const tabs = [
@@ -103,6 +134,9 @@ const tabs = [
   "claxedo_channel_delivery",
   "claxedo_channel_state",
   "claxedo_channel_run_audit",
+  "claxedo_usage_turn_revision",
+  "claxedo_usage_turn_current",
+  "claxedo_usage_outbox",
 ] as const
 
 function hasTable(db: SqliteInstance, name: string) {

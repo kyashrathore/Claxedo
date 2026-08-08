@@ -83,6 +83,7 @@
     "verify:closure": "bun ../../script/product-boundary/verify.ts"
   },
   "dependencies": {
+    "@claxedo/agent-event-runtime": "workspace:0.7.0",
     "@claxedo/agent-extensions": "workspace:0.7.0",
     "@claxedo/agent-sdk-runtime": "workspace:0.7.0",
     "@claxedo/channels": "workspace:0.4.0",

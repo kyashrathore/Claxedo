@@ -11,6 +11,7 @@ import {
   type SessionEnvFactory,
   type SubagentAdmissionStore,
   type SubagentObservation,
+  type AgentTurnOutcome,
 } from "@claxedo/agent-sdk-runtime"
 import {
   codexBundlePiBackendResolver,
@@ -48,11 +49,12 @@ import { piProviderCatalog, validatePiPromptModel } from "@claxedo/server-core/c
 import {
   emitLlmTurnCompleted,
   emitSessionStarted,
-  llmTurnRecord,
   workGraphSessionAttribution,
   type UsageLedger,
 } from "../platform/telemetry/product/metering"
 import type { ProductDeploymentMode, ProductIdentity } from "../platform/telemetry/product/product"
+import { createTurnMeter } from "../usage/turn-meter"
+import type { TurnUsageRevision, UsageRevisionReader, UsageRevisionWriter } from "../usage/contracts"
 
 type SourceChannel = "github" | "slack" | "telegram" | "discord" | "whatsapp"
 
@@ -147,6 +149,9 @@ type CentralSessionRuntimeOptions = {
    * correct posture for a self-host box with no control plane.
    */
   usageLedger?: UsageLedger
+  /** Durable local fact/outbox store. Deployment compositions must provide it. */
+  usageRevisionStore?: UsageRevisionWriter & Partial<UsageRevisionReader>
+  resolveUsageHostIdentity?: () => Promise<{ hostId: string }>
   /** Product-plane `deployment_mode` for turn metering; defaults to self-host. */
   productDeploymentMode?: ProductDeploymentMode
   /** Deterministic model backend injection for tests and embedded deployments. */
@@ -341,7 +346,21 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     toolExtensionProvider: { providesSubagentTool: () => true },
     ...(options.createEnv ? { createEnv: options.createEnv } : {}),
   })
+  let onTurnOutcome: ((input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void) | undefined
   const runtimeStore = createMemoryRuntimeStore() as unknown as AgentRuntimeStoreWithRecovery
+  const finishTurn = runtimeStore.finishTurn?.bind(runtimeStore)
+  if (finishTurn) {
+    runtimeStore.finishTurn = (input) => {
+      finishTurn(input)
+      const session = runtimeStore.getSession(input.sessionId) as { lastTurn?: AgentTurnOutcome } | null
+      onTurnOutcome?.({
+        ...input,
+        ...(input.assistantMessageId ?? session?.lastTurn?.assistantMessageId
+          ? { assistantMessageId: input.assistantMessageId ?? session?.lastTurn?.assistantMessageId }
+          : {}),
+      })
+    }
+  }
   const subagentStore = runtimeStore as AgentRuntimeStoreWithRecovery & SubagentAdmissionStore & {
     listSubagents(parentSessionId: string): unknown[]
   }
@@ -393,39 +412,89 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
   }
   const sessionHarness = (sessionId: string) =>
     runtimeStore.getSessionConfig(sessionId)?.harness?.id ?? "pi"
-  const meterCompletedTurn = (event: CompatEnvelope) => {
-    if (event.payload.type !== "message.updated") return
-    const info = (event.payload.properties as { info?: unknown }).info
-    const sessionId = eventSessionId(event.payload)
-    // Resolved synchronously: the async-local turn scope unwinds as soon as
-    // this returns, so reading it after an await would find nothing.
-    const identity = turnIdentity()
-    const localAttribution = workGraphSessionAttribution(sessionId ?? "")
-    void (async () => {
-      const hostedAttribution = !localAttribution && identity && sessionId
-        ? await options.usageLedger?.resolveWorkGraphAttribution?.({
-          org_id: identity.org_id,
-          user_id: identity.user_id,
-          session_id: sessionId,
-        })
-        : undefined
-      const record = llmTurnRecord({
-        message: info,
-        harness: sessionHarness(sessionId ?? ""),
-        attribution: localAttribution ?? (hostedAttribution ? {
-          streamId: hostedAttribution.stream_id,
-          runId: hostedAttribution.run_id,
-          workItemId: hostedAttribution.work_item_id,
-        } : undefined),
+  const usageIdentities = new Map<string, ProductIdentity | undefined>()
+  const usageTimings = new Map<string, { created: number; completed: number }>()
+  const usageWriter: UsageRevisionWriter = options.usageRevisionStore ?? {
+    writeRevision: async () => ({ status: "accepted" }),
+  }
+  const usageReader = options.usageRevisionStore?.current
+    ? options.usageRevisionStore as UsageRevisionReader
+    : undefined
+  const usageHost = options.resolveUsageHostIdentity?.() ?? Promise.resolve({ hostId: "unconfigured" })
+  const emitTerminalUsage = async (fact: TurnUsageRevision) => {
+    const usageKey = `${fact.sessionId}\u0000${fact.messageId}`
+    const identity = usageIdentities.get(usageKey)
+    const timing = usageTimings.get(usageKey)
+    const localAttribution = workGraphSessionAttribution(fact.sessionId)
+    const hostedAttribution = !localAttribution && identity
+      ? await options.usageLedger?.resolveWorkGraphAttribution?.({
+        org_id: identity.org_id,
+        user_id: identity.user_id,
+        session_id: fact.sessionId,
       })
-      if (!record) return
-      await emitLlmTurnCompleted({
-        identity,
-        sink: services.telemetry,
-        ledger: options.usageLedger,
-        record,
-      })
-    })()
+      : undefined
+    const count = (value: number | null) => value ?? 0
+    await emitLlmTurnCompleted({
+      identity,
+      sink: services.telemetry,
+      ledger: options.usageLedger,
+      record: {
+        message_id: fact.messageId,
+        session_id: fact.sessionId,
+        ...(localAttribution?.streamId ? { stream_id: localAttribution.streamId } : {}),
+        ...(localAttribution?.runId ? { run_id: localAttribution.runId } : {}),
+        ...(localAttribution?.workItemId ? { work_item_id: localAttribution.workItemId } : {}),
+        ...(!localAttribution && hostedAttribution?.stream_id ? { stream_id: hostedAttribution.stream_id } : {}),
+        ...(!localAttribution && hostedAttribution?.run_id ? { run_id: hostedAttribution.run_id } : {}),
+        ...(!localAttribution && hostedAttribution?.work_item_id ? { work_item_id: hostedAttribution.work_item_id } : {}),
+        harness: fact.harness,
+        provider_id: fact.providerId,
+        model_id: fact.modelId,
+        input_tokens: count(fact.tokens.input),
+        output_tokens: count(fact.tokens.output),
+        reasoning_tokens: count(fact.tokens.reasoning),
+        cache_read_tokens: count(fact.tokens.cache.read),
+        cache_write_tokens: count(fact.tokens.cache.write),
+        turn_status: fact.status === "error" ? "error" : "ok",
+        latency_ms: timing ? Math.max(0, timing.completed - timing.created) : 0,
+        settlement: fact.settlement,
+        known_token_categories: fact.quality.knownCategories,
+      },
+    })
+    usageIdentities.delete(usageKey)
+    usageTimings.delete(usageKey)
+  }
+  const turnMeter = createTurnMeter({
+    writer: usageWriter,
+    ...(usageReader ? { reader: usageReader } : {}),
+    currentFilter: (fact) => fact.location === "central" || fact.location === "cloud-workspace",
+    reconcileProvisionalOnStart: true,
+    resolveContext: async ({ sessionId }) => {
+      const [meta, host] = await Promise.all([
+        services.projectionStore.session_meta(sessionId),
+        usageHost,
+      ])
+      return {
+        sessionRef: meta?.sessionRef ?? `central:${sessionId}`,
+        ...(meta?.workspaceID ? { workspaceId: meta.workspaceID } : {}),
+        hostId: host.hostId,
+        location: meta?.host === "workspace" ? "cloud-workspace" : "central",
+        harness: sessionHarness(sessionId),
+        ...(meta?.model?.providerID ? { providerId: meta.model.providerID } : {}),
+        ...(meta?.model?.modelID ? { modelId: meta.model.modelID } : {}),
+      }
+    },
+    onTerminal: emitTerminalUsage,
+    onDegraded: (error) => console.error("[central-runtime] usage metering degraded:", error),
+  })
+  if (usageReader) void turnMeter.start()
+  onTurnOutcome = ({ sessionId, assistantMessageId, outcome }) => {
+    if (outcome.status !== "cancelled" || !assistantMessageId) return
+    void turnMeter.settle({
+      sessionId,
+      messageId: assistantMessageId,
+      status: outcome.reason === "steer" ? "interrupted_by_steer" : "stopped",
+    })
   }
   async function deploymentDefaultModel(sessionId: string) {
     const configured = process.env.CLAXEDO_PI_MODEL?.trim()
@@ -626,9 +695,29 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
    * message completes.
    */
   function publishGlobal(event: CompatEnvelope) {
-    eventHub.publishGlobal(event)
-    meterCompletedTurn(event)
     const sessionId = eventSessionId(event.payload)
+    const messageId = event.payload.type === "session.usage"
+      ? event.payload.properties.messageID
+      : event.payload.type === "message.updated"
+        ? event.payload.properties.info.id
+        : event.payload.type === "message.completed"
+          ? event.payload.properties.messageID
+          : undefined
+    if (sessionId && messageId) {
+      // Capture before the AsyncLocal turn credential scope unwinds.
+      usageIdentities.set(`${sessionId}\u0000${messageId}`, turnIdentity())
+      if (event.payload.type === "message.updated") {
+        const created = event.payload.properties.info.time.created
+        const completed = "completed" in event.payload.properties.info.time
+          ? event.payload.properties.info.time.completed
+          : undefined
+        if (typeof created === "number" && typeof completed === "number") {
+          usageTimings.set(`${sessionId}\u0000${messageId}`, { created, completed })
+        }
+      }
+    }
+    void turnMeter.consume(event)
+    eventHub.publishGlobal(event)
     if (event.payload.type === "session.updated") {
       const title = typeof event.payload.properties.info.title === "string"
         ? event.payload.properties.info.title
@@ -1113,6 +1202,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     eventHub,
     /** The compat-event ingress: live hub, turn metering, durable log. */
     publishGlobal,
+    flushUsage: () => turnMeter.flush(),
     runtimeEvents: runtimeEventsHandler(eventHub),
     sourceChannelSessionCountsByWeek: (input?: { channel?: string; includeHidden?: boolean }) =>
       services.projectionStore.source_channel_session_counts_by_week?.(input) ?? Promise.resolve([]),

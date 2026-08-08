@@ -10,7 +10,12 @@
  */
 
 import { describe, expect, test, vi } from "vitest"
-import { buildAssistantMessage, messageUpdated } from "@claxedo/agent-sdk-runtime/compat-events"
+import {
+  buildAssistantMessage,
+  messageCompleted,
+  messageUpdated,
+  sessionUsage,
+} from "@claxedo/agent-sdk-runtime/compat-events"
 import type { ControlPlaneServices } from "../../../authority/services"
 import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { createCentralSessionRuntime } from "../../../session/runtime"
@@ -30,6 +35,7 @@ import {
   type UsageLedger,
 } from "./metering"
 import type { ProductIdentity } from "./product"
+import type { TurnUsageRevision } from "../../../usage/contracts"
 
 /**
  * The fake provider's usage object as the agent runtime hands it over —
@@ -127,6 +133,52 @@ function completedTurn(input: {
 // ---------------------------------------------------------------------------
 
 describe("llm_turn_completed carries the provider's usage object verbatim", () => {
+  test("the runtime ingress commits provisional and final local revisions from canonical events", async () => {
+    const captured = captureSink()
+    const facts: TurnUsageRevision[] = []
+    const runtime = createCentralSessionRuntime(services(captured.sink), {
+      usageRevisionStore: {
+        writeRevision: async (fact) => {
+          facts.push(structuredClone(fact))
+          return { status: "accepted" }
+        },
+      },
+      resolveUsageHostIdentity: async () => ({ hostId: "host-stable" }),
+    })
+    const info = buildAssistantMessage({
+      id: "msg-runtime",
+      sessionID: "session-runtime",
+      parentID: "user-runtime",
+      agent: "build",
+      model: { providerID: "openai", modelID: "gpt-5.4" },
+      directory: "/must-not-persist",
+      created: 100,
+    })
+    runtime.publishGlobal({ directory: "/must-not-persist", payload: messageUpdated(info) })
+    runtime.publishGlobal({
+      directory: "/must-not-persist",
+      payload: sessionUsage({
+        sessionID: "session-runtime",
+        messageID: "msg-runtime",
+        contextSize: 100,
+        contextUsed: 12,
+        observation: {
+          kind: "cumulative",
+          tokens: { input: 10, output: 2, reasoning: null, cache: { read: 4, write: null } },
+        },
+      }),
+    })
+    runtime.publishGlobal({ directory: "/must-not-persist", payload: messageCompleted("session-runtime", "msg-runtime") })
+    await runtime.flushUsage()
+
+    expect(facts).toEqual([
+      expect.objectContaining({ revision: 1, settlement: "provisional", hostId: "host-stable", quality: expect.objectContaining({ source: "lifecycle" }) }),
+      expect.objectContaining({ revision: 2, settlement: "provisional", hostId: "host-stable", quality: expect.objectContaining({ source: "provider" }) }),
+      expect.objectContaining({ revision: 3, settlement: "final", status: "completed", hostId: "host-stable" }),
+    ])
+    expect(JSON.stringify(facts)).not.toContain("must-not-persist")
+  })
+
   test("the emitted token fields equal the fake provider's usage, field for field", async () => {
     const captured = captureSink()
     const turnCredentials = createConnectionTurnCredentials()

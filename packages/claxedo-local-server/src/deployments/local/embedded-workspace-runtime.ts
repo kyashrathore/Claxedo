@@ -25,6 +25,7 @@ import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/wo
 import { resolveClaxedoWorkspaceRuntimeTarget } from "../../hosts/workspace-runtime/target"
 import { createOpencodeEvents, type OpencodeEvent, type OpencodeEventsHandle } from "../../opencode/events"
 import type { PiModelBackendResolver } from "@claxedo/agent-sdk-runtime/adapters"
+import type { AgentTurnOutcome } from "@claxedo/agent-sdk-runtime"
 
 type EmbeddedRuntime = ReturnType<typeof createWorkspaceRuntimeApp> & {
   workspace: Workspace
@@ -81,6 +82,7 @@ let configuredProcessObserver: ProcessObserver | undefined
 let configuredOnSessionMetaEvent: ((event: OpencodeEvent) => void) | undefined
 let configuredOnSessionMetaCreated: ((workspace: Workspace, session: unknown) => Promise<void> | void) | undefined
 let configuredOnSessionMetaSnapshot: ((workspace: Workspace, sessions: unknown[]) => void | Promise<void>) | undefined
+let configuredOnTurnOutcome: ((input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void) | undefined
 
 export function configureEmbeddedWorkspaceRuntime(input: {
   opencodeRequest: OpenCodeRequestFn
@@ -91,6 +93,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   onSessionMetaEvent?: (event: OpencodeEvent) => void
   onSessionMetaCreated?: (workspace: Workspace, session: unknown) => Promise<void> | void
   onSessionMetaSnapshot?: (workspace: Workspace, sessions: unknown[]) => void | Promise<void>
+  onTurnOutcome?: (input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void
 }) {
   configuredOpencodeRequest = input.opencodeRequest
   configuredOpencodeCompat = input.opencodeCompat ?? true
@@ -100,6 +103,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   configuredOnSessionMetaEvent = input.onSessionMetaEvent
   configuredOnSessionMetaCreated = input.onSessionMetaCreated
   configuredOnSessionMetaSnapshot = input.onSessionMetaSnapshot
+  configuredOnTurnOutcome = input.onTurnOutcome
 }
 
 function storeRoot(ws: Workspace) {
@@ -140,6 +144,7 @@ function options(
     ...(configuredPiModelBackend ? { piModelBackend: configuredPiModelBackend } : {}),
     ...(configuredRouteContributions.length ? { routeContributions: configuredRouteContributions } : {}),
     ...(configuredProcessObserver ? { processObserver: configuredProcessObserver } : {}),
+    ...(configuredOnTurnOutcome ? { onTurnOutcome: configuredOnTurnOutcome } : {}),
     exposure: createClaxedoRuntimeExposure({ kind: "embedded", guard: embeddedRuntimeGuard }),
     target: resolveClaxedoWorkspaceRuntimeTarget(ws),
     storeRoot: storeRoot(ws),

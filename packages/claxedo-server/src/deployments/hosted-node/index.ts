@@ -23,6 +23,8 @@ import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { createConnectionTurnCredentials, type ConnectionTurnCredentials } from "../../connections/turn-credentials"
 import { createHostedWorkGraphRuntime } from "../../hosts/workgraph/hosted/runtime"
 import { createNodeSettlementDispatcher } from "../../hosts/workgraph/settlement-dispatcher"
+import { createSqliteUsageLedger } from "../../usage/adapters/sqlite-usage-ledger"
+import { localHostIdentity } from "../../workspace/local-host"
 
 function centralStorePorts() {
   const centralStore = createSqliteCentralStore({ mode: () => "central_canonical" })
@@ -114,6 +116,8 @@ export function createHostedNodeApp(env: HostedWorkerEnv = process.env) {
     // service token at call time, so it is safe to construct before secrets
     // exist. The self-host composition (server.ts) stays unwired on purpose.
     usageLedger: createConvexUsageLedger(),
+    usageRevisionStore: createSqliteUsageLedger(),
+    resolveUsageHostIdentity: localHostIdentity,
     productDeploymentMode: "cloud",
   })
   const channels = createControlPlaneChannels({

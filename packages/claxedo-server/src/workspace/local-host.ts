@@ -12,7 +12,9 @@ export type LocalHostIdentity = {
   privateKey: JsonWebKey
 }
 
-export async function localHostIdentity(): Promise<LocalHostIdentity> {
+let identityPromise: Promise<LocalHostIdentity> | undefined
+
+async function loadLocalHostIdentity(): Promise<LocalHostIdentity> {
   const file = path.join(dataDir(), "local-host-identity.json")
   try {
     const existing = JSON.parse(await fs.readFile(file, "utf8")) as unknown
@@ -45,6 +47,12 @@ export async function localHostIdentity(): Promise<LocalHostIdentity> {
     publicKey: JSON.stringify(record.public_key_jwk),
     privateKey: record.private_key_jwk,
   }
+}
+
+/** One process-wide identity load prevents concurrent first callers rotating the key. */
+export function localHostIdentity(): Promise<LocalHostIdentity> {
+  identityPromise ??= loadLocalHostIdentity()
+  return identityPromise
 }
 
 export function registrationPayload(input: {

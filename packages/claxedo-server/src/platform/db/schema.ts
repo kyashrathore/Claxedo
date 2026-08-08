@@ -14,3 +14,8 @@ export { ClaxedoChannelDeliveryTable, ClaxedoChannelStateTable } from "../../cha
 export { ClaxedoChannelRunAuditTable } from "../../channels/run-audit.sql"
 export { ClaxedoChannelPairingTable, ClaxedoChannelAllowTable, ClaxedoChannelIdentityTable } from "../../channels/access.sql"
 export { ClaxedoConnectionTable } from "../../connections/connection.sql"
+export {
+  ClaxedoUsageTurnRevisionTable,
+  ClaxedoUsageTurnCurrentTable,
+  ClaxedoUsageOutboxTable,
+} from "../../usage/usage.sql"

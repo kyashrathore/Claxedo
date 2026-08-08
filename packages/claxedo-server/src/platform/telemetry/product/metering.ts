@@ -79,6 +79,8 @@ export type LlmTurnRecord = {
   cache_write_tokens: number
   turn_status: TurnStatus
   latency_ms: number
+  settlement?: "provisional" | "final" | "partial" | "unavailable" | "recovered"
+  known_token_categories?: string[]
 }
 
 /**
