@@ -138,7 +138,7 @@
  *      (`POST /api/claxedo/agent-config/extensions/:id/enable|disable`,
  *      `packages/agent-extensions/src/install.ts`'s `disableAgentExtension`/
  *      `enableAgentExtension`, both unit-tested server-side in
- *      `packages/claxedo-server/src/hosts/agent-extensions/install.test.ts`). The
+ *      `packages/claxedo-local-server/src/hosts/agent-extensions/install.test.ts`). The
  *      marketplace panel now surfaces it: the installed pill's group/install
  *      wrapper hover-reveals a "Disable" control (and, once disabled, an
  *      "Enable" control) alongside "Uninstall" — `cards.tsx`'s `InstallButton`.

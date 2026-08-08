@@ -505,7 +505,7 @@ describe("control-plane services", () => {
   test("runtime-facing server files do not reach around control-plane ports", () => {
     const files = [
       path.resolve(import.meta.dirname, "../deployments/local/server.ts"),
-      path.resolve(import.meta.dirname, "../deployments/local/embedded-workspace-runtime.ts"),
+      path.resolve(import.meta.dirname, "../../../claxedo-local-server/src/deployments/local/embedded-workspace-runtime.ts"),
     ]
 
     for (const file of files) {

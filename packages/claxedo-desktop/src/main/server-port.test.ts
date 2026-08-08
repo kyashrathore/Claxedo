@@ -38,7 +38,7 @@ describe("DEFAULT_CLAXEDO_SERVER_PORT", () => {
     // quietly gets a second embedded server. Read the source rather than trust
     // the comments to stay honest.
     const source = readFileSync(
-      join(import.meta.dir, "../../../claxedo-server/src/deployments/local/port.ts"),
+      join(import.meta.dir, "../../../claxedo-local-server/src/deployments/local/port.ts"),
       "utf8",
     )
     const declared = /export const DEFAULT_CLAXEDO_SERVER_PORT = (\d+)/.exec(source)

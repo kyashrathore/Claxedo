@@ -13,7 +13,7 @@ process.env.CLAXEDO_DATA_DIR = root
 const { createTestBackend, setBackendOverride } = await import("@claxedo/server-core/credentials/backend-registry")
 const { putCredential, getCredential, resolveSecretById } = await import("@claxedo/server-core/credentials/registry")
 const { defaultControlPlaneCredentials } = await import("../../authority/services")
-const { CredentialRoutes } = await import("./credential")
+const { CredentialRoutes } = await import("@claxedo/local-server/credentials/routes/credential")
 const { ClaxedoDB } = await import("../../platform/db")
 
 const TOKEN_URL = "https://auth.openai.com/oauth/token"

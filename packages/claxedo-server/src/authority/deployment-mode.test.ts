@@ -8,7 +8,7 @@ import {
   deploymentMode,
   hostedBootRequirementFailures,
   unsignedLocalRequestGuard,
-} from "./deployment-mode"
+} from "@claxedo/server-core/authority/deployment-mode"
 import type { ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 
 /**

@@ -81,8 +81,8 @@ vi.mock("@claxedo/server-core/opencode/auth", () => ({
   opencodeHeaders: mocks.opencodeHeaders,
 }))
 
-const { createWorkspaceRuntimeProxy, workspaceRuntimeProxy } = await import("./middleware")
-const { embeddedConfigModeForPath } = await import("./internals")
+const { createWorkspaceRuntimeProxy, workspaceRuntimeProxy } = await import("@claxedo/local-server/workspace/runtime-dispatch/middleware")
+const { embeddedConfigModeForPath } = await import("@claxedo/local-server/workspace/runtime-dispatch/internals")
 const { configureWorkspaceSupervisorPort } = await import("@claxedo/server-core/workspace/supervisor-port")
 
 const {

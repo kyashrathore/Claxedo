@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import type { ControlPlaneCredentials, ControlPlaneServices } from "../../authority/services"
+import type { ControlPlaneCredentials, ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import type { CredentialWrite } from "@claxedo/server-core/credentials/types"
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
 import { createProviderAuthService, ProviderAuthError } from "./service"
@@ -181,7 +181,7 @@ describe("OAuth pending state is keyed by tenant", () => {
 describe("provider-auth routes resolve the tenant the same way credential routes do", () => {
   function app(registry: ControlPlaneCredentials, resolveOrg: (request: Request) => string) {
     const auth = service(registry)
-    return ProviderAuthRoutes({ credentials: registry } as unknown as ControlPlaneServices, {
+    return ProviderAuthRoutes({ credentials: registry } as unknown as ControlPlaneServicesContract, {
       service: auth,
       resolveOrg,
     })
@@ -215,7 +215,7 @@ describe("provider-auth routes resolve the tenant the same way credential routes
   test("POSITIVE CONTROL: unsigned local requests complete and land in the single-tenant partition", async () => {
     const c = credentials()
     // No resolveOrg override: unsigned local auth config resolves to __local__.
-    const routes = ProviderAuthRoutes({ credentials: c.registry } as unknown as ControlPlaneServices, {
+    const routes = ProviderAuthRoutes({ credentials: c.registry } as unknown as ControlPlaneServicesContract, {
       service: service(c.registry),
       authConfig: { enabled: false, mode: "local-only", reason: "test" },
     })

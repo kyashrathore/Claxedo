@@ -3,7 +3,7 @@ import path from "node:path"
 import { describe, expect, test } from "vitest"
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
 import { architectureOwnershipEntries, OwnershipStatus } from "./architecture-ownership"
-import { routeOwnership, RouteHandler } from "../../platform/governance/route-ownership"
+import { routeOwnership, RouteHandler } from "@claxedo/local-server/platform/governance/route-ownership"
 import { importPattern, walk } from "../../test-support/guards"
 
 describe("architecture boundaries", () => {
@@ -89,9 +89,9 @@ describe("architecture boundaries", () => {
     // other 149 lines — including the endpoint that mints owner-role tokens —
     // outside this ban.
     const files = [
-      "deployments/local/embedded-workspace-runtime.ts",
+      "../../claxedo-local-server/src/deployments/local/embedded-workspace-runtime.ts",
       "../../claxedo-server-core/src/workspace/http/sandbox-target-fetch.ts",
-      "agent-config/fanout.ts",
+      "../../claxedo-local-server/src/agent-config/fanout.ts",
       ...walk(path.resolve(import.meta.dirname, "../../workspace/runtime-dispatch"))
         .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))
         .map((file) => path.relative(path.resolve(import.meta.dirname, "../.."), file)),

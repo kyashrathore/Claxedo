@@ -10,7 +10,7 @@ import {
 } from "./config"
 import { initNodeObservability } from "./node"
 import { initPostHog, shutdownPostHog } from "./posthog"
-import { deploymentMode } from "../../../authority/deployment-mode"
+import { deploymentMode } from "@claxedo/server-core/authority/deployment-mode"
 
 /**
  * Observability gates.

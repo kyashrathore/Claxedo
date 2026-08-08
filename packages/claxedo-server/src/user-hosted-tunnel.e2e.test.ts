@@ -13,7 +13,7 @@ import {
   mintRuntimeAccessToken,
 } from "@claxedo/workspace-relay"
 import { configureWorkspaceSupervisor, shutdownWorkspaceSupervisor } from "./workspace/supervisor"
-import { configureEmbeddedWorkspaceRuntime } from "./deployments/local/embedded-workspace-runtime"
+import { configureEmbeddedWorkspaceRuntime } from "@claxedo/local-server/deployments/local/embedded-workspace-runtime"
 import { configureOpenCodeEngine, opencodeRequest } from "@claxedo/server-core/opencode/engine"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { startUserHostedWorkspaceTunnel, stopAllUserHostedWorkspaceTunnels } from "./user-hosted-tunnel"

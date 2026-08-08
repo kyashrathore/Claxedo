@@ -18,9 +18,9 @@ mkdirSync(root, { recursive: true })
 process.env.CLAXEDO_DATA_DIR = root
 process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 
-const { OpenCodeCompatRoutes } = await import("./index")
+const { OpenCodeCompatRoutes } = await import("@claxedo/local-server/opencode/compat-routes/index")
 const { ControlPlaneAuthError } = await import("@claxedo/server-core/platform/auth/auth")
-const { RouteHandler, routeOwnership } = await import("../../platform/governance/route-ownership")
+const { RouteHandler, routeOwnership } = await import("@claxedo/local-server/platform/governance/route-ownership")
 type ControlPlaneAuthConfig = import("@claxedo/server-core/platform/auth/auth").ControlPlaneAuthConfig
 type ClerkVerifier = import("@claxedo/server-core/platform/auth/auth").ClerkVerifier
 

@@ -63,7 +63,7 @@ import {
   DeploymentModeError,
   deploymentMode,
   unsignedLocalRequestGuard,
-} from "../../authority/deployment-mode"
+} from "@claxedo/server-core/authority/deployment-mode"
 import {
   createHostedWorkGraph,
   type HostedWorkGraph,

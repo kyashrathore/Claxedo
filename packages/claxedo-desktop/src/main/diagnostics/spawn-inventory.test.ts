@@ -70,6 +70,9 @@ async function productionFiles() {
   const directories = [
     "packages/claxedo-desktop/src",
     "packages/claxedo-server/src",
+    // The two packages the local product was split into. A spawn seam that
+    // moves into either must stay audited.
+    "packages/claxedo-local-server/src",
     // The shared core the local server composes over. A spawn seam that moves
     // here would otherwise stop being audited without anything saying so.
     "packages/claxedo-server-core/src",

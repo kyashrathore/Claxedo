@@ -6,14 +6,14 @@ import path from "path"
 import { randomUUID } from "crypto"
 import { Hono } from "hono"
 import { localOnlyAuthAdapter, type ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
-import type { ControlPlaneServices } from "../../authority/services"
+import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 
 const root = path.join(realpathSync(os.tmpdir()), `network-policy-routes-${randomUUID().slice(0, 8)}`)
 mkdirSync(root, { recursive: true })
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
-const { ClaxedoDB } = await import("../../platform/db")
+const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
 ClaxedoDB.Drizzle()
 const { NetworkPolicyRoutes } = await import("./network-policy-routes")
 
@@ -32,7 +32,7 @@ const verifier: ClerkVerifier = async (token, config) => ({
   },
 })
 
-function services(role = "admin"): ControlPlaneServices {
+function services(role = "admin"): ControlPlaneServicesContract {
   return {
     projectionStore: {} as never,
     durableSessionLog: {} as never,
@@ -54,12 +54,12 @@ function services(role = "admin"): ControlPlaneServices {
           access: "cloud" as const,
         },
       })),
-    } as unknown as ControlPlaneServices["authority"],
+    } as unknown as ControlPlaneServicesContract["authority"],
   }
 }
 
 function app(input?: {
-  services?: ControlPlaneServices
+  services?: ControlPlaneServicesContract
 }) {
   return new Hono().route("/api/claxedo/network-policy", NetworkPolicyRoutes({
     services: input?.services,

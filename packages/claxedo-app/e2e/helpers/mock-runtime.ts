@@ -447,7 +447,7 @@ export type MockRuntimeHandles = {
    * Manually inject an event onto the global SSE stream WITHOUT the
    * `{directory, payload}` envelope `emit()` always wraps events in. Real
    * `claxedoBus`-originated events (e.g. `session.lifecycle`, see
-   * `packages/claxedo-server/src/opencode/compat-routes/events.ts`) are
+   * `packages/claxedo-local-server/src/opencode/compat-routes/events.ts`) are
    * written to the wire flat/unwrapped — `ClaxedoEventsProvider`'s
    * `isClaxedoEvent` guard (`packages/claxedo-app/src/providers/
    * claxedo-events.tsx`) requires a top-level `.type` and silently drops
@@ -1951,7 +1951,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // failure.
   //
   // CONTRACTS, all read from the routes the app actually talks to
-  // (claxedo-server/src/opencode/compat-routes/index.ts:67-89, which delegate to
+  // (claxedo-local-server/src/opencode/compat-routes/index.ts:67-89, which delegate to
   // opencode-compat-file-browser.ts; workspace-runtime/src/routes/file.ts:55-108 is
   // the same surface behind the relay and agrees on every shape):
   //   GET /find/file    -> string[] of workspace-RELATIVE paths (globSearch)

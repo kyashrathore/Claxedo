@@ -14,7 +14,7 @@ import {
 } from "@claxedo/workspace-runtime/exposure"
 import { workspaceRelayRuntimeOptionsFromEnv } from "@claxedo/workspace-runtime/relay"
 import { workGraphRuntimeRouteContributions } from "@claxedo/workgraph/runtime-adapter"
-import { allowedOriginPatterns } from "@claxedo/server-core/platform/http/cors-origins"
+import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
 import {
   sandboxLeaseEnv,
   workspaceRuntimeDirectAuthEnv,
@@ -77,14 +77,7 @@ function text(env: NodeJS.ProcessEnv, key: string) {
  * default `*.claxedo.com`); every other exposure allows nothing. Both Claxedo
  * hosts (the sandbox host below and the embedded host) pass this.
  */
-export const claxedoCorsOrigin: WorkspaceRuntimeCorsOrigin = (origin, exposure) => {
-  if (exposure.kind !== "loopback") return undefined
-  if (origin.startsWith("http://localhost:")) return origin
-  if (origin.startsWith("http://127.0.0.1:")) return origin
-  const patterns = allowedOriginPatterns(process.env.CLAXEDO_ALLOWED_ORIGIN_SUFFIXES)
-  if (patterns.some((pattern) => pattern.test(origin))) return origin
-  return undefined
-}
+export { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
 
 export function claxedoRuntimeRunnerFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeRunner {
   const raw = text(env, "WORKSPACE_RUNTIME_RUNNER")

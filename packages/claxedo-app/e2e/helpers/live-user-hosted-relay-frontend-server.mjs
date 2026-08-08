@@ -4,7 +4,7 @@
 // header.
 //
 // Why this is needed (not a workaround, a real product code path): claxedo-server's
-// `/api/claxedo/bootstrap` route (packages/claxedo-server/src/deployments/shared-routes/bootstrap.ts) takes
+// `/api/claxedo/bootstrap` route (packages/claxedo-local-server/src/deployments/shared-routes/bootstrap.ts) takes
 // the LOCAL, unsigned bootstrap path for ANY request whose real socket peer is loopback
 // (`isLoopbackLocalRequest`, packages/claxedo-server-core/src/platform/http/peer-address.ts)
 // REGARDLESS of a valid bearer token being present — this is deliberate (desktop/local

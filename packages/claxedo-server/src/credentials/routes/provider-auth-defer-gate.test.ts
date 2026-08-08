@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest"
 import { Hono } from "hono"
 
-const { ProviderAuthRoutes } = await import("./provider-auth")
+const { ProviderAuthRoutes } = await import("@claxedo/local-server/credentials/routes/provider-auth")
 type ControlPlaneAuthConfig = import("@claxedo/server-core/platform/auth/auth").ControlPlaneAuthConfig
 
 // `deferToHarnessRoute` makes `/provider/auth` call `next()` so a LATER-mounted

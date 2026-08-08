@@ -3,7 +3,7 @@ import os from "os"
 import path from "path"
 import { Hono } from "hono"
 import { afterAll, describe, expect, test } from "vitest"
-import { workspacePath } from "./context"
+import { workspacePath } from "@claxedo/local-server/opencode/compat-routes/context"
 
 /**
  * Regression pin for §6.6 of the 2026-07-27 Cloud security review:

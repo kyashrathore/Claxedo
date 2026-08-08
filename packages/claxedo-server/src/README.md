@@ -22,7 +22,7 @@ identity/authorization/tenancy layer.
 closed at boot). *Self-hosting* — a user running this themselves — is a
 different axis entirely and is **not** a code value: a self-hosted box on a
 public domain with signed auth is `trust=hosted, runtime=node`. See
-`authority/deployment-mode.ts`.
+``@claxedo/server-core/authority/deployment-mode``.
 
 **`.cf.ts` means workerd-only.** A file that cannot run outside the Cloudflare
 runtime (Durable Object classes, `cloudflare:workers`, KV/R2 bindings). `hosted-*` files are NOT marked, because hosted runs on Node too.

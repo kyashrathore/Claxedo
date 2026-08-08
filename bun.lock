@@ -288,6 +288,29 @@
         "mintlify": "^4",
       },
     },
+    "packages/claxedo-local-server": {
+      "name": "@claxedo/local-server",
+      "version": "0.1.0",
+      "dependencies": {
+        "@claxedo/agent-extensions": "workspace:0.7.0",
+        "@claxedo/agent-sdk-runtime": "workspace:*",
+        "@claxedo/sandbox-manager": "workspace:*",
+        "@claxedo/server-core": "workspace:*",
+        "@claxedo/workspace-runtime": "workspace:*",
+        "@hono/node-ws": "1.3.1",
+        "hono": "4.10.7",
+        "tokentracker-cli": "0.75.1",
+        "zod": "4.4.3",
+      },
+      "devDependencies": {
+        "@hono/node-server": "1.19.11",
+        "@tsconfig/node-lts": "22.0.4",
+        "@types/bun": "1.3.13",
+        "jose": "6.2.4",
+        "typescript": "catalog:",
+        "vitest": "2.1.9",
+      },
+    },
     "packages/claxedo-mcp": {
       "name": "@claxedo/mcp",
       "version": "0.4.0",
@@ -315,6 +338,7 @@
         "@claxedo/agent-sdk-runtime": "workspace:0.7.0",
         "@claxedo/channels": "workspace:0.4.0",
         "@claxedo/connections": "0.4.0",
+        "@claxedo/local-server": "workspace:*",
         "@claxedo/mcp": "workspace:0.4.0",
         "@claxedo/sandbox-manager": "workspace:0.7.0",
         "@claxedo/server-core": "workspace:*",
@@ -1625,6 +1649,8 @@
     "@claxedo/desktop": ["@claxedo/desktop@workspace:packages/claxedo-desktop"],
 
     "@claxedo/docs": ["@claxedo/docs@workspace:packages/claxedo-docs"],
+
+    "@claxedo/local-server": ["@claxedo/local-server@workspace:packages/claxedo-local-server"],
 
     "@claxedo/mcp": ["@claxedo/mcp@workspace:packages/claxedo-mcp"],
 

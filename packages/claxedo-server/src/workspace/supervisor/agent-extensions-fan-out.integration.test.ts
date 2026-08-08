@@ -25,8 +25,8 @@ import {
   broadcastRuntimeConfig,
   configureWorkspaceSupervisor,
   syncWorkspaceRuntimeAgentExtensions,
-} from "../../workspace/supervisor"
-import { __registerReadyRuntimeForTest, __unregisterRuntimeForTest } from "../../workspace/supervisor/test-helper"
+} from "./index"
+import { __registerReadyRuntimeForTest, __unregisterRuntimeForTest } from "./test-helper"
 import type { WorkspaceAgentExtensionRecord } from "@claxedo/server-core/hosts/agent-extensions/workspace"
 
 type RecordedRequest = {

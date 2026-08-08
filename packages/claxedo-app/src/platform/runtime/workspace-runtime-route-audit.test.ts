@@ -508,7 +508,7 @@ describe("workspace runtime route audit", () => {
       path.join(root, "..", "..", "claxedo-server/src/agent-config/routes/extensions.test.ts"),
     ).text()
     const serverNetworkPolicyTest = await Bun.file(
-      path.join(root, "..", "..", "claxedo-server/src/sandbox/network/network-policy-routes.test.ts"),
+      path.join(root, "..", "..", "claxedo-local-server/src/sandbox/network/network-policy-routes.test.ts"),
     ).text()
 
     expect(networkPolicy).not.toMatch(/RuntimeGateway\.workspaceConnectionUrl/)

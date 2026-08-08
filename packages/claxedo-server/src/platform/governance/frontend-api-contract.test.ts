@@ -108,7 +108,7 @@ const [serverMod, servicesMod, syncMod, compatMod, agentConfigMod, engineMod] = 
   import("../../deployments/local/server"),
   import("../../authority/services"),
   import("../../authority/adapters/sqlite/central-store"),
-  import("../../opencode/compat-routes/index"),
+  import("@claxedo/local-server/opencode/compat-routes/index"),
   import("@claxedo/server-core/agent-config/index"),
   import("@claxedo/server-core/opencode/engine"),
 ])

@@ -13,7 +13,7 @@ const prev = {
 process.env.CLAXEDO_DATA_DIR = root
 
 const { Hono } = await import("hono")
-const { OpenCodeCompatRoutes } = await import("./compat-routes/index")
+const { OpenCodeCompatRoutes } = await import("@claxedo/local-server/opencode/compat-routes/index")
 const { configureOpenCodeEngine } = await import("@claxedo/server-core/opencode/engine")
 const { saveCommand } = await import("@claxedo/server-core/agent-config/index")
 const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")

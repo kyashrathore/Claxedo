@@ -4,8 +4,8 @@ import os from "os"
 import path from "path"
 import { localOnlyAuthAdapter, type ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
-import { createAgentConfigRoutes } from "./index"
-import { AgentExtensionConflictError, installCachedAgentExtension } from "../../hosts/agent-extensions/install"
+import { createAgentConfigRoutes } from "@claxedo/local-server/agent-config/routes/index"
+import { AgentExtensionConflictError, installCachedAgentExtension } from "@claxedo/local-server/hosts/agent-extensions/install"
 import {
   mirrorWorkspaceAgentExtensionRecord,
   readMirroredWorkspaceAgentExtensions,

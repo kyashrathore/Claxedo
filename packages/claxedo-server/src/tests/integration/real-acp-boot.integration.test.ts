@@ -57,7 +57,7 @@ const [serverMod, supervisor, store, agent, embedded] = await Promise.all([
   import("../../workspace/supervisor/index.js"),
   import("@claxedo/server-core/workspace/store/index"),
   import("@claxedo/server-core/agent-config/index"),
-  import("../../deployments/local/embedded-workspace-runtime.js"),
+  import("@claxedo/local-server/deployments/local/embedded-workspace-runtime"),
 ])
 
 const realBinary = path.resolve(__dirname, "../../../workspace-runtime/node_modules/.bin/claude-agent-acp")

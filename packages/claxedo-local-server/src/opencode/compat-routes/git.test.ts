@@ -41,7 +41,7 @@ const { contains, gitRun, locate, trees } = await import("./git")
 const { OpenCodeCompatRoutes } = await import("./index")
 const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
 const { dataDir } = await import("@claxedo/server-core/platform/runtime/lib/paths")
-const { unsignedLocalRequestGuard } = await import("../../authority/deployment-mode")
+const { unsignedLocalRequestGuard } = await import("@claxedo/server-core/authority/deployment-mode")
 
 const app = new Hono()
 app.route("/", OpenCodeCompatRoutes())

@@ -34,7 +34,7 @@ delete process.env.CLAXEDO_SIGNED_CLOUD_AUTH
 const { createTestBackend, setBackendOverride } = await import("@claxedo/server-core/credentials/backend-registry")
 const registry = await import("@claxedo/server-core/credentials/registry")
 const { defaultControlPlaneCredentials } = await import("../../authority/services")
-const { CredentialRoutes } = await import("./credential")
+const { CredentialRoutes } = await import("@claxedo/local-server/credentials/routes/credential")
 const { ClaxedoDB } = await import("../../platform/db")
 const { SINGLE_TENANT_ORG } = await import("@claxedo/server-core/credentials/provider-credential.sql")
 

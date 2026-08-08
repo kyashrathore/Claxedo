@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { embeddedRuntimeTargetUrl } from "./internals"
+import { embeddedRuntimeTargetUrl } from "@claxedo/local-server/workspace/runtime-dispatch/internals"
 
 /**
  * The embedded hop used to dispatch from a synthetic, portless origin, so

@@ -150,7 +150,7 @@ configureWorkspaceSupervisorPort({
   markUse() {},
   touch() {},
   async broadcastRuntimeConfig() {},
-  syncAgentExtensions: (...args) => mocks.syncWorkspaceRuntimeAgentExtensions(...args as []),
+  syncAgentExtensions: async (...args) => { await mocks.syncWorkspaceRuntimeAgentExtensions(...(args as unknown as [])) },
 })
 
 vi.mock("../../workspace/supervisor", () => ({

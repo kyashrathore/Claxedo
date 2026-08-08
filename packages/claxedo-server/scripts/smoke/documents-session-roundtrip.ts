@@ -8,7 +8,7 @@ import {
   hydrateSessionDocument,
   hydratedSessionDocumentPaths,
 } from "../../src/documents/session-hydration"
-import { releaseEmbeddedWorkspaceRuntime } from "../../src/deployments/local/embedded-workspace-runtime"
+import { releaseEmbeddedWorkspaceRuntime } from "@claxedo/local-server/deployments/local/embedded-workspace-runtime"
 import { createClaxedoSessionEnvFactory } from "../../src/hosts/workspace-runtime/session-env"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 

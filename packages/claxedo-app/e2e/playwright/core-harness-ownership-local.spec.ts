@@ -1088,7 +1088,7 @@ test.describe("core harness ownership (local) @core", () => {
       // REGRESSION TEST for a real production bug, not a mock artifact.
       //
       // `POST /api/claxedo/agent-config/harness` answers `{ ok: true }` and nothing
-      // else (claxedo-server/src/agent-config/routes/harness-routes.ts:202,211).
+      // else (claxedo-local-server/src/agent-config/routes/harness-routes.ts:202,211).
       // `postHarnessConfig` (src/features/session/harness/harness-switcher.ts) did:
       //
       //     decodeHarnessState(await res.json()) ?? await fetchHarnessStatus(...) ?? true

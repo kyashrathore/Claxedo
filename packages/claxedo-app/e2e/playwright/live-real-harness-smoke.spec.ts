@@ -107,7 +107,7 @@
  *     as a local workspace via a fire-and-forget `GET /api/workspace/resolve?...&
  *     create=true` (`src/shell/data/bootstrap.ts`'s `postPaint` block ->
  *     `packages/claxedo-server/src/workspace/routes/index.ts:142` -> `ensureWorkspace()` in
- *     `packages/claxedo-server/src/workspace/store/index.ts:287`) that is not awaited
+ *     `packages/claxedo-server-core/src/workspace/store/index.ts:287`) that is not awaited
  *     before the composer becomes interactive. `POST /session` 404s for any
  *     directory that has not yet completed that registration (confirmed by direct
  *     `curl` reproduction: 404 before the `GET .../resolve...&create=true` call,
@@ -344,11 +344,11 @@ async function makeWorkspace(name: string) {
  * `resolveWorkspace()` inside `postPaint` -> `src/shared/data/http-backend.ts`'s
  * `resolveWorkspace`/`workspaceResolveUrl` -> `packages/claxedo-server/src/routes/
  * workspace.ts:142` (`GET /resolve`) -> `resolveWorkspace({..., create: true})` ->
- * `ensureWorkspace()` in `packages/claxedo-server/src/workspace/store/index.ts:287`). This
+ * `ensureWorkspace()` in `packages/claxedo-server-core/src/workspace/store/index.ts:287`). This
  * closes a REAL race this spec found empirically against the live server: until that
  * registration completes, `POST /session` 404s (`workspaceRuntimeProxy`'s `resolveWorkspace`
  * lookup finds nothing and falls through to `next()` with no other root `/session`
- * handler registered — `packages/claxedo-server/src/workspace/runtime-dispatch/internals.ts:325-350`), confirmed by
+ * handler registered — `packages/claxedo-local-server/src/workspace/runtime-dispatch/internals.ts:325-350`), confirmed by
  * direct `curl` reproduction: `POST /session` 404s deterministically for a brand-new,
  * never-registered directory and 201s immediately after this exact `GET .../resolve
  * ...&create=true` call. The app's own bootstrap call is fire-and-forget and not

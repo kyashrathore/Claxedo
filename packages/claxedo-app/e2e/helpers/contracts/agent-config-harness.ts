@@ -8,8 +8,8 @@
 // The first two bindings target `workspace-runtime`. This one does NOT: the harness
 // config surface is owned by **claxedo-server**, mounted at `/api/claxedo/agent-config`
 // (`claxedo-server/src/deployments/local/server.ts:550`) and defined in
-// `claxedo-server/src/agent-config/routes/index.ts:18` → `agentConfigHarnessRoutes(options)`.
-// The handlers live in `claxedo-server/src/agent-config/routes/harness-routes.ts`:
+// `claxedo-local-server/src/agent-config/routes/index.ts:18` → `agentConfigHarnessRoutes(options)`.
+// The handlers live in `claxedo-local-server/src/agent-config/routes/harness-routes.ts`:
 //
 //   `.get("/harness",  …)` → `harnessStatusResponse`  (:41, body at :48-143)
 //   `.post("/harness", …)` → `updateHarnessResponse`  (:42, body at :145-212)
@@ -36,7 +36,7 @@
 //   (1) `HARNESS_IDENTITY_FIELDS` is `satisfies Record<keyof Required<HarnessIdentityInput>,
 //       FieldSpec>` where `HarnessIdentityInput = NonNullable<Parameters<typeof
 //       harnessFromRequest>[1]>` — the real second parameter of `harnessFromRequest`
-//       (`claxedo-server/src/agent-config/harness.ts:53`), which is the function
+//       (`claxedo-local-server/src/agent-config/harness.ts:53`), which is the function
 //       the route hands the body to. Add a field to that parameter server-side and this
 //       table is missing a key; remove one and it has an excess key.
 //   (2) `HARNESS_RESULT_FIELDS` is `satisfies Record<keyof Required<SessionHarness>,
@@ -71,7 +71,7 @@ import type { SessionHarness } from "@claxedo/agent-sdk-runtime"
 // `e2e/helpers/workgraph-connection-browser-use-server.ts:7`), and `tsconfig.e2e.json`
 // carries the `types: ["bun", …]` entry that exists specifically so those imports
 // resolve — so this costs nothing at runtime and adds no new build surface.
-import type { harnessFromRequest } from "../../../../claxedo-server/src/agent-config/harness"
+import type { harnessFromRequest } from "../../../../claxedo-local-server/src/agent-config/harness"
 
 // ---------------------------------------------------------------------------
 // (1) Compile-time drift tripwires
@@ -256,7 +256,7 @@ export class HarnessConfigContractError extends Error {
   constructor(method: "POST" | "GET", url: string, problems: string[]) {
     super(
       `${method} ${url} violated the real server's harness-config contract `
-        + `(claxedo-server/src/agent-config/routes/harness-routes.ts):\n  - ${problems.join("\n  - ")}\n`
+        + `(claxedo-local-server/src/agent-config/routes/harness-routes.ts):\n  - ${problems.join("\n  - ")}\n`
         + `This is a REAL failure: the mock now enforces what claxedo-server enforces, so this `
         + `request/response would not have behaved this way against a real backend.`,
     )
