@@ -14,13 +14,13 @@ const retiredPageTable = ["claxedo", "page"].join("_")
 const retiredArenaTable = ["claxedo", "page", "arena"].join("_")
 
 function migrations() {
-  return readdirSync(path.join(import.meta.dirname, "../platform/db/claxedo-migration"), { withFileTypes: true })
+  return readdirSync(path.join(import.meta.dirname, "../../../claxedo-server-core/src/platform/db/claxedo-migration"), { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort()
     .map((name) => ({
       name,
-      sql: readFileSync(path.join(import.meta.dirname, "../platform/db/claxedo-migration", name, "migration.sql"), "utf8"),
+      sql: readFileSync(path.join(import.meta.dirname, "../../../claxedo-server-core/src/platform/db/claxedo-migration", name, "migration.sql"), "utf8"),
     }))
 }
 
