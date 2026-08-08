@@ -1,4 +1,5 @@
 import type { SandboxManager } from "@claxedo/sandbox-manager"
+import { localWorkspaceRuntime } from "../local-runtime-port"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { RelayProvider, RelayTokenInput } from "../../adapters/relay/index"
@@ -15,23 +16,6 @@ export type SandboxFetchOptions = {
   resume?: boolean
 }
 
-/**
- * How to reach a LOCAL workspace's runtime.
- *
- * This used to be a dynamic import of the local deployment written as a
- * variable with `@vite-ignore`, which made a shared module reach back into the
- * product it belongs beneath — in a form neither TypeScript nor an import-graph
- * walker can see. The composition that owns an embedded runtime installs this;
- * one that has none never asks for a local workspace.
- */
-export type LocalWorkspaceRuntimeFetch = (ws: Workspace, request: Request) => Promise<Response>
-
-let localRuntimeFetch: LocalWorkspaceRuntimeFetch | undefined
-
-export function configureLocalWorkspaceRuntimeFetch(fetchLocal: LocalWorkspaceRuntimeFetch | undefined) {
-  localRuntimeFetch = fetchLocal
-}
-
 export async function sandboxFetch(
   ws: Workspace,
   path: string,
@@ -39,12 +23,7 @@ export async function sandboxFetch(
   options: SandboxFetchOptions = {},
 ) {
   if (ws.kind !== "cloud") {
-    if (!localRuntimeFetch) {
-      throw new Error(
-        `no local workspace runtime configured; call configureLocalWorkspaceRuntimeFetch from the composition that owns one (workspace ${ws.id})`,
-      )
-    }
-    return localRuntimeFetch(ws, new Request(new URL(path, "http://embedded-workspace-runtime.local"), init))
+    return localWorkspaceRuntime().fetch(ws, new Request(new URL(path, "http://embedded-workspace-runtime.local"), init))
   }
   if (options.loopbackRelayUrl && !options.relayProvider) {
     const headers = new Headers(init?.headers)

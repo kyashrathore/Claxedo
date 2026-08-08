@@ -1,3 +1,5 @@
+import { workspaceSupervisor } from "@claxedo/server-core/workspace/supervisor-port"
+import { localWorkspaceRuntime, localWorkspaceRuntimeInstalled } from "@claxedo/server-core/workspace/local-runtime-port"
 import { workspaceAgentExtensionRecords } from "@claxedo/server-core/hosts/agent-extensions/workspace"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
@@ -100,20 +102,17 @@ export async function syncWorkspaceAgentExtensionsForSignedUser(
   ])
   const overrides = policyOverrides as import("@claxedo/server-core/hosts/agent-extensions/runtime-config").AgentExtensionPolicyOverride[]
   const records = workspaceAgentExtensionRecords(installs)
-  // Held in variables so the bundler cannot follow them: these pull in the
-  // Node-only supervisor and embedded runtime, which must not land in a Worker
-  // build. That also makes them invisible to tsc and to import rewriters, so a
-  // move of THIS file has to update them by hand — `workspace/routes/index.test.ts`
-  // mocks both specifiers and silently stops mocking if they drift.
-  const supervisorMod = "./supervisor"
-  const embeddedMod = "../deployments/local/embedded-workspace-runtime"
-  const [{ syncWorkspaceRuntimeAgentExtensions }, { syncEmbeddedWorkspaceRuntimeAgentExtensions }] = await Promise.all([
-    import(/* @vite-ignore */ supervisorMod),
-    import(/* @vite-ignore */ embeddedMod),
-  ])
+  // Both reached through composed ports. They used to be dynamic imports
+  // written as VARIABLES with `@vite-ignore` so a Worker build would not carry
+  // the Node-only supervisor or the embedded runtime — right intent, wrong
+  // mechanism: such an edge is invisible to tsc, to import rewriters, and to
+  // every import-graph gate, and a move of this file had to update them by
+  // hand. Ports keep the Worker clean and stay visible.
   await Promise.all([
-    syncWorkspaceRuntimeAgentExtensions(workspaceId, records, { policyOverrides: overrides }),
-    syncEmbeddedWorkspaceRuntimeAgentExtensions(workspaceId, records, { policyOverrides: overrides }),
+    workspaceSupervisor().syncAgentExtensions(workspaceId, records, { policyOverrides: overrides }),
+    localWorkspaceRuntimeInstalled()
+      ? localWorkspaceRuntime().syncAgentExtensions(workspaceId, records, { policyOverrides: overrides })
+      : Promise.resolve(),
   ])
 }
 

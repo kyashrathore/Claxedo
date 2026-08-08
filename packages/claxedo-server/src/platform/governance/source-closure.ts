@@ -25,6 +25,11 @@ export type SourceClosure = {
   packages: string[]
   /** Specifiers that could not be resolved to a file on disk. */
   unresolved: string[]
+  /**
+   * `import(someVariable)` sites. Each is an edge this walk cannot follow, so a
+   * closure containing any of them is a lower bound rather than an answer.
+   */
+  opaque: string[]
 }
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs"]
@@ -76,6 +81,23 @@ export function runtimeImportSpecifiers(source: string): string[] {
     .replace(/\bimport\s+type\s+[^"';]*?\bfrom\s*["'][^"']+["']/g, "")
     .replace(/\bexport\s+type\s+[^"';]*?\bfrom\s*["'][^"']+["']/g, "")
   return importSpecifiers(withoutTypeOnly)
+}
+
+/**
+ * Dynamic imports whose specifier is not a literal.
+ *
+ * `const m = "../../deployments/local/x"; await import(m)` is an edge no
+ * import-graph walker can follow and no typechecker can verify — and in this
+ * repository one such edge, written with `@vite-ignore`, survived a package
+ * move silently and broke at runtime. A closure that cannot see an edge must
+ * say so rather than report a clean graph.
+ */
+export function opaqueDynamicImports(source: string): string[] {
+  const found: string[] = []
+  for (const match of source.matchAll(/\bimport\s*\(\s*(?:\/\*[^*]*\*\/\s*)?([A-Za-z_$][\w$.]*)\s*\)/g)) {
+    if (match[1]) found.push(match[1])
+  }
+  return found
 }
 
 function resolveFile(candidate: string): string | null {
@@ -140,6 +162,7 @@ export function sourceClosure(input: {
   const seen = new Set<string>()
   const packages = new Set<string>()
   const unresolved = new Set<string>()
+  const opaque = new Set<string>()
   const queue = [entry]
 
   while (queue.length > 0) {
@@ -151,6 +174,9 @@ export function sourceClosure(input: {
       source = fs.readFileSync(file, "utf8")
     } catch {
       continue
+    }
+    for (const name of opaqueDynamicImports(source)) {
+      opaque.add(`${path.relative(root, file)} -> import(${name})`)
     }
     for (const specifier of read(source)) {
       if (isBare(specifier)) {
@@ -172,6 +198,7 @@ export function sourceClosure(input: {
       .sort((a, b) => a.relative.localeCompare(b.relative)),
     packages: [...packages].sort(),
     unresolved: [...unresolved].sort(),
+    opaque: [...opaque].sort(),
   }
 }
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { importSpecifiers, packageNameOf, runtimeImportSpecifiers, shortestForbiddenChain, sourceClosure } from "./source-closure"
+import { importSpecifiers, opaqueDynamicImports, packageNameOf, runtimeImportSpecifiers, shortestForbiddenChain, sourceClosure } from "./source-closure"
 
 function fixture(files: Record<string, string>) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "source-closure-"))
@@ -53,6 +53,19 @@ describe("runtimeImportSpecifiers", () => {
 
   it("keeps an inline type specifier's module, because the statement still imports a value", () => {
     expect(runtimeImportSpecifiers(`import { type Shape, build } from "./m"`)).toEqual(["./m"])
+  })
+})
+
+describe("opaqueDynamicImports", () => {
+  it("reports a dynamic import whose specifier is a variable", () => {
+    // This exact shape — with `@vite-ignore` — hid a shared module reaching back
+    // into a product deployment, survived a package move, and broke at runtime
+    // with nothing in the graph to show for it.
+    expect(opaqueDynamicImports(`const m = "../x"\nawait import(/* @vite-ignore */ m)`)).toEqual(["m"])
+  })
+
+  it("ignores a literal specifier, which the walk CAN follow", () => {
+    expect(opaqueDynamicImports(`await import("./known")`)).toEqual([])
   })
 })
 
@@ -107,6 +120,27 @@ describe("sourceClosure", () => {
 
     expect(sourceClosure({ entry: path.join(root, "entry.ts"), root }).unresolved)
       .toEqual(["entry.ts -> ./missing"])
+  })
+})
+
+describe("sourceClosure opacity", () => {
+  it("says when the graph contains an edge it cannot follow", () => {
+    const root = fixture({
+      "entry.ts": `const target = "./hidden"\nawait import(target)`,
+      "hidden.ts": `export const hidden = 1`,
+    })
+
+    const closure = sourceClosure({ entry: path.join(root, "entry.ts"), root })
+
+    // `hidden.ts` is genuinely reachable and genuinely absent from the walk.
+    // The closure reports itself as a lower bound rather than as an answer.
+    expect(closure.modules.map((m) => m.relative)).toEqual(["entry.ts"])
+    expect(closure.opaque).toEqual(["entry.ts -> import(target)"])
+  })
+
+  it("reports nothing opaque for a graph of literal specifiers", () => {
+    const root = fixture({ "entry.ts": `import "./ok"`, "ok.ts": `export const ok = 1` })
+    expect(sourceClosure({ entry: path.join(root, "entry.ts"), root }).opaque).toEqual([])
   })
 })
 

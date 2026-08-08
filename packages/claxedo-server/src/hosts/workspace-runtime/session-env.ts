@@ -13,6 +13,7 @@ import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import { localWorkspaceRuntime } from "@claxedo/server-core/workspace/local-runtime-port"
 import { CONNECTION_TURN_HEADER, type ConnectionTurnCredentials } from "../../connections/turn-credentials"
 import { disposeHydratedSessionDocuments, syncHydratedSessionDocuments } from "../../documents/session-hydration"
 
@@ -194,19 +195,15 @@ function createEmbeddedSandboxRequester(
 ): SandboxRequester {
   return {
     async send(requestPath, init) {
-      // Imported lazily, by a specifier the bundler cannot follow: the
-      // embedded runtime is a LOCAL deployment module, and `hosts/` must not
-      // depend statically on a deployment (worker.import-graph.test.ts also
-      // bans it from the Worker graph). This branch only ever runs on the local
-      // server, where the module is present.
-      const embeddedModule = "../../deployments/local/embedded-workspace-runtime"
-      const { ensureEmbeddedWorkspaceRuntime } = await import(/* @vite-ignore */ embeddedModule)
-      const runtime = await ensureEmbeddedWorkspaceRuntime(ws)
+      // Through the composed port, not a dynamic import the bundler cannot
+      // follow: `hosts/` must not depend on a deployment, and a Worker build
+      // must not carry one. A port keeps both properties AND stays visible to
+      // the typechecker and to every import-graph gate.
       const headers = new Headers(init?.headers)
       if (directory) headers.set("x-opencode-directory", directory)
       const credential = connectionTurnCredential?.()
       if (credential) headers.set(CONNECTION_TURN_HEADER, credential)
-      return runtime.app.fetch(
+      return localWorkspaceRuntime().fetch(ws, 
         new Request(new URL(requestPath, "http://embedded-workspace-runtime.local"), { ...init, headers }),
       )
     },

@@ -71,6 +71,15 @@ describe("desktop-local entry closure", () => {
     expect(localClosure().unresolved).toEqual([])
   })
 
+  it("contains no import the walk cannot follow", () => {
+    // `import(someVariable)` is invisible to this walk and to the typechecker.
+    // One such edge — a shared module reaching back into the local deployment,
+    // written with `@vite-ignore` — survived a package move and broke at
+    // runtime with a clean import graph the whole time. Every closure number
+    // in this file is only trustworthy while this list is empty.
+    expect(localClosure().opaque).toEqual([])
+  })
+
   it("records the hosted surface the unsigned desktop still reaches", () => {
     // Named, not tolerated. Each entry here is a Phase B deletion target, and
     // the list is the checklist for Unit 8's closure enforcement.

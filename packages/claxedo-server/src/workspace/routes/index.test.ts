@@ -140,6 +140,19 @@ vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   deleteWorkspaceByDirectory: vi.fn(async (directory: string) => mocks.workspaceRows.delete(directory)),
 }))
 
+// Agent-extension sync reaches the supervisor through the composed port now,
+// so the same spy is installed there. Mocking the module alone would leave the
+// assertion below passing against a call nothing makes.
+const { configureWorkspaceSupervisorPort } = await import("@claxedo/server-core/workspace/supervisor-port")
+configureWorkspaceSupervisorPort({
+  hold() {},
+  release() {},
+  markUse() {},
+  touch() {},
+  async broadcastRuntimeConfig() {},
+  syncAgentExtensions: (...args) => mocks.syncWorkspaceRuntimeAgentExtensions(...args as []),
+})
+
 vi.mock("../../workspace/supervisor", () => ({
   discardSupervisorSandbox: mocks.discardSupervisorSandbox,
   ensureSupervisorSandbox: mocks.ensureSupervisorSandbox,

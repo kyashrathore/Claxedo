@@ -15,7 +15,7 @@ import { agentExtensionStateRoot } from "@claxedo/agent-extensions"
 import { opencodeRequest as defaultOpencodeRequest, type OpenCodeRequestFn } from "@claxedo/server-core/opencode/engine"
 import type { WorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
-import { configureLocalWorkspaceRuntimeFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
+import { configureLocalWorkspaceRuntime } from "@claxedo/server-core/workspace/local-runtime-port"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { WorkspaceAgentExtensionRecord } from "@claxedo/server-core/hosts/agent-extensions/workspace"
 import type { AgentExtensionPolicyOverride } from "@claxedo/server-core/hosts/agent-extensions/runtime-config"
@@ -207,9 +207,18 @@ function disposeRuntime(runtime: EmbeddedRuntime) {
 // beside the runtimes it serves — means any composition that can create an
 // embedded runtime can also be reached through one, with no import from the
 // shared side back into this deployment.
-configureLocalWorkspaceRuntimeFetch(async (workspace, request) => {
-  const runtime = await ensureEmbeddedWorkspaceRuntime(workspace)
-  return runtime.app.fetch(request)
+configureLocalWorkspaceRuntime({
+  async fetch(workspace: Workspace, request: Request) {
+    const runtime = await ensureEmbeddedWorkspaceRuntime(workspace)
+    return runtime.app.fetch(request)
+  },
+  async syncAgentExtensions(workspaceId, installs, options) {
+    await syncEmbeddedWorkspaceRuntimeAgentExtensions(
+      workspaceId,
+      installs as WorkspaceAgentExtensionRecord[],
+      (options ?? {}) as { policyOverrides?: AgentExtensionPolicyOverride[] },
+    )
+  },
 })
 
 export async function ensureEmbeddedWorkspaceRuntime(

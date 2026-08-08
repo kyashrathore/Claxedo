@@ -9,9 +9,19 @@ const mocks = vi.hoisted(() => ({
   embeddedFetch: vi.fn(),
 }))
 
-vi.mock("../../deployments/local/embedded-workspace-runtime", () => ({
-  ensureEmbeddedWorkspaceRuntime: mocks.ensureEmbeddedWorkspaceRuntime,
-}))
+// The embedded runtime is reached through the composed port, so these cases
+// install one rather than mocking a deployment module by path. `mocks.
+// ensureEmbeddedWorkspaceRuntime` still drives it, so each case keeps setting
+// up its runtime exactly as before.
+import { configureLocalWorkspaceRuntime } from "@claxedo/server-core/workspace/local-runtime-port"
+
+configureLocalWorkspaceRuntime({
+  async fetch(ws, request) {
+    const runtime = await mocks.ensureEmbeddedWorkspaceRuntime(ws)
+    return runtime.app.fetch(request)
+  },
+  async syncAgentExtensions() {},
+})
 
 vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   resolveWorkspace: mocks.resolveWorkspace,
