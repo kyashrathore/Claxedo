@@ -960,7 +960,21 @@ This changes the unit's shape. The dependency table forbids `@claxedo/local-serv
 
 The alternative — `@claxedo/server` depending on `@claxedo/local-server` for the shared 62 — is rejected: it inverts the table, and it would put local composition in the workerd closure, which `worker.import-graph.test.ts` already forbids by name.
 
-**Not done:** neither `packages/claxedo-local-server` nor the shared-core package exists. The 44/62 split is pinned by `local-entry-closure.test.ts`, so the move set is known and cannot drift; the work is the two package extractions in that order, then retargeting the desktop server child, predev, prebuild, and boot smoke.
+**`@claxedo/server-core` exists and two slices have landed (2026-08-08).** It holds no product capability and makes no composition decisions; it exports source subpaths rather than a build artifact, so there is no dist to keep in sync while the remaining slices move.
+
+| slice | modules | desktop-local entry closure |
+|---|---|---|
+| start | — | 254 modules |
+| `platform/runtime/lib/{log,paths,bus,lazy,strings}` | 5 + 1 test | 249 modules |
+| `platform/{errors,http,auth}/*`, `platform/runtime/region` | 11 + 5 tests | 238 modules |
+
+The local producer union is now **90 modules / 28 packages**, from 177 / 36 when the unit started.
+
+Two things worth carrying forward from the moves. First, `vi.mock` specifiers name modules by PATH, so a rename that misses them leaves a test mocking a module nobody imports — silently, and green. Four had to be rewritten by hand in the first slice. Second, the repository's own governance gates caught their stale registries in the second slice (`architecture-ownership.ts` still claimed `platform/auth/authority.ts`; `src/authority/README.md` still pointed a reader at two moved files), which is exactly what they exist for.
+
+**Next slice is blocked on a question, not on effort.** `platform/db/{db,repair}` is the natural next move, but `db.ts` type-references `platform/db/schema.ts`, the barrel that names every product table — connections, channels, documents. That barrel does not belong in a neutral core, and after the type-only change it has no remaining importer in `src/`. Before moving `db.ts`, establish what consumes the barrel (drizzle-kit migration generation is the likely answer, but no config in this package points at it). Moving on a guess would either delete a live build input or leave dead code behind.
+
+**Not done:** `packages/claxedo-local-server` does not exist, and 46 of the 62 shared modules have not moved — the credential engine, `session/meta/*`, `session/harness/*`, `agent-config/index.ts`, `workspace/store`, `platform/db/*`, and the SQLite workspace authority. The 44/62 split is pinned by `local-entry-closure.test.ts`, so the move set cannot drift.
 
 **Goal:** Create `@claxedo/local-server` and move the Unit 4 local composition, local services, and embedded Workspace Runtime wiring into its independent source and manifest closure.
 
