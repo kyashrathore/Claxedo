@@ -968,8 +968,14 @@ The alternative — `@claxedo/server` depending on `@claxedo/local-server` for t
 | `platform/runtime/lib/{log,paths,bus,lazy,strings}` | 5 + 1 test | 249 modules |
 | `platform/{errors,http,auth}/*`, `platform/runtime/region` | 11 + 5 tests | 238 modules |
 | `platform/db/{db,repair}` behind a composition-supplied journal | 2 + 1 test | 237 modules, 39 packages |
+| the suite migration journal | — | — |
+| credential engine, `session/meta/*`, `sandbox/network/policy`, `workspace/store` | 18 + 6 tests | **219 modules** |
 
-The local producer union is now **89 modules / 26 packages**, from 177 / 36 when the unit started.
+The local producer union is now **70 modules / 25 packages**, from 177 / 36 when the unit started.
+
+**A runtime-only closure is the right gate for CAPABILITY and the wrong basis for a MOVE.** It skips type-only edges, so the credentials slice left `credentials/types.ts` and `workspace/store` behind and did not compile. Measure a move against the declared closure; measure a boundary against the executable one.
+
+**Tests and helpers do not follow their subject automatically.** `workspace/store/index.test.ts` came back to `claxedo-server` because it drives the supervisor's lease store, which stays. `assert-helpers.ts` came back because a dozen product tests use it and nothing in the core does. `platform/auth/auth.test.ts` never left, because it imports `authority/deployment-mode`. Each is a judgment about what the test is really about.
 
 Two things worth carrying forward from the moves. First, `vi.mock` specifiers name modules by PATH, so a rename that misses them leaves a test mocking a module nobody imports — silently, and green. Four had to be rewritten by hand in the first slice. Second, the repository's own governance gates caught their stale registries in the second slice (`architecture-ownership.ts` still claimed `platform/auth/authority.ts`; `src/authority/README.md` still pointed a reader at two moved files), which is exactly what they exist for.
 
@@ -979,14 +985,14 @@ The first attempt failed on something only doing it revealed: `db.ts` resolved i
 
 The second attempt made the journal a **composition input**. `claxedo-server/src/platform/db/index.ts` names it and re-exports the engine, so every consumer configures it by importing; forty-five import sites moved to that wrapper. `configureClaxedoMigrations` has NO default and an empty or missing journal throws, because the alternative is the failure this product has already shipped: zero migrations applied, a working handle returned, and every query failing later somewhere else for a reason its stack trace does not name. Two tests cover it — one asserts a fresh profile actually has its tables, the other that the engine alone refuses to open.
 
-**Where the journal finally lives is still open, and it is the next decision.** The 45 remaining shared modules — the whole credential engine, `session/meta/*`, `session/harness/*`, `workspace/store`, `agent-config/index.ts` — all sit behind it. Two readings:
+**The journal now lives in the core, and the suite reading was adopted.** Both server products open the same `claxedo.db` file format, so its schema is the suite's. Splitting it would split a persisted contract for no gain — every existing desktop profile already holds every table — while carrying it costs a local build a handful of leaf table definitions and no capability. The `*.sql.ts` definitions it is generated FROM stay with their domains: those are a generation-time input, the journal is the runtime artifact, and the platform-boundary gate's sanctioned barrel inversion is untouched. What was, before that decision, 45 blocked shared modules  has since largely moved. Two readings were weighed:
 
 - The journal is *product* schema, so local-server gets its own with only local tables. This splits a persisted contract: existing desktop profiles already hold every table, so the split either drops them (data loss) or leaves them (no benefit).
 - The journal is the *suite's* schema, because both products open the same `claxedo.db` file format. It moves to `@claxedo/server-core` with the `*.sql.ts` leaves it is generated from — pure drizzle table definitions, no logic, no capability.
 
-The second is the working answer: it costs a local build a handful of leaf table definitions and buys back the entire remaining shared core, and the capability boundary this plan actually protects is already enforced without it — no `@claxedo/connections`, `@claxedo/channels`, Documents implementation, or Convex adapter is reachable from any local producer. Adopt it in the next slice unless the persisted-contract reading is preferred.
+**Not done:** `packages/claxedo-local-server` does not exist. Roughly 27 shared modules remain — `agent-config/index.ts`, `session/harness/*`, `hosts/agent-extensions/*`, `hosts/workspace-runtime/{env,runtime-config}`, `opencode/{auth,engine}`, `authority/{services,adapters/sqlite}`, `workspace/http/sandbox-target-fetch`, `credentials/operations/*`. `opencode/engine` deserves scrutiny before it moves: the embedded engine is a harness capability, not a neutral primitive, and `credentials/engine-bridge.ts` — its only real consumer — is already a lazy dynamic import and can stay with the product behind a port.
 
-**Not done:** `packages/claxedo-local-server` does not exist, and 46 of the 62 shared modules have not moved — the credential engine, `session/meta/*`, `session/harness/*`, `agent-config/index.ts`, `workspace/store`, `platform/db/*`, and the SQLite workspace authority. The 44/62 split is pinned by `local-entry-closure.test.ts`, so the move set cannot drift.
+The 44/62 split is pinned by `local-entry-closure.test.ts`, so the move set cannot drift.
 
 **Goal:** Create `@claxedo/local-server` and move the Unit 4 local composition, local services, and embedded Workspace Runtime wiring into its independent source and manifest closure.
 
