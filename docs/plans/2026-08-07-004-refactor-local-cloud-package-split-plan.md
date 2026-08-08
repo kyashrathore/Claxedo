@@ -935,18 +935,22 @@ The measured blocker count went 6 -> 3 -> 2 -> 1 -> 0. The last one, `embedded w
 2. `workspace/store/index.ts` imported the supervisor lease table to decide whether an in-flight CLOUD workspace is visible yet, so reading local workspace inventory reached cloud sandbox leasing. `configureWorkspaceSupervisor` now installs the reader; a composition with no supervisor has no cloud workspaces and needs none.
 3. `agent-config/index.ts` selected its own runtime workspace authority (Convex when a URL was set), so reading agent configuration reached the cloud control plane. The composition supplies it now.
 
-Result: the local producer union fell to **142 modules / 30 packages / 16 hosted modules reached**, and the embedded Workspace Runtime's executable closure reaches no connections, channels, documents, cloud sandbox store, or Convex authority module. All 3260 `claxedo-server` tests stay green.
+A fourth edge was one concept repeated four times. Runtime dispatch, agent-config fanout, the agent-extension routes, and `agent-config/extension-support.ts` each imported `workspace/supervisor` to say one of six things — a stream is holding this sandbox open, it closed, it was used, tell the provider it is still wanted, push runtime config, push an extension snapshot. `workspace/supervisor-port.ts` names exactly that surface and the supervisor installs itself into it from `configureWorkspaceSupervisor`. A composition with no supervisor has no cloud sandboxes, so every call is correctly a no-op — and because that no-op would otherwise be silent (a live stream's sandbox reaped mid-response, nothing in the logs), a contract test asserts the composition installs it.
+
+**Result, and this is the precondition Unit 5 was actually blocked on.** The union of the thirteen producers a local-only composition would mount:
+
+| | modules | packages | hosted modules reached |
+|---|---|---|---|
+| before | 177 | 36 | 43 |
+| after | 106 | 29 | 4 |
+
+The four remaining are `sandbox/network/*`, which IS the `network-policy` route family this plan's own table assigns to local-server. No connections, channels, documents, Convex authority, cloud sandbox store, sandbox driver route, or WorkGraph host module is reachable from any of them. All 3264 `claxedo-server` tests stay green, and `local-entry-closure.test.ts` pins the union so a regression names itself.
 
 **The closure walker distinguishes declared from executable edges.** A type-only import is erased whole: no module loads and no capability becomes reachable, so counting it would report hosted surface in a build that cannot execute a line of it. An INLINE type specifier (`import { type A, B }`) is NOT erased and is kept. `runtimeOnly: true` selects the executable graph.
 
-**Remaining edges before the package can be created**, each with its measured chain:
+One edge is deliberately left: `src/workspace/routes/index.ts` mounts `connections/routes/connection-routes.ts` and `sandbox/routes/sandbox-driver-routes.ts` beside the local workspace routes. That is a route-composition barrel, not a producer — the local composition mounts its own families, so it resolves by construction and is excluded from the pinned union.
 
-- `src/workspace/routes/index.ts -> src/connections/routes/connection-routes.ts` and `-> src/sandbox/routes/sandbox-driver-routes.ts`. This is a route-composition barrel that mounts hosted families beside local ones. The local composition mounts its own families, so this resolves by construction rather than by a port.
-- `src/workspace/runtime-dispatch/internals.ts -> src/workspace/supervisor/index.ts -> src/sandbox/stores/*`, and the same edge from `src/agent-config/fanout.ts` and `src/agent-config/routes/extension-routes.ts`. The supervisor legitimately owns cloud provisioning; these three callers need the same port treatment as edges 2 and 3.
-
-`src/deployments/local/local-entry-closure.test.ts` pins the ceilings and the cut edges, so a regression names itself.
-
-**Not done:** `packages/claxedo-local-server` does not exist. Creating it, moving the producers, and retargeting desktop remain the body of this unit.
+**Not done:** `packages/claxedo-local-server` does not exist. Creating the package, moving the producers into it, and retargeting the desktop server child, predev, prebuild, and boot smoke remain the body of this unit. Nothing further blocks that work; it is now a move rather than an untangling.
 
 **Goal:** Create `@claxedo/local-server` and move the Unit 4 local composition, local services, and embedded Workspace Runtime wiring into its independent source and manifest closure.
 
