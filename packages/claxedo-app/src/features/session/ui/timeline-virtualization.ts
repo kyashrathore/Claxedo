@@ -1,5 +1,15 @@
 import type { Virtualizer } from "@tanstack/solid-virtual"
 
+export function estimateLongMarkdownHeight(text: string) {
+  const lines = text.split("\n")
+  if (/^\s*(?:```|~~~)/.test(lines[0] ?? "") && lines.length > 80) {
+    return Math.min(6_000, (lines.length - 2) * 24 + 36)
+  }
+  const structuralRows = lines.filter((line) => /^\s*(?:[-*+]\s+|\|)/.test(line)).length
+  if (structuralRows < 20) return
+  return Math.min(6_000, lines.length * 50)
+}
+
 export function filterVirtualIndexes(indexes: number[], count: number) {
   return indexes.filter((index) => index >= 0 && index < count)
 }

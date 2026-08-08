@@ -31,6 +31,7 @@
  *     licence agreement covers the free tier and forbids redistributing SVG
  *     source, which is exactly what this repo does.
  */
-import sprite from "../assets/icons/codex/sprite.svg"
+import sprite from "../assets/icons/codex/sprite.svg?raw"
+import { createInlineSvgSprite } from "./inline-svg-sprite"
 
-export const codexIconSprite = sprite
+export const codexIconSprite = createInlineSvgSprite("codex-icon-sprite", sprite)

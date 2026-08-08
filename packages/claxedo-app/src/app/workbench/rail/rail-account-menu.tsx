@@ -6,7 +6,8 @@ import { useConfigOptional } from "@/app/providers/config"
 import { useAuthSession } from "@/platform/auth/auth-session"
 import { authDisplayEmail, type AuthDisplayUser } from "@/platform/auth/auth-display"
 import { ClaxedoIcon as Icon, type ClaxedoIconName } from "@/ui/controls/claxedo-icon"
-import { useLanguage, usePlatform } from "@claxedo/app"
+import { useLanguage } from "@/platform/i18n/provider"
+import { usePlatform } from "@/platform/runtime/platform-provider"
 
 export type RailAccountMenuProps = {
   onDiagnostics?: () => void

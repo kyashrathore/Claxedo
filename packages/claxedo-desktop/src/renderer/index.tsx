@@ -404,6 +404,13 @@ function bootstrapDesktop() {
       getStartAtLogin: () => desktopApi().getStartAtLogin(),
       setStartAtLogin: (enabled) => desktopApi().setStartAtLogin(enabled),
 
+      ...(desktopApi().optionalFeatures.nativeMarkdown
+        ? { parseMarkdown: (source: string) => desktopApi().parseMarkdown(source) }
+        : {}),
+      ...(desktopApi().optionalFeatures.nativeMermaid
+        ? { renderMermaid: (source: string, theme?: Record<string, string>) => desktopApi().renderMermaid(source, theme) }
+        : {}),
+
       notify: async (title, description, href) => {
         const focused = await desktopApi()
           .getWindowFocused()

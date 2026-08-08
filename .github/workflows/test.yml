@@ -85,7 +85,6 @@ jobs:
         working-directory: packages/claxedo-app/perf-harness
         env:
           CLAXEDO_PERF_APP_SCRIPT: serve
-          CLAXEDO_PERF_HEADROOM: "1.0"
         run: bun run run:all
 
       - name: Run real-child diagnostics overhead smoke

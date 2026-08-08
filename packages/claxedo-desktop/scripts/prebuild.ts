@@ -15,6 +15,7 @@ import * as path from "path"
 
 import { bundleClaxedoServer } from "./bundle-claxedo-server"
 import { buildMemoryImpactHelper } from "./build-memory-impact-helper"
+import { buildRichContentRenderer } from "./build-rich-content-renderer"
 import { copyIcons as copyChannelIcons } from "./utils"
 
 // ── Paths ──
@@ -130,6 +131,12 @@ async function copyAcpBinaries() {
 // ── Main ──
 
 // Icon and ACP copying are independent of the server bundle and run alongside it.
-await Promise.all([copyIcons(), copyAcpBinaries(), bundleServer(), buildMemoryImpactHelper()])
+await Promise.all([
+  copyIcons(),
+  copyAcpBinaries(),
+  bundleServer(),
+  buildMemoryImpactHelper(),
+  buildRichContentRenderer(),
+])
 
 log("Done.")

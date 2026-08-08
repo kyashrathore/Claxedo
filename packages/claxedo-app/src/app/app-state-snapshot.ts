@@ -1,6 +1,6 @@
 import { onCleanup, type Accessor } from "solid-js"
 import type { Platform } from "@/platform/runtime/platform-provider"
-import type { LocalProject } from "@claxedo/app"
+import type { LocalProject } from "@/app/providers/layout"
 import type { ClaxedoStateApi } from "./workbench/state/index"
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 

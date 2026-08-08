@@ -1,7 +1,10 @@
 import type { Component, JSX } from "solid-js"
-import { createMemo, createUniqueId, splitProps, Show } from "solid-js"
-import sprite from "./file-icons/sprite.svg"
+import { createMemo, createUniqueId, onMount, splitProps, Show } from "solid-js"
+import sprite from "./file-icons/sprite.svg?raw"
 import type { IconName } from "./file-icons/types"
+import { createInlineSvgSprite } from "./inline-svg-sprite"
+
+const fileIconSprite = createInlineSvgSprite("file-icon-sprite", sprite)
 
 export type FileIconProps = JSX.GSVGAttributes<SVGSVGElement> & {
   node: { path: string; type: "file" | "directory" }
@@ -13,6 +16,7 @@ export const FileIcon: Component<FileIconProps> = (props) => {
   const [local, rest] = splitProps(props, ["node", "class", "classList", "expanded", "mono"])
   const name = createMemo(() => chooseIconName(local.node.path, local.node.type, local.expanded || false))
   const id = `file-icon-mono-${createUniqueId()}`
+  onMount(() => fileIconSprite.ensure(name()))
   return (
     <svg
       data-component="file-icon"
@@ -22,10 +26,10 @@ export const FileIcon: Component<FileIconProps> = (props) => {
         [local.class ?? ""]: !!local.class,
       }}
     >
-      <Show when={local.mono} fallback={<use href={`${sprite}#${name()}`} />}>
+      <Show when={local.mono} fallback={<use href={fileIconSprite.href(name())} />}>
         <defs>
           <mask id={id} mask-type="alpha">
-            <use href={`${sprite}#${name()}`} />
+            <use href={fileIconSprite.href(name())} />
           </mask>
         </defs>
         <rect width="100%" height="100%" fill="currentColor" mask={`url(#${id})`} />

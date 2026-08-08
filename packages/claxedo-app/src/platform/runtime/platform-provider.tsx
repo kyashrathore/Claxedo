@@ -60,7 +60,7 @@ export type Platform = {
   getDefaultServer?(): Promise<ServerConnection.Key | null> | ServerConnection.Key | null
   setDefaultServer?(url: ServerConnection.Key | null): Promise<void> | void
   parseMarkdown?(markdown: string): Promise<string>
-  renderMermaid?(source: string): Promise<string>
+  renderMermaid?(source: string, theme?: Record<string, string>): Promise<string>
   webviewZoom?: Accessor<number>
   getPinchZoomEnabled?(): Promise<boolean> | boolean
   setPinchZoomEnabled?(enabled: boolean): Promise<void> | void

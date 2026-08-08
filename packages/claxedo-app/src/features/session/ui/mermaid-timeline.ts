@@ -1,4 +1,5 @@
 import { sanitizeSvg, setMermaidRenderer, setMermaidViewer } from "@/ui/session-kit"
+import { createMermaidBackend } from "./mermaid-backend"
 import { openMermaidViewer } from "./mermaid-viewer"
 
 /**
@@ -75,9 +76,12 @@ export function openTimelineMermaidViewer(source: string) {
 }
 
 let installed = false
-export function installTimelineMermaid() {
+export function installTimelineMermaid(
+  nativeRenderer?: (source: string, theme?: Record<string, string>) => Promise<string>,
+) {
   if (installed) return
   installed = true
-  setMermaidRenderer(renderTimelineMermaid)
-  setMermaidViewer(openTimelineMermaidViewer)
+  const renderer = createMermaidBackend({ nativeRenderer, fallback: renderTimelineMermaid, theme: themeVariables })
+  setMermaidRenderer(renderer)
+  setMermaidViewer((source) => openMermaidViewer(source, renderer, sanitizeSvg))
 }

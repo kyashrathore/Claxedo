@@ -12,6 +12,7 @@ import * as path from "path"
 
 import { bundleClaxedoServer } from "./bundle-claxedo-server"
 import { buildMemoryImpactHelper } from "./build-memory-impact-helper"
+import { buildRichContentRenderer } from "./build-rich-content-renderer"
 import { copyIcons, copyWorkspaceRuntimeTemplates } from "./utils"
 
 const SCRIPT_DIR = import.meta.dir
@@ -47,7 +48,7 @@ try {
 }
 
 await ensureElectronNativeModules()
-await buildMemoryImpactHelper()
+await Promise.all([buildMemoryImpactHelper(), buildRichContentRenderer()])
 
 async function patchDevBundleMetadata() {
   if (process.platform !== "darwin") return

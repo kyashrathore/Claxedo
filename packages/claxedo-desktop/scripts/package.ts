@@ -61,5 +61,5 @@ if (failures.length > 0) {
   console.error(`[package] packaging invariant violated:\n${failures.join("\n")}`)
   process.exit(1)
 }
-console.log("[package] packaging invariant holds (bundled output + native modules only)")
+console.log("[package] packaging invariants hold (bundled output, native modules, and rich-content renderer)")
 process.exit(0)
