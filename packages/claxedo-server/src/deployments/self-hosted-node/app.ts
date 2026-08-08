@@ -37,6 +37,7 @@ import { configureOpencodeMcpSync } from "@claxedo/local-server/self-hosted-exec
 import {
   configureOpenCodeApplicationTools,
   configureOpenCodeEmbedPath,
+  configureOpenCodeWorkerPath,
   configureOpenCodeEngine,
   drainOpenCodeEngine,
   opencodeEngineMode,
@@ -870,6 +871,7 @@ export type ControlPlaneStackOptions = {
   opencodeUrl?: string
   opencodePassword?: string | null
   opencodeEmbedPath?: string
+  opencodeWorkerPath?: string
   processObserver?: ProcessObserver
   /**
    * Hosted capabilities this deployment contributes.
@@ -1061,8 +1063,9 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
 
 function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseDataDirOwner: () => void) {
   const port = options.port ?? DEFAULT_CLAXEDO_SERVER_PORT
-  // No external opencodeUrl configured => embed the engine in-process (default).
-  // An explicit opencodeUrl is the external-URL opt-in. NOTHING listens on :4096.
+  // No external opencodeUrl configured => use the embedded engine (in-process
+  // for generic hosts, on-demand worker when desktop supplies one). An explicit
+  // opencodeUrl is the external-URL opt-in. NOTHING listens on :4096.
   const opencodeCompat = process.env.CLAXEDO_DISABLE_OPENCODE_COMPAT !== "1"
   const services = options.services
   let executeWorkGraphRun:
@@ -1162,6 +1165,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   }
   configureOpenCodeAuth(options.opencodePassword)
   configureOpenCodeEmbedPath(options.opencodeEmbedPath)
+  configureOpenCodeWorkerPath(options.opencodeWorkerPath)
   if (options.opencodeUrl) {
     configureOpenCodeEngine({ url: options.opencodeUrl, headers: opencodeHeaders() })
   } else {
@@ -1717,6 +1721,7 @@ export function startServer(
   options: {
     processObserver?: ProcessObserver
     opencodeEmbedPath?: string
+    opencodeWorkerPath?: string
     /**
      * Hosted capabilities for this process.
      *
@@ -1737,6 +1742,7 @@ export function startServer(
     ...(opencodeUrl ? { opencodeUrl } : {}),
     opencodePassword,
     ...(options.opencodeEmbedPath ? { opencodeEmbedPath: options.opencodeEmbedPath } : {}),
+    ...(options.opencodeWorkerPath ? { opencodeWorkerPath: options.opencodeWorkerPath } : {}),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     ...(options.capabilities ? { capabilities: options.capabilities } : {}),
   })

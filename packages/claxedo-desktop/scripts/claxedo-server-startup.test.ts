@@ -33,12 +33,14 @@ describe("Claxedo server utility startup", () => {
       CLAXEDO_CHILD_PORT: "3210",
       CLAXEDO_DESKTOP_PARENT_PID: "99",
       CLAXEDO_CHILD_OPENCODE_EMBED_PATH: "/opt/claxedo/opencode-engine/node.js",
+      CLAXEDO_CHILD_OPENCODE_WORKER_PATH: "/opt/claxedo/claxedo-engine-worker/index.js",
     })).toEqual({
       port: 3210,
       desktopParentPid: 99,
       opencodeUrl: undefined,
       opencodePassword: null,
       opencodeEmbedPath: "/opt/claxedo/opencode-engine/node.js",
+      opencodeWorkerPath: "/opt/claxedo/claxedo-engine-worker/index.js",
     })
   })
 

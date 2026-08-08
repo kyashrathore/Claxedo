@@ -26,6 +26,7 @@ startLocalServer({
   ...(startup.opencodeUrl ? { opencodeUrl: startup.opencodeUrl } : {}),
   opencodePassword: startup.opencodePassword,
   ...(startup.opencodeEmbedPath ? { opencodeEmbedPath: startup.opencodeEmbedPath } : {}),
+  ...(startup.opencodeWorkerPath ? { opencodeWorkerPath: startup.opencodeWorkerPath } : {}),
   ...(transport ? { processObserver: transport.observer } : {}),
 })
 
