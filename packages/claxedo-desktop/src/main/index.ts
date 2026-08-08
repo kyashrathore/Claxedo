@@ -5,7 +5,7 @@ import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { Event, IpcMainInvokeEvent, MessageBoxOptions } from "electron"
-import { app, BrowserWindow, dialog, ipcMain, session, utilityProcess } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, session, utilityProcess } from "electron"
 import { trustMainRendererOrigin } from "./renderer-origin"
 import pkg from "electron-updater"
 import treeKill from "tree-kill"
@@ -68,6 +68,7 @@ import { createWindowsWslCollector, createWslSource } from "./diagnostics/wsl-so
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand, wireFullscreenEvents } from "./ipc"
 import { installIpcCallerGuard, mainIpcCallerGuard } from "./ipc-caller-guard"
 import { setupAccount } from "./account/index"
+import { setupHostConnector } from "./host-connector/index"
 import { initLogging } from "./logging"
 import { createMenu } from "./menu"
 import {
@@ -585,6 +586,31 @@ if (!account.configured) {
   // the shape of a build shipped without its OAuth client registered.
   logger.warn(`[account] sign-in unavailable; missing config: ${account.missing.join(", ")}`)
 }
+
+/**
+ * Machine remote access, constructed but NOT started.
+ *
+ * Constructing mints no key, writes nothing and sends no traffic — that all
+ * happens in `start()`. So an unsigned launch, which is most launches, enrolls
+ * nothing and leaves no machine identity on disk.
+ *
+ * Nothing calls `start()` yet. It belongs behind an explicit user action in the
+ * Remote Access surface, and enrolling silently on launch because an account
+ * happens to be signed in would be the desktop deciding to publish the user's
+ * laptop for them.
+ */
+const hostConnector = account.configured
+  ? setupHostConnector({
+      run: (name, params) => account.service.run(name as never, params),
+      safeStorage,
+      userDataDir: app.getPath("userData"),
+      platform: process.platform,
+      onError: (stage, error) => logger.warn(`[host-connector] ${stage}: ${String(error)}`),
+    })
+  : undefined
+// Referenced so the composition is not dead code while its trigger is still to
+// come; `status()` reads state and starts nothing.
+logger.log("host connector", { available: hostConnector !== undefined, state: hostConnector?.status().status })
 
 const diagnosticsIpc = registerIpcHandlers({
   killSidecar: () => stopLocalServer(),

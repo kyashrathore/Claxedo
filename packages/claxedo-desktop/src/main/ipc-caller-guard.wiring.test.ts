@@ -62,6 +62,24 @@ describe("ipc caller guard wiring", () => {
     expect(installed).toBeLessThan(account)
   })
 
+  test("the host connector is constructed but never started at launch", () => {
+    // Constructing mints no key and sends no traffic; `start()` does both. An
+    // unsigned launch — most launches — must leave no machine identity on
+    // disk, and a signed one must not publish the user's laptop because they
+    // happened to be signed in.
+    //
+    // Asserted over the entry's code with comment lines stripped: the prose
+    // above `setupHostConnector` in index.ts explains the rule and names the
+    // method, so scanning raw text would pass with a real call present.
+    const code = entry
+      .split("\n")
+      .filter((line) => !line.trimStart().startsWith("//") && !line.trimStart().startsWith("*"))
+      .join("\n")
+
+    expect(code, "index.ts must construct the connector").toContain("setupHostConnector({")
+    expect(code, "launch must not start it").not.toMatch(/hostConnector[?.]*\.start\(/)
+  })
+
   test("the guard is installed exactly once", () => {
     // Installing twice would double-wrap every channel: two guard checks per
     // call, and a second `guardedCount` that silently disagrees with the first.
