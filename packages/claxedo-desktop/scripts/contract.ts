@@ -109,6 +109,7 @@ export function spec(root = ROOT): Spec {
     "scripts/bundle-claxedo-server.ts",
     "scripts/claxedo-server-entry.ts",
     "scripts/claxedo-engine-worker-entry.ts",
+    "scripts/claxedo-engine-worker-policy.ts",
     "scripts/claxedo-server-startup.ts",
     "scripts/codex-acp-entry.ts",
     "scripts/codex-acp-target.ts",
