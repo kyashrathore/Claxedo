@@ -1,6 +1,13 @@
 import type { HarnessType } from "./profile"
+import type { ModelKey } from "@/features/session/composer/model-strategy"
 
 export type PreparedSessionDirectory = string
+
+export type PreparedRuntimeSessionConfig = {
+  agent: string
+  model: ModelKey
+  variant?: string
+}
 
 export type PreparedRuntimeSession = {
   id: string

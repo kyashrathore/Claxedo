@@ -26,6 +26,7 @@ import {
   syncSessionMeta,
   waitForFirstActiveSessionStatusPoll,
 } from "./session-controller"
+import { readAcceptedPromptStatus } from "./accepted-prompt-refresh"
 import { backfillFailedCursor, createHistoryMetaState, historyHasMore } from "./history-pagination"
 import {
   SESSION_STATUS_TELEMETRY_CONFIG,
@@ -75,6 +76,28 @@ function question(id: string, sessionID: string): QuestionRequest {
 }
 
 describe("session controller helpers", () => {
+  test("reads accepted-prompt status from the canonical live-status map", async () => {
+    expect(await readAcceptedPromptStatus({
+      sessionID: "ses_busy",
+      client: { session: { status: async () => ({ data: { ses_busy: busy } }) } },
+    })).toEqual(busy)
+    expect(await readAcceptedPromptStatus({
+      sessionID: "ses_idle",
+      client: { session: { status: async () => ({ data: {} }) } },
+    })).toEqual(idle)
+  })
+
+  test("does not turn a failed accepted-prompt status read into idle", async () => {
+    expect(await readAcceptedPromptStatus({
+      sessionID: "ses_failed",
+      client: { session: { status: async () => Promise.reject(new Error("unavailable")) } },
+    })).toBeUndefined()
+    expect(await readAcceptedPromptStatus({
+      sessionID: "ses_failed",
+      client: { session: { status: async () => ({}) } },
+    })).toBeUndefined()
+  })
+
   test("keeps migrated metadata, todo, and capabilities request state query-owned", async () => {
     const source = await Bun.file(new URL("./session-controller.ts", import.meta.url)).text()
     const banned = [

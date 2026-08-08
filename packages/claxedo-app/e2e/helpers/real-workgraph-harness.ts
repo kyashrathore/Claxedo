@@ -1368,6 +1368,16 @@ async function createRealSessionRuntime(
             ? location.directory
             : headers.get("x-opencode-directory")
         if (!sessionId || !sessionDirectory) throw new Error("OpenCode Session creation omitted its identity or project directory")
+        const create = object(JSON.parse(body || "{}")) ?? {}
+        const model = object(create.model)
+        const providerID = typeof model?.providerID === "string" ? model.providerID : undefined
+        const modelID = typeof model?.id === "string" ? model.id : undefined
+        sessionConfigs.set(sessionId, {
+          harness: { id: "opencode", access: "native" },
+          ...(typeof create.agent === "string" ? { agent: create.agent } : {}),
+          ...(providerID && modelID ? { model: { providerID, modelID } } : {}),
+          ...(typeof model?.variant === "string" ? { variant: model.variant } : {}),
+        })
         const timestamp = Date.now()
         records.set(sessionId, {
           sessionId,

@@ -62,6 +62,7 @@ export type SubmitSessionTargetAcquisitionInput = {
     readonly scope: string
     readonly directory: SubmitDirectory
     readonly sessionID: string | undefined
+    readonly sessionConfig: SubmitSessionTargetAcquisitionInput["sessionConfig"]
   }) => Promise<SubmitSessionTarget | undefined>
   readonly onOpencodeCreateError: (err: unknown) => void
 }
@@ -145,6 +146,7 @@ async function createRuntimeSessionTarget(input: SubmitSessionTargetAcquisitionI
       scope: input.scope,
       directory: input.sessionDirectory,
       sessionID: input.explicitSessionID,
+      sessionConfig: input.sessionConfig,
     }).catch(() => undefined)
     if (session) input.boot(session.id)
     return session

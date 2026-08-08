@@ -147,7 +147,7 @@ export type SdkRuntimeTurnInput = {
 export type SdkRuntimeDriver = {
   readonly type: SdkRuntimeRunnerType
   setAuth(keys: SdkRuntimeAuth): void
-  applyConfig(config: Record<string, unknown>): void
+  applyConfig(config: Record<string, unknown>): void | Promise<void>
   createAgentSession(input: { directory: string; title?: string; model: string }): Promise<string>
   createRuntime(threadId: string): AgentEventRuntime
   runTurn(input: SdkRuntimeTurnInput): Promise<void>
@@ -835,7 +835,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   }
 
   async applyConfig(config: Record<string, unknown>): Promise<void> {
-    this.driver.applyConfig(config)
+    await this.driver.applyConfig(config)
   }
 
   async probeConfigOptions(directory: string): Promise<AgentConfigOptionRow[]> {

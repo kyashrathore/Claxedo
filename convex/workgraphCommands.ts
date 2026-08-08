@@ -1211,6 +1211,10 @@ async function applyCommand(ctx: any, input: CommandInput, now: number): Promise
         }),
       ),
     )
+    // Creation is the readiness transition for an approved Task. Drain this
+    // exact Stream in-transaction, matching approve/arm/retry, so admission is
+    // never contingent on where the Stream falls in a bounded tenant sweep.
+    if (bornState === "pending") await continueStream(ctx, stream, now)
     return pending("work_item_created", "work_item", id, { workItemId: id }, stream.id)
   }
   if (command.type === "update_work_item") {

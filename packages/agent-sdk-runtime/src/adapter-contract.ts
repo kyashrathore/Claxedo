@@ -178,6 +178,7 @@ export interface SupportsQuestions {
 
 export interface SupportsRuntimeConfig {
   applyConfig(config: Record<string, unknown>): Promise<void>
+  waitForConfigReady?(): Promise<void>
 }
 
 export interface SupportsConfigOptions {

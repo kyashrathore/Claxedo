@@ -342,6 +342,11 @@ jobs:
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           WORKGRAPH_SMOKE_USER_A_ID: ${{ vars.WORKGRAPH_SMOKE_USER_A_ID }}
           WORKGRAPH_SMOKE_ORGANIZATION_A_ID: ${{ vars.WORKGRAPH_SMOKE_ORGANIZATION_A_ID }}
+          WORKGRAPH_SMOKE_AGENT: ${{ vars.WORKGRAPH_SMOKE_AGENT }}
+          WORKGRAPH_SMOKE_PROVIDER_ID: ${{ vars.WORKGRAPH_SMOKE_PROVIDER_ID }}
+          WORKGRAPH_SMOKE_MODEL_ID: ${{ vars.WORKGRAPH_SMOKE_MODEL_ID }}
+          WORKGRAPH_SMOKE_EFFORT: ${{ vars.WORKGRAPH_SMOKE_EFFORT }}
+          WORKGRAPH_SMOKE_TOOLS_JSON: ${{ vars.WORKGRAPH_SMOKE_TOOLS_JSON }}
           WORKGRAPH_SMOKE_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
         run: bun run smoke:interactive
 

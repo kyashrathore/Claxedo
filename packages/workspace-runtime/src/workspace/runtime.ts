@@ -607,6 +607,13 @@ export function runtimeAuthKey(input: string | undefined) {
 }
 
 export async function materializeCodexAuth(input: string | undefined) {
+  const materialization = codexAuthMaterialization(input)
+  if (!materialization) return
+  await writeCodexAuth(materialization)
+  return materialization.target
+}
+
+function codexAuthMaterialization(input: string | undefined) {
   const value = codexAuthValue(input)
   if (!value) return
   const oauth = value.oauth && typeof value.oauth === "object" ? value.oauth as Record<string, unknown> : undefined
@@ -615,12 +622,9 @@ export async function materializeCodexAuth(input: string | undefined) {
   const refresh = typeof row?.refresh_token === "string" ? row.refresh_token : typeof oauth?.refresh === "string" ? oauth.refresh : undefined
   const account = typeof row?.account_id === "string" ? row.account_id : typeof oauth?.account_id === "string" ? oauth.account_id : undefined
   if (!access || !refresh || !account) return
-  const dir = path.join(process.env.HOME || os.homedir(), ".codex")
-  await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 })
-  const target = path.join(dir, "auth.json")
-  await fs.promises.writeFile(
-    target,
-    JSON.stringify({
+  return {
+    target: path.join(process.env.HOME || os.homedir(), ".codex", "auth.json"),
+    content: JSON.stringify({
       auth_mode: typeof value.auth_mode === "string" ? value.auth_mode : "chatgpt",
       OPENAI_API_KEY: null,
       tokens: {
@@ -631,13 +635,16 @@ export async function materializeCodexAuth(input: string | undefined) {
       },
       last_refresh: typeof value.last_refresh === "string" ? value.last_refresh : new Date().toISOString(),
     }, null, 2) + "\n",
-    { mode: 0o600 },
-  )
-  return target
+  }
 }
 
-async function materialize(auth: Record<string, string>) {
-  return materializeCodexAuth(codexAuthInput(auth))
+async function writeCodexAuth(input: { target: string; content: string }) {
+  await fs.promises.mkdir(path.dirname(input.target), { recursive: true, mode: 0o700 })
+  await fs.promises.writeFile(
+    input.target,
+    input.content,
+    { mode: 0o600 },
+  )
 }
 
 const defaultStoreFactory: WorkspaceRuntimeStoreFactory = ({ storeRoot }) => new RuntimeStore(storeRoot)
@@ -726,7 +733,7 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
         const transcripts = options.transcripts
         const registerTranscript = transcripts?.resolver.register
         return new Adapter({
-          ...(processConnection(runner)?.binary || HARNESS_BINARY_FALLBACKS[harnessKey(runner)] ? { binary: binary(runner) } : {}),
+          ...(processConnection(runner)?.binary ? { binary: binary(runner) } : {}),
           createStore: adapterCreateStore(resolveStoreFactory(options)),
           ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
           ...(options.eventHub ? { eventHub: options.eventHub } : {}),
@@ -1051,6 +1058,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   let currentMcp: Record<string, unknown> = {}
   let currentAuth: RuntimeAuth = {}
   let currentAuthRaw: Record<string, string> = {}
+  let currentModel: string | undefined
   let materializedCodexAuthPath: string | undefined
   let applyQueue = Promise.resolve()
   const storeFactory = resolveStoreFactory(options)
@@ -1076,7 +1084,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   function adapterKey(next: RuntimeRunner) {
     const process = processConnection(next)
     const remote = remoteConnection(next)
-    return `${next.id}\n${next.access}\n${process?.binary ?? ""}\n${process?.args?.join("\0") ?? ""}\n${remote?.transport ?? ""}\n${remote?.url ?? ""}\n${JSON.stringify(remote?.headers ?? {})}`
+    const binary = next.id === "codex" && next.access === "native" && process?.binary === "codex"
+      ? ""
+      : process?.binary ?? ""
+    return `${next.id}\n${next.access}\n${binary}\n${process?.args?.join("\0") ?? ""}\n${remote?.transport ?? ""}\n${remote?.url ?? ""}\n${JSON.stringify(remote?.headers ?? {})}`
   }
 
   function runnerFromAdapterKey(key: string) {
@@ -1105,8 +1116,9 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
 
   async function configureAdapter(next: AgentHarnessAdapter, nextRunner: RuntimeRunner, model?: string) {
     if (!hasAdapterCapability(next, "runtime-config") || !next.applyConfig) return
+    const configuredModel = model ?? currentModel
     if (
-      model === undefined
+      configuredModel === undefined
       && Object.keys(currentAuthRaw).length === 0
       && Object.keys(currentMcp).length === 0
       && adapterConfigStamps.get(next) === undefined
@@ -1114,22 +1126,28 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       adapterConfigStamps.set(next, `${adapterKey(nextRunner)}\n\n{}\n{}`)
       return
     }
-    const stamp = `${adapterKey(nextRunner)}\n${model ?? ""}\n${JSON.stringify(currentAuthRaw)}\n${JSON.stringify(currentMcp)}`
+    const stamp = `${adapterKey(nextRunner)}\n${configuredModel ?? ""}\n${JSON.stringify(currentAuthRaw)}\n${JSON.stringify(currentMcp)}`
+    if (adapterConfigStamps.get(next) === stamp) return
+    const turns = acp(nextRunner) ? activeTurns.get(next) : undefined
+    if (turns?.size) await Promise.all([...turns].map((turn) => turn.done))
     if (adapterConfigStamps.get(next) === stamp) return
     ;(next as AgentHarnessAdapter & RuntimeConfigurableAdapter).setAuth(
       acp(nextRunner)
         ? acpEnv(nextRunner, currentAuthRaw)
         : runtimeAuthForAdapter(currentAuth),
     )
-    if (model && model !== "default") {
-      ;(next as AgentHarnessAdapter & RuntimeConfigurableAdapter).setModel(model)
+    if (configuredModel !== undefined) {
+      ;(next as AgentHarnessAdapter & RuntimeConfigurableAdapter).setModel(
+        configuredModel === "default" ? "" : configuredModel,
+      )
     }
     await next.applyConfig({
       mcp: currentMcp,
       auth: currentAuthRaw,
       harness: nextRunner,
-      model,
+      model: configuredModel,
     })
+    await (next as AgentHarnessAdapter & { waitForConfigReady?: () => Promise<void> }).waitForConfigReady?.()
     adapterConfigStamps.set(next, stamp)
   }
 
@@ -1173,10 +1191,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   async function adapterForSession(input?: { sessionId?: string; directory?: string; harness?: RuntimeRunner }) {
     if (!input?.sessionId) {
       if (input?.harness) return await ensureSessionAdapter(input.harness)
-      return ensure()
+      return await ensureSessionAdapter(runner)
     }
     const config = sessionConfigFor(input)
-    if (!config) return input?.harness ? await ensureSessionAdapter(input.harness) : ensure()
+    if (!config) return await ensureSessionAdapter(input?.harness ?? runner)
     return await ensureSessionAdapter(config.harness)
   }
 
@@ -1281,7 +1299,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       items.push(next)
     }
     const items: Array<{ adapter: AgentHarnessAdapter; runner: RuntimeRunner }> = []
-    add(items, { adapter: ensure(), runner })
+    add(items, { adapter: await ensureSessionAdapter(runner), runner })
     for (const [key, item] of sessionAdapters) {
       add(items, { adapter: item, runner: sessionAdapterRunners.get(key) ?? runnerFromAdapterKey(key) })
     }
@@ -1514,29 +1532,32 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     let acceptedAt: string | undefined
     const replacing = adapterKey(next.harness) !== adapterKey(runner)
     const nextAuth = runtimeAuth(next.auth)
-    const unsafeAcpLiveConfigChange = !replacing
-      && adapter
-      && acp(runner)
-      && hasAdapterCapability(adapter, "runtime-config")
-      && (activeTurns.get(adapter)?.size ?? 0) > 0
-      && (
-        next.model !== undefined
-        || !sameRuntimeAuth(currentAuth, nextAuth)
-        || !sameRuntimeMcp(currentMcp, next.mcp)
+    const effectiveModel = next.model ?? currentModel
+    const configChangesActiveAcp = (replacing ? effectiveModel !== undefined : next.model !== undefined)
+      || !sameRuntimeAuth(currentAuth, nextAuth)
+      || !sameRuntimeMcp(currentMcp, next.mcp)
+
+    function assertSafeAcpTarget(target: AgentHarnessAdapter | undefined) {
+      if (
+        !target
+        || !acp(next.harness)
+        || !hasAdapterCapability(target, "runtime-config")
+        || (activeTurns.get(target)?.size ?? 0) === 0
+        || !configChangesActiveAcp
+      ) return
+      throw new RuntimeConfigApplyError(
+        "runtime_config_unsafe_restart",
+        "ACP runtime config change would restart an active session",
+        409,
+        {
+          harness: next.harness.id,
+          activeTurns: activeTurns.get(target)?.size ?? 0,
+        },
       )
+    }
 
     try {
-      if (unsafeAcpLiveConfigChange) {
-        throw new RuntimeConfigApplyError(
-          "runtime_config_unsafe_restart",
-          "ACP runtime config change would restart an active session",
-          409,
-          {
-            harness: runner.id,
-            activeTurns: adapter ? activeTurns.get(adapter)?.size ?? 0 : 0,
-          },
-        )
-      }
+      assertSafeAcpTarget(replacing ? sessionAdapters.get(adapterKey(next.harness)) : adapter)
       revision = configApplyRevision + 1
       acceptedAt = new Date().toISOString()
       configApplyRevision = revision
@@ -1548,34 +1569,57 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         harness: next.harness,
       }
       await persistRuntimeConfigApplyStatus({ receiptDir, status: configApply, snapshot: next })
-      const nextMaterializedCodexAuthPath = await materialize(next.auth)
-      if (materializedCodexAuthPath && materializedCodexAuthPath !== nextMaterializedCodexAuthPath) {
-        await fs.promises.rm(materializedCodexAuthPath, { force: true })
-      }
-      materializedCodexAuthPath = nextMaterializedCodexAuthPath
+      const nextMaterializedCodexAuthPath = await materializeCodexAuth(codexAuthInput(next.auth))
+      const obsoleteMaterializedCodexAuthPath = materializedCodexAuthPath
+        && materializedCodexAuthPath !== nextMaterializedCodexAuthPath
+        ? materializedCodexAuthPath
+        : undefined
       // Do not materialize central slash commands pushed via
       // the runtime config push — the runner-host owns command discovery
       // and re-writing them at the workspace layer would clobber any
       // user-authored commands that already live on disk.
       // (See workspace/runtime.test.ts: "runtime config push does not
       // materialize central slash commands".)
-      currentMcp = next.mcp
-      currentAuth = nextAuth
-      currentAuthRaw = next.auth
+      if (obsoleteMaterializedCodexAuthPath) {
+        await fs.promises.rm(obsoleteMaterializedCodexAuthPath, { force: true })
+      }
+      materializedCodexAuthPath = nextMaterializedCodexAuthPath
 
       if (replacing) {
         if (adapter) await drainActiveTurns(adapter)
+        const key = adapterKey(next.harness)
+        const promoted = sessionAdapters.get(key)
+        // Config acceptance is the linearization point. A runner-scoped ACP
+        // turn admitted during receipt/auth I/O is promoted without restarting
+        // its process; the accepted config is applied on its next safe use.
+        // Promotion and the runner flip are synchronous, so no second adapter
+        // for this identity can appear between them.
         clear()
         runner = next.harness
+        if (promoted) {
+          // A session adapter can already own native provider process state
+          // before the workspace-default config fan-out settles.
+          adapter = promoted
+          sessionAdapters.delete(key)
+          sessionAdapterRunners.delete(key)
+        }
       }
 
-      if (!replacing && adapter && hasAdapterCapability(adapter, "runtime-config") && next.model !== undefined) {
+      currentMcp = next.mcp
+      currentAuth = nextAuth
+      currentAuthRaw = next.auth
+      currentModel = effectiveModel
+      const deferDefaultAdapterConfig = adapter
+        && acp(next.harness)
+        && (activeTurns.get(adapter)?.size ?? 0) > 0
+
+      if (!deferDefaultAdapterConfig && adapter && hasAdapterCapability(adapter, "runtime-config") && effectiveModel !== undefined) {
         ;(adapter as AgentHarnessAdapter & RuntimeConfigurableAdapter).setModel(
-          next.model === "default" ? "" : next.model,
+          effectiveModel === "default" ? "" : effectiveModel,
         )
       }
 
-      if (adapter && hasAdapterCapability(adapter, "runtime-config")) {
+      if (!deferDefaultAdapterConfig && adapter && hasAdapterCapability(adapter, "runtime-config")) {
         ;(adapter as AgentHarnessAdapter & RuntimeConfigurableAdapter).setAuth(
           acp(next.harness)
             ? acpEnv(next.harness, next.auth)
@@ -1584,13 +1628,20 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       }
 
       if (!replacing) runner = next.harness
-      if (adapter?.applyConfig) {
+      if (!deferDefaultAdapterConfig && adapter?.applyConfig) {
         await adapter.applyConfig({
           mcp: next.mcp,
           auth: next.auth,
           harness: next.harness,
-          model: next.model,
+          model: effectiveModel,
         })
+        await (adapter as AgentHarnessAdapter & { waitForConfigReady?: () => Promise<void> }).waitForConfigReady?.()
+        if (hasAdapterCapability(adapter, "runtime-config")) {
+          adapterConfigStamps.set(
+            adapter,
+            `${adapterKey(next.harness)}\n${effectiveModel ?? ""}\n${JSON.stringify(next.auth)}\n${JSON.stringify(next.mcp)}`,
+          )
+        }
       }
       await Promise.all([...sessionAdapters.entries()].map(([key, nextAdapter]) => {
         return activeTurns.get(nextAdapter)?.size
@@ -1702,7 +1753,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       })
 
       app.get("/session/status", async (c) => {
-        const adapter = ensure()
+        const adapter = await ensureSessionAdapter(runner)
         if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) {
           const directory = assertTarget(c.req.query("directory") || c.req.header("x-opencode-directory"))
           return c.json(sessionStatusSnapshot(await adapter.listSessions(directory)))
@@ -1711,25 +1762,25 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       })
 
       app.get("/mcp", async (c) => {
-        const adapter = ensure()
+        const adapter = await ensureSessionAdapter(runner)
         if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) return c.json({})
         return proxyOpenCodeOrJson(c, adapter, () => mcpStatus(currentMcp), hostOptions.opencodeHeaders)
       })
 
       app.post("/mcp/:name/connect", async (c) => {
-        const adapter = ensure()
+        const adapter = await ensureSessionAdapter(runner)
         if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) return c.json(true)
         return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
       })
 
       app.post("/mcp/:name/disconnect", async (c) => {
-        const adapter = ensure()
+        const adapter = await ensureSessionAdapter(runner)
         if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) return c.json(true)
         return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
       })
 
       app.get("/lsp", async (c) => {
-        const adapter = ensure()
+        const adapter = await ensureSessionAdapter(runner)
         if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) return c.json([])
         return proxyOpenCodeOrJson(c, adapter, () => [], hostOptions.opencodeHeaders)
       })
@@ -1749,7 +1800,9 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             },
           }, 502)
         }
-        const adapter = runner.id === "opencode" ? ensure() : await ensureSessionAdapter({ id: "opencode", access: "native" })
+        const adapter = runner.id === "opencode"
+          ? await ensureSessionAdapter(runner)
+          : await ensureSessionAdapter({ id: "opencode", access: "native" })
         try {
           const detail = c.req.query("provider")
           const res = await proxyOpenCode(
@@ -1787,7 +1840,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       })
 
       app.get("/experimental/tool/ids", async (c) => {
-        const adapter = ensure()
+        const adapter = await ensureSessionAdapter(runner)
         if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true || !hasAdapterCapability(adapter, "http-proxy")) {
           return c.json({
             ok: false,
@@ -1802,22 +1855,31 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       })
 
       app.get("/vcs", async (c) => {
-        const adapter = ensure()
+        const adapter = await ensureSessionAdapter(runner)
         const fallback = () => localVcsInfo(requestDirectory(c))
         if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) return c.json(await fallback())
         return proxyOpenCodeOrJson(c, adapter, fallback, hostOptions.opencodeHeaders)
       })
 
       app.get("/global/event", async (c) => {
+        // Two changes meet here and BOTH are load-bearing.
+        //
         // The shell opens this stream on every launch. Proxying it to OpenCode
         // used to START OpenCode, so an idle desktop paid for a harness it was
-        // never asked to run. The compat proxy now attaches only to a transport
+        // never asked to run. The compat proxy attaches only to a transport
         // that is ALREADY live, and holds an activity lease for the stream's
         // life so the idle reaper cannot cut it mid-delivery. When nothing is
         // running the runtime's own hub answers — it is the authoritative
         // producer of canonical events, and the adapter republishes upstream
         // events into it once real work starts.
-        const proxy = runner.id === "opencode" && hostOptions.opencodeCompat === true ? ensure() : undefined
+        //
+        // Resolution goes through `ensureSessionAdapter` rather than `ensure()`
+        // so a session pinned to a non-default harness gets ITS adapter. That
+        // helper only creates and configures; it does not spawn, so it does not
+        // reintroduce the start this gate exists to prevent.
+        const proxy = runner.id === "opencode" && hostOptions.opencodeCompat === true
+          ? await ensureSessionAdapter(runner)
+          : undefined
         const adapter = proxy && hasAdapterCapability(proxy, "http-proxy")
           ? proxy as AgentHarnessAdapter & HttpProxyAdapter
           : undefined
@@ -1889,7 +1951,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       // contracts used by hosted WorkGraph. Keep them on the authenticated
       // workspace-runtime/relay path and proxy byte-for-byte to OpenCode.
       const proxySessionV2 = async (c: Context) => {
-        const adapter = ensure()
+        const adapter = await ensureSessionAdapter(runner)
         if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true || !hasAdapterCapability(adapter, "http-proxy")) {
           return c.json({ error: { code: "session_v2_unavailable", message: "Session V2 requires the OpenCode HTTP runtime" } }, 503)
         }
@@ -2019,12 +2081,14 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       const normalized = normalizeRuntimeSnapshot(next)
       if (!normalized) throw new RuntimeConfigApplyError("runtime_config_invalid", "Invalid runtime config snapshot", 409)
       const nextAuth = runtimeAuth(normalized.auth)
+      const target = adapterKey(normalized.harness) === adapterKey(runner)
+        ? adapter
+        : sessionAdapters.get(adapterKey(normalized.harness))
       if (
-        adapter
-        && adapterKey(normalized.harness) === adapterKey(runner)
-        && acp(runner)
-        && hasAdapterCapability(adapter, "runtime-config")
-        && (activeTurns.get(adapter)?.size ?? 0) > 0
+        target
+        && acp(normalized.harness)
+        && hasAdapterCapability(target, "runtime-config")
+        && (activeTurns.get(target)?.size ?? 0) > 0
         && (
           normalized.model !== undefined
           || !sameRuntimeAuth(currentAuth, nextAuth)
@@ -2036,8 +2100,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           "ACP runtime config change would restart an active session",
           409,
           {
-            harness: runner.id,
-            activeTurns: activeTurns.get(adapter)?.size ?? 0,
+            harness: normalized.harness.id,
+            activeTurns: activeTurns.get(target)?.size ?? 0,
           },
         )
       }
@@ -2140,7 +2204,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         }
       },
       async resume() {
-        materializedCodexAuthPath = await materialize(currentAuthRaw)
+        materializedCodexAuthPath = await materializeCodexAuth(codexAuthInput(currentAuthRaw))
         checkpointState = "active"
         return checkpointDetail()
       },

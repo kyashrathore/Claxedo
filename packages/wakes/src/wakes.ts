@@ -94,10 +94,12 @@ export interface Wakes {
   /**
    * Fire due wakes. With `serialKey` (string = that lane, null = null-key
    * wakes) the run is lane-scoped for a push driver: it reclaims and claims
-   * only that lane and skips the expiry sweep. Without it, the full polled
+   * only that lane and skips the expiry sweep. A live lease that blocks the
+   * lane returns its authoritative `blockedUntil` boundary so the driver can
+   * re-arm instead of losing the pending wake. Without a key, the full polled
    * pass runs (expiry + reclaim + claim across all lanes).
    */
-  runDue(serialKey?: string | null): Promise<{ fired: number }>
+  runDue(serialKey?: string | null): Promise<{ fired: number; blockedUntil?: number }>
   /** Boot sweep: re-drive `firing` rows whose leases have already lapsed. */
   recover(): Promise<{ recovered: number }>
   once<T>(sessionId: SessionId, effectKey: string, fn: () => Promise<T> | T): Promise<T>
@@ -370,7 +372,11 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
         await driveFiring(wake)
         fired++
       }
-      return { fired }
+      if (serialKey === undefined || fired > 0) return { fired }
+      const blockedUntil = (await store.listFiring(serialKey))
+        .flatMap((wake) => wake.leaseUntil === null ? [] : [wake.leaseUntil])
+        .sort((a, b) => a - b)[0]
+      return blockedUntil === undefined ? { fired } : { fired, blockedUntil }
     },
 
     async recover() {

@@ -44,6 +44,12 @@ function submitStore(overrides: Partial<HarnessSubmitControllerStore> = {}): Har
 }
 
 describe("harness controller facade", () => {
+  const sessionConfig = {
+    agent: "build",
+    model: { providerID: "codex-acp", modelID: "gpt-5.5" },
+    variant: "high",
+  }
+
   test("reads selector state from the backing store", () => {
     expect(createHarnessSelectionController(selectionStore()).read("scope")).toEqual({
       harness: "codex-acp",
@@ -106,7 +112,7 @@ describe("harness controller facade", () => {
     expect(controller.readiness("scope")).toBe("ready")
     expect(controller.readyForSubmit("scope")).toBe(true)
     expect(controller.modelKeyForSubmit("scope")).toBeUndefined()
-    expect(await controller.claimSession("scope")).toBeUndefined()
+    expect(await controller.claimSession("scope", { sessionConfig })).toBeUndefined()
     await expect(controller.setHarness("scope", "opencode")).resolves.toBeUndefined()
   })
 
@@ -121,11 +127,11 @@ describe("harness controller facade", () => {
     }))
 
     expect(controller.modelKeyForSubmit("scope")).toEqual({ providerID: "codex-acp", modelID: "gpt-5.5" })
-    expect(await controller.claimSession("scope", { directory: "/repo" })).toEqual({ id: "ses_harness" })
+    expect(await controller.claimSession("scope", { directory: "/repo", sessionConfig })).toEqual({ id: "ses_harness" })
     controller.promote("draft", "session")
 
     expect(calls).toEqual([
-      ["claimSession", "scope", { directory: "/repo" }],
+      ["claimSession", "scope", { directory: "/repo", sessionConfig }],
       ["promote", "draft", "session"],
     ])
   })

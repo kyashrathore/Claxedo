@@ -59,7 +59,15 @@ function fakeCodexStore(): AgentRuntimeStoreWithRecovery {
   })
 }
 
-async function makeFakeCodex(options: { requestRefresh?: boolean; auth401?: boolean; models?: unknown[]; subagent?: boolean } = {}) {
+async function makeFakeCodex(options: {
+  requestRefresh?: boolean
+  auth401?: boolean
+  models?: unknown[]
+  subagent?: boolean
+  initializeDelayMs?: number
+  loginDelayMs?: number
+  ignoreSigterm?: boolean
+} = {}) {
   const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "codex-app-server-"))
   tempDirs.push(dir)
   const binary = path.join(dir, "codex")
@@ -70,6 +78,9 @@ const logPath = ${JSON.stringify(log)}
 const requestRefresh = ${JSON.stringify(options.requestRefresh === true)}
 const auth401 = ${JSON.stringify(options.auth401 === true)}
 const subagent = ${JSON.stringify(options.subagent === true)}
+const initializeDelayMs = ${JSON.stringify(options.initializeDelayMs ?? 0)}
+const loginDelayMs = ${JSON.stringify(options.loginDelayMs ?? 0)}
+const ignoreSigterm = ${JSON.stringify(options.ignoreSigterm === true)}
 const models = ${JSON.stringify(options.models ?? [])}
 let buffer = ""
 let completed = false
@@ -79,6 +90,12 @@ function write(message) {
 function append(message) {
   fs.appendFileSync(logPath, JSON.stringify(message) + "\\n")
 }
+append({ event: "started", pid: process.pid })
+process.on("SIGTERM", () => {
+  append({ event: "sigterm" })
+  if (ignoreSigterm) return
+  process.exit(0)
+})
 function completeTurn() {
   if (completed) return
   completed = true
@@ -99,10 +116,13 @@ process.stdin.on("data", (chunk) => {
     if (message.id) append(message)
     if (message.id === 900 && message.result) completeTurn()
     if (message.method === "initialize") {
-      write({ id: message.id, result: { userAgent: "fake-codex" } })
+      setTimeout(() => write({ id: message.id, result: { userAgent: "fake-codex" } }), initializeDelayMs)
     }
     if (message.method === "account/login/start") {
-      write({ id: message.id, result: { type: "chatgptAuthTokens" } })
+      setTimeout(() => write({ id: message.id, result: { type: "chatgptAuthTokens" } }), loginDelayMs)
+    }
+    if (message.method === "account/logout") {
+      write({ id: message.id, result: {} })
     }
     if (message.method === "model/list") {
       write({ id: message.id, result: { data: models, nextCursor: null } })
@@ -139,6 +159,28 @@ process.stdin.on("data", (chunk) => {
 `, "utf8")
   await fs.promises.chmod(binary, 0o755)
   return { dir, binary, log }
+}
+
+async function waitForLog(log: string, match: (row: Record<string, unknown>) => boolean) {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const rows = await fs.promises.readFile(log, "utf8")
+      .then((value) => value.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as Record<string, unknown>), () => [])
+    if (rows.some(match)) return
+    await Bun.sleep(5)
+  }
+  throw new Error(`Timed out waiting for fake Codex log ${log}`)
+}
+
+async function waitForProcessExit(pid: number) {
+  for (let attempt = 0; attempt < 300; attempt++) {
+    try {
+      process.kill(pid, 0)
+    } catch {
+      return
+    }
+    await Bun.sleep(5)
+  }
+  throw new Error(`Timed out waiting for fake Codex process ${pid} to exit`)
 }
 
 function prompt(modelID: string, variant?: string): PromptInput {
@@ -190,6 +232,110 @@ async function runWithModel(model: string) {
 }
 
 describe("CodexHarnessAdapter", () => {
+  test("shares one app-server startup across concurrent session creation and model discovery", async () => {
+    const fake = await makeFakeCodex({
+      models: [codexModel(["low", "high"], "low")],
+    })
+    const adapter = new CodexHarnessAdapter({
+      binary: fake.binary,
+      createStore: () => fakeCodexStore(),
+      storeRoot: path.join(fake.dir, "store"),
+    })
+    adapter.setModel("gpt-5.5")
+
+    await Promise.all([
+      adapter.createSession(fake.dir),
+      adapter.probeConfigOptions(fake.dir),
+    ])
+    adapter.dispose()
+
+    const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
+      method: string
+    })
+    expect(requests.filter((request) => request.method === "initialize")).toHaveLength(1)
+  })
+
+  test("applies auth changed during startup before creating the Codex thread", async () => {
+    const fake = await makeFakeCodex({ initializeDelayMs: 50 })
+    const adapter = new CodexHarnessAdapter({
+      binary: fake.binary,
+      createStore: () => fakeCodexStore(),
+      storeRoot: path.join(fake.dir, "store"),
+    })
+
+    const creation = adapter.createSession(fake.dir)
+    await waitForLog(fake.log, (row) => row.method === "initialize")
+    await Promise.all([
+      creation,
+      adapter.applyConfig({ auth: { "codex-app-server": "sk-during-startup" } }),
+    ])
+    adapter.dispose()
+
+    const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
+      method?: string
+      params?: Record<string, unknown>
+    })
+    expect(requests.filter((request) => request.method === "initialize")).toHaveLength(1)
+    expect(requests.find((request) => request.method === "account/login/start")?.params).toEqual({
+      type: "apiKey",
+      apiKey: "sk-during-startup",
+    })
+    expect(requests.findIndex((request) => request.method === "account/login/start"))
+      .toBeLessThan(requests.findIndex((request) => request.method === "thread/start"))
+  })
+
+  test("applies changed auth to the retained Codex app-server", async () => {
+    const fake = await makeFakeCodex({ loginDelayMs: 50 })
+    const adapter = new CodexHarnessAdapter({
+      binary: fake.binary,
+      createStore: () => fakeCodexStore(),
+      storeRoot: path.join(fake.dir, "store"),
+    })
+
+    await adapter.createSession(fake.dir)
+    let applied = false
+    const config = adapter.applyConfig({ auth: { "codex-app-server": "sk-live" } }).then(() => {
+      applied = true
+    })
+    await waitForLog(fake.log, (row) => row.method === "account/login/start")
+    expect(applied).toBe(false)
+    await config
+    await adapter.createSession(fake.dir)
+    adapter.dispose()
+
+    const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
+      method?: string
+      params?: Record<string, unknown>
+    })
+    expect(requests.filter((request) => request.method === "initialize")).toHaveLength(1)
+    expect(requests.find((request) => request.method === "account/login/start")?.params).toEqual({
+      type: "apiKey",
+      apiKey: "sk-live",
+    })
+    expect(requests.filter((request) => request.method === "thread/start")).toHaveLength(2)
+  })
+
+  test("disposes an app-server whose startup is still pending", async () => {
+    const fake = await makeFakeCodex({ initializeDelayMs: 10_000, ignoreSigterm: true })
+    const adapter = new CodexHarnessAdapter({
+      binary: fake.binary,
+      createStore: () => fakeCodexStore(),
+      storeRoot: path.join(fake.dir, "store"),
+    })
+
+    const creation = adapter.createSession(fake.dir)
+    await waitForLog(fake.log, (row) => row.method === "initialize")
+    const pid = fs.readFileSync(fake.log, "utf8").trim().split("\n")
+      .map((line) => JSON.parse(line) as { event?: string; pid?: number })
+      .find((row) => row.event === "started")?.pid
+    if (!pid) throw new Error("Fake Codex process did not record its PID")
+    adapter.dispose()
+
+    await expect(creation).rejects.toThrow()
+    await waitForLog(fake.log, (row) => row.event === "sigterm")
+    await waitForProcessExit(pid)
+  })
+
   test("omits Codex app-server default model from provider requests", async () => {
     const requests = await runWithModel("default")
 

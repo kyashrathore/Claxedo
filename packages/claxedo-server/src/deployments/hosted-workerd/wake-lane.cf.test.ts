@@ -105,6 +105,29 @@ describe("WakeLane alarm", () => {
     expect(storage.data.has("laneBackoffMs")).toBe(false) // progress cleared
   })
 
+  it("re-arms at the authoritative firing-lease boundary when the lane is still blocked", async () => {
+    const clock = { t: 1_000 }
+    const results = [
+      { fired: 0, blockedUntil: 31_000 },
+      { fired: 1 },
+      { fired: 0 },
+    ]
+    const { storage, lane } = laneHarness({
+      now: () => clock.t,
+      runDue: async () => results.shift() ?? { fired: 0 },
+    })
+    await lane.fetch(nudgeRequest("org:a", clock.t))
+
+    storage.alarm = null
+    await lane.alarm()
+    expect(storage.alarm).toBe(31_000)
+
+    clock.t = 31_000
+    storage.alarm = null
+    await lane.alarm()
+    expect(results).toHaveLength(0)
+  })
+
   it("does nothing when never nudged (no persisted lane key)", async () => {
     const calls: unknown[] = []
     const { lane } = laneHarness({

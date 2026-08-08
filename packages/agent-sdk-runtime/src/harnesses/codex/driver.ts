@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "child_process"
+import { createIdleReaper } from "../shared/process-lifecycle"
 import { randomUUID } from "crypto"
 import fs from "fs"
 import os from "os"
@@ -35,7 +36,6 @@ import {
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
 import { harnessSpawnEnv } from "../shared/spawn-env"
-import { createIdleReaper } from "../shared/process-lifecycle"
 import {
   CODEX_PERMISSION_MODES,
   CODEX_SETTINGS,
@@ -156,11 +156,11 @@ const CODEX_DYNAMIC_TOOLS = [{
 }]
 
 /**
- * How long the app-server may sit with no work before it is reaped.
+ * How long an idle codex app-server survives.
  *
- * Matches the OpenCode adapter's U8-F4 desktop default. Codex is the more
- * expensive one to leave resident, because the driver previously held it for
- * its own lifetime rather than the session's.
+ * Matches the OpenCode adapter's desktop default. Codex is the more expensive
+ * one to leave resident, because the driver otherwise holds it for its own
+ * lifetime rather than the session's.
  */
 function codexIdleTimeoutMs() {
   const configured = Number(process.env.CLAXEDO_CODEX_IDLE_TIMEOUT_MS)
@@ -173,28 +173,29 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   private codexAuth: JsonRecord | undefined
   private process: CodexAppServerProcess | null = null
   /**
-   * The in-flight start, shared by every joiner.
+   * Reap the app-server when nothing is using it.
    *
-   * Cleared in `finally` rather than only on success: a cached rejected start
-   * would make one failed spawn permanent for the life of the driver, which is
-   * the same defect the OpenCode adapter carried.
-   */
-  private processStart: Promise<CodexAppServerProcess> | undefined
-  private processError: string | null = null
-  /**
-   * Reaps the app-server after a quiet period.
+   * Without this the process lives for the driver's lifetime, so an idle
+   * desktop holds a codex app-server it was asked for once. `ensureProcess`
+   * re-spawns transparently, which every caller already relies on.
    *
-   * The driver used to hold its child for the life of the driver, so a desktop
-   * that ran one Codex turn at breakfast still had `codex app-server` resident
-   * at midnight. A prompt turn takes a lease, so a long silent tool call cannot
-   * be reaped mid-flight; `ensureProcess` re-spawns transparently, which is the
-   * same contract every other caller of this driver already relies on.
+   * Restored after a merge took the upstream driver wholesale and dropped it —
+   * upstream never had one. `idle-reaping.test.ts` is what noticed.
    */
   private readonly idleMs = codexIdleTimeoutMs()
   private readonly idle = createIdleReaper({
     idleMs: this.idleMs,
     onIdle: () => this.reapIdleProcess(),
   })
+  private processStartup: Promise<CodexAppServerProcess> | null = null
+  private processStartupAbort: AbortController | null = null
+  private processAuthSync: Promise<void> | null = null
+  private authRevision = 0
+  private processAuthRevision = -1
+  private processAuthWasExplicit = false
+  private lifecycleRevision = 0
+  private disposed = false
+  private processError: string | null = null
   private currentMcp: Record<string, ResolvedMcpServer> = {}
   private activeThreads = new Map<string, CodexActiveThread>()
   private readonly codexHome: string
@@ -213,13 +214,16 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   }
 
   setAuth(keys: SdkRuntimeAuth) {
+    const previous = this.authSignature()
     this.auth = {
       ...this.auth,
       ...(keys.openai !== undefined ? { openai: keys.openai || undefined } : {}),
     }
+    if (this.authSignature() !== previous) this.authRevision++
   }
 
-  applyConfig(config: Record<string, unknown>) {
+  async applyConfig(config: Record<string, unknown>) {
+    const previous = this.authSignature()
     const auth = record(config.auth) as Record<string, string> | undefined
     const source = auth?.["codex-app-server"] ?? auth?.["codex-acp"] ?? auth?.openai
     this.codexAuth = sourceCodexAuthValue(source)
@@ -227,6 +231,9 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       openai: sourceAuthValue(source),
     }
     this.currentMcp = (record(config.mcp) as Record<string, ResolvedMcpServer> | undefined) ?? {}
+    if (this.authSignature() !== previous) this.authRevision++
+    const proc = this.process ?? (this.processStartup ? await this.processStartup : null)
+    if (proc?.alive) await this.syncProcessAuth(proc)
   }
 
   private readonly permissionSelection = new PermissionModeSelection(CODEX_PERMISSION_MODES, "next-turn")
@@ -279,11 +286,11 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
 
   async runTurn(input: SdkRuntimeTurnInput) {
     const threadId = input.getAgentSessionId()
-    const proc = await this.ensureProcess(input.directory)
     // Held for the whole turn, released in the `finally` below. Idle teardown
     // driven by "time since the last request STARTED" would reap a turn that is
     // still inside one long silent tool call.
     const turn = this.idle.lease()
+    const proc = await this.ensureProcess(input.directory)
     let turnId = ""
     let resolveCompleted: (() => void) | undefined
     let rejectCompleted: ((err: Error) => void) | undefined
@@ -470,10 +477,15 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   }
 
   dispose() {
+    if (this.disposed) return
+    this.disposed = true
     this.idle.cancel()
+    this.lifecycleRevision++
     this.activeThreads.clear()
+    this.processStartupAbort?.abort()
     this.process?.dispose()
     this.process = null
+    void this.processStartup?.then((proc) => proc.dispose(), () => {})
   }
 
   async configOptions(currentModel: string, directory?: string): Promise<AgentConfigOptionRow[]> {
@@ -562,29 +574,28 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     log.warn("codex app-server process died; cleared interactive state", { err })
   }
 
-  /**
-   * Start the app-server at most once, however many operations ask at once.
-   *
-   * Without this, two concurrent operations both saw a dead process and both
-   * called `start(...)`: two `codex app-server` children, the second
-   * overwriting `this.process`, and the first leaked — its `onClose` guard
-   * (`this.process === started`) no longer matched, so nothing ever disposed
-   * it. The symptom is orphaned codex processes accumulating under load, which
-   * looks like a leak in the binary rather than in this method.
-   */
-  private ensureProcess(directory: string): Promise<CodexAppServerProcess> {
-    this.idle.touch()
-    if (this.process?.alive) return Promise.resolve(this.process)
-    if (this.processStart) return this.processStart
-    const pending = this.startProcess(directory).finally(() => {
-      if (this.processStart === pending) this.processStart = undefined
-    })
-    this.processStart = pending
-    return pending
+  private async ensureProcess(directory: string) {
+    if (this.disposed) throw new Error("Codex app-server driver is disposed")
+    if (!this.process?.alive && !this.processStartup) {
+      this.process?.dispose()
+      const revision = this.lifecycleRevision
+      const abort = new AbortController()
+      this.processStartupAbort = abort
+      const startup = this.startProcess(directory, revision, abort.signal)
+      const pending = startup.finally(() => {
+        if (this.processStartup === pending) {
+          this.processStartup = null
+          this.processStartupAbort = null
+        }
+      })
+      this.processStartup = pending
+    }
+    const proc = this.processStartup ? await this.processStartup : this.process!
+    await this.syncProcessAuth(proc)
+    return proc
   }
 
-  private async startProcess(directory: string) {
-    this.process?.dispose()
+  private async startProcess(directory: string, lifecycleRevision: number, signal: AbortSignal) {
     let started: CodexAppServerProcess | undefined
     started = await CodexAppServerProcess.start({
       binary: this.options.binary ?? "codex",
@@ -592,32 +603,76 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       env: codexSpawnEnv({
         ...process.env,
         CODEX_HOME: this.codexHome,
-        ...(this.auth.openai ? { OPENAI_API_KEY: this.auth.openai } : {}),
       }),
       requestHandler: (message) => this.handleServerRequest(message),
       processObserver: this.host.processObserver,
       mcp: this.currentMcp,
+      signal,
       onClose: (err) => {
         if (this.process === started) this.process = null
         this.failInteractiveState(err)
       },
     })
-    const tokens = codexChatgptAuthTokens(this.codexAuth)
-    if (tokens && !this.auth.openai) {
-      try {
-        await started.request("account/login/start", {
-          type: "chatgptAuthTokens",
-          accessToken: tokens.access,
-          chatgptAccountId: tokens.accountId,
-          chatgptPlanType: tokens.planType ?? null,
-        })
-      } catch (err) {
-        throw new Error(`Codex ChatGPT auth could not initialize: ${errorMessage(err)}`)
-      }
+    if (this.disposed || lifecycleRevision !== this.lifecycleRevision) {
+      started.dispose()
+      throw new Error("Codex app-server driver was disposed during startup")
     }
     this.process = started
+    this.processAuthRevision = -1
+    this.processAuthWasExplicit = false
     this.processError = null
-    return this.process
+    await this.syncProcessAuth(started)
+    if (this.disposed || lifecycleRevision !== this.lifecycleRevision) {
+      started.dispose()
+      if (this.process === started) this.process = null
+      throw new Error("Codex app-server driver was disposed during startup")
+    }
+    return started
+  }
+
+  private async syncProcessAuth(proc: CodexAppServerProcess): Promise<void> {
+    if (this.processAuthSync) await this.processAuthSync
+    if (this.process !== proc || !proc.alive || this.processAuthRevision === this.authRevision) return
+    const revision = this.authRevision
+    const params = this.loginParams()
+    const pending = (async () => {
+      try {
+        if (params) await proc.request("account/login/start", params)
+        else if (this.processAuthWasExplicit) {
+          await proc.request("account/logout", null)
+        }
+      } catch (err) {
+        throw new Error(`Codex auth could not initialize: ${errorMessage(err)}`)
+      }
+      if (this.process === proc) {
+        this.processAuthWasExplicit = !!params
+        if (revision === this.authRevision) this.processAuthRevision = revision
+      }
+    })()
+    const sync = pending.finally(() => {
+      if (this.processAuthSync === sync) this.processAuthSync = null
+    })
+    this.processAuthSync = sync
+    await this.processAuthSync
+    if (this.process === proc && proc.alive && this.processAuthRevision !== this.authRevision) {
+      await this.syncProcessAuth(proc)
+    }
+  }
+
+  private loginParams() {
+    if (this.auth.openai) return { type: "apiKey", apiKey: this.auth.openai }
+    const tokens = codexChatgptAuthTokens(this.codexAuth)
+    if (!tokens) return
+    return {
+      type: "chatgptAuthTokens",
+      accessToken: tokens.access,
+      chatgptAccountId: tokens.accountId,
+      chatgptPlanType: tokens.planType ?? null,
+    }
+  }
+
+  private authSignature() {
+    return JSON.stringify(this.loginParams() ?? null)
   }
 
   private async handleServerRequest(message: JsonRecord) {
@@ -927,6 +982,7 @@ class CodexAppServerProcess {
   private buffer = ""
   private seq = 0
   private disposed = false
+  private killTimer: ReturnType<typeof setTimeout> | undefined
   private pending = new Map<number, {
     resolve: (value: unknown) => void
     reject: (err: Error) => void
@@ -966,6 +1022,7 @@ class CodexAppServerProcess {
       for (const listener of this.stderrListeners) listener(message)
     })
     this.proc.on("error", (cause) => {
+      if (this.killTimer) clearTimeout(this.killTimer)
       const err = cause instanceof Error ? cause : new Error(String(cause))
       this.exitObservation({ reason: "error" })
       for (const item of this.pending.values()) item.reject(err)
@@ -974,6 +1031,7 @@ class CodexAppServerProcess {
       this.onClose(err)
     })
     this.proc.on("exit", (code, signal) => {
+      if (this.killTimer) clearTimeout(this.killTimer)
       this.exitObservation({ reason: "exited", ...(code !== null ? { exitCode: code } : {}) })
       const err = new Error(`codex app-server exited (${signal ?? code ?? "unknown"})`)
       for (const item of this.pending.values()) item.reject(err)
@@ -991,6 +1049,7 @@ class CodexAppServerProcess {
     onClose?: (err: Error) => void
     processObserver?: AgentProcessObserver
     mcp?: Record<string, ResolvedMcpServer>
+    signal?: AbortSignal
   }) {
     const proc = new CodexAppServerProcess(
       input.binary,
@@ -1001,7 +1060,10 @@ class CodexAppServerProcess {
       input.processObserver,
       input.mcp,
     )
+    const onAbort = () => proc.dispose()
     try {
+      if (input.signal?.aborted) throw new Error("Codex app-server startup was cancelled")
+      input.signal?.addEventListener("abort", onAbort, { once: true })
       await proc.request("initialize", {
         clientInfo: { name: "claxedo-workspace-runtime", version: "0.1.0" },
         capabilities: {
@@ -1015,6 +1077,8 @@ class CodexAppServerProcess {
     } catch (cause) {
       proc.dispose()
       throw cause
+    } finally {
+      input.signal?.removeEventListener("abort", onAbort)
     }
   }
 
@@ -1052,9 +1116,20 @@ class CodexAppServerProcess {
     if (this.disposed) return
     this.disposed = true
     this.exitObservation({ reason: "disposed" })
+    const err = new Error("codex app-server process was disposed")
+    for (const item of this.pending.values()) item.reject(err)
+    this.pending.clear()
+    if (this.proc.exitCode !== null || this.proc.signalCode !== null) return
     try {
       this.proc.kill("SIGTERM")
     } catch {}
+    this.killTimer = setTimeout(() => {
+      if (this.proc.exitCode !== null || this.proc.signalCode !== null) return
+      try {
+        this.proc.kill("SIGKILL")
+      } catch {}
+    }, 1_000)
+    this.killTimer.unref()
   }
 
   private exitObservation(input: { reason: "error" | "exited" | "disposed"; exitCode?: number }) {

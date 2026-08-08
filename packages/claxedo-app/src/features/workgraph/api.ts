@@ -142,11 +142,14 @@ export function createWorkGraphClient(input: { baseUrl?: string; request?: typeo
   }
 
   const command = async (body: z.input<typeof WorkGraphCommandRequestSchema>): Promise<CommandResult> => {
-    const response = await request(url("/commands"), {
+    // A WorkGraph mutation is an owner-blocking interaction. Keep it out of the
+    // bootstrap fetch queue, whose workspace probes can each occupy a throttle
+    // slot for several seconds and otherwise delay a command indefinitely.
+    const response = await request(url("/commands"), bypassFetchThrottle({
       method: "POST",
       headers: { Accept: "application/json", "Content-Type": "application/json" },
       body: JSON.stringify(WorkGraphCommandRequestSchema.parse(body)),
-    }).catch((error) => {
+    })).catch((error) => {
       throw new WorkGraphApiError("offline", error instanceof Error ? error.message : "WorkGraph is offline")
     })
     const value = await response.json().catch(() => {
@@ -172,7 +175,9 @@ export function createWorkGraphClient(input: { baseUrl?: string; request?: typeo
   const snapshotPage = (cursor?: SnapshotResumeCursor) => {
     const query = new URLSearchParams({ limit: "100" })
     if (cursor) query.set("after", cursor)
-    return read(`/snapshot?${query}`, decodeWorkGraphSnapshot)
+    // Mutations stay busy until this canonical reconciliation completes, so
+    // every snapshot page belongs to the same owner-blocking request lane.
+    return read(`/snapshot?${query}`, decodeWorkGraphSnapshot, bypassFetchThrottle({}))
   }
   const snapshot = () => collectWorkGraphSnapshotPages({
     page: snapshotPage,

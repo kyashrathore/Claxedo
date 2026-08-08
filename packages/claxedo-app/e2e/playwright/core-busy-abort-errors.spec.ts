@@ -23,8 +23,8 @@
  *     (`src/components/prompt-input/submit-abort.ts:40`, BEFORE the network abort call
  *     resolves — abort is itself optimistic/instant). `"server"` writes come from the
  *     `/global/event` SSE stream (`session.status`, `session.idle`, `session.error` —
- *     `applySessionStatusSseEvent`, session-status-dispatcher.ts:120-166) or from a
- *     direct `GET /session/:id/status` response.
+ *     `applySessionStatusSseEvent`, session-status-dispatcher.ts:120-166) or from the
+ *     canonical bulk `GET /session/status` live-status map.
  *   - ANY server-source status write — regardless of its value, even another "busy" —
  *     clears the four escalation timers below (session-status-dispatcher.ts:92-97,
  *     "one contract for session-status writes"). This is why the escalation ladder is
@@ -42,25 +42,22 @@
  *     "server"-shaped write in the sense that it flows through the SAME status cache,
  *     but it is dispatched WITHOUT clearing the timer chain (`dispatchSessionStatusTimeoutStage`
  *     only advances `stage` bookkeeping, session-status-dispatcher.ts:168-182).
- *   - Independent of the ladder AND of the `session.idle` SSE event, an assistant
- *     message becoming non-empty (parts.length>0) or carrying an `error` is enough for
+ *   - Independent of the ladder AND of the `session.idle` SSE event,
  *     `requestAcceptedPromptRefresh` (`src/session/store/accepted-prompt-refresh.ts`,
- *     consumed by an effect in `src/session/store/session-controller.ts:806-830`) to
- *     force-resync the session over REST (`syncCompatSession`, retry delays `[0, 600,
- *     1200, 2400, 4000, 8000, 12000]`ms — `ACCEPTED_PROMPT_REFRESH_ATTEMPT_DELAYS_MS`,
- *     session-controller.ts:137) and dispatch a `session.status: idle` (source
- *     "server") the moment `conversationHasAssistantMessage` (session-controller.ts:65-71)
- *     sees content. THIS is the mechanism that reconciles "stale-busy" without user
- *     action, decoupled from the missing `session.idle` SSE event.
+ *     consumed by an effect in `src/session/store/session-controller.ts`) refreshes
+ *     transcript history and the canonical live-status map together on retry delays
+ *     `[0, 600, 1200, 2400, 4000, 8000, 12000]`ms. Reconciliation completes only when
+ *     `conversationHasAssistantMessage` sees the accepted turn's reply and the status
+ *     producer reports the session absent/idle. A failed status read leaves the local
+ *     status unresolved. This is the mechanism that handles a dropped terminal SSE
+ *     frame without inventing status from transcript content.
  *   - A THIRD, independent reconciliation path also exists: while a turn is active,
  *     `useQuery` at `session-controller.ts:898-932` runs a "get the real status once,
  *     ~60s after the turn went active" poll (`waitForFirstActiveSessionStatusPoll`,
  *     `ACTIVE_SESSION_STATUS_POLL_DELAY_MS=60_000`, session-controller.ts:135,152-161),
  *     then `refetchInterval: ACTIVE_SESSION_STATUS_POLL_INTERVAL_MS` (5s) thereafter.
- *     Its queryFn (`refreshMeta`→`syncSessionMeta`, session-controller.ts:879-896)
- *     hits `GET /session/:id/status` directly — a resolved response of ANY shape
- *     (including an empty one, which the status query's own fallback treats as
- *     `{type:"idle"}`) reconciles the session regardless of message content. The
+ *     Its queryFn (`refreshMeta`→`syncSessionMeta`) reads the same bulk live-status
+ *     map; absence is the server protocol's canonical representation of idle. The
  *     escalation-ladder scenario below must starve THIS path too (by never letting
  *     `/session/status` resolve at all), not just the other two.
  *   - Timeline "settled" state: `assistantMessageSettled(message)` is
@@ -133,8 +130,8 @@
  *   2. PERMANENT executable regression: "stale-busy" — the assistant message reaches
  *      `time.completed` but the `session.idle` SSE event is never sent. The reply is
  *      still visibly rendered (DOM+geometric+evidence) and the submit control returns
- *      to ready WITHOUT any user action, reconciled by the REST-polling mechanism in
- *      STATE MODEL, not by the missing SSE event.
+ *      to ready WITHOUT any user action, reconciled from the canonical live-status
+ *      producer described in STATE MODEL.
  *   3. Clicking the submit control while busy (its `data-icon` is `"stop"`) aborts the
  *      turn: `session.status` flips to idle IMMEDIATELY (optimistic, before any network
  *      response), a `POST /session/:id/abort` fires, and the submit control returns to
@@ -452,9 +449,9 @@ test.describe("core busy / abort / errors @core", () => {
     await sendPrompt(page, input, promptText)
 
     // The oracle's three layers include "submit control back to ready" — this is the
-    // exact claim the historical regression broke. `session.idle` is NEVER sent by
-    // this mock (staleBusy:true); reconciliation instead comes from the REST-polling
-    // mechanism in STATE MODEL, which this assertion proves end to end.
+    // exact claim the historical regression broke. `session.idle` is never sent by
+    // this mock; the canonical live-status route settles after message completion,
+    // and accepted-prompt reconciliation must observe that producer without user action.
     await expectAssistantReplyVisible(page, `ack 1: ${promptText}`)
     expect(mock.requests.promptCount).toBe(1)
   })
@@ -733,7 +730,9 @@ test.describe("core busy / abort / errors @core", () => {
     // is shown in the card's collapsed raw-detail (first-turn-recovery-card.tsx
     // RawDetail); this error classifies as "unknown" (matches none of the credential/
     // session/harness/model/workspace regexes).
-    const errorCard = page.getByTestId("first-turn-recovery-card")
+    // Keep this locator pinned to the original failed turn. Resending creates a
+    // second legitimate failed turn and therefore a second recovery card.
+    const errorCard = page.getByTestId("first-turn-recovery-card").first()
     await expect(errorCard, "recovery/error card never rendered").toBeVisible({ timeout: 20_000 })
     await expect(errorCard).toHaveAttribute("data-recovery-class", "unknown")
     await expect(errorCard).toContainText("overloaded_error: The server is overloaded, please retry later.")

@@ -70,7 +70,7 @@ describe("serialization lanes (serialKey)", () => {
 
     // lease still live: the same-key pending wake must NOT be claimable
     clock.t += 1_000 // < 30s default lease
-    expect((await wakes.runDue()).fired).toBe(0)
+    expect(await wakes.runDue("org:a")).toEqual({ fired: 0, blockedUntil: 1_030_010 })
     expect(fired).toHaveLength(0)
 
     // lease lapses: reclaim re-drives the stuck wake, freeing the lane for the second

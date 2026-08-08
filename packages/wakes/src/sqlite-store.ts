@@ -248,8 +248,12 @@ export class SqliteWakeStore implements WakeStore {
     return rows.map(rowToWake)
   }
 
-  async listFiring(): Promise<Wake[]> {
-    return (this.db.prepare("SELECT * FROM wakes WHERE state = 'firing'").all() as Row[]).map(rowToWake)
+  async listFiring(serialKey?: string | null): Promise<Wake[]> {
+    const laneFilter =
+      serialKey === undefined ? "" : serialKey === null ? "AND serial_key IS NULL" : "AND serial_key = ?"
+    const laneParams = typeof serialKey === "string" ? [serialKey] : []
+    return (this.db.prepare(`SELECT * FROM wakes WHERE state = 'firing' ${laneFilter}`).all(...laneParams) as Row[])
+      .map(rowToWake)
   }
 
   async listForSession(sessionId: SessionId): Promise<Wake[]> {

@@ -8,6 +8,7 @@ const {
   seedProjectCatalog, seedCommandList, sessionStatusFor, localSessionRef, promptLengthForTest,
   repoMainPromptScope, promptValue, state, calls, boots, apiCalls, fetchCalls, unsignedCalls,
   runtimeCalls, transportPromptAsyncCalls, sessionCreateCalls, transportClients, harnessSetCalls,
+  harnessClaimCalls,
   buildRequestPartCalls, shellCalls, commandCalls, navCalls, flowEvents, handoffCalls, toasts,
   promptCalls, optimisticAdds, optimisticRemoves, promptContextItems, promptContextAdds,
   promptContextRemoves, refreshCalls, bootstrapCalls, worktreeCreateCalls, enabledAutoAccept,
@@ -50,7 +51,7 @@ describe("Harness + demo dispatch and abort", () => {
   })
 
 
-  test("harness draft submit reuses the prewarmed session instead of creating one on send", async () => {
+  test("harness draft submit claims its session with the complete initial config", async () => {
     state.demoMode = false
     state.harnessMode = true
     const submit = createPromptSubmit({
@@ -86,20 +87,20 @@ describe("Harness + demo dispatch and abort", () => {
       undefined,
     ])
     expect(apiCalls).toHaveLength(0)
-    const configCalls = unsignedCalls.filter((call) => call.url.includes("/session/session-1/config"))
-    expect(configCalls).toHaveLength(1)
-    expect(configCalls[0]?.url).toBe("http://localhost:3001/session/session-1/config?directory=%2Frepo%2Fmain&harness=claude-acp")
-    expect(configCalls[0]?.method).toBe("PATCH")
-    expect(configCalls[0]?.authorization).toBeNull()
+    expect(unsignedCalls.filter((call) => call.url.includes("/session/session-1/config"))).toHaveLength(0)
+    expect(harnessClaimCalls).toContainEqual({
+      directory: "/repo/main",
+      sessionId: undefined,
+      sessionConfig: {
+        agent: "agent",
+        model: { providerID: "claude-acp", modelID: "opus" },
+        variant: undefined,
+      },
+    })
     expect(transportClients).toHaveLength(1)
     expect(transportClients[0]?.baseUrl).toBe("http://localhost:3001")
     expect(transportClients[0]?.directory).toBe("/repo/main")
     expect(transportClients[0]?.fetch).not.toBeUndefined()
-    expect(JSON.parse(configCalls[0]?.body ?? "{}")).toEqual({
-      harness: { type: "claude-acp" },
-      agent: "agent",
-      model: { providerID: "claude-acp", modelID: "opus" },
-    })
     expect(transportPromptAsyncCalls.at(-1)).toMatchObject({
       sessionID: "session-1",
       directory: "/repo/main",
@@ -155,7 +156,7 @@ describe("Harness + demo dispatch and abort", () => {
   })
 
 
-  test("existing harness follow-up drops a stale persisted OpenCode variant", async () => {
+  test("existing harness follow-up preserves its persisted harness variant", async () => {
     state.demoMode = false
 
     const submit = createSubmit({
@@ -180,13 +181,9 @@ describe("Harness + demo dispatch and abort", () => {
       sessionID: "session-1",
       directory: "/repo/main",
       model: { providerID: "claude-acp", modelID: "opus" },
+      variant: "high",
     })
-    expect(transportPromptAsyncCalls.at(-1)).not.toHaveProperty("variant")
-    expect(JSON.parse(unsignedCalls.at(-1)?.body ?? "{}")).toEqual({
-      harness: { type: "claude-acp" },
-      agent: "build",
-      model: { providerID: "claude-acp", modelID: "opus" },
-    })
+    expect(unsignedCalls.filter((call) => call.url.includes("/config"))).toHaveLength(0)
   })
 
 
@@ -290,9 +287,13 @@ describe("Harness + demo dispatch and abort", () => {
     expect(calls.transportAsync).toBe(1)
     expect(boots).toEqual([])
     expect(apiCalls.some((item) => new URL(item.url).pathname.startsWith("/session/"))).toBe(false)
-    expect(runtimeCalls).toContainEqual(expect.objectContaining({
-      input: "/session/session-1/config?directory=%2Frepo%2Fmain&harness=claude-acp",
-      method: "PATCH",
+    expect(runtimeCalls.some((item) => item.input.includes("/session/session-1/config"))).toBe(false)
+    expect(harnessClaimCalls).toContainEqual(expect.objectContaining({
+      sessionConfig: {
+        agent: "agent",
+        model: { providerID: "claude-acp", modelID: "opus" },
+        variant: undefined,
+      },
     }))
     expect(toasts).toEqual([])
   })
@@ -334,9 +335,13 @@ describe("Harness + demo dispatch and abort", () => {
     expect(calls.shell).toBe(0)
     expect(calls.transportAsync).toBe(1)
     expect(modes).toContain("normal")
-    expect(runtimeCalls).toContainEqual(expect.objectContaining({
-      input: "/session/session-1/config?directory=%2Frepo%2Fmain&harness=claude-acp",
-      method: "PATCH",
+    expect(runtimeCalls.some((item) => item.input.includes("/session/session-1/config"))).toBe(false)
+    expect(harnessClaimCalls).toContainEqual(expect.objectContaining({
+      sessionConfig: {
+        agent: "agent",
+        model: { providerID: "claude-acp", modelID: "opus" },
+        variant: undefined,
+      },
     }))
   })
 

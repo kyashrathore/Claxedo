@@ -218,6 +218,14 @@ export async function interactiveSessionSmoke(env: SmokeEnvironment = process.en
   const userA = required(env.WORKGRAPH_SMOKE_USER_A_ID, "WORKGRAPH_SMOKE_USER_A_ID")
   const organizationA = required(env.WORKGRAPH_SMOKE_ORGANIZATION_A_ID, "WORKGRAPH_SMOKE_ORGANIZATION_A_ID")
   const repositoryUrl = required(env.WORKGRAPH_SMOKE_REPOSITORY_URL, "WORKGRAPH_SMOKE_REPOSITORY_URL")
+  const agent = required(env.WORKGRAPH_SMOKE_AGENT, "WORKGRAPH_SMOKE_AGENT")
+  const providerID = required(env.WORKGRAPH_SMOKE_PROVIDER_ID, "WORKGRAPH_SMOKE_PROVIDER_ID")
+  const modelID = required(env.WORKGRAPH_SMOKE_MODEL_ID, "WORKGRAPH_SMOKE_MODEL_ID")
+  const variant = required(env.WORKGRAPH_SMOKE_EFFORT, "WORKGRAPH_SMOKE_EFFORT")
+  const tools = stringArray(
+    required(env.WORKGRAPH_SMOKE_TOOLS_JSON, "WORKGRAPH_SMOKE_TOOLS_JSON"),
+    "WORKGRAPH_SMOKE_TOOLS_JSON",
+  )
   const retryDelayMs = positiveInteger(env.WORKGRAPH_SMOKE_RETRY_DELAY_MS ?? "2000", "WORKGRAPH_SMOKE_RETRY_DELAY_MS")
 
   const runId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
@@ -274,6 +282,9 @@ export async function interactiveSessionSmoke(env: SmokeEnvironment = process.en
         method: "POST",
         body: JSON.stringify({
           id: sessionId,
+          agent,
+          model: { providerID, id: modelID, variant },
+          tools,
           location: { directory: "/workspace" },
         }),
       }),
@@ -633,6 +644,14 @@ function positiveInteger(value: string, name: string) {
   const parsed = Number(value)
   if (!Number.isInteger(parsed) || parsed < 1) throw new Error(`${name} must be a positive integer`)
   return parsed
+}
+
+function stringArray(input: string, name: string) {
+  const value = parseJson(input, name)
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim())) {
+    throw new Error(`${name} must be a JSON array of non-empty tool IDs`)
+  }
+  return value
 }
 
 function authorization(token: string) {

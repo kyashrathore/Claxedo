@@ -1,12 +1,22 @@
 import { describe, expect, test } from "bun:test"
 import { createHarnessRuntimeSessionActions } from "./harness-runtime-session-actions"
 import type { HarnessScopeInput } from "./store-policy"
+import type { PreparedRuntimeSessionConfig } from "./prepared-session"
+
+type ClaimInput = HarnessScopeInput & { sessionConfig: PreparedRuntimeSessionConfig }
+
+const sessionConfig = {
+  agent: "build",
+  model: { providerID: "claude-sdk", modelID: "sonnet" },
+  variant: "high",
+}
 
 describe("harness runtime session actions", () => {
   test("creates prepared sessions through SDK fetch with harness routing", async () => {
     const fetchUrls: string[] = []
     const clients: ClientInput[] = []
-    const actions = createHarnessRuntimeSessionActions<HarnessScopeInput>({
+    const creates: unknown[] = []
+    const actions = createHarnessRuntimeSessionActions<ClaimInput>({
       base: "http://127.0.0.1:3001",
       runtime: runtime({
         sessionFetch: async (input) => {
@@ -18,7 +28,8 @@ describe("harness runtime session actions", () => {
         clients.push(input)
         return {
           session: {
-            create: async () => {
+            create: async (value) => {
+              creates.push(value)
               await input.fetch("http://127.0.0.1:3001/session", { method: "POST" })
               return { data: { id: "ses_created" } }
             },
@@ -29,7 +40,7 @@ describe("harness runtime session actions", () => {
     })
 
     await expect(actions.create({
-      input: { directory: "/repo" },
+      input: { directory: "/repo", sessionConfig },
       directory: "/repo",
       harness: "claude-acp",
     })).resolves.toBe("ses_created")
@@ -40,11 +51,16 @@ describe("harness runtime session actions", () => {
       throwOnError: true,
     }])
     expect(fetchUrls).toEqual(["http://127.0.0.1:3001/session?harness=claude-acp"])
+    expect(creates).toEqual([{
+      directory: "/repo",
+      agent: "build",
+      model: { providerID: "claude-sdk", id: "sonnet", variant: "high" },
+    }])
   })
 
   test("skips delete outside local config or workspace runtime scopes", async () => {
     const deletes: string[] = []
-    const actions = createHarnessRuntimeSessionActions<HarnessScopeInput>({
+    const actions = createHarnessRuntimeSessionActions<ClaimInput>({
       base: "https://claxedo.example.test",
       runtime: runtime({ useLocal: false }),
       createClient: () => ({
@@ -68,7 +84,7 @@ describe("harness runtime session actions", () => {
   })
 
   test("returns undefined when create response has no id", async () => {
-    const actions = createHarnessRuntimeSessionActions<HarnessScopeInput>({
+    const actions = createHarnessRuntimeSessionActions<ClaimInput>({
       base: "http://127.0.0.1:3001",
       runtime: runtime(),
       createClient: () => ({
@@ -80,7 +96,7 @@ describe("harness runtime session actions", () => {
     })
 
     await expect(actions.create({
-      input: { directory: "/repo" },
+      input: { directory: "/repo", sessionConfig },
       directory: "/repo",
       harness: "claude-acp",
     })).resolves.toBeUndefined()
@@ -88,7 +104,7 @@ describe("harness runtime session actions", () => {
 
   test("deletes local and workspace runtime prepared sessions and swallows failures", async () => {
     const deletes: string[] = []
-    const actions = createHarnessRuntimeSessionActions<HarnessScopeInput>({
+    const actions = createHarnessRuntimeSessionActions<ClaimInput>({
       base: "http://127.0.0.1:3001",
       runtime: runtime({ useLocal: (input) => input?.directory === "/repo" }),
       createClient: () => ({

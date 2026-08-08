@@ -398,7 +398,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       ? {
           model: existingSessionConfig.model,
           agent: input.agent?.() || existingSessionConfig.agent || local.agent.current()?.name || "build",
-          ...(!harnessMode && existingSessionConfig.variant ? { variant: existingSessionConfig.variant } : {}),
+          ...(existingSessionConfig.variant ? { variant: existingSessionConfig.variant } : {}),
         }
       : await resolveSubmittedConfig({
           harnessMode,
@@ -468,6 +468,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         harnessController.claimSession(targetInput.scope, {
           directory: targetInput.directory,
           sessionId: targetInput.sessionID,
+          sessionConfig: targetInput.sessionConfig,
         }),
       onOpencodeCreateError: (err) => {
         const message = errorMessage(err)
@@ -484,14 +485,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       clearBoot()
       return
     }
-    // An OpenCode session is created by `createOpencodeSession`
-    // (submit-create-session.ts) with the full initial config in the create
-    // body, so the runtime already holds the canonical config and a follow-up
-    // PATCH would be a redundant write. A harness session is NOT created here:
-    // it is claimed from the prewarm pool, which created it with `{ directory }`
-    // alone (harness-runtime-session-actions.ts), so its config still has to be
-    // written on the first submit.
-    const sessionConfigWrittenOnCreate = target.created && !harnessMode
     const provisionalTitle = mode === "normal" ? provisionalSessionTitle(text) : undefined
     const finalizedSessionTarget = finalizeSubmitSessionTarget({
       target,
@@ -564,7 +557,16 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const recordPromptSubmissionContext = {
       onSubmit: input.onSubmit,
       saveSessionConfig: () => {
-        if (sessionConfigWrittenOnCreate) return Promise.resolve()
+        // `target.created` covers BOTH paths now: an OpenCode session is
+        // created with its config in the create body, and a harness session is
+        // claimed with `sessionConfig` threaded into the claim. Neither needs a
+        // follow-up PATCH.
+        //
+        // This branch was briefly `target.created && !harnessMode`, because the
+        // harness claim did NOT carry config and those sessions never persisted
+        // theirs. Passing it into the claim is the better fix — it is atomic,
+        // where the follow-up write was not — so the narrower guard is gone.
+        if (target.created) return Promise.resolve()
         if (existingSessionConfig && sameExistingSessionConfig(existingSessionConfig, {
           harnessType: persistedHarnessType,
           agent,

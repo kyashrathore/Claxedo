@@ -138,8 +138,11 @@ export class ConvexWakeStore implements WakeStore {
     )) as Wake[]
   }
 
-  async listFiring(): Promise<Wake[]> {
-    return (await this.run.query(api.wakes.listFiringWakes, this.args({}))) as Wake[]
+  async listFiring(serialKey?: string | null): Promise<Wake[]> {
+    return (await this.run.query(
+      api.wakes.listFiringWakes,
+      this.args(serialKey === undefined ? {} : { serial_key: serialKey }),
+    )) as Wake[]
   }
 
   async listForSession(sessionId: SessionId): Promise<Wake[]> {

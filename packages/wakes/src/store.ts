@@ -51,8 +51,11 @@ export interface WakeStore {
    * path, which was a plain SELECT and could hand the same row to two drivers.
    */
   reclaimFiring(nowMs: number, leaseMs: number, serialKey?: string | null): Promise<Wake[]>
-  /** All `firing` rows — the boot-sweep set. */
-  listFiring(): Promise<Wake[]>
+  /**
+   * `firing` rows — the boot-sweep set. `serialKey` scopes like `claimDue` so
+   * a pushed lane can read the exact live lease that currently blocks it.
+   */
+  listFiring(serialKey?: string | null): Promise<Wake[]>
   listForSession(sessionId: SessionId): Promise<Wake[]>
 
   // budget counters

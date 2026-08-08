@@ -369,8 +369,10 @@ export type MockRuntimeOptions = {
   harnessGetPollSettleAfter?: number
   /** Assistant reply text builder. Defaults to `ack <n>: <prompt text>` (legacy vocabulary). */
   replyText?: (turn: number, promptText: string) => string
-  /** Message is marked `time.completed` but `session.idle` is never sent. */
+  /** Message and the live-status route settle, but the `session.idle` event is never sent. */
   staleBusy?: boolean
+  /** Keep the authoritative message and live status busy until the test aborts the turn. */
+  holdTurn?: boolean
   /** Extra delay (ms) inserted before `session.idle`, after the message completes. */
   delayedIdleMs?: number
   /** Emits `session.error` (and marks the assistant message `error`) instead of completing normally. */
@@ -1154,6 +1156,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     messages = [...messages, assistantRow]
     emit({ type: "message.updated", properties: { sessionID: SESSION_ID, info: assistantRow.info } })
 
+    if (options.holdTurn) return
+
     const fullText = replyTextFn(input.turn, input.text)
     if (options.errorMidTurn) {
       await wait(timings.delta)
@@ -1212,10 +1216,13 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       properties: { sessionID: SESSION_ID, info: messages.find((row) => row.info.id === input.assistantID)!.info },
     })
 
-    // Deliberately NOT settled in the live map either: a stale-busy server is one
-    // that never reports the turn finished by ANY route, which is the whole point
-    // of the scenario. Settling here would reproduce the contradiction above.
-    if (options.staleBusy) return // idle deliberately never sent
+    // Keep the live-status route authoritative even when the event stream drops the
+    // terminal frame. Reconciliation must read this settled producer; it must not
+    // infer or synthesize idle from the transcript.
+    if (options.staleBusy) {
+      setSessionStatus(SESSION_ID)
+      return // idle event deliberately never sent
+    }
 
     await wait(timings.idle + (options.delayedIdleMs ?? 0))
     setSessionStatus(SESSION_ID)
@@ -2193,6 +2200,16 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       if (options.configPatchFailure && Object.keys(body).some((key) => ["harness", "model", "agent", "variant"].includes(key))) {
         return json(route, { error: { code: "session_create_failed", message: "config unavailable" } }, 500)
       }
+      const createModel = body.model && typeof body.model === "object" && !Array.isArray(body.model)
+        ? body.model as Record<string, unknown>
+        : undefined
+      if (body.model === null) savedModel = null
+      if (typeof createModel?.providerID === "string" && typeof createModel.id === "string") {
+        savedModel = { providerID: createModel.providerID, modelID: createModel.id }
+      }
+      if (typeof body.agent === "string" || body.agent === null) savedAgent = body.agent
+      if (typeof body.variant === "string" || body.variant === null) savedVariant = body.variant
+      if (!("variant" in body) && typeof createModel?.variant === "string") savedVariant = createModel.variant
       const sessionHarness = new URL(url).searchParams.get("harness")
       if (sessionHarness && sessionHarness !== "opencode") requests.harnessSessionCreateCount += 1
       else requests.opencodeSessionCreateCount += 1
@@ -2353,6 +2370,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // network, and proving exactly that is what `holdAbort` exists for.
     requests.abortCount += 1
     if (abortGate) await abortGate
+    if (options.holdTurn) {
+      setSessionStatus(SESSION_ID)
+      emit({ type: "session.idle", properties: { sessionID: SESSION_ID } })
+    }
     return json(route, { ok: true, status: "cancelled" })
   })
 
