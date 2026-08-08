@@ -1,10 +1,6 @@
 import { configureSessionAppPorts } from "@/features/session/app-ports"
-import { configureTerminalAppPorts } from "@/features/terminal/app-ports"
-import { configureSettingsAppPorts } from "@/features/settings/app-ports"
-import { configureOnboardingAppPorts } from "@/features/onboarding/app-ports"
 import { configureDocumentsAppPorts } from "@/features/documents/app-ports"
 import { configureWorkGraphAppPorts } from "@/features/workgraph/app-ports"
-import { configureReviewAppPorts } from "@/features/review/app-ports"
 import { configureWorkspacesAppPorts } from "@/features/workspaces/app-ports"
 import * as SDK from "@/app/providers/sdk/sdk"
 import * as GlobalSDK from "@/app/providers/global-sdk/provider"
@@ -36,49 +32,50 @@ import * as LayoutActions from "@/app/workbench/actions/shared"
 import * as WorkspaceRecovery from "@/features/workspaces/actions/workspace-recovery"
 import * as Marketplace from "@/features/extensions/marketplace/api"
 import * as SessionScope from "@/features/session/ui/components/session-pane-scope"
-import * as ConnectIntegration from "@/app/dialogs/connect-integration"
-import * as ProviderListModule from "@/app/dialogs/provider-list"
-import * as ProviderConnectFormModule from "@/app/dialogs/provider-connect-form"
-import * as SandboxSectionLogic from "@/features/settings/ui/sandbox-section-logic"
-import * as SandboxDriverLogoModule from "@/features/settings/ui/sandbox-driver-logo"
-import * as LinkModule from "@/app/controls/link"
-import * as SessionModels from "@/features/session/providers/models"
-import * as ConnectProvider from "@/app/dialogs/connect-provider"
-import * as ConnectAI from "@/app/dialogs/connect-ai"
-import * as SelectProvider from "@/app/dialogs/select-provider"
-import * as CustomProvider from "@/app/dialogs/custom-provider"
 import * as SessionSync from "@/features/session/providers/session-sync"
 import * as MarkdownTab from "@/app/workbench/lib/open-markdown-page-tab"
 import * as ProjectEnsure from "@/features/workspaces/data/query/project-ensure"
 import * as SurfaceRoute from "@/app/workbench/state/surface-route"
-import * as Prompt from "@/features/session/providers/prompt"
-import * as PanePreferences from "@/features/session/preferences/pane"
-import * as ReleaseNotes from "@/app/dialogs/release-notes"
 import * as TerminalFit from "@/features/terminal/workbench/terminal-fit"
-import * as Dialogs from "@/app/dialogs"
-import * as DialogSettingsModule from "@/app/dialogs/settings"
-import * as DialogSelectDirectoryModule from "@/app/dialogs/select-directory"
 import * as SessionQueries from "@/features/session/data/sync/queries"
 import * as SessionCache from "@/features/session/data/sync/directory-session-cache"
 import * as CloudStartup from "@/features/session/ui/components/cloud-startup-view"
 import * as DocWorkGraph from "@/app/integrations/doc-workgraph"
-import * as SettingsSourceViews from "@/app/integrations/settings-source-views"
 import * as DocumentMentions from "@/app/integrations/document-mentions"
 import * as AIConnectResolution from "@/app/integrations/ai-connect-resolution"
 import * as RailGitRemote from "@/app/workbench/rail/rail-git-remote"
-import * as TerminalNew from "@/app/workbench/terminal/terminal-new-view"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { createOnboardingFunnel } from "@/features/onboarding"
 import { capture as captureTelemetry, identityProps } from "@/platform/telemetry/analytics"
+import { lazy } from "solid-js"
 
-function useOnboardingFunnel() {
+export const DialogConnectIntegration = lazy(() =>
+  import("@/app/dialogs/connect-integration").then((module) => ({ default: module.DialogConnectIntegration })),
+)
+const DialogRecoverWorkspace = lazy(() =>
+  import("@/features/workspaces/ui/dialogs/recover-workspace-dialog").then((module) => ({
+    default: module.DialogRecoverWorkspace,
+  })),
+)
+const DialogDeleteWorkspace = lazy(() =>
+  import("@/features/workspaces/ui/dialogs/delete-workspace-dialog").then((module) => ({
+    default: module.DialogDeleteWorkspace,
+  })),
+)
+const DialogSettings = lazy(() =>
+  import("@/app/dialogs/settings").then((module) => ({ default: module.DialogSettings })),
+)
+const DialogSelectDirectory = lazy(() =>
+  import("@/app/dialogs/select-directory").then((module) => ({ default: module.DialogSelectDirectory })),
+)
+
+export function useOnboardingFunnel() {
   const platform = usePlatform()
   const config = Config.useConfigOptional()
   return createOnboardingFunnel({
     deployment: platform.platform === "desktop" || config?.sandboxEnabled ? "hosted" : "self-host",
     // `step_done` carries its own `surface` and overrides the default below.
-    capture: (name, properties) =>
-      captureTelemetry(name, { ...identityProps(), surface: "onboarding", ...properties }),
+    capture: (name, properties) => captureTelemetry(name, { ...identityProps(), surface: "onboarding", ...properties }),
   })
 }
 
@@ -140,49 +137,6 @@ configureSessionAppPorts({
   documentMentionText: DocumentMentions.documentMentionText,
 })
 
-configureTerminalAppPorts({
-  useSDK: SDK.useSDK,
-  useClaxedoEventsOptional: Events.useClaxedoEventsOptional,
-  useClaxedoState: State.useClaxedoState,
-  SessionPaneScope: SessionScope.SessionPaneScope,
-  NavigationRow: Navigation.NavigationRow,
-  NavigationStatusDot: Navigation.NavigationStatusDot,
-  NavigationRowStatusGutter: Navigation.NavigationRowStatusGutter,
-  NavigationRowGlyph: Navigation.NavigationRowGlyph,
-  workspacePlacement: WorkspaceConnection.workspacePlacement,
-  recoverMissingWorkspace: WorkspaceRecovery.recoverMissingWorkspace,
-  TerminalNewView: TerminalNew.TerminalNewView,
-})
-
-configureSettingsAppPorts({
-  useProviders: Providers.useProviders,
-  useGlobalSDK: GlobalSDK.useGlobalSDK,
-  useShellQueryOptions: QueryOptions.useShellQueryOptions,
-  DialogConnectProvider: ConnectProvider.DialogConnectProvider,
-  DialogAIConnect: ConnectAI.DialogAIConnect,
-  DialogSelectProvider: SelectProvider.DialogSelectProvider,
-  DialogCustomProvider: CustomProvider.DialogCustomProvider,
-  useModels: SessionModels.useModels,
-  formatKeybind: Command.formatKeybind,
-  parseKeybind: Command.parseKeybind,
-  useCommand: Command.useCommand,
-  DialogConnectIntegration: ConnectIntegration.DialogConnectIntegration,
-  Link: LinkModule.Link,
-  useSettingsSourceViews: SettingsSourceViews.useSettingsSourceViews,
-  useSandboxOnboardingFunnel: useOnboardingFunnel,
-})
-
-// Onboarding renders the same provider catalog and connect form the command
-// palette does, so setup reaches every provider — including OAuth ones — rather
-// than the two hardcoded buttons it used to ship.
-configureOnboardingAppPorts({
-  ProviderList: ProviderListModule.ProviderList,
-  ProviderConnectForm: ProviderConnectFormModule.ProviderConnectForm,
-  workspaceSandboxDriversUrl: SandboxSectionLogic.workspaceSandboxDriversUrl,
-  workspaceSandboxDriverAuthUrl: SandboxSectionLogic.workspaceSandboxDriverAuthUrl,
-  SandboxDriverLogo: SandboxDriverLogoModule.SandboxDriverLogo,
-})
-
 configureDocumentsAppPorts({
   useClaxedoEventsOptional: Events.useClaxedoEventsOptional,
   useSessionSyncOptional: SessionSync.useSessionSyncOptional,
@@ -195,20 +149,8 @@ configureDocumentsAppPorts({
   turnDocumentIntoWork: DocWorkGraph.turnDocumentIntoWork,
 })
 
-// WorkGraph consumes exactly one shell capability: the central Claxedo events
-// bus, where the server rings the `workgraph.changed` doorbell that replaced the
-// deleted `GET /api/workgraph/changes` long-poll.
 configureWorkGraphAppPorts({
   useClaxedoEventsOptional: Events.useClaxedoEventsOptional,
-})
-
-configureReviewAppPorts({
-  useFile: FileContext.useFile,
-  usePrompt: Prompt.usePrompt,
-  useSDK: SDK.useSDK,
-  createPanePreferences: PanePreferences.createPanePreferences,
-  reviewModePreferenceScope: PanePreferences.reviewModePreferenceScope,
-  DialogReleaseNotes: ReleaseNotes.DialogReleaseNotes,
 })
 
 configureWorkspacesAppPorts({
@@ -219,11 +161,11 @@ configureWorkspacesAppPorts({
   useClaxedoEvents: Events.useClaxedoEvents,
   useConfigOptional: Config.useConfigOptional,
   emitTerminalFit: TerminalFit.emitTerminalFit,
-  DialogRecoverWorkspace: Dialogs.DialogRecoverWorkspace,
-  DialogDeleteWorkspace: Dialogs.DialogDeleteWorkspace,
-  DialogSettings: DialogSettingsModule.DialogSettings,
-  DialogSelectDirectory: DialogSelectDirectoryModule.DialogSelectDirectory,
-  DialogConnectIntegration: ConnectIntegration.DialogConnectIntegration,
+  DialogRecoverWorkspace,
+  DialogDeleteWorkspace,
+  DialogSettings,
+  DialogSelectDirectory,
+  DialogConnectIntegration,
   ensureDirectorySessionCache: LayoutActions.ensureDirectorySessionCache,
   findProjectForWorkspace: LayoutActions.findProjectForWorkspace,
   message: LayoutActions.message,
@@ -239,3 +181,7 @@ configureWorkspacesAppPorts({
   WorkspaceStateButton: CloudStartup.WorkspaceStateButton,
   isForbiddenConnectionError: CloudStartup.isForbiddenConnectionError,
 })
+
+if ((window as unknown as Record<string, unknown>).__claxedoPerfTrace === true) {
+  performance.mark("runtime.featurePortsModuleEvaluated")
+}

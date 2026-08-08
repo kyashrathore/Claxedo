@@ -68,4 +68,29 @@ describe("ClaxedoSessionReview", () => {
     await Promise.resolve()
     expect(onDiffContentRequired).not.toHaveBeenCalled()
   })
+
+  test("mounts changed-file headers progressively and includes a focused file beyond the first batch", () => {
+    const diffs = Array.from({ length: 75 }, (_, index) => ({
+      file: `src/file-${index}.ts`,
+      additions: 1,
+      deletions: 1,
+      status: "modified" as const,
+    }))
+    const initial = render(() => (
+      <FileComponentProvider component="div">
+        <ClaxedoSessionReview diffs={diffs} />
+      </FileComponentProvider>
+    ))
+
+    expect(initial.container.querySelectorAll("[data-review-file]")).toHaveLength(20)
+    expect(initial.container.querySelector("[data-review-rendered-files]")?.getAttribute("data-review-total-files")).toBe("75")
+    initial.unmount()
+
+    const focused = render(() => (
+      <FileComponentProvider component="div">
+        <ClaxedoSessionReview diffs={diffs} focusedFile="src/file-74.ts" />
+      </FileComponentProvider>
+    ))
+    expect(focused.container.querySelectorAll("[data-review-file]")).toHaveLength(75)
+  })
 })

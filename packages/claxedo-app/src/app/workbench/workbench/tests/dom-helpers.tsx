@@ -15,7 +15,7 @@ export type CloseEvent = { contentId: string; reason: string }
 
 export type MountOpts = {
   initial?: WorkbenchState
-  mountPolicy?: "always" | "active-only"
+  mountPolicy?: "always" | "active-only" | "visible-once"
   maxMountedContents?: number
   mountCapCandidate?: (contentId: string) => boolean
   keyMap?: Partial<KeyMap>
