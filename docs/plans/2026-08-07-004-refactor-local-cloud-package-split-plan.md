@@ -846,46 +846,17 @@ Terminal states: structural package acceptance with machine-readable inventory a
 
 **Verification:** Workspace Runtime is the sole local harness dispatcher; process inventory is zero before explicit work and after idle; all adapter lifecycle/security/replay tests pass.
 
-- [ ] **Unit 4: Make session inventory and canonical events runtime-owned** — *defect located and reproduced; fix reverted pending a proven discovery path*
+- [x] **Unit 4: Make session inventory and canonical events runtime-owned** — *landed*
 
-**Finding (2026-08-08):** `listSessions` in `packages/workspace-runtime/src/workspace/runtime.ts` is the U8-F7 violation, and it is worse than "reads through an adapter". With no `harness` query it calls `sessionListAdapters()`, which invokes `ensure()` AND additionally starts OpenCode whenever the configured runner is something else. So the plainest read in the product — the inventory the empty shell fetches on every launch — starts one or two harness processes before it can answer. An idle desktop cannot be idle.
+**Status (2026-08-08):** Landed. Generic session listing is store-only, mutations write through, and the compatibility stream no longer starts a harness.
 
-**Why the obvious fix is not committed:** making generic listing store-only is a two-line change, but it makes the explicit `?harness=` path the ONLY route by which sessions predating the store are imported — and that path does not durably import them.
+**How the discovery problem was solved.** Store-only listing was blocked by one thing: it made the explicit `?harness=` path the only route by which sessions predating the store are imported, and nothing triggered that route. The answer was not an app-side affordance but a durable per-directory marker in the store (`session_inventory_import`). The first generic list for a directory runs the full discovery fan-out and records the import; every later list is store-only. That is correct for two distinct populations — a profile upgrading onto the store, and a fresh profile sitting on an existing harness install — and it costs one harness start per directory, once, ever, instead of one or two on every launch.
 
-**Root cause found (2026-08-08), and it was not where the symptom pointed.** `bindDiscoveredSession` decided "already imported" from the session ID alone: `store().getSession(id)` returning any row suppressed the bind. A row belonging to a DIFFERENT directory therefore blocked the import, so the session was never associated with the directory being listed and never appeared in its inventory — discovery ran, fetched the upstream row, returned it to the caller, and imported nothing. That bites whenever one agent session ID is reachable from two workspace directories: a moved or re-cloned workspace, or sibling worktrees sharing a harness session.
+The measured blocker count went 6 -> 3 -> 2 -> 1 -> 0. The last one, `embedded workspace runtime > reconciles persisted runtime titles when rebuilding a workspace after restart`, passes unchanged: that test starts from a fresh store with a populated upstream, which is exactly the first-import case. The cross-runner isolation test was re-expressed rather than deleted — name the harness that owns the session, then a plain list includes it, which is what the test is actually about.
 
-**Fixed and landed:** the bind now runs when there is no existing row *for this directory*. This is a strict improvement independent of the rest of the unit and breaks no consumer.
+**The second harness start was one layer over.** `/global/event` proxied to OpenCode by calling `ensure()` plus `getRequestFn()`, and the embedded runtime opens that stream at every workspace rebuild. So even with listing fixed, a desktop configured for OpenCode still spawned it at launch to serve an event stream. The proxy now attaches only to an already-live transport (`transportLive()`), and takes an activity lease for the stream's life (`acquireRequestFn()`) so the idle reaper cannot cut it mid-delivery. When nothing is running the runtime's own hub answers, which is the authoritative producer of canonical events anyway.
 
-**Mutations now write through (2026-08-08).** Create, update, and delete each reach the durable store: `createSession` is exposed on `SessionRoutes` and supplies a store bind; `afterUpdateSession` is exposed and applies renames/archives; `afterDeleteSession` now removes the row instead of only invalidating the transcript cache. Delete in particular was harmless while listing fanned out — the adapter simply stopped returning the session — but a store-owned inventory would have resurrected every deleted session.
-
-**Store-only listing: 6 blocking server tests down to 3.** With the write-throughs in place, the two-line change passes the whole workspace-runtime suite and now fails only:
-
-- `agent lifecycle integration > cross-runner session isolation > binds discovered sessions to the runner that listed them so all session APIs keep working`
-- `agent lifecycle integration > cross-runner session isolation > keeps the binding aligned with the freshest discovered runner when duplicate session ids appear across runners`
-- `embedded workspace runtime > reconciles persisted runtime titles when rebuilding a workspace after restart`
-
-All three depend on list-time CROSS-RUNNER discovery: a session created under one runner being found and bound when another runner lists.
-
-**A narrower variant gets it to 2.** Rather than making listing store-only, `sessionListAdapters()` can discover from adapters that are ALREADY running and simply never start one — dropping the `ensure()` call and the unconditional OpenCode force-start. That satisfies what U8-F7 actually protects (the empty shell must not spawn a harness to answer a list) while keeping cross-runner discovery for any adapter the session already brought up. Measured: `claxedo-server` blocking tests fall from 3 to 2, leaving
-
-- `agent lifecycle integration > cross-runner session isolation > binds discovered sessions to the runner that listed them so all session APIs keep working`
-- `embedded workspace runtime > reconciles persisted runtime titles when rebuilding a workspace after restart`
-
-Both require discovery from an adapter that is NOT yet running, which is exactly the case the explicit selected-harness refresh must take over. That refresh is server- and app-side work (`session/routes/meta-routes.ts`, `claxedo-app` inventory queries).
-
-**Taken to 1, and the last one is a product gate, not a test.** With the no-start variant applied, the cross-runner isolation test re-expresses cleanly: name the harness to import, then a plain list includes it, which is what that test is actually about. Verified passing.
-
-The single remaining failure is `embedded workspace runtime > reconciles persisted runtime titles when rebuilding a workspace after restart`. It is not a test artifact. On workspace rebuild the runtime lists upstream sessions and delivers them through `onSessionMetaSnapshot` so titles generated before a restart survive. Under the no-start variant nothing is running at rebuild time, so the snapshot is empty — and for a user upgrading, session titles would disappear from the shell until they manually refreshed.
-
-That is precisely the behaviour the unit's "named selected-harness refresh imports historical harness metadata idempotently" is meant to carry, but the APP has to trigger that refresh once for an upgraded profile. Until it does, landing this ships a visible regression.
-
-**Recommended order:** (1) app-side one-time reconciliation refresh for an upgraded profile; (2) the no-start variant plus the two re-expressed tests, which are already written and verified; (3) the explicit-refresh migration of remaining consumers; (4) store-only listing. Steps 2–4 are small once step 1 exists. Both listing variants are reverted for now; the write-throughs are kept because they stand alone and every suite is green with them.
-
-**Where the write-through seam is (probed 2026-08-08).** `POST /session` in `routes/session-core.ts` calls `opts.createSession ?? adapter.createSession(...)`, and `runtime.ts` supplies no `createSession`, so creation lands only in the adapter. `session-core.ts` has no store access by design — the store lives in `runtime.ts`'s closure — so the write-through belongs in a `createSession` handler passed alongside the existing `listSessions` one.
-
-That handler is about ten lines. The blocker is one layer up: `runtime.ts` mounts `SessionRoutes` (`routes/session.ts`), whose options type does not expose `createSession` even though `createSessionRoutes` beneath it does. Threading it through `SessionRoutes` is the first concrete edit of this unit.
-
-**Next step:** expose `createSession` on `SessionRoutes`' options, supply a handler from `runtime.ts` that calls the adapter and then `store().bindSession({ sessionId, directory, title, agentSessionId })` — idempotent, because `bindSession` upserts and `bindDiscoveredSession` now skips a row already bound to this directory. Then do the same for update, title, status, and delete, publishing one canonical event each; then move the server and app consumers onto that inventory plus an explicit selected-harness refresh; then land the two-line store-only listing with them in one slice.
+**Not done:** the store-backed status projection and the per-transition canonical event for status specifically. Create, update, title, and delete each write through and publish; status transitions still flow only through the live adapter stream, which is correct while a session is running but leaves a restarted shell showing the last persisted status rather than a reconciled one. That is a visible-but-minor staleness, not a harness start, so it does not gate the split.
 
 **Goal:** Make generic local hydration independent of every harness and compatibility stream, with durable runtime metadata and an explicit selected-harness refresh for historical imports.
 
