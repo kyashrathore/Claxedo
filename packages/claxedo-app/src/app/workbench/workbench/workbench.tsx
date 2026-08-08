@@ -21,7 +21,7 @@ export type WorkbenchProps = {
   renderContent: (contentId: string, ctx: PaneCtx) => JSX.Element
   renderEmpty?: () => JSX.Element
   keyMap?: Partial<KeyMap>
-  mountPolicy?: "always" | "active-only"
+  mountPolicy?: "always" | "active-only" | "visible-once"
   maxMountedContents?: number
   mountCapCandidate?: (contentId: string) => boolean
   onFocusChange?: (paneId: string | null, contentId: string | null) => void
@@ -264,6 +264,15 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
     return map
   })
   const visibleContentSet = createMemo(() => new Set(contentPaneMap().keys()))
+  const [activatedContentIds, setActivatedContentIds] = createSignal<ReadonlySet<string>>(new Set())
+  createEffect(() => {
+    if (mountPolicy() !== "visible-once") return
+    const visible = visibleContentSet()
+    setActivatedContentIds((previous) => {
+      if ([...visible].every((id) => previous.has(id))) return previous
+      return new Set([...previous, ...visible])
+    })
+  })
   const isVisibleContent = (contentId: string) => visibleContentSet().has(contentId)
   const paneOfContent = (contentId: string) => contentPaneMap().get(contentId) ?? null
 
@@ -273,13 +282,16 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
       ...s.contentIds,
       ...s.panes.map((pane) => pane.contentId).filter((id): id is string => !!id),
     ])]
-    if (mountPolicy() === "always") {
-      if (!props.maxMountedContents || ids.length <= props.maxMountedContents) return ids
-      const visibleIds = ids.filter((id) => visibleContentSet().has(id))
+    if (mountPolicy() === "always" || mountPolicy() === "visible-once") {
+      const eligibleIds = mountPolicy() === "visible-once"
+        ? ids.filter((id) => visibleContentSet().has(id) || activatedContentIds().has(id))
+        : ids
+      if (!props.maxMountedContents || eligibleIds.length <= props.maxMountedContents) return eligibleIds
+      const visibleIds = eligibleIds.filter((id) => visibleContentSet().has(id))
       const alwaysMountedSet = props.mountCapCandidate
-        ? new Set(ids.filter((id) => !props.mountCapCandidate?.(id)))
+        ? new Set(eligibleIds.filter((id) => !props.mountCapCandidate?.(id)))
         : new Set<string>()
-      const idSet = new Set(ids)
+      const idSet = new Set(eligibleIds)
       const visibleCandidateIds = visibleIds.filter((id) => !alwaysMountedSet.has(id))
       const retainedCandidateIds = s.contentRecency
         .filter((id) =>
@@ -288,7 +300,12 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
           (!props.mountCapCandidate || props.mountCapCandidate(id))
         )
         .slice(0, Math.max(0, props.maxMountedContents - visibleCandidateIds.length))
-      return [...new Set([...visibleIds, ...alwaysMountedSet, ...retainedCandidateIds])]
+      const selected = new Set([...visibleIds, ...alwaysMountedSet, ...retainedCandidateIds])
+      // Keep surviving slots in their canonical content order. Recency chooses
+      // which slots survive the cap; it must not reorder their live DOM nodes,
+      // because moving a scroll owner disconnects it and resets its native
+      // offset and virtualizer observers.
+      return eligibleIds.filter((id) => selected.has(id))
     }
     return ids.filter((id) => isVisibleContent(id))
   }
@@ -480,8 +497,8 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
 	                  inset: "0",
 	                  width: "100%",
 	                  height: "100%",
-	                  visibility: "hidden",
-	                  "content-visibility": "hidden",
+	                  opacity: "0",
+	                  "content-visibility": "visible",
 	                  contain: "strict",
 	                  "pointer-events": "none",
 	                  overflow: "hidden",
@@ -521,6 +538,8 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
               <div
                 data-workbench-content={contentId}
                 data-pane-id={paneId() ?? undefined}
+                aria-hidden={!visible()}
+                inert={!visible()}
                 style={slotStyle()}
                 class="transition-[opacity,filter] duration-100"
                 classList={{

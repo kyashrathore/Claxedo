@@ -37,6 +37,20 @@ describe("F. mount retention", () => {
     expect(h.utils.queryByTestId("content-a")).toBeNull()
   })
 
+  test('mountPolicy="visible-once" defers restored hidden content and retains it after opening', () => {
+    const h = mountWorkbench({ mountPolicy: "visible-once" })
+    h.api().contents.add("a")
+    h.api().contents.add("b")
+    h.api().navigation.show("a")
+
+    expect(h.utils.queryByTestId("content-a")).not.toBeNull()
+    expect(h.utils.queryByTestId("content-b")).toBeNull()
+
+    h.api().navigation.show("b")
+    expect(h.utils.queryByTestId("content-a")).not.toBeNull()
+    expect(h.utils.queryByTestId("content-b")).not.toBeNull()
+  })
+
   test("maxMountedContents keeps visible content plus recent hidden content", () => {
     const h = mountWorkbench({ maxMountedContents: 2 })
     h.api().contents.add("a")

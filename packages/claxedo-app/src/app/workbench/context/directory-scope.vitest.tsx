@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library"
+import { cleanup, render, waitFor } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
 const state = vi.hoisted(() => ({
@@ -365,6 +365,26 @@ describe("DirectoryScope bootstrap gating", () => {
     expect(result.queryByText("Waiting for health check")).toBeNull()
   })
 
+  test("mounts a routed local session before the directory session cache warms", async () => {
+    const result = render(() => (
+      <DirectoryScope {...directoryScopeProps}
+        directory="/repo/local"
+        harnessType={() => state.harnessType()}
+        sessionId={() => "ses_existing"}
+        workspaceKind={() => "local"}
+        surfaceId={() => state.surfaceId}
+      >
+        <div>visible local pane content</div>
+      </DirectoryScope>
+    ))
+
+    await waitFor(() => {
+      expect(result.getByText("visible local pane content")).toBeTruthy()
+    })
+    expect(state.refreshDirectory).toHaveBeenCalledWith("/repo/local", "codex-acp", { quiet: undefined })
+    expect(result.queryByText("Preparing workspace")).toBeNull()
+  })
+
   test("mounts cloud draft content before the directory session cache warms once workspace is ready", async () => {
     const result = render(() => (
       <DirectoryScope {...directoryScopeProps}
@@ -603,10 +623,7 @@ describe("DirectoryScope bootstrap gating", () => {
     expect(state.refreshDirectory).not.toHaveBeenCalled()
   })
 
-  test("shows a retryable error instead of spinning forever when the session cache fails to warm", async () => {
-    // A local existing session has no draft/route-session fallback: when the
-    // refresh resolves without populating the cache (the load error is toasted
-    // upstream and swallowed), the pane must not stay on "Preparing workspace".
+  test("keeps a routed local session mounted when its directory cache fails to warm", async () => {
     const result = render(() => (
       <DirectoryScope {...directoryScopeProps}
         directory="/repo/broken"
@@ -621,21 +638,8 @@ describe("DirectoryScope bootstrap gating", () => {
     await waitFor(() => {
       expect(state.refreshDirectory).toHaveBeenCalledWith("/repo/broken", "codex-acp", { quiet: undefined })
     })
-    await waitFor(() => {
-      expect(result.getByText("Failed to load sessions")).toBeTruthy()
-    })
+    await waitFor(() => expect(result.getByText("broken pane content")).toBeTruthy())
     expect(result.queryByText("Preparing workspace")).toBeNull()
-    expect(result.queryByText("broken pane content")).toBeNull()
-
-    state.refreshDirectory.mockClear()
-    fireEvent.click(result.getByRole("button", { name: "Retry" }))
-
-    await waitFor(() => {
-      expect(state.refreshDirectory).toHaveBeenCalledTimes(1)
-    })
-    // Still failing — the error state returns rather than an endless spinner.
-    await waitFor(() => {
-      expect(result.getByText("Failed to load sessions")).toBeTruthy()
-    })
+    expect(result.queryByText("Failed to load sessions")).toBeNull()
   })
 })

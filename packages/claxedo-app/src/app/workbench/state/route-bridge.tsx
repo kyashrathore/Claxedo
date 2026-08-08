@@ -1,7 +1,10 @@
 // target-layer: data — Phase 1/2 will absorb
 import { createEffect, createMemo, createSignal, on, onCleanup, type ParentProps } from "solid-js"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
-import { useGlobalSDK, useLayout, usePlatform, useServer, type LocalProject } from "@claxedo/app"
+import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
+import { useLayout, type LocalProject } from "@/app/providers/layout"
+import { usePlatform } from "@/platform/runtime/platform-provider"
+import { useServer } from "@/app/connection/server"
 import { useQuery } from "@tanstack/solid-query"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
 import { useClaxedoEventsOptional } from "../../integrations/claxedo-events"

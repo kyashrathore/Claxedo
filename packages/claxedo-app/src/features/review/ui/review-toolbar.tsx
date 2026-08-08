@@ -234,6 +234,8 @@ function ReviewToolbarControls(props: {
       <Tooltip value={viewLabel()} placement="bottom" gutter={4}>
         <button
           type="button"
+          data-testid="review-diff-style-toggle"
+          data-review-next-diff-style={props.diffStyle === "split" ? "unified" : "split"}
           data-icon-interaction="binary"
           class="flex size-6 items-center justify-center rounded-sm text-text-weak hover:text-text-base hover:bg-surface-base-hover transition-colors [&_[data-slot=icon-svg]]:!size-3.5"
           aria-label={viewLabel()}

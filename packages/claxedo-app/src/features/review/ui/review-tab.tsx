@@ -264,6 +264,7 @@ export function ReviewTab(props: ReviewTabProps) {
     remoteDiffKey: "",
     remoteDiffs: [] as VcsFileDiff[],
   })
+  const [renderedHunks, setRenderedHunks] = createSignal(0)
 
   const activeDiffRefs = () => {
     const mode = untrack(activeMode)
@@ -476,6 +477,7 @@ export function ReviewTab(props: ReviewTabProps) {
     const loaded = initialReviewOpenDiffs(files, untrack(() => props.focusedDiffPath))
     const focused = untrack(() => props.focusedDiffPath)
     batch(() => {
+      setRenderedHunks(0)
       setStore("loadedDiffs", loaded)
       setStore("openDiffs", focused ? [focused] : [])
     })
@@ -612,7 +614,11 @@ export function ReviewTab(props: ReviewTabProps) {
               </div>
             }
           >
-            <div class="contents" data-review-diff-style={store.diffStyle}>
+            <div
+              class="contents"
+              data-review-diff-style={store.diffStyle}
+              data-review-rendered-hunks={renderedHunks()}
+            >
               <ClaxedoSessionReview
                 diffs={diffs()}
                 diffStyle={store.diffStyle}
@@ -623,6 +629,7 @@ export function ReviewTab(props: ReviewTabProps) {
                 open={store.openDiffs}
                 onOpenChange={(open) => setStore("openDiffs", open)}
                 onDiffContentRequired={loadRequiredVcsDiffContent}
+                onDiffRendered={() => setRenderedHunks((count) => count + 1)}
                 readFile={readFile}
                 onLineComment={handleLineComment}
                 onLineCommentUpdate={handleLineCommentUpdate}
