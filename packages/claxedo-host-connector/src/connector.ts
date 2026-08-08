@@ -64,8 +64,26 @@ export type ConnectorState =
 export function createHostConnector(options: ConnectorOptions) {
   let state: ConnectorState = { status: "idle" }
   let timer: { cancel: () => void } | undefined
+  /**
+   * Which enrollment the connector is living in, counted.
+   *
+   * Heartbeats are not serialized — a beat slower than the interval overlaps
+   * the next one, and `beat()` exists to be called by hand after a wake from
+   * sleep while the pre-sleep request is still open — so a response can arrive
+   * after the enrollment it belonged to is over. Without this, the older of two
+   * overlapping beats wrote its answer unconditionally: a success landing after
+   * a revocation put the connector back into `enrolled`, which is the state
+   * machine being talked out of a terminal decision by a message that predates
+   * it.
+   *
+   * Every departure from an enrolled session goes through `stop`, so bumping it
+   * there is enough: a beat's answer is current if, and only if, this number
+   * has not moved since the beat was issued.
+   */
+  let era = 0
 
   const stop = (reason: Extract<ConnectorState, { status: "stopped" }>["reason"], detail: string) => {
+    era++
     timer?.cancel()
     timer = undefined
     state = { status: "stopped", reason, detail }
@@ -92,6 +110,11 @@ export function createHostConnector(options: ConnectorOptions) {
           ),
           ...(options.displayName ? { displayName: options.displayName } : {}),
         })
+        // A new enrollment is a new era, so a beat still in flight from the
+        // previous one cannot write its expiry onto this one. `stop` bumping is
+        // enough for the pause-and-resume path — this covers a `start` that did
+        // not pass through one.
+        era++
         state = { status: "enrolled", enrollment }
       } catch (error) {
         options.onError?.("enroll", error)
@@ -99,6 +122,9 @@ export function createHostConnector(options: ConnectorOptions) {
         return state
       }
 
+      // The previous loop, if any, before installing this one: an overwritten
+      // handle is a timer nothing holds and `close()` can no longer cancel.
+      timer?.cancel()
       timer = options.setInterval(() => {
         void this.beat()
       }, options.heartbeatIntervalMs)
@@ -108,13 +134,36 @@ export function createHostConnector(options: ConnectorOptions) {
     /** One heartbeat. Exposed so a caller can force one after a wake from sleep. */
     async beat() {
       if (state.status !== "enrolled") return state
+      // `era` is what makes the answer's currency checkable below, and it is
+      // the guard that actually decides the outcome.
+      //
+      // `enrollment` is captured for a narrower reason and changes no behaviour
+      // while that guard stands: the narrowing on line above does NOT survive
+      // the await at runtime, only in the compiler. Reading `state.enrollment`
+      // after the await type-checked, and when the response landed on a
+      // `stopped` state — which carries no enrollment — it spread `undefined`,
+      // which is how the reversal produced a machine enrolled with an expiry,
+      // no id and no host id. Reading it while the narrowing is still true
+      // means no future edit can reintroduce that shape by weakening a guard.
+      const startedIn = era
+      const enrollment = state.enrollment
       try {
         const result = await options.transport.heartbeat({
           hostId: options.hostId,
           signature: await options.keys.sign(heartbeatPayload({ hostId: options.hostId })),
         })
-        state = { status: "enrolled", enrollment: { ...state.enrollment, expires_at: result.expires_at } }
+        // The enrollment this beat was proving ended while it was in flight.
+        // Its answer describes a machine the control plane has already stopped
+        // recognising, so it is dropped rather than adopted.
+        if (startedIn !== era) return state
+        state = { status: "enrolled", enrollment: { ...enrollment, expires_at: result.expires_at } }
       } catch (error) {
+        // Same test on the failing path, for the opposite mistake. A beat that
+        // was already open when the user paused comes back rejected — the
+        // enrollment is being allowed to lapse, so of course it does — and
+        // reporting that as `revoked` tells the user their access was taken
+        // away when they turned it off themselves.
+        if (startedIn !== era) return state
         options.onError?.("heartbeat", error)
         // A rejected heartbeat means the control plane no longer recognises
         // this machine — revoked, paused past expiry, or enrolled elsewhere.

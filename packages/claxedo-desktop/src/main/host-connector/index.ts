@@ -221,6 +221,24 @@ export function setupHostConnector(input: {
 }): HostConnectorSetup {
   let status: HostConnectorStatus = { status: "not-started" }
   let connector: ReturnType<typeof createHostConnector> | undefined
+  /** The one start allowed to be in flight. See `start`. */
+  let starting: Promise<HostConnectorStatus> | undefined
+  /**
+   * Bumped by every pause and every revocation.
+   *
+   * `start` is asynchronous twice over — minting or unsealing the machine key,
+   * then the enrollment handshake — and `ipc.ts` exposes `start`, `pause` and
+   * `revoke` as operations the renderer invokes independently. So "Revoke while
+   * Enable is still spinning" is an ordinary sequence, and without this the
+   * enrollment that was already in flight would arrive afterwards and install
+   * itself: a machine publishing itself to the control plane after the user
+   * took it off the network, holding a key whose only on-disk copy is gone.
+   *
+   * Same device as `account/account-service.ts`, for the same reason — there,
+   * so an in-flight refresh cannot put a live token back into a signed-out
+   * process.
+   */
+  let era = 0
 
   /**
    * Announce a transition.
@@ -238,6 +256,85 @@ export function setupHostConnector(input: {
 
   const live = () => connector !== undefined && connector.state().status !== "stopped"
 
+  /** Whether a pause or a revocation has overtaken the start that began here. */
+  const superseded = (startedIn: number) => startedIn !== era
+
+  /**
+   * One enrollment attempt, start to finish.
+   *
+   * Separated from `start` so that `start` is nothing but the two guards that
+   * decide whether this may run at all — the liveness check, and the
+   * single-flight latch.
+   */
+  const beginStart = async (): Promise<HostConnectorStatus> => {
+    const startedIn = era
+
+    const identity = await loadOrCreateMachineIdentity({
+      safeStorage: input.safeStorage,
+      file: machineIdentityFile(input.userDataDir),
+      platform: input.platform ?? process.platform,
+      ...(input.onError ? { onRejected: (reason) => input.onError?.("machine-identity", reason) } : {}),
+    })
+    if (superseded(startedIn)) {
+      // A revocation deleted the record while this mint was busy writing one,
+      // so the key is back on disk with nothing pointing at it. It is the only
+      // thing that can ever sign as this machine — `machine-identity.ts` keeps
+      // no second copy — so the revocation has to reach the copy this start
+      // made as well, or it did not outlive the launch after all.
+      if (status.status === "stopped" && status.reason === "revoked") machineIdentityFile(input.userDataDir).clear()
+      return status
+    }
+    if (!identity.ok) {
+      input.onError?.("machine-identity", identity.detail)
+      return settle({ status: "unavailable", reason: identity.reason, detail: identity.detail })
+    }
+
+    // Built as a LOCAL, and promoted to `connector` only once it is both
+    // enrolled and still wanted. Assigning first — as this did — meant a
+    // handshake that the user cancelled halfway still ended up as the process's
+    // connector, and one that failed had to be un-assigned afterwards.
+    const pending = createHostConnector({
+      hostId: identity.identity.hostId,
+      keys: identity.identity.keys,
+      transport: accountConnectorTransport(input.run),
+      heartbeatIntervalMs: input.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_MS,
+      setInterval: input.setInterval ?? nodeInterval(),
+      ...(input.displayName ? { displayName: input.displayName } : {}),
+      ...(input.onError ? { onError: (stage, error) => input.onError?.(stage, error) } : {}),
+    })
+    try {
+      const started = await pending.start()
+      if (superseded(startedIn)) {
+        // Paused or revoked during the handshake. CLOSED, not dropped: the
+        // enrollment succeeded and its heartbeat timer is already running, and
+        // an unreferenced connector beats exactly as loudly as a referenced
+        // one. Closing stops the loop and lets the enrollment lapse at its TTL,
+        // which is what both `stop` and `revoke` promise.
+        pending.close()
+        return status
+      }
+      connector = pending
+      settle(started)
+    } catch (error) {
+      // Kept after the connector's own `start()` was fixed to catch the nonce
+      // request, not before it. That fix removed the known escape; this
+      // catches an unknown one, and in Electron main the cost of missing it
+      // is an unhandled rejection during startup. Nothing is closed here on
+      // purpose: `createHostConnector().start()` turns every failure it knows
+      // about into a stopped state, so anything reaching this point escaped
+      // from installing the timer — and there is no loop yet to stop.
+      input.onError?.("enroll", error)
+      // A failure does not get to overwrite a revocation that landed while it
+      // was failing.
+      if (superseded(startedIn)) return status
+      // Any previous connector is dropped with it, so `status()` reports this
+      // failure rather than the state of the one this attempt replaced.
+      connector = undefined
+      settle({ status: "stopped", reason: "error", detail: String(error) })
+    }
+    return status
+  }
+
   return {
     status: () => (connector ? connector.state() : status),
 
@@ -247,46 +344,19 @@ export function setupHostConnector(input: {
       // heartbeat timers beating for one machine, of which only one can be
       // cancelled by `stop()`.
       if (live()) return connector!.state()
-
-      const identity = await loadOrCreateMachineIdentity({
-        safeStorage: input.safeStorage,
-        file: machineIdentityFile(input.userDataDir),
-        platform: input.platform ?? process.platform,
-        ...(input.onError ? { onRejected: (reason) => input.onError?.("machine-identity", reason) } : {}),
+      // The same guard for the window the one above cannot see. Until the
+      // handshake finishes there is no connector to be live, so two Enables in
+      // quick succession — `ipc.ts` makes that one button, twice — both fall
+      // through and enroll. Sharing the first attempt is what makes the second
+      // click a no-op instead of a second machine.
+      starting ??= beginStart().finally(() => {
+        starting = undefined
       })
-      if (!identity.ok) {
-        input.onError?.("machine-identity", identity.detail)
-        return settle({ status: "unavailable", reason: identity.reason, detail: identity.detail })
-      }
-
-      connector = createHostConnector({
-        hostId: identity.identity.hostId,
-        keys: identity.identity.keys,
-        transport: accountConnectorTransport(input.run),
-        heartbeatIntervalMs: input.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_MS,
-        setInterval: input.setInterval ?? nodeInterval(),
-        ...(input.displayName ? { displayName: input.displayName } : {}),
-        ...(input.onError ? { onError: (stage, error) => input.onError?.(stage, error) } : {}),
-      })
-      try {
-        settle(await connector.start())
-      } catch (error) {
-        // Kept after the connector's own `start()` was fixed to catch the nonce
-        // request, not before it. That fix removed the known escape; this
-        // catches an unknown one, and in Electron main the cost of missing it
-        // is an unhandled rejection during startup.
-        //
-        // The connector is DISCARDED rather than kept: its internal state is
-        // still `idle`, and a retained one would make `start()` believe a live
-        // connector already exists and never retry.
-        input.onError?.("enroll", error)
-        connector = undefined
-        settle({ status: "stopped", reason: "error", detail: String(error) })
-      }
-      return status
+      return starting
     },
 
     stop() {
+      era++
       // Closing rather than dropping the reference: the heartbeat timer is the
       // thing that must actually stop, and a garbage-collected connector still
       // beats.
@@ -298,6 +368,7 @@ export function setupHostConnector(input: {
     },
 
     revoke() {
+      era++
       connector?.close()
       // The file, not just the process. The record is the only copy of the
       // private key — `machine-identity.ts` keeps it inside the OS secure

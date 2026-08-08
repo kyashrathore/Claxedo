@@ -72,28 +72,79 @@ function fakeRunner(responses: Partial<Record<string, unknown>> = {}) {
   return { run, calls }
 }
 
-function harness(input: { runner?: ReturnType<typeof fakeRunner>; safeStorage?: SafeStorageApi } = {}) {
+/** A latch the test opens by hand. No timers, no wall clock. */
+function latch() {
+  let open!: () => void
+  const opened = new Promise<void>((resolve) => {
+    open = resolve
+  })
+  return { opened, open }
+}
+
+/**
+ * Poll until the test's own condition holds.
+ *
+ * A condition, never a duration: this is how a test proves a call is genuinely
+ * in flight before it does the thing that has to race it. An unreachable
+ * condition fails by name instead of hanging.
+ */
+async function until(condition: () => boolean, what: string) {
+  for (let attempt = 0; attempt < 1_000; attempt++) {
+    if (condition()) return
+    await Bun.sleep(0)
+  }
+  throw new Error(`timed out waiting for ${what}`)
+}
+
+function harness(
+  input: {
+    runner?: ReturnType<typeof fakeRunner>
+    safeStorage?: SafeStorageApi
+    userDataDir?: string
+    /** Replaces the recording timer, for tests that need installing one to fail. */
+    setInterval?: (fn: () => void, ms: number) => { cancel: () => void }
+  } = {},
+) {
   const runner = input.runner ?? fakeRunner()
   const ticks: Array<() => void> = []
   const cancels = { count: 0 }
   const errors: Array<{ stage: string; error: unknown }> = []
+  const userDataDir = input.userDataDir ?? tempDir()
   const connector = setupHostConnector({
     run: runner.run,
     safeStorage: input.safeStorage ?? fakeSafeStorage(),
-    userDataDir: tempDir(),
+    userDataDir,
     platform: "darwin",
     displayName: "Work laptop",
-    setInterval: (fn) => {
-      ticks.push(fn)
-      return {
-        cancel: () => {
-          cancels.count++
-        },
-      }
-    },
+    setInterval:
+      input.setInterval ??
+      ((fn) => {
+        ticks.push(fn)
+        return {
+          cancel: () => {
+            cancels.count++
+          },
+        }
+      }),
     onError: (stage, error) => errors.push({ stage, error }),
   })
-  return { connector, calls: runner.calls, ticks, cancels, errors }
+  return { connector, calls: runner.calls, ticks, cancels, errors, userDataDir }
+}
+
+/**
+ * Fire every heartbeat timer this harness ever handed out, and report the
+ * traffic that produced.
+ *
+ * The point of collecting ALL of them rather than the current one: an orphaned
+ * timer is by definition the one nothing holds a handle to any more, so a test
+ * that only fired the live timer would find nothing wrong with a machine that
+ * is still publishing.
+ */
+async function beatEveryTimer(input: { ticks: Array<() => void>; calls: Call[] }) {
+  const before = input.calls.length
+  for (const tick of input.ticks) tick()
+  await Bun.sleep(1)
+  return input.calls.slice(before)
 }
 
 describe("the transport", () => {
@@ -339,6 +390,222 @@ describe("setup", () => {
 
     expect(connector.status()).toMatchObject({ status: "stopped", reason: "revoked" })
     expect(calls.filter((call) => call.name === "host.enrollCurrentMachine")).toHaveLength(1)
+  })
+})
+
+/**
+ * Two things happening at once.
+ *
+ * `ipc.ts` registers `start`, `pause` and `revoke` as named operations the
+ * renderer invokes, so "the user clicked Enable twice" and "the user hit Revoke
+ * while Enable was still spinning" are ordinary sequences, not thought
+ * experiments. Every test here proves the overlap before asserting on it: it
+ * holds the first call open at a seam and checks it is actually parked there
+ * before issuing the second.
+ */
+describe("concurrent operations", () => {
+  /** A runner that parks on one operation until the test opens the latch. */
+  function gatedRunner(operation: string) {
+    const inner = fakeRunner()
+    const gate = latch()
+    const arrived = { at: false }
+    return {
+      gate,
+      arrived,
+      calls: inner.calls,
+      runner: {
+        calls: inner.calls,
+        run: async (name: string, params?: Record<string, unknown>) => {
+          if (name === operation) {
+            arrived.at = true
+            await gate.opened
+          }
+          return inner.run(name, params)
+        },
+      } as ReturnType<typeof fakeRunner>,
+    }
+  }
+
+  /**
+   * A seam inside `loadOrCreateMachineIdentity`, which is where the window is.
+   *
+   * The window a second `start` slips through is the one BEFORE `connector` is
+   * assigned — once it holds a connector, even a half-built one, the liveness
+   * check turns the second call away. So a test that parks the first start at
+   * the control plane proves nothing: by then the gap has already closed, and
+   * the test passes against the very code it is meant to indict. `safeStorage`
+   * is the last synchronous thing the mint touches before it writes, so a call
+   * made from here is provably made while the first start is still inside its
+   * identity load.
+   */
+  function duringIdentityMint() {
+    const secure = fakeSafeStorage()
+    const during: { run?: () => void } = {}
+    return {
+      during,
+      safeStorage: {
+        ...secure,
+        encryptString: (plain: string) => {
+          const run = during.run
+          delete during.run
+          run?.()
+          return secure.encryptString(plain)
+        },
+      } satisfies SafeStorageApi,
+    }
+  }
+
+  test("a second start during the first neither re-enrolls nor starts a second timer", async () => {
+    // The orphan: both calls pass the liveness check because neither has
+    // finished, the second connector replaces the first in the only variable
+    // that holds one, and the first keeps beating with nothing able to stop it.
+    const seam = duringIdentityMint()
+    const { connector, calls, ticks } = harness({ safeStorage: seam.safeStorage })
+    let second: Promise<unknown> | undefined
+    // The overlap, proved: this runs while the first start is inside its
+    // identity load, which is the only moment the gap exists.
+    seam.during.run = () => {
+      second = connector.start()
+    }
+
+    await connector.start()
+    await second
+
+    expect(second, "the second start never ran, so this test proved nothing").toBeDefined()
+    expect(calls.filter((call) => call.name === HOST_ENROLLMENT_OPERATIONS.enroll)).toHaveLength(1)
+    expect(ticks).toHaveLength(1)
+  })
+
+  test("pausing leaves nothing beating after two concurrent starts", async () => {
+    // The invariant the user cares about, stated without reference to how many
+    // connectors exist: a paused machine stops publishing. A second timer that
+    // `stop()` cannot reach is a laptop that keeps announcing itself as
+    // available after its owner turned it off.
+    const seam = duringIdentityMint()
+    const { connector, calls, ticks } = harness({ safeStorage: seam.safeStorage })
+    let second: Promise<unknown> | undefined
+    seam.during.run = () => {
+      second = connector.start()
+    }
+
+    await connector.start()
+    await second
+    connector.stop()
+
+    expect(second).toBeDefined()
+    expect(await beatEveryTimer({ ticks, calls })).toEqual([])
+  })
+
+  test("a revoke during the handshake does not leave a machine publishing", async () => {
+    // Revocation is the user taking this laptop off the network. An enrollment
+    // that completes after it — because the request was already in flight —
+    // must not become the process's live connector, or the machine goes on
+    // heartbeating with a key whose only on-disk copy has been destroyed.
+    const gated = gatedRunner(HOST_ENROLLMENT_OPERATIONS.enroll)
+    const { connector, calls, ticks } = harness({ runner: gated.runner })
+
+    const starting = connector.start()
+    await until(() => gated.arrived.at, "the handshake to reach the enrollment call")
+    connector.revoke()
+    gated.gate.open()
+    await starting
+
+    expect(connector.status()).toMatchObject({ status: "stopped", reason: "revoked" })
+    expect(await beatEveryTimer({ ticks, calls })).toEqual([])
+  })
+
+  test("a pause during the handshake does not leave a machine publishing", async () => {
+    const gated = gatedRunner(HOST_ENROLLMENT_OPERATIONS.enroll)
+    const { connector, calls, ticks } = harness({ runner: gated.runner })
+
+    const starting = connector.start()
+    await until(() => gated.arrived.at, "the handshake to reach the enrollment call")
+    connector.stop()
+    gated.gate.open()
+    await starting
+
+    expect(connector.status()).not.toMatchObject({ status: "enrolled" })
+    expect(await beatEveryTimer({ ticks, calls })).toEqual([])
+  })
+
+  test("a handshake that fails after a revoke reports the revocation, not the failure", async () => {
+    // The order the panel gets wrong most easily. The user revoked; the
+    // enrollment that was already in flight then failed — as it should, its
+    // machine is gone — and reporting that as a transport error offers "try
+    // again" for something the user deliberately turned off.
+    const gated = gatedRunner(HOST_ENROLLMENT_OPERATIONS.enroll)
+    const { connector } = harness({
+      runner: {
+        calls: gated.calls,
+        run: async (name: string, params?: Record<string, unknown>) => {
+          const result = await gated.runner.run(name, params)
+          if (name === HOST_ENROLLMENT_OPERATIONS.enroll) throw new Error("410 machine gone")
+          return result
+        },
+      } as ReturnType<typeof fakeRunner>,
+    })
+
+    const starting = connector.start()
+    await until(() => gated.arrived.at, "the handshake to reach the enrollment call")
+    connector.revoke()
+    gated.gate.open()
+    await starting
+
+    expect(connector.status()).toMatchObject({ status: "stopped", reason: "revoked" })
+  })
+
+  test("an escaping failure after a revoke still reports the revocation", async () => {
+    // The other arm of the same ordering, through the catch that exists for
+    // failures nobody predicted. `createHostConnector().start()` turns every
+    // failure it knows about into a stopped STATE, so the only way into that
+    // catch is something outside its try — installing the timer is the one
+    // statement there, and a throw from it is the closest a test can get to the
+    // unknown escape the catch was written for.
+    const gated = gatedRunner(HOST_ENROLLMENT_OPERATIONS.enroll)
+    const { connector, errors } = harness({
+      runner: gated.runner,
+      setInterval: () => {
+        throw new Error("no timers available")
+      },
+    })
+
+    const starting = connector.start()
+    await until(() => gated.arrived.at, "the handshake to reach the enrollment call")
+    connector.revoke()
+    gated.gate.open()
+    await starting
+
+    expect(connector.status()).toMatchObject({ status: "stopped", reason: "revoked" })
+    expect(errors.map((entry) => entry.stage)).toContain("enroll")
+  })
+
+  test("a revoke while the identity is being minted does not leave the key on disk", async () => {
+    // `revoke` deletes the record, and the mint that was already running writes
+    // one. Whichever order they land in, the private key must not outlive the
+    // revocation — it is the only thing that can ever sign as this machine, and
+    // `machine-identity.ts` keeps no other copy.
+    const dir = tempDir()
+    const secure = fakeSafeStorage()
+    const onMint: { revoke?: () => void } = {}
+    const { connector } = harness({
+      userDataDir: dir,
+      safeStorage: {
+        ...secure,
+        // The seam is the last thing the mint does before writing the record.
+        encryptString: (plain) => {
+          const revoke = onMint.revoke
+          delete onMint.revoke
+          revoke?.()
+          return secure.encryptString(plain)
+        },
+      },
+    })
+    onMint.revoke = () => connector.revoke()
+
+    await connector.start()
+
+    expect(machineIdentityFile(dir).read()).toBeUndefined()
+    expect(connector.status()).toMatchObject({ status: "stopped", reason: "revoked" })
   })
 })
 
