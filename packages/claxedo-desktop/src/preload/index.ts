@@ -145,6 +145,8 @@ const api: ElectronAPI = {
       process.env.CLAXEDO_MERMAID_RENDERER_PATH ?? process.env.CLAXEDO_RICH_CONTENT_RENDERER_PATH,
     ),
   },
+  parseMarkdown: (source) => ipcRenderer.invoke("parse-markdown", source),
+  renderMermaid: (source, theme) => ipcRenderer.invoke("render-mermaid", source, theme),
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
   awaitInitialization: (onStep) => {
     const handler = (_: unknown, step: InitStep) => onStep(step)

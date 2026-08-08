@@ -112,7 +112,16 @@ function inspectLocales(archive: string) {
   return null
 }
 
-export function verifyPackageContents(root = path.resolve(import.meta.dir, "..")) {
+export type PackageTarget = { platform: NodeJS.Platform; arch: string }
+
+export function canSmokePackagedBinary(target: PackageTarget) {
+  return target.platform === process.platform && target.arch === process.arch
+}
+
+export function verifyPackageContents(
+  root = path.resolve(import.meta.dir, ".."),
+  target: PackageTarget = { platform: process.platform, arch: process.arch },
+) {
   const asars = findAsars(root)
   if (asars.length === 0) {
     throw new Error(`no packaged app.asar found under ${path.resolve(root, "dist")} — run packaging first`)
@@ -132,6 +141,11 @@ export function verifyPackageContents(root = path.resolve(import.meta.dir, "..")
       failures.push(`${archive}: packaged rich-content renderer is not executable: ${binaries[0]}`)
       continue
     }
+    // Cross-packaging creates binaries the host cannot execute (for example a
+    // win32 .exe produced on macOS, or an x64 helper on arm64). Presence and
+    // permissions remain packaging invariants; the functional smoke belongs to
+    // a host with the same OS and architecture as the target.
+    if (!canSmokePackagedBinary(target)) continue
     const markdown = spawnSync(binaries[0]!, ["markdown"], {
       input: JSON.stringify({ source: "# Packaged renderer\n\n| a | b |\n|---|---|\n| 1 | 2 |" }),
       encoding: "utf8",

@@ -143,6 +143,8 @@ export type ElectronAPI = {
     nativeMarkdown: boolean
     nativeMermaid: boolean
   }>
+  parseMarkdown: (source: string) => Promise<string>
+  renderMermaid: (source: string, theme?: Record<string, string>) => Promise<string>
   killSidecar: () => Promise<void>
   awaitInitialization: (onStep: (step: InitStep) => void) => Promise<ServerReadyData>
   getDefaultServer: () => Promise<string | null>
