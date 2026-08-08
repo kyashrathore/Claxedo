@@ -967,14 +967,24 @@ The alternative — `@claxedo/server` depending on `@claxedo/local-server` for t
 | start | — | 254 modules |
 | `platform/runtime/lib/{log,paths,bus,lazy,strings}` | 5 + 1 test | 249 modules |
 | `platform/{errors,http,auth}/*`, `platform/runtime/region` | 11 + 5 tests | 238 modules |
+| `platform/db/{db,repair}` behind a composition-supplied journal | 2 + 1 test | 237 modules, 39 packages |
 
-The local producer union is now **90 modules / 28 packages**, from 177 / 36 when the unit started.
+The local producer union is now **89 modules / 26 packages**, from 177 / 36 when the unit started.
 
 Two things worth carrying forward from the moves. First, `vi.mock` specifiers name modules by PATH, so a rename that misses them leaves a test mocking a module nobody imports — silently, and green. Four had to be rewritten by hand in the first slice. Second, the repository's own governance gates caught their stale registries in the second slice (`architecture-ownership.ts` still claimed `platform/auth/authority.ts`; `src/authority/README.md` still pointed a reader at two moved files), which is exactly what they exist for.
 
-**`platform/db` was attempted and deliberately left behind.** The schema-barrel question resolved cleanly — `src/README.md` names it as the migration generator's input, so it stays with the product tables, and `ClaxedoDB.Client` is now schema-less because drizzle's generic only types `db.query.*`, which nothing uses. That removed the last `platform/db` edge to product surface.
+**`platform/db` landed on the second attempt, and the first attempt is why.** The schema-barrel question resolved cleanly — `src/README.md` names it as the migration generator's input, so it stays with the product tables, and `ClaxedoDB.Client` is now schema-less because drizzle's generic only types `db.query.*`, which nothing uses. That removed the last `platform/db` edge to product surface.
 
-The move still did not land, for a different reason found by doing it: `db.ts` resolves its migration journal from its own `import.meta.dirname`, and that journal is **product DDL** — documents, credentials, connections, channels. Moving the engine into a neutral core drags product schema with it, and the four migration tests plus the desktop bundler all reach for the journal by relative path. The right shape is a composition-supplied migration source, but its failure mode is a fresh profile opening a database with ZERO tables, silently — a bug this repository has already shipped once. That needs a fail-closed default and its own verification, not a ride-along on a package move. The move was reverted; the schema-less client was kept.
+The first attempt failed on something only doing it revealed: `db.ts` resolved its migration journal from its own `import.meta.dirname`, and that journal is DDL — documents, credentials, connections, channels — so moving the engine dragged schema with it, and four migration tests plus the desktop bundler reached the journal by relative path. That move was reverted rather than half-landed.
+
+The second attempt made the journal a **composition input**. `claxedo-server/src/platform/db/index.ts` names it and re-exports the engine, so every consumer configures it by importing; forty-five import sites moved to that wrapper. `configureClaxedoMigrations` has NO default and an empty or missing journal throws, because the alternative is the failure this product has already shipped: zero migrations applied, a working handle returned, and every query failing later somewhere else for a reason its stack trace does not name. Two tests cover it — one asserts a fresh profile actually has its tables, the other that the engine alone refuses to open.
+
+**Where the journal finally lives is still open, and it is the next decision.** The 45 remaining shared modules — the whole credential engine, `session/meta/*`, `session/harness/*`, `workspace/store`, `agent-config/index.ts` — all sit behind it. Two readings:
+
+- The journal is *product* schema, so local-server gets its own with only local tables. This splits a persisted contract: existing desktop profiles already hold every table, so the split either drops them (data loss) or leaves them (no benefit).
+- The journal is the *suite's* schema, because both products open the same `claxedo.db` file format. It moves to `@claxedo/server-core` with the `*.sql.ts` leaves it is generated from — pure drizzle table definitions, no logic, no capability.
+
+The second is the working answer: it costs a local build a handful of leaf table definitions and buys back the entire remaining shared core, and the capability boundary this plan actually protects is already enforced without it — no `@claxedo/connections`, `@claxedo/channels`, Documents implementation, or Convex adapter is reachable from any local producer. Adopt it in the next slice unless the persisted-contract reading is preferred.
 
 **Not done:** `packages/claxedo-local-server` does not exist, and 46 of the 62 shared modules have not moved — the credential engine, `session/meta/*`, `session/harness/*`, `agent-config/index.ts`, `workspace/store`, `platform/db/*`, and the SQLite workspace authority. The 44/62 split is pinned by `local-entry-closure.test.ts`, so the move set cannot drift.
 
