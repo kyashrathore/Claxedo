@@ -1,0 +1,21 @@
+{
+  "name": "@claxedo/agent-runtime-stats",
+  "version": "0.1.0",
+  "description": "Analyze local AI coding-agent transcripts by minimum execution runtime",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "agent-runtime-stats": "./bin/agent-runtime-stats.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "test": "node --disable-warning=ExperimentalWarning --test test/behavior.test.js test/parsers.test.js"
+  }
+}
