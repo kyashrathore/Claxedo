@@ -38,6 +38,10 @@ import {
 } from "./markdown-cache"
 import { inlineCodeKind } from "./markdown-inline-code-kind"
 import { markdownTableText } from "./markdown-table"
+import {
+  disposeProgressiveMarkdown,
+  stageMarkdownCollections as stageCollections,
+} from "./markdown-progressive"
 
 type RenderedBlock =
   | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code"> })
@@ -60,11 +64,6 @@ type RenderResult = {
 
 const renderedCodeTokens = new WeakMap<HTMLDivElement, RenderedCodeState>()
 const highlightedCodeTokenLimit = 800
-const progressiveMarkdownInitialRows = 8
-const progressiveMarkdownBatchRows = 4
-const progressiveMarkdownMinimumRows = 20
-const progressiveMarkdownFrames = new WeakMap<HTMLElement, number>()
-const progressiveMarkdownDelays = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>()
 
 function escape(text: string) {
   return text
@@ -205,51 +204,8 @@ function disposeMarkdownControls(root: Element) {
   disposeViewButtons(root)
 }
 
-function disposeProgressiveMarkdown(root: Element) {
-  if (!(root instanceof HTMLElement)) return
-  const frame = progressiveMarkdownFrames.get(root)
-  if (frame !== undefined) cancelAnimationFrame(frame)
-  const delay = progressiveMarkdownDelays.get(root)
-  if (delay !== undefined) clearTimeout(delay)
-  progressiveMarkdownFrames.delete(root)
-  progressiveMarkdownDelays.delete(root)
-}
-
-function stageMarkdownCollections(root: HTMLElement) {
-  const collections = Array.from(root.querySelectorAll("ul, ol, tbody"))
-    .filter((collection) => collection.children.length > progressiveMarkdownMinimumRows)
-    .filter((collection, _, all) => !all.some((parent) => parent !== collection && parent.contains(collection)))
-    .map((collection) => ({
-      collection,
-      children: Array.from(collection.children),
-      cursor: progressiveMarkdownInitialRows,
-    }))
-  if (collections.length === 0) return
-
-  collections.forEach((entry) => entry.children.slice(progressiveMarkdownInitialRows).forEach((node) => node.remove()))
-  root.dataset.markdownProgressive = "pending"
-  let batch = 0
-  const step = () => {
-    progressiveMarkdownFrames.delete(root)
-    if (!root.isConnected) return
-    const started = rendererClock()
-    collections.forEach((entry) => {
-      const end = Math.min(entry.children.length, entry.cursor + progressiveMarkdownBatchRows)
-      while (entry.cursor < end) entry.collection.appendChild(entry.children[entry.cursor++]!)
-    })
-    const pending = collections.some((entry) => entry.cursor < entry.children.length)
-    if (batch++ === 0 || !pending) traceRenderer(`markdown.progressive.${pending ? "first" : "complete"}`, started)
-    if (pending) {
-      progressiveMarkdownFrames.set(root, requestAnimationFrame(step))
-      return
-    }
-    root.dataset.markdownProgressive = "complete"
-  }
-  progressiveMarkdownDelays.set(root, setTimeout(() => {
-    progressiveMarkdownDelays.delete(root)
-    if (!root.isConnected) return
-    progressiveMarkdownFrames.set(root, requestAnimationFrame(step))
-  }, 260))
+export function stageMarkdownCollections(root: HTMLElement) {
+  stageCollections(root, traceRenderer)
 }
 
 const shellLanguages = new Set(["bash", "sh", "shell", "zsh", "fish", "console", "terminal"])
