@@ -6,7 +6,7 @@ import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import { dockerSandboxDriverEnabled, type SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
+import { dockerSandboxDriverEnabled, type SandboxDriverID } from "@claxedo/sandbox-contract"
 
 const execFileAsync = promisify(execFile)
 

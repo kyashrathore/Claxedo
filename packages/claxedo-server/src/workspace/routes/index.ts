@@ -3,10 +3,10 @@ import { z } from "zod"
 import { globalWorkspace, isGlobalDirectory } from "../../session/global"
 import {
   defaultSandboxDriverID,
-  isSandboxDriverID,
   sandboxDriverId,
   sandboxDriverAuth,
 } from "@claxedo/sandbox-manager/driver-catalog"
+import { isSandboxDriverID } from "@claxedo/sandbox-contract"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import { loadUserConfig, sandboxDriverConfig } from "@claxedo/server-core/agent-config/index"
 import { type ControlPlaneServices } from "../../authority/services"

@@ -1,4 +1,4 @@
-import type { SandboxDriverID } from "./driver-catalog"
+import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import type {
   SandboxCheckpointReference,
   SandboxPersistenceCapabilities,

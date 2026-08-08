@@ -1,4 +1,8 @@
-import { isSandboxDriverID, sandboxDriverCatalog, type SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
+import {
+  isSandboxDriverID,
+  sandboxDriverCredentialFields,
+  type SandboxDriverID,
+} from "@claxedo/sandbox-contract"
 import { CredentialVerificationError } from "../verification-error"
 import type { CredentialHealth } from "@claxedo/server-core/credentials/types"
 
@@ -78,7 +82,7 @@ export function sandboxDriverVerifiable(id: SandboxDriverID) {
  * predates the codec must verify, not read as an unsupported shape.
  */
 function storedAuth(id: SandboxDriverID, secret: string): Record<string, string | undefined> {
-  const fields = sandboxDriverCatalog[id].credentialFields
+  const fields = sandboxDriverCredentialFields[id]
   try {
     const parsed = JSON.parse(secret) as unknown
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
@@ -214,12 +218,12 @@ function sandboxDriverProbe(
  */
 function probeAuth(id: SandboxDriverID, auth: Record<string, string | undefined>) {
   const values = Object.fromEntries(
-    sandboxDriverCatalog[id].credentialFields.flatMap((field) => {
+    sandboxDriverCredentialFields[id].flatMap((field) => {
       const value = auth[field.key]?.trim()
       return value ? [[field.key, value]] : []
     }),
   )
-  if (Object.keys(values).length !== sandboxDriverCatalog[id].credentialFields.length) return
+  if (Object.keys(values).length !== sandboxDriverCredentialFields[id].length) return
   return values
 }
 

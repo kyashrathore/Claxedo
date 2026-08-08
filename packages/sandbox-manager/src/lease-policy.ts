@@ -1,5 +1,6 @@
 import type { SandboxLeaseRow } from "./lease-types"
-import { sandboxDriverCatalog, type SandboxDriverID } from "./driver-catalog"
+import { sandboxDriverCatalog } from "./driver-catalog"
+import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 
 export type SandboxDecision =
   | { action: "skip"; reason: string }

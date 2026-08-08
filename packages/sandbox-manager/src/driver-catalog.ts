@@ -1,49 +1,21 @@
 import { validateSandboxPersistenceCapabilities, type SandboxDriverMetadata } from "./index"
 import { workspaceRuntimeVersion } from "./runtime-version"
 import { defaultSandboxImage } from "./image-name"
-
-export const sandboxDriverIds = ["exe", "daytona", "modal", "vercel", "cloudflare", "box", "docker"] as const
-
-export type SandboxDriverID = (typeof sandboxDriverIds)[number]
-
-export type SandboxDriverAuth = {
-  exe?: {
-    api_token?: string
-  }
-  daytona?: {
-    api_key?: string
-  }
-  modal?: {
-    token_id?: string
-    token_secret?: string
-  }
-  vercel?: {
-    access_token?: string
-    team_id?: string
-    project_id?: string
-  }
-  cloudflare?: {
-    api_token?: string
-    worker_url?: string
-  }
-  box?: {
-    api_key?: string
-  }
-  docker?: {
-    image?: string
-  }
-}
-
-export type SandboxDriverConfig = {
-  default_driver?: SandboxDriverID
-  auth?: SandboxDriverAuth
-}
+import {
+  dockerSandboxDriverEnabled as contractDockerSandboxDriverEnabled,
+  isSandboxDriverID,
+  sandboxDriverCredentialFields,
+  sandboxDriverIds,
+  type SandboxDriverAuth,
+  type SandboxDriverConfig,
+  type SandboxDriverID,
+} from "@claxedo/sandbox-contract"
 
 export type SandboxDriverCatalogEntry = {
   id: SandboxDriverID
   label: string
   metadata: SandboxDriverMetadata
-  credentialFields: Array<{ key: string; label: string; secret?: boolean }>
+  credentialFields: ReadonlyArray<{ key: string; label: string; secret?: boolean }>
 }
 
 export { validateSandboxPersistenceCapabilities }
@@ -52,7 +24,7 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
   exe: {
     id: "exe",
     label: "exe.dev",
-    credentialFields: [{ key: "api_token", label: "API Token", secret: true }],
+    credentialFields: sandboxDriverCredentialFields.exe,
     metadata: {
       driverRunsIn: ["worker", "node"],
       hostStopBehavior: "not-supported",
@@ -73,7 +45,7 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
   daytona: {
     id: "daytona",
     label: "Daytona",
-    credentialFields: [{ key: "api_key", label: "API Key", secret: true }],
+    credentialFields: sandboxDriverCredentialFields.daytona,
     metadata: {
       driverRunsIn: ["worker", "node"],
       hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
@@ -96,10 +68,7 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
   modal: {
     id: "modal",
     label: "Modal",
-    credentialFields: [
-      { key: "token_id", label: "Token ID", secret: true },
-      { key: "token_secret", label: "Token Secret", secret: true },
-    ],
+    credentialFields: sandboxDriverCredentialFields.modal,
     metadata: {
       driverRunsIn: ["node"],
       hostStopBehavior: "terminates-host", hostResumeBehavior: "replacement-host",
@@ -122,11 +91,7 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
   vercel: {
     id: "vercel",
     label: "Vercel",
-    credentialFields: [
-      { key: "access_token", label: "Access Token", secret: true },
-      { key: "team_id", label: "Team ID" },
-      { key: "project_id", label: "Project ID" },
-    ],
+    credentialFields: sandboxDriverCredentialFields.vercel,
     metadata: {
       driverRunsIn: ["node"],
       hostStopBehavior: "terminates-host", hostResumeBehavior: "replacement-host",
@@ -148,10 +113,7 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
   cloudflare: {
     id: "cloudflare",
     label: "Cloudflare",
-    credentialFields: [
-      { key: "api_token", label: "API Token", secret: true },
-      { key: "worker_url", label: "Worker URL" },
-    ],
+    credentialFields: sandboxDriverCredentialFields.cloudflare,
     metadata: {
       driverRunsIn: ["worker"],
       hostStopBehavior: "not-supported", hostResumeBehavior: "same-host",
@@ -177,7 +139,7 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
   box: {
     id: "box",
     label: "Box",
-    credentialFields: [{ key: "api_key", label: "API Key", secret: true }],
+    credentialFields: sandboxDriverCredentialFields.box,
     metadata: {
       driverRunsIn: ["node"],
       hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
@@ -197,7 +159,7 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
   docker: {
     id: "docker",
     label: "Docker",
-    credentialFields: [{ key: "image", label: "Image" }],
+    credentialFields: sandboxDriverCredentialFields.docker,
     metadata: {
       driverRunsIn: ["local"],
       hostStopBehavior: "terminates-host", hostResumeBehavior: "same-host",
@@ -214,10 +176,6 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
       },
     },
   },
-}
-
-export function isSandboxDriverID(input: string | undefined): input is SandboxDriverID {
-  return !!input && (sandboxDriverIds as readonly string[]).includes(input)
 }
 
 export function sandboxDriverId(input: string | undefined, cfg?: SandboxDriverConfig, env: SandboxDriverEnv = process.env) {
@@ -254,7 +212,7 @@ export function hasSandboxDriverAuth(
 }
 
 export function dockerSandboxDriverEnabled(env: SandboxDriverEnv = process.env) {
-  return dockerSandboxEnabled(env)
+  return contractDockerSandboxDriverEnabled(env)
 }
 
 export function listSandboxDrivers(
@@ -291,10 +249,6 @@ function clean(input: string | undefined) {
 
 function enabled(input: string | undefined) {
   return ["1", "true", "yes", "on"].includes(input?.trim().toLowerCase() ?? "")
-}
-
-function dockerSandboxEnabled(env: SandboxDriverEnv) {
-  return enabled(env.CLAXEDO_ENABLE_DOCKER_SANDBOX) || enabled(env.CLAXEDO_DEV_DOCKER_SANDBOX)
 }
 
 function dockerSandboxDefault(env: SandboxDriverEnv) {
@@ -336,7 +290,7 @@ function authBox(cfg: SandboxDriverConfig | undefined, env: SandboxDriverEnv) {
 }
 
 function authDocker(cfg: SandboxDriverConfig | undefined, env: SandboxDriverEnv) {
-  if (!dockerSandboxEnabled(env)) return
+  if (!contractDockerSandboxDriverEnabled(env)) return
   return {
     image: clean(cfg?.auth?.docker?.image)
       ?? clean(env.CLAXEDO_DOCKER_SANDBOX_IMAGE)

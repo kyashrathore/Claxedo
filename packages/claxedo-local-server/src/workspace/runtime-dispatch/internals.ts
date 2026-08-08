@@ -1,6 +1,6 @@
 import type { Context, Next } from "hono"
 import { workspaceSupervisor } from "@claxedo/server-core/workspace/supervisor-port"
-import type { SandboxManager, SandboxEnsureResult } from "@claxedo/sandbox-manager"
+import type { SandboxEnsureResult, SandboxManagerPort } from "@claxedo/server-core/sandbox/manager-port"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { opencodeHeaders } from "@claxedo/server-core/opencode/auth"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
@@ -25,7 +25,7 @@ export type Hit = {
 }
 
 export type RuntimeProxyOptions = {
-  sandboxManager?: SandboxManager
+  sandboxManager?: Pick<SandboxManagerPort, "ensure" | "touch">
   relayProvider?: RelayProvider
   defaultHomeRegion?: ClaxedoRegion
 }
@@ -157,7 +157,7 @@ export function runtimeProxyResponseHeaders(headers: Headers) {
 export async function proxy(c: Context, hit: Hit, options?: {
   pathname?: string
   forwardedBy?: string
-  sandboxManager?: SandboxManager
+  sandboxManager?: Pick<SandboxManagerPort, "ensure" | "touch">
   relayProvider?: RelayProvider
   defaultHomeRegion?: ClaxedoRegion
 }) {

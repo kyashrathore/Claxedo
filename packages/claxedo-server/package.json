@@ -83,6 +83,7 @@
     "@claxedo/connections": "0.4.0",
     "@claxedo/local-server": "workspace:*",
     "@claxedo/mcp": "workspace:0.4.0",
+    "@claxedo/sandbox-contract": "workspace:0.7.0",
     "@claxedo/sandbox-manager": "workspace:0.7.0",
     "@claxedo/server-core": "workspace:*",
     "@claxedo/wakes": "workspace:0.3.0",

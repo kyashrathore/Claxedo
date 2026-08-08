@@ -1,6 +1,6 @@
 import type { ControlPlaneTelemetry } from "@claxedo/server-core/platform/telemetry/ports"
 import type { AgentExtensionPolicyOverride } from "@claxedo/server-core/hosts/agent-extensions/runtime-config"
-import type { SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
+import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import type { CredentialHealth, CredentialMetadata, CredentialScope, CredentialStatus, CredentialWrite } from "@claxedo/server-core/credentials/types"
 import type { CredentialDiscoveryPreview, CredentialDiscoverySelection } from "@claxedo/server-core/credentials/operations/discovery"
 import { clerkAuthAdapter, type ControlPlaneAuthAdapter, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
@@ -51,6 +51,11 @@ export { defaultControlPlaneCredentials } from "@claxedo/server-core/authority/d
 export type ControlPlaneServices = ControlPlaneServicesContract & {
   projectionStore: ProjectionStore
   relay: ControlPlaneRelay
+  sandbox: HostedControlPlaneSandbox
+}
+
+export type HostedControlPlaneSandbox = Omit<ControlPlaneSandbox, "sandboxManager"> & {
+  sandboxManager?: SandboxManager
 }
 
 export type ControlPlaneServicesOptions = {
@@ -62,7 +67,7 @@ export type ControlPlaneServicesOptions = {
   credentials?: ControlPlaneCredentials
   extensionPolicy?: ControlPlaneExtensionPolicy
   relay?: ControlPlaneRelay
-  sandbox?: ControlPlaneSandbox
+  sandbox?: HostedControlPlaneSandbox
   telemetry?: ControlPlaneTelemetry
   localExecution?: ControlPlaneLocalExecution
   defaultHomeRegion?: ClaxedoRegion
@@ -76,7 +81,7 @@ export type HostedControlPlaneServicesOptions = Omit<
   credentials: ControlPlaneCredentials
   extensionPolicy: ControlPlaneExtensionPolicy
   relay: ControlPlaneRelay
-  sandbox: ControlPlaneSandbox
+  sandbox: HostedControlPlaneSandbox
   telemetry: ControlPlaneTelemetry
   authority: WorkspaceAuthority
 }

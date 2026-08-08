@@ -93,6 +93,7 @@ function producers(): string[] {
  * capability the unsigned desktop has no way to use and no business carrying.
  */
 const FORBIDDEN_PACKAGES = [
+  "@claxedo/sandbox-manager",
   "@claxedo/server",
   "@claxedo/workgraph",
   "@claxedo/channels",

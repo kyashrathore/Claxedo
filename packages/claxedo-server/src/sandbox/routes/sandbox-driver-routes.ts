@@ -12,12 +12,14 @@ import {
   controlPlaneAuthErrorBody,
 } from "@claxedo/server-core/platform/auth/auth"
 import {
-  isSandboxDriverID,
   listSandboxDrivers as listSandboxDriverCatalog,
   sandboxDriverId,
-  sandboxDriverCatalog,
-  type SandboxDriverID,
 } from "@claxedo/sandbox-manager/driver-catalog"
+import {
+  isSandboxDriverID,
+  sandboxDriverCredentialFields,
+  type SandboxDriverID,
+} from "@claxedo/sandbox-contract"
 import {
   loadUserConfig,
   sandboxDriverConfig,
@@ -290,11 +292,11 @@ export function sandboxDriverCredentials(options: WorkspaceRouteOptions, service
 // (and by `credentials/migrate.ts`, which writes daytona bare) keep working.
 function sandboxDriverManagedSecret(id: SandboxDriverID, auth: Record<string, string>) {
   const values = Object.fromEntries(
-    sandboxDriverCatalog[id].credentialFields.flatMap((field) => {
+    sandboxDriverCredentialFields[id].flatMap((field) => {
       const value = auth[field.key]?.trim()
       return value ? [[field.key, value]] : []
     }),
   )
-  if (Object.keys(values).length !== sandboxDriverCatalog[id].credentialFields.length) return
+  if (Object.keys(values).length !== sandboxDriverCredentialFields[id].length) return
   return JSON.stringify(values)
 }

@@ -2,11 +2,13 @@ import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/
 import { getCredentialByProvider, resolveSecret } from "@claxedo/server-core/credentials/registry"
 import {
   sandboxDriverAuth,
-  sandboxDriverCatalog,
+} from "@claxedo/sandbox-manager/driver-catalog"
+import {
+  sandboxDriverCredentialFields,
   type SandboxDriverAuth,
   type SandboxDriverConfig,
   type SandboxDriverID,
-} from "@claxedo/sandbox-manager/driver-catalog"
+} from "@claxedo/sandbox-contract"
 
 
 function json(secret: string) {
@@ -54,7 +56,7 @@ export async function sandboxDriverAuthAsync<T extends SandboxDriverID>(
 // halves off `credentialFields` removes the class of bug — a new driver needs
 // no edit here, and there is no per-driver list left to disagree about.
 function parseManagedAuth<T extends SandboxDriverID>(id: T, secret: string): SandboxDriverAuth[T] | undefined {
-  const fields = sandboxDriverCatalog[id].credentialFields
+  const fields = sandboxDriverCredentialFields[id]
   const parsed = json(secret)
 
   const values =

@@ -1,6 +1,6 @@
 import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
 import { loadUserConfig, sandboxDriverConfig } from "../../agent-config"
-import { sandboxDriverIds, type SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
+import { isSandboxDriverID, type SandboxDriverID } from "@claxedo/sandbox-contract"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { getCredentialByProvider, putCredential } from "@claxedo/server-core/credentials/registry"
 import type { CredentialKind, CredentialSource } from "@claxedo/server-core/credentials/types"
@@ -366,7 +366,7 @@ function opencodeCopilot(input: unknown, providerId: "github-copilot" | "github-
 
 
 function kind(providerId: string): CredentialKind {
-  return (sandboxDriverIds as readonly string[]).includes(providerId) ? "sandbox_driver" : "api_key"
+  return isSandboxDriverID(providerId) ? "sandbox_driver" : "api_key"
 }
 
 function itemOrigin(item: Item) {

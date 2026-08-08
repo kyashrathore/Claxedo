@@ -1,4 +1,4 @@
-import type { SandboxDriverID } from "./driver-catalog"
+import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 
 export function workspaceRuntimeTargetEnv(input: {
   workspaceId: string

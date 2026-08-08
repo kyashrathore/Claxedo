@@ -1,5 +1,5 @@
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "./constants"
-import type { SandboxDriverID } from "./driver-catalog"
+import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import {
   captureSandboxCheckpoint,
   restoreSandboxCheckpoint,

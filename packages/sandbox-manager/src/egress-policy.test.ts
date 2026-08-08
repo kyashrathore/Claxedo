@@ -13,7 +13,8 @@ import {
   type SandboxEgressUnenforcedEvent,
 } from "."
 import { createMemoryLeaseStore } from "./stores/memory"
-import { sandboxDriverCatalog, sandboxDriverIds } from "./driver-catalog"
+import { sandboxDriverCatalog } from "./driver-catalog"
+import { sandboxDriverIds } from "@claxedo/sandbox-contract"
 import { createDaytonaSandboxDriver, type DaytonaClientLike } from "./drivers/daytona"
 import { createFetchBridgeSandboxDriver } from "./drivers/fetch-bridge"
 

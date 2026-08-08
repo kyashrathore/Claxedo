@@ -1,4 +1,4 @@
-import type { SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
+import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import {
   workspaceRuntimeDirectAuthEnv,
   sandboxLeaseEnv as sandboxLeaseVariables,

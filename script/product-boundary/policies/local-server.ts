@@ -27,6 +27,7 @@ export const localServer: Policy = {
   roots: [SRC],
 
   forbiddenPackages: [
+    "@claxedo/sandbox-manager",
     "@claxedo/server",
     "@claxedo/workgraph",
     "@claxedo/channels",

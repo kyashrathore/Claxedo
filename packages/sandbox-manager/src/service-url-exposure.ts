@@ -1,4 +1,4 @@
-import type { SandboxDriverID } from "./driver-catalog"
+import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import { workspaceRuntimeServiceExposureEnv } from "./runtime-env"
 
 export type SandboxServiceUrlExposure = {

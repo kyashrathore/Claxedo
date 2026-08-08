@@ -96,14 +96,16 @@ export { createDockerSandboxDriver, type DockerSandboxDriverOptions } from "@cla
 export { createModalSandboxDriver, type ModalSandboxDriverOptions } from "@claxedo/sandbox-manager/drivers/modal"
 export { createVercelSandboxDriver, type VercelSandboxDriverOptions } from "@claxedo/sandbox-manager/drivers/vercel"
 export {
-  isSandboxDriverID,
   sandboxDriverCatalog,
+  type SandboxDriverCatalogEntry,
+} from "@claxedo/sandbox-manager/driver-catalog"
+export {
+  isSandboxDriverID,
   sandboxDriverIds,
   type SandboxDriverAuth,
-  type SandboxDriverCatalogEntry,
   type SandboxDriverConfig,
   type SandboxDriverID,
-} from "@claxedo/sandbox-manager/driver-catalog"
+} from "@claxedo/sandbox-contract"
 export type {
   SandboxRowAcquireResult,
   SandboxComputeClass,

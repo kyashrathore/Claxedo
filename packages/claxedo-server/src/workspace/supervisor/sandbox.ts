@@ -27,7 +27,7 @@ import {
 import { emitProvision } from "../../sandbox/provision-events"
 import { sandboxDriverAuthAsync } from "../../sandbox/driver-auth"
 import { defaultSandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
-import type { SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
+import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { defaultHomeRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import { listPolicies } from "@claxedo/server-core/sandbox/network/policy"

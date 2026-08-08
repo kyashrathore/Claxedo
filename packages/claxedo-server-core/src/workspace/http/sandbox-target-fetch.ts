@@ -1,11 +1,11 @@
-import type { SandboxManager } from "@claxedo/sandbox-manager"
+import type { SandboxManagerPort } from "@claxedo/server-core/sandbox/manager-port"
 import { localWorkspaceRuntime } from "../local-runtime-port"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { RelayProvider, RelayTokenInput } from "../../adapters/relay/index"
 
 export type SandboxFetchOptions = {
-  sandboxManager?: SandboxManager
+  sandboxManager?: SandboxManagerPort
   relayProvider?: RelayProvider
   loopbackRelayUrl?: string
   defaultHomeRegion?: ClaxedoRegion

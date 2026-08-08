@@ -1,5 +1,5 @@
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-import type { SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
+import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 
 /**
  * Normalized workspace backing model aligned with the target API. The

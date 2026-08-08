@@ -19,7 +19,7 @@ import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { syncMcpHosts } from "@claxedo/server-core/sandbox/network/policy"
 import type { CredentialKind } from "@claxedo/server-core/credentials/types"
-import { sandboxDriverIds } from "@claxedo/sandbox-manager/driver-catalog"
+import { isSandboxDriverID } from "@claxedo/sandbox-contract"
 
 const log = Log.create({ service: "credentials-migrate" })
 
@@ -44,7 +44,7 @@ function markMigrated() {
 
 /** Provider ID → credential kind mapping for legacy auth entries. */
 function credentialKind(providerId: string): CredentialKind {
-  if ((sandboxDriverIds as readonly string[]).includes(providerId)) return "sandbox_driver"
+  if (isSandboxDriverID(providerId)) return "sandbox_driver"
   // ACP runners
   if (providerId.endsWith("-acp")) return "api_key"
   // Default to API key

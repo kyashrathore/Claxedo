@@ -34,7 +34,7 @@
   "dependencies": {
     "@claxedo/agent-extensions": "workspace:0.7.0",
     "@claxedo/agent-sdk-runtime": "workspace:*",
-    "@claxedo/sandbox-manager": "workspace:*",
+    "@claxedo/sandbox-contract": "workspace:0.7.0",
     "@claxedo/workspace-relay": "workspace:0.7.0",
     "@claxedo/workspace-relay-protocol": "workspace:0.7.0",
     "@claxedo/workspace-runtime": "workspace:*",

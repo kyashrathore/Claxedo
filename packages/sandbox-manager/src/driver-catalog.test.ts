@@ -3,14 +3,13 @@ import {
   defaultSandboxDriverID,
   dockerSandboxDriverEnabled,
   hasSandboxDriverAuth,
-  isSandboxDriverID,
   listSandboxDrivers,
   sandboxDriverCatalog,
-  sandboxDriverIds,
   sandboxDriverId,
   sandboxDriverAuth,
   validateSandboxPersistenceCapabilities,
 } from "./driver-catalog"
+import { isSandboxDriverID, sandboxDriverIds } from "@claxedo/sandbox-contract"
 
 describe("sandbox driver catalog", () => {
   test("owns every direct sandbox driver id", () => {

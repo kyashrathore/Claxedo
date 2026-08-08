@@ -18,7 +18,7 @@ import * as path from "path"
 import os from "os"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
-import { isSandboxDriverID, type SandboxDriverConfig } from "@claxedo/sandbox-manager/driver-catalog"
+import { isSandboxDriverID, type SandboxDriverConfig } from "@claxedo/sandbox-contract"
 import {
   bundledAcpBinary,
   harnessKey,
