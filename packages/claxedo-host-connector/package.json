@@ -21,7 +21,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default",
+    "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit.xml",
     "verify:closure": "bun ../../script/product-boundary/verify.ts"
   },
   "devDependencies": {
