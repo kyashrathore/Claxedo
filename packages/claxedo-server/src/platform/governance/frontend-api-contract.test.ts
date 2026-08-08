@@ -61,7 +61,7 @@ vi.mock("../../workspace/supervisor", () => ({
   })),
 }))
 
-vi.mock("../../workspace/store", () => ({
+vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   resolveWorkspace: vi.fn(async (input: { workspaceId?: string; directory?: string }) =>
     workspaceRows.get(input.workspaceId ?? "") ?? workspaceRows.get(input.directory ?? "")),
   resolveWorkspaceByRepo: vi.fn(async () => undefined),
@@ -99,18 +99,18 @@ vi.mock("../../workspace/store", () => ({
   listProjects: vi.fn(async () => []),
 }))
 
-vi.mock("../../opencode/auth", () => ({
+vi.mock("@claxedo/server-core/opencode/auth", () => ({
   configureOpenCodeAuth: vi.fn(),
   opencodeHeaders: vi.fn((headers?: HeadersInit) => new Headers(headers)),
 }))
 
 const [serverMod, servicesMod, syncMod, compatMod, agentConfigMod, engineMod] = await Promise.all([
-  import("../../deployments/local/server"),
+  import("../../deployments/self-hosted-node/app"),
   import("../../authority/services"),
   import("../../authority/adapters/sqlite/central-store"),
-  import("../../opencode/compat-routes/index"),
-  import("../../agent-config"),
-  import("../../opencode/engine"),
+  import("@claxedo/local-server/opencode/compat-routes/index"),
+  import("@claxedo/server-core/agent-config/index"),
+  import("@claxedo/server-core/opencode/engine"),
 ])
 
 function seedSyntheticCloudWorkspace() {
@@ -135,7 +135,7 @@ function seedSyntheticCloudWorkspace() {
 
 function createContractApp() {
   const centralStore = syncMod.createSqliteCentralStore({ mode: () => "workspace_replicated" })
-  return serverMod.createApp(servicesMod.createControlPlaneServices({
+  return serverMod.createSelfHostedApp(servicesMod.createControlPlaneServices({
     projectionStore: centralStore.projectionStore,
     durableSessionLog: centralStore.durableSessionLog,
   }, {

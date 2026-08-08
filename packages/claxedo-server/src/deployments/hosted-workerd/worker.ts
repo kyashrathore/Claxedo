@@ -31,7 +31,7 @@ import { createHostedApp, type HostedAppOverrides } from "../hosted-shared/hoste
 import { runScheduledBillingReconciliation } from "../../billing/reconcile"
 import { reportError, setErrorReporterSink } from "../../platform/telemetry/errors/report"
 import { observabilityOptions, type ObservabilityEnv } from "../../platform/telemetry/errors/config"
-import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "../../platform/http/security-headers"
+import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "@claxedo/server-core/platform/http/security-headers"
 import { createHostedWorkGraphRuntime } from "../../hosts/workgraph/hosted/runtime"
 import { leaseFencedReconcile, skipOverlappingReconcile } from "../../hosts/workgraph/reconcile-serialize"
 import { createConvexCronLease } from "../../authority/adapters/convex/cron-lease"
@@ -54,7 +54,7 @@ import { createHostedDocumentsBackend } from "../../documents/backends/hosted/ba
 import { createHostedDocumentRuntimeBroker } from "../../documents/backends/hosted/runtime-broker"
 import { createHostedLocalDocumentRelay } from "../../documents/backends/hosted/local-relay"
 import type { R2BucketBinding } from "../../documents/backends/hosted/managed"
-import type { SignedControlPlaneAuth } from "../../platform/auth/auth"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { DocumentIndexEntry } from "../../documents/index-store"
 
 export { WorkGraphSettler }

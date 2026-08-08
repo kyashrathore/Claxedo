@@ -2,14 +2,14 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vit
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
-import { localOnlyAuthAdapter, type ClerkVerifier } from "../../platform/auth/auth"
-import type { ControlPlaneServices } from "../../authority/services"
-import { createAgentConfigRoutes } from "./index"
-import { AgentExtensionConflictError, installCachedAgentExtension } from "../../hosts/agent-extensions/install"
+import { localOnlyAuthAdapter, type ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
+import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
+import { createAgentConfigRoutes } from "@claxedo/local-server/agent-config/routes/index"
+import { AgentExtensionConflictError, installCachedAgentExtension } from "@claxedo/local-server/hosts/agent-extensions/install"
 import {
   mirrorWorkspaceAgentExtensionRecord,
   readMirroredWorkspaceAgentExtensions,
-} from "../../hosts/agent-extensions/workspace"
+} from "@claxedo/server-core/hosts/agent-extensions/workspace"
 import { AgentExtensionMaterializationError } from "@claxedo/agent-extensions"
 
 const root = `${process.env.TMPDIR ?? "/tmp"}/agent-config-extensions-route-${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -61,7 +61,7 @@ const verifier: ClerkVerifier = async (token, config) => ({
   },
 })
 
-function services(authority: NonNullable<ControlPlaneServices["authority"]>): ControlPlaneServices {
+function services(authority: NonNullable<ControlPlaneServicesContract["authority"]>): ControlPlaneServicesContract {
   return {
     projectionStore: {} as never,
     durableSessionLog: {} as never,
@@ -655,7 +655,7 @@ describe("Agent Config Agent Extensions routes", () => {
       deleteAgentExtensionPolicyOverride: vi.fn(async () => ({})),
       auditDeny: async () => {},
       auditAllow: async () => {},
-    } satisfies NonNullable<ControlPlaneServices["authority"]>
+    } satisfies NonNullable<ControlPlaneServicesContract["authority"]>
     const svc = services(convex)
     svc.telemetry = {
       capture: vi.fn(() => {
@@ -772,7 +772,7 @@ describe("Agent Config Agent Extensions routes", () => {
             targets: ["cursor"],
           },
         }]),
-      } as unknown as NonNullable<ControlPlaneServices["authority"]>),
+      } as unknown as NonNullable<ControlPlaneServicesContract["authority"]>),
       authConfig,
       verifier,
       agentExtensionPolicyOverrides: async (input) => input.scope === "workspace"
@@ -823,7 +823,7 @@ describe("Agent Config Agent Extensions routes", () => {
           },
         }]),
         upsertWorkspaceAgentExtension,
-      } as unknown as NonNullable<ControlPlaneServices["authority"]>),
+      } as unknown as NonNullable<ControlPlaneServicesContract["authority"]>),
       authConfig,
       verifier,
       resolveGitHubWorkspaceAgentExtension: async () => ({
@@ -885,7 +885,7 @@ describe("Agent Config Agent Extensions routes", () => {
         listWorkspaceAgentExtensions: vi.fn(async () => [legacyPdfRecord()]),
         upsertWorkspaceAgentExtension,
         deleteWorkspaceAgentExtension,
-      } as unknown as NonNullable<ControlPlaneServices["authority"]>),
+      } as unknown as NonNullable<ControlPlaneServicesContract["authority"]>),
       authConfig,
       verifier,
       resolveGitHubWorkspaceAgentExtension: async () => resolvedPinnedPdf(),
@@ -965,7 +965,7 @@ describe("Agent Config Agent Extensions routes", () => {
         usersMe: async () => ({}),
         listWorkspaceAgentExtensions: vi.fn(async () => [legacyPdfRecord()]),
         setWorkspaceAgentExtensionEnabled,
-      } as unknown as NonNullable<ControlPlaneServices["authority"]>),
+      } as unknown as NonNullable<ControlPlaneServicesContract["authority"]>),
       authConfig,
       verifier,
     })
@@ -996,7 +996,7 @@ describe("Agent Config Agent Extensions routes", () => {
         usersMe: async () => ({}),
         listWorkspaceAgentExtensions: vi.fn(async () => [legacyPdfRecord()]),
         deleteWorkspaceAgentExtension,
-      } as unknown as NonNullable<ControlPlaneServices["authority"]>),
+      } as unknown as NonNullable<ControlPlaneServicesContract["authority"]>),
       authConfig,
       verifier,
     })
@@ -1025,7 +1025,7 @@ describe("Agent Config Agent Extensions routes", () => {
         listWorkspaceAgentExtensions: vi.fn(async () => [legacyPdfRecord()]),
         upsertWorkspaceAgentExtension,
         deleteWorkspaceAgentExtension,
-      } as unknown as NonNullable<ControlPlaneServices["authority"]>),
+      } as unknown as NonNullable<ControlPlaneServicesContract["authority"]>),
       authConfig,
       verifier,
       resolveGitHubWorkspaceAgentExtension: async (input) => {
@@ -1097,7 +1097,7 @@ describe("Agent Config Agent Extensions routes", () => {
           },
         }]),
         listAgentExtensionPolicyOverrides,
-      } as unknown as NonNullable<ControlPlaneServices["authority"]>),
+      } as unknown as NonNullable<ControlPlaneServicesContract["authority"]>),
       authConfig,
       verifier,
     })
@@ -1147,7 +1147,7 @@ describe("Agent Config Agent Extensions routes", () => {
         listAgentExtensionPolicyOverrides: vi.fn(async () => {
           throw new Error("Could not find public function for 'agentExtensionPolicies:list'. Did you forget to run `npx convex dev`?")
         }),
-      } as unknown as NonNullable<ControlPlaneServices["authority"]>),
+      } as unknown as NonNullable<ControlPlaneServicesContract["authority"]>),
       authConfig,
       verifier,
     })
@@ -1190,7 +1190,7 @@ describe("Agent Config Agent Extensions routes", () => {
         authorizeWorkspaceAgentExtensionsAdmin: vi.fn(async () => {}),
         listWorkspaceAgentExtensions,
         upsertWorkspaceAgentExtension,
-      } as unknown as NonNullable<ControlPlaneServices["authority"]>),
+      } as unknown as NonNullable<ControlPlaneServicesContract["authority"]>),
       authConfig,
       verifier,
       resolveGitHubWorkspaceAgentExtension: async (input) => {
@@ -1259,7 +1259,7 @@ describe("Agent Config Agent Extensions routes", () => {
         setWorkspaceAgentExtensionEnabled: vi.fn(async () => {
           throw new Error("Workspace not found")
         }),
-      } as unknown as NonNullable<ControlPlaneServices["authority"]>),
+      } as unknown as NonNullable<ControlPlaneServicesContract["authority"]>),
       authConfig,
       verifier,
     })
@@ -1288,7 +1288,7 @@ describe("Agent Config Agent Extensions routes", () => {
           throw new Error("Workspace not found")
         }),
         upsertWorkspaceAgentExtension,
-      } as unknown as NonNullable<ControlPlaneServices["authority"]>),
+      } as unknown as NonNullable<ControlPlaneServicesContract["authority"]>),
       authConfig,
       verifier,
       resolveGitHubWorkspaceAgentExtension,
@@ -1324,7 +1324,7 @@ describe("Agent Config Agent Extensions routes", () => {
           throw new Error("Workspace not found")
         }),
         listWorkspaceAgentExtensions,
-      } as unknown as NonNullable<ControlPlaneServices["authority"]>),
+      } as unknown as NonNullable<ControlPlaneServicesContract["authority"]>),
       authConfig,
       verifier,
       resolveGitHubWorkspaceAgentExtension,

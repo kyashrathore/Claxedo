@@ -1615,3 +1615,127 @@ describe("workspace relay host tunnel region hint", () => {
     tunnel.close()
   })
 })
+
+/**
+ * U8 Unit 1 characterization — the two registration behaviours Unit 6 changes.
+ *
+ * The host tunnel is the canonical transport and the split deliberately does
+ * not rewrite it. But Unit 6 makes exactly two changes here, and both are the
+ * kind that a reader would assume already work. Recording today's behaviour is
+ * what turns "we changed it" into something a diff can show.
+ *
+ * These tests assert the CURRENT contract and are expected to be inverted by
+ * Unit 6, not deleted.
+ */
+describe("U8 registration characterization", () => {
+  test("reconnect still upgrades with the ORIGINAL workspace set, not the updated one", async () => {
+    // The bug this records: `tunnelUrl()` reads `options.workspaceIds`, which is
+    // fixed at construction, while `updateRegistration` only stores a frame to
+    // replay after `onopen`. So a machine that removed a workspace reconnects
+    // with the removed workspace still in its upgrade URL and token scope, and
+    // it reappears in Relay presence for the window between upgrade and the
+    // replayed update frame.
+    //
+    // U8-R20 makes the set accepted by `updateRegistration` authoritative for
+    // the next reconnect URL. When that lands, the first assertion below flips
+    // to `["ws_a"]` and the comment above becomes the changelog entry.
+    const sockets: FakeWebSocket[] = []
+    const timers = fakeTimers()
+    const tunnel = startWorkspaceRelayHostTunnel({
+      relayUrl: "http://relay.invalid",
+      hostId: "host_1",
+      workspaceIds: ["ws_a", "ws_b"],
+      localBaseUrl: "http://runtime.invalid",
+      webSocket: class extends FakeWebSocket {
+        constructor(url: string, options: { headers?: Record<string, string> }) {
+          super(url, options)
+          sockets.push(this)
+        }
+      } as never,
+      setTimeout: timers.setTimeout as never,
+      clearTimeout: timers.clearTimeout as never,
+    })
+
+    sockets[0]!.open()
+    await tunnel.updateRegistration({ workspaceIds: ["ws_a"], token: "htt_2" })
+
+    // Force a reconnect and let the backoff timer fire.
+    sockets[0]!.close(1006, "relay restart")
+    for (const timer of timers.timers) {
+      if (!timer.cleared && !timer.fired) {
+        timer.fired = true
+        timer.fn()
+      }
+    }
+
+    expect(sockets.length).toBeGreaterThan(1)
+    const reconnectUrl = new URL(sockets.at(-1)!.url.replace(/^ws/, "http"))
+    expect(reconnectUrl.searchParams.getAll("workspaceId")).toEqual(["ws_a", "ws_b"])
+
+    // The replayed update frame does carry the correct set — which is why the
+    // window is transient rather than permanent, and why it is easy to miss.
+    sockets.at(-1)!.open()
+    const replayed = await waitForSent(sockets.at(-1)!, "host.registration.update")
+    expect((replayed as unknown as { workspace_ids: string[] }).workspace_ids).toEqual(["ws_a"])
+
+    tunnel.close()
+  })
+
+  test("an empty workspace set is currently rejected", async () => {
+    // A machine with zero local workspaces is a VALID enrollment under U8-R17:
+    // "Ready — waiting for first workspace". Today `updateRegistration` throws
+    // on an empty set, so the valid-empty case has no representation in the
+    // transport at all. Unit 6 must either accept it here or keep the tunnel
+    // closed until the first workspace appears — but it cannot silently send
+    // an empty registration through this path.
+    const sockets: FakeWebSocket[] = []
+    const tunnel = startWorkspaceRelayHostTunnel({
+      relayUrl: "http://relay.invalid",
+      hostId: "host_1",
+      workspaceIds: ["ws_a"],
+      localBaseUrl: "http://runtime.invalid",
+      webSocket: class extends FakeWebSocket {
+        constructor(url: string, options: { headers?: Record<string, string> }) {
+          super(url, options)
+          sockets.push(this)
+        }
+      } as never,
+    })
+    sockets[0]!.open()
+
+    await expect(tunnel.updateRegistration({ workspaceIds: [], token: "htt_2" })).rejects.toThrow(
+      /At least one workspace is required/,
+    )
+
+    tunnel.close()
+  })
+
+  test("deduplicates a repeated workspace id in one registration", async () => {
+    // Unit 6 submits a reconciled full set on every inventory change. Recording
+    // that the transport already normalizes duplicates means the reconciler does
+    // not have to, and a future change that removes this would be visible.
+    const sockets: FakeWebSocket[] = []
+    const tunnel = startWorkspaceRelayHostTunnel({
+      relayUrl: "http://relay.invalid",
+      hostId: "host_1",
+      workspaceIds: ["ws_a"],
+      localBaseUrl: "http://runtime.invalid",
+      webSocket: class extends FakeWebSocket {
+        constructor(url: string, options: { headers?: Record<string, string> }) {
+          super(url, options)
+          sockets.push(this)
+        }
+      } as never,
+    })
+    sockets[0]!.open()
+
+    await tunnel.updateRegistration({ workspaceIds: ["ws_a", "ws_b", "ws_a"], token: "htt_2" })
+
+    expect(JSON.parse(sockets[0]!.sent.at(-1)!)).toMatchObject({
+      type: "host.registration.update",
+      workspace_ids: ["ws_a", "ws_b"],
+    })
+
+    tunnel.close()
+  })
+})

@@ -21,7 +21,9 @@ import { copyIcons as copyChannelIcons } from "./utils"
 
 const SCRIPT_DIR = import.meta.dir
 const PACKAGE_DIR = path.resolve(SCRIPT_DIR, "..")
-const CLAXEDO_SERVER_DIR = path.resolve(PACKAGE_DIR, "../claxedo-server")
+// The desktop server IS `@claxedo/local-server` now. `claxedo-server` is the
+// hosted and self-hosted product; nothing the desktop ships comes from it.
+const CLAXEDO_SERVER_DIR = path.resolve(PACKAGE_DIR, "../claxedo-local-server")
 const OPENCODE_DIR = path.resolve(PACKAGE_DIR, "../opencode")
 const WS_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../workspace-runtime")
 const RESOURCES_DIR = path.resolve(PACKAGE_DIR, "resources")

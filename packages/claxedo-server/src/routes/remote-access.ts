@@ -4,7 +4,7 @@ import {
   ControlPlaneAuthError,
   controlPlaneAuthErrorBody,
   type SignedControlPlaneAuth,
-} from "../platform/auth/auth"
+} from "@claxedo/server-core/platform/auth/auth"
 
 const enableBody = z.object({
   display_name: z.string().trim().min(1).max(120),

@@ -557,6 +557,15 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const recordPromptSubmissionContext = {
       onSubmit: input.onSubmit,
       saveSessionConfig: () => {
+        // `target.created` covers BOTH paths now: an OpenCode session is
+        // created with its config in the create body, and a harness session is
+        // claimed with `sessionConfig` threaded into the claim. Neither needs a
+        // follow-up PATCH.
+        //
+        // This branch was briefly `target.created && !harnessMode`, because the
+        // harness claim did NOT carry config and those sessions never persisted
+        // theirs. Passing it into the claim is the better fix — it is atomic,
+        // where the follow-up write was not — so the narrower guard is gone.
         if (target.created) return Promise.resolve()
         if (existingSessionConfig && sameExistingSessionConfig(existingSessionConfig, {
           harnessType: persistedHarnessType,

@@ -1,0 +1,44 @@
+{
+  "name": "@claxedo/local-server",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "The desktop-local Claxedo server: local project, file, diff, PTY, process, session, provider, configuration, credential, and harness-dispatch routes over an embedded Workspace Runtime",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kyashrathore/Claxedo.git",
+    "directory": "packages/claxedo-local-server"
+  },
+  "exports": {
+    "./*": {
+      "types": "./src/*.ts",
+      "bun": "./src/*.ts",
+      "development": "./src/*.ts",
+      "import": "./src/*.ts",
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default"
+  },
+  "dependencies": {
+    "@claxedo/agent-extensions": "workspace:0.7.0",
+    "@claxedo/agent-sdk-runtime": "workspace:*",
+    "@claxedo/sandbox-manager": "workspace:*",
+    "@claxedo/server-core": "workspace:*",
+    "@claxedo/workspace-runtime": "workspace:*",
+    "@hono/node-ws": "1.3.1",
+    "hono": "4.10.7",
+    "tokentracker-cli": "0.75.1",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@hono/node-server": "1.19.11",
+    "@tsconfig/node-lts": "22.0.4",
+    "@types/bun": "1.3.13",
+    "typescript": "catalog:",
+    "vitest": "2.1.9"
+  }
+}

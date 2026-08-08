@@ -48,8 +48,8 @@
     "node": ">=22 <25"
   },
   "scripts": {
-    "dev": "CLAXEDO_WAKES=${CLAXEDO_WAKES:-1} node --conditions=development --import ../workspace-runtime/src/text-imports.mjs --import tsx --watch src/deployments/local/main.ts",
-    "start": "node --conditions=development --import ../workspace-runtime/src/text-imports.mjs --import tsx src/deployments/local/main.ts",
+    "dev": "CLAXEDO_WAKES=${CLAXEDO_WAKES:-1} node --conditions=development --import ../workspace-runtime/src/text-imports.mjs --import tsx --watch src/deployments/self-hosted-node/index.ts",
+    "start": "node --conditions=development --import ../workspace-runtime/src/text-imports.mjs --import tsx src/deployments/self-hosted-node/index.ts",
     "start:hosted": "node --conditions=development --import ../workspace-runtime/src/text-imports.mjs --import tsx src/deployments/hosted-node/index.ts",
     "release:runtime": "bun run scripts/release/publish-runtime-packages.ts",
     "release:packages": "bun run scripts/release/publish-claxedo-packages.ts",
@@ -64,21 +64,26 @@
     "smoke:workgraph": "bun run scripts/smoke/smoke-workgraph.ts",
     "stress:workgraph": "node ./node_modules/vitest/vitest.mjs run --config vitest.stress.config.ts --reporter=default",
     "check:package-boundary": "bun run scripts/maintenance/check-package-boundary.ts",
+    "maintenance:cutover-host-enrollments": "bun run scripts/maintenance/cutover-host-enrollments.ts",
     "maintenance:normalize-sandbox-leases": "bun run scripts/maintenance/normalize-convex-sandbox-leases.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.convex-tests.json",
     "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit.xml && bun run test:convex",
     "test:convex": "node ./node_modules/vitest/vitest.mjs run --config vitest.convex.config.ts --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit-convex.xml",
     "test:live-ui": "node --import tsx scripts/sandbox/live/live-ui-test.ts",
     "sandbox:image": "bun run scripts/sandbox/build-sandbox-image.ts",
-    "rebuild:native": "npm rebuild better-sqlite3"
+    "rebuild:native": "npm rebuild better-sqlite3",
+    "smoke:self-hosted-restart": "./scripts/smoke/self-hosted-restart.sh",
+    "smoke:self-hosted-upgrade": "./scripts/smoke/self-hosted-upgrade.sh"
   },
   "dependencies": {
     "@claxedo/agent-extensions": "workspace:0.7.0",
     "@claxedo/agent-sdk-runtime": "workspace:0.7.0",
     "@claxedo/channels": "workspace:0.4.0",
     "@claxedo/connections": "0.4.0",
+    "@claxedo/local-server": "workspace:*",
     "@claxedo/mcp": "workspace:0.4.0",
     "@claxedo/sandbox-manager": "workspace:0.7.0",
+    "@claxedo/server-core": "workspace:*",
     "@claxedo/wakes": "workspace:0.3.0",
     "@claxedo/workgraph": "0.4.0",
     "@claxedo/workspace-relay": "workspace:0.7.0",

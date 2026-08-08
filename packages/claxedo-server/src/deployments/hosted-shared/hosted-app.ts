@@ -32,11 +32,13 @@
 
 import { Hono, type Context } from "hono"
 import { cors } from "hono/cors"
-import { allowedOriginPatterns } from "../../platform/http/cors-origins"
-import { securityHeaders } from "../../platform/http/security-headers"
+import { allowedOriginPatterns } from "@claxedo/server-core/platform/http/cors-origins"
+import { securityHeaders } from "@claxedo/server-core/platform/http/security-headers"
 import { JwksRoutes } from "../../authority/routes/jwks"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../shared-routes/internal-relay"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
+import { HostEnrollmentRoutes } from "../../routes/hosted/host-enrollment"
+import { createRouteOwnership, withRouteOwnership } from "../route-ownership"
 import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
 import { signedOrError } from "../../workspace/route-support"
 import { HostedDeviceAuthRoutes } from "../../routes/hosted/device-auth"
@@ -46,7 +48,7 @@ import { HostedSandboxAdminRoutes } from "../../routes/hosted/sandbox-admin"
 import { HostedWorkGraphAdminRoutes, type WorkGraphReconcileResult } from "../../routes/hosted/workgraph-admin"
 import { HostedControlRoutes } from "../../routes/hosted/control"
 import { HostedWorkerCompositionError, type HostedControlPlane } from "../../authority/hosted-services"
-import { configureCliSessionTokenRegistry } from "../../platform/auth/cli-session-registry"
+import { configureCliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
 import type { ControlPlaneServices } from "../../authority/services"
 import {
   createFixedWindowConnectionRateLimiter,
@@ -56,14 +58,14 @@ import {
 import { defaultRequestGuard, hostedRouteGuardExemptions } from "../../platform/auth/request-guard"
 import { BILLING_WEBHOOK_GUARD_EXEMPTION, BillingRoutes } from "../../billing/routes"
 import { createEntitlementGate, type EntitlementGate } from "../../billing/entitlement"
-import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPlaneAuth } from "../../platform/auth/auth"
+import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { deploymentCompatibilityReport } from "../../platform/governance/deployment-compatibility"
 import {
   DEPLOYMENT_MODE_ENV,
   DeploymentModeError,
   deploymentMode,
   unsignedLocalRequestGuard,
-} from "../../authority/deployment-mode"
+} from "@claxedo/server-core/authority/deployment-mode"
 import {
   createHostedWorkGraph,
   type HostedWorkGraph,
@@ -262,8 +264,33 @@ function sandboxEgressExtraHosts(env: HostedControlPlane["env"]): string[] {
     .filter(Boolean)
 }
 
+/**
+ * The cloud-hosted control plane: boot validation, then the shared route core.
+ *
+ * The assertion is the only thing this adds, and it is the whole point of the
+ * split. `assertHostedAppBootConfig` encodes a CLOUD trust posture — a hosted
+ * deployment mode, a signed issuer, a hosted authority. Self-hosted composes
+ * the same routes over SQLite and embedded auth, which that assertion would
+ * reject, and reusing it there would mean either weakening a cloud boot check
+ * or asserting nothing at all.
+ *
+ * So the route assembly below is trust-NEUTRAL, and each deployment brings its
+ * own posture check. Unit 7 adds `createSelfHostedApp` as the second caller.
+ */
 export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppOverrides = {}) {
   assertHostedAppBootConfig(plane)
+  return createSignedControlPlaneApp(plane, overrides)
+}
+
+/**
+ * The signed control-plane routes, with no deployment posture of its own.
+ *
+ * Every caller must have validated its own boot configuration first. Nothing
+ * here re-checks it, and nothing here may: a check that suited both cloud and
+ * self-hosted would have to be the weaker of the two, which is how a hosted
+ * boot gate quietly stops covering the thing it was written for.
+ */
+export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides: HostedAppOverrides = {}) {
   // Install the plane's durable CLI session token registry process-wide.
   //
   // This is the `configureX(...)` composition seam the registry port defines,
@@ -274,7 +301,13 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   // the port fails closed when nothing is configured, on purpose.
   configureCliSessionTokenRegistry(plane.cliSessionTokenRegistry)
   const { services } = plane
-  const app = new Hono()
+  // Every `app.route()` below is recorded against one owner. Unit 7 splits this
+  // file into a shared signed core plus deployment adapters, and two
+  // compositions mounting the same prefix is the mistake that arrangement
+  // invites — Hono resolves it silently by keeping whichever mounted first, so
+  // the loser becomes dead code whose identity depends on call order.
+  const routeOwnership = createRouteOwnership()
+  const app = withRouteOwnership(new Hono(), routeOwnership, "hosted-shared")
   const liveSyncRoom = overrides.liveSyncRoom
   const settlementDispatcherByRequest = new WeakMap<Request, SettlementDispatcher>()
   // Per-request `waitUntil`, captured in `forwardWorkGraph` from the active
@@ -541,6 +574,10 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   )
 
   app.route("/api/workspace", HostedWorkspaceRoutes(services, workspaceOptions))
+  // Machine-wide remote access. Deliberately NOT under /api/workspace: there
+  // is no workspace in any of these paths, and mounting it there would invite
+  // the per-workspace shape back in.
+  app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, workspaceOptions))
   app.route("/api/workspace", WorkspaceCheckpointRoutes(services, {
     defaultHomeRegion: services.defaultHomeRegion,
   }))

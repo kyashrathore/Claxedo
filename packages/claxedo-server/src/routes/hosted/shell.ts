@@ -28,7 +28,7 @@
 import { Hono } from "hono"
 import type { Context } from "hono"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
-import { loadAgentExtensionsCatalog } from "../../agent-config/extensions/catalog"
+import { loadAgentExtensionsCatalog } from "@claxedo/server-core/agent-config/extensions/catalog"
 import {
   ControlPlaneAuthError,
   bearerToken,
@@ -38,7 +38,7 @@ import {
   type ControlPlaneAuthConfig,
   type ControlPlaneAuthContext,
   type SignedControlPlaneAuth,
-} from "../../platform/auth/auth"
+} from "@claxedo/server-core/platform/auth/auth"
 import { connectLiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
 
 export type HostedShellRouteOptions = {

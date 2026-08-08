@@ -2,7 +2,7 @@ import { Hono } from "hono"
 import { randomUUID } from "node:crypto"
 import type { SandboxRef } from "@claxedo/agent-sdk-runtime"
 import type { ControlPlaneServices } from "../../authority/services"
-import type { SessionMeta } from "../meta"
+import type { SessionMeta } from "@claxedo/server-core/session/meta/index"
 import { resolveSessionGateway } from "../../authority/http"
 import {
   ControlPlaneAuthError,
@@ -10,9 +10,9 @@ import {
   controlPlaneAuthErrorBody,
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
-} from "../../platform/auth/auth"
-import { requireAuthority } from "../../platform/auth/authority"
-import { isLoopbackLocalRequest } from "../../platform/http/peer-address"
+} from "@claxedo/server-core/platform/auth/auth"
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import {
   buildSessionListResponse,
   parseSessionListQuery,

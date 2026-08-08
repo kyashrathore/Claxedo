@@ -913,7 +913,12 @@ export async function installSubmitMocks(mock: ModuleMocker) {
   rawCreatePromptSubmit = mod.createPromptSubmit
   const testQueryClient = (await import("@/platform/query/query-client")).queryClient
   clearRuntimeQueries = () => testQueryClient.clear()
-  resetRuntimeEnsureCache = (await import("@/platform/runtime/cloud/workspace-runtime-store")).resetWorkspaceRuntimeEnsureCache
+  const cloudStartup = await import("@/platform/runtime/cloud/workspace-runtime-store")
+  resetRuntimeEnsureCache = cloudStartup.resetWorkspaceRuntimeEnsureCache
+  // Production binds this in `app/entry/main.tsx`; the harness is the hosted
+  // composition for these tests, so it binds the same implementation. Without
+  // it a cloud/user-hosted submit would throw "no hosted workspace startup".
+  ;(await import("@/platform/runtime/workspace-startup")).configureWorkspaceStartup(cloudStartup.cloudWorkspaceStartup)
 }
 
 /** Restore every mutable state field + observable sink to its per-test default. */

@@ -7,8 +7,8 @@ import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
 import type { ConnectionsService } from "@claxedo/connections"
 import { WorkGraphConnectionToolNames, type WorkGraphContext } from "@claxedo/workgraph/contracts"
 import { ExecutionCapabilitiesUnavailableError } from "@claxedo/workgraph/ports"
-import { OPENCODE_INTERNAL_BASE } from "../../../opencode/engine"
-import { piProviderCatalog } from "../../../credentials/pi-provider-catalog"
+import { OPENCODE_INTERNAL_BASE } from "@claxedo/server-core/opencode/engine"
+import { piProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-catalog"
 import { createExecutionCapabilitiesPort } from "../execution-capabilities"
 
 const SESSION_COMPOSER_HARNESSES = [

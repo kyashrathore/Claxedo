@@ -4,10 +4,10 @@ import type { ControlPlaneServices } from "../../authority/services"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthErrorBody,
-} from "../../platform/auth/auth"
+} from "@claxedo/server-core/platform/auth/auth"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
-import { resolveWorkspace } from "../../workspace/store"
-import { isLoopbackLocalRequest } from "../../platform/http/peer-address"
+import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
+import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { cloudConnectionInfo, localLoopbackCloudConnectionInfo } from "../cloud-connection"
 import { userHostedConnectionInfo } from "../user-hosted-connection"
 import { signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"

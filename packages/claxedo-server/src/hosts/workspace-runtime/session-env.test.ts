@@ -9,17 +9,27 @@ const mocks = vi.hoisted(() => ({
   embeddedFetch: vi.fn(),
 }))
 
-vi.mock("../../deployments/local/embedded-workspace-runtime", () => ({
-  ensureEmbeddedWorkspaceRuntime: mocks.ensureEmbeddedWorkspaceRuntime,
-}))
+// The embedded runtime is reached through the composed port, so these cases
+// install one rather than mocking a deployment module by path. `mocks.
+// ensureEmbeddedWorkspaceRuntime` still drives it, so each case keeps setting
+// up its runtime exactly as before.
+import { configureLocalWorkspaceRuntime } from "@claxedo/server-core/workspace/local-runtime-port"
 
-vi.mock("../../workspace/store", () => ({
+configureLocalWorkspaceRuntime({
+  async fetch(ws, request) {
+    const runtime = await mocks.ensureEmbeddedWorkspaceRuntime(ws)
+    return runtime.app.fetch(request)
+  },
+  async syncAgentExtensions() {},
+})
+
+vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   resolveWorkspace: mocks.resolveWorkspace,
 }))
 
-import type { SandboxFetchOptions } from "../../workspace/http/sandbox-target-fetch"
+import type { SandboxFetchOptions } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import { createClaxedoSessionEnvFactory, createWorkspaceRuntimeSessionEnv } from "./session-env"
-import type { Workspace } from "../../workspace/store"
+import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { CONNECTION_TURN_HEADER, createConnectionTurnCredentials } from "../../connections/turn-credentials"
 import {
   disposeHydratedSessionDocuments,

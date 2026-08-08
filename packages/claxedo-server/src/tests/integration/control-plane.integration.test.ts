@@ -130,12 +130,12 @@ process.env.CLAXEDO_STATE_DIR = path.join(data, "state")
 process.env.POSTHOG_KEY = ""
 
 // Vitest can deadlock resolving this graph when these top-level imports run concurrently.
-const serverMod = await import("../../deployments/local/server")
+const serverMod = await import("../../deployments/self-hosted-node/app")
 const supervisor = await import("../../workspace/supervisor")
-const store = await import("../../workspace/store")
-const agent = await import("../../agent-config")
-const embedded = await import("../../deployments/local/embedded-workspace-runtime")
-const opauth = await import("../../opencode/auth")
+const store = await import("@claxedo/server-core/workspace/store/index")
+const agent = await import("@claxedo/server-core/agent-config/index")
+const embedded = await import("@claxedo/local-server/deployments/local/embedded-workspace-runtime")
+const opauth = await import("@claxedo/server-core/opencode/auth")
 
 const upstreamProvider = {
   all: [

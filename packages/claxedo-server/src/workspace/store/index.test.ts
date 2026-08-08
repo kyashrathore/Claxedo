@@ -11,9 +11,9 @@ const root = path.join(realpathSync(os.tmpdir()), `workspace-store-test-${random
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
-const mod = await import("./index")
+const mod = await import("@claxedo/server-core/workspace/store/index")
 const hostLease = await import("../../sandbox/stores/sqlite-supervisor-state")
-const { ClaxedoDB } = await import("../../platform/db/db")
+const { ClaxedoDB } = await import("../../platform/db")
 
 function restoreEnv(key: string, value: string | undefined) {
   if (value === undefined) {
@@ -84,6 +84,10 @@ describe("workspace store", () => {
   beforeEach(async () => {
     ClaxedoDB.close()
     await fs.rm(root, { recursive: true, force: true })
+    // Cloud-workspace visibility depends on the sandbox lease, which the
+    // supervisor owns. These cases exercise that visibility rule, so they wire
+    // the same reader the supervisor composition installs.
+    mod.configureWorkspaceStore({ sandboxLease: (id) => hostLease.getSupervisorSandboxLease(id) })
   })
 
   afterAll(async () => {

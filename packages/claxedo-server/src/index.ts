@@ -1,12 +1,20 @@
 export {
-  createApp,
+  createSelfHostedApp,
   createDefaultLocalControlPlaneServices,
   shutdownControlPlaneRuntime,
   startControlPlaneStack,
-  startServer,
   type ControlPlaneStackOptions,
-} from "./deployments/local/server"
-export { DEFAULT_CLAXEDO_SERVER_PORT } from "./deployments/local/port"
+} from "./deployments/self-hosted-node/app"
+/**
+ * The self-hosted binary's one supported way in.
+ *
+ * `startServer` is deliberately NOT re-exported: it composes without checking
+ * the deployment posture, so a caller reaching it would boot a configuration
+ * this package refuses. It stays reachable inside the package for
+ * `startSelfHostedServer` to call after the gate passes.
+ */
+export { startSelfHostedServer, selfHostedPosture } from "./deployments/self-hosted-node/start"
+export { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/self-hosted-execution"
 export { createCentralSessionRuntime } from "./session/runtime"
 export {
   ControlPlaneCompositionError,
@@ -36,13 +44,13 @@ export {
   type ControlPlaneAuthAdapter,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "./platform/auth/auth"
+} from "@claxedo/server-core/platform/auth/auth"
 export {
   hostTunnelTokenSigner,
   runtimeAccessTokenSigner,
   type HostTunnelTokenSigner,
   type RuntimeAccessTokenSigner,
-} from "./platform/auth/runtime-access-token"
+} from "@claxedo/server-core/platform/auth/runtime-access-token"
 export {
   createControlPlaneRelayProvider,
   type ControlPlaneRelayProviderOptions,
@@ -50,7 +58,7 @@ export {
   type RelayTarget,
   type RelayToken,
   type RelayTokenInput,
-} from "./adapters/relay"
+} from "@claxedo/server-core/adapters/relay/index"
 export {
   DEFAULT_WORKSPACE_RUNTIME_PORT,
   createSandboxManager,
@@ -114,7 +122,7 @@ export {
   WORKSPACE_DIR,
 } from "@claxedo/sandbox-manager/defaults"
 export { createProjectionStore, type ProjectionStore } from "./authority/projection-store"
-export { createDurableSessionLog, type DurableSessionLog } from "./platform/auth/durable-session-log"
+export { createDurableSessionLog, type DurableSessionLog } from "@claxedo/server-core/platform/auth/durable-session-log"
 export {
   claimChannelDelivery,
   countChannelDeliveriesByUserDay,
@@ -145,8 +153,8 @@ export {
   stopUserHostedWorkspaceTunnel,
 } from "./user-hosted-tunnel"
 export { initPostHog, shutdownPostHog, capture, getPostHog } from "./platform/telemetry/errors/posthog"
-export { claxedoBus } from "./platform/runtime/lib/bus"
-export type { ClaxedoEvent, PtyInfo } from "./platform/runtime/lib/bus"
+export { claxedoBus } from "@claxedo/server-core/platform/runtime/lib/bus"
+export type { ClaxedoEvent, PtyInfo } from "@claxedo/server-core/platform/runtime/lib/bus"
 export { Pty, Process, createProcessClient, ProcessManager } from "@claxedo/workspace-runtime/host"
-export { ClaxedoDB } from "./platform/db/db"
-export { dataDir, stateDir } from "./platform/runtime/lib/paths"
+export { ClaxedoDB } from "./platform/db"
+export { dataDir, stateDir } from "@claxedo/server-core/platform/runtime/lib/paths"

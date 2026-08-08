@@ -1,4 +1,4 @@
-import { cleanString as clean } from "../runtime/lib/strings"
+import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
 import { TUNNEL_PROTOCOL_VERSION } from "@claxedo/workspace-relay-protocol"
 
 export const CLAXEDO_COMPATIBILITY_SCHEMA_VERSION = 1

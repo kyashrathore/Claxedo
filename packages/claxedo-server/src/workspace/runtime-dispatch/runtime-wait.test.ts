@@ -42,7 +42,7 @@ vi.mock("../../workspace/supervisor", () => ({
   listSupervisorSandboxs: mocks.listSupervisorSandboxs,
 }))
 
-vi.mock("../../workspace/store", () => ({
+vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   resolveWorkspace: mocks.resolveWorkspace,
   ensureWorkspace: vi.fn(async (input: { workspaceId?: string; directory?: string; kind?: string; repo_url?: string; status?: string }) => {
     const row = {
@@ -76,13 +76,14 @@ vi.mock("../../workspace/store", () => ({
   listProjects: vi.fn(async () => []),
 }))
 
-vi.mock("../../opencode/auth", () => ({
+vi.mock("@claxedo/server-core/opencode/auth", () => ({
   configureOpenCodeAuth: vi.fn(),
   opencodeHeaders: mocks.opencodeHeaders,
 }))
 
-const { createWorkspaceRuntimeProxy, workspaceRuntimeProxy } = await import("./middleware")
-const { embeddedConfigModeForPath } = await import("./internals")
+const { createWorkspaceRuntimeProxy, workspaceRuntimeProxy } = await import("@claxedo/local-server/workspace/runtime-dispatch/middleware")
+const { embeddedConfigModeForPath } = await import("@claxedo/local-server/workspace/runtime-dispatch/internals")
+const { configureWorkspaceSupervisorPort } = await import("@claxedo/server-core/workspace/supervisor-port")
 
 const {
   markSupervisorSandboxUse,
@@ -126,6 +127,16 @@ describe("workspaceRuntimeProxy startup wait", () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.clearAllMocks()
+    // Dispatch reaches the supervisor through the composed port, which is what
+    // keeps the cloud provisioning graph out of the dispatch closure.
+    configureWorkspaceSupervisorPort({
+      hold: mocks.holdSupervisorSandbox,
+      release: mocks.releaseSupervisorSandbox,
+      markUse: mocks.markSupervisorSandboxUse,
+      touch: mocks.touchSupervisorSandbox,
+      broadcastRuntimeConfig: mocks.broadcastRuntimeConfig,
+      syncAgentExtensions: mocks.syncWorkspaceRuntimeAgentExtensions,
+    })
     resolveWorkspace.mockResolvedValue({
       id: "ws_1",
       kind: "cloud",
@@ -136,6 +147,7 @@ describe("workspaceRuntimeProxy startup wait", () => {
   })
 
   afterEach(() => {
+    configureWorkspaceSupervisorPort(undefined)
     vi.useRealTimers()
     globalThis.fetch = originalFetch
     resetWorkspaceStoreMock()

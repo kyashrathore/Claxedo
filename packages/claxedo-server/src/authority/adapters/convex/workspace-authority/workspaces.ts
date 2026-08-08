@@ -1,5 +1,5 @@
-import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../../../platform/auth/auth"
-import { isCliAccessAuth } from "../../../../platform/auth/cli-session-token"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { isCliAccessAuth } from "@claxedo/server-core/platform/auth/cli-session-token"
 import { convexApi } from "./api"
 import { requireAllowed, requireExecutor } from "./executor"
 import type { ConvexAuthorityInput, ServiceArgs } from "./types"

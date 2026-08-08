@@ -1,4 +1,4 @@
-import type { SignedControlPlaneAuth } from "../platform/auth/auth"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import {
   DocumentAgentOpenError,
   publishDocumentEvent,
@@ -263,12 +263,6 @@ export function createDocumentsService<H extends DocumentHandle>(
     updateSession(scope: DocumentsServiceScope, documentId: string, session_id: string | null) {
       return mutateIndex(scope, documentId, "document.session_changed", () =>
         backend.index.update(scope, documentId, { session_id }),
-      )
-    },
-
-    transitionStatus(scope: DocumentsServiceScope, documentId: string, status: string) {
-      return mutateIndex(scope, documentId, "document.status_changed", () =>
-        backend.index.transitionStatus(scope, documentId, status),
       )
     },
 

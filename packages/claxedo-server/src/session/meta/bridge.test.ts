@@ -35,9 +35,9 @@ const [
   { createSqliteCentralStore },
   { ClaxedoDB },
 ] = await Promise.all([
-  import("../../deployments/local/server"),
+  import("../../deployments/self-hosted-node/app"),
   import("../../authority/adapters/sqlite/central-store"),
-  import("../../platform/db/db"),
+  import("../../platform/db"),
 ])
 
 function centralStore() {
@@ -59,7 +59,7 @@ describe("projectLocalSessionMetaFromEvent (SSE-only auto-title -> projectionSto
     await fs.mkdir(root, { recursive: true })
     const services = { projectionStore: centralStore().projectionStore }
 
-    await projectLocalSessionMetaFromEvent(services, {
+    await projectLocalSessionMetaFromEvent(services.projectionStore, {
       directory: "/tmp/e2e-harness-session",
       payload: {
         type: "session.updated",
@@ -83,7 +83,7 @@ describe("projectLocalSessionMetaFromEvent (SSE-only auto-title -> projectionSto
     const services = { projectionStore: centralStore().projectionStore }
 
     await expect(
-      projectLocalSessionMetaFromEvent(services, {
+      projectLocalSessionMetaFromEvent(services.projectionStore, {
         directory: "/tmp/e2e-harness-session",
         payload: { type: "session.updated", properties: {} },
       }),
@@ -94,7 +94,7 @@ describe("projectLocalSessionMetaFromEvent (SSE-only auto-title -> projectionSto
     await fs.mkdir(root, { recursive: true })
     const firstProcess = { projectionStore: centralStore().projectionStore }
 
-    await projectLocalSessionMetaFromEvent(firstProcess, {
+    await projectLocalSessionMetaFromEvent(firstProcess.projectionStore, {
       directory: "/tmp/e2e-harness-session-restart",
       payload: {
         type: "session.updated",

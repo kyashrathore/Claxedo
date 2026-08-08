@@ -209,6 +209,48 @@ const api: ElectronAPI = {
   getDroppedFilePaths: (files) => files.map((f) => webUtils.getPathForFile(f)).filter(Boolean),
   processDiagnostics: processDiagnosticsBridge,
   browser: browserBridge,
+  /**
+   * The account, entirely by name.
+   *
+   * No method here takes a url, a path, or headers — `run` takes an operation
+   * NAME from the reviewed set and main decides the request. That is what lets
+   * the credential live in main: this bridge cannot be used to spend it on a
+   * route nobody wrote down.
+   */
+  /**
+   * Machine remote access, entirely by name.
+   *
+   * Four operations, none of which takes an argument. The renderer cannot pass
+   * a url, a path, a method, a body or even a label — main holds the account
+   * bearer and a machine signing key that does not expire, so the only thing a
+   * message may carry is WHICH of four reviewed things should happen.
+   *
+   * `status` reads. `start` publishes this machine and is the one place the
+   * enrollment handshake can begin, which is why the desktop enrolls nothing at
+   * launch: the user presses a button, or nothing happens.
+   *
+   * `onStatus` is the other direction — a heartbeat rejected, an enrollment
+   * expired, a revocation — which no invoke could deliver because nobody would
+   * be asking at the moment it happened.
+   */
+  hostConnector: {
+    status: () => ipcRenderer.invoke("claxedo.hostConnector.status"),
+    start: () => ipcRenderer.invoke("claxedo.hostConnector.start"),
+    pause: () => ipcRenderer.invoke("claxedo.hostConnector.pause"),
+    revoke: () => ipcRenderer.invoke("claxedo.hostConnector.revoke"),
+    onStatus: (listener: (status: unknown) => void) => {
+      const handler = (_event: unknown, status: unknown) => listener(status)
+      ipcRenderer.on("claxedo.hostConnector.status", handler)
+      return () => ipcRenderer.removeListener("claxedo.hostConnector.status", handler)
+    },
+  },
+  account: {
+    state: () => ipcRenderer.invoke("claxedo.account.state"),
+    signIn: () => ipcRenderer.invoke("claxedo.account.signIn"),
+    signOut: () => ipcRenderer.invoke("claxedo.account.signOut"),
+    run: (operation: string, input?: Record<string, unknown>) =>
+      ipcRenderer.invoke(`claxedo.account.operation:${operation}`, input),
+  },
 }
 
 contextBridge.exposeInMainWorld("api", api)

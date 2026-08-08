@@ -2,7 +2,7 @@ import { describe, expect, expectTypeOf, test } from "vitest"
 import type {
   DocumentChangedEvent as ServerDocumentChangedEvent,
   WorkgraphChangedEvent as ServerWorkgraphChangedEvent,
-} from "../runtime/lib/bus"
+} from "@claxedo/server-core/platform/runtime/lib/bus"
 import type { WorkgraphChangedEvent as AppWorkgraphChangedEvent } from "../../../../claxedo-app/src/features/workgraph/workgraph-changed-event"
 import type { DocumentChangedEvent as AppDocumentChangedEvent } from "../../../../claxedo-app/src/features/documents/data/document-changed-event"
 

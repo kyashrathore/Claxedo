@@ -1,4 +1,4 @@
-import { cleanString as clean } from "../../runtime/lib/strings"
+import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
 /**
  * Env → observability init options. PostHog carries product analytics AND
  * error tracking for every runtime, so one key resolves both planes and there

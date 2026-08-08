@@ -1,9 +1,10 @@
-import type { SignedControlPlaneAuth } from "../../../../platform/auth/auth"
-import type { WorkspaceAuthority } from "../../../../platform/auth/authority"
-import { cliServiceUser } from "../../../../platform/auth/cli-session-token"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { cliServiceUser } from "@claxedo/server-core/platform/auth/cli-session-token"
 import { agentExtensionAuthority } from "./agent-extensions"
 import { auditAuthority } from "./audit"
 import { requireServiceToken } from "./executor"
+import { hostEnrollmentAuthority } from "./host-enrollment"
 import { identityAuthority } from "./identity"
 import { runtimeTokenAuthority } from "./runtime-tokens"
 import { sessionAuthority } from "./sessions"
@@ -43,6 +44,7 @@ export function createConvexAuthority(input: ConvexAuthorityInput = {}): Workspa
   return {
     ...identityAuthority(input, serviceArgs),
     ...workspaceAuthority(input, serviceArgs),
+    ...hostEnrollmentAuthority(input, serviceArgs),
     ...sessionAuthority(input, serviceArgs),
     ...runtimeTokenAuthority(input),
     ...agentExtensionAuthority(input),

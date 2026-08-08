@@ -23,7 +23,7 @@ import {
   type PiModelBackendResolver,
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { Type } from "@sinclair/typebox"
-import { putCredential, resolveSecret } from "../credentials/registry"
+import { putCredential, resolveSecret } from "@claxedo/server-core/credentials/registry"
 import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
 import { createRuntimeEventHub } from "@claxedo/agent-sdk-runtime/runtime-event-hub"
 import { eventSessionId } from "@claxedo/agent-sdk-runtime/compat-events"
@@ -41,10 +41,10 @@ import {
 import { SqliteWakeStore } from "@claxedo/wakes/sqlite"
 import { createSessionRoutes, runtimeEventsHandler, type RuntimeSessionBusEvent } from "@claxedo/workspace-runtime/routes"
 import type { ControlPlaneServices } from "../authority/services"
-import type { SessionMeta } from "../session/meta"
+import type { SessionMeta } from "@claxedo/server-core/session/meta/index"
 import { createConnectionTurnCredentials, type ConnectionTurnCredentials } from "../connections/turn-credentials"
-import { piRegistryCredentialProvider } from "../credentials/pi-credentials"
-import { piProviderCatalog, validatePiPromptModel } from "../credentials/pi-provider-catalog"
+import { piRegistryCredentialProvider } from "@claxedo/server-core/credentials/pi-credentials"
+import { piProviderCatalog, validatePiPromptModel } from "@claxedo/server-core/credentials/pi-provider-catalog"
 import {
   emitLlmTurnCompleted,
   emitSessionStarted,

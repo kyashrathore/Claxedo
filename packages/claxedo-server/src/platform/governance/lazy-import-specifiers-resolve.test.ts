@@ -1,7 +1,12 @@
 /**
  * Every bundler-hidden lazy import specifier must resolve to a real module.
  *
- * A handful of call sites hold their specifier in a variable
+ * NOTE (2026-08-08): there are no such call sites left — all three became
+ * ports. This guard now asserts that, and keeps the resolver so a
+ * reintroduced one is still checked. The rest of this comment records why the
+ * pattern existed and why it was worth removing.
+ *
+ * A handful of call sites held their specifier in a variable
  * (`const embeddedMod = "../deployments/local/…"`) precisely so esbuild/Vite
  * cannot follow the edge — the targets are Node-only deployment modules that
  * must not land in a Worker build. The cost of that trick is that tsc cannot
@@ -58,8 +63,18 @@ describe("lazy import specifiers", () => {
       }
     }
     expect(failures).toEqual([])
-    // The pattern must keep matching a real corpus — if the call sites are
-    // rewritten to a shape this regex misses, the guard is dead, not passing.
-    expect(sites).toBeGreaterThanOrEqual(3)
+    // There are now ZERO of these, and that is the point.
+    //
+    // All three call sites reached a Node-only deployment module from shared
+    // code, hiding the edge from the bundler on purpose. They are ports now
+    // (`workspace/local-runtime-port.ts`, `workspace/supervisor-port.ts`),
+    // which keeps the Worker build clean AND leaves the edge visible to tsc,
+    // to import rewriters, and to the closure walker.
+    //
+    // The resolver above stays: a new hidden import must still point at a real
+    // module. This assertion is the stronger statement — do not reintroduce
+    // the pattern. If a case genuinely needs it, this line is where to argue
+    // for it.
+    expect(sites).toBe(0)
   })
 })

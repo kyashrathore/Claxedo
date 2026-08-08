@@ -1,5 +1,5 @@
 import { and, desc, eq } from "drizzle-orm"
-import { ClaxedoDB } from "../platform/db/db"
+import { ClaxedoDB } from "../platform/db"
 import { ClaxedoChannelRunAuditTable } from "./run-audit.sql"
 import { ClaxedoChannelStateTable } from "./delivery.sql"
 

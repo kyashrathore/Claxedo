@@ -7,6 +7,7 @@ import log from "electron-log/main.js"
 import { isBrowserTabEnabled } from "./browser/flag"
 import { IS_PACKAGED } from "./constants"
 import { navigationDecision, windowOpenDecision, type NavigationDecision } from "./navigation-guard"
+import { trustWindowWithBridge } from "./ipc-caller-guard"
 
 type Globals = {
   updaterEnabled: boolean
@@ -76,6 +77,13 @@ export function createMainWindow(globals: Globals, options?: { deferLoad?: boole
     },
   })
   wireNavigationGuard(win.webContents)
+  // This window carries the preload bridge, so it is also an IPC caller we
+  // trust. Granted here, beside the navigation guard, so the code that hands
+  // out the bridge is the code that authorizes it.
+  trustWindowWithBridge({
+    webContentsId: win.webContents.id,
+    onDestroyed: (listener) => win.webContents.once("destroyed", listener),
+  })
   if (process.env.CLAXEDO_PERF_READY_SELECTOR) {
     log.info(`[startup-perf] browser-window ready elapsed=${String(Math.round(performance.now() - startedAt))}ms`)
   }
@@ -167,6 +175,13 @@ export function createLoadingWindow(globals: Globals) {
     },
   })
   wireNavigationGuard(win.webContents)
+  // This window carries the preload bridge, so it is also an IPC caller we
+  // trust. Granted here, beside the navigation guard, so the code that hands
+  // out the bridge is the code that authorizes it.
+  trustWindowWithBridge({
+    webContentsId: win.webContents.id,
+    onDestroyed: (listener) => win.webContents.once("destroyed", listener),
+  })
 
   loadWindow(win, "loading.html")
   injectGlobals(win, globals)

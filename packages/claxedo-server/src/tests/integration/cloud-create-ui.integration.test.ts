@@ -9,8 +9,8 @@ import { createServer } from "node:net"
 
 vi.mock("../../workspace/supervisor", async () => {
   const ensureMockSandbox = async (workspaceId: string) => {
-    const bus = await import("../../platform/runtime/lib/bus")
-    const store = await import("../../workspace/store")
+    const bus = await import("@claxedo/server-core/platform/runtime/lib/bus")
+    const store = await import("@claxedo/server-core/workspace/store/index")
     bus.claxedoBus.publish({
       type: "provision",
       workspaceId,
@@ -195,9 +195,9 @@ process.env.CLAXEDO_STATE_DIR = path.join(data, "state")
 process.env.POSTHOG_KEY = ""
 
 const [serverMod, store, agent] = await Promise.all([
-  import("../../deployments/local/server"),
-  import("../../workspace/store"),
-  import("../../agent-config"),
+  import("../../deployments/self-hosted-node/app"),
+  import("@claxedo/server-core/workspace/store/index"),
+  import("@claxedo/server-core/agent-config/index"),
 ])
 
 async function repo(label: string) {

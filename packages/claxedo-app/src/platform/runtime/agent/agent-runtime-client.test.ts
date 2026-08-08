@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
+import { configureApiRuntime, resetApiRuntime } from "@/platform/api/api"
 import { agentRuntimeWorkspaceTargetQueryKey, createAgentRuntimeClient } from "./agent-runtime-client"
 
 function ok(body: unknown, init?: ResponseInit) {
@@ -768,6 +769,74 @@ describe("AgentRuntimeClient", () => {
       "GET https://control.example/api/workspace/ws_real/connection",
       "POST https://relay.example/workspaces/ws_real/session/runtime-session-1/prompt_async",
     ])
+  })
+
+  /**
+   * Where the signed control plane's bearer comes from.
+   *
+   * This client used to import `getAuthToken` from `@/platform/auth/auth-client`
+   * for this one header, which put Clerk in the local product's bundle for a
+   * code path a local build never reaches. It now reads whatever the build
+   * bound through `configureApiRuntime({ bearerToken })` — the same source
+   * `authFetch` uses — so the two cases below are "hosted" and "local", not
+   * "works" and "broken".
+   *
+   * `/repo/bearer-*` directories are distinct per test because `workspaceTarget`
+   * caches its resolve in `queryClient` by (serverUrl, directory).
+   */
+  async function signedResolveAuthorization(directory: string) {
+    const seen: Array<string | null> = []
+    const client = createAgentRuntimeClient({
+      serverUrl: "https://control.example/",
+      signedControlPlane: true,
+      request: async (input, init) => {
+        if (String(input).includes("/api/workspace/resolve")) {
+          seen.push(new Headers(init?.headers).get("Authorization"))
+          return ok({ workspaceId: "ws_bearer", kind: "cloud" })
+        }
+        if (String(input).includes("/api/workspace/ws_bearer/connection")) {
+          return ok({
+            access: "cloud",
+            backing: "cloud-vm",
+            workspaceId: "ws_bearer",
+            relayUrl: "https://control.example",
+            runtimeAccessToken: "runtime-token",
+            role: "editor",
+            tokenExpiresAt: Date.now() + 120_000,
+          })
+        }
+        return ok({})
+      },
+    })
+
+    await client.sendMessage({
+      mode: "async",
+      directory,
+      sessionID: "runtime-session-1",
+      agent: "build",
+      model: { providerID: "claude-acp", modelID: "default" },
+      messageID: "message-1",
+      parts: [],
+    })
+    return seen
+  }
+
+  it("sends the bearer the build bound through configureApiRuntime", async () => {
+    configureApiRuntime({ bearerToken: async () => "tok_bound" })
+    try {
+      expect(await signedResolveAuthorization("/repo/bearer-bound")).toEqual(["Bearer tok_bound"])
+    } finally {
+      resetApiRuntime()
+    }
+  })
+
+  it("sends no authorization when the build bound no bearer source", async () => {
+    // The local product: `app/entry/local.tsx` binds nothing, which is the whole
+    // reason it can ship without an identity provider. An absent bearer is a
+    // state this path already handled — the header is simply omitted.
+    resetApiRuntime()
+
+    expect(await signedResolveAuthorization("/repo/bearer-unbound")).toEqual([null])
   })
 
   it("exposes workspace-scoped runtime event stream URLs", () => {

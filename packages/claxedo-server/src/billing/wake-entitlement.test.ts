@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest"
 import { hostedConnectionInfo } from "../connections/hosted-connection-info"
 import type { ControlPlaneServices } from "../authority/services"
-import type { SignedControlPlaneAuth } from "../platform/auth/auth"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 
 /**
  * Adversarial review: the cloud-workspace entitlement is enforced at

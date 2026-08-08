@@ -1,6 +1,6 @@
 import { randomUUID, timingSafeEqual } from "crypto"
 import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER } from "@claxedo/workspace-runtime/config"
-import { mintSupervisorBackplaneToken } from "../../platform/auth/runtime-access-token"
+import { mintSupervisorBackplaneToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { runtimes, type WorkspaceRuntimeState } from "./store"
 
 export function externalConfigToken() {

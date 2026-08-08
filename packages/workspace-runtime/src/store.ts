@@ -743,6 +743,18 @@ export class RuntimeStore {
         deleted_at INTEGER NOT NULL
       )
     `)
+    // One row per workspace directory whose inventory has been imported from
+    // the harnesses at least once. Generic listing is store-only, so a profile
+    // that predates the store — or a fresh profile sitting on top of an
+    // existing harness install — would otherwise show an empty session list.
+    // The marker is durable so that import happens exactly once per directory
+    // instead of on every launch, which is what keeps an idle shell idle.
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS session_inventory_import (
+        directory TEXT PRIMARY KEY,
+        imported_at INTEGER NOT NULL
+      )
+    `)
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS workspace_worktree (
         session_id TEXT PRIMARY KEY,
@@ -2475,6 +2487,27 @@ export class RuntimeStore {
       `)
       .get(sessionId, beforeSeq) as { assistant_message_id: string | null } | null
     return row?.assistant_message_id ?? undefined
+  }
+
+  /**
+   * Whether this directory's inventory has already been imported from the
+   * harnesses. `false` means generic listing must run discovery once before it
+   * can answer for this directory.
+   */
+  sessionInventoryImported(directory: string) {
+    return Boolean(this.db
+      .prepare("SELECT 1 FROM session_inventory_import WHERE directory = ?")
+      .get(directory))
+  }
+
+  markSessionInventoryImported(directory: string, at = Date.now()) {
+    this.db
+      .prepare(`
+        INSERT INTO session_inventory_import (directory, imported_at)
+        VALUES (?, ?)
+        ON CONFLICT(directory) DO NOTHING
+      `)
+      .run(directory, at)
   }
 
   listSessions(directory: string) {

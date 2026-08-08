@@ -70,7 +70,7 @@ vi.mock("@/platform/api/api", () => ({
   normalizeUrl: (value: string) => value.replace(/\/+$/, ""),
 }))
 
-vi.mock("@/platform/runtime/cloud/workspace-runtime-store", () => ({
+vi.mock("@/platform/runtime/workspace-runtime-record", () => ({
   resolveWorkspaceRuntime: vi.fn(async () => null),
 }))
 

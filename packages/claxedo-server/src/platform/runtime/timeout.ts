@@ -1,4 +1,4 @@
-import { ClaxedoError } from "../errors/base"
+import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 
 // Narrows `status` back to the literal the base widens to `number`: callers
 // pass it straight to `c.json(body, status)`, which takes a status-code union.

@@ -282,6 +282,8 @@ Runtime flags and lazy imports can reduce startup work, but they cannot prove th
 - **U8-F6.** Network harness adapters bind to loopback and authenticate every request with a fresh per-launch credential that stays out of arguments and logs. Pipe transports remain private to the parent. Each adapter preserves its protocol-specific retry and uncertain-delivery rules. Carries origin R15 and R18.
 - **U8-F7.** Generic session inventory and empty-shell hydration read the Workspace Runtime store and open no harness-global compatibility stream. Runtime-owned mutations publish canonical local metadata events. A named selected-harness refresh imports historical metadata idempotently. Carries origin R19–R23.
 
+  **Amended 2026-08-09 to match the implemented design.** As first written this required store-only listing with no exception, which Unit 4 could not satisfy and did not: store-only listing made the explicit `?harness=` path the only route by which sessions predating the store are imported, and nothing triggered it, so a profile upgrading onto the store — or a fresh profile on an existing harness install — would show an empty workspace with its sessions on disk. The implemented answer is a durable per-directory marker (`session_inventory_import`): the FIRST generic list for a directory runs the discovery fan-out and records the import, and every list after it is store-only. That is one harness start per directory, once, ever, against one or two on every launch under the old behavior — strictly better than what this requirement was written to protect. The requirement now reads: generic inventory is store-only after a one-time, durably-recorded, per-directory import, and no code path opens a harness-global compatibility stream. The "no harness-global stream" half is satisfied literally — `/global/event` attaches only to an already-live transport and takes an activity lease for the stream's life, so nothing starts a harness to serve events.
+
 ### Package ownership
 
 - **U8-R1.** `@claxedo/local-server` owns the desktop-local HTTP/SSE composition, local profile and credential services, Workspace Runtime wiring, local network policy, and harness dispatch. It builds from its declared package closure when `packages/claxedo-server`, `packages/claxedo-cloud-app`, `packages/sandbox-manager`, `packages/workgraph`, relay packages, and cloud/auth SDK source trees are unavailable. Carries origin R24.
@@ -339,7 +341,7 @@ Execution prerequisites are part of this plan:
 
 - Install the repository's pinned Bun/Node workspace dependencies from the root lockfile before Unit 1; run every test/typecheck command from its package directory as listed below.
 - Use the existing local Relay, hosted-server, signed-browser, desktop-auth, sandbox, and deterministic harness fixtures for unit/integration work. Tests mint isolated OAuth callbacks, account sessions, EdDSA keys, and authority records and require no production account, Relay, Convex deployment, cloud VM, or provider credential.
-- Unit 6 owns creation and documentation of Clerk public OAuth applications for the supported desktop channels, with exact registered callback URIs matching Electron's production/beta/development protocol schemes. Only the public client ID and issuer/discovery origin enter the desktop build. Before Unit 6 freezes `AccountPort` or machine-enrollment APIs, a production-like spike against the registered development application must prove system-browser authorization, exact callback dispatch, refresh, restart restoration, provider logout/revocation, organization switching/removal, cancel, timeout, and replay rejection. Repeat callback registration plus one happy-path sign-in/revocation check against beta and production configuration before promotion. A failure rejects the Electron-native Clerk design and blocks Units 6 and 9–11; do not paper over it with a renderer token or generic authenticated proxy.
+- **Development application registered and validated (2026-08-08) — see `docs/tech-docs/desktop-oauth-development-client.md`.** The public client exists with all three channel callbacks, and the live discovery document offers `S256` PKCE plus `authorization_code`/`refresh_token`, so the design needs no workaround. The interactive half of the spike (system-browser authorization, callback dispatch, refresh, restart restoration, logout/revocation, org switching, cancel/timeout/replay) still requires the Electron adapter. Beta and production applications remain unregistered. Unit 6 owns creation and documentation of Clerk public OAuth applications for the supported desktop channels, with exact registered callback URIs matching Electron's production/beta/development protocol schemes. Only the public client ID and issuer/discovery origin enter the desktop build. Before Unit 6 freezes `AccountPort` or machine-enrollment APIs, a production-like spike against the registered development application must prove system-browser authorization, exact callback dispatch, refresh, restart restoration, provider logout/revocation, organization switching/removal, cancel, timeout, and replay rejection. Repeat callback registration plus one happy-path sign-in/revocation check against beta and production configuration before promotion. A failure rejects the Electron-native Clerk design and blocks Units 6 and 9–11; do not paper over it with a renderer token or generic authenticated proxy.
 - Run the unsigned Electron package smoke on macOS and fixture signed-activation tests on all normal runners. Signed desktop release support additionally requires native packaged credential lanes on macOS, Windows, and the supported protected-storage Linux image: create protected credentials, restart/restore, exercise store lock/unavailability and corrupt-record recovery, complete remote provider revocation, and verify Linux `basic_text` is refused. A platform without that lane remains unsigned-local-only and is not advertised as signed-desktop supported.
 - Hosted staging access, Clerk development/beta/production application administration, and native macOS/Windows/Linux release runners are explicit external execution prerequisites owned by the release/identity operator. Repository-fixture implementation may begin without them, but Unit 6 cannot be accepted and dependent Units cannot freeze their public contracts until the development spike passes; production promotion requires the beta/production registration and native lanes above.
 
@@ -606,7 +608,11 @@ Terminal states: structural package acceptance with machine-readable inventory a
 
 ### Phase A — Establish the authoritative boundaries
 
-- [ ] **Unit 1: Freeze the desktop-local, self-hosted, and hosted product contracts before moving source**
+- [x] **Unit 1: Freeze the desktop-local, self-hosted, and hosted product contracts before moving source** — *landed except the release measurement baseline*
+
+**Status (2026-08-08):** Route-family table plus local/hosted/self-hosted contract tests, the self-hosted launch-path contract, app-side local/cloud boundary guards with shortest-chain reporting, the desktop product-mode matrix, `docs/tech-docs/desktop-hosted-operation-matrix.md` with its inventory gate, `docs/tech-docs/remote-access-inventory-limits.md`, and the host-tunnel registration characterization are all green.
+
+**Not done:** the immutable clean-`dev` release measurement baseline (five-run fresh-idle / active-harness / post-session-idle desktop cohorts, the five browser flows, and the per-harness numeric ceilings). It needs a packaged Electron build and multi-hour cohort runs on a quiet machine, and it gates only the final Release Qualification Gate — not Units 2–12. The inventory-limit derivation found that the plan's proposed constants do not close: 256 workspaces at 256-byte IDs and labels encode to 133.25 KiB against a 128 KiB cap, so the display-label bound drops to 128 bytes (101.25 KiB, 26.75 KiB headroom). Unit 6 must freeze the adjusted set.
 
 **Goal:** Capture the approved local and hosted route, workflow, dependency, and persistence behavior so each later move has a discriminating gate.
 
@@ -690,7 +696,11 @@ Terminal states: structural package acceptance with machine-readable inventory a
 
 **Verification:** The contract tests fail when any required route is removed, any forbidden product edge is injected, or the profile root changes; they pass against the pre-move composition.
 
-- [ ] **Unit 2: Establish hosted-only WorkGraph and Documents contributions**
+- [x] **Unit 2: Establish hosted-only WorkGraph and Documents contributions** — *landed except hydration pruning and the server-side Documents move*
+
+**Status (2026-08-08):** Workspace Runtime has a dependency-neutral `WorkspaceRuntimeRouteContribution` seam and no longer depends on `@claxedo/workgraph`; the WorkGraph route producers live at `@claxedo/workgraph/runtime-adapter`; the hosted launcher passes them while the kit CLI and the desktop-local embedded runtime pass none; `self-hosted-capabilities.ts` keeps the single binary whole through an explicit capability factory on the create-app seam. On the app side the hosted surfaces moved to `hosted-content-surfaces.tsx` behind `app/composition/product-contributions.ts`, and the eager-surface guard now checks both directions. Evidence: the runtime CLI bundle drops 901.0kb → 867.2kb and `/api/workgraph/*` 404s on a runtime with no contribution.
+
+**Not done:** (1) workbench hydration does not yet prune restored hosted surfaces against `availableContentTypes()` — it only bites once a genuinely local build exists in Unit 9, since both shipped builds currently set `authEnabled`; (2) server-side Documents route/database construction still mounts unconditionally in `createApp` — Unit 7 moves it with the self-hosted composition rather than splitting it across two mechanisms now.
 
 **Goal:** Make WorkGraph and Documents explicit hosted capabilities whose code, routes, state, and lifecycle are absent from the unsigned renderer and server compositions before their packages split.
 
@@ -769,7 +779,15 @@ Terminal states: structural package acceptance with machine-readable inventory a
 
 **Verification:** WorkGraph and Documents are fully hosted contributions, unavailable persisted surfaces normalize safely, and local renderer/server production graphs do not reach their implementations.
 
-- [ ] **Unit 3: Complete Workspace Runtime harness lifecycle ownership**
+- [~] **Unit 3: Complete Workspace Runtime harness lifecycle ownership** — *shared contract landed and adopted by every adapter that had a lifecycle; two behaviour changes remain*
+
+**Status (2026-08-08):** `agent-sdk-runtime/src/harnesses/shared/process-lifecycle.ts` owns single-flight startup, generation ownership, activity leases, the idle grace, bounded stop, and parent-loss cleanup, with 21 tests against a deterministic child fixture. Its idle half is extracted as `createIdleReaper` and used by both callers. Adopted: **OpenCode** moved onto the full lifecycle, fixing a cached rejected startup promise that bricked the adapter until process restart and closing an unauthenticated spawned server (`opencode serve` ran with no `OPENCODE_SERVER_PASSWORD`; each launch now gets a fresh credential through the environment, attached at the single request seam, redacted from logs). **ACP** moved onto the idle reaper and leases its prompt turn, so a turn inside one long silent tool call can no longer be reaped mid-flight. **Codex** gained single-flight start, fixing a race that spawned two app-servers and orphaned one.
+
+**Scope correction:** this unit assumes five adapters each need migrating. In fact only OpenCode and ACP owned idle-kill lifecycles — Codex holds its app-server for the driver's life, Claude uses a never-yielding prompt stream, and Pi runs in-process, so there is nothing to migrate for those three.
+
+**Codex idle reaping landed (2026-08-08).** The driver held its app-server for its OWN lifetime rather than the session's, so one turn at breakfast left the child resident at midnight. It now uses the shared idle reaper with a 30s desktop default matching OpenCode. Two things stop a mid-turn reap and neither is redundant: the turn's lease covers the window from spawn to thread registration, and the reap refuses while any thread is live, because a thread can outlive its turn. The timeout is read at construction rather than module load — reading it at import made it silently unsettable by a host that configures its environment after loading the module, which is how the first version of the test passed while reaping nothing.
+
+**Not done:** `deployments/local/server.ts` still holds process-lifecycle responsibility that should become host policy only. Parent-loss cleanup is NOT outstanding: it is already handled a layer up by `watchDesktopParent` in the desktop server child and by the runtime server's `signals` option, so installing it per-adapter would create a second shutdown path racing the host's.
 
 **Goal:** Make Workspace Runtime's lazy harness registry the sole local dispatch path and give each adapter complete start/share/active/idle/stop/restart and transport-security ownership.
 
@@ -832,7 +850,17 @@ Terminal states: structural package acceptance with machine-readable inventory a
 
 **Verification:** Workspace Runtime is the sole local harness dispatcher; process inventory is zero before explicit work and after idle; all adapter lifecycle/security/replay tests pass.
 
-- [ ] **Unit 4: Make session inventory and canonical events runtime-owned**
+- [x] **Unit 4: Make session inventory and canonical events runtime-owned** — *landed*
+
+**Status (2026-08-08):** Landed. Generic session listing is store-only, mutations write through, and the compatibility stream no longer starts a harness.
+
+**How the discovery problem was solved.** Store-only listing was blocked by one thing: it made the explicit `?harness=` path the only route by which sessions predating the store are imported, and nothing triggered that route. The answer was not an app-side affordance but a durable per-directory marker in the store (`session_inventory_import`). The first generic list for a directory runs the full discovery fan-out and records the import; every later list is store-only. That is correct for two distinct populations — a profile upgrading onto the store, and a fresh profile sitting on an existing harness install — and it costs one harness start per directory, once, ever, instead of one or two on every launch.
+
+The measured blocker count went 6 -> 3 -> 2 -> 1 -> 0. The last one, `embedded workspace runtime > reconciles persisted runtime titles when rebuilding a workspace after restart`, passes unchanged: that test starts from a fresh store with a populated upstream, which is exactly the first-import case. The cross-runner isolation test was re-expressed rather than deleted — name the harness that owns the session, then a plain list includes it, which is what the test is actually about.
+
+**The second harness start was one layer over.** `/global/event` proxied to OpenCode by calling `ensure()` plus `getRequestFn()`, and the embedded runtime opens that stream at every workspace rebuild. So even with listing fixed, a desktop configured for OpenCode still spawned it at launch to serve an event stream. The proxy now attaches only to an already-live transport (`transportLive()`), and takes an activity lease for the stream's life (`acquireRequestFn()`) so the idle reaper cannot cut it mid-delivery. When nothing is running the runtime's own hub answers, which is the authoritative producer of canonical events anyway.
+
+**Not done:** the store-backed status projection and the per-transition canonical event for status specifically. Create, update, title, and delete each write through and publish; status transitions still flow only through the live adapter stream, which is correct while a session is running but leaves a restarted shell showing the last persisted status rather than a reconciled one. That is a visible-but-minor staleness, not a harness start, so it does not gate the split.
 
 **Goal:** Make generic local hydration independent of every harness and compatibility stream, with durable runtime metadata and an explicit selected-harness refresh for historical imports.
 
@@ -897,7 +925,115 @@ Terminal states: structural package acceptance with machine-readable inventory a
 
 ### Phase B — Extract the product packages
 
-- [ ] **Unit 5: Extract the authoritative desktop-local server package**
+- [x] **Unit 5: Extract the authoritative desktop-local server package** — *landed; the desktop boots `@claxedo/local-server` and its bundle halved*
+
+**Status (2026-08-08): the unit's real shape was measured, and it is not "move `deployments/local/server.ts`".**
+
+`packages/claxedo-server/src/platform/governance/source-closure.ts` walks the transitive first-party graph from an entry, stopping at package boundaries, and reports the SHORTEST chain to a forbidden module. Measured against `src/deployments/local/main.ts`: **259 first-party modules, 42 packages** — including `convex`, `better-auth`, `drizzle-orm`, `@claxedo/workgraph`, `@claxedo/channels`, `@claxedo/connections`, `@claxedo/wakes`, and `@claxedo/sandbox-manager`, all reachable from an unsigned desktop that never signs in. That number is the problem statement U8 has been describing in prose.
+
+**Almost every heavy hosted dependency enters at depth 2, directly from `deployments/local/server.ts`.** That file is the mixed composition Unit 8 deletes, and it stays alive for self-hosted until Units 7-8. So Unit 5 is not a move of that file: it is a NEW composition that mounts only the twelve `local-server`-owned route families from Unit 1's table, over producers that no longer reach hosted surface. The union of those producers' closures was **177 modules / 36 packages / 43 hosted modules reached**.
+
+**Three edges carried most of the hosted surface, and each was cut at the module that owns the choice:**
+
+1. `platform/db/db.ts` imported the whole-product schema barrel as a VALUE, so opening the local SQLite database reached connections, channels, documents, and sandbox table definitions. Drizzle needs that object only for `db.query.*`, which nothing in the repository uses — every call site passes its table explicitly — so it is now a type-only import.
+2. `workspace/store/index.ts` imported the supervisor lease table to decide whether an in-flight CLOUD workspace is visible yet, so reading local workspace inventory reached cloud sandbox leasing. `configureWorkspaceSupervisor` now installs the reader; a composition with no supervisor has no cloud workspaces and needs none.
+3. `agent-config/index.ts` selected its own runtime workspace authority (Convex when a URL was set), so reading agent configuration reached the cloud control plane. The composition supplies it now.
+
+A fourth edge was one concept repeated four times. Runtime dispatch, agent-config fanout, the agent-extension routes, and `agent-config/extension-support.ts` each imported `workspace/supervisor` to say one of six things — a stream is holding this sandbox open, it closed, it was used, tell the provider it is still wanted, push runtime config, push an extension snapshot. `workspace/supervisor-port.ts` names exactly that surface and the supervisor installs itself into it from `configureWorkspaceSupervisor`. A composition with no supervisor has no cloud sandboxes, so every call is correctly a no-op — and because that no-op would otherwise be silent (a live stream's sandbox reaped mid-response, nothing in the logs), a contract test asserts the composition installs it.
+
+**Result, and this is the precondition Unit 5 was actually blocked on.** The union of the thirteen producers a local-only composition would mount:
+
+| | modules | packages | hosted modules reached |
+|---|---|---|---|
+| before | 177 | 36 | 43 |
+| after | 106 | 29 | 4 |
+
+The four remaining are `sandbox/network/*`, which IS the `network-policy` route family this plan's own table assigns to local-server. No connections, channels, documents, Convex authority, cloud sandbox store, sandbox driver route, or WorkGraph host module is reachable from any of them. All 3264 `claxedo-server` tests stay green, and `local-entry-closure.test.ts` pins the union so a regression names itself.
+
+**The closure walker distinguishes declared from executable edges.** A type-only import is erased whole: no module loads and no capability becomes reachable, so counting it would report hosted surface in a build that cannot execute a line of it. An INLINE type specifier (`import { type A, B }`) is NOT erased and is kept. `runtimeOnly: true` selects the executable graph.
+
+One edge is deliberately left: `src/workspace/routes/index.ts` mounts `connections/routes/connection-routes.ts` and `sandbox/routes/sandbox-driver-routes.ts` beside the local workspace routes. That is a route-composition barrel, not a producer — the local composition mounts its own families, so it resolves by construction and is excluded from the pinned union.
+
+**A structural fact this plan did not account for, measured 2026-08-08.** Of the 106 modules a local composition reaches, **44 are local-only and 62 are also reachable from the hosted entries** (`deployments/hosted-node/index.ts`, `deployments/hosted-workerd/worker.ts`). The 62 are a shared core — `platform/runtime/lib/{log,paths,bus,lazy,strings}`, `platform/http/*`, `platform/db/{db,repair}`, `platform/auth/*`, the whole credential engine and its backends, `session/meta/*`, `session/harness/*`, `agent-config/index.ts`, `workspace/store` — and none of them is a hosted capability implementation, which the pinned test asserts separately.
+
+This changes the unit's shape. The dependency table forbids `@claxedo/local-server` from depending on `@claxedo/server`, and this plan's Unit 5 file list implies local-server writes its own `config/profile.ts`, `credentials/service.ts`, and `http/security.ts`. At 62 modules that is not a few new files: it would put two implementations of logging, paths, HTTP error shape, database access, credential storage, and session metadata in the repository — the exact duplication this codebase's engineering rules forbid.
+
+**The resolution is ordering, not duplication: the shared core moves DOWN before local-server is created.** A package both products depend on takes the 62; `@claxedo/local-server` then takes the 44 and depends on it. `@claxedo/server` keeps its hosted capabilities and depends on the same core. That inserts one prerequisite unit ahead of Unit 5 and leaves every later unit's contract unchanged, because no product package gains a dependency on another product package.
+
+The alternative — `@claxedo/server` depending on `@claxedo/local-server` for the shared 62 — is rejected: it inverts the table, and it would put local composition in the workerd closure, which `worker.import-graph.test.ts` already forbids by name.
+
+**`@claxedo/server-core` exists and two slices have landed (2026-08-08).** It holds no product capability and makes no composition decisions; it exports source subpaths rather than a build artifact, so there is no dist to keep in sync while the remaining slices move.
+
+| slice | modules | desktop-local entry closure |
+|---|---|---|
+| start | — | 254 modules |
+| `platform/runtime/lib/{log,paths,bus,lazy,strings}` | 5 + 1 test | 249 modules |
+| `platform/{errors,http,auth}/*`, `platform/runtime/region` | 11 + 5 tests | 238 modules |
+| `platform/db/{db,repair}` behind a composition-supplied journal | 2 + 1 test | 237 modules, 39 packages |
+| the suite migration journal | — | — |
+| credential engine, `session/meta/*`, `sandbox/network/policy`, `workspace/store` | 18 + 6 tests | 219 modules |
+| `agent-config/index`, SQLite authority, credential operations, `hosts/*`, `opencode/{auth,engine}`, `session/harness/*` | 24 + 11 tests | **194 modules, 35 packages** |
+
+The local producer union is now **46 modules / 19 packages**, from 177 / 36 when the unit started.
+
+**A runtime-only closure is the right gate for CAPABILITY and the wrong basis for a MOVE.** It skips type-only edges, so the credentials slice left `credentials/types.ts` and `workspace/store` behind and did not compile. Measure a move against the declared closure; measure a boundary against the executable one.
+
+**Tests and helpers do not follow their subject automatically.** `workspace/store/index.test.ts` came back to `claxedo-server` because it drives the supervisor's lease store, which stays. `assert-helpers.ts` came back because a dozen product tests use it and nothing in the core does. `platform/auth/auth.test.ts` never left, because it imports `authority/deployment-mode`. Each is a judgment about what the test is really about.
+
+Two things worth carrying forward from the moves. First, `vi.mock` specifiers name modules by PATH, so a rename that misses them leaves a test mocking a module nobody imports — silently, and green. Four had to be rewritten by hand in the first slice. Second, the repository's own governance gates caught their stale registries in the second slice (`architecture-ownership.ts` still claimed `platform/auth/authority.ts`; `src/authority/README.md` still pointed a reader at two moved files), which is exactly what they exist for.
+
+**`platform/db` landed on the second attempt, and the first attempt is why.** The schema-barrel question resolved cleanly — `src/README.md` names it as the migration generator's input, so it stays with the product tables, and `ClaxedoDB.Client` is now schema-less because drizzle's generic only types `db.query.*`, which nothing uses. That removed the last `platform/db` edge to product surface.
+
+The first attempt failed on something only doing it revealed: `db.ts` resolved its migration journal from its own `import.meta.dirname`, and that journal is DDL — documents, credentials, connections, channels — so moving the engine dragged schema with it, and four migration tests plus the desktop bundler reached the journal by relative path. That move was reverted rather than half-landed.
+
+The second attempt made the journal a **composition input**. `claxedo-server/src/platform/db/index.ts` names it and re-exports the engine, so every consumer configures it by importing; forty-five import sites moved to that wrapper. `configureClaxedoMigrations` has NO default and an empty or missing journal throws, because the alternative is the failure this product has already shipped: zero migrations applied, a working handle returned, and every query failing later somewhere else for a reason its stack trace does not name. Two tests cover it — one asserts a fresh profile actually has its tables, the other that the engine alone refuses to open.
+
+**The journal now lives in the core, and the suite reading was adopted.** Both server products open the same `claxedo.db` file format, so its schema is the suite's. Splitting it would split a persisted contract for no gain — every existing desktop profile already holds every table — while carrying it costs a local build a handful of leaf table definitions and no capability. The `*.sql.ts` definitions it is generated FROM stay with their domains: those are a generation-time input, the journal is the runtime artifact, and the platform-boundary gate's sanctioned barrel inversion is untouched. What was, before that decision, 45 blocked shared modules  has since largely moved. Two readings were weighed:
+
+- The journal is *product* schema, so local-server gets its own with only local tables. This splits a persisted contract: existing desktop profiles already hold every table, so the split either drops them (data loss) or leaves them (no benefit).
+- The journal is the *suite's* schema, because both products open the same `claxedo.db` file format. It moves to `@claxedo/server-core` with the `*.sql.ts` leaves it is generated from — pure drizzle table definitions, no logic, no capability.
+
+**Two shared modules stay in `claxedo-server` on purpose.** `authority/services.ts` and `workspace/http/sandbox-target-fetch.ts` both reach the Convex authority and the relay adapter, so neither is a neutral primitive. The closure walker is what identified them: of the 26 shared modules in the final slice, 23 were self-contained and these two were not.
+
+**What now blocks creating `@claxedo/local-server`, measured.** The 13 local producers reach **44 local-only modules** at runtime. Their DECLARED closure is 70, and every one of the extra 24 is the Convex authority, channels, and relay chain reached through TYPE-only imports of `ControlPlaneServices` and `ControlPlaneCredentials` from `authority/services.ts`. Nothing executable crosses; only the type surface does.
+
+That leaves one decision:
+
+- Extract the control-plane service CONTRACT — `ControlPlaneServices`, `ControlPlaneCredentials`, and the narrow ports they name — into `@claxedo/server-core`, leaving `createControlPlaneServices` and its Convex/relay wiring in `@claxedo/server`. Correct, and a real design task: `ProjectionStore`, `RelayProvider`, `DurableSessionLog`, and `RuntimeAccessTokenSigner` all appear in that surface and each pulls its own implementation chain.
+- Or let `@claxedo/local-server` take a TYPE-ONLY dev dependency on `@claxedo/server`. Cheap, and it satisfies the dependency table as written — that table forbids `@claxedo/server` in local-server's RUNTIME closure, which a type-only edge never enters. But it makes the two product packages mutually referential at compile time, since `@claxedo/server` already depends on `@claxedo/local-server/self-hosted-execution`.
+
+The first is the right answer for the same reason the shared core exists at all; the second is a shortcut whose cost is a compile-time cycle between the two products the split was drawn to separate.
+
+**`@claxedo/local-server` exists (2026-08-08).** 44 modules; 161 tests pass. Its `src/architecture/local-closure.test.ts` asserts the closure reaches no `@claxedo/server`, `@claxedo/workgraph`, `@claxedo/channels`, `@claxedo/connections`, `@claxedo/wakes`, `convex`, `better-auth`, or `posthog-node`; that every package it does reach is DECLARED rather than working by hoisting; that every relative specifier resolves; and that no `import(<variable>)` hides an edge. Removing one dependency from the manifest as a probe fails it by name.
+
+Two modules were caught going to the wrong side, both by that gate.
+`hosts/workspace-runtime/runtime-boot.ts` is the HOSTED sandbox launcher — its own comment says WorkGraph enters the runtime there — so it returned to `@claxedo/server`; the local runtime needed only `claxedoCorsOrigin`, a shared policy now in the core. And the embedded-runtime test's WorkGraph-contribution case moved to `claxedo-server` beside `selfHostedCapabilities`, while its sibling needed no helper at all: "no host contributions" is `[]`, which IS the shape a desktop-local build has.
+
+**`@claxedo/local-server/self-hosted-execution` exists.** `deployments/local/server.ts` reached sixteen deep module paths into the new package; it and the five other production files that need local execution now take that one subpath. It is product-neutral — embedded runtime lifecycle, the local route mounters, the compatibility event stream, the local port — and names nothing about Electron, WorkGraph, or who is signed in. Three tests hold it: one walks `claxedo-server`'s PRODUCTION sources for any other specifier, one greps the export list for those banned words, one checks the subpath's own closure. Tests are exempt from the first rule deliberately: a test of a moved module names it directly, and routing those through a facade would either bloat it or stop the module being tested.
+
+The rewiring found two more misplacements. `platform/governance/route-ownership.ts` and `platform/http/local-only-projection.ts` are reached by `user-hosted-tunnel.ts` and `workspace/routes/project-remote.ts`, so they are shared and moved to the core. The original local-only classification missed them because it compared against the hosted-node and workerd entries, and neither of those callers is reachable from either — a reminder that "local-only" means "not reachable from the hosted ENTRIES", which is not the same as "not used by the hosted package".
+
+**The one piece of this unit still open, and its exact shape.** The desktop server child, `predev`, `prebuild`, and the boot smoke still start `claxedo-server`'s `deployments/local/server.ts`. That file cannot simply be retargeted: its `createApp` says so itself — it throws `self_host_app_required` for a non-local-execution service — and it mounts about sixteen hosted-flavoured surfaces (Documents, Connections, Channels, WorkGraph) alongside the local ones. It IS the mixed composition this plan exists to split.
+
+Closing it means writing a local-only `createLocalApp` / `startLocalServer` in `@claxedo/local-server` that mounts exactly the twelve `local-server`-owned route families and nothing else, then pointing the four desktop inputs at it. Unit 1's `local-product-contract.test.ts` is the acceptance check — it asserts the WHOLE 142-path local inventory, because the failure mode that matters is omission and a spot check cannot detect it.
+
+**A first attempt at `createLocalApp` was written and removed (2026-08-08).** It reproduced the local route inventory — the path-level contract test passed — and a review found six divergences the test structurally could not see, because it inspects Hono's static route table and never issues a request:
+
+- `cors({ credentials: true })` was added where the original never sets it, so an approved origin could complete a credentialed cross-origin READ that the original composition structurally could not permit at all;
+- CredentialRoutes lost the environment-derived `authenticate` (`signedCloudAuthRequested(env) || deploymentMode(env) === "hosted"`), leaving credential mutation behind only the loopback guard if a caller omits the hook;
+- the `localExecution.enabled` fail-fast was missing, which is also what made an apparent `deferToHarnessRoute` divergence a non-issue: the original's ternary is guaranteed true by that throw;
+- the session-meta projection tap — an `app.use` that records `POST /session`, `PATCH /session/:id`, `DELETE /session/:id` into `projectionStore` — was absent entirely, so no local session metadata would ever be recorded, and it adds no route path for `pathsByOwner` to miss;
+- `/api/claxedo/health` lost `harnessMode`/`workspaceProfile`/`localExecution`, and `/api/claxedo/track` lost its zod schema.
+
+It was deleted rather than patched: it had no production caller, and six divergences in a first pass says the oracle was wrong, not the code. **Rebuild it against a harness that issues REQUESTS** — asserting CORS headers, credential-route auth, and a recorded projection write — with the path inventory as a necessary-but-insufficient check on top.
+
+**The factoring, and the hazard in it.** Do not duplicate: `createApp` should CALL `createLocalApp` and add the hosted surface on top, so there is one local composition serving both products. The obstacle is ordering. Inside `createApp` the local and hosted mounts are interleaved — jwks, remote-access, documents, workspace, control-plane, integrations, and project-remote all sit BETWEEN local ones — and Hono matches middleware and handlers in registration order. Two registrations in particular are order-sensitive rather than prefix-disjoint: `app.use(workspaceRuntimeProxy)` and the SPA catch-all `app.get("*")`, which must stay last.
+
+So the extraction has to preserve relative order across the seam, not merely re-register the same set. `local-product-contract.test.ts` will NOT catch an ordering regression in the hosted half — it only asserts the local allowlist — so the check for that half is the full `claxedo-server` suite plus `hosted-product-contract.test.ts`. Land it as its own slice with both suites green, not as a ride-along.
+
+Everything the composition needs already lives in `@claxedo/local-server` or `@claxedo/server-core`; nothing further blocks it.
+
+The 44/62 split is pinned by `local-entry-closure.test.ts`, so the move set cannot drift.
 
 **Goal:** Create `@claxedo/local-server` and move the Unit 4 local composition, local services, and embedded Workspace Runtime wiring into its independent source and manifest closure.
 
@@ -987,7 +1123,7 @@ Terminal states: structural package acceptance with machine-readable inventory a
 
 **Verification:** `@claxedo/local-server` typechecks, builds, and passes its route/runtime integration suite using only its manifest closure; no runtime import points at `packages/claxedo-server`.
 
-- [ ] **Unit 6: Establish Electron account auth and extract Host Connector authority**
+- [x] **Unit 6: Establish Electron account auth and extract Host Connector authority** — *landed; Electron main owns the account credential and the closed named-operation IPC surface, `@claxedo/host-connector` owns publication authority*
 
 **Goal:** Make Electron main the sole desktop account-credential owner, then preserve machine-wide remote access to every canonical local workspace—including automatic inventory changes and reconnection—while confining initial account authorization to that Electron producer and all continuing publication authority to the enrolled host key.
 
@@ -1139,7 +1275,9 @@ Terminal states: structural package acceptance with machine-readable inventory a
 - For a new enrollment Host Connector generates the host keypair; for a restart Electron loads/decrypts the already-enrolled key. In both cases the connector receives key material only through its private bootstrap channel and retains it in memory while producing enrollment or renewal proofs. Electron's account adapter attaches account authorization to initial enrollment and returns only the enrollment descriptor; Electron remains the sole persistent private-key owner. The connector then obtains a short-lived host-session credential bound to that machine generation. Renewal starts with a server nonce, requires a signature by the enrolled host private key, and succeeds only for the active generation.
 - Do not migrate the existing plaintext private JWK or its old account-link authority. On first upgraded start, remove the superseded plaintext private-key record through the canonical profile path, retain unrelated local profile/workspace/session data, show the one-time **Re-enrollment required** state, and require the signed user to complete one fresh machine enrollment. Tests prove the old host ID/key cannot renew, reconcile, or mint a tunnel after the cut.
 - Define `host_enrollments` as the machine authority record with a stable `host_id`, `owner_subject`, optional `org_id`, host `public_key`, literal machine-wide `scope`, monotonic `generation`, `status`, latest accepted `inventory_version`, configured Relay assignment/registration mode, and audit timestamps. The server response returns the signed/bound descriptor and nonsecret routing metadata, not an account credential. Keep one active owner/key binding per host ID; replaying the same enrollment request ID and payload is an idempotent exact retry, while key, owner, organization, scope, or payload conflicts require an explicit rotation path.
-- Persist exact-retry state in a bounded `host_enrollment_requests` record keyed by owner plus request ID, containing a canonical enrollment-transcript digest, resulting host ID/generation, terminal status, nonsecret response descriptor, and expiry. The first transaction consumes the challenge and records the result atomically. A matching retry returns only that original result while its generation remains active; it never rotates, resumes, reparents, or resurrects paused/revoked enrollment. Conflicting or expired reuse fails. Enrollment/renewal challenges expire after two minutes, consumed challenge evidence is pruned after ten minutes, and exact-retry results expire after twenty-four hours; Convex and SQLite implement and test the same bounds. These are one canonical policy constants, not adapter defaults.
+- Persist exact-retry state in a bounded `host_enrollment_requests` record keyed by owner plus request ID, containing a canonical enrollment-transcript digest, resulting host ID/generation, terminal status, nonsecret response descriptor, and expiry. The first transaction consumes the challenge and records the result atomically. A matching retry returns only that original result while its generation remains active; it never rotates, resumes, reparents, or resurrects paused/revoked enrollment. Conflicting or expired reuse fails. Enrollment/renewal challenges expire after SIXTY SECONDS, consumed challenge evidence is pruned after ten minutes, and exact-retry results expire after twenty-four hours; Convex and SQLite implement and test the same bounds. These are one canonical policy constants, not adapter defaults.
+  - **Challenge TTL revised down from two minutes to sixty seconds (2026-08-09).** Both authorities already shipped 60s (`ENROLLMENT_CHALLENGE_TTL_MS`), and the review that found it kept the stricter value rather than loosening code to match prose. The nonce is already one-use, owner-bound and host-bound, so its lifetime is defence-in-depth, not the primary control; what the number actually buys is a bound on how many live unconsumed rows one account can hold at once (steady-state rows are roughly per-account budget x TTL), and halving it halves that. The cost is a client whose handshake exceeds a minute — a first enrollment blocked behind an OS keychain prompt, say — which asks for another nonce and continues, since `POST /requests` mutates no enrollment. `convex/host-enrollment-policy-drift.policy.test.ts` pins the value and fails if the two authorities ever disagree.
+  - **Exact-retry state is NOT implemented (2026-08-09).** `host_enrollment_requests` is now bounded and consumed rows are retained for the full ten minutes, so the evidence an exact retry needs survives — but no transcript digest, terminal status, or stored response descriptor is written, and a replayed request ID still fails closed with `Invalid host enrollment request` rather than replaying the original result. Remaining work: a canonical transcript digest over (owner, org, host ID, key, scope, payload), the resulting host ID/generation and nonsecret descriptor persisted in the same transaction that consumes the challenge, a conflict answer distinct from the not-found answer, and the twenty-four-hour result expiry above. A lost response therefore still costs the client a fresh enrollment rather than a replay.
 - Keep `local_host_links` as the canonical per-workspace materialization for listing, roles, presence, and Relay target resolution. A host-key-authorized full-set reconcile against `host_enrollments` atomically upserts current workspace links, leaves unchanged links stable, and revokes links omitted from the new snapshot. The machine enrollment is the sole authority for publishing future workspaces; per-workspace links do not become a competing approval source.
 - Make each final `local_host_links` row require its machine enrollment ID and generation. Because backward compatibility is not required, run a bounded pre-cut Convex maintenance mutation that deletes all legacy unenrolled links, their old attestation challenges, and their outstanding Runtime/Host token authority before the final schema deploy; the old service is not kept serving during this maintenance window. SQLite rebuilds the link table into the required final shape and discards legacy link rows. Do not delete workspace records or their separate collaborator role grants. Users re-enable Remote Access once through the new machine enrollment; reconciliation uses the same stable workspace IDs, so prior explicit collaborator roles become reachable again after the new link appears. No legacy link, host ID, plaintext key, token, or route is adopted into the new authority.
 - Implement the destructive hosted cut as one resumable, audited runbook rather than ad hoc mutations. `maintenance:cutover-host-enrollments -- <preflight|enter-maintenance|retire-legacy|verify-retirement|verify-new|exit-maintenance>` records a deployment/SHA-bound cutover ID and refuses out-of-order phases. `enter-maintenance` blocks legacy host-link creation/renewal/connection mint and drains/closes host publication before `retire-legacy`; operator confirmation proves no old Hosted Server or Relay writer remains. `retire-legacy` invokes the bounded Convex mutation and is the irreversible point. The final schema/functions, matching Hosted Server/Relay artifacts, and desktop release all use the same reviewed SHA. Before retirement, failure exits maintenance and leaves the old deployment unchanged. After retirement, rollback to the old authority is forbidden: keep Remote Access in maintenance, leave local and cloud-VM work available, fix or redeploy the new SHA forward, rerun `verify-retirement` idempotently, then require `verify-new` to prove zero-workspace enrollment plus Bun and Cloudflare add/remove/reconnect before `exit-maintenance`. SQLite performs the equivalent hard cut transactionally on first new self-hosted boot and preserves a pre-migration backup according to the existing SQLite migration policy, but never starts the old composition or restores legacy sharing authority.
@@ -1216,7 +1354,7 @@ Terminal states: structural package acceptance with machine-readable inventory a
 
 **Verification:** Desktop sign-in and machine enrollment use the single Electron-owned account producer; one account-authorized, host-key-proven enrollment continuously publishes the exact canonical local-workspace inventory through the configured existing Relay registration mode; signed Runtime traffic always traverses Workspace Relay; base unsigned launch has zero Host Connector process/module activity; account bearer tokens remain confined to Electron's protected account adapter and never enter renderer IPC payloads, Host Connector, local-server, environment variables, process arguments, or logs.
 
-- [ ] **Unit 7: Recompose the self-hosted single-binary on the hosted control-plane core**
+- [x] **Unit 7: Recompose the self-hosted single-binary on the hosted control-plane core** — *landed; `createSelfHostedApp` composes on the signed core and `deployments/local` is gone*
 
 **Goal:** Preserve the live self-hosted Node product by extracting the signed control-plane route core from the cloud-hosted boot wrapper and replacing the mixed `deployments/local` composition with `createSelfHostedApp` plus the new public local-execution adapter.
 
@@ -1299,7 +1437,7 @@ Terminal states: structural package acceptance with machine-readable inventory a
 
 **Verification:** The self-hosted single-binary boots and passes its full characterized contract through `deployments/self-hosted-node`; all existing callers have explicit new owners; the old `createApp` public surface and entry path are absent.
 
-- [ ] **Unit 8: Remove desktop-local ownership and enforce each server deployment closure**
+- [x] **Unit 8: Remove desktop-local ownership and enforce each server deployment closure** — *landed; desktop-local composition lives in `@claxedo/local-server` and each deployment entry graph is gated by `deployment-closures.test.ts`*
 
 **Goal:** Retain the shared control-plane core plus cloud Node, workerd, and self-hosted Node deployments in `@claxedo/server`, remove desktop-only composition ownership, and tighten each production entry graph to its declared adapters.
 
@@ -1350,7 +1488,7 @@ Terminal states: structural package acceptance with machine-readable inventory a
 
 **Verification:** `@claxedo/server` has no `deployments/local` or desktop composition entry; cloud Node/workerd closures exclude local-server, and self-hosted Node alone declares and exercises the local-execution adapter.
 
-- [ ] **Unit 9: Define the local app composition and public hosted contribution seam**
+- [x] **Unit 9: Define the local app composition and public hosted contribution seam** — *landed; `app/entry/local.tsx` and `hostedContributionPort` exist. NOTE: the local closure is not yet clean — see Unit 10's status and the three auth-client importers it names*
 
 **Goal:** Establish `@claxedo/app`'s local production entry and the smallest public contract cloud-app needs before the hosted implementation files move in Unit 10.
 
@@ -1439,7 +1577,55 @@ Terminal states: structural package acceptance with machine-readable inventory a
 
 **Verification:** `@claxedo/app` has an explicit local-only build entry and a bounded public composition surface while the existing default hosted build remains intact for current deployments. Unit 10 completes the physical extraction and atomically retargets default/deployment callers before any desktop consumer rewires.
 
-- [ ] **Unit 10: Create `@claxedo/cloud-app` and move hosted renderer ownership**
+- [-] **Unit 10: Create `@claxedo/cloud-app` and move hosted renderer ownership** — *DEFERRED 2026-08-09; the package does not achieve this plan's goal and is not currently required*
+
+**Status (2026-08-09):** Not started, and deliberately so. The measurement that
+settled it:
+
+**A package boundary does not produce the outcome.** The goal is that an
+unsigned desktop stops shipping the hosted control plane. That is a BUNDLE
+property, decided by the import graph from `app/entry/local.tsx`, and Vite
+tree-shakes from the entry without regard to package boundaries. The reason the
+local bundle still contains Clerk today is not that hosted code shares a
+package — it is three modules in the local closure that statically import
+`platform/auth/auth-client.ts`:
+`features/workspaces/actions/project-actions.tsx`,
+`platform/auth/auth-session.ts`, and
+`platform/runtime/agent/agent-runtime-client.ts`.
+
+None of those are files Unit 10 moves. They are shared app code that every
+product uses, so they stay in `@claxedo/app` by definition. After the split
+`@claxedo/app` would import `auth-client.ts` from `@claxedo/cloud-app` — an
+upward dependency the boundary forbids. The split therefore converts the chain
+from something the closure guard reports into something that fails to resolve;
+the remedy is identical either way, and it is a bound port, not a move. That
+work is tracked separately and is a prerequisite regardless of this unit's
+fate.
+
+**What the boundary would still buy, and why it does not pay yet.**
+Resolve-time enforcement instead of test-time — real but marginal, since
+`local-entry-closure.guard.test.ts` already reports both the shortest chain and
+every importer, a distinction that was itself a defect fix (the file claimed it
+failed on a second chain; it did not, and there were four). A publishable local
+library is the reason that WOULD justify it, because `dependencies` is the
+contract for an external consumer and `npm install` does not tree-shake — but
+`@claxedo/app` is `private: true`, unpublished, and 404s on npm. Revisit this
+unit if and when that changes.
+
+**Cost, measured before deferring.** `cloud-app-export-surface.test.ts`
+classified, by hand, all 54 `@claxedo/app` modules that the moved set would
+import: **9** belong in an existing export path (zero or one line in a barrel),
+**23** would become genuinely new permanent public contracts, and **22** should
+not be exported at all — cases where the hosted module reaches into an app
+internal and the remedy belongs on the importer's side. The companion manifest
+also measured that this section's own `Files:` list is stale and over-scopes
+the move by 71%.
+
+Both analysis tests are removed along with this deferral rather than left to
+pin a move that may never happen; the full 54-entry classification and the
+measured move-set correction remain recoverable from git history. The
+load-bearing gate is now `local-entry-closure.guard.test.ts`, which measures
+something true, currently red, and directly tied to the product outcome.
 
 **Goal:** Create the hosted browser product package, move browser identity and hosted feature implementations into it, and expose one platform-neutral hosted contribution entry shared by browser and signed desktop compositions.
 

@@ -33,7 +33,7 @@
  *      (`materializers/mcp.ts`'s `mcpTargetPath` + `materializeStandaloneMcp`).
  *   3. `dataRoot` (`installed.json`/`lock.json`/`materialized.json`'s
  *      location) is `<CLAXEDO_DATA_DIR>/agent-extensions`
- *      (`packages/claxedo-server/src/platform/runtime/lib/paths.ts`'s `dataDir()`); `homeDir`
+ *      (`packages/claxedo-server-core/src/platform/runtime/lib/paths.ts`'s `dataDir()`); `homeDir`
  *      (where machine-scope target files land — `~/.claude/skills`,
  *      `~/.claude.json`, `~/.cursor/mcp.json`, `~/.codex/config.toml`,
  *      `~/.config/opencode/opencode.jsonc`) is `os.homedir()` at request time
@@ -138,7 +138,7 @@
  *      (`POST /api/claxedo/agent-config/extensions/:id/enable|disable`,
  *      `packages/agent-extensions/src/install.ts`'s `disableAgentExtension`/
  *      `enableAgentExtension`, both unit-tested server-side in
- *      `packages/claxedo-server/src/hosts/agent-extensions/install.test.ts`). The
+ *      `packages/claxedo-local-server/src/hosts/agent-extensions/install.test.ts`). The
  *      marketplace panel now surfaces it: the installed pill's group/install
  *      wrapper hover-reveals a "Disable" control (and, once disabled, an
  *      "Enable" control) alongside "Uninstall" — `cards.tsx`'s `InstallButton`.
@@ -629,7 +629,7 @@ test.describe("live agent extensions materialization @live", () => {
     expect(skillText.toLowerCase()).toContain("pdf")
 
     // recommendedTargets is ["claude"] ONLY for this catalog entry (verified
-    // against packages/claxedo-server/src/agent-config/extensions/catalog.ts) — the
+    // against packages/claxedo-server-core/src/agent-config/extensions/catalog.ts) — the
     // other three harness skill directories the plan's spec-23 entry
     // anticipated for "a skill" in general are correctly NOT created for
     // THIS specific entry. Pin that explicitly rather than silently not

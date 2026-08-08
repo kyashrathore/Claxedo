@@ -1,4 +1,4 @@
-import type { SignedControlPlaneAuth } from "../../../../platform/auth/auth"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { convexApi } from "./api"
 import { requireExecutor, requireServiceToken } from "./executor"
 import type { ConvexAuthorityInput } from "./types"

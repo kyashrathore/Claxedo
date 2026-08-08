@@ -12,7 +12,7 @@
 
 import type { SandboxRowEvent, SandboxLeaseRow } from "@claxedo/sandbox-manager/lease-types"
 import type { PreparedImage, RuntimeSnapshot } from "../../workspace/supervisor/prepared-image.sql"
-import { Log } from "../../platform/runtime/lib/log"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 
 const log = Log.create({ service: "mirror" })
 

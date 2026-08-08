@@ -4,16 +4,16 @@ import {
   type WorkspaceRelayHostTunnel,
   type WorkspaceRelayHostTunnelEvent,
 } from "@claxedo/workspace-runtime/relay"
-import { Log } from "./platform/runtime/lib/log"
-import { defaultHomeRegion } from "./platform/runtime/region"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import { defaultHomeRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import {
   createWorkspaceSupervisorSandboxManager,
   holdSupervisorSandbox,
   releaseSupervisorSandbox,
   workspaceSupervisorServerUrl,
 } from "./workspace/supervisor"
-import { getWorkspace } from "./workspace/store"
-import { RouteHandler, routeOwnership } from "./platform/governance/route-ownership"
+import { getWorkspace } from "@claxedo/server-core/workspace/store/index"
+import { RouteHandler, routeOwnership } from "@claxedo/server-core/platform/governance/route-ownership"
 
 const log = Log.create({ service: "user-hosted-tunnel" })
 const sandboxManager = createWorkspaceSupervisorSandboxManager()

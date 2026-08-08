@@ -15,7 +15,7 @@
 import { describe, expect, test, beforeAll, beforeEach, afterEach, vi } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import type { SandboxHoldRow, SandboxLeaseRow } from "@claxedo/sandbox-manager/lease-types"
-import { claxedoBus, type ClaxedoEvent } from "../../platform/runtime/lib/bus"
+import { claxedoBus, type ClaxedoEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 
 let driverId = "daytona"
 const previousRelayHostPublicKey = process.env.CLAXEDO_RELAY_HOST_PUBLIC_KEY_JWK
@@ -303,12 +303,14 @@ function lease(workspaceId: string, driverId = "daytona"): SandboxLeaseRow {
 
 // ── Module mocks (must be before import) ─────────────────────────────────
 
-vi.mock("../store", () => ({
+vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   getWorkspace: (...args: unknown[]) => (mockGetWorkspace as any)(...args),
   updateWorkspace: (...args: unknown[]) => (mockUpdateWorkspace as any)(...args),
+  // The supervisor composition teaches the store to read sandbox leases.
+  configureWorkspaceStore: vi.fn(),
 }))
 
-vi.mock("../../sandbox/network/policy", () => ({
+vi.mock("@claxedo/server-core/sandbox/network/policy", () => ({
   listPolicies: vi.fn(() => []),
 }))
 
@@ -575,7 +577,7 @@ vi.mock("@claxedo/sandbox-manager/drivers/docker", () => ({
   createDockerSandboxDriver: (...args: unknown[]) => (mockCreateDockerSandboxDriver as any)(...args),
 }))
 
-vi.mock("../../agent-config", () => ({
+vi.mock("@claxedo/server-core/agent-config/index", () => ({
   loadUserConfig: (...args: unknown[]) => (mockLoadUserConfig as any)(...args),
   sandboxDriverConfig: vi.fn((config?: { sandbox_driver?: unknown }) => config?.sandbox_driver ?? {}),
   defaultHarness: vi.fn(() => ({})),
@@ -804,7 +806,7 @@ describe("workspace-supervisor", () => {
     })
 
     test("passes resolved Daytona network policy CIDRs into SandboxManager", async () => {
-      const policy = await import("../../sandbox/network/policy")
+      const policy = await import("@claxedo/server-core/sandbox/network/policy")
       const resolve = await import("../../sandbox/network/resolve")
       ;(policy.listPolicies as any).mockReturnValueOnce([
         { target: "api.example.test", kind: "host" },

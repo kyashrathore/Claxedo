@@ -1,8 +1,8 @@
 import fs from "fs/promises"
 import path from "path"
 import { randomUUID } from "crypto"
-import { dataDir } from "../platform/runtime/lib/paths"
-import type { Workspace } from "../workspace/store"
+import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
+import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 
 const GLOBAL_ID = "global"
 

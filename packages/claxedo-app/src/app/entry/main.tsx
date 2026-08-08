@@ -10,8 +10,9 @@ import { render } from "solid-js/web"
 import { AppBaseProviders, AppInterface } from "@/app/entry/app"
 import { PlatformProvider, type Platform } from "@claxedo/app"
 import { initClaxedo, getDefaultConfig } from "./index"
-import { getAuthToken } from "@/platform/auth/auth-client"
-import { authFetch } from "@/platform/api/api"
+import { getAuthToken, initializeClerk, useAuth } from "@/platform/auth/auth-client"
+import { authFetch, configureApiRuntime, getClaxedoServerUrl } from "@/platform/api/api"
+import { configureAuthSession } from "@/platform/auth/auth-session"
 import {
   initPostHog,
   capture as phCapture,
@@ -23,10 +24,92 @@ import { isDemoMode, isEmbedMode } from "@/platform/api/api"
 import { urlRoutingEnabled } from "@/lib/runtime-mode"
 import { ConfigProvider } from "../providers/config"
 import { Persist, resetDemoPersisted, setPersisted } from "@/platform/persistence/persist"
+import { configureWorkspaceStartup } from "@/platform/runtime/workspace-startup"
+import { cloudWorkspaceStartup } from "@/platform/runtime/cloud/workspace-runtime-store"
+import { configureHttpMachineRemoteAccess } from "@/platform/remote-access/machine-remote-access"
+
+/**
+ * Bind the hosted workspace-startup implementation.
+ *
+ * This is the only place `platform/runtime/cloud` is imported by anything
+ * outside itself. The composer and the session actions menu wake cloud and
+ * user-hosted runtimes through `workspaceStartup()`, which is why they can
+ * stay in `@claxedo/app` while this file — and the implementation it binds —
+ * move to `@claxedo/cloud-app`.
+ *
+ * `local.tsx` deliberately has no counterpart: a local build has no sandbox to
+ * wake, so the port stays unbound and reaching it throws instead of pretending.
+ */
+configureWorkspaceStartup(cloudWorkspaceStartup)
+
+/**
+ * Bind machine remote access to this server's own routes.
+ *
+ * The server this bundle is served from mounts `RemoteAccessRoutes` at
+ * `/api/claxedo/remote-access` (`deployments/self-hosted-node/app.ts`), so
+ * publishing a machine here IS an authenticated call to this origin.
+ *
+ * The desktop binds a different implementation over Electron IPC, because its
+ * sidecar serves none of those paths — machine publication belongs to the Host
+ * Connector in Electron main. `local.tsx` binds nothing, deliberately: a local
+ * browser build has neither the routes nor a main process, and the panel says
+ * so rather than posting into a 404. That is the bug this seam exists to make
+ * impossible.
+ *
+ * At module scope, beside the other bindings, so a surface that reads the port
+ * during its first render does not see it unbound.
+ */
+configureHttpMachineRemoteAccess((path, init) => authFetch(new URL(path, getClaxedoServerUrl()), init))
+
+/**
+ * Bind the identity provider to the authenticated transport.
+ *
+ * `platform/api/api.ts` used to import `getAuthToken` itself. It stays in
+ * `@claxedo/app` while `auth-client.ts` moves to `@claxedo/cloud-app`, so that
+ * import was a cycle across the package boundary — and it was the chain by
+ * which `local.tsx` reached Clerk through `app.tsx`. The transport now names a
+ * bearer source and the hosted entry supplies one; `local.tsx` supplies none,
+ * which is why an unsigned build talks to its loopback server with no
+ * Authorization header at all rather than with a stub that returns null.
+ *
+ * At module scope, not inside a component: `authFetch` is called from plain
+ * modules during bootstrap, and a binding installed during render would leave
+ * the earliest calls unauthenticated.
+ */
+configureApiRuntime({ bearerToken: getAuthToken })
+
+/**
+ * Bind the identity provider to the app's canonical auth-session abstraction.
+ *
+ * `platform/auth/auth-session.ts` used to `import { useAuth }` statically. It
+ * is called unconditionally from the shell's provider tree (`app/entry/app.tsx`
+ * mounts it, and BOTH products render that shell), so that one import was the
+ * remaining chain by which `local.tsx` reached Clerk:
+ * `local.tsx -> app/entry/app.tsx -> platform/auth/auth-session.ts ->
+ * auth-client.ts`. It now keeps only an `import type` edge for the shape, which
+ * the bundler erases.
+ *
+ * `local.tsx` supplies nothing on purpose. Unbound, `useAuthSession()` returns
+ * a stable anonymous session rather than throwing — an unsigned local build
+ * genuinely IS anonymous, and that is the honest value for a call that happens
+ * during render. Same asymmetry as `configureApiRuntime` above, and unlike
+ * `configureWorkspaceStartup`, whose unbound port throws because waking a
+ * hosted sandbox is an operation, not a state.
+ *
+ * At module scope, not inside a component: the provider tree reads the session
+ * on its first render, and a binding installed during render would leave that
+ * read anonymous in a hosted build.
+ */
+configureAuthSession(useAuth)
 
 // Initialize cloud extensions before rendering
 const config = getDefaultConfig()
 initClaxedo(config)
+
+// The hosted entry starts the identity provider. `initClaxedo` deliberately
+// does not — see the note there; a shared init that imports Clerk puts it in
+// the local build too.
+if (config.authEnabled) initializeClerk().catch(() => {})
 
 // Initialize PostHog analytics (no-ops if VITE_POSTHOG_KEY not set)
 if (!isDemoMode()) {

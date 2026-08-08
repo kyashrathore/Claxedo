@@ -5,7 +5,7 @@ import { convexTest } from "convex-test"
 import { api } from "./_generated/api"
 import { requireControlPlaneService } from "./model"
 import schema from "./schema"
-import { timingSafeEqualStrings } from "../packages/claxedo-server/src/platform/auth/web-crypto"
+import { timingSafeEqualStrings } from "../packages/claxedo-server-core/src/platform/auth/web-crypto"
 
 declare global {
   interface ImportMeta {

@@ -8,11 +8,11 @@ import {
   sandboxDriverAuth,
 } from "@claxedo/sandbox-manager/driver-catalog"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
-import { loadUserConfig, sandboxDriverConfig } from "../../agent-config"
+import { loadUserConfig, sandboxDriverConfig } from "@claxedo/server-core/agent-config/index"
 import { type ControlPlaneServices } from "../../authority/services"
-import { requireAuthority } from "../../platform/auth/authority"
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { workspaceBacking } from "../../workspace/store/backing"
-import { ensureHostForRepo } from "../../sandbox/network/policy"
+import { ensureHostForRepo } from "@claxedo/server-core/sandbox/network/policy"
 import {
   deleteWorkspace,
   ensureWorkspace,
@@ -21,10 +21,10 @@ import {
   resolveWorkspace,
   workspaceIdFromDirectoryRef,
   type Workspace,
-} from "../../workspace/store"
+} from "@claxedo/server-core/workspace/store/index"
 import { discardSupervisorSandbox, getSupervisorSandboxStatus } from "../../workspace/supervisor"
-import { Log } from "../../platform/runtime/lib/log"
-import { ControlPlaneAuthError, bearerToken, controlPlaneAuthErrorBody } from "../../platform/auth/auth"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import { ControlPlaneAuthError, bearerToken, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
 import { apiError, captureWorkspaceTelemetry, parsedBody, rec, signedOrError, type WorkspaceRouteOptions } from "../route-support"

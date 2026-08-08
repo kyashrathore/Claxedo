@@ -292,10 +292,17 @@ jobs:
         if: always()
         uses: mikepenz/action-junit-report@bccf2e31636835cf0874589931c4116687171386 # v6.4.0
         with:
+          # `junit*.xml`, not `junit.xml`: several packages run more than one
+          # runner and write one report each -- @claxedo/app emits `junit.xml`
+          # (bun) plus `junit-vitest.xml` (Solid component renders), and
+          # @claxedo/workspace-relay emits `junit-bun-adapter.xml` /
+          # `junit-workerd.xml`. Those suites already gate the job through their
+          # exit code; the narrower glob only meant their results were missing
+          # from the published check.
           # Second glob catches the nested workspace package (packages/sdk/js).
           report_paths: |
-            packages/*/.artifacts/unit/junit.xml
-            packages/*/*/.artifacts/unit/junit.xml
+            packages/*/.artifacts/unit/junit*.xml
+            packages/*/*/.artifacts/unit/junit*.xml
           check_name: "unit results (${{ matrix.settings.name }})"
           detailed_summary: true
           include_time_in_summary: true

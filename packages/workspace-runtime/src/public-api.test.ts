@@ -30,13 +30,18 @@ describe("workspace-runtime public API manifest", () => {
     expect(Object.keys(rootApi).sort()).toEqual([...manifest.rootRuntimeExports].sort())
   })
 
-  test("route manifest exposes only the documented runtime and WorkGraph capability routes", () => {
+  test("route manifest exposes only the runtime's own capability routes", () => {
     expect(WorkspaceRuntimeRouteManifest.map((item) => String(item.path)).sort()).toEqual(
       manifest.routePrefixes.sort(),
     )
     expect(Object.values(WorkspaceRuntimeRoutes).map(String).sort()).toEqual(manifest.routePrefixes.sort())
-    expect(WorkspaceRuntimeRouteManifest.every((item) =>
-      item.path.startsWith("/api/wr/") || item.path.startsWith("/api/workgraph/"))).toBe(true)
+    // Every path under `/api/wr/`, with no exceptions. The four
+    // `/api/workgraph/*` entries that used to sit here belonged to a hosted
+    // capability the runtime happened to mount; they now arrive as a host route
+    // contribution and are described by `@claxedo/workgraph/runtime-adapter`.
+    // A product capability reappearing in this manifest means the runtime has
+    // taken ownership of something above it again.
+    expect(WorkspaceRuntimeRouteManifest.every((item) => item.path.startsWith("/api/wr/"))).toBe(true)
   })
 
   // The kit stays decision-free: hosts construct the OpenCode engine and

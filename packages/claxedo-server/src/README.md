@@ -6,9 +6,9 @@ become one running product. Three roles, three directories:
 | dir | role | contents |
 | --- | --- | --- |
 | `hosts/` | we **host** these packages | `workgraph/`, `wakes/`, `agent-extensions/`, `workspace-runtime/` — one dir per `@claxedo/<pkg>` |
-| `adapters/` | we **adapt** these backends | `relay/`, `central-store/` — each adapts exactly one external thing |
+| `adapters/` | we **adapt** these backends | `central-store/` — each adapts exactly one external thing. The Relay adapter moved to `@claxedo/server-core/adapters/relay`, which both products use. |
 | `platform/` | layer-organized shared machinery | `auth/`, `db/`, `errors/`, `http/`, `runtime/`, `telemetry/`, `governance/` |
-| `deployments/` | we **compose** these modes | `local/`, `hosted-node/`, `hosted-shared/`, `hosted-workerd/`, `shared-routes/` |
+| `deployments/` | we **compose** these modes | `self-hosted-node/`, `hosted-node/`, `hosted-shared/`, `hosted-workerd/`, `shared-routes/` |
 
 Everything else is a feature domain, flat at `src/` root — `documents/`,
 `billing/`, `channels/`, `session/`, `workspace/`, `credentials/`, `sandbox/`,
@@ -22,7 +22,7 @@ identity/authorization/tenancy layer.
 closed at boot). *Self-hosting* — a user running this themselves — is a
 different axis entirely and is **not** a code value: a self-hosted box on a
 public domain with signed auth is `trust=hosted, runtime=node`. See
-`authority/deployment-mode.ts`.
+``@claxedo/server-core/authority/deployment-mode``.
 
 **`.cf.ts` means workerd-only.** A file that cannot run outside the Cloudflare
 runtime (Durable Object classes, `cloudflare:workers`, KV/R2 bindings). `hosted-*` files are NOT marked, because hosted runs on Node too.
@@ -43,7 +43,7 @@ and `deployments/hosted-workerd/worker.import-graph.test.ts`:
   `*.sql.ts` table definitions; `platform/db/schema.ts` barrels them for the
   migration generator. Hand-written
   `ClaxedoDB.raw().prepare(...)` in feature code fails the suite. One
-  documented exception (`session/meta/index.ts`, a dynamic cursor query).
+  documented exception (``@claxedo/server-core/session/meta/index``, a dynamic cursor query).
   `authority/adapters/sqlite/` is a *separate* Node-only database with its own
   hand-rolled schema, deliberately kept out of the Worker bundle.
 - **`test-support/` may not be imported by production modules.**

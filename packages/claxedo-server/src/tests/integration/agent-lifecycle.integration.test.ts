@@ -129,11 +129,11 @@ delete process.env.OPENAI_API_KEY
 delete process.env.CURSOR_API_KEY
 
 const [serverMod, supervisor, store, agent, embedded] = await Promise.all([
-  import("../../deployments/local/server.js"),
+  import("../../deployments/self-hosted-node/app.js"),
   import("../../workspace/supervisor/index.js"),
-  import("../../workspace/store/index.js"),
-  import("../../agent-config/index.js"),
-  import("../../deployments/local/embedded-workspace-runtime.js"),
+  import("@claxedo/server-core/workspace/store/index"),
+  import("@claxedo/server-core/agent-config/index"),
+  import("@claxedo/local-server/deployments/local/embedded-workspace-runtime"),
 ])
 
 const fakeBinaryPath = path.resolve(__dirname, "../../test-support/fake-acp.ts")
@@ -720,6 +720,14 @@ describe("agent lifecycle integration", () => {
 
       await setAcpRunner("claude-acp")
 
+      // A plain list is store-only once the directory has been imported, so a
+      // session that appeared upstream afterwards arrives through the explicit
+      // selected-harness refresh. Name the harness that owns it...
+      const refreshRes = await fetch(`${base()}/session?${q(ws)}&harness=opencode`)
+      expect(refreshRes.status).toBe(200)
+      expect((await refreshRes.json() as Array<{ id: string }>).some((s) => s.id === "ses_discovered")).toBe(true)
+
+      // ...and it is then part of this directory's durable inventory.
       const listRes = await fetch(`${base()}/session?${q(ws)}`)
       expect(listRes.status).toBe(200)
       const sessions = await listRes.json() as Array<{ id: string }>
@@ -769,7 +777,7 @@ describe("agent lifecycle integration", () => {
         updated_at: Date.now(),
       })
 
-      const runner = await import("../../session/harness/index.js")
+      const runner = await import("@claxedo/server-core/session/harness/index")
       runner.setSessionHarness(ws.id, "ses_duplicate", {
         id: "claude",
         access: "acp",

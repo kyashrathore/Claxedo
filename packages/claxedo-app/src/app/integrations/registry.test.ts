@@ -135,6 +135,28 @@ describe("contribution registry gates", () => {
     ])
   })
 
+  test("removes a surface by id, leaving the rest in order", () => {
+    // `addSurface` had no counterpart, so a contribution registered at runtime
+    // stayed registered for the life of the page. Hosted contributions are
+    // registered on sign-in and have to come back out on sign-out.
+    const registry = createContributionRegistry()
+    const surface = (id: string) => ({ id, tier: "claxedo-first-party" as const, surface: id })
+    for (const id of ["a", "b", "c"]) registry.addSurface(surface(id))
+
+    registry.removeSurface("b")
+
+    expect(registry.all().surfaces.map((item) => item.id)).toEqual(["a", "c"])
+  })
+
+  test("removing an id it never held changes nothing", () => {
+    const registry = createContributionRegistry()
+    registry.addSurface({ id: "a", tier: "claxedo-first-party", surface: "a" })
+
+    registry.removeSurface("absent")
+
+    expect(registry.all().surfaces.map((item) => item.id)).toEqual(["a"])
+  })
+
   test("treats hosting and role gates as explicit placement constraints", () => {
     expect(contributionGateAllows(
       { hosting: "workspace", role: "editor" },

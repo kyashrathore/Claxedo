@@ -159,4 +159,22 @@ crons.interval("sweep expired connection attempts", { minutes: 15 }, internal.co
   limit: 500,
 })
 
+// Machine-enrollment request GC (Unit 6). `POST /api/claxedo/host/enrollments/requests`
+// inserts one server-random-keyed row per call and, before this sweep, nothing
+// ever deleted one — the table grew for the life of the deployment, bounded
+// only by how fast a caller could ask for nonces. The rows are self-expiring by
+// predicate (a nonce is dead after a minute, consumed evidence after ten), so
+// like the two sweeps above this only reclaims storage and correctness never
+// depends on it having run.
+//
+// Every 15 minutes, matching them, and for the same arithmetic: the whole
+// lifetime of a row is ~10 minutes, so an hourly sweep would sit on several
+// generations of dead rows for no benefit. Bounded per tick
+// (`ENROLLMENT_REQUEST_SWEEP_LIMIT`) and level-triggered, so a flood's backlog
+// drains across ticks instead of pushing one transaction toward Convex's read
+// cap.
+crons.interval("sweep expired host enrollment requests", { minutes: 15 }, internal.hostEnrollments.sweepExpired, {
+  limit: 500,
+})
+
 export default crons

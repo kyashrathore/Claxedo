@@ -13,7 +13,7 @@ import {
 } from "./server-workgraph"
 import type { ExecutionCapabilitiesPort, WorkspaceExecutionPort } from "@claxedo/workgraph"
 import { EXECUTION_CAPABILITY_CATALOG_MAX_AGE_MS, readChangeCursor, type WorkGraphArchive } from "@claxedo/workgraph/contracts"
-import type { SignedControlPlaneAuth } from "../../../platform/auth/auth"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import {
   createAttempts,
   createConnectionsService,

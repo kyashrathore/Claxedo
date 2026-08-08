@@ -72,7 +72,7 @@ function serverSource(relative: string) {
 
 describe("sandbox driver client/server route contract", () => {
   test("server.ts still mounts the workspace routes under the prefix the client encodes", () => {
-    expect(serverSource("../../deployments/local/server.ts")).toContain(`app.route("${MOUNT_PREFIX}", WorkspaceRoutes(`)
+    expect(serverSource("../../deployments/self-hosted-node/app.ts")).toContain(`app.route("${MOUNT_PREFIX}", WorkspaceRoutes(`)
     // `sandboxDriverRoutes` is mounted at the WorkspaceRoutes root, so the
     // driver paths sit directly under MOUNT_PREFIX with no extra segment.
     expect(serverSource("../../workspace/routes/index.ts")).toContain('.route("/", sandboxDriverRoutes(')

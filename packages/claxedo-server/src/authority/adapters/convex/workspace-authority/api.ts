@@ -52,6 +52,18 @@ type ConvexApi = {
     markSecondDeviceOpen: ConvexMutation
     active: ConvexQuery
   }
+  hostEnrollments: {
+    createRequest: ConvexMutation
+    createRequestForService: ConvexMutation
+    enroll: ConvexMutation
+    enrollForService: ConvexMutation
+    heartbeat: ConvexMutation
+    heartbeatForService: ConvexMutation
+    pause: ConvexMutation
+    pauseForService: ConvexMutation
+    active: ConvexQuery
+    activeForService: ConvexQuery
+  }
   workspaceShares: {
     grant: ConvexMutation
     revoke: ConvexMutation

@@ -65,14 +65,19 @@ export const claxedoPackages: readonly ClaxedoPackage[] = [
   { name: "@claxedo/sandbox-manager", dir: "packages/sandbox-manager", track: "runtime", runtimeFamily: false },
   { name: "@claxedo/channels", dir: "packages/claxedo-channels", track: "apps", runtimeFamily: false },
   { name: "@claxedo/connections", dir: "packages/claxedo-connections", track: "apps", runtimeFamily: false },
-  { name: "@claxedo/workgraph", dir: "packages/workgraph", track: "apps", runtimeFamily: false },
   { name: "@claxedo/wakes", dir: "packages/wakes", track: "wakes", runtimeFamily: false },
   // Tier 1
   { name: "@claxedo/agent-sdk-runtime", dir: "packages/agent-sdk-runtime", track: "runtime", runtimeFamily: true },
   { name: "@claxedo/workspace-relay", dir: "packages/workspace-relay", track: "runtime", runtimeFamily: true },
-  { name: "@claxedo/mcp", dir: "packages/claxedo-mcp", track: "apps", runtimeFamily: false },
   // Tier 2
   { name: "@claxedo/workspace-runtime", dir: "packages/workspace-runtime", track: "runtime", runtimeFamily: true },
+  // Tier 3 — WorkGraph moved down from Tier 0 when its Workspace Runtime
+  // adapter arrived. It now depends on the runtime it contributes routes to,
+  // which is the correct direction (product capability above execution core)
+  // but reverses their publish order.
+  { name: "@claxedo/workgraph", dir: "packages/workgraph", track: "apps", runtimeFamily: false },
+  // Tier 4 — depends on WorkGraph, so it follows.
+  { name: "@claxedo/mcp", dir: "packages/claxedo-mcp", track: "apps", runtimeFamily: false },
 ]
 
 export type PackageSelector = "all" | "others" | "runtime-family" | PackageTrack

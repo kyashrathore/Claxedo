@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { ControlPlaneAuthError } from "../../platform/auth/auth"
-import type { ClerkVerifier } from "../../platform/auth/auth"
+import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
+import type { ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
-import type { CredentialMetadata } from "../../credentials/types"
+import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 
 type WorkspaceTestRow = Record<string, unknown> & {
   id: string
@@ -90,7 +90,7 @@ function resetWorkspaceStoreMocks() {
   )
 }
 
-vi.mock("../../agent-config", () => ({
+vi.mock("@claxedo/server-core/agent-config/index", () => ({
   loadUserConfig: mocks.loadUserConfig,
   sandboxDriverConfig: vi.fn((config?: { sandbox_driver?: unknown }) => config?.sandbox_driver ?? {}),
   saveUserConfig: mocks.saveUserConfig,
@@ -107,17 +107,17 @@ vi.mock("../../agent-config", () => ({
   getEffectiveConfig: vi.fn(async () => ({})),
 }))
 
-vi.mock("../../credentials/registry", () => ({
+vi.mock("@claxedo/server-core/credentials/registry", () => ({
   getCredentialByProvider: mocks.getCredentialByProvider,
   putCredential: mocks.putCredential,
   deleteCredentialsByProvider: mocks.deleteCredentialsByProvider,
 }))
 
-vi.mock("../../sandbox/network/policy", () => ({
+vi.mock("@claxedo/server-core/sandbox/network/policy", () => ({
   ensureHostForRepo: mocks.ensureHostForRepo,
 }))
 
-vi.mock("../../workspace/store", () => ({
+vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   resolveWorkspace: mocks.resolveWorkspace,
   workspaceIdFromDirectoryRef: (input: string | undefined) => {
     const value = input?.trim()
@@ -139,6 +139,19 @@ vi.mock("../../workspace/store", () => ({
   deleteWorkspace: mocks.deleteWorkspace,
   deleteWorkspaceByDirectory: vi.fn(async (directory: string) => mocks.workspaceRows.delete(directory)),
 }))
+
+// Agent-extension sync reaches the supervisor through the composed port now,
+// so the same spy is installed there. Mocking the module alone would leave the
+// assertion below passing against a call nothing makes.
+const { configureWorkspaceSupervisorPort } = await import("@claxedo/server-core/workspace/supervisor-port")
+configureWorkspaceSupervisorPort({
+  hold() {},
+  release() {},
+  markUse() {},
+  touch() {},
+  async broadcastRuntimeConfig() {},
+  syncAgentExtensions: async (...args) => { await mocks.syncWorkspaceRuntimeAgentExtensions(...(args as unknown as [])) },
+})
 
 vi.mock("../../workspace/supervisor", () => ({
   discardSupervisorSandbox: mocks.discardSupervisorSandbox,
@@ -165,7 +178,7 @@ vi.mock("../../user-hosted-tunnel", () => ({
   stopAllUserHostedWorkspaceTunnels: mocks.stopAllUserHostedWorkspaceTunnels,
 }))
 
-const { localOnlyAuthAdapter } = await import("../../platform/auth/auth")
+const { localOnlyAuthAdapter } = await import("@claxedo/server-core/platform/auth/auth")
 const { WorkspaceRoutes } = await import("./index")
 const { createFixedWindowConnectionRateLimiter } = await import("../../platform/auth/rate-limit")
 

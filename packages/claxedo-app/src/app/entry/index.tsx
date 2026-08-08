@@ -7,8 +7,13 @@
 import { setExtensions } from "../../features/extensions/index"
 import { appExtensions } from "../../features/extensions/index"
 import { serverExtensions } from "../../features/extensions/index"
-import { initializeClerk } from "@/platform/auth/auth-client"
 import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "@/platform/api/local-server"
+import { configureProductContributions, hostedContributionLoader } from "@/app/composition/product-contributions"
+import {
+  localContentSurfaces,
+  registerContentSurface,
+  unregisterContentSurface,
+} from "@/app/integrations/first-party-content-surfaces"
 
 /**
  * Configuration for initializing Claxedo cloud extensions.
@@ -71,9 +76,46 @@ export function initClaxedo(config: ClaxedoConfig): void {
     server: serverExtensions(config),
   })
 
-  // Only initialize auth if authEnabled (fire-and-forget)
+  // `hostedComposition` answers "may this build ever hold hosted
+  // contributions", which is what gates activation. It is NOT the account:
+  // a hosted build serves unsigned windows too, and gating registration on a
+  // signed account here would empty the composition of every window before
+  // sign-in. Removal on sign-out is the account's half, and
+  // `app/composition/hosted-contribution-sync.tsx` drives it.
+  //
+  // Unit 11 replaces this with the Electron account port's signed state, so a
+  // signed desktop activates the same contribution entry from a real account
+  // rather than a build-time environment variable — and the two halves become
+  // one question.
+  const contributions = configureProductContributions({
+    local: localContentSurfaces,
+    register: registerContentSurface,
+    unregister: unregisterContentSurface,
+    loadHosted: hostedContributionLoader(),
+    hostedComposition: () => config.authEnabled === true,
+  })
+
+  // Starting the identity provider is NOT this function's job.
+  //
+  // It used to be, and that put Clerk in the import graph of every build that
+  // calls `initClaxedo` — including the local one, which can never sign in.
+  // Guarding it behind `config.authEnabled` did not help: the branch not
+  // running does not remove the module from the bundle. Making it a dynamic
+  // import only moved it to a lazy chunk that a local build still ships.
+  //
+  // So the hosted entry starts it (`app/entry/main.tsx`), which is where the
+  // decision to have an identity provider is actually made, and this function
+  // keeps only the parts both products share.
   if (config.authEnabled) {
-    initializeClerk().catch(() => {})
+    // Hosted composition: WorkGraph and Documents arrive as one lazily
+    // imported contribution set rather than as static imports of this entry.
+    //
+    // `expectHosted()` runs synchronously and `activateHosted` resolves later,
+    // and the split matters: restored-state pruning must know that WorkGraph
+    // tabs are legal in this build BEFORE the dynamic import lands, or a hosted
+    // reload would drop every restored WorkGraph tab in the gap.
+    contributions.expectHosted()
+    void contributions.activateHosted().catch(() => {})
   }
 }
 
@@ -100,10 +142,10 @@ export function getDefaultConfig(): ClaxedoConfig {
   }
 }
 
-// Re-export utilities and types for direct use
-export { clerk as authClient, waitForClerk, initializeClerk, getAuthToken } from "@/platform/auth/auth-client"
-export { useAuthSession } from "@/platform/auth/auth-session"
-export type { AuthSession, AuthSessionStatus } from "@/platform/auth/auth-session"
+// The authenticated-identity surface lives on `@claxedo/app/auth`, not here.
+// Re-exporting it from the main entry made Clerk a static edge of every build
+// that imports this module for `getDefaultConfig` — including the local one,
+// which can never sign in. See `entry/auth.ts`.
 export { PrincipalProvider } from "@/platform/auth/principal-provider"
 export { applyLayoutCommand } from "../layout/commands"
 export type { LayoutCommand } from "../layout/commands"

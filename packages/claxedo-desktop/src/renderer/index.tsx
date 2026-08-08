@@ -23,8 +23,10 @@ import {
   setDeploymentMode,
 } from "@/platform/telemetry/analytics"
 import { ConfigProvider } from "@/app/providers"
-import { getAuthToken, getDefaultConfig, initClaxedo } from "@claxedo/app"
+import { getDefaultConfig, initClaxedo } from "@claxedo/app"
+import { configureAuthSession, getAuthToken, useAuth } from "@claxedo/app/auth"
 import { configureApiRuntime } from "@/platform/api/api"
+import { configureDesktopMachineRemoteAccess } from "@/platform/remote-access/machine-remote-access"
 import type { LinuxDisplayBackend, ServerReadyData } from "../preload/types"
 import pkg from "../../package.json"
 import { initI18n, t } from "./i18n"
@@ -44,6 +46,64 @@ type Platform = AppPlatform & {
   getDisplayBackend?(): Promise<LinuxDisplayBackend | null>
   setDisplayBackend?(backend: LinuxDisplayBackend | null): Promise<void>
 }
+
+/**
+ * Bind the identity provider to the authenticated transport.
+ *
+ * `@claxedo/app`'s `platform/api/api.ts` used to import `getAuthToken` itself;
+ * it now names a bearer source and each composition root supplies one, so the
+ * transport can stay in `@claxedo/app` while the Clerk producer moves to
+ * `@claxedo/cloud-app`. This renderer already holds `getAuthToken` for the
+ * platform descriptor below — the same function, now also handed to the
+ * transport explicitly.
+ *
+ * At module scope rather than in the `configureApiRuntime` call inside
+ * `ServerGate`: that one runs during render, once the sidecar URL and password
+ * are known, and anything that reached `authFetch` before then would lose the
+ * bearer it has today.
+ */
+configureApiRuntime({ bearerToken: getAuthToken })
+
+/**
+ * Bind the identity provider to the app's canonical auth-session abstraction.
+ *
+ * Same reason as the bearer above, one seam over. `platform/auth/auth-session.ts`
+ * used to `import { useAuth }` statically; because the shell's provider tree
+ * calls `useAuthSession()` unconditionally, that put Clerk in the LOCAL bundle
+ * too. It now keeps a type-only edge and takes the provider from whoever binds
+ * one.
+ *
+ * This renderer is a signed-in-capable build — it already holds `getAuthToken`
+ * — so it binds the real provider. Without this line the desktop account menu
+ * would report "Local workspace" forever with a green suite; the local browser
+ * entry is the only composition root that deliberately binds nothing.
+ *
+ * At module scope, before render, for the same reason as `configureApiRuntime`.
+ */
+configureAuthSession(useAuth)
+
+/**
+ * Bind machine remote access to the Host Connector in Electron main.
+ *
+ * The desktop's sidecar is `@claxedo/local-server`, which serves none of
+ * `/api/claxedo/remote-access/*` — those paths belong to the Host Connector
+ * now, and the connector is in main because that is where the machine signing
+ * key and the account credential live. So this renderer performs no request:
+ * it names one of four operations over IPC.
+ *
+ * Without this line, "Enable remote access" posts to a route this product does
+ * not serve. That is not hypothetical — it is what shipped, past a green suite,
+ * because the transport was hardcoded in shared app code with nothing asserting
+ * which product it belonged to.
+ *
+ * Bound only when the preload actually exposes the bridge. Nothing is bound in
+ * its absence: an older preload under a newer renderer means the capability is
+ * missing, and the panel reporting that is far better than a fallback that
+ * quietly recreates the bug.
+ *
+ * At module scope, before render, for the same reason as `configureApiRuntime`.
+ */
+configureDesktopMachineRemoteAccess()
 
 const root = document.getElementById("root")
 if (import.meta.env.DEV && !(root instanceof HTMLElement)) {

@@ -28,13 +28,13 @@ await Promise.all([
   fs.mkdir(process.env.CLAXEDO_STATE_DIR, { recursive: true }),
 ])
 
-const [{ createApp, createDefaultLocalControlPlaneServices }, { ClaxedoDB }] = await Promise.all([
-  import("../../deployments/local/server"),
-  import("../../platform/db/db"),
+const [{ createSelfHostedApp, createDefaultLocalControlPlaneServices }, { ClaxedoDB }] = await Promise.all([
+  import("../../deployments/self-hosted-node/app"),
+  import("../../platform/db"),
 ])
 
 const services = createDefaultLocalControlPlaneServices()
-const app = createApp(services).app
+const app = createSelfHostedApp(services).app
 
 const alpha = workspace("ws_alpha", "project_alpha", "/work/alpha")
 const beta = workspace("ws_beta", "project_alpha", "/work/beta")

@@ -10,10 +10,9 @@ import {
 import { showToast } from "@opencode-ai/ui/toast"
 import { validWorktree } from "@/platform/sync/worktree"
 
-import { api, getDefaultBaseUrl } from "@/platform/api/api"
+import { api, apiBearerToken, getDefaultBaseUrl } from "@/platform/api/api"
 import type { ProjectItem, WorkspaceItem } from "../../../app/workbench/rail/domain-types"
 import type { WorkspaceBarItem } from "../../../app/workbench/rail/workspace-toolbar"
-import { getAuthToken } from "@/platform/auth/auth-client"
 import type { ActionProps, Nav } from "../../../app/workbench/actions/shared"
 import { workspaceSessionRoute } from "@/platform/identity/route"
 import { createLocalWorkspace, type LocalWorkspaceProps } from "./workspace-recovery"
@@ -382,7 +381,13 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
   }
 
   const deleteCloudMainWorkspace = async (dir: string) => {
-    const token = await getAuthToken()
+    // The bearer comes from whatever the build bound through
+    // `configureApiRuntime({ bearerToken })`, not from the identity provider
+    // directly — importing `getAuthToken` here put Clerk in the local bundle
+    // for one cloud-only action. A local build binds no source and gets `null`,
+    // which this already handled: the header is simply omitted, and only a
+    // cloud workspace reaches here at all.
+    const token = await apiBearerToken()
     const headers: Record<string, string> = {}
     if (token) {
       headers.Authorization = `Bearer ${token}`

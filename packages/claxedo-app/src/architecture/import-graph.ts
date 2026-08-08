@@ -11,6 +11,11 @@ const testSupportPathPatterns = [
   /(?:^|\/)[^/]*test-helpers?\.tsx?$/,
 ]
 const typeContractCandidates = new Set([
+  // The content-surface shape, shared by the local and hosted surface sets.
+  // Both import it type-only ON PURPOSE — that is what keeps the hosted set out
+  // of the local runtime graph — so it is reachable by types alone and would
+  // otherwise read as orphaned.
+  "app/integrations/content-surface-contract.ts",
   "features/extensions/data/types.ts",
   "features/session/data/session-lifecycle.ts",
   // Doorbell event mirrors: the feature owns the event
@@ -26,12 +31,107 @@ const typeContractCandidates = new Set([
   "platform/runtime/workspace-runtime.ts",
   "platform/runtime/capabilities.ts",
   "platform/runtime/session.ts",
-  "platform/runtime/workspace-log.ts",
+  // The workspace-startup port: what local code may ask a hosted build to bring
+  // up. Same shape as the account port below — the contract is imported
+  // type-only by its caller, its binding, and its cloud implementation, so the
+  // value graph sees no edge into it.
+  "platform/runtime/workspace-startup-port.ts",
+  // The account port: the tokenless account contract. The provider and the
+  // browser binding both import it type-only, which is the whole shape — the
+  // port declares what may be asked for, and implementations supply it.
+  "platform/account/account-port.ts",
+  // The machine remote-access port: what "publish this machine" means, with no
+  // opinion on whether it is an HTTP call or Electron IPC. Same shape as the
+  // account port above — the binder, both implementations and the onboarding
+  // controller import it type-only.
+  "platform/remote-access/machine-remote-access-port.ts",
   "platform/query/project-meta.ts",
 ])
 const configAliasTargets = new Map([
   ["lru_map", "lib/lru-map.ts"],
 ])
+
+/**
+ * One edge of a product-boundary walk: the module that owned the import, the
+ * literal specifier it wrote, and the in-package module it resolved to (null
+ * for a bare package specifier, which the walk checks but never follows).
+ */
+export type ProductImportRef = { specifier: string; module: string | null }
+
+export type ProductBoundaryBreach = {
+  /** Module chain from the entry to the module that owns the forbidden import. */
+  chain: string[]
+  /** The literal specifier that crossed the boundary. */
+  specifier: string
+  /** The in-package module it resolved to, or null for a bare package. */
+  module: string | null
+}
+
+/**
+ * Walk the transitive VALUE-import graph from one production entry and return
+ * the SHORTEST chain that reaches a forbidden edge, or null when the closure is
+ * clean.
+ *
+ * Shortest, not first-found: a depth-first walk reports whichever chain the
+ * traversal order happened to reach, which for a graph this size is routinely
+ * a twelve-hop path through unrelated modules. Breadth-first makes the reported
+ * chain the actual tightest coupling, which is the one a reader has to break.
+ *
+ * Bare package specifiers are CHECKED but never followed — `@clerk/clerk-js`
+ * is a boundary breach wherever it appears, and its own internals are not this
+ * package's graph. Type-only imports are excluded because the bundler erases
+ * them; an emitted-artifact gate (Unit 12) covers what source scanning cannot.
+ */
+export function shortestForbiddenImportChain(options: {
+  appRoot: string
+  /** Entry module, relative to `<appRoot>/src`. */
+  entry: string
+  isForbidden: (ref: ProductImportRef) => boolean
+}): ProductBoundaryBreach | null {
+  const { appRoot, entry, isForbidden } = options
+  const srcRoot = path.join(appRoot, "src")
+  const entryFile = tryFile(path.join(srcRoot, entry))
+  if (!entryFile) throw new Error(`entry not found: ${entry}`)
+
+  const entryRel = relative(srcRoot, entryFile)
+  const parents = new Map<string, string>()
+  const seen = new Set<string>([entryRel])
+  let frontier = [entryRel]
+
+  while (frontier.length) {
+    const next: string[] = []
+    for (const rel of frontier) {
+      const file = path.join(srcRoot, rel)
+      if (!existsSync(file)) continue
+      for (const specifier of importSpecifiers(readFileSync(file, "utf8"))) {
+        const resolved = resolveImport(appRoot, file, specifier)
+        const module = resolved ? relative(srcRoot, resolved) : null
+        if (isForbidden({ specifier, module })) {
+          return { chain: chainTo(rel, entryRel, parents), specifier, module }
+        }
+        if (!module || seen.has(module)) continue
+        seen.add(module)
+        parents.set(module, rel)
+        next.push(module)
+      }
+    }
+    frontier = next
+  }
+
+  return null
+}
+
+function chainTo(module: string, entry: string, parents: Map<string, string>) {
+  const chain = [module]
+  let cursor = module
+  while (cursor !== entry) {
+    const parent = parents.get(cursor)
+    if (!parent) break
+    chain.unshift(parent)
+    cursor = parent
+  }
+  return chain
+}
 
 export function orphanModules(appRoot: string) {
   const srcRoot = path.join(appRoot, "src")
@@ -76,7 +176,10 @@ export function reachableModules(appRoot: string) {
 }
 
 function rootFiles(appRoot: string) {
-  const roots = ["app/entry/main.tsx", "app/entry/index.tsx"].filter((file) => existsSync(path.join(appRoot, "src", file)))
+  // `local.tsx` is an HTML entry like `main.tsx`: nothing imports it, and
+  // without it here the orphan guard reports the local product's entry point
+  // as dead code.
+  const roots = ["app/entry/main.tsx", "app/entry/local.tsx", "app/entry/index.tsx"].filter((file) => existsSync(path.join(appRoot, "src", file)))
   const pkg = JSON.parse(readFileSync(path.join(appRoot, "package.json"), "utf8")) as {
     exports?: Record<string, string>
   }
@@ -219,7 +322,14 @@ function isTypeOnlyClause(keyword: string, clause: string) {
   return bindings.length > 0 && bindings.every((binding) => /^type\b/.test(binding))
 }
 
-function stripComments(text: string) {
+/**
+ * Source with comments blanked out, positions preserved.
+ *
+ * Exported because guards keep needing it: six guards in one session passed by
+ * matching their own doc comments, and every one of them would have been red if
+ * it had scanned the code instead of the prose next to it.
+ */
+export function stripComments(text: string) {
   let output = ""
   let state: "code" | "line" | "block" | "single" | "double" | "template" = "code"
   let escaped = false

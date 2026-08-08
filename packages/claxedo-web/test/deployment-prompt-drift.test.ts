@@ -256,12 +256,12 @@ describe("cloudflare deploy prompt: fail-closed prerequisites", () => {
   // gives it meaning. If a var is renamed or its enforcement is deleted, this fails.
   const anchors: Record<string, string> = {
     CLAXEDO_WORKSPACE_AUTHORITY_URL: "packages/claxedo-server/src/authority/adapters/convex/workspace-authority/index.ts",
-    CLERK_JWT_ISSUER: "packages/claxedo-server/src/platform/auth/auth.ts",
-    CLERK_ISSUER_URL: "packages/claxedo-server/src/platform/auth/auth.ts",
-    CLERK_JWKS_URL: "packages/claxedo-server/src/platform/auth/auth.ts",
-    CLERK_JWT_AUDIENCE: "packages/claxedo-server/src/platform/auth/auth.ts",
-    CLAXEDO_SIGNED_CLOUD_AUTH: "packages/claxedo-server/src/platform/auth/auth.ts",
-    CLAXEDO_DEPLOYMENT_MODE: "packages/claxedo-server/src/authority/deployment-mode.ts",
+    CLERK_JWT_ISSUER: "packages/claxedo-server-core/src/platform/auth/auth.ts",
+    CLERK_ISSUER_URL: "packages/claxedo-server-core/src/platform/auth/auth.ts",
+    CLERK_JWKS_URL: "packages/claxedo-server-core/src/platform/auth/auth.ts",
+    CLERK_JWT_AUDIENCE: "packages/claxedo-server-core/src/platform/auth/auth.ts",
+    CLAXEDO_SIGNED_CLOUD_AUTH: "packages/claxedo-server-core/src/platform/auth/auth.ts",
+    CLAXEDO_DEPLOYMENT_MODE: "packages/claxedo-server-core/src/authority/deployment-mode.ts",
     CLAXEDO_WORKSPACE_RELAY_URL: "packages/claxedo-server/src/authority/hosted-services.ts",
     CLAXEDO_RELAY_RESOLVER_TOKEN: "packages/claxedo-server/src/authority/hosted-services.ts",
     CLAXEDO_RUNTIME_ADMIN_TOKEN: "packages/claxedo-server/src/authority/hosted-services.ts",
@@ -334,7 +334,7 @@ describe("cloudflare deploy prompt: fail-closed prerequisites", () => {
   })
 
   test("says this is the hosted path only, and that absent mode means local", async () => {
-    const deploymentMode = await read("packages/claxedo-server/src/authority/deployment-mode.ts")
+    const deploymentMode = await read("packages/claxedo-server-core/src/authority/deployment-mode.ts")
     expect(deploymentMode).toContain('if (!raw || raw === "local") return "local"')
     expect(prompt).toContain("HOSTED PATH ONLY")
     expect(prompt).toContain("absent deployment mode means local")

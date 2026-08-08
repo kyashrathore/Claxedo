@@ -78,6 +78,8 @@ export type ApiModuleShape = {
   getConfiguredClaxedoServerUrl: () => string | undefined
   getDefaultBaseUrl: () => string
   authFetch: (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+  /** Mirrors the real reader's unbound state: a mock has no bearer source. */
+  apiBearerToken: (options?: { skipCache?: boolean }) => Promise<string | null>
   api: {
     get<T = unknown>(url: string): Promise<T>
     post<T = unknown>(url: string, body?: unknown): Promise<T>
@@ -228,6 +230,7 @@ export function createMockApi(overrides: MockApiOverrides = {}): MockApiFixture 
     getConfiguredClaxedoServerUrl,
     getDefaultBaseUrl,
     authFetch,
+    apiBearerToken: overrides.apiBearerToken ?? (async () => null),
     api: overrides.api ?? defaultApi,
   }
 

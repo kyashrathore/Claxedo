@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 import { HostedWorkspaceRoutes } from "../routes/hosted/workspace"
-import type { ClerkVerifier } from "../platform/auth/auth"
+import type { ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 

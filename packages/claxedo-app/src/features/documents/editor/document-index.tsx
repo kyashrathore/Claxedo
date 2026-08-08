@@ -423,7 +423,13 @@ export function PageIndex(props: PageIndexProps) {
       return currentGeneration
     },
   )
+  // Distinct from `generation`, which also moves on every scope change: a scope
+  // change is not a disposal, and a create the user explicitly filed against a
+  // named project should still open when it lands. This flag marks the one case
+  // where the completion has nowhere to go — the index itself is gone.
+  let disposed = false
   onCleanup(() => {
+    disposed = true
     generation++
     controller?.stop()
   })
@@ -458,8 +464,12 @@ export function PageIndex(props: PageIndexProps) {
         directory: project.worktree,
         displayName: "Untitled document",
       })
+      // The index can be closed while the create is still in flight. Opening the
+      // result then would drop a tab on a surface the user has already left.
+      if (disposed) return
       props.onOpenPage(document, project.id)
     } catch (error) {
+      if (disposed) return
       setState({ ...state(), error: error instanceof Error ? error.message : String(error) })
     } finally {
       setCreating(false)

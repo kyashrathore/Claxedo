@@ -1,11 +1,11 @@
 import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, test, vi } from "vitest"
-import type { SessionMeta } from "../session/meta"
-import type { SessionWriteMode } from "../platform/runtime/profile"
-import { createDurableSessionLog } from "../platform/auth/durable-session-log"
+import type { SessionMeta } from "@claxedo/server-core/session/meta/index"
+import type { SessionWriteMode } from "@claxedo/server-core/platform/runtime/profile"
+import { createDurableSessionLog } from "@claxedo/server-core/platform/auth/durable-session-log"
 import { createProjectionStore } from "./projection-store"
-import { ControlPlaneAuthError, controlPlaneAuthContext, customVerifierAuthAdapter, localOnlyAuthAdapter } from "../platform/auth/auth"
+import { ControlPlaneAuthError, controlPlaneAuthContext, customVerifierAuthAdapter, localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import {
   ControlPlaneCompositionError,
   createControlPlaneServices,
@@ -392,11 +392,32 @@ describe("control-plane services", () => {
     }
   })
 
-  test("server composition uses createApp with explicit services", () => {
-    const file = path.resolve(import.meta.dirname, "../deployments/local/server.ts")
+  test("the composition records local session metadata, and does it before the runtime proxy", () => {
+    // The control plane is the source of truth for the local session list, and
+    // the tap is what fills it. It adds no route, so dropping it changes
+    // nothing about the route table and no other test in this repository
+    // notices — verified by mutation: deleting the call fails nothing else.
+    //
+    // Order is load-bearing too: the workspace runtime proxy ANSWERS
+    // `/session` itself, so a tap registered after it never sees the call and
+    // the session list silently stops filling.
+    const text = fs.readFileSync(
+      path.resolve(import.meta.dirname, "../deployments/self-hosted-node/app.ts"),
+      "utf8",
+    )
+    const tap = text.indexOf("app.use(sessionMetaProjectionTap(")
+    const proxy = text.indexOf("app.use(workspaceRuntimeProxy)")
+
+    expect(tap, "createSelfHostedApp must record local session metadata").toBeGreaterThan(-1)
+    expect(proxy, "createSelfHostedApp must mount the workspace runtime proxy").toBeGreaterThan(-1)
+    expect(tap, "the session-meta tap must be registered BEFORE the runtime proxy").toBeLessThan(proxy)
+  })
+
+  test("server composition uses createSelfHostedApp with explicit services", () => {
+    const file = path.resolve(import.meta.dirname, "../deployments/self-hosted-node/app.ts")
     const text = fs.readFileSync(file, "utf8")
 
-    expect(text).toContain("export function createApp(")
+    expect(text).toContain("export function createSelfHostedApp(")
     expect(text).toContain("services: ControlPlaneServices")
     expect(text).toContain("export function createDefaultLocalControlPlaneServices()")
     expect(text).toContain("const authorityUrl = convexAuthorityUrlFromEnv(process.env)")
@@ -442,7 +463,7 @@ describe("control-plane services", () => {
     // Deployer trap: signed auth enabled + no authority previously answered 503
     // on every request; the default local composition must refuse to boot with
     // an actionable message instead.
-    const { createDefaultLocalControlPlaneServices } = await import("../deployments/local/server")
+    const { createDefaultLocalControlPlaneServices } = await import("../deployments/self-hosted-node/app")
     const previous = {
       signed: process.env.CLAXEDO_SIGNED_CLOUD_AUTH,
       authority: process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL,
@@ -474,7 +495,7 @@ describe("control-plane services", () => {
   })
 
   test("local composition does not expose signers from a private key without its public pair", async () => {
-    const { createDefaultLocalControlPlaneServices } = await import("../deployments/local/server")
+    const { createDefaultLocalControlPlaneServices } = await import("../deployments/self-hosted-node/app")
     const previous = {
       privateKey: process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM,
       publicKey: process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM,
@@ -495,7 +516,7 @@ describe("control-plane services", () => {
 
   test("agent session routes are no longer owned by the control plane", () => {
     const route = path.resolve(import.meta.dirname, "../routes/agent-session.ts")
-    const server = fs.readFileSync(path.resolve(import.meta.dirname, "../deployments/local/server.ts"), "utf8")
+    const server = fs.readFileSync(path.resolve(import.meta.dirname, "../deployments/self-hosted-node/app.ts"), "utf8")
 
     expect(fs.existsSync(route)).toBe(false)
     expect(server).not.toContain("AgentSessionRoutes(")
@@ -504,8 +525,8 @@ describe("control-plane services", () => {
 
   test("runtime-facing server files do not reach around control-plane ports", () => {
     const files = [
-      path.resolve(import.meta.dirname, "../deployments/local/server.ts"),
-      path.resolve(import.meta.dirname, "../deployments/local/embedded-workspace-runtime.ts"),
+      path.resolve(import.meta.dirname, "../deployments/self-hosted-node/app.ts"),
+      path.resolve(import.meta.dirname, "../../../claxedo-local-server/src/deployments/local/embedded-workspace-runtime.ts"),
     ]
 
     for (const file of files) {
@@ -544,14 +565,14 @@ describe("control-plane services", () => {
     expect(sessionPull).toContain("export async function resolveSessionGateway")
   })
 
-  test("createApp accepts an injected ControlPlaneServices and returns app + websocket", async () => {
-    const { createApp } = await import("../deployments/local/server")
+  test("createSelfHostedApp accepts an injected ControlPlaneServices and returns app + websocket", async () => {
+    const { createSelfHostedApp } = await import("../deployments/self-hosted-node/app")
     const sync = fakeSync()
     const services = createControlPlaneServices(fakePorts(sync), {
       authority: null,
       relay: { resolverToken: "expected-relay-token" },
     })
-    const built = createApp(services)
+    const built = createSelfHostedApp(services)
     expect(typeof built.app.fetch).toBe("function")
     expect(typeof built.injectWebSocket).toBe("function")
 
@@ -602,8 +623,8 @@ describe("control-plane services", () => {
     }
   })
 
-  test("createApp gates remote central runtime routes with signed auth", async () => {
-    const { createApp } = await import("../deployments/local/server")
+  test("createSelfHostedApp gates remote central runtime routes with signed auth", async () => {
+    const { createSelfHostedApp } = await import("../deployments/self-hosted-node/app")
     const sync = fakeSync()
     const authorizeSessionRead = vi.fn(async () => {})
     const services = createControlPlaneServices(fakePorts(sync), {
@@ -622,7 +643,7 @@ describe("control-plane services", () => {
         }),
       }),
     })
-    const built = createApp(services)
+    const built = createSelfHostedApp(services)
 
     const missing = await built.app.request("https://control.example.test/api/control/session/session-1/message", {
       method: "POST",
@@ -799,9 +820,9 @@ describe("control-plane services", () => {
     })
   })
 
-  test("createApp gates remote central runtime events with signed auth", async () => {
-    const { createApp } = await import("../deployments/local/server")
-    const built = createApp(createControlPlaneServices(fakePorts(), { authority: null }))
+  test("createSelfHostedApp gates remote central runtime events with signed auth", async () => {
+    const { createSelfHostedApp } = await import("../deployments/self-hosted-node/app")
+    const built = createSelfHostedApp(createControlPlaneServices(fakePorts(), { authority: null }))
 
     // In an unsigned-local deployment a REMOTE caller is now denied by
     // the global unsigned-local guard before the per-route bearer gate
@@ -815,18 +836,18 @@ describe("control-plane services", () => {
     })
   })
 
-  test("createApp rejects hosted services so hosted security hooks cannot be bypassed", async () => {
-    const { createApp } = await import("../deployments/local/server")
+  test("createSelfHostedApp rejects hosted services so hosted security hooks cannot be bypassed", async () => {
+    const { createSelfHostedApp } = await import("../deployments/self-hosted-node/app")
     expect(() =>
-      createApp(createHostedControlPlaneServices(fakePorts(), hostedOptions()))
+      createSelfHostedApp(createHostedControlPlaneServices(fakePorts(), hostedOptions()))
     ).toThrow(new ControlPlaneCompositionError(
       "self_host_app_required",
-      "createApp is the self-host composition; use createHostedApp for hosted services",
+      "createSelfHostedApp is the self-host composition; use createHostedApp for hosted services",
     ))
   })
 
   test("startup telemetry captures non-secret control-plane composition facts", async () => {
-    const { captureControlPlaneStartupTelemetry } = await import("../deployments/local/server")
+    const { captureControlPlaneStartupTelemetry } = await import("../deployments/self-hosted-node/app")
     const capture = vi.fn()
     const services = createHostedControlPlaneServices(fakePorts(), hostedOptions({
       telemetry: { capture },
@@ -854,7 +875,7 @@ describe("control-plane services", () => {
   })
 
   test("startup telemetry failures do not fail server startup", async () => {
-    const { captureControlPlaneStartupTelemetry } = await import("../deployments/local/server")
+    const { captureControlPlaneStartupTelemetry } = await import("../deployments/self-hosted-node/app")
     const services = createControlPlaneServices(fakePorts(), {
       authority: null,
       telemetry: {
@@ -873,7 +894,7 @@ describe("control-plane services", () => {
   })
 
   test("startServer is a thin wrapper that composes the default local stack", () => {
-    const file = path.resolve(import.meta.dirname, "../deployments/local/server.ts")
+    const file = path.resolve(import.meta.dirname, "../deployments/self-hosted-node/app.ts")
     const text = fs.readFileSync(file, "utf8")
 
     // startServer configures local service defaults, then delegates to
@@ -885,12 +906,12 @@ describe("control-plane services", () => {
   })
 
   test("lower-level stack startup accepts injected services and centralizes shutdown cleanup", () => {
-    const file = path.resolve(import.meta.dirname, "../deployments/local/server.ts")
+    const file = path.resolve(import.meta.dirname, "../deployments/self-hosted-node/app.ts")
     const text = fs.readFileSync(file, "utf8")
 
     expect(text).toContain("export function startControlPlaneStack(options: ControlPlaneStackOptions)")
     expect(text).toContain("const services = options.services")
-    expect(text).toContain("const built = createApp(services, {")
+    expect(text).toContain("const built = createSelfHostedApp(services, {")
     expect(text).toContain("configureWorkspaceSupervisor({")
     expect(text).toContain("relay_url: services.relay.relayUrl")
     expect(text).toContain("default_sandbox_driver: services.sandbox.defaultDriver")

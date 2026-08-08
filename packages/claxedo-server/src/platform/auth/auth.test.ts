@@ -15,12 +15,12 @@ import {
   localOnlyAuthAdapter,
   signedCloudAuthRequested,
   tokenVerifierAsClerk,
-} from "./auth"
+} from "@claxedo/server-core/platform/auth/auth"
 import {
   assertHostedBootRequirements,
   deploymentMode,
   unsignedLocalRequestGuard,
-} from "../../authority/deployment-mode"
+} from "@claxedo/server-core/authority/deployment-mode"
 
 const enabledConfig = {
   enabled: true,

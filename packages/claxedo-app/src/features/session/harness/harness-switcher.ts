@@ -186,7 +186,7 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
       if (!active()) return false
       if (res.ok) {
         // The switch endpoint answers `{ ok: true }` and nothing else
-        // (claxedo-server/src/agent-config/routes/harness-routes.ts:202,211), so
+        // (claxedo-local-server/src/agent-config/routes/harness-routes.ts:202,211), so
         // `decodeHarnessState` finds no harness/status/binary keys and returns an EMPTY
         // object. `{}` is truthy, so a plain `??` here short-circuited and
         // `fetchHarnessStatus` — the fallback that exists precisely for this case —

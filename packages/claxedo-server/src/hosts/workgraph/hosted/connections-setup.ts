@@ -14,7 +14,7 @@ import {
 } from "@claxedo/connections"
 import { Hono, type Context } from "hono"
 import { anyApi, type FunctionReference } from "convex/server"
-import { controlPlaneAuthContext, controlPlaneAuthErrorBody, ControlPlaneAuthError, type ClerkVerifier, type ControlPlaneAuthConfig } from "../../../platform/auth/auth"
+import { controlPlaneAuthContext, controlPlaneAuthErrorBody, ControlPlaneAuthError, type ClerkVerifier, type ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import { hostedOrgCredentials } from "../../../credentials/worker/index"
 import { githubIntegrationForEnv } from "../../../connections/github-oauth"
 import { createConvexConnectionAttempts } from "../../../authority/adapters/convex/connection-attempts"

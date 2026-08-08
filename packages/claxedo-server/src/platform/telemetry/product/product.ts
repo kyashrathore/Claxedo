@@ -19,7 +19,7 @@
  * credential registry), so the port arrives as `import type`.
  */
 
-import type { ControlPlaneTelemetry } from "../ports"
+import type { ControlPlaneTelemetry } from "@claxedo/server-core/platform/telemetry/ports"
 
 /**
  * Where the deployment sits, as the product plane reports it. Distinct from

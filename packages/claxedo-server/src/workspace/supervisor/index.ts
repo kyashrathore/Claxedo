@@ -1,8 +1,9 @@
-import type { AgentExtensionPolicyOverride } from "../../hosts/agent-extensions/runtime-config"
-import type { WorkspaceAgentExtensionRecord } from "../../hosts/agent-extensions/workspace"
-import { Log } from "../../platform/runtime/lib/log"
-import { updateWorkspace, getWorkspace, type Workspace } from "../store"
-import { createClaxedoRuntimeConfig } from "../../hosts/workspace-runtime/runtime-config"
+import type { AgentExtensionPolicyOverride } from "@claxedo/server-core/hosts/agent-extensions/runtime-config"
+import type { WorkspaceAgentExtensionRecord } from "@claxedo/server-core/hosts/agent-extensions/workspace"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import { configureWorkspaceStore, updateWorkspace, getWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
+import { configureWorkspaceSupervisorPort } from "@claxedo/server-core/workspace/supervisor-port"
+import { createClaxedoRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
 import { IDLE_MS, now } from "./clock"
 import {
   pushRuntimeConfig,
@@ -58,6 +59,22 @@ const log = Log.create({ service: "workspace-supervisor" })
 
 export function configureWorkspaceSupervisor(input: WorkspaceSupervisorOptions) {
   configureWorkspaceSupervisorOptions(input)
+  // The supervisor owns sandbox leases, so it is the one that can teach the
+  // workspace store to read them. The store used to import the lease table
+  // directly, which put the cloud sandbox graph inside the closure of every
+  // module that reads local workspace inventory. A composition without a
+  // supervisor has no cloud workspaces, so it needs no reader.
+  configureWorkspaceStore({ sandboxLease: (workspaceId) => getSupervisorSandboxLease(workspaceId) })
+  // Local request paths speak to the supervisor through a six-method port so
+  // they do not import the cloud provisioning graph to say "still in use".
+  configureWorkspaceSupervisorPort({
+    hold: holdSupervisorSandbox,
+    release: releaseSupervisorSandbox,
+    markUse: markSupervisorSandboxUse,
+    touch: touchSupervisorSandbox,
+    broadcastRuntimeConfig,
+    syncAgentExtensions: syncWorkspaceRuntimeAgentExtensions,
+  })
 }
 
 export async function ensureSupervisorSandbox(workspaceId: string) {

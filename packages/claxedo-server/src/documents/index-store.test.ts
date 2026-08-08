@@ -3,7 +3,7 @@ import { mkdirSync, realpathSync, rmSync, symlinkSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { afterAll, beforeEach, describe, expect, test } from "vitest"
-import { ClaxedoDB } from "../platform/db/db"
+import { ClaxedoDB } from "../platform/db"
 import { createHostedDocumentIndex } from "./backends/hosted/index"
 import { objectListing } from "./backends/hosted/managed"
 import {
@@ -19,7 +19,6 @@ import {
   resolveLocalProjectId,
   restoreDocumentIndexEntry,
   relocateRepositoryDocumentIndexEntry,
-  transitionDocumentStatus,
   updateDocumentIndexMetadata,
 } from "./index-store"
 
@@ -250,35 +249,6 @@ describe("document index store", () => {
       ...input,
       repository_relative_path: "docs/other.md",
     })).toThrowError(expect.objectContaining({ code: "document_index_not_found" }))
-  })
-
-  test("status transitions retain the validated project workflow", () => {
-    createDocumentIndexEntry({
-      ...common,
-      origin_kind: "managed",
-      managed_relative_path: "document_1/release-notes.md",
-      repository_id: null,
-      workspace_id: null,
-      repository_relative_path: null,
-      branch: null,
-    })
-
-    expect(() => transitionDocumentStatus(
-      { orgId: "__local__", projectId: "project_1" },
-      "document_1",
-      "done",
-      "2026-07-16T01:00:00.000Z",
-    )).toThrowError(expect.objectContaining({ code: "document_status_transition_not_allowed" }))
-
-    const transitioned = transitionDocumentStatus(
-      { orgId: "__local__", projectId: "project_1" },
-      "document_1",
-      "in_review",
-      "2026-07-16T01:00:00.000Z",
-    )
-
-    expect(transitioned.status).toBe("in_review")
-    expect(transitioned.updated_at).toBe("2026-07-16T01:00:00.000Z")
   })
 
   test("custom-only status workflows are retained without injecting defaults", () => {

@@ -9,11 +9,11 @@ import {
   forgetRuntimeDocuments,
   relayWorkspaceRuntimeExposure,
 } from "../../../../../workspace-runtime/src/index"
-import type { SignedControlPlaneAuth } from "../../../platform/auth/auth"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../../authority/services"
 import { createHostedDocumentRuntimeBroker } from "./runtime-broker"
 import type { DocumentIndexEntry } from "../../index-store"
-import { verifyDocumentRelayJobToken, verifyDocumentSessionToken } from "../../../platform/auth/runtime-access-token"
+import { verifyDocumentRelayJobToken, verifyDocumentSessionToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 
 const auth = { user: { subject: "user_1" } } as SignedControlPlaneAuth
 const entry = {

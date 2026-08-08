@@ -2,8 +2,8 @@ import fs from "node:fs"
 import path from "node:path"
 import { createHash, randomUUID } from "node:crypto"
 import type { ErrorReportContext } from "../../../platform/telemetry/errors/report"
-import type { SessionMeta } from "../../../session/meta/types"
-import type { Workspace } from "../../../workspace/store"
+import type { SessionMeta } from "@claxedo/server-core/session/meta/types"
+import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { DocumentAgentOpenError, type DocumentsBackend } from "../../backend"
 import { DocumentNotFoundError, DocumentStorageError } from "../../errors"
 import {
@@ -19,7 +19,6 @@ import {
   resolveLocalProjectId,
   restoreRepositoryMoveToManaged,
   restoreDocumentIndexEntry,
-  transitionDocumentStatus,
   updateDocumentIndexMetadata,
   type DocumentIndexEntry,
 } from "../../index-store"
@@ -194,7 +193,6 @@ export function createLocalDocumentsBackend(
       archive: archiveDocumentIndexEntry,
       restore: restoreDocumentIndexEntry,
       listStatuses: listDocumentStatuses,
-      transitionStatus: transitionDocumentStatus,
       resolveLocalProjectId,
     },
     workspace,

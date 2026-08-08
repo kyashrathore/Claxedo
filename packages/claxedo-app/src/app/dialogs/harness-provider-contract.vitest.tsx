@@ -21,10 +21,6 @@ import {
   providerCatalogFixture,
 } from "./test-support/harness-provider-contract"
 
-// jsdom's Element has no `scrollTo`; `List` calls it whenever its filter
-// changes, which surfaces as an unhandled rejection rather than a test failure.
-if (!Element.prototype.scrollTo) Element.prototype.scrollTo = () => undefined
-
 const requestedHarnesses: Array<string | undefined> = []
 
 vi.mock("@/app/providers/use-providers", async () => {

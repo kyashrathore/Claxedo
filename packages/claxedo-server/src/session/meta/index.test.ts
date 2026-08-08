@@ -24,8 +24,8 @@ const [{
   syncSessionMetas,
   taggedSessionMetas,
 }, { ClaxedoDB }] = await Promise.all([
-  import("./index"),
-  import("../../platform/db/db"),
+  import("@claxedo/server-core/session/meta/index"),
+  import("../../platform/db"),
 ])
 
 afterEach(async () => {

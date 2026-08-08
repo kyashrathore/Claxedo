@@ -1,11 +1,11 @@
 import { Hono } from "hono"
 import { exportJWK, importSPKI, type JWK } from "jose"
-import { sha256Hex16 } from "../../platform/auth/web-crypto"
+import { sha256Hex16 } from "@claxedo/server-core/platform/auth/web-crypto"
 import {
   RUNTIME_ACCESS_TOKEN_ALGORITHM,
   RuntimeAccessTokenConfigurationError,
   runtimeAccessTokenAlgorithm,
-} from "../../platform/auth/runtime-access-token"
+} from "@claxedo/server-core/platform/auth/runtime-access-token"
 
 /**
  * JWKS endpoint for the Runtime Access Token (RAT) signing keys.

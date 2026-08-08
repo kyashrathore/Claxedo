@@ -1,4 +1,4 @@
-import { ClaxedoError } from "../platform/errors/base"
+import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type { DocumentVersion } from "./port"
 
 export type DocumentErrorCode =

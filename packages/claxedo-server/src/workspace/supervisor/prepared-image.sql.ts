@@ -4,7 +4,7 @@
 
 import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core"
 import { eq, and, desc } from "drizzle-orm"
-import { ClaxedoDB } from "../../platform/db/db"
+import { ClaxedoDB } from "../../platform/db"
 
 // ── Drizzle table definitions ──────────────────────────────────────────
 

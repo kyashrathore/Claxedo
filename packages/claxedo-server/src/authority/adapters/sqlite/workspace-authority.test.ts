@@ -3,9 +3,9 @@ import os from "node:os"
 import path from "node:path"
 import { generateKeyPairSync, sign as signData, type KeyObject } from "node:crypto"
 import { describe, expect, test, vi } from "vitest"
-import type { SignedControlPlaneAuth } from "../../../platform/auth/auth"
-import { createSqliteWorkspaceAuthority, localControlPlaneAuth } from "./workspace-authority"
-import { ensurePersonalOrg, ensureProject, openAuthorityDb, upsertUser } from "./workspace-authority-store"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { createSqliteWorkspaceAuthority, localControlPlaneAuth } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
+import { ensurePersonalOrg, ensureProject, openAuthorityDb, upsertUser } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 
 function signedAuth(subject: string): SignedControlPlaneAuth {
   return {
@@ -525,7 +525,7 @@ describe("default local composition", () => {
     delete process.env.CLAXEDO_SIGNED_CLOUD_AUTH
     delete process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
     try {
-      const { createDefaultLocalControlPlaneServices } = await import("../../../deployments/local/server")
+      const { createDefaultLocalControlPlaneServices } = await import("../../../deployments/self-hosted-node/app")
       const services = createDefaultLocalControlPlaneServices()
       // The whole point of the SQLite authority: `requireAuthority` must never
       // throw its 503 in an unconfigured self-host deployment.

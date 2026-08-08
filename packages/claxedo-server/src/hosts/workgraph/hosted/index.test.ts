@@ -10,12 +10,12 @@ import {
   EXECUTION_CAPABILITY_CATALOG_MAX_AGE_MS,
   type CommandResult,
 } from "@claxedo/workgraph/contracts"
-import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../../../platform/auth/auth"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { createConvexAuthority } from "../../../authority/adapters/convex/workspace-authority"
-import type { WorkspaceAuthority } from "../../../platform/auth/authority"
+import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createHostedWorkGraph } from "./index"
 import type { SettlementDispatcher } from "../settlement-dispatcher"
-import type { ClaxedoEvent } from "../../../platform/runtime/lib/bus"
+import type { ClaxedoEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import type { LiveSyncRoomNamespace } from "../../../deployments/hosted-workerd/live-sync-room.cf"
 
 afterEach(() => vi.unstubAllEnvs())

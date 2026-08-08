@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
-import { ControlPlaneAuthError } from "../../../platform/auth/auth"
+import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { ControlPlaneRequestTimeoutError, controlPlaneTimeoutMs, withTimeout } from "./timeout"
 
 describe("control-plane Convex timeouts", () => {

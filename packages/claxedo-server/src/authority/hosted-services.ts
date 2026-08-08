@@ -16,29 +16,29 @@
  * this module names no storage backend.
  */
 
-import { clerkAuthAdapter } from "../platform/auth/auth"
+import { clerkAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import {
   hostTunnelTokenSigner,
   RuntimeAccessTokenConfigurationError,
   runtimeAccessTokenAlgorithm,
   runtimeAccessTokenSigner,
-} from "../platform/auth/runtime-access-token"
+} from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { workerTelemetry } from "../platform/auth/worker-telemetry"
 import { workerCredentials } from "../credentials/worker/index"
 import type { ControlPlaneServices, ControlPlaneTelemetry } from "./services"
 import type { ProjectionStore } from "./projection-store"
-import type { DurableSessionLog } from "../platform/auth/durable-session-log"
+import type { DurableSessionLog } from "@claxedo/server-core/platform/auth/durable-session-log"
 import { createFetchBridgeSandboxDriver } from "@claxedo/sandbox-manager/drivers/fetch-bridge"
 import { createCloudflareSandboxDriver } from "@claxedo/sandbox-manager/drivers/cloudflare"
 import { createDaytonaSandboxDriver } from "@claxedo/sandbox-manager/drivers/daytona"
 import { createExeSandboxDriver } from "@claxedo/sandbox-manager/drivers/exe"
-import { defaultHomeRegion, relayEndpointsFromEnv } from "../platform/runtime/region"
+import { defaultHomeRegion, relayEndpointsFromEnv } from "@claxedo/server-core/platform/runtime/region/index"
 import type { HostedDeviceAuthProvider } from "../routes/hosted/device-auth"
-import { createControlPlaneRelayProvider } from "../adapters/relay"
+import { createControlPlaneRelayProvider } from "@claxedo/server-core/adapters/relay/index"
 import { sandboxRelayTargetLookup } from "./sandbox-relay-target"
 import type { RelayTargetLookup } from "../deployments/shared-routes/internal-relay"
 import type { SandboxDriver, SandboxEgressUnenforcedEvent } from "@claxedo/sandbox-manager"
-import type { CliSessionTokenRegistry } from "../platform/auth/cli-session-registry"
+import type { CliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
 import {
   HostedWorkerCompositionError,
   clean,

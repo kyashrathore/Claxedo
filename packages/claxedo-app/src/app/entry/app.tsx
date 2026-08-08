@@ -47,12 +47,14 @@ import { useConfigOptional } from "@/app/providers/config"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { useAuthSession } from "@/platform/auth/auth-session"
 import { PrincipalProvider } from "@/platform/auth/principal-provider"
+import { AccountPortProvider } from "@/platform/account/account-provider"
 import { queryClient } from "@/platform/query/query-client"
 import { installQueryPersister } from "@/platform/query/persister"
 import { installSessionStatusTelemetryDevtools } from "../../features/session/store/session-status-telemetry"
 import { getExtensions } from "@/features/extensions"
 import { RemoteAccessMarkerRecorder } from "@/features/onboarding"
 import { TelemetryIdentityRecorder } from "@/app/integrations/telemetry-identity"
+import { HostedContributionSync } from "@/app/composition/hosted-contribution-sync"
 import { ClaxedoEventsProvider } from "@/app/integrations/claxedo-events"
 
 // Restore navigation data before the shell mounts so the sidebar can paint its
@@ -358,13 +360,20 @@ function AuthenticatedProviders(props: ParentProps) {
 
   return (
     <PrincipalProvider authEnabled={config?.authEnabled === true}>
+      {/* Inside PrincipalProvider so both read one session, and above every
+          account surface so none of them reaches the session directly. */}
+      <AccountPortProvider>
       <TelemetryIdentityRecorder />
       <RemoteAccessMarkerRecorder />
+      {/* Removes the hosted contribution set when the account signs out.
+          Before this, hosted surfaces stayed registered until a reload. */}
+      <HostedContributionSync />
       <CloudAuthGate>
         <Show when={config?.authEnabled} fallback={props.children}>
           <CloudAutoSwitch>{props.children}</CloudAutoSwitch>
         </Show>
       </CloudAuthGate>
+      </AccountPortProvider>
     </PrincipalProvider>
   )
 }

@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "child_process"
+import { createIdleReaper } from "../shared/process-lifecycle"
 import { randomUUID } from "crypto"
 import fs from "fs"
 import os from "os"
@@ -154,11 +155,38 @@ const CODEX_DYNAMIC_TOOLS = [{
   },
 }]
 
+/**
+ * How long an idle codex app-server survives.
+ *
+ * Matches the OpenCode adapter's desktop default. Codex is the more expensive
+ * one to leave resident, because the driver otherwise holds it for its own
+ * lifetime rather than the session's.
+ */
+function codexIdleTimeoutMs() {
+  const configured = Number(process.env.CLAXEDO_CODEX_IDLE_TIMEOUT_MS)
+  return Number.isFinite(configured) && configured > 0 ? Math.round(configured) : 30_000
+}
+
 class CodexAppServerDriver implements SdkRuntimeDriver {
   readonly type = "codex" as const
   private auth: SdkRuntimeAuth = {}
   private codexAuth: JsonRecord | undefined
   private process: CodexAppServerProcess | null = null
+  /**
+   * Reap the app-server when nothing is using it.
+   *
+   * Without this the process lives for the driver's lifetime, so an idle
+   * desktop holds a codex app-server it was asked for once. `ensureProcess`
+   * re-spawns transparently, which every caller already relies on.
+   *
+   * Restored after a merge took the upstream driver wholesale and dropped it —
+   * upstream never had one. `idle-reaping.test.ts` is what noticed.
+   */
+  private readonly idleMs = codexIdleTimeoutMs()
+  private readonly idle = createIdleReaper({
+    idleMs: this.idleMs,
+    onIdle: () => this.reapIdleProcess(),
+  })
   private processStartup: Promise<CodexAppServerProcess> | null = null
   private processStartupAbort: AbortController | null = null
   private processAuthSync: Promise<void> | null = null
@@ -256,7 +284,29 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     })
   }
 
+  /**
+   * Own the idle lease for the whole turn, whatever the turn does.
+   *
+   * Idle teardown driven by "time since the last request STARTED" would reap a
+   * turn that is still inside one long silent tool call, so the lease is taken
+   * before anything else — including the app-server start, which is itself
+   * slow enough to matter.
+   *
+   * It lives in this wrapper rather than in the turn body because EVERY exit
+   * has to release it. Acquired above the body's own `try`, a failed start
+   * leaked the lease, and one leaked lease disarms the reaper for the driver's
+   * whole life: the next turn's app-server then stays resident forever.
+   */
   async runTurn(input: SdkRuntimeTurnInput) {
+    const turn = this.idle.lease()
+    try {
+      await this.runLeasedTurn(input)
+    } finally {
+      turn.release()
+    }
+  }
+
+  private async runLeasedTurn(input: SdkRuntimeTurnInput) {
     const threadId = input.getAgentSessionId()
     const proc = await this.ensureProcess(input.directory)
     let turnId = ""
@@ -427,9 +477,26 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     }
   }
 
+  /**
+   * Only reap a genuinely idle child. A lease covers a prompt turn, but a
+   * thread can outlive its turn, and disposing under one would surface as a
+   * lost session rather than as reclaimed memory.
+   */
+  private reapIdleProcess() {
+    if (this.activeThreads.size > 0) {
+      this.idle.touch()
+      return
+    }
+    if (!this.process) return
+    log.info("codex app-server idle timeout, disposing", { idleMs: this.idleMs })
+    this.process.dispose()
+    this.process = null
+  }
+
   dispose() {
     if (this.disposed) return
     this.disposed = true
+    this.idle.cancel()
     this.lifecycleRevision++
     this.activeThreads.clear()
     this.processStartupAbort?.abort()

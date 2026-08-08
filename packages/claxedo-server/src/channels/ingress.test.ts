@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { WhatsAppBaileysSocket } from "@claxedo/channels"
-import { createApp } from "../deployments/local/server"
-import { localOnlyAuthAdapter } from "../platform/auth/auth"
+import { createSelfHostedApp } from "../deployments/self-hosted-node/app"
+import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
 import { createCentralControlApp } from "../central-runtime"
 import { createControlPlaneChannels } from "./control-plane"
-import { ensureWorkspace } from "../workspace/store"
-import type { ControlPlaneAuthConfig } from "../platform/auth/auth"
+import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
+import type { ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import type { ChannelRunAuditInput, ChannelRunAuditRecord } from "./run-audit"
 
 afterEach(() => {
@@ -89,7 +89,7 @@ function services(input: {
     // the route does not exist and the loopback gate asserted below is absent.
     //
     // This said `enabled: false` from the history reset (00a533c2f), which was
-    // inert until 25b8025c4 made `createApp` reject non-self-host services as its
+    // inert until 25b8025c4 made `createSelfHostedApp` reject non-self-host services as its
     // first statement. That mismatch, not any channels behavior, is what broke
     // these tests; the flag was always describing the wrong composition.
     localExecution: { enabled: true },
@@ -121,7 +121,7 @@ async function registeredRepoWorkspace(input: {
 
 describe("channels ingress", () => {
   test("keeps fake channel ingress loopback-only until signed channel auth lands", async () => {
-    const { app } = createApp(services())
+    const { app } = createSelfHostedApp(services())
     const blocked = await app.request("https://control.example.test/api/channels/fake", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -136,7 +136,7 @@ describe("channels ingress", () => {
 
   test("fake channel ingress can drive the central runtime locally", async () => {
     const svc = services()
-    const { app } = createApp(svc)
+    const { app } = createSelfHostedApp(svc)
     const res = await app.request("http://127.0.0.1/api/channels/fake", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -451,7 +451,7 @@ describe("channels ingress", () => {
 
   test("repo channel ingress rejects unknown workspaces with instructions", async () => {
     const svc = services()
-    const { app } = createApp(svc)
+    const { app } = createSelfHostedApp(svc)
     const res = await app.request("http://127.0.0.1/api/channels/fake", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -488,7 +488,7 @@ describe("channels ingress", () => {
       owner: "claxedo-auth",
       name: "denied",
     })
-    const { app } = createApp(svc)
+    const { app } = createSelfHostedApp(svc)
     const res = await app.request("http://127.0.0.1/api/channels/fake", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -531,7 +531,7 @@ describe("channels ingress", () => {
       owner: "claxedo-auth",
       name: "allowed",
     })
-    const { app } = createApp(svc)
+    const { app } = createSelfHostedApp(svc)
     const res = await app.request("http://127.0.0.1/api/channels/fake", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -581,7 +581,7 @@ describe("channels ingress", () => {
       owner: "claxedo-auth",
       name: "continue",
     })
-    const { app } = createApp(svc)
+    const { app } = createSelfHostedApp(svc)
     const first = await app.request("http://127.0.0.1/api/channels/fake", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -641,7 +641,7 @@ describe("channels ingress", () => {
       owner: "claxedo-auth",
       name: "spoofed",
     })
-    const { app } = createApp(svc)
+    const { app } = createSelfHostedApp(svc)
     const first = await app.request("http://127.0.0.1/api/channels/fake", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -853,7 +853,7 @@ describe("channels ingress", () => {
  * back to whatever the thread already had. A sender could name a nonexistent
  * repo to dodge the check. It now fails closed.
  *
- * These drive `channels.core.handleInbound` directly rather than `createApp`,
+ * These drive `channels.core.handleInbound` directly rather than `createSelfHostedApp`,
  * which currently throws for these services (see the `localExecution` guard at
  * server.ts:452 — a pre-existing breakage tracked separately). `trustedSource`
  * bypasses the DM/group access gate but NOT `authorize`, which is the seam under

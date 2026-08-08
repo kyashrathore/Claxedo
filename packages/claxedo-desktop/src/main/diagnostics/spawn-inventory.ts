@@ -148,7 +148,7 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     observation: "lifecycle-only",
     stop: "unsupported",
     kill: "unsupported",
-    source: { file: "packages/claxedo-server/src/credentials/operations/sync.ts", callee: "execFileSync", calls: 1 },
+    source: { file: "packages/claxedo-server-core/src/credentials/operations/sync.ts", callee: "execFileSync", calls: 1 },
   }),
   product({
     id: "server-document-git",
@@ -158,7 +158,7 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     observation: "lifecycle-only",
     stop: "owner-dependent",
     kill: "unsupported",
-    source: { file: "packages/claxedo-server/src/deployments/local/server.ts", callee: "execFileAsync", calls: 1 },
+    source: { file: "packages/claxedo-server/src/deployments/self-hosted-node/app.ts", callee: "execFileAsync", calls: 1 },
   }),
   product({
     id: "server-workspace-git",
@@ -168,7 +168,7 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     observation: "lifecycle-only",
     stop: "owner-dependent",
     kill: "unsupported",
-    source: { file: "packages/claxedo-server/src/workspace/store/index.ts", callee: "execFileAsync", calls: 1 },
+    source: { file: "packages/claxedo-server-core/src/workspace/store/index.ts", callee: "execFileAsync", calls: 1 },
   }),
   product({
     id: "server-opencode-compat-git",
@@ -179,7 +179,7 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     stop: "owner-dependent",
     kill: "unsupported",
     source: {
-      file: "packages/claxedo-server/src/opencode/compat-routes/git.ts",
+      file: "packages/claxedo-local-server/src/opencode/compat-routes/git.ts",
       callee: "execFileAsync",
       calls: 3,
     },
@@ -313,7 +313,7 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     observation: "host-tree",
     stop: "supported",
     kill: "owner-dependent",
-    source: { file: "packages/agent-sdk-runtime/src/harnesses/opencode/process.ts", callee: "spawn", calls: 1 },
+    source: { file: "packages/agent-sdk-runtime/src/harnesses/opencode/process.ts", callee: "spawnChild", calls: 1 },
   }),
   product({
     id: "claude-sdk-cli",

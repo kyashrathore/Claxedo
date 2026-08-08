@@ -37,7 +37,7 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "authority",
-    module: "platform/auth/authority.ts",
+    module: "../../claxedo-server-core/src/platform/auth/authority.ts",
     status: OwnershipStatus.Canonical,
     owner: "control-plane authority port",
     tests: [
@@ -141,28 +141,36 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "projection",
+    // Moved to @claxedo/server-core in the local/cloud package split: BOTH
+    // products persist streamed message events, so the module could not stay in
+    // the hosted package. Recorded as Deleted-here rather than dropped from the
+    // table, so a revert that recreates it under src/ is caught.
     module: "session/message-replay.ts",
-    status: OwnershipStatus.Canonical,
+    status: OwnershipStatus.Deleted,
     owner: "local session message replay projection",
-    reason: "Persists streamed workspace-runtime message events into the local projection store; it is not sandbox driver or lease code.",
-    tests: ["session/message-replay.test.ts"],
+    canonicalReplacement: "../../claxedo-server-core/src/session/message-replay.ts",
+    reason: "Persists streamed workspace-runtime message events into the projection store, for the desktop-local and hosted products alike.",
+    tests: ["../../claxedo-server-core/src/session/message-replay.test.ts"],
   },
   {
     area: "projection",
+    // Moved to @claxedo/server-core with message-replay above, and for the same
+    // reason: both products mirror session summaries into claxedo.db.
     module: "session/sync.ts",
-    status: OwnershipStatus.Canonical,
+    status: OwnershipStatus.Deleted,
+    canonicalReplacement: "../../claxedo-server-core/src/session/sync.ts",
     owner: "local cloud session projection sync",
     reason: "Mirrors cloud workspace session summaries and messages into claxedo.db for local reads; it is not sandbox driver or lease code.",
-    tests: ["session/sync.test.ts"],
+    tests: ["../../claxedo-server-core/src/session/sync.test.ts"],
   },
   {
     area: "registry",
-    module: "credentials/registry.ts",
+    module: "../../claxedo-server-core/src/credentials/registry.ts",
     status: OwnershipStatus.Canonical,
     owner: "local credential registry",
     tests: [
-      "credentials/registry.test.ts",
-      "credentials/operations/sync.test.ts",
+      "../../claxedo-server-core/src/credentials/registry.test.ts",
+      "../../claxedo-server-core/src/credentials/operations/sync.test.ts",
     ],
   },
   {
@@ -174,14 +182,14 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "registry",
-    module: "agent-config/extensions/catalog.ts",
+    module: "../../claxedo-server-core/src/agent-config/extensions/catalog.ts",
     status: OwnershipStatus.Canonical,
     owner: "agent extension catalog",
-    tests: ["agent-config/extensions/scan.test.ts"],
+    tests: ["../../claxedo-local-server/src/agent-config/extensions/scan.test.ts"],
   },
   {
     area: "host",
-    module: "deployments/local/embedded-workspace-runtime.ts",
+    module: "../../claxedo-local-server/src/deployments/local/embedded-workspace-runtime.ts",
     status: OwnershipStatus.Canonical,
     owner: "embedded local Sandbox composer",
     reason: "Local workspaces are served by an in-process Workspace Runtime app; this module composes that host and applies pre-resolved runtime snapshots without implementing harness adapters itself.",
@@ -193,7 +201,7 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "host",
-    module: "workspace/http/sandbox-target-fetch.ts",
+    module: "../../claxedo-server-core/src/workspace/http/sandbox-target-fetch.ts",
     status: OwnershipStatus.Canonical,
     owner: "Sandbox request bridge",
     reason: "Server routes use this bridge to fetch local embedded or cloud Workspace Runtime hosts without owning runner execution.",
@@ -204,12 +212,12 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "host",
-    module: "agent-config/fanout.ts",
+    module: "../../claxedo-local-server/src/agent-config/fanout.ts",
     status: OwnershipStatus.Canonical,
     owner: "Sandbox runtime config fan-out",
     reason: "Agent config changes broadcast already-resolved runtime snapshots to active sandboxs.",
     tests: [
-      "agent-config/index.test.ts",
+      "../../claxedo-server-core/src/agent-config/index.test.ts",
       "tests/governance/codebase-shape.test.ts",
     ],
   },
@@ -239,7 +247,7 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "workspace/runtime-dispatch/internals.ts",
+    module: "../../claxedo-local-server/src/workspace/runtime-dispatch/internals.ts",
     status: OwnershipStatus.Canonical,
     owner: "Workspace Runtime proxy dispatcher",
     reason: "The local server dispatches runtime-owned routes to embedded or cloud Workspace Runtime hosts through this module.",
@@ -254,7 +262,7 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "platform/governance/route-ownership.ts",
+    module: "../../claxedo-server-core/src/platform/governance/route-ownership.ts",
     status: OwnershipStatus.Canonical,
     owner: "central route ownership classifier",
     tests: ["workspace/runtime-dispatch/route-ownership-contract.test.ts"],
@@ -269,15 +277,15 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "platform/http/local-only-projection.ts",
+    module: "../../claxedo-server-core/src/platform/http/local-only-projection.ts",
     status: OwnershipStatus.Canonical,
     owner: "local-only route guard",
-    tests: ["platform/http/local-only-projection.test.ts"],
+    tests: ["../../claxedo-server-core/src/platform/http/local-only-projection.test.ts"],
     routeSamples: ["/api/workgraph"],
   },
   {
     area: "route",
-    module: "opencode/compat-routes/index.ts",
+    module: "../../claxedo-local-server/src/opencode/compat-routes/index.ts",
     status: OwnershipStatus.Compatibility,
     owner: "OpenCode HTTP compatibility routes",
     canonicalReplacement: "Control-plane and workspace-runtime route domains in route-ownership.ts",
@@ -301,23 +309,23 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "projection",
-    module: "platform/auth/durable-session-log.ts",
+    module: "../../claxedo-server-core/src/platform/auth/durable-session-log.ts",
     status: OwnershipStatus.Canonical,
     owner: "ControlPlane DurableSessionLog",
     tests: [
-      "platform/auth/durable-session-log.test.ts",
+      "../../claxedo-server-core/src/platform/auth/durable-session-log.test.ts",
       "authority/durable-state.test.ts",
     ],
   },
   {
     area: "projection",
-    module: "platform/http/local-only-projection.ts",
+    module: "../../claxedo-server-core/src/platform/http/local-only-projection.ts",
     status: OwnershipStatus.Compatibility,
     owner: "local-only projection route compatibility",
     canonicalReplacement: "ControlPlaneAuthAdapter-gated route factories",
     reason: "Local server still exposes loopback-only projections for WorkGraph and related local surfaces.",
     removalCondition: "Local-only route surfaces are either removed or compose the same route factories with explicit auth policies.",
-    tests: ["platform/http/local-only-projection.test.ts"],
+    tests: ["../../claxedo-server-core/src/platform/http/local-only-projection.test.ts"],
   },
   // --- Unit 5: control-plane-owned route reorganization ---
   // MOVE: generic control-plane route modules whose import graph is
@@ -349,22 +357,22 @@ export const ARCHITECTURE_OWNERSHIP = [
   // import evidence noted per Unit 5's decision rule.
   {
     area: "route",
-    module: "session/routes/meta-routes.ts",
+    module: "../../claxedo-local-server/src/session/routes/meta-routes.ts",
     status: OwnershipStatus.Canonical,
     owner: "local session-meta routes (Claxedo local adapter)",
     reason:
       "Unit 5 verdict flipped MOVE→DOCUMENT: imports resolveWorkspace from ../workspace-store (FORBIDDEN_LOCAL, fs/child_process/sqlite). Not Worker-safe, so it stays a local control-plane route adapter under routes/.",
-    tests: ["session/routes/meta-routes.test.ts"],
+    tests: ["../../claxedo-local-server/src/session/routes/meta-routes.test.ts"],
     routeSamples: ["/api/claxedo/session/s1/meta"],
   },
   {
     area: "route",
-    module: "sandbox/network/network-policy-routes.ts",
+    module: "../../claxedo-local-server/src/sandbox/network/network-policy-routes.ts",
     status: OwnershipStatus.Canonical,
     owner: "local network-policy routes (Claxedo local adapter)",
     reason:
       "Unit 5 verdict flipped MOVE→DOCUMENT: transitively imports ../network/policy → ../adapters/storage/db (better-sqlite3 + fs). SQLite-coupled, so it stays a local control-plane route adapter under routes/.",
-    tests: ["sandbox/network/network-policy-routes.test.ts"],
+    tests: ["../../claxedo-local-server/src/sandbox/network/network-policy-routes.test.ts"],
     routeSamples: ["/api/claxedo/network-policy"],
   },
   {
@@ -378,21 +386,21 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "platform/http/events.ts",
+    module: "../../claxedo-server-core/src/platform/http/events.ts",
     status: OwnershipStatus.Canonical,
     owner: "local control-plane events SSE route (Claxedo local adapter)",
     reason:
       "Unit 5 verdict flipped VERIFY→WRAP→DOCUMENT: imports claxedoBus from ../bus → @claxedo/workspace-runtime/host (FORBIDDEN_BARE, process-local). Process-local + Worker-forbidden, so it stays in place with no barrel.",
-    tests: ["platform/http/events.test.ts"],
+    tests: ["../../claxedo-server-core/src/platform/http/events.test.ts"],
   },
   {
     area: "route",
-    module: "deployments/shared-routes/bootstrap.ts",
+    module: "../../claxedo-local-server/src/deployments/shared-routes/bootstrap.ts",
     status: OwnershipStatus.Canonical,
     owner: "local bootstrap route (Claxedo local adapter)",
     reason:
       "Unit 5 verdict DOCUMENT: imports listProjects from ../workspace-store (FORBIDDEN_LOCAL), ../paths, ../opencode-auth, and node os. env + local provider catalog + opencode-compat coupling, so it stays in place.",
-    tests: ["deployments/shared-routes/bootstrap.test.ts"],
+    tests: ["../../claxedo-local-server/src/deployments/shared-routes/bootstrap.test.ts"],
     routeSamples: ["/api/claxedo/bootstrap"],
   },
   {
@@ -407,30 +415,30 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "registry",
-    module: "credentials/provider-auth/service.ts",
+    module: "../../claxedo-local-server/src/credentials/provider-auth/service.ts",
     status: OwnershipStatus.Canonical,
     owner: "provider auth method service (Claxedo local adapter)",
     reason:
       "Unit 5 verdict WRAP→DOCUMENT: the implementation is portable (only node:timers + a type import) but it is a service, not a route, so there is no authority/routes/ home; with 2 non-test importers (routes/provider-auth.ts, routes/bootstrap.ts) a barrel is not warranted. Left in place and documented.",
-    tests: ["credentials/routes/provider-auth.test.ts"],
+    tests: ["../../claxedo-local-server/src/credentials/routes/provider-auth.test.ts"],
   },
   {
     area: "registry",
-    module: "adapters/relay/index.ts",
+    module: "../../claxedo-server-core/src/adapters/relay/index.ts",
     status: OwnershipStatus.Canonical,
     owner: "Claxedo relay provider adapter",
     reason:
       "Unit 5 verdict DOCUMENT: Claxedo relay adapter consumed via services.relay; imports @claxedo/workspace-relay and ../region. Product-specific relay decision, not generic control-plane core.",
-    tests: ["adapters/relay/index.test.ts"],
+    tests: ["../../claxedo-server-core/src/adapters/relay/index.test.ts"],
   },
   {
     area: "registry",
-    module: "credentials/backends/local.ts",
+    module: "../../claxedo-server-core/src/credentials/backends/local.ts",
     status: OwnershipStatus.Canonical,
     owner: "local credential secret backend",
     reason:
       "Unit 5 verdict DOCUMENT: local registry file backend (fs + crypto). The neutral port is services.credentials; this is a Worker-forbidden local adapter that stays in place.",
-    tests: ["credentials/registry.test.ts"],
+    tests: ["../../claxedo-server-core/src/credentials/registry.test.ts"],
   },
 ] as const satisfies readonly ArchitectureOwnershipEntry[]
 

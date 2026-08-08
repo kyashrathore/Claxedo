@@ -18,16 +18,16 @@
  */
 
 import type { Context } from "hono"
-import { resolveWorkspace } from "../store"
-import { isLoopbackLocalRequest } from "../../platform/http/peer-address"
-import { errorBody } from "../../platform/http/http"
+import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
+import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
+import { errorBody } from "@claxedo/server-core/platform/http/http"
 import {
   embedded,
   ensureCloudRuntime,
   noWr,
   proxy,
   type RuntimeProxyOptions,
-} from "./internals"
+} from "@claxedo/local-server/self-hosted-execution"
 
 const DEFAULT_REMOTE_DIRECTORY = "/workspace"
 

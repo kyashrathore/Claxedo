@@ -20,7 +20,7 @@ import os from "node:os"
 import path from "node:path"
 import { randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest"
-import type { ClerkVerifier, ControlPlaneAuthConfig } from "../../platform/auth/auth"
+import type { ClerkVerifier, ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 
 const root = path.join(realpathSync(os.tmpdir()), `credential-org-isolation-${randomUUID().slice(0, 8)}`)
 mkdirSync(root, { recursive: true })
@@ -31,12 +31,12 @@ process.env.CLAXEDO_DATA_DIR = root
 // from the ambient environment.
 delete process.env.CLAXEDO_SIGNED_CLOUD_AUTH
 
-const { createTestBackend, setBackendOverride } = await import("../backend-registry")
-const registry = await import("../registry")
+const { createTestBackend, setBackendOverride } = await import("@claxedo/server-core/credentials/backend-registry")
+const registry = await import("@claxedo/server-core/credentials/registry")
 const { defaultControlPlaneCredentials } = await import("../../authority/services")
-const { CredentialRoutes } = await import("./credential")
-const { ClaxedoDB } = await import("../../platform/db/db")
-const { SINGLE_TENANT_ORG } = await import("../provider-credential.sql")
+const { CredentialRoutes } = await import("@claxedo/local-server/credentials/routes/credential")
+const { ClaxedoDB } = await import("../../platform/db")
+const { SINGLE_TENANT_ORG } = await import("@claxedo/server-core/credentials/provider-credential.sql")
 
 const ORG_A = "org_a"
 const ORG_B = "org_b"
@@ -320,7 +320,7 @@ describe("single-tenant self-host still works end to end", () => {
    * credential table must reach its terminator through the org predicate.
    */
   test("every statement against the credential table carries the org predicate", async () => {
-    const source = await fs.readFile(path.resolve(import.meta.dirname, "../registry.ts"), "utf8")
+    const source = await fs.readFile(path.resolve(import.meta.dirname, "../../../../claxedo-server-core/src/credentials/registry.ts"), "utf8")
     const heads = [...source.matchAll(/\.(from|update|delete)\(ClaxedoProviderCredentialTable\)/g)]
     expect(heads.length).toBeGreaterThan(10)
 

@@ -1,9 +1,6 @@
-import {
-  appendWorkspaceRuntimeLog,
-  prepareWorkspaceSessionWorktree,
-  prepareUserHostedRuntime,
-  prepareWorkspaceRuntime,
-} from "@/platform/runtime/cloud/workspace-runtime-store"
+import { appendWorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
+import { workspaceStartup } from "@/platform/runtime/workspace-startup"
+import type { WorkspaceStartupPort } from "@/platform/runtime/workspace-startup-port"
 import type { SubmitDirectory } from "../../submit/index"
 import { resolveSubmitDirectory } from "../../submit/index"
 import {
@@ -14,9 +11,10 @@ import {
 } from "../workspace-resolver"
 import type { CloudStartupState } from "./submit-create-session"
 
-type RuntimeEvents = Parameters<typeof prepareWorkspaceRuntime>[0]["events"]
-type PrepareUserHostedRuntime = typeof prepareUserHostedRuntime
-type PrepareWorkspaceRuntime = typeof prepareWorkspaceRuntime
+type RuntimeEvents = Parameters<WorkspaceStartupPort["prepareWorkspaceRuntime"]>[0]["events"]
+type PrepareUserHostedRuntime = WorkspaceStartupPort["prepareUserHostedRuntime"]
+type PrepareWorkspaceRuntime = WorkspaceStartupPort["prepareWorkspaceRuntime"]
+type PrepareWorkspaceSessionWorktree = WorkspaceStartupPort["prepareWorkspaceSessionWorktree"]
 
 export type SubmitToast = {
   readonly title: string
@@ -56,7 +54,7 @@ export type SubmitDirectoryProvisionInput = {
   }
   readonly prepareUserHostedRuntime?: PrepareUserHostedRuntime
   readonly prepareWorkspaceRuntime?: PrepareWorkspaceRuntime
-  readonly prepareWorkspaceSessionWorktree?: typeof prepareWorkspaceSessionWorktree
+  readonly prepareWorkspaceSessionWorktree?: PrepareWorkspaceSessionWorktree
 }
 
 export async function resolvePreparedSubmitDirectory(input: SubmitDirectoryProvisionInput) {
@@ -211,7 +209,7 @@ async function prepareRemoteSubmitDirectory(input: SubmitDirectoryProvisionInput
     return workspace?.kind === "user-hosted" ? workspace : undefined
   })()
   if (userHostedWorkspace) {
-    const result = await (input.prepareUserHostedRuntime ?? prepareUserHostedRuntime)({
+    const result = await (input.prepareUserHostedRuntime ?? workspaceStartup().prepareUserHostedRuntime)({
       workspaceId: userHostedWorkspace.workspaceId,
       directory: input.directory,
       request: input.request,
@@ -242,7 +240,7 @@ async function prepareRemoteSubmitDirectory(input: SubmitDirectoryProvisionInput
     return true
   }
 
-  const result = await (input.prepareWorkspaceRuntime ?? prepareWorkspaceRuntime)({
+  const result = await (input.prepareWorkspaceRuntime ?? workspaceStartup().prepareWorkspaceRuntime)({
     directory: input.directory,
     request: input.request,
     ...(input.events === undefined ? {} : { events: input.events }),
@@ -276,7 +274,7 @@ async function prepareRemoteSubmitDirectory(input: SubmitDirectoryProvisionInput
     return false
   }
   if (input.draftId && result.workspace?.workspaceId) {
-    const worktree = await (input.prepareWorkspaceSessionWorktree ?? prepareWorkspaceSessionWorktree)({
+    const worktree = await (input.prepareWorkspaceSessionWorktree ?? workspaceStartup().prepareWorkspaceSessionWorktree)({
       workspaceId: result.workspace.workspaceId,
       sessionId: input.draftId,
       directory: input.directory,

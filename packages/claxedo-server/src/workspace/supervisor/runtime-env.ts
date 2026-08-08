@@ -3,7 +3,7 @@ import {
   workspaceRuntimeDirectAuthEnv,
   sandboxLeaseEnv as sandboxLeaseVariables,
   workspaceRuntimeRelayVerificationEnv,
-} from "../../hosts/workspace-runtime/env"
+} from "@claxedo/server-core/hosts/workspace-runtime/env"
 
 export type WorkspaceSupervisorOptions = {
   server_url: string

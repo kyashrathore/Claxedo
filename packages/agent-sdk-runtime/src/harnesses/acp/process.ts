@@ -32,6 +32,7 @@ import {
 } from "./session"
 import type { AgentPermissionModeState } from "../../adapter-contract"
 import { IDLE_TIMEOUT_MS, promptTimeoutMs, watch } from "./helpers"
+import { createIdleReaper, type IdleReaper } from "../shared/process-lifecycle"
 import type { ACPTransport, ACPTransportEnv, ACPTransportFactory } from "./transport"
 import type { AgentProcessObserverHandle } from "../../process-observer"
 
@@ -79,7 +80,7 @@ export class ACPProcess {
   private transport!: ACPTransport
   readonly connection: ClientConnection
   readonly agent: ClientContext
-  private idleTimer: ReturnType<typeof setTimeout> | null = null
+  private readonly idle: IdleReaper
   private caps: InitializeResponse["agentCapabilities"] | null = null
   readonly pendingPermissions = new Map<string, PendingPermission>()
   // agentSessionId → update listener
@@ -115,6 +116,13 @@ export class ACPProcess {
       kind: ACPTransport["kind"]
     }) => AgentProcessObserverHandle,
   ) {
+    this.idle = createIdleReaper({
+      idleMs: IDLE_TIMEOUT_MS,
+      onIdle: () => {
+        log.info("ACP process idle timeout, disposing", { directory: this.directory, idleMs: IDLE_TIMEOUT_MS })
+        this.dispose()
+      },
+    })
     this.transport = createTransport({
       directory,
       binary,
@@ -259,11 +267,18 @@ export class ACPProcess {
   }
 
   private resetIdleTimer() {
-    if (this.idleTimer) clearTimeout(this.idleTimer)
-    this.idleTimer = setTimeout(() => {
-      log.info("ACP process idle timeout, disposing", { directory: this.directory, idleMs: IDLE_TIMEOUT_MS })
-      this.dispose()
-    }, IDLE_TIMEOUT_MS)
+    this.idle.touch()
+  }
+
+  /**
+   * Hold this process open for work that spans time.
+   *
+   * A prompt turn can sit silent for minutes inside one tool call. Touching the
+   * deadline at each protocol message covers a chatty turn but not a quiet one,
+   * so a long build or test run used to race the idle reaper and lose.
+   */
+  private leaseIdle() {
+    return this.idle.lease()
   }
 
   private exitMessage(code: number | null, signal: NodeJS.Signals | null) {
@@ -504,6 +519,12 @@ export class ACPProcess {
     })
 
     const t0 = Date.now()
+    // A prompt turn is protocol-defined ACTIVE WORK for its whole duration
+    // (U8-F4). Touching the deadline on each incoming update covers a chatty
+    // turn but not a quiet one, so a turn sitting inside a single long build or
+    // test call used to race the idle reaper and lose — the harness died
+    // mid-turn and the user saw the transport drop, not a timeout.
+    const idleLease = this.leaseIdle()
     try {
       const prompt = blocks(input.parts, input.system, this.state(agentSessionId).prompt)
 
@@ -556,6 +577,9 @@ export class ACPProcess {
       throw err
     } finally {
       this.sessionListeners.delete(agentSessionId)
+      // Release before the slot: the countdown should start from the end of the
+      // turn, not from whenever the next queued prompt happens to pick it up.
+      idleLease.release()
       slotRelease()
     }
   }
@@ -596,7 +620,7 @@ export class ACPProcess {
     if (this.disposed) return
     this.disposed = true
     this.exitObservation({ reason: "disposed" })
-    if (this.idleTimer) clearTimeout(this.idleTimer)
+    this.idle.cancel()
     log.info("ACP transport dispose", { directory: this.directory, kind: this.transport.kind })
     this.connection.close()
     this.transport.dispose()

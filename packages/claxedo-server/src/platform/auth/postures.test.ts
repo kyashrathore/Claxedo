@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
-import { ControlPlaneAuthError } from "./auth"
+import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import {
   RouteNotFoundError,
   RoutePosture,

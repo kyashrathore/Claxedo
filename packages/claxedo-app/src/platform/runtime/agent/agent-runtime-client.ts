@@ -8,8 +8,7 @@ import type {
   AgentPartInput,
   Todo,
 } from "@opencode-ai/sdk/v2/client"
-import { getAuthToken } from "@/platform/auth/auth-client"
-import { authFetch, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
+import { apiBearerToken, authFetch, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
 import type { SessionTransportCapabilities } from "@/platform/runtime/capabilities"
 import { supportsSessionDirectory, type SessionRef } from "@/platform/identity/session-ref"
 import { usesScopedSessionTransport, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
@@ -418,10 +417,11 @@ export function createAgentRuntimeClient(options: {
     }
   }
 
+  // Bearer from the build's bound source, not the provider — see `apiBearerToken`.
   async function controlPlaneAuthInit(init?: RequestInit) {
     const headers = new Headers(init?.headers)
     if (!headers.has("Authorization")) {
-      const token = await getAuthToken()
+      const token = await apiBearerToken()
       if (token) headers.set("Authorization", `Bearer ${token}`)
     }
     return { ...init, headers }

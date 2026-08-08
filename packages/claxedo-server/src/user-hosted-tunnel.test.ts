@@ -71,11 +71,11 @@ vi.mock("@claxedo/workspace-runtime/relay", () => ({
   hostTunnelPreOpenQueueFromEnv: () => ({}),
 }))
 
-vi.mock("./workspace/store", () => ({
+vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   getWorkspace: mocks.getWorkspace,
 }))
 
-vi.mock("./platform/runtime/lib/log", () => ({
+vi.mock("@claxedo/server-core/platform/runtime/lib/log", () => ({
   Log: {
     create: () => mocks.log,
   },

@@ -7,7 +7,7 @@ import {
   generateKeyPair,
 } from "jose"
 import { JwksRoutes } from "./jwks"
-import { runtimeAccessTokenSigner } from "../../platform/auth/runtime-access-token"
+import { runtimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 
 const ENV_KEYS = [
   "CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM",

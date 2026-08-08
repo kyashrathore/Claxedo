@@ -1,5 +1,5 @@
-import { cleanString as clean } from "../platform/runtime/lib/strings"
-import { getCredentialByProvider, resolveSecret } from "../credentials/registry"
+import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
+import { getCredentialByProvider, resolveSecret } from "@claxedo/server-core/credentials/registry"
 import {
   sandboxDriverAuth,
   sandboxDriverCatalog,

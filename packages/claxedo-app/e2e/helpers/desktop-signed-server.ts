@@ -189,7 +189,7 @@ export async function startSignedFixture(input: {
  * real non-loopback `X-Forwarded-For` on every request.
  *
  * WHY THIS IS REQUIRED, NOT OPTIONAL — `bootstrap.ts`'s
- * `isLoopbackLocalRequest` gate (`packages/claxedo-server/src/platform/http/
+ * `isLoopbackLocalRequest` gate (`packages/claxedo-server-core/src/platform/http/
  * peer-address.ts`) takes the LOCAL bootstrap path for ANY request whose
  * real socket peer is loopback, and BOTH the fixture's backend (127.0.0.1)
  * and the packaged Electron app's outbound requests (from a desktop process

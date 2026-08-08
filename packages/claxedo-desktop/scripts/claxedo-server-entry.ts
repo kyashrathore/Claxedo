@@ -1,4 +1,9 @@
-import { startServer } from "../../claxedo-server/src/deployments/local/server"
+// The desktop-local product, not the mixed self-hosted composition. This is
+// the line that keeps an unsigned desktop from closing over the hosted control
+// plane: `@claxedo/local-server` cannot reach Documents, Connections, Channels,
+// WorkGraph, a workspace authority, or cloud provisioning, and its own closure
+// test asserts so.
+import { startLocalServer } from "@claxedo/local-server/self-hosted-execution"
 import type { DiagnosticsBinding } from "../src/shared/diagnostics-transport"
 import { claxedoServerStartup, watchDesktopParent } from "./claxedo-server-startup"
 import { createDiagnosticsChildTransport } from "./diagnostics-child-transport"
@@ -17,7 +22,10 @@ process.parentPort?.on("message", (event) => {
   void transport?.onMessage(event.data)
 })
 
-startServer(startup.port, startup.opencodeUrl, startup.opencodePassword, {
+startLocalServer({
+  port: startup.port,
+  ...(startup.opencodeUrl ? { opencodeUrl: startup.opencodeUrl } : {}),
+  opencodePassword: startup.opencodePassword,
   ...(startup.opencodeEmbedPath ? { opencodeEmbedPath: startup.opencodeEmbedPath } : {}),
   ...(transport ? { processObserver: transport.observer } : {}),
 })

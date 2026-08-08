@@ -23,16 +23,16 @@ const prevPartition = process.env.CLAXEDO_CREDENTIALS_ORG_ID
 process.env.CLAXEDO_DATA_DIR = root
 delete process.env.CLAXEDO_CREDENTIALS_ORG_ID
 
-const { dataDir } = await import("../../platform/runtime/lib/paths")
-const { setBackendOverride } = await import("../backend-registry")
-const { putCredential, listCredentials, deleteCredential } = await import("../registry")
-const { createStaticKeyProvider, encryptedSecretBackend, envelopeKeyId } = await import("../envelope")
+const { dataDir } = await import("@claxedo/server-core/platform/runtime/lib/paths")
+const { setBackendOverride } = await import("@claxedo/server-core/credentials/backend-registry")
+const { putCredential, listCredentials, deleteCredential } = await import("@claxedo/server-core/credentials/registry")
+const { createStaticKeyProvider, encryptedSecretBackend, envelopeKeyId } = await import("@claxedo/server-core/credentials/envelope")
 const { rotateLocalCredentialKeys, localEnvelopePartition } = await import("./rotate-local")
-const { ClaxedoDB } = await import("../../platform/db/db")
-const { ClaxedoProviderCredentialTable } = await import("../provider-credential.sql")
+const { ClaxedoDB } = await import("../../platform/db")
+const { ClaxedoProviderCredentialTable } = await import("@claxedo/server-core/credentials/provider-credential.sql")
 ClaxedoDB.Drizzle()
 
-import type { SecretBackend } from "../types"
+import type { SecretBackend } from "@claxedo/server-core/credentials/types"
 
 function kek(fill: number): Uint8Array {
   return new Uint8Array(32).fill(fill)

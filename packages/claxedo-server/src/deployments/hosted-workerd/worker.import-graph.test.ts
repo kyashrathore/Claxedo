@@ -54,7 +54,20 @@ const FORBIDDEN_LOCAL = [
   "adapters/credentials/registry",
   "credentials/backends/local",
   "cloud/sandbox",
-  "server.ts",
+  // The self-hosted composition, named as its DIRECTORY rather than a
+  // filename. It was `deployments/local/server.ts`; the entry read
+  // `"server.ts"`, and after Unit 7 moved it to
+  // `deployments/self-hosted-node/app.ts` that string matched nothing in the
+  // package at all.
+  //
+  // It was dead rather than dangerous: importing the self-hosted composition
+  // into the Worker still fails this suite, because `workspace/supervisor`,
+  // `authority/adapters/sqlite/central-store`, `better-sqlite3` and `node:fs`
+  // all ride along with it and each is forbidden separately. Verified by
+  // importing it with the stale entry in place — 4 tests still failed. So this
+  // is a dead entry revived, not a hole closed. A directory prefix cannot go
+  // stale the same way a filename can.
+  "deployments/self-hosted-node/",
   "server-usage-limits",
   "workgraph-execution",
   "server-workgraph",

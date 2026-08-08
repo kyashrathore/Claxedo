@@ -4,8 +4,8 @@ import { existsSync, renameSync, writeFileSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type { Event, MessageBoxOptions } from "electron"
-import { app, BrowserWindow, dialog, session, utilityProcess } from "electron"
+import type { Event, IpcMainInvokeEvent, MessageBoxOptions } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, session, utilityProcess } from "electron"
 import { trustMainRendererOrigin } from "./renderer-origin"
 import pkg from "electron-updater"
 import treeKill from "tree-kill"
@@ -66,6 +66,11 @@ import { createSessionMemoryScanner } from "./diagnostics/session-memory-worker"
 import { createOwnerOperationBridge } from "./diagnostics/owner-operation-bridge"
 import { createWindowsWslCollector, createWslSource } from "./diagnostics/wsl-source"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand, wireFullscreenEvents } from "./ipc"
+import { installIpcCallerGuard, mainIpcCallerGuard } from "./ipc-caller-guard"
+import { setupAccount } from "./account/index"
+import { machineDisplayName, setupHostConnector } from "./host-connector/index"
+import { registerHostConnectorIpc } from "./host-connector/ipc"
+import { publishHostConnectorStatus } from "./host-connector/status-channel"
 import { initLogging } from "./logging"
 import { createMenu } from "./menu"
 import {
@@ -552,6 +557,97 @@ function wireMenu() {
       }),
   })
 }
+
+// Installed BEFORE any handler registers, because it works by wrapping
+// `ipcMain.handle`/`ipcMain.on` — anything registered earlier would be
+// permanently unguarded. `ipc-caller-guard.wiring.test.ts` pins that ordering.
+installIpcCallerGuard({
+  ipcMain,
+  guard: mainIpcCallerGuard(),
+  readCaller: (event) => {
+    const ipc = event as IpcMainInvokeEvent
+    return {
+      senderId: ipc.sender.id,
+      // Null when the frame is already gone, which is not a top frame and so
+      // fails closed.
+      isMainFrame: ipc.senderFrame !== null && ipc.senderFrame === ipc.sender.mainFrame,
+    }
+  },
+  onRejected: (channel, reason) => logger.warn(`[security] ${reason} (channel ${channel})`),
+})
+
+// After the guard above, like every other registration — these channels spend
+// an account credential, so an unguarded one would be the worst of the sixty to
+// leave open.
+const account = setupAccount({
+  ipcMain,
+  onError: (stage, error) => logger.warn(`[account] ${stage}: ${String(error)}`),
+})
+if (!account.configured) {
+  // Stated at boot rather than discovered when a user clicks Sign in. This is
+  // the shape of a build shipped without its OAuth client registered.
+  logger.warn(`[account] sign-in unavailable; missing config: ${account.missing.join(", ")}`)
+}
+
+/**
+ * Machine remote access, constructed but NOT started.
+ *
+ * Constructing mints no key, writes nothing and sends no traffic — that all
+ * happens in `start()`. So an unsigned launch, which is most launches, enrolls
+ * nothing and leaves no machine identity on disk.
+ *
+ * This file still never calls `start()`, and that is the point rather than an
+ * omission: enrolling because an account happens to be signed in would be the
+ * desktop deciding to publish the user's laptop for them. The trigger now
+ * exists, and it is `registerHostConnectorIpc` below — one named operation that
+ * only runs when the user presses Enable in the Remote Access surface.
+ * `ipc-caller-guard.wiring.test.ts` holds the entry to that: it asserts this
+ * file contains no `.start(` call at all.
+ *
+ * The machine's label is chosen HERE, not sent from the renderer. It is main
+ * that signs the enrollment, so main names the thing it is signing for — and a
+ * platform word rather than `os.hostname()`, because a hostname is the laptop's
+ * identity on its network and `machine-identity.ts` explains at length why that
+ * must not travel to the control plane.
+ */
+const hostConnector = account.configured
+  ? setupHostConnector({
+      run: (name, params) => account.service.run(name as never, params),
+      safeStorage,
+      userDataDir: app.getPath("userData"),
+      platform: process.platform,
+      displayName: machineDisplayName(process.platform),
+      onError: (stage, error) => logger.warn(`[host-connector] ${stage}: ${String(error)}`),
+      // The panel shows state the user did not cause — an expiry, a rejected
+      // beat, a revocation — so every transition is pushed rather than waited
+      // for. `status-channel.ts` skips a window that has gone, which matters
+      // because this fires from a heartbeat timer.
+      onStatusChange: (state) =>
+        publishHostConnectorStatus(mainWindow ?? undefined, state, hostConnectorContext()),
+    })
+  : undefined
+
+/** The two facts the connector's own state cannot carry. See `status-channel.ts`. */
+function hostConnectorContext() {
+  return {
+    available: hostConnector !== undefined,
+    signedIn: account.configured && account.service.state().status === "signed",
+  }
+}
+
+// Registered whether or not the connector exists: an absent channel would leave
+// `window.api.hostConnector` half-built, the renderer would read the bridge as
+// missing, and the desktop would fall back to an HTTP call its own sidecar does
+// not serve. Answering `available: false` is the honest version of that.
+//
+// After `installIpcCallerGuard`, like every other registration.
+registerHostConnectorIpc({
+  ipcMain,
+  ...(hostConnector ? { connector: hostConnector } : {}),
+  signedIn: () => hostConnectorContext().signedIn,
+  onError: (stage, error) => logger.warn(`[host-connector] ${stage}: ${String(error)}`),
+})
+logger.log("host connector", { available: hostConnector !== undefined, state: hostConnector?.status().status })
 
 const diagnosticsIpc = registerIpcHandlers({
   killSidecar: () => stopLocalServer(),

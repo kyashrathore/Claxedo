@@ -82,11 +82,11 @@ delete process.env.OPENAI_API_KEY
 delete process.env.CURSOR_API_KEY
 
 const [serverMod, supervisor, store, agent, embedded] = await Promise.all([
-  import("../../deployments/local/server"),
+  import("../../deployments/self-hosted-node/app"),
   import("../../workspace/supervisor"),
-  import("../../workspace/store"),
-  import("../../agent-config"),
-  import("../../deployments/local/embedded-workspace-runtime"),
+  import("@claxedo/server-core/workspace/store/index"),
+  import("@claxedo/server-core/agent-config/index"),
+  import("@claxedo/local-server/deployments/local/embedded-workspace-runtime"),
 ])
 
 const upstreamProvider = {
@@ -387,7 +387,7 @@ describe("multi-agent integration", () => {
 
     // Verify persisted via credential registry (not config file —
     // PUT /auth stores through putCredential, not plaintext config)
-    const { resolveSecret } = await import("../../credentials/registry")
+    const { resolveSecret } = await import("@claxedo/server-core/credentials/registry")
     const secret = await resolveSecret("claude-acp")
     expect(secret).toBe("sk-ant-test-key")
 
@@ -942,7 +942,7 @@ describe("multi-agent integration", () => {
     })
 
     // Verify via credential registry (PUT /auth stores through putCredential)
-    const { resolveSecret } = await import("../../credentials/registry")
+    const { resolveSecret } = await import("@claxedo/server-core/credentials/registry")
     expect(await resolveSecret("claude-acp")).toBe("sk-ant-key")
     expect(await resolveSecret("codex-acp")).toBe("sk-oai-key")
 
@@ -981,7 +981,7 @@ describe("multi-agent integration", () => {
     expect(cfg.mcp["toolx"]).toBeDefined()
 
     // Auth is stored in credential registry, verify there
-    const { resolveSecret } = await import("../../credentials/registry")
+    const { resolveSecret } = await import("@claxedo/server-core/credentials/registry")
     expect(await resolveSecret("claude-acp")).toBe("sk-test")
 
     // Top-level keys should include at least mcp and harness.

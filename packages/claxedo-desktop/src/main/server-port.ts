@@ -19,7 +19,7 @@ import { createServer } from "node:net"
  * default anything else reaches for.
  *
  * Keep in sync with the standalone server default in
- * `packages/claxedo-server/src/deployments/local/main.ts`. The two must agree or
+ * `packages/claxedo-server/src/deployments/self-hosted-node/index.ts`. The two must agree or
  * the development attach path breaks: the desktop app probes one port while
  * `claxedo-server dev` listens on another, so every `bun dev` silently gets a
  * second, embedded server instead of attaching to the one already running.

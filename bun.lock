@@ -239,6 +239,8 @@
       "version": "0.0.1",
       "dependencies": {
         "@claxedo/app": "workspace:*",
+        "@claxedo/host-connector": "workspace:*",
+        "@claxedo/local-server": "workspace:*",
         "@claxedo/workspace-runtime": "workspace:*",
         "@lydell/node-pty": "catalog:",
         "@opencode-ai/session-ui": "workspace:*",
@@ -288,6 +290,38 @@
         "mintlify": "^4",
       },
     },
+    "packages/claxedo-host-connector": {
+      "name": "@claxedo/host-connector",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@tsconfig/node-lts": "22.0.4",
+        "@types/bun": "1.3.13",
+        "typescript": "catalog:",
+        "vitest": "2.1.9",
+      },
+    },
+    "packages/claxedo-local-server": {
+      "name": "@claxedo/local-server",
+      "version": "0.1.0",
+      "dependencies": {
+        "@claxedo/agent-extensions": "workspace:0.7.0",
+        "@claxedo/agent-sdk-runtime": "workspace:*",
+        "@claxedo/sandbox-manager": "workspace:*",
+        "@claxedo/server-core": "workspace:*",
+        "@claxedo/workspace-runtime": "workspace:*",
+        "@hono/node-ws": "1.3.1",
+        "hono": "4.10.7",
+        "tokentracker-cli": "0.75.1",
+        "zod": "4.4.3",
+      },
+      "devDependencies": {
+        "@hono/node-server": "1.19.11",
+        "@tsconfig/node-lts": "22.0.4",
+        "@types/bun": "1.3.13",
+        "typescript": "catalog:",
+        "vitest": "2.1.9",
+      },
+    },
     "packages/claxedo-mcp": {
       "name": "@claxedo/mcp",
       "version": "0.4.0",
@@ -315,8 +349,10 @@
         "@claxedo/agent-sdk-runtime": "workspace:0.7.0",
         "@claxedo/channels": "workspace:0.4.0",
         "@claxedo/connections": "0.4.0",
+        "@claxedo/local-server": "workspace:*",
         "@claxedo/mcp": "workspace:0.4.0",
         "@claxedo/sandbox-manager": "workspace:0.7.0",
+        "@claxedo/server-core": "workspace:*",
         "@claxedo/wakes": "workspace:0.3.0",
         "@claxedo/workgraph": "0.4.0",
         "@claxedo/workspace-relay": "workspace:0.7.0",
@@ -357,6 +393,32 @@
         "typescript": "catalog:",
         "vitest": "2.1.9",
         "wrangler": "4.114.0",
+      },
+    },
+    "packages/claxedo-server-core": {
+      "name": "@claxedo/server-core",
+      "version": "0.1.0",
+      "dependencies": {
+        "@claxedo/agent-extensions": "workspace:0.7.0",
+        "@claxedo/agent-sdk-runtime": "workspace:*",
+        "@claxedo/sandbox-manager": "workspace:*",
+        "@claxedo/workspace-relay": "workspace:0.7.0",
+        "@claxedo/workspace-relay-protocol": "workspace:0.7.0",
+        "@claxedo/workspace-runtime": "workspace:*",
+        "@opencode-ai/sdk-next": "workspace:*",
+        "better-sqlite3": "13.0.1",
+        "drizzle-orm": "catalog:",
+        "hono": "4.10.7",
+        "jose": "6.2.4",
+        "opencode": "workspace:*",
+      },
+      "devDependencies": {
+        "@hono/node-server": "1.19.11",
+        "@tsconfig/node-lts": "22.0.4",
+        "@types/better-sqlite3": "7.6.13",
+        "@types/bun": "1.3.13",
+        "typescript": "catalog:",
+        "vitest": "2.1.9",
       },
     },
     "packages/claxedo-web": {
@@ -1001,10 +1063,13 @@
       "name": "@claxedo/workgraph",
       "version": "0.4.0",
       "dependencies": {
+        "@claxedo/workspace-runtime": "0.7.0",
+        "@hono/node-server": "1.19.11",
         "@noble/hashes": "2.2.0",
         "better-sqlite3": "13.0.1",
         "hono": "4.10.7",
         "zod": "4.4.3",
+        "zod-to-json-schema": "3.25.2",
       },
       "devDependencies": {
         "@claxedo/connections": "workspace:*",
@@ -1066,7 +1131,6 @@
         "@claxedo/agent-event-runtime": "0.7.0",
         "@claxedo/agent-extensions": "0.7.0",
         "@claxedo/agent-sdk-runtime": "0.7.0",
-        "@claxedo/workgraph": "0.4.0",
         "@claxedo/workspace-relay": "0.7.0",
         "@claxedo/workspace-relay-protocol": "0.7.0",
         "@hono/node-server": "1.19.11",
@@ -1598,11 +1662,17 @@
 
     "@claxedo/docs": ["@claxedo/docs@workspace:packages/claxedo-docs"],
 
+    "@claxedo/host-connector": ["@claxedo/host-connector@workspace:packages/claxedo-host-connector"],
+
+    "@claxedo/local-server": ["@claxedo/local-server@workspace:packages/claxedo-local-server"],
+
     "@claxedo/mcp": ["@claxedo/mcp@workspace:packages/claxedo-mcp"],
 
     "@claxedo/sandbox-manager": ["@claxedo/sandbox-manager@workspace:packages/sandbox-manager"],
 
     "@claxedo/server": ["@claxedo/server@workspace:packages/claxedo-server"],
+
+    "@claxedo/server-core": ["@claxedo/server-core@workspace:packages/claxedo-server-core"],
 
     "@claxedo/wakes": ["@claxedo/wakes@workspace:packages/wakes"],
 

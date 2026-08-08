@@ -17,7 +17,7 @@ import {
   forgetRuntimeDocuments,
   relayWorkspaceRuntimeExposure,
 } from "../../../workspace-runtime/src/index"
-import { localOnlyAuthAdapter, type ClerkVerifier, type ControlPlaneAuthConfig, type SignedControlPlaneAuth } from "../platform/auth/auth"
+import { localOnlyAuthAdapter, type ClerkVerifier, type ControlPlaneAuthConfig, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
 import { DocumentsRoutes, type DocumentsRouteBackend } from "./routes/index"
 import { createHostedDocumentsBackend } from "./backends/hosted/backend"
@@ -292,7 +292,6 @@ function localDocumentsBackend(
     archive: async (_scope: unknown, id: string) => index.update({}, id, { archived_at: new Date().toISOString() }),
     restore: async (_scope: unknown, id: string) => index.update({}, id, { archived_at: null }),
     listStatuses: async () => [],
-    transitionStatus: async (_scope: unknown, id: string, status: string) => index.update({}, id, { status }),
     resolveLocalProjectId: async () => "project_1",
   }
   const workspace = {

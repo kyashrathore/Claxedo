@@ -1,6 +1,6 @@
-import { cleanString as clean } from "../../platform/runtime/lib/strings"
+import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
 import { Hono } from "hono"
-import { errorBody } from "../../platform/http/http"
+import { errorBody } from "@claxedo/server-core/platform/http/http"
 import type { ControlPlaneTelemetry } from "../../authority/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { internalAdminAuthorized } from "../../platform/http/internal-admin-auth"

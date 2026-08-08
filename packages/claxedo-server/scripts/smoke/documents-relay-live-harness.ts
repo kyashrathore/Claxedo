@@ -7,7 +7,7 @@ import { createWorkspaceRelayBun, mintRuntimeAccessToken } from "@claxedo/worksp
 import { createWorkspaceRuntimeApp, relayWorkspaceRuntimeExposure } from "../../../workspace-runtime/src/index"
 import { LocalInstallationDocumentBroker } from "../../src/documents/backends/local/installation-broker"
 import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from "../../src/documents/backends/local/managed"
-import { mintDocumentRelayJobToken } from "../../src/platform/auth/runtime-access-token"
+import { mintDocumentRelayJobToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { captureWorkspaceRuntimeInternalSecrets } from "../../../workspace-runtime/src/internal-secrets"
 import type { DocumentsRouteBackend } from "../../src/documents/routes/index"
 import type { DocumentIndexEntry } from "../../src/documents/index-store"

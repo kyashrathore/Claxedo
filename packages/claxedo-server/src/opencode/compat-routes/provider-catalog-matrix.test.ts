@@ -30,9 +30,9 @@ const prevDataDir = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
 const { Hono } = await import("hono")
-const { OpenCodeCompatRoutes } = await import("./index")
-const { configureOpenCodeEngine } = await import("../../opencode/engine")
-const { engineDegradations, clearEngineDegradations } = await import("./provider-config")
+const { OpenCodeCompatRoutes } = await import("@claxedo/local-server/opencode/compat-routes/index")
+const { configureOpenCodeEngine } = await import("@claxedo/server-core/opencode/engine")
+const { engineDegradations, clearEngineDegradations } = await import("@claxedo/local-server/opencode/compat-routes/provider-config")
 
 const ENGINE = "http://127.0.0.1:65501"
 

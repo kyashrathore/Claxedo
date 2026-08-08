@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
 import type { ConnectionsService } from "@claxedo/connections"
 import type { CodeHostConnector, SourceIssueConnector } from "@claxedo/workgraph/connectors"
-import { WorkGraphRunToolRoutes, WorkGraphConnectionToolRoutes } from "@claxedo/workspace-runtime"
+import { WorkGraphRunToolRoutes, WorkGraphConnectionToolRoutes } from "@claxedo/workgraph/runtime-adapter"
 import {
   WorkGraphRunIdentitySchema,
   WorkGraphRunToolNames,
@@ -12,7 +12,7 @@ import {
   type WorkGraphRunOperationRequest,
   type WorkGraphContext,
 } from "@claxedo/workgraph/contracts"
-import { OPENCODE_INTERNAL_BASE } from "../../../opencode/engine"
+import { OPENCODE_INTERNAL_BASE } from "@claxedo/server-core/opencode/engine"
 import { ConnectionOperationDeniedError, createConnectionOperationBroker } from "../connection-operation-broker"
 import { createWorkGraphConnectionsPort } from "../connections"
 import type { WorkGraphSessionGateway } from "../local/execution"

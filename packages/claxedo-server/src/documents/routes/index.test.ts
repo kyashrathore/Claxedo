@@ -7,8 +7,8 @@ import { randomUUID } from "node:crypto"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { Hono } from "hono"
-import { localOnlyAuthAdapter, type ClerkVerifier, type ControlPlaneAuthConfig } from "../../platform/auth/auth"
-import type { ProjectAction, WorkspaceAuthority } from "../../platform/auth/authority"
+import { localOnlyAuthAdapter, type ClerkVerifier, type ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
+import type { ProjectAction, WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from "../backends/local/managed"
 import {
   createLocalRepositoryFileAuthority,
@@ -29,14 +29,13 @@ import {
   removeDocumentIndexEntry,
   relocateRepositoryDocumentIndexEntry,
   restoreDocumentIndexEntry,
-  transitionDocumentStatus,
   updateDocumentIndexMetadata,
 } from "../index-store"
 import type { DocumentIndexEntry } from "../index-store"
 import { setDocumentChangedSink, subscribeDocumentEvents } from "../backend"
-import { ClaxedoDB } from "../../platform/db/db"
+import { ClaxedoDB } from "../../platform/db"
 import { DocumentsRoutes, type DocumentsRouteBackend } from "./index"
-import { peerAddressStamp } from "../../platform/http/peer-address"
+import { peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
 import {
   disposeHydratedSessionDocuments,
   hydrateSessionDocument,
@@ -64,7 +63,6 @@ const backend: DocumentsRouteBackend<Awaited<ReturnType<typeof workspace.resolve
     archive: archiveDocumentIndexEntry,
     restore: restoreDocumentIndexEntry,
     listStatuses: listDocumentStatuses,
-    transitionStatus: transitionDocumentStatus,
     resolveLocalProjectId: () => "project_local",
   },
   workspace,
@@ -1100,17 +1098,6 @@ describe("DocumentsRoutes", () => {
     ).toBe(200)
     reasons.push(nextReason())
 
-    expect(
-      (
-        await app.request(`http://localhost/documents/${document.id}/status`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ status: "in_review" }),
-        })
-      ).status,
-    ).toBe(200)
-    reasons.push(nextReason())
-
     const content = await app.request(`http://localhost/documents/${document.id}/content`, {
       method: "PUT",
       headers: { "content-type": "application/json", "if-match": metadata.last_known_file_version },
@@ -1147,7 +1134,6 @@ describe("DocumentsRoutes", () => {
       "document.created",
       "document.metadata_updated",
       "document.session_changed",
-      "document.status_changed",
       "document.content_updated",
       "document.snapshot_restored",
       "document.archived",

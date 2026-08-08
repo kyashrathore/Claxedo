@@ -8,8 +8,8 @@ import {
   deploymentMode,
   hostedBootRequirementFailures,
   unsignedLocalRequestGuard,
-} from "./deployment-mode"
-import type { ControlPlaneAuthConfig } from "../platform/auth/auth"
+} from "@claxedo/server-core/authority/deployment-mode"
+import type { ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 
 /**
  * Deployment mode and the global unsigned-local gate.
@@ -315,7 +315,7 @@ describe("Node composition boot wiring (createDefaultLocalControlPlaneServices)"
   }
 
   test("mode=hosted with missing pieces REFUSES to boot, naming every piece", async () => {
-    const { createDefaultLocalControlPlaneServices } = await import("../deployments/local/server")
+    const { createDefaultLocalControlPlaneServices } = await import("../deployments/self-hosted-node/app")
     await withEnv({ CLAXEDO_DEPLOYMENT_MODE: "hosted" }, () => {
       let thrown: Error | undefined
       try {
@@ -334,7 +334,7 @@ describe("Node composition boot wiring (createDefaultLocalControlPlaneServices)"
   })
 
   test("mode=hosted with signed auth but no authority refuses to boot naming ONLY the authority", async () => {
-    const { createDefaultLocalControlPlaneServices } = await import("../deployments/local/server")
+    const { createDefaultLocalControlPlaneServices } = await import("../deployments/self-hosted-node/app")
     await withEnv(
       {
         CLAXEDO_DEPLOYMENT_MODE: "hosted",
@@ -359,7 +359,7 @@ describe("Node composition boot wiring (createDefaultLocalControlPlaneServices)"
   })
 
   test("invalid mode value refuses to boot loudly", async () => {
-    const { createDefaultLocalControlPlaneServices } = await import("../deployments/local/server")
+    const { createDefaultLocalControlPlaneServices } = await import("../deployments/self-hosted-node/app")
     await withEnv({ CLAXEDO_DEPLOYMENT_MODE: "prod" }, () => {
       expect(() => createDefaultLocalControlPlaneServices()).toThrowError(/must be "local" or "hosted"/)
     })

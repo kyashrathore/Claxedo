@@ -9,7 +9,7 @@ import {
   requireEntitlement,
 } from "./entitlement"
 import { hostedConnectionInfo } from "../connections/hosted-connection-info"
-import type { ClerkVerifier, ControlPlaneAuthConfig, SignedControlPlaneAuth } from "../platform/auth/auth"
+import type { ClerkVerifier, ControlPlaneAuthConfig, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 // REAL Convex billing + orgs handlers — the same in-memory harness the billing

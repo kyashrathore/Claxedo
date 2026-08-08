@@ -1,5 +1,5 @@
 import { and, count as countFn, eq, gte, isNull, lt } from "drizzle-orm"
-import { ClaxedoDB } from "../platform/db/db"
+import { ClaxedoDB } from "../platform/db"
 import { ClaxedoChannelDeliveryTable, ClaxedoChannelStateTable } from "./delivery.sql"
 
 export type ChannelDeliveryDecision =

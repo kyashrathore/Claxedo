@@ -18,11 +18,11 @@ import { createConvexLeaseStore } from "../../../sandbox/stores/convex"
 import { convexAuthorityUrlFromEnv, createConvexAuthority } from "../convex/workspace-authority"
 import { cliSessionTokenAuthority } from "../convex/cli-session-tokens"
 import { createUserHostedTargetResolver } from "../convex/user-hosted-relay-target"
-import type { WorkspaceAuthority } from "../../../platform/auth/authority"
+import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {
   authorityCliSessionTokenRegistry,
   type CliSessionTokenRegistry,
-} from "../../../platform/auth/cli-session-registry"
+} from "@claxedo/server-core/platform/auth/cli-session-registry"
 import type { UserHostedTargetResolver } from "../../sandbox-relay-target"
 
 export class HostedWorkerCompositionError extends Error {

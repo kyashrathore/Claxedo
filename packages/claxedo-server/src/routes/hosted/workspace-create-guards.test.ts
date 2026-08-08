@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import fs from "node:fs"
 import path from "node:path"
-import type { ClerkVerifier } from "../../platform/auth/auth"
+import type { ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"

@@ -17,8 +17,8 @@ import {
   controlPlaneAuthContext,
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
-} from "../../../platform/auth/auth"
-import type { WorkspaceAuthority } from "../../../platform/auth/authority"
+} from "@claxedo/server-core/platform/auth/auth"
+import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { WorkGraphSessionGateway } from "../local/execution"
 import type { ControlPlaneTelemetry } from "../../../authority/services"
 import {
@@ -32,7 +32,7 @@ import {
   instrumentAttentionDoorbell,
   instrumentWorkGraphChangeDoorbell,
 } from "../change-doorbell"
-import { claxedoBus, type WorkgraphChangedEvent } from "../../../platform/runtime/lib/bus"
+import { claxedoBus, type WorkgraphChangedEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { createLocalWorkGraphMasterRuntime } from "../local/master-runtime"
 
 export type LocalWorkGraphAuthOptions = Readonly<{

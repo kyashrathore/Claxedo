@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest"
 
 describe("Claxedo server WorkGraph reachability", () => {
   it("mounts only the embedded v2 service from production startup", () => {
-    const server = fs.readFileSync(path.join(import.meta.dirname, "../../../deployments/local/server.ts"), "utf8")
+    const server = fs.readFileSync(path.join(import.meta.dirname, "../../../deployments/self-hosted-node/app.ts"), "utf8")
     const composition = fs.readFileSync(path.join(import.meta.dirname, "server-workgraph.ts"), "utf8")
 
     expect(server).toContain("mountLazyEmbeddedWorkGraph(")
@@ -14,7 +14,7 @@ describe("Claxedo server WorkGraph reachability", () => {
     expect(composition).not.toContain("loadWorkGraphApp")
     expect(composition).not.toContain("githubAuthFromConnections")
     expect(composition).not.toContain('execFileAsync("gh"')
-    expect(composition).not.toContain("workgraph.createApp")
+    expect(composition).not.toContain("workgraph.createSelfHostedApp")
     expect(composition).not.toContain("mountLazyLocalOnlyWorkGraph")
     expect(composition).not.toContain("localOnlyProjection")
     expect(fs.existsSync(path.join(import.meta.dirname, "../../../workgraph-execution.ts"))).toBe(false)

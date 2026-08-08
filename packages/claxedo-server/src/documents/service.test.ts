@@ -97,7 +97,6 @@ function fixture() {
         return entry
       }),
       listStatuses: vi.fn(async () => []),
-      transitionStatus: vi.fn(),
       resolveLocalProjectId: vi.fn(async () => "project_1"),
     },
     workspace,

@@ -1,0 +1,32 @@
+{
+  "name": "@claxedo/host-connector",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "The laptop side of machine-wide remote access: a signing identity, the enrollment handshake, and a heartbeat — with no server, no routes, and no account credential",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kyashrathore/Claxedo.git",
+    "directory": "packages/claxedo-host-connector"
+  },
+  "exports": {
+    "./*": {
+      "types": "./src/*.ts",
+      "bun": "./src/*.ts",
+      "development": "./src/*.ts",
+      "import": "./src/*.ts",
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default"
+  },
+  "devDependencies": {
+    "@tsconfig/node-lts": "22.0.4",
+    "@types/bun": "1.3.13",
+    "typescript": "catalog:",
+    "vitest": "2.1.9"
+  }
+}

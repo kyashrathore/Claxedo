@@ -6,10 +6,10 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
-} from "./auth"
-import { ClaxedoError } from "../errors/base"
+} from "@claxedo/server-core/platform/auth/auth"
+import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { internalAdminAuthorized } from "../http/internal-admin-auth"
-import { isLoopbackLocalRequest } from "../http/peer-address"
+import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 
 /**
  * The five ways a request is allowed to reach a handler. Every route picks

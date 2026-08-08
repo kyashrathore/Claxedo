@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest"
 
 const secrets = new Map<string, string>()
 
-vi.mock("../credentials/registry", () => ({
+vi.mock("@claxedo/server-core/credentials/registry", () => ({
   getCredentialByProvider: vi.fn((id: string) => secrets.has(id) ? { provider_id: id, status: "available" } : undefined),
   resolveSecretsForScope: vi.fn(async () => ({})),
   resolveSecret: vi.fn(async (id: string) => secrets.get(id) ?? null),

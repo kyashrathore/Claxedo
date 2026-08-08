@@ -29,9 +29,9 @@ import {
   ControlPlaneAuthError,
   controlPlaneAuthConfig,
   controlPlaneAuthErrorBody,
-} from "../../platform/auth/auth"
+} from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
-import { requireAuthority } from "../../platform/auth/authority"
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
 import {
@@ -43,7 +43,7 @@ import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, hostTunnelCred
 import { connectionRateLimitError, controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
 import { sandboxLeaseCapError, type ActiveSandboxLeaseCounter } from "../../workspace/runtime-token-guards"
 import { authenticatedGitHubCloneSource } from "../../workspace/repository-clone"
-import { normalizeClaxedoRegion } from "../../platform/runtime/region"
+import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import { emitSandboxLeaseOpened } from "../../platform/telemetry/product/metering"
 import { recordSandboxLeaseTenant } from "../../authority/adapters/convex/usage-ledger"
 import { productIdentity } from "../../platform/telemetry/product/product"

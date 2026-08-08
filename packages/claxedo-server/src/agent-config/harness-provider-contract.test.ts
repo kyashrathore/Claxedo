@@ -39,8 +39,8 @@ process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 mkdirSync(process.env.CLAXEDO_STATE_DIR, { recursive: true })
 
 const { Hono } = await import("hono")
-const { OpenCodeCompatRoutes } = await import("../opencode/compat-routes/index")
-const { configureOpenCodeEngine } = await import("../opencode/engine")
+const { OpenCodeCompatRoutes } = await import("@claxedo/local-server/opencode/compat-routes/index")
+const { configureOpenCodeEngine } = await import("@claxedo/server-core/opencode/engine")
 
 const ENGINE = "http://127.0.0.1:65501"
 

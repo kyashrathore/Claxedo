@@ -14,8 +14,6 @@
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
-if (!Element.prototype.scrollTo) Element.prototype.scrollTo = () => undefined
-
 const selectProviderProps: Array<{ harness?: string }> = []
 const shown: Array<() => unknown> = []
 

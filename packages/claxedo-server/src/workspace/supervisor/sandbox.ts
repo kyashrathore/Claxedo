@@ -1,6 +1,6 @@
-import { cleanString as clean } from "../../platform/runtime/lib/strings"
+import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
 import { randomUUID } from "crypto"
-import { type RuntimeConfigSnapshot, loadUserConfig, sandboxDriverConfig } from "../../agent-config"
+import { type RuntimeConfigSnapshot, loadUserConfig, sandboxDriverConfig } from "@claxedo/server-core/agent-config/index"
 import {
   createSandboxManager,
   type SandboxBootSource,
@@ -28,12 +28,12 @@ import { emitProvision } from "../../sandbox/provision-events"
 import { sandboxDriverAuthAsync } from "../../sandbox/driver-auth"
 import { defaultSandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
 import type { SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
-import { Log } from "../../platform/runtime/lib/log"
-import { defaultHomeRegion } from "../../platform/runtime/region"
-import { listPolicies } from "../../sandbox/network/policy"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import { defaultHomeRegion } from "@claxedo/server-core/platform/runtime/region/index"
+import { listPolicies } from "@claxedo/server-core/sandbox/network/policy"
 import { resolveSandboxNetworkPolicy } from "../../sandbox/network/resolve"
 import { insertSnapshot } from "./prepared-image.sql"
-import { updateWorkspace } from "../store"
+import { updateWorkspace } from "@claxedo/server-core/workspace/store/index"
 import {
   configToken,
   configTokenHeaders,

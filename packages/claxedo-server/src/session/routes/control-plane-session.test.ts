@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from "vitest"
-import { ControlPlaneAuthError, localOnlyAuthAdapter } from "../../platform/auth/auth"
+import { ControlPlaneAuthError, localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
 
 const mocks = vi.hoisted(() => ({
@@ -7,11 +7,11 @@ const mocks = vi.hoisted(() => ({
   resolveHarnessHostForRequest: vi.fn(),
 }))
 
-vi.mock("../../workspace/store", () => ({
+vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   resolveWorkspace: mocks.resolveWorkspace,
 }))
 
-vi.mock("../harness/resolution", () => ({
+vi.mock("@claxedo/server-core/session/harness/resolution", () => ({
   resolveHarnessHostForRequest: mocks.resolveHarnessHostForRequest,
 }))
 

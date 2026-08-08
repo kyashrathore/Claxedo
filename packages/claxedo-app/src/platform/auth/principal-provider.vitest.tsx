@@ -17,7 +17,6 @@ vi.mock("./auth-session", () => ({
     signIn: async () => undefined,
     signOut: async () => undefined,
     signUp: async () => undefined,
-    getToken: async () => authState.status === "signed" ? "token" : null,
     refreshSession: async () => undefined,
     organization: () => authState.organization,
   }),
@@ -45,8 +44,7 @@ describe("PrincipalProvider", () => {
 
     expect(renderPrincipal(false)).toEqual({
       kind: "signed",
-      userId: "usr_1",
-      getToken: expect.any(Function),
+      userId: "usr_1"
     })
   })
 
@@ -63,8 +61,7 @@ describe("PrincipalProvider", () => {
       kind: "org-member",
       userId: "usr_1",
       orgId: "org_1",
-      memberships: [],
-      getToken: expect.any(Function),
+      memberships: []
     })
   })
 })

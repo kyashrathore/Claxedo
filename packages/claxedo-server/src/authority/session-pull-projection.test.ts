@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { localOnlyAuthAdapter } from "../platform/auth/auth"
+import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "./services"
 
 // Unit 6 characterization pins for the CENTRAL storage boundary: the two
@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
   updateWorkspace: vi.fn(async () => undefined),
 }))
 
-vi.mock("../workspace/store", () => ({
+vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   resolveWorkspace: mocks.resolveWorkspace,
   updateWorkspace: mocks.updateWorkspace,
 }))

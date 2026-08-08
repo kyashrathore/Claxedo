@@ -13,19 +13,37 @@ import path from "path"
  * `execFileSync` directly, or asks `security` for anything other than a read,
  * would slip past an injected spy but not past a read of the source.
  */
-const dir = __dirname
-const sources = readdirSync(dir).filter((file) => file.endsWith(".ts") && !file.includes(".test."))
+/**
+ * Credential operations now live in two places: the shared engine in
+ * `@claxedo/server-core` and this product's own operations beside it. The
+ * invariant is about the Keychain, not about a directory, so the guard reads
+ * BOTH — a module that moved between packages must not escape it.
+ */
+const DIRS = [
+  __dirname,
+  path.resolve(__dirname, "../../../../claxedo-server-core/src/credentials/operations"),
+]
+
+const sources = DIRS.flatMap((dir) =>
+  readdirSync(dir)
+    .filter((file) => file.endsWith(".ts") && !file.includes(".test."))
+    .map((file) => path.join(dir, file)),
+)
 
 function source(file: string) {
-  return readFileSync(path.join(dir, file), "utf8")
+  return readFileSync(file, "utf8")
+}
+
+function named(file: string) {
+  return path.basename(file)
 }
 
 describe("Keychain access guard", () => {
   test("exactly one module reaches a command line, through exactly one call site", () => {
     const spawners = sources.filter((file) => /\b(execFileSync|execSync|execFile|spawnSync|spawn)\(/.test(source(file)))
 
-    expect(spawners).toEqual(["sync.ts"])
-    expect(source("sync.ts").match(/\bexecFileSync\(/g)).toHaveLength(1)
+    expect(spawners.map(named)).toEqual(["sync.ts"])
+    expect(source(spawners[0]!).match(/\bexecFileSync\(/g)).toHaveLength(1)
   })
 
   test("no credentials module can write to or delete the Keychain item", () => {

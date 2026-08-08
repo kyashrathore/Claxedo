@@ -1,5 +1,5 @@
 import { runtimes, type WorkspaceRuntimeState } from "./store"
-import type { Workspace } from "../store"
+import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 
 export function __registerReadyRuntimeForTest(input: {
   workspaceId: string

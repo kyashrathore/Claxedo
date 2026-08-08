@@ -49,11 +49,11 @@ import {
 import {
   configureCliSessionTokenRegistry,
   type CliSessionTokenRegistry,
-} from "./cli-session-registry"
-import { mintCliSessionTokens, refreshCliSessionTokens, verifyCliAccessBearer } from "./cli-session-token"
+} from "@claxedo/server-core/platform/auth/cli-session-registry"
+import { mintCliSessionTokens, refreshCliSessionTokens, verifyCliAccessBearer } from "@claxedo/server-core/platform/auth/cli-session-token"
 import { composeHostedControlPlane, sandboxRelayTargetLookup, type HostedControlPlane } from "../../authority/hosted-services"
 import type { ControlPlaneServices } from "../../authority/services"
-import type { SignedControlPlaneAuth } from "./auth"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 
 const SERVICE_TOKEN = "service-secret"
 const OWNER = "https://clerk.test|user_1"

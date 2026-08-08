@@ -88,9 +88,16 @@
       "outputs": [".artifacts/unit/junit.xml"],
       "passThroughEnv": ["*"]
     },
+    // Two runners, two reports: `junit.xml` from the `bun test` logic/architecture
+    // lane, `junit-vitest.xml` from the vitest lane that renders Solid components
+    // (`*.vitest.ts(x)`). The vitest lane had no CI wiring at all until
+    // 2026-08-09 — roughly 100 component files never executed on a PR — so it is
+    // folded into this package's own `test` script rather than added as a
+    // separate workflow step, which is what makes a newly added `.vitest.tsx`
+    // gated the day it lands.
     "@claxedo/app#test": {
       "dependsOn": ["^build"],
-      "outputs": [".artifacts/unit/junit.xml"],
+      "outputs": [".artifacts/unit/junit.xml", ".artifacts/unit/junit-vitest.xml"],
       "passThroughEnv": ["*"]
     }
   }

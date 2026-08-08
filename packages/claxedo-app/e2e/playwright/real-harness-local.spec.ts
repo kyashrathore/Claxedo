@@ -598,7 +598,7 @@ async function makeWorkspace(name: string, harnessKey = "opencode") {
  *
  * The cross-scenario coupling is real and server-side: `GET /harness` answers
  * from `defaultHarness(await loadUserConfig())`
- * (`packages/claxedo-server/src/agent-config/routes/harness-routes.ts:60`), and
+ * (`packages/claxedo-local-server/src/agent-config/routes/harness-routes.ts:60`), and
  * `loadUserConfig()` reads ONE server-global file — `user-agent-config.json`
  * under `CLAXEDO_DATA_DIR` (`agent-config.ts:231/67`) — with no workspace
  * keying at all. So every scenario's harness switch rewrites the seed the NEXT
@@ -642,7 +642,7 @@ async function seedDefaultHarness(dir: string, harnessKey: string) {
  * resolve?directory=...&create=true` the app's own bootstrap fires on first
  * navigation (`src/shell/data/bootstrap.ts`'s fire-and-forget `resolveWorkspace()`
  * in `postPaint` -> `packages/claxedo-server/src/workspace/routes/index.ts:142` ->
- * `ensureWorkspace()` in `packages/claxedo-server/src/workspace/store/index.ts:287`).
+ * `ensureWorkspace()` in `packages/claxedo-server-core/src/workspace/store/index.ts:287`).
  * Until that registration completes, `POST /session` 404s — the app's call is
  * not awaited before the composer becomes interactive, and a synthetic
  * compose-and-click does not reliably win the race a human always wins. This

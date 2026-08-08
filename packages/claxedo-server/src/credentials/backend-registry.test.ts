@@ -10,8 +10,8 @@ mkdirSync(root, { recursive: true })
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
-const { createTestBackend, getBackend, setBackendOverride } = await import("./backend-registry")
-const { createLocalBackend } = await import("./backends/local")
+const { createTestBackend, getBackend, setBackendOverride } = await import("@claxedo/server-core/credentials/backend-registry")
+const { createLocalBackend } = await import("@claxedo/server-core/credentials/backends/local")
 
 describe("credential store", () => {
   afterAll(async () => {

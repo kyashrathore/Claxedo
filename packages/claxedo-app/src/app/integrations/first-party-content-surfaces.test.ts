@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, mock, test } from "bun:test"
-import type { ContentSurfaceContribution } from "./first-party-content-surfaces"
+import type { ContentSurfaceContribution } from "./content-surface-contract"
 
 let mod: typeof import("./first-party-content-surfaces")
+let hosted: typeof import("./hosted-content-surfaces")
 
 beforeAll(async () => {
   mock.module("../../features/session/ui/content/session-content", () => ({
@@ -27,6 +28,10 @@ beforeAll(async () => {
   }))
 
   mod = await import("./first-party-content-surfaces")
+  // The hosted set is a SEPARATE module now — importing it here is exactly the
+  // edge the local composition must not have, which is why the test has to
+  // reach for it explicitly.
+  hosted = await import("./hosted-content-surfaces")
 })
 
 describe("content surface contributions", () => {
@@ -35,7 +40,7 @@ describe("content surface contributions", () => {
     const navigate = mock(() => {})
     const request = mock(async () => new Response(undefined, { status: 500 }))
 
-    await mod.openWorkGraphSession({
+    await hosted.openWorkGraphSession({
       reference: {
         sessionId: "ses_workgraph",
         workspaceId: "envelope_reference",
@@ -80,7 +85,7 @@ describe("content surface contributions", () => {
     const open = mock(() => {})
     const navigate = mock(() => {})
 
-    await expect(mod.openWorkGraphSession({
+    await expect(hosted.openWorkGraphSession({
       reference: { sessionId: "ses_missing", harness: "codex-acp" },
       request: async () => new Response(undefined, { status: 404 }),
       serverUrl: "http://claxedo.test",
@@ -95,9 +100,39 @@ describe("content surface contributions", () => {
   test("seeds built-in workbench renderers through the shared surface registry", () => {
     const registry = mod.createContentSurfaceRegistry()
 
-    expect(registry.all().surfaces.map((surface) => surface.id)).toEqual(mod.firstPartyContentSurfaces.map((surface) => surface.id))
+    expect(registry.all().surfaces.map((surface) => surface.id)).toEqual(mod.localContentSurfaces.map((surface) => surface.id))
     expect(mod.contentSurface("session", {}, registry)?.id).toBe("surface.content.session")
     expect(mod.contentSurface("terminal", {}, registry)?.id).toBe("surface.content.terminal")
+  })
+
+  test("the default registry renders no hosted surface until the hosted set is added", () => {
+    // The Unit 2 acceptance criterion on the app side. Not "WorkGraph is
+    // hidden" — WorkGraph has no renderer at all in a local composition.
+    const registry = mod.createContentSurfaceRegistry()
+
+    for (const type of ["workgraph", "workspace-workgraph", "task-composer", "page", "pages-index"]) {
+      expect(mod.contentSurface(type, {}, registry), type).toBeUndefined()
+    }
+
+    const withHosted = mod.createContentSurfaceRegistry([...mod.localContentSurfaces, ...hosted.hostedContentSurfaces])
+    expect(mod.contentSurface("workgraph", {}, withHosted)?.id).toBe("surface.content.workgraph")
+    expect(mod.contentSurface("page", {}, withHosted)?.id).toBe("surface.content.page")
+  })
+
+  test("un-registers a surface from the shared registry, so it stops resolving", () => {
+    // The removal half of the composition seam. `registerContentSurface` and
+    // `unregisterContentSurface` both act on the ONE shared registry the
+    // workbench resolves against, which is what makes a sign-out observable
+    // without a reload.
+    const workgraph = hosted.hostedContentSurfaces.find((surface) => surface.surface === "workgraph")!
+
+    mod.registerContentSurface(workgraph)
+    expect(mod.contentSurface("workgraph", {})?.id).toBe(workgraph.id)
+
+    mod.unregisterContentSurface(workgraph)
+    expect(mod.contentSurface("workgraph", {})).toBeUndefined()
+    // The local surfaces the same registry seeded are untouched.
+    expect(mod.contentSurface("session", {})?.id).toBe("surface.content.session")
   })
 
   test("resolves extension content surfaces through the same registry path as first-party surfaces", () => {
@@ -110,7 +145,7 @@ describe("content surface contributions", () => {
       gate: { backing: "real" },
       renderer: () => null,
     }
-    const registry = mod.createContentSurfaceRegistry([...mod.firstPartyContentSurfaces, extensionSurface])
+    const registry = mod.createContentSurfaceRegistry([...mod.localContentSurfaces, extensionSurface])
 
     expect(mod.contentSurface("agent-review", {
       sessionRef: {

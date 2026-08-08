@@ -1,5 +1,5 @@
-import type { DocumentChangedEvent } from "../platform/runtime/lib/bus"
-import type { SignedControlPlaneAuth } from "../platform/auth/auth"
+import type { DocumentChangedEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { DocumentIndexEntry, DocumentIndexScope } from "./index-store"
 import type {
   DocumentActor,
@@ -58,7 +58,6 @@ export type DocumentsBackend<H extends DocumentHandle = DocumentHandle> = Readon
     archive(scope: DocumentIndexScope, documentId: string): Awaitable<DocumentIndexEntry>
     restore(scope: DocumentIndexScope, documentId: string): Awaitable<DocumentIndexEntry>
     listStatuses(projectId: string): Awaitable<readonly Record<string, unknown>[]>
-    transitionStatus(scope: DocumentIndexScope, documentId: string, status: string): Awaitable<DocumentIndexEntry>
     resolveLocalProjectId(directory: string): Awaitable<string>
   }>
   workspace: DocumentWorkspaceAdapter<H>
@@ -206,7 +205,6 @@ export type DocumentEventReason =
   | "document.created"
   | "document.metadata_updated"
   | "document.session_changed"
-  | "document.status_changed"
   | "document.archived"
   | "document.restored"
   | "document.content_updated"

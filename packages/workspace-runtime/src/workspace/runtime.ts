@@ -1,3 +1,4 @@
+import { Log } from "../log"
 import fs from "fs"
 import os from "os"
 import path from "path"
@@ -43,7 +44,9 @@ import {
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { attachSseFanout, createSseReplayBuffer, encodeSseData, sseHeaders } from "@claxedo/agent-sdk-runtime/sse"
 import { isTerminalCompatEvent, type CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
+import type { SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime/subagent-admission"
 import type { Context, Hono } from "hono"
+import { HTTPException } from "hono/http-exception"
 import { workspaceCapabilities } from "../capabilities"
 import { runGit } from "../git"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hub"
@@ -78,6 +81,9 @@ import type { WorkspaceTranscriptRoutesOptions } from "./core"
  * host may back the runtime with any store that satisfies this shape — e.g. the
  * in-memory store from `@claxedo/agent-sdk-runtime/stores/memory`.
  */
+
+const sessionInventoryLog = Log.create({ service: "session-inventory" })
+
 export type WorkspaceRuntimeStore =
   & Omit<AgentRuntimeStoreWithRecovery, "getSession" | "getMessages" | "bindSession" | "updateSessionConfig">
   & {
@@ -99,6 +105,14 @@ export type WorkspaceRuntimeStore =
       update: SessionConfigUpdate,
       input?: { directory?: string },
     ): SessionConfig | null | undefined
+    /**
+     * Whether this directory's inventory has already been imported from the
+     * harnesses. A store that does not record it reports nothing, and generic
+     * listing then falls back to discovering on every list — correct, just not
+     * free. The SQLite store records it durably.
+     */
+    sessionInventoryImported?: (directory: string) => boolean
+    markSessionInventoryImported?: (directory: string, at?: number) => void
     recoverBusySessions?: () => unknown
     flush?: () => void
     close?: () => void
@@ -186,6 +200,17 @@ export type WorkspaceHostOptions = {
    * {@link WorkspaceRuntimeStoreFactory}.
    */
   storeFactory?: WorkspaceRuntimeStoreFactory
+  /**
+   * Durable subagent admission the OpenCode adapter records delegations into.
+   *
+   * Adapters that own a store (the native-SDK and ACP rails) admit through it
+   * directly; the OpenCode adapter keeps no store of its own because its
+   * sessions live in the engine, so the host hands it exactly the two methods
+   * the admission boundary needs. `createWorkspaceHost` fills this in from its
+   * own store — the same one `/session/:id/subagents` reads — so an omitted
+   * value means "no host behind this adapter", not "use a second store".
+   */
+  subagentAdmission?: SubagentAdmissionStore
   /**
    * Host-supplied harness-adapter registry. `createAdapter` dispatches through
    * it (first matching entry wins). Defaults to
@@ -755,6 +780,7 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
         ...(options.opencodeHeaders ? { headers: options.opencodeHeaders } : {}),
         ...(options.opencodeRequest ? { request: options.opencodeRequest } : {}),
         eventHub: options.eventHub,
+        ...(options.subagentAdmission ? { subagents: options.subagentAdmission } : {}),
         ...(options.processObserver ? { processObserver: agentProcessObserver(options.processObserver) } : {}),
         // Adapter mechanism (upstream list/status proxying) stays on unless the
         // host explicitly opts out. The root compat ROUTE surface is separately
@@ -870,6 +896,52 @@ async function proxyOpenCode(
     statusText: res.statusText,
     headers: res.headers,
   })
+}
+
+/**
+ * Whether an adapter's EMPTY session list was an answer rather than a swallowed
+ * failure.
+ *
+ * `AgentHarnessAdapter.listSessions` returns `AgentSessionRow[]`, so the only
+ * failure it can report is a throw — and the OpenCode adapter does not throw:
+ * it returns `[]` for ANY non-2xx. A transient 5xx from a server that has just
+ * restarted is therefore byte-identical to a fresh install, and the one-time
+ * inventory import would record itself as done on it, hiding every existing
+ * session from generic listing forever with no retry and no error.
+ *
+ * The status is recoverable one layer down, on the proxy transport the adapter
+ * itself uses, so an empty list from a proxy adapter is confirmed by asking the
+ * same question with the status visible. Two gates keep this from costing
+ * anything it should not:
+ *
+ *  - It runs only for an EMPTY list during the once-per-directory import, so
+ *    the common path pays nothing and the confirmation never repeats.
+ *  - It never starts a harness. `transportLive()` false means the adapter's own
+ *    listing did not reach a transport either (compat off, nothing spawned), so
+ *    there is nothing to confirm and the empty stands.
+ */
+async function emptyListIsAnAnswer(
+  adapter: AgentHarnessAdapter,
+  directory: string,
+  options: { opencodeCompat?: boolean; opencodeHeaders?: HeadersInit },
+) {
+  if (!hasAdapterCapability(adapter, "http-proxy")) return true
+  // Mirrors how `defaultWorkspaceHarnessRegistry` maps the three-state host
+  // option onto the adapter's own `compat` flag: with the mechanism off the
+  // adapter answers `[]` locally without ever asking upstream, and confirming
+  // it against upstream would block the marker on a server the host has said
+  // not to consult.
+  if (options.opencodeCompat === false) return true
+  if ((adapter as HttpProxyAdapter).transportLive?.() !== true) return true
+  try {
+    const request = await (adapter as AgentHarnessAdapter & HttpProxyAdapter).getRequestFn()
+    const headers = new Headers(options.opencodeHeaders)
+    headers.set("x-opencode-directory", directory)
+    const response = await request(new Request(`${OPENCODE_INTERNAL_BASE}/session`, { headers }))
+    return response.ok
+  } catch {
+    return false
+  }
 }
 
 async function proxyOpenCodeOrJson(c: any, adapter: AgentHarnessAdapter, fallback: () => Promise<unknown> | unknown, baseHeaders?: HeadersInit) {
@@ -1031,7 +1103,20 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   const cleanupGlobalEventReplay = eventHub.subscribeGlobal((event) => {
     globalEventReplay.push(event)
   })
-  const hostOptions = { ...options, eventHub }
+  // `store()` is the host's own session-config store — the same instance
+  // `/session/:id/subagents` lists from — so an OpenCode delegation admitted
+  // through this port is immediately readable on the host read path and
+  // survives a reload. Bound lazily: `store()` opens SQLite on first use, and a
+  // host that never runs a turn should never open it.
+  const hostOptions = {
+    ...options,
+    eventHub,
+    subagentAdmission: options.subagentAdmission ?? {
+      admit: (input: Parameters<SubagentAdmissionStore["admit"]>[0]) => subagentStore().admit(input),
+      markPublished: (parentSessionId: string, observationId: string) =>
+        subagentStore().markPublished(parentSessionId, observationId),
+    },
+  }
   let runner = options.harness ?? { id: "opencode" as const, access: "native" as const }
   let state: "ready" | "applying" | "error" = "ready"
   let err = ""
@@ -1230,11 +1315,60 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       }
       return await listSessionsForAdapter(await ensureSessionAdapter(target), target, directory)
     }
-    const rows = await Promise.all((await sessionListAdapters()).map((item) => listSessionsForAdapter(item.adapter, item.runner, directory)))
-    return mergeSessionRows([
-      ...(store().listSessions(directory) as AgentSessionRow[]),
-      ...rows.flat(),
-    ])
+    // Generic listing is store-only. It is the read the empty shell performs on
+    // every launch, so it must not select, load, or start a harness adapter.
+    //
+    // The one exception is the first generic list for a directory. A profile
+    // that predates the store, or a fresh profile sitting on an existing
+    // harness install, has inventory that only the harnesses know about. That
+    // import runs once per directory and is recorded durably, so every later
+    // launch — and every later list — costs zero harness processes. Sessions
+    // created outside Claxedo after that point arrive through the explicit
+    // `?harness=` refresh above.
+    if (!store().sessionInventoryImported?.(directory)) {
+      // Mark imported only when EVERY adapter actually answered.
+      //
+      // "This adapter has no sessions" and "this adapter could not be asked"
+      // are different facts that both arrive as an empty array — the OpenCode
+      // adapter returns `[]` for any non-2xx, so a transient 5xx from a
+      // just-spawned server looks exactly like a fresh install. Writing the
+      // durable marker on that would hide a user's existing sessions from
+      // generic listing forever, with no retry and no error.
+      //
+      // A failed adapter still lets the healthy ones contribute; the directory
+      // simply stays unimported and tries again on the next list.
+      let complete = true
+      const rows = await Promise.all((await sessionListAdapters()).map(async (item) => {
+        try {
+          const listed = await listSessionsForAdapter(item.adapter, item.runner, directory)
+          // A throw is not the only way an adapter fails to answer. An empty
+          // array from a proxy adapter has to be confirmed as an ANSWER before
+          // it counts toward completeness — see `emptyListIsAnAnswer`.
+          if (!listed.length && !await emptyListIsAnAnswer(item.adapter, directory, hostOptions)) {
+            complete = false
+            sessionInventoryLog.warn("session inventory import could not confirm an empty adapter listing", {
+              directory,
+              harness: item.runner.id,
+            })
+          }
+          return listed
+        } catch (error) {
+          complete = false
+          sessionInventoryLog.warn("session inventory import skipped an adapter", {
+            directory,
+            harness: item.runner.id,
+            error: error instanceof Error ? error.message : String(error),
+          })
+          return [] as AgentSessionRow[]
+        }
+      }))
+      if (complete) store().markSessionInventoryImported?.(directory)
+      return mergeSessionRows([
+        ...(store().listSessions(directory) as AgentSessionRow[]),
+        ...rows.flat(),
+      ])
+    }
+    return mergeSessionRows(store().listSessions(directory) as AgentSessionRow[])
   }
 
   async function sessionListAdapters() {
@@ -1267,8 +1401,18 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   function bindDiscoveredSession(session: AgentSessionRow, targetRunner: RuntimeRunner, directory: string) {
     const id = typeof session.id === "string" ? session.id : undefined
     if (!id) return session
-    const existing = store().getSession(id) as { time?: { updated?: number }; updated_at?: number } | null
-    if (!existing) {
+    const existing = store().getSession(id) as
+      | { directory?: string; time?: { updated?: number }; updated_at?: number }
+      | null
+    // "Already imported" means already imported INTO THIS DIRECTORY.
+    //
+    // Keying on session ID alone let a row belonging to another directory
+    // suppress the bind, so the session was never associated with the directory
+    // being listed and never appeared in its inventory — discovery silently
+    // imported nothing. That happens whenever an agent session ID is reachable
+    // from two workspace directories: a moved or re-cloned workspace, or sibling
+    // worktrees sharing a harness session.
+    if (!existing || existing.directory !== directory) {
       store().bindSession({
         sessionId: id,
         directory,
@@ -1354,6 +1498,21 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     // the host-supplied factory, defaulting to the SQLite RuntimeStore.
     sessionConfigStore ??= storeFactory({ storeRoot: options.storeRoot })
     return sessionConfigStore
+  }
+
+  /**
+   * The host store, narrowed to the two subagent-admission methods. Both are
+   * optional on {@link WorkspaceRuntimeStore} because a host may back the
+   * runtime with any store shape; one that cannot persist subagents fails the
+   * individual delegation loudly rather than letting a card silently vanish
+   * after reload.
+   */
+  function subagentStore(): SubagentAdmissionStore {
+    const target = store()
+    if (!target.admit || !target.markPublished) {
+      throw new Error("workspace runtime store does not support subagent admission")
+    }
+    return { admit: target.admit.bind(target), markPublished: target.markPublished.bind(target) }
   }
 
   function createActiveTurnScope(input: { adapter: AgentHarnessAdapter; directory: string; sessionId: string }) {
@@ -1802,21 +1961,59 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       })
 
       app.get("/global/event", async (c) => {
-        const adapter = runner.id === "opencode" && hostOptions.opencodeCompat === true
+        // Two changes meet here and BOTH are load-bearing.
+        //
+        // The shell opens this stream on every launch. Proxying it to OpenCode
+        // used to START OpenCode, so an idle desktop paid for a harness it was
+        // never asked to run. The compat proxy attaches only to a transport
+        // that is ALREADY live, and holds an activity lease for the stream's
+        // life so the idle reaper cannot cut it mid-delivery. When nothing is
+        // running the runtime's own hub answers — it is the authoritative
+        // producer of canonical events, and the adapter republishes upstream
+        // events into it once real work starts.
+        //
+        // Resolution goes through `ensureSessionAdapter` rather than `ensure()`
+        // so a session pinned to a non-default harness gets ITS adapter. That
+        // helper only creates and configures; it does not spawn, so it does not
+        // reintroduce the start this gate exists to prevent.
+        const proxy = runner.id === "opencode" && hostOptions.opencodeCompat === true
           ? await ensureSessionAdapter(runner)
           : undefined
-        if (adapter && hasAdapterCapability(adapter, "http-proxy")) {
+        const adapter = proxy && hasAdapterCapability(proxy, "http-proxy")
+          ? proxy as AgentHarnessAdapter & HttpProxyAdapter
+          : undefined
+        if (adapter && (adapter.transportLive?.() ?? true)) {
+          let lease: { release(): void } | undefined
           try {
-            const request = await (adapter as AgentHarnessAdapter & HttpProxyAdapter).getRequestFn()
+            const acquired = await adapter.acquireRequestFn?.()
+            lease = acquired?.lease
+            const request = acquired?.request ?? await adapter.getRequestFn()
             const headers = new Headers(hostOptions.opencodeHeaders)
             headers.set("Accept", "text/event-stream")
             const res = await request(new Request(`${OPENCODE_INTERNAL_BASE}/global/event`, {
               headers,
               signal: c.req.raw.signal,
             }))
-            if (!res.ok || !res.body) return closedSse()
-            return new Response(res.body, { status: res.status, headers: res.headers })
+            if (!res.ok || !res.body) {
+              lease?.release()
+              return closedSse()
+            }
+            // Released on BOTH ends of the stream's life. Wiring only the
+            // client's abort leaks the lease whenever the upstream ends first —
+            // an OpenCode restart on config change, or the child exiting — and
+            // a held lease stops the idle countdown from ever starting again,
+            // so the harness this change exists to reap could never be reaped.
+            // `ActivityLease.release` is idempotent, so both firing is fine.
+            // `flush` covers a clean end; a client-side cancel propagates back
+            // as an abort on the request signal, which the listener catches.
+            const release = () => lease?.release()
+            c.req.raw.signal.addEventListener("abort", release, { once: true })
+            return new Response(
+              res.body.pipeThrough(new TransformStream({ flush: release })),
+              { status: res.status, headers: res.headers },
+            )
           } catch {
+            lease?.release()
             return closedSse()
           }
         }
@@ -1866,6 +2063,78 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       app.route("/", SessionRoutes((input) => adapterForSession(input), {
         eventHub,
         resolveRuntime: (input) => runtimeForSession(input),
+        createSession: async (c, directory, title, id) => {
+          // Write through to the durable store on CREATE.
+          //
+          // Creation used to land only in the adapter; the store learned about
+          // a session solely through `bindDiscoveredSession` during the
+          // list-time adapter fan-out. That made the store a cache the fan-out
+          // happened to fill rather than the owner of local session inventory,
+          // and it is why generic listing cannot stop fanning out yet (U8-F7).
+          //
+          // Idempotent by construction: `bindSession` upserts, and
+          // `bindDiscoveredSession` skips a row already bound to this
+          // directory, so a later discovery pass neither duplicates nor
+          // clobbers what this wrote.
+          //
+          // A caller-supplied id may name a session this runtime already owns.
+          // It must not be able to say which WORKSPACE that session belongs to.
+          //
+          // `bindSession` upserts on a single primary key, so a create issued
+          // against another directory REWRITES the existing row's `directory`
+          // rather than adding a second one — and the directory string is this
+          // runtime's routing identity, so the session simultaneously vanishes
+          // from its own workspace's inventory and starts resolving against the
+          // caller's directory. Nothing in a create verifies the claim: the
+          // harness is told to make a session, it is never asked which
+          // workspace the id already lives in.
+          //
+          // A repeat in the SAME directory is left alone — that is the retry
+          // path, where the upsert is a no-op. Only a cross-directory claim is
+          // refused, and it is refused before the harness is asked to create
+          // anything. Discovery may still move a session between directories
+          // (`bindDiscoveredSession`); there the HARNESS reported the session
+          // under that directory, which is the authority a create does not
+          // have.
+          if (id) {
+            const owner = (store().getSession(id) as { directory?: string } | null)?.directory
+            if (owner && owner !== directory) {
+              throw new HTTPException(409, {
+                message: `Session ${id} belongs to another workspace directory`,
+              })
+            }
+          }
+          // The requested harness must be honoured here exactly as the route's
+          // own `resolveAdapter` would. Resolving the ACTIVE runner instead
+          // silently creates the session on the wrong adapter — and when the
+          // active runner is ACP, spawns a process the caller never asked for.
+          const query = (c as { req: { query: (k: string) => string | undefined } }).req
+          const requested = normalizeHarnessIdentity(query.query("harness") || query.query("runner") || undefined)
+          const adapter = await adapterForSession({
+            ...(id ? { sessionId: id } : {}),
+            directory,
+            ...(requested ? { harness: { id: requested.id, access: requested.access } } : {}),
+          })
+          const session = await adapter.createSession(directory, title, id)
+          // The agent session id belongs to the HARNESS, never to this
+          // write-through. An adapter that persists into this store has
+          // already bound the id its process answers to: a codex
+          // `thread/start` id, an ACP `session/new` id, or the `claude-sdk:`
+          // sentinel that means "no SDK conversation exists yet". Re-binding
+          // `session.id` over it told the harness to resume a conversation
+          // that never existed, so the FIRST turn of every native-SDK session
+          // died with `thread not found` / `No conversation found with session
+          // ID` (ACP hid it by booting a replacement session). `session.id` is
+          // only the placeholder for adapters that keep their sessions
+          // elsewhere and left nothing here to preserve.
+          store().bindSession({
+            sessionId: session.id,
+            directory,
+            ...(title ? { title } : {}),
+            agentSessionId: store().getAgentSessionId(session.id) ?? session.id,
+          })
+          return session
+        },
         listSessions: (c, directory) => listSessions(c as { req: { query: (k: string) => string | undefined } }, directory),
         listSubagents: ({ parentSessionId }) => store().listSubagents?.(parentSessionId) ?? [],
         listPermissions: (c, directory) => listPermissions(c as { req: { query: (k: string) => string | undefined } }, directory),
@@ -1916,12 +2185,32 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           )
           return recovered
         },
+        // The store records what the harness ACCEPTED, never what the caller
+        // asked for.
+        //
+        // Writing the requested update first made the store the authority on a
+        // config no harness had agreed to: Pi refuses a model change on an
+        // active session, and the pre-write meant the refusal surfaced to the
+        // caller while the store already held — and kept serving — the model
+        // the session was not running. The adapter's returned config is a
+        // complete `SessionConfig` from every harness, so a single write after
+        // acceptance loses nothing.
         updateSessionConfig: async ({ adapter, directory, sessionId, update }) => {
-          store().updateSessionConfig(sessionId, update, { directory })
           const adapterConfig = await adapter.updateSessionConfig(sessionId, update, directory)
           return store().updateSessionConfig(sessionId, adapterConfig, { directory }) ?? adapterConfig
         },
+        afterUpdateSession: ({ sessionId, updates }) => {
+          // Renames and archives have to reach the durable store, or a
+          // store-owned inventory serves the old title and keeps handing back
+          // sessions the user archived.
+          store().updateSession(sessionId, updates)
+        },
         afterDeleteSession: ({ sessionId }) => {
+          // Deletion was invalidating the transcript cache and leaving the
+          // store row in place. Harmless while listing fanned out to the
+          // adapter — the adapter no longer returned it — but a store-owned
+          // inventory would resurrect every deleted session.
+          store().deleteSession(sessionId)
           hostOptions.transcripts?.resolver.invalidateParent?.(hostOptions.transcripts.workspaceId, sessionId)
         },
         ...(hostOptions.opencodeHeaders ? { opencodeHeaders: hostOptions.opencodeHeaders } : {}),

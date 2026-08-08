@@ -13,11 +13,11 @@ import {
   mintRuntimeAccessToken,
 } from "@claxedo/workspace-relay"
 import { configureWorkspaceSupervisor, shutdownWorkspaceSupervisor } from "./workspace/supervisor"
-import { configureEmbeddedWorkspaceRuntime } from "./deployments/local/embedded-workspace-runtime"
-import { configureOpenCodeEngine, opencodeRequest } from "./opencode/engine"
-import { ensureWorkspace } from "./workspace/store"
+import { configureEmbeddedWorkspaceRuntime } from "@claxedo/local-server/deployments/local/embedded-workspace-runtime"
+import { configureOpenCodeEngine, opencodeRequest } from "@claxedo/server-core/opencode/engine"
+import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { startUserHostedWorkspaceTunnel, stopAllUserHostedWorkspaceTunnels } from "./user-hosted-tunnel"
-import { createApp } from "./deployments/local/server"
+import { createSelfHostedApp } from "./deployments/self-hosted-node/app"
 import { createControlPlaneServices } from "./authority/services"
 import { createSqliteCentralStore } from "./authority/adapters/sqlite/central-store"
 
@@ -254,7 +254,7 @@ describe("server-owned user-hosted Workspace Relay tunnel E2E", () => {
     configureOpenCodeEngine({ url: opencode.url })
     configureEmbeddedWorkspaceRuntime({ opencodeRequest })
     const centralStore = createSqliteCentralStore({ mode: () => "central_canonical" })
-    const built = createApp(createControlPlaneServices({
+    const built = createSelfHostedApp(createControlPlaneServices({
       projectionStore: centralStore.projectionStore,
       durableSessionLog: centralStore.durableSessionLog,
     }))

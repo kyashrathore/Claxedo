@@ -1,6 +1,18 @@
-import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterAll, beforeEach, describe, expect, test } from "bun:test"
 
+/**
+ * The bearer this transport is given, and how it was asked for.
+ *
+ * `api.ts` used to import `getAuthToken` from `@/platform/auth/auth-client`,
+ * and this file used to `mock.module` that import away. Both are gone: the
+ * transport now takes a bearer source through `configureApiRuntime`, so the
+ * test installs a real one instead of replacing a module it no longer imports.
+ * `tokenRequests` records the options each call carried, which is what proves
+ * the force-refresh retry actually asks for a fresh JWT rather than the cached
+ * one it was just told is invalid.
+ */
 let token: string | null = null
+const tokenRequests: Array<{ skipCache?: boolean } | undefined> = []
 const calls: Array<{
   auth: string | null
   body: string
@@ -11,25 +23,13 @@ const calls: Array<{
 const originalFetch = globalThis.fetch
 const originalOpencode = window.__OPENCODE__
 
-mock.module("@/platform/auth/auth-client", () => ({
-  clerk: {},
-  getAuthToken: async () => token,
-  initializeClerk: async () => {},
-  useAuth: () => ({
-    isSignedIn: () => !!token,
-    loading: () => false,
-    session: () => null,
-    user: () => null,
-  }),
-  waitForClerk: async () => {},
-}))
-
 // Use an absolute path with a cache-busting query to bypass any stale
 // mock.module("./api") may be registered by other API client tests.
 // Bun treats distinct specifiers as distinct module instances, so this
 // always evaluates the real api.ts.
 const {
   api,
+  apiBearerToken,
   authFetch,
   configureApiRuntime,
   fixDir,
@@ -89,12 +89,20 @@ beforeEach(() => {
   window.location.href = "http://localhost/"
   window.__OPENCODE__ = originalOpencode ? { ...originalOpencode } : undefined
   token = null
+  tokenRequests.length = 0
   calls.length = 0
   setServerEnv({
     claxedo: originalClaxedoServerUrl,
     legacy: originalLegacyBackendUrl,
   })
   resetApiRuntime()
+  // After the reset, or it would clear the binding it is meant to install.
+  configureApiRuntime({
+    bearerToken: async (options) => {
+      tokenRequests.push(options)
+      return token
+    },
+  })
   globalThis.fetch = (async (input, init) => {
     const req = input instanceof Request ? new Request(input, init) : new Request(String(input), init)
     calls.push({
@@ -182,6 +190,50 @@ describe("authFetch", () => {
     expect(calls[0]?.auth).toBe(`Basic ${btoa("opencode:desk-secret")}`)
   })
 
+  test("sends no bearer, and asks for none, when the build bound no source", async () => {
+    // The local product's shape. `app/entry/local.tsx` calls no
+    // `configureApiRuntime({ bearerToken })`, which is the whole reason it can
+    // ship without an identity provider in its bundle. A token is deliberately
+    // available here: if this transport had ANY other route to one, the header
+    // below would carry it.
+    resetApiRuntime()
+    token = "tok_123"
+
+    await authFetch("http://localhost/test")
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.auth).toBeNull()
+    expect(tokenRequests).toEqual([])
+  })
+
+  test("force-refreshes the bearer once when the server rejects it as invalid", async () => {
+    // The retry that keeps a stale Clerk JWT from wedging every panel in
+    // "loading" forever. It is also the only caller that passes an option
+    // through the bearer seam, so it is what proves the seam carries one.
+    token = "tok_stale"
+    globalThis.fetch = (async (input, init) => {
+      const req = input instanceof Request ? new Request(input, init) : new Request(String(input), init)
+      calls.push({
+        auth: req.headers.get("Authorization"),
+        body: await req.clone().text(),
+        cache: init?.cache ?? req.cache ?? "default",
+        dir: req.headers.get("x-opencode-directory"),
+        url: req.url,
+      })
+      if (calls.length === 1) {
+        token = "tok_fresh"
+        return Response.json({ error: { code: "invalid_bearer_token" } }, { status: 401 })
+      }
+      return Response.json({ ok: true })
+    }) as typeof fetch
+
+    const res = await authFetch("http://localhost/test")
+
+    expect(res.status).toBe(200)
+    expect(calls.map((call) => call.auth)).toEqual(["Bearer tok_stale", "Bearer tok_fresh"])
+    expect(tokenRequests).toEqual([undefined, { skipCache: true }])
+  })
+
   test("preserves an explicit authorization header", async () => {
     token = "tok_123"
     configureApiRuntime({ password: "desk-secret" })
@@ -246,6 +298,38 @@ describe("authFetch", () => {
 
     expect(calls).toHaveLength(1)
     expect(calls[0]?.url).toBe("http://127.0.0.1:64144/api/control/sessions")
+  })
+})
+
+/**
+ * The bearer read on its own, for the callers that build an `Authorization`
+ * header themselves rather than going through `authFetch`.
+ *
+ * `project-actions.tsx` (destroying a cloud sandbox) and
+ * `agent-runtime-client.ts` (the signed control-plane init) used to import
+ * `getAuthToken` for one call each, which is how Clerk reached the LOCAL
+ * bundle through two modules the local shell needs. They read this instead, so
+ * "no build bound a source" has to be a first-class ANSWER here, not a throw.
+ */
+describe("apiBearerToken", () => {
+  test("resolves null when the build bound no source", async () => {
+    // The local product's shape, and the reason this returns a value rather
+    // than throwing the way an unbound `*-port.ts` operation does. A token is
+    // deliberately available: if the reader had any other route to one, it
+    // would come back below.
+    resetApiRuntime()
+    token = "tok_123"
+
+    expect(await apiBearerToken()).toBeNull()
+    expect(tokenRequests).toEqual([])
+  })
+
+  test("hands back the bound source's token, and asks it with the caller's options", async () => {
+    token = "tok_123"
+
+    expect(await apiBearerToken()).toBe("tok_123")
+    expect(await apiBearerToken({ skipCache: true })).toBe("tok_123")
+    expect(tokenRequests).toEqual([undefined, { skipCache: true }])
   })
 })
 

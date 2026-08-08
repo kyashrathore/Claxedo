@@ -30,10 +30,13 @@
     "typecheck:test": "bun x tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
+    "@claxedo/workspace-runtime": "0.7.0",
+    "@hono/node-server": "1.19.11",
     "@noble/hashes": "2.2.0",
     "better-sqlite3": "13.0.1",
     "hono": "4.10.7",
-    "zod": "4.4.3"
+    "zod": "4.4.3",
+    "zod-to-json-schema": "3.25.2"
   },
   "devDependencies": {
     "@claxedo/connections": "workspace:*",
@@ -90,6 +93,11 @@
       "browser": "./dist/conformance/index.mjs",
       "import": "./dist/conformance/index.mjs",
       "default": "./dist/conformance/index.mjs"
+    },
+    "./runtime-adapter": {
+      "types": "./dist/runtime-adapter/index.d.ts",
+      "import": "./dist/runtime-adapter/index.mjs",
+      "default": "./dist/runtime-adapter/index.mjs"
     }
   },
   "files": [
