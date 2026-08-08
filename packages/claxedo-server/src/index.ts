@@ -3,9 +3,17 @@ export {
   createDefaultLocalControlPlaneServices,
   shutdownControlPlaneRuntime,
   startControlPlaneStack,
-  startServer,
   type ControlPlaneStackOptions,
 } from "./deployments/self-hosted-node/app"
+/**
+ * The self-hosted binary's one supported way in.
+ *
+ * `startServer` is deliberately NOT re-exported: it composes without checking
+ * the deployment posture, so a caller reaching it would boot a configuration
+ * this package refuses. It stays reachable inside the package for
+ * `startSelfHostedServer` to call after the gate passes.
+ */
+export { startSelfHostedServer, selfHostedPosture } from "./deployments/self-hosted-node/start"
 export { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/self-hosted-execution"
 export { createCentralSessionRuntime } from "./session/runtime"
 export {
