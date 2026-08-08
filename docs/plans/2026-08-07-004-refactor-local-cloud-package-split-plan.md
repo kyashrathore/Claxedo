@@ -921,7 +921,32 @@ The measured blocker count went 6 -> 3 -> 2 -> 1 -> 0. The last one, `embedded w
 
 ### Phase B — Extract the product packages
 
-- [ ] **Unit 5: Extract the authoritative desktop-local server package**
+- [~] **Unit 5: Extract the authoritative desktop-local server package** — *preconditions measured and three of the widest edges cut; the package itself is not created*
+
+**Status (2026-08-08): the unit's real shape was measured, and it is not "move `deployments/local/server.ts`".**
+
+`packages/claxedo-server/src/platform/governance/source-closure.ts` walks the transitive first-party graph from an entry, stopping at package boundaries, and reports the SHORTEST chain to a forbidden module. Measured against `src/deployments/local/main.ts`: **259 first-party modules, 42 packages** — including `convex`, `better-auth`, `drizzle-orm`, `@claxedo/workgraph`, `@claxedo/channels`, `@claxedo/connections`, `@claxedo/wakes`, and `@claxedo/sandbox-manager`, all reachable from an unsigned desktop that never signs in. That number is the problem statement U8 has been describing in prose.
+
+**Almost every heavy hosted dependency enters at depth 2, directly from `deployments/local/server.ts`.** That file is the mixed composition Unit 8 deletes, and it stays alive for self-hosted until Units 7-8. So Unit 5 is not a move of that file: it is a NEW composition that mounts only the twelve `local-server`-owned route families from Unit 1's table, over producers that no longer reach hosted surface. The union of those producers' closures was **177 modules / 36 packages / 43 hosted modules reached**.
+
+**Three edges carried most of the hosted surface, and each was cut at the module that owns the choice:**
+
+1. `platform/db/db.ts` imported the whole-product schema barrel as a VALUE, so opening the local SQLite database reached connections, channels, documents, and sandbox table definitions. Drizzle needs that object only for `db.query.*`, which nothing in the repository uses — every call site passes its table explicitly — so it is now a type-only import.
+2. `workspace/store/index.ts` imported the supervisor lease table to decide whether an in-flight CLOUD workspace is visible yet, so reading local workspace inventory reached cloud sandbox leasing. `configureWorkspaceSupervisor` now installs the reader; a composition with no supervisor has no cloud workspaces and needs none.
+3. `agent-config/index.ts` selected its own runtime workspace authority (Convex when a URL was set), so reading agent configuration reached the cloud control plane. The composition supplies it now.
+
+Result: the local producer union fell to **142 modules / 30 packages / 16 hosted modules reached**, and the embedded Workspace Runtime's executable closure reaches no connections, channels, documents, cloud sandbox store, or Convex authority module. All 3260 `claxedo-server` tests stay green.
+
+**The closure walker distinguishes declared from executable edges.** A type-only import is erased whole: no module loads and no capability becomes reachable, so counting it would report hosted surface in a build that cannot execute a line of it. An INLINE type specifier (`import { type A, B }`) is NOT erased and is kept. `runtimeOnly: true` selects the executable graph.
+
+**Remaining edges before the package can be created**, each with its measured chain:
+
+- `src/workspace/routes/index.ts -> src/connections/routes/connection-routes.ts` and `-> src/sandbox/routes/sandbox-driver-routes.ts`. This is a route-composition barrel that mounts hosted families beside local ones. The local composition mounts its own families, so this resolves by construction rather than by a port.
+- `src/workspace/runtime-dispatch/internals.ts -> src/workspace/supervisor/index.ts -> src/sandbox/stores/*`, and the same edge from `src/agent-config/fanout.ts` and `src/agent-config/routes/extension-routes.ts`. The supervisor legitimately owns cloud provisioning; these three callers need the same port treatment as edges 2 and 3.
+
+`src/deployments/local/local-entry-closure.test.ts` pins the ceilings and the cut edges, so a regression names itself.
+
+**Not done:** `packages/claxedo-local-server` does not exist. Creating it, moving the producers, and retargeting desktop remain the body of this unit.
 
 **Goal:** Create `@claxedo/local-server` and move the Unit 4 local composition, local services, and embedded Workspace Runtime wiring into its independent source and manifest closure.
 
