@@ -8,8 +8,9 @@
  *
  *   - "embedded" (DEFAULT when no external URL is configured): lazily boots the
  *     OpenCode engine through SDK-next. Desktop supplies an on-demand worker
- *     path so an idle engine can exit; other hosts use the socketless in-process
- *     handler. NOTHING listens on :4096.
+ *     path so an idle engine can exit; its random loopback port requires a
+ *     per-boot capability on every request. Other hosts use the socketless
+ *     in-process handler. Nothing listens on the historical fixed :4096 port.
  *   - "external-url": an explicit opt-in. Rewrites the synthetic request origin
  *     (`http://opencode.internal`) onto the configured URL and calls `fetch`,
  *     applying opencodeHeaders — i.e. the historical passthrough behavior.
@@ -22,6 +23,7 @@
 import path from "path"
 import fs from "fs"
 import { pathToFileURL } from "url"
+import { randomBytes } from "node:crypto"
 import { fork, type ChildProcess } from "node:child_process"
 import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
 import {
@@ -121,6 +123,7 @@ function defaultLoader(): Promise<EmbeddedModule> {
 // Injectable import seam so tests can exercise the structured-failure path
 // without shipping a broken artifact. Production loads the real node artifact.
 let loader: () => Promise<EmbeddedModule> = defaultLoader
+let forkWorker: typeof fork = fork
 
 /** TEST-ONLY: replace the engine module loader (structured-failure coverage). */
 export function __setOpenCodeEmbedLoaderForTests(next: (() => Promise<EmbeddedModule>) | undefined) {
@@ -129,9 +132,16 @@ export function __setOpenCodeEmbedLoaderForTests(next: (() => Promise<EmbeddedMo
   loadedHost = undefined
 }
 
+/** TEST-ONLY: replace the process fork seam for worker transport coverage. */
+export function __setOpenCodeWorkerForkForTests(next: typeof fork | undefined) {
+  forkWorker = next ?? fork
+}
+
 let embeddedHostPromise: Promise<EmbeddedHost> | undefined
 let loadedHost: EmbeddedHost | undefined
-let engineWorkerPromise: Promise<{ child: ChildProcess; url: string }> | undefined
+type EngineWorker = { child: ChildProcess; url: string; authorization: string }
+
+let engineWorkerPromise: Promise<EngineWorker> | undefined
 let loggedFailure = false
 
 async function embeddedHost(): Promise<EmbeddedHost> {
@@ -199,23 +209,23 @@ export const opencodeRequest: OpenCodeRequestFn = async (request) => {
 }
 
 async function workerRequest(request: Request) {
-  const retry = request.clone()
   const worker = await engineWorker()
-  try {
-    return await fetch(rewriteToConfiguredUrl(request, worker.url))
-  } catch {
-    worker.child.kill()
-    engineWorkerPromise = undefined
-    return fetch(rewriteToConfiguredUrl(retry, (await engineWorker()).url))
-  }
+  const outgoing = rewriteToConfiguredUrl(request, worker.url)
+  outgoing.headers.set("authorization", worker.authorization)
+  // Never replay a failed request. A transport failure does not prove that the
+  // engine did not already perform the requested action, so retrying here can
+  // duplicate messages, file writes, or commands. The child's exit handler
+  // clears the cached worker; a later caller may start a fresh one.
+  return fetch(outgoing)
 }
 
 async function engineWorker() {
   if (engineWorkerPromise) return engineWorkerPromise
-  const pending = new Promise<{ child: ChildProcess; url: string }>((resolve, reject) => {
+  const token = randomBytes(32).toString("base64url")
+  const pending = new Promise<EngineWorker>((resolve, reject) => {
     const dbDir = path.join(dataDir(), "opencode-engine")
     fs.mkdirSync(dbDir, { recursive: true })
-    const child = fork(workerPath!, [], {
+    const child = forkWorker(workerPath!, [], {
       execPath: process.execPath,
       env: {
         ...process.env,
@@ -223,6 +233,7 @@ async function engineWorker() {
         CLAXEDO_ENGINE_EMBED_PATH: embedPath,
         CLAXEDO_ENGINE_DB_PATH: path.join(dbDir, "opencode.db"),
         CLAXEDO_ENGINE_PARENT_PID: String(process.pid),
+        CLAXEDO_ENGINE_AUTH_TOKEN: token,
       },
       stdio: ["inherit", "inherit", "inherit", "ipc"],
     })
@@ -243,7 +254,7 @@ async function engineWorker() {
       if (settled || !isWorkerReady(message)) return
       settled = true
       clearTimeout(timeout)
-      resolve({ child, url: `http://127.0.0.1:${message.port}` })
+      resolve({ child, url: `http://127.0.0.1:${message.port}`, authorization: `Bearer ${token}` })
     })
     child.once("exit", () => {
       clearTimeout(timeout)
