@@ -1,0 +1,89 @@
+/**
+ * The self-hosted single binary's start path.
+ *
+ * Unit 7 moves the self-hosted product onto its own composition. This is the
+ * first half of that move, and it is the half that can land without breaking
+ * anything: the entry point, its boot gate, and the ownership statement that
+ * `deployments/local` is no longer a shared thing.
+ *
+ * The measurement that made this possible: after Unit 5 the desktop boots
+ * `@claxedo/local-server`, so `startServer` in `deployments/local/server.ts`
+ * has exactly ONE production caller left — the self-hosted entry. Its own
+ * comment still claimed two. That file is now self-hosted's private
+ * implementation rather than a shared composition, and this module is the
+ * public way in.
+ *
+ * What has NOT moved yet: the 1,270-line `createApp` body, which still lives
+ * in `deployments/local/server.ts` and is still reached by ~24 tests that
+ * construct it with a `local` deployment mode and no authority. Those tests are
+ * why the posture gate cannot simply be added there — see `posture.ts`. They
+ * are the remaining migration, and until they move, `createApp` stays exported
+ * for them and unreachable from production.
+ */
+
+import fs from "node:fs"
+import path from "node:path"
+import { deploymentMode } from "@claxedo/server-core/authority/deployment-mode"
+import { embeddedAuthEnabled } from "../local/embedded-auth"
+import { selfHostedCapabilities } from "../local/self-hosted-capabilities"
+import { startServer } from "../local/server"
+import { assertSelfHostedPosture } from "./posture"
+
+export type SelfHostedStartOptions = {
+  port: number
+  /** An explicit URL opts out of the embedded engine. */
+  opencodeUrl?: string
+  env?: NodeJS.ProcessEnv
+}
+
+/**
+ * The static-app half of the posture, as data.
+ *
+ * Absent is valid — an API-only self-host is supported. Configured but missing
+ * means a build step did not run, and serving the API with no UI reads to a
+ * user as a broken app rather than a broken deploy.
+ */
+export function staticAppPosture(staticDir: string | undefined) {
+  if (!staticDir) return {}
+  return {
+    staticAppDir: staticDir,
+    staticAppDirExists: fs.existsSync(path.join(staticDir, "index.html")),
+  }
+}
+
+/**
+ * The posture this process is actually in, read from its environment.
+ *
+ * Separate from the assertion so a test can inspect what was measured without
+ * booting a server, and so the two concerns — observing and judging — do not
+ * end up in one function that is hard to exercise.
+ */
+export function selfHostedPosture(env: NodeJS.ProcessEnv) {
+  return {
+    deploymentMode: deploymentMode(env),
+    embeddedAuth: embeddedAuthEnabled(env),
+    // This composition builds its authority from SQLite unconditionally. Both
+    // fields exist so a future composition that does neither cannot pass by
+    // omission.
+    authority: true,
+    sqliteAuthority: true,
+    // The product IS local execution; `createDefaultLocalControlPlaneServices`
+    // composes it, and `createApp` refuses outright without it.
+    localExecution: true,
+    ...staticAppPosture(env.CLAXEDO_APP_DIST_DIR?.trim()),
+  }
+}
+
+/**
+ * Validate the self-hosted posture, then start.
+ *
+ * The gate runs BEFORE anything is composed. Every failure it reports is a way
+ * to boot something that answers a health check and cannot do its job, and
+ * discovering that after the listener is up means the operator finds out from a
+ * user rather than from a log line.
+ */
+export function startSelfHostedServer(options: SelfHostedStartOptions) {
+  const env = options.env ?? process.env
+  assertSelfHostedPosture(selfHostedPosture(env))
+  return startServer(options.port, options.opencodeUrl, undefined, { capabilities: selfHostedCapabilities })
+}

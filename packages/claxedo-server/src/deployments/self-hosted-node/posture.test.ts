@@ -18,7 +18,7 @@ import { SelfHostedCompositionError, assertSelfHostedPosture, type SelfHostedPos
 
 function posture(overrides: Partial<SelfHostedPosture> = {}): SelfHostedPosture {
   return {
-    deploymentMode: "self-hosted",
+    deploymentMode: "local",
     embeddedAuth: true,
     authority: true,
     sqliteAuthority: true,
@@ -32,9 +32,12 @@ describe("assertSelfHostedPosture", () => {
     expect(() => assertSelfHostedPosture(posture())).not.toThrow()
   })
 
-  test("rejects a hosted deployment mode", () => {
+  test("rejects a hosted trust posture", () => {
     // The cloud binary's configuration in the self-hosted binary. Each has its
     // own gate precisely so this cannot pass.
+    //
+    // `local` is the accepted value, not `self-hosted`: the mode enum is a
+    // TRUST posture, not a product name — see the table in `posture.ts`.
     expect(() => assertSelfHostedPosture(posture({ deploymentMode: "hosted" }))).toThrow(SelfHostedCompositionError)
   })
 
@@ -50,8 +53,11 @@ describe("assertSelfHostedPosture", () => {
     )
   })
 
-  test("rejects a build with no embedded auth", () => {
-    expect(() => assertSelfHostedPosture(posture({ embeddedAuth: false }))).toThrow(/no identity provider/)
+  test("accepts a build with no embedded auth, which is a single-user self-host", () => {
+    // `CLAXEDO_EMBEDDED_AUTH` is the MULTI-USER opt-in. A personal self-host on
+    // a private box runs behind the unsigned-local gate without it, and that
+    // deployment works today — requiring it here would refuse to start it.
+    expect(() => assertSelfHostedPosture(posture({ embeddedAuth: false }))).not.toThrow()
   })
 
   test("rejects a build that cannot open a workspace", () => {
@@ -87,14 +93,14 @@ describe("assertSelfHostedPosture", () => {
       message = String(error)
     }
 
-    for (const fragment of ["deployment mode", "embedded auth", "workspace authority", "local-execution"]) {
+    for (const fragment of ["deployment mode", "workspace authority", "local-execution"]) {
       expect(message, `must report ${fragment}`).toContain(fragment)
     }
   })
 
   test("carries a stable code for the operator-facing error path", () => {
     try {
-      assertSelfHostedPosture(posture({ embeddedAuth: false }))
+      assertSelfHostedPosture(posture({ localExecution: false }))
       expect.unreachable("should have thrown")
     } catch (error) {
       expect((error as SelfHostedCompositionError).code).toBe("self_hosted_composition_invalid")

@@ -7,8 +7,8 @@
  *
  *   | | cloud-hosted | self-hosted |
  *   |---|---|---|
- *   | deployment mode | `hosted` | `self-hosted` |
- *   | auth | signed Clerk issuer + JWKS | embedded auth |
+ *   | trust posture | `hosted` | `local` |
+ *   | auth | signed Clerk issuer + JWKS | unsigned-local, or embedded auth |
  *   | authority | remote workspace authority URL | local SQLite |
  *
  * A single assertion covering both would have to accept "either a Clerk issuer
@@ -35,7 +35,13 @@
 
 export type SelfHostedPosture = {
   deploymentMode: string
-  /** Whether the embedded auth adapter is composed. */
+  /**
+   * Whether the embedded auth adapter is composed.
+   *
+   * Recorded, not required — see the note in `assertSelfHostedPosture`. This is
+   * the multi-user opt-in, and single-user self-hosts legitimately run without
+   * it.
+   */
   embeddedAuth: boolean
   /** Whether a workspace authority is composed at all. */
   authority: boolean
@@ -56,15 +62,26 @@ export class SelfHostedCompositionError extends Error {
 export function assertSelfHostedPosture(posture: SelfHostedPosture) {
   const failures: string[] = []
 
-  if (posture.deploymentMode !== "self-hosted") {
+  // `local`, not `self-hosted`. The mode enum is a TRUST posture, not a
+  // product name — `deployment-mode.ts` documents why the old
+  // `self-host | hosted` enum was replaced: a self-hosted box on a public
+  // domain with signed auth is `trust=hosted`, a shape the product-named enum
+  // could not express. So the self-hosted single binary's trust posture is
+  // `local`, and asserting `self-hosted` here would reject every real deploy.
+  if (posture.deploymentMode !== "local") {
     failures.push(
-      `deployment mode is "${posture.deploymentMode}", not self-hosted`
-      + " (set CLAXEDO_DEPLOYMENT_MODE=self-hosted)",
+      `deployment mode is "${posture.deploymentMode}", but the self-hosted binary runs at trust posture "local"`
+      + " (unset CLAXEDO_DEPLOYMENT_MODE, or set it to local)",
     )
   }
-  if (!posture.embeddedAuth) {
-    failures.push("embedded auth is not composed; a self-hosted binary has no identity provider without it")
-  }
+  // Embedded auth is deliberately NOT required.
+  //
+  // `CLAXEDO_EMBEDDED_AUTH` is an opt-in for MULTI-USER self-hosting. A
+  // personal self-host on a private box runs without it, behind the
+  // unsigned-local gate, and that is a supported deployment — requiring it
+  // here would refuse to start a configuration that works today. Observed
+  // rather than asserted, so the field is available to a caller that has a
+  // reason to care.
   if (!posture.authority) {
     failures.push("no workspace authority is composed")
   } else if (!posture.sqliteAuthority) {
