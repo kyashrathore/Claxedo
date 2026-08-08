@@ -14,6 +14,17 @@ import {
  * Three ways this stops working, and none is caught by exercising a decode:
  * it drifts from the reviewed matrix, it grows a transport, or a decoder gets
  * loose enough to accept the thing it was written to reject. Each has a test.
+ *
+ * A fourth way is NOT tested here and cannot be: a decoder that is internally
+ * consistent and simply wrong about what its route returns. Every shape below
+ * is written by hand, so it agrees with whatever reading of the routes produced
+ * it — which is how `workspace.list`, `workspace.resolve`,
+ * `host.enrollCurrentMachine` and three more shipped mismatched. What binds
+ * these decoders to real route output is
+ * `claxedo-server/src/deployments/hosted-shared/hosted-operation-response-contract.test.ts`,
+ * which drives a real hosted app and feeds the bodies it produces to these
+ * decoders. The shapes here exist to pin decoder BEHAVIOUR — what is rejected,
+ * and with what message — not to state the contract.
  */
 
 const source = readFileSync(path.join(import.meta.dir, "hosted-operations.ts"), "utf8")
@@ -77,7 +88,8 @@ describe("decodeHostedResult", () => {
 
   test("rejects a list where an object is required, and the reverse", () => {
     expect(() => decodeHostedResult("account.get", [])).toThrow(/expected an object/)
-    expect(() => decodeHostedResult("workspace.list", {})).toThrow(/expected an array/)
+    expect(() => decodeHostedResult("workspace.list", [])).toThrow(/expected an object/)
+    expect(() => decodeHostedResult("workspace.list", {})).toThrow(/expected an array "workspaces"/)
   })
 
   test("rejects an empty string in a required field, not just a missing one", () => {
@@ -92,13 +104,48 @@ describe("decodeHostedResult", () => {
       relayUrl: "wss://relay.test",
       token: "x",
     })
-    expect(decodeHostedResult("workspace.list", [{ id: "ws_1" }])).toEqual([{ id: "ws_1" }])
+    expect(decodeHostedResult("workspace.list", { workspaces: [{ id: "ws_1" }] })).toEqual({
+      workspaces: [{ id: "ws_1" }],
+    })
+  })
+
+  test("admits a connection that is still provisioning", () => {
+    // A cold start answers 200 with no relay URL and a retry hint. Requiring
+    // the URL unconditionally would fail every cold start — the moment the user
+    // is watching most closely.
+    expect(decodeHostedResult("workspace.connection.mint", { status: "provisioning", retryAfterMs: 2_000 })).toEqual({
+      status: "provisioning",
+      retryAfterMs: 2_000,
+    })
+    // Still not a rubber stamp: a SETTLED connection with nowhere to connect to
+    // is the case the requirement exists for.
+    expect(() => decodeHostedResult("workspace.connection.mint", { status: "ready" })).toThrow(/relayUrl/)
+  })
+
+  test("reads through the envelope an operation is wrapped in", () => {
+    // `{ enrollment }`, not a bare enrollment. Checking `host_id` on the
+    // envelope finds nothing and reports a server that changed shape, which is
+    // what this decoder did for as long as it existed.
+    expect(() => decodeHostedResult("host.enrollCurrentMachine", { host_id: "host_1" })).toThrow(/enrollment/)
+    expect(
+      decodeHostedResult("host.enrollCurrentMachine", { enrollment: { enrollment_id: "enr_1", host_id: "host_1" } }),
+    ).toEqual({ enrollment: { enrollment_id: "enr_1", host_id: "host_1" } })
   })
 
   test("rejects null, which is an object to typeof", () => {
     // The classic. `typeof null === "object"`, so a decoder written the obvious
     // way accepts it and the caller reads a field off nothing.
     expect(() => decodeHostedResult("account.get", null)).toThrow(/expected an object/)
+  })
+
+  test("accepts null only where a route answers it deliberately", () => {
+    // The hosted control plane's `/api/workspace/resolve` returns `null` as its
+    // "no central runtime snapshot" signal. Nullability is per-operation for
+    // that reason: loosening `object` instead would have made every operation
+    // null-tolerant to fix one that is.
+    expect(decodeHostedResult("workspace.resolve", null)).toBe(null as never)
+    expect(decodeHostedResult("workspace.resolve", { workspaceId: "ws_1" })).toEqual({ workspaceId: "ws_1" })
+    expect(() => decodeHostedResult("workspace.resolve", [])).toThrow(/expected an object/)
   })
 })
 

@@ -67,9 +67,13 @@ describe("HOSTED_OPERATIONS", () => {
 
 describe("resolveHostedOperation", () => {
   test("fills path parameters from named input", () => {
-    expect(resolveHostedOperation("workspace.lifecycle", { id: "ws_1", operation: "start" })).toEqual({
+    // `replace`, not `start`: the server's lifecycle operations are stop,
+    // replace, cleanup and destroy, and every one but `stop` refuses without
+    // the approval the body carries.
+    expect(resolveHostedOperation("workspace.lifecycle", { id: "ws_1", operation: "replace", approved: true })).toEqual({
       method: "POST",
-      path: "/api/workspace/ws_1/lifecycle/start",
+      path: "/api/workspace/ws_1/lifecycle/replace",
+      body: { approved: true },
     })
   })
 

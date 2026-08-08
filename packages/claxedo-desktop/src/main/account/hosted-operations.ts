@@ -32,10 +32,32 @@ export const HOSTED_OPERATIONS = {
   "account.cliExchange": { method: "POST", path: "/api/auth/cli/exchange", body: ["code"] },
   "workspace.list": { method: "GET", path: "/api/workspace" },
   "workspace.resolve": { method: "GET", path: "/api/workspace/resolve" },
-  "workspace.create": { method: "POST", path: "/api/workspace/create", body: ["displayName", "projectId", "repoUrl"] },
-  "workspace.lifecycle": { method: "POST", path: "/api/workspace/:id/lifecycle/:operation" },
+  // `projectName`/`workspaceName`, not `displayName`. The create body is a
+  // strict schema, so an undeclared field is a 400 for the whole request rather
+  // than a field the server ignores — `displayName` made this operation
+  // unusable from the day it was written. The connected-repository form
+  // (`connectionId` + a `repo` object, both or neither) is deliberately absent:
+  // parameters here are scalars, so that create shape is not expressible as a
+  // named operation and must not be half-declared.
+  "workspace.create": {
+    method: "POST",
+    path: "/api/workspace/create",
+    body: ["projectId", "projectName", "workspaceName", "repoUrl"],
+  },
+  // `approved` is not decoration. Every lifecycle operation except `stop`
+  // refuses with 409 unless the caller states the approval explicitly, and an
+  // operation that declares no body can never state it.
+  "workspace.lifecycle": {
+    method: "POST",
+    path: "/api/workspace/:id/lifecycle/:operation",
+    body: ["approved", "checkpointId"],
+  },
   "workspace.checkpoints.list": { method: "GET", path: "/api/workspace/:id/checkpoints" },
-  "workspace.checkpoints.restore": { method: "POST", path: "/api/workspace/:id/checkpoints/:checkpointId/restore" },
+  "workspace.checkpoints.restore": {
+    method: "POST",
+    path: "/api/workspace/:id/checkpoints/:checkpointId/restore",
+    body: ["approved"],
+  },
   "workspace.connection.mint": { method: "GET", path: "/api/workspace/:id/connection" },
   "workspace.connection.refresh": { method: "POST", path: "/api/workspace/:id/connection/refresh" },
   "host.enrollCurrentMachine": {

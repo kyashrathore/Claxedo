@@ -47,11 +47,6 @@ function object(raw: unknown): DecodeResult<Record<string, unknown>> {
   return { ok: true, value: raw as Record<string, unknown> }
 }
 
-function array(raw: unknown): DecodeResult<unknown[]> {
-  if (!Array.isArray(raw)) return { ok: false, reason: "expected an array" }
-  return { ok: true, value: raw }
-}
-
 /** Requires named fields to be present and non-empty strings. */
 function withStrings(...fields: string[]) {
   return (raw: unknown): DecodeResult<Record<string, unknown>> => {
@@ -66,6 +61,59 @@ function withStrings(...fields: string[]) {
   }
 }
 
+/** Requires a named field holding an array. The envelope is returned as sent. */
+function withArray(field: string) {
+  return (raw: unknown): DecodeResult<Record<string, unknown>> => {
+    const shape = object(raw)
+    if (!shape.ok) return shape
+    if (!Array.isArray(shape.value[field])) return { ok: false, reason: `expected an array "${field}"` }
+    return shape
+  }
+}
+
+/** Requires a named field holding an object, checked by `inner`. */
+function withRecord(field: string, inner: (raw: unknown) => DecodeResult<unknown>) {
+  return (raw: unknown): DecodeResult<Record<string, unknown>> => {
+    const shape = object(raw)
+    if (!shape.ok) return shape
+    const nested = inner(shape.value[field])
+    if (!nested.ok) return { ok: false, reason: `expected "${field}": ${nested.reason}` }
+    return shape
+  }
+}
+
+/**
+ * `null`, or whatever `decode` accepts.
+ *
+ * Not a loosening of `object`. A route that answers `null` is answering
+ * something — `GET /api/workspace/resolve` on the hosted control plane returns
+ * it deliberately, as the documented "no central runtime snapshot" signal — and
+ * a decoder that rejects it turns a correct answer into a crash. Bending
+ * `object` to let nulls through instead would have made every other operation
+ * silently null-tolerant, which is the opposite of what these decoders are for.
+ */
+function nullable<T>(decode: (raw: unknown) => DecodeResult<T>) {
+  return (raw: unknown): DecodeResult<T | null> => (raw === null ? { ok: true, value: null } : decode(raw))
+}
+
+/**
+ * A workspace connection: a mint, or the poll that precedes one.
+ *
+ * `relayUrl` is required, EXCEPT while the sandbox is still coming up. A cold
+ * start answers 200 with `status: "provisioning"` and a `retryAfterMs`, and the
+ * client is expected to poll — so a decoder that demanded `relayUrl`
+ * unconditionally would fail every cold start, which is precisely when the user
+ * is watching. The requirement still bites for a settled connection, which is
+ * the case it exists to protect: a ready connection with no relay URL would be
+ * a client with nowhere to connect.
+ */
+function connection(raw: unknown): DecodeResult<Record<string, unknown>> {
+  const shape = object(raw)
+  if (!shape.ok) return shape
+  if (shape.value["status"] === "provisioning") return shape
+  return withStrings("relayUrl")(raw)
+}
+
 export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec> = {
   "account.get": { safe: true, decode: object },
   "account.mode": { safe: true, decode: object },
@@ -73,21 +121,36 @@ export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec>
   // Mints a CLI session token. A replayed exchange must not mint twice, and
   // the idempotency key for that lives in main.
   "account.cliExchange": { safe: false, decode: object },
-  "workspace.list": { safe: true, decode: array },
-  "workspace.resolve": { safe: true, decode: object },
+  // An ENVELOPE, not a bare array: `GET /api/workspace` answers
+  // `{ workspaces: [...] }`, the same shape the local server's list handler
+  // uses. Validated and passed through rather than unwrapped, because every
+  // other row here validates without transforming and one decoder that quietly
+  // reshapes its answer is a decoder nobody can read the registry to predict.
+  "workspace.list": { safe: true, decode: withArray("workspaces") },
+  // Nullable: the hosted control plane answers `null` on purpose.
+  "workspace.resolve": { safe: true, decode: nullable(object) },
   // Provisions a cloud VM. Without a key, an uncertain response creates a
-  // second one.
-  "workspace.create": { safe: false, decode: withStrings("id") },
+  // second one. Answers `{ workspaceId, directory }` — `directory` is what the
+  // caller opens, so an answer without one is not a usable workspace.
+  "workspace.create": { safe: false, decode: withStrings("workspaceId", "directory") },
   "workspace.lifecycle": { safe: false, decode: object },
-  "workspace.checkpoints.list": { safe: true, decode: array },
+  // The lifecycle SNAPSHOT — lease, checkpoint, worktrees, runtime — not a
+  // list. The route is `GET /:id/checkpoints` and the name has misled twice.
+  "workspace.checkpoints.list": { safe: true, decode: object },
   // Destructive to working state.
   "workspace.checkpoints.restore": { safe: false, decode: object },
   // Returns a relay URL and a scoped token — and deliberately no laptop
   // address; the decoder requires the field that must be there rather than
   // asserting the absence of one that must not.
-  "workspace.connection.mint": { safe: true, decode: withStrings("relayUrl") },
-  "workspace.connection.refresh": { safe: true, decode: withStrings("relayUrl") },
-  "host.enrollCurrentMachine": { safe: false, decode: withStrings("host_id") },
+  "workspace.connection.mint": { safe: true, decode: connection },
+  "workspace.connection.refresh": { safe: true, decode: connection },
+  // Wrapped: the route returns `{ enrollment }`. Reading `host_id` off the
+  // envelope finds nothing, which is exactly what this decoder existed to
+  // prevent and exactly what it did.
+  "host.enrollCurrentMachine": {
+    safe: false,
+    decode: withRecord("enrollment", withStrings("enrollment_id", "host_id")),
+  },
   // Unsafe: each call mints a nonce, so a retry burns one. The nonce itself is
   // public and worthless without the machine's private key.
   "host.enrollmentNonce": { safe: false, decode: withStrings("request_id", "nonce") },
