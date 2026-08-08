@@ -217,6 +217,20 @@ const api: ElectronAPI = {
    * the credential live in main: this bridge cannot be used to spend it on a
    * route nobody wrote down.
    */
+  /**
+   * Machine remote-access status, receive-only.
+   *
+   * A listener and nothing else. There is deliberately no `start`, `pause` or
+   * `resume` here: those are account-authorized operations and travel on the
+   * account's named channels, where the credential is. A bridge that let the
+   * renderer drive a signing process would be a second, weaker path to the
+   * same authority.
+   */
+  onHostConnectorStatus: (listener: (status: unknown) => void) => {
+    const handler = (_event: unknown, status: unknown) => listener(status)
+    ipcRenderer.on("claxedo.hostConnector.status", handler)
+    return () => ipcRenderer.removeListener("claxedo.hostConnector.status", handler)
+  },
   account: {
     state: () => ipcRenderer.invoke("claxedo.account.state"),
     signIn: () => ipcRenderer.invoke("claxedo.account.signIn"),

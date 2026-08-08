@@ -205,6 +205,13 @@ export type ElectronAPI = {
    * make main a confused deputy. The names come from
    * `docs/tech-docs/desktop-hosted-operation-matrix.md`.
    */
+  /**
+   * Machine remote-access status, receive-only. Returns an unsubscribe.
+   *
+   * No start/pause/resume by design — those are account-authorized and travel
+   * on the account channels.
+   */
+  onHostConnectorStatus: (listener: (status: unknown) => void) => () => void
   account: {
     state: () => Promise<unknown>
     signIn: () => Promise<unknown>

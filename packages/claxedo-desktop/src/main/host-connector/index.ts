@@ -185,9 +185,25 @@ export function setupHostConnector(input: {
   heartbeatIntervalMs?: number
   setInterval?: (fn: () => void, ms: number) => { cancel: () => void }
   onError?: (stage: string, error: unknown) => void
+  /** Called on every transition. See `settle`. */
+  onStatusChange?: (status: HostConnectorStatus) => void
 }): HostConnectorSetup {
   let status: HostConnectorStatus = { status: "not-started" }
   let connector: ReturnType<typeof createHostConnector> | undefined
+
+  /**
+   * Announce a transition.
+   *
+   * The Remote Access panel shows state the user did not cause — an expiry, a
+   * rejected beat, a revocation — so it cannot be a pull. Every assignment to
+   * `status` goes through here rather than to the variable, which is what stops
+   * a future branch from changing state silently.
+   */
+  const settle = (next: HostConnectorStatus) => {
+    status = next
+    input.onStatusChange?.(next)
+    return next
+  }
 
   const live = () => connector !== undefined && connector.state().status !== "stopped"
 
@@ -209,8 +225,7 @@ export function setupHostConnector(input: {
       })
       if (!identity.ok) {
         input.onError?.("machine-identity", identity.detail)
-        status = { status: "unavailable", reason: identity.reason, detail: identity.detail }
-        return status
+        return settle({ status: "unavailable", reason: identity.reason, detail: identity.detail })
       }
 
       connector = createHostConnector({
@@ -223,20 +238,19 @@ export function setupHostConnector(input: {
         ...(input.onError ? { onError: (stage, error) => input.onError?.(stage, error) } : {}),
       })
       try {
-        status = await connector.start()
+        settle(await connector.start())
       } catch (error) {
-        // `createHostConnector().start()` performs the nonce request OUTSIDE
-        // its own try, so a control-plane failure there escapes as a rejection
-        // rather than a stopped state. In Electron main that would be an
-        // unhandled rejection during startup, so it is caught here and turned
-        // into the same visible outcome as any other enrollment failure.
+        // Kept after the connector's own `start()` was fixed to catch the nonce
+        // request, not before it. That fix removed the known escape; this
+        // catches an unknown one, and in Electron main the cost of missing it
+        // is an unhandled rejection during startup.
         //
         // The connector is DISCARDED rather than kept: its internal state is
         // still `idle`, and a retained one would make `start()` believe a live
         // connector already exists and never retry.
         input.onError?.("enroll", error)
         connector = undefined
-        status = { status: "stopped", reason: "error", detail: String(error) }
+        settle({ status: "stopped", reason: "error", detail: String(error) })
       }
       return status
     },
