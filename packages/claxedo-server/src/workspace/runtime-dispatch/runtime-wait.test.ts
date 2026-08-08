@@ -83,6 +83,7 @@ vi.mock("../../opencode/auth", () => ({
 
 const { createWorkspaceRuntimeProxy, workspaceRuntimeProxy } = await import("./middleware")
 const { embeddedConfigModeForPath } = await import("./internals")
+const { configureWorkspaceSupervisorPort } = await import("../supervisor-port")
 
 const {
   markSupervisorSandboxUse,
@@ -126,6 +127,16 @@ describe("workspaceRuntimeProxy startup wait", () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.clearAllMocks()
+    // Dispatch reaches the supervisor through the composed port, which is what
+    // keeps the cloud provisioning graph out of the dispatch closure.
+    configureWorkspaceSupervisorPort({
+      hold: mocks.holdSupervisorSandbox,
+      release: mocks.releaseSupervisorSandbox,
+      markUse: mocks.markSupervisorSandboxUse,
+      touch: mocks.touchSupervisorSandbox,
+      broadcastRuntimeConfig: mocks.broadcastRuntimeConfig,
+      syncAgentExtensions: mocks.syncWorkspaceRuntimeAgentExtensions,
+    })
     resolveWorkspace.mockResolvedValue({
       id: "ws_1",
       kind: "cloud",
@@ -136,6 +147,7 @@ describe("workspaceRuntimeProxy startup wait", () => {
   })
 
   afterEach(() => {
+    configureWorkspaceSupervisorPort(undefined)
     vi.useRealTimers()
     globalThis.fetch = originalFetch
     resetWorkspaceStoreMock()

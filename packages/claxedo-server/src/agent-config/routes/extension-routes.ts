@@ -21,7 +21,7 @@ import {
   resolveGitHubWorkspaceAgentExtension,
   workspaceAgentExtensionRecords,
 } from "../../hosts/agent-extensions/workspace"
-import { syncWorkspaceRuntimeAgentExtensions } from "../../workspace/supervisor"
+import { workspaceSupervisor } from "../../workspace/supervisor-port"
 import { errorBody } from "../../platform/http/http"
 import { localAgentConfigAllowed } from "../local-auth"
 import {
@@ -518,7 +518,7 @@ async function mirroredWorkspaceExtensionInstallResponse(
       record,
       ...(legacy ? { replaces: legacy.desired.id } : {}),
     })
-    await syncWorkspaceRuntimeAgentExtensions(workspaceId, await readMirroredWorkspaceAgentExtensions({ workspaceId }))
+    await workspaceSupervisor().syncAgentExtensions(workspaceId, await readMirroredWorkspaceAgentExtensions({ workspaceId }))
     return c.json({
       id: result.id,
       package: result.package,

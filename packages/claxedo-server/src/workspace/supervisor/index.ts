@@ -2,6 +2,7 @@ import type { AgentExtensionPolicyOverride } from "../../hosts/agent-extensions/
 import type { WorkspaceAgentExtensionRecord } from "../../hosts/agent-extensions/workspace"
 import { Log } from "../../platform/runtime/lib/log"
 import { configureWorkspaceStore, updateWorkspace, getWorkspace, type Workspace } from "../store"
+import { configureWorkspaceSupervisorPort } from "../supervisor-port"
 import { createClaxedoRuntimeConfig } from "../../hosts/workspace-runtime/runtime-config"
 import { IDLE_MS, now } from "./clock"
 import {
@@ -64,6 +65,16 @@ export function configureWorkspaceSupervisor(input: WorkspaceSupervisorOptions) 
   // module that reads local workspace inventory. A composition without a
   // supervisor has no cloud workspaces, so it needs no reader.
   configureWorkspaceStore({ sandboxLease: (workspaceId) => getSupervisorSandboxLease(workspaceId) })
+  // Local request paths speak to the supervisor through a six-method port so
+  // they do not import the cloud provisioning graph to say "still in use".
+  configureWorkspaceSupervisorPort({
+    hold: holdSupervisorSandbox,
+    release: releaseSupervisorSandbox,
+    markUse: markSupervisorSandboxUse,
+    touch: touchSupervisorSandbox,
+    broadcastRuntimeConfig,
+    syncAgentExtensions: syncWorkspaceRuntimeAgentExtensions,
+  })
 }
 
 export async function ensureSupervisorSandbox(workspaceId: string) {

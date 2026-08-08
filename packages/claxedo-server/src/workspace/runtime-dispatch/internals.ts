@@ -1,5 +1,5 @@
 import type { Context, Next } from "hono"
-import { holdSupervisorSandbox, markSupervisorSandboxUse, releaseSupervisorSandbox, touchSupervisorSandbox } from "../supervisor"
+import { workspaceSupervisor } from "../supervisor-port"
 import type { SandboxManager, SandboxEnsureResult } from "@claxedo/sandbox-manager"
 import { resolveWorkspace } from "../store"
 import { opencodeHeaders } from "../../opencode/auth"
@@ -212,9 +212,9 @@ export async function proxy(c: Context, hit: Hit, options?: {
   })
 
   const res = await fetch(req)
-  markSupervisorSandboxUse(hit.workspaceId)
+  workspaceSupervisor().markUse(hit.workspaceId)
   if (options?.sandboxManager?.touch) void options.sandboxManager.touch(hit.workspaceId).catch(() => undefined)
-  if (!options?.sandboxManager) touchSupervisorSandbox(hit.workspaceId)
+  if (!options?.sandboxManager) workspaceSupervisor().touch(hit.workspaceId)
   if (!res.body || !streaming(url.pathname, res.headers)) {
     return new Response(res.body, {
       status: res.status,
@@ -223,13 +223,13 @@ export async function proxy(c: Context, hit: Hit, options?: {
     })
   }
 
-  holdSupervisorSandbox(hit.workspaceId)
+  workspaceSupervisor().hold(hit.workspaceId)
   const reader = res.body.getReader()
   let released = false
   const release = () => {
     if (released) return
     released = true
-    releaseSupervisorSandbox(hit.workspaceId)
+    workspaceSupervisor().release(hit.workspaceId)
   }
   const body = new ReadableStream<Uint8Array>({
     async pull(ctrl) {

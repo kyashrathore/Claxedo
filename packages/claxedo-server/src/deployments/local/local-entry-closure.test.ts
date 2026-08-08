@@ -14,8 +14,8 @@ const LOCAL_ENTRY = path.join(ROOT, "src/deployments/local/main.ts")
  * hosted surface to the unsigned desktop and must be justified; a change that
  * lowers them is progress and should lower the ceiling with it.
  */
-const CURRENT_MODULE_CEILING = 259
-const CURRENT_PACKAGE_CEILING = 42
+const CURRENT_MODULE_CEILING = 254
+const CURRENT_PACKAGE_CEILING = 41
 
 function localClosure(options: { runtimeOnly?: boolean } = {}) {
   const closure = sourceClosure({ entry: LOCAL_ENTRY, root: ROOT, ...options })
@@ -27,7 +27,10 @@ function localClosure(options: { runtimeOnly?: boolean } = {}) {
 
 describe("desktop-local entry closure", () => {
   it("stays within its measured ceiling", () => {
-    const closure = localClosure()
+    // Ratcheted on the EXECUTABLE closure. The declared closure counts type-only
+    // edges, which cost a build nothing, so ratcheting it would punish adding a
+    // type import and reward nothing for cutting one.
+    const closure = localClosure({ runtimeOnly: true })
     expect(closure.modules.length).toBeLessThanOrEqual(CURRENT_MODULE_CEILING)
     expect(closure.packages.length).toBeLessThanOrEqual(CURRENT_PACKAGE_CEILING)
   })

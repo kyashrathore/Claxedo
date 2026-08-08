@@ -9,10 +9,6 @@ const mocks = {
   },
 }
 
-vi.mock("../workspace/supervisor", () => ({
-  broadcastRuntimeConfig: mocks.broadcastRuntimeConfig,
-}))
-
 vi.mock("../deployments/local/embedded-workspace-runtime", () => ({
   syncEmbeddedWorkspaceRuntimes: mocks.syncEmbeddedWorkspaceRuntimes,
 }))
@@ -28,9 +24,20 @@ vi.mock("../platform/runtime/lib/log", () => ({
 }))
 
 const { fanOutConfig } = await import("./fanout")
+const { configureWorkspaceSupervisorPort } = await import("../workspace/supervisor-port")
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // Fanout reaches the sandbox supervisor through the composed port rather
+  // than importing the cloud provisioning graph.
+  configureWorkspaceSupervisorPort({
+    hold() {},
+    release() {},
+    markUse() {},
+    touch() {},
+    broadcastRuntimeConfig: mocks.broadcastRuntimeConfig,
+    async syncAgentExtensions() {},
+  })
   mocks.broadcastRuntimeConfig.mockResolvedValue(undefined)
   mocks.syncEmbeddedWorkspaceRuntimes.mockResolvedValue(undefined)
   mocks.syncOpencodeMcpConfig.mockResolvedValue(undefined)
