@@ -1013,7 +1013,13 @@ The rewiring found two more misplacements. `platform/governance/route-ownership.
 
 **The one piece of this unit still open, and its exact shape.** The desktop server child, `predev`, `prebuild`, and the boot smoke still start `claxedo-server`'s `deployments/local/server.ts`. That file cannot simply be retargeted: its `createApp` says so itself — it throws `self_host_app_required` for a non-local-execution service — and it mounts about sixteen hosted-flavoured surfaces (Documents, Connections, Channels, WorkGraph) alongside the local ones. It IS the mixed composition this plan exists to split.
 
-Closing it means writing a local-only `createLocalApp` / `startLocalServer` in `@claxedo/local-server` that mounts exactly the twelve `local-server`-owned route families from Unit 1's table and nothing else, then pointing the four desktop inputs at it. Unit 1's `local-product-contract.test.ts` is already the acceptance check for that composition, and Unit 8 then deletes the mixed path. Everything that composition needs now lives in `@claxedo/local-server` or `@claxedo/server-core`; nothing further blocks it.
+Closing it means writing a local-only `createLocalApp` / `startLocalServer` in `@claxedo/local-server` that mounts exactly the twelve `local-server`-owned route families and nothing else, then pointing the four desktop inputs at it. Unit 1's `local-product-contract.test.ts` is the acceptance check — it asserts the WHOLE 142-path local inventory, because the failure mode that matters is omission and a spot check cannot detect it.
+
+**The factoring, and the hazard in it.** Do not duplicate: `createApp` should CALL `createLocalApp` and add the hosted surface on top, so there is one local composition serving both products. The obstacle is ordering. Inside `createApp` the local and hosted mounts are interleaved — jwks, remote-access, documents, workspace, control-plane, integrations, and project-remote all sit BETWEEN local ones — and Hono matches middleware and handlers in registration order. Two registrations in particular are order-sensitive rather than prefix-disjoint: `app.use(workspaceRuntimeProxy)` and the SPA catch-all `app.get("*")`, which must stay last.
+
+So the extraction has to preserve relative order across the seam, not merely re-register the same set. `local-product-contract.test.ts` will NOT catch an ordering regression in the hosted half — it only asserts the local allowlist — so the check for that half is the full `claxedo-server` suite plus `hosted-product-contract.test.ts`. Land it as its own slice with both suites green, not as a ride-along.
+
+Everything the composition needs already lives in `@claxedo/local-server` or `@claxedo/server-core`; nothing further blocks it.
 
 The 44/62 split is pinned by `local-entry-closure.test.ts`, so the move set cannot drift.
 
