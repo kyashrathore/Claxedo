@@ -923,7 +923,7 @@ The measured blocker count went 6 -> 3 -> 2 -> 1 -> 0. The last one, `embedded w
 
 ### Phase B — Extract the product packages
 
-- [~] **Unit 5: Extract the authoritative desktop-local server package** — *`@claxedo/local-server` and `@claxedo/server-core` exist and are green; the desktop server child, predev/prebuild, and the self-hosted composition are not yet rewired*
+- [x] **Unit 5: Extract the authoritative desktop-local server package** — *landed; the desktop boots `@claxedo/local-server` and its bundle halved*
 
 **Status (2026-08-08): the unit's real shape was measured, and it is not "move `deployments/local/server.ts`".**
 
