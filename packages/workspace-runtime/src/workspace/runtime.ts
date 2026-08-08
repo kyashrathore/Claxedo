@@ -99,6 +99,14 @@ export type WorkspaceRuntimeStore =
       update: SessionConfigUpdate,
       input?: { directory?: string },
     ): SessionConfig | null | undefined
+    /**
+     * Whether this directory's inventory has already been imported from the
+     * harnesses. A store that does not record it reports nothing, and generic
+     * listing then falls back to discovering on every list — correct, just not
+     * free. The SQLite store records it durably.
+     */
+    sessionInventoryImported?: (directory: string) => boolean
+    markSessionInventoryImported?: (directory: string, at?: number) => void
     recoverBusySessions?: () => unknown
     flush?: () => void
     close?: () => void
@@ -1212,11 +1220,25 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       }
       return await listSessionsForAdapter(await ensureSessionAdapter(target), target, directory)
     }
-    const rows = await Promise.all((await sessionListAdapters()).map((item) => listSessionsForAdapter(item.adapter, item.runner, directory)))
-    return mergeSessionRows([
-      ...(store().listSessions(directory) as AgentSessionRow[]),
-      ...rows.flat(),
-    ])
+    // Generic listing is store-only. It is the read the empty shell performs on
+    // every launch, so it must not select, load, or start a harness adapter.
+    //
+    // The one exception is the first generic list for a directory. A profile
+    // that predates the store, or a fresh profile sitting on an existing
+    // harness install, has inventory that only the harnesses know about. That
+    // import runs once per directory and is recorded durably, so every later
+    // launch — and every later list — costs zero harness processes. Sessions
+    // created outside Claxedo after that point arrive through the explicit
+    // `?harness=` refresh above.
+    if (!store().sessionInventoryImported?.(directory)) {
+      const rows = await Promise.all((await sessionListAdapters()).map((item) => listSessionsForAdapter(item.adapter, item.runner, directory)))
+      store().markSessionInventoryImported?.(directory)
+      return mergeSessionRows([
+        ...(store().listSessions(directory) as AgentSessionRow[]),
+        ...rows.flat(),
+      ])
+    }
+    return mergeSessionRows(store().listSessions(directory) as AgentSessionRow[])
   }
 
   async function sessionListAdapters() {
@@ -1759,19 +1781,38 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       })
 
       app.get("/global/event", async (c) => {
-        const adapter = runner.id === "opencode" && hostOptions.opencodeCompat === true ? ensure() : undefined
-        if (adapter && hasAdapterCapability(adapter, "http-proxy")) {
+        // The shell opens this stream on every launch. Proxying it to OpenCode
+        // used to START OpenCode, so an idle desktop paid for a harness it was
+        // never asked to run. The compat proxy now attaches only to a transport
+        // that is ALREADY live, and holds an activity lease for the stream's
+        // life so the idle reaper cannot cut it mid-delivery. When nothing is
+        // running the runtime's own hub answers — it is the authoritative
+        // producer of canonical events, and the adapter republishes upstream
+        // events into it once real work starts.
+        const proxy = runner.id === "opencode" && hostOptions.opencodeCompat === true ? ensure() : undefined
+        const adapter = proxy && hasAdapterCapability(proxy, "http-proxy")
+          ? proxy as AgentHarnessAdapter & HttpProxyAdapter
+          : undefined
+        if (adapter && (adapter.transportLive?.() ?? true)) {
+          let lease: { release(): void } | undefined
           try {
-            const request = await (adapter as AgentHarnessAdapter & HttpProxyAdapter).getRequestFn()
+            const acquired = await adapter.acquireRequestFn?.()
+            lease = acquired?.lease
+            const request = acquired?.request ?? await adapter.getRequestFn()
             const headers = new Headers(hostOptions.opencodeHeaders)
             headers.set("Accept", "text/event-stream")
             const res = await request(new Request(`${OPENCODE_INTERNAL_BASE}/global/event`, {
               headers,
               signal: c.req.raw.signal,
             }))
-            if (!res.ok || !res.body) return closedSse()
+            if (!res.ok || !res.body) {
+              lease?.release()
+              return closedSse()
+            }
+            c.req.raw.signal.addEventListener("abort", () => lease?.release(), { once: true })
             return new Response(res.body, { status: res.status, headers: res.headers })
           } catch {
+            lease?.release()
             return closedSse()
           }
         }

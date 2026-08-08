@@ -1663,6 +1663,26 @@ describe("RuntimeStore", () => {
   })
 })
 
+describe("session inventory import marker", () => {
+  it("records the import per directory and survives reopen", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+
+    assert(!store.sessionInventoryImported("/work/a"))
+    store.markSessionInventoryImported("/work/a", 100)
+    assert(store.sessionInventoryImported("/work/a"))
+    // A sibling directory has its own inventory and its own import.
+    assert(!store.sessionInventoryImported("/work/b"))
+
+    // Marking twice is idempotent and keeps the first timestamp, so a repeated
+    // import cannot look like a fresh one.
+    store.markSessionInventoryImported("/work/a", 200)
+    const reopened = new RuntimeStore(root)
+    assert(reopened.sessionInventoryImported("/work/a"))
+    assert(!reopened.sessionInventoryImported("/work/b"))
+  })
+})
+
 describe("provisional user parts", () => {
   /**
    * Three layers each record the user's prompt, each minting its own id:

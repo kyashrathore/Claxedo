@@ -43,7 +43,8 @@ import { toOpencodeConfig, type ResolvedMcpServer } from "../../mcp-resolver"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
 import { createLegacyOpenCodeRuntimePublisher, drainEventStream, openEventStream } from "./events"
 import { opencodeAuthContent } from "./env"
-import { OpenCodeServerProcess } from "./process"
+import { OpenCodeServerProcess, type OpenCodeServerConnection } from "./process"
+import type { ActivityLease } from "../shared/process-lifecycle"
 import { randomUUID } from "crypto"
 import {
   observeAgentProcess,
@@ -232,7 +233,10 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
    */
   private async requestFn(): Promise<OpenCodeRequestFn> {
     if (this.injectedRequest) return this.injectedRequest
-    const { url, authorization } = await this.server.ensureConnection()
+    return this.forwardTo(await this.server.ensureConnection())
+  }
+
+  private forwardTo({ url, authorization }: OpenCodeServerConnection): OpenCodeRequestFn {
     return (req) => {
       const src = new URL(req.url)
       const target = new URL(src.pathname + src.search, url)
@@ -264,6 +268,26 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
   /** Public accessor for the kit's compat proxy — resolves the active transport. */
   async getRequestFn(): Promise<OpenCodeRequestFn> {
     return this.requestFn()
+  }
+
+  /**
+   * Whether a proxy can attach without paying a server start. Injected and
+   * external-URL transports are always live because nothing is spawned for
+   * them; a spawn-mode adapter is live only once its child is up.
+   */
+  transportLive(): boolean {
+    if (this.injectedRequest) return true
+    return this.server.mode === "external" || this.server.hasProcess
+  }
+
+  /**
+   * Transport for a stream that outlives its opening request, plus the lease
+   * that keeps the server alive for the stream's whole life.
+   */
+  async acquireRequestFn(): Promise<{ request: OpenCodeRequestFn; lease: ActivityLease }> {
+    if (this.injectedRequest) return { request: this.injectedRequest, lease: { release() {} } }
+    const { connection, lease } = await this.server.acquire()
+    return { request: this.forwardTo(connection), lease }
   }
 
   /**

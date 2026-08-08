@@ -720,6 +720,14 @@ describe("agent lifecycle integration", () => {
 
       await setAcpRunner("claude-acp")
 
+      // A plain list is store-only once the directory has been imported, so a
+      // session that appeared upstream afterwards arrives through the explicit
+      // selected-harness refresh. Name the harness that owns it...
+      const refreshRes = await fetch(`${base()}/session?${q(ws)}&harness=opencode`)
+      expect(refreshRes.status).toBe(200)
+      expect((await refreshRes.json() as Array<{ id: string }>).some((s) => s.id === "ses_discovered")).toBe(true)
+
+      // ...and it is then part of this directory's durable inventory.
       const listRes = await fetch(`${base()}/session?${q(ws)}`)
       expect(listRes.status).toBe(200)
       const sessions = await listRes.json() as Array<{ id: string }>

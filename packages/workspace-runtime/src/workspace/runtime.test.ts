@@ -3028,3 +3028,150 @@ describe("scoped Session tool compatibility", () => {
     host.dispose()
   })
 })
+
+// ── Unit 4: runtime-owned session inventory ─────────────────────────────────
+// Generic session listing is the read the empty shell performs on every launch.
+// It must answer from the durable store, with no adapter selection and no
+// harness process — except for the single per-directory import that brings a
+// pre-store (or externally created) inventory in once.
+describe("runtime-owned session inventory (Unit 4)", () => {
+  function countingAdapter(sessions: unknown[], onList: () => void): AgentHarnessAdapter {
+    return {
+      listSessions: async (_directory: string) => {
+        onList()
+        return sessions
+      },
+      dispose: () => {},
+    } as unknown as AgentHarnessAdapter
+  }
+
+  async function listIds(app: Hono, dir: string, query = "") {
+    const response = await app.request(`http://localhost/session?directory=${encodeURIComponent(dir)}${query}`)
+    expect(response.status).toBe(200)
+    return (await response.json() as Array<{ id: string }>).map((row) => row.id)
+  }
+
+  test("imports a directory once, then answers from the store with zero adapter listing", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-inventory-once-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+
+    let listCalls = 0
+    const upstream = [{ id: "ses_before_store", title: "Made before the store existed", time: { created: 1, updated: 2 } }]
+    const registry: WorkspaceHarnessRegistry = [{
+      match: () => true,
+      create: () => countingAdapter(upstream, () => { listCalls++ }),
+    }]
+
+    const app = new Hono()
+    const host = mountTestHost(app, { harness: { id: "pi", access: "native" }, harnesses: registry })
+
+    // First generic list: the historical session is imported.
+    expect(await listIds(app, dir)).toContain("ses_before_store")
+    expect(listCalls).toBeGreaterThan(0)
+
+    // Every later generic list is store-only — the session is still there and
+    // no adapter was asked for it.
+    const afterImport = listCalls
+    expect(await listIds(app, dir)).toContain("ses_before_store")
+    expect(await listIds(app, dir)).toContain("ses_before_store")
+    expect(listCalls).toBe(afterImport)
+
+    // A session that appears upstream after the import is NOT silently picked
+    // up by a generic list...
+    upstream.push({ id: "ses_added_later", title: "Created outside Claxedo", time: { created: 3, updated: 4 } })
+    expect(await listIds(app, dir)).not.toContain("ses_added_later")
+    expect(listCalls).toBe(afterImport)
+
+    // ...it arrives through the explicit selected-harness refresh, and is then
+    // part of the durable inventory.
+    expect(await listIds(app, dir, "&harness=pi")).toContain("ses_added_later")
+    expect(await listIds(app, dir)).toContain("ses_added_later")
+
+    host.dispose()
+  })
+
+})
+
+// ── Unit 4: compatibility stream must not start a harness ────────────────────
+describe("global compatibility stream (Unit 4)", () => {
+  function proxyAdapter(input: {
+    live: boolean
+    onAcquire?: () => void
+    onRelease?: () => void
+  }): AgentHarnessAdapter {
+    return {
+      adapterCapabilities: ["http-proxy"] as const,
+      listSessions: async () => [],
+      transportLive: () => input.live,
+      acquireRequestFn: async () => {
+        input.onAcquire?.()
+        return {
+          request: async () => new Response(new ReadableStream<Uint8Array>({ start() {} }), {
+            headers: { "content-type": "text/event-stream" },
+          }),
+          lease: { release: () => input.onRelease?.() },
+        }
+      },
+      getRequestFn: async () => {
+        input.onAcquire?.()
+        return async () => new Response(null, { status: 404 })
+      },
+      dispose: () => {},
+    } as unknown as AgentHarnessAdapter
+  }
+
+  async function mountOpencode(dir: string, adapter: AgentHarnessAdapter) {
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const app = new Hono()
+    const host = mountTestHost(app, {
+      harness: { id: "opencode", access: "native" },
+      harnesses: [{ match: () => true, create: () => adapter }] as WorkspaceHarnessRegistry,
+      opencodeCompat: true,
+    })
+    return { app, host }
+  }
+
+  test("serves the runtime's own hub instead of starting the harness transport", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-compat-sse-cold-"))
+    tempDirs.push(dir)
+    let attached = 0
+    const { app, host } = await mountOpencode(dir, proxyAdapter({ live: false, onAcquire: () => { attached++ } }))
+
+    const controller = new AbortController()
+    const response = await app.request("http://localhost/global/event", { signal: controller.signal })
+    expect(response.status).toBe(200)
+    // The shell got a stream, and nothing reached for the harness transport.
+    expect(attached).toBe(0)
+    const first = await response.body!.getReader().read()
+    expect(new TextDecoder().decode(first.value)).toContain("server.connected")
+
+    controller.abort()
+    host.dispose()
+  })
+
+  test("rides an already-live transport under a lease it releases when the client leaves", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-compat-sse-warm-"))
+    tempDirs.push(dir)
+    let attached = 0
+    let released = 0
+    const { app, host } = await mountOpencode(dir, proxyAdapter({
+      live: true,
+      onAcquire: () => { attached++ },
+      onRelease: () => { released++ },
+    }))
+
+    const controller = new AbortController()
+    const response = await app.request("http://localhost/global/event", { signal: controller.signal })
+    expect(response.status).toBe(200)
+    expect(attached).toBe(1)
+    // The lease is held for the stream's life, not the request's.
+    expect(released).toBe(0)
+
+    controller.abort()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(released).toBe(1)
+
+    host.dispose()
+  })
+})

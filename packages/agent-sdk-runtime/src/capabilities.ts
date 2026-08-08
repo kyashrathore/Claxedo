@@ -1,5 +1,6 @@
 import type { AgentHarnessId } from "./harness-types"
 import type { OpenCodeRequestFn } from "./harnesses/opencode"
+import type { ActivityLease } from "./harnesses/shared/process-lifecycle"
 
 export type HarnessCapabilityTarget = AgentHarnessId
 export type AdapterCapability = "http-proxy" | "runtime-config"
@@ -37,6 +38,22 @@ export type HttpProxyAdapter = AdapterCapabilityProvider & {
   // `getRequestFn` is the transport-agnostic accessor kit proxies should use.
   getServerUrl(): Promise<string>
   getRequestFn(): Promise<OpenCodeRequestFn>
+  /**
+   * Whether a proxy can attach without paying a harness start.
+   *
+   * Long-lived compatibility streams are opened for the shell's benefit, not
+   * because the user asked for harness work. A proxy that starts the harness to
+   * serve one is why an idle desktop was never idle. Callers that only want to
+   * ride an already-live transport check this first.
+   */
+  transportLive?(): boolean
+  /**
+   * Attach a stream that outlives the request that opened it, holding the
+   * transport open until the returned lease is released. Without the lease the
+   * idle countdown starts the moment the request returns and can tear the
+   * harness down mid-stream.
+   */
+  acquireRequestFn?(): Promise<{ request: OpenCodeRequestFn; lease: ActivityLease }>
 }
 
 export type RuntimeConfigurableAdapter = AdapterCapabilityProvider & {
