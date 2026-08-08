@@ -76,13 +76,14 @@ export default defineConfig(({ mode }) => {
           name: "copy-claxedo-server",
           closeBundle() {
             if (mode === "development") return
-            const src = path.join(desktopDir, "resources/claxedo-server")
-            const dest = path.join(desktopDir, "out/main/claxedo-server")
-            if (existsSync(src)) {
+            for (const name of ["claxedo-server", "claxedo-engine-worker"]) {
+              const src = path.join(desktopDir, "resources", name)
+              const dest = path.join(desktopDir, "out/main", name)
+              if (!existsSync(src)) continue
               rmSync(dest, { recursive: true, force: true })
-              rmSync(path.join(desktopDir, "out/main/claxedo-server.js"), { force: true })
+              rmSync(path.join(desktopDir, `out/main/${name}.js`), { force: true })
               cpSync(src, dest, { recursive: true })
-              console.log("[vite] Copied split claxedo-server bundle to out/main/")
+              console.log(`[vite] Copied ${name} bundle to out/main/`)
             }
           },
         },
