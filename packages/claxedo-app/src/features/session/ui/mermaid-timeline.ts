@@ -71,10 +71,6 @@ export async function renderTimelineMermaid(source: string): Promise<string> {
   return svg
 }
 
-export function openTimelineMermaidViewer(source: string) {
-  return openMermaidViewer(source, renderTimelineMermaid, sanitizeSvg)
-}
-
 let installed = false
 export function installTimelineMermaid(
   nativeRenderer?: (source: string, theme?: Record<string, string>) => Promise<string>,
