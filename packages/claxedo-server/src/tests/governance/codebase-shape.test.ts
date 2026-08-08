@@ -90,7 +90,7 @@ describe("architecture boundaries", () => {
     // outside this ban.
     const files = [
       "deployments/local/embedded-workspace-runtime.ts",
-      "workspace/http/sandbox-target-fetch.ts",
+      "../../claxedo-server-core/src/workspace/http/sandbox-target-fetch.ts",
       "agent-config/fanout.ts",
       ...walk(path.resolve(import.meta.dirname, "../../workspace/runtime-dispatch"))
         .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))

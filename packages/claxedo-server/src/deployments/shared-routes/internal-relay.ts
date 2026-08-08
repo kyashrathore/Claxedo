@@ -1,4 +1,5 @@
 import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
+import type { RelayTargetLookup, RelayTargetResult } from "@claxedo/server-core/adapters/relay-port"
 import { Hono, type Context } from "hono"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
@@ -51,29 +52,7 @@ export type RuntimeAccessRevocationLookup = (args: {
  * For user-hosted workspaces the host dials *out* to the relay, so `baseUrl`
  * may be empty — the relay routes by `hostId` over the established tunnel.
  */
-export type RelayTargetResult =
-  | {
-      found: true
-      baseUrl: string
-      access: "cloud" | "user-hosted"
-      backing: "cloud-vm" | "local-worktree"
-      upstreamHeaders?: Record<string, string>
-    }
-  | {
-      found: false
-      code: "relay_resolver_workspace_not_found" | "relay_resolver_workspace_target_unavailable"
-    }
-
-export type RelayTargetLookup = (args: {
-  workspaceId: string
-  hostId: string
-  /**
-   * When provided (Cloudflare Worker), background work spawned by the lookup
-   * (sandbox touch + its telemetry) should be scheduled through this so the
-   * runtime does not cancel it after the response is returned.
-   */
-  waitUntil?: (promise: Promise<unknown>) => void
-}) => Promise<RelayTargetResult>
+export type { RelayTargetLookup, RelayTargetResult } from "@claxedo/server-core/adapters/relay-port"
 
 export type LocalRelayTargetExists = (args: {
   workspaceId: string

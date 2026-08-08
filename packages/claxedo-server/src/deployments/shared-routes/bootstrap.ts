@@ -10,7 +10,7 @@ import { listProjects } from "@claxedo/server-core/workspace/store/index"
 import { dataDir, stateDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { OPENCODE_INTERNAL_BASE, opencodeEngineMode, opencodeRequest } from "@claxedo/server-core/opencode/engine"
 import { providerCatalogView } from "../../opencode/provider-catalog-view"
-import type { ControlPlaneServices } from "../../authority/services"
+import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import {
   ControlPlaneAuthError,
   bearerToken,
@@ -27,7 +27,7 @@ import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-
 type Options = {
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
-  services?: ControlPlaneServices
+  services?: ControlPlaneServicesContract
   env?: Record<string, string | undefined>
 }
 

@@ -5,7 +5,7 @@ import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 import { localOnlyAuthAdapter, type ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
-import type { ControlPlaneServices } from "../../authority/services"
+import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 
 const root = path.join(realpathSync(os.tmpdir()), `session-meta-routes-${randomUUID().slice(0, 8)}`)
 mkdirSync(root, { recursive: true })
@@ -39,7 +39,7 @@ const verifier: ClerkVerifier = async (token, config) => ({
   },
 })
 
-function services(): ControlPlaneServices {
+function services(): ControlPlaneServicesContract {
   return {
     projectionStore: {} as never,
     durableSessionLog: {} as never,
@@ -62,7 +62,7 @@ function services(): ControlPlaneServices {
           access: "cloud" as const,
         },
       })),
-    } as unknown as ControlPlaneServices["authority"],
+    } as unknown as ControlPlaneServicesContract["authority"],
   }
 }
 

@@ -15,6 +15,7 @@ import { agentExtensionStateRoot } from "@claxedo/agent-extensions"
 import { opencodeRequest as defaultOpencodeRequest, type OpenCodeRequestFn } from "@claxedo/server-core/opencode/engine"
 import type { WorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
+import { configureLocalWorkspaceRuntimeFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { WorkspaceAgentExtensionRecord } from "@claxedo/server-core/hosts/agent-extensions/workspace"
 import type { AgentExtensionPolicyOverride } from "@claxedo/server-core/hosts/agent-extensions/runtime-config"
@@ -200,6 +201,16 @@ function disposeRuntime(runtime: EmbeddedRuntime) {
   runtime.diagnosticsOwner?.exit({ reason: "disposed" })
   runtime.host.dispose()
 }
+
+// A shared module needs a way to reach a LOCAL workspace's runtime, and this
+// is the module that owns them. Installing the port here — at import time,
+// beside the runtimes it serves — means any composition that can create an
+// embedded runtime can also be reached through one, with no import from the
+// shared side back into this deployment.
+configureLocalWorkspaceRuntimeFetch(async (workspace, request) => {
+  const runtime = await ensureEmbeddedWorkspaceRuntime(workspace)
+  return runtime.app.fetch(request)
+})
 
 export async function ensureEmbeddedWorkspaceRuntime(
   ws: Workspace,

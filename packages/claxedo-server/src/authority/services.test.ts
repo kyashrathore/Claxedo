@@ -3,7 +3,7 @@ import path from "node:path"
 import { describe, expect, test, vi } from "vitest"
 import type { SessionMeta } from "@claxedo/server-core/session/meta/index"
 import type { SessionWriteMode } from "@claxedo/server-core/platform/runtime/profile"
-import { createDurableSessionLog } from "../platform/auth/durable-session-log"
+import { createDurableSessionLog } from "@claxedo/server-core/platform/auth/durable-session-log"
 import { createProjectionStore } from "./projection-store"
 import { ControlPlaneAuthError, controlPlaneAuthContext, customVerifierAuthAdapter, localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import {

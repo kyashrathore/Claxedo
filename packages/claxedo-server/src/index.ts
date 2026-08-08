@@ -42,7 +42,7 @@ export {
   runtimeAccessTokenSigner,
   type HostTunnelTokenSigner,
   type RuntimeAccessTokenSigner,
-} from "./platform/auth/runtime-access-token"
+} from "@claxedo/server-core/platform/auth/runtime-access-token"
 export {
   createControlPlaneRelayProvider,
   type ControlPlaneRelayProviderOptions,
@@ -50,7 +50,7 @@ export {
   type RelayTarget,
   type RelayToken,
   type RelayTokenInput,
-} from "./adapters/relay"
+} from "@claxedo/server-core/adapters/relay/index"
 export {
   DEFAULT_WORKSPACE_RUNTIME_PORT,
   createSandboxManager,
@@ -114,7 +114,7 @@ export {
   WORKSPACE_DIR,
 } from "@claxedo/sandbox-manager/defaults"
 export { createProjectionStore, type ProjectionStore } from "./authority/projection-store"
-export { createDurableSessionLog, type DurableSessionLog } from "./platform/auth/durable-session-log"
+export { createDurableSessionLog, type DurableSessionLog } from "@claxedo/server-core/platform/auth/durable-session-log"
 export {
   claimChannelDelivery,
   countChannelDeliveriesByUserDay,

@@ -7,7 +7,7 @@ import { flushRuntimeDocument, forgetRuntimeDocuments } from "../../../workspace
 import { RuntimeDocumentHydrationRoutes } from "../../../workspace-runtime/src/routes/document-hydration"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
-import { mintDocumentSessionToken } from "../platform/auth/runtime-access-token"
+import { mintDocumentSessionToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { createHostedDocumentsBackend } from "./backends/hosted/backend"
 import type { DocumentIndexEntry } from "./index-store"
 import { createHostedDocumentRuntimeBroker } from "./backends/hosted/runtime-broker"

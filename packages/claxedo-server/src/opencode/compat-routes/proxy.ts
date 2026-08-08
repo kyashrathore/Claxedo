@@ -1,4 +1,4 @@
-import type { ControlPlaneServices } from "../../authority/services"
+import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import { OPENCODE_INTERNAL_BASE, opencodeRequest } from "@claxedo/server-core/opencode/engine"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneRouteAuthOptions } from "../../platform/http/control-plane-route-auth"
@@ -12,7 +12,7 @@ import { requestHarnessId, workspaceInput, type OpenCodeCompatRequestContext } f
 export type OpenCodeCompatRouteOptions = ControlPlaneRouteAuthOptions & {
   env?: Record<string, string | undefined>
   onOpencodeAccess?: () => void
-  services?: ControlPlaneServices
+  services?: ControlPlaneServicesContract
 }
 
 export function opencodeCompatDisabled(options?: OpenCodeCompatRouteOptions) {

@@ -1,47 +1,18 @@
-import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-import type { SessionAttachment, SessionMeta, SessionMetaNavigationListInput, SessionToolSandbox } from "@claxedo/server-core/session/meta/index"
+import type { SessionProjectionStore } from "@claxedo/server-core/authority/session-projection"
 import type { ChannelDeliveryClaimInput, ChannelDeliveryDecision } from "../channels/delivery"
 import type { ChannelRunAuditInput, ChannelRunAuditRecord } from "../channels/run-audit"
 
-export type ProjectionStore = {
-  sync_session_meta: (ws: Workspace | undefined, input: unknown) => Promise<void>
-  sync_session_metas: (ws: Workspace | undefined, input: unknown[]) => Promise<void>
-  sync_session_messages: (
-    ws: Workspace | undefined,
-    sessionID: string,
-    messages: unknown[],
-    options?: { maxEventOrdinal?: number },
-  ) => Promise<void>
-  put_session_meta: (
-    sessionID: string,
-    input: {
-      ws?: Workspace
-      workspaceID?: string | null
-      directory?: string | null
-      host?: "central" | "workspace"
-      toolSandbox?: SessionToolSandbox | null
-      model?: { providerID: string; modelID: string } | null
-      title?: string | null
-      parentID?: string | null
-      archived?: number | null
-      tags?: string[]
-      attachments?: SessionAttachment[]
-    },
-  ) => Promise<void>
-  delete_session_meta: (sessionID: string) => Promise<void>
-  session_meta: (sessionID: string) => Promise<SessionMeta | undefined>
-  session_metas: (input: string[]) => Promise<Map<string, SessionMeta>>
-  list_session_metas: (input?: {
-    workspaceID?: string
-    directory?: string
-    includeArchived?: boolean
-  }) => Promise<SessionMeta[]>
-  list_session_navigation_metas?: (input: SessionMetaNavigationListInput) => Promise<SessionMeta[]>
-  tagged_session_metas: (tags: string[], input?: { includeHidden?: boolean }) => Promise<SessionMeta[]>
-  source_channel_session_counts_by_week?: (input?: {
-    channel?: string
-    includeHidden?: boolean
-  }) => Promise<Array<{ channel: string; week: string; count: number }>>
+export type { SessionProjectionStore }
+
+/**
+ * The full projection store: session metadata plus channel delivery.
+ *
+ * The session half lives in `@claxedo/server-core` because both products use
+ * it. The channel methods are hosted-only and stay here — naming them in the
+ * shared half would pull channel delivery and run-audit into the compile
+ * closure of every local route producer that types a `services` argument.
+ */
+export type ProjectionStore = SessionProjectionStore & {
   claim_channel_delivery?: (input: ChannelDeliveryClaimInput) => Promise<ChannelDeliveryDecision>
   remember_channel_delivery_session?: (input: { channel: string; idempotencyKey: string; sessionId: string; sessionCreate?: boolean }) => Promise<void>
   release_channel_delivery?: (input: { channel: string; idempotencyKey: string }) => Promise<void>
@@ -51,8 +22,6 @@ export type ProjectionStore = {
   channel_run_audits?: (input?: { channel?: string; externalUserId?: string; threadKey?: string; workspaceId?: string }) => Promise<ChannelRunAuditRecord[]>
   channel_thread_session?: (input: { threadKey: string }) => Promise<string | undefined>
   clear_channel_thread_session?: (input: { threadKey: string; sessionId?: string }) => Promise<void>
-  read_session_messages: (sessionID: string) => Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }>
-  read_session_max_event_ordinal: (sessionID: string) => number
 }
 
 // The backend contract this port needs — adapters (e.g. the SQLite

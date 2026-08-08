@@ -8,7 +8,7 @@ import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { ensureEmbeddedWorkspaceRuntime, type EmbeddedWorkspaceRuntimeConfigMode } from "../../deployments/local/embedded-workspace-runtime"
 import { routeOwnership, RouteHandler } from "../../platform/governance/route-ownership"
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
-import type { RelayProvider } from "../../adapters/relay"
+import type { RelayProvider } from "@claxedo/server-core/adapters/relay/index"
 
 const WR_INTERNAL = ["/api/wr/health", "/api/wr/config", "/api/wr/harness-config-options", "/api/wr/capabilities"]
 

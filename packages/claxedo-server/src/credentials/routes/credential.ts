@@ -7,10 +7,8 @@
 
 import { Hono } from "hono"
 import { z } from "zod"
-import {
-  defaultControlPlaneCredentials,
-  type ControlPlaneCredentials,
-} from "../../authority/services"
+import { defaultControlPlaneCredentials } from "@claxedo/server-core/authority/default-credentials"
+import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
 import { CredentialVerificationError, verifyCredential } from "@claxedo/server-core/credentials/operations/verify"

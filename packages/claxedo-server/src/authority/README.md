@@ -11,12 +11,12 @@ The Control Plane is `claxedo-server`'s authority layer. It owns:
   port; the only control-plane files permitted to name the storage backend
 - `adapters/worker/hosted-compose.ts` — Worker-side authority/lease composition
   adapter (the single hosted composition module allowed to reach Convex)
-- `../platform/auth/runtime-access-token.ts` — RAT minting / verification
+- ``@claxedo/server-core/platform/auth/runtime-access-token`` — RAT minting / verification
 - `services.ts` — composition bag for projection and durable storage, the auth
   adapter, credentials, extension policy, relay, sandbox management, telemetry,
   local execution, region selection, and the optional workspace authority
 - `projection-store.ts` — read model the UI consumes
-- `../platform/auth/durable-session-log.ts` — append-only session events
+- ``@claxedo/server-core/platform/auth/durable-session-log`` — append-only session events
 
 ## Plugging in a custom token verifier (P-shared.2)
 

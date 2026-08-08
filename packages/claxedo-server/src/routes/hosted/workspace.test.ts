@@ -4,7 +4,7 @@ import { createChallenge as convexCreateChallenge, register as convexRegister } 
 import { registerLocalForSharing as convexRegisterLocalForSharing } from "../../../../../convex/workspaces"
 import type { ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
-import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "../../platform/auth/runtime-access-token"
+import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./workspace"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import type { SandboxManager } from "@claxedo/sandbox-manager"

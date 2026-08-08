@@ -4,7 +4,7 @@ import { defaultHarness, listCommands, loadUserConfig, saveUserConfig } from "@c
 import { putCredential, deleteCredentialsByProvider } from "@claxedo/server-core/credentials/registry"
 import { fanOutConfig } from "../../agent-config/fanout"
 import { syncOpencodeMcpConfig } from "../../opencode/mcp-sync"
-import { sandboxFetch } from "../../workspace/http/sandbox-target-fetch"
+import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import { listProjects, resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { controlPlaneRouteAuth } from "../../platform/http/control-plane-route-auth"
 import { errorBody } from "@claxedo/server-core/platform/http/http"

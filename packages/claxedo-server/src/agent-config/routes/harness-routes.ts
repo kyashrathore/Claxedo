@@ -32,7 +32,7 @@ import {
 } from "../harness"
 import { localAgentConfigAllowed } from "../local-auth"
 import type { AgentConfigRouteOptions } from "../extension-support"
-import type { SandboxFetchOptions } from "../../workspace/http/sandbox-target-fetch"
+import type { SandboxFetchOptions } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { validatePiPromptModel } from "@claxedo/server-core/credentials/pi-provider-catalog"
 

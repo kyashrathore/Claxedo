@@ -3,7 +3,7 @@ import type { ControlPlaneServices } from "../../authority/services"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { ControlPlaneAuthError, controlPlaneAuthConfig, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { sandboxFetch } from "../../workspace/http/sandbox-target-fetch"
+import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import { createWorkspaceCheckpointService } from "../../workspace/checkpoints"
 import { signedOrError } from "../route-support"
 export function WorkspaceCheckpointRoutes(

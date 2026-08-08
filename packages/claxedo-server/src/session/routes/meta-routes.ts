@@ -10,13 +10,13 @@ import {
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
-import type { ControlPlaneServices } from "../../authority/services"
+import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { parseSessionMeta, putSessionMeta, sessionMeta, type SessionMeta } from "@claxedo/server-core/session/meta/index"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 
 type Options = {
-  services?: ControlPlaneServices
+  services?: ControlPlaneServicesContract
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
 }

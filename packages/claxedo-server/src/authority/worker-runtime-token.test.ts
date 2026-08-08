@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest"
 import { exportJWK, generateKeyPair, jwtVerify } from "jose"
 import { randomToken, sha256Hex16 } from "@claxedo/server-core/platform/auth/web-crypto"
-import { runtimeAccessTokenSigner, hostTunnelTokenSigner } from "../platform/auth/runtime-access-token"
+import { runtimeAccessTokenSigner, hostTunnelTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 
 /**
  * Proves the JWKS `kid` derivation and the RAT/HTT signers work on the global

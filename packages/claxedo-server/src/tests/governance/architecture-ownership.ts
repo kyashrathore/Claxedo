@@ -193,7 +193,7 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "host",
-    module: "workspace/http/sandbox-target-fetch.ts",
+    module: "../../claxedo-server-core/src/workspace/http/sandbox-target-fetch.ts",
     status: OwnershipStatus.Canonical,
     owner: "Sandbox request bridge",
     reason: "Server routes use this bridge to fetch local embedded or cloud Workspace Runtime hosts without owning runner execution.",
@@ -301,11 +301,11 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "projection",
-    module: "platform/auth/durable-session-log.ts",
+    module: "../../claxedo-server-core/src/platform/auth/durable-session-log.ts",
     status: OwnershipStatus.Canonical,
     owner: "ControlPlane DurableSessionLog",
     tests: [
-      "platform/auth/durable-session-log.test.ts",
+      "../../claxedo-server-core/src/platform/auth/durable-session-log.test.ts",
       "authority/durable-state.test.ts",
     ],
   },
@@ -416,12 +416,12 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "registry",
-    module: "adapters/relay/index.ts",
+    module: "../../claxedo-server-core/src/adapters/relay/index.ts",
     status: OwnershipStatus.Canonical,
     owner: "Claxedo relay provider adapter",
     reason:
       "Unit 5 verdict DOCUMENT: Claxedo relay adapter consumed via services.relay; imports @claxedo/workspace-relay and ../region. Product-specific relay decision, not generic control-plane core.",
-    tests: ["adapters/relay/index.test.ts"],
+    tests: ["../../claxedo-server-core/src/adapters/relay/index.test.ts"],
   },
   {
     area: "registry",

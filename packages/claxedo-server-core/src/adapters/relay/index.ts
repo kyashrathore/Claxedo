@@ -6,40 +6,22 @@ import {
   RUNTIME_ACCESS_TOKEN_TTL_BOUNDS_SECONDS,
   type HostTunnelTokenSigner,
   type RuntimeAccessTokenSigner,
-} from "../../platform/auth/runtime-access-token"
+} from "@claxedo/server-core/platform/auth/runtime-access-token"
 import type { RelayRole } from "@claxedo/workspace-relay"
-import type { RelayTargetLookup } from "../../deployments/shared-routes/internal-relay"
+import type {
+  RelayProvider,
+  RelayTarget,
+  RelayToken,
+  RelayTokenInput,
+} from "@claxedo/server-core/adapters/relay-port"
+import type { RelayTargetLookup } from "@claxedo/server-core/adapters/relay-port"
 
-export type RelayProvider = {
-  getRelayEndpoint: (workspaceId: string, homeRegion: ClaxedoRegion) => string | Promise<string>
-  mintHostTunnelToken: (input: RelayTokenInput) => Promise<RelayToken>
-  mintRuntimeAccessToken: (input: RelayTokenInput) => Promise<RelayToken>
-  resolveTarget: (workspaceId: string, hostId: string) => Promise<RelayTarget | undefined>
-  drainWorkspace: (workspaceId: string) => Promise<void>
-}
-
-export type RelayTokenInput = {
-  workspaceId: string
-  hostId: string
-  subject: string
-  orgId?: string
-  role?: RelayRole
-  ttlMs: number
-}
-
-export type RelayToken = {
-  token: string
-  expiresAt: number
-  jti: string
-}
-
-export type RelayTarget = {
-  workspaceId: string
-  hostId: string
-  baseUrl: string
-  access: "cloud" | "user-hosted"
-  backing: "cloud-vm" | "local-worktree"
-}
+export type {
+  RelayProvider,
+  RelayTarget,
+  RelayToken,
+  RelayTokenInput,
+} from "@claxedo/server-core/adapters/relay-port"
 
 export type ControlPlaneRelayProviderOptions = {
   relay: {

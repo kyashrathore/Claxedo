@@ -1,5 +1,5 @@
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { mintDocumentRelayJobToken } from "../../../platform/auth/runtime-access-token"
+import { mintDocumentRelayJobToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import type { ControlPlaneServices } from "../../../authority/services"
 import { defaultHomeRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import { DocumentVersionConflictError } from "../../errors"

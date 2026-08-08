@@ -14,7 +14,7 @@ const LOCAL_ENTRY = path.join(ROOT, "src/deployments/local/main.ts")
  * hosted surface to the unsigned desktop and must be justified; a change that
  * lowers them is progress and should lower the ceiling with it.
  */
-const CURRENT_MODULE_CEILING = 194
+const CURRENT_MODULE_CEILING = 190
 const CURRENT_PACKAGE_CEILING = 35
 
 /**
@@ -153,7 +153,7 @@ describe("desktop-local entry closure", () => {
       }
     }
 
-    expect(reached.size).toBeLessThanOrEqual(48)
+    expect(reached.size).toBeLessThanOrEqual(46)
     expect([...reached].filter((module) => /^src\/(connections|channels|documents|authority\/adapters\/convex|sandbox\/stores|sandbox\/routes|hosts\/workgraph)\//.test(module)))
       .toEqual([])
   })
@@ -193,7 +193,10 @@ describe("desktop-local entry closure", () => {
     const shared = [...local].filter((module) => hosted.has(module))
 
     expect(localOnly.length).toBeGreaterThanOrEqual(30)
-    expect(shared.length).toBeGreaterThan(0)
+    // Zero. Every module a local composition reaches is now either local-only
+    // or lives in `@claxedo/server-core`, which is the condition for creating
+    // `@claxedo/local-server` at all.
+    expect(shared).toEqual([])
     // Every module a local composition reaches is one or the other; a module
     // that fell out of both would be a hole in the walk.
     expect(localOnly.length + shared.length).toBe(local.size)

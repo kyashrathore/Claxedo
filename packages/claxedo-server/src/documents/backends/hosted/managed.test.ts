@@ -15,7 +15,7 @@ import {
 import { createHostedDocumentIndex } from "./index"
 import type { DocumentIndexEntry } from "../../index-store"
 import { createHostedDocumentsBackend } from "./backend"
-import { mintDocumentSessionToken } from "../../../platform/auth/runtime-access-token"
+import { mintDocumentSessionToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { documentWorkspaceConformance } from "../../port-conformance"
 import type { DocumentEntry } from "../../port"
 import { MAX_SNAPSHOT_METADATA_BYTES } from "../../snapshot-pins"

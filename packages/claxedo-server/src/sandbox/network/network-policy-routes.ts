@@ -14,7 +14,7 @@ import {
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
-import type { ControlPlaneServices } from "../../authority/services"
+import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {
   createPolicy,
@@ -52,7 +52,7 @@ const checkBody = z.object({
 })
 
 type Options = {
-  services?: ControlPlaneServices
+  services?: ControlPlaneServicesContract
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
 }

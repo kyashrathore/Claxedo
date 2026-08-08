@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises"
-import type { ControlPlaneCredentials } from "../../authority/services"
+import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
 import { OPENAI_CLIENT_ID, OPENAI_ISSUER } from "@claxedo/server-core/credentials/provider-auth/openai-oauth"
 

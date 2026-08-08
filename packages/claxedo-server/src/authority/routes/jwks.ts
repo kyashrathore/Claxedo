@@ -5,7 +5,7 @@ import {
   RUNTIME_ACCESS_TOKEN_ALGORITHM,
   RuntimeAccessTokenConfigurationError,
   runtimeAccessTokenAlgorithm,
-} from "../../platform/auth/runtime-access-token"
+} from "@claxedo/server-core/platform/auth/runtime-access-token"
 
 /**
  * JWKS endpoint for the Runtime Access Token (RAT) signing keys.

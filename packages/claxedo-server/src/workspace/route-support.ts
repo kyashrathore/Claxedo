@@ -11,7 +11,7 @@ import {
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
-import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "../platform/auth/runtime-access-token"
+import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
 import { regionValue, type ClaxedoRegion, type ClaxedoRegionMap } from "@claxedo/server-core/platform/runtime/region/index"
 

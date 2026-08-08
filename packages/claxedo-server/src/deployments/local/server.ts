@@ -89,9 +89,9 @@ import { JwksRoutes } from "../../authority/routes/jwks"
 import { InternalRelayResolverRoutes } from "../shared-routes/internal-relay"
 import { localRelayTargetExists, localRelayTargetLookup } from "./internal-relay-local"
 import { BootstrapRoutes } from "../shared-routes/bootstrap"
-import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "../../platform/auth/runtime-access-token"
-import { createControlPlaneRelayProvider } from "../../adapters/relay"
-import { sandboxFetch } from "../../workspace/http/sandbox-target-fetch"
+import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
+import { createControlPlaneRelayProvider } from "@claxedo/server-core/adapters/relay/index"
+import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
 import {
   ensureWorkspace,

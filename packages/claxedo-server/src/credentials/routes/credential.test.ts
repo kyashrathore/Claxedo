@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 import { CredentialRoutes } from "./credential"
-import type { ControlPlaneCredentials } from "../../authority/services"
+import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import type { CredentialHealth, CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import { CredentialDiscoveryError } from "@claxedo/server-core/credentials/operations/discovery"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"

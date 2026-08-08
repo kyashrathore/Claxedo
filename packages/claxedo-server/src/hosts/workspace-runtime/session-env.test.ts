@@ -17,7 +17,7 @@ vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   resolveWorkspace: mocks.resolveWorkspace,
 }))
 
-import type { SandboxFetchOptions } from "../../workspace/http/sandbox-target-fetch"
+import type { SandboxFetchOptions } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import { createClaxedoSessionEnvFactory, createWorkspaceRuntimeSessionEnv } from "./session-env"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { CONNECTION_TURN_HEADER, createConnectionTurnCredentials } from "../../connections/turn-credentials"

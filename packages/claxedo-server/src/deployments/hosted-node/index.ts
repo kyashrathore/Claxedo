@@ -18,7 +18,7 @@ import {
   createClaxedoSessionEnvFactory,
   type WorkspaceResolver,
 } from "../../hosts/workspace-runtime/session-env"
-import type { SandboxFetchOptions } from "../../workspace/http/sandbox-target-fetch"
+import type { SandboxFetchOptions } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { createConnectionTurnCredentials, type ConnectionTurnCredentials } from "../../connections/turn-credentials"
 import { createHostedWorkGraphRuntime } from "../../hosts/workgraph/hosted/runtime"

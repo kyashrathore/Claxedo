@@ -11,7 +11,7 @@ import {
   sameSource,
 } from "@claxedo/agent-extensions"
 import { loadAgentExtensionsCatalog } from "@claxedo/server-core/agent-config/extensions/catalog"
-import type { ControlPlaneServices } from "../authority/services"
+import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {
   ControlPlaneAuthError,
@@ -47,7 +47,7 @@ type WorkspaceExtensionScope = {
   scope: "workspace"
   workspaceId: string
   auth: SignedControlPlaneAuth
-  services: ControlPlaneServices
+  services: ControlPlaneServicesContract
 }
 
 class AgentExtensionInputError extends Error {
@@ -69,7 +69,7 @@ export type AgentConfigRouteOptions = {
     workspaceId?: string
     auth?: SignedControlPlaneAuth
   }) => AgentExtensionPolicyOverride[] | Promise<AgentExtensionPolicyOverride[]>)
-  services?: ControlPlaneServices
+  services?: ControlPlaneServicesContract
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
   homeDir?: string
@@ -105,7 +105,7 @@ export function extensionScope(input: {
 export async function workspaceExtensionScope(input: {
   request: Request
   workspaceId?: string | null
-  services?: ControlPlaneServices
+  services?: ControlPlaneServicesContract
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
 }): Promise<WorkspaceExtensionScope | Response> {
@@ -128,7 +128,7 @@ export async function workspaceExtensionScope(input: {
       workspaceId: input.workspaceId,
       auth: context,
       // `requireAuthority` succeeding above proves services is present.
-      services: input.services as ControlPlaneServices,
+      services: input.services as ControlPlaneServicesContract,
     }
   } catch (err) {
     if (err instanceof ControlPlaneAuthError) return Response.json(controlPlaneAuthErrorBody(err), { status: err.status })
@@ -351,7 +351,7 @@ export function localExtensionListState(scope: AgentExtensionLifecycleInput) {
 }
 
 export function captureAgentExtensionMutation(input: {
-  services?: ControlPlaneServices
+  services?: ControlPlaneServicesContract
   auth?: SignedControlPlaneAuth
   action: "install" | "update" | "enable" | "disable" | "uninstall"
   scope: "project" | "machine" | "workspace"

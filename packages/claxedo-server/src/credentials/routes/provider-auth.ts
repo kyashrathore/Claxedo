@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 import { z } from "zod"
-import type { ControlPlaneServices } from "../../authority/services"
+import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import {
   createProviderAuthService,
   ProviderAuthError,
@@ -67,7 +67,7 @@ function authError(error: unknown) {
  * account. See `control-plane-route-auth.ts` for why the global guard does not
  * cover this posture.
  */
-export function ProviderAuthRoutes(services: ControlPlaneServices, options: ProviderAuthRouteOptions = {}) {
+export function ProviderAuthRoutes(services: ControlPlaneServicesContract, options: ProviderAuthRouteOptions = {}) {
   const service = options.service ?? createProviderAuthService(services.credentials)
 
   /**

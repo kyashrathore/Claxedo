@@ -4,7 +4,7 @@ import { withDocumentOperation, type DocumentsBackend } from "../../backend"
 import type { DocumentIndexEntry } from "../../index-store"
 import type { DocumentVersion } from "../../port"
 import { DocumentVersionConflictError } from "../../errors"
-import { verifyDocumentRelayJobToken } from "../../../platform/auth/runtime-access-token"
+import { verifyDocumentRelayJobToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 
 const MAX_BROKER_BODY_BYTES = 2 * 1024 * 1024 + 64 * 1024
 

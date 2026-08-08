@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import type { ControlPlaneCredentials, ControlPlaneServices } from "../../authority/services"
+import type { ControlPlaneCredentials, ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import { createProviderAuthService } from "../provider-auth/service"
 import { ProviderAuthRoutes } from "./provider-auth"
 
@@ -57,7 +57,7 @@ function credentials() {
 }
 
 function services(input: ControlPlaneCredentials) {
-  return { credentials: input } as unknown as ControlPlaneServices
+  return { credentials: input } as unknown as ControlPlaneServicesContract
 }
 
 describe("control-plane provider auth", () => {

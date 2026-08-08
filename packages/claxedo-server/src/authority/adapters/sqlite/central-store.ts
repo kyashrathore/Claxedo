@@ -32,7 +32,7 @@ import {
 import { syncCloudMessages } from "../../../session/sync"
 import type { SessionWriteMode } from "@claxedo/server-core/platform/runtime/profile"
 
-import { createDurableSessionLog, type DurableSessionLog, type DurableSessionLogBackend } from "../../../platform/auth/durable-session-log"
+import { createDurableSessionLog, type DurableSessionLog, type DurableSessionLogBackend } from "@claxedo/server-core/platform/auth/durable-session-log"
 import { createProjectionStore, type ProjectionStore, type ProjectionStoreBackend } from "../../projection-store"
 
 // Claxedo's LOCAL central-store adapter: the control plane's central

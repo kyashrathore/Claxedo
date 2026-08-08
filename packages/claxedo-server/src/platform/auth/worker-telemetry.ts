@@ -9,7 +9,7 @@
  * request handler or block the response.
  */
 
-import type { ControlPlaneTelemetry } from "../telemetry/ports"
+import type { ControlPlaneTelemetry } from "@claxedo/server-core/platform/telemetry/ports"
 import { resolveTelemetryHost, resolveTelemetryKey, type ObservabilityEnv } from "../telemetry/errors/config"
 
 type TelemetryEnv = ObservabilityEnv
