@@ -7,7 +7,7 @@ import { bearer } from "better-auth/plugins"
 import { getMigrations } from "better-auth/db/migration"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import type { BetterAuthVerifier } from "@claxedo/server-core/platform/auth/auth"
-import { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/deployments/local/port"
+import { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/self-hosted-execution"
 
 /**
  * Embedded Better Auth for self-host boxes (part of the self-host/hosted-parity

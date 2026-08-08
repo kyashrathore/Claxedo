@@ -24,15 +24,15 @@ import { createConnectionsHost } from "../../connections"
 import { createConnectionTurnCredentials } from "../../connections/turn-credentials"
 import { mirrorProcessEvents } from "../../platform/runtime/lib/process-events"
 import { DocumentsRoutes } from "../../documents/routes/index"
-import { AgentConfigRoutes } from "@claxedo/local-server/agent-config/routes/index"
-import { SessionMetaRoutes } from "@claxedo/local-server/session/routes/meta-routes"
+import { AgentConfigRoutes } from "@claxedo/local-server/self-hosted-execution"
+import { SessionMetaRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { WorkspaceRoutes } from "../../workspace/routes/index"
-import { OpenCodeCompatRoutes } from "@claxedo/local-server/opencode/compat-routes/index"
-import { resolveHarnessId } from "@claxedo/local-server/opencode/compat-routes/provider-config"
+import { OpenCodeCompatRoutes } from "@claxedo/local-server/self-hosted-execution"
+import { resolveHarnessId } from "@claxedo/local-server/self-hosted-execution"
 import { normalizeHarnessIdentity } from "@claxedo/agent-sdk-runtime"
-import { createWorkspaceRuntimeProxy } from "@claxedo/local-server/workspace/runtime-dispatch/middleware"
+import { createWorkspaceRuntimeProxy } from "@claxedo/local-server/self-hosted-execution"
 import { createLocalWorkspaceRelayProxy } from "../../workspace/runtime-dispatch/shared-workspace-endpoint"
-import { configureOpencodeMcpSync } from "@claxedo/local-server/opencode/mcp-sync"
+import { configureOpencodeMcpSync } from "@claxedo/local-server/self-hosted-execution"
 import {
   configureOpenCodeApplicationTools,
   configureOpenCodeEmbedPath,
@@ -41,7 +41,7 @@ import {
   opencodeEngineMode,
   opencodeRequest,
 } from "@claxedo/server-core/opencode/engine"
-import { createOpencodeEvents, type OpencodeEvent, type OpencodeEventsHandle } from "@claxedo/local-server/opencode/events"
+import { createOpencodeEvents, type OpencodeEvent, type OpencodeEventsHandle } from "@claxedo/local-server/self-hosted-execution"
 import { claxedoBus, globalBus } from "@claxedo/server-core/platform/runtime/lib/bus"
 import {
   configureWorkspaceSupervisor,
@@ -53,14 +53,14 @@ import {
   ensureEmbeddedWorkspaceRuntime,
   releaseEmbeddedWorkspaceRuntime,
   shutdownEmbeddedWorkspaceRuntimes,
-} from "@claxedo/local-server/deployments/local/embedded-workspace-runtime"
+} from "@claxedo/local-server/self-hosted-execution"
 import { configureOpenCodeAuth, opencodeHeaders } from "@claxedo/server-core/opencode/auth"
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
 import { migrateCredentials } from "../../credentials/operations/migrate"
-import { CredentialRoutes } from "@claxedo/local-server/credentials/routes/credential"
-import { ProviderAuthRoutes } from "@claxedo/local-server/credentials/routes/provider-auth"
-import { NetworkPolicyRoutes } from "@claxedo/local-server/sandbox/network/network-policy-routes"
+import { CredentialRoutes } from "@claxedo/local-server/self-hosted-execution"
+import { ProviderAuthRoutes } from "@claxedo/local-server/self-hosted-execution"
+import { NetworkPolicyRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { ProjectRemoteRoutes } from "../../workspace/routes/project-remote"
 import {
   ControlPlaneCompositionError,
@@ -88,7 +88,7 @@ import { createCentralControlApp } from "../../central-runtime"
 import { JwksRoutes } from "../../authority/routes/jwks"
 import { InternalRelayResolverRoutes } from "../shared-routes/internal-relay"
 import { localRelayTargetExists, localRelayTargetLookup } from "./internal-relay-local"
-import { BootstrapRoutes } from "@claxedo/local-server/deployments/shared-routes/bootstrap"
+import { BootstrapRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { createControlPlaneRelayProvider } from "@claxedo/server-core/adapters/relay/index"
 import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
@@ -103,7 +103,7 @@ import {
 } from "@claxedo/server-core/workspace/store/index"
 import { defaultHomeRegion, relayEndpointsFromEnv } from "@claxedo/server-core/platform/runtime/region/index"
 import { createControlPlaneChannels, mountControlPlaneChannels } from "../../channels/control-plane"
-import { mountWorkspaceRuntimePtyWebSocketProxy } from "@claxedo/local-server/deployments/local/server-workspace-pty-proxy"
+import { mountWorkspaceRuntimePtyWebSocketProxy } from "@claxedo/local-server/self-hosted-execution"
 import {
   createClaxedoSessionEnvFactory,
   prepareWorkspaceRuntimeSession,
@@ -113,7 +113,7 @@ import {
   mountLazyEmbeddedWorkGraph,
   recordLocalWorkGraphLlmUsage,
 } from "../../hosts/workgraph/composition/server-workgraph"
-import { mountLocalOnlyUsageLimits } from "@claxedo/local-server/deployments/local/server-usage-limits"
+import { mountLocalOnlyUsageLimits } from "@claxedo/local-server/self-hosted-execution"
 import { centralModelBackend } from "../../session/runtime"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { withDataDirOwnership } from "../../platform/runtime/lib/data-dir-owner"
@@ -126,7 +126,7 @@ import { noSelfHostedCapabilities, type SelfHostedCapabilities } from "./self-ho
 import type { WorkGraphRunOperationBroker } from "@claxedo/workgraph/runtime-adapter"
 import { createSqlitePullRequestEffects } from "../../hosts/workgraph/sqlite-pull-request-effects"
 import { createLocalWorkGraphAgentTools, localSessionContext, localSessionExecution, localSessionOwnerDirected } from "../../hosts/workgraph/composition/agent-tools"
-import { provisionRegisteredWorktree, releaseRegisteredWorktree, localWorktreeWorkGraphId } from "@claxedo/local-server/workspace/worktree"
+import { provisionRegisteredWorktree, releaseRegisteredWorktree, localWorktreeWorkGraphId } from "@claxedo/local-server/self-hosted-execution"
 import { StreamIDSchema, masterRunId, masterSessionId } from "@claxedo/workgraph/contracts"
 import type { CommandResult, WorkGraphRunOperationRequest, WorkGraphContext } from "@claxedo/workgraph/contracts"
 import { sessionMeta } from "@claxedo/server-core/session/meta/index"
@@ -136,7 +136,7 @@ import { RemoteAccessRoutes } from "../../routes/remote-access"
 import { createRemoteAccessService, unavailableRemoteAccessService } from "./remote-access-service"
 import { localHostIdentity, registrationPayload, signHostPayload } from "../../workspace/local-host"
 import { hasUserHostedMachineTunnel, startUserHostedMachineTunnel, stopUserHostedMachineTunnel } from "../../user-hosted-tunnel"
-import { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/deployments/local/port"
+import { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/self-hosted-execution"
 
 const execFileAsync = promisify(execFile)
 

@@ -254,7 +254,7 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "../../claxedo-local-server/src/platform/governance/route-ownership.ts",
+    module: "../../claxedo-server-core/src/platform/governance/route-ownership.ts",
     status: OwnershipStatus.Canonical,
     owner: "central route ownership classifier",
     tests: ["workspace/runtime-dispatch/route-ownership-contract.test.ts"],
@@ -269,10 +269,10 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "../../claxedo-local-server/src/platform/http/local-only-projection.ts",
+    module: "../../claxedo-server-core/src/platform/http/local-only-projection.ts",
     status: OwnershipStatus.Canonical,
     owner: "local-only route guard",
-    tests: ["../../claxedo-local-server/src/platform/http/local-only-projection.test.ts"],
+    tests: ["../../claxedo-server-core/src/platform/http/local-only-projection.test.ts"],
     routeSamples: ["/api/workgraph"],
   },
   {
@@ -311,13 +311,13 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "projection",
-    module: "../../claxedo-local-server/src/platform/http/local-only-projection.ts",
+    module: "../../claxedo-server-core/src/platform/http/local-only-projection.ts",
     status: OwnershipStatus.Compatibility,
     owner: "local-only projection route compatibility",
     canonicalReplacement: "ControlPlaneAuthAdapter-gated route factories",
     reason: "Local server still exposes loopback-only projections for WorkGraph and related local surfaces.",
     removalCondition: "Local-only route surfaces are either removed or compose the same route factories with explicit auth policies.",
-    tests: ["../../claxedo-local-server/src/platform/http/local-only-projection.test.ts"],
+    tests: ["../../claxedo-server-core/src/platform/http/local-only-projection.test.ts"],
   },
   // --- Unit 5: control-plane-owned route reorganization ---
   // MOVE: generic control-plane route modules whose import graph is

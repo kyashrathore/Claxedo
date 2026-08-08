@@ -14,7 +14,7 @@ import { Hono } from "hono"
 import { describe, expect, test } from "vitest"
 import { runtimeProxyResponseHeaders } from "@claxedo/local-server/workspace/runtime-dispatch/internals"
 import { createLocalWorkspaceRelayProxy } from "./shared-workspace-endpoint"
-import { routeOwnership, routeRules, RouteDomain, RouteHandler } from "@claxedo/local-server/platform/governance/route-ownership"
+import { routeOwnership, routeRules, RouteDomain, RouteHandler } from "@claxedo/server-core/platform/governance/route-ownership"
 
 function classify(path: string) {
   return routeOwnership(path.split("?")[0])

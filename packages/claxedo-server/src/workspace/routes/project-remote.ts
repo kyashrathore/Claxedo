@@ -14,7 +14,7 @@
 import path from "node:path"
 import { Hono } from "hono"
 import { z } from "zod"
-import { localOnlyProjection } from "@claxedo/local-server/platform/http/local-only-projection"
+import { localOnlyProjection } from "@claxedo/server-core/platform/http/local-only-projection"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { deriveRemote, parseRemotes, type DerivedRemote } from "../git-remote-derivation"
 

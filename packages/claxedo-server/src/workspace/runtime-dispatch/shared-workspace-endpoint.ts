@@ -27,7 +27,7 @@ import {
   noWr,
   proxy,
   type RuntimeProxyOptions,
-} from "@claxedo/local-server/workspace/runtime-dispatch/internals"
+} from "@claxedo/local-server/self-hosted-execution"
 
 const DEFAULT_REMOTE_DIRECTORY = "/workspace"
 

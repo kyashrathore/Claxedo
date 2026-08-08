@@ -6,7 +6,7 @@ export {
   startServer,
   type ControlPlaneStackOptions,
 } from "./deployments/local/server"
-export { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/deployments/local/port"
+export { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/self-hosted-execution"
 export { createCentralSessionRuntime } from "./session/runtime"
 export {
   ControlPlaneCompositionError,
