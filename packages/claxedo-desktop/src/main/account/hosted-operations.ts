@@ -29,6 +29,15 @@ export const HOSTED_OPERATIONS = {
   "account.get": { method: "GET", path: "/api/claxedo/bootstrap" },
   "account.mode": { method: "GET", path: "/api/claxedo/mode" },
   "account.compatibility": { method: "GET", path: "/api/claxedo/compatibility" },
+  // No idempotency key. The app registry says "the idempotency key for that
+  // lives in main"; it does not — nothing in this process, for any operation,
+  // has ever had one, and this table has no way to express one. The route
+  // dedupes nothing either: `POST /api/auth/cli/exchange`
+  // (`routes/hosted/device-auth.ts`) mints from the BEARER and never reads the
+  // body at all, so `code` is declared here and ignored there, and every call
+  // is a fresh, separately-revocable session pair. Harmless only because the
+  // renderer cannot reach it — see `RENDERER_WITHHELD_OPERATIONS` — and no
+  // main-side caller exists.
   "account.cliExchange": { method: "POST", path: "/api/auth/cli/exchange", body: ["code"] },
   "workspace.list": { method: "GET", path: "/api/workspace" },
   "workspace.resolve": { method: "GET", path: "/api/workspace/resolve" },
@@ -39,6 +48,20 @@ export const HOSTED_OPERATIONS = {
   // (`connectionId` + a `repo` object, both or neither) is deliberately absent:
   // parameters here are scalars, so that create shape is not expressible as a
   // named operation and must not be half-declared.
+  //
+  // NO IDEMPOTENCY KEY, and one cannot be added from this side. The matrix once
+  // classified this row `idempotency-key`; there is no key anywhere. This table
+  // expresses a request as method + path + declared body — there is no header
+  // seam — and the route's body schema is `.strict()` with no idempotency field
+  // (`createCloudBody`, `routes/hosted/workspace.ts`), so a key declared here
+  // would 400 every create rather than dedupe a retry. That is the same failure
+  // `displayName` caused above. Until the route accepts one, this operation is
+  // genuinely `unsafe`: an uncertain response must be surfaced, never retried,
+  // because a retry provisions a second billable sandbox. Nothing retries it
+  // today — `account-service.run` performs exactly one fetch and no renderer
+  // surface names this operation yet — which is what keeps the gap latent
+  // rather than live. `isSafeOperation` in the app registry already answers
+  // false for it, and that is the property a retry loop must consult.
   "workspace.create": {
     method: "POST",
     path: "/api/workspace/create",
@@ -60,6 +83,19 @@ export const HOSTED_OPERATIONS = {
   },
   "workspace.connection.mint": { method: "GET", path: "/api/workspace/:id/connection" },
   "workspace.connection.refresh": { method: "POST", path: "/api/workspace/:id/connection/refresh" },
+  // MAIN-ONLY. `publicKey` and `signature` are the machine identity, and the
+  // route stores whatever public key it is handed — so a caller that supplies
+  // them enrolls a machine whose private half nobody else holds. The only
+  // legitimate caller is `setupHostConnector`, which is given
+  // `account.service.run` in-process and fills these from the key
+  // `host-connector/machine-identity.ts` owns; the renderer reaches the same
+  // feature through the connector's own zero-argument IPC. That refusal is
+  // enforced by `RENDERER_WITHHELD_OPERATIONS` in `account-ipc.ts`, which is
+  // where the whole argument is written down.
+  //
+  // Retry IS idempotent, and by the machine identity rather than a key the
+  // caller invents: `enrollForUser` patches the existing row for the same
+  // `host_id` instead of inserting a second one.
   "host.enrollCurrentMachine": {
     method: "POST",
     path: "/api/claxedo/host/enrollments",

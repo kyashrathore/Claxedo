@@ -204,6 +204,106 @@ describe("operations whose result is a credential", () => {
   })
 })
 
+describe("operations whose parameters are a machine identity", () => {
+  /**
+   * The enrollment handshake, as an ATTACKER's renderer would send it.
+   *
+   * `host.enrollCurrentMachine` declares `publicKey` and `signature` as body
+   * fields filled from the caller, and `routes/hosted/host-enrollment.ts`
+   * stores whatever public key it is handed. So a renderer holding this channel
+   * generates a keypair, takes a nonce from `host.enrollmentNonce` — also on a
+   * channel — signs it, and enrolls a machine whose private half Electron main
+   * has never seen, on main's bearer and under the owner's account. Sending the
+   * REAL `hostId` is worse still: `enrollForUser` patches the existing row,
+   * overwriting `public_key` and clearing `revoked_at`, so the same call takes
+   * over an honest machine and un-revokes one the user revoked.
+   *
+   * These are real field names and a real key shape, not `{ x: 1 }`: the point
+   * of the fixture is that this is the message that used to reach the route.
+   */
+  const ATTACKER_ENROLLMENT = {
+    hostId: "host_stolen_1",
+    publicKey: '{"kty":"EC","crv":"P-256","x":"ATTACKER_PUBLIC_X","y":"ATTACKER_PUBLIC_Y"}',
+    requestId: "req_1",
+    signature: "ATTACKER_SIGNATURE",
+    displayName: "macOS",
+  }
+
+  const MACHINE_OPERATIONS = [
+    "host.enrollCurrentMachine",
+    "host.enrollmentNonce",
+    "host.enrollmentHeartbeat",
+  ] as const
+
+  /** A service that ANSWERS, and records what it was asked. See `minting`. */
+  const enrolling = () => {
+    const ran: Array<{ name: string; input: unknown }> = []
+    const h = harness({
+      run: async (name, input) => {
+        ran.push({ name, input })
+        return { enrollment: { enrollment_id: "enr_1", host_id: "host_stolen_1", expires_at: 1 } }
+      },
+    })
+    return { ...h, ran }
+  }
+
+  test("every host operation is withheld from the renderer", () => {
+    for (const name of MACHINE_OPERATIONS) {
+      expect(RENDERER_WITHHELD_OPERATIONS, name).toContain(name)
+    }
+  })
+
+  test("enrolling a renderer-supplied key never reaches the account service", async () => {
+    // Refused BEFORE `service.run`, like the credential case: discarding the
+    // response would keep the enrollment record out of the renderer and still
+    // leave the attacker's machine enrolled, which is the whole damage.
+    const h = enrolling()
+
+    let rejected: unknown
+    await h
+      .invoke(hostedOperationChannel("host.enrollCurrentMachine"), ATTACKER_ENROLLMENT)
+      .catch((error: unknown) => {
+        rejected = error
+      })
+
+    expect(rejected).toBeInstanceOf(Error)
+    expect(h.ran).toEqual([])
+    // Scanned as a VALUE rather than asserted by shape: no part of the
+    // attacker's key material may appear in anything the service was handed.
+    expect(JSON.stringify(h.ran)).not.toContain("ATTACKER_PUBLIC_X")
+    expect(JSON.stringify(h.ran)).not.toContain("ATTACKER_SIGNATURE")
+  })
+
+  test("the whole handshake is refused, not just its last step", async () => {
+    // Withholding only `enrollCurrentMachine` would leave a renderer able to
+    // mint nonces and heartbeat as a machine — step one and step four of the
+    // same handshake — so the refusal covers all three.
+    const h = enrolling()
+
+    for (const name of MACHINE_OPERATIONS) {
+      let rejected: unknown
+      await h.invoke(hostedOperationChannel(name), ATTACKER_ENROLLMENT).catch((error: unknown) => {
+        rejected = error
+      })
+      expect(rejected, name).toBeInstanceOf(Error)
+    }
+
+    expect(h.ran).toEqual([])
+  })
+
+  test("the channels are still registered, so the surface matches the table", () => {
+    // Same reasoning as the credential case: withholding narrows what a
+    // channel DOES. A missing channel would be indistinguishable from one
+    // nobody wired, and would break the equality check that catches an EXTRA
+    // one.
+    const h = enrolling()
+
+    for (const name of MACHINE_OPERATIONS) {
+      expect(h.has(hostedOperationChannel(name)), name).toBe(true)
+    }
+  })
+})
+
 describe("account channels", () => {
   test("signIn returns the state, never the token set", async () => {
     // The flow's own result carries tokens. A handler that returned it would

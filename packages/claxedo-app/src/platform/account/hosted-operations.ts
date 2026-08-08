@@ -34,8 +34,14 @@ export type DecodeResult<T> = { ok: true; value: T } | { ok: false; reason: stri
  *
  * `safe` marks an operation with no side effect, which is the only property the
  * renderer needs in order to decide whether a retry is its own decision to
- * make. Anything unsafe is main's call, because main is where the idempotency
- * key lives.
+ * make. Anything unsafe is main's call.
+ *
+ * This used to say "because main is where the idempotency key lives". Main has
+ * no idempotency key, for any operation — `claxedo-desktop`'s operation table
+ * expresses a request as method + path + declared body and has no header seam,
+ * and no route it names accepts a key in its body. So `safe: false` means
+ * exactly what it says and nothing more: DO NOT RETRY. It is not a promise that
+ * someone downstream will make a retry harmless.
  */
 export type HostedOperationSpec<T = unknown> = {
   safe: boolean
@@ -118,8 +124,11 @@ export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec>
   "account.get": { safe: true, decode: object },
   "account.mode": { safe: true, decode: object },
   "account.compatibility": { safe: true, decode: object },
-  // Mints a CLI session token. A replayed exchange must not mint twice, and
-  // the idempotency key for that lives in main.
+  // Mints a CLI session token. A replayed exchange must not mint twice — and
+  // nothing prevents it: the route mints from the bearer and never reads the
+  // body, so every call is a fresh, separately-revocable pair. Unreachable from
+  // here in any case; Electron main refuses this operation to the renderer
+  // (`RENDERER_WITHHELD_OPERATIONS`).
   "account.cliExchange": { safe: false, decode: object },
   // An ENVELOPE, not a bare array: `GET /api/workspace` answers
   // `{ workspaces: [...] }`, the same shape the local server's list handler
@@ -130,8 +139,12 @@ export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec>
   // Nullable: the hosted control plane answers `null` on purpose.
   "workspace.resolve": { safe: true, decode: nullable(object) },
   // Provisions a cloud VM. Without a key, an uncertain response creates a
-  // second one. Answers `{ workspaceId, directory }` — `directory` is what the
-  // caller opens, so an answer without one is not a usable workspace.
+  // second one — and there is no key: the hosted route's body schema is strict
+  // and has no idempotency field, so one cannot be sent from a client at all.
+  // `safe: false` is therefore the whole protection, and the disposition for an
+  // uncertain response is to surface it, not to retry. Answers
+  // `{ workspaceId, directory }` — `directory` is what the caller opens, so an
+  // answer without one is not a usable workspace.
   "workspace.create": { safe: false, decode: withStrings("workspaceId", "directory") },
   "workspace.lifecycle": { safe: false, decode: object },
   // The lifecycle SNAPSHOT — lease, checkpoint, worktrees, runtime — not a

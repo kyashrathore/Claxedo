@@ -56,6 +56,17 @@ Two consequences worth stating plainly:
 key. `unsafe` means an uncertain result must be surfaced, never silently
 retried — a duplicate here creates a duplicate workspace, charge, or document.
 
+**There is no client-side idempotency-key mechanism today, and the desktop
+cannot grow one on its own.** `claxedo-desktop/src/main/account/hosted-operations.ts`
+expresses a request as a method, a path template, and a list of declared body
+fields; it has no header seam, and every route named below that accepts a key
+accepts it as a body field its schema must declare. So an `idempotency-key` row
+is only true when the ROUTE already carries the key, and each one says which
+field that is. A row that named a key the route does not accept would be worse
+than none: bodies are validated strictly, so the "safe retry" would 400 the
+first attempt. Where no such field exists the row is classified `unsafe`, which
+is the honest reading and the one a caller must act on.
+
 ## The matrix
 
 Paths are Hosted Server route templates as mounted by `createHostedApp`
@@ -69,7 +80,7 @@ is the authoritative source for this column.
 | `account.get` | `features/settings/ui/account-section.tsx` | `GET /api/claxedo/bootstrap` | unary | safe | Sanitized identity/org only. The renderer receives display state, never a token. |
 | `account.mode` | `features/settings/ui/account-section.tsx` | `GET /api/claxedo/mode` | unary | safe | Deployment posture; drives which hosted surfaces render. |
 | `account.compatibility` | `app/boot/data/bootstrap-orchestrator.ts` | `GET /api/claxedo/compatibility` | unary | safe | Client/server version gate. |
-| `account.cliExchange` | `app/routes/cli-login-token.ts` | `POST /api/auth/cli/exchange` | unary | unsafe | Mints a CLI session token. A replayed exchange must not mint twice. |
+| `account.cliExchange` | `app/routes/cli-login-token.ts` | `POST /api/auth/cli/exchange` | unary | unsafe | Mints a CLI session token. A replayed exchange must not mint twice, and nothing stops it: the route mints from the bearer and never reads the request body, so each call is a fresh separately-revocable pair. Refused to the renderer entirely (`RENDERER_WITHHELD_OPERATIONS`), because the result is itself a credential. |
 
 ### Workspace authority
 
@@ -77,8 +88,8 @@ is the authoritative source for this column.
 |---|---|---|---|---|---|
 | `workspace.list` | `features/workspaces/data/workspace-connection.ts` | `GET /api/workspace` | unary | safe | Includes both laptop and cloud-VM rows; placement is a field, not a route. |
 | `workspace.resolve` | `features/workspaces/data/workspace-connection.ts` | `GET /api/workspace/resolve` | unary | safe | |
-| `workspace.create` | `features/workspaces/ui/dialogs/create-cloud-project.tsx` | `POST /api/workspace/create` | unary | idempotency-key | Provisions a cloud VM. Without a key, an uncertain response creates a second VM. |
-| `workspace.lifecycle` | `features/workspaces/actions/project-actions.tsx` | `POST /api/workspace/:id/lifecycle/:operation` | unary | idempotency-key | Start/stop/suspend. |
+| `workspace.create` | `features/workspaces/ui/dialogs/create-cloud-project.tsx` | `POST /api/workspace/create` | unary | unsafe | Provisions a cloud VM. Without a key, an uncertain response creates a second VM — and there is no key to replay. `createCloudBody` in `claxedo-server/src/routes/hosted/workspace.ts` is `.strict()` with no idempotency field, so a key sent from a client 400s the whole request. Classified `unsafe` until the route accepts one; an uncertain response must be surfaced, never retried. |
+| `workspace.lifecycle` | `features/workspaces/actions/project-actions.tsx` | `POST /api/workspace/:id/lifecycle/:operation` | unary | unsafe | Stop/replace/cleanup/destroy. The route reads only `approved` and `checkpointId` and accepts no key. `stop`, `cleanup` and `destroy` converge on a state and tolerate a retry; `replace` provisions, so it does not — classified by its worst member. Every operation but `stop` refuses with 409 unless `approved: true` is in the body. |
 | `workspace.checkpoints.list` | `features/workspaces/actions/project-actions.tsx` | `GET /api/workspace/:id/checkpoints` | unary | safe | |
 | `workspace.checkpoints.restore` | `features/workspaces/actions/project-actions.tsx` | `POST /api/workspace/:id/checkpoints/:checkpointId/restore` | unary | unsafe | Destructive to working state. |
 | `workspace.connection.mint` | `platform/runtime/cloud/workspace-runtime-store.ts` | `GET /api/workspace/:id/connection` | unary | safe | Returns `relayUrl` plus a scoped Runtime Access Token, and no laptop address. |
@@ -96,9 +107,9 @@ Unit 6 moves the laptop side of this into Host Connector. The rows below are the
 | `hostLink.heartbeat` | `features/onboarding/remote-access-controller.ts` | `POST /api/workspace/:id/user-hosted/heartbeat` | unary | safe | Presence only. |
 | `hostLink.pause` | `features/onboarding/remote-access-controller.ts` | `POST /api/workspace/:id/user-hosted/pause` | unary | safe | Idempotent by design; pausing twice is pausing. |
 | `hostLink.secondDeviceOpen` | `features/onboarding/remote-access-marker.tsx` | `POST /api/claxedo/remote-access/workspaces/:workspaceId/second-device-open` | unary | safe | |
-| `host.enrollCurrentMachine` | `platform/account/account-port.ts` | `POST /api/claxedo/host/enrollments` | unary | idempotency-key | Unit 6's replacement for `hostLink.register`: enrolls the MACHINE once, with no workspace in the path. Enrolling twice from the same machine must return the existing enrollment rather than a second one, so the key is the machine identity. The renderer names the operation and receives an enrollment record; the credential and the machine key stay in Electron main. |
-| `host.enrollmentNonce` | `platform/account/account-port.ts` | `POST /api/claxedo/host/enrollments/requests` | unary | unsafe | The one-use nonce the machine signs. Unsafe rather than safe: each call mints a new nonce, so a retry burns one. It carries no secret — the nonce is public and worthless without the machine's private key — but a caller that retried freely would fill the request table. |
-| `host.enrollmentHeartbeat` | `platform/account/account-port.ts` | `POST /api/claxedo/host/enrollments/heartbeat` | unary | safe | Presence, signed by the machine key. Safe to retry: the server extends an existing enrollment rather than creating anything, and a heartbeat that arrives twice is a heartbeat. A REJECTED one is not retried at all — the connector stops, because re-enrolling would be it overruling a revocation. |
+| `host.enrollCurrentMachine` | `platform/account/account-port.ts` | `POST /api/claxedo/host/enrollments` | unary | idempotency-key (`hostId`) | Unit 6's replacement for `hostLink.register`: enrolls the MACHINE once, with no workspace in the path. The key is the machine identity and it is a real one — `enrollForUser` patches the existing row for the same `host_id` rather than inserting a second. **Main-only.** `publicKey` and `signature` are the machine identity, so a caller that supplies them enrolls a machine whose private half main has never seen; the route stores whatever public key it is handed, and a second enrollment on a known `host_id` overwrites the honest key and clears a revocation. The only caller is Electron main's Host Connector, which fills those fields from the key it owns. The renderer's route to this feature is the connector's own zero-argument IPC (`claxedo.hostConnector.start`), and `RENDERER_WITHHELD_OPERATIONS` refuses the account channel. |
+| `host.enrollmentNonce` | `platform/account/account-port.ts` | `POST /api/claxedo/host/enrollments/requests` | unary | unsafe | The one-use nonce the machine signs. Unsafe rather than safe: each call mints a new nonce, so a retry burns one. It carries no secret — the nonce is public and worthless without the machine's private key — but a caller that retried freely would fill the request table. Main-only, like the enrollment it precedes: a renderer able to mint nonces holds step one of the handshake, and the account channel is refused. |
+| `host.enrollmentHeartbeat` | `platform/account/account-port.ts` | `POST /api/claxedo/host/enrollments/heartbeat` | unary | safe | Presence, signed by the machine key. Safe to retry: the server extends an existing enrollment rather than creating anything, and a heartbeat that arrives twice is a heartbeat. A REJECTED one is not retried at all — the connector stops, because re-enrolling would be it overruling a revocation. Main-only for the same reason as the other two: the signature is the machine key's. |
 
 ### Sessions
 
