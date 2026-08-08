@@ -8,7 +8,7 @@ become one running product. Three roles, three directories:
 | `hosts/` | we **host** these packages | `workgraph/`, `wakes/`, `agent-extensions/`, `workspace-runtime/` — one dir per `@claxedo/<pkg>` |
 | `adapters/` | we **adapt** these backends | `central-store/` — each adapts exactly one external thing. The Relay adapter moved to `@claxedo/server-core/adapters/relay`, which both products use. |
 | `platform/` | layer-organized shared machinery | `auth/`, `db/`, `errors/`, `http/`, `runtime/`, `telemetry/`, `governance/` |
-| `deployments/` | we **compose** these modes | `local/`, `hosted-node/`, `hosted-shared/`, `hosted-workerd/`, `shared-routes/` |
+| `deployments/` | we **compose** these modes | `self-hosted-node/`, `hosted-node/`, `hosted-shared/`, `hosted-workerd/`, `shared-routes/` |
 
 Everything else is a feature domain, flat at `src/` root — `documents/`,
 `billing/`, `channels/`, `session/`, `workspace/`, `credentials/`, `sandbox/`,

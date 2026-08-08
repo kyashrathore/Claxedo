@@ -129,7 +129,7 @@ delete process.env.OPENAI_API_KEY
 delete process.env.CURSOR_API_KEY
 
 const [serverMod, supervisor, store, agent, embedded] = await Promise.all([
-  import("../../deployments/local/server.js"),
+  import("../../deployments/self-hosted-node/app.js"),
   import("../../workspace/supervisor/index.js"),
   import("@claxedo/server-core/workspace/store/index"),
   import("@claxedo/server-core/agent-config/index"),

@@ -13,7 +13,7 @@ import {
 } from "@claxedo/workspace-relay"
 import { createWorkspaceRuntimeApp } from "../../workspace-runtime/src/server.ts"
 import { relayWorkspaceRuntimeExposure } from "../../workspace-runtime/src/exposure.ts"
-import { createApp } from "./deployments/local/server"
+import { createApp } from "./deployments/self-hosted-node/app"
 import { opencodeRequest } from "./opencode/engine.ts"
 import { createControlPlaneServices } from "./authority/services.ts"
 import { createSqliteCentralStore } from "./authority/adapters/sqlite/central-store.ts"
@@ -373,7 +373,7 @@ if (access === "cloud") {
 //     OIDC-shaped issuer instead of Clerk.
 //   - `createSqliteWorkspaceAuthority()` (`authority/adapters/sqlite/
 //     workspace-authority.ts`) is the SAME self-host `WorkspaceAuthority`
-//     `deployments/local/server.ts:948`'s `createDefaultLocalControlPlaneServices`
+//     `deployments/self-hosted-node/app.ts:948`'s `createDefaultLocalControlPlaneServices`
 //     composes when no `CLAXEDO_WORKSPACE_AUTHORITY_URL` (Convex) is set —
 //     full role/session/sharing model, mirrored 1:1 from the Convex backend,
 //     backed by a real SQLite file under this fixture's own
@@ -501,7 +501,7 @@ const services = createControlPlaneServices({
   // Real self-host `WorkspaceAuthority`, injected at the composition site —
   // exactly the seam `authority/services.ts:220` documents ("the authority is
   // always injected by the composition site; the generic services never
-  // construct one") and the same object `deployments/local/server.ts:948`
+  // construct one") and the same object `deployments/self-hosted-node/app.ts:948`
   // composes for production self-host. Replaces the hand-rolled
   // `services.authority = {...}` object literal that used to sit after
   // `createApp(services)` below — every method there returned a canned value

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { createApp, isConnectionsCredentialPath } from "../../deployments/local/server"
+import { createApp, isConnectionsCredentialPath } from "../../deployments/self-hosted-node/app"
 import { createControlPlaneServices } from "../../authority/services"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
 

@@ -195,7 +195,7 @@ process.env.CLAXEDO_STATE_DIR = path.join(data, "state")
 process.env.POSTHOG_KEY = ""
 
 const [serverMod, store, agent] = await Promise.all([
-  import("../../deployments/local/server"),
+  import("../../deployments/self-hosted-node/app"),
   import("@claxedo/server-core/workspace/store/index"),
   import("@claxedo/server-core/agent-config/index"),
 ])

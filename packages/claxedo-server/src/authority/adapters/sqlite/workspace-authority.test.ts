@@ -525,7 +525,7 @@ describe("default local composition", () => {
     delete process.env.CLAXEDO_SIGNED_CLOUD_AUTH
     delete process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
     try {
-      const { createDefaultLocalControlPlaneServices } = await import("../../../deployments/local/server")
+      const { createDefaultLocalControlPlaneServices } = await import("../../../deployments/self-hosted-node/app")
       const services = createDefaultLocalControlPlaneServices()
       // The whole point of the SQLite authority: `requireAuthority` must never
       // throw its 503 in an unconfigured self-host deployment.

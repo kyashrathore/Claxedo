@@ -5,7 +5,7 @@ export {
   startControlPlaneStack,
   startServer,
   type ControlPlaneStackOptions,
-} from "./deployments/local/server"
+} from "./deployments/self-hosted-node/app"
 export { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/self-hosted-execution"
 export { createCentralSessionRuntime } from "./session/runtime"
 export {

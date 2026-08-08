@@ -10,7 +10,7 @@ import {
   SELF_HOST_DOCUMENT_CONTENT_SECURITY_POLICY,
   SELF_HOST_DOCUMENT_FRAME_ANCESTORS,
   selfHostDocumentSecurityHeaderEntries,
-} from "./server"
+} from "./app"
 
 /**
  * The local / self-host server is the ONE surface that answers both response
@@ -304,12 +304,12 @@ describe("selfHostDocumentSecurityHeaderEntries derives from the hosted set", ()
   })
 })
 
-describe("server.ts mounts the middleware outermost", () => {
+describe("app.ts mounts the middleware outermost", () => {
   test("localSecurityHeaders() is registered before the CORS middleware", () => {
     // Source-level ratchet, same idiom as the hosted pin in
     // security-headers.test.ts: the guarantee is "no local route can miss
     // these", which only holds if the middleware is composed once, at the top.
-    const source = fs.readFileSync(path.resolve(import.meta.dirname, "server.ts"), "utf-8")
+    const source = fs.readFileSync(path.resolve(import.meta.dirname, "app.ts"), "utf-8")
     const mount = source.indexOf("app.use(localSecurityHeaders())")
     const corsMount = source.indexOf("app.use(\n    cors({")
 
@@ -319,7 +319,7 @@ describe("server.ts mounts the middleware outermost", () => {
   })
 
   test("the SPA bundle mount marks its requests so they get the document policy", () => {
-    const source = fs.readFileSync(path.resolve(import.meta.dirname, "server.ts"), "utf-8")
+    const source = fs.readFileSync(path.resolve(import.meta.dirname, "app.ts"), "utf-8")
 
     expect(source).toContain('app.get("*", markSpaBundleRequest, serveStatic({ root }))')
   })

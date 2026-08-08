@@ -308,7 +308,7 @@ describe("architecture boundaries", () => {
 
   test("keeps API error response bodies structured", () => {
     const files = [
-      path.resolve(import.meta.dirname, "../../deployments/local/server.ts"),
+      path.resolve(import.meta.dirname, "../../deployments/self-hosted-node/app.ts"),
       // Whole directory, not one file: the entrypoints hold the `errorBody`
       // responses this guard pins, and they moved out of proxy.ts in W11.2b.
       ...walk(path.resolve(import.meta.dirname, "../../workspace/runtime-dispatch")).filter((file) =>
@@ -353,7 +353,7 @@ describe("architecture boundaries", () => {
 
 
   test("keeps WorkGraph out of Control Plane module load", () => {
-    const server = fs.readFileSync(path.resolve(import.meta.dirname, "../../deployments/local/server.ts"), "utf-8")
+    const server = fs.readFileSync(path.resolve(import.meta.dirname, "../../deployments/self-hosted-node/app.ts"), "utf-8")
     const serverWorkgraph = fs.readFileSync(path.resolve(import.meta.dirname, "../../hosts/workgraph/composition/server-workgraph.ts"), "utf-8")
 
     expect(server).not.toMatch(/from ["']@claxedo\/workgraph["']/)

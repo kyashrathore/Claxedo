@@ -7,14 +7,14 @@
  * `deployments/local` is no longer a shared thing.
  *
  * The measurement that made this possible: after Unit 5 the desktop boots
- * `@claxedo/local-server`, so `startServer` in `deployments/local/server.ts`
+ * `@claxedo/local-server`, so `startServer` in `deployments/self-hosted-node/app.ts`
  * has exactly ONE production caller left — the self-hosted entry. Its own
  * comment still claimed two. That file is now self-hosted's private
  * implementation rather than a shared composition, and this module is the
  * public way in.
  *
  * What has NOT moved yet: the 1,270-line `createApp` body, which still lives
- * in `deployments/local/server.ts` and is still reached by ~24 tests that
+ * in `deployments/self-hosted-node/app.ts` and is still reached by ~24 tests that
  * construct it with a `local` deployment mode and no authority. Those tests are
  * why the posture gate cannot simply be added there — see `posture.ts`. They
  * are the remaining migration, and until they move, `createApp` stays exported
@@ -26,7 +26,7 @@ import path from "node:path"
 import { deploymentMode } from "@claxedo/server-core/authority/deployment-mode"
 import { embeddedAuthEnabled } from "./embedded-auth"
 import { selfHostedCapabilities } from "./capabilities"
-import { startServer } from "../local/server"
+import { startServer } from "./app"
 import { assertSelfHostedPosture } from "./posture"
 
 export type SelfHostedStartOptions = {

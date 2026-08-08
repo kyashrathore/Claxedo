@@ -17,7 +17,7 @@ import { configureEmbeddedWorkspaceRuntime } from "@claxedo/local-server/deploym
 import { configureOpenCodeEngine, opencodeRequest } from "@claxedo/server-core/opencode/engine"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { startUserHostedWorkspaceTunnel, stopAllUserHostedWorkspaceTunnels } from "./user-hosted-tunnel"
-import { createApp } from "./deployments/local/server"
+import { createApp } from "./deployments/self-hosted-node/app"
 import { createControlPlaneServices } from "./authority/services"
 import { createSqliteCentralStore } from "./authority/adapters/sqlite/central-store"
 

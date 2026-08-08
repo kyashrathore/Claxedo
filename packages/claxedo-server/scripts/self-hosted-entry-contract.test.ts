@@ -84,7 +84,7 @@ describe("self-hosted entry contract", () => {
     // records that the public surface is the mixed local composition.
     expect(manifest.main).toBe("./src/index.ts")
     const index = read("src/index.ts")
-    expect(index).toContain('from "./deployments/local/server"')
+    expect(index).toContain('from "./deployments/self-hosted-node/app"')
     expect(index).toContain("createApp")
     expect(index).toContain("startControlPlaneStack")
   })

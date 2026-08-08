@@ -53,7 +53,7 @@ process.env.CLAXEDO_ACP_PROMPT_TIMEOUT_MS = "15000"
 process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "1000"
 
 const [serverMod, supervisor, store, agent, embedded] = await Promise.all([
-  import("../../deployments/local/server.js"),
+  import("../../deployments/self-hosted-node/app.js"),
   import("../../workspace/supervisor/index.js"),
   import("@claxedo/server-core/workspace/store/index"),
   import("@claxedo/server-core/agent-config/index"),

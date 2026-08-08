@@ -105,7 +105,7 @@ vi.mock("@claxedo/server-core/opencode/auth", () => ({
 }))
 
 const [serverMod, servicesMod, syncMod, compatMod, agentConfigMod, engineMod] = await Promise.all([
-  import("../../deployments/local/server"),
+  import("../../deployments/self-hosted-node/app"),
   import("../../authority/services"),
   import("../../authority/adapters/sqlite/central-store"),
   import("@claxedo/local-server/opencode/compat-routes/index"),

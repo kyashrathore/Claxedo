@@ -130,7 +130,7 @@ process.env.CLAXEDO_STATE_DIR = path.join(data, "state")
 process.env.POSTHOG_KEY = ""
 
 // Vitest can deadlock resolving this graph when these top-level imports run concurrently.
-const serverMod = await import("../../deployments/local/server")
+const serverMod = await import("../../deployments/self-hosted-node/app")
 const supervisor = await import("../../workspace/supervisor")
 const store = await import("@claxedo/server-core/workspace/store/index")
 const agent = await import("@claxedo/server-core/agent-config/index")

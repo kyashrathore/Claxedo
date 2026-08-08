@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
-import { createApp } from "./server"
+import { createApp } from "./app"
 import { createControlPlaneServices } from "../../authority/services"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
 import {

@@ -6,7 +6,7 @@ import type { WorkGraphRunOperationBroker } from "@claxedo/workgraph/runtime-ada
  * The hosted capabilities the SELF-HOSTED single binary contributes to its
  * embedded Workspace Runtime.
  *
- * `deployments/local/server.ts` currently serves two products. The desktop
+ * `deployments/self-hosted-node/app.ts` currently serves two products. The desktop
  * sidecar must lose WorkGraph and Documents; the self-hosted single binary
  * ships them and always has. Making the create-app seam take a capability
  * contribution is what lets one composition satisfy both without a runtime
