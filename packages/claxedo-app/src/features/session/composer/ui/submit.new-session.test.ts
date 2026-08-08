@@ -74,6 +74,15 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       model: { providerID: "provider", id: "model" },
     })
     expect(sessionPromotionCalls).toEqual([{ sessionID: "session-1", configWrites: 0 }])
+    // The create body above IS the canonical config write, so nothing may
+    // follow it with a redundant `/session/:id/config` PATCH — not before
+    // promotion (asserted by `configWrites: 0`) and not after the prompt is
+    // dispatched either. A harness session is claimed from the prewarm pool
+    // instead of created here, so it still needs that PATCH — see
+    // submit.harness-dispatch.test.ts.
+    await settleSubmitEffects()
+    expect(unsignedCalls.filter((call) => call.method === "PATCH" && call.url.includes("/config"))).toEqual([])
+    expect(runtimeCalls.filter((call) => call.method === "PATCH" && call.input.includes("/config"))).toEqual([])
     expect(stateAtSubmit).toEqual([{ resetCount: 2, optimisticCount: 1 }])
   })
 

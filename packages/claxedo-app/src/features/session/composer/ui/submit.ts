@@ -484,6 +484,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       clearBoot()
       return
     }
+    // An OpenCode session is created by `createOpencodeSession`
+    // (submit-create-session.ts) with the full initial config in the create
+    // body, so the runtime already holds the canonical config and a follow-up
+    // PATCH would be a redundant write. A harness session is NOT created here:
+    // it is claimed from the prewarm pool, which created it with `{ directory }`
+    // alone (harness-runtime-session-actions.ts), so its config still has to be
+    // written on the first submit.
+    const sessionConfigWrittenOnCreate = target.created && !harnessMode
     const provisionalTitle = mode === "normal" ? provisionalSessionTitle(text) : undefined
     const finalizedSessionTarget = finalizeSubmitSessionTarget({
       target,
@@ -556,7 +564,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const recordPromptSubmissionContext = {
       onSubmit: input.onSubmit,
       saveSessionConfig: () => {
-        if (target.created) return Promise.resolve()
+        if (sessionConfigWrittenOnCreate) return Promise.resolve()
         if (existingSessionConfig && sameExistingSessionConfig(existingSessionConfig, {
           harnessType: persistedHarnessType,
           agent,
