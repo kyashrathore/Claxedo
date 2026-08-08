@@ -218,18 +218,31 @@ const api: ElectronAPI = {
    * route nobody wrote down.
    */
   /**
-   * Machine remote-access status, receive-only.
+   * Machine remote access, entirely by name.
    *
-   * A listener and nothing else. There is deliberately no `start`, `pause` or
-   * `resume` here: those are account-authorized operations and travel on the
-   * account's named channels, where the credential is. A bridge that let the
-   * renderer drive a signing process would be a second, weaker path to the
-   * same authority.
+   * Four operations, none of which takes an argument. The renderer cannot pass
+   * a url, a path, a method, a body or even a label — main holds the account
+   * bearer and a machine signing key that does not expire, so the only thing a
+   * message may carry is WHICH of four reviewed things should happen.
+   *
+   * `status` reads. `start` publishes this machine and is the one place the
+   * enrollment handshake can begin, which is why the desktop enrolls nothing at
+   * launch: the user presses a button, or nothing happens.
+   *
+   * `onStatus` is the other direction — a heartbeat rejected, an enrollment
+   * expired, a revocation — which no invoke could deliver because nobody would
+   * be asking at the moment it happened.
    */
-  onHostConnectorStatus: (listener: (status: unknown) => void) => {
-    const handler = (_event: unknown, status: unknown) => listener(status)
-    ipcRenderer.on("claxedo.hostConnector.status", handler)
-    return () => ipcRenderer.removeListener("claxedo.hostConnector.status", handler)
+  hostConnector: {
+    status: () => ipcRenderer.invoke("claxedo.hostConnector.status"),
+    start: () => ipcRenderer.invoke("claxedo.hostConnector.start"),
+    pause: () => ipcRenderer.invoke("claxedo.hostConnector.pause"),
+    revoke: () => ipcRenderer.invoke("claxedo.hostConnector.revoke"),
+    onStatus: (listener: (status: unknown) => void) => {
+      const handler = (_event: unknown, status: unknown) => listener(status)
+      ipcRenderer.on("claxedo.hostConnector.status", handler)
+      return () => ipcRenderer.removeListener("claxedo.hostConnector.status", handler)
+    },
   },
   account: {
     state: () => ipcRenderer.invoke("claxedo.account.state"),

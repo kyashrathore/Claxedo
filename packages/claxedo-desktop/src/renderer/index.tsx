@@ -26,6 +26,7 @@ import { ConfigProvider } from "@/app/providers"
 import { getDefaultConfig, initClaxedo } from "@claxedo/app"
 import { configureAuthSession, getAuthToken, useAuth } from "@claxedo/app/auth"
 import { configureApiRuntime } from "@/platform/api/api"
+import { configureDesktopMachineRemoteAccess } from "@/platform/remote-access/machine-remote-access"
 import type { LinuxDisplayBackend, ServerReadyData } from "../preload/types"
 import pkg from "../../package.json"
 import { initI18n, t } from "./i18n"
@@ -80,6 +81,29 @@ configureApiRuntime({ bearerToken: getAuthToken })
  * At module scope, before render, for the same reason as `configureApiRuntime`.
  */
 configureAuthSession(useAuth)
+
+/**
+ * Bind machine remote access to the Host Connector in Electron main.
+ *
+ * The desktop's sidecar is `@claxedo/local-server`, which serves none of
+ * `/api/claxedo/remote-access/*` — those paths belong to the Host Connector
+ * now, and the connector is in main because that is where the machine signing
+ * key and the account credential live. So this renderer performs no request:
+ * it names one of four operations over IPC.
+ *
+ * Without this line, "Enable remote access" posts to a route this product does
+ * not serve. That is not hypothetical — it is what shipped, past a green suite,
+ * because the transport was hardcoded in shared app code with nothing asserting
+ * which product it belonged to.
+ *
+ * Bound only when the preload actually exposes the bridge. Nothing is bound in
+ * its absence: an older preload under a newer renderer means the capability is
+ * missing, and the panel reporting that is far better than a fallback that
+ * quietly recreates the bug.
+ *
+ * At module scope, before render, for the same reason as `configureApiRuntime`.
+ */
+configureDesktopMachineRemoteAccess()
 
 const root = document.getElementById("root")
 if (import.meta.env.DEV && !(root instanceof HTMLElement)) {

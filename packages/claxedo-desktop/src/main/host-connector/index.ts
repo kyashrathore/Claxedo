@@ -23,9 +23,10 @@
  *     process — the same split `ipc-caller-guard.ts` and `navigation-guard.ts`
  *     use, and the reason `account/index.ts` has no test beside it.
  *
- * It registers NO IPC. Sharing state reaches the renderer through the existing
- * account/settings surfaces; see the report accompanying this unit for the one
- * channel a status readout would need.
+ * It registers NO IPC itself. `ipc.ts` beside it owns the four named operations
+ * the renderer may ask for and `status-channel.ts` owns the push back; keeping
+ * assembly, the inbound surface and the outbound one in three files is what
+ * makes "what can the renderer reach?" answerable by reading one of them.
  */
 
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
@@ -37,10 +38,11 @@ import { loadOrCreateMachineIdentity, type MachineIdentityFile } from "./machine
 /**
  * The account service's `run`, and nothing else.
  *
- * Typed by NAME rather than as `HostedOperationName` on purpose: two of the
- * three names below are not yet rows in `account/hosted-operations.ts`, and a
- * type that hid that would be a type that lied. The call fails loudly at
- * `resolveHostedOperation` instead — see `HOST_ENROLLMENT_OPERATIONS`.
+ * Typed by NAME rather than as `HostedOperationName` because that union lives
+ * in `account/`, which this module deliberately does not depend on: the
+ * connector asks for an operation and the account decides what one is. A name
+ * nobody wrote down fails loudly at `resolveHostedOperation` rather than
+ * silently taking some default — there is no default.
  */
 export type AccountOperationRunner = (name: string, input?: Record<string, unknown>) => Promise<unknown>
 
@@ -51,12 +53,11 @@ export type AccountOperationRunner = (name: string, input?: Record<string, unkno
  * three must travel through the account service — the connector has no bearer
  * of its own.
  *
- * `host.enrollCurrentMachine` is declared in the reviewed operation matrix. The
- * other two are NOT yet, and adding them means editing both
- * `docs/tech-docs/desktop-hosted-operation-matrix.md` and
- * `account/hosted-operations.ts`, which this unit deliberately does not touch.
- * Until then `start()` stops with an error naming the missing operation rather
- * than inventing a generic request path around the table.
+ * All three are rows in the reviewed table (`account/hosted-operations.ts`), so
+ * the handshake performs three named operations and never composes a request.
+ * Adding a fourth means adding a matrix row and a table entry first; `start()`
+ * would otherwise stop with an error naming the missing operation, which is the
+ * correct outcome and the reason nothing here reaches for a generic path.
  */
 export const HOST_ENROLLMENT_OPERATIONS = {
   createRequest: "host.enrollmentNonce",
@@ -154,6 +155,23 @@ export function machineIdentityFile(userDataDir: string): MachineIdentityFile {
   }
 }
 
+/**
+ * What this machine is called in the account's device list.
+ *
+ * A platform word and nothing more. The obvious label is `os.hostname()`, and
+ * it is the wrong one for the reason `machine-identity.ts` gives about the host
+ * id: a hostname is the laptop's identity on its own network, it is routinely
+ * the owner's name, and sending it to the control plane hands that over for no
+ * benefit the user asked for. "macOS" tells a person which row is which — which
+ * is the whole job of a label — and tells an observer nothing.
+ */
+export function machineDisplayName(platform: NodeJS.Platform): string {
+  if (platform === "darwin") return "macOS"
+  if (platform === "win32") return "Windows"
+  if (platform === "linux") return "Linux"
+  return "This machine"
+}
+
 /** `setInterval`, shaped as the connector's cancellable timer. */
 export function nodeInterval() {
   return (fn: () => void, ms: number) => {
@@ -167,7 +185,20 @@ export function nodeInterval() {
 export type HostConnectorSetup = {
   status: () => HostConnectorStatus
   start: () => Promise<HostConnectorStatus>
+  /** Stop beating. The identity survives, so a later `start` re-enrols it. */
   stop: () => void
+  /**
+   * Stop beating and destroy this machine's identity.
+   *
+   * The difference from `stop` is what happens NEXT. Both let the enrollment
+   * lapse when its TTL runs out — the control plane forgets a machine that
+   * stops proving it is there — but a paused machine can come back as itself,
+   * and a revoked one cannot: its private key is gone, so nothing can ever sign
+   * as that host id again. A later `start` mints a fresh identity and the
+   * control plane sees an honest new machine, which is the same rule
+   * `machine-identity.ts` applies to a rotated key.
+   */
+  revoke: () => void
 }
 
 /**
@@ -260,7 +291,24 @@ export function setupHostConnector(input: {
       // thing that must actually stop, and a garbage-collected connector still
       // beats.
       connector?.close()
-      if (connector) status = connector.state()
+      // Through `settle`, not a bare assignment: pausing is a transition the
+      // panel must see. Before this, a pause left the renderer showing a
+      // published machine until something else happened to push.
+      if (connector) settle(connector.state())
+    },
+
+    revoke() {
+      connector?.close()
+      // The file, not just the process. The record is the only copy of the
+      // private key — `machine-identity.ts` keeps it inside the OS secure
+      // store's ciphertext and nowhere else — so removing it is what makes the
+      // revocation outlive this launch.
+      machineIdentityFile(input.userDataDir).clear()
+      // Dropped, so a later `start` takes the mint path rather than believing a
+      // live connector already exists. Its key is gone; keeping the object
+      // would keep a connector that can only fail.
+      connector = undefined
+      settle({ status: "stopped", reason: "revoked", detail: "remote access revoked on this machine" })
     },
   }
 }

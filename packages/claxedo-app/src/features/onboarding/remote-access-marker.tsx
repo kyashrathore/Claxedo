@@ -1,10 +1,17 @@
 import { onMount, type Component } from "solid-js"
 import { useLocation } from "@solidjs/router"
-import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { parseShellRoute } from "@/platform/identity/route"
-import { createRemoteAccessClient } from "./remote-access-api"
+import { machineRemoteAccess } from "@/platform/remote-access/machine-remote-access"
 import { remoteAccessClientId, shouldRecordSecondDeviceOpen } from "./remote-access-state"
 
+/**
+ * Records that a workspace was opened from a SECOND signed-in client.
+ *
+ * Runs on the device that followed the link — a phone, another browser — never
+ * on the machine that published itself. That asymmetry is why the operation is
+ * optional on the port and absent on the desktop: the desktop is the first
+ * device by construction.
+ */
 export const RemoteAccessMarkerRecorder: Component = () => {
   const location = useLocation()
 
@@ -17,9 +24,11 @@ export const RemoteAccessMarkerRecorder: Component = () => {
       currentClientId: remoteAccessClientId(),
       signedIn: true,
     })) return
-    void createRemoteAccessClient({
-      request: (path, init) => authFetch(new URL(path, getClaxedoServerUrl()), init),
-    }).markSecondDeviceOpen(route.workspaceId, sourceClientId, remoteAccessClientId())
+    void machineRemoteAccess()?.markSecondDeviceOpen?.({
+      workspaceId: route.workspaceId,
+      sourceClientId,
+      currentClientId: remoteAccessClientId(),
+    })
   })
 
   return null

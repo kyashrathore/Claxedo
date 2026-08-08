@@ -206,12 +206,25 @@ export type ElectronAPI = {
    * `docs/tech-docs/desktop-hosted-operation-matrix.md`.
    */
   /**
-   * Machine remote-access status, receive-only. Returns an unsubscribe.
+   * Machine remote access, by named operation only.
    *
-   * No start/pause/resume by design — those are account-authorized and travel
-   * on the account channels.
+   * Four operations and a status subscription. None of them takes an argument,
+   * which is stronger than the account bridge below and deliberately so: main
+   * holds the account bearer AND a machine signing key that never expires, so
+   * there must be nothing in a message for a handler to act on. A message picks
+   * which of four things happens; it cannot describe one.
+   *
+   * `main/host-connector/ipc.ts` is the closed set, and
+   * `main/host-connector/ipc.test.ts` asserts this bridge names exactly it.
    */
-  onHostConnectorStatus: (listener: (status: unknown) => void) => () => void
+  hostConnector: {
+    status: () => Promise<unknown>
+    start: () => Promise<unknown>
+    pause: () => Promise<unknown>
+    revoke: () => Promise<unknown>
+    /** Push, for the transitions the user did not cause. Returns an unsubscribe. */
+    onStatus: (listener: (status: unknown) => void) => () => void
+  }
   account: {
     state: () => Promise<unknown>
     signIn: () => Promise<unknown>

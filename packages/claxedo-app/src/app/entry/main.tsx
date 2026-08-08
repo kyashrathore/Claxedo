@@ -11,7 +11,7 @@ import { AppBaseProviders, AppInterface } from "@/app/entry/app"
 import { PlatformProvider, type Platform } from "@claxedo/app"
 import { initClaxedo, getDefaultConfig } from "./index"
 import { getAuthToken, initializeClerk, useAuth } from "@/platform/auth/auth-client"
-import { authFetch, configureApiRuntime } from "@/platform/api/api"
+import { authFetch, configureApiRuntime, getClaxedoServerUrl } from "@/platform/api/api"
 import { configureAuthSession } from "@/platform/auth/auth-session"
 import {
   initPostHog,
@@ -26,6 +26,7 @@ import { ConfigProvider } from "../providers/config"
 import { Persist, resetDemoPersisted, setPersisted } from "@/platform/persistence/persist"
 import { configureWorkspaceStartup } from "@/platform/runtime/workspace-startup"
 import { cloudWorkspaceStartup } from "@/platform/runtime/cloud/workspace-runtime-store"
+import { configureHttpMachineRemoteAccess } from "@/platform/remote-access/machine-remote-access"
 
 /**
  * Bind the hosted workspace-startup implementation.
@@ -40,6 +41,25 @@ import { cloudWorkspaceStartup } from "@/platform/runtime/cloud/workspace-runtim
  * wake, so the port stays unbound and reaching it throws instead of pretending.
  */
 configureWorkspaceStartup(cloudWorkspaceStartup)
+
+/**
+ * Bind machine remote access to this server's own routes.
+ *
+ * The server this bundle is served from mounts `RemoteAccessRoutes` at
+ * `/api/claxedo/remote-access` (`deployments/self-hosted-node/app.ts`), so
+ * publishing a machine here IS an authenticated call to this origin.
+ *
+ * The desktop binds a different implementation over Electron IPC, because its
+ * sidecar serves none of those paths — machine publication belongs to the Host
+ * Connector in Electron main. `local.tsx` binds nothing, deliberately: a local
+ * browser build has neither the routes nor a main process, and the panel says
+ * so rather than posting into a 404. That is the bug this seam exists to make
+ * impossible.
+ *
+ * At module scope, beside the other bindings, so a surface that reads the port
+ * during its first render does not see it unbound.
+ */
+configureHttpMachineRemoteAccess((path, init) => authFetch(new URL(path, getClaxedoServerUrl()), init))
 
 /**
  * Bind the identity provider to the authenticated transport.

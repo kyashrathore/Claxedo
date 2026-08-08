@@ -28,6 +28,9 @@ function target() {
   return state
 }
 
+/** A build that can publish, with a signed-in owner. */
+const live = { available: true, signedIn: true }
+
 const enrolled = {
   status: "enrolled",
   enrollment: { enrollment_id: "enr_1", host_id: "host_1", expires_at: 9_999 },
@@ -38,11 +41,11 @@ describe("toStatusEvent", () => {
     // Not the state object. The connector's own shape carries an enrollment
     // record; sending it whole would put fields on the boundary that no
     // surface reads and every future reader would be tempted to.
-    expect(toStatusEvent(enrolled)).toEqual({ status: "enrolled", expiresAt: 9_999 })
+    expect(toStatusEvent(enrolled, live)).toEqual({ status: "enrolled", expiresAt: 9_999, available: true, signedIn: true })
   })
 
   test("carries no enrollment id, host id or key material", () => {
-    const payload = JSON.stringify(toStatusEvent(enrolled))
+    const payload = JSON.stringify(toStatusEvent(enrolled, live))
 
     for (const leaked of ["enr_1", "host_1", "publicKey", "privateKey", "signature"]) {
       expect(payload, `must not carry ${leaked}`).not.toContain(leaked)
@@ -54,15 +57,21 @@ describe("toStatusEvent", () => {
     // messages, and the panel cannot tell them apart without the reason.
     const stopped = { status: "stopped", reason: "revoked", detail: "the server rejected this session" } as never
 
-    expect(toStatusEvent(stopped)).toEqual({
+    expect(toStatusEvent(stopped, live)).toEqual({
       status: "stopped",
       reason: "revoked",
       detail: "the server rejected this session",
+      available: true,
+      signedIn: true,
     })
   })
 
   test("omits absent fields rather than sending undefined", () => {
-    expect(toStatusEvent({ status: "not-started" } as never)).toEqual({ status: "not-started" })
+    expect(toStatusEvent({ status: "not-started" } as never, { available: false, signedIn: false })).toEqual({
+      status: "not-started",
+      available: false,
+      signedIn: false,
+    })
   })
 })
 
@@ -70,8 +79,11 @@ describe("publishHostConnectorStatus", () => {
   test("sends on the one channel", () => {
     const window = target()
 
-    expect(publishHostConnectorStatus(window.handle, enrolled)).toBe(true)
-    expect(window.sent).toEqual([{ channel: HOST_CONNECTOR_STATUS_CHANNEL, payload: { status: "enrolled", expiresAt: 9_999 } }])
+    expect(publishHostConnectorStatus(window.handle, enrolled, live)).toBe(true)
+    expect(window.sent).toEqual([{
+      channel: HOST_CONNECTOR_STATUS_CHANNEL,
+      payload: { status: "enrolled", expiresAt: 9_999, available: true, signedIn: true },
+    }])
   })
 
   test("skips a destroyed window instead of throwing", () => {
@@ -81,12 +93,12 @@ describe("publishHostConnectorStatus", () => {
     const window = target()
     window.destroyed = true
 
-    expect(publishHostConnectorStatus(window.handle, enrolled)).toBe(false)
+    expect(publishHostConnectorStatus(window.handle, enrolled, live)).toBe(false)
     expect(window.sent).toEqual([])
   })
 
   test("skips an absent window", () => {
-    expect(publishHostConnectorStatus(undefined, enrolled)).toBe(false)
+    expect(publishHostConnectorStatus(undefined, enrolled, live)).toBe(false)
   })
 })
 

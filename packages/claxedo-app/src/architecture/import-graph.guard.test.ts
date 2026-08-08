@@ -28,6 +28,10 @@ const liveTypeContracts = [
   "platform/runtime/workspace-startup-port.ts",
   "platform/query/project-meta.ts",
   "platform/account/account-port.ts",
+  // The machine remote-access port. Type-only from its binder, both
+  // implementations and the onboarding controller — the port declares what may
+  // be asked for, and each product binds one implementation of it.
+  "platform/remote-access/machine-remote-access-port.ts",
 ]
 
 describe("import graph orphan guard", () => {
