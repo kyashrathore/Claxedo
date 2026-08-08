@@ -78,6 +78,25 @@ describe("self-hosted entry contract", () => {
     expect(read("fly.toml")).toContain(`internal_port = ${exposed}`)
   })
 
+  test("the image's app build gets an explicit heap", () => {
+    // Found by building the image: the app build died with
+    // `FATAL ERROR: Reached heap limit` (exit 134). `NODE_OPTIONS` is set in
+    // the Dockerfile, but in the RUNTIME stage — the build stage inherits
+    // nothing from it.
+    //
+    // Nothing else can catch this. Node sizes its default heap from the
+    // cgroup rather than the host, so the identical build succeeds outside
+    // Docker on a 7.7GB machine and fails inside it, and every test in the
+    // repository passes either way. The only signal is building the image.
+    const dockerfile = read("Dockerfile")
+    const appBuild = dockerfile.slice(
+      dockerfile.indexOf("cd packages/claxedo-app"),
+      dockerfile.indexOf("FROM node:22-bookworm-slim AS runtime"),
+    )
+
+    expect(appBuild, "the app build stage must set its own heap").toContain("max-old-space-size")
+  })
+
   test("the public package entry exposes the self-hosted composition", () => {
     // `main`/`exports` are what `@claxedo/server` consumers resolve. Unit 7
     // replaces `createSelfHostedApp` with `createSelfHostedApp` here; until then this

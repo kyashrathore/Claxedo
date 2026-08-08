@@ -39,7 +39,15 @@ RUN cd packages/opencode && OPENCODE_CHANNEL=selfhost OPENCODE_VERSION=0.0.0-sel
 # Web UI bundle (W2): served by the control plane itself (CLAXEDO_APP_DIST_DIR
 # below). Empty VITE_* URLs → the app calls its own origin, so one process
 # serves both the UI and the API on any host name.
+# NODE_OPTIONS is set here and not inherited: the ENV further down belongs to
+# the RUNTIME stage, so this build ran on the container default heap and died
+# with `FATAL ERROR: Reached heap limit` (exit 134). Node sizes its default heap
+# from the cgroup, not the host, so the same build succeeds outside Docker and
+# fails inside it — which is why nothing caught this until the image was built.
+# 4096 rather than the runtime's 2048 because this bundle emits hidden
+# sourcemaps, and those are what the heap is spent on.
 RUN cd packages/claxedo-app && VITE_CLAXEDO_SERVER_URL="" VITE_OPENCODE_BACKEND_URL="" VITE_AUTH_ENABLED=false \
+    NODE_OPTIONS=--max-old-space-size=4096 \
     node ./node_modules/vite/bin/vite.js build --config vite.cloud.config.ts --outDir dist-selfhost
 
 FROM node:22-bookworm-slim AS runtime
