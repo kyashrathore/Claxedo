@@ -8,10 +8,10 @@
 # the cache still has the row rather than that the row is on disk — which is
 # the only thing worth proving here.
 #
-# What it does NOT yet cover: booting a build of the PREVIOUS entry first.
-# Unit 7 changed file paths and added a boot gate; it changed no schema and no
-# data format, so the migration surface is unchanged code. That makes the
-# cross-version fixture lower risk than a normal upgrade, and still unverified.
+# The cross-version case — boot the PREVIOUS entry, then this one on its data
+# root — is covered separately by `self-hosted-upgrade.sh`, which materializes
+# the shipped build from git history. Keep both: this one is fast and runs on
+# every change; that one takes ~3 minutes and matters at release.
 set -euo pipefail
 
 PORT="${PORT:-3194}"
