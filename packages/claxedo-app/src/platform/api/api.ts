@@ -69,6 +69,30 @@ export function resetApiRuntime() {
   cfg.bearerToken = undefined
 }
 
+/**
+ * Read the bound bearer, for the callers that build an `Authorization` header
+ * themselves instead of going through `authFetch`.
+ *
+ * Two of them exist — `features/workspaces/actions/project-actions.tsx`
+ * (destroying a cloud sandbox) and `platform/runtime/agent/agent-runtime-client.ts`
+ * (the signed control-plane init) — and both used to import `getAuthToken` from
+ * `@/platform/auth/auth-client` for one call each. That is the same edge this
+ * module cut for itself above, and it put Clerk in the LOCAL bundle through two
+ * modules the local shell genuinely needs.
+ *
+ * So the binder this module already owns answers for them too. Reading is
+ * deliberately a plain function rather than a second port: there is exactly one
+ * credential here, `configureApiRuntime` is where it is installed, and a caller
+ * that wants it should not have to know which build installed one.
+ *
+ * `null` when no build bound a source is the local product's normal state, not
+ * a failure — both call sites already omit the header when there is no token,
+ * which is also what they did before sign-in on the hosted app.
+ */
+export async function apiBearerToken(options?: { skipCache?: boolean }): Promise<string | null> {
+  return (await cfg.bearerToken?.(options)) ?? null
+}
+
 // Claxedo's own hosted app only. This used to also match `opencode.ai` and its
 // subdomains, which trusted upstream's hosted app as if it were ours.
 export function isHostedAppHostname(hostname: string | undefined) {
@@ -331,7 +355,7 @@ export async function authFetch(
   const apiFetchDebug = beginApiFetchDebug(input)
   const cache = localUrl(apiFetchUrl(input)) ? "no-store" as const : init?.cache
   const buildRequest = async (forceRefreshToken: boolean): Promise<{ request: Request | string | URL; init?: RequestInit; token: string | null }> => {
-    const token = (await cfg.bearerToken?.(forceRefreshToken ? { skipCache: true } : undefined)) ?? null
+    const token = await apiBearerToken(forceRefreshToken ? { skipCache: true } : undefined)
 
     const setAuth = (headers: Headers) => {
       if (headers.has("Authorization") && !forceRefreshToken) return

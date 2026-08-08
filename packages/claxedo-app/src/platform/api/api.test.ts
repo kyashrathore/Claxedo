@@ -29,6 +29,7 @@ const originalOpencode = window.__OPENCODE__
 // always evaluates the real api.ts.
 const {
   api,
+  apiBearerToken,
   authFetch,
   configureApiRuntime,
   fixDir,
@@ -297,6 +298,38 @@ describe("authFetch", () => {
 
     expect(calls).toHaveLength(1)
     expect(calls[0]?.url).toBe("http://127.0.0.1:64144/api/control/sessions")
+  })
+})
+
+/**
+ * The bearer read on its own, for the callers that build an `Authorization`
+ * header themselves rather than going through `authFetch`.
+ *
+ * `project-actions.tsx` (destroying a cloud sandbox) and
+ * `agent-runtime-client.ts` (the signed control-plane init) used to import
+ * `getAuthToken` for one call each, which is how Clerk reached the LOCAL
+ * bundle through two modules the local shell needs. They read this instead, so
+ * "no build bound a source" has to be a first-class ANSWER here, not a throw.
+ */
+describe("apiBearerToken", () => {
+  test("resolves null when the build bound no source", async () => {
+    // The local product's shape, and the reason this returns a value rather
+    // than throwing the way an unbound `*-port.ts` operation does. A token is
+    // deliberately available: if the reader had any other route to one, it
+    // would come back below.
+    resetApiRuntime()
+    token = "tok_123"
+
+    expect(await apiBearerToken()).toBeNull()
+    expect(tokenRequests).toEqual([])
+  })
+
+  test("hands back the bound source's token, and asks it with the caller's options", async () => {
+    token = "tok_123"
+
+    expect(await apiBearerToken()).toBe("tok_123")
+    expect(await apiBearerToken({ skipCache: true })).toBe("tok_123")
+    expect(tokenRequests).toEqual([undefined, { skipCache: true }])
   })
 })
 

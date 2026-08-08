@@ -24,7 +24,7 @@ import {
 } from "@/platform/telemetry/analytics"
 import { ConfigProvider } from "@/app/providers"
 import { getDefaultConfig, initClaxedo } from "@claxedo/app"
-import { getAuthToken } from "@claxedo/app/auth"
+import { configureAuthSession, getAuthToken, useAuth } from "@claxedo/app/auth"
 import { configureApiRuntime } from "@/platform/api/api"
 import type { LinuxDisplayBackend, ServerReadyData } from "../preload/types"
 import pkg from "../../package.json"
@@ -62,6 +62,24 @@ type Platform = AppPlatform & {
  * bearer it has today.
  */
 configureApiRuntime({ bearerToken: getAuthToken })
+
+/**
+ * Bind the identity provider to the app's canonical auth-session abstraction.
+ *
+ * Same reason as the bearer above, one seam over. `platform/auth/auth-session.ts`
+ * used to `import { useAuth }` statically; because the shell's provider tree
+ * calls `useAuthSession()` unconditionally, that put Clerk in the LOCAL bundle
+ * too. It now keeps a type-only edge and takes the provider from whoever binds
+ * one.
+ *
+ * This renderer is a signed-in-capable build — it already holds `getAuthToken`
+ * — so it binds the real provider. Without this line the desktop account menu
+ * would report "Local workspace" forever with a green suite; the local browser
+ * entry is the only composition root that deliberately binds nothing.
+ *
+ * At module scope, before render, for the same reason as `configureApiRuntime`.
+ */
+configureAuthSession(useAuth)
 
 const root = document.getElementById("root")
 if (import.meta.env.DEV && !(root instanceof HTMLElement)) {

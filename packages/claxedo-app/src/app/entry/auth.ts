@@ -16,6 +16,6 @@
  * happen per-consumer instead of blocking the entry split on it.
  */
 
-export { clerk as authClient, waitForClerk, initializeClerk, getAuthToken } from "@/platform/auth/auth-client"
-export { useAuthSession } from "@/platform/auth/auth-session"
-export type { AuthSession, AuthSessionStatus } from "@/platform/auth/auth-session"
+export { clerk as authClient, waitForClerk, initializeClerk, getAuthToken, useAuth } from "@/platform/auth/auth-client"
+export { configureAuthSession, useAuthSession } from "@/platform/auth/auth-session"
+export type { AuthSession, AuthSessionStatus, ExternalAuthSource } from "@/platform/auth/auth-session"

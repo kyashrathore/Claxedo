@@ -85,29 +85,26 @@ function importersOf(entry: string, target: string) {
 /**
  * The local closure's remaining routes to Clerk, by the module that owns each.
  *
- * Was four. `platform/api/api.ts` — the authenticated transport, imported by
- * `app/entry/app.tsx` two hops from the entry, and the shortest of the four —
- * is gone: it takes its bearer from `configureApiRuntime({ bearerToken })`,
- * which the hosted entry and the desktop renderer bind and `local.tsx`
- * deliberately does not.
+ * EMPTY, as of 2026-08-09. It was four, and each was cut separately:
+ * `platform/api/api.ts` (the authenticated transport),
+ * `platform/auth/auth-session.ts` (the shell's provider tree),
+ * `platform/runtime/agent/agent-runtime-client.ts`, and
+ * `features/workspaces/actions/project-actions.tsx`.
  *
- * The three below are separate work, and each is a different shape:
+ * Every one of them was a module that NEEDS a token importing the thing that
+ * MINTS one, and every one was fixed the same way — name the capability, let a
+ * composition root bind it. The hosted entry and the desktop renderer bind
+ * both ports; `local.tsx` deliberately binds neither, so the token source and
+ * the identity provider are simply absent from the local bundle rather than
+ * present-but-unused.
  *
- *  - `platform/auth/auth-session.ts` is the provider tree, reached from
- *    `app/entry/app.tsx`. It is on Unit 10's move list; the shell must stop
- *    mounting it in a local build.
- *  - `platform/runtime/agent/agent-runtime-client.ts` calls `getAuthToken`
- *    directly, exactly as `api.ts` did. Same remedy, different transport.
- *  - `features/workspaces/actions/project-actions.tsx` calls it in one action.
- *
- * DOWN is the only acceptable direction. A module appearing here is a new route
- * to the identity provider from local code.
+ * This list is not a baseline any more, it is an invariant. A module appearing
+ * here is a new route to the identity provider from local code, and the fix is
+ * a port, not an entry in this array. Note this measures VALUE imports only —
+ * `auth-session.ts` still names `useAuth` as a `import type`, which the bundler
+ * erases and which therefore correctly does not count.
  */
-const LOCAL_AUTH_CLIENT_IMPORTERS = [
-  "features/workspaces/actions/project-actions.tsx",
-  "platform/auth/auth-session.ts",
-  "platform/runtime/agent/agent-runtime-client.ts",
-]
+const LOCAL_AUTH_CLIENT_IMPORTERS: string[] = []
 
 describe("the local entry", () => {
   test("exists and is what index.local.html loads", () => {
@@ -136,39 +133,41 @@ describe("the local entry", () => {
     }
   })
 
-  test("reaches Clerk through the shell's provider tree, and that is the shortest route left", () => {
-    // MEASURED, not assumed. If this shrinks to null the assertion below
-    // should be replaced with `toBeNull()` — that is the goal state, and this
-    // test is how anyone knows whether it has been reached.
-    const breach = chainTo("app/entry/local.tsx")
-
-    expect(breach, "expected the known Clerk chain; if it is gone, tighten this test").not.toBeNull()
-    expect(breach!.specifier).toContain("@clerk/clerk-js")
-    // The chain is now
-    // `local.tsx -> app/entry/app.tsx -> platform/auth/auth-session.ts -> auth-client.ts`.
+  test("does not reach Clerk or Convex at all", () => {
+    // The goal state, reached 2026-08-09. This assertion used to be its
+    // inverse — `.not.toBeNull()` against a recorded baseline — because the
+    // chain was real and pretending otherwise would have been the lie. The
+    // history is worth keeping, because each hop was cut for a different
+    // reason and the shape of the last one is the shape of the next such fix:
     //
-    // It used to run through `app/entry/index.tsx`, which re-exported the auth
-    // surface and started Clerk inside the shared `initClaxedo`. Both are gone:
-    // the auth surface moved to `@claxedo/app/auth`, and starting the identity
-    // provider is the hosted entry's job.
+    //  1. `app/entry/index.tsx` re-exported the auth surface and started Clerk
+    //     inside the shared `initClaxedo`. The surface moved to
+    //     `@claxedo/app/auth`, and starting the identity provider became the
+    //     hosted entry's job.
+    //  2. `platform/api/api.ts`, the authenticated transport, imported
+    //     `getAuthToken`. It now takes a bearer from
+    //     `configureApiRuntime({ bearerToken })` — only a build that HAS an
+    //     identity provider binds one.
+    //  3. `platform/auth/auth-session.ts` was reached from `app/entry/app.tsx`,
+    //     so the shared shell's provider tree pulled Clerk into every build.
+    //     It now imports `useAuth` as a TYPE and takes the real one through
+    //     `configureAuthSession`; unbound, it returns an anonymous session,
+    //     which is what a local build genuinely is.
+    //  4. `agent-runtime-client.ts` and `project-actions.tsx` each called
+    //     `getAuthToken` directly. Both read the bound bearer instead.
     //
-    // Then it ran through `platform/api/api.ts` — the authenticated transport,
-    // which the cloud-app extraction measurement named as the structural edge
-    // because api.ts STAYS in `@claxedo/app` while `auth-client.ts` moves. That
-    // hop is gone too: the transport takes a bearer from
-    // `configureApiRuntime({ bearerToken })` instead of importing the provider,
-    // and only a build with an identity provider binds one.
-    //
-    // What is left is what the top of this file described from the beginning —
-    // the shell's provider tree, mounted by `app/entry/app.tsx`. Making it
-    // local is a different unit's work.
-    expect(breach!.chain).toContain("platform/auth/auth-session.ts")
-    // The transport is still in the local closure — it is the local product's
-    // fetch path too — it just no longer leads anywhere near Clerk.
-    expect(breach!.chain).not.toContain("platform/api/api.ts")
+    // All four were the same defect: a module that NEEDS a token importing the
+    // thing that MINTS one. The remedy every time was to name the capability
+    // and let a composition root supply it.
+    expect(chainTo("app/entry/local.tsx"), "the local entry reached a forbidden package again").toBeNull()
   })
 
   test("records every remaining route to the identity provider, not just the shortest", () => {
+    // Empty, and it must stay empty. A shortest-path walk reports one chain and
+    // hides the rest; this file once claimed it "fails if a SECOND chain
+    // appears" and it did not — there were four the whole time, and cutting the
+    // shortest only promoted the next. So the check that actually holds the
+    // line is this one, over the WHOLE closure, not the one above it.
     expect(importersOf("app/entry/local.tsx", "platform/auth/auth-client.ts")).toEqual(LOCAL_AUTH_CLIENT_IMPORTERS)
   })
 
@@ -199,10 +198,30 @@ describe("the local entry", () => {
     expect(hosted).toMatch(/configureApiRuntime\(\{\s*bearerToken:\s*getAuthToken\s*\}\)/)
     expect(importSpecifiers(hosted)).toContain("@/platform/auth/auth-client")
 
-    // And the local entry cannot bind one even by accident: it imports neither
-    // the transport nor the provider (asserted above, over specifiers).
+    // The auth-session port has exactly the same shape and therefore exactly
+    // the same hazard, one seam over. `platform/auth/auth-session.ts` now takes
+    // its `useAuth` from `configureAuthSession` instead of importing it, which
+    // is what removed the shell's provider tree from the local closure. Delete
+    // the binding and every signed-in build compiles, renders, and reports
+    // ANONYMOUS — account menu stuck on "Local workspace", with a green suite.
+    expect(hosted).toMatch(/configureAuthSession\s*\(\s*useAuth\s*\)/)
+
+    // BOTH signed-capable composition roots, not just the web one. The desktop
+    // renderer is a third root that mounts the same shell and is signed-in
+    // capable; it was missed on the first pass precisely because nothing here
+    // was looking at it.
+    const desktopRenderer = readFileSync(
+      path.join(appRoot, "../claxedo-desktop/src/renderer/index.tsx"),
+      "utf8",
+    )
+    expect(desktopRenderer).toMatch(/configureAuthSession\s*\(\s*useAuth\s*\)/)
+    expect(desktopRenderer).toMatch(/configureApiRuntime\(\{\s*bearerToken:\s*getAuthToken\s*\}\)/)
+
+    // And the local entry cannot bind either one even by accident: it imports
+    // neither the transport nor the provider (asserted above, over specifiers).
     const local = readFileSync(path.join(appRoot, "src/app/entry/local.tsx"), "utf8")
     expect(local).not.toMatch(/configureApiRuntime\s*\(/)
+    expect(local).not.toMatch(/configureAuthSession\s*\(/)
   })
 
   test("the hosted entry reaches it too, so the measurement is not local-specific", () => {

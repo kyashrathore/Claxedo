@@ -10,8 +10,9 @@ import { render } from "solid-js/web"
 import { AppBaseProviders, AppInterface } from "@/app/entry/app"
 import { PlatformProvider, type Platform } from "@claxedo/app"
 import { initClaxedo, getDefaultConfig } from "./index"
-import { getAuthToken, initializeClerk } from "@/platform/auth/auth-client"
+import { getAuthToken, initializeClerk, useAuth } from "@/platform/auth/auth-client"
 import { authFetch, configureApiRuntime } from "@/platform/api/api"
+import { configureAuthSession } from "@/platform/auth/auth-session"
 import {
   initPostHog,
   capture as phCapture,
@@ -56,6 +57,30 @@ configureWorkspaceStartup(cloudWorkspaceStartup)
  * the earliest calls unauthenticated.
  */
 configureApiRuntime({ bearerToken: getAuthToken })
+
+/**
+ * Bind the identity provider to the app's canonical auth-session abstraction.
+ *
+ * `platform/auth/auth-session.ts` used to `import { useAuth }` statically. It
+ * is called unconditionally from the shell's provider tree (`app/entry/app.tsx`
+ * mounts it, and BOTH products render that shell), so that one import was the
+ * remaining chain by which `local.tsx` reached Clerk:
+ * `local.tsx -> app/entry/app.tsx -> platform/auth/auth-session.ts ->
+ * auth-client.ts`. It now keeps only an `import type` edge for the shape, which
+ * the bundler erases.
+ *
+ * `local.tsx` supplies nothing on purpose. Unbound, `useAuthSession()` returns
+ * a stable anonymous session rather than throwing — an unsigned local build
+ * genuinely IS anonymous, and that is the honest value for a call that happens
+ * during render. Same asymmetry as `configureApiRuntime` above, and unlike
+ * `configureWorkspaceStartup`, whose unbound port throws because waking a
+ * hosted sandbox is an operation, not a state.
+ *
+ * At module scope, not inside a component: the provider tree reads the session
+ * on its first render, and a binding installed during render would leave that
+ * read anonymous in a hosted build.
+ */
+configureAuthSession(useAuth)
 
 // Initialize cloud extensions before rendering
 const config = getDefaultConfig()

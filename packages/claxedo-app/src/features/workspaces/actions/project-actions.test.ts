@@ -16,6 +16,16 @@ const worktreeStates = new Map<string, { status: "pending" | "ready" } | { statu
 const worktreeWaiters = new Map<string, Array<(state: { status: "pending" | "ready" } | { status: "failed"; message: string }) => void>>()
 
 const toasts: Array<{ title?: string; description?: string }> = []
+/**
+ * What `configureApiRuntime({ bearerToken })` would have installed.
+ *
+ * Destroying a cloud sandbox builds its own `Authorization` header, and it used
+ * to import `getAuthToken` from `@/platform/auth/auth-client` to do it — one
+ * call site that put Clerk in the local product's bundle. It reads the bearer
+ * the build bound into `@/platform/api/api` instead, so this stands in for the
+ * binding, and `null` is the local product's real state rather than a stub.
+ */
+let boundBearer: string | null = null
 const mockApi: {
   post: (url: string, body?: unknown) => Promise<unknown>
   get: (url: string) => Promise<unknown>
@@ -111,6 +121,7 @@ beforeAll(async () => {
     fixDir: (input: string | undefined) => input,
     configureApiRuntime: () => undefined,
     resetApiRuntime: () => undefined,
+    apiBearerToken: async () => boundBearer,
     normalizeUrl: (u: string | undefined) => u?.trim().replace(/\/+$/, "") || undefined,
   }))
 
@@ -121,6 +132,7 @@ beforeAll(async () => {
 beforeEach(() => {
   queryClient.clear()
   toasts.length = 0
+  boundBearer = null
   deleteDialogProps = undefined
   worktreeStates.clear()
   worktreeWaiters.clear()
@@ -564,14 +576,15 @@ describe("createProjectActions", () => {
     expect(queryClient.getQueryData<ProjectFixture[]>(projectsQueryKey)?.[0]?.workspaces).toEqual({})
   })
 
-  test("deleting a cloud main workspace destroys the sandbox through the gateway path", async () => {
+  async function destroyCloudMainWorkspace() {
     const { props, nav, routes, removes } = make("workspace:ws_cloud")
     const originalFetch = globalThis.fetch
-    const calls: Array<{ url: string; method?: string }> = []
+    const calls: Array<{ url: string; method?: string; auth: string | null }> = []
     globalThis.fetch = (async (input, init) => {
       calls.push({
         url: String(input),
         method: init?.method,
+        auth: new Headers(init?.headers).get("Authorization"),
       })
       return new Response("{}")
     }) as typeof fetch
@@ -590,11 +603,37 @@ describe("createProjectActions", () => {
       globalThis.fetch = originalFetch
     }
 
+    return { calls, removes, routes }
+  }
+
+  test("deleting a cloud main workspace destroys the sandbox through the gateway path", async () => {
+    boundBearer = "tok_cloud"
+
+    const { calls, removes, routes } = await destroyCloudMainWorkspace()
+
+    // The bearer is the one the build bound into `@/platform/api/api`, which is
+    // the whole point: this action authenticates without importing an identity
+    // provider.
     expect(calls).toEqual([{
       url: "/api/experimental/sandbox?directory=workspace%3Aws_cloud",
       method: "DELETE",
+      auth: "Bearer tok_cloud",
     }])
     expect(removes).toEqual(["workspace:ws_cloud"])
     expect(routes).toEqual(["/"])
+  })
+
+  test("destroys the sandbox unauthenticated when the build bound no bearer source", async () => {
+    // The local product's shape. Nothing here fabricates a token; the request
+    // goes out without one and the server decides.
+    boundBearer = null
+
+    const { calls } = await destroyCloudMainWorkspace()
+
+    expect(calls).toEqual([{
+      url: "/api/experimental/sandbox?directory=workspace%3Aws_cloud",
+      method: "DELETE",
+      auth: null,
+    }])
   })
 })
