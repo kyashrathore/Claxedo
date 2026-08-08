@@ -18,7 +18,7 @@ import { useNavigate } from "@solidjs/router"
 import { Tooltip as KobalteTooltip } from "@kobalte/core/tooltip"
 import { useMutation, useQuery } from "@tanstack/solid-query"
 import { createVirtualizer, defaultRangeExtractor, elementScroll, type VirtualItem } from "@tanstack/solid-virtual"
-import { observeElementOffsetReconnectAware } from "./message-timeline-observe-offset"
+import { observeElementOffsetReconnectAware, observeElementRectDeduped } from "./message-timeline-observe-offset"
 import { Accordion } from "@opencode-ai/ui/accordion"
 import { Button } from "@opencode-ai/ui/button"
 import { Card } from "@opencode-ai/ui/card"
@@ -103,7 +103,12 @@ import {
   captureTimelinePrependAnchor,
   type TimelinePrependAnchor,
 } from "./timeline-prepend-anchor"
-import { createTimelineResizeAnchor, filterVirtualIndexes, scheduleConnectedMeasure } from "./timeline-virtualization"
+import {
+  createTimelineResizeAnchor,
+  estimateLongMarkdownHeight,
+  filterVirtualIndexes,
+  scheduleConnectedMeasure,
+} from "./timeline-virtualization"
 import { createTurnFoldStore } from "./turn-fold-store"
 import { formatDuration } from "@/ui/session-kit"
 import { installTimelineMermaid } from "./mermaid-timeline"
@@ -124,8 +129,6 @@ import { retargetSessionRef, type SessionRef } from "@/platform/identity/session
 import "./message-nav-gutter.css"
 import "./markdown-surfaces.css"
 
-installTimelineMermaid()
-installTimelineTables()
 // Keep parity with the upstream session row model.
 const emptyMessages: MessageType[] = []
 const emptyParts: PartType[] = []
@@ -142,6 +145,7 @@ type FramedTimelineRow = Exclude<TimelineRow.TimelineRow, { _tag: "TurnGap" }>
 type TimelineRowByTag<T extends TimelineRow.TimelineRow["_tag"]> = Extract<TimelineRow.TimelineRow, { _tag: T }>
 
 const timelineFallbackItemSize = 60
+const timelineInitialEstimatedItemSize = 180
 const timelineCache = new Map<string, { measurements: VirtualItem[]; toolOpen: Record<string, boolean | undefined> }>()
 
 const taskDescription = (part: PartType, sessionID: string) => {
@@ -435,6 +439,8 @@ export function MessageTimeline(props: {
   const cached = timelineCache.get(ownerSessionKey)
   const turnFold = createTurnFoldStore(ownerSessionKey)
   const platform = usePlatform()
+  installTimelineMermaid(platform.renderMermaid)
+  installTimelineTables()
   const claxedoState = useClaxedoState()
   const paneId = usePaneId()
 
@@ -792,10 +798,14 @@ export function MessageTimeline(props: {
 
   const [toolOpen, setToolOpen] = createStore<Record<string, boolean | undefined>>(cached?.toolOpen ?? {})
   const initialMeasurements = cached?.measurements
-  const [renderOverscan, setRenderOverscan] = createSignal(initialMeasurements?.length ? 6 : 50)
-  const [initialRevealReady, setInitialRevealReady] = createSignal(!props.shouldAnchorBottom())
+  const [renderOverscan, setRenderOverscan] = createSignal(initialMeasurements?.length ? 6 : 1)
+  const [renderRangeLimit, setRenderRangeLimit] = createSignal(1)
+  const [initialRevealReady, setInitialRevealReady] = createSignal(false)
+  const [progressiveReady, setProgressiveReady] = createSignal(timelineRows().length === 0)
+  let initialRowsScheduled = timelineRows().length > 0
   const prepareScrollOverscan = () => {
-    if (renderOverscan() < 50) setRenderOverscan(50)
+    if (renderOverscan() < 6) setRenderOverscan(6)
+    if (renderRangeLimit() !== Number.MAX_SAFE_INTEGER) setRenderRangeLimit(Number.MAX_SAFE_INTEGER)
   }
   const prepareInteractionScroll = () => {
     const plan = timelineInteractionPlan({
@@ -813,10 +823,29 @@ export function MessageTimeline(props: {
       return timelineRows().length
     },
     getScrollElement: () => listRoot() ?? null,
+    observeElementRect: observeElementRectDeduped,
     observeElementOffset: observeElementOffsetReconnectAware,
+    initialRect: {
+      width: typeof window === "undefined" ? 0 : window.innerWidth,
+      height: typeof window === "undefined" ? 0 : window.innerHeight,
+    },
     initialOffset: () => (props.shouldAnchorBottom() ? Number.MAX_SAFE_INTEGER : 0),
     initialMeasurementsCache: initialMeasurements,
-    estimateSize: () => timelineFallbackItemSize,
+    estimateSize: (index) => {
+      const rows = timelineRows()
+      const row = rows[index]
+      if (row?._tag !== "AssistantPart") return timelineInitialEstimatedItemSize
+      // Initial bottom-anchored layout only needs precise estimates around the
+      // first visible fold. Scanning every historical Markdown body blocks the
+      // viewport callback even though those rows remain virtual and will be
+      // measured when the user approaches them.
+      if (index < rows.length - 50) return timelineInitialEstimatedItemSize
+      const group = row.group
+      if (group.type !== "part") return timelineInitialEstimatedItemSize
+      const part = getMsgParts(group.ref.messageID).find((item) => item.id === group.ref.partID)
+      if (part?.type !== "text") return timelineInitialEstimatedItemSize
+      return estimateLongMarkdownHeight(part.text) ?? timelineInitialEstimatedItemSize
+    },
     scrollToFn: (offset, options, instance) => {
       if (virtualContent) virtualContent.style.height = `${instance.getTotalSize()}px`
       elementScroll(offset, options, instance)
@@ -845,9 +874,13 @@ export function MessageTimeline(props: {
         ? rows.findLastIndex((row) => "userMessageID" in row && row.userMessageID === activeID)
         : -1
       const indexes = defaultRangeExtractor({ ...range, overscan: renderOverscan() })
-      const pinned = [active].filter((index) => index >= 0)
+      const visibleIndexes = props.shouldAnchorBottom() && renderRangeLimit() < indexes.length
+        ? indexes.slice(-renderRangeLimit())
+        : indexes
       return filterVirtualIndexes(
-        [...new Set([...resizeAnchor.pinnedIndexes(), ...indexes, ...pinned])].sort((a, b) => a - b),
+        [...new Set([...resizeAnchor.pinnedIndexes(), ...visibleIndexes, ...(active < 0 ? [] : [active])])].sort(
+          (a, b) => a - b,
+        ),
         range.count,
       )
     },
@@ -914,24 +947,82 @@ export function MessageTimeline(props: {
     props.setHistoryAnchor?.({ capture: capturePrependAnchor, restore: restorePrependAnchor })
   })
 
+  let progressiveFrame: number | undefined
+  const scheduleProgressiveRows = () => {
+    if (progressiveReady() || progressiveFrame !== undefined) return
+    const step = () => {
+      progressiveFrame = undefined
+      const length = timelineRows().length
+      const targetCount = Math.min(8, length)
+      const currentCount = renderRangeLimit()
+      if (currentCount < targetCount) {
+        const nextCount = currentCount + 1
+        if (renderRangeLimit() < nextCount) setRenderRangeLimit(nextCount)
+        progressiveFrame = requestAnimationFrame(step)
+        return
+      }
+      let stableFrames = 2
+      const settle = () => {
+        stableFrames -= 1
+        if (stableFrames <= 0) {
+          setProgressiveReady(true)
+          setInitialRevealReady(true)
+          return
+        }
+        progressiveFrame = requestAnimationFrame(settle)
+      }
+      progressiveFrame = requestAnimationFrame(settle)
+    }
+    progressiveFrame = requestAnimationFrame(step)
+  }
+
+  createEffect(() => {
+    const length = timelineRows().length
+    if (length === 0 || initialRowsScheduled) return
+    initialRowsScheduled = true
+    setInitialRevealReady(false)
+    setProgressiveReady(false)
+    scheduleProgressiveRows()
+  })
+
   const scheduleInitialReveal = () => {
     if (!props.shouldAnchorBottom()) {
-      setInitialRevealReady(true)
+      if (timelineRows().length === 0) {
+        setInitialRevealReady(true)
+        return
+      }
+      scheduleProgressiveRows()
       return
     }
 
-    let frames = 8
+    let frames = 0
+    let stableFrames = 0
+    let previousOffset: number | undefined
+    let previousSize: number | undefined
     const settle = () => {
+      const root = listRoot()
+      const nativeAtEnd = root
+        ? root.scrollHeight - root.clientHeight - root.scrollTop <= 1
+        : false
       if (
         timelineInitialRevealShouldScroll({
           hasScrollGesture: props.hasScrollGesture(),
           shouldAnchorBottom: props.shouldAnchorBottom(),
-        })
+        }) && !nativeAtEnd
       )
         virtualizer.scrollToEnd()
-      frames -= 1
-      if (frames <= 0) {
-        setInitialRevealReady(true)
+      const offset = root?.scrollTop
+      const size = virtualizer.getTotalSize()
+      stableFrames = offset === previousOffset && size === previousSize ? stableFrames + 1 : 0
+      previousOffset = offset
+      previousSize = size
+      frames += 1
+      if (stableFrames >= 1 || frames >= 8) {
+        if (timelineRows().length === 0) {
+          setInitialRevealReady(true)
+          return
+        }
+        scheduleProgressiveRows()
         return
       }
       requestAnimationFrame(settle)
@@ -940,16 +1031,7 @@ export function MessageTimeline(props: {
   }
 
   onMount(() => {
-    const expand = () => {
-      const next = Math.min(50, renderOverscan() + 8)
-      setRenderOverscan(next)
-      if (next < 50) requestAnimationFrame(() => setTimeout(expand, 0))
-    }
-    requestAnimationFrame(() => {
-      if (props.shouldAnchorBottom()) virtualizer.scrollToEnd()
-      scheduleInitialReveal()
-      if (renderOverscan() < 50) setTimeout(expand, 0)
-    })
+    requestAnimationFrame(scheduleInitialReveal)
   })
 
   let bottomAnchorSessionKey = ""
@@ -962,11 +1044,14 @@ export function MessageTimeline(props: {
     bottomAnchorSessionKey = key
     if (!props.shouldAnchorBottom()) return
     if (bottomAnchorFrame !== undefined) cancelAnimationFrame(bottomAnchorFrame)
+    if (progressiveFrame !== undefined) cancelAnimationFrame(progressiveFrame)
     clearPrependAnchor()
     if (prependAnchorFrame !== undefined) cancelAnimationFrame(prependAnchorFrame)
     bottomAnchorFrame = requestAnimationFrame(() => {
       bottomAnchorFrame = undefined
       if (sessionKey() !== key) return
+      const root = listRoot()
+      if (root && root.scrollHeight - root.clientHeight - root.scrollTop <= 1) return
       virtualizer.scrollToEnd()
     })
   }
@@ -1389,7 +1474,7 @@ export function MessageTimeline(props: {
                   toolOpen={toolOpen[member.part.id] ?? defaultOpen()}
                   onToolOpenChange={(open) => setToolOpen(member.part.id, open)}
                   deferToolContent={false}
-                  virtualizeDiff={false}
+                  virtualizeDiff
                   onContentRendered={onSizeChange}
                 />
               )
@@ -1430,7 +1515,7 @@ export function MessageTimeline(props: {
                 toolOpen={toolOpen[part().id] ?? defaultOpen()}
                 onToolOpenChange={(open) => setToolOpen(part().id, open)}
                 deferToolContent={false}
-                virtualizeDiff={false}
+                virtualizeDiff
                 onContentRendered={onSizeChange}
               />
             )}
@@ -1709,6 +1794,7 @@ export function MessageTimeline(props: {
     return (
       <div
         data-timeline-key={props.rowKey}
+        data-timeline-row-rich-ready={ready() ? "true" : "false"}
         style={{
           position: "absolute",
           top: `${item().start}px`,
@@ -1748,6 +1834,8 @@ export function MessageTimeline(props: {
       data-session-timeline-user-count={String(props.userMessages.length)}
       data-session-timeline-row-count={String(timelineRows().length)}
       data-session-timeline-key-count={String(virtualRowKeys().length)}
+      data-session-timeline-reveal-ready={initialRevealReady() ? "true" : "false"}
+      data-session-timeline-progressive-ready={progressiveReady() ? "true" : "false"}
       style={{ visibility: timelineInitialRevealVisibility({ ready: initialRevealReady() }) }}
       onClick={handleTimelinePathClick}
       onContextMenu={handleTimelineContextMenu}

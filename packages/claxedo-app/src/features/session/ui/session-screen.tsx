@@ -1,5 +1,5 @@
 // Claxedo sessions can render inside independent Workbench panes, so this override uses pane-scoped params, cloud runtime gates, and the inline new-session composer.
-import { onCleanup, onMount, Show, Match, Switch, createMemo, createEffect, createComputed, on } from "solid-js"
+import { onCleanup, onMount, Show, Match, Switch, Suspense, createMemo, createEffect, createComputed, lazy, on } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useQuery } from "@tanstack/solid-query"
@@ -20,7 +20,6 @@ import { useComments } from "@/platform/comments/provider"
 import { showToast } from "@opencode-ai/ui/toast"
 import { NewSessionDesignView, SessionHeader, type NewSessionWorkspaceKind } from "@/features/session/ui/components"
 import { createNewSessionWorkspaceState, type ProjectWorkspace } from "@/features/session/ui/components/session-new-workspace-options"
-import { PromptInput } from "@/features/session/composer/composer"
 import { same } from "@/lib/same"
 import { extractPromptFromParts } from "@/features/session/data/prompt"
 import { createSessionHistoryWindow, emptyUserMessages } from "@/features/session/ui/history-window"
@@ -28,10 +27,9 @@ import { createHistoryFill } from "@/features/session/ui/history-fill"
 import { groupNavigateUrlSync } from "@/features/session/ui/group-navigate-route"
 import { setSessionHandoff, setTerminalHandoff } from "@/features/session/ui/prompt-preview-handoff"
 import { terminalTabLabel } from "@/features/session/ui/terminal-label"
-import { MessageTimeline } from "@/features/session/ui/message-timeline"
 import { SessionTimelineSkeleton } from "@/features/session/ui/content/session-timeline-skeleton"
 import { useSessionCommands } from "@/features/session/ui/use-session-commands"
-import { SessionComposerRegion, createSessionComposerState } from "@/features/session/ui/composer/index"
+import { createSessionComposerState } from "@/features/session/ui/composer/session-composer-state"
 import { useSessionHashScroll } from "@/features/session/ui/use-session-hash-scroll"
 import { useSessionParams } from "@/features/session/providers/session-params"
 import { CloudStartupView, isForbiddenConnectionError, type CloudLog } from "@/features/session/ui/components/cloud-startup-view"
@@ -85,6 +83,22 @@ import { classifySessionKeydown, isEditableTagName } from "@/features/session/ui
 import { createFirstTurnOnboarding } from "@/features/session/onboarding/first-turn-onboarding"
 import { SessionHealthPeek } from "@/features/session/ui/components/session-health-peek"
 import { SessionConnectionLine } from "@/features/session/ui/components/session-connection-line"
+
+const SessionComposerRegion = lazy(() =>
+  import("@/features/session/ui/composer/session-composer-region").then((module) => ({
+    default: module.SessionComposerRegion,
+  })),
+)
+const MessageTimeline = lazy(() =>
+  import("@/features/session/ui/message-timeline").then((module) => ({
+    default: module.MessageTimeline,
+  })),
+)
+const PromptInput = lazy(() =>
+  import("@/features/session/composer/composer").then((module) => ({
+    default: module.PromptInput,
+  })),
+)
 export default function SessionPage() {
   const sessionParams = useSessionParams()
   const claxedoState = useClaxedoState()
@@ -1075,6 +1089,8 @@ export default function SessionPage() {
     scroller: () => scroller,
     onBeforeLoad: () => captureHistoryAnchor(),
     onAfterLoad: () => restoreHistoryAnchor(),
+    onBeforeReveal: () => captureHistoryAnchor(),
+    onAfterReveal: () => restoreHistoryAnchor(),
   })
 
   // See `createHistoryFill` for why the decision is confirmed across two frames.
@@ -1500,7 +1516,8 @@ export default function SessionPage() {
           </div>
 
           <Show when={!gate.open && !newSession()}>
-            <SessionComposerRegion
+            <Suspense fallback={<div aria-hidden="true" class="h-44 shrink-0" data-component="session-prompt-dock-loading" />}>
+              <SessionComposerRegion
               state={composerState}
               ready={!store.deferRender && messagesReady()}
               centered={centered()}
@@ -1547,7 +1564,8 @@ export default function SessionPage() {
                   : undefined
               }
               setPromptDockRef={(el) => (promptDock = el)}
-            />
+              />
+            </Suspense>
           </Show>
         </div>
       </div>
