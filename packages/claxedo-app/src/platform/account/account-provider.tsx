@@ -4,6 +4,7 @@ import { type Component, type JSX, createContext, useContext } from "solid-js"
 import { useAuthSession } from "@/platform/auth/auth-session"
 import type { AccountPort } from "./account-port"
 import { browserAccountPort, type RunHostedOperation } from "./browser-account-port"
+import { accountBridge, electronAccountPort } from "./electron-account-port"
 
 /**
  * Who supplies the account port for this build.
@@ -17,10 +18,12 @@ import { browserAccountPort, type RunHostedOperation } from "./browser-account-p
 const AccountPortContext = createContext<AccountPort>()
 
 export const AccountPortProvider: Component<{ port?: AccountPort; children: JSX.Element }> = (props) => {
-  // Built once from the ambient session when no port is injected. The session's
-  // accessors are read inside `state()`, so this stays reactive.
+  // Built once when no port is injected. Which one depends on where the
+  // credential lives in THIS build, and that is the only place the difference
+  // appears — no product surface below asks.
   const auth = useAuthSession()
-  const fallback = browserAccountPort(auth, notImplemented)
+  const bridge = accountBridge()
+  const fallback = bridge ? electronAccountPort(bridge) : browserAccountPort(auth, notImplemented)
   return (
     <AccountPortContext.Provider value={props.port ?? fallback}>{props.children}</AccountPortContext.Provider>
   )

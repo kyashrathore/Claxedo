@@ -67,6 +67,7 @@ import { createOwnerOperationBridge } from "./diagnostics/owner-operation-bridge
 import { createWindowsWslCollector, createWslSource } from "./diagnostics/wsl-source"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand, wireFullscreenEvents } from "./ipc"
 import { installIpcCallerGuard, mainIpcCallerGuard } from "./ipc-caller-guard"
+import { setupAccount } from "./account/index"
 import { initLogging } from "./logging"
 import { createMenu } from "./menu"
 import {
@@ -571,6 +572,19 @@ installIpcCallerGuard({
   },
   onRejected: (channel, reason) => logger.warn(`[security] ${reason} (channel ${channel})`),
 })
+
+// After the guard above, like every other registration — these channels spend
+// an account credential, so an unguarded one would be the worst of the sixty to
+// leave open.
+const account = setupAccount({
+  ipcMain,
+  onError: (stage, error) => logger.warn(`[account] ${stage}: ${String(error)}`),
+})
+if (!account.configured) {
+  // Stated at boot rather than discovered when a user clicks Sign in. This is
+  // the shape of a build shipped without its OAuth client registered.
+  logger.warn(`[account] sign-in unavailable; missing config: ${account.missing.join(", ")}`)
+}
 
 const diagnosticsIpc = registerIpcHandlers({
   killSidecar: () => stopLocalServer(),

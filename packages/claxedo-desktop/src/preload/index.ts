@@ -209,6 +209,21 @@ const api: ElectronAPI = {
   getDroppedFilePaths: (files) => files.map((f) => webUtils.getPathForFile(f)).filter(Boolean),
   processDiagnostics: processDiagnosticsBridge,
   browser: browserBridge,
+  /**
+   * The account, entirely by name.
+   *
+   * No method here takes a url, a path, or headers — `run` takes an operation
+   * NAME from the reviewed set and main decides the request. That is what lets
+   * the credential live in main: this bridge cannot be used to spend it on a
+   * route nobody wrote down.
+   */
+  account: {
+    state: () => ipcRenderer.invoke("claxedo.account.state"),
+    signIn: () => ipcRenderer.invoke("claxedo.account.signIn"),
+    signOut: () => ipcRenderer.invoke("claxedo.account.signOut"),
+    run: (operation: string, input?: Record<string, unknown>) =>
+      ipcRenderer.invoke(`claxedo.account.operation:${operation}`, input),
+  },
 }
 
 contextBridge.exposeInMainWorld("api", api)

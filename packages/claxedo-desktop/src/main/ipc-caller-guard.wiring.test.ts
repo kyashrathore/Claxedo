@@ -50,6 +50,18 @@ describe("ipc caller guard wiring", () => {
     expect(windows).toContain(`win.webContents.once("destroyed"`)
   })
 
+  test("the account's channels register after the guard too", () => {
+    // These spend a credential, so an unguarded one is the worst of the sixty
+    // to leave open. Same ordering rule, asserted separately because
+    // `setupAccount` is a different call site that a future refactor could move
+    // above the install without touching `registerIpcHandlers`.
+    const installed = entry.indexOf("installIpcCallerGuard({")
+    const account = entry.indexOf("setupAccount({")
+
+    expect(account, "index.ts must set up the account").toBeGreaterThan(-1)
+    expect(installed).toBeLessThan(account)
+  })
+
   test("the guard is installed exactly once", () => {
     // Installing twice would double-wrap every channel: two guard checks per
     // call, and a second `guardedCount` that silently disagrees with the first.

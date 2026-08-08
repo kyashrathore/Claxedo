@@ -197,4 +197,18 @@ export type ElectronAPI = {
   getDroppedFilePaths: (files: File[]) => string[]
   processDiagnostics: ProcessDiagnosticsBridge
   browser: BrowserBridge
+  /**
+   * The account, by named operation only.
+   *
+   * `run` deliberately takes a name and parameters rather than a request: the
+   * credential lives in main, and a bridge that could describe a request would
+   * make main a confused deputy. The names come from
+   * `docs/tech-docs/desktop-hosted-operation-matrix.md`.
+   */
+  account: {
+    state: () => Promise<unknown>
+    signIn: () => Promise<unknown>
+    signOut: () => Promise<unknown>
+    run: (operation: string, input?: Record<string, unknown>) => Promise<unknown>
+  }
 }
