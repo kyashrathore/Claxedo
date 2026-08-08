@@ -17,8 +17,8 @@ const LOCAL_ENTRY = path.join(ROOT, "src/deployments/local/main.ts")
 const CURRENT_MODULE_CEILING = 259
 const CURRENT_PACKAGE_CEILING = 42
 
-function localClosure() {
-  const closure = sourceClosure({ entry: LOCAL_ENTRY, root: ROOT })
+function localClosure(options: { runtimeOnly?: boolean } = {}) {
+  const closure = sourceClosure({ entry: LOCAL_ENTRY, root: ROOT, ...options })
   return {
     ...closure,
     modules: closure.modules.filter((module) => !module.relative.includes(".test.")),
@@ -61,41 +61,50 @@ describe("desktop-local entry closure", () => {
     })
   })
 
-  it("names the three edges that carry hosted surface into local modules", () => {
-    // Measured 2026-08-08. These are the chains to cut, in the order that
-    // removes the most: the whole-product SQL schema barrel is reachable from
-    // any module that opens the local database, so it dominates.
-    const chainTo = (entry: string, pattern: RegExp) =>
+  it("keeps hosted surface out of the embedded runtime's executable closure", () => {
+    // Three edges carried hosted surface into local modules, measured
+    // 2026-08-08. Each is cut at the module that OWNS the choice rather than
+    // at the module that suffered it.
+    //
+    //   1. `platform/db/db.ts` imported the whole-product schema barrel as a
+    //      value, so opening the local database reached connections, channels,
+    //      and documents SQL. Drizzle needs it only for `db.query.*`, which
+    //      nothing uses, so it is now a type-only edge.
+    //   2. `workspace/store/index.ts` imported the supervisor lease table, so
+    //      reading local workspace inventory reached cloud sandbox leasing. The
+    //      supervisor — which owns leases — now installs the reader.
+    //   3. `agent-config/index.ts` selected its own workspace authority, so
+    //      reading agent configuration reached the Convex control plane. The
+    //      composition now supplies it.
+    const chainTo = (pattern: RegExp) =>
       shortestForbiddenChain({
-        entry: path.join(ROOT, entry),
+        entry: path.join(ROOT, "src/deployments/local/embedded-workspace-runtime.ts"),
         root: ROOT,
+        runtimeOnly: true,
         isForbidden: (module) => pattern.test(module.relative),
       })?.map((module) => module.relative)
 
-    // 1. The local database opens the whole product's schema.
-    expect(chainTo("src/deployments/local/embedded-workspace-runtime.ts", /^src\/connections\//)).toEqual([
-      "src/deployments/local/embedded-workspace-runtime.ts",
-      "src/workspace/store/index.ts",
-      "src/sandbox/stores/sqlite-supervisor-state.ts",
-      "src/sandbox/stores/lease.sql.ts",
-      "src/platform/db/db.ts",
-      "src/platform/db/schema.ts",
-      "src/connections/connection.sql.ts",
-    ])
+    expect({
+      connections: chainTo(/^src\/connections\//),
+      channels: chainTo(/^src\/channels\//),
+      documents: chainTo(/^src\/documents\//),
+      cloudSandboxStores: chainTo(/^src\/sandbox\/stores\//),
+      convexAuthority: chainTo(/^src\/authority\/adapters\/convex\//),
+    }).toEqual({
+      connections: undefined,
+      channels: undefined,
+      documents: undefined,
+      cloudSandboxStores: undefined,
+      convexAuthority: undefined,
+    })
+  })
 
-    // 2. Local workspace inventory reaches cloud sandbox leasing.
-    expect(chainTo("src/deployments/local/embedded-workspace-runtime.ts", /^src\/sandbox\//)).toEqual([
-      "src/deployments/local/embedded-workspace-runtime.ts",
-      "src/workspace/store/index.ts",
-      "src/sandbox/stores/sqlite-supervisor-state.ts",
-    ])
-
-    // 3. Local agent configuration reaches the Convex control plane.
-    expect(chainTo("src/deployments/local/embedded-workspace-runtime.ts", /^src\/authority\/adapters\/convex\//)).toEqual([
-      "src/deployments/local/embedded-workspace-runtime.ts",
-      "src/hosts/workspace-runtime/runtime-config.ts",
-      "src/agent-config/index.ts",
-      "src/authority/adapters/convex/workspace-authority/index.ts",
-    ])
+  it("shrinks once type-only edges are discounted", () => {
+    // A type-only import is erased whole: no module is loaded and no capability
+    // becomes reachable. The gap between these two numbers is the surface a
+    // build carries versus the surface the source declares.
+    const declared = localClosure()
+    const executable = localClosure({ runtimeOnly: true })
+    expect(executable.modules.length).toBeLessThan(declared.modules.length)
   })
 })

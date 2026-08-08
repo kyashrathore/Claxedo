@@ -1238,6 +1238,14 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   }
   configureAgentConfig({
     ...(process.env.CLAXEDO_ACP_DIR ? { acpDir: process.env.CLAXEDO_ACP_DIR } : {}),
+    // This composition owns the Convex-versus-SQLite choice — the same rule
+    // `createDefaultLocalControlPlaneServices` applies. agent-config used to
+    // make it itself, which put the cloud control plane in the closure of every
+    // module that reads agent configuration.
+    runtimeWorkspaceAuthority: () => {
+      const authorityUrl = convexAuthorityUrlFromEnv(process.env)
+      return authorityUrl ? createConvexAuthority({ url: authorityUrl }) : undefined
+    },
   })
   configureWorkspaceSupervisor({
     server_url: `http://127.0.0.1:${port}`,

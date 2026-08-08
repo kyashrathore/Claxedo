@@ -84,6 +84,10 @@ describe("workspace store", () => {
   beforeEach(async () => {
     ClaxedoDB.close()
     await fs.rm(root, { recursive: true, force: true })
+    // Cloud-workspace visibility depends on the sandbox lease, which the
+    // supervisor owns. These cases exercise that visibility rule, so they wire
+    // the same reader the supervisor composition installs.
+    mod.configureWorkspaceStore({ sandboxLease: (id) => hostLease.getSupervisorSandboxLease(id) })
   })
 
   afterAll(async () => {

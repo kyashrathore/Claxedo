@@ -1,7 +1,7 @@
 import type { AgentExtensionPolicyOverride } from "../../hosts/agent-extensions/runtime-config"
 import type { WorkspaceAgentExtensionRecord } from "../../hosts/agent-extensions/workspace"
 import { Log } from "../../platform/runtime/lib/log"
-import { updateWorkspace, getWorkspace, type Workspace } from "../store"
+import { configureWorkspaceStore, updateWorkspace, getWorkspace, type Workspace } from "../store"
 import { createClaxedoRuntimeConfig } from "../../hosts/workspace-runtime/runtime-config"
 import { IDLE_MS, now } from "./clock"
 import {
@@ -58,6 +58,12 @@ const log = Log.create({ service: "workspace-supervisor" })
 
 export function configureWorkspaceSupervisor(input: WorkspaceSupervisorOptions) {
   configureWorkspaceSupervisorOptions(input)
+  // The supervisor owns sandbox leases, so it is the one that can teach the
+  // workspace store to read them. The store used to import the lease table
+  // directly, which put the cloud sandbox graph inside the closure of every
+  // module that reads local workspace inventory. A composition without a
+  // supervisor has no cloud workspaces, so it needs no reader.
+  configureWorkspaceStore({ sandboxLease: (workspaceId) => getSupervisorSandboxLease(workspaceId) })
 }
 
 export async function ensureSupervisorSandbox(workspaceId: string) {

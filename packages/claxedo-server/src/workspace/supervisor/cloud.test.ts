@@ -306,6 +306,8 @@ function lease(workspaceId: string, driverId = "daytona"): SandboxLeaseRow {
 vi.mock("../store", () => ({
   getWorkspace: (...args: unknown[]) => (mockGetWorkspace as any)(...args),
   updateWorkspace: (...args: unknown[]) => (mockUpdateWorkspace as any)(...args),
+  // The supervisor composition teaches the store to read sandbox leases.
+  configureWorkspaceStore: vi.fn(),
 }))
 
 vi.mock("../../sandbox/network/policy", () => ({

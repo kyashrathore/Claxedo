@@ -56,6 +56,28 @@ export function importSpecifiers(source: string): string[] {
   return found
 }
 
+/**
+ * Specifiers that survive compilation.
+ *
+ * `import type X from "m"` and `export type { X } from "m"` are erased whole:
+ * the module is never loaded, no capability becomes reachable, and nothing of
+ * it lands in the emitted artifact. Counting those edges would report hosted
+ * surface in a build that cannot execute a line of it.
+ *
+ * An INLINE type specifier (`import { type A, B } from "m"`) is different — the
+ * statement still imports `B`, so the module is loaded and the edge is real.
+ * Only the `import type` / `export type` statement forms are dropped.
+ */
+export function runtimeImportSpecifiers(source: string): string[] {
+  // Delete the erased statements, then read what is left. Filtering by
+  // specifier instead would drop a module that one statement imports as a type
+  // and another imports as a value — that module IS loaded at runtime.
+  const withoutTypeOnly = source
+    .replace(/\bimport\s+type\s+[^"';]*?\bfrom\s*["'][^"']+["']/g, "")
+    .replace(/\bexport\s+type\s+[^"';]*?\bfrom\s*["'][^"']+["']/g, "")
+  return importSpecifiers(withoutTypeOnly)
+}
+
 function resolveFile(candidate: string): string | null {
   if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate
   for (const extension of SOURCE_EXTENSIONS) {
@@ -101,7 +123,18 @@ function isBare(specifier: string) {
  * the question this answers is "what does THIS package's source reach", and a
  * dependency's own internals are governed by its own manifest.
  */
-export function sourceClosure(input: { entry: string; root: string }): SourceClosure {
+export function sourceClosure(input: {
+  entry: string
+  root: string
+  /**
+   * Follow only edges that survive compilation. Default `false` keeps every
+   * declared edge, which is what an architecture gate wants; `true` answers
+   * "what can this build actually execute", which is what a capability gate
+   * wants.
+   */
+  runtimeOnly?: boolean
+}): SourceClosure {
+  const read = input.runtimeOnly ? runtimeImportSpecifiers : importSpecifiers
   const entry = path.resolve(input.entry)
   const root = path.resolve(input.root)
   const seen = new Set<string>()
@@ -119,7 +152,7 @@ export function sourceClosure(input: { entry: string; root: string }): SourceClo
     } catch {
       continue
     }
-    for (const specifier of importSpecifiers(source)) {
+    for (const specifier of read(source)) {
       if (isBare(specifier)) {
         packages.add(packageNameOf(specifier))
         continue
@@ -155,7 +188,10 @@ export function shortestForbiddenChain(input: {
   entry: string
   root: string
   isForbidden: (module: SourceModule) => boolean
+  /** See {@link sourceClosure}. */
+  runtimeOnly?: boolean
 }): SourceModule[] | null {
+  const read = input.runtimeOnly ? runtimeImportSpecifiers : importSpecifiers
   const entry = path.resolve(input.entry)
   const root = path.resolve(input.root)
   const seen = new Set<string>([entry])
@@ -170,7 +206,7 @@ export function shortestForbiddenChain(input: {
       } catch {
         continue
       }
-      for (const specifier of importSpecifiers(source)) {
+      for (const specifier of read(source)) {
         if (isBare(specifier)) continue
         const resolved = resolveRelative(file, specifier)
         if (!resolved || seen.has(resolved)) continue

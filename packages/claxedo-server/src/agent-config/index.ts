@@ -50,7 +50,6 @@ import {
 } from "../hosts/agent-extensions/workspace"
 import { ControlPlaneAuthError } from "../platform/auth/auth"
 import type { WorkspaceAuthority } from "../platform/auth/authority"
-import { convexAuthorityUrlFromEnv, createConvexAuthority } from "../authority/adapters/convex/workspace-authority"
 import { createSqliteWorkspaceAuthority } from "../authority/adapters/sqlite/workspace-authority"
 
 const log = Log.create({ service: "agent-config" })
@@ -125,6 +124,17 @@ export type HarnessType = AgentHarnessId
 export type AgentConfigOptions = {
   acpDir?: string
   platform?: NodeJS.Platform
+  /**
+   * Authority used to hydrate workspace Agent Extensions into the runtime
+   * snapshot pushed to sandboxes.
+   *
+   * A composition supplies this; agent-config does not choose it. Selecting the
+   * Convex adapter here is what put the whole cloud control plane — Convex,
+   * jose, the hosted authority graph — inside the closure of every local module
+   * that reads agent configuration. Returning `undefined` means "no remote
+   * authority", and the local SQLite authority answers.
+   */
+  runtimeWorkspaceAuthority?: () => RuntimeWorkspaceAuthority | undefined
 }
 
 let agentConfigOptions: AgentConfigOptions = {}
@@ -368,14 +378,15 @@ async function runtimeMcp(
 }
 
 // Default workspace authority for RUNTIME snapshot hydration (sandbox
-// provisioning / broadcast config pushes). Mirrors the server composition
-// rule (server.ts): Convex when a backend URL is configured, otherwise the
-// local SQLite authority — so a self-host deploy (no Convex env) still
-// hydrates workspace Agent Extensions into the snapshot pushed to sandboxes
-// instead of silently pushing an empty install set.
+// provisioning / broadcast config pushes). The composition supplies the remote
+// authority when it has one; otherwise the local SQLite authority answers — so
+// a self-host deploy (no Convex env) still hydrates workspace Agent Extensions
+// into the snapshot pushed to sandboxes instead of silently pushing an empty
+// install set.
 let localRuntimeWorkspaceAuthority: { dataRoot: string; authority: RuntimeWorkspaceAuthority } | undefined
 function defaultRuntimeWorkspaceAuthority(): RuntimeWorkspaceAuthority {
-  if (convexAuthorityUrlFromEnv(process.env)) return createConvexAuthority()
+  const configured = agentConfigOptions.runtimeWorkspaceAuthority?.()
+  if (configured) return configured
   // Memoized per data root so repeated config pushes reuse one SQLite
   // connection (same authority.db file the server composition opens).
   const dataRoot = dataDir()

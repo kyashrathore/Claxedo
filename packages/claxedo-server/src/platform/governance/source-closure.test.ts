@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { importSpecifiers, packageNameOf, shortestForbiddenChain, sourceClosure } from "./source-closure"
+import { importSpecifiers, packageNameOf, runtimeImportSpecifiers, shortestForbiddenChain, sourceClosure } from "./source-closure"
 
 function fixture(files: Record<string, string>) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "source-closure-"))
@@ -30,6 +30,29 @@ describe("importSpecifiers", () => {
 
   it("finds multi-line import lists, which is how most modules are written", () => {
     expect(importSpecifiers(`import {\n  one,\n  two,\n} from "./pair"`)).toEqual(["./pair"])
+  })
+})
+
+describe("runtimeImportSpecifiers", () => {
+  it("drops statements the compiler erases whole", () => {
+    expect(runtimeImportSpecifiers([
+      `import type { A } from "./erased"`,
+      `export type { B } from "./also-erased"`,
+      `import { c } from "./kept"`,
+    ].join("\n"))).toEqual(["./kept"])
+  })
+
+  it("keeps a module that one statement imports as a type and another as a value", () => {
+    // The value import loads the module; the type import next to it changes
+    // nothing about that.
+    expect(runtimeImportSpecifiers([
+      `import type { Shape } from "./m"`,
+      `import { build } from "./m"`,
+    ].join("\n"))).toEqual(["./m"])
+  })
+
+  it("keeps an inline type specifier's module, because the statement still imports a value", () => {
+    expect(runtimeImportSpecifiers(`import { type Shape, build } from "./m"`)).toEqual(["./m"])
   })
 })
 
@@ -84,6 +107,23 @@ describe("sourceClosure", () => {
 
     expect(sourceClosure({ entry: path.join(root, "entry.ts"), root }).unresolved)
       .toEqual(["entry.ts -> ./missing"])
+  })
+})
+
+describe("sourceClosure with runtimeOnly", () => {
+  it("stops at a type-only edge, so an erased import cannot report reachable surface", () => {
+    const root = fixture({
+      "entry.ts": `import type { Shape } from "./hosted"\nimport "./local"`,
+      "hosted.ts": `import "./hosted-deep"\nexport type Shape = { id: string }`,
+      "hosted-deep.ts": `export const deep = 1`,
+      "local.ts": `export const local = 1`,
+    })
+    const entry = path.join(root, "entry.ts")
+
+    expect(sourceClosure({ entry, root }).modules.map((m) => m.relative))
+      .toEqual(["entry.ts", "hosted-deep.ts", "hosted.ts", "local.ts"])
+    expect(sourceClosure({ entry, root, runtimeOnly: true }).modules.map((m) => m.relative))
+      .toEqual(["entry.ts", "local.ts"])
   })
 })
 

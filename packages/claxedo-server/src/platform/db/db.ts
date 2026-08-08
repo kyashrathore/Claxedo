@@ -16,7 +16,12 @@ import { lazy } from "../runtime/lib/lazy"
 import path from "path"
 import { readFileSync, readdirSync, existsSync, mkdirSync } from "fs"
 import { createRequire } from "module"
-import * as schema from "./schema"
+// TYPE-only. Drizzle needs the schema object at runtime solely for its
+// relational query builder (`db.query.*`), which nothing in this repository
+// uses; every call site passes its table explicitly. Importing it as a value
+// pulled the whole-product schema barrel — connections, channels, documents,
+// sandbox — into the closure of every module that opens the local database.
+import type * as schema from "./schema"
 import { repair } from "./repair"
 
 declare const CLAXEDO_MIGRATIONS: { sql: string; timestamp: number; name: string }[] | undefined
@@ -51,14 +56,14 @@ function openDatabase(file: string) {
     const sqlite = new bun.Database(file)
     return {
       sqlite: sqlite as CompatibleSqlite,
-      db: drizzle({ client: sqlite, schema }) as unknown as BetterSQLite3Database<typeof schema>,
+      db: drizzle({ client: sqlite }) as unknown as BetterSQLite3Database<typeof schema>,
     }
   }
 
   const sqlite = new Database(file)
   return {
     sqlite: sqlite as CompatibleSqlite,
-    db: drizzleBetter({ client: sqlite, schema }),
+    db: drizzleBetter({ client: sqlite }) as unknown as BetterSQLite3Database<typeof schema>,
   }
 }
 

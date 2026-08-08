@@ -7,11 +7,30 @@ import { promisify } from "node:util"
 import { dataDir } from "../../platform/runtime/lib/paths"
 import { Log } from "../../platform/runtime/lib/log"
 import { dockerSandboxDriverEnabled, type SandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
-import { getSupervisorSandboxLease } from "../../sandbox/stores/sqlite-supervisor-state"
 
 const execFileAsync = promisify(execFile)
 
 const log = Log.create({ service: "workspace-store" })
+
+/**
+ * Reads the provisioning lease for a cloud workspace.
+ *
+ * Only cloud workspaces have one, and a desktop-local build has no cloud
+ * workspaces at all — yet importing the supervisor lease store directly put the
+ * whole cloud sandbox graph inside the closure of every module that reads local
+ * workspace inventory. A composition that provisions sandboxes supplies this;
+ * one that does not leaves it unset, and an unfinished cloud workspace stays
+ * hidden exactly as it does today when the lease lookup fails.
+ */
+export type WorkspaceSandboxLeaseReader = (workspaceId: string) =>
+  | { status?: string; last_error?: string | null }
+  | undefined
+
+let sandboxLeaseReader: WorkspaceSandboxLeaseReader | undefined
+
+export function configureWorkspaceStore(options: { sandboxLease?: WorkspaceSandboxLeaseReader } = {}) {
+  sandboxLeaseReader = options.sandboxLease
+}
 
 export type Workspace = {
   id: string
@@ -251,7 +270,7 @@ function visible(ws: Workspace) {
   if (ws.status !== "acquiring_sandbox") return true
   const lease = (() => {
     try {
-      return getSupervisorSandboxLease(ws.id)
+      return sandboxLeaseReader?.(ws.id)
     } catch {
       return undefined
     }
@@ -265,7 +284,7 @@ function cloudAvailable(ws: Workspace) {
   if (ws.driver === "docker" && !dockerSandboxDriverEnabled()) return false
   const lease = (() => {
     try {
-      return getSupervisorSandboxLease(ws.id)
+      return sandboxLeaseReader?.(ws.id)
     } catch {
       return undefined
     }
