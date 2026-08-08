@@ -969,9 +969,10 @@ The alternative — `@claxedo/server` depending on `@claxedo/local-server` for t
 | `platform/{errors,http,auth}/*`, `platform/runtime/region` | 11 + 5 tests | 238 modules |
 | `platform/db/{db,repair}` behind a composition-supplied journal | 2 + 1 test | 237 modules, 39 packages |
 | the suite migration journal | — | — |
-| credential engine, `session/meta/*`, `sandbox/network/policy`, `workspace/store` | 18 + 6 tests | **219 modules** |
+| credential engine, `session/meta/*`, `sandbox/network/policy`, `workspace/store` | 18 + 6 tests | 219 modules |
+| `agent-config/index`, SQLite authority, credential operations, `hosts/*`, `opencode/{auth,engine}`, `session/harness/*` | 24 + 11 tests | **194 modules, 35 packages** |
 
-The local producer union is now **70 modules / 25 packages**, from 177 / 36 when the unit started.
+The local producer union is now **46 modules / 19 packages**, from 177 / 36 when the unit started.
 
 **A runtime-only closure is the right gate for CAPABILITY and the wrong basis for a MOVE.** It skips type-only edges, so the credentials slice left `credentials/types.ts` and `workspace/store` behind and did not compile. Measure a move against the declared closure; measure a boundary against the executable one.
 
@@ -990,7 +991,18 @@ The second attempt made the journal a **composition input**. `claxedo-server/src
 - The journal is *product* schema, so local-server gets its own with only local tables. This splits a persisted contract: existing desktop profiles already hold every table, so the split either drops them (data loss) or leaves them (no benefit).
 - The journal is the *suite's* schema, because both products open the same `claxedo.db` file format. It moves to `@claxedo/server-core` with the `*.sql.ts` leaves it is generated from — pure drizzle table definitions, no logic, no capability.
 
-**Not done:** `packages/claxedo-local-server` does not exist. Roughly 27 shared modules remain — `agent-config/index.ts`, `session/harness/*`, `hosts/agent-extensions/*`, `hosts/workspace-runtime/{env,runtime-config}`, `opencode/{auth,engine}`, `authority/{services,adapters/sqlite}`, `workspace/http/sandbox-target-fetch`, `credentials/operations/*`. `opencode/engine` deserves scrutiny before it moves: the embedded engine is a harness capability, not a neutral primitive, and `credentials/engine-bridge.ts` — its only real consumer — is already a lazy dynamic import and can stay with the product behind a port.
+**Two shared modules stay in `claxedo-server` on purpose.** `authority/services.ts` and `workspace/http/sandbox-target-fetch.ts` both reach the Convex authority and the relay adapter, so neither is a neutral primitive. The closure walker is what identified them: of the 26 shared modules in the final slice, 23 were self-contained and these two were not.
+
+**What now blocks creating `@claxedo/local-server`, measured.** The 13 local producers reach **44 local-only modules** at runtime. Their DECLARED closure is 70, and every one of the extra 24 is the Convex authority, channels, and relay chain reached through TYPE-only imports of `ControlPlaneServices` and `ControlPlaneCredentials` from `authority/services.ts`. Nothing executable crosses; only the type surface does.
+
+That leaves one decision:
+
+- Extract the control-plane service CONTRACT — `ControlPlaneServices`, `ControlPlaneCredentials`, and the narrow ports they name — into `@claxedo/server-core`, leaving `createControlPlaneServices` and its Convex/relay wiring in `@claxedo/server`. Correct, and a real design task: `ProjectionStore`, `RelayProvider`, `DurableSessionLog`, and `RuntimeAccessTokenSigner` all appear in that surface and each pulls its own implementation chain.
+- Or let `@claxedo/local-server` take a TYPE-ONLY dev dependency on `@claxedo/server`. Cheap, and it satisfies the dependency table as written — that table forbids `@claxedo/server` in local-server's RUNTIME closure, which a type-only edge never enters. But it makes the two product packages mutually referential at compile time, since `@claxedo/server` already depends on `@claxedo/local-server/self-hosted-execution`.
+
+The first is the right answer for the same reason the shared core exists at all; the second is a shortcut whose cost is a compile-time cycle between the two products the split was drawn to separate.
+
+**Not done:** `packages/claxedo-local-server` does not exist.
 
 The 44/62 split is pinned by `local-entry-closure.test.ts`, so the move set cannot drift.
 
