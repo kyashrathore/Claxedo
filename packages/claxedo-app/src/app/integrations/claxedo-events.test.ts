@@ -33,6 +33,7 @@ describe("claxedoEventStreamTargets", () => {
         kind: "workspace",
         serverUrl: "https://control.example.test",
         workspaceId: "ws_local",
+        workspaceKind: "local",
         directory: "/repo/local",
       },
     ])
@@ -64,6 +65,7 @@ describe("claxedoEventStreamTargets", () => {
       kind: "workspace",
       serverUrl: "https://control.example.test",
       workspaceId: "ws_cloud",
+      workspaceKind: "cloud",
       directory: "/repo/cloud",
     })
     // It must NOT be a central URL target.
@@ -179,7 +181,7 @@ describe("eventStreamFetch", () => {
     expect(hit).toBe("https://control.example.test/api/wr/events")
   })
 
-  test("keeps loopback workspace streams on the local workspace proxy", async () => {
+  test("keeps loopback local workspace streams on the directory-scoped runtime", async () => {
     const seen: Array<{ url: string; auth: string | null; xdir: string | null }> = []
     const request: typeof fetch = async (input, init) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
@@ -199,16 +201,22 @@ describe("eventStreamFetch", () => {
     }
 
     const res = await eventStreamFetch(
-      { kind: "workspace", serverUrl: "http://127.0.0.1:3001", workspaceId: "ws_loopback", directory: "workspace:ws_loopback" },
+      {
+        kind: "workspace",
+        serverUrl: "http://127.0.0.1:3001",
+        workspaceId: "ws_loopback",
+        workspaceKind: "local",
+        directory: "/repo/local",
+      },
       { headers: { Accept: "text/event-stream", Authorization: "Bearer browser-token" } },
       { request },
     )
 
     expect(res.status).toBe(200)
     expect(seen).toEqual([{
-      url: "http://127.0.0.1:3001/workspaces/ws_loopback/api/wr/events",
+      url: "http://127.0.0.1:3001/api/wr/events?directory=%2Frepo%2Flocal",
       auth: null,
-      xdir: "workspace:ws_loopback",
+      xdir: null,
     }])
   })
 
