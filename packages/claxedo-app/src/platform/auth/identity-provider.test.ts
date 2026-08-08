@@ -4,13 +4,12 @@ import { principalHasSignedAccess } from "./identity-provider"
 describe("principalHasSignedAccess", () => {
   test("allows local, signed, and org-member principals", () => {
     expect(principalHasSignedAccess({ kind: "local", deviceId: "local" })).toBe(true)
-    expect(principalHasSignedAccess({ kind: "signed", userId: "usr_1", getToken: async () => null })).toBe(true)
+    expect(principalHasSignedAccess({ kind: "signed", userId: "usr_1" })).toBe(true)
     expect(principalHasSignedAccess({
       kind: "org-member",
       userId: "usr_1",
       orgId: "org_1",
-      memberships: [],
-      getToken: async () => null,
+      memberships: []
     })).toBe(true)
   })
 

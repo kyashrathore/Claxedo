@@ -105,13 +105,12 @@ describe("role policy", () => {
     const principals = {
       anonymous: { kind: "anonymous" },
       local: { kind: "local", deviceId: "local" },
-      signed: { kind: "signed", userId: "usr_1", getToken: async () => null },
+      signed: { kind: "signed", userId: "usr_1" },
       "org-member": {
         kind: "org-member",
         userId: "usr_1",
         orgId: "org_1",
-        memberships: [],
-        getToken: async () => null,
+        memberships: []
       },
     } satisfies Record<Principal["kind"], Principal>
 
@@ -129,7 +128,7 @@ describe("role policy", () => {
       transport: "workspace-relay",
       role: "viewer",
     }
-    const signed: Principal = { kind: "signed", userId: "usr_1", getToken: async () => null }
+    const signed: Principal = { kind: "signed", userId: "usr_1" }
 
     expect(can("share.workspace" satisfies Capability, viewer)).toBe(false)
     expect(can("mutate.workspace" satisfies Capability, signed)).toBe(false)

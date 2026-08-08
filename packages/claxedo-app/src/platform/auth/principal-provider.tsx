@@ -15,13 +15,11 @@ export function PrincipalProvider(props: ParentProps<{ authEnabled: boolean }>) 
           userId: user?.id ?? "signed-user",
           orgId: organization.id,
           memberships: [],
-          getToken: auth.getToken,
         }
       }
       return {
         kind: "signed",
         userId: user?.id ?? "signed-user",
-        getToken: auth.getToken,
       }
     }
     if (!props.authEnabled) return { kind: "local", deviceId: "local" }
