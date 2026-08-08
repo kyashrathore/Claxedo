@@ -37,6 +37,7 @@ import { securityHeaders } from "@claxedo/server-core/platform/http/security-hea
 import { JwksRoutes } from "../../authority/routes/jwks"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../shared-routes/internal-relay"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
+import { HostEnrollmentRoutes } from "../../routes/hosted/host-enrollment"
 import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
 import { signedOrError } from "../../workspace/route-support"
 import { HostedDeviceAuthRoutes } from "../../routes/hosted/device-auth"
@@ -541,6 +542,10 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   )
 
   app.route("/api/workspace", HostedWorkspaceRoutes(services, workspaceOptions))
+  // Machine-wide remote access. Deliberately NOT under /api/workspace: there
+  // is no workspace in any of these paths, and mounting it there would invite
+  // the per-workspace shape back in.
+  app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, workspaceOptions))
   app.route("/api/workspace", WorkspaceCheckpointRoutes(services, {
     defaultHomeRegion: services.defaultHomeRegion,
   }))

@@ -178,6 +178,20 @@ const HOSTED_FAMILIES: Record<string, string[]> = {
     "/api/workspace/:id/user-hosted/pause",
     "/api/workspace/:id/user-hosted/register",
   ],
+  /**
+   * Machine-wide enrollment, Unit 6's replacement for `userHostedControl`
+   * above. Listed as its own family rather than folded in, so the cutover is
+   * visible here as one list appearing and the other leaving — and so a build
+   * that somehow mounts neither is caught.
+   *
+   * No `:id` in any entry. That is the whole difference.
+   */
+  hostEnrollment: [
+    "/api/claxedo/host/enrollments",
+    "/api/claxedo/host/enrollments/heartbeat",
+    "/api/claxedo/host/enrollments/pause",
+    "/api/claxedo/host/enrollments/requests",
+  ],
   relayResolver: ["/internal/relay/*", "/internal/relay/revocation", "/internal/relay/target"],
   sandboxAdmin: ["/internal/sandbox-manager/*", "/internal/sandbox-manager/gc", "/internal/sandbox-manager/release"],
 }
