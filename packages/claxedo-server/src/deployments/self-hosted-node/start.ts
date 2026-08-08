@@ -24,6 +24,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { deploymentMode } from "@claxedo/server-core/authority/deployment-mode"
+import { convexAuthorityUrlFromEnv } from "../../authority/adapters/convex/workspace-authority"
 import { embeddedAuthEnabled } from "./embedded-auth"
 import { selfHostedCapabilities } from "./capabilities"
 import { startServer } from "./app"
@@ -52,6 +53,23 @@ export function staticAppPosture(staticDir: string | undefined) {
 }
 
 /**
+ * Which workspace authority this environment will actually compose.
+ *
+ * `createDefaultLocalControlPlaneServices` decides it on one line:
+ *
+ *   `authorityUrl ? createConvexAuthority({ url: authorityUrl }) : createSqliteWorkspaceAuthority()`
+ *
+ * and `authorityUrl` is `convexAuthorityUrlFromEnv(process.env)`. This calls
+ * that same helper on the same environment, so the posture reports the
+ * authority the process is about to build rather than the one the product is
+ * supposed to have. It used to be a literal `true`, which made "your data
+ * stays in local SQLite" a claim a constant made about a branch it never read.
+ */
+export function selectedWorkspaceAuthority(env: NodeJS.ProcessEnv): "convex" | "sqlite" {
+  return convexAuthorityUrlFromEnv(env) ? "convex" : "sqlite"
+}
+
+/**
  * The posture this process is actually in, read from its environment.
  *
  * Separate from the assertion so a test can inspect what was measured without
@@ -59,14 +77,24 @@ export function staticAppPosture(staticDir: string | undefined) {
  * end up in one function that is hard to exercise.
  */
 export function selfHostedPosture(env: NodeJS.ProcessEnv) {
+  // Read ONCE and used for both authority fields, so they cannot disagree
+  // about the same composition.
+  const workspaceAuthority = selectedWorkspaceAuthority(env)
   return {
     deploymentMode: deploymentMode(env),
     embeddedAuth: embeddedAuthEnabled(env),
-    // This composition builds its authority from SQLite unconditionally. Both
-    // fields exist so a future composition that does neither cannot pass by
-    // omission.
+    // Both arms of that branch return an authority, so this composition always
+    // has one — it chooses WHICH, never whether. The field stays so a future
+    // composition that builds none cannot pass by omission.
     authority: true,
-    sqliteAuthority: true,
+    // The data-residency claim, and therefore the one that must never be a
+    // literal. `CLAXEDO_WORKSPACE_AUTHORITY_URL` makes this false, and
+    // `assertSelfHostedPosture` then refuses to start — deliberately, because
+    // a self-hosted binary writing workspace, project and session state into a
+    // remote control plane is the exact outcome an operator chose self-hosting
+    // to avoid. An operator who genuinely wants a remote authority wants the
+    // hosted composition (`start:hosted`), which is built for it.
+    sqliteAuthority: workspaceAuthority === "sqlite",
     // The product IS local execution; `createDefaultLocalControlPlaneServices`
     // composes it, and `createSelfHostedApp` refuses outright without it.
     localExecution: true,

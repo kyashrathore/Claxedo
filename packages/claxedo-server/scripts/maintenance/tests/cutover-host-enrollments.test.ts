@@ -1,7 +1,14 @@
+import { spawnSync } from "node:child_process"
+import { readFileSync } from "node:fs"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
 import { describe, expect, test } from "vitest"
 import {
+  CUTOVER_BACKEND_GAPS,
+  CutoverBackendUnavailableError,
   PHASES,
   parseCutoverArgv,
+  resolveCutoverPorts,
   runCutoverPhase,
   type CutoverPorts,
   type CutoverRecord,
@@ -240,6 +247,89 @@ describe("parseCutoverArgv", () => {
     expect(parseCutoverArgv(["preflight", "--environment", "--sha", "abc"])).toMatchObject({
       error: "--environment requires a value",
     })
+  })
+})
+
+describe("the command an operator actually runs", () => {
+  /**
+   * Driven through the real process entry, because the defect this covers was
+   * invisible from inside the module: every export below was correct and
+   * `bun run maintenance:cutover-host-enrollments` still exited 0 having done
+   * nothing, in the middle of an irreversible runbook. Only the exit status of
+   * a spawned run can tell those apart.
+   */
+  const packageDir = path.resolve(fileURLToPath(import.meta.url), "../../../..")
+  const script = path.join(packageDir, "scripts/maintenance/cutover-host-enrollments.ts")
+
+  function runScript(...args: string[]) {
+    return spawnSync(process.execPath, ["--import", "tsx", script, ...args], {
+      cwd: packageDir,
+      encoding: "utf8",
+      env: { ...process.env, USER: "operator" },
+    })
+  }
+
+  test("the package script points at this file", () => {
+    // `maintenance:cutover-host-enrollments` is the surface the runbook tells
+    // an operator to run; a main on some other module would not help them.
+    const manifest = JSON.parse(readFileSync(path.join(packageDir, "package.json"), "utf8")) as {
+      scripts: Record<string, string>
+    }
+
+    expect(manifest.scripts["maintenance:cutover-host-enrollments"]).toContain(
+      "scripts/maintenance/cutover-host-enrollments.ts",
+    )
+  })
+
+  test("a phase run fails loudly instead of exiting 0", () => {
+    const result = runScript("preflight", "--environment", "production", "--sha", "abc123")
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain("REFUSED")
+    expect(result.stderr).toContain("Nothing was read, blocked, deleted or recorded")
+    // The operator needs to know WHICH deployment and phase did not run.
+    expect(result.stderr).toContain("preflight")
+    expect(result.stderr).toContain("production@abc123")
+    expect(result.stdout).toBe("")
+  })
+
+  test("names the backend it is missing, so the message is actionable", () => {
+    const result = runScript("retire-legacy", "--environment", "production", "--sha", "abc123", "--confirm-destroy")
+
+    // Even the destructive invocation refuses; nothing is deleted.
+    expect(result.status).toBe(1)
+    for (const gap of CUTOVER_BACKEND_GAPS) {
+      for (const port of gap.ports) expect(result.stderr).toContain(port)
+    }
+    expect(result.stderr).toContain("docs/tech-docs/host-enrollment-hard-cut-runbook.md")
+  })
+
+  test("a bad invocation exits 2 with usage, not 1", () => {
+    // Distinct from the refusal above: an operator who mistyped a flag has a
+    // different problem from one whose deployment cannot be cut over.
+    const result = runScript("not-a-phase", "--environment", "production")
+
+    expect(result.status).toBe(2)
+    expect(result.stderr).toContain("phase must be one of")
+    expect(result.stderr).toContain("--confirm-destroy")
+  })
+})
+
+describe("resolveCutoverPorts", () => {
+  test("refuses rather than returning stubs", () => {
+    // Stub ports would let every phase report `done` against nothing.
+    expect(() => resolveCutoverPorts()).toThrow(CutoverBackendUnavailableError)
+  })
+
+  test("its report accounts for every port a phase calls", () => {
+    // A gap list that drifts from `CutoverPorts` is how a port quietly gets a
+    // stub: the reader sees a named gap for everything else and assumes this
+    // one is wired.
+    const covered = new Set(CUTOVER_BACKEND_GAPS.flatMap((gap) => gap.ports))
+    const harness = ports()
+    const needsBackend = (Object.keys(harness.ports) as Array<keyof CutoverPorts>).filter((port) => port !== "now")
+
+    expect([...needsBackend].filter((port) => !covered.has(port))).toEqual([])
   })
 })
 
