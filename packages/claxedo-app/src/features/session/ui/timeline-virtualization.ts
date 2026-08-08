@@ -1,5 +1,25 @@
 import type { Virtualizer } from "@tanstack/solid-virtual"
 
+export function estimateLongMarkdownHeight(text: string) {
+  let lineCount = 1
+  for (let newline = text.indexOf("\n"); newline !== -1; newline = text.indexOf("\n", newline + 1)) lineCount += 1
+  // Neither supported estimate can match fewer than 20 structural rows. Avoid
+  // allocating a line array and running a regex for the overwhelmingly common
+  // one-line response while the virtualizer estimates the complete history.
+  if (lineCount < 20) return
+
+  const lines = text.split("\n")
+  if (/^\s*(?:```|~~~)/.test(lines[0] ?? "") && lines.length > 80) {
+    return Math.min(6_000, (lines.length - 2) * 24 + 36)
+  }
+  let structuralRows = 0
+  for (const line of lines) {
+    if (!/^\s*(?:[-*+]\s+|\|)/.test(line)) continue
+    structuralRows += 1
+    if (structuralRows >= 20) return Math.min(6_000, lines.length * 50)
+  }
+}
+
 export function filterVirtualIndexes(indexes: number[], count: number) {
   return indexes.filter((index) => index >= 0 && index < count)
 }

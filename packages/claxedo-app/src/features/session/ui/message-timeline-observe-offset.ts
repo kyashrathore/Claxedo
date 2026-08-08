@@ -1,4 +1,30 @@
-import { observeElementOffset, type Virtualizer } from "@tanstack/solid-virtual"
+import { observeElementOffset, observeElementRect, type Virtualizer } from "@tanstack/solid-virtual"
+
+export const observeElementRectDeduped: typeof observeElementRect = (instance, callback) => {
+  return observeElementRect(instance, createObservedRectHandler(instance, callback))
+}
+
+export function createObservedRectHandler<T extends { width: number; height: number }>(
+  instance: { scrollRect: T | null },
+  callback: (rect: T) => void,
+) {
+  let width: number | undefined
+  let height: number | undefined
+  let initialObservation = true
+  return (rect: T) => {
+    if (rect.width === width && rect.height === height) return
+    width = rect.width
+    height = rect.height
+    const currentRect = instance.scrollRect
+    if (initialObservation && currentRect && currentRect.width > 0 && currentRect.height > 0) {
+      initialObservation = false
+      instance.scrollRect = rect
+      return
+    }
+    initialObservation = false
+    callback(rect)
+  }
+}
 
 // Ported from upstream packages/app/src/pages/session/timeline/observe-element-offset.ts (#36643).
 // When a route reconnect swaps the timeline's scroll element under a persistent

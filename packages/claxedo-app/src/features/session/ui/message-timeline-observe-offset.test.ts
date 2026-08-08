@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test"
 import { Virtualizer } from "@tanstack/solid-virtual"
-import { mutationNodesContainElement, observeElementOffsetReconnectAware } from "./message-timeline-observe-offset"
+import {
+  createObservedRectHandler,
+  mutationNodesContainElement,
+  observeElementOffsetReconnectAware,
+} from "./message-timeline-observe-offset"
 
 // Ported from upstream packages/app/src/pages/session/timeline/observe-element-offset.test.ts (#36643),
 // using real Virtualizer instances instead of structural casts.
@@ -16,6 +20,19 @@ test("matches only the scroll element or an ancestor containing it", () => {
   expect(mutationNodesContainElement([viewport], viewport)).toBe(true)
   expect(mutationNodesContainElement([route], viewport)).toBe(true)
   expect(mutationNodesContainElement([child, sibling], viewport)).toBe(false)
+})
+
+test("adopts only the first canonical element rect and reports later resizes", () => {
+  const instance = { scrollRect: { width: 1_280, height: 720 } }
+  const calls: Array<{ width: number; height: number }> = []
+  const observe = createObservedRectHandler(instance, (rect) => calls.push(rect))
+
+  observe({ width: 1_000, height: 640 })
+  observe({ width: 1_000, height: 640 })
+  observe({ width: 900, height: 640 })
+
+  expect(instance.scrollRect).toEqual({ width: 1_000, height: 640 })
+  expect(calls).toEqual([{ width: 900, height: 640 }])
 })
 
 function createInstance(input: {
@@ -54,6 +71,7 @@ test("reports a divergent native offset once and ignores equal offsets and unrel
     calls.push([offset, isScrolling])
     instance.scrollOffset = offset
   })
+  await frames(1)
 
   document.body.append(unrelated)
   unrelated.remove()
@@ -64,6 +82,7 @@ test("reports a divergent native offset once and ignores equal offsets and unrel
   document.body.append(route)
   await new Promise((resolve) => setTimeout(resolve, 0))
   await frames(3)
+  await new Promise((resolve) => setTimeout(resolve, 0))
   expect(calls).toEqual([[0, false]])
 
   route.remove()
@@ -132,6 +151,39 @@ test.each([
   route.remove()
 })
 
+test("keeps a user scroll offset while virtual content is added and remeasured", async () => {
+  const route = document.createElement("section")
+  const viewport = document.createElement("div")
+  const content = document.createElement("div")
+  route.append(viewport)
+  viewport.append(content)
+  document.body.append(route)
+  Object.defineProperties(viewport, {
+    clientHeight: { configurable: true, value: 600 },
+    scrollHeight: { configurable: true, value: 2_400 },
+    scrollTop: { configurable: true, value: 900, writable: true },
+  })
+  const instance = createInstance({ viewport, isScrollingResetDelay: 10 })
+  instance.scrollOffset = 900
+  const calls: [number, boolean][] = []
+  const cleanup = observeElementOffsetReconnectAware(instance, (offset, isScrolling) => {
+    calls.push([offset, isScrolling])
+    instance.scrollOffset = offset
+  })
+
+  viewport.scrollTop = 1_100
+  viewport.dispatchEvent(new Event("scroll"))
+  content.append(document.createElement("div"))
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  await frames(2)
+
+  expect(viewport.scrollTop).toBe(1_100)
+  expect(instance.scrollOffset).toBe(1_100)
+  expect(calls.some(([offset, isScrolling]) => offset === 1_100 && isScrolling)).toBe(true)
+  cleanup?.()
+  route.remove()
+})
+
 test("cleanup suppresses an already queued delegated offset callback", async () => {
   const viewport = document.createElement("div")
   document.body.append(viewport)
@@ -142,6 +194,7 @@ test("cleanup suppresses an already queued delegated offset callback", async () 
   const cleanup = observeElementOffsetReconnectAware(instance, (offset, isScrolling) =>
     calls.push([offset, isScrolling]),
   )
+  await frames(1)
 
   viewport.dispatchEvent(new Event("scroll"))
   cleanup?.()

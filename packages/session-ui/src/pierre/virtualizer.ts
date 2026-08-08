@@ -1,9 +1,10 @@
-import { type VirtualFileMetrics, Virtualizer } from "@pierre/diffs"
+import { type VirtualFileMetrics, Virtualizer, type VirtualizerConfig } from "@pierre/diffs"
 
 type Target = {
   key: Document | HTMLElement
   root: Document | HTMLElement
   content: HTMLElement | undefined
+  config?: Partial<VirtualizerConfig>
 }
 
 type Entry = {
@@ -53,6 +54,12 @@ function target(container: HTMLElement): Target | undefined {
       key: root,
       root,
       content: content instanceof HTMLElement ? content : undefined,
+      // Inline tool diffs have their own small viewport. Pierre's 1000px
+      // default buffer renders substantially more token DOM than that viewport
+      // can show, so retain ten lines around the visible range instead.
+      config: container.closest("[data-component='edit-content'], [data-component='apply-patch-file-diff']")
+        ? { overscrollSize: virtualMetrics.lineHeight! * 10 }
+        : undefined,
     }
   }
 
@@ -69,7 +76,7 @@ export function acquireVirtualizer(container: HTMLElement) {
 
   let entry = cache.get(resolved.key)
   if (!entry) {
-    const virtualizer = new Virtualizer()
+    const virtualizer = new Virtualizer(resolved.config)
     virtualizer.setup(resolved.root, resolved.content)
     entry = {
       virtualizer,
