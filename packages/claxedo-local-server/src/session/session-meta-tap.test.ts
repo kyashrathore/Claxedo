@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
-import { sessionMetaProjectionTap } from "./session-meta-tap"
+import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "./session-meta-tap"
 
 /**
  * Request-level, on purpose.
@@ -113,5 +113,31 @@ describe("session meta projection tap", () => {
 
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ id: "ses_1" })
+  })
+})
+
+describe("SSE session meta projection", () => {
+  test("records an auto-generated title that never arrives over HTTP", async () => {
+    // The reason this exists alongside the HTTP tap: a harness's async rename
+    // is published only on the workspace's own event stream, so the tap above
+    // cannot see it. Without this, titles revert to "Untitled" after a restart.
+    const sync = vi.fn(async (_ws: unknown, _info: Record<string, unknown>) => {})
+    await projectLocalSessionMetaFromEvent({ sync_session_meta: sync } as never, {
+      directory: "/work",
+      payload: { type: "session.updated", properties: { info: { id: "ses_1", title: "Auto title" } } },
+    })
+
+    expect(sync).toHaveBeenCalledTimes(1)
+    expect(sync.mock.calls[0]?.[1]).toMatchObject({ id: "ses_1", title: "Auto title", directory: "/work" })
+  })
+
+  test("ignores an event with no session info", async () => {
+    const sync = vi.fn(async () => {})
+    await projectLocalSessionMetaFromEvent({ sync_session_meta: sync } as never, {
+      directory: "/work",
+      payload: { type: "session.updated", properties: {} },
+    })
+
+    expect(sync).not.toHaveBeenCalled()
   })
 })

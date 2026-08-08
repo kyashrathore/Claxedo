@@ -57,7 +57,7 @@ import {
 import { configureOpenCodeAuth, opencodeHeaders } from "@claxedo/server-core/opencode/auth"
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
-import { migrateCredentials } from "../../credentials/operations/migrate"
+import { migrateCredentials, projectLocalSessionMetaFromEvent } from "@claxedo/local-server/self-hosted-execution"
 import { CredentialRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { ProviderAuthRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { NetworkPolicyRoutes } from "@claxedo/local-server/self-hosted-execution"
@@ -176,26 +176,7 @@ function globalBusOpencodeEvents(): OpencodeEventsHandle {
 // — share one write path into the control plane's session projection, and so
 // it can be exercised directly in tests without constructing a full `Hono`
 // app. `Pick` keeps it decoupled from the rest of `ControlPlaneServices`.
-export async function projectLocalSessionMetaFromEvent(
-  services: Pick<ControlPlaneServices, "projectionStore">,
-  event: OpencodeEvent,
-) {
-  try {
-    const raw = event.payload.properties?.info
-    const info = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : undefined
-    if (!info || typeof info.id !== "string") return
-    const directory = typeof info.directory === "string" ? info.directory : event.directory
-    const workspaceID = typeof info.workspaceID === "string" ? info.workspaceID : undefined
-    const ws = await resolveWorkspace({ workspaceId: workspaceID, directory }).catch(() => undefined)
-    if (ws?.kind === "cloud") return
-    await services.projectionStore.sync_session_meta(ws, {
-      ...info,
-      ...(directory ? { directory } : {}),
-    })
-  } catch {
-    // Best-effort projection; upstream events must never break the bridge.
-  }
-}
+export { projectLocalSessionMetaFromEvent } from "@claxedo/local-server/self-hosted-execution"
 
 function authRouteOptions(services: ControlPlaneServices) {
   return {
@@ -1178,7 +1159,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     // to "Untitled" after a restart.
     onSessionMetaEvent: (event) => {
       if (event.payload.type === "session.created" || event.payload.type === "session.updated") {
-        void projectLocalSessionMetaFromEvent(services, event)
+        void projectLocalSessionMetaFromEvent(services.projectionStore, event)
       }
       recordLocalWorkGraphUsage(event)
     },
@@ -1228,7 +1209,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   upstreamEvents?.on((event) => {
     if (!event.payload.type) return
     if (event.payload.type === "session.created" || event.payload.type === "session.updated") {
-      void projectLocalSessionMetaFromEvent(services, event)
+      void projectLocalSessionMetaFromEvent(services.projectionStore, event)
     }
     globalBus.publish({
       directory: event.directory ?? "global",

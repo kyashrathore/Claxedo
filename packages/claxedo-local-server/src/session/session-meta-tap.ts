@@ -62,3 +62,36 @@ export function sessionMetaProjectionTap(
     }
   }
 }
+
+/**
+ * The SSE half of the same concern.
+ *
+ * A harness session's auto-generated title — OpenCode's own LLM rename, or an
+ * ACP harness's post-turn `maybeEmitTitle` — is published ONLY on that
+ * workspace's `/global/event` stream. It never arrives as an HTTP
+ * `PATCH /session/:id`, so the response tap above cannot see it, and without
+ * this projection titles revert to "Untitled" after a restart.
+ */
+export async function projectLocalSessionMetaFromEvent(
+  projectionStore: Pick<SessionProjectionStore, "sync_session_meta">,
+  event: {
+    directory?: string
+    payload: { properties?: Record<string, unknown> } & Record<string, unknown>
+  },
+) {
+  try {
+    const raw = event.payload.properties?.info
+    const info = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : undefined
+    if (!info || typeof info.id !== "string") return
+    const directory = typeof info.directory === "string" ? info.directory : event.directory
+    const workspaceID = typeof info.workspaceID === "string" ? info.workspaceID : undefined
+    const ws = await resolveWorkspace({ workspaceId: workspaceID, directory }).catch(() => undefined)
+    if (ws?.kind === "cloud") return
+    await projectionStore.sync_session_meta(ws, {
+      ...info,
+      ...(directory ? { directory } : {}),
+    })
+  } catch {
+    // Best-effort projection; upstream events must never break the bridge.
+  }
+}
