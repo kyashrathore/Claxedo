@@ -1,22 +1,26 @@
 # Claxedo Performance Harness
 
-Frame-first performance harness for the Claxedo app. It launches the **real** app
-in Chromium, drives a small set of user-observable flows, and measures the only
-thing that matters to how the app feels: **are we holding the frame rate?**
+Renderer-performance harness for the Claxedo app. It launches the production web
+bundle in headless Chromium, supplies deterministic synthetic API responses,
+drives user-observable flows, and measures renderer main-thread scheduling plus
+semantic readiness.
 
-- Target: **120hz** — every frame produced in ≤ 8.33ms.
-- Floor: **60hz** — no flow may sustain frames slower than 16.67ms.
+- Target: **120hz-capable** — pooled p95 renderer interval ≤ 8.33ms.
+- Floor: **60hz-capable** — zero observed renderer intervals > 16.67ms.
 
-There is no deterministic/fabricated mode and no upstream comparison. Every number
-comes from a real browser driving the real app. Set `CLAXEDO_PERF_RECORD_VIDEO=1`
-for non-gating visual recordings; release measurements leave capture off so video
-encoding cannot distort frame evidence.
+The browser runs the real compiled application code. Project, session, message,
+terminal, file, and diff data come from the harness's route-level fixture, with no
+real Claxedo server, workspace harness, filesystem, or network latency in the
+measured path. This lane is a repeatable renderer proxy, not evidence of actual FPS
+or frames presented by packaged Electron on a physical display. Set
+`CLAXEDO_PERF_RECORD_VIDEO=1` for non-gating visual recordings; release
+measurements leave capture off so video encoding cannot distort scheduling evidence.
 
 ## Quick start
 
 ```sh
 bun run list            # list the measured flows
-bun run run             # run the default flow (launch-project), headless
+bun run run             # production build, then run launch-project headless
 bun run run:all         # run every flow
 bun run run:debug       # run every flow and print the debug sub-metrics
 bun run run:headed      # watch it drive the app
@@ -31,9 +35,17 @@ enabled→control. This gives each side one early and one late run so warm/cold
 position cannot be mistaken for profiler overhead, while avoiding heavyweight
 browser-process churn between flows. Finished pages are closed before the next
 flow. Enabled runs start the production diagnostics profiler against that
-browser's real process tree. The gate compares conservative merged
-p95/worst-frame evidence and also requires real retained process samples from
-both profiler runs.
+browser's real process tree. The gate compares pooled p95 intervals, the worst
+interval, and every 60hz deadline miss. It also requires real retained process
+samples from both profiler runs. Raw per-run headline measurements and intervals
+remain in JSON under `headline.runs` and `headline.frameIntervalsMs`. The strict
+worst-interval gate keeps an isolated stall visible even when it does not move
+pooled p95.
+
+The harness builds and serves the production Vite bundle by default. Repeated
+local experiments may set `CLAXEDO_PERF_SKIP_BUILD=1` only after building the
+current source once. `CLAXEDO_PERF_APP_SCRIPT=dev` is an explicit diagnostic mode;
+its Vite transforms and HMR traffic are not release evidence.
 
 Run a single flow:
 
@@ -41,39 +53,113 @@ Run a single flow:
 bun src/cli.ts run --scenario workspace-switch --headed
 ```
 
+For causal size-scaling experiments, enable diagnostic seed overrides without
+changing the release fixtures:
+
+```sh
+CLAXEDO_PERF_DIAGNOSTIC=1 \
+CLAXEDO_PERF_SEED_MESSAGES=1 \
+CLAXEDO_PERF_SEED_CHANGED_FILES=1 \
+CLAXEDO_PERF_CAUSAL=1 \
+bun src/cli.ts run --scenario workspace-switch --iterations 3 --no-trend
+```
+
+The diagnostic seed accepts `SESSIONS`, `MESSAGES`, `TERMINALS`,
+`CHANGED_FILES`, and `PROJECTS` using the same `CLAXEDO_PERF_SEED_` prefix.
+`CLAXEDO_PERF_CAUSAL=1` adds action-scoped long-frame attribution, long tasks,
+event/resource timing, DOM mutation counts, and an 8ms event-loop heartbeat
+correlated with each rAF deadline miss. The heartbeat
+distinguishes main-thread unavailability from headless frame-scheduler gaps.
+Neither flag changes a normal release or CI run.
+
+`CLAXEDO_PERF_CPU_PROFILE=1` adds the sampled CPU profile. It is deliberately
+separate because Chrome's sampler perturbs short frame measurements; profile
+runs provide attribution and never provide gating timing evidence.
+
+The 8ms event-loop heartbeat runs in every release and diagnostic measurement.
+It distinguishes application main-thread unavailability from the headless
+browser's own rAF cadence without enabling mutation observers or CPU sampling.
+
+`CLAXEDO_PERF_WARM_SESSION_SWITCH=1` pre-activates both session surfaces before
+the measured stress loop. It is a diagnostic comparison for retained-pane layout
+cost; the normal release flow deliberately includes the first cold mount.
+`CLAXEDO_PERF_SESSION_PREFETCH_SETTLE_MS=<ms>` adds an unmeasured delay before
+that loop to distinguish incomplete adjacent-session data prefetch from DOM mount
+and layout cost.
+
+`CLAXEDO_PERF_SESSION_SWITCH_ROUNDS=<count>` changes the default three
+back-and-forth rounds for causal isolation. Release gates keep the default.
+
+`CLAXEDO_PERF_SESSION_RENDERER=plain|markdown|code|mermaid|diff` selects one
+semantically verified rich row in the session-switch fixture. Markdown waits
+for its table, code waits for completed highlighting, Mermaid explicitly starts
+the diagram and waits for its SVG, and diff expands the edit tool and waits for
+its file viewer. This is a causal profiling control; the release fixture uses
+`diff`.
+
 ## How it measures frame rate
 
 The harness launches Chromium with vsync and the frame-rate cap disabled
-(`--disable-gpu-vsync --disable-frame-rate-limit`). `requestAnimationFrame` then
-fires as fast as the main thread allows, so each frame interval reflects the time
-spent **producing** that frame (script + layout + paint) rather than the display's
-refresh period. That is what makes 8.33ms / 16.67ms physically meaningful in
-headless. A `PerformanceObserver('long-animation-frame')` folds in any main-thread
-blocking as additional worst-case samples.
+(`--disable-gpu-vsync --disable-frame-rate-limit`) and records both rAF cadence
+and an 8ms event-loop heartbeat. Headless Chromium can still emit 17.8ms rAF
+intervals on `about:blank` while the heartbeat remains at 8ms, so rAF cadence
+alone is not treated as application work. A sub-50ms rAF deadline miss enters the
+application gate only when it overlaps an event-loop interval above 16.67ms. A
+`PerformanceObserver('long-animation-frame')` attributes animation work at or
+above 50ms. Timestamp overlap identifies which rAF gap each entry replaces rather
+than duplicating it. Unattributed gaps remain in raw evidence and produce a
+measurement-quality warning.
+
+This catches renderer event-loop stalls from JavaScript, style, and layout that
+can make a 60/120Hz presentation deadline impossible. It does not observe
+Electron's compositor, GPU raster/presentation, monitor vsync, OS input delivery,
+or input-to-photon latency. Interactions use DOM `click()` inside the page so the
+measured window includes application handlers and rendering, but excludes native
+mouse dispatch and Playwright's locator/actionability overhead. A packaged-desktop
+trace lane is required before the project can claim displayed 60Hz.
+
+| Claim | Supported by this lane? | Reason |
+| --- | --- | --- |
+| Production renderer code avoids >16.67ms main-thread unavailability in these flows | Yes | Production bundle, semantic readiness, 8ms heartbeat, Long Animation Frames, raw rAF intervals, and strict worst-interval gate |
+| Synthetic data scale mounts and updates the intended UI | Yes | Fixture request counts plus transcript, review-hunk, terminal, and navigator readiness checks |
+| A packaged desktop presents 60 FPS | No | Headless Chromium does not expose Electron compositor or physical-display presentation |
+| GPU raster and compositing stay within budget | No | Vsync and the frame-rate cap are disabled; no presentation trace is collected |
+| Real server, filesystem, sandbox, relay, or network latency is fast | No | Deterministic fixtures are fulfilled through Playwright route interception over loopback; their routing time is included, but production infrastructure is absent |
+| Native click-to-photon latency is fast | No | The measured action starts with an in-page DOM click |
+| Diagnostics do not materially disturb the renderer proxy | Partly | Enabled/control ABBA runs compare profiler overhead against the same synthetic flow |
 
 For each flow, `measureInteraction()` records every frame produced while the real
 interaction runs, then reports:
 
 | Field | Meaning |
 | --- | --- |
-| `p95FrameMs` | the headline — "in most cases" frame time → the Hz badge |
-| `worstFrameMs` | the single worst frame → the regression budget |
-| `framesOver1667` | how many frames dropped below 60hz |
+| `observedFrameIntervalsMs` | every raw rAF interval, including browser-scheduler cadence |
+| `p95FrameMs` | p95 of all retained rAF intervals across the merged repetitions |
+| `worstFrameMs` | the worst rAF or Long Animation Frame duration |
+| `framesOver1667` | count of renderer intervals over the 16.67ms deadline |
+| `sampleCount` | total retained rAF intervals used by the merged result |
+| `longAnimationFrameMs` | Chromium-attributed main-thread animation frames at or above 50ms |
+| `unattributedSchedulingGapsMs` | rAF pauses excluded from the app gate because neither the heartbeat nor Chromium LoAF evidence attributes them to main-thread work |
 | `completionMs` | how long the interaction took end-to-end |
+
+Short interactions can produce only a few dozen intervals. The JSON retains each
+raw interval so percentile rank and isolated misses are auditable. The report does
+not call an interval a displayed frame and does not derive an FPS number from these
+uncapped samples.
 
 ### Gate
 
-- 🟢 **120hz** — `p95 ≤ 8.33ms`
-- 🟡 **60hz** (warn) — `8.33ms < p95 ≤ 16.67ms`
-- 🔴 **<60hz** (fail) — `p95 > 16.67ms`, or more than 2 frames below 60hz, or the
-  worst frame regressed past the stored budget.
+- 🟢 **120hz-capable** — `p95 ≤ 8.33ms` and no interval misses 16.67ms.
+- 🟡 **60hz-capable** (warn) — `8.33ms < p95 ≤ 16.67ms` and no interval misses 16.67ms.
+- 🔴 **missed-60hz** (fail) — `p95 > 16.67ms`, any interval over 16.67ms, or the
+  worst interval regressed past the stored budget.
 
 A `warn` does not fail CI; a `fail` does. In the paired diagnostics gate, a stored
 budget fails only when the disabled control satisfies it and diagnostics causes
 the enabled run to cross it. A control that already exceeds the stored budget is
 reported as a base-app warning with both measurements, rather than attributed to
-diagnostics. The 8.33/16.67 thresholds are physical and fixed — only the per-flow
-worst-frame regression budget is stored (`data/budgets/<flow>.json`,
+diagnostics. The 8.33/16.67 renderer-proxy thresholds are fixed — only the per-flow
+worst-interval regression budget is stored (`data/budgets/<flow>.json`,
 auto-calibrated from the first accepted run).
 
 ## Flows
@@ -83,9 +169,9 @@ Five user-observable flows, each frame-gated:
 | Flow | Headline interaction |
 | --- | --- |
 | `launch-project` | launch into a 20-session project |
-| `session-switch` | rapid back-and-forth between two 10k-message sessions |
-| `live-terminal-switch` | switch between three live terminals |
-| `large-diff-toggle` | toggle split/unified on a 500-file diff |
+| `session-switch` | rapid cold/warm switching between two 80-message first folds; the fixture's 10k history length exercises pagination metadata, not 10k mounted rows |
+| `live-terminal-switch` | switch between three attached, already-open terminal surfaces after one seeded websocket line; continuous-output stress is not part of this flow |
+| `large-diff-toggle` | toggle split/unified with a 500-file model; the first 20 file headers and visible diff body mount initially, then headers render progressively |
 | `workspace-switch` | switch to another workspace and into a session |
 
 Headline = the frame timing of the flow's primary interaction. Each flow also
