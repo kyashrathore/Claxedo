@@ -35,6 +35,7 @@ import {
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
 import { harnessSpawnEnv } from "../shared/spawn-env"
+import { createIdleReaper } from "../shared/process-lifecycle"
 import {
   CODEX_PERMISSION_MODES,
   CODEX_SETTINGS,
@@ -154,6 +155,18 @@ const CODEX_DYNAMIC_TOOLS = [{
   },
 }]
 
+/**
+ * How long the app-server may sit with no work before it is reaped.
+ *
+ * Matches the OpenCode adapter's U8-F4 desktop default. Codex is the more
+ * expensive one to leave resident, because the driver previously held it for
+ * its own lifetime rather than the session's.
+ */
+function codexIdleTimeoutMs() {
+  const configured = Number(process.env.CLAXEDO_CODEX_IDLE_TIMEOUT_MS)
+  return Number.isFinite(configured) && configured > 0 ? Math.round(configured) : 30_000
+}
+
 class CodexAppServerDriver implements SdkRuntimeDriver {
   readonly type = "codex" as const
   private auth: SdkRuntimeAuth = {}
@@ -168,6 +181,20 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
    */
   private processStart: Promise<CodexAppServerProcess> | undefined
   private processError: string | null = null
+  /**
+   * Reaps the app-server after a quiet period.
+   *
+   * The driver used to hold its child for the life of the driver, so a desktop
+   * that ran one Codex turn at breakfast still had `codex app-server` resident
+   * at midnight. A prompt turn takes a lease, so a long silent tool call cannot
+   * be reaped mid-flight; `ensureProcess` re-spawns transparently, which is the
+   * same contract every other caller of this driver already relies on.
+   */
+  private readonly idleMs = codexIdleTimeoutMs()
+  private readonly idle = createIdleReaper({
+    idleMs: this.idleMs,
+    onIdle: () => this.reapIdleProcess(),
+  })
   private currentMcp: Record<string, ResolvedMcpServer> = {}
   private activeThreads = new Map<string, CodexActiveThread>()
   private readonly codexHome: string
@@ -253,6 +280,10 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   async runTurn(input: SdkRuntimeTurnInput) {
     const threadId = input.getAgentSessionId()
     const proc = await this.ensureProcess(input.directory)
+    // Held for the whole turn, released in the `finally` below. Idle teardown
+    // driven by "time since the last request STARTED" would reap a turn that is
+    // still inside one long silent tool call.
+    const turn = this.idle.lease()
     let turnId = ""
     let resolveCompleted: (() => void) | undefined
     let rejectCompleted: ((err: Error) => void) | undefined
@@ -409,6 +440,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       unsubscribeStderr()
       unsubscribe()
       this.activeThreads.delete(threadId)
+      turn.release()
     }
   }
 
@@ -421,7 +453,24 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     }
   }
 
+  /**
+   * Only reap a genuinely idle child. A lease covers a prompt turn, but a
+   * thread can outlive its turn, and disposing under one would surface as a
+   * lost session rather than as reclaimed memory.
+   */
+  private reapIdleProcess() {
+    if (this.activeThreads.size > 0) {
+      this.idle.touch()
+      return
+    }
+    if (!this.process) return
+    log.info("codex app-server idle timeout, disposing", { idleMs: this.idleMs })
+    this.process.dispose()
+    this.process = null
+  }
+
   dispose() {
+    this.idle.cancel()
     this.activeThreads.clear()
     this.process?.dispose()
     this.process = null
@@ -524,6 +573,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
    * looks like a leak in the binary rather than in this method.
    */
   private ensureProcess(directory: string): Promise<CodexAppServerProcess> {
+    this.idle.touch()
     if (this.process?.alive) return Promise.resolve(this.process)
     if (this.processStart) return this.processStart
     const pending = this.startProcess(directory).finally(() => {
