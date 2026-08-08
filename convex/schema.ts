@@ -313,6 +313,50 @@ export default defineSchema({
     .index("by_host_id", ["host_id"])
     .index("by_expires_at", ["expires_at"]),
 
+  // Machine-wide remote access (Unit 6). One row per (owner, machine) — NOT
+  // per workspace, which is the whole difference from local_host_links above.
+  // A user with twelve projects on one laptop enrolls the laptop once; which
+  // workspaces a session may reach is decided at request time from the
+  // workspace tables rather than frozen into a registration row.
+  //
+  // Convex has no unique constraints, so `by_owner_host` is how that rule is
+  // enforced: every write path reads through it first and patches rather than
+  // inserts. The SQLite authority states the same rule as a UNIQUE.
+  host_enrollments: defineTable({
+    enrollment_id: v.string(),
+    owner_user_id: v.id("users"),
+    host_id: v.string(),
+    public_key: v.string(),
+    display_name: v.optional(v.string()),
+    last_seen_at: v.number(),
+    expires_at: v.number(),
+    paused_at: v.optional(v.number()),
+    paused_by: v.optional(v.union(v.literal("user"), v.literal("killswitch"))),
+    paused_reason: v.optional(v.string()),
+    revoked_at: v.optional(v.number()),
+    created_at: v.number(),
+    updated_at: v.number(),
+  })
+    .index("by_owner_host", ["owner_user_id", "host_id"])
+    .index("by_owner", ["owner_user_id"])
+    .index("by_host_id", ["host_id"])
+    .index("by_expires_at", ["expires_at"]),
+
+  // The one-use nonce a machine signs to prove it holds the private key.
+  // Separate from host_attestation_challenges because that table is keyed by
+  // workspace and this flow has no workspace to key by.
+  host_enrollment_requests: defineTable({
+    request_id: v.string(),
+    owner_user_id: v.id("users"),
+    host_id: v.string(),
+    nonce: v.string(),
+    expires_at: v.number(),
+    used_at: v.optional(v.number()),
+    created_at: v.number(),
+  })
+    .index("by_request_id", ["request_id"])
+    .index("by_owner", ["owner_user_id"]),
+
   host_attestation_challenges: defineTable({
     challenge_id: v.string(),
     // PUBLIC workspace id (not a doc reference): a challenge may be issued for

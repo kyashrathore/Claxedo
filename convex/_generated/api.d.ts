@@ -21,6 +21,7 @@ import type * as cronLease from "../cronLease.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as idempotency from "../idempotency.js";
+import type * as hostEnrollments from "../hostEnrollments.js";
 import type * as localHostLinks from "../localHostLinks.js";
 import type * as migrations from "../migrations.js";
 import type * as model from "../model.js";
@@ -68,6 +69,7 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   http: typeof http;
   idempotency: typeof idempotency;
+  hostEnrollments: typeof hostEnrollments;
   localHostLinks: typeof localHostLinks;
   migrations: typeof migrations;
   model: typeof model;

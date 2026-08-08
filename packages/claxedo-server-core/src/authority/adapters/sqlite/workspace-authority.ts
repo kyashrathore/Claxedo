@@ -1,5 +1,5 @@
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import type { OrgId, ProjectAction, ProjectRoleResult, WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { HostEnrollment, OrgId, ProjectAction, ProjectRoleResult, WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
 import {
   authorizeProjectForUser,
@@ -79,6 +79,60 @@ function registrationPayload(input: {
     `challenge_id=${input.challenge_id}`,
     `nonce=${input.nonce}`,
   ].join("\n")
+}
+
+function enrollmentPayload(input: { host_id: string; request_id: string; nonce: string }) {
+  // A distinct v1 prefix from the local-host-link payloads above. Payload
+  // domains must not overlap: a signature captured from one flow being
+  // replayable in the other is exactly what a prefix prevents.
+  return [
+    "claxedo.host-enrollment.enroll.v1",
+    `host_id=${input.host_id}`,
+    `request_id=${input.request_id}`,
+    `nonce=${input.nonce}`,
+  ].join("\n")
+}
+
+function heartbeatEnrollmentPayload(input: { host_id: string; ttl_ms?: number }) {
+  return [
+    "claxedo.host-enrollment.heartbeat.v1",
+    `host_id=${input.host_id}`,
+    `ttl_ms=${input.ttl_ms ?? ""}`,
+  ].join("\n")
+}
+
+type HostEnrollmentRow = {
+  enrollment_id: string
+  owner_token_identifier: string
+  host_id: string
+  public_key: string
+  display_name: string | null
+  last_seen_at: number
+  expires_at: number
+  paused_at: number | null
+  revoked_at: number | null
+  created_at: number
+}
+
+type HostEnrollmentRequestRow = {
+  request_id: string
+  owner_token_identifier: string
+  host_id: string
+  nonce: string
+  expires_at: number
+  used_at: number | null
+}
+
+/** Row → what an owner may see. The public key never crosses this boundary. */
+function toHostEnrollment(row: HostEnrollmentRow): HostEnrollment {
+  return {
+    enrollment_id: row.enrollment_id,
+    host_id: row.host_id,
+    ...(row.display_name ? { display_name: row.display_name } : {}),
+    expires_at: row.expires_at,
+    last_seen_at: row.last_seen_at,
+    created_at: row.created_at,
+  }
 }
 
 function heartbeatPayload(input: {
@@ -611,6 +665,161 @@ export function createSqliteWorkspaceAuthority(options: SqliteWorkspaceAuthority
         revoked: true,
         runtime_tokens_revoked: revokeRuntimeTokensForUsers(db, args.workspaceId, tokenIdentifiers),
       }
+    },
+
+    // --- machine-wide enrollment (Unit 6) -----------------------------------
+    //
+    // The local-host-link methods below do the same four things per WORKSPACE.
+    // These do them per MACHINE, and every difference between the two blocks is
+    // the removal of workspace handling: no ownership check against a workspace
+    // row, no cloud-workspace refusal, and — the one that matters — no implicit
+    // `INSERT INTO workspaces`. Enrolling a laptop creates nothing to own.
+    async createHostEnrollmentRequest(auth: SignedControlPlaneAuth, args) {
+      const db = database()
+      const who = user(auth)
+      const now = Date.now()
+      const nonce = base64url(crypto.getRandomValues(new Uint8Array(32)))
+      const requestId = base64url(crypto.getRandomValues(new Uint8Array(16)))
+      db.prepare(`
+        INSERT INTO host_enrollment_requests (request_id, owner_token_identifier, host_id, nonce, expires_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(requestId, who.token_identifier, args.hostId, nonce, now + CHALLENGE_TTL_MS, now)
+      return { request_id: requestId, nonce, expires_at: now + CHALLENGE_TTL_MS }
+    },
+    async enrollHost(auth: SignedControlPlaneAuth, args) {
+      const db = database()
+      const who = user(auth)
+      const now = Date.now()
+      const request = db.prepare(`SELECT * FROM host_enrollment_requests WHERE request_id = ?`)
+        .get(args.requestId) as HostEnrollmentRequestRow | undefined
+      if (
+        !request
+        || request.owner_token_identifier !== who.token_identifier
+        || request.host_id !== args.hostId
+        || request.used_at
+        || request.expires_at <= now
+      ) {
+        throw new Error("Invalid host enrollment request")
+      }
+      // Signature verified BEFORE the nonce is claimed: a bad signature must
+      // not burn the request, or an attacker who can reach this endpoint could
+      // invalidate every enrollment attempt the user makes.
+      await verifyHostSignature({
+        public_key: args.publicKey,
+        payload: enrollmentPayload({
+          host_id: args.hostId,
+          request_id: args.requestId,
+          nonce: request.nonce,
+        }),
+        signature: args.signature,
+      })
+      return db.transaction(() => {
+        const claimedAt = Date.now()
+        const claimed = db.prepare(`
+          UPDATE host_enrollment_requests SET used_at = ?
+          WHERE request_id = ? AND used_at IS NULL AND expires_at > ?
+        `).run(claimedAt, args.requestId, claimedAt)
+        // One-use, enforced by the UPDATE's own WHERE rather than by the read
+        // above: two concurrent enrollments race through that read, and only
+        // one can win here.
+        if (claimed.changes !== 1) throw new Error("Invalid host enrollment request")
+
+        const expiresAt = claimedAt + ttl(args.ttlMs)
+        const enrollmentId = base64url(crypto.getRandomValues(new Uint8Array(16)))
+        db.prepare(`
+          INSERT INTO host_enrollments (
+            enrollment_id, owner_token_identifier, host_id, public_key, display_name,
+            last_seen_at, expires_at, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT (owner_token_identifier, host_id) DO UPDATE SET
+            public_key = excluded.public_key,
+            display_name = COALESCE(excluded.display_name, host_enrollments.display_name),
+            last_seen_at = excluded.last_seen_at,
+            expires_at = excluded.expires_at,
+            updated_at = excluded.updated_at,
+            -- Re-enrolling a machine clears a previous revoke or pause. The
+            -- user just proved possession of the key again, which is a stronger
+            -- statement than either flag.
+            paused_at = NULL,
+            paused_by = NULL,
+            paused_reason = NULL,
+            revoked_at = NULL
+        `).run(
+          enrollmentId,
+          who.token_identifier,
+          args.hostId,
+          args.publicKey,
+          args.displayName ?? null,
+          claimedAt,
+          expiresAt,
+          claimedAt,
+          claimedAt,
+        )
+        const row = db.prepare(`SELECT * FROM host_enrollments WHERE owner_token_identifier = ? AND host_id = ?`)
+          .get(who.token_identifier, args.hostId) as HostEnrollmentRow
+        return toHostEnrollment(row)
+      })()
+    },
+    async heartbeatHostEnrollment(auth: SignedControlPlaneAuth, args) {
+      const db = database()
+      const who = user(auth)
+      const row = db.prepare(`SELECT * FROM host_enrollments WHERE owner_token_identifier = ? AND host_id = ?`)
+        .get(who.token_identifier, args.hostId) as HostEnrollmentRow | undefined
+      if (!row || row.revoked_at) throw new Error("Host enrollment not found")
+      await verifyHostSignature({
+        public_key: row.public_key,
+        payload: heartbeatEnrollmentPayload({ host_id: args.hostId, ttl_ms: args.ttlMs }),
+        signature: args.signature,
+      })
+      const now = Date.now()
+      const expiresAt = now + ttl(args.ttlMs)
+      db.prepare(`
+        UPDATE host_enrollments SET last_seen_at = ?, expires_at = ?, updated_at = ?
+        WHERE owner_token_identifier = ? AND host_id = ?
+      `).run(now, expiresAt, now, who.token_identifier, args.hostId)
+      return { expires_at: expiresAt, last_seen_at: now }
+    },
+    async pauseHostEnrollment(auth: SignedControlPlaneAuth, args) {
+      const db = database()
+      const who = user(auth)
+      const now = Date.now()
+      const values = [
+        args.paused ? now : null,
+        args.paused ? "user" : null,
+        args.paused ? "user_paused" : null,
+        now,
+        who.token_identifier,
+      ]
+      // No host id pauses every machine this owner enrolled — the "stop all
+      // remote access" the settings switch means.
+      if (args.hostId) {
+        db.prepare(`
+          UPDATE host_enrollments SET paused_at = ?, paused_by = ?, paused_reason = ?, updated_at = ?
+          WHERE owner_token_identifier = ? AND host_id = ?
+        `).run(...values, args.hostId)
+      } else {
+        db.prepare(`
+          UPDATE host_enrollments SET paused_at = ?, paused_by = ?, paused_reason = ?, updated_at = ?
+          WHERE owner_token_identifier = ?
+        `).run(...values)
+      }
+      return { paused: args.paused }
+    },
+    async activeHostEnrollment(auth: SignedControlPlaneAuth) {
+      const db = database()
+      const who = user(auth)
+      const row = db.prepare(`
+        SELECT * FROM host_enrollments WHERE owner_token_identifier = ?
+        ORDER BY last_seen_at DESC LIMIT 1
+      `).get(who.token_identifier) as HostEnrollmentRow | undefined
+      if (!row) return { active: false as const, reason: "not-enrolled" as const }
+      // Ordered most-specific first: a revoked enrollment is also expired
+      // eventually, and reporting the expiry would send the user to reconnect
+      // when the real answer is that access was taken away.
+      if (row.revoked_at) return { active: false as const, reason: "revoked" as const }
+      if (row.paused_at) return { active: false as const, reason: "paused" as const }
+      if (row.expires_at <= Date.now()) return { active: false as const, reason: "expired" as const }
+      return { active: true as const, ...toHostEnrollment(row) }
     },
 
     // --- local host links (convex/localHostLinks.ts) ------------------------

@@ -683,6 +683,17 @@ export const ORG_RETAINED_TABLES: Readonly<Record<string, string>> = {
   // different subject (`user.deleted`) with a different scope.
   users: "user-owned, not org-owned",
   channel_identities: "keyed on the user, with no org linkage",
+  // Machine-wide remote access, keyed on the USER and their laptop. There is no
+  // org column to scope a purge by, and purging would unenroll a multi-org
+  // user's machine because one of their orgs was deleted — taking away their
+  // personal work along with the tenant's.
+  //
+  // Retaining one is not retained authority over the deleted tenant. An
+  // enrollment proves "this machine belongs to this user"; every workspace the
+  // resulting session can reach is re-resolved through `workspace_memberships`
+  // and org grants per request, and the cascade destroys those.
+  host_enrollments: "user-owned machine identity, not org-owned",
+  host_enrollment_requests: "one-use nonces for the above; user-owned and short-lived",
   // Same class as `users` above, and the reasoning matters because these rows
   // ARE live credentials — the usual argument for purging.
   //

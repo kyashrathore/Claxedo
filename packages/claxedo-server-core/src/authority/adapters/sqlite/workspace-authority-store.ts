@@ -127,6 +127,45 @@ CREATE TABLE IF NOT EXISTS local_host_links (
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (workspace_id, host_id)
 );
+-- Machine-wide remote access (Unit 6). One row per (owner, machine) — NOT per
+-- workspace, which is the whole difference from local_host_links above. A user
+-- with twelve projects on one laptop enrolls the laptop once; the workspaces a
+-- session may reach are decided at request time from the workspace tables, not
+-- baked into a registration row.
+--
+-- The UNIQUE below is that rule, enforced by the database rather than by every
+-- caller remembering to check first.
+CREATE TABLE IF NOT EXISTS host_enrollments (
+  enrollment_id TEXT PRIMARY KEY,
+  owner_token_identifier TEXT NOT NULL,
+  host_id TEXT NOT NULL,
+  public_key TEXT NOT NULL,
+  display_name TEXT,
+  last_seen_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  paused_at INTEGER,
+  paused_by TEXT,
+  paused_reason TEXT,
+  revoked_at INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE (owner_token_identifier, host_id)
+);
+CREATE INDEX IF NOT EXISTS host_enrollments_by_owner ON host_enrollments (owner_token_identifier);
+CREATE INDEX IF NOT EXISTS host_enrollments_by_expires_at ON host_enrollments (expires_at);
+-- The one-use nonce a machine signs to prove it holds the private key. Separate
+-- table from host_attestation_challenges because that one is keyed by workspace
+-- and this flow has no workspace to key by.
+CREATE TABLE IF NOT EXISTS host_enrollment_requests (
+  request_id TEXT PRIMARY KEY,
+  owner_token_identifier TEXT NOT NULL,
+  host_id TEXT NOT NULL,
+  nonce TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  used_at INTEGER,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS host_enrollment_requests_by_owner ON host_enrollment_requests (owner_token_identifier);
 CREATE TABLE IF NOT EXISTS runtime_access_tokens (
   jti TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL,

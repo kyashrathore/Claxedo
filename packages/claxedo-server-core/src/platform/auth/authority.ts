@@ -150,6 +150,43 @@ export type WorkspaceAuthority = {
     | { active: true; host_id: string; workspace_id: string; display_name?: string; second_device_open_at?: number; expires_at: number; last_seen_at: number }
     | { active: false }
   >
+  // --- machine-wide enrollment (Unit 6) ------------------------------------
+  //
+  // The same four verbs as the local-host-link methods above, with the
+  // workspace removed from every one of them. That absence IS the feature: a
+  // laptop is enrolled once, and which workspaces a session may reach is
+  // decided at request time from the workspace tables rather than frozen into a
+  // registration row per project.
+  //
+  // Optional on the port while both authorities are being built out; Unit 6's
+  // hard cut removes the legacy methods and makes these required.
+  createHostEnrollmentRequest?: (
+    auth: SignedControlPlaneAuth,
+    args: { hostId: string },
+  ) => Promise<{ request_id: string; nonce: string; expires_at: number }>
+  enrollHost?: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      hostId: string
+      publicKey: string
+      requestId: string
+      signature: string
+      displayName?: string
+      ttlMs?: number
+    },
+  ) => Promise<HostEnrollment>
+  heartbeatHostEnrollment?: (
+    auth: SignedControlPlaneAuth,
+    args: { hostId: string; signature: string; ttlMs?: number },
+  ) => Promise<{ expires_at: number; last_seen_at: number }>
+  pauseHostEnrollment?: (
+    auth: SignedControlPlaneAuth,
+    args: { hostId?: string; paused: boolean },
+  ) => Promise<{ paused: boolean }>
+  activeHostEnrollment?: (
+    auth: SignedControlPlaneAuth,
+    args?: Record<string, never>,
+  ) => Promise<HostEnrollmentState>
   markSecondDeviceOpen?: (
     auth: SignedControlPlaneAuth,
     args: { workspaceId: string },
@@ -336,3 +373,24 @@ export function requireAuthority(services: { authority?: WorkspaceAuthority } | 
   if (services?.authority) return services.authority
   throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", "Workspace authority is not configured")
 }
+
+/** One machine's enrollment, as the owner sees it. Carries no key material. */
+export type HostEnrollment = {
+  enrollment_id: string
+  host_id: string
+  display_name?: string
+  expires_at: number
+  last_seen_at: number
+  created_at: number
+}
+
+export type HostEnrollmentState =
+  | ({ active: true } & HostEnrollment)
+  /**
+   * Why it is not active, rather than a bare `false`.
+   *
+   * "You paused this machine" and "this machine has not checked in since
+   * Tuesday" are different problems with different fixes, and a UI that cannot
+   * tell them apart shows the user the wrong one.
+   */
+  | { active: false; reason: "not-enrolled" | "paused" | "expired" | "revoked" }
