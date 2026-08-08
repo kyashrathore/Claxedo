@@ -4,8 +4,8 @@ import { existsSync, renameSync, writeFileSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type { Event, MessageBoxOptions } from "electron"
-import { app, BrowserWindow, dialog, session, utilityProcess } from "electron"
+import type { Event, IpcMainInvokeEvent, MessageBoxOptions } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, session, utilityProcess } from "electron"
 import { trustMainRendererOrigin } from "./renderer-origin"
 import pkg from "electron-updater"
 import treeKill from "tree-kill"
@@ -66,6 +66,7 @@ import { createSessionMemoryScanner } from "./diagnostics/session-memory-worker"
 import { createOwnerOperationBridge } from "./diagnostics/owner-operation-bridge"
 import { createWindowsWslCollector, createWslSource } from "./diagnostics/wsl-source"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand, wireFullscreenEvents } from "./ipc"
+import { installIpcCallerGuard, mainIpcCallerGuard } from "./ipc-caller-guard"
 import { initLogging } from "./logging"
 import { createMenu } from "./menu"
 import {
@@ -552,6 +553,24 @@ function wireMenu() {
       }),
   })
 }
+
+// Installed BEFORE any handler registers, because it works by wrapping
+// `ipcMain.handle`/`ipcMain.on` — anything registered earlier would be
+// permanently unguarded. `ipc-caller-guard.wiring.test.ts` pins that ordering.
+installIpcCallerGuard({
+  ipcMain,
+  guard: mainIpcCallerGuard(),
+  readCaller: (event) => {
+    const ipc = event as IpcMainInvokeEvent
+    return {
+      senderId: ipc.sender.id,
+      // Null when the frame is already gone, which is not a top frame and so
+      // fails closed.
+      isMainFrame: ipc.senderFrame !== null && ipc.senderFrame === ipc.sender.mainFrame,
+    }
+  },
+  onRejected: (channel, reason) => logger.warn(`[security] ${reason} (channel ${channel})`),
+})
 
 const diagnosticsIpc = registerIpcHandlers({
   killSidecar: () => stopLocalServer(),
