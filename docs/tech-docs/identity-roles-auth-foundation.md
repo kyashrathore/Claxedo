@@ -1,7 +1,7 @@
 # Identity, Roles, And Auth Foundation
 
 Status: retained code-grounded reference
-Last updated: 2026-07-09
+Last updated: 2026-08-09
 
 This document is retained because `public-docs/hosted-control-plane-worker.md`
 cites signed-mode Phase A from it.
@@ -9,21 +9,21 @@ cites signed-mode Phase A from it.
 ## Current Implementation
 
 - Control-plane auth config and adapters:
-  `packages/claxedo-server/src/control-plane/auth.ts`
+  `packages/claxedo-server-core/src/platform/auth/auth.ts`
 - Service composition:
-  `packages/claxedo-server/src/control-plane/services.ts`
+  `packages/claxedo-server/src/authority/services.ts`
 - Hosted service composition:
-  `packages/claxedo-server/src/control-plane/hosted-services.ts`
+  `packages/claxedo-server/src/authority/hosted-services.ts`
 - Hosted device login:
-  `packages/claxedo-server/src/routes/hosted-device-auth.ts`
+  `packages/claxedo-server/src/routes/hosted/device-auth.ts`
 - Hosted workspace authorization:
-  `packages/claxedo-server/src/routes/hosted-workspace.ts`
-- Convex policy coverage:
-  `packages/claxedo-server/src/control-plane/convex-*-policy.test.ts`
+  `packages/claxedo-server/src/routes/hosted/workspace.ts`
+- Convex policy coverage: the `*.policy.test.ts` suites in the repo-root
+  `convex/` directory
 - App auth bootstrap:
-  `packages/claxedo-app/src/index.tsx`
+  `packages/claxedo-app/src/app/entry/auth.ts`
 - App signed runtime access:
-  `packages/claxedo-app/src/context/global-sdk.tsx`
+  `packages/claxedo-app/src/app/providers/global-sdk/provider.tsx`
 
 ## Current Signed-Mode Rules
 
@@ -37,16 +37,17 @@ cites signed-mode Phase A from it.
 
 ## Current Role/Identity Grounding
 
-Current authorization behavior is covered by control-plane and Convex policy
-tests rather than by this document. Before changing identity behavior, read the
-policy tests under `packages/claxedo-server/src/control-plane/`, especially:
+Current authorization behavior is covered by authority and Convex policy tests
+rather than by this document. Before changing identity behavior, read the
+authority suites under `packages/claxedo-server/src/authority` and the Convex
+policy tests in the repo-root `convex/` directory, especially:
 
-- `convex-orgs-policy.test.ts`
-- `convex-users-policy.test.ts`
-- `convex-sessions-policy.test.ts`
-- `convex-workspace-region-policy.test.ts`
-- `convex-local-host-links-policy.test.ts`
-- `convex-share-revoke-policy.test.ts`
+- `convex/orgs.policy.test.ts`
+- `convex/users.policy.test.ts`
+- `convex/sessions.policy.test.ts`
+- `convex/workspace-region.policy.test.ts`
+- `convex/local-host-links.policy.test.ts`
+- `convex/share-revoke.policy.test.ts`
 
 ## Maintenance Rule
 

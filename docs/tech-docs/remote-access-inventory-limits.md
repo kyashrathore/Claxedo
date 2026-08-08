@@ -1,8 +1,15 @@
 # Remote access inventory limits
 
-Status: **constants derived, load drills outstanding** (U8 Unit 1).
-Consumed by Unit 6 (`packages/claxedo-host-connector/src/inventory/limits.ts`)
-and by both Workspace Authority adapters.
+Status: **constants derived, nothing implemented yet** (U8 Unit 1).
+
+No consumer exists. Unit 6 landed a connector that publishes no inventory at
+all — `packages/claxedo-host-connector/src/connector.ts` enrolls the machine and
+heartbeats, and which workspaces are reachable is decided by the control plane
+at request time — so there is no snapshot for these bounds to reject, no shared
+constant object in the tree, and no Workspace Authority adapter reading one.
+Everything below is the arithmetic that a future inventory-publishing design
+must satisfy, not a description of shipped behaviour. Verify it against the
+tree before citing it as a limit.
 
 ## What is being bounded
 
@@ -68,10 +75,11 @@ it is longer than this sentence and no UI renders it. Recomputing:
 ```
 
 101.25 KiB against a 128 KiB cap leaves **26.75 KiB** for the envelope and
-future fields — roughly 26% headroom on the worst legal snapshot. Unit 6 freezes
+future fields — roughly 26% headroom on the worst legal snapshot. Whichever unit
+implements inventory publication must freeze
 `{ workspaces: 256, idBytes: 256, labelBytes: 128, encodedBytes: 131_072 }` as
 one shared constant object, consumed by the connector and both adapters, so the
-three cannot drift apart again.
+three cannot drift apart. No such object is in the tree today.
 
 ## Headroom over real profiles
 
@@ -113,14 +121,17 @@ Crossing a bound is a **product state**, not an error toast:
 |---|---|---|
 | Convex reconcile transaction at 256 entries | **not measured** | `convex/host-enrollments.policy.test.ts` (Unit 6) with a 256-entry fixture; record document reads/writes and bandwidth. |
 | SQLite reconcile transaction at 256 entries | **not measured** | `packages/claxedo-server/src/authority/adapters/sqlite/workspace-authority.test.ts` (Unit 6). |
-| Bun registration replacement at 256 IDs | **not measured** | `packages/claxedo-host-connector/src/tunnel/user-hosted-machine-tunnel.e2e.test.ts` against the Bun Relay fixture. |
+| Bun registration replacement at 256 IDs | **not measured** | A machine-tunnel e2e suite in `packages/claxedo-host-connector` against the Bun Relay fixture. No such suite exists; the package's only suites are `connector.test.ts` and `connector-closure.test.ts`. |
 | Cloudflare room recovery at concurrency 1 / 4 / 8 / 16 | **not measured** | Same suite against the Durable Object fixture; the concurrency cap is what this drill validates or moves. |
 
-These four are load drills against Relay fixtures that Unit 6 creates; they
-cannot be run before that unit exists. **The 8-concurrent-reconnect cap is
-therefore a starting value, not a validated one** — it is the only bound in this
-document with no arithmetic behind it, and Unit 6's acceptance depends on the
-Cloudflare drill either confirming it or replacing it.
+These four are load drills against a publishing connector and Relay fixtures
+that do not exist yet; they cannot be run until inventory publication is
+implemented. The first two rows name suites that DO exist and would host the
+drill; the last two name a suite that would have to be written. **The
+8-concurrent-reconnect cap is therefore a starting value, not a validated
+one** — it is the only bound in this document with no arithmetic behind it, and
+acceptance of any inventory-publishing unit depends on the Cloudflare drill
+either confirming it or replacing it.
 
 The size bounds above are different: they are arithmetic on a fixed encoding
 and hold independently of any drill.

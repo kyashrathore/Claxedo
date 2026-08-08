@@ -33,20 +33,20 @@ cites it for the CLI/device-login phase.
 
 ## Server Surfaces
 
-- Device login: `packages/claxedo-server/src/routes/hosted-device-auth.ts`
+- Device login: `packages/claxedo-server/src/routes/hosted/device-auth.ts`
 - Hosted workspace registration:
-  `packages/claxedo-server/src/routes/hosted-workspace.ts`
-- Local workspace registration:
-  `packages/claxedo-server/src/routes/workspace-user-hosted.ts`
+  `packages/claxedo-server/src/routes/hosted/workspace.ts`
+- Local (user-hosted) machine registration:
+  `packages/claxedo-server/src/routes/hosted/host-enrollment.ts`
 - Host tunnel client:
   `packages/workspace-runtime/src/workspace-relay-host-tunnel.ts`
 - Hosted app composition:
-  `packages/claxedo-server/src/hosted-app.ts`
+  `packages/claxedo-server/src/deployments/hosted-shared/hosted-app.ts`
 
 ## Configuration
 
 The hosted control plane composes device-login provider settings from
-`packages/claxedo-server/src/control-plane/hosted-services.ts`. If no
+`packages/claxedo-server/src/authority/hosted-services.ts`. If no
 `CLAXEDO_DEVICE_LOGIN_ISSUER` is configured, device-login routes fail closed
 with `device_login_unconfigured`.
 

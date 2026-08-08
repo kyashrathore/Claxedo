@@ -251,8 +251,8 @@ Implemented in:
 - `packages/agent-extensions/src/install.ts`
 - `packages/agent-extensions/src/replay.ts`
 - `packages/agent-extensions/src/materialize.ts`
-- `packages/claxedo-server/src/routes/agent-config.ts`
-- `packages/claxedo-server/src/routes/agent-config-extension-routes.ts`
+- `packages/claxedo-local-server/src/agent-config/routes/index.ts`
+- `packages/claxedo-local-server/src/agent-config/routes/extension-routes.ts`
 - `packages/workspace-runtime/src/workspace/runtime.ts` (integration point:
   `applyRuntimeAgentExtensions` import and `applyAgentExtensionsSnapshot`)
 - `packages/workspace-runtime/src/index.ts`
