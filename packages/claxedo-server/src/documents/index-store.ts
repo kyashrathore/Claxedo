@@ -28,16 +28,6 @@ export class DocumentIndexNotFoundError extends Error {
   }
 }
 
-export class DocumentStatusTransitionError extends Error {
-  constructor(
-    readonly code: "document_status_not_found" | "document_status_transition_not_allowed",
-    message: string,
-  ) {
-    super(message)
-    this.name = "DocumentStatusTransitionError"
-  }
-}
-
 const documentIndexProjection = {
   id: ClaxedoDocumentIndexTable.id,
   org_id: ClaxedoDocumentIndexTable.org_id,
@@ -403,43 +393,6 @@ export function listDocumentStatuses(projectId: string) {
       .orderBy(ClaxedoDocumentStatusTable.position)
       .all(),
   )
-}
-
-export function transitionDocumentStatus(
-  scope: DocumentIndexScope,
-  documentId: string,
-  targetStatus: string,
-  transitionedAt = new Date().toISOString(),
-) {
-  const existing = lookupDocumentIndexEntry(scope, documentId)
-  if (existing.state === "missing") throw new DocumentIndexNotFoundError(documentId)
-  const statuses = listDocumentStatuses(scope.projectId)
-  const target = statuses.find((status) => status.id === targetStatus)
-  if (!target) {
-    throw new DocumentStatusTransitionError("document_status_not_found", `Status ${targetStatus} does not exist`)
-  }
-  const current = statuses.find((status) => status.id === existing.entry.status)
-  if (!current || !z.array(z.string()).parse(JSON.parse(current.transitions)).includes(targetStatus)) {
-    throw new DocumentStatusTransitionError(
-      "document_status_transition_not_allowed",
-      `Transition from ${existing.entry.status} to ${targetStatus} is not allowed`,
-    )
-  }
-  const timestamp = z.string().datetime().parse(transitionedAt)
-  ClaxedoDB.use((db) =>
-    db
-      .update(ClaxedoDocumentIndexTable)
-      .set({ status: targetStatus, updated_at: timestamp })
-      .where(and(
-        eq(ClaxedoDocumentIndexTable.id, documentId),
-        eq(ClaxedoDocumentIndexTable.org_id, scope.orgId),
-        eq(ClaxedoDocumentIndexTable.project_id, scope.projectId),
-      ))
-      .run(),
-  )
-  const transitioned = lookupDocumentIndexEntry(scope, documentId)
-  if (transitioned.state === "missing") throw new DocumentIndexNotFoundError(documentId)
-  return transitioned.entry
 }
 
 function canonicalDirectory(directory: string) {

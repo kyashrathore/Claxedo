@@ -19,7 +19,6 @@ import {
   resolveLocalProjectId,
   restoreRepositoryMoveToManaged,
   restoreDocumentIndexEntry,
-  transitionDocumentStatus,
   updateDocumentIndexMetadata,
   type DocumentIndexEntry,
 } from "../../index-store"
@@ -194,7 +193,6 @@ export function createLocalDocumentsBackend(
       archive: archiveDocumentIndexEntry,
       restore: restoreDocumentIndexEntry,
       listStatuses: listDocumentStatuses,
-      transitionStatus: transitionDocumentStatus,
       resolveLocalProjectId,
     },
     workspace,

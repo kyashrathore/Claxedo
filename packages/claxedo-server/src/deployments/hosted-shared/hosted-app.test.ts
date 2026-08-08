@@ -1738,7 +1738,10 @@ describe("hosted live-sync delivery — internal org identity end-to-end", () =>
       index: {
         find: async (orgId: string, documentId: string) =>
           orgId === "org_internal_acme" && documentId === "document_1" ? entry : undefined,
-        transitionStatus: async (_scope: unknown, _documentId: string, status: string) => ({ ...entry, status }),
+        update: async (_scope: unknown, _documentId: string, patch: { session_id?: string | null }) => ({
+          ...entry,
+          ...patch,
+        }),
       },
     } as unknown as DocumentsRouteBackend
     const app = createHostedApp(activeOrgPlane(), { liveSyncRoom: namespace, documentsBackend })
@@ -1756,10 +1759,10 @@ describe("hosted live-sync delivery — internal org identity end-to-end", () =>
     expect([...namespace.instances.keys()]).toEqual(["org:org_internal_acme"])
 
     const mutation = await app.fetch(
-      new Request("http://cp.test/documents/document_1/status", {
-        method: "POST",
+      new Request("http://cp.test/documents/document_1/session", {
+        method: "PATCH",
         headers: { authorization: "Bearer member", "content-type": "application/json" },
-        body: JSON.stringify({ status: "review" }),
+        body: JSON.stringify({ session_id: "session_1" }),
       }),
     )
     expect(mutation.status).toBe(200)

@@ -135,20 +135,6 @@ export function createHostedDocumentIndex(store: ConditionalObjectStore) {
     async listStatuses() {
       return defaultDocumentStatuses
     },
-    transitionStatus(scope: DocumentIndexScope, documentId: string, status: string) {
-      return update(scope, documentId, (entry) => {
-        const current = defaultDocumentStatuses.find((candidate) => candidate.id === entry.status)
-        if (!current)
-          throw new HostedIndexError("document_status_not_found", `Document status ${entry.status} was not found`)
-        if (!(current.transitions as readonly string[]).includes(status)) {
-          throw new HostedIndexError(
-            "document_status_transition_not_allowed",
-            `Cannot transition ${entry.status} to ${status}`,
-          )
-        }
-        return { ...entry, status, updated_at: new Date().toISOString() }
-      })
-    },
     async resolveLocalProjectId() {
       throw new Error("Hosted documents require an authenticated project id")
     },

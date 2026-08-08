@@ -151,7 +151,6 @@ const HOSTED_FAMILIES: Record<string, string[]> = {
     "/documents/:id/snapshots",
     "/documents/:id/snapshots/:snapshotId/restore",
     "/documents/:id/snapshots/:snapshotId/work-source-pin",
-    "/documents/:id/status",
     "/documents/:id/work-source",
     "/documents/from-repo",
     "/documents/remote",

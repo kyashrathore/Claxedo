@@ -253,12 +253,6 @@ export const documentsApi = {
       transitions: typeof row.transitions === "string" ? (JSON.parse(row.transitions) as string[]) : row.transitions,
     }))
   },
-  transitionStatus(id: string, status: string) {
-    return request<DocumentSummary>(documentsUrl({ id, path: "status" }), {
-      method: "POST",
-      body: JSON.stringify({ status }),
-    })
-  },
 }
 
 export type DocumentsApi = typeof documentsApi

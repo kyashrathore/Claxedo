@@ -159,17 +159,14 @@ describe("documentsApi", () => {
     )
   })
 
-  test("lists status metadata and posts an allowed transition", async () => {
+  test("lists status metadata and parses the encoded transition vocabulary", async () => {
     responses.push(
       Response.json([{ id: "draft", name: "Draft", color: "#fff", position: 0, transitions: '["done"]' }]),
-      Response.json({ id: "doc-1", status: "done" }),
     )
     await expect(documentsApi.listStatuses({ projectId: "project-1" })).resolves.toEqual([
       expect.objectContaining({ id: "draft", transitions: ["done"] }),
     ])
-    await expect(documentsApi.transitionStatus("doc-1", "done")).resolves.toMatchObject({ status: "done" })
-    expect(calls[1]?.url).toBe("http://test.local/documents/doc-1/status")
-    expect(calls[1]?.init?.body).toBe(JSON.stringify({ status: "done" }))
+    expect(calls[0]?.url).toBe("http://test.local/documents/statuses?project_id=project-1")
   })
 
   test("missing documents surface a typed recovery state", async () => {

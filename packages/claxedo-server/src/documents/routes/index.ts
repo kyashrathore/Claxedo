@@ -60,7 +60,6 @@ const MetadataBody = z
   .refine((input) => input.display_name !== undefined || input.session_id !== undefined)
 
 const SessionBody = z.object({ session_id: z.string().min(1).nullable() }).strict()
-const StatusBody = z.object({ status: z.string().min(1) }).strict()
 const ContentBody = z
   .object({
     markdown: z.string(),
@@ -209,11 +208,6 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
       const body = await bodyAs(context.req.raw, SessionBody)
       const scope = await directScope(context.req.raw, options, "write", context.req.param("id"))
       return context.json(await documents().updateSession(serviceScope(scope), scope.entry.id, body.session_id))
-    })
-    .post("/:id/status", async (context) => {
-      const body = await bodyAs(context.req.raw, StatusBody)
-      const scope = await directScope(context.req.raw, options, "write", context.req.param("id"))
-      return context.json(await documents().transitionStatus(serviceScope(scope), scope.entry.id, body.status))
     })
     .post("/:id/archive", async (context) => {
       await optionalEmptyBody(context.req.raw)
@@ -637,9 +631,7 @@ function errorResponse(error: unknown) {
         ? 404
         : error.code === "git_source_conflict" || error.code === "document_workspace_unavailable"
           ? 409
-          : error.code === "document_status_not_found" || error.code === "document_status_transition_not_allowed"
-            ? 422
-            : 500
+          : 500
     return Response.json(
       {
         error: { code: error.code, message: error instanceof Error ? error.message : "Document request failed" },

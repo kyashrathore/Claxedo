@@ -266,12 +266,6 @@ export function createDocumentsService<H extends DocumentHandle>(
       )
     },
 
-    transitionStatus(scope: DocumentsServiceScope, documentId: string, status: string) {
-      return mutateIndex(scope, documentId, "document.status_changed", () =>
-        backend.index.transitionStatus(scope, documentId, status),
-      )
-    },
-
     archive(scope: DocumentsServiceScope, documentId: string) {
       return mutateIndex(scope, documentId, "document.archived", () => backend.index.archive(scope, documentId), true)
     },

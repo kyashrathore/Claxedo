@@ -777,12 +777,6 @@ export async function createHandlers() {
         ? new Response(document.markdown, { headers: { "Content-Type": "text/markdown" } })
         : HttpResponse.json({ error: "Not found" }, { status: 404 })
     }),
-    http.post(`${DEMO_BASE}/documents/:id/status`, async ({ params, request }) => {
-      const document = documentFor(state, routeParam(params, "id"))
-      if (!document) return HttpResponse.json({ error: "Not found" }, { status: 404 })
-      document.status = stringField(await jsonRecord(request), "status") || document.status
-      return HttpResponse.json(document)
-    }),
     http.get(`${DEMO_BASE}/api/wr/process`, () => {
       return HttpResponse.json({
         configs: [

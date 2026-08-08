@@ -7,7 +7,6 @@ const api = vi.hoisted(() => ({
   createFromRepository: vi.fn(),
   list: vi.fn(),
   listStatuses: vi.fn(),
-  transitionStatus: vi.fn(),
 }))
 
 // The index reads the `document.changed` doorbell off the central events stream
@@ -59,7 +58,6 @@ describe("PageIndex", () => {
     api.createFromRepository.mockReset()
     api.list.mockReset().mockResolvedValue([])
     api.listStatuses.mockReset().mockResolvedValue([])
-    api.transitionStatus.mockReset().mockResolvedValue({})
     events.unsubscribes = []
     events.centralConnected.mockReset().mockReturnValue(true)
     events.on.mockReset().mockImplementation(() => {
@@ -293,7 +291,6 @@ describe("PageIndex project grouping", () => {
       ),
     )
     api.listStatuses.mockReset().mockResolvedValue([])
-    api.transitionStatus.mockReset().mockResolvedValue({})
     events.unsubscribes = []
     events.centralConnected.mockReset().mockReturnValue(true)
     events.on.mockReset().mockImplementation(() => () => undefined)
@@ -357,7 +354,6 @@ describe("PageIndex status vocabulary", () => {
       doc({ id: "d2", display_name: "Beta memo", status: "review" }),
     ])
     api.listStatuses.mockReset().mockResolvedValue(statuses)
-    api.transitionStatus.mockReset().mockResolvedValue({})
     events.centralConnected.mockReset().mockReturnValue(true)
     events.on.mockReset().mockImplementation(() => () => undefined)
   })
