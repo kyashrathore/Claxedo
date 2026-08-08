@@ -24,6 +24,20 @@ WORKDIR /app
 COPY . .
 RUN bun install --frozen-lockfile
 
+# better-sqlite3 ships a prebuilt binary linked against GLIBC_2.38. This image
+# is bookworm (glibc 2.36), so the prebuild loads and then dies at the first
+# `new Database()` with `ERR_DLOPEN_FAILED ... GLIBC_2.38 not found` — after a
+# clean build, a healthy-looking start, and the log line "opening claxedo
+# database". Compiling from source against THIS image's glibc is the fix; the
+# node-gyp installed above exists for exactly this and was never invoked.
+# `node-gyp rebuild`, not `npm rebuild`: run inside a package directory, npm
+# rebuilds that package's DEPENDENCIES, not the package itself. It reports
+# "rebuilt dependencies successfully" in two seconds and produces nothing —
+# which is what the `test -f` below caught.
+RUN cd node_modules/.bun/better-sqlite3@*/node_modules/better-sqlite3 \
+    && node-gyp rebuild --release \
+    && test -f build/Release/better_sqlite3.node
+
 # Build workspace packages whose `main`/exports point at a gitignored dist/.
 # claxedo-server imports these as @claxedo/* (resolving to dist even under the
 # development condition), so a fresh clone MUST build them or the import fails.

@@ -97,6 +97,38 @@ describe("self-hosted entry contract", () => {
     expect(appBuild, "the app build stage must set its own heap").toContain("max-old-space-size")
   })
 
+  test("the image compiles better-sqlite3 against its own glibc", () => {
+    // Found by running the container. better-sqlite3 ships a prebuild linked
+    // against GLIBC_2.38; the image is bookworm (2.36). The prebuild installs
+    // fine, the build succeeds, the container starts, logs "opening claxedo
+    // database" — and then dies with ERR_DLOPEN_FAILED.
+    //
+    // Same blind spot as the heap check above: everything passes on the host,
+    // and only running the image shows it. `node-gyp` was already installed in
+    // the Dockerfile for this exact purpose and was never invoked.
+    const dockerfile = read("Dockerfile")
+
+    // Scanned over RUN INSTRUCTIONS, not the whole file. Checking the raw
+    // text passed with the rebuild deleted, because the comment above it in
+    // the Dockerfile explains the fix and contains the string — the same trap
+    // that caught a guard of mine in claxedo-app earlier.
+    const instructions = dockerfile
+      .split("\n")
+      .filter((line) => !line.trimStart().startsWith("#"))
+      .join("\n")
+
+    // On `node-gyp rebuild`: `npm rebuild` inside a package directory rebuilds
+    // that package's DEPENDENCIES and silently produces nothing, so a weaker
+    // "some rebuild command is present" would pass for the version that did
+    // not work.
+    expect(instructions, "the image must compile better-sqlite3 rather than trust its prebuild").toContain(
+      "node-gyp rebuild",
+    )
+    // And prove the artifact exists at build time, so a silently skipped
+    // rebuild fails the BUILD rather than the first request.
+    expect(instructions).toContain("build/Release/better_sqlite3.node")
+  })
+
   test("the public package entry exposes the self-hosted composition", () => {
     // `main`/`exports` are what `@claxedo/server` consumers resolve. Unit 7
     // replaces `createSelfHostedApp` with `createSelfHostedApp` here; until then this
