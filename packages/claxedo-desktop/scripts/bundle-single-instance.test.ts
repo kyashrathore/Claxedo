@@ -43,13 +43,17 @@ describe("shipped claxedo-server bundle", () => {
   test("emits exactly one copy of each stateful shared module", async () => {
     await bundleClaxedoServer(path.resolve(import.meta.dir, "claxedo-server-entry.ts"), OUT)
 
-    // Each marker is a string that appears once in its module's source and
-    // nowhere else, so a second occurrence in the output means a second copy of
-    // the module — not a second call site.
+    // Each marker must appear once in its module's source and NOWHERE else in
+    // the tree — a marker that also matches a log line or comment somewhere
+    // reports a phantom duplicate. Zero occurrences fails too: a drifted marker
+    // means this test is dead, not passing.
     const markers = {
       "workspace store": /service: *"workspace-store"/g,
       "claxedo database": /opening claxedo database/g,
-      "local runtime port": /no local workspace runtime configured/g,
+      // Narrow enough to be unique: a log line elsewhere legitimately says
+      // "no local workspace runtime configured", and matching that made this
+      // report two copies of a module that is present once.
+      "local runtime port": /call configureLocalWorkspaceRuntime from the composition/g,
     }
 
     const counts = Object.fromEntries(
