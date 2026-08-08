@@ -6,30 +6,30 @@ const DIAGNOSTICS_RETAINED_BYTES_BUDGET = 20 * 1024 * 1024
 
 type Gateable = Omit<ScenarioResult, "budget" | "status" | "failures" | "warnings">
 
-// The pass/warn/fail gate. The 8.33/16.67 thresholds are physical and fixed; the
-// budget only adds a regression ceiling on the worst frame.
+// The browser gate applies 8.33/16.67ms to traced CrRendererMain task duration.
+// Presented frames belong to the packaged Electron lane; the budget adds a
+// regression ceiling on the worst renderer task.
 export function gateHeadline(headline: FrameMetric, budget: Budget) {
   const failures: string[] = []
-  const warnings: string[] = []
-
-  // Launch flows are load events, not interactions: their headline is time-to-ready
-  // (completionMs), and a few heavy hydration frames are unavoidable. Frame drops on
-  // a launch are reported as warnings; only a worst-frame regression fails them.
-  const isLaunch = budget.scenario.startsWith("launch-")
-  const note = (message: string) => (isLaunch ? warnings : failures).push(message)
+  const warnings = (headline.unattributedSchedulingGapsMs?.length ?? 0) > 0
+    ? [`${headline.unattributedSchedulingGapsMs!.length} host/browser scheduling gaps in rAF had no matching main-thread unavailability or Long Animation Frame attribution and were excluded from the app gate`]
+    : []
 
   if (headline.p95FrameMs > FRAME_60HZ_MS) {
-    note(`p95 frame ${formatNumber(headline.p95FrameMs)}ms > ${formatNumber(FRAME_60HZ_MS)}ms — sustained below 60hz`)
+    failures.push(`p95 renderer task ${formatNumber(headline.p95FrameMs)}ms > ${formatNumber(FRAME_60HZ_MS)}ms`)
+  }
+  if (headline.worstFrameMs > FRAME_60HZ_MS) {
+    failures.push(`worst renderer task ${formatNumber(headline.worstFrameMs)}ms > ${formatNumber(FRAME_60HZ_MS)}ms — exceeded one 60hz main-thread budget`)
   }
   if (headline.framesOver1667 > FRAMES_OVER_60HZ_ALLOWANCE) {
-    note(`${headline.framesOver1667} frames dropped below 60hz (allowance ${FRAMES_OVER_60HZ_ALLOWANCE})`)
+    failures.push(`${headline.framesOver1667} of ${headline.sampleCount} renderer tasks exceeded the 60hz budget (allowance ${FRAMES_OVER_60HZ_ALLOWANCE})`)
   }
   if (typeof budget.worst_frame_ms === "number" && headline.worstFrameMs > budget.worst_frame_ms) {
-    failures.push(`worst frame ${formatNumber(headline.worstFrameMs)}ms regressed past budget ${formatNumber(budget.worst_frame_ms)}ms`)
+    failures.push(`worst renderer task ${formatNumber(headline.worstFrameMs)}ms regressed past budget ${formatNumber(budget.worst_frame_ms)}ms`)
   }
 
   if (failures.length === 0 && warnings.length === 0 && headline.p95FrameMs > FRAME_120HZ_MS) {
-    warnings.push(`p95 frame ${formatNumber(headline.p95FrameMs)}ms > ${formatNumber(FRAME_120HZ_MS)}ms — below the 120hz target`)
+    warnings.push(`p95 renderer task ${formatNumber(headline.p95FrameMs)}ms > ${formatNumber(FRAME_120HZ_MS)}ms — above one 120hz main-thread budget`)
   }
 
   return { status: resultStatus(failures, warnings), failures, warnings }
@@ -49,6 +49,7 @@ export function gatePairedHeadline(control: FrameMetric, enabled: FrameMetric, b
   const p95Multiplier = process.env.CLAXEDO_PERF_HEADROOM ? Number(process.env.CLAXEDO_PERF_HEADROOM) : 0.1
   const worstMultiplier = process.env.CLAXEDO_PERF_HEADROOM ? Number(process.env.CLAXEDO_PERF_HEADROOM) : 0.1
   const controlPhysical = gateHeadline(control, { scenario: budget.scenario })
+  const enabledPhysical = gateHeadline(enabled, { scenario: budget.scenario })
   const rawFailures = [
     enabled.p95FrameMs > control.p95FrameMs + Math.max(2, control.p95FrameMs * p95Multiplier)
       ? `diagnostics moved p95 frame from ${formatNumber(control.p95FrameMs)}ms to ${formatNumber(enabled.p95FrameMs)}ms`
@@ -62,31 +63,28 @@ export function gatePairedHeadline(control: FrameMetric, enabled: FrameMetric, b
       ? `diagnostics moved worst frame past budget ${formatNumber(budget.worst_frame_ms)}ms (${formatNumber(control.worstFrameMs)}ms control → ${formatNumber(enabled.worstFrameMs)}ms enabled)`
       : undefined,
   ].filter((item): item is string => !!item)
-  // A paired delta only measures DIAGNOSTICS overhead when the disabled
-  // control itself renders soundly. When the control is already below 60hz
-  // (starved runner), enabled-vs-control differences are machine noise, not
-  // evidence — report them as warnings so a healthy-runner regression still
-  // fails while a weak runner does not manufacture one. Judge soundness by
-  // the physical metric, NOT the failure list: launch flows demote the same
-  // sub-60hz findings to warnings, which previously let a starved control
-  // fail the launch-project paired delta.
+  // A paired delta measures diagnostics overhead only when the disabled
+  // control itself renders soundly. Both modes still enforce the renderer
+  // frame floor independently; an unsound control only makes the relative
+  // enabled-vs-control delta inconclusive.
   const controlUnsound =
     controlPhysical.failures.length > 0
     || control.p95FrameMs > FRAME_60HZ_MS
     || control.framesOver1667 > FRAMES_OVER_60HZ_ALLOWANCE
-  const failures = controlUnsound ? [] : rawFailures
+  const failures = [
+    ...controlPhysical.failures.map((failure) => `disabled control base-app gate: ${failure}`),
+    ...enabledPhysical.failures.map((failure) => `diagnostics-enabled base-app gate: ${failure}`),
+    ...(controlUnsound ? [] : rawFailures),
+  ]
   const warnings = [
     ...(controlUnsound
       ? rawFailures.map((failure) => `paired delta unmeasurable (control fails base-app gate): ${failure}`)
       : []),
-    failures.length === 0 && !controlUnsound && enabled.p95FrameMs > control.p95FrameMs
-      ? `diagnostics added ${formatNumber(enabled.p95FrameMs - control.p95FrameMs)}ms to paired p95 frame time`
-      : undefined,
     typeof budget.worst_frame_ms === "number" && control.worstFrameMs > budget.worst_frame_ms
       ? `disabled control already exceeds stored worst-frame budget ${formatNumber(budget.worst_frame_ms)}ms (control ${formatNumber(control.worstFrameMs)}ms; enabled ${formatNumber(enabled.worstFrameMs)}ms)`
       : undefined,
-    ...controlPhysical.failures.map((failure) => `disabled control base-app gate: ${failure}`),
     ...controlPhysical.warnings.map((warning) => `disabled control base-app gate: ${warning}`),
+    ...enabledPhysical.warnings.map((warning) => `diagnostics-enabled base-app gate: ${warning}`),
   ].filter((item): item is string => !!item)
   return { status: resultStatus(failures, warnings), failures, warnings }
 }
@@ -112,7 +110,7 @@ export function gateDiagnostics(input: DiagnosticsOverheadEvidence) {
 export function markdownReport(results: ScenarioResult[], options: { debug?: boolean } = {}) {
   const headlineRows = results.map((result) => {
     const h = result.headline
-    return `| ${result.id} | ${verdictBadge(h.verdict)} | ${formatNumber(h.p95FrameMs)} | ${formatNumber(h.worstFrameMs)} | ${h.framesOver1667} | ${formatNumber(h.completionMs)} | ${result.status} | ${result.artifacts?.video ?? ""} |`
+    return `| ${result.id} | ${verdictBadge(h.verdict)} | ${formatNumber(h.p95FrameMs)} | ${formatNumber(h.worstFrameMs)} | ${h.framesOver1667}/${h.sampleCount} | ${formatNumber(h.completionMs)} | ${result.status} | ${result.artifacts?.video ?? ""} |`
   })
 
   const failureRows = results.flatMap((result) =>
@@ -125,12 +123,13 @@ export function markdownReport(results: ScenarioResult[], options: { debug?: boo
     "# Claxedo Performance Report",
     "",
     `Generated: ${new Date().toISOString()}`,
+    "Measurement: production web bundle in headless Chromium with synthetic route-level fixtures fulfilled over loopback. This is a renderer main-thread scheduling proxy, not actual FPS or packaged Electron compositor/GPU presentation.",
     results.some((result) => result.diagnostics)
       ? "Gate: two profiler-enabled and two disabled context-isolated runs execute in ABBA order across two benchmark browsers. Enabled evidence must stay within 10% (minimum 2ms p95 / 5ms worst-frame tolerance) of control and must not cross a stored worst-frame budget that control satisfies."
       : `Target: 120hz (frame <= ${formatNumber(FRAME_120HZ_MS)}ms). Floor: 60hz (frame <= ${formatNumber(FRAME_60HZ_MS)}ms).`,
     `Flows: ${results.length}  ·  pass: ${count(results, "pass")}  ·  warn: ${count(results, "warn")}  ·  fail: ${count(results, "fail")}`,
     "",
-    `| Flow | ${results.some((result) => result.diagnostics) ? "Enabled frame verdict" : "Rate"} | p95 frame (ms) | worst frame (ms) | frames <60hz | completion (ms) | ${results.some((result) => result.diagnostics) ? "Diagnostics status" : "Status"} | Video |`,
+    `| Flow | Renderer proxy | pooled p95 task (ms) | worst task (ms) | tasks >16.67ms | completion (ms) | ${results.some((result) => result.diagnostics) ? "Diagnostics status" : "Status"} | Video |`,
     "| --- | --- | ---: | ---: | ---: | ---: | --- | --- |",
     ...headlineRows,
   ]

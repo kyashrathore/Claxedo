@@ -8,7 +8,7 @@ export const repoRoot = path.resolve(harnessRoot, "../../..")
 export const dataRoot = path.join(harnessRoot, "data")
 export const reportsRoot = path.join(harnessRoot, "reports")
 
-// How much slower than the first accepted run the headline worst-frame may drift
+// How much slower than the first accepted run the worst renderer interval may drift
 // before we call it a regression. The absolute 8.33/16.67 thresholds are enforced
 // separately in report.ts; this budget catches "still passing but 2x slower".
 const REGRESSION_HEADROOM = 1.5

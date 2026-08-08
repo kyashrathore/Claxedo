@@ -7,9 +7,9 @@ import type { Measurement, ScenarioId } from "./types"
 // driver in browser-runner's `flowDrivers`.
 export const FLOWS: { id: ScenarioId; name: string }[] = [
   { id: "launch-project", name: "Launch into a project with 20 sessions" },
-  { id: "session-switch", name: "Switch between two 10,000-message sessions (with rapid stress)" },
-  { id: "live-terminal-switch", name: "Switch between three live terminals" },
-  { id: "large-diff-toggle", name: "Open a 500-file diff and toggle split/unified" },
+  { id: "session-switch", name: "Switch between two 80-message first folds (rapid cold/warm stress)" },
+  { id: "live-terminal-switch", name: "Switch between three attached, already-open terminal surfaces" },
+  { id: "large-diff-toggle", name: "Toggle split/unified with a progressively rendered 500-file review" },
   { id: "workspace-switch", name: "Switch across five workspaces" },
 ]
 
