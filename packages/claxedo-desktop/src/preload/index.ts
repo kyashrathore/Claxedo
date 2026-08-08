@@ -137,6 +137,14 @@ const processDiagnosticsBridge: ProcessDiagnosticsBridge = {
 }
 
 const api: ElectronAPI = {
+  optionalFeatures: {
+    nativeMarkdown: Boolean(
+      process.env.CLAXEDO_MARKDOWN_RENDERER_PATH ?? process.env.CLAXEDO_RICH_CONTENT_RENDERER_PATH,
+    ),
+    nativeMermaid: Boolean(
+      process.env.CLAXEDO_MERMAID_RENDERER_PATH ?? process.env.CLAXEDO_RICH_CONTENT_RENDERER_PATH,
+    ),
+  },
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
   awaitInitialization: (onStep) => {
     const handler = (_: unknown, step: InitStep) => onStep(step)

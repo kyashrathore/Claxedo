@@ -151,6 +151,11 @@ const getBase = (): Configuration => ({
   ],
   asarUnpack: NATIVE_MODULES.map((name) => `**/node_modules/${name}/**`),
   extraResources: [
+    {
+      from: `resources/rich-content/${targetOsArch}/`,
+      to: "rich-content/",
+      filter: [targetOsArch.startsWith("win32-") ? "claxedo-rich-content-renderer.exe" : "claxedo-rich-content-renderer"],
+    },
     ...(targetOsArch.startsWith("darwin-")
       ? [{ from: "resources/diagnostics/", to: "diagnostics/", filter: ["macos-memory-impact"] }]
       : []),
