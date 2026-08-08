@@ -1015,6 +1015,16 @@ The rewiring found two more misplacements. `platform/governance/route-ownership.
 
 Closing it means writing a local-only `createLocalApp` / `startLocalServer` in `@claxedo/local-server` that mounts exactly the twelve `local-server`-owned route families and nothing else, then pointing the four desktop inputs at it. Unit 1's `local-product-contract.test.ts` is the acceptance check — it asserts the WHOLE 142-path local inventory, because the failure mode that matters is omission and a spot check cannot detect it.
 
+**A first attempt at `createLocalApp` was written and removed (2026-08-08).** It reproduced the local route inventory — the path-level contract test passed — and a review found six divergences the test structurally could not see, because it inspects Hono's static route table and never issues a request:
+
+- `cors({ credentials: true })` was added where the original never sets it, so an approved origin could complete a credentialed cross-origin READ that the original composition structurally could not permit at all;
+- CredentialRoutes lost the environment-derived `authenticate` (`signedCloudAuthRequested(env) || deploymentMode(env) === "hosted"`), leaving credential mutation behind only the loopback guard if a caller omits the hook;
+- the `localExecution.enabled` fail-fast was missing, which is also what made an apparent `deferToHarnessRoute` divergence a non-issue: the original's ternary is guaranteed true by that throw;
+- the session-meta projection tap — an `app.use` that records `POST /session`, `PATCH /session/:id`, `DELETE /session/:id` into `projectionStore` — was absent entirely, so no local session metadata would ever be recorded, and it adds no route path for `pathsByOwner` to miss;
+- `/api/claxedo/health` lost `harnessMode`/`workspaceProfile`/`localExecution`, and `/api/claxedo/track` lost its zod schema.
+
+It was deleted rather than patched: it had no production caller, and six divergences in a first pass says the oracle was wrong, not the code. **Rebuild it against a harness that issues REQUESTS** — asserting CORS headers, credential-route auth, and a recorded projection write — with the path inventory as a necessary-but-insufficient check on top.
+
 **The factoring, and the hazard in it.** Do not duplicate: `createApp` should CALL `createLocalApp` and add the hosted surface on top, so there is one local composition serving both products. The obstacle is ordering. Inside `createApp` the local and hosted mounts are interleaved — jwks, remote-access, documents, workspace, control-plane, integrations, and project-remote all sit BETWEEN local ones — and Hono matches middleware and handlers in registration order. Two registrations in particular are order-sensitive rather than prefix-disjoint: `app.use(workspaceRuntimeProxy)` and the SPA catch-all `app.get("*")`, which must stay last.
 
 So the extraction has to preserve relative order across the seam, not merely re-register the same set. `local-product-contract.test.ts` will NOT catch an ordering regression in the hosted half — it only asserts the local allowlist — so the check for that half is the full `claxedo-server` suite plus `hosted-product-contract.test.ts`. Land it as its own slice with both suites green, not as a ride-along.
