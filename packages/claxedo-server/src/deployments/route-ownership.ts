@@ -21,6 +21,13 @@
  * Deliberately not a test-only check. A composition error should stop the
  * process at boot, where it is one line of output, rather than at the first
  * request that happens to reach the losing handler.
+ *
+ * Lives at the `deployments/` root rather than inside `hosted-shared/` because
+ * both compositions install it — `createSignedControlPlaneApp` as
+ * "hosted-shared" and `createSelfHostedApp` as "self-hosted-node". A
+ * self-hosted deployment importing its composition guard out of a directory
+ * named for the cloud one is the wrong dependency direction for a rule that
+ * belongs to no single deployment.
  */
 
 /** A mounted family: the prefix, and who mounted it. */

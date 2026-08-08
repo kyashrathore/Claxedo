@@ -87,6 +87,7 @@ import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/a
 import { ControlPlaneHttpRoutes } from "../../authority/http"
 import { createCentralControlApp } from "../../central-runtime"
 import { JwksRoutes } from "../../authority/routes/jwks"
+import { createRouteOwnership, withRouteOwnership } from "../route-ownership"
 import { InternalRelayResolverRoutes } from "../shared-routes/internal-relay"
 import { localRelayTargetExists, localRelayTargetLookup } from "./internal-relay-node"
 import { BootstrapRoutes } from "@claxedo/local-server/self-hosted-execution"
@@ -466,7 +467,17 @@ export function createSelfHostedApp(
   }
   const localDocumentBrokerToken = process.env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN?.trim()
   delete process.env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN
-  const app = new Hono()
+  // Every `app.route()` below is recorded against this composition, the same
+  // way `createSignedControlPlaneApp` records its own. What that buys HERE is
+  // narrower than it looks and worth stating plainly: one owner cannot collide
+  // with itself (`/api/workspace` is deliberately mounted twice), so this does
+  // not catch a duplicate inside this function. It catches the arrangement
+  // Unit 7 creates — a second composition mounting onto this app — which is
+  // silent in Hono and decided by call order. `mountControlPlaneChannels` and
+  // the other `mount*` helpers below run against this same wrapped app, so
+  // their claims land under this owner too.
+  const routeOwnership = createRouteOwnership()
+  const app = withRouteOwnership(new Hono(), routeOwnership, "self-hosted-node")
   // Outermost ON PURPOSE, ahead of CORS, the unsigned-local gate and every
   // route — so the preflight CORS short-circuits, the 404 handler and anything
   // `onError` produces are all covered. Which of the two policies a response
@@ -837,6 +848,14 @@ export function createSelfHostedApp(
     app,
     injectWebSocket,
     channels: controlPlaneChannels,
+    /**
+     * This composition's route ledger — every prefix it claimed, and under
+     * which owner. Exposed for the same reason `createRouteOwnership` records
+     * mounts at all: a contract test compares it against a declared table, and
+     * a later composition that mounts onto `app` can claim through it instead
+     * of shadowing a prefix silently.
+     */
+    routeOwnership,
     /** @claxedo/connections service — the one connections layer. Thread this
      * Into consumers that need capability-handle token resolution (workgraph). */
     connections: connectionsHost.service,

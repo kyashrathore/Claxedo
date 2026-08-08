@@ -20,11 +20,13 @@ import { mountedPaths } from "@claxedo/server-core/deployments/product-route-fam
  * hosted WorkGraph and Documents, channels, Relay authority, and an optional
  * static web UI.
  *
- * Unit 7 has to recompose it as `createSelfHostedApp` over the shared signed
- * route core — WITHOUT copying the 1,700-line mixed composition. The only way
- * to recompose rather than copy is to know which routes already come from the
- * shared hosted core and which are genuinely self-hosted Node adapters. That
- * partition is computed and pinned below.
+ * Unit 7 asked whether it could be recomposed over the shared signed route
+ * core. Measured at the mount level the answer is that it already is, for the
+ * four route families the two compositions genuinely share, and that the rest
+ * of the overlap below is same-path/different-implementation — see the note on
+ * `SHARED_WITH_HOSTED_CORE`. So the partition is not a migration plan any
+ * more; it is the record of which capabilities the two products answer at the
+ * same address, and it fails when one of them silently stops.
  *
  * The partition is derived from the two real apps rather than hand-listed, so
  * it cannot drift from what the code actually mounts; the committed lists are
@@ -111,11 +113,36 @@ function hostedCorePaths() {
 }
 
 /**
- * Routes the self-hosted app shares with the cloud-hosted core.
+ * Paths the self-hosted app and the cloud-hosted core both answer.
  *
- * Unit 7 must obtain every one of these from `createSignedControlPlaneApp`. If
- * a path drops off this list during the extraction, self-hosted quietly lost a
- * capability that cloud-hosted kept.
+ * A SHARED PATH, not a shared implementation — the distinction is the whole
+ * point of this list and an earlier version of this comment got it wrong by
+ * saying Unit 7 "must obtain every one of these from
+ * `createSignedControlPlaneApp`". Measured at the mount level, the two
+ * compositions overlap on five prefixes (`/`, `/api/workspace`, `/documents`,
+ * `/api/control`, `/api/claxedo/integrations`) and mount the SAME route factory
+ * for exactly four families:
+ *
+ *   JwksRoutes                  authority/routes/jwks
+ *   InternalRelayResolverRoutes deployments/shared-routes/internal-relay
+ *   WorkspaceCheckpointRoutes   workspace/routes/checkpoints
+ *   DocumentsRoutes             documents/routes/index
+ *
+ * All four already live in one module that both compositions import, so there
+ * is nothing left to move — and even those four are composed with different
+ * options, because the options are where the posture lives (self-host passes
+ * `allowUnsignedLocal: true` to the checkpoint routes and a local disk backend
+ * to Documents; cloud passes neither).
+ *
+ * Everything else on this list is the same path answered by a DIFFERENT route
+ * object: `/api/workspace/*` is `WorkspaceRoutes` here and
+ * `HostedWorkspaceRoutes` there, `/api/control/*` is `ControlPlaneHttpRoutes`
+ * vs `HostedControlRoutes`, `/project`/`/provider`/`/global/*` are the real
+ * local surfaces vs `HostedShellRoutes`' hosted stubs. Merging any of those
+ * would not remove a duplicate, it would delete one of two products.
+ *
+ * What the list is still good for: if a path drops off it, self-hosted quietly
+ * lost a capability that cloud-hosted kept.
  */
 const SHARED_WITH_HOSTED_CORE = [
   "/.well-known/jwks.json",

@@ -48,7 +48,10 @@ const ROOT = path.resolve(import.meta.dirname, "../..")
 const ENTRIES = [
   { name: "hosted-node", entry: "src/deployments/hosted-node/index.ts", modules: 131, packages: 25 },
   { name: "hosted-workerd", entry: "src/deployments/hosted-workerd/worker.ts", modules: 107, packages: 13 },
-  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 139, packages: 32 },
+  // +1 module (139 -> 140) on 2026-08-08: `deployments/route-ownership.ts`,
+  // the composition guard the self-hosted app now installs alongside the
+  // hosted core. One dependency-free module, no new package.
+  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 140, packages: 32 },
 ] as const
 
 /** The two cloud compositions. Neither runs a workspace on its own box. */
