@@ -129,6 +129,17 @@ export function createContributionRegistry(seed: Partial<ContributionRegistry> =
     addSurface(contribution: SurfaceContribution) {
       upsert(registry.surfaces, contribution)
     },
+    /**
+     * Removes a surface by id.
+     *
+     * The counterpart `addSurface` never had: hosted contributions are
+     * registered when an account signs in and have to come back OUT when it
+     * signs out, and without this the only way to un-register anything was to
+     * reload the page.
+     */
+    removeSurface(id: string) {
+      remove(registry.surfaces, id)
+    },
     addCommand(contribution: CommandContribution) {
       upsert(registry.commands, contribution)
     },
@@ -213,6 +224,12 @@ function upsert<T extends { id: string }>(items: T[], next: T) {
     return
   }
   items[index] = next
+}
+
+function remove<T extends { id: string }>(items: T[], id: string) {
+  const index = items.findIndex((item) => item.id === id)
+  if (index === -1) return
+  items.splice(index, 1)
 }
 
 function leaseBoundAgent<T extends { tier: ContributionTier }>(contribution: T) {

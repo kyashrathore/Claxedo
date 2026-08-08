@@ -54,6 +54,7 @@ import { installSessionStatusTelemetryDevtools } from "../../features/session/st
 import { getExtensions } from "@/features/extensions"
 import { RemoteAccessMarkerRecorder } from "@/features/onboarding"
 import { TelemetryIdentityRecorder } from "@/app/integrations/telemetry-identity"
+import { HostedContributionSync } from "@/app/composition/hosted-contribution-sync"
 import { ClaxedoEventsProvider } from "@/app/integrations/claxedo-events"
 
 // Restore navigation data before the shell mounts so the sidebar can paint its
@@ -364,6 +365,9 @@ function AuthenticatedProviders(props: ParentProps) {
       <AccountPortProvider>
       <TelemetryIdentityRecorder />
       <RemoteAccessMarkerRecorder />
+      {/* Removes the hosted contribution set when the account signs out.
+          Before this, hosted surfaces stayed registered until a reload. */}
+      <HostedContributionSync />
       <CloudAuthGate>
         <Show when={config?.authEnabled} fallback={props.children}>
           <CloudAutoSwitch>{props.children}</CloudAutoSwitch>

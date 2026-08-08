@@ -93,6 +93,17 @@ export function registerContentSurface(surface: ContentSurfaceContribution) {
   contentSurfaceRegistry.addSurface(surface as SurfaceContribution)
 }
 
+/**
+ * Removes a surface registered by an activation.
+ *
+ * Takes the contribution rather than its id so the two halves have the same
+ * signature at the composition seam, and so a caller cannot un-register
+ * something it never held a reference to.
+ */
+export function unregisterContentSurface(surface: ContentSurfaceContribution) {
+  contentSurfaceRegistry.removeSurface(surface.id)
+}
+
 export function contentSurface(type: string | undefined, context: ContributionGateContext = {}, registry = contentSurfaceRegistry) {
   return (registry.visibleSurfaces(context) as ContentSurfaceContribution[]).find(
     (surface): surface is ContentSurfaceContribution => surface.surface === type && typeof surface.renderer === "function",

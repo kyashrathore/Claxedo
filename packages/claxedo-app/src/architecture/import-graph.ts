@@ -317,7 +317,14 @@ function isTypeOnlyClause(keyword: string, clause: string) {
   return bindings.length > 0 && bindings.every((binding) => /^type\b/.test(binding))
 }
 
-function stripComments(text: string) {
+/**
+ * Source with comments blanked out, positions preserved.
+ *
+ * Exported because guards keep needing it: six guards in one session passed by
+ * matching their own doc comments, and every one of them would have been red if
+ * it had scanned the code instead of the prose next to it.
+ */
+export function stripComments(text: string) {
   let output = ""
   let state: "code" | "line" | "block" | "single" | "double" | "template" = "code"
   let escaped = false

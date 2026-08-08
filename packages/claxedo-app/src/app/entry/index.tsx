@@ -9,7 +9,11 @@ import { appExtensions } from "../../features/extensions/index"
 import { serverExtensions } from "../../features/extensions/index"
 import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "@/platform/api/local-server"
 import { configureProductContributions, hostedContributionLoader } from "@/app/composition/product-contributions"
-import { localContentSurfaces, registerContentSurface } from "@/app/integrations/first-party-content-surfaces"
+import {
+  localContentSurfaces,
+  registerContentSurface,
+  unregisterContentSurface,
+} from "@/app/integrations/first-party-content-surfaces"
 
 /**
  * Configuration for initializing Claxedo cloud extensions.
@@ -72,9 +76,23 @@ export function initClaxedo(config: ClaxedoConfig): void {
     server: serverExtensions(config),
   })
 
+  // `hostedComposition` answers "may this build ever hold hosted
+  // contributions", which is what gates activation. It is NOT the account:
+  // a hosted build serves unsigned windows too, and gating registration on a
+  // signed account here would empty the composition of every window before
+  // sign-in. Removal on sign-out is the account's half, and
+  // `app/composition/hosted-contribution-sync.tsx` drives it.
+  //
+  // Unit 11 replaces this with the Electron account port's signed state, so a
+  // signed desktop activates the same contribution entry from a real account
+  // rather than a build-time environment variable — and the two halves become
+  // one question.
   const contributions = configureProductContributions({
     local: localContentSurfaces,
     register: registerContentSurface,
+    unregister: unregisterContentSurface,
+    loadHosted: hostedContributionLoader(),
+    hostedComposition: () => config.authEnabled === true,
   })
 
   // Starting the identity provider is NOT this function's job.
@@ -96,13 +114,8 @@ export function initClaxedo(config: ClaxedoConfig): void {
     // and the split matters: restored-state pruning must know that WorkGraph
     // tabs are legal in this build BEFORE the dynamic import lands, or a hosted
     // reload would drop every restored WorkGraph tab in the gap.
-    //
-    // `config.authEnabled` is the hosted signal available today. Unit 11
-    // replaces it with the Electron account port, so signed desktop activates
-    // the same contribution entry from a real account state instead of a build
-    // -time environment variable.
     contributions.expectHosted()
-    void contributions.activateHosted(hostedContributionLoader()).catch(() => {})
+    void contributions.activateHosted().catch(() => {})
   }
 }
 

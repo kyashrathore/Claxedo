@@ -119,6 +119,22 @@ describe("content surface contributions", () => {
     expect(mod.contentSurface("page", {}, withHosted)?.id).toBe("surface.content.page")
   })
 
+  test("un-registers a surface from the shared registry, so it stops resolving", () => {
+    // The removal half of the composition seam. `registerContentSurface` and
+    // `unregisterContentSurface` both act on the ONE shared registry the
+    // workbench resolves against, which is what makes a sign-out observable
+    // without a reload.
+    const workgraph = hosted.hostedContentSurfaces.find((surface) => surface.surface === "workgraph")!
+
+    mod.registerContentSurface(workgraph)
+    expect(mod.contentSurface("workgraph", {})?.id).toBe(workgraph.id)
+
+    mod.unregisterContentSurface(workgraph)
+    expect(mod.contentSurface("workgraph", {})).toBeUndefined()
+    // The local surfaces the same registry seeded are untouched.
+    expect(mod.contentSurface("session", {})?.id).toBe("surface.content.session")
+  })
+
   test("resolves extension content surfaces through the same registry path as first-party surfaces", () => {
     const extensionSurface: ContentSurfaceContribution = {
       id: "surface.content.agent-review",
