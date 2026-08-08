@@ -18,7 +18,8 @@ import { Hono } from "hono"
 import fs from "fs"
 import os from "os"
 import path from "path"
-import { createWorkspaceHost, type OpenCodeRequestFn } from "./runtime"
+import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
+import { createWorkspaceHost } from "./runtime"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 
 const loopbackExposure = loopbackWorkspaceRuntimeExposure()
