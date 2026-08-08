@@ -70,13 +70,19 @@ export class OpenCodeServerProcess {
       config: () => Record<string, ResolvedMcpServer>
       auth: () => Record<string, string>
       processObserver?: AgentProcessObserver
+      /**
+       * Injected so the spawn path itself is testable — the child's own exit
+       * handling is lifecycle-critical and was otherwise reachable only by
+       * launching a real `opencode`. Defaults to `child_process.spawn`.
+       */
+      spawn?: typeof spawn
     },
   ) {
     this.fixedUrl = opencodeUrl ?? ""
     this.shouldSpawn = !this.fixedUrl
     this.lifecycle = createProcessLifecycle<SpawnedServer>({
       idleGraceMs: IDLE_TIMEOUT_MS,
-      start: ({ signal }) => this.spawnServer(signal),
+      start: ({ signal, generation }) => this.spawnServer(signal, generation),
       stop: ({ handle }) => stopSpawnedServer(handle),
       onEvent: (event) => {
         if (event.type === "idle-timeout") {
@@ -142,7 +148,7 @@ export class OpenCodeServerProcess {
     void this.lifecycle.dispose()
   }
 
-  private async spawnServer(signal: AbortSignal): Promise<SpawnedServer> {
+  private async spawnServer(signal: AbortSignal, generation: number): Promise<SpawnedServer> {
     const port = 10000 + Math.floor(Math.random() * 50000)
     const directory = workspaceDir()
     const credential = launchCredential()
@@ -158,7 +164,7 @@ export class OpenCodeServerProcess {
       ...(auth ? { OPENCODE_AUTH_CONTENT: auth } : {}),
     })
     await prepareSpawnEnv(env)
-    const proc = spawn("opencode", ["serve", `--hostname=127.0.0.1`, `--port=${port}`], {
+    const proc = (this.input.spawn ?? spawn)("opencode", ["serve", `--hostname=127.0.0.1`, `--port=${port}`], {
       cwd: directory,
       stdio: ["pipe", "pipe", "pipe"],
       env,
@@ -230,8 +236,10 @@ export class OpenCodeServerProcess {
       observation.exit({ reason: "exited", ...(code !== null ? { exitCode: code } : {}) })
       log.info("opencode process exited", { code, signal: signal_ })
       // A child that dies on its own must not leave the lifecycle believing it
-      // is ready; stopping is idempotent and generation-scoped.
-      void this.lifecycle.stop("explicit")
+      // is ready. Scoped to THIS generation: a restart replaces the child
+      // before the old one has finished exiting, and an unscoped stop here
+      // would reap the replacement.
+      void this.lifecycle.stop("explicit", { generation })
     })
     return server
   }

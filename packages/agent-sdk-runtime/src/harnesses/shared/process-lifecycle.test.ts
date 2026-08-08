@@ -259,6 +259,62 @@ describe("harness process lifecycle", () => {
     expect(harness.lifecycle.state()).toBe("absent")
   })
 
+  test("a stop that lands after its replacement is ready leaves the replacement owning the state", async () => {
+    // Restart is stop-then-start, and the stop is asynchronous. Generation 1's
+    // `stop()` resolving after generation 2 is already `ready` used to write
+    // `absent` over a live child: `hasProcess` then reported false, and the
+    // next `restartSpawnedProcess()` refused to restart a server that was
+    // running.
+    let releaseStop: (() => void) | undefined
+    const harness = fixture({
+      stop: (handle) => handle === "child-1"
+        ? new Promise<void>((resolve) => { releaseStop = resolve })
+        : undefined,
+    })
+    await harness.lifecycle.ensure()
+
+    const stopping = harness.lifecycle.stop("restart")
+    expect(await harness.lifecycle.ensure()).toBe("child-2")
+    expect(harness.lifecycle.state()).toBe("ready")
+
+    releaseStop!()
+    await stopping
+
+    expect(harness.lifecycle.generation()).toBe(2)
+    expect(harness.lifecycle.state()).toBe("ready")
+    expect(harness.stopped).toEqual(["child-1"])
+  })
+
+  test("a stop scoped to an old generation cannot take down its replacement", async () => {
+    // Adapters stop the lifecycle from the child's own `exit` handler. The old
+    // child's exit arrives after the restart, so an unscoped stop there kills
+    // the healthy replacement — the generation the caller means has to travel
+    // with the call.
+    let releaseStop: (() => void) | undefined
+    const harness = fixture({
+      stop: (handle) => handle === "child-1"
+        ? new Promise<void>((resolve) => { releaseStop = resolve })
+        : undefined,
+    })
+    await harness.lifecycle.ensure()
+    const stopping = harness.lifecycle.stop("restart")
+    await harness.lifecycle.ensure()
+
+    // Generation 1's child now reports the exit that its own stop caused.
+    await harness.lifecycle.stop("explicit", { generation: 1 })
+
+    expect(harness.lifecycle.state()).toBe("ready")
+    expect(harness.stopped).toEqual(["child-1"])
+
+    // The live generation is still stoppable on its own terms.
+    await harness.lifecycle.stop("explicit", { generation: 2 })
+    expect(harness.stopped).toEqual(["child-1", "child-2"])
+    expect(harness.lifecycle.state()).toBe("absent")
+
+    releaseStop!()
+    await stopping
+  })
+
   test("dispose forbids further starts", async () => {
     const harness = fixture()
     await harness.lifecycle.ensure()

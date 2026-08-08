@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { fakeGlobalFetch } from "../../test-utils/class-internals"
+import { fakeGlobalFetch, internalsOf } from "../../test-utils/class-internals"
+import { createProcessLifecycle } from "../shared/process-lifecycle"
 import { OpenCodeHarnessAdapter, spawnEnv, type OpenCodeRequestFn } from "./index"
 
 function prompt() {
@@ -379,6 +380,128 @@ describe("OpenCodeHarnessAdapter injected-request transport", () => {
     expect(promptSeen).toBe(true)
     expect(events.some((event) => event.type === "session.idle")).toBe(true)
     expect(events.some((event) => event.type === "message.part.updated")).toBe(true)
+  })
+})
+
+/**
+ * A spawn-mode server backed by the REAL shared lifecycle, with timers
+ * injected and nothing actually spawned.
+ *
+ * The question under test is whether the prompt stream keeps the lifecycle
+ * open, so a hand-written lease counter would only restate the answer — the
+ * lifecycle itself has to be the one deciding whether the child dies.
+ */
+function spawnedServerDouble(url: string) {
+  const timers: Array<{ id: number; fn: () => void }> = []
+  let nextTimer = 1
+  const stopped: number[] = []
+  const lifecycle = createProcessLifecycle<{ url: string }>({
+    idleGraceMs: 30_000,
+    start: async () => ({ url }),
+    stop: ({ generation }) => { stopped.push(generation) },
+    setTimeout: (fn) => {
+      const id = nextTimer++
+      timers.push({ id, fn })
+      return id
+    },
+    clearTimeout: (handle) => {
+      const index = timers.findIndex((timer) => timer.id === handle)
+      if (index >= 0) timers.splice(index, 1)
+    },
+  })
+  return {
+    lifecycle,
+    stopped,
+    /** Let the idle grace elapse, as the event loop eventually would. */
+    fireIdle() {
+      for (const timer of timers.splice(0)) timer.fn()
+    },
+    server: {
+      mode: "spawned" as const,
+      get hasProcess() { return lifecycle.state() === "ready" },
+      async ensureServer() { return (await lifecycle.ensure()).url },
+      async ensureConnection() { return { url: (await lifecycle.ensure()).url } },
+      async acquire() {
+        const { handle, lease } = await lifecycle.acquire()
+        return { connection: { url: handle.url }, lease }
+      },
+      restartSpawnedProcess: () => false,
+      dispose() {},
+    },
+  }
+}
+
+describe("OpenCodeHarnessAdapter prompt-stream lifecycle", () => {
+  test("holds the spawned server open across a silent gap in the turn", async () => {
+    // A tool call that runs longer than the idle grace produces no traffic at
+    // all. Without a lease spanning the WHOLE stream, the countdown armed by
+    // the opening request expires mid-turn and kills a healthy child — the
+    // same defect the ACP adapter leases its prompt turn to avoid.
+    const adapter = new OpenCodeHarnessAdapter("http://127.0.0.1:4096")
+    const backing = spawnedServerDouble("http://127.0.0.1:4096")
+    internalsOf<{ server: unknown }>(adapter).server = backing.server
+
+    const enc = new TextEncoder()
+    let emit: ((chunk: string) => void) | undefined
+    let announcePost: (() => void) | undefined
+    const posted = new Promise<void>((resolve) => { announcePost = resolve })
+    const prev = globalThis.fetch
+    globalThis.fetch = fakeGlobalFetch(async (input, init) => {
+      const req = input instanceof Request ? input : new Request(String(input), init)
+      const url = new URL(req.url)
+      if (url.pathname === "/global/event") {
+        return new Response(new ReadableStream<Uint8Array>({
+          start(controller) {
+            emit = (chunk) => controller.enqueue(enc.encode(chunk))
+          },
+        }), { status: 200, headers: { "Content-Type": "text/event-stream" } })
+      }
+      if (url.pathname === "/session/s1/prompt_async") {
+        announcePost?.()
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected fetch: ${req.url}`)
+    })
+
+    try {
+      const events: Array<{ type: string }> = []
+      const draining = (async () => {
+        for await (const event of adapter.sendMessage("s1", prompt(), "/work")) {
+          events.push(event as { type: string })
+        }
+      })()
+      await posted
+
+      // The turn is live and silent. The idle grace elapses here.
+      expect(backing.lifecycle.activeLeases()).toBe(1)
+      backing.fireIdle()
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(backing.stopped).toEqual([])
+      expect(backing.lifecycle.state()).toBe("ready")
+
+      emit!(`data: ${JSON.stringify({
+        type: "message.part.updated",
+        properties: {
+          sessionID: "s1",
+          part: { id: "part-1", sessionID: "s1", messageID: "msg-assistant", type: "text", text: "done" },
+        },
+      })}\n\n`)
+      emit!(`data: ${JSON.stringify({ type: "session.idle", properties: { sessionID: "s1" } })}\n\n`)
+      await draining
+
+      expect(events.map((event) => event.type)).toContain("message.part.updated")
+
+      // The lease is released with the turn, and the reaper is armed again
+      // rather than disarmed: an idle server still gets torn down.
+      expect(backing.lifecycle.activeLeases()).toBe(0)
+      backing.fireIdle()
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(backing.stopped).toEqual([1])
+    } finally {
+      globalThis.fetch = prev
+    }
   })
 })
 

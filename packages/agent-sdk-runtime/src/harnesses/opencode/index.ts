@@ -462,9 +462,32 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
 
   // ── Messaging ────────────────────────────────────────────────────────────────
 
+  /**
+   * A turn is a STREAM, and the lease has to cover all of it.
+   *
+   * The opening request only re-arms the idle countdown; between chunks the
+   * adapter is silent, so a tool call that runs longer than the grace period
+   * used to have its healthy child reaped mid-turn and surface as a hung
+   * session. Holding the lease here — the same thing the ACP adapter does for
+   * its prompt turn — is what makes the silence safe. The `finally` covers the
+   * error paths and a consumer that breaks out of the loop alike.
+   */
   async *sendMessage(id: string, input: PromptInput, directory: string): AsyncIterable<AgentRuntimeStreamEvent> {
     directory = requireWorkspaceDirectory(directory)
-    const request = await this.requestFn()
+    const { request, lease } = await this.acquireRequestFn()
+    try {
+      yield* this.streamPrompt(request, id, input, directory)
+    } finally {
+      lease.release()
+    }
+  }
+
+  private async *streamPrompt(
+    request: OpenCodeRequestFn,
+    id: string,
+    input: PromptInput,
+    directory: string,
+  ): AsyncIterable<AgentRuntimeStreamEvent> {
     const publishRuntime = createLegacyOpenCodeRuntimePublisher({
       directory,
       sessionId: id,

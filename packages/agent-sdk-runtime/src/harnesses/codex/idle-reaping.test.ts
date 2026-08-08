@@ -3,10 +3,14 @@ import fs from "fs"
 import os from "os"
 import path from "path"
 import { CodexHarnessAdapter } from "./index"
+import { createCodexAppServerDriver } from "./driver"
 import type { PromptInput, SessionConfig } from "../../index"
 import type { AgentProcessObserver } from "../../process-observer"
 import type { AgentRuntimeStoreWithRecovery } from "../shared/runtime-store"
+import type { SdkRuntimeDriver, SdkRuntimeTurnInput } from "../shared/sdk-runtime-adapter"
+import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
 import { fakeRuntimeStore } from "../../test-utils/fake-runtime-store"
+import type { WithInternals } from "../../test-utils/class-internals"
 
 // The Codex driver used to hold its app-server for the life of the driver, so a
 // desktop that ran one turn at breakfast still had `codex app-server` resident
@@ -195,4 +199,46 @@ describe("Codex app-server idle reaping", () => {
 
     adapter.dispose()
   })
+
+  test("a turn whose app-server never starts leaves no lease behind", async () => {
+    // The lease is taken BEFORE `ensureProcess` on purpose: a slow start must
+    // not arm the countdown under a turn that has already begun. But it sat
+    // outside the releasing `finally`, so a failed startup leaked it — and one
+    // leaked lease disables the reaper for the driver's whole life, which is
+    // the exact "app-server resident until midnight" symptom this suite exists
+    // to prevent, reappearing after any startup failure.
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "codex-lease-"))
+    tempDirs.push(dir)
+    const host = {
+      lifecycle: () => createSessionTurnLifecycle(),
+      pendingPermissions: new Map(),
+      pendingQuestions: new Map(),
+      bindSession() {},
+    }
+    const driver = createCodexAppServerDriver(host as never, {
+      // Nothing to spawn: startup fails the way a missing or broken binary does.
+      binary: path.join(dir, "codex-does-not-exist"),
+      codexHome: path.join(dir, "home"),
+    }) as WithInternals<SdkRuntimeDriver, { idle: { activeLeases(): number } }>
+
+    await expect(driver.runTurn(turnInput(dir))).rejects.toThrow()
+
+    expect(driver.idle.activeLeases()).toBe(0)
+    driver.dispose?.()
+  })
 })
+
+function turnInput(directory: string): SdkRuntimeTurnInput {
+  return {
+    sessionId: "s1",
+    getAgentSessionId: () => "thread-1",
+    input: prompt(),
+    directory,
+    abort: new AbortController(),
+    ingest: () => {},
+    associateChild: () => {},
+    observeSubagent: async () => { throw new Error("no subagent is expected on a turn that never started") },
+    rebindAgentSession: () => {},
+    model: "default",
+  }
+}

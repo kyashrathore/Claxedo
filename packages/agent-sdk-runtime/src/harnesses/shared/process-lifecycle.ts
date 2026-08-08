@@ -98,8 +98,16 @@ export type ProcessLifecycle<THandle> = {
   acquire(): Promise<{ handle: THandle; lease: ActivityLease }>
   /** Take a lease on an already-running generation. */
   lease(): ActivityLease
-  /** Stop the current generation now, regardless of leases. */
-  stop(reason?: StopReason): Promise<void>
+  /**
+   * Stop the current generation now, regardless of leases.
+   *
+   * Pass `scope` when the caller speaks for ONE generation rather than for the
+   * lifecycle — a child's own `exit` handler is the case that matters. That
+   * exit can arrive after a restart has already replaced the child, and an
+   * unscoped stop there takes the healthy replacement down with it. A scoped
+   * stop whose generation is no longer the active one is a no-op.
+   */
+  stop(reason?: StopReason, scope?: { generation: number }): Promise<void>
   /** Stop and forbid further starts. */
   dispose(reason?: StopReason): Promise<void>
 }
@@ -243,7 +251,23 @@ export function createProcessLifecycle<THandle>(
     idle.touch()
   }
 
-  const stopInternal = async (reason: StopReason) => {
+  // State is DERIVED from what the lifecycle owns right now, never asserted
+  // from inside an operation that may have been overtaken. `stop()` is async:
+  // between its first line and its last, a restart can have started and
+  // finished a whole new generation, and writing `absent` there would report a
+  // live child as gone.
+  const settleState = () => {
+    state = current ? "ready" : starting ? "starting" : "absent"
+  }
+
+  const stopInternal = async (reason: StopReason, scope?: { generation: number }) => {
+    // A caller speaking for one generation must not act on a later one.
+    if (
+      scope !== undefined &&
+      current?.generation !== scope.generation &&
+      starting?.generation !== scope.generation
+    ) return
+
     clearIdleTimer()
     const active = current
     const pending = starting
@@ -255,7 +279,7 @@ export function createProcessLifecycle<THandle>(
     pending?.abort.abort()
 
     if (!active) {
-      state = disposed ? "absent" : "absent"
+      settleState()
       return
     }
 
@@ -268,7 +292,7 @@ export function createProcessLifecycle<THandle>(
       // allowed to block shutdown. The alternative is a process that never
       // exits because one adapter refused to.
     }
-    state = "absent"
+    settleState()
     emit({ type: "stopped", generation: stopped, reason })
   }
 
@@ -361,7 +385,7 @@ export function createProcessLifecycle<THandle>(
       }
     },
     lease,
-    stop: (reason = "explicit") => stopInternal(reason),
+    stop: (reason = "explicit", scope) => stopInternal(reason, scope),
     async dispose(reason = "explicit") {
       disposed = true
       await stopInternal(reason)

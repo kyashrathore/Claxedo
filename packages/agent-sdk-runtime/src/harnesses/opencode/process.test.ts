@@ -1,7 +1,83 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
+import type { spawn as spawnReal } from "child_process"
+import { EventEmitter } from "events"
+import fs from "fs"
+import os from "os"
+import path from "path"
 import { OpenCodeServerProcess, redact } from "./process"
 
 const inputs = { config: () => ({}), auth: () => ({}) }
+
+/**
+ * A spawned `opencode serve`, minus the process.
+ *
+ * The adapter only ever touches these members, and the exit ORDER relative to a
+ * restart is the whole point: a real child cannot be told to exit at a chosen
+ * moment, so the one case that matters could not be written against it.
+ */
+class FakeOpenCodeChild extends EventEmitter {
+  readonly stdout = new EventEmitter()
+  readonly stderr = new EventEmitter()
+  readonly signals: string[] = []
+  killed = false
+
+  constructor(readonly pid: number, readonly port: string) {
+    super()
+  }
+
+  /** Print the line the adapter waits for before it calls the server ready. */
+  announceListening() {
+    this.stdout.emit("data", Buffer.from(`opencode server listening on http://127.0.0.1:${this.port}\n`))
+  }
+
+  kill(signal?: string) {
+    this.signals.push(signal ?? "SIGTERM")
+    this.killed = true
+    return true
+  }
+}
+
+function fakeSpawner() {
+  const children: FakeOpenCodeChild[] = []
+  const waiting: Array<(child: FakeOpenCodeChild) => void> = []
+  const spawn = ((_command: string, args: readonly string[]) => {
+    const port = String(args.find((arg) => arg.startsWith("--port="))?.split("=")[1] ?? "0")
+    const child = new FakeOpenCodeChild(9000 + children.length, port)
+    children.push(child)
+    for (const resolve of waiting.splice(0)) resolve(child)
+    return child
+  }) as unknown as typeof spawnReal
+
+  return {
+    spawn,
+    children,
+    /** Resolves with the next child spawned after this call. */
+    next: () => new Promise<FakeOpenCodeChild>((resolve) => { waiting.push(resolve) }),
+  }
+}
+
+const scratchEnv = ["OPENCODE_CONFIG_DIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"] as const
+const restoreEnv: Array<() => void> = []
+const scratchDirs: string[] = []
+
+/** Keep `prepareSpawnEnv`'s mkdirs inside a temp dir instead of the real data dir. */
+function scratchSpawnDirs() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencode-spawn-"))
+  scratchDirs.push(dir)
+  for (const name of scratchEnv) {
+    const previous = process.env[name]
+    restoreEnv.push(() => {
+      if (previous === undefined) delete process.env[name]
+      else process.env[name] = previous
+    })
+    process.env[name] = path.join(dir, name.toLowerCase())
+  }
+}
+
+afterEach(async () => {
+  for (const restore of restoreEnv.splice(0)) restore()
+  await Promise.all(scratchDirs.splice(0).map((dir) => fs.promises.rm(dir, { recursive: true, force: true })))
+})
 
 describe("opencode server process", () => {
   test("external-URL mode neither spawns nor invents a credential", async () => {
@@ -40,6 +116,40 @@ describe("opencode server process", () => {
 
     expect(server.mode).toBe("spawned")
     expect(server.hasProcess).toBe(false)
+  })
+
+  test("a replaced child's late exit does not take down its replacement", async () => {
+    // A restart kills the old child and starts a new one immediately, so the
+    // old child's `exit` arrives when the replacement is already serving. The
+    // exit handler stops the lifecycle, and unscoped that stop reaps the
+    // healthy replacement — the adapter then reports no process at all and the
+    // next request pays a second cold start.
+    scratchSpawnDirs()
+    const spawner = fakeSpawner()
+    const server = new OpenCodeServerProcess(undefined, { ...inputs, spawn: spawner.spawn })
+
+    const connecting = server.ensureConnection()
+    const first = await spawner.next()
+    first.announceListening()
+    await connecting
+    expect(server.hasProcess).toBe(true)
+
+    expect(server.restartSpawnedProcess()).toBe(true)
+    const reconnecting = server.ensureConnection()
+    const second = await spawner.next()
+    second.announceListening()
+    await reconnecting
+    expect(server.hasProcess).toBe(true)
+    expect(first.signals).toEqual(["SIGTERM"])
+
+    // The replaced child now reports the exit its own SIGTERM caused.
+    first.emit("exit", 0, "SIGTERM")
+
+    expect(server.hasProcess).toBe(true)
+    expect(second.signals).toEqual([])
+    expect(spawner.children).toHaveLength(2)
+
+    server.dispose()
   })
 
   test("redaction removes every occurrence of the launch credential", () => {

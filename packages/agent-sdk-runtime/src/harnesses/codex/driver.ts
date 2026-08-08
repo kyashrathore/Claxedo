@@ -284,12 +284,30 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     })
   }
 
+  /**
+   * Own the idle lease for the whole turn, whatever the turn does.
+   *
+   * Idle teardown driven by "time since the last request STARTED" would reap a
+   * turn that is still inside one long silent tool call, so the lease is taken
+   * before anything else — including the app-server start, which is itself
+   * slow enough to matter.
+   *
+   * It lives in this wrapper rather than in the turn body because EVERY exit
+   * has to release it. Acquired above the body's own `try`, a failed start
+   * leaked the lease, and one leaked lease disarms the reaper for the driver's
+   * whole life: the next turn's app-server then stays resident forever.
+   */
   async runTurn(input: SdkRuntimeTurnInput) {
-    const threadId = input.getAgentSessionId()
-    // Held for the whole turn, released in the `finally` below. Idle teardown
-    // driven by "time since the last request STARTED" would reap a turn that is
-    // still inside one long silent tool call.
     const turn = this.idle.lease()
+    try {
+      await this.runLeasedTurn(input)
+    } finally {
+      turn.release()
+    }
+  }
+
+  private async runLeasedTurn(input: SdkRuntimeTurnInput) {
+    const threadId = input.getAgentSessionId()
     const proc = await this.ensureProcess(input.directory)
     let turnId = ""
     let resolveCompleted: (() => void) | undefined
@@ -447,7 +465,6 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       unsubscribeStderr()
       unsubscribe()
       this.activeThreads.delete(threadId)
-      turn.release()
     }
   }
 
