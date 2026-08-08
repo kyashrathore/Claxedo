@@ -20,6 +20,17 @@
  *
  * Reports every failure at once. An operator bringing up a self-host fixes
  * these one environment variable at a time otherwise, restarting between each.
+ *
+ * NOT YET WIRED, and the reason is Unit 7's whole justification. Attempting to
+ * call this from today's `deployments/local/server.ts#createApp` fails 24
+ * tests: that composition also serves a `CLAXEDO_DEPLOYMENT_MODE=local` mode
+ * with no embedded auth and no authority. `createApp` is not the self-hosted
+ * product — it is the self-hosted product AND something else sharing one
+ * function, which is precisely what the recomposition separates.
+ *
+ * Making it fit would mean weakening the gate until it accepted the mixed mode,
+ * at which point it would stop being a check. So it waits for
+ * `createSelfHostedApp`, whose only caller is the self-hosted entry.
  */
 
 export type SelfHostedPosture = {
