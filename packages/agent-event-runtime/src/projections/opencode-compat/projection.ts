@@ -1302,8 +1302,10 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
     case "usage":
       return [withDir(ctx.directory, sessionUsage({
         sessionID: ctx.sessionId,
+        messageID: ctx.assistantMsgId,
         contextSize: chunk.contextSize,
         contextUsed: chunk.contextUsed,
+        ...(chunk.observation ? { observation: chunk.observation } : {}),
         ...(chunk.cost ? { cost: chunk.cost } : {}),
       }))]
 

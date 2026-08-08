@@ -11,6 +11,46 @@ function makeProjection() {
 }
 
 describe("createOpencodeCompatProjection", () => {
+  test("preserves exact usage categories and the active message identity", () => {
+    const projection = makeProjection()
+
+    expect(projection.ingest({
+      type: "usage",
+      contextSize: 200_000,
+      contextUsed: 24_542,
+      observation: {
+        kind: "cumulative",
+        sequence: 2,
+        providerObservationId: "provider-usage-2",
+        tokens: {
+          input: 4,
+          output: 679,
+          reasoning: null,
+          cache: { read: 21_144, write: 2_715 },
+        },
+      },
+    })[0]?.payload).toEqual({
+      type: "session.usage",
+      properties: {
+        sessionID: "session-1",
+        messageID: "assistant-1",
+        contextSize: 200_000,
+        contextUsed: 24_542,
+        observation: {
+          kind: "cumulative",
+          sequence: 2,
+          providerObservationId: "provider-usage-2",
+          tokens: {
+            input: 4,
+            output: 679,
+            reasoning: null,
+            cache: { read: 21_144, write: 2_715 },
+          },
+        },
+      },
+    })
+  })
+
   test("keeps subagent lifecycle out of the compatibility projection", () => {
     expect(makeProjection().ingest({
       type: "subagent-updated",

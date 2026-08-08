@@ -434,6 +434,18 @@ function usageSnapshot(message: Record<string, unknown>, lastKnownContextWindow?
     type: "usage",
     contextSize,
     contextUsed: Math.min(totalTokens, contextSize),
+    observation: {
+      kind: "cumulative",
+      tokens: {
+        input: number(usage.input_tokens) ?? null,
+        output: number(usage.output_tokens) ?? null,
+        reasoning: number(usage.thinking_tokens) ?? null,
+        cache: {
+          read: number(usage.cache_read_input_tokens) ?? null,
+          write: number(usage.cache_creation_input_tokens) ?? null,
+        },
+      },
+    },
   } satisfies AgentRuntimeEvent
 }
 

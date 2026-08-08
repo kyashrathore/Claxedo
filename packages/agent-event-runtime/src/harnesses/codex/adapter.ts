@@ -225,10 +225,28 @@ function usage(row: Record<string, unknown>): AgentRuntimeEvent | undefined {
   const contextSize = number(tokenUsage.modelContextWindow) ?? number(row.modelContextWindow)
   const contextUsed = number(last.totalTokens) ?? number(tokenUsage.totalTokens) ?? number(total.totalTokens)
   if (contextUsed === undefined && contextSize === undefined) return undefined
+  const inputTokens = number(last.inputTokens)
+  const cachedInputTokens = number(last.cachedInputTokens)
+  const outputTokens = number(last.outputTokens)
+  const reasoningOutputTokens = number(last.reasoningOutputTokens)
   return {
     type: "usage",
     contextSize: contextSize ?? contextUsed ?? 0,
     contextUsed: contextUsed ?? contextSize ?? 0,
+    observation: {
+      kind: "cumulative",
+      ...(text(row.turnId) ? { providerObservationId: text(row.turnId) } : {}),
+      tokens: {
+        input: inputTokens === undefined
+          ? null
+          : Math.max(0, inputTokens - (cachedInputTokens ?? 0)),
+        output: outputTokens === undefined
+          ? null
+          : Math.max(0, outputTokens - (reasoningOutputTokens ?? 0)),
+        reasoning: reasoningOutputTokens ?? null,
+        cache: { read: cachedInputTokens ?? null, write: null },
+      },
+    },
   }
 }
 

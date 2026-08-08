@@ -343,13 +343,16 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         outcome = mergeOutcome(outcome, outcomeFromPayload(payload))
         commitAndPublish(sessionId, directory, payload, { dir: "out", method: "runtime.finish" })
       }
-      if (!adapter.commitsStreamEvents || !terminal) {
-        store.finishTurn?.({
-          sessionId,
-          assistantMessageId: prompt.assistantMessageId,
-          outcome: outcome ?? { status: "completed", completedAt: Date.now() },
-        })
-      }
+      // Terminal compat events and the durable turn outcome are separate
+      // contracts. A committing adapter may already have journaled
+      // message.completed/session.idle, but only finishTurn records the
+      // replayable turn.finish outcome. Stores make this call idempotent and
+      // avoid duplicating terminal events that the adapter already committed.
+      store.finishTurn?.({
+        sessionId,
+        assistantMessageId: prompt.assistantMessageId,
+        outcome: outcome ?? { status: "completed", completedAt: Date.now() },
+      })
     } catch (err) {
       const message = err instanceof Error ? err.message : "turn failed"
       const payload = sessionError(message, sessionId)

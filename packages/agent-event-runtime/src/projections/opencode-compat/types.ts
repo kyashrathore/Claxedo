@@ -1,4 +1,5 @@
 import type { Event as OpenCodeSdkEvent, Part, SessionStatus } from "@opencode-ai/sdk/v2"
+import type { RuntimeUsageObservation } from "../../contracts/agent-runtime-event"
 
 export type OpenCodeCompatEnvelope<Event extends OpenCodeCompatEvent = OpenCodeCompatEvent> = {
   directory: string
@@ -98,8 +99,10 @@ export type EventSessionUsage = {
   type: "session.usage"
   properties: {
     sessionID: string
+    messageID?: string
     contextSize: number
     contextUsed: number
+    observation?: RuntimeUsageObservation
     cost?: {
       amount: number
       currency: string

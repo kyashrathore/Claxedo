@@ -78,7 +78,20 @@ describe("cursorSdkAdapter", () => {
           totalTokens: 200,
         },
       },
-    }).events).toMatchObject([{ type: "usage", contextSize: 200, contextUsed: 200 }])
+    }).events).toMatchObject([{
+      type: "usage",
+      contextSize: 200,
+      contextUsed: 200,
+      observation: {
+        kind: "cumulative",
+        tokens: {
+          input: 120,
+          output: 30,
+          reasoning: null,
+          cache: { read: 40, write: 10 },
+        },
+      },
+    }])
   })
 
   test("maps tool call lifecycle events", () => {

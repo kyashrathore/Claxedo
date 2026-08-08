@@ -12,7 +12,7 @@
  * picked up without rebinding sessions.
  */
 import { Agent, type AgentEvent, type AgentTool, type StreamFn } from "@mariozechner/pi-agent-core"
-import { getModel, type Api, type Model } from "@mariozechner/pi-ai"
+import { getModel, type Api, type Model, type Usage } from "@mariozechner/pi-ai"
 import { Type } from "@sinclair/typebox"
 import type { SessionEnv } from "../../session-env"
 import type { AgentRuntimeStreamEvent, PromptModel } from "../../index"
@@ -217,6 +217,8 @@ export type PiModelTurnResult = {
   text: string
   /** Set when the turn failed (LLM/provider error); callers surface it. */
   error?: string
+  /** Exact provider counters retained from the canonical final Pi message. */
+  usage?: Usage
 }
 
 /**
@@ -278,5 +280,6 @@ export async function* runPiModelTurn(input: {
 
   const stateError = agent.state.errorMessage
   const error = runError ?? (typeof stateError === "string" && stateError.length > 0 ? stateError : undefined)
-  return { text, ...(error ? { error } : {}) }
+  const usage = agent.state.messages.findLast((message) => message.role === "assistant")?.usage
+  return { text, ...(usage ? { usage } : {}), ...(error ? { error } : {}) }
 }

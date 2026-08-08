@@ -39,8 +39,10 @@ function testHarness(options: {
   sendMessage?: AgentHarnessAdapter["sendMessage"]
   abort?: (id: string) => Promise<AgentRuntimeAbortResult>
   runtimeConfigCalls?: string[]
+  commitsStreamEvents?: boolean
 } = {}): AgentHarnessFactory {
   const adapter: AgentHarnessAdapter = {
+    ...(options.commitsStreamEvents ? { commitsStreamEvents: true as const } : {}),
     ...(options.runtimeConfigCalls
       ? {
           adapterCapabilities: ["runtime-config"] as const,
@@ -380,6 +382,30 @@ describe("createAgentRuntime", () => {
 
     await expect(runtime.sessions.get(session.id)).resolves.toMatchObject({
       status: null,
+      lastTurn: { status: "completed", assistantMessageId: "msg_1_r" },
+    })
+    runtime.dispose()
+  })
+
+  test("records a durable turn outcome when a committing adapter already emitted terminal events", async () => {
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [testHarness({
+        commitsStreamEvents: true,
+        sendMessage: async function* (id) {
+          yield sessionIdle(id)
+        },
+      })],
+    })
+    const session = await runtime.sessions.create({
+      directory: undefined,
+      harness: { id: "pi", access: "native" },
+    })
+
+    await runtime.turns.start({ sessionId: session.id, messageId: "msg_1", text: "hello" })
+    await tick()
+
+    await expect(runtime.sessions.get(session.id)).resolves.toMatchObject({
       lastTurn: { status: "completed", assistantMessageId: "msg_1_r" },
     })
     runtime.dispose()

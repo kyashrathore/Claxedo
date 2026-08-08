@@ -1,4 +1,5 @@
 import type { McpServer, Usage } from "@agentclientprotocol/sdk"
+import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import { Log } from "../../log"
 import type { ACPTransportEnv } from "./transport"
 import { claudeAuthEnv, claudeAuthValue } from "../claude/auth"
@@ -97,6 +98,26 @@ export function messageUsage(usage: Usage) {
     cache: {
       read: usage.cachedReadTokens ?? 0,
       write: usage.cachedWriteTokens ?? 0,
+    },
+  }
+}
+
+export function runtimeUsage(usage: Usage): Extract<AgentRuntimeEvent, { type: "usage" }> {
+  return {
+    type: "usage",
+    contextSize: usage.totalTokens,
+    contextUsed: usage.totalTokens,
+    observation: {
+      kind: "cumulative",
+      tokens: {
+        input: usage.inputTokens,
+        output: usage.outputTokens,
+        reasoning: usage.thoughtTokens ?? null,
+        cache: {
+          read: usage.cachedReadTokens ?? null,
+          write: usage.cachedWriteTokens ?? null,
+        },
+      },
     },
   }
 }

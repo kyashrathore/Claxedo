@@ -640,6 +640,19 @@ function translateSdkMessage(input: {
             type: "usage",
             contextSize: message.usage.totalTokens,
             contextUsed: message.usage.totalTokens,
+            observation: {
+              kind: "cumulative",
+              providerObservationId: message.run_id,
+              tokens: {
+                input: message.usage.inputTokens,
+                output: message.usage.outputTokens,
+                reasoning: null,
+                cache: {
+                  read: message.usage.cacheReadTokens,
+                  write: message.usage.cacheWriteTokens,
+                },
+              },
+            },
           }]
 
         case "user":

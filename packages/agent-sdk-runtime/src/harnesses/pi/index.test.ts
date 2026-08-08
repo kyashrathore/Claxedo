@@ -379,9 +379,30 @@ describe("PiHarnessAdapter", () => {
     expect(events.findIndex((event) => event.type === "message.updated" && event.properties.info.role === "assistant"))
       .toBeLessThan(events.findIndex((event) => event.type === "text-delta"))
     expect(events.at(-1)).toEqual({ type: "finish", sessionId: session.id })
+    expect(events).toContainEqual({
+      type: "usage",
+      contextSize: 2,
+      contextUsed: 2,
+      observation: {
+        kind: "cumulative",
+        tokens: {
+          input: 1,
+          output: 1,
+          reasoning: null,
+          cache: { read: 0, write: 0 },
+        },
+      },
+    })
     expect(await adapter.getMessages(session.id, undefined)).toMatchObject([
       { info: { id: "user-1", role: "user" } },
-      { info: { id: "assistant-1", role: "assistant" }, parts: [{ text: "hello from codex" }] },
+      {
+        info: {
+          id: "assistant-1",
+          role: "assistant",
+          tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+        parts: [{ text: "hello from codex" }],
+      },
     ])
   })
 

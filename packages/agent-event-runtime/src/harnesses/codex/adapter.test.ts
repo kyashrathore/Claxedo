@@ -413,12 +413,25 @@ describe("codexAppServerAdapter", () => {
       method: "thread/tokenUsage/updated",
       payload: {
         tokenUsage: {
-          total: { totalTokens: 11839 },
-          last: { totalTokens: 126 },
+          total: { totalTokens: 11839, inputTokens: 10000, cachedInputTokens: 7000, outputTokens: 1200, reasoningOutputTokens: 639 },
+          last: { totalTokens: 126, inputTokens: 100, cachedInputTokens: 60, outputTokens: 20, reasoningOutputTokens: 6 },
           modelContextWindow: 258400,
         },
       },
-    }).events).toMatchObject([{ type: "usage", contextSize: 258400, contextUsed: 126 }])
+    }).events).toMatchObject([{
+      type: "usage",
+      contextSize: 258400,
+      contextUsed: 126,
+      observation: {
+        kind: "cumulative",
+        tokens: {
+          input: 40,
+          output: 14,
+          reasoning: 6,
+          cache: { read: 60, write: null },
+        },
+      },
+    }])
 
     expect(agent.ingest({
       source: "codex.app-server",

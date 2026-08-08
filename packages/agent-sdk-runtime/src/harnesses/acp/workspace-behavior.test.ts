@@ -243,6 +243,23 @@ describe("AcpHarnessAdapter", () => {
       reasoning: 5,
       cache: { read: 3, write: 2 },
     })
+    const usageIndex = out.findIndex((event) => event.type === "session.usage")
+    const completedIndex = out.findIndex((event) => event.type === "message.completed")
+    expect(usageIndex).toBeGreaterThanOrEqual(0)
+    expect(usageIndex).toBeLessThan(completedIndex)
+    expect(out[usageIndex]?.properties).toMatchObject({
+      sessionID: "s1",
+      messageID: "a1",
+      observation: {
+        kind: "cumulative",
+        tokens: {
+          input: 10,
+          output: 20,
+          reasoning: 5,
+          cache: { read: 3, write: 2 },
+        },
+      },
+    })
   })
 
   it("caches resolved MCP when config updates only auth", async () => {

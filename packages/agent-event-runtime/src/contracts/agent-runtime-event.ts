@@ -2,7 +2,7 @@ import type { AvailableCommand, ContentBlock, ToolCallContent } from "@agentclie
 import type { RuntimeDiagnostic } from "./diagnostics"
 import type { RawHarnessEvent } from "./raw-harness-event"
 
-export const AGENT_RUNTIME_EVENT_CONTRACT_VERSION = 4
+export const AGENT_RUNTIME_EVENT_CONTRACT_VERSION = 5
 
 export type RuntimeStatus = "busy" | "idle" | "error" | "recovering"
 export type RuntimeToolStatus = "pending" | "running" | "completed" | "failed"
@@ -13,6 +13,33 @@ export type SubagentToolCallRole = "spawn" | "interaction"
 export type SubagentTranscript = {
   kind: "live" | "file" | "messages" | "none"
   ref?: string
+}
+
+/**
+ * Provider-reported token categories for one turn observation.
+ *
+ * `null` means the provider did not report the category. This is deliberately
+ * different from a reported zero: metering consumers must never manufacture a
+ * measured zero for an unknown category.
+ */
+export type RuntimeTokenUsage = {
+  input: number | null
+  output: number | null
+  reasoning: number | null
+  cache: {
+    read: number | null
+    write: number | null
+  }
+}
+
+export type RuntimeUsageObservation = {
+  /** Whether this observation replaces prior turn usage or adds to it. */
+  kind: "cumulative" | "delta"
+  tokens: RuntimeTokenUsage
+  /** Provider-native ordering data when the source exposes it. */
+  sequence?: number
+  providerObservationId?: string
+  observedAt?: number
 }
 
 export type SubagentUpdatedEvent = {
@@ -126,7 +153,13 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
   | { type: "config-update"; options: Array<{ id: string; name: string; category?: string; type: "select" | "boolean"; currentValue: string | boolean; selectOptions?: Array<{ id: string; name: string }> }> }
   | { type: "session-info"; title?: string | null; updatedAt?: string | null; parentID?: string }
   | { type: "session-title"; title: string }
-  | { type: "usage"; contextSize: number; contextUsed: number; cost?: { amount: number; currency: string } }
+  | {
+      type: "usage"
+      contextSize: number
+      contextUsed: number
+      observation?: RuntimeUsageObservation
+      cost?: { amount: number; currency: string }
+    }
   | { type: "diagnostic"; diagnostic: RuntimeDiagnostic }
 )
 

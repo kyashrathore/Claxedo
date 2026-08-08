@@ -155,6 +155,9 @@ export function legacyRuntimeEventFromOpencodeCompat(
       payload: agentRuntimeEvent.usage({
         contextSize: Number.isFinite(contextSize) ? contextSize : 0,
         contextUsed: Number.isFinite(contextUsed) ? contextUsed : 0,
+        ...(record(event.properties.observation)
+          ? { observation: event.properties.observation as Extract<AgentRuntimeEvent, { type: "usage" }>["observation"] }
+          : {}),
         ...(record(event.properties.cost) ? { cost: event.properties.cost as { amount: number; currency: string } } : {}),
       }),
     }

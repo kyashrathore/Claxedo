@@ -56,6 +56,40 @@ describe("OpenCode compatibility ownership", () => {
 })
 
 describe("legacyRuntimeEventFromOpencodeCompat", () => {
+  test("preserves exact usage observations without replacing unknown categories with zero", () => {
+    expect(legacyRuntimeEventFromOpencodeCompat({
+      type: "session.usage",
+      properties: {
+        sessionID: "session-1",
+        messageID: "assistant-1",
+        contextSize: 10_000,
+        contextUsed: 20,
+        observation: {
+          kind: "cumulative",
+          tokens: {
+            input: 10,
+            output: 5,
+            reasoning: null,
+            cache: { read: 5, write: null },
+          },
+        },
+      },
+    }, new Map())?.payload).toEqual({
+      type: "usage",
+      contextSize: 10_000,
+      contextUsed: 20,
+      observation: {
+        kind: "cumulative",
+        tokens: {
+          input: 10,
+          output: 5,
+          reasoning: null,
+          cache: { read: 5, write: null },
+        },
+      },
+    })
+  })
+
   test("uses remembered part type to map SDK text-field reasoning deltas to thinking deltas", () => {
     const content = new Map<string, string>()
 

@@ -112,6 +112,7 @@ describe("ACP frozen compat output", () => {
           type: "session.usage",
           properties: {
             sessionID: "session-1",
+            messageID: "message-1",
             contextSize: 100,
             contextUsed: 25,
           },

@@ -38,6 +38,7 @@ import type { RuntimeEventHub } from "../../runtime-event-hub"
 import { firstTurnErrorData } from "../../first-turn-error"
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import type { Agent, AgentTool } from "@mariozechner/pi-agent-core"
+import type { Usage as PiUsage } from "@mariozechner/pi-ai"
 import {
   createPiAgent,
   PiModelResolutionError,
@@ -433,6 +434,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     }
     let assistantText = ""
     let assistantError: string | undefined
+    let assistantUsage: PiUsage | undefined
     const assistant = {
       id: input.assistantMessageId,
       sessionID: id,
@@ -485,6 +487,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
             const next = await turn.next()
             if (next.done) {
               assistantText = next.value.text
+              assistantUsage = next.value.usage
               if (next.value.error) throw new Error(next.value.error)
               break
             }
@@ -501,13 +504,41 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
       session.updated = Date.now()
     }
     const completed = Date.now()
-    const info = buildAssistantMessage({
+    if (assistantUsage) {
+      yield emit({
+        type: "usage",
+        contextSize: assistantUsage.totalTokens,
+        contextUsed: assistantUsage.totalTokens,
+        observation: {
+          kind: "cumulative",
+          tokens: {
+            input: assistantUsage.input,
+            output: assistantUsage.output,
+            reasoning: null,
+            cache: { read: assistantUsage.cacheRead, write: assistantUsage.cacheWrite },
+          },
+        },
+      })
+    }
+    const info = {
+      ...buildAssistantMessage({
         ...assistant,
         completed,
         ...(assistantError
           ? { error: { name: "UnknownError", data: firstTurnErrorData(assistantError) } }
           : { finish: "stop" }),
-      })
+      }),
+      ...(assistantUsage
+        ? {
+            tokens: {
+              input: assistantUsage.input,
+              output: assistantUsage.output,
+              reasoning: 0,
+              cache: { read: assistantUsage.cacheRead, write: assistantUsage.cacheWrite },
+            },
+          }
+        : {}),
+    }
     putMessage(session, {
       info,
       parts: assistantText

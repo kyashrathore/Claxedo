@@ -102,6 +102,7 @@ import {
   newSessionTimeoutMs,
   probeTimeoutMs,
   promptTimeoutMs,
+  runtimeUsage,
   sameAcpEnv,
   sameAcpMcp,
 } from "./helpers"
@@ -1306,6 +1307,11 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
           // than 10s (codex with reasoning models never survived it).
           const result = await bound("ACP prompt", proc.prompt(agentSessionId, input, forward), promptTimeoutMs())
           if (result.usage && result.usage.totalTokens > 0) {
+            router.project(runtimeUsage(result.usage), {
+              dir: "in",
+              method: "prompt.result.usage",
+              frame: { usage: result.usage },
+            })
             const event = messageUpdated({
               ...buildAssistantMessage({
                 id: assistantMsgId,

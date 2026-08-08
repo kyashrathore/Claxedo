@@ -12,6 +12,7 @@ import {
   permissionAsked,
   questionAsked,
   sessionIdle,
+  sessionUsage,
   sessionUpdated,
   todoUpdated,
 } from "./compat-events"
@@ -1285,6 +1286,65 @@ describe("RuntimeStore", () => {
     const replayed = new RuntimeStore(root)
     assert.equal((replayed.getSession("s1") as { status?: string } | null)?.status, "idle")
     assert.equal((replayed.getMessages("s1")[1]?.info.time as { completed?: number } | undefined)?.completed !== undefined, true)
+  })
+
+  it("commits exact usage before terminal lifecycle records", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    store.startTurn({
+      sessionId: "s1",
+      agentSessionId: "a1",
+      userMessageId: "u1",
+      assistantMessageId: "m1",
+      agent: "general",
+      model: { providerID: "claude-sdk", modelID: "claude-sonnet-4-6" },
+      parts: [{ type: "text", text: "hello" }],
+    })
+    store.appendEvent({
+      sessionId: "s1",
+      agentSessionId: "a1",
+      payload: sessionUsage({
+        sessionID: "s1",
+        messageID: "m1",
+        contextSize: 200_000,
+        contextUsed: 24_542,
+        observation: {
+          kind: "cumulative",
+          tokens: {
+            input: 4,
+            output: 679,
+            reasoning: null,
+            cache: { read: 21_144, write: 2_715 },
+          },
+        },
+      }),
+    })
+    store.finishTurn({
+      sessionId: "s1",
+      assistantMessageId: "m1",
+      outcome: { status: "completed", completedAt: 123 },
+    })
+
+    const rows = journal(root, "s1")
+    assert.deepEqual(rows.slice(-4).map((row) => row.type), [
+      "session.usage",
+      "message.completed",
+      "session.idle",
+      "turn.finish",
+    ])
+    assert.deepEqual(
+      ((rows.at(-4)?.payload.properties as { observation?: unknown } | undefined)?.observation),
+      {
+        kind: "cumulative",
+        tokens: {
+          input: 4,
+          output: 679,
+          reasoning: null,
+          cache: { read: 21_144, write: 2_715 },
+        },
+      },
+    )
   })
 
   it("finishTurn does not duplicate terminal events already committed by an adapter", () => {

@@ -636,7 +636,20 @@ describe("claudeSdkAdapter", () => {
         modelUsage: { "claude-opus-4-6": { contextWindow: 200000 } },
       },
     }).events).toMatchObject([
-      { type: "usage", contextSize: 200000, contextUsed: 24542 },
+      {
+        type: "usage",
+        contextSize: 200000,
+        contextUsed: 24542,
+        observation: {
+          kind: "cumulative",
+          tokens: {
+            input: 4,
+            output: 679,
+            reasoning: null,
+            cache: { read: 21144, write: 2715 },
+          },
+        },
+      },
       { type: "session-status", status: "idle" },
       { type: "finish", sessionId: "sdk-session-result" },
     ])
