@@ -13,10 +13,15 @@ const srcRoot = path.join(appRoot, "src")
  *
  * `platform/runtime/cloud/` is a ONE-module root that fourteen local files
  * imported: bootstrap, the rail, terminals, processes, review, the session
- * composer, actions and harness. `cloud-app-extraction-manifest.test.ts`
- * measured it as the single most expensive edge in the whole extraction,
- * because a module with fourteen local importers cannot be moved at all — there
- * is no "just update the import" for it.
+ * composer, actions and harness. The cloud-app extraction manifest measured it
+ * as the single most expensive edge in the whole extraction, because a module
+ * with fourteen local importers cannot be moved at all — there is no "just
+ * update the import" for it. (That manifest is gone: the extraction it sized
+ * was deferred, and the analysis lives in the Unit 10 status of
+ * `docs/plans/2026-08-07-004-refactor-local-cloud-package-split-plan.md`. The
+ * inversion below is worth keeping regardless of whether the package is ever
+ * created — it is what stopped fourteen local files reaching into a hosted
+ * runtime root.)
  *
  * It was resolved in two halves, and the split is the thing this file protects:
  *

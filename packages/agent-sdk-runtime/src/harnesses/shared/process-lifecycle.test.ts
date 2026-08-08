@@ -402,4 +402,3 @@ describe("idle reaper", () => {
     expect(harness.liveTimers()).toHaveLength(1)
   })
 })
-

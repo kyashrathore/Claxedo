@@ -203,7 +203,7 @@ function createEmbeddedSandboxRequester(
       if (directory) headers.set("x-opencode-directory", directory)
       const credential = connectionTurnCredential?.()
       if (credential) headers.set(CONNECTION_TURN_HEADER, credential)
-      return localWorkspaceRuntime().fetch(ws, 
+      return localWorkspaceRuntime().fetch(ws,
         new Request(new URL(requestPath, "http://embedded-workspace-runtime.local"), { ...init, headers }),
       )
     },

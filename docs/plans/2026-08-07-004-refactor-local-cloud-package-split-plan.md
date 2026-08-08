@@ -1121,7 +1121,7 @@ The 44/62 split is pinned by `local-entry-closure.test.ts`, so the move set cann
 
 **Verification:** `@claxedo/local-server` typechecks, builds, and passes its route/runtime integration suite using only its manifest closure; no runtime import points at `packages/claxedo-server`.
 
-- [ ] **Unit 6: Establish Electron account auth and extract Host Connector authority**
+- [x] **Unit 6: Establish Electron account auth and extract Host Connector authority** — *landed; Electron main owns the account credential and the closed named-operation IPC surface, `@claxedo/host-connector` owns publication authority*
 
 **Goal:** Make Electron main the sole desktop account-credential owner, then preserve machine-wide remote access to every canonical local workspace—including automatic inventory changes and reconnection—while confining initial account authorization to that Electron producer and all continuing publication authority to the enrolled host key.
 
@@ -1350,7 +1350,7 @@ The 44/62 split is pinned by `local-entry-closure.test.ts`, so the move set cann
 
 **Verification:** Desktop sign-in and machine enrollment use the single Electron-owned account producer; one account-authorized, host-key-proven enrollment continuously publishes the exact canonical local-workspace inventory through the configured existing Relay registration mode; signed Runtime traffic always traverses Workspace Relay; base unsigned launch has zero Host Connector process/module activity; account bearer tokens remain confined to Electron's protected account adapter and never enter renderer IPC payloads, Host Connector, local-server, environment variables, process arguments, or logs.
 
-- [ ] **Unit 7: Recompose the self-hosted single-binary on the hosted control-plane core**
+- [x] **Unit 7: Recompose the self-hosted single-binary on the hosted control-plane core** — *landed; `createSelfHostedApp` composes on the signed core and `deployments/local` is gone*
 
 **Goal:** Preserve the live self-hosted Node product by extracting the signed control-plane route core from the cloud-hosted boot wrapper and replacing the mixed `deployments/local` composition with `createSelfHostedApp` plus the new public local-execution adapter.
 
@@ -1433,7 +1433,7 @@ The 44/62 split is pinned by `local-entry-closure.test.ts`, so the move set cann
 
 **Verification:** The self-hosted single-binary boots and passes its full characterized contract through `deployments/self-hosted-node`; all existing callers have explicit new owners; the old `createApp` public surface and entry path are absent.
 
-- [ ] **Unit 8: Remove desktop-local ownership and enforce each server deployment closure**
+- [x] **Unit 8: Remove desktop-local ownership and enforce each server deployment closure** — *landed; desktop-local composition lives in `@claxedo/local-server` and each deployment entry graph is gated by `deployment-closures.test.ts`*
 
 **Goal:** Retain the shared control-plane core plus cloud Node, workerd, and self-hosted Node deployments in `@claxedo/server`, remove desktop-only composition ownership, and tighten each production entry graph to its declared adapters.
 
@@ -1484,7 +1484,7 @@ The 44/62 split is pinned by `local-entry-closure.test.ts`, so the move set cann
 
 **Verification:** `@claxedo/server` has no `deployments/local` or desktop composition entry; cloud Node/workerd closures exclude local-server, and self-hosted Node alone declares and exercises the local-execution adapter.
 
-- [ ] **Unit 9: Define the local app composition and public hosted contribution seam**
+- [x] **Unit 9: Define the local app composition and public hosted contribution seam** — *landed; `app/entry/local.tsx` and `hostedContributionPort` exist. NOTE: the local closure is not yet clean — see Unit 10's status and the three auth-client importers it names*
 
 **Goal:** Establish `@claxedo/app`'s local production entry and the smallest public contract cloud-app needs before the hosted implementation files move in Unit 10.
 
@@ -1573,7 +1573,55 @@ The 44/62 split is pinned by `local-entry-closure.test.ts`, so the move set cann
 
 **Verification:** `@claxedo/app` has an explicit local-only build entry and a bounded public composition surface while the existing default hosted build remains intact for current deployments. Unit 10 completes the physical extraction and atomically retargets default/deployment callers before any desktop consumer rewires.
 
-- [ ] **Unit 10: Create `@claxedo/cloud-app` and move hosted renderer ownership**
+- [-] **Unit 10: Create `@claxedo/cloud-app` and move hosted renderer ownership** — *DEFERRED 2026-08-09; the package does not achieve this plan's goal and is not currently required*
+
+**Status (2026-08-09):** Not started, and deliberately so. The measurement that
+settled it:
+
+**A package boundary does not produce the outcome.** The goal is that an
+unsigned desktop stops shipping the hosted control plane. That is a BUNDLE
+property, decided by the import graph from `app/entry/local.tsx`, and Vite
+tree-shakes from the entry without regard to package boundaries. The reason the
+local bundle still contains Clerk today is not that hosted code shares a
+package — it is three modules in the local closure that statically import
+`platform/auth/auth-client.ts`:
+`features/workspaces/actions/project-actions.tsx`,
+`platform/auth/auth-session.ts`, and
+`platform/runtime/agent/agent-runtime-client.ts`.
+
+None of those are files Unit 10 moves. They are shared app code that every
+product uses, so they stay in `@claxedo/app` by definition. After the split
+`@claxedo/app` would import `auth-client.ts` from `@claxedo/cloud-app` — an
+upward dependency the boundary forbids. The split therefore converts the chain
+from something the closure guard reports into something that fails to resolve;
+the remedy is identical either way, and it is a bound port, not a move. That
+work is tracked separately and is a prerequisite regardless of this unit's
+fate.
+
+**What the boundary would still buy, and why it does not pay yet.**
+Resolve-time enforcement instead of test-time — real but marginal, since
+`local-entry-closure.guard.test.ts` already reports both the shortest chain and
+every importer, a distinction that was itself a defect fix (the file claimed it
+failed on a second chain; it did not, and there were four). A publishable local
+library is the reason that WOULD justify it, because `dependencies` is the
+contract for an external consumer and `npm install` does not tree-shake — but
+`@claxedo/app` is `private: true`, unpublished, and 404s on npm. Revisit this
+unit if and when that changes.
+
+**Cost, measured before deferring.** `cloud-app-export-surface.test.ts`
+classified, by hand, all 54 `@claxedo/app` modules that the moved set would
+import: **9** belong in an existing export path (zero or one line in a barrel),
+**23** would become genuinely new permanent public contracts, and **22** should
+not be exported at all — cases where the hosted module reaches into an app
+internal and the remedy belongs on the importer's side. The companion manifest
+also measured that this section's own `Files:` list is stale and over-scopes
+the move by 71%.
+
+Both analysis tests are removed along with this deferral rather than left to
+pin a move that may never happen; the full 54-entry classification and the
+measured move-set correction remain recoverable from git history. The
+load-bearing gate is now `local-entry-closure.guard.test.ts`, which measures
+something true, currently red, and directly tied to the product outcome.
 
 **Goal:** Create the hosted browser product package, move browser identity and hosted feature implementations into it, and expose one platform-neutral hosted contribution entry shared by browser and signed desktop compositions.
 
