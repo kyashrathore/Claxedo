@@ -29,6 +29,7 @@ const PACKAGE_DIR = path.resolve(SCRIPT_DIR, "..")
 // resolves through the same module, so development and production preparation
 // cannot drift apart.
 const CLAXEDO_SERVER_DIR = localServerPackageDir(PACKAGE_DIR)
+const SERVER_CORE_DIR = path.resolve(PACKAGE_DIR, "../claxedo-server-core")
 const OPENCODE_DIR = path.resolve(PACKAGE_DIR, "../opencode")
 const WS_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../workspace-runtime")
 const require = createRequire(import.meta.url)
@@ -231,8 +232,8 @@ function electronCanLoadBetterSqlite() {
       "-e",
       [
         `const { createRequire } = require("node:module")`,
-        `const requireFromServer = createRequire(${JSON.stringify(path.join(CLAXEDO_SERVER_DIR, "package.json"))})`,
-        `const Database = requireFromServer("better-sqlite3")`,
+        `const requireFromSqliteOwner = createRequire(${JSON.stringify(path.join(SERVER_CORE_DIR, "package.json"))})`,
+        `const Database = requireFromSqliteOwner("better-sqlite3")`,
         `const db = new Database(":memory:")`,
         `db.close()`,
       ].join(";"),
