@@ -15,7 +15,13 @@ import { controlPlaneTimeoutMs, withTimeout } from "../../../authority/adapters/
 import type { LlmTurnRecord, UsageLedger } from "../../../platform/telemetry/product/metering"
 
 const usageApi = anyApi as unknown as {
-  usageMetering: { recordLlmTurn: unknown; resolveWorkGraphAttribution: unknown }
+  usageMetering: {
+    recordLlmTurn: unknown
+    resolveWorkGraphAttribution: unknown
+    ingestTurnUsageBatch: unknown
+    usageDashboard: unknown
+    usageBreakdown: unknown
+  }
   sandboxLeases: { recordTenant: unknown }
 }
 
@@ -26,6 +32,11 @@ export type ConvexUsageLedgerInput = {
 }
 
 export function createConvexUsageLedger(input: ConvexUsageLedgerInput = {}): UsageLedger {
+  const execute = () => requireExecutor(input, undefined, { allowUnsigned: true })
+  const serviceArgs = <T extends Record<string, unknown>>(args: T) => ({
+    ...args,
+    service_token: requireServiceToken(input),
+  })
   return {
     resolveWorkGraphAttribution: async (identity) => {
       const executor = requireExecutor(input, undefined, { allowUnsigned: true })
@@ -49,6 +60,61 @@ export function createConvexUsageLedger(input: ConvexUsageLedgerInput = {}): Usa
       const activated = (result as { activated?: unknown } | null)?.activated
       return { activated: activated === true }
     },
+    recordTurnUsageRevision: async ({ org_id, user_id, ...fact }) => {
+      const result = await withTimeout(
+        execute().mutation(usageApi.usageMetering.ingestTurnUsageBatch, serviceArgs({
+          org_id,
+          user_id,
+          revisions: [{
+            host_id: fact.hostId,
+            session_ref: fact.sessionRef,
+            session_id: fact.sessionId,
+            message_id: fact.messageId,
+            revision: fact.revision,
+            observed_at: fact.observedAt,
+            ...(fact.completedAt === undefined ? {} : { completed_at: fact.completedAt }),
+            settlement: fact.settlement,
+            status: fact.status,
+            location: fact.location,
+            harness: fact.harness,
+            provider_id: fact.providerId,
+            model_id: fact.modelId,
+            ...(fact.workspaceId ? { workspace_id: fact.workspaceId } : {}),
+            input_tokens: fact.tokens.input,
+            output_tokens: fact.tokens.output,
+            reasoning_tokens: fact.tokens.reasoning,
+            cache_read_tokens: fact.tokens.cache.read,
+            cache_write_tokens: fact.tokens.cache.write,
+            quality: {
+              source: fact.quality.source,
+              ...(fact.quality.observationKind ? { observation_kind: fact.quality.observationKind } : {}),
+              ...(fact.quality.providerObservationId ? { provider_observation_id: fact.quality.providerObservationId } : {}),
+              known_categories: fact.quality.knownCategories,
+            },
+          }],
+        })),
+        controlPlaneTimeoutMs("mutation"),
+      ) as { results?: Array<{ status?: unknown; current_revision?: unknown; activated?: unknown }> }
+      const item = result.results?.[0]
+      const status = item?.status
+      if (status !== "accepted" && status !== "duplicate" && status !== "stale" && status !== "conflict") {
+        throw new Error("Convex usage ingest returned an invalid acknowledgement")
+      }
+      if (!item) throw new Error("Convex usage ingest returned no acknowledgement")
+      return {
+        status,
+        ...(typeof item.current_revision === "number" ? { currentRevision: item.current_revision } : {}),
+        activated: item.activated === true,
+      }
+    },
+    usageDashboard: async (args) => await withTimeout(
+      execute().query(usageApi.usageMetering.usageDashboard, serviceArgs(args)),
+      controlPlaneTimeoutMs("read"),
+    ),
+    usageBreakdown: async (args) => await withTimeout(
+      execute().query(usageApi.usageMetering.usageBreakdown, serviceArgs(args)),
+      controlPlaneTimeoutMs("read"),
+    ),
   }
 }
 

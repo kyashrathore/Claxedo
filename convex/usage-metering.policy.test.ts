@@ -29,6 +29,10 @@ import { recordTenant } from "./sandboxLeases"
 import {
   llmUsageForSession,
   llmUsageTotals,
+  ingestTurnUsageBatch,
+  usageDashboard,
+  usageBreakdown,
+  backfillLegacyLlmUsage,
   leaseEventsForSandbox,
   pruneUsageFacts,
   recordLlmTurn,
@@ -85,6 +89,137 @@ const TURN = {
   turn_status: "ok" as const,
   latency_ms: 1_234,
 }
+
+const REVISION = {
+  host_id: "host_1",
+  session_ref: "workspace:ws_1:session:s_1",
+  session_id: "s_1",
+  message_id: "msg_1",
+  revision: 1,
+  observed_at: Date.UTC(2026, 6, 10),
+  settlement: "provisional" as const,
+  status: "running" as const,
+  location: "local" as const,
+  harness: "claude-sdk",
+  provider_id: "anthropic",
+  model_id: "claude-sonnet-5",
+  workspace_id: "ws_1",
+  input_tokens: 100,
+  output_tokens: 20,
+  reasoning_tokens: null,
+  cache_read_tokens: 7,
+  cache_write_tokens: null,
+  quality: {
+    source: "provider" as const,
+    observation_kind: "cumulative" as const,
+    known_categories: ["input", "output", "cache_read"] as const,
+  },
+}
+
+describe("revisioned turn usage ingest", () => {
+  test("accepts, deduplicates, rejects conflicts/stale writes, and replaces the daily contribution", async () => {
+    const t = convexTest(schema, modules)
+    const ingest = (revision: Record<string, unknown>) => t.mutation(api.usageMetering.ingestTurnUsageBatch, {
+      ...SERVICE,
+      org_id: "org_1",
+      user_id: "user_sub_1",
+      revisions: [revision],
+      now: Date.UTC(2026, 6, 11),
+    } as never)
+
+    await expect(ingest(REVISION)).resolves.toMatchObject({ results: [{ status: "accepted", revision: 1 }] })
+    await expect(ingest(REVISION)).resolves.toMatchObject({ results: [{ status: "duplicate", revision: 1 }] })
+    await expect(ingest({ ...REVISION, output_tokens: 99 })).resolves.toMatchObject({
+      results: [{ status: "conflict", revision: 1, current_revision: 1 }],
+    })
+    await expect(ingest({ ...REVISION, revision: 0 })).rejects.toThrow("positive integer")
+
+    const final = {
+      ...REVISION,
+      revision: 2,
+      settlement: "final" as const,
+      status: "completed" as const,
+      completed_at: Date.UTC(2026, 6, 10, 0, 1),
+      output_tokens: 40,
+    }
+    await expect(ingest(final)).resolves.toMatchObject({ results: [{ status: "accepted", revision: 2 }] })
+    await expect(ingest(REVISION)).resolves.toMatchObject({
+      results: [{ status: "stale", revision: 1, current_revision: 2 }],
+    })
+
+    const dashboard: any = await t.query(api.usageMetering.usageDashboard, {
+      ...SERVICE,
+      org_id: "org_1",
+      user_id: "user_sub_1",
+      since: Date.UTC(2026, 6, 1),
+      until: Date.UTC(2026, 6, 31),
+    } as never)
+    expect(dashboard.totals).toMatchObject({
+      turn_count: 1,
+      input_tokens: 100,
+      output_tokens: 40,
+      partial_turn_count: 0,
+      unavailable_turn_count: 0,
+    })
+    expect(dashboard.daily).toHaveLength(1)
+    const breakdown: any = await t.query(api.usageMetering.usageBreakdown, {
+      ...SERVICE,
+      org_id: "org_1",
+      user_id: "user_sub_1",
+      since: Date.UTC(2026, 6, 1),
+      until: Date.UTC(2026, 6, 31),
+      dimension: "model",
+    } as never)
+    expect(breakdown.rows).toEqual([expect.objectContaining({
+      value: "anthropic/claude-sonnet-5",
+      turn_count: 1,
+      output_tokens: 40,
+    })])
+    expect(await t.run(async (ctx) => ctx.db.query("llm_usage_revisions").collect())).toHaveLength(2)
+  })
+
+  test("scopes projections by tenant and rejects an invalid batch before writing any item", async () => {
+    const t = convexTest(schema, modules)
+    await t.mutation(api.usageMetering.ingestTurnUsageBatch, {
+      ...SERVICE,
+      org_id: "org_1",
+      user_id: "user_sub_1",
+      revisions: [REVISION],
+    } as never)
+    const foreign: any = await t.query(api.usageMetering.usageDashboard, {
+      ...SERVICE,
+      org_id: "org_2",
+      user_id: "user_sub_1",
+      since: 0,
+      until: Number.MAX_SAFE_INTEGER,
+    } as never)
+    expect(foreign.totals.turn_count).toBe(0)
+
+    await expect(t.mutation(api.usageMetering.ingestTurnUsageBatch, {
+      ...SERVICE,
+      org_id: "org_1",
+      user_id: "user_sub_1",
+      revisions: [
+        { ...REVISION, revision: 2 },
+        { ...REVISION, message_id: "msg_bad", revision: 1, input_tokens: -1 },
+      ],
+    } as never)).rejects.toThrow("non-negative")
+    const rows = await t.run(async (ctx) => ctx.db.query("llm_usage_events").collect())
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.revision).toBe(1)
+  })
+
+  test("rejects oversized batches without a partial write", async () => {
+    const t = convexTest(schema, modules)
+    await expect(t.mutation(api.usageMetering.ingestTurnUsageBatch, {
+      ...SERVICE,
+      org_id: "org_1",
+      user_id: "user_sub_1",
+      revisions: Array.from({ length: 101 }, (_, index) => ({ ...REVISION, message_id: `msg_${index}` })),
+    } as never)).rejects.toThrow("at most 100")
+    expect(await t.run(async (ctx) => ctx.db.query("llm_usage_events").collect())).toHaveLength(0)
+  })
+})
 
 // ---------------------------------------------------------------------------
 
@@ -543,6 +678,18 @@ describe("the rollup and retention crons keep the answer bounded and honest", ()
     expect(daily.active_seconds_per_user).toBe(65)
   })
 
+  test("legacy turn rows backfill once before they become retention-eligible", async () => {
+    const t = convexTest(schema, modules)
+    await t.run(async (ctx) => ctx.db.insert("llm_usage_events", { ...TURN, created_at: 1_000 } as never))
+    await expect(t.mutation(internal.usageMetering.backfillLegacyLlmUsage, { now: 2_000 } as never))
+      .resolves.toEqual({ backfilled: 1 })
+    await expect(t.mutation(internal.usageMetering.backfillLegacyLlmUsage, { now: 3_000 } as never))
+      .resolves.toEqual({ backfilled: 0 })
+    const rows = await t.run(async (ctx) => ctx.db.query("llm_usage_events").collect())
+    expect(rows[0]).toMatchObject({ revision: 1, settlement: "final", usage_rolled_up_at: 2_000 })
+    expect(await t.run(async (ctx) => ctx.db.query("llm_usage_revisions").collect())).toHaveLength(1)
+  })
+
   test("retention prunes aged facts, keeps rollups, and never drops an uncounted fact", async () => {
     const now = 400 * 24 * 60 * 60 * 1000 + 1_000_000
     const t = convexTest(schema, modules)
@@ -560,7 +707,7 @@ describe("the rollup and retention crons keep the answer bounded and honest", ()
         created_at: 1,
         updated_at: 1,
       }) as never)
-      await ctx.db.insert("llm_usage_events", { ...TURN, created_at: 1_000 } as never)
+      await ctx.db.insert("llm_usage_events", { ...TURN, created_at: 1_000, usage_rolled_up_at: 2_000 } as never)
       await ctx.db.insert("llm_usage_events", { ...TURN, created_at: now - 1_000 } as never)
     })
 
@@ -623,7 +770,7 @@ describe("the Convex function is the boundary", () => {
   })
 
   test("the cron handlers are internal: not callable by any client, so they take no token", () => {
-    for (const fn of [rollupSandboxUsageDaily, pruneUsageFacts]) {
+    for (const fn of [rollupSandboxUsageDaily, backfillLegacyLlmUsage, pruneUsageFacts]) {
       expect((fn as { isInternal?: boolean }).isInternal).toBe(true)
     }
     // The service-authed functions are NOT internal — they are called by the
@@ -647,6 +794,9 @@ describe("the Convex function is the boundary", () => {
       recordTenant,
       llmUsageForSession,
       llmUsageTotals,
+      ingestTurnUsageBatch,
+      usageDashboard,
+      usageBreakdown,
       leaseEventsForSandbox,
       sandboxUsageDaily,
     ]) {
@@ -655,7 +805,7 @@ describe("the Convex function is the boundary", () => {
     }
     // The crons are the stronger stance: internal visibility, no token needed
     // because no client can reach them at all.
-    for (const fn of [rollupSandboxUsageDaily, pruneUsageFacts]) {
+    for (const fn of [rollupSandboxUsageDaily, backfillLegacyLlmUsage, pruneUsageFacts]) {
       expect((fn as { isPublic?: boolean }).isPublic).toBeFalsy()
       expect(exported(fn)).not.toContain("service_token")
     }

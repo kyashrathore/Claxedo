@@ -21,6 +21,7 @@ import type { WorkspaceSessionAdmission } from "./hosts/workspace-runtime/sessio
 import type { UsageLedger } from "./platform/telemetry/product/metering"
 import type { ProductDeploymentMode } from "./platform/telemetry/product/product"
 import type { UsageRevisionReader, UsageRevisionWriter } from "./usage/contracts"
+import { UsageRoutes } from "./usage/routes"
 
 export { createCentralSessionRuntime } from "./session/runtime"
 export { ControlPlaneAuthError, localOnlyAuthAdapter, type ControlPlaneAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
@@ -169,6 +170,13 @@ export function createCentralControlApp(services: ControlPlaneServices, options:
     ...(options.beforeLocalSessionList ? { beforeLocalList: options.beforeLocalSessionList } : {}),
     createHybridSession: runtime.createHybridSession,
   }))
+  if (options.usageLedger) {
+    app.route("/api/control/usage", UsageRoutes({
+      ledger: options.usageLedger,
+      ...(options.authConfig ? { authConfig: options.authConfig } : {}),
+      ...(options.verifier ? { verifier: options.verifier } : {}),
+    }))
+  }
   const forwardRuntimeRequest = async (request: Request) => {
     const access = await centralRuntimeAccess(request, services, options)
     if (access instanceof Response) return access

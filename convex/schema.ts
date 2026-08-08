@@ -294,7 +294,7 @@ export default defineSchema({
   local_host_links: defineTable({
     workspace_id: v.id("workspaces"),
     owner_user_id: v.id("users"),
-    host_id: v.string(),
+    host_id: v.optional(v.string()),
     public_key: v.optional(v.string()),
     display_name: v.optional(v.string()),
     second_device_open_at: v.optional(v.number()),
@@ -325,7 +325,7 @@ export default defineSchema({
   host_enrollments: defineTable({
     enrollment_id: v.string(),
     owner_user_id: v.id("users"),
-    host_id: v.string(),
+    host_id: v.optional(v.string()),
     public_key: v.string(),
     display_name: v.optional(v.string()),
     last_seen_at: v.number(),
@@ -619,7 +619,7 @@ export default defineSchema({
     .index("by_org_date", ["org_id", "date"])
     .index("by_date", ["date"]),
 
-  /** One row per completed model turn — the raw AI-token fact. */
+  /** Latest authoritative revision per stable model turn. Legacy fields stay readable during backfill. */
   llm_usage_events: defineTable({
     org_id: v.string(),
     user_id: v.string(),
@@ -631,20 +631,152 @@ export default defineSchema({
     harness: v.string(),
     provider_id: v.string(),
     model_id: v.string(),
+    host_id: v.optional(v.string()),
+    session_ref: v.optional(v.string()),
+    revision: v.optional(v.number()),
+    payload_hash: v.optional(v.string()),
+    observed_at: v.optional(v.number()),
+    completed_at: v.optional(v.number()),
+    settlement: v.optional(v.union(
+      v.literal("provisional"), v.literal("final"), v.literal("partial"),
+      v.literal("unavailable"), v.literal("recovered"),
+    )),
+    status: v.optional(v.union(
+      v.literal("running"), v.literal("completed"), v.literal("error"), v.literal("stopped"),
+      v.literal("interrupted_by_steer"), v.literal("process_lost"),
+    )),
+    location: v.optional(v.union(
+      v.literal("local"), v.literal("central"), v.literal("cloud-workspace"), v.literal("user-hosted"),
+    )),
+    workspace_id: v.optional(v.string()),
+    quality: v.optional(v.object({
+      source: v.union(v.literal("provider"), v.literal("provider-message"), v.literal("lifecycle"), v.literal("legacy")),
+      observation_kind: v.optional(v.union(v.literal("cumulative"), v.literal("delta"))),
+      provider_observation_id: v.optional(v.string()),
+      known_categories: v.array(v.union(
+        v.literal("input"), v.literal("output"), v.literal("reasoning"),
+        v.literal("cache_read"), v.literal("cache_write"),
+      )),
+    })),
+    input_tokens: v.union(v.number(), v.null()),
+    output_tokens: v.union(v.number(), v.null()),
+    reasoning_tokens: v.union(v.number(), v.null()),
+    cache_read_tokens: v.union(v.number(), v.null()),
+    cache_write_tokens: v.union(v.number(), v.null()),
+    turn_status: v.optional(v.union(v.literal("ok"), v.literal("error"))),
+    latency_ms: v.optional(v.number()),
+    usage_rolled_up_at: v.optional(v.number()),
+    created_at: v.number(),
+    updated_at: v.optional(v.number()),
+  })
+    .index("by_session_id", ["session_id"])
+    .index("by_org_message", ["org_id", "message_id"])
+    .index("by_org_session_ref_message", ["org_id", "session_ref", "message_id"])
+    .index("by_org_user", ["org_id", "user_id"])
+    .index("by_org_observed", ["org_id", "observed_at"])
+    .index("by_org_user_observed", ["org_id", "user_id", "observed_at"])
+    .index("by_org_stream_created", ["org_id", "stream_id", "created_at", "message_id"])
+    .index("by_usage_rolled_up_at", ["usage_rolled_up_at"])
+    .index("by_created_at", ["created_at"]),
+
+  /** Immutable accepted revisions for repair/audit; dashboard totals never sum this table. */
+  llm_usage_revisions: defineTable({
+    org_id: v.string(),
+    user_id: v.string(),
+    host_id: v.optional(v.string()),
+    session_ref: v.string(),
+    session_id: v.string(),
+    message_id: v.string(),
+    stream_id: v.optional(v.string()),
+    run_id: v.optional(v.string()),
+    work_item_id: v.optional(v.string()),
+    revision: v.number(),
+    payload_hash: v.string(),
+    observed_at: v.number(),
+    completed_at: v.optional(v.number()),
+    settlement: v.union(
+      v.literal("provisional"), v.literal("final"), v.literal("partial"),
+      v.literal("unavailable"), v.literal("recovered"),
+    ),
+    status: v.union(
+      v.literal("running"), v.literal("completed"), v.literal("error"), v.literal("stopped"),
+      v.literal("interrupted_by_steer"), v.literal("process_lost"),
+    ),
+    location: v.union(
+      v.literal("local"), v.literal("central"), v.literal("cloud-workspace"), v.literal("user-hosted"),
+    ),
+    harness: v.string(),
+    provider_id: v.string(),
+    model_id: v.string(),
+    workspace_id: v.optional(v.string()),
+    input_tokens: v.union(v.number(), v.null()),
+    output_tokens: v.union(v.number(), v.null()),
+    reasoning_tokens: v.union(v.number(), v.null()),
+    cache_read_tokens: v.union(v.number(), v.null()),
+    cache_write_tokens: v.union(v.number(), v.null()),
+    quality: v.object({
+      source: v.union(v.literal("provider"), v.literal("provider-message"), v.literal("lifecycle"), v.literal("legacy")),
+      observation_kind: v.optional(v.union(v.literal("cumulative"), v.literal("delta"))),
+      provider_observation_id: v.optional(v.string()),
+      known_categories: v.array(v.union(
+        v.literal("input"), v.literal("output"), v.literal("reasoning"),
+        v.literal("cache_read"), v.literal("cache_write"),
+      )),
+    }),
+    created_at: v.number(),
+  })
+    .index("by_turn_revision", ["org_id", "session_ref", "message_id", "revision"])
+    .index("by_created_at", ["created_at"]),
+
+  /** Transactionally maintained bounded headline/daily projection. */
+  llm_usage_daily: defineTable({
+    org_id: v.string(),
+    user_id: v.string(),
+    date: v.string(),
+    turn_count: v.number(),
     input_tokens: v.number(),
     output_tokens: v.number(),
     reasoning_tokens: v.number(),
     cache_read_tokens: v.number(),
     cache_write_tokens: v.number(),
-    turn_status: v.union(v.literal("ok"), v.literal("error")),
-    latency_ms: v.number(),
+    input_known_count: v.number(),
+    output_known_count: v.number(),
+    reasoning_known_count: v.number(),
+    cache_read_known_count: v.number(),
+    cache_write_known_count: v.number(),
+    partial_turn_count: v.number(),
+    unavailable_turn_count: v.number(),
+    error_turn_count: v.number(),
     created_at: v.number(),
+    updated_at: v.number(),
   })
-    .index("by_session_id", ["session_id"])
-    .index("by_org_message", ["org_id", "message_id"])
-    .index("by_org_user", ["org_id", "user_id"])
-    .index("by_org_stream_created", ["org_id", "stream_id", "created_at", "message_id"])
-    .index("by_created_at", ["created_at"]),
+    .index("by_bucket", ["org_id", "user_id", "date"])
+    .index("by_org_date", ["org_id", "date"])
+    .index("by_org_user_date", ["org_id", "user_id", "date"]),
+
+  /** Transactionally maintained daily dimensions for bounded group queries. */
+  llm_usage_breakdown_daily: defineTable({
+    org_id: v.string(),
+    user_id: v.string(),
+    date: v.string(),
+    dimension: v.union(
+      v.literal("harness"), v.literal("model"), v.literal("location"),
+      v.literal("session"), v.literal("workspace"),
+    ),
+    value: v.string(),
+    turn_count: v.number(),
+    input_tokens: v.number(),
+    output_tokens: v.number(),
+    reasoning_tokens: v.number(),
+    cache_read_tokens: v.number(),
+    cache_write_tokens: v.number(),
+    known_token_count: v.number(),
+    unknown_token_count: v.number(),
+    created_at: v.number(),
+    updated_at: v.number(),
+  })
+    .index("by_bucket", ["org_id", "user_id", "date", "dimension", "value"])
+    .index("by_org_user_dimension_date", ["org_id", "user_id", "dimension", "date"]),
 
   agent_extension_installs: defineTable({
     workspace_id: v.id("workspaces"),

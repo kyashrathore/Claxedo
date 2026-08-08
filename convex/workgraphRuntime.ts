@@ -208,7 +208,22 @@ async function foldAndGateStreamBudget(
 }
 
 function convexUsageTokens(row: Pick<Doc<"llm_usage_events">, "input_tokens" | "output_tokens" | "reasoning_tokens" | "cache_read_tokens" | "cache_write_tokens">) {
-  return row.input_tokens + row.output_tokens + row.reasoning_tokens + row.cache_read_tokens + row.cache_write_tokens
+  return (row.input_tokens ?? 0) + (row.output_tokens ?? 0) + (row.reasoning_tokens ?? 0)
+    + (row.cache_read_tokens ?? 0) + (row.cache_write_tokens ?? 0)
+}
+
+function convexUsageCost(row: Pick<Doc<"llm_usage_events">, "provider_id" | "model_id" | "input_tokens" | "output_tokens" | "reasoning_tokens" | "cache_read_tokens" | "cache_write_tokens">) {
+  if (row.input_tokens === null || row.output_tokens === null || row.reasoning_tokens === null
+    || row.cache_read_tokens === null || row.cache_write_tokens === null) return undefined
+  return modelUsageCostUsd({
+    providerId: row.provider_id,
+    modelId: row.model_id,
+    inputTokens: row.input_tokens,
+    outputTokens: row.output_tokens,
+    reasoningTokens: row.reasoning_tokens,
+    cacheReadTokens: row.cache_read_tokens,
+    cacheWriteTokens: row.cache_write_tokens,
+  })
 }
 
 function convexUsageSpend(
@@ -216,15 +231,7 @@ function convexUsageSpend(
   initial: { total_tokens: number; total_usd?: number; as_of: number },
 ) {
   return rows.reduce((current, row) => {
-    const cost = modelUsageCostUsd({
-      providerId: row.provider_id,
-      modelId: row.model_id,
-      inputTokens: row.input_tokens,
-      outputTokens: row.output_tokens,
-      reasoningTokens: row.reasoning_tokens,
-      cacheReadTokens: row.cache_read_tokens,
-      cacheWriteTokens: row.cache_write_tokens,
-    })
+    const cost = convexUsageCost(row)
     return {
       total_tokens: current.total_tokens + convexUsageTokens(row),
       ...(current.total_usd !== undefined || cost !== undefined
@@ -245,15 +252,7 @@ function convexUsageByProfile(
     rows.reduce((totals, row) => {
       const profile = convexUsageProfile(agents, row.run_id ? profileByRun.get(row.run_id) : undefined)
       const current = totals.get(profile) ?? { profile, total_tokens: 0 }
-      const cost = modelUsageCostUsd({
-        providerId: row.provider_id,
-        modelId: row.model_id,
-        inputTokens: row.input_tokens,
-        outputTokens: row.output_tokens,
-        reasoningTokens: row.reasoning_tokens,
-        cacheReadTokens: row.cache_read_tokens,
-        cacheWriteTokens: row.cache_write_tokens,
-      })
+      const cost = convexUsageCost(row)
       totals.set(profile, {
         profile,
         total_tokens: current.total_tokens + convexUsageTokens(row),

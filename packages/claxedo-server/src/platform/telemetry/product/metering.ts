@@ -24,6 +24,7 @@
  */
 
 import { captureProduct, type ProductCaptureSink, type ProductIdentity } from "./product"
+import type { TurnUsageRevision } from "../../../usage/contracts"
 
 export const SANDBOX_LEASE_OPENED = "sandbox.lease_opened"
 export const SANDBOX_LEASE_CLOSED = "sandbox.lease_closed"
@@ -98,6 +99,28 @@ export type UsageLedger = {
   recordLlmTurn: (
     input: LlmTurnRecord & { org_id: string; user_id: string },
   ) => Promise<{ activated: boolean }>
+  recordTurnUsageRevision?: (
+    input: TurnUsageRevision & { org_id: string; user_id: string },
+  ) => Promise<{
+    status: "accepted" | "duplicate" | "stale" | "conflict"
+    currentRevision?: number
+    activated: boolean
+  }>
+  usageDashboard?: (input: {
+    org_id: string
+    user_id: string
+    since: number
+    until: number
+  }) => Promise<unknown>
+  usageBreakdown?: (input: {
+    org_id: string
+    user_id: string
+    since: number
+    until: number
+    dimension: "harness" | "model" | "location" | "session" | "workspace"
+    after?: string
+    limit?: number
+  }) => Promise<unknown>
 }
 
 /** Raw ops-plane sink, for the emission points that hold no signed tenant. */
@@ -286,12 +309,13 @@ export async function emitLlmTurnCompleted(input: {
   identity: ProductIdentity | undefined
   sink: ProductCaptureSink | undefined
   ledger: UsageLedger | undefined
+  ledgerResult?: { activated: boolean; ledger_write: "ok" | "failed" }
   record: LlmTurnRecord
 }) {
   const identity = input.identity
-  let activated = false
-  let ledgerWrite: "ok" | "failed" | "skipped" = "skipped"
-  if (identity && input.ledger) {
+  let activated = input.ledgerResult?.activated ?? false
+  let ledgerWrite: "ok" | "failed" | "skipped" = input.ledgerResult?.ledger_write ?? "skipped"
+  if (!input.ledgerResult && identity && input.ledger) {
     try {
       const result = await input.ledger.recordLlmTurn({
         ...input.record,

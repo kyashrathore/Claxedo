@@ -434,10 +434,27 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       })
       : undefined
     const count = (value: number | null) => value ?? 0
+    let ledgerResult: { activated: boolean; ledger_write: "ok" | "failed" } | undefined
+    if (identity && options.usageLedger?.recordTurnUsageRevision) {
+      try {
+        const acknowledgement = await options.usageLedger.recordTurnUsageRevision({
+          ...fact,
+          org_id: identity.org_id,
+          user_id: identity.user_id,
+        })
+        ledgerResult = {
+          activated: acknowledgement.activated,
+          ledger_write: acknowledgement.status === "conflict" ? "failed" : "ok",
+        }
+      } catch {
+        ledgerResult = { activated: false, ledger_write: "failed" }
+      }
+    }
     await emitLlmTurnCompleted({
       identity,
       sink: services.telemetry,
-      ledger: options.usageLedger,
+      ledger: ledgerResult ? undefined : options.usageLedger,
+      ...(ledgerResult ? { ledgerResult } : {}),
       record: {
         message_id: fact.messageId,
         session_id: fact.sessionId,

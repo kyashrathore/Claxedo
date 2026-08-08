@@ -260,7 +260,17 @@ async function meterWorkGraphTranscriptTurns(
     const created = typeof time?.created === "number" ? time.created : completed
     const tokens = rec(info.tokens)
     const cache = rec(tokens?.cache)
-    const positive = (value: unknown) => (typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0)
+    const known = (value: unknown) => (
+      typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null
+    )
+    const providerId = txt(info.providerID)
+    const modelId = txt(info.modelID)
+    const workspaceId = txt(input.workspace.workspace_id)
+    if (!providerId || !modelId || !workspaceId) continue
+    const access = txt(input.workspace.access)
+    const location = access === "user-hosted" ? "user-hosted" as const
+      : access === "local" ? "local" as const
+      : "cloud-workspace" as const
     await recordLlmTurnFact(
       ctx,
       {
@@ -268,15 +278,18 @@ async function meterWorkGraphTranscriptTurns(
         user_id: meteringUserId,
         message_id: messageId,
         session_id: input.session_id,
+        session_ref: `workspace:${workspaceId}:session:${input.session_id}`,
+        workspace_id: workspaceId,
+        location,
         ...attribution,
         harness: "workgraph",
-        provider_id: txt(info.providerID) ?? "unknown",
-        model_id: txt(info.modelID) ?? "unknown",
-        input_tokens: positive(tokens?.input),
-        output_tokens: positive(tokens?.output),
-        reasoning_tokens: positive(tokens?.reasoning),
-        cache_read_tokens: positive(cache?.read),
-        cache_write_tokens: positive(cache?.write),
+        provider_id: providerId,
+        model_id: modelId,
+        input_tokens: known(tokens?.input),
+        output_tokens: known(tokens?.output),
+        reasoning_tokens: known(tokens?.reasoning),
+        cache_read_tokens: known(cache?.read),
+        cache_write_tokens: known(cache?.write),
         turn_status: info.error ? "error" : "ok",
         latency_ms: Math.max(0, completed - created),
       },
