@@ -129,6 +129,10 @@ jobs:
         working-directory: packages/claxedo-app/perf-harness
         env:
           CLAXEDO_PERF_APP_SCRIPT: serve
+          # Absolute 60 Hz renderer-task limits remain strict. This headroom
+          # applies only to the paired diagnostics-overhead delta, whose two
+          # sequential samples are noisy on shared runners.
+          CLAXEDO_PERF_HEADROOM: "1.0"
         run: bun run run:all
 
       - name: Run real-child diagnostics overhead smoke
