@@ -17,6 +17,29 @@ const LOCAL_ENTRY = path.join(ROOT, "src/deployments/local/main.ts")
 const CURRENT_MODULE_CEILING = 254
 const CURRENT_PACKAGE_CEILING = 41
 
+/**
+ * The producers a local-only composition mounts: one per `local-server`-owned
+ * route family in Unit 1's table, plus the embedded runtime and PTY proxy those
+ * families dispatch through. This is the set `@claxedo/local-server` is composed
+ * over, so it — not the mixed `deployments/local/server.ts` — is what decides
+ * the package's closure.
+ */
+const LOCAL_PRODUCERS = [
+  "src/deployments/local/embedded-workspace-runtime.ts",
+  "src/deployments/local/server-workspace-pty-proxy.ts",
+  "src/deployments/local/server-usage-limits.ts",
+  "src/deployments/local/port.ts",
+  "src/workspace/runtime-dispatch/internals.ts",
+  "src/workspace/runtime-dispatch/middleware.ts",
+  "src/agent-config/routes/index.ts",
+  "src/credentials/routes/credential.ts",
+  "src/credentials/routes/provider-auth.ts",
+  "src/session/routes/meta-routes.ts",
+  "src/deployments/shared-routes/bootstrap.ts",
+  "src/sandbox/network/network-policy-routes.ts",
+  "src/opencode/compat-routes/index.ts",
+]
+
 function localClosure(options: { runtimeOnly?: boolean } = {}) {
   const closure = sourceClosure({ entry: LOCAL_ENTRY, root: ROOT, ...options })
   return {
@@ -112,21 +135,6 @@ describe("desktop-local entry closure", () => {
     // Measured 2026-08-08: 177 -> 106 modules and 43 -> 4 hosted modules
     // reached, and the four are `sandbox/network/*`, which IS the local-owned
     // `network-policy` route family from Unit 1's table.
-    const LOCAL_PRODUCERS = [
-      "src/deployments/local/embedded-workspace-runtime.ts",
-      "src/deployments/local/server-workspace-pty-proxy.ts",
-      "src/deployments/local/server-usage-limits.ts",
-      "src/deployments/local/port.ts",
-      "src/workspace/runtime-dispatch/internals.ts",
-      "src/workspace/runtime-dispatch/middleware.ts",
-      "src/agent-config/routes/index.ts",
-      "src/credentials/routes/credential.ts",
-      "src/credentials/routes/provider-auth.ts",
-      "src/session/routes/meta-routes.ts",
-      "src/deployments/shared-routes/bootstrap.ts",
-      "src/sandbox/network/network-policy-routes.ts",
-      "src/opencode/compat-routes/index.ts",
-    ]
     const reached = new Set<string>()
     for (const producer of LOCAL_PRODUCERS) {
       for (const module of sourceClosure({
@@ -140,6 +148,52 @@ describe("desktop-local entry closure", () => {
 
     expect(reached.size).toBeLessThanOrEqual(110)
     expect([...reached].filter((module) => /^src\/(connections|channels|documents|authority\/adapters\/convex|sandbox\/stores|sandbox\/routes|hosts\/workgraph)\//.test(module)))
+      .toEqual([])
+  })
+
+  it("splits the local producer set into what can move and what is genuinely shared", () => {
+    // The number that decides Unit 5's package structure. `@claxedo/local-server`
+    // may not depend on `@claxedo/server`, so every module it needs has to
+    // either move with it or already live below it.
+    //
+    // Measured 2026-08-08: of the 106 modules a local composition reaches, 44
+    // are local-only and 62 are ALSO reachable from the hosted entries. The 62
+    // are the shared core — platform logging/paths/http/db, auth primitives,
+    // the credential engine, session metadata — and duplicating them would put
+    // two implementations of each responsibility in the repository. They have
+    // to move down into a package both products depend on BEFORE local-server
+    // can be created.
+    const HOSTED_ENTRIES = [
+      "src/deployments/hosted-node/index.ts",
+      "src/deployments/hosted-workerd/worker.ts",
+    ]
+    const union = (entries: string[]) => {
+      const set = new Set<string>()
+      for (const entry of entries) {
+        for (const module of sourceClosure({
+          entry: path.join(ROOT, entry),
+          root: ROOT,
+          runtimeOnly: true,
+        }).modules) {
+          if (!module.relative.includes(".test.")) set.add(module.relative)
+        }
+      }
+      return set
+    }
+    const local = union(LOCAL_PRODUCERS)
+    const hosted = union(HOSTED_ENTRIES)
+    const localOnly = [...local].filter((module) => !hosted.has(module))
+    const shared = [...local].filter((module) => hosted.has(module))
+
+    expect(localOnly.length).toBeGreaterThanOrEqual(40)
+    expect(shared.length).toBeGreaterThan(0)
+    // Every module a local composition reaches is one or the other; a module
+    // that fell out of both would be a hole in the walk.
+    expect(localOnly.length + shared.length).toBe(local.size)
+
+    // The shared set is a SHARED CORE, not stray hosted surface: nothing in it
+    // is a hosted capability implementation.
+    expect(shared.filter((module) => /^src\/(connections|channels|documents|authority\/adapters\/convex|sandbox\/stores|sandbox\/routes|hosts\/workgraph)\//.test(module)))
       .toEqual([])
   })
 

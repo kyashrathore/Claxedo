@@ -952,7 +952,15 @@ The four remaining are `sandbox/network/*`, which IS the `network-policy` route 
 
 One edge is deliberately left: `src/workspace/routes/index.ts` mounts `connections/routes/connection-routes.ts` and `sandbox/routes/sandbox-driver-routes.ts` beside the local workspace routes. That is a route-composition barrel, not a producer — the local composition mounts its own families, so it resolves by construction and is excluded from the pinned union.
 
-**Not done:** `packages/claxedo-local-server` does not exist. Creating the package, moving the producers into it, and retargeting the desktop server child, predev, prebuild, and boot smoke remain the body of this unit. Nothing further blocks that work; it is now a move rather than an untangling.
+**A structural fact this plan did not account for, measured 2026-08-08.** Of the 106 modules a local composition reaches, **44 are local-only and 62 are also reachable from the hosted entries** (`deployments/hosted-node/index.ts`, `deployments/hosted-workerd/worker.ts`). The 62 are a shared core — `platform/runtime/lib/{log,paths,bus,lazy,strings}`, `platform/http/*`, `platform/db/{db,repair}`, `platform/auth/*`, the whole credential engine and its backends, `session/meta/*`, `session/harness/*`, `agent-config/index.ts`, `workspace/store` — and none of them is a hosted capability implementation, which the pinned test asserts separately.
+
+This changes the unit's shape. The dependency table forbids `@claxedo/local-server` from depending on `@claxedo/server`, and this plan's Unit 5 file list implies local-server writes its own `config/profile.ts`, `credentials/service.ts`, and `http/security.ts`. At 62 modules that is not a few new files: it would put two implementations of logging, paths, HTTP error shape, database access, credential storage, and session metadata in the repository — the exact duplication this codebase's engineering rules forbid.
+
+**The resolution is ordering, not duplication: the shared core moves DOWN before local-server is created.** A package both products depend on takes the 62; `@claxedo/local-server` then takes the 44 and depends on it. `@claxedo/server` keeps its hosted capabilities and depends on the same core. That inserts one prerequisite unit ahead of Unit 5 and leaves every later unit's contract unchanged, because no product package gains a dependency on another product package.
+
+The alternative — `@claxedo/server` depending on `@claxedo/local-server` for the shared 62 — is rejected: it inverts the table, and it would put local composition in the workerd closure, which `worker.import-graph.test.ts` already forbids by name.
+
+**Not done:** neither `packages/claxedo-local-server` nor the shared-core package exists. The 44/62 split is pinned by `local-entry-closure.test.ts`, so the move set is known and cannot drift; the work is the two package extractions in that order, then retargeting the desktop server child, predev, prebuild, and boot smoke.
 
 **Goal:** Create `@claxedo/local-server` and move the Unit 4 local composition, local services, and embedded Workspace Runtime wiring into its independent source and manifest closure.
 
