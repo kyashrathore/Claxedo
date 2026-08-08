@@ -2,6 +2,7 @@
 
 import { createSignal, type Accessor } from "solid-js"
 import type { AccountPort, AccountState, HostedOperationName } from "./account-port"
+import { decodeHostedResult } from "./hosted-operations"
 
 /**
  * The desktop's `AccountPort`: every answer comes from Electron main.
@@ -61,7 +62,11 @@ export function electronAccountPort(bridge: AccountBridge): AccountPort & { refr
     refresh,
     signIn: () => adopt(bridge.signIn()),
     signOut: () => adopt(bridge.signOut()),
-    run: (operation, input) => bridge.run(operation, input) as never,
+    // Decoded at the boundary. Main returns whatever the server sent; a shape
+    // that changed should fail HERE, naming the operation, rather than three
+    // components later as `undefined is not an object`.
+    run: (async <T,>(operation: HostedOperationName, input?: Record<string, unknown>) =>
+      decodeHostedResult<T>(operation, await bridge.run(operation, input))) as AccountPort["run"],
   }
 }
 

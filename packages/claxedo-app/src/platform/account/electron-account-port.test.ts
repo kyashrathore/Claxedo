@@ -30,7 +30,10 @@ function bridge(overrides: Partial<AccountBridge> = {}) {
     },
     run: async (operation, input) => {
       calls.push({ method: "run", args: [operation, input] })
-      return { ran: operation }
+      // A shape the registry's decoder accepts for this operation. Returning
+      // something arbitrary would make the port's decode step fail here, which
+      // is the decode step working.
+      return operation === "workspace.checkpoints.list" ? [{ ran: operation }] : { ran: operation }
     },
     ...overrides,
   }

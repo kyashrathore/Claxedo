@@ -57,6 +57,12 @@ export type AccountState =
 /**
  * The operations the renderer may ask for, by name.
  *
+ * Declared HERE and not in `hosted-operations.ts`, even though that module owns
+ * each operation's decoder: this file is the port's contract and must stay
+ * import-free, so it can be read on its own and so the import graph can see it
+ * as the pure type contract it is. The registry imports this union and is
+ * checked against it.
+ *
  * A string union rather than a free-form key: an implementation that must
  * satisfy every member cannot quietly gain a passthrough, and a caller naming
  * something absent fails to compile rather than at runtime.
