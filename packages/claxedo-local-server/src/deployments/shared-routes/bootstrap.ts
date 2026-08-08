@@ -204,6 +204,21 @@ async function localBootstrapBody(harnessOverride: string | undefined, options: 
   }
 }
 
+async function localShellBootstrapBody(options: Options) {
+  return {
+    healthy: true,
+    version: version(options),
+    engine_mode: opencodeEngineMode(),
+    path: bootPath(),
+    project: await listProjects(),
+  }
+}
+
+function localBootstrap(url: string, harnessOverride: string | undefined, options: Options) {
+  if (new URL(url).searchParams.get("scope") === "shell") return localShellBootstrapBody(options)
+  return localBootstrapBody(harnessOverride, options)
+}
+
 function signedBootstrapProjects(workspaces: unknown[]) {
   const groups = new Map<string, {
     id: string
@@ -286,7 +301,7 @@ export function BootstrapRoutes(options: Options = {}) {
         const token = bearerToken(c.req.header("authorization") ?? null)
         const authConfig = options.authConfig ?? controlPlaneAuthConfig()
         if (token && isLoopbackLocalRequest(c.req.raw)) {
-          return c.json(await localBootstrapBody(queryHarnessId(c.req.url), options))
+          return c.json(await localBootstrap(c.req.url, queryHarnessId(c.req.url), options))
         }
         if (token) {
           try {
@@ -306,7 +321,7 @@ export function BootstrapRoutes(options: Options = {}) {
             throw err
           }
         }
-        return c.json(await localBootstrapBody(queryHarnessId(c.req.url), options))
+        return c.json(await localBootstrap(c.req.url, queryHarnessId(c.req.url), options))
       } catch (err) {
         return c.json({
           error: err instanceof Error ? err.message : String(err),
