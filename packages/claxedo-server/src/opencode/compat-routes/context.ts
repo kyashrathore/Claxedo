@@ -3,9 +3,9 @@ import os from "os"
 import path from "path"
 import { HTTPException } from "hono/http-exception"
 import { normalizeHarnessIdentity, type SessionHarness } from "@claxedo/agent-sdk-runtime"
-import { defaultHarness } from "../../agent-config"
+import { defaultHarness } from "@claxedo/server-core/agent-config/index"
 import { dataDir, stateDir } from "@claxedo/server-core/platform/runtime/lib/paths"
-import { normalize } from "../../session/harness"
+import { normalize } from "@claxedo/server-core/session/harness/index"
 import { contains } from "./git"
 
 export type OpenCodeCompatRequestContext = {

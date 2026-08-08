@@ -90,7 +90,7 @@ function resetWorkspaceStoreMocks() {
   )
 }
 
-vi.mock("../../agent-config", () => ({
+vi.mock("@claxedo/server-core/agent-config/index", () => ({
   loadUserConfig: mocks.loadUserConfig,
   sandboxDriverConfig: vi.fn((config?: { sandbox_driver?: unknown }) => config?.sandbox_driver ?? {}),
   saveUserConfig: mocks.saveUserConfig,

@@ -1,4 +1,4 @@
-import { workspaceAgentExtensionRecords } from "../hosts/agent-extensions/workspace"
+import { workspaceAgentExtensionRecords } from "@claxedo/server-core/hosts/agent-extensions/workspace"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
@@ -98,7 +98,7 @@ export async function syncWorkspaceAgentExtensionsForSignedUser(
       ? authority.listAgentExtensionPolicyOverrides(auth, { workspaceId })
       : [],
   ])
-  const overrides = policyOverrides as import("../hosts/agent-extensions/runtime-config").AgentExtensionPolicyOverride[]
+  const overrides = policyOverrides as import("@claxedo/server-core/hosts/agent-extensions/runtime-config").AgentExtensionPolicyOverride[]
   const records = workspaceAgentExtensionRecords(installs)
   // Held in variables so the bundler cannot follow them: these pull in the
   // Node-only supervisor and embedded runtime, which must not land in a Worker

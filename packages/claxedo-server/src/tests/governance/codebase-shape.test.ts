@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
-import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "../../platform/runtime/profile"
+import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
 import { architectureOwnershipEntries, OwnershipStatus } from "./architecture-ownership"
 import { routeOwnership, RouteHandler } from "../../platform/governance/route-ownership"
 import { importPattern, walk } from "../../test-support/guards"

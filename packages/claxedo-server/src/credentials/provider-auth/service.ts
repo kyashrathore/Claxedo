@@ -1,7 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises"
 import type { ControlPlaneCredentials } from "../../authority/services"
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
-import { OPENAI_CLIENT_ID, OPENAI_ISSUER } from "./openai-oauth"
+import { OPENAI_CLIENT_ID, OPENAI_ISSUER } from "@claxedo/server-core/credentials/provider-auth/openai-oauth"
 
 const OPENAI_DEVICE_URL = `${OPENAI_ISSUER}/codex/device`
 const OPENAI_DEVICE_REDIRECT_URI = `${OPENAI_ISSUER}/deviceauth/callback`

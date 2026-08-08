@@ -3,7 +3,7 @@ import {
   defaultHarness,
   getEffectiveConfig,
   loadUserConfig,
-} from "../../agent-config"
+} from "@claxedo/server-core/agent-config/index"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { agentConfigCommandRoutes } from "./command-routes"
 import { agentConfigExtensionRoutes } from "./extension-routes"

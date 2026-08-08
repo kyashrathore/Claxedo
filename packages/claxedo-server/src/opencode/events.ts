@@ -8,7 +8,7 @@
  */
 
 import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
-import { OPENCODE_INTERNAL_BASE } from "./engine"
+import { OPENCODE_INTERNAL_BASE } from "@claxedo/server-core/opencode/engine"
 
 export type OpencodeEvent = {
   directory?: string

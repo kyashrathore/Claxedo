@@ -3,7 +3,7 @@ import {
   configureWorkspaceSupervisorPort,
   workspaceSupervisor,
   workspaceSupervisorInstalled,
-} from "./supervisor-port"
+} from "@claxedo/server-core/workspace/supervisor-port"
 
 afterEach(() => {
   configureWorkspaceSupervisorPort(undefined)
@@ -48,7 +48,7 @@ describe("workspace supervisor port", () => {
     const supervisor = await import("./supervisor")
     supervisor.configureWorkspaceSupervisor({ server_url: "http://127.0.0.1:3001" })
 
-    const port = await import("./supervisor-port")
+    const port = await import("@claxedo/server-core/workspace/supervisor-port")
     expect(port.workspaceSupervisorInstalled()).toBe(true)
   })
 })

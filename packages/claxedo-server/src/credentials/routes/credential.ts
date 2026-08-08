@@ -13,8 +13,8 @@ import {
 } from "../../authority/services"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
-import { CredentialVerificationError, verifyCredential } from "../operations/verify"
-import { CredentialDiscoveryError } from "../operations/discovery"
+import { CredentialVerificationError, verifyCredential } from "@claxedo/server-core/credentials/operations/verify"
+import { CredentialDiscoveryError } from "@claxedo/server-core/credentials/operations/discovery"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,

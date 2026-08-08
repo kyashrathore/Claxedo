@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
-import type { SessionWriteMode } from "../../platform/runtime/profile"
+import type { SessionWriteMode } from "@claxedo/server-core/platform/runtime/profile"
 import {
   claimChannelDelivery,
   createHostedControlPlaneServices,

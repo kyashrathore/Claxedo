@@ -9,7 +9,7 @@ import { AgentExtensionConflictError, installCachedAgentExtension } from "../../
 import {
   mirrorWorkspaceAgentExtensionRecord,
   readMirroredWorkspaceAgentExtensions,
-} from "../../hosts/agent-extensions/workspace"
+} from "@claxedo/server-core/hosts/agent-extensions/workspace"
 import { AgentExtensionMaterializationError } from "@claxedo/agent-extensions"
 
 const root = `${process.env.TMPDIR ?? "/tmp"}/agent-config-extensions-route-${Date.now()}-${Math.random().toString(16).slice(2)}`

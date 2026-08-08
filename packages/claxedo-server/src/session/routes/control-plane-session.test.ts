@@ -11,7 +11,7 @@ vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   resolveWorkspace: mocks.resolveWorkspace,
 }))
 
-vi.mock("../harness/resolution", () => ({
+vi.mock("@claxedo/server-core/session/harness/resolution", () => ({
   resolveHarnessHostForRequest: mocks.resolveHarnessHostForRequest,
 }))
 

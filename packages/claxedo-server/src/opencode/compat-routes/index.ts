@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 import path from "path"
-import { defaultHarness, listCommands, loadUserConfig, saveUserConfig } from "../../agent-config"
+import { defaultHarness, listCommands, loadUserConfig, saveUserConfig } from "@claxedo/server-core/agent-config/index"
 import { putCredential, deleteCredentialsByProvider } from "@claxedo/server-core/credentials/registry"
 import { fanOutConfig } from "../../agent-config/fanout"
 import { syncOpencodeMcpConfig } from "../../opencode/mcp-sync"

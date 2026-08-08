@@ -197,7 +197,7 @@ process.env.POSTHOG_KEY = ""
 const [serverMod, store, agent] = await Promise.all([
   import("../../deployments/local/server"),
   import("@claxedo/server-core/workspace/store/index"),
-  import("../../agent-config"),
+  import("@claxedo/server-core/agent-config/index"),
 ])
 
 async function repo(label: string) {

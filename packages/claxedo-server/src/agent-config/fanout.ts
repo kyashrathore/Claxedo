@@ -5,7 +5,7 @@
  * after any MCP mutation. Called from agent-config routes.
  */
 
-import { workspaceSupervisor } from "../workspace/supervisor-port"
+import { workspaceSupervisor } from "@claxedo/server-core/workspace/supervisor-port"
 import { syncEmbeddedWorkspaceRuntimes } from "../deployments/local/embedded-workspace-runtime"
 import { syncOpencodeMcpConfig } from "../opencode/mcp-sync"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"

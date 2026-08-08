@@ -20,8 +20,8 @@ import {
   readMirroredWorkspaceAgentExtensions,
   resolveGitHubWorkspaceAgentExtension,
   workspaceAgentExtensionRecords,
-} from "../../hosts/agent-extensions/workspace"
-import { workspaceSupervisor } from "../../workspace/supervisor-port"
+} from "@claxedo/server-core/hosts/agent-extensions/workspace"
+import { workspaceSupervisor } from "@claxedo/server-core/workspace/supervisor-port"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { localAgentConfigAllowed } from "../local-auth"
 import {
@@ -54,7 +54,7 @@ export function agentConfigExtensionRoutes(options: AgentConfigRouteOptions = {}
   const resolveWorkspaceExtension = options.resolveGitHubWorkspaceAgentExtension ?? resolveGitHubWorkspaceAgentExtension
   return new Hono()
     .get("/extensions/catalog", async (c) => {
-      const { loadAgentExtensionsCatalog } = await import("../extensions/catalog")
+      const { loadAgentExtensionsCatalog } = await import("@claxedo/server-core/agent-config/extensions/catalog")
       return c.json(loadAgentExtensionsCatalog())
     })
 

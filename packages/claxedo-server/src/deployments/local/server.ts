@@ -17,7 +17,7 @@ import { capture, initPostHog, shutdownPostHog } from "../../platform/telemetry/
 import { initNodeObservability } from "../../platform/telemetry/errors/node"
 import { reportError } from "../../platform/telemetry/errors/report"
 import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "../../platform/http/security-headers"
-import { configureAgentConfig, defaultHarness, loadUserConfig } from "../../agent-config"
+import { configureAgentConfig, defaultHarness, loadUserConfig } from "@claxedo/server-core/agent-config/index"
 import { eventsHandler } from "../../platform/http/events"
 import { peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
 import { createConnectionsHost } from "../../connections"
@@ -40,7 +40,7 @@ import {
   drainOpenCodeEngine,
   opencodeEngineMode,
   opencodeRequest,
-} from "../../opencode/engine"
+} from "@claxedo/server-core/opencode/engine"
 import { createOpencodeEvents, type OpencodeEvent, type OpencodeEventsHandle } from "../../opencode/events"
 import { claxedoBus, globalBus } from "@claxedo/server-core/platform/runtime/lib/bus"
 import {
@@ -54,8 +54,8 @@ import {
   releaseEmbeddedWorkspaceRuntime,
   shutdownEmbeddedWorkspaceRuntimes,
 } from "./embedded-workspace-runtime"
-import { configureOpenCodeAuth, opencodeHeaders } from "../../opencode/auth"
-import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "../../platform/runtime/profile"
+import { configureOpenCodeAuth, opencodeHeaders } from "@claxedo/server-core/opencode/auth"
+import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
 import { migrateCredentials } from "../../credentials/operations/migrate"
 import { CredentialRoutes } from "../../credentials/routes/credential"
@@ -82,7 +82,7 @@ import {
 } from "../../authority/deployment-mode"
 import { EMBEDDED_AUTH_ISSUER, embeddedAuthEnabled, getEmbeddedAuth } from "./embedded-auth"
 import { convexAuthorityUrlFromEnv, createConvexAuthority } from "../../authority/adapters/convex/workspace-authority"
-import { createSqliteWorkspaceAuthority } from "../../authority/adapters/sqlite/workspace-authority"
+import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
 import { ControlPlaneHttpRoutes } from "../../authority/http"
 import { createCentralControlApp } from "../../central-runtime"
 import { JwksRoutes } from "../../authority/routes/jwks"
@@ -1194,7 +1194,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     // the first turn — mutations after this keep the two in step (see
     // credentials/engine-bridge.ts). Deferred and non-blocking: it boots the
     // engine lazily and must not gate server startup.
-    void import("../../credentials/engine-bridge")
+    void import("@claxedo/server-core/credentials/engine-bridge")
       .then((bridge) => bridge.syncCredentialsToEngine())
       .catch(() => {})
   }

@@ -10,7 +10,7 @@ import {
   readMaterializedRuntimeRecord,
   sameSource,
 } from "@claxedo/agent-extensions"
-import { loadAgentExtensionsCatalog } from "./extensions/catalog"
+import { loadAgentExtensionsCatalog } from "@claxedo/server-core/agent-config/extensions/catalog"
 import type { ControlPlaneServices } from "../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {
@@ -33,12 +33,12 @@ import {
   resolveGitHubWorkspaceAgentExtension,
   workspaceAgentExtensionRecords,
   type WorkspaceAgentExtensionRecord,
-} from "../hosts/agent-extensions/workspace"
+} from "@claxedo/server-core/hosts/agent-extensions/workspace"
 import {
   resolveEffectiveAgentExtensionPolicy,
   type AgentExtensionPolicyOverride,
-} from "../hosts/agent-extensions/runtime-config"
-import { workspaceSupervisor } from "../workspace/supervisor-port"
+} from "@claxedo/server-core/hosts/agent-extensions/runtime-config"
+import { workspaceSupervisor } from "@claxedo/server-core/workspace/supervisor-port"
 import { syncEmbeddedWorkspaceRuntimeAgentExtensions } from "../deployments/local/embedded-workspace-runtime"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 

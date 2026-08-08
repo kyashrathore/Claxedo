@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
-import { probeDiscoveredCredential } from "./probe"
-import type { LocalCredentialItem } from "./sync"
+import { probeDiscoveredCredential } from "@claxedo/server-core/credentials/operations/probe"
+import type { LocalCredentialItem } from "@claxedo/server-core/credentials/operations/sync"
 
 /**
  * `probeDiscoveredCredential` is provider-agnostic — it routes through

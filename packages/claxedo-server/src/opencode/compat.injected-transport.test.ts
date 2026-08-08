@@ -12,7 +12,7 @@ process.env.CLAXEDO_DATA_DIR = root
 
 const { Hono } = await import("hono")
 const { OpenCodeCompatRoutes } = await import("./compat-routes/index")
-const { __setOpenCodeEmbedLoaderForTests, configureOpenCodeEngine } = await import("./engine")
+const { __setOpenCodeEmbedLoaderForTests, configureOpenCodeEngine } = await import("@claxedo/server-core/opencode/engine")
 
 afterEach(async () => {
   __setOpenCodeEmbedLoaderForTests(undefined)

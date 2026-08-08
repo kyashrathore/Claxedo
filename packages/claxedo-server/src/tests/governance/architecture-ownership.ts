@@ -162,7 +162,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     owner: "local credential registry",
     tests: [
       "../../claxedo-server-core/src/credentials/registry.test.ts",
-      "credentials/operations/sync.test.ts",
+      "../../claxedo-server-core/src/credentials/operations/sync.test.ts",
     ],
   },
   {
@@ -174,7 +174,7 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "registry",
-    module: "agent-config/extensions/catalog.ts",
+    module: "../../claxedo-server-core/src/agent-config/extensions/catalog.ts",
     status: OwnershipStatus.Canonical,
     owner: "agent extension catalog",
     tests: ["agent-config/extensions/scan.test.ts"],
@@ -209,7 +209,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     owner: "Sandbox runtime config fan-out",
     reason: "Agent config changes broadcast already-resolved runtime snapshots to active sandboxs.",
     tests: [
-      "agent-config/index.test.ts",
+      "../../claxedo-server-core/src/agent-config/index.test.ts",
       "tests/governance/codebase-shape.test.ts",
     ],
   },

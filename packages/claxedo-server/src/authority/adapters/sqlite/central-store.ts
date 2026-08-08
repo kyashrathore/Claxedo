@@ -30,7 +30,7 @@ import {
   subscribeMessageReplay,
 } from "../../../session/message-replay"
 import { syncCloudMessages } from "../../../session/sync"
-import type { SessionWriteMode } from "../../../platform/runtime/profile"
+import type { SessionWriteMode } from "@claxedo/server-core/platform/runtime/profile"
 
 import { createDurableSessionLog, type DurableSessionLog, type DurableSessionLogBackend } from "../../../platform/auth/durable-session-log"
 import { createProjectionStore, type ProjectionStore, type ProjectionStoreBackend } from "../../projection-store"

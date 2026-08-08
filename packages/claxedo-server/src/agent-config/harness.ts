@@ -4,7 +4,7 @@ import {
   type AgentHarnessId,
   type SessionHarness,
 } from "@claxedo/agent-sdk-runtime"
-import { normalize } from "../session/harness"
+import { normalize } from "@claxedo/server-core/session/harness/index"
 import { sandboxFetch, type SandboxFetchOptions } from "../workspace/http/sandbox-target-fetch"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 

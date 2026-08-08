@@ -9,11 +9,11 @@ import {
   getRuntimeConfigSnapshot,
   loadUserConfig,
   saveUserConfig,
-} from "../../agent-config"
+} from "@claxedo/server-core/agent-config/index"
 import { fanOutConfig } from "../fanout"
-import { getSessionConfig, getSessionHarness, normalize, setSessionConfig, setSessionHarness } from "../../session/harness"
+import { getSessionConfig, getSessionHarness, normalize, setSessionConfig, setSessionHarness } from "@claxedo/server-core/session/harness/index"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
-import { resolveHarnessForRequest } from "../../session/harness/resolution"
+import { resolveHarnessForRequest } from "@claxedo/server-core/session/harness/resolution"
 import { sessionMeta } from "@claxedo/server-core/session/meta/index"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import {

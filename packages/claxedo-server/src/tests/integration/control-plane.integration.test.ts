@@ -133,9 +133,9 @@ process.env.POSTHOG_KEY = ""
 const serverMod = await import("../../deployments/local/server")
 const supervisor = await import("../../workspace/supervisor")
 const store = await import("@claxedo/server-core/workspace/store/index")
-const agent = await import("../../agent-config")
+const agent = await import("@claxedo/server-core/agent-config/index")
 const embedded = await import("../../deployments/local/embedded-workspace-runtime")
-const opauth = await import("../../opencode/auth")
+const opauth = await import("@claxedo/server-core/opencode/auth")
 
 const upstreamProvider = {
   all: [

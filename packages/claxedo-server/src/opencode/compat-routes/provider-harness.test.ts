@@ -24,7 +24,7 @@ process.env.CLAXEDO_DATA_DIR = root
 
 const { Hono } = await import("hono")
 const { OpenCodeCompatRoutes } = await import("./index")
-const { configureOpenCodeEngine } = await import("../../opencode/engine")
+const { configureOpenCodeEngine } = await import("@claxedo/server-core/opencode/engine")
 const { ProviderAuthRoutes } = await import("../../credentials/routes/provider-auth")
 
 const ENGINE = "http://127.0.0.1:65500"

@@ -4,8 +4,8 @@ import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 import { installCachedAgentExtension } from "./install"
-import { getRuntimeAgentExtensionsSnapshot } from "./runtime-config"
-import { mirrorWorkspaceAgentExtensionRecord, readMirroredWorkspaceAgentExtensions } from "./workspace"
+import { getRuntimeAgentExtensionsSnapshot } from "@claxedo/server-core/hosts/agent-extensions/runtime-config"
+import { mirrorWorkspaceAgentExtensionRecord, readMirroredWorkspaceAgentExtensions } from "@claxedo/server-core/hosts/agent-extensions/workspace"
 import {
   applyRuntimeAgentExtensions,
   FIRST_PARTY_AGENT_EXTENSION_ID,

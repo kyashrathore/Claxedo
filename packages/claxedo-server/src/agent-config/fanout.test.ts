@@ -24,7 +24,7 @@ vi.mock("@claxedo/server-core/platform/runtime/lib/log", () => ({
 }))
 
 const { fanOutConfig } = await import("./fanout")
-const { configureWorkspaceSupervisorPort } = await import("../workspace/supervisor-port")
+const { configureWorkspaceSupervisorPort } = await import("@claxedo/server-core/workspace/supervisor-port")
 
 beforeEach(() => {
   vi.clearAllMocks()

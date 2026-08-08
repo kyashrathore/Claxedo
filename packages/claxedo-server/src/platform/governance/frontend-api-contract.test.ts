@@ -99,7 +99,7 @@ vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   listProjects: vi.fn(async () => []),
 }))
 
-vi.mock("../../opencode/auth", () => ({
+vi.mock("@claxedo/server-core/opencode/auth", () => ({
   configureOpenCodeAuth: vi.fn(),
   opencodeHeaders: vi.fn((headers?: HeadersInit) => new Headers(headers)),
 }))
@@ -109,8 +109,8 @@ const [serverMod, servicesMod, syncMod, compatMod, agentConfigMod, engineMod] = 
   import("../../authority/services"),
   import("../../authority/adapters/sqlite/central-store"),
   import("../../opencode/compat-routes/index"),
-  import("../../agent-config"),
-  import("../../opencode/engine"),
+  import("@claxedo/server-core/agent-config/index"),
+  import("@claxedo/server-core/opencode/engine"),
 ])
 
 function seedSyntheticCloudWorkspace() {

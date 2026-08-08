@@ -76,14 +76,14 @@ vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   listProjects: vi.fn(async () => []),
 }))
 
-vi.mock("../../opencode/auth", () => ({
+vi.mock("@claxedo/server-core/opencode/auth", () => ({
   configureOpenCodeAuth: vi.fn(),
   opencodeHeaders: mocks.opencodeHeaders,
 }))
 
 const { createWorkspaceRuntimeProxy, workspaceRuntimeProxy } = await import("./middleware")
 const { embeddedConfigModeForPath } = await import("./internals")
-const { configureWorkspaceSupervisorPort } = await import("../supervisor-port")
+const { configureWorkspaceSupervisorPort } = await import("@claxedo/server-core/workspace/supervisor-port")
 
 const {
   markSupervisorSandboxUse,

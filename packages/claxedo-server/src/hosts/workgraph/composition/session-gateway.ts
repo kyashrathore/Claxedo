@@ -12,7 +12,7 @@ import {
   type WorkGraphRunOperationRequest,
   type WorkGraphContext,
 } from "@claxedo/workgraph/contracts"
-import { OPENCODE_INTERNAL_BASE } from "../../../opencode/engine"
+import { OPENCODE_INTERNAL_BASE } from "@claxedo/server-core/opencode/engine"
 import { ConnectionOperationDeniedError, createConnectionOperationBroker } from "../connection-operation-broker"
 import { createWorkGraphConnectionsPort } from "../connections"
 import type { WorkGraphSessionGateway } from "../local/execution"

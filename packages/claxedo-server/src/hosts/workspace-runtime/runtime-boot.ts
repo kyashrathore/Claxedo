@@ -19,7 +19,7 @@ import {
   sandboxLeaseEnv,
   workspaceRuntimeDirectAuthEnv,
   workspaceRuntimeTargetEnv,
-} from "./env"
+} from "@claxedo/server-core/hosts/workspace-runtime/env"
 
 export type ClaxedoWorkspaceRuntimeBoot = {
   port: number

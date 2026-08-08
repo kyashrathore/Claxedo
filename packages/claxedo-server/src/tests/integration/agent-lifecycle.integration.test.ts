@@ -132,7 +132,7 @@ const [serverMod, supervisor, store, agent, embedded] = await Promise.all([
   import("../../deployments/local/server.js"),
   import("../../workspace/supervisor/index.js"),
   import("@claxedo/server-core/workspace/store/index"),
-  import("../../agent-config/index.js"),
+  import("@claxedo/server-core/agent-config/index"),
   import("../../deployments/local/embedded-workspace-runtime.js"),
 ])
 
@@ -777,7 +777,7 @@ describe("agent lifecycle integration", () => {
         updated_at: Date.now(),
       })
 
-      const runner = await import("../../session/harness/index.js")
+      const runner = await import("@claxedo/server-core/session/harness/index")
       runner.setSessionHarness(ws.id, "ses_duplicate", {
         id: "claude",
         access: "acp",

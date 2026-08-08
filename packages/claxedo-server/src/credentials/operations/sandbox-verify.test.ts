@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
-import { CredentialVerificationError } from "./verify"
-import { verifySandboxDriverAuth } from "./sandbox-verify"
+import { CredentialVerificationError } from "@claxedo/server-core/credentials/operations/verify"
+import { verifySandboxDriverAuth } from "@claxedo/server-core/credentials/operations/sandbox-verify"
 
 /**
  * One stub for every provider probe. Recording the request is half the point:

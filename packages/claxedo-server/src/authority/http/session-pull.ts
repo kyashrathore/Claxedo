@@ -1,4 +1,4 @@
-import { resolveHarnessHostForRequest } from "../../session/harness/resolution"
+import { resolveHarnessHostForRequest } from "@claxedo/server-core/session/harness/resolution"
 import { resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneAuthContext, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"

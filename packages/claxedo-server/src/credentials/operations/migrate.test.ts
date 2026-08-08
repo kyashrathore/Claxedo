@@ -13,7 +13,7 @@ vi.mock("fs", () => ({
     writeFileSync: vi.fn(),
   },
 }))
-vi.mock("../../agent-config", () => ({
+vi.mock("@claxedo/server-core/agent-config/index", () => ({
   loadUserConfig: vi.fn(async () => mocks.config),
   saveUserConfig: mocks.saveUserConfig,
   sandboxDriverConfig: vi.fn(() => ({})),

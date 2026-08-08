@@ -44,7 +44,7 @@ import {
   localSessionExecution,
   localSessionOwnerDirected,
 } from "../../../claxedo-server/src/hosts/workgraph/composition/agent-tools"
-import type { OpenCodeApplicationToolRegistration } from "../../../claxedo-server/src/opencode/engine"
+import type { OpenCodeApplicationToolRegistration } from "../../../claxedo-server-core/src/opencode/engine"
 
 const repository = path.resolve(import.meta.dirname, "../../../..")
 type WorkGraphDatabase = Parameters<typeof createLocalEmbeddedWorkGraph>[0]["database"]

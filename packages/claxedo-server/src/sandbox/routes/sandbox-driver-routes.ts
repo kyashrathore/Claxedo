@@ -23,12 +23,12 @@ import {
   sandboxDriverConfig,
   saveUserConfig,
   setSandboxDriverConfig,
-} from "../../agent-config"
+} from "@claxedo/server-core/agent-config/index"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { apiError, type WorkspaceRouteOptions } from "../../workspace/route-support"
-import { sandboxDriverVerifiable, verifySandboxDriverAuth } from "../../credentials/operations/sandbox-verify"
-import { CredentialVerificationError } from "../../credentials/verification-error"
-import type { CredentialProbe } from "../../credentials/operations/discovery"
+import { sandboxDriverVerifiable, verifySandboxDriverAuth } from "@claxedo/server-core/credentials/operations/sandbox-verify"
+import { CredentialVerificationError } from "@claxedo/server-core/credentials/verification-error"
+import type { CredentialProbe } from "@claxedo/server-core/credentials/operations/discovery"
 
 const authBody = z.object({
   auth: z.record(z.string(), z.string()).default({}),

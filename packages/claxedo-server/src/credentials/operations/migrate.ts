@@ -12,7 +12,7 @@ import {
   sandboxDriverConfig,
   saveUserConfig,
   setSandboxDriverConfig,
-} from "../../agent-config"
+} from "@claxedo/server-core/agent-config/index"
 import { putCredential } from "@claxedo/server-core/credentials/registry"
 import { getBackend } from "@claxedo/server-core/credentials/backend-registry"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"

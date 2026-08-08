@@ -11,7 +11,7 @@ import {
   syncEmbeddedWorkspaceRuntimeAgentExtensions,
 } from "./embedded-workspace-runtime"
 import type { OpencodeEvent } from "../../opencode/events"
-import type { OpenCodeRequestFn } from "../../opencode/engine"
+import type { OpenCodeRequestFn } from "@claxedo/server-core/opencode/engine"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { noSelfHostedCapabilities, selfHostedCapabilities } from "./self-hosted-capabilities"
 

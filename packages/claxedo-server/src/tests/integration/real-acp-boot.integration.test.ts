@@ -56,7 +56,7 @@ const [serverMod, supervisor, store, agent, embedded] = await Promise.all([
   import("../../deployments/local/server.js"),
   import("../../workspace/supervisor/index.js"),
   import("@claxedo/server-core/workspace/store/index"),
-  import("../../agent-config/index.js"),
+  import("@claxedo/server-core/agent-config/index"),
   import("../../deployments/local/embedded-workspace-runtime.js"),
 ])
 

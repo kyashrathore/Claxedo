@@ -1,6 +1,6 @@
 import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
 import { randomUUID } from "crypto"
-import { type RuntimeConfigSnapshot, loadUserConfig, sandboxDriverConfig } from "../../agent-config"
+import { type RuntimeConfigSnapshot, loadUserConfig, sandboxDriverConfig } from "@claxedo/server-core/agent-config/index"
 import {
   createSandboxManager,
   type SandboxBootSource,

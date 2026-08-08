@@ -629,7 +629,7 @@ test.describe("live agent extensions materialization @live", () => {
     expect(skillText.toLowerCase()).toContain("pdf")
 
     // recommendedTargets is ["claude"] ONLY for this catalog entry (verified
-    // against packages/claxedo-server/src/agent-config/extensions/catalog.ts) — the
+    // against packages/claxedo-server-core/src/agent-config/extensions/catalog.ts) — the
     // other three harness skill directories the plan's spec-23 entry
     // anticipated for "a skill" in general are correctly NOT created for
     // THIS specific entry. Pin that explicitly rather than silently not

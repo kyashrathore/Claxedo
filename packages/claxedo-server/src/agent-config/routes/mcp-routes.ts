@@ -1,5 +1,5 @@
 import { Hono } from "hono"
-import { loadUserConfig, saveUserConfig } from "../../agent-config"
+import { loadUserConfig, saveUserConfig } from "@claxedo/server-core/agent-config/index"
 import { fanOutConfig } from "../fanout"
 import { ensureHostForUrl, removeAutoHostsForSource } from "@claxedo/server-core/sandbox/network/policy"
 import { errorBody } from "@claxedo/server-core/platform/http/http"

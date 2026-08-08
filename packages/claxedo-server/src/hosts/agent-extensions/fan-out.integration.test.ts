@@ -27,7 +27,7 @@ import {
   syncWorkspaceRuntimeAgentExtensions,
 } from "../../workspace/supervisor"
 import { __registerReadyRuntimeForTest, __unregisterRuntimeForTest } from "../../workspace/supervisor/test-helper"
-import type { WorkspaceAgentExtensionRecord } from "./workspace"
+import type { WorkspaceAgentExtensionRecord } from "@claxedo/server-core/hosts/agent-extensions/workspace"
 
 type RecordedRequest = {
   method: string

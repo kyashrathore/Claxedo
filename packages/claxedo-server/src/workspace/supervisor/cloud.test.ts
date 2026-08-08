@@ -577,7 +577,7 @@ vi.mock("@claxedo/sandbox-manager/drivers/docker", () => ({
   createDockerSandboxDriver: (...args: unknown[]) => (mockCreateDockerSandboxDriver as any)(...args),
 }))
 
-vi.mock("../../agent-config", () => ({
+vi.mock("@claxedo/server-core/agent-config/index", () => ({
   loadUserConfig: (...args: unknown[]) => (mockLoadUserConfig as any)(...args),
   sandboxDriverConfig: vi.fn((config?: { sandbox_driver?: unknown }) => config?.sandbox_driver ?? {}),
   defaultHarness: vi.fn(() => ({})),

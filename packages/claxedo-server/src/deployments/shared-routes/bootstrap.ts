@@ -4,11 +4,11 @@ import { normalizeHarnessIdentity } from "@claxedo/agent-sdk-runtime"
 import {
   defaultHarness,
   loadUserConfig,
-} from "../../agent-config"
+} from "@claxedo/server-core/agent-config/index"
 import { providerAuthMethods } from "../../credentials/provider-auth/service"
 import { listProjects } from "@claxedo/server-core/workspace/store/index"
 import { dataDir, stateDir } from "@claxedo/server-core/platform/runtime/lib/paths"
-import { OPENCODE_INTERNAL_BASE, opencodeEngineMode, opencodeRequest } from "../../opencode/engine"
+import { OPENCODE_INTERNAL_BASE, opencodeEngineMode, opencodeRequest } from "@claxedo/server-core/opencode/engine"
 import { providerCatalogView } from "../../opencode/provider-catalog-view"
 import type { ControlPlaneServices } from "../../authority/services"
 import {
