@@ -17,7 +17,7 @@ import { bundleClaxedoEngineWorker, bundleClaxedoServer } from "./bundle-claxedo
 import { bundleHostConnector } from "./bundle-host-connector"
 import { buildMemoryImpactHelper } from "./build-memory-impact-helper"
 import { LOCAL_SERVER_ENTRY, resolveLocalServerEntry } from "./local-server"
-import { buildRichContentRenderer } from "./build-rich-content-renderer"
+import { prepareRichContentRenderer } from "./build-rich-content-renderer"
 import { copyIcons as copyChannelIcons } from "./utils"
 
 // ── Paths ──
@@ -146,7 +146,7 @@ await Promise.all([
   bundleServer(),
   bundleHostConnector(),
   buildMemoryImpactHelper(),
-  buildRichContentRenderer(),
+  prepareRichContentRenderer({ required: process.env.CLAXEDO_REQUIRE_NATIVE_RICH_CONTENT === "1" }),
 ])
 
 log("Done.")
