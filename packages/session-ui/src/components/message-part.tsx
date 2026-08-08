@@ -231,6 +231,12 @@ export interface MessagePartProps {
   useV2Actions?: boolean
 }
 
+const virtualizedDiffViewport: JSX.CSSProperties = {
+  "max-height": "min(480px, 50vh)",
+  overflow: "auto",
+  contain: "layout paint",
+}
+
 function MessageActionButton(
   props: Pick<ComponentProps<"button">, "disabled" | "onMouseDown" | "onClick" | "aria-label"> & {
     icon: "check" | "copy" | "reset"
@@ -1804,6 +1810,21 @@ function ToolFileAccordion(props: { path: string; actions?: JSX.Element; childre
   )
 }
 
+function FrameDeferred(props: { content: () => JSX.Element }) {
+  const [ready, setReady] = createSignal(false)
+  let frame: number | undefined
+  onMount(() => {
+    frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        frame = undefined
+        setReady(true)
+      })
+    })
+  })
+  onCleanup(() => frame !== undefined && cancelAnimationFrame(frame))
+  return <Show when={ready()}>{props.content()}</Show>
+}
+
 PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const data = useData()
   const i18n = useI18n()
@@ -2626,7 +2647,7 @@ ToolRegistry.register({
         <BasicTool
           {...props}
           icon="code-lines"
-          defer={props.deferContent !== false}
+          defer
           trigger={
             <div data-component="edit-trigger">
               <div data-slot="message-part-title-area" data-path={props.input.filePath}>
@@ -2661,13 +2682,22 @@ ToolRegistry.register({
                 </Show>
               }
             >
-              <div data-component="edit-content">
-                <Dynamic
-                  component={fileComponent}
-                  mode="diff"
-                  virtualize={props.virtualizeDiff}
-                  onRendered={props.onContentRendered}
-                  {...fileCompProps()}
+              <div
+                data-component="edit-content"
+                data-virtualized={props.virtualizeDiff ? "true" : undefined}
+                style={props.virtualizeDiff ? virtualizedDiffViewport : undefined}
+              >
+                <FrameDeferred
+                  content={() => (
+                    <Dynamic
+                      component={fileComponent}
+                      mode="diff"
+                      virtualize={props.virtualizeDiff}
+                      tokenizeMaxLength={props.virtualizeDiff ? 120 : undefined}
+                      onRendered={props.onContentRendered}
+                      {...fileCompProps()}
+                    />
+                  )}
                 />
               </div>
             </ToolFileAccordion>
@@ -2849,7 +2879,11 @@ ToolRegistry.register({
                           </StickyAccordionHeader>
                           <Accordion.Content>
                             <Show when={props.deferContent === false || visible()}>
-                              <div data-component="apply-patch-file-diff">
+                              <div
+                                data-component="apply-patch-file-diff"
+                                data-virtualized={props.virtualizeDiff ? "true" : undefined}
+                                style={props.virtualizeDiff ? virtualizedDiffViewport : undefined}
+                              >
                                 <Dynamic
                                   component={fileComponent}
                                   mode="diff"
@@ -2929,7 +2963,11 @@ ToolRegistry.register({
                 </Switch>
               }
             >
-              <div data-component="apply-patch-file-diff">
+              <div
+                data-component="apply-patch-file-diff"
+                data-virtualized={props.virtualizeDiff ? "true" : undefined}
+                style={props.virtualizeDiff ? virtualizedDiffViewport : undefined}
+              >
                 <Dynamic
                   component={fileComponent}
                   mode="diff"

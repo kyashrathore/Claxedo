@@ -1,4 +1,4 @@
-import { Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { Show, createEffect, createMemo, createSignal, lazy, onCleanup } from "solid-js"
 import type { ContentMeta } from "@/features/session/app-ports"
 import { useClaxedoState } from "@/features/session/app-ports"
 import type { PaneCtx } from "@/features/session/app-ports"
@@ -6,7 +6,12 @@ import { SessionPaneScope } from "../components/session-pane-scope"
 import SessionPage from "@/features/session/ui/session-screen"
 import { hasBacking, isDirectorylessPiSession, localSessionRefForDirectory, retargetSessionRef } from "@/platform/identity/session-ref"
 import { SessionLoadingSurface } from "./session-loading-surface"
-import { SessionEnvironmentCardMount } from "./session-environment-card"
+
+const SessionEnvironmentCardMount = lazy(() =>
+  import("./session-environment-card").then((module) => ({
+    default: module.SessionEnvironmentCardMount,
+  })),
+)
 
 export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbackDirectory?: () => string | undefined }) {
   const state = useClaxedoState()

@@ -59,6 +59,12 @@ type RenderResult = {
 }
 
 const renderedCodeTokens = new WeakMap<HTMLDivElement, RenderedCodeState>()
+const highlightedCodeTokenLimit = 800
+const progressiveMarkdownInitialRows = 8
+const progressiveMarkdownBatchRows = 4
+const progressiveMarkdownMinimumRows = 20
+const progressiveMarkdownFrames = new WeakMap<HTMLElement, number>()
+const progressiveMarkdownDelays = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>()
 
 function escape(text: string) {
   return text
@@ -199,6 +205,53 @@ function disposeMarkdownControls(root: Element) {
   disposeViewButtons(root)
 }
 
+function disposeProgressiveMarkdown(root: Element) {
+  if (!(root instanceof HTMLElement)) return
+  const frame = progressiveMarkdownFrames.get(root)
+  if (frame !== undefined) cancelAnimationFrame(frame)
+  const delay = progressiveMarkdownDelays.get(root)
+  if (delay !== undefined) clearTimeout(delay)
+  progressiveMarkdownFrames.delete(root)
+  progressiveMarkdownDelays.delete(root)
+}
+
+function stageMarkdownCollections(root: HTMLElement) {
+  const collections = Array.from(root.querySelectorAll("ul, ol, tbody"))
+    .filter((collection) => collection.children.length > progressiveMarkdownMinimumRows)
+    .filter((collection, _, all) => !all.some((parent) => parent !== collection && parent.contains(collection)))
+    .map((collection) => ({
+      collection,
+      children: Array.from(collection.children),
+      cursor: progressiveMarkdownInitialRows,
+    }))
+  if (collections.length === 0) return
+
+  collections.forEach((entry) => entry.children.slice(progressiveMarkdownInitialRows).forEach((node) => node.remove()))
+  root.dataset.markdownProgressive = "pending"
+  let batch = 0
+  const step = () => {
+    progressiveMarkdownFrames.delete(root)
+    if (!root.isConnected) return
+    const started = rendererClock()
+    collections.forEach((entry) => {
+      const end = Math.min(entry.children.length, entry.cursor + progressiveMarkdownBatchRows)
+      while (entry.cursor < end) entry.collection.appendChild(entry.children[entry.cursor++]!)
+    })
+    const pending = collections.some((entry) => entry.cursor < entry.children.length)
+    if (batch++ === 0 || !pending) traceRenderer(`markdown.progressive.${pending ? "first" : "complete"}`, started)
+    if (pending) {
+      progressiveMarkdownFrames.set(root, requestAnimationFrame(step))
+      return
+    }
+    root.dataset.markdownProgressive = "complete"
+  }
+  progressiveMarkdownDelays.set(root, setTimeout(() => {
+    progressiveMarkdownDelays.delete(root)
+    if (!root.isConnected) return
+    progressiveMarkdownFrames.set(root, requestAnimationFrame(step))
+  }, 260))
+}
+
 const shellLanguages = new Set(["bash", "sh", "shell", "zsh", "fish", "console", "terminal"])
 
 /**
@@ -305,21 +358,49 @@ function renderMermaidBlocks(root: HTMLElement) {
     if (language !== "mermaid" || !code) continue
     const source = code.textContent ?? ""
     if (!source.trim()) continue
+    if (largeMermaid(source) && wrapper.dataset.mermaidRenderRequested !== source) {
+      traceMermaid("defer", source)
+      wrapper.setAttribute("data-mermaid-state", "deferred")
+      wrapper.querySelector('[data-slot="mermaid-diagram"]')?.remove()
+      wrapper.querySelector('[data-slot="mermaid-view-button"]')?.remove()
+      const existing = wrapper.querySelector<HTMLElement>('[data-slot="mermaid-render-button"]')
+      if (existing?.dataset.mermaidSource !== source) {
+        existing?.remove()
+        const button = document.createElement("button")
+        button.type = "button"
+        button.textContent = "Render diagram"
+        button.setAttribute("data-slot", "mermaid-render-button")
+        button.dataset.mermaidSource = source
+        button.addEventListener("click", () => {
+          wrapper.dataset.mermaidRenderRequested = source
+          button.remove()
+          renderMermaidBlocks(root)
+        })
+        wrapper.appendChild(button)
+      }
+      continue
+    }
     if (wrapper.getAttribute("data-mermaid-source") === source) {
       if (wrapper.getAttribute("data-mermaid-state") === "rendered") ensureMermaidControls(wrapper, source)
       continue
     }
     wrapper.setAttribute("data-mermaid-source", source)
+    traceMermaid("render", source)
+    const renderStarted = rendererClock()
     void mermaidRenderer(source)
       .then((svg) => {
+        traceMermaid("generate", source, renderStarted)
         // Guard against streaming: skip if the source changed while rendering.
         if (wrapper.getAttribute("data-mermaid-source") !== source) return
         // Fail closed. `sanitizeSvg` returns "" when it cannot vouch for the
         // markup (no DOMPurify, or the sanitizer threw); throwing here routes
         // into the catch below, which keeps the plain code block visible. The
         // raw `svg` must never reach the DOM.
+        const sanitizeStarted = rendererClock()
         const safe = sanitizeSvg(svg)
+        traceMermaid("sanitize", source, sanitizeStarted)
         if (!safe) throw new Error("mermaid: SVG failed sanitization")
+        const commitStarted = rendererClock()
         let diagram = wrapper.querySelector('[data-slot="mermaid-diagram"]')
         if (!diagram) {
           diagram = document.createElement("div")
@@ -328,8 +409,10 @@ function renderMermaidBlocks(root: HTMLElement) {
         }
         replaceSanitizedMarkup(diagram, safe)
         wrapper.setAttribute("data-mermaid-state", "rendered")
+        wrapper.querySelector('[data-slot="mermaid-render-button"]')?.remove()
         wrapper.setAttribute("data-markdown-rich", "mermaid")
         ensureMermaidControls(wrapper, source)
+        traceMermaid("commit", source, commitStarted)
       })
       .catch(() => {
         // Fallback: keep the code block, clear the marker so a later retry is possible.
@@ -375,6 +458,39 @@ function decorateTables(root: HTMLDivElement, labels: CopyLabels) {
   for (const table of tables) {
     if (table instanceof HTMLTableElement) ensureTableWrapper(table, labels)
   }
+}
+
+function traceMermaid(
+  action: "defer" | "render" | "generate" | "sanitize" | "commit",
+  source: string,
+  started?: number,
+) {
+  traceRenderer(
+    `mermaid.${action}.chars-${source.length}.lines-${source.split("\n").length}`,
+    started,
+  )
+}
+
+function rendererClock() {
+  if (typeof performance === "undefined") return
+  return performance.now()
+}
+
+function traceRenderer(name: string, started?: number) {
+  if (typeof window === "undefined") return
+  const target = window as unknown as {
+    __claxedoPerfTrace?: boolean
+    __claxedoPerfRendererPhases?: Array<{ name: string; durationMs: number }>
+  }
+  if (!target.__claxedoPerfTrace) return
+  target.__claxedoPerfRendererPhases?.push({
+    name,
+    durationMs: started === undefined ? 0 : performance.now() - started,
+  })
+}
+
+function largeMermaid(source: string) {
+  return source.length > 4_000 || source.split("\n", 33).length > 32
 }
 
 function codeKind(language: string | undefined) {
@@ -577,9 +693,12 @@ export function Markdown(
   const owner = createUniqueId()
   const activeCodeKeys = new Set<string>()
   const completedCode = new Map<string, Extract<RenderedBlock, { mode: "code" }>>()
-  const projection = createMemo((previous: Projection | undefined) =>
-    project(previous, local.text, local.streaming ?? false),
-  )
+  const projection = createMemo((previous: Projection | undefined) => {
+    const started = rendererClock()
+    const result = project(previous, local.text, local.streaming ?? false)
+    traceRenderer(`markdown.project.chars-${local.text.length}.blocks-${result.blocks.length}`, started)
+    return result
+  })
   const [html] = createResource(
     () => {
       return {
@@ -613,7 +732,9 @@ export function Markdown(
           if (block.mode === "code") {
             const cached = completedCode.get(blockKey)
             if (block.complete && cached?.raw === block.raw) return cached
+            const started = rendererClock()
             const result = await code(block.src, block.language, blockKey, block.complete)
+            traceRenderer(`markdown.highlight.chars-${block.src.length}.language-${result.language}`, started)
             const rendered = {
               key: blockKey,
               mode: block.mode,
@@ -635,7 +756,12 @@ export function Markdown(
           }
 
           const hash = checksum(block.raw)
-          const safe = sanitizeMarkdown(await Promise.resolve(marked.parse(block.src)))
+          const parseStarted = rendererClock()
+          const parsed = await Promise.resolve(marked.parse(block.src))
+          traceRenderer(`markdown.parse.chars-${block.src.length}`, parseStarted)
+          const sanitizeStarted = rendererClock()
+          const safe = sanitizeMarkdown(parsed)
+          traceRenderer(`markdown.sanitize.chars-${block.src.length}`, sanitizeStarted)
           if (key && hash) touchCachedMarkdown(key, { raw: block.raw, hash, html: safe })
           return { key: blockKey, mode: block.mode, raw: block.raw, hash: hash ?? "", html: safe }
         }),
@@ -673,10 +799,12 @@ export function Markdown(
     if (isServer) return
     if (content.length === 0) {
       disposeMarkdownControls(container)
+      Array.from(container.children).forEach(disposeProgressiveMarkdown)
       container.replaceChildren()
       return
     }
 
+    const commitStarted = rendererClock()
     const labels = {
       copy: i18n.t("ui.message.copy"),
       copied: i18n.t("ui.message.copied"),
@@ -692,6 +820,7 @@ export function Markdown(
       const child = container.lastElementChild
       if (!child) break
       disposeMarkdownControls(child)
+      disposeProgressiveMarkdown(child)
       child.remove()
     }
     container
@@ -702,6 +831,7 @@ export function Markdown(
         copy: i18n.t("ui.message.copy"),
         copied: i18n.t("ui.message.copied"),
       }))
+    traceRenderer(`markdown.commit.chars-${local.text.length}.blocks-${content.length}`, commitStarted)
   })
 
   onCleanup(() => {
@@ -757,6 +887,7 @@ function disposeCode(key: string) {
 }
 
 function updateBlock(container: HTMLDivElement, index: number, block: RenderedBlock, labels: CopyLabels) {
+  const started = rendererClock()
   const current = container.children[index]
   if (block.mode === "code") {
     const node = updateCodeBlock(container, current, block, labels)
@@ -766,6 +897,7 @@ function updateBlock(container: HTMLDivElement, index: number, block: RenderedBl
     // parse, and each failed attempt clears the marker, so an ungated call would
     // re-render on every token until the fence closes.
     if (block.complete) renderMermaidBlocks(node)
+    traceRenderer(`markdown.block.code.chars-${block.raw.length}`, started)
     return
   }
   if (
@@ -785,9 +917,12 @@ function updateBlock(container: HTMLDivElement, index: number, block: RenderedBl
 
   if (!(current instanceof HTMLDivElement)) {
     container.appendChild(next)
+    stageMarkdownCollections(next)
+    traceRenderer(`markdown.block.${block.mode}.chars-${block.raw.length}`, started)
     return
   }
 
+  disposeProgressiveMarkdown(current)
   morphdom(current, next, {
     onBeforeElUpdated: (fromEl, toEl) => {
       if (
@@ -802,10 +937,15 @@ function updateBlock(container: HTMLDivElement, index: number, block: RenderedBl
       return true
     },
     onBeforeNodeDiscarded: (node) => {
-      if (node instanceof Element) disposeMarkdownControls(node)
+      if (node instanceof Element) {
+        disposeMarkdownControls(node)
+        disposeProgressiveMarkdown(node)
+      }
       return true
     },
   })
+  stageMarkdownCollections(current)
+  traceRenderer(`markdown.block.${block.mode}.chars-${block.raw.length}`, started)
 }
 
 function replaceSanitizedMarkup(element: Element, html: string) {
@@ -832,6 +972,18 @@ function updateCodeBlock(
     const wrapper = code.closest('[data-component="markdown-code"]')
     if (wrapper instanceof HTMLElement) applyCodeMetadata(wrapper, block.language)
     code.className = `language-${block.language}`
+    const tokens = [...block.stable, ...block.unstable]
+    if (tokens.length > highlightedCodeTokenLimit) {
+      code.textContent = tokens.map((token) => token[0]).join("")
+      code.dataset.markdownCodeRender = "plain-large"
+      renderedCodeTokens.delete(next)
+      return next
+    }
+    if (code.dataset.markdownCodeRender) {
+      code.textContent = ""
+      delete code.dataset.markdownCodeRender
+      renderedCodeTokens.delete(next)
+    }
     const previous = renderedCodeTokens.get(next)
     const reset = shouldResetCodeTokens(previous, {
       language: block.language,
@@ -866,7 +1018,13 @@ function updateCodeBlock(
   pre.className = "shiki OpenCode"
   const codeElement = document.createElement("code")
   codeElement.className = `language-${block.language}`
-  ;[...block.stable, ...block.unstable].map(createTokenSpan).forEach((span) => codeElement.appendChild(span))
+  const tokens = [...block.stable, ...block.unstable]
+  if (tokens.length > highlightedCodeTokenLimit) {
+    codeElement.textContent = tokens.map((token) => token[0]).join("")
+    codeElement.dataset.markdownCodeRender = "plain-large"
+  } else {
+    tokens.map(createTokenSpan).forEach((span) => codeElement.appendChild(span))
+  }
   pre.appendChild(codeElement)
   wrapper.appendChild(pre)
   wrapper.appendChild(createCopyButton(labels))

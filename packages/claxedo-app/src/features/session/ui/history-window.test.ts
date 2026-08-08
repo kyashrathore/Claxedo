@@ -131,6 +131,39 @@ describe("createSessionHistoryWindow", () => {
     root.dispose()
   })
 
+  test("wraps cached backfill in the timeline's stable-row anchor transaction", () => {
+    const events: string[] = []
+    const root = createRoot((dispose) => {
+      const [messages] = createSignal(userMessages(12))
+      const [userScrolled, setUserScrolled] = createSignal(false)
+      const scroller = document.createElement("div")
+      scroller.scrollTop = 0
+      return {
+        dispose,
+        setUserScrolled,
+        historyWindow: createSessionHistoryWindow({
+          sessionID: () => "s-1",
+          messagesReady: () => true,
+          visibleUserMessages: messages,
+          historyMore: () => false,
+          historyLoading: () => false,
+          loadMore: async () => undefined,
+          userScrolled,
+          scroller: () => scroller,
+          onBeforeReveal: () => events.push("capture"),
+          onAfterReveal: () => events.push("restore"),
+        }),
+      }
+    })
+
+    root.setUserScrolled(true)
+    root.historyWindow.onScrollerScroll()
+
+    expect(root.historyWindow.turnStart()).toBe(0)
+    expect(events).toEqual(["capture", "restore"])
+    root.dispose()
+  })
+
   test("prefetches older history near the first cached turn", () => {
     const loadCalls: string[] = []
     const root = createRoot((dispose) => {
