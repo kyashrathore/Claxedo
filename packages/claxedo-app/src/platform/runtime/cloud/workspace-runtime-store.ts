@@ -1,26 +1,32 @@
-import type { WorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
 import { queryClient } from "@/platform/query/query-client"
-import { type WorkspaceRuntimeSnapshot, workspaceResolveQuery } from "@/platform/runtime/workspace-query"
 import { createHttpWorkspaceRuntimeBackend } from "@/platform/runtime/http-backend"
-import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
-import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
-import { createTransport } from "@/platform/runtime/transport"
+import { pendingCloudRuntime, resolveWorkspaceRuntime, runtimeScope } from "@/platform/runtime/workspace-runtime-record"
+import { centralTransportForServer, createTransport } from "@/platform/runtime/transport"
 import { authFetch } from "@/platform/api/api"
 import { bypassFetchThrottle } from "@/lib/fetch-throttle"
-import { centralTransportForServer } from "@/platform/runtime/transport"
+import type {
+  PrepareUserHostedRuntimeInput,
+  PrepareWorkspaceRuntimeInput,
+  PrepareWorkspaceRuntimeResult,
+  PrepareWorkspaceSessionWorktreeInput,
+  UserHostedRuntimeResult,
+  WorkspaceSessionWorktree,
+  WorkspaceStartupPort,
+} from "@/platform/runtime/workspace-startup-port"
 
-export type WorkspaceProvisionEvent = {
-  type: "provision"
-  workspaceId: string
-  step: string
-  message?: string
-  totalMs?: number
-  ts: number
-}
-
-export type WorkspaceProvisionEvents = {
-  on(type: "provision", handler: (event: WorkspaceProvisionEvent) => void): (() => void) | undefined
-}
+/**
+ * The hosted implementation of `WorkspaceStartupPort`.
+ *
+ * Everything here needs the account-bearing transport and the Relay: waking a
+ * central sandbox, connecting to a user-hosted machine, admitting a worktree on
+ * a remote host. Local code never imports this module — it names the operation
+ * through `platform/runtime/workspace-startup.ts`, and `app/entry/main.tsx`
+ * binds this implementation for the hosted build. That indirection is what lets
+ * the whole `platform/runtime/cloud` root move to `@claxedo/cloud-app`.
+ *
+ * Reading the runtime RECORD used to live here too and does not any more; see
+ * `platform/runtime/workspace-runtime-record.ts` for why.
+ */
 
 const ENSURE_RUNTIME_FRESH_MS = 30_000
 
@@ -41,15 +47,6 @@ export function workspaceRuntimeEnsureQueryKey(input: { baseUrl?: string; worksp
   ] as const
 }
 
-function runtimeScope(input: { directory?: string; workspaceId?: string }) {
-  const workspaceId = input.workspaceId ??
-    (input.directory ? sessionWorkspaceRuntimeRef({ directory: input.directory })?.workspaceId : undefined)
-  return {
-    workspaceId,
-    directory: workspaceId ? undefined : input.directory,
-  }
-}
-
 function errorText(error: unknown) {
   if (typeof error === "string") return error
   if (error instanceof Error) return error.message
@@ -58,45 +55,6 @@ function errorText(error: unknown) {
     if (typeof message === "string") return message
   }
   return "Request failed"
-}
-
-function pendingCloudRuntime(input: WorkspaceRuntimeSnapshot | null | undefined): input is WorkspaceRuntimeSnapshot & { kind: "cloud"; status: string } {
-  return !!input && input.kind === "cloud" && !!input.status && input.status !== "ready" && input.status !== "failed"
-}
-
-export function workspaceRuntimeBlocksBootstrap(input?: WorkspaceRuntimeSnapshot | null) {
-  return pendingCloudRuntime(input)
-}
-
-export function appendWorkspaceRuntimeLog(
-  logs: WorkspaceRuntimeLog[],
-  step: string,
-  message?: string,
-  totalMs?: number,
-  now = Date.now(),
-) {
-  const prev = logs.at(-1)
-  if (prev?.step === step && prev?.message === message) return logs
-  return [...logs, { step, message, ts: now, totalMs }]
-}
-
-export async function resolveWorkspaceRuntime(input: {
-  baseUrl?: string
-  request?: typeof fetch
-  directory?: string
-  workspaceId?: string
-  create?: boolean
-}) {
-  const query = workspaceResolveQuery({
-    ...input,
-    ...runtimeScope(input),
-  })
-  if (fastSessionSwitchAnyNetworkQuiet() && input.directory && !input.workspaceId && input.create !== true) {
-    const cached = queryClient.getQueryData<WorkspaceRuntimeSnapshot | null>(query.queryKey)
-    if (cached !== undefined) return cached
-    return null
-  }
-  return await queryClient.fetchQuery(query)
 }
 
 async function ensureWorkspaceRuntime(input: {
@@ -119,29 +77,6 @@ async function ensureWorkspaceRuntime(input: {
 export function resetWorkspaceRuntimeEnsureCache() {
   queryClient.removeQueries({ queryKey: ["shell", "workspace-runtime-ensure"] })
   queryClient.removeQueries({ queryKey: ["shell", "workspace-connection"] })
-}
-
-// User-hosted workspaces are NOT provisioned as a central sandbox — they
-// already exist and connect through the relay. They still have a real
-// connecting sequence (mint the relay connection → reach the host through the
-// tunnel → probe runtime health) that takes time and can fail when the host
-// machine is offline. There is no provision event stream for user-hosted, so we
-// derive the phase from the connection + health-probe results directly.
-export const USER_HOSTED_STARTUP_PIPELINE = [
-  { key: "connecting_workspace", label: "Connecting to workspace" },
-  { key: "establishing_relay", label: "Establishing relay tunnel" },
-  { key: "checking_health", label: "Checking runtime health" },
-] as const
-
-export type UserHostedRuntimeResult = {
-  ok: boolean
-  offline?: boolean
-  status?: string
-  message?: string
-}
-
-export type UserHostedOfflineSignal = {
-  message: string
 }
 
 function isHostOfflineBody(text: string) {
@@ -188,21 +123,9 @@ function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
-export async function prepareUserHostedRuntime(input: {
-  workspaceId: string
-  directory?: string
-  baseUrl?: string
-  request?: typeof fetch
-  relayRequest?: typeof fetch
-  cancelled?: () => boolean
-  onStatus?: (status: string) => void
-  onLog?: (next: WorkspaceRuntimeLog) => void
-  onOffline?: (next: UserHostedOfflineSignal) => void
-  maxHealthAttempts?: number
-  retryDelayMs?: number
-  healthTimeoutMs?: number
-  delay?: (ms: number) => Promise<void>
-}): Promise<UserHostedRuntimeResult> {
+export async function prepareUserHostedRuntime(
+  input: PrepareUserHostedRuntimeInput,
+): Promise<UserHostedRuntimeResult> {
   const emit = (step: string, message?: string) => {
     input.onStatus?.(step)
     input.onLog?.({ step, message, ts: Date.now() })
@@ -287,16 +210,9 @@ export async function prepareUserHostedRuntime(input: {
   }
 }
 
-export async function prepareWorkspaceRuntime(input: {
-  directory: string
-  baseUrl?: string
-  request?: typeof fetch
-  events?: WorkspaceProvisionEvents
-  cancelled?: () => boolean
-  onResolved?: (workspace: WorkspaceRuntimeSnapshot | null) => void
-  onStatus?: (status: string) => void
-  onLog?: (next: WorkspaceRuntimeLog) => void
-}) {
+export async function prepareWorkspaceRuntime(
+  input: PrepareWorkspaceRuntimeInput,
+): Promise<PrepareWorkspaceRuntimeResult> {
   const workspace = await resolveWorkspaceRuntime({
     baseUrl: input.baseUrl,
     request: input.request,
@@ -360,14 +276,9 @@ export async function prepareWorkspaceRuntime(input: {
   }
 }
 
-export async function prepareWorkspaceSessionWorktree(input: {
-  workspaceId: string
-  sessionId: string
-  directory?: string
-  baseUrl?: string
-  request?: typeof fetch
-  baseCommit?: string
-}) {
+export async function prepareWorkspaceSessionWorktree(
+  input: PrepareWorkspaceSessionWorktreeInput,
+): Promise<WorkspaceSessionWorktree> {
   const transport = createTransport({
     placement: {
       workspaceId: input.workspaceId,
@@ -394,4 +305,18 @@ export async function prepareWorkspaceSessionWorktree(input: {
     throw new Error("Worktree admission returned an invalid record")
   }
   return body.worktree
+}
+
+/**
+ * The hosted binding, as one object.
+ *
+ * Composition installs this — see `app/entry/main.tsx`. Assembled here rather
+ * than at the entry so that adding an operation to the port is a type error in
+ * THIS file, next to the implementation, instead of in a file whose job is to
+ * start the app.
+ */
+export const cloudWorkspaceStartup: WorkspaceStartupPort = {
+  prepareWorkspaceRuntime,
+  prepareUserHostedRuntime,
+  prepareWorkspaceSessionWorktree,
 }

@@ -17,7 +17,8 @@ import {
 } from "@/features/session/app-ports"
 import { sessionRoute as canonicalSessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
 import { CloudStartupView, type CloudLog } from "@/features/session/ui/components/cloud-startup-view"
-import { appendWorkspaceRuntimeLog, prepareWorkspaceRuntime } from "@/platform/runtime/cloud/workspace-runtime-store"
+import { appendWorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
+import { workspaceStartup } from "@/platform/runtime/workspace-startup"
 import { shouldBlockRemoteSessionHistoryAction } from "./session-actions.logic"
 import { directorySessionCacheQueryOptions, type DirectorySessionCacheValue } from "../data/sync/queries"
 import { removeSessionInventoryQueryData } from "../data/sync/session-inventory"
@@ -115,7 +116,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
       logs: [] as CloudLog[],
     })
 
-    const result = await prepareWorkspaceRuntime({
+    const result = await workspaceStartup().prepareWorkspaceRuntime({
       directory: workspaceDir,
       events: props.events,
       onResolved: (workspace) => {

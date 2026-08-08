@@ -373,7 +373,15 @@ describe("direction 1 — local code that imports hosted candidates", () => {
   const CROSS_EDGES_BY_ROOT = {
     "features/workgraph": { modules: 28, importedByLocal: 8, localImporters: 7 },
     "features/documents": { modules: 28, importedByLocal: 8, localImporters: 11 },
-    "platform/runtime/cloud": { modules: 1, importedByLocal: 1, localImporters: 14 },
+    // 14 -> 1. The root was inverted behind
+    // `platform/runtime/workspace-startup-port.ts`: local callers name an
+    // operation, `app/entry/main.tsx` binds `cloudWorkspaceStartup`, and it is
+    // now the ONLY staying module that imports the root. It is itself on Unit
+    // 10's move list, so by the plan's own manifest the edge is already zero
+    // (see PLAN_MOVE_SET below). Twelve of the fourteen callers did not need a
+    // port at all — they only read the runtime RECORD, which works in a local
+    // build and moved to `platform/runtime/workspace-runtime-record.ts`.
+    "platform/runtime/cloud": { modules: 1, importedByLocal: 1, localImporters: 1 },
     "features/workspaces": { modules: 24, importedByLocal: 21, localImporters: 32 },
     "features/settings": { modules: 16, importedByLocal: 13, localImporters: 12 },
     "features/onboarding": { modules: 32, importedByLocal: 2, localImporters: 7 },
@@ -399,10 +407,14 @@ describe("direction 1 — local code that imports hosted candidates", () => {
   })
 
   test("records the whole-package totals", () => {
-    // 62 hosted modules reached from 63 local files. Roughly one local edit per
-    // hosted module reached — the extraction is wide and shallow, not deep.
+    // 62 hosted modules reached from 52 local files. The module count is
+    // unchanged by the cloud-runtime inversion — the store is still reached,
+    // by one file — but the FILE count fell from 63, because thirteen of the
+    // fourteen callers stopped importing hosted code entirely. That asymmetry
+    // is the point of inverting rather than re-exporting: the review size is
+    // the file count.
     expect(new Set(byCandidateRoots.inbound.map((edge) => edge.to)).size).toBe(62)
-    expect(new Set(byCandidateRoots.inbound.map((edge) => edge.from)).size).toBe(63)
+    expect(new Set(byCandidateRoots.inbound.map((edge) => edge.from)).size).toBe(52)
   })
 
   /**
@@ -412,12 +424,8 @@ describe("direction 1 — local code that imports hosted candidates", () => {
    * cannot be moved at all until it is inverted — there is no "just update the
    * import" for it — while a module with one importer is a one-line change.
    *
-   * The top three are the whole story:
+   * The top two are the whole story:
    *
-   *  - `platform/runtime/cloud/workspace-runtime-store.ts` (14) is a ONE-module
-   *    root that fourteen local files read: bootstrap, terminals, processes,
-   *    session composer, review. It is the single most expensive edge in the
-   *    extraction and nothing else is close on a per-module basis.
    *  - `features/workspaces/ui/panel/workspace-panel-state.ts` (13) is read
    *    almost entirely by `app/workbench/rail/*` — the local rail. Its own
    *    inventory entry already says the panel stays local.
@@ -425,11 +433,14 @@ describe("direction 1 — local code that imports hosted candidates", () => {
    *    move list and is imported by the local shell, the rail, and the session
    *    and terminal app-ports.
    *
+   * `platform/runtime/cloud/workspace-runtime-store.ts` used to head this list
+   * at 14 and is GONE from it — one importer now, so it does not clear the
+   * threshold. See the test below, which still names its importers by hand.
+   *
    * A count going UP here is the loudest signal in the file: it means the module
    * that was already hardest to move got harder.
    */
   const HEAVIEST_CROSS_EDGES = {
-    "platform/runtime/cloud/workspace-runtime-store.ts": 14,
     "features/workspaces/ui/panel/workspace-panel-state.ts": 13,
     "features/workspaces/data/workspace-connection.ts": 9,
     "features/onboarding/index.ts": 6,
@@ -448,12 +459,19 @@ describe("direction 1 — local code that imports hosted candidates", () => {
     expect(heaviest(byCandidateRoots.inbound, 3)).toEqual(HEAVIEST_CROSS_EDGES)
   })
 
-  test("names the local importers of the single most expensive edge", () => {
-    // Recorded by name, not just counted: this is the list the next session has
-    // to work through, and it is the argument for inverting the store behind a
-    // port rather than moving it. Note the callers are terminals, processes and
-    // the session composer — all local features — which is why "move the cloud
-    // runtime store to cloud-app" cannot be done as a file move.
+  test("names the local importers of the once-most-expensive edge", () => {
+    // This list used to hold fourteen files — bootstrap, the rail, terminals,
+    // processes, review, the session composer and harness — which is why "move
+    // the cloud runtime store to cloud-app" could not be done as a file move.
+    //
+    // It now holds one, and that one is the COMPOSITION ROOT: the hosted entry
+    // binds `cloudWorkspaceStartup` into
+    // `platform/runtime/workspace-startup.ts`, and every product caller reaches
+    // the three hosted operations through `workspaceStartup()`. `main.tsx` is
+    // itself on Unit 10's move list, so the edge leaves with the code.
+    //
+    // Kept as a named list rather than a count so a second importer has to be
+    // written down here, next to the reason there is only supposed to be one.
     const importers = [
       ...new Set(
         byCandidateRoots.inbound
@@ -462,22 +480,14 @@ describe("direction 1 — local code that imports hosted candidates", () => {
       ),
     ].toSorted()
 
-    expect(importers).toEqual([
-      "app/boot/data/bootstrap.ts",
-      "app/providers/global-sync/provider.tsx",
-      "app/workbench/rail/workspace-panel-body.tsx",
-      "features/processes/providers/process-pane.tsx",
-      "features/processes/ui/add-process-dialog.tsx",
-      "features/review/ui/review-tab.tsx",
-      "features/session/actions/session-actions.tsx",
-      "features/session/composer/ui/submit-create-session.ts",
-      "features/session/composer/ui/submit-directory.ts",
-      "features/session/harness/harness-config-runtime.ts",
-      "features/session/ui/content/session-environment-card.tsx",
-      "features/terminal/providers/provider.tsx",
-      "features/terminal/ui/content/terminal-content.tsx",
-      "features/terminal/ui/terminal.tsx",
-    ])
+    expect(importers).toEqual(["app/entry/main.tsx"])
+    // Positive control: the walker still sees this module at all. An empty list
+    // would otherwise be indistinguishable from a resolver that stopped
+    // resolving `@/platform/runtime/cloud/...`.
+    expect(byCandidateRoots.leaving).toContain("platform/runtime/cloud/workspace-runtime-store.ts")
+    // And the binding really is the hosted entry's, not a leftover in the port
+    // itself: the seam local callers import must reach no hosted module.
+    expect(byCandidateRoots.inbound.filter((edge) => edge.from === "platform/runtime/workspace-startup.ts")).toEqual([])
   })
 })
 
@@ -573,8 +583,13 @@ describe("the plan's move list versus the candidate manifest", () => {
    */
   const PLAN_MOVE_SET = {
     movedModules: 87,
-    stayingModulesThatImportThem: 55,
-    movedModulesImportedByStaying: 42,
+    // 55 -> 41 and 42 -> 41 after the cloud runtime store was inverted. Under
+    // the plan's own move list the store is now imported by ZERO staying
+    // modules: its one remaining importer, `app/entry/main.tsx`, is itself on
+    // the list. The thirteen other files that dropped out did so because the
+    // record reader they actually wanted moved to `platform/runtime/`.
+    stayingModulesThatImportThem: 41,
+    movedModulesImportedByStaying: 41,
     exportSurface: 58,
   }
 

@@ -1,4 +1,4 @@
-import { resolveWorkspaceRuntime as defaultResolveWorkspaceRuntime } from "@/platform/runtime/cloud/workspace-runtime-store"
+import { resolveWorkspaceRuntime as defaultResolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
 import { createTransport as defaultCreateTransport } from "@/platform/runtime/transport"
 import { authFetch } from "@/platform/api/api"
 import { centralTransportForServer, unsignedLocalFetch as defaultUnsignedLocalFetch } from "@/platform/runtime/transport"

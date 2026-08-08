@@ -2,8 +2,11 @@ import { createStore, produce, type SetStoreFunction } from "solid-js/store"
 import type { CloudLog } from "@/features/session/ui/components/cloud-startup-view"
 import { isForbiddenConnectionError } from "@/features/workspaces/app-ports"
 import type { useClaxedoEventsOptional } from "../../../app/integrations/claxedo-events"
+import { appendWorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
+// The connection authority is itself hosted (Unit 10 moves it with cloud-app),
+// so it binds the implementation directly rather than through
+// `workspaceStartup()`. Local surfaces must not copy this import.
 import {
-  appendWorkspaceRuntimeLog,
   prepareUserHostedRuntime,
   prepareWorkspaceRuntime,
 } from "@/platform/runtime/cloud/workspace-runtime-store"

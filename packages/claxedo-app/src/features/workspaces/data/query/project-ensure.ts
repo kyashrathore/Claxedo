@@ -1,4 +1,4 @@
-import { resolveWorkspaceRuntime } from "@/platform/runtime/cloud/workspace-runtime-store"
+import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 

@@ -311,12 +311,21 @@ describe("workspace runtime route audit", () => {
           offenders.push(`${file}: imports/exports ${unsafe.join(", ")} from workspace-runtime-request`)
       }
     }
+    // Runtime-ref normalization moved out of the hosted startup module when the
+    // cloud store was inverted behind `WorkspaceStartupPort`: `runtimeScope()`
+    // (and with it `sessionWorkspaceRuntimeRef`) now lives in the record reader
+    // that stays in `@claxedo/app`, and the hosted module calls it. Both halves
+    // are asserted so the collapse cannot be undone by re-deriving the ref in
+    // either file.
+    const runtimeRecord = await Bun.file(path.join(root, "platform/runtime/workspace-runtime-record.ts")).text()
     const runtimeStore = await Bun.file(path.join(root, "platform/runtime/cloud/workspace-runtime-store.ts")).text()
     const agentRuntimeClient = await Bun.file(path.join(root, "platform/runtime/agent/agent-runtime-client.ts")).text()
     const httpBackend = await Bun.file(path.join(root, "platform/runtime/http-backend.ts")).text()
     const globalSync = await Bun.file(path.join(root, globalSyncContext)).text()
     const globalSyncBootstrap = await Bun.file(path.join(root, "app/boot/data/bootstrap.ts")).text()
-    expect(runtimeStore).toMatch(/sessionWorkspaceRuntimeRef/)
+    expect(runtimeRecord).toMatch(/sessionWorkspaceRuntimeRef/)
+    expect(runtimeRecord).not.toMatch(/workspaceIdFromDirectoryRef/)
+    expect(runtimeStore).toMatch(/runtimeScope/)
     expect(runtimeStore).toMatch(/workspaceRuntimeEnsureQueryKey/)
     expect(runtimeStore).toMatch(/"workspace-runtime-ensure"/)
     expect(runtimeStore).not.toMatch(/ensureRuntimeInflight/)

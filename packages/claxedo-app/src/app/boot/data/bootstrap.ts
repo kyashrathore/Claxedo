@@ -24,7 +24,7 @@ import {
 import { commandListQuery } from "../../../features/session/data/query/shell"
 import { agentListQuery, configQuery, pathQuery, projectCurrentQuery, workspaceResolveQuery } from "../../../features/session/data/query/directory"
 import { workspaceVcsQuery, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-query"
-import { workspaceRuntimeBlocksBootstrap } from "@/platform/runtime/cloud/workspace-runtime-store"
+import { workspaceRuntimeBlocksBootstrap } from "@/platform/runtime/workspace-runtime-record"
 import { normalizeProviderList } from "@/platform/query/provider-list"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"

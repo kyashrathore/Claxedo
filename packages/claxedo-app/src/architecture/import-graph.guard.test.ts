@@ -22,7 +22,10 @@ const liveTypeContracts = [
   "platform/runtime/workspace-runtime.ts",
   "platform/runtime/capabilities.ts",
   "platform/runtime/session.ts",
-  "platform/runtime/workspace-log.ts",
+  // The workspace-startup port. `workspace-log.ts` used to sit here and no
+  // longer does: it gained `appendWorkspaceRuntimeLog`, so it is reached by
+  // value and is not a pure type contract any more.
+  "platform/runtime/workspace-startup-port.ts",
   "platform/query/project-meta.ts",
   "platform/account/account-port.ts",
 ]

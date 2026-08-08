@@ -31,7 +31,11 @@ const typeContractCandidates = new Set([
   "platform/runtime/workspace-runtime.ts",
   "platform/runtime/capabilities.ts",
   "platform/runtime/session.ts",
-  "platform/runtime/workspace-log.ts",
+  // The workspace-startup port: what local code may ask a hosted build to bring
+  // up. Same shape as the account port below — the contract is imported
+  // type-only by its caller, its binding, and its cloud implementation, so the
+  // value graph sees no edge into it.
+  "platform/runtime/workspace-startup-port.ts",
   // The account port: the tokenless account contract. The provider and the
   // browser binding both import it type-only, which is the whole shape — the
   // port declares what may be asked for, and implementations supply it.

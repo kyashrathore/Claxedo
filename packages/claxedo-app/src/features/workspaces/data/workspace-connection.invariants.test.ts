@@ -123,9 +123,18 @@ describe("workspace connection authority invariants", () => {
   test("the authority reuses the existing mint/health/provision code (no duplication)", async () => {
     const text = await read(authorityModule)
     // Wave 1.5 flattened `cloud/runtime/` → `platform/runtime/cloud/workspace-runtime-store.ts`.
+    //
+    // The authority binds that hosted module DIRECTLY rather than through
+    // `workspaceStartup()`, unlike every local caller: it is on Unit 10's move
+    // list and leaves with the implementation, so a port between them would be
+    // indirection that moves twice. `architecture/workspace-startup-port.guard.test.ts`
+    // allowlists exactly this importer, with that reason.
     expect(text).toMatch(/from .*cloud\/workspace-runtime-store/)
     expect(text).toMatch(/prepareUserHostedRuntime\b/)
     expect(text).toMatch(/prepareWorkspaceRuntime\b/)
+    // The log helper is NOT hosted — it appends to an array — so it comes from
+    // `platform/runtime/workspace-log.ts`, which stays in `@claxedo/app`.
     expect(text).toMatch(/appendWorkspaceRuntimeLog\b/)
+    expect(text).toMatch(/from ["']@\/platform\/runtime\/workspace-log["']/)
   })
 })

@@ -10,7 +10,7 @@ import { legacyTerminalPersistScopeKey, terminalScopeKey } from "@/platform/iden
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "@/platform/api/local-server"
 import { usePlatform } from "@/platform/runtime/platform-provider"
-import { resolveWorkspaceRuntime } from "@/platform/runtime/cloud/workspace-runtime-store"
+import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { createTransport } from "@/platform/runtime/transport"
 import { centralTransportForServer } from "@/platform/runtime/transport"

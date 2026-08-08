@@ -57,7 +57,7 @@ import { shellRouteDirectoryFromPathname } from "@/platform/identity/route"
 import { removeSessionIdentity } from "@/platform/sync/global-session-identity"
 import { mergeSignedInventoryProjects } from "../../../features/session/data/query/inventory"
 import { projectListQuery } from "@/platform/query/control-plane"
-import { resolveWorkspaceRuntime } from "@/platform/runtime/cloud/workspace-runtime-store"
+import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
 import {
   cachedGlobalSyncSdkClient,
   clearGlobalSyncSdkClientsForDirectory,

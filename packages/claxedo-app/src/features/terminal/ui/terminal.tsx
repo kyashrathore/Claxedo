@@ -28,7 +28,7 @@ import { cursorPlan, initialDelay, isLikelyTui, restoreSize } from "@/features/t
 import { stripTerminalRepliesFromInput } from "@/features/terminal/core/input-reply-filter"
 import { getCapabilityResponses } from "@/features/terminal/core/capability-responder"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
-import { resolveWorkspaceRuntime } from "@/platform/runtime/cloud/workspace-runtime-store"
+import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
 import { resolveTerminalReloadFlag, terminalReloadStorageKey } from "./pty-key-migration"
 import { resolveInitialCommand } from "./initial-command"
 import { buildRestoreWrite, shouldTrimRestoredTail, trimTrailingLines } from "./restore"

@@ -9,7 +9,7 @@ import { aliasTerminalLogSummary } from "../../lib/terminal-log-summary"
 import { pendingRecovery, resolveRecovery, trackRecovery } from "../../workbench/pane-terminal-recovery"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { usePlatform } from "@/platform/runtime/platform-provider"
-import { resolveWorkspaceRuntime } from "@/platform/runtime/cloud/workspace-runtime-store"
+import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
 import {
   SessionPaneScope,
   TerminalNewView,

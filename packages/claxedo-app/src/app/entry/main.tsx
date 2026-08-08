@@ -23,6 +23,22 @@ import { isDemoMode, isEmbedMode } from "@/platform/api/api"
 import { urlRoutingEnabled } from "@/lib/runtime-mode"
 import { ConfigProvider } from "../providers/config"
 import { Persist, resetDemoPersisted, setPersisted } from "@/platform/persistence/persist"
+import { configureWorkspaceStartup } from "@/platform/runtime/workspace-startup"
+import { cloudWorkspaceStartup } from "@/platform/runtime/cloud/workspace-runtime-store"
+
+/**
+ * Bind the hosted workspace-startup implementation.
+ *
+ * This is the only place `platform/runtime/cloud` is imported by anything
+ * outside itself. The composer and the session actions menu wake cloud and
+ * user-hosted runtimes through `workspaceStartup()`, which is why they can
+ * stay in `@claxedo/app` while this file — and the implementation it binds —
+ * move to `@claxedo/cloud-app`.
+ *
+ * `local.tsx` deliberately has no counterpart: a local build has no sandbox to
+ * wake, so the port stays unbound and reaching it throws instead of pretending.
+ */
+configureWorkspaceStartup(cloudWorkspaceStartup)
 
 // Initialize cloud extensions before rendering
 const config = getDefaultConfig()

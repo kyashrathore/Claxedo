@@ -1,5 +1,5 @@
 import type { CloudLog } from "@/features/session/ui/components/cloud-startup-view"
-import { appendWorkspaceRuntimeLog } from "@/platform/runtime/cloud/workspace-runtime-store"
+import { appendWorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
 import type { useClaxedoState } from "@/features/session/app-ports"
 import { scheduleSessionProjectionPull } from "@/platform/runtime/agent/session-projection"
 import type {

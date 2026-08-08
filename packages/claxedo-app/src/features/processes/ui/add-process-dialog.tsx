@@ -21,7 +21,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { showToast } from "@opencode-ai/ui/toast"
 import { createProcessClient } from "@/features/processes/data/client"
 import type { Process } from "@/features/processes/data/process"
-import { resolveWorkspaceRuntime } from "@/platform/runtime/cloud/workspace-runtime-store"
+import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 
 type ProcessConfig = Process.ProcessConfig

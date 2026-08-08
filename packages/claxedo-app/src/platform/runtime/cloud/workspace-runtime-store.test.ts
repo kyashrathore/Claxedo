@@ -1,14 +1,12 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
 import {
-  appendWorkspaceRuntimeLog,
+  cloudWorkspaceStartup,
   prepareUserHostedRuntime,
   prepareWorkspaceRuntime,
   resetWorkspaceRuntimeEnsureCache,
-  resolveWorkspaceRuntime,
   workspaceRuntimeEnsureQueryKey,
-  workspaceRuntimeBlocksBootstrap,
-  type WorkspaceProvisionEvent,
 } from "./workspace-runtime-store"
+import type { WorkspaceProvisionEvent } from "@/platform/runtime/workspace-startup-port"
 import { queryClient } from "@/platform/query/query-client"
 import { isFetchThrottleBypassed } from "@/lib/fetch-throttle"
 
@@ -42,100 +40,7 @@ function connectionBody(workspaceId: string) {
   }
 }
 
-describe("workspace runtime helpers", () => {
-  test("workspaceRuntimeBlocksBootstrap only while cloud runtime is still pending", () => {
-    expect(workspaceRuntimeBlocksBootstrap()).toBe(false)
-    expect(workspaceRuntimeBlocksBootstrap({ workspaceId: "ws", kind: "local" })).toBe(false)
-    expect(workspaceRuntimeBlocksBootstrap({ workspaceId: "ws", kind: "cloud", status: "ready" })).toBe(false)
-    expect(workspaceRuntimeBlocksBootstrap({ workspaceId: "ws", kind: "cloud", status: "failed" })).toBe(false)
-    expect(workspaceRuntimeBlocksBootstrap({ workspaceId: "ws", kind: "cloud", status: "starting_runtime" })).toBe(true)
-    expect(workspaceRuntimeBlocksBootstrap({ workspaceId: "ws", kind: "cloud", status: "stopped" })).toBe(true)
-  })
-
-  test("appendWorkspaceRuntimeLog avoids duplicate rows", () => {
-    const first = appendWorkspaceRuntimeLog([], "stopped", "Waking workspace runtime...", 12, 1)
-    expect(first).toEqual([{ step: "stopped", message: "Waking workspace runtime...", ts: 1, totalMs: 12 }])
-    expect(appendWorkspaceRuntimeLog(first, "stopped", "Waking workspace runtime...", 12, 2)).toBe(first)
-  })
-
-  test("resolveWorkspaceRuntime uses the shared query cache", async () => {
-    const request: typeof fetch = mock(async () => new Response(JSON.stringify({
-      workspaceId: "ws_1",
-      kind: "cloud",
-      status: "ready",
-    }), { status: 200 }))
-
-    const first = await resolveWorkspaceRuntime({
-      baseUrl: "http://runtime.test",
-      request,
-      directory: "/tmp/ws",
-    })
-    const second = await resolveWorkspaceRuntime({
-      baseUrl: "http://runtime.test",
-      request,
-      directory: "/tmp/ws",
-    })
-
-    expect(first).toMatchObject({ workspaceId: "ws_1", status: "ready" })
-    expect(second).toMatchObject({ workspaceId: "ws_1", status: "ready" })
-    expect(request).toHaveBeenCalledTimes(1)
-  })
-
-  test("resolveWorkspaceRuntime skips uncached directory resolve during fast session switch quiet", async () => {
-    ;(globalThis as typeof globalThis & {
-      window?: {
-        __claxedoFastSessionSwitch?: { sessionId: string; until: number; networkQuietUntil?: number }
-      }
-    }).window = {
-      __claxedoFastSessionSwitch: {
-        sessionId: "ses_next",
-        until: Date.now() + 250,
-        networkQuietUntil: Date.now() + 2_000,
-      },
-    }
-    const request: typeof fetch = mock(async () => new Response(JSON.stringify({
-      workspaceId: "ws_1",
-      kind: "local",
-      status: "ready",
-    }), { status: 200 }))
-
-    const result = await resolveWorkspaceRuntime({
-      baseUrl: "http://runtime.test",
-      request,
-      directory: "/tmp/ws",
-    })
-
-    expect(result).toBeNull()
-    expect(request).not.toHaveBeenCalled()
-  })
-
-  test("resolveWorkspaceRuntime normalizes legacy workspace directory selectors", async () => {
-    const calls: string[] = []
-    const request: typeof fetch = mock(async (input) => {
-      calls.push(requestUrl(input))
-      return new Response(JSON.stringify({
-        workspaceId: "ws_1",
-        kind: "cloud",
-        status: "ready",
-      }), { status: 200 })
-    })
-
-    await resolveWorkspaceRuntime({
-      baseUrl: "http://runtime.test",
-      request,
-      directory: "workspace:ws_1",
-    })
-    await resolveWorkspaceRuntime({
-      baseUrl: "http://runtime.test",
-      request,
-      directory: "ws_2",
-    })
-
-    expect(calls).toEqual([
-      "http://runtime.test/api/workspace/resolve?workspaceId=ws_1",
-      "http://runtime.test/api/workspace/resolve?workspaceId=ws_2",
-    ])
-  })
+describe("cloud workspace startup", () => {
 
   test("prepareWorkspaceRuntime reuses resolve and streams startup progress", async () => {
     const request: typeof fetch = mock(async (input, init) => {
