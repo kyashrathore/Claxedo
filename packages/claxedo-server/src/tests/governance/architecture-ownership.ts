@@ -141,19 +141,27 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "projection",
+    // Moved to @claxedo/server-core in the local/cloud package split: BOTH
+    // products persist streamed message events, so the module could not stay in
+    // the hosted package. Recorded as Deleted-here rather than dropped from the
+    // table, so a revert that recreates it under src/ is caught.
     module: "session/message-replay.ts",
-    status: OwnershipStatus.Canonical,
+    status: OwnershipStatus.Deleted,
     owner: "local session message replay projection",
-    reason: "Persists streamed workspace-runtime message events into the local projection store; it is not sandbox driver or lease code.",
-    tests: ["session/message-replay.test.ts"],
+    canonicalReplacement: "../../claxedo-server-core/src/session/message-replay.ts",
+    reason: "Persists streamed workspace-runtime message events into the projection store, for the desktop-local and hosted products alike.",
+    tests: ["../../claxedo-server-core/src/session/message-replay.test.ts"],
   },
   {
     area: "projection",
+    // Moved to @claxedo/server-core with message-replay above, and for the same
+    // reason: both products mirror session summaries into claxedo.db.
     module: "session/sync.ts",
-    status: OwnershipStatus.Canonical,
+    status: OwnershipStatus.Deleted,
+    canonicalReplacement: "../../claxedo-server-core/src/session/sync.ts",
     owner: "local cloud session projection sync",
     reason: "Mirrors cloud workspace session summaries and messages into claxedo.db for local reads; it is not sandbox driver or lease code.",
-    tests: ["session/sync.test.ts"],
+    tests: ["../../claxedo-server-core/src/session/sync.test.ts"],
   },
   {
     area: "registry",
