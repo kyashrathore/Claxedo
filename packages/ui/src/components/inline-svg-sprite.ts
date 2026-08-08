@@ -61,6 +61,7 @@ export function createInlineSvgSprite(rootID: string, markup: string) {
 export function createLazyInlineSvgSprite(rootID: string, load: () => Promise<string>) {
   let symbols: Map<string, string> | undefined
   let loading: Promise<void> | undefined
+  let failed = false
   const pending = new Set<string>()
 
   const materialize = (name: string) => {
@@ -69,12 +70,21 @@ export function createLazyInlineSvgSprite(rootID: string, load: () => Promise<st
   }
 
   const start = () => {
-    if (loading) return
-    loading = load().then((markup) => {
-      symbols = parseSymbols(rootID, markup)
-      for (const name of pending) materialize(name)
-      pending.clear()
-    })
+    if (loading || failed) return
+    loading = load()
+      .then((markup) => {
+        symbols = parseSymbols(rootID, markup)
+        for (const name of pending) materialize(name)
+        pending.clear()
+      })
+      .catch((error) => {
+        // A missing development asset must not become an unhandled rejection
+        // that fails an unrelated render. The URL is immutable for the life of
+        // this module, so log once and stop retrying every mounted icon.
+        failed = true
+        pending.clear()
+        console.warn(`[svg-sprite] ${rootID} failed to load`, error)
+      })
   }
 
   return {

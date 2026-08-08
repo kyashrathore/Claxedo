@@ -39,7 +39,8 @@ import {
 } from "@/ui/session-kit"
 
 const REVIEW_MOUNT_MARGIN = 80
-const REVIEW_RENDER_BATCH = 20
+const REVIEW_RENDER_BATCH = 8
+const REVIEW_IDLE_BATCH = 2
 
 export type SessionReviewDiffStyle = "unified" | "split"
 
@@ -171,6 +172,8 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   let scroll: HTMLDivElement | undefined
   let focusToken = 0
   let frame: number | undefined
+  let renderTask: number | undefined
+  let renderTaskIsIdle = false
   const i18n = useI18n()
   const fileComponent = useFileComponent()
   const anchors = new Map<string, HTMLElement>()
@@ -271,8 +274,11 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   }
 
   onCleanup(() => {
-    if (frame === undefined) return
-    cancelAnimationFrame(frame)
+    if (frame !== undefined) cancelAnimationFrame(frame)
+    if (renderTask !== undefined) {
+      if (renderTaskIsIdle && typeof window.cancelIdleCallback === "function") window.cancelIdleCallback(renderTask)
+      else window.clearTimeout(renderTask)
+    }
   })
 
   createEffect(() => {
@@ -282,6 +288,27 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   })
 
   createEffect(on(() => files().join("\0"), () => setRenderLimit(REVIEW_RENDER_BATCH)))
+
+  // Keep first paint small, then admit every file header during browser idle
+  // time. This preserves keyboard search, browser find, and programmatic
+  // navigation without competing with review interactions for a frame; the
+  // expensive diff bodies remain viewport-gated by `visible`.
+  createEffect(() => {
+    const total = items().length
+    const current = renderLimit()
+    if (current >= total || renderTask !== undefined) return
+    const render = () => {
+      renderTask = undefined
+      setRenderLimit((limit) => Math.min(total, limit + REVIEW_IDLE_BATCH))
+    }
+    if (typeof window.requestIdleCallback === "function") {
+      renderTaskIsIdle = true
+      renderTask = window.requestIdleCallback(render, { timeout: 2_000 })
+      return
+    }
+    renderTaskIsIdle = false
+    renderTask = window.setTimeout(render, 0)
+  })
 
   const handleChange = (next: string[]) => {
     props.onOpenChange?.(next)
