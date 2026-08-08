@@ -264,8 +264,33 @@ function sandboxEgressExtraHosts(env: HostedControlPlane["env"]): string[] {
     .filter(Boolean)
 }
 
+/**
+ * The cloud-hosted control plane: boot validation, then the shared route core.
+ *
+ * The assertion is the only thing this adds, and it is the whole point of the
+ * split. `assertHostedAppBootConfig` encodes a CLOUD trust posture — a hosted
+ * deployment mode, a signed issuer, a hosted authority. Self-hosted composes
+ * the same routes over SQLite and embedded auth, which that assertion would
+ * reject, and reusing it there would mean either weakening a cloud boot check
+ * or asserting nothing at all.
+ *
+ * So the route assembly below is trust-NEUTRAL, and each deployment brings its
+ * own posture check. Unit 7 adds `createSelfHostedApp` as the second caller.
+ */
 export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppOverrides = {}) {
   assertHostedAppBootConfig(plane)
+  return createSignedControlPlaneApp(plane, overrides)
+}
+
+/**
+ * The signed control-plane routes, with no deployment posture of its own.
+ *
+ * Every caller must have validated its own boot configuration first. Nothing
+ * here re-checks it, and nothing here may: a check that suited both cloud and
+ * self-hosted would have to be the weaker of the two, which is how a hosted
+ * boot gate quietly stops covering the thing it was written for.
+ */
+export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides: HostedAppOverrides = {}) {
   // Install the plane's durable CLI session token registry process-wide.
   //
   // This is the `configureX(...)` composition seam the registry port defines,
