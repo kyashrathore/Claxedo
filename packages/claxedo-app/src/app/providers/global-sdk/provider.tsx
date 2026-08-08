@@ -134,10 +134,6 @@ function shouldUseSignedEventAccess(input: {
     isUserHostedWorkspaceDirectory(directory)
 }
 
-function authEnabledRuntime() {
-  return import.meta.env.VITE_AUTH_ENABLED === "true"
-}
-
 export type RuntimeEventEnvelope = {
   contractVersion: typeof AGENT_RUNTIME_EVENT_CONTRACT_VERSION
   directory: EventDirectory
@@ -355,7 +351,10 @@ const globalSDKContextInput = {
       return { sessionID: "route", directory, workspaceId: ref.workspaceId, workspaceKind: ref.kind }
     }
     const signedEventAccess = () => shouldUseSignedEventAccess({
-      hasSignedAccess: principalHasSignedAccess(principal()) || authEnabledRuntime() || platform.platform === "web",
+      // Enabling sign-in does not make a signed-out desktop principal a cloud
+      // authority. Browser deployments own their cookie/token transport;
+      // desktop crosses the signed boundary only after principal hydration.
+      hasSignedAccess: principalHasSignedAccess(principal()) || platform.platform === "web",
       serverUrl: server.current?.http.url,
       liveSession,
     })
@@ -683,11 +682,13 @@ const globalSDKContextInput = {
           } catch (error) {
             if (!aborted(error) && !transientStreamError(error) && !streamErrorLogged) {
               streamErrorLogged = true
-              console.error("[global-sdk] event stream failed", {
+              console.error("[global-sdk] event stream failed", JSON.stringify({
                 url: currentServer.http.url,
                 fetch: rawEventFetch ? "platform" : "webview",
-                error,
-              })
+                error: error instanceof Error
+                  ? { name: error.name, message: error.message, stack: error.stack }
+                  : error,
+              }))
             }
           } finally {
             abort.signal.removeEventListener("abort", onAbort)
