@@ -77,3 +77,15 @@ export async function bundleClaxedoServer(source: string, destination: string) {
     outputBytes,
   }
 }
+
+export async function bundleClaxedoEngineWorker(source: string, destination: string) {
+  const result = await Bun.build({
+    entrypoints: [source],
+    outdir: destination,
+    target: "node",
+    format: "esm",
+    naming: "index.[ext]",
+  })
+  if (!result.success) throw new AggregateError(result.logs, "Failed to bundle claxedo engine worker")
+  return path.join(destination, "index.js")
+}
