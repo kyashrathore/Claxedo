@@ -34,6 +34,7 @@ import {
 import { configureOpenCodeAuth, opencodeHeaders } from "@claxedo/server-core/opencode/auth"
 import { configureAgentConfig } from "@claxedo/server-core/agent-config/index"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
+import { createLocalControlPlaneServices } from "./local-services"
 import { configureEmbeddedWorkspaceRuntime, shutdownEmbeddedWorkspaceRuntimes } from "../deployments/local/embedded-workspace-runtime"
 import { configureOpencodeMcpSync } from "../opencode/mcp-sync"
 import { createOpencodeEvents } from "../opencode/events"
@@ -43,7 +44,8 @@ import { DEFAULT_CLAXEDO_SERVER_PORT } from "../deployments/local/port"
 
 const log = Log.create({ service: "local-server" })
 
-export type StartLocalServerOptions = Omit<LocalAppOptions, "onError"> & {
+export type StartLocalServerOptions = Omit<LocalAppOptions, "onError" | "services"> & {
+  services?: LocalAppOptions["services"]
   port?: number
   hostname?: string
   /** An explicit URL opts out of the embedded engine. */
@@ -51,6 +53,8 @@ export type StartLocalServerOptions = Omit<LocalAppOptions, "onError"> & {
   opencodePassword?: string | null
   opencodeEmbedPath?: string
   onError?: LocalAppOptions["onError"]
+  /** Desktop diagnostics observer for spawned harness processes. */
+  processObserver?: Parameters<typeof configureEmbeddedWorkspaceRuntime>[0]["processObserver"]
 }
 
 export type LocalServer = {
@@ -92,7 +96,7 @@ export function startLocalServer(options: StartLocalServerOptions): LocalServer 
 
 function startOwned(options: StartLocalServerOptions, release: () => void): LocalServer {
   const port = options.port ?? DEFAULT_CLAXEDO_SERVER_PORT
-  const { services } = options
+  const services = options.services ?? createLocalControlPlaneServices()
   const opencodeCompat = process.env.CLAXEDO_DISABLE_OPENCODE_COMPAT !== "1"
 
   configureOpenCodeAuth(options.opencodePassword ?? null)
@@ -107,6 +111,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   configureEmbeddedWorkspaceRuntime({
     opencodeRequest,
     opencodeCompat,
+    ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     // No route contributions: WorkGraph is a hosted capability, and its absence
     // from an unsigned desktop is this line rather than a runtime flag.
     routeContributions: [],
@@ -139,7 +144,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     log.warn("credential migration failed", { error: String(error) })
   })
 
-  const { app, injectWebSocket } = createLocalApp(options)
+  const { app, injectWebSocket } = createLocalApp({ ...options, services })
   const upstreamEvents = opencodeCompat ? createOpencodeEvents(opencodeRequest, { autoStart: false }) : undefined
 
   const hostname = options.hostname ?? (process.env.CLAXEDO_SERVER_HOST?.trim() || "127.0.0.1")

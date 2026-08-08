@@ -49,11 +49,35 @@ import { mountWorkspaceRuntimePtyWebSocketProxy } from "../deployments/local/ser
 import { mountLocalOnlyUsageLimits } from "../deployments/local/server-usage-limits"
 import { resolveHarnessId } from "../opencode/compat-routes/provider-config"
 
+/**
+ * Paths whose responses carry credential material.
+ *
+ * They are same-origin by definition — the loopback control plane talking to
+ * itself — so they must never get an ACAO header. The defense is the browser
+ * refusing the cross-origin READ, which it only does when none comes back.
+ */
+export function isLocalCredentialPath(path: string): boolean {
+  return /^\/api\/claxedo\/(credentials|integrations)\b/.test(path)
+}
+
+/**
+ * Which origins the desktop-local server answers.
+ *
+ * Loopback plus the product's own web origin. Deliberately NOT paired with
+ * `credentials: true` — see the cors mount below.
+ */
+export function localCorsOrigin(origin: string): string | undefined {
+  if (origin.startsWith("http://localhost:")) return origin
+  if (origin.startsWith("http://127.0.0.1:")) return origin
+  if (/^https:\/\/([a-z0-9-]+\.)*opencode\.ai$/.test(origin)) return origin
+  return undefined
+}
+
 export type LocalAppOptions = {
   services: ControlPlaneServicesContract
   /** Same-origin credential paths that must never receive an ACAO header. */
-  isCredentialPath: (path: string) => boolean
-  corsOrigin: (origin: string, path: string) => string | undefined
+  isCredentialPath?: (path: string) => boolean
+  corsOrigin?: (origin: string, path: string) => string | undefined
   runtimeProxyOptions?: RuntimeProxyOptions
   /** Answers `/workspaces/:workspaceId`; registered ahead of the runtime proxy. */
   workspaceRelayProxy?: MiddlewareHandler
@@ -123,9 +147,10 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
         // talking to itself. Never reflect an ACAO for them — the header
         // defense relies on the browser blocking the cross-origin READ, which
         // it only does when no ACAO comes back.
-        if (options.isCredentialPath(c.req.path)) return undefined
-        return options.corsOrigin(origin, c.req.path)
+        if ((options.isCredentialPath ?? isLocalCredentialPath)(c.req.path)) return undefined
+        return (options.corsOrigin ?? localCorsOrigin)(origin, c.req.path)
       },
+      maxAge: 86400,
       // FINDING 1: `credentials: true` is deliberately NOT set. The self-hosted
       // composition never sets it, and setting it lets any origin this policy
       // approves complete a credentialed cross-origin read — which the shape of

@@ -32,10 +32,12 @@ function read(rel: string) {
 /**
  * The module the desktop server child imports, relative to the desktop package.
  *
- * Unit 5 changes this to the `@claxedo/local-server` package entry. Everything
- * that resolves a server must agree with it.
+ * Unit 5 changed this from `../../claxedo-server/src/deployments/local/server`
+ * — a source-relative reach into the MIXED composition — to the local
+ * product's declared package entry. Everything that resolves a server must
+ * agree with it.
  */
-const DESKTOP_SERVER_ENTRY = "../../claxedo-server/src/deployments/local/server"
+const DESKTOP_SERVER_ENTRY = "@claxedo/local-server/self-hosted-execution"
 
 /** The package directory whose sources feed the bundled desktop server. */
 const DESKTOP_SERVER_PACKAGE_DIR = "../claxedo-server"
@@ -186,27 +188,26 @@ describe("desktop server launch wiring", () => {
     expect(renderer).not.toContain("../../claxedo-app/src")
   })
 
-  test("records that the desktop server edge is undeclared today", () => {
-    // The finding this contract exists to hold onto: desktop composes the
-    // renderer through the DECLARED `@claxedo/app` package, but reaches the
-    // server through a source-relative `../../claxedo-server/src/...` import
-    // with no manifest edge at all.
+  test("declares its server dependency, rather than reaching into a source tree", () => {
+    // The asymmetry this contract was written to hold onto, now resolved.
     //
-    // That asymmetry is why manifest checking alone cannot prove the split.
-    // A source-relative reach-through is invisible to every dependency audit,
-    // survives any amount of package.json tidying, and is precisely how hosted
-    // code would leak back into an unsigned desktop build. Unit 5 replaces it
-    // with a declared `@claxedo/local-server` dependency, and Unit 12's
-    // emitted-artifact gate is what keeps it replaced.
+    // Desktop used to compose the renderer through the DECLARED `@claxedo/app`
+    // package but reach the server through a source-relative
+    // `../../claxedo-server/src/...` import with no manifest edge at all. That
+    // is invisible to every dependency audit, survives any amount of
+    // package.json tidying, and is exactly how hosted code leaks back into an
+    // unsigned desktop build.
+    //
+    // Both edges are declared now. Unit 12's emitted-artifact gate is what
+    // keeps them that way.
     const manifest = JSON.parse(read("package.json")) as {
       dependencies?: Record<string, string>
-      devDependencies?: Record<string, string>
     }
-    const declared = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies })
+    const deps = manifest.dependencies ?? {}
 
-    expect(declared).toContain("@claxedo/app")
-    expect(declared).not.toContain("@claxedo/server")
-    expect(declared).not.toContain("@claxedo/local-server")
-    expect(read("scripts/claxedo-server-entry.ts")).toContain("../../claxedo-server/src/")
+    expect(Object.keys(deps)).toContain("@claxedo/local-server")
+    expect(Object.keys(deps)).toContain("@claxedo/app")
+    // And the reach-through is gone from the entry.
+    expect(read("scripts/claxedo-server-entry.ts")).not.toContain("../../claxedo-server/src")
   })
 })

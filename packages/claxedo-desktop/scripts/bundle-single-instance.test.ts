@@ -40,6 +40,33 @@ function emitted(dir: string): string[] {
 }
 
 describe("shipped claxedo-server bundle", () => {
+  test("carries no hosted capability implementation", async () => {
+    // The point of the split, measured on the artifact rather than the import
+    // graph. Before the desktop entry moved to `@claxedo/local-server` this
+    // bundle was 30MB and contained the Convex client, better-auth, the Polar
+    // billing SDK and the Daytona driver — in a build that never signs in.
+    //
+    // Matched on symbols that only appear in the real implementations. Plain
+    // words like "convex" or "workgraph" still occur as DATA — a network-policy
+    // hostname allowlist, a route-ownership prefix table, an event-name switch
+    // — and matching those would fail for the wrong reason.
+    await bundleClaxedoServer(path.resolve(import.meta.dir, "claxedo-server-entry.ts"), OUT)
+
+    const text = emitted(OUT).map((file) => fs.readFileSync(file, "utf8")).join("\n")
+    const forbidden = {
+      "Convex client": /ConvexHttpClient|ConvexClient\b/,
+      "better-auth": /betterAuth\(|better-auth\//,
+      "Polar billing": /@polar-sh|PolarCore\b/,
+      "Daytona driver": /@daytona\/sdk|DaytonaClient\b/,
+    }
+
+    expect(
+      Object.entries(forbidden)
+        .filter(([, pattern]) => pattern.test(text))
+        .map(([name]) => name),
+    ).toEqual([])
+  }, 300_000)
+
   test("emits exactly one copy of each stateful shared module", async () => {
     await bundleClaxedoServer(path.resolve(import.meta.dir, "claxedo-server-entry.ts"), OUT)
 

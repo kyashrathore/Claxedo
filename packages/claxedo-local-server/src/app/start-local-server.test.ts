@@ -6,6 +6,7 @@ import path from "node:path"
 import { workspaceSupervisorInstalled } from "@claxedo/server-core/workspace/supervisor-port"
 import { startLocalServer, type LocalServer } from "./start-local-server"
 import type { LocalAppOptions } from "./local-app"
+import { createLocalControlPlaneServices } from "./local-services"
 
 /**
  * Boots the real server on a real socket and talks to it over HTTP.
@@ -133,4 +134,37 @@ describe("startLocalServer", () => {
   // because a second `server.close()` on a closed listener still invokes its
   // callback and the data-dir release already swallows a double release. A test
   // asserting it would pass either way, which is worse than no test.
+})
+
+describe("createLocalControlPlaneServices", () => {
+  test("composes a server that answers, with no cloud surface", async () => {
+    // The real services, not the fixture above — this is what the desktop entry
+    // will pass. Booting on them proves the SQLite session projection, the
+    // credential registry and the loopback auth adapter actually compose.
+    const port = await freePort()
+    server = startLocalServer({
+      port,
+      services: createLocalControlPlaneServices(),
+      isCredentialPath: (p) => p.startsWith("/api/claxedo/credentials"),
+      corsOrigin: (origin) => origin,
+    })
+
+    expect((await fetch(`http://127.0.0.1:${port}/api/claxedo/health`)).status).toBe(200)
+    // Unsigned by construction: no account, nothing to verify a bearer against.
+    expect((await fetch(`http://127.0.0.1:${port}/api/claxedo/credentials`)).status).toBe(200)
+    expect(workspaceSupervisorInstalled()).toBe(false)
+  }, 30_000)
+
+  test("records a session into the real projection store", async () => {
+    // End to end through the SQLite store the desktop actually uses, rather
+    // than a vi.fn() that would pass against a projection that never persists.
+    const services = createLocalControlPlaneServices()
+    await services.projectionStore.put_session_meta("ses_local_1", {
+      directory: "/work",
+      title: "Recorded",
+    })
+
+    const stored = await services.projectionStore.session_meta("ses_local_1")
+    expect(stored).toMatchObject({ sessionID: "ses_local_1", title: "Recorded", directory: "/work" })
+  }, 30_000)
 })

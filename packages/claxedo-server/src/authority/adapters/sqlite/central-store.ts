@@ -28,8 +28,8 @@ import {
   readSessionMessages,
   readSessionMaxEventOrdinal,
   subscribeMessageReplay,
-} from "../../../session/message-replay"
-import { syncCloudMessages } from "../../../session/sync"
+} from "@claxedo/server-core/session/message-replay"
+import { syncCloudMessages } from "@claxedo/server-core/session/sync"
 import type { SessionWriteMode } from "@claxedo/server-core/platform/runtime/profile"
 
 import { createDurableSessionLog, type DurableSessionLog, type DurableSessionLogBackend } from "@claxedo/server-core/platform/auth/durable-session-log"

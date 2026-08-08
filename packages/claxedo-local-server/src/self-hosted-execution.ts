@@ -79,3 +79,5 @@ export { projectLocalSessionMetaFromEvent } from "./session/session-meta-tap"
 /** Starts the desktop-local server: composition plus lifecycle. */
 export { startLocalServer, type LocalServer, type StartLocalServerOptions } from "./app/start-local-server"
 export { createLocalApp, mountLocalRouteFamilies, localSecurityHeaders, type LocalAppOptions } from "./app/local-app"
+export { createLocalControlPlaneServices, localSessionProjectionStore } from "./app/local-services"
+export { isLocalCredentialPath, localCorsOrigin } from "./app/local-app"
