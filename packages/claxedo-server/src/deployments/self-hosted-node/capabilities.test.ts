@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { noSelfHostedCapabilities, selfHostedCapabilities } from "./self-hosted-capabilities"
+import { noSelfHostedCapabilities, selfHostedCapabilities } from "./capabilities"
 
 /**
  * The capability seam that separates the two products sharing this composition

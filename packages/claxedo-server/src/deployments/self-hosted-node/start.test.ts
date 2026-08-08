@@ -15,7 +15,7 @@ import { selfHostedPosture, staticAppPosture } from "./start"
  */
 
 const start = readFileSync(path.join(import.meta.dirname, "start.ts"), "utf8")
-const main = readFileSync(path.join(import.meta.dirname, "../local/main.ts"), "utf8")
+const entry = readFileSync(path.join(import.meta.dirname, "index.ts"), "utf8")
 
 describe("selfHostedPosture", () => {
   test("reads the deployment mode from the environment", () => {
@@ -74,8 +74,8 @@ describe("the self-hosted entry wiring", () => {
   test("the process entry goes through the gated start, not startServer", () => {
     // `startServer` had exactly one production caller left after Unit 5 — this
     // entry. Calling it directly would skip the gate entirely.
-    expect(main).toContain("startSelfHostedServer({")
-    expect(main).not.toContain("startServer(")
+    expect(entry).toContain("startSelfHostedServer({")
+    expect(entry).not.toContain("startServer(")
   })
 
   test("passes the self-hosted capability factory", () => {

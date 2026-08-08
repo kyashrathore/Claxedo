@@ -31,7 +31,7 @@ const repoRoot = path.resolve(packageRoot, "../..")
  * change `package.json`, the Dockerfile, and the smoke scripts in the same
  * slice — this test is what forces that to be one slice rather than three.
  */
-const SELF_HOSTED_ENTRY = "src/deployments/local/main.ts"
+const SELF_HOSTED_ENTRY = "src/deployments/self-hosted-node/index.ts"
 
 /** The health path the container's HEALTHCHECK probes. */
 const SELF_HOSTED_HEALTH_PATH = "/api/claxedo/health"

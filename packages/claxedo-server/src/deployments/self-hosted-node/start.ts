@@ -24,8 +24,8 @@
 import fs from "node:fs"
 import path from "node:path"
 import { deploymentMode } from "@claxedo/server-core/authority/deployment-mode"
-import { embeddedAuthEnabled } from "../local/embedded-auth"
-import { selfHostedCapabilities } from "../local/self-hosted-capabilities"
+import { embeddedAuthEnabled } from "./embedded-auth"
+import { selfHostedCapabilities } from "./capabilities"
 import { startServer } from "../local/server"
 import { assertSelfHostedPosture } from "./posture"
 

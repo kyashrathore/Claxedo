@@ -114,7 +114,7 @@ describe("signed-mode boot composition with embedded auth", () => {
     delete process.env.CONVEX_URL
     delete process.env.VITE_CONVEX_URL
     try {
-      const { createDefaultLocalControlPlaneServices } = await import("./server")
+      const { createDefaultLocalControlPlaneServices } = await import("../local/server")
       const services = createDefaultLocalControlPlaneServices()
       // Signed mode, backed by the embedded issuer + local SQLite authority.
       expect(services.auth.config.enabled).toBe(true)
@@ -135,7 +135,7 @@ describe("signed-mode boot composition with embedded auth", () => {
     delete process.env.CONVEX_URL
     delete process.env.VITE_CONVEX_URL
     try {
-      const { createDefaultLocalControlPlaneServices } = await import("./server")
+      const { createDefaultLocalControlPlaneServices } = await import("../local/server")
       expect(() => createDefaultLocalControlPlaneServices()).toThrowError(/workspace authority/i)
     } finally {
       delete process.env.CLAXEDO_SIGNED_CLOUD_AUTH

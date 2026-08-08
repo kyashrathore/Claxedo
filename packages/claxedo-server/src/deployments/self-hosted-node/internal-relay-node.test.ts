@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from "vitest"
 
-import { localRelayTargetExists, localRelayTargetLookup } from "./internal-relay-local"
+import { localRelayTargetExists, localRelayTargetLookup } from "./internal-relay-node"
 
 describe("local relay target lookup", () => {
   beforeEach(() => {

@@ -18,7 +18,7 @@ import {
   shutdownEmbeddedWorkspaceRuntimes,
 } from "@claxedo/local-server/deployments/local/embedded-workspace-runtime"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-import { selfHostedCapabilities } from "./self-hosted-capabilities"
+import { selfHostedCapabilities } from "./capabilities"
 
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 const previousAgentType = process.env.CLAXEDO_AGENT_TYPE

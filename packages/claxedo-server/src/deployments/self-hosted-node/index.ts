@@ -1,4 +1,4 @@
-import { startSelfHostedServer } from "../self-hosted-node/start"
+import { startSelfHostedServer } from "./start"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/self-hosted-execution"
 import { getPostHog } from "../../platform/telemetry/errors/posthog"
 import { reportError } from "../../platform/telemetry/errors/report"

@@ -87,7 +87,7 @@ describe("Polar confinement (ADR 014 addendum)", () => {
   })
 
   test("self-host entrypoints stay Polar-free (I-1): server.ts and main.ts never import billing", () => {
-    for (const entrypoint of ["deployments/local/server.ts", "deployments/local/main.ts"]) {
+    for (const entrypoint of ["deployments/local/server.ts", "deployments/self-hosted-node/index.ts"]) {
       const text = fs.readFileSync(path.join(serverSrc, entrypoint), "utf8")
       expect(text.includes("billing/"), `${entrypoint} must not import billing modules`).toBe(false)
       expect(/polar/i.test(text), `${entrypoint} must not name Polar`).toBe(false)
