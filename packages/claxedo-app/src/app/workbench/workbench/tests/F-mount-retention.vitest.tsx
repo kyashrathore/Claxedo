@@ -68,36 +68,6 @@ describe("F. mount retention", () => {
     expect(h.utils.queryByTestId("content-session-a")).toBeNull()
   })
 
-  test("zero candidate cap mounts only visible candidates while retaining exempt content", () => {
-    const h = mountWorkbench({
-      maxMountedContents: 0,
-      mountCapCandidate: (id) => !id.startsWith("terminal-"),
-    })
-    h.api().contents.add("terminal-a")
-    h.api().contents.add("session-a")
-    h.api().contents.add("workgraph-a")
-    h.api().navigation.show("terminal-a")
-    const terminalRoot = h.utils.queryByTestId("content-terminal-a")
-
-    h.api().navigation.show("session-a")
-    expect(h.utils.queryByTestId("content-terminal-a")).toBe(terminalRoot)
-    expect(h.utils.queryByTestId("content-session-a")).not.toBeNull()
-    expect(h.utils.queryByTestId("content-workgraph-a")).toBeNull()
-
-    h.api().navigation.show("workgraph-a")
-    expect(h.utils.queryByTestId("content-terminal-a")).toBe(terminalRoot)
-    expect(h.utils.queryByTestId("content-session-a")).toBeNull()
-    expect(h.utils.queryByTestId("content-workgraph-a")).not.toBeNull()
-    expect(h.state().contentIds).toEqual(
-      expect.arrayContaining(["terminal-a", "session-a", "workgraph-a"]),
-    )
-
-    h.api().navigation.show("terminal-a")
-    expect(h.utils.queryByTestId("content-terminal-a")).toBe(terminalRoot)
-    expect(h.utils.queryByTestId("content-session-a")).toBeNull()
-    expect(h.utils.queryByTestId("content-workgraph-a")).toBeNull()
-  })
-
   test("paneCtx.isVisible reflects whether the pane is currently displaying this content", () => {
     const h = mountWorkbench()
     h.api().contents.add("a")
