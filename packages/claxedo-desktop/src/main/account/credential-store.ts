@@ -14,7 +14,7 @@
  * Electron is injected so this is testable in a plain Node process.
  */
 
-import { secureStorageVerdict, storedCredentialUsable, type StoredCredential } from "./secure-storage"
+import { secureStorageVerdict, storedCredentialDisposition, type StoredCredential } from "./secure-storage"
 
 export type SafeStorageApi = {
   isEncryptionAvailable: () => boolean
@@ -41,7 +41,13 @@ export type CredentialStore = {
   /** The verdict for this machine, so callers can refuse before OAuth. */
   available: () => ReturnType<typeof secureStorageVerdict>
   save: (tokens: TokenSet) => void
-  /** Undefined when absent, unusable, or written by a different backend. */
+  /**
+   * Undefined when absent, written by a different backend, undecryptable, or
+   * spent — where spent means the access token has expired AND there is no
+   * refresh token to renew it with. A record past `expiresAt` that still holds
+   * a refresh token comes back intact; deciding to renew it belongs to the
+   * account service, which is the only thing here that can.
+   */
   load: (now: number) => TokenSet | undefined
   clear: () => void
 }
@@ -87,24 +93,38 @@ export function createCredentialStore(input: {
         input.onRejected?.("stored credential could not be parsed")
         return undefined
       }
-      const usable = storedCredentialUsable({ stored: record, currentBackend: backend(), now })
-      if (!usable.usable) {
-        input.onRejected?.(`stored credential unusable: ${usable.reason}`)
+      const disposition = storedCredentialDisposition({ stored: record, currentBackend: backend(), now })
+      if (disposition.state === "dead") {
+        input.onRejected?.(`stored credential unusable: ${disposition.reason}`)
         // Cleared rather than left in place. A credential we will never use
         // again is only a liability, and keeping it invites a future reader
         // that skips this check.
         input.file.clear()
         return undefined
       }
+
+      let tokens: TokenSet
       try {
-        return JSON.parse(input.safeStorage.decryptString(Buffer.from(record.ciphertext, "base64"))) as TokenSet
+        tokens = JSON.parse(input.safeStorage.decryptString(Buffer.from(record.ciphertext, "base64"))) as TokenSet
       } catch {
         // Decryption failing on a matching backend means the OS key changed
-        // under us — same disposition as unusable.
+        // under us — same disposition as dead.
         input.onRejected?.("stored credential could not be decrypted")
         input.file.clear()
         return undefined
       }
+
+      // The access token is spent. That is fatal only when there is nothing to
+      // renew it with: deleting a record that still holds a live refresh token
+      // signs the user out the first time they leave the app open past one
+      // access-token lifetime, and no restart can undo it because the refresh
+      // token went with it.
+      if (disposition.state === "access-expired" && !tokens.refreshToken) {
+        input.onRejected?.("stored credential unusable: expired with nothing to renew it")
+        input.file.clear()
+        return undefined
+      }
+      return tokens
     },
 
     clear: () => input.file.clear(),

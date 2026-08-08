@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { createAccountService } from "./account-service"
+import { createAccountService, type RefreshOutcome } from "./account-service"
+import { createCredentialStore } from "./credential-store"
 import type { CredentialStore, TokenSet } from "./credential-store"
 import { REDIRECT_PATH } from "./oauth-flow"
 import type { OAuthSeams } from "./oauth-flow"
@@ -39,17 +40,25 @@ function memoryStore(initial?: TokenSet) {
   return store
 }
 
-function service(overrides: {
-  store?: ReturnType<typeof memoryStore>
+function service<S extends CredentialStore = ReturnType<typeof memoryStore>>(overrides: {
+  store?: S
   fetch?: Parameters<typeof createAccountService>[0]["fetch"]
-  refresh?: (token: string) => Promise<TokenSet>
+  refresh?: (token: string) => Promise<RefreshOutcome>
   now?: number
+  errors?: Array<{ stage: string; error: unknown }>
 } = {}) {
   const requests: Array<{ url: string; method: string; headers: Record<string, string>; body?: string }> = []
-  const store = overrides.store ?? memoryStore()
+  const store = (overrides.store ?? memoryStore()) as S
   let callback: ((url: string) => unknown) | undefined
+  // Resolved when the flow hands the authorize URL to the browser, so a
+  // sign-in test can read the `state` it must echo back rather than guessing
+  // at the flow's internal timing.
+  let announce: (url: string) => void = () => {}
+  const opened = new Promise<string>((resolve) => {
+    announce = resolve
+  })
   const seams: OAuthSeams = {
-    openExternal: async () => {},
+    openExternal: async (url) => announce(url),
     listen: async (handler) => {
       callback = handler
       return { port: 49_152, close: async () => {} }
@@ -71,8 +80,21 @@ function service(overrides: {
         return new Response(JSON.stringify({ ok: true }), { status: 200 })
       }),
     ...(overrides.refresh ? { refresh: overrides.refresh } : {}),
+    ...(overrides.errors ? { onError: (stage, error) => overrides.errors!.push({ stage, error }) } : {}),
   })
-  return { api, requests, store, deliverCallback: (state: string) => callback?.(`${REDIRECT_PATH}?code=c&state=${state}`) }
+  return {
+    api,
+    requests,
+    store,
+    deliverCallback: (state: string) => callback?.(`${REDIRECT_PATH}?code=c&state=${state}`),
+    /** Runs one sign-in end to end, echoing the flow's own `state` back. */
+    completeSignIn: async () => {
+      const result = api.signIn()
+      const authorizeUrl = await opened
+      callback?.(`${REDIRECT_PATH}?code=c&state=${new URL(authorizeUrl).searchParams.get("state")}`)
+      return await result
+    },
+  }
 }
 
 describe("run", () => {
@@ -152,19 +174,39 @@ describe("run", () => {
 })
 
 describe("refresh", () => {
+  const RENEWED: TokenSet = { accessToken: "at_2", refreshToken: "rt_2", expiresAt: 20_000 }
+
   test("renews before expiry and stores the new token", async () => {
-    const renewed: TokenSet = { accessToken: "at_2", refreshToken: "rt_2", expiresAt: 20_000 }
     const { api, requests, store } = service({
       store: memoryStore(TOKENS),
       now: 9_999,
-      refresh: async () => renewed,
+      refresh: async () => ({ ok: true, tokens: RENEWED }),
     })
     api.restore()
 
     await api.run("account.get")
 
     expect(requests[0]!.headers.authorization).toBe("Bearer at_2")
-    expect(store.held()).toEqual(renewed)
+    expect(store.held()).toEqual(RENEWED)
+  })
+
+  test("carries the session past the access token's expiry", async () => {
+    // The whole point. `now` is well beyond `expiresAt`, which used to be a
+    // permanent sign-out: the operation must simply succeed, on the new token.
+    const { api, requests, store } = service({
+      store: memoryStore(TOKENS),
+      now: 50_000,
+      refresh: async (token) => {
+        expect(token).toBe("rt_1")
+        return { ok: true, tokens: RENEWED }
+      },
+    })
+    api.restore()
+
+    await expect(api.run("account.get")).resolves.toEqual({ ok: true })
+    expect(requests[0]!.headers.authorization).toBe("Bearer at_2")
+    expect(api.state()).toMatchObject({ status: "signed" })
+    expect(store.held()).toEqual(RENEWED)
   })
 
   test("does not renew a token that is still comfortably valid", async () => {
@@ -174,7 +216,7 @@ describe("refresh", () => {
       now: 1_000,
       refresh: async () => {
         refreshes++
-        return TOKENS
+        return { ok: true, tokens: TOKENS }
       },
     })
     api.restore()
@@ -184,29 +226,203 @@ describe("refresh", () => {
     expect(refreshes).toBe(0)
   })
 
-  test("signs out when renewal fails instead of sending a dead token", async () => {
-    // Otherwise the user sees a screenful of failed requests rather than
-    // "signed out", and the real cause is three layers down.
-    const { api, requests, store } = service({
+  test("runs one exchange for concurrent callers rather than one each", async () => {
+    // A renderer painting a screen asks for four things at once, and they cross
+    // the skew window together. Four exchanges with the same refresh token
+    // means, against a rotating server, three `invalid_grant`s — which would
+    // sign the user out of the session the first one just renewed.
+    let started = 0
+    let release: (outcome: RefreshOutcome) => void = () => {}
+    const pendingExchange = new Promise<RefreshOutcome>((resolve) => {
+      release = resolve
+    })
+    const { api, requests } = service({
       store: memoryStore(TOKENS),
       now: 9_999,
       refresh: async () => {
-        throw new Error("refresh rejected")
+        started++
+        return await pendingExchange
       },
+    })
+    api.restore()
+
+    const calls = [api.run("account.get"), api.run("account.get"), api.run("account.get")]
+    await Promise.resolve()
+    release({ ok: true, tokens: RENEWED })
+    await Promise.all(calls)
+
+    expect(started).toBe(1)
+    expect(requests).toHaveLength(3)
+    expect(requests.map((request) => request.headers.authorization)).toEqual([
+      "Bearer at_2",
+      "Bearer at_2",
+      "Bearer at_2",
+    ])
+  })
+
+  test("signs out when the authorization server says the grant is dead", async () => {
+    // `invalid_grant` is a real revocation: the refresh token will never work
+    // again, so holding the session open would leave the user in a signed-in
+    // shell that can do nothing.
+    const { api, requests, store } = service({
+      store: memoryStore(TOKENS),
+      now: 9_999,
+      refresh: async () => ({ ok: false, reason: "revoked", detail: "invalid_grant" }),
     })
     api.restore()
 
     await expect(api.run("account.get")).rejects.toThrow(/not signed in/)
     expect(requests).toEqual([])
     expect(store.held()).toBeUndefined()
+    expect(api.state()).toMatchObject({ status: "unavailable", reason: "revoked" })
   })
 
-  test("signs out when the token is expired and nothing can renew it", async () => {
-    const { api, requests } = service({ store: memoryStore({ accessToken: "at", expiresAt: 10_000 }), now: 9_999 })
+  test("keeps the session when renewal could not reach an answer", async () => {
+    // An offline laptop is not a revoked session. Discarding the credential
+    // here would sign the user out on a dropped wifi connection and take the
+    // refresh token with it, so reconnecting could not recover.
+    let attempts = 0
+    const { api, store } = service({
+      store: memoryStore(TOKENS),
+      now: 9_999,
+      refresh: async () => {
+        attempts++
+        return attempts === 1
+          ? { ok: false, reason: "unavailable", detail: "network unreachable" }
+          : { ok: true, tokens: RENEWED }
+      },
+    })
+    api.restore()
+
+    await expect(api.run("account.get")).rejects.toThrow(/could not renew the session/)
+    expect(store.held()).toEqual(TOKENS)
+    expect(api.state()).toMatchObject({ status: "signed" })
+
+    // And the next attempt, once the network is back, simply works.
+    await expect(api.run("account.get")).resolves.toEqual({ ok: true })
+    expect(store.held()).toEqual(RENEWED)
+  })
+
+  test("treats a thrown exchange as transient, not as revocation", async () => {
+    // An exception carries no verdict about the credential. Reading one into it
+    // means any bug in the seam permanently signs the user out.
+    const { api, store } = service({
+      store: memoryStore(TOKENS),
+      now: 9_999,
+      refresh: async () => {
+        throw new Error("boom")
+      },
+    })
+    api.restore()
+
+    await expect(api.run("account.get")).rejects.toThrow(/could not renew the session/)
+    expect(store.held()).toEqual(TOKENS)
+    expect(api.state()).toMatchObject({ status: "signed" })
+  })
+
+  test("signs out when the credential carries nothing to renew with", async () => {
+    // A provider that issued no refresh token — the default scope asks for one,
+    // but not every provider honours it. Renewal is impossible, so this really
+    // is the end of the session; the exchange must not even be attempted.
+    let attempts = 0
+    const { api, requests, store } = service({
+      store: memoryStore({ accessToken: "at", expiresAt: 10_000 }),
+      now: 9_999,
+      refresh: async () => {
+        attempts++
+        return { ok: true, tokens: RENEWED }
+      },
+    })
     api.restore()
 
     await expect(api.run("account.get")).rejects.toThrow(/not signed in/)
+    expect(attempts).toBe(0)
     expect(requests).toEqual([])
+    expect(store.held()).toBeUndefined()
+    expect(api.state()).toMatchObject({ status: "unavailable", reason: "revoked" })
+  })
+
+  test("does not revive a session that was signed out while it was renewing", async () => {
+    let release: (outcome: RefreshOutcome) => void = () => {}
+    const { api, store } = service({
+      store: memoryStore(TOKENS),
+      now: 9_999,
+      refresh: () =>
+        new Promise<RefreshOutcome>((resolve) => {
+          release = resolve
+        }),
+    })
+    api.restore()
+
+    const call = api.run("account.get")
+    await Promise.resolve()
+    await api.signOut()
+    release({ ok: true, tokens: RENEWED })
+
+    await expect(call).rejects.toThrow(/not signed in/)
+    expect(store.held()).toBeUndefined()
+    expect(api.state()).toEqual({ status: "unsigned" })
+  })
+})
+
+describe("restart", () => {
+  /** Reversible, not secure — the point is to exercise the real store. */
+  function diskStore() {
+    let contents: string | undefined
+    return {
+      contents: () => contents,
+      store: createCredentialStore({
+        safeStorage: {
+          isEncryptionAvailable: () => true,
+          encryptString: (plain) => Buffer.from(`enc:${plain}`),
+          decryptString: (encrypted) => encrypted.toString().replace(/^enc:/, ""),
+          getSelectedStorageBackend: () => "unknown",
+        },
+        file: {
+          read: () => contents,
+          write: (next) => {
+            contents = next
+          },
+          clear: () => {
+            contents = undefined
+          },
+        },
+        platform: "darwin",
+      }),
+    }
+  }
+
+  test("restores through a real store after the access token expired, and renews", async () => {
+    // The path a user actually walks: sign in, close the laptop overnight,
+    // reopen it. Every boot before this found nothing on disk, because `load`
+    // had deleted the record — refresh token included — the first time it read
+    // it past `expiresAt`.
+    const disk = diskStore()
+    disk.store.save(TOKENS)
+
+    const { api, requests } = service({
+      store: disk.store,
+      now: 50_000,
+      refresh: async (token) => ({
+        ok: true,
+        tokens: { accessToken: "at_2", refreshToken: token, expiresAt: 60_000 },
+      }),
+    })
+
+    expect(api.restore()).toMatchObject({ status: "signed" })
+    await expect(api.run("account.get")).resolves.toEqual({ ok: true })
+    expect(requests[0]!.headers.authorization).toBe("Bearer at_2")
+    expect(disk.contents()).toBeDefined()
+  })
+
+  test("stays signed out when the stored credential cannot be renewed", async () => {
+    const disk = diskStore()
+    disk.store.save({ accessToken: "at", expiresAt: 10_000 })
+
+    const { api } = service({ store: disk.store, now: 50_000, refresh: async () => ({ ok: true, tokens: TOKENS }) })
+
+    expect(api.restore()).toEqual({ status: "unsigned" })
+    expect(disk.contents()).toBeUndefined()
   })
 })
 
@@ -230,6 +446,61 @@ describe("restore", () => {
     }
 
     expect(() => service({ store }).api.restore()).not.toThrow()
+  })
+})
+
+describe("signIn", () => {
+  test("adopts the credential and reports signed", async () => {
+    const { api, store, completeSignIn } = service()
+
+    await expect(completeSignIn()).resolves.toMatchObject({ ok: true })
+    expect(api.state()).toMatchObject({ status: "signed" })
+    expect(store.held()).toEqual(TOKENS)
+  })
+
+  test("leaves no live token and no pending state when the credential cannot be stored", async () => {
+    // `save` throws when the keyring has gone away. Publishing the token in
+    // memory first would leave `run()` able to spend a credential this process
+    // could not keep, while `state` sat at `pending` for the rest of the
+    // session — a resting state that means "a sign-in is happening" long after
+    // one stopped.
+    const store = memoryStore()
+    store.save = () => {
+      throw new Error("refusing to store a credential: the keyring is gone")
+    }
+    const errors: Array<{ stage: string; error: unknown }> = []
+    const { api, requests, completeSignIn } = service({ store, errors })
+
+    const result = await completeSignIn()
+
+    expect(result).toMatchObject({ ok: false, reason: "no-secure-storage" })
+    expect(api.state()).toMatchObject({ status: "unavailable", reason: "no-secure-storage" })
+    expect(api.state().status).not.toBe("pending")
+    expect(store.held()).toBeUndefined()
+    // The half that a state assertion alone would miss: nothing spendable is
+    // left behind in memory either.
+    await expect(api.run("account.get")).rejects.toThrow(/not signed in/)
+    expect(requests).toEqual([])
+    expect(errors.map((entry) => entry.stage)).toContain("persist")
+  })
+
+  test("leaves no live token when a renewal cannot be stored", async () => {
+    // The same transaction, on the other adoption path.
+    const store = memoryStore(TOKENS)
+    const { api, requests } = service({
+      store,
+      now: 9_999,
+      refresh: async () => ({ ok: true, tokens: { accessToken: "at_2", refreshToken: "rt_2", expiresAt: 20_000 } }),
+    })
+    api.restore()
+    store.save = () => {
+      throw new Error("keyring locked")
+    }
+
+    await expect(api.run("account.get")).rejects.toThrow(/could not be stored/)
+    expect(requests).toEqual([])
+    expect(api.state()).toMatchObject({ status: "unavailable" })
+    await expect(api.run("account.get")).rejects.toThrow(/not signed in/)
   })
 })
 

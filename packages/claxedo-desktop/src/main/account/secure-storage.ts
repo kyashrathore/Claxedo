@@ -73,27 +73,47 @@ export type StoredCredential = {
   ciphertext: string
   /** Which backend wrote it, so a backend change can invalidate rather than fail. */
   backend: string
-  /** Seconds since the epoch; the access token's expiry, not the refresh token's. */
+  /**
+   * Seconds since the epoch; the ACCESS token's expiry, not the refresh
+   * token's. Past it the record is not dead — it is a record whose access token
+   * needs renewing, and only the ciphertext knows whether it carries a refresh
+   * token to renew it with. Treating this field as the record's own expiry is
+   * how a still-renewable session gets deleted an hour after it was created.
+   */
   expiresAt: number
 }
 
 /**
- * Whether a stored credential may still be used.
+ * What to do with a stored credential.
  *
- * The backend check is the interesting half. If the credential was written
- * under a keyring and the machine now reports `basic_text`, the decrypt would
- * simply fail — but if it went the other way, a credential written in
- * effectively plaintext would be silently promoted to "trusted" once a keyring
- * appeared. Recording the writer makes both directions explicit.
+ * Three answers, not two. The backend check is the security half: if the
+ * credential was written under a keyring and the machine now reports
+ * `basic_text`, the decrypt would simply fail — but if it went the other way, a
+ * credential written in effectively plaintext would be silently promoted to
+ * "trusted" once a keyring appeared. Recording the writer makes both directions
+ * explicit, and a mismatch is fatal to the record.
+ *
+ * The clock is the other half, and it is NOT fatal. `expiresAt` is the access
+ * token's, so all a passed expiry establishes is that the access token must be
+ * renewed before use. Whether it can be is decided by whoever can read the
+ * plaintext — this function only sees ciphertext.
  */
-export function storedCredentialUsable(input: {
+export type StoredCredentialDisposition =
+  /** Usable as-is. */
+  | { state: "usable" }
+  /** The access token is spent; usable only if the plaintext carries a refresh token. */
+  | { state: "access-expired" }
+  /** Nothing here may be used, whatever it decrypts to. */
+  | { state: "dead"; reason: "backend-changed" }
+
+export function storedCredentialDisposition(input: {
   stored: StoredCredential
   currentBackend: string
   now: number
-}): { usable: true } | { usable: false; reason: "backend-changed" | "expired" } {
-  if (input.stored.backend !== input.currentBackend) return { usable: false, reason: "backend-changed" }
-  if (input.stored.expiresAt <= input.now) return { usable: false, reason: "expired" }
-  return { usable: true }
+}): StoredCredentialDisposition {
+  if (input.stored.backend !== input.currentBackend) return { state: "dead", reason: "backend-changed" }
+  if (input.stored.expiresAt <= input.now) return { state: "access-expired" }
+  return { state: "usable" }
 }
 
 /**

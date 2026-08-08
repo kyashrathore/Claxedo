@@ -124,11 +124,28 @@ describe("load", () => {
     expect(harness.rejections[0]).toContain("backend-changed")
   })
 
-  test("refuses an expired credential", () => {
+  test("keeps a credential whose access token expired but whose refresh token lives", () => {
+    // `expiresAt` on the record is the ACCESS token's. Treating it as the
+    // record's own expiry deleted the refresh token unread — so a user who left
+    // the app open past one token lifetime was signed out, and no restart could
+    // undo it. Renewal is the account service's decision; this must give it
+    // something to decide about.
     const harness = store()
     harness.store.save(TOKENS)
 
+    expect(harness.store.load(2_001)).toEqual(TOKENS)
+    expect(harness.file.contents()).toBeDefined()
+    expect(harness.rejections).toEqual([])
+  })
+
+  test("discards an expired credential with nothing to renew it", () => {
+    // The other half: no refresh token means no path back to a usable session,
+    // and a credential that will never be used again is only a liability.
+    const harness = store()
+    harness.store.save({ accessToken: "at", expiresAt: 2_000 })
+
     expect(harness.store.load(2_001)).toBeUndefined()
+    expect(harness.file.contents()).toBeUndefined()
     expect(harness.rejections[0]).toContain("expired")
   })
 

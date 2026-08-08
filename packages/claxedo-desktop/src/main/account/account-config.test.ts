@@ -20,8 +20,17 @@ describe("readAccountConfig", () => {
     expect(readAccountConfig(COMPLETE)).toMatchObject({
       configured: true,
       clientId: "client_desktop",
-      scope: "openid profile email",
+      scope: "openid profile email offline_access",
     })
+  })
+
+  test("asks for a refresh token by default", () => {
+    // Without `offline_access` the provider issues no refresh token, and the
+    // account service can then only sign the user out when the access token
+    // expires — an hour into every session.
+    const result = readAccountConfig(COMPLETE)
+
+    expect(result.configured === true && result.scope.split(" ")).toContain("offline_access")
   })
 
   test("names exactly what is missing", () => {

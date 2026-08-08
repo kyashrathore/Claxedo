@@ -16,7 +16,7 @@
 import { app, safeStorage, shell } from "electron"
 import { createAccountService, type AccountState } from "./account-service"
 import { createCredentialStore } from "./credential-store"
-import { credentialFile, loopbackListener, nodeTimer, tokenExchange } from "./electron-seams"
+import { credentialFile, loopbackListener, nodeTimer, refreshExchange, tokenExchange } from "./electron-seams"
 import { registerAccountIpc, type AccountIpcTarget } from "./account-ipc"
 import { readAccountConfig, type AccountConfigEnv } from "./account-config"
 import type { OAuthSeams } from "./oauth-flow"
@@ -81,6 +81,12 @@ export function setupAccount(input: {
     setTimeout: nodeTimer(),
   }
 
+  // The refresh grant, bound to the same client and token endpoint the sign-in
+  // used. Supplying it is what makes a session outlive one access token: with
+  // no `refresh` the service can only sign the user out at expiry, which for a
+  // typical one-hour token means every day starts signed out.
+  const refresh = refreshExchange()
+
   const service = createAccountService({
     config: {
       authorizeUrl: config.authorizeUrl,
@@ -93,6 +99,7 @@ export function setupAccount(input: {
     store,
     serverOrigin: config.serverOrigin,
     fetch: (url, init) => fetch(url, init),
+    refresh: (refreshToken) => refresh({ tokenUrl: config.tokenUrl, clientId: config.clientId, refreshToken }),
     now: () => Math.floor(Date.now() / 1000),
     ...(input.onError ? { onError: input.onError } : {}),
   })

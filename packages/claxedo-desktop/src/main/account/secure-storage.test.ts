@@ -3,7 +3,7 @@ import {
   REFRESH_SKEW_SECONDS,
   secureStorageVerdict,
   shouldRefresh,
-  storedCredentialUsable,
+  storedCredentialDisposition,
   type SafeStorageReport,
 } from "./secure-storage"
 
@@ -50,36 +50,51 @@ describe("secureStorageVerdict", () => {
   })
 })
 
-describe("storedCredentialUsable", () => {
+describe("storedCredentialDisposition", () => {
   const stored = { ciphertext: "…", backend: "gnome_libsecret", expiresAt: 2_000 }
 
   test("accepts a live credential from the same backend", () => {
-    expect(storedCredentialUsable({ stored, currentBackend: "gnome_libsecret", now: 1_000 })).toEqual({ usable: true })
+    expect(storedCredentialDisposition({ stored, currentBackend: "gnome_libsecret", now: 1_000 })).toEqual({
+      state: "usable",
+    })
   })
 
-  test("rejects one written under a different backend", () => {
+  test("calls one written under a different backend dead", () => {
     // The direction that matters: a credential written under `basic_text` must
-    // not become trusted merely because a keyring appeared later.
-    const result = storedCredentialUsable({ stored: { ...stored, backend: "basic_text" }, currentBackend: "gnome_libsecret", now: 1_000 })
+    // not become trusted merely because a keyring appeared later. Dead, not
+    // "expired" — no refresh token can rescue this one.
+    const result = storedCredentialDisposition({
+      stored: { ...stored, backend: "basic_text" },
+      currentBackend: "gnome_libsecret",
+      now: 1_000,
+    })
 
-    expect(result).toEqual({ usable: false, reason: "backend-changed" })
+    expect(result).toEqual({ state: "dead", reason: "backend-changed" })
   })
 
-  test("rejects an expired credential", () => {
-    expect(storedCredentialUsable({ stored, currentBackend: "gnome_libsecret", now: 2_000 }).usable).toBe(false)
-    expect(storedCredentialUsable({ stored, currentBackend: "gnome_libsecret", now: 2_001 }).usable).toBe(false)
+  test("calls a passed expiry access-expired, not dead", () => {
+    // `expiresAt` is the ACCESS token's. All a passed one establishes is that
+    // the access token must be renewed before use; whether it CAN be is a
+    // question about the plaintext, which this function cannot see. Answering
+    // "dead" here is what deleted still-renewable sessions.
+    expect(storedCredentialDisposition({ stored, currentBackend: "gnome_libsecret", now: 2_000 })).toEqual({
+      state: "access-expired",
+    })
+    expect(storedCredentialDisposition({ stored, currentBackend: "gnome_libsecret", now: 2_001 })).toEqual({
+      state: "access-expired",
+    })
   })
 
   test("checks the backend before the clock", () => {
     // A wrong-backend credential is a security answer and an expired one is a
     // routine refresh; reporting the refresh first would hide the other.
-    const result = storedCredentialUsable({
+    const result = storedCredentialDisposition({
       stored: { ...stored, backend: "basic_text", expiresAt: 1 },
       currentBackend: "gnome_libsecret",
       now: 1_000,
     })
 
-    expect(result.usable === false && result.reason).toBe("backend-changed")
+    expect(result).toEqual({ state: "dead", reason: "backend-changed" })
   })
 })
 

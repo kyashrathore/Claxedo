@@ -17,6 +17,22 @@ export type AccountConfigEnv = {
   CLAXEDO_SERVER_ORIGIN?: string
 }
 
+/**
+ * The scopes a desktop sign-in asks for by default.
+ *
+ * `offline_access` is the load-bearing one. It is what asks the authorization
+ * server for a refresh token, and without a refresh token the account service
+ * has nothing to renew with — it signs the user out the moment the access token
+ * expires, which for a typical one-hour token means signing in again every
+ * session. The desktop is a long-lived app the user leaves open; it is exactly
+ * the client OIDC defines this scope for.
+ *
+ * A provider that does not recognise it will answer `invalid_scope`. That is
+ * why `CLAXEDO_ACCOUNT_SCOPE` exists: the release owner who registered the
+ * client overrides this wholesale, and gets a session that lasts one token.
+ */
+export const DEFAULT_SCOPE = "openid profile email offline_access"
+
 export type AccountConfig =
   | { configured: true; authorizeUrl: string; tokenUrl: string; clientId: string; scope: string; serverOrigin: string }
   | { configured: false; missing: string[] }
@@ -44,8 +60,7 @@ export function readAccountConfig(env: AccountConfigEnv): AccountConfig {
     authorizeUrl: required.authorizeUrl!,
     tokenUrl: required.tokenUrl!,
     clientId: required.clientId!,
-    scope: env.CLAXEDO_ACCOUNT_SCOPE?.trim() || "openid profile email",
+    scope: env.CLAXEDO_ACCOUNT_SCOPE?.trim() || DEFAULT_SCOPE,
     serverOrigin: required.serverOrigin!,
   }
 }
-

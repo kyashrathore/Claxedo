@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { credentialFile, loopbackListener, tokenExchange } from "./electron-seams"
+import { credentialFile, loopbackListener, refreshExchange, tokenExchange } from "./electron-seams"
 
 /**
  * The seams, against real sockets and a real filesystem.
@@ -137,5 +137,113 @@ describe("tokenExchange", () => {
     await expect(
       exchange({ tokenUrl: "https://t.test", clientId: "c", code: "x", codeVerifier: "v", redirectUri: "r" }),
     ).rejects.toThrow(/failed: 400/)
+  })
+})
+
+describe("refreshExchange", () => {
+  const INPUT = { tokenUrl: "https://t.test", clientId: "c", refreshToken: "rt_1" }
+
+  function stub(handler: (url: string, init: RequestInit) => Response | Promise<Response>) {
+    const bodies: string[] = []
+    const exchange = refreshExchange((async (url, init) => {
+      bodies.push(String((init as RequestInit).body))
+      return await handler(String(url), init as RequestInit)
+    }) as typeof fetch)
+    return { exchange, bodies }
+  }
+
+  test("sends the refresh_token grant, and no secret", async () => {
+    // The grant that did not exist. Without it `refresh` was API surface the
+    // production wiring could never supply, so every session ended at the first
+    // access-token expiry.
+    const { exchange, bodies } = stub(
+      () => new Response(JSON.stringify({ access_token: "at_2", expires_in: 3_600 }), { status: 200 }),
+    )
+
+    await exchange(INPUT)
+
+    const params = new URLSearchParams(bodies[0])
+    expect(params.get("grant_type")).toBe("refresh_token")
+    expect(params.get("refresh_token")).toBe("rt_1")
+    expect(params.get("client_id")).toBe("c")
+    expect(bodies[0]).not.toContain("client_secret")
+  })
+
+  test("keeps the existing refresh token when the response does not rotate it", async () => {
+    // A server that returns no `refresh_token` means "keep using the one you
+    // have". Dropping it would quietly downgrade the session to unrenewable and
+    // sign the user out one access token later, with nothing to explain why.
+    const { exchange } = stub(
+      () => new Response(JSON.stringify({ access_token: "at_2", expires_in: 3_600 }), { status: 200 }),
+    )
+
+    const outcome = await exchange(INPUT)
+
+    expect(outcome).toMatchObject({ ok: true })
+    expect(outcome.ok === true && outcome.tokens.refreshToken).toBe("rt_1")
+    expect(outcome.ok === true && outcome.tokens.expiresAt).toBeGreaterThan(Date.now() / 1000 + 3_000)
+  })
+
+  test("takes a rotated refresh token over the old one", async () => {
+    const { exchange } = stub(
+      () => new Response(JSON.stringify({ access_token: "at_2", refresh_token: "rt_2" }), { status: 200 }),
+    )
+
+    const outcome = await exchange(INPUT)
+
+    expect(outcome.ok === true && outcome.tokens.refreshToken).toBe("rt_2")
+  })
+
+  test("reports invalid_grant as revocation", async () => {
+    // The one answer that means the credential is genuinely dead. RFC 6749 §5.2
+    // spends this code on exactly that, and the caller signs the user out on it.
+    const { exchange } = stub(() => new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 }))
+
+    expect(await exchange(INPUT)).toMatchObject({ ok: false, reason: "revoked" })
+  })
+
+  test("reports a 401 from the token endpoint as revocation", async () => {
+    const { exchange } = stub(() => new Response("", { status: 401 }))
+
+    expect(await exchange(INPUT)).toMatchObject({ ok: false, reason: "revoked" })
+  })
+
+  test("reports a network failure as unavailable, not revocation", async () => {
+    // An offline laptop must not cost the user their session. This is the
+    // difference between "reconnect and carry on" and "sign in again", and the
+    // refresh token is gone by the time they notice.
+    const { exchange } = stub(() => {
+      throw new Error("getaddrinfo ENOTFOUND")
+    })
+
+    expect(await exchange(INPUT)).toMatchObject({ ok: false, reason: "unavailable" })
+  })
+
+  test("reports a server error as unavailable", async () => {
+    const { exchange } = stub(() => new Response("", { status: 503 }))
+
+    expect(await exchange(INPUT)).toMatchObject({ ok: false, reason: "unavailable" })
+  })
+
+  test("does not read a bare 400 as revocation", async () => {
+    // A malformed request of OUR making also produces a 400. Signing the user
+    // out over our own bug is the failure that cannot be walked back, so only
+    // the server naming the grant dead earns that.
+    const { exchange } = stub(() => new Response(JSON.stringify({ error: "invalid_request" }), { status: 400 }))
+
+    expect(await exchange(INPUT)).toMatchObject({ ok: false, reason: "unavailable" })
+  })
+
+  test("treats a 200 naming invalid_grant as revocation", async () => {
+    // Some servers report a dead grant with a 200 and an error body.
+    const { exchange } = stub(() => new Response(JSON.stringify({ error: "invalid_grant" }), { status: 200 }))
+
+    expect(await exchange(INPUT)).toMatchObject({ ok: false, reason: "revoked" })
+  })
+
+  test("does not invent a session from a 200 with no access token", async () => {
+    const { exchange } = stub(() => new Response("not json", { status: 200 }))
+
+    expect(await exchange(INPUT)).toMatchObject({ ok: false, reason: "unavailable" })
   })
 })
