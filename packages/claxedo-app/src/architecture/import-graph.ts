@@ -167,7 +167,10 @@ export function reachableModules(appRoot: string) {
 }
 
 function rootFiles(appRoot: string) {
-  const roots = ["app/entry/main.tsx", "app/entry/index.tsx"].filter((file) => existsSync(path.join(appRoot, "src", file)))
+  // `local.tsx` is an HTML entry like `main.tsx`: nothing imports it, and
+  // without it here the orphan guard reports the local product's entry point
+  // as dead code.
+  const roots = ["app/entry/main.tsx", "app/entry/local.tsx", "app/entry/index.tsx"].filter((file) => existsSync(path.join(appRoot, "src", file)))
   const pkg = JSON.parse(readFileSync(path.join(appRoot, "package.json"), "utf8")) as {
     exports?: Record<string, string>
   }
