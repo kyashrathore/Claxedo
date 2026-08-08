@@ -40,7 +40,7 @@ function read(rel: string) {
 const DESKTOP_SERVER_ENTRY = "@claxedo/local-server/self-hosted-execution"
 
 /** The package directory whose sources feed the bundled desktop server. */
-const DESKTOP_SERVER_PACKAGE_DIR = "../claxedo-server"
+const DESKTOP_SERVER_PACKAGE_DIR = "../claxedo-local-server"
 
 type ProductMode = {
   mode: string

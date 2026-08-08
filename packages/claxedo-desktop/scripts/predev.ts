@@ -16,7 +16,9 @@ import { copyIcons, copyWorkspaceRuntimeTemplates } from "./utils"
 
 const SCRIPT_DIR = import.meta.dir
 const PACKAGE_DIR = path.resolve(SCRIPT_DIR, "..")
-const CLAXEDO_SERVER_DIR = path.resolve(PACKAGE_DIR, "../claxedo-server")
+// The desktop server IS `@claxedo/local-server` now. `claxedo-server` is the
+// hosted and self-hosted product; nothing the desktop ships comes from it.
+const CLAXEDO_SERVER_DIR = path.resolve(PACKAGE_DIR, "../claxedo-local-server")
 const OPENCODE_DIR = path.resolve(PACKAGE_DIR, "../opencode")
 const WS_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../workspace-runtime")
 const require = createRequire(import.meta.url)
@@ -147,11 +149,9 @@ if (fs.existsSync(serverSource) && outputIsStale(serverEntry, [
   path.resolve(SCRIPT_DIR, "bundle-claxedo-server.ts"),
   serverSource,
   path.resolve(CLAXEDO_SERVER_DIR, "src"),
-  // The two packages `claxedo-server` was split into. Without them, editing
-  // either leaves this bundle looking current and the desktop runs stale code
-  // with nothing said.
+  // The shared core beneath it. Without this, editing a core module leaves the
+  // bundle looking current and the desktop runs stale code with nothing said.
   path.resolve(PACKAGE_DIR, "../claxedo-server-core/src"),
-  path.resolve(PACKAGE_DIR, "../claxedo-local-server/src"),
   path.resolve(PACKAGE_DIR, "../agent-event-runtime/src"),
   path.resolve(PACKAGE_DIR, "../agent-sdk-runtime/src"),
   path.resolve(PACKAGE_DIR, "../sdk-next/src"),
