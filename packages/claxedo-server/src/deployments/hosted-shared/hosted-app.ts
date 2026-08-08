@@ -38,6 +38,7 @@ import { JwksRoutes } from "../../authority/routes/jwks"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../shared-routes/internal-relay"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
 import { HostEnrollmentRoutes } from "../../routes/hosted/host-enrollment"
+import { createRouteOwnership, withRouteOwnership } from "./route-ownership"
 import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
 import { signedOrError } from "../../workspace/route-support"
 import { HostedDeviceAuthRoutes } from "../../routes/hosted/device-auth"
@@ -275,7 +276,13 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
   // the port fails closed when nothing is configured, on purpose.
   configureCliSessionTokenRegistry(plane.cliSessionTokenRegistry)
   const { services } = plane
-  const app = new Hono()
+  // Every `app.route()` below is recorded against one owner. Unit 7 splits this
+  // file into a shared signed core plus deployment adapters, and two
+  // compositions mounting the same prefix is the mistake that arrangement
+  // invites — Hono resolves it silently by keeping whichever mounted first, so
+  // the loser becomes dead code whose identity depends on call order.
+  const routeOwnership = createRouteOwnership()
+  const app = withRouteOwnership(new Hono(), routeOwnership, "hosted-shared")
   const liveSyncRoom = overrides.liveSyncRoom
   const settlementDispatcherByRequest = new WeakMap<Request, SettlementDispatcher>()
   // Per-request `waitUntil`, captured in `forwardWorkGraph` from the active
