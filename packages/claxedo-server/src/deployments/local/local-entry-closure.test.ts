@@ -102,6 +102,47 @@ describe("desktop-local entry closure", () => {
     })
   })
 
+  it("keeps hosted surface out of the producers a local-only composition would mount", () => {
+    // The unit that follows this one builds a local composition over exactly
+    // these producers. Their union is what `@claxedo/local-server` closes over,
+    // so it is the number that decides whether the package can be created at
+    // all — the mixed `deployments/local/server.ts` closure never can be,
+    // because it also serves self-hosted.
+    //
+    // Measured 2026-08-08: 177 -> 106 modules and 43 -> 4 hosted modules
+    // reached, and the four are `sandbox/network/*`, which IS the local-owned
+    // `network-policy` route family from Unit 1's table.
+    const LOCAL_PRODUCERS = [
+      "src/deployments/local/embedded-workspace-runtime.ts",
+      "src/deployments/local/server-workspace-pty-proxy.ts",
+      "src/deployments/local/server-usage-limits.ts",
+      "src/deployments/local/port.ts",
+      "src/workspace/runtime-dispatch/internals.ts",
+      "src/workspace/runtime-dispatch/middleware.ts",
+      "src/agent-config/routes/index.ts",
+      "src/credentials/routes/credential.ts",
+      "src/credentials/routes/provider-auth.ts",
+      "src/session/routes/meta-routes.ts",
+      "src/deployments/shared-routes/bootstrap.ts",
+      "src/sandbox/network/network-policy-routes.ts",
+      "src/opencode/compat-routes/index.ts",
+    ]
+    const reached = new Set<string>()
+    for (const producer of LOCAL_PRODUCERS) {
+      for (const module of sourceClosure({
+        entry: path.join(ROOT, producer),
+        root: ROOT,
+        runtimeOnly: true,
+      }).modules) {
+        if (!module.relative.includes(".test.")) reached.add(module.relative)
+      }
+    }
+
+    expect(reached.size).toBeLessThanOrEqual(110)
+    expect([...reached].filter((module) => /^src\/(connections|channels|documents|authority\/adapters\/convex|sandbox\/stores|sandbox\/routes|hosts\/workgraph)\//.test(module)))
+      .toEqual([])
+  })
+
   it("shrinks once type-only edges are discounted", () => {
     // A type-only import is erased whole: no module is loaded and no capability
     // becomes reachable. The gap between these two numbers is the surface a

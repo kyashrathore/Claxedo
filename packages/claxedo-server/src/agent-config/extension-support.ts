@@ -38,7 +38,7 @@ import {
   resolveEffectiveAgentExtensionPolicy,
   type AgentExtensionPolicyOverride,
 } from "../hosts/agent-extensions/runtime-config"
-import { syncWorkspaceRuntimeAgentExtensions } from "../workspace/supervisor"
+import { workspaceSupervisor } from "../workspace/supervisor-port"
 import { syncEmbeddedWorkspaceRuntimeAgentExtensions } from "../deployments/local/embedded-workspace-runtime"
 import { errorBody } from "../platform/http/http"
 
@@ -210,7 +210,7 @@ export async function syncWorkspaceRuntimeForSignedScope(scope: WorkspaceExtensi
   ])
   const records = workspaceAgentExtensionRecords(installs)
   await Promise.all([
-    syncWorkspaceRuntimeAgentExtensions(scope.workspaceId, records, { policyOverrides }),
+    workspaceSupervisor().syncAgentExtensions(scope.workspaceId, records, { policyOverrides }),
     syncEmbeddedWorkspaceRuntimeAgentExtensions(scope.workspaceId, records, { policyOverrides }),
   ])
 }
