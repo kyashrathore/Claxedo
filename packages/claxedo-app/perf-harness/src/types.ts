@@ -84,9 +84,9 @@ export type DiagnosticsOverheadEvidence = {
   enabledHeadline: FrameMetric
 }
 
-// Regression budget: a ceiling on the headline worst-frame, auto-calibrated from
-// the first accepted run. The 8.33/16.67 thresholds are enforced separately and
-// are not stored (they are physical, not tunable).
+// Regression budget: a ceiling on the headline worst renderer interval, auto-calibrated from
+// the first accepted run. The 8.33/16.67 renderer-proxy thresholds are enforced
+// separately and are not stored.
 export type Budget = {
   scenario: ScenarioId
   worst_frame_ms?: number
