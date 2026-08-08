@@ -923,7 +923,7 @@ The measured blocker count went 6 -> 3 -> 2 -> 1 -> 0. The last one, `embedded w
 
 ### Phase B — Extract the product packages
 
-- [~] **Unit 5: Extract the authoritative desktop-local server package** — *preconditions measured and three of the widest edges cut; the package itself is not created*
+- [~] **Unit 5: Extract the authoritative desktop-local server package** — *`@claxedo/local-server` and `@claxedo/server-core` exist and are green; the desktop server child, predev/prebuild, and the self-hosted composition are not yet rewired*
 
 **Status (2026-08-08): the unit's real shape was measured, and it is not "move `deployments/local/server.ts`".**
 
@@ -1002,7 +1002,12 @@ That leaves one decision:
 
 The first is the right answer for the same reason the shared core exists at all; the second is a shortcut whose cost is a compile-time cycle between the two products the split was drawn to separate.
 
-**Not done:** `packages/claxedo-local-server` does not exist.
+**`@claxedo/local-server` exists (2026-08-08).** 44 modules; 161 tests pass. Its `src/architecture/local-closure.test.ts` asserts the closure reaches no `@claxedo/server`, `@claxedo/workgraph`, `@claxedo/channels`, `@claxedo/connections`, `@claxedo/wakes`, `convex`, `better-auth`, or `posthog-node`; that every package it does reach is DECLARED rather than working by hoisting; that every relative specifier resolves; and that no `import(<variable>)` hides an edge. Removing one dependency from the manifest as a probe fails it by name.
+
+Two modules were caught going to the wrong side, both by that gate.
+`hosts/workspace-runtime/runtime-boot.ts` is the HOSTED sandbox launcher — its own comment says WorkGraph enters the runtime there — so it returned to `@claxedo/server`; the local runtime needed only `claxedoCorsOrigin`, a shared policy now in the core. And the embedded-runtime test's WorkGraph-contribution case moved to `claxedo-server` beside `selfHostedCapabilities`, while its sibling needed no helper at all: "no host contributions" is `[]`, which IS the shape a desktop-local build has.
+
+**Not done in this unit:** the desktop server child, `predev`, `prebuild`, and the boot smoke still point at `claxedo-server`'s local entry, and `deployments/local/server.ts` has not been retargeted to a `@claxedo/local-server/self-hosted-execution` subpath. `main.ts`, `server.ts`, `embedded-auth`, `internal-relay-local`, `remote-access-service`, and `self-hosted-capabilities` remain in `claxedo-server` because they are the SELF-HOSTED composition, which Unit 7 recomposes.
 
 The 44/62 split is pinned by `local-entry-closure.test.ts`, so the move set cannot drift.
 
