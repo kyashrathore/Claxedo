@@ -5,6 +5,8 @@ import * as net from "node:net"
 import * as os from "node:os"
 import * as path from "node:path"
 
+import { localServerBundleEntry, requireLocalServerBundle } from "./local-server"
+
 // Boot-level coverage for the desktop server composition. Unit tests run from
 // packages that carry their own node_modules/opencode link, so they can never
 // see the bundled server's module-resolution reality: the bundle externalizes
@@ -15,10 +17,61 @@ import * as path from "node:path"
 
 const SCRIPT_DIR = import.meta.dir
 const PACKAGE_DIR = path.resolve(SCRIPT_DIR, "..")
-const SERVER_BUNDLE = path.join(PACKAGE_DIR, "resources/claxedo-server/index.js")
+// The same resolver `prebuild`, `predev`, and `build` use, so the smoke test
+// cannot pass against a different artifact than the one that ships.
+const SERVER_BUNDLE = localServerBundleEntry(PACKAGE_DIR)
 const ENGINE_ARTIFACT = path.resolve(PACKAGE_DIR, "../opencode/dist/node/node.js")
 
 const require = createRequire(import.meta.url)
+
+test("a missing local-server bundle stops the boot, naming the artifact", async () => {
+  // The error path the plan requires, exercised at the real boot boundary
+  // rather than asserted about. CI's unit job has no bundle, so this is the
+  // only server-boot coverage that always runs — and the case it covers is the
+  // one that matters: nothing else may start in the bundle's place.
+  const missing = path.join(PACKAGE_DIR, "resources/claxedo-server/does-not-exist.js")
+  expect(fs.existsSync(missing)).toBe(false)
+
+  const port = await freePort()
+  const child = Bun.spawn({
+    cmd: [process.execPath, require.resolve("electron/cli.js"), missing],
+    env: {
+      ...Bun.env,
+      ELECTRON_RUN_AS_NODE: "1",
+      CLAXEDO_CHILD_PORT: String(port),
+      CLAXEDO_DESKTOP_PARENT_PID: String(process.pid),
+    },
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+
+  const code = await child.exited
+  expect(code).not.toBe(0)
+  expect(await new Response(child.stderr).text()).toContain(missing)
+
+  // And no server took its place on the port it would have claimed.
+  const answered = await fetch(`http://127.0.0.1:${port}/api/claxedo/health`, {
+    signal: AbortSignal.timeout(1_000),
+  })
+    .then(() => true)
+    .catch(() => false)
+  expect(answered).toBe(false)
+}, 30_000)
+
+test("requireLocalServerBundle names the artifact and the command that builds it", () => {
+  // The preparation-time half of the same rule: `build.ts` calls this before
+  // electron-vite, because the vite plugin that copies the bundle into
+  // out/main/ skips silently when it is absent.
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-no-bundle-"))
+  try {
+    expect(() => requireLocalServerBundle(empty)).toThrow(
+      new RegExp(`${path.join("resources", "claxedo-server", "index.js").replace(/\\/g, "\\\\")}`),
+    )
+    expect(() => requireLocalServerBundle(empty)).toThrow(/prebuild/)
+  } finally {
+    fs.rmSync(empty, { recursive: true, force: true })
+  }
+})
 
 test("embedded OpenCode engine artifact exists at the desktop-resolved path", () => {
   // The desktop main points CLAXEDO_CHILD_OPENCODE_EMBED_PATH at this exact

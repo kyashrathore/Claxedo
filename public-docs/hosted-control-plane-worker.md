@@ -5,13 +5,16 @@ control plane**: auth, workspace ownership, relay target resolution, token
 minting, user-hosted registration/heartbeat/pause, JWKS, health, and device
 login. Local execution — the embedded workspace runtime, PTY/process/file
 routes, the cloudflared/Tailscale tunnel, SQLite, and the sandbox supervisor —
-stays in the local Node server (`src/server.ts`) and is never bundled into the
-Worker.
+stays in the local server, which is now its own package
+(`packages/claxedo-local-server/src/app/start-local-server.ts`), and is never
+bundled into the Worker.
 
-The Worker entrypoint is `packages/claxedo-server/src/worker.ts`, which serves
-the Worker-safe app from `src/hosted-app.ts`. It mounts only the hosted
-control-plane route set below — a different, narrower surface than the local
-Node server's routes.
+The Worker entrypoint is
+`packages/claxedo-server/src/deployments/hosted-workerd/worker.ts`, which serves
+the Worker-safe app from
+`packages/claxedo-server/src/deployments/hosted-shared/hosted-app.ts`. It mounts
+only the hosted control-plane route set below — a different, narrower surface
+than the local server's routes.
 
 ## Worker API surface
 

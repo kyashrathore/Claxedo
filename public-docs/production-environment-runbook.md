@@ -27,9 +27,10 @@ Every claim in this section traces to a command output.
 **This is expected, not a gap. Production should also read `false` at launch.**
 
 `deviceLogin` is `!!plane.deviceAuthProvider`
-(`packages/claxedo-server/src/hosted-app.ts:396`). `deviceAuthProvider` returns
-`undefined` whenever `CLAXEDO_DEVICE_LOGIN_ISSUER` is unset
-(`packages/claxedo-server/src/control-plane/hosted-services.ts:178-180`).
+(`packages/claxedo-server/src/deployments/hosted-shared/hosted-app.ts:538`).
+`deviceAuthProvider` returns `undefined` whenever `CLAXEDO_DEVICE_LOGIN_ISSUER`
+is unset
+(`packages/claxedo-server/src/authority/hosted-services.ts:297-299`).
 Device-code login is an unshipped Phase A feature that fails closed by design
 until that issuer exists — see
 `docs/plans/2026-07-17-001-review-remote-desktop-access-feasibility.md:80`
@@ -121,9 +122,10 @@ No workflow sets any of these. They are installed with `wrangler secret put` and
 #### Control-plane Worker — boot-required (5 hand-provisioned)
 
 Missing any one of these makes the Worker return **503 on every request**
-(`worker.ts:235-256`), so the smoke's health check catches it immediately. All
-five throw from `composeHostedControlPlane`
-(`packages/claxedo-server/src/control-plane/hosted-services.ts:234-266`).
+(`packages/claxedo-server/src/deployments/hosted-workerd/worker.ts:311-345`), so
+the smoke's health check catches it immediately. All five throw from
+`composeHostedControlPlane`
+(`packages/claxedo-server/src/authority/hosted-services.ts:363-405`).
 
 | Name | Guard | Notes |
 | --- | --- | --- |
@@ -185,7 +187,7 @@ unreadable; never drop it and the key was never actually retired.
    `--env`), plus removal from any self-host environment.
 
 **The local encrypted file store is not in this scheme.**
-`packages/claxedo-server/src/credentials/local.ts` — used when
+`packages/claxedo-server-core/src/credentials/backends/local.ts` — used when
 `CLAXEDO_CF_KV_URL` is unset — encrypts with a machine-local key derived from
 `<data dir>/credentials/.seed` (`~/.claxedo` unless `CLAXEDO_DATA_DIR` overrides
 it), carries no key-id, and never involves `CLAXEDO_CREDENTIALS_KEK`. A
@@ -520,7 +522,8 @@ into the YAML.
 
 ### 4b. What the 4-assertion smoke does and does not cover
 
-`/api/claxedo/mode` (`packages/claxedo-server/src/hosted-app.ts:387-399`)
+`/api/claxedo/mode`
+(`packages/claxedo-server/src/deployments/hosted-shared/hosted-app.ts:529-541`)
 returns eight booleans. The production smoke (`deploy-control-plane.yml:422-459`)
 asserts **health ok**, **`signedAuth == true`**, and **two garbage-bearer 401s**.
 
@@ -529,10 +532,11 @@ is not, and the reason is worth writing down** — because the natural "harden t
 smoke" reaction would add assertions that can never fail.
 
 The hosted composition is genuinely fail-closed. `composeHostedControlPlane`
-(`packages/claxedo-server/src/control-plane/hosted-services.ts:234-266`) throws
+(`packages/claxedo-server/src/authority/hosted-services.ts:363-405`) throws
 `HostedWorkerCompositionError` before the app is ever built, and
-`worker.ts:235-256` maps that to a **503 on every request** — which the smoke's
-health check catches first.
+`packages/claxedo-server/src/deployments/hosted-workerd/worker.ts:311-345` maps
+that to a **503 on every request** — which the smoke's health check catches
+first.
 
 | Signal | Derivation | Can it be `false` on a Worker that returns health 200? |
 | --- | --- | --- |
@@ -623,8 +627,10 @@ Two independent problems:
    and `VITE_CONVEX_URL`. **Setting `VITE_POSTHOG_KEY` as an environment variable
    would change nothing** — the workflow must also pass it into the build.
 2. **Worker-side is just a missing secret.**
-   `packages/claxedo-server/src/control-plane/worker-telemetry.ts:18` reads
-   `env.CLAXEDO_POSTHOG_KEY`, so `wrangler secret put` is sufficient there.
+   `packages/claxedo-server/src/platform/auth/worker-telemetry.ts` resolves its
+   key through `resolveTelemetryKey`, which reads `env.CLAXEDO_POSTHOG_KEY`
+   (`packages/claxedo-server/src/platform/telemetry/errors/config.ts:106`), so
+   `wrangler secret put` is sufficient there.
 
 This matters for the cutover because `public-docs/deploy-runbook.md:266` makes
 telemetry a *promotion precondition*: "environment-specific PostHog dashboards,
@@ -899,7 +905,8 @@ cd packages/workspace-relay && bunx wrangler deploy --env "" --dry-run --outdir 
 
 Plus `grep`-based enumeration of `secrets.*` / `vars.*` across
 `.github/workflows/deploy-*.yml`, and source reading of
-`packages/claxedo-server/src/control-plane/hosted-services.ts`,
-`.../deployment-mode.ts`, `.../runtime-access-token.ts`,
-`packages/claxedo-server/src/hosted-app.ts`, both `wrangler.toml` files, and
-`convex/auth.config.ts`.
+`packages/claxedo-server/src/authority/hosted-services.ts`,
+`packages/claxedo-server-core/src/authority/deployment-mode.ts`,
+`packages/claxedo-server-core/src/platform/auth/runtime-access-token.ts`,
+`packages/claxedo-server/src/deployments/hosted-shared/hosted-app.ts`, both
+`wrangler.toml` files, and `convex/auth.config.ts`.

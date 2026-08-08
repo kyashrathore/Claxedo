@@ -4,6 +4,8 @@ import tailwindcss from "@tailwindcss/vite"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { desktopProductMode, rendererDocument, type DesktopProductMode } from "./src/main/navigation-guard"
+
 const normalize = (value: string) => value.replaceAll("\\", "/")
 
 export const desktopDir = normalize(fileURLToPath(new URL("./", import.meta.url)))
@@ -12,9 +14,29 @@ const agentEventRuntimeDir = normalize(fileURLToPath(new URL("../agent-event-run
 const rendererRoot = normalize(path.join(desktopDir, "src/renderer"))
 // Post-divorce (plan 006): the renderer resolves @/ against claxedo-app, not packages/app.
 const upstreamRoot = normalize(fileURLToPath(new URL("../claxedo-app/src/", import.meta.url)))
+/**
+ * Which product this desktop build is.
+ *
+ * Resolved from the SAME environment `createElectronRenderer` already loads, by
+ * the same function `src/main/windows.ts` reads its baked answer from. Exported
+ * so `electron.vite.config.ts` can bake it into the main process without a
+ * second `loadEnv` call and a second copy of the rule.
+ */
+export function desktopProductModeForBuild(mode: string): DesktopProductMode {
+  return desktopProductMode(loadEnv(mode, claxedoAppDir, "VITE_"))
+}
+
 export function createElectronRenderer(mode: string): UserConfig {
   const env = loadEnv(mode, claxedoAppDir, "VITE_")
   const terminal = env.VITE_TERMINAL_BACKEND || "xterm"
+  // Exactly ONE main document, chosen by product.
+  //
+  // This is the line that stops an unsigned desktop shipping the hosted control
+  // plane, and it has to be an INPUT selection rather than a runtime branch:
+  // rollup links whatever an input's graph reaches, so listing both documents
+  // would put `index.tsx` — and through `@claxedo/app/auth`, `auth-client.ts`
+  // and Clerk — into the local artifact no matter which one main then loaded.
+  const document = rendererDocument(desktopProductMode(env))
 
   return {
     define: {
@@ -44,7 +66,7 @@ export function createElectronRenderer(mode: string): UserConfig {
       sourcemap: "hidden",
       rollupOptions: {
         input: {
-          main: normalize(path.join(rendererRoot, "index.html")),
+          main: normalize(path.join(rendererRoot, document)),
           loading: normalize(path.join(rendererRoot, "loading.html")),
         },
         output: {

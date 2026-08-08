@@ -12,13 +12,21 @@ import * as path from "path"
 
 import { bundleClaxedoServer } from "./bundle-claxedo-server"
 import { buildMemoryImpactHelper } from "./build-memory-impact-helper"
+import {
+  LOCAL_SERVER_ENTRY,
+  localServerBundleEntry,
+  localServerPackageDir,
+  resolveLocalServerEntry,
+} from "./local-server"
 import { copyIcons, copyWorkspaceRuntimeTemplates } from "./utils"
 
 const SCRIPT_DIR = import.meta.dir
 const PACKAGE_DIR = path.resolve(SCRIPT_DIR, "..")
-// The desktop server IS `@claxedo/local-server` now. `claxedo-server` is the
-// hosted and self-hosted product; nothing the desktop ships comes from it.
-const CLAXEDO_SERVER_DIR = path.resolve(PACKAGE_DIR, "../claxedo-local-server")
+// The desktop server IS `@claxedo/local-server`. `claxedo-server` is the hosted
+// and self-hosted product; nothing the desktop ships comes from it. `prebuild`
+// resolves through the same module, so development and production preparation
+// cannot drift apart.
+const CLAXEDO_SERVER_DIR = localServerPackageDir(PACKAGE_DIR)
 const OPENCODE_DIR = path.resolve(PACKAGE_DIR, "../opencode")
 const WS_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../workspace-runtime")
 const require = createRequire(import.meta.url)
@@ -130,8 +138,8 @@ if (outputIsStale(workspaceRuntimeOutput, [
 }
 
 const serverSource = path.resolve(SCRIPT_DIR, "claxedo-server-entry.ts")
-const serverDest = path.resolve(PACKAGE_DIR, "resources/claxedo-server")
-const serverEntry = path.join(serverDest, "index.js")
+const serverEntry = localServerBundleEntry(PACKAGE_DIR)
+const serverDest = path.dirname(serverEntry)
 const embeddedOpenCode = path.resolve(OPENCODE_DIR, "dist/node/node.js")
 
 if (outputIsStale(embeddedOpenCode, [
@@ -144,6 +152,11 @@ if (outputIsStale(embeddedOpenCode, [
 } else {
   console.log(`[predev] SDK-next embedded OpenCode is current`)
 }
+
+// Same gate `prebuild` applies, for the same reason: an unresolvable
+// `@claxedo/local-server` must stop here naming the package, not silently
+// leave dev running yesterday's bundle.
+console.log(`[predev] Local server entry: ${LOCAL_SERVER_ENTRY} → ${resolveLocalServerEntry(PACKAGE_DIR)}`)
 
 if (fs.existsSync(serverSource) && outputIsStale(serverEntry, [
   path.resolve(SCRIPT_DIR, "bundle-claxedo-server.ts"),

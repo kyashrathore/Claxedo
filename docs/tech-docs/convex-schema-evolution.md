@@ -49,10 +49,15 @@ remains only for the break-glass maintenance script
 
 ## Guards that keep this honest
 
-- `packages/claxedo-server/src/control-plane/convex-migrations-discipline.test.ts`
-  pins the component registration and internal-only visibility of migration
-  functions.
-- `packages/claxedo-server/src/control-plane/convex-authz-guard.test.ts` (D8)
-  bans raw Convex builders, so a new backfill cannot bypass the builder set.
-- `packages/claxedo-server/src/architecture.test.ts` pins where the
-  `runtime_leases` legacy-normalize logic lives.
+The Convex functions and their policy suites live in the repo-root `convex/`
+directory, not under a server package.
+
+- `convex/migrations-discipline.policy.test.ts` pins the component registration
+  and internal-only visibility of migration functions, and pins that migration
+  #001 reuses the `runtime_leases` normalize logic rather than forking a second
+  implementation of it.
+- `convex/authz-guard.policy.test.ts` (D8) bans raw Convex builders, so a new
+  backfill cannot bypass the builder set.
+- `convex/sandbox-leases.policy.test.ts` pins the behaviour of that
+  `runtime_leases` legacy-normalize logic, which lives in
+  `convex/sandboxLeases.ts` and is reached from `convex/migrations.ts`.

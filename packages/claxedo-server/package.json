@@ -73,7 +73,8 @@
     "sandbox:image": "bun run scripts/sandbox/build-sandbox-image.ts",
     "rebuild:native": "npm rebuild better-sqlite3",
     "smoke:self-hosted-restart": "./scripts/smoke/self-hosted-restart.sh",
-    "smoke:self-hosted-upgrade": "./scripts/smoke/self-hosted-upgrade.sh"
+    "smoke:self-hosted-upgrade": "./scripts/smoke/self-hosted-upgrade.sh",
+    "verify:closure": "bun ../../script/product-boundary/verify.ts"
   },
   "dependencies": {
     "@claxedo/agent-extensions": "workspace:0.7.0",
