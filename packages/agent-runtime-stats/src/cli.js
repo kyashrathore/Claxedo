@@ -104,7 +104,8 @@ export async function main(args, io = { stdout: process.stdout, stderr: process.
   }
   if (options.format === "json") io.stdout.write(`${JSON.stringify(report, null, 2)}\n`)
   else {
-    io.stdout.write(`${renderTable(report, io.stdout.columns)}\n\n`)
+    const colors = io.stdout.isTTY === true && !("NO_COLOR" in environment)
+    io.stdout.write(`${renderTable(report, io.stdout.columns, colors)}\n\n`)
     const sharing = sharePrompt(report, environment.AGENT_RUNTIME_STATS_SHARE_URL, io.stdout.isTTY === true)
     if (sharing) io.stdout.write(`${sharing}\n`)
   }

@@ -192,13 +192,15 @@ test("renders the report as terminal tables", () => {
   assert.match(output, /Median first-call lead/)
   assert.match(output, /Median full-machine call duration/)
   assert.match(output, /Gaps longer than 120s/)
-  assert.match(output, /Environment readiness is not measured/)
+  assert.match(output, /ENVIRONMENT READINESS/)
+  assert.match(output, /Not measured here/)
   assert.match(output, /Can run in just-bash/)
   assert.match(output, /Runtime unresolved/)
   assert.match(output, /Generated code execution is counted as full-machine/)
   assert.doesNotMatch(output, /workerd/i)
   assert.doesNotMatch(output, /CI\/E2E/)
-  assert.match(output, /Partial coverage: cursor/)
+  assert.match(output, /PARTIAL COVERAGE/)
+  assert.match(output, /cursor:/)
   assert.match(output, /No transcript sessions were found/)
   assert.doesNotMatch(output, /Harness.*Status.*Stores/)
 })
@@ -216,18 +218,19 @@ test("keeps report lines within wide, compact, and narrow terminals", () => {
   const analysis = analyzeSessions([
     { id: "feature", harness: "codex", calls: [call("1", "shell", { command: "bun test" })] },
   ])
-  for (const columns of [120, 80, 50]) {
+  for (const columns of [160, 120, 80, 50, 20]) {
     const output = renderTable(analysis, columns)
+    assert.match(output, /^┌/)
+    assert.match(output, /└[^\n]*┘\n\nNOTES/)
+    assert.doesNotMatch(output, /^Sessions analyzed.*:/m)
     assert.ok(Math.max(...output.split("\n").map((line) => line.length)) <= columns, `exceeded ${columns} columns`)
     if (columns === 50) {
       const normalized = output.replace(/\s+/g, " ")
-      assert.match(normalized, /100\.00% of resolved sessions/)
+      assert.match(normalized, /100\.00% of .*resolved sessions/)
       assert.match(normalized, /1 turn/)
       assert.doesNotMatch(normalized, /of tier/)
     }
   }
-  const narrow = renderTable(analysis, 20)
-  assert.ok(Math.max(...narrow.split("\n").map((line) => line.length)) <= 20)
   const longToken = { ...analysis, sources: [{ harness: "x".repeat(80), status: "partial", stores: 1 }] }
   assert.ok(
     Math.max(
@@ -236,6 +239,14 @@ test("keeps report lines within wide, compact, and narrow terminals", () => {
         .map((line) => line.length),
     ) <= 20,
   )
+
+  const colored = renderTable(analysis, 80, true)
+  assert.match(colored, /\u001B\[1;36m/)
+  assert.match(colored, /\u001B\[90m/)
+  assert.match(colored, /\u001B\[33m/)
+  const plain = colored.replace(/\u001B\[[0-9;]*m/g, "")
+  assert.ok(Math.max(...plain.split("\n").map((line) => line.length)) <= 80)
+  assert.doesNotMatch(renderTable(analysis, 80), /\u001B\[/)
 })
 
 test("shows live scan progress only in interactive terminals", () => {

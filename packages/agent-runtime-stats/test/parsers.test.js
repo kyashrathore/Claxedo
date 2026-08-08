@@ -55,7 +55,7 @@ test("preserves missing tool completion timestamps", async () => {
   assert.equal(session.calls[0].end, null)
 })
 
-test("classifies Codex codemode and generated JavaScript through the parser boundary", async () => {
+test("uses one command extractor for Codex codemode and code-key inputs", async () => {
   const file = await jsonlFixture([
     { timestamp: "2026-01-01T00:00:00.000Z", type: "turn_context", payload: { turn_id: "t1" } },
     {
@@ -78,6 +78,16 @@ test("classifies Codex codemode and generated JavaScript through the parser boun
         arguments: JSON.stringify({ code: "await import('node:fs')" }),
       },
     },
+    {
+      timestamp: "2026-01-01T00:00:03.000Z",
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        call_id: "code-1",
+        name: "custom_executor",
+        arguments: JSON.stringify({ code: "git status" }),
+      },
+    },
   ])
   const { session } = await parseJsonlFile("codex", file)
   assert.deepEqual(
@@ -85,6 +95,7 @@ test("classifies Codex codemode and generated JavaScript through the parser boun
     [
       { tier: "vm", bucket: "Git repository operations" },
       { tier: "vm", bucket: "generated code execution*" },
+      { tier: "vm", bucket: "Git repository operations" },
     ],
   )
 })
