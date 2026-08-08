@@ -1,5 +1,5 @@
 import type { Command, CommandHandler } from "./command-bus"
-import type { JSX } from "solid-js"
+import { createSignal, type JSX } from "solid-js"
 import { hasBacking, workspaceKey, type SessionRef } from "@/platform/identity/session-ref"
 
 export type ContributionTier = "shell" | "claxedo-first-party" | "lease-bound-agent"
@@ -124,10 +124,36 @@ export function createContributionRegistry(seed: Partial<ContributionRegistry> =
     settings: [...(seed.settings ?? [])],
   }
 
+  /**
+   * Revision of the registry's contents.
+   *
+   * The contribution lists are plain mutable arrays, so `addSurface` and
+   * `removeSurface` used to be invisible to SolidJS: a renderer that had
+   * already resolved a contribution kept the answer it got, which made hosted
+   * activation arrive too late to matter and sign-out leave hosted UI mounted.
+   *
+   * Invalidation lives HERE rather than at the register/unregister helpers in
+   * `first-party-content-surfaces.tsx` because this module owns every mutator —
+   * `addTrustedAgentContributions` reaches the same arrays without going
+   * through those helpers — and because bumping at the mutation site leaves
+   * every reader reactive without a single consumer change. Same version-signal
+   * shape the metadata slice already uses for `meta.ids()`.
+   *
+   * Bumped only when the arrays actually changed, so a no-op removal cannot
+   * invalidate anything, and read by every accessor below so the tracking scope
+   * that asked for the current contributions re-runs when they change.
+   */
+  const [revision, setRevision] = createSignal(0)
+  const changed = () => setRevision((current) => current + 1)
+  const track = () => void revision()
+
   return {
-    all: () => registry,
+    all: () => {
+      track()
+      return registry
+    },
     addSurface(contribution: SurfaceContribution) {
-      upsert(registry.surfaces, contribution)
+      if (upsert(registry.surfaces, contribution)) changed()
     },
     /**
      * Removes a surface by id.
@@ -138,56 +164,65 @@ export function createContributionRegistry(seed: Partial<ContributionRegistry> =
      * reload the page.
      */
     removeSurface(id: string) {
-      remove(registry.surfaces, id)
+      if (remove(registry.surfaces, id)) changed()
     },
     addCommand(contribution: CommandContribution) {
-      upsert(registry.commands, contribution)
+      if (upsert(registry.commands, contribution)) changed()
     },
     addToolbar(contribution: ToolbarContribution) {
-      upsert(registry.toolbar, contribution)
+      if (upsert(registry.toolbar, contribution)) changed()
     },
     addMenu(contribution: MenuContribution) {
-      upsert(registry.menus, contribution)
+      if (upsert(registry.menus, contribution)) changed()
     },
     addRenderer(contribution: RendererContribution) {
-      upsert(registry.renderers, contribution)
+      if (upsert(registry.renderers, contribution)) changed()
     },
     addSettings(contribution: SettingsContribution) {
-      upsert(registry.settings, contribution)
+      if (upsert(registry.settings, contribution)) changed()
     },
     addTrustedAgentContributions(bundle: TrustedAgentContributionBundle) {
+      // One bump for the whole bundle: a lease installs its contributions as a
+      // unit, and readers should see the unit, not each intermediate list.
+      let mutated = false
       for (const contribution of bundle.surfaces ?? []) {
-        upsert(registry.surfaces, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease })
+        mutated = upsert(registry.surfaces, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease }) || mutated
       }
       for (const contribution of bundle.commands ?? []) {
-        upsert(registry.commands, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease })
+        mutated = upsert(registry.commands, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease }) || mutated
       }
       for (const contribution of bundle.toolbar ?? []) {
-        upsert(registry.toolbar, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease })
+        mutated = upsert(registry.toolbar, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease }) || mutated
       }
       for (const contribution of bundle.menus ?? []) {
-        upsert(registry.menus, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease })
+        mutated = upsert(registry.menus, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease }) || mutated
       }
       for (const contribution of bundle.renderers ?? []) {
-        upsert(registry.renderers, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease })
+        mutated = upsert(registry.renderers, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease }) || mutated
       }
       for (const contribution of bundle.settings ?? []) {
-        upsert(registry.settings, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease })
+        mutated = upsert(registry.settings, { ...contribution, tier: "lease-bound-agent", lease: bundle.lease }) || mutated
       }
+      if (mutated) changed()
     },
     command(id: string) {
+      track()
       return registry.commands.find((command) => command.id === id)
     },
     visibleSurfaces(context: ContributionGateContext) {
+      track()
       return registry.surfaces.filter((surface) => contributionGateAllows(surface.gate, context))
     },
     visibleCommands(context: ContributionGateContext) {
+      track()
       return registry.commands.filter((command) => contributionGateAllows(command.gate, context))
     },
     trustedAgentCommands() {
+      track()
       return registry.commands.filter((command) => command.tier === "lease-bound-agent")
     },
     trustedAgentContributions() {
+      track()
       return {
         surfaces: registry.surfaces.filter(leaseBoundAgent),
         commands: registry.commands.filter(leaseBoundAgent),
@@ -217,19 +252,23 @@ function roleIncludes(actual: ContributionGate["role"] | undefined, minimum: Con
   return actual ? order.indexOf(actual) >= order.indexOf(minimum) : false
 }
 
+/** Returns whether the list changed, so only real mutations bump the revision. */
 function upsert<T extends { id: string }>(items: T[], next: T) {
   const index = items.findIndex((item) => item.id === next.id)
   if (index === -1) {
     items.push(next)
-    return
+    return true
   }
+  if (items[index] === next) return false
   items[index] = next
+  return true
 }
 
 function remove<T extends { id: string }>(items: T[], id: string) {
   const index = items.findIndex((item) => item.id === id)
-  if (index === -1) return
+  if (index === -1) return false
   items.splice(index, 1)
+  return true
 }
 
 function leaseBoundAgent<T extends { tier: ContributionTier }>(contribution: T) {

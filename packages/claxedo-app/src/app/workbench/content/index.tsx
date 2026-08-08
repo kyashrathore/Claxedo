@@ -48,20 +48,38 @@ export function ContentRenderer(props: ContentRendererProps): JSX.Element {
       }
     >
       {(m) => {
-        const current = m()
-        const surface = contentSurface(current.type, { sessionRef: current.content?.sessionRef })
-        if (surface) {
-          return surface.renderer({
-            meta: current,
-            ctx: props.ctx,
-            fallbackDirectory: props.fallbackDirectory,
-            canUseDocuments: documentsAccess({ principal: principal(), serverUrl: server.url }),
-          })
-        }
+        // `Show` invokes this block UNTRACKED and only when `when` flips
+        // truthiness, so resolving the surface inline froze the answer for the
+        // life of the mount: hosted activation arrived too late to replace
+        // "Unknown content type", and sign-out could not take a mounted hosted
+        // surface back off. The lookup therefore gets its own memo, which
+        // tracks the contribution registry's revision.
+        const surface = createMemo(() => {
+          const current = m()
+          return contentSurface(current.type, { sessionRef: current.content?.sessionRef })
+        })
         return (
-          <div class="flex items-center justify-center h-full text-text-weak">
-            Unknown content type: {String(type())}
-          </div>
+          <Show
+            when={surface()}
+            // Keyed: a different contribution for the same type is a different
+            // renderer and must re-mount. The memo is stable across metadata
+            // patches, so this does not churn long-lived per-content state.
+            keyed
+            fallback={
+              <div class="flex items-center justify-center h-full text-text-weak">
+                Unknown content type: {String(type())}
+              </div>
+            }
+          >
+            {(resolved) =>
+              resolved.renderer({
+                meta: m(),
+                ctx: props.ctx,
+                fallbackDirectory: props.fallbackDirectory,
+                canUseDocuments: documentsAccess({ principal: principal(), serverUrl: server.url }),
+              })
+            }
+          </Show>
         )
       }}
     </Show>
