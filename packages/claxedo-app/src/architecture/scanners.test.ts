@@ -62,6 +62,7 @@ describe("architecture scanners", () => {
 
     expect(metric.scan([
       source("ui/session-kit.ts", `export * from "@opencode-ai/session-ui/context"`),
+      source("ui/session-kit-loaders.ts", `return import("@opencode-ai/session-ui/file")`),
       source("components/file.tsx", `import { File } from "@opencode-ai/session-ui/file"`),
     ])).toEqual([
       {
