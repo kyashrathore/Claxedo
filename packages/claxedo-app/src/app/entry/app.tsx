@@ -47,6 +47,10 @@ import { HostedContributionSync } from "@/app/composition/hosted-contribution-sy
 import { ClaxedoEventsProvider } from "@/app/integrations/claxedo-events"
 import { loadFileComponent } from "@/ui/session-kit-loaders"
 
+if ((window as unknown as Record<string, unknown>).__claxedoPerfTrace === true) {
+  performance.mark("runtime.appEntryModuleEvaluated")
+}
+
 // Restore navigation data before the shell mounts so the sidebar can paint its
 // last-known session rows while the local server refresh runs in the background.
 installQueryPersister()
@@ -228,7 +232,7 @@ function ConnectionGate(props: ParentProps) {
     actions.refetch()
   })
 
-  const readyToRender = () => mode() === "blocking" ? !startup.loading : startup.state !== "pending"
+  const readyToRender = () => (mode() === "blocking" ? !startup.loading : startup.state !== "pending")
   const showBlockingSplash = () => mode() === "blocking" && !readyToRender()
 
   return (
@@ -412,9 +416,7 @@ function AuthenticatedLayout(
       <RoutedClaxedoEventsProvider>
         <AuthenticatedProviders>
           <ConnectionGate>
-            <RuntimeProviders onPainted={() => setClaxedoAppShellPainted(true)}>
-              {props.children}
-            </RuntimeProviders>
+            <RuntimeProviders onPainted={() => setClaxedoAppShellPainted(true)}>{props.children}</RuntimeProviders>
           </ConnectionGate>
         </AuthenticatedProviders>
       </RoutedClaxedoEventsProvider>
@@ -473,9 +475,7 @@ export function AppInterface(props: {
 
       <Route
         path="/"
-        component={(p) => (
-          <AuthenticatedLayout {...p} defaultServer={props.defaultServer} servers={props.servers} />
-        )}
+        component={(p) => <AuthenticatedLayout {...p} defaultServer={props.defaultServer} servers={props.servers} />}
       >
         <Route
           path="/"

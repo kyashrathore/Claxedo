@@ -12,10 +12,7 @@
 import "./styles/app-shell.css"
 import { createEffect, createMemo, lazy, type ParentProps } from "solid-js"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
-import { Toast } from "@opencode-ai/ui/toast"
-
 import { AppShellLayout } from "./app-shell-layout"
-import { ClaxedoStateProvider } from "./workbench/state/index"
 
 import { isDemoMode } from "@/platform/api/api"
 import { PromptHarnessControllersProvider } from "../features/session/composer/ui/harness-controller"
@@ -34,6 +31,8 @@ import { reviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-
 const DemoTourController = __DEMO_ENABLED__
   ? lazy(() => import("./demo/tour-controller").then((m) => ({ default: m.DemoTourController })))
   : () => null
+
+traceModuleEvaluation("runtime.appShellModuleEvaluated")
 
 /**
  * ClaxedoAppShellContent - The actual layout content
@@ -165,16 +164,25 @@ function ClaxedoAppShellContent(props: ParentProps) {
  * TerminalProvider stays out of this app-level shell because directory-scoped
  * providers mount under directory-layout/DirectoryScope for each Workbench pane.
  */
-export function ClaxedoAppShell(props: ParentProps) {
+export function ClaxedoAppShellInner(props: ParentProps) {
   return (
-    <ClaxedoStateProvider>
-      <Toast.Region />
+    <>
       {isDemoMode() && <DemoTourController />}
       <ClaxedoRouteStateBridge>
         <PromptHarnessControllersProvider>
           <ClaxedoAppShellContent>{props.children}</ClaxedoAppShellContent>
         </PromptHarnessControllersProvider>
       </ClaxedoRouteStateBridge>
-    </ClaxedoStateProvider>
+    </>
   )
+}
+
+function traceModuleEvaluation(name: string) {
+  const target = window as unknown as {
+    __claxedoPerfTrace?: boolean
+    __claxedoPerfRendererPhases?: Array<{ name: string; durationMs: number }>
+  }
+  if (!target.__claxedoPerfTrace) return
+  performance.mark(name)
+  target.__claxedoPerfRendererPhases?.push({ name, durationMs: 0 })
 }

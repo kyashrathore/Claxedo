@@ -434,7 +434,7 @@ async function executeBrowserScenario(
   const monitor = monitorPage(page)
   const started = performance.now()
   await installMockApi(page, app, fixture, monitor)
-  await installSeedState(page, app.target, fixture)
+  await installSeedState(page, app, fixture)
 
   try {
     const flow = await runFlow(scenario, page, app, fixture)
@@ -594,6 +594,7 @@ async function launchProject(page: Page, app: BrowserTarget, fixture: ReturnType
   const session = fixture.sessions[0]!
   const launch = await launchTo(page, app, sessionPath(session, session.id))
   await waitForTranscript(page, fixture, session.id, session.title)
+  await waitForSessionComposer(page)
   const transcriptReady = performance.now() - started
   await showSessionInventory(page, fixture, fixture.sessions.length, { settle: "frame" })
   const headline = await stopPageLoadRecorder(page, "launch-project", performance.now() - started)
@@ -839,8 +840,17 @@ async function waitForLaunchStable(page: Page) {
   )
 }
 
-async function installSeedState(page: Page, target: AppTarget, fixture: ReturnType<typeof fixtureFor>) {
-  await page.addInitScript(({ target, directory, project, sessions, claxedoState }) => {
+async function waitForSessionComposer(page: Page) {
+  // The route fixture does not synthesize provider readiness, so PromptInput
+  // may legitimately show its loading body. The dock still proves that the
+  // lazy composer module evaluated, mounted, and established its interaction
+  // region before the launch recorder stops.
+  await page.waitForSelector("[data-component='session-prompt-dock']", { timeout: 10_000 })
+}
+
+async function installSeedState(page: Page, app: Pick<BrowserTarget, "target" | "mockPort">, fixture: ReturnType<typeof fixtureFor>) {
+  const target = app.target
+  await page.addInitScript(({ target, directory, project, sessions, claxedoState, serverUrl }) => {
     localStorage.setItem(
       "settings.v3",
       JSON.stringify({ general: { showFileTree: true, showSessionProgressBar: true, editToolPartsExpanded: true } }),
@@ -871,12 +881,21 @@ async function installSeedState(page: Page, target: AppTarget, fixture: ReturnTy
       const win = window as typeof window & {
         __CLAXEDO_TEST_AUTH_TOKEN__?: string
         __CLAXEDO_TEST_AUTH_USER__?: unknown
+        __CLAXEDO_E2E_SERVER_URL__?: string
       }
       win.__CLAXEDO_TEST_AUTH_TOKEN__ = "perf-browser-token"
       win.__CLAXEDO_TEST_AUTH_USER__ = { id: "perf-browser-user" }
+      win.__CLAXEDO_E2E_SERVER_URL__ = serverUrl
     }
     sessionStorage.setItem("claxedo.perf.fixture", JSON.stringify({ project, sessions }))
-  }, { target, directory: fixture.directory, project: fixture.project, sessions: fixture.sessions, claxedoState: claxedoStateSeed(fixture) })
+  }, {
+    target,
+    directory: fixture.directory,
+    project: fixture.project,
+    sessions: fixture.sessions,
+    claxedoState: claxedoStateSeed(fixture),
+    serverUrl: `http://127.0.0.1:${app.mockPort}`,
+  })
 }
 
 export function claxedoStateSeed(
@@ -1047,11 +1066,11 @@ function mockCorsHeaders(route: Route) {
 
 function shouldMock(url: URL, app: BrowserTarget) {
   if (url.port === String(app.mockPort)) return true
-  if (url.origin === app.baseUrl && apiPath(url.pathname)) return true
+  if (url.origin === app.baseUrl && (apiPath(url.pathname) || sseStreamPath(url.pathname))) return true
   if (
     ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname) &&
     url.origin !== app.baseUrl &&
-    apiPath(url.pathname)
+    (apiPath(url.pathname) || sseStreamPath(url.pathname))
   ) return true
   return false
 }
@@ -1745,7 +1764,7 @@ async function startApp(): Promise<BrowserTarget> {
   const mockPort = Number(process.env.CLAXEDO_PERF_MOCK_PORT) || await freePort()
   const baseUrl = `http://127.0.0.1:${basePort}`
   const script = process.env.CLAXEDO_PERF_APP_SCRIPT ?? "serve"
-  if (script === "serve" && process.env.CLAXEDO_PERF_SKIP_BUILD !== "1") await buildProductionApp()
+  if (script === "serve" && process.env.CLAXEDO_PERF_SKIP_BUILD !== "1") await buildProductionApp(mockPort)
   const cmd = script === "serve"
     ? ["node", "./node_modules/vite/bin/vite.js", "preview", "--config", "vite.cloud.config.ts", "--host", "127.0.0.1", "--port", String(basePort)]
     : ["bun", "run", script, "--", "--host", "127.0.0.1", "--port", String(basePort)]
@@ -1763,6 +1782,7 @@ async function startApp(): Promise<BrowserTarget> {
       VITE_OPENCODE_SERVER_PORT: String(mockPort),
       VITE_OPENCODE_BACKEND_URL: `http://127.0.0.1:${mockPort}`,
       VITE_CLAXEDO_SERVER_URL: `http://127.0.0.1:${mockPort}`,
+      VITE_CLAXEDO_E2E: "1",
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -1773,11 +1793,19 @@ async function startApp(): Promise<BrowserTarget> {
   return { target: app.id, baseUrl, mockPort, command, process: proc }
 }
 
-async function buildProductionApp() {
+async function buildProductionApp(mockPort: number) {
   const proc = Bun.spawn({
     cmd: ["bun", "run", "build"],
     cwd: appRoot,
-    env: process.env,
+    env: {
+      ...process.env,
+      PLAYWRIGHT_SERVER_HOST: "127.0.0.1",
+      PLAYWRIGHT_SERVER_PORT: String(mockPort),
+      VITE_OPENCODE_SERVER_HOST: "127.0.0.1",
+      VITE_OPENCODE_SERVER_PORT: String(mockPort),
+      VITE_OPENCODE_BACKEND_URL: `http://127.0.0.1:${mockPort}`,
+      VITE_CLAXEDO_SERVER_URL: `http://127.0.0.1:${mockPort}`,
+    },
     stdout: "inherit",
     stderr: "inherit",
   })
@@ -1996,9 +2024,9 @@ async function waitForTranscript(page: Page, fixture: ReturnType<typeof fixtureF
         if (timeline.dataset.sessionTimelineProgressiveReady !== "true") return false
         if (getComputedStyle(timeline).visibility === "hidden") return false
         if (Number(timeline.dataset.sessionTimelineKeyCount ?? "0") <= 0) return false
-        const message = timeline.querySelector<HTMLElement>("[data-slot='session-turn-message-content']")
-        if (!message || !(message.textContent ?? "").trim()) return false
-        return (message.textContent ?? "").includes(expected)
+        const renderedRow = timeline.querySelector<HTMLElement>("[data-timeline-key]")
+        if (!renderedRow || !(renderedRow.textContent ?? "").trim()) return false
+        return (timeline.textContent ?? "").includes(expected)
       }),
     { id: sessionID, expected: text },
     { timeout: 10_000 },
@@ -2124,7 +2152,7 @@ async function measureInPageSessionFirstFoldSwitch(
           timeline.dataset.sessionTimelineProgressiveReady === "true" &&
           getComputedStyle(timeline).visibility !== "hidden" &&
           Number(timeline.dataset.sessionTimelineKeyCount ?? "0") > 0 &&
-          !!timeline.querySelector<HTMLElement>("[data-slot='session-turn-message-content']")?.textContent?.trim()
+          !!timeline.querySelector<HTMLElement>("[data-timeline-key]")?.textContent?.trim()
         const inlineDiffReady = !!timeline?.querySelector(
           "[data-timeline-row-rich-ready='true'] [data-component='edit-content']",
         )

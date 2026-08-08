@@ -9,25 +9,39 @@ import { ModelsProvider } from "@/features/session/providers/models"
 import { CommandProvider } from "@/app/providers/command"
 import { HighlightsProvider } from "@/features/review/providers/highlights"
 
+trace("runtime.providersModuleEvaluated", 0)
+
 type ClaxedoAppShellComponent = Component<ParentProps>
 const [claxedoAppShell, setClaxedoAppShell] = createSignal<ClaxedoAppShellComponent>()
 let claxedoAppShellLoad: Promise<ClaxedoAppShellComponent> | undefined
 
 export function preloadRuntimeProviders() {
   const started = performance.now()
-  claxedoAppShellLoad ??= import("@/app/integrations/feature-ports")
-    .then(() => {
-      trace("runtime.featurePortsReady", performance.now() - started)
-      const shellStarted = performance.now()
-      return import("@/app/app-shell").then((module) => {
-        trace("runtime.appShellReady", performance.now() - shellStarted)
-        return module
+  claxedoAppShellLoad ??= (() => {
+    // Start both requests together. They remain separate dynamic module graphs,
+    // so evaluation can yield between them without paying a serial fetch.
+    const secondaryStarted = performance.now()
+    const secondaryReady = import("@/app/integrations/secondary-feature-ports").then(() => {
+      trace("runtime.secondaryFeaturePortsReady", performance.now() - secondaryStarted)
+    })
+
+    return import("@/app/integrations/feature-ports")
+      .then(() => {
+        trace("runtime.featurePortsReady", performance.now() - started)
+        return secondaryReady
       })
-    })
-    .then((module) => {
-      setClaxedoAppShell(() => module.ClaxedoAppShell)
-      return module.ClaxedoAppShell
-    })
+      .then(() => {
+        const shellStarted = performance.now()
+        return import("@/app/app-shell-bootstrap").then((module) => {
+          trace("runtime.appShellReady", performance.now() - shellStarted)
+          return module
+        })
+      })
+      .then((module) => {
+        setClaxedoAppShell(() => module.ClaxedoAppShell)
+        return module.ClaxedoAppShell
+      })
+  })()
   return claxedoAppShellLoad
 }
 
@@ -54,9 +68,7 @@ export function RuntimeProviders(props: ParentProps & { onPainted: () => void })
               <NotificationProvider>
                 <ModelsProvider>
                   <CommandProvider>
-                    <HighlightsProvider>
-                      {AppShell ? <AppShell>{props.children}</AppShell> : null}
-                    </HighlightsProvider>
+                    <HighlightsProvider>{AppShell ? <AppShell>{props.children}</AppShell> : null}</HighlightsProvider>
                   </CommandProvider>
                 </ModelsProvider>
               </NotificationProvider>
@@ -76,5 +88,6 @@ function trace(name: string, durationMs: number) {
     __claxedoPerfRendererPhases?: Array<{ name: string; durationMs: number }>
   }
   if (!target.__claxedoPerfTrace) return
+  performance.mark(name)
   target.__claxedoPerfRendererPhases?.push({ name, durationMs })
 }

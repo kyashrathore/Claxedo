@@ -447,7 +447,7 @@ function summarizeTraceTasks(events: TraceEvent[]) {
     .filter((task) => task.dur! >= 2_000)
     .map((task) => {
       const end = task.ts + task.dur!
-      const children = events
+      const spans = events
         .filter((event) =>
           event !== task &&
           event.ph === "X" &&
@@ -465,9 +465,23 @@ function summarizeTraceTasks(events: TraceEvent[]) {
         }))
         .toSorted((left, right) => right.durationMs - left.durationMs)
         .slice(0, 8)
+      const markers = events
+        .filter((event) =>
+          event.pid === task.pid &&
+          event.tid === task.tid &&
+          (event.ph === "I" || event.ph === "R") &&
+          event.ts >= task.ts &&
+          event.ts <= end &&
+          event.name.startsWith("runtime."),
+        )
+        .map((event) => ({
+          name: event.name,
+          durationMs: 0,
+          detail: traceDetail(event),
+        }))
       return {
         durationMs: round(task.dur! / 1_000),
-        events: children,
+        events: [...spans, ...markers],
       }
     })
     .toSorted((left, right) => right.durationMs - left.durationMs)
@@ -476,7 +490,11 @@ function summarizeTraceTasks(events: TraceEvent[]) {
 
 function traceDetail(event: TraceEvent) {
   const source = event.args?.data?.scriptName || event.args?.data?.url
-  if (!source) return
+  if (!source) {
+    if (!event.name.startsWith("v8.")) return
+    const detail = JSON.stringify(event.args ?? {})
+    return detail === "{}" ? undefined : detail.slice(0, 500)
+  }
   const line = event.args?.data?.lineNumber
   const column = event.args?.data?.columnNumber
   if (line === undefined) return source

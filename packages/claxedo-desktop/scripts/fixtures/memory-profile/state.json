@@ -3,7 +3,7 @@
     "panes": [
       {
         "id": "memory-pane",
-        "contentId": "memory-workgraph"
+        "contentId": "memory-session-1"
       }
     ],
     "split": {
@@ -27,10 +27,10 @@
       "memory-session-7"
     ],
     "contentRecency": [
+      "memory-session-1",
       "memory-workgraph",
       "memory-marketplace",
       "memory-pages",
-      "memory-session-1",
       "memory-session-2",
       "memory-session-3",
       "memory-session-4",
@@ -79,6 +79,7 @@
         "type": "session",
         "directory": "/tmp/claxedo-memory-workspace",
         "sessionId": "memory-session-1",
+        "title": "Memory Profile",
         "sessionRef": {
           "sessionId": "memory-session-1",
           "host": "workspace",
@@ -230,8 +231,8 @@
     "worktreeColor": {}
   },
   "workspacePanel": {
-    "open": true,
-    "mode": "workgraph-attention"
+    "open": false,
+    "mode": "diff"
   },
   "terminal": {
     "owner": {},

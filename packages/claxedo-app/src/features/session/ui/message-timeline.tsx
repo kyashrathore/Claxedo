@@ -18,7 +18,7 @@ import { useNavigate } from "@solidjs/router"
 import { Tooltip as KobalteTooltip } from "@kobalte/core/tooltip"
 import { useMutation, useQuery } from "@tanstack/solid-query"
 import { createVirtualizer, defaultRangeExtractor, elementScroll, type VirtualItem } from "@tanstack/solid-virtual"
-import { observeElementOffsetReconnectAware } from "./message-timeline-observe-offset"
+import { observeElementOffsetReconnectAware, observeElementRectDeduped } from "./message-timeline-observe-offset"
 import { Accordion } from "@opencode-ai/ui/accordion"
 import { Button } from "@opencode-ai/ui/button"
 import { Card } from "@opencode-ai/ui/card"
@@ -790,12 +790,13 @@ export function MessageTimeline(props: {
   const [toolOpen, setToolOpen] = createStore<Record<string, boolean | undefined>>(cached?.toolOpen ?? {})
   const initialMeasurements = cached?.measurements
   const [renderOverscan, setRenderOverscan] = createSignal(initialMeasurements?.length ? 6 : 1)
-  const [initialRevealReady, setInitialRevealReady] = createSignal(!props.shouldAnchorBottom())
-  const [richRowStart, setRichRowStart] = createSignal(timelineRows().length)
+  const [renderRangeLimit, setRenderRangeLimit] = createSignal(1)
+  const [initialRevealReady, setInitialRevealReady] = createSignal(false)
   const [progressiveReady, setProgressiveReady] = createSignal(timelineRows().length === 0)
-  const latestUserMessageID = createMemo(() => props.userMessages.at(-1)?.id)
+  let initialRowsScheduled = timelineRows().length > 0
   const prepareScrollOverscan = () => {
-    if (renderOverscan() < 50) setRenderOverscan(50)
+    if (renderOverscan() < 6) setRenderOverscan(6)
+    if (renderRangeLimit() !== Number.MAX_SAFE_INTEGER) setRenderRangeLimit(Number.MAX_SAFE_INTEGER)
   }
   const prepareInteractionScroll = () => {
     const plan = timelineInteractionPlan({
@@ -813,12 +814,23 @@ export function MessageTimeline(props: {
       return timelineRows().length
     },
     getScrollElement: () => listRoot() ?? null,
+    observeElementRect: observeElementRectDeduped,
     observeElementOffset: observeElementOffsetReconnectAware,
+    initialRect: {
+      width: typeof window === "undefined" ? 0 : window.innerWidth,
+      height: typeof window === "undefined" ? 0 : window.innerHeight,
+    },
     initialOffset: () => (props.shouldAnchorBottom() ? Number.MAX_SAFE_INTEGER : 0),
     initialMeasurementsCache: initialMeasurements,
     estimateSize: (index) => {
-      const row = timelineRows()[index]
+      const rows = timelineRows()
+      const row = rows[index]
       if (row?._tag !== "AssistantPart") return timelineInitialEstimatedItemSize
+      // Initial bottom-anchored layout only needs precise estimates around the
+      // first visible fold. Scanning every historical Markdown body blocks the
+      // viewport callback even though those rows remain virtual and will be
+      // measured when the user approaches them.
+      if (index < rows.length - 50) return timelineInitialEstimatedItemSize
       const group = row.group
       if (group.type !== "part") return timelineInitialEstimatedItemSize
       const part = getMsgParts(group.ref.messageID).find((item) => item.id === group.ref.partID)
@@ -837,17 +849,17 @@ export function MessageTimeline(props: {
         return TimelineRow.key(row)
       }
     },
-    anchorTo: "end",
-    followOnAppend: true,
-    scrollEndThreshold: 80,
     overscan: 50,
     paddingEnd: 64,
     rangeExtractor: (range) => {
       const id = activeMessageID()
       const active = id ? timelineRows().findLastIndex((row) => "userMessageID" in row && row.userMessageID === id) : -1
       const indexes = defaultRangeExtractor({ ...range, overscan: renderOverscan() })
+      const visibleIndexes = props.shouldAnchorBottom() && renderRangeLimit() < indexes.length
+        ? indexes.slice(-renderRangeLimit())
+        : indexes
       return filterVirtualIndexes(
-        [...new Set([...resizeAnchor.pinnedIndexes(), ...indexes, ...(active < 0 ? [] : [active])])].sort(
+        [...new Set([...resizeAnchor.pinnedIndexes(), ...visibleIndexes, ...(active < 0 ? [] : [active])])].sort(
           (a, b) => a - b,
         ),
         range.count,
@@ -914,25 +926,12 @@ export function MessageTimeline(props: {
     if (progressiveReady() || progressiveFrame !== undefined) return
     const step = () => {
       progressiveFrame = undefined
-      const start = richRowStart()
-      if (start > 0) {
-        const row = timelineRows()[start - 1]
-        const trace = (window as unknown as Record<string, unknown>).__claxedoPerfTrace === true
-          ? performance.now()
-          : undefined
-        setRichRowStart(start - 1)
-        if (trace !== undefined) {
-          const part = row?._tag === "AssistantPart" && row.group.type === "part"
-            ? getMsgPart(row.group.ref.messageID, row.group.ref.partID)
-            : undefined
-          const kind = row?._tag === "AssistantPart"
-            ? `${row._tag}.${row.group.type}${part ? `.${part.type}${part.type === "tool" ? `.${part.tool}` : ""}` : ""}`
-            : row?._tag ?? "removed"
-          const end = performance.now()
-          performance.measure(`claxedo.timeline.rich.${kind}`, { start: trace, end })
-          const phases = (window as unknown as Record<string, unknown>).__claxedoPerfRendererPhases
-          if (Array.isArray(phases)) phases.push({ name: `timeline.rich.${kind}`, durationMs: end - trace })
-        }
+      const length = timelineRows().length
+      const targetCount = Math.min(8, length)
+      const currentCount = renderRangeLimit()
+      if (currentCount < targetCount) {
+        const nextCount = currentCount + 1
+        if (renderRangeLimit() < nextCount) setRenderRangeLimit(nextCount)
         progressiveFrame = requestAnimationFrame(step)
         return
       }
@@ -941,6 +940,7 @@ export function MessageTimeline(props: {
         stableFrames -= 1
         if (stableFrames <= 0) {
           setProgressiveReady(true)
+          setInitialRevealReady(true)
           return
         }
         progressiveFrame = requestAnimationFrame(settle)
@@ -950,25 +950,52 @@ export function MessageTimeline(props: {
     progressiveFrame = requestAnimationFrame(step)
   }
 
+  createEffect(() => {
+    const length = timelineRows().length
+    if (length === 0 || initialRowsScheduled) return
+    initialRowsScheduled = true
+    setInitialRevealReady(false)
+    setProgressiveReady(false)
+    scheduleProgressiveRows()
+  })
+
   const scheduleInitialReveal = () => {
     if (!props.shouldAnchorBottom()) {
-      setInitialRevealReady(true)
+      if (timelineRows().length === 0) {
+        setInitialRevealReady(true)
+        return
+      }
       scheduleProgressiveRows()
       return
     }
 
-    let frames = 8
+    let frames = 0
+    let stableFrames = 0
+    let previousOffset: number | undefined
+    let previousSize: number | undefined
     const settle = () => {
+      const root = listRoot()
+      const nativeAtEnd = root
+        ? root.scrollHeight - root.clientHeight - root.scrollTop <= 1
+        : false
       if (
         timelineInitialRevealShouldScroll({
           hasScrollGesture: props.hasScrollGesture(),
           shouldAnchorBottom: props.shouldAnchorBottom(),
-        })
+        }) && !nativeAtEnd
       )
         virtualizer.scrollToEnd()
-      frames -= 1
-      if (frames <= 0) {
-        setInitialRevealReady(true)
+      const offset = root?.scrollTop
+      const size = virtualizer.getTotalSize()
+      stableFrames = offset === previousOffset && size === previousSize ? stableFrames + 1 : 0
+      previousOffset = offset
+      previousSize = size
+      frames += 1
+      if (stableFrames >= 1 || frames >= 8) {
+        if (timelineRows().length === 0) {
+          setInitialRevealReady(true)
+          return
+        }
         scheduleProgressiveRows()
         return
       }
@@ -978,10 +1005,7 @@ export function MessageTimeline(props: {
   }
 
   onMount(() => {
-    requestAnimationFrame(() => {
-      if (props.shouldAnchorBottom()) virtualizer.scrollToEnd()
-      scheduleInitialReveal()
-    })
+    requestAnimationFrame(scheduleInitialReveal)
   })
 
   let bottomAnchorSessionKey = ""
@@ -1000,6 +1024,8 @@ export function MessageTimeline(props: {
     bottomAnchorFrame = requestAnimationFrame(() => {
       bottomAnchorFrame = undefined
       if (sessionKey() !== key) return
+      const root = listRoot()
+      if (root && root.scrollHeight - root.clientHeight - root.scrollTop <= 1) return
       virtualizer.scrollToEnd()
     })
   }
@@ -1717,14 +1743,6 @@ export function MessageTimeline(props: {
     const initialRow = timelineRowByKey().get(props.rowKey)!
     const item = createMemo(() => virtualItemByKey().get(props.rowKey) ?? initialItem)
     const row = createMemo(() => timelineRowByKey().get(props.rowKey) ?? initialRow)
-    const rich = createMemo(() => item().index >= richRowStart())
-    const previewText = createMemo(() => {
-      const value = row()
-      if (value._tag !== "UserMessage" || value.userMessageID !== latestUserMessageID()) return
-      return getMsgParts(value.userMessageID)
-        .flatMap((part) => part.type === "text" && part.text?.trim() ? [part.text] : [])
-        .join("\n\n")
-    })
     const asyncFile = () => {
       const value = row()
       if (value._tag !== "AssistantPart" || value.group.type !== "part") return false
@@ -1766,35 +1784,16 @@ export function MessageTimeline(props: {
             element = value
           }}
           data-index={item().index}
-          style={{ "min-height": rich() && ready() ? undefined : `${initialItem.size}px` }}
+          style={{ "min-height": ready() ? undefined : `${initialItem.size}px` }}
         >
-          <Show
-            when={rich()}
-            fallback={
-              <Show when={previewText()}>
-                {(text) => (
-                  <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-                    <div
-                      data-slot="session-turn-message-content"
-                      data-session-message-preview
-                      class="whitespace-pre-wrap break-words text-14-regular text-text-strong"
-                    >
-                      {text()}
-                    </div>
-                  </div>
-                )}
-              </Show>
-            }
-          >
-            <TimelineRowView
-              row={row()}
-              onSizeChange={() => {
-                setReady(true)
-                if (contentMeasureFrame !== undefined) cancelAnimationFrame(contentMeasureFrame)
-                contentMeasureFrame = scheduleConnectedMeasure(element, (el) => virtualizer.measureElement(el))
-              }}
-            />
-          </Show>
+          <TimelineRowView
+            row={row()}
+            onSizeChange={() => {
+              setReady(true)
+              if (contentMeasureFrame !== undefined) cancelAnimationFrame(contentMeasureFrame)
+              contentMeasureFrame = scheduleConnectedMeasure(element, (el) => virtualizer.measureElement(el))
+            }}
+          />
         </div>
       </div>
     )

@@ -1,10 +1,14 @@
 import type { Component, JSX } from "solid-js"
 import { createMemo, createUniqueId, onMount, splitProps, Show } from "solid-js"
-import sprite from "./file-icons/sprite.svg?raw"
+import spriteURL from "./file-icons/sprite.svg?url"
 import type { IconName } from "./file-icons/types"
-import { createInlineSvgSprite } from "./inline-svg-sprite"
+import { createLazyInlineSvgSprite } from "./inline-svg-sprite"
 
-const fileIconSprite = createInlineSvgSprite("file-icon-sprite", sprite)
+const fileIconSprite = createLazyInlineSvgSprite("file-icon-sprite", async () => {
+  const response = await fetch(spriteURL)
+  if (!response.ok) throw new Error(`Unable to load file icon sprite (${response.status})`)
+  return response.text()
+})
 
 export type FileIconProps = JSX.GSVGAttributes<SVGSVGElement> & {
   node: { path: string; type: "file" | "directory" }

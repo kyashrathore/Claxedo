@@ -410,57 +410,6 @@ function renderMathInText(
   return result
 }
 
-const inlineMathRegex = /^\\\(((?:\\.|[^\\\n])*?)\\\)/
-const blockMathRegex = /^\$\$\n([\s\S]+?)\n\$\$(?:\n|$)/
-
-function createKatexExtension(
-  render: (source: string, options: { displayMode: boolean; throwOnError: boolean }) => string,
-): MarkedExtension {
-  const renderToken = (token: Tokens.Generic) => render(typeof token.text === "string" ? token.text : "", {
-    displayMode: token.displayMode === true,
-    throwOnError: false,
-  })
-  return {
-    extensions: [
-      {
-        name: "inlineKatex",
-        level: "inline",
-        start(src) {
-          const index = src.indexOf("\\(")
-          if (index === -1) return
-          return index
-        },
-        tokenizer(src) {
-          const match = src.match(inlineMathRegex)
-          if (!match) return
-          return {
-            type: "inlineKatex",
-            raw: match[0],
-            text: match[1].trim(),
-            displayMode: false,
-          }
-        },
-        renderer: renderToken,
-      },
-      {
-        name: "blockKatex",
-        level: "block",
-        tokenizer(src) {
-          const match = src.match(blockMathRegex)
-          if (!match) return
-          return {
-            type: "blockKatex",
-            raw: match[0],
-            text: match[1].trim(),
-            displayMode: true,
-          }
-        },
-        renderer: renderToken,
-      },
-    ],
-  }
-}
-
 async function renderMathExpressions(html: string) {
   if (!html.includes("$$") && !html.includes("\\(")) return html
   const katex = await import("katex")
@@ -599,14 +548,8 @@ function createNativeParseScheduler(maxConcurrent: number) {
 }
 
 function loadJsParser() {
-  jsParser ??= Promise.all([
-    import("marked"),
-    import("marked-shiki"),
-    import("katex"),
-    import("shiki"),
-    ensureOpenCodeTheme(),
-  ]).then(([{ marked }, { default: markedShiki }, katex, { addClassToHast, bundledLanguages }, pierre]) => {
-    return marked.use(
+  jsParser ??= import("marked").then(({ Marked }) => {
+    const parser = new Marked(
       markedCodeSpanBoundary,
       {
         renderer: {
@@ -617,30 +560,14 @@ function loadJsParser() {
           },
         },
       },
-      createKatexExtension(katex.default.renderToString),
-      markedShiki({
-        async highlight(code, lang) {
-          const highlighter = await pierre.getSharedHighlighter({
-            themes: ["OpenCode"],
-            langs: [],
-            preferredHighlighter: "shiki-wasm",
-          })
-          if (!(lang in bundledLanguages)) lang = "text"
-          if (!highlighter.getLoadedLanguages().includes(lang)) await highlighter.loadLanguage(lang as BundledLanguage)
-          return highlighter.codeToHtml(code, {
-            lang: lang || "text",
-            theme: "OpenCode",
-            tabindex: false,
-            transformers: [{
-              name: "opencode:language-class",
-              code(node) {
-                addClassToHast(node, `language-${lang || "text"}`)
-              },
-            }],
-          })
-        },
-      }),
     )
+    return {
+      async parse(markdown: string) {
+        const html = await parser.parse(markdown)
+        const withMath = await renderMathExpressions(html)
+        return highlightCodeBlocks(withMath)
+      },
+    }
   })
   return jsParser
 }

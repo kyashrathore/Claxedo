@@ -18,6 +18,11 @@
 
 import {
   createMemo,
+  createSignal,
+  lazy,
+  onCleanup,
+  onMount,
+  Show,
   type ParentProps,
   type JSX,
 } from "solid-js"
@@ -35,8 +40,6 @@ import { useRailKeyboardController } from "./workbench/rail/rail-keyboard-contro
 import { useRailEmptyDraftController } from "./workbench/rail/rail-empty-draft-controller"
 import { useRailShellChromeState } from "./workbench/rail/rail-shell-chrome-state"
 import { isNarrowViewport } from "./workbench/workbench/index"
-import { RailSidebarShell } from "./workbench/rail/rail-sidebar-shell"
-import { RailWorkbenchShell } from "./workbench/rail/rail-workbench-shell"
 import { useRailWorkbenchController } from "./workbench/rail/rail-workbench-controller"
 import { terminalBlockedByRole } from "../features/terminal/core/terminal-role-gate"
 import { workspacePlacement } from "../features/workspaces/data/workspace-connection"
@@ -49,7 +52,6 @@ import {
 } from "./layout/commands"
 import { createShellLayoutState } from "./layout/state"
 import { focusComposerSurface } from "../features/session/composer/ui/composer-focus"
-import { DialogProcessDiagnostics } from "../features/processes/ui"
 import { warmConversationMemorySnapshot } from "../features/session/conversation/conversation-registry"
 import {
   TerminalWorkspaceProvisioningProvider,
@@ -59,6 +61,22 @@ import {
 /** See the note on the same alias in `workbench/terminal/terminal-new-view.tsx`. */
 type WorkspaceDirectoryRef = string
 import "./styles/ui-overrides.css"
+
+const RailSidebarShell = lazy(() =>
+  import("./workbench/rail/rail-sidebar-shell").then((module) => ({
+    default: module.RailSidebarShell,
+  })),
+)
+const RailWorkbenchShell = lazy(() =>
+  import("./workbench/rail/rail-workbench-shell").then((module) => ({
+    default: module.RailWorkbenchShell,
+  })),
+)
+const DialogProcessDiagnostics = lazy(() =>
+  import("../features/processes/ui/dialog-process-diagnostics").then((module) => ({
+    default: module.DialogProcessDiagnostics,
+  })),
+)
 
 export type AppShellLayoutProps = ParentProps<{
   /**
@@ -174,6 +192,26 @@ export type AppShellLayoutProps = ParentProps<{
 
 function AppShellLayoutBody(props: AppShellLayoutProps) {
   const isolationStage = window.__OPENCODE__?.startupIsolationStage
+  const [sidebarMounted, setSidebarMounted] = createSignal(false)
+  let sidebarMountFrame: number | undefined
+  onMount(() => {
+    sidebarMountFrame = requestAnimationFrame(() => {
+      sidebarMountFrame = requestAnimationFrame(() => {
+        sidebarMountFrame = undefined
+        const trace = (window as unknown as Record<string, unknown>).__claxedoPerfTrace === true
+          ? performance.now()
+          : undefined
+        setSidebarMounted(true)
+        if (trace !== undefined) {
+          const phases = (window as unknown as Record<string, unknown>).__claxedoPerfRendererPhases
+          if (Array.isArray(phases)) phases.push({ name: "shell.sidebarMounted", durationMs: performance.now() - trace })
+        }
+      })
+    })
+  })
+  onCleanup(() => {
+    if (sidebarMountFrame !== undefined) cancelAnimationFrame(sidebarMountFrame)
+  })
   const claxedoState = useClaxedoState()
   const command = useCommand()
   const platform = usePlatform()
@@ -357,7 +395,18 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
             content lives inside a landmark (axe `region`) alongside the
             workbench `main`. Single nav on the page, so no label is required. */}
         <nav class="contents">
-        <RailSidebarShell
+        <Show
+          when={sidebarMounted()}
+          fallback={
+            <aside
+              aria-hidden="true"
+              data-testid="rail-sidebar-progressive-placeholder"
+              class="shrink-0 bg-background-base"
+              style={{ width: `${sidebarWidth()}px` }}
+            />
+          }
+        >
+          <RailSidebarShell
           activeGlobal={emptyDraft.activeGlobal}
           activeProjectId={props.activeProjectId}
           activeSessionId={props.activeSessionId}
@@ -400,7 +449,8 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           onSidebarMouseLeave={handleSidebarMouseLeave}
           onToggleSidebar={toggleSidebar}
           trafficLightPad={chrome.trafficLightPad}
-        />
+          />
+        </Show>
         </nav>
         {isolationStage === "sidebar" ? (
           <main

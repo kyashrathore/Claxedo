@@ -1,10 +1,14 @@
 import type { Component, JSX } from "solid-js"
 import { createMemo, onMount, splitProps } from "solid-js"
-import sprite from "./provider-icons/sprite.svg?raw"
+import spriteURL from "./provider-icons/sprite.svg?url"
 import { iconNames, type IconName } from "./provider-icons/types"
-import { createInlineSvgSprite } from "./inline-svg-sprite"
+import { createLazyInlineSvgSprite } from "./inline-svg-sprite"
 
-const providerIconSprite = createInlineSvgSprite("provider-icon-sprite", sprite)
+const providerIconSprite = createLazyInlineSvgSprite("provider-icon-sprite", async () => {
+  const response = await fetch(spriteURL)
+  if (!response.ok) throw new Error(`Unable to load provider icon sprite (${response.status})`)
+  return response.text()
+})
 
 export type ProviderIconProps = JSX.SVGElementTags["svg"] & {
   id: string

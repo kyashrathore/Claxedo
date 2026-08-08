@@ -17,7 +17,7 @@ const idleMs = Number(Bun.env.CLAXEDO_MEMORY_IDLE_MS ?? "5000")
 const fixturePath = Bun.env.CLAXEDO_MEMORY_FIXTURE
   ? path.resolve(packageDir, Bun.env.CLAXEDO_MEMORY_FIXTURE)
   : path.join(import.meta.dir, "fixtures/memory-profile/state.json")
-const fixture = await Bun.file(fixturePath).json()
+const fixtureTemplate = await Bun.file(fixturePath).json()
 
 if (Bun.env.CLAXEDO_MEMORY_REBUILD === "1" || !(await Bun.file(mainPath).exists())) {
   const build = Bun.spawnSync(["bun", "run", "build:inner"], {
@@ -32,7 +32,15 @@ if (!(await Bun.file(mainPath).exists())) throw new Error(`desktop main bundle i
 const root = await mkdtemp(path.join(tmpdir(), "claxedo-memory-"))
 const userDataDir = path.join(root, "chromium")
 const dataDir = path.join(root, "data")
-await Promise.all([mkdir(userDataDir), mkdir(dataDir), mkdir("/tmp/claxedo-memory-workspace", { recursive: true })])
+const memoryWorkspaceDir = path.join(root, "workspace")
+await Promise.all([mkdir(userDataDir), mkdir(dataDir), mkdir(memoryWorkspaceDir)])
+const initializeWorkspace = Bun.spawnSync(["git", "init", "--quiet", memoryWorkspaceDir], {
+  stdout: "pipe",
+  stderr: "pipe",
+})
+if (!initializeWorkspace.success) {
+  throw new Error(`memory workspace git init failed: ${initializeWorkspace.stderr.toString()}`)
+}
 
 const app = Bun.spawn([
   String(createRequire(import.meta.url)("electron")),
@@ -61,11 +69,15 @@ try {
   await client.send("Runtime.enable")
   await client.send("Page.enable")
   await waitForExpression(client, "document.readyState === 'complete'")
+  const fixture = await prepareMemoryFixture(serverPort, fixtureTemplate)
   await client.send("Runtime.evaluate", {
     expression: `localStorage.setItem("claxedo.state.v5", ${JSON.stringify(JSON.stringify(fixture))})`,
   })
   await client.send("Page.reload", { ignoreCache: true })
-  await waitForExpression(client, `document.readyState === "complete" && Boolean(document.getElementById("root")?.children.length)`)
+  await waitForExpression(
+    client,
+    `document.readyState === "complete" && Boolean(document.querySelector('[data-workbench-content="memory-session-1"] [data-testid="session-content"] [data-component="prompt-input"]'))`,
+  )
   const core = await verifyCore(serverPort)
   await delay(idleMs)
 
@@ -89,10 +101,14 @@ try {
         }
       })(),
       mountedContentCount: document.querySelectorAll("[data-workbench-content]").length,
+      activeSurfaceReady: Number(Boolean(document.querySelector('[data-workbench-content="memory-session-1"] [data-testid="session-content"] [data-component="prompt-input"]'))),
       rendererReady: Number(document.readyState === "complete" && Boolean(document.getElementById("root")?.children.length)),
     }))()`,
     returnByValue: true,
   })))
+  if (Number(page.activeSurfaceReady ?? 0) !== 1) {
+    throw new Error("memory profile active session surface was not ready after the idle window")
+  }
 
   const processes = processFamily(app.pid)
   const roles = {
@@ -124,6 +140,7 @@ try {
     terminal_delete_status: core.status.terminalDelete,
     restored_content_count: Number(page.restoredContentCount ?? 0),
     mounted_content_count: Number(page.mountedContentCount ?? 0),
+    active_surface_ready: Number(page.activeSurfaceReady ?? 0),
     total_footprint_mib: footprint.summary,
     main_rss_mib: rssMiB(roles.main),
     gpu_rss_mib: rssMiB(roles.gpu),
@@ -139,6 +156,12 @@ try {
     nodes: metric("Nodes"),
     layout_objects: metric("LayoutObjects"),
     iosurface_mib: footprint.iosurface,
+    process_count: processes.length,
+    process_breakdown: processes.map((process) => ({
+      role: processRole(process, app.pid),
+      rss_mib: rssMiB(process),
+      footprint_mib: footprint.byPid.get(process.pid) ?? 0,
+    })),
   }))
 } catch (error) {
   failure = error
@@ -157,7 +180,7 @@ try {
 
 async function verifyCore(port: number) {
   const base = `http://127.0.0.1:${String(port)}`
-  const directory = encodeURIComponent(packageDir)
+  const directory = encodeURIComponent(memoryWorkspaceDir)
   const health = await fetch(`${base}/api/claxedo/health`)
   const project = await fetch(`${base}/project/current?directory=${directory}`)
   const sessions = await fetch(`${base}/session?directory=${directory}&roots=true`)
@@ -193,6 +216,47 @@ async function verifyCore(port: number) {
       terminalDelete: deleteTerminal?.status ?? 0,
     },
   }
+}
+
+async function prepareMemoryFixture(port: number, template: unknown) {
+  const directory = memoryWorkspaceDir
+  const base = `http://127.0.0.1:${String(port)}`
+  let lastFailure = "server did not answer"
+  for (let attempt = 0; attempt < 120; attempt++) {
+    const registration = await fetch(
+      `${base}/api/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`,
+      { signal: AbortSignal.timeout(2_000) },
+    ).catch(() => undefined)
+    if (!registration?.ok) {
+      if (registration) lastFailure = `workspace registration: ${String(registration.status)} ${await registration.text()}`
+      await delay(250)
+      continue
+    }
+    // A draft is the local unsigned idle state: a real registered workspace,
+    // with no harness process and no server-side Session created yet.
+    return memoryFixtureWithSession(template, "new", directory)
+  }
+  throw new Error(`memory profile workspace registration failed: ${lastFailure}`)
+}
+
+function memoryFixtureWithSession(template: unknown, sessionId: string, directory: string) {
+  const fixture = structuredClone(asObject(template))
+  const meta = asObject(asObject(fixture.meta)["memory-session-1"])
+  const content = asObject(meta.content)
+  const sessionRef = asObject(content.sessionRef)
+  meta.sessionId = sessionId
+  meta.directory = directory
+  content.sessionId = sessionId
+  content.directory = directory
+  sessionRef.sessionId = sessionId
+  sessionRef.cwd = directory
+  const toolSandbox = asObject(sessionRef.toolSandbox)
+  toolSandbox.cwd = directory
+  sessionRef.toolSandbox = toolSandbox
+  content.sessionRef = sessionRef
+  meta.content = content
+  asObject(fixture.meta)["memory-session-1"] = meta
+  return fixture
 }
 
 async function waitForTarget() {
@@ -263,6 +327,22 @@ function processFamily(rootPid: number) {
     })
   }
   return rows.filter((row) => family.has(row.pid))
+}
+
+function processRole(process: ProcessRow, mainPid: number) {
+  if (process.pid === mainPid) return "main"
+  if (process.command.includes("--type=gpu-process")) return "gpu"
+  if (process.command.includes("--type=renderer")) return "renderer"
+  if (process.command.includes("claxedo-engine-worker")) return "opencode-compat-worker"
+  if (
+    process.command.includes("--utility-sub-type=node.mojom.NodeService") ||
+    process.command.includes("claxedo-server/index.js")
+  ) return "server"
+  const utility = process.command.match(/--utility-sub-type=([^\s]+)/)?.[1]
+  if (utility) return `utility:${utility}`
+  if (process.command.includes("--type=utility")) return "utility"
+  if (process.command.includes("crashpad_handler")) return "crashpad"
+  return "other"
 }
 
 function nativeFootprint(processes: ProcessRow[]) {
