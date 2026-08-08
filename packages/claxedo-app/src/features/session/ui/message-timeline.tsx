@@ -107,6 +107,8 @@ import { createTimelineResizeAnchor, filterVirtualIndexes, scheduleConnectedMeas
 import { createTurnFoldStore } from "./turn-fold-store"
 import { formatDuration } from "@/ui/session-kit"
 import { installTimelineMermaid } from "./mermaid-timeline"
+import { installTimelineTables } from "./table-timeline"
+import { sessionMessageScrollInset } from "./session-message-scroll-position"
 import {
   timelineAnchorClickTarget,
   timelineExternalSourceClickTarget,
@@ -115,13 +117,15 @@ import {
   timelineFileTarget,
   resolveTimelinePath as resolveTimelineFilePath,
 } from "./timeline-file-paths"
+import { createMessageNavRoom } from "./message-nav-layout"
 import { messageNavCurrentID, messageNavPreview, messageNavVisible } from "./message-nav-preview"
 import { BP_MD } from "@/ui/controls/breakpoints"
 import { retargetSessionRef, type SessionRef } from "@/platform/identity/session-ref"
 import "./message-nav-gutter.css"
+import "./markdown-surfaces.css"
 
 installTimelineMermaid()
-
+installTimelineTables()
 // Keep parity with the upstream session row model.
 const emptyMessages: MessageType[] = []
 const emptyParts: PartType[] = []
@@ -408,8 +412,8 @@ export function MessageTimeline(props: {
   onMessageSelect?: (message: UserMessage) => void
   status: () => SessionStatus
   anchor: (id: string) => string
-  setRevealMessage?: (fn: (id: string) => void) => void
   setScrollToEnd?: (fn: () => void) => void
+  setScrollToMessage?: (fn: ((id: string, behavior: ScrollBehavior) => boolean) | undefined) => void
   setHistoryAnchor?: (handlers: { capture: () => void; restore: () => void }) => void
   onFirstTurnRecovery?: (kind: SessionErrorClass, userMessageID: string) => unknown
   firstTurnRecovery?: boolean
@@ -507,7 +511,11 @@ export function MessageTimeline(props: {
     openFileInPanel(raw)
   }
   // Capture phase runs before the link's default action (see above).
+  const [timelineRoot, setTimelineRoot] = createSignal<HTMLDivElement>()
+  const messageNavHasRoom = createMessageNavRoom(timelineRoot)
+
   const registerTimelineRoot = (el: HTMLDivElement) => {
+    setTimelineRoot(el)
     const onOpenSubagent = (raw: Event) => {
       const event = raw as CustomEvent<{ childSessionId?: string; subagentKey?: string }>
       const childSessionId = event.detail?.childSessionId
@@ -821,19 +829,25 @@ export function MessageTimeline(props: {
         return TimelineRow.key(row)
       }
     },
-    anchorTo: "end",
-    followOnAppend: true,
+    get anchorTo() {
+      return props.shouldAnchorBottom() ? "end" : "start"
+    },
+    get followOnAppend() {
+      return props.shouldAnchorBottom()
+    },
     scrollEndThreshold: 80,
     overscan: 50,
     paddingEnd: 64,
     rangeExtractor: (range) => {
-      const id = activeMessageID()
-      const active = id ? timelineRows().findLastIndex((row) => "userMessageID" in row && row.userMessageID === id) : -1
+      const rows = timelineRows()
+      const activeID = activeMessageID()
+      const active = activeID
+        ? rows.findLastIndex((row) => "userMessageID" in row && row.userMessageID === activeID)
+        : -1
       const indexes = defaultRangeExtractor({ ...range, overscan: renderOverscan() })
+      const pinned = [active].filter((index) => index >= 0)
       return filterVirtualIndexes(
-        [...new Set([...resizeAnchor.pinnedIndexes(), ...indexes, ...(active < 0 ? [] : [active])])].sort(
-          (a, b) => a - b,
-        ),
+        [...new Set([...resizeAnchor.pinnedIndexes(), ...indexes, ...pinned])].sort((a, b) => a - b),
         range.count,
       )
     },
@@ -852,8 +866,7 @@ export function MessageTimeline(props: {
   const messageRowIndex = createMemo(() => {
     const result = new Map<string, number>()
     timelineRows().forEach((row, index) => {
-      if (!("userMessageID" in row)) return
-      if (result.has(row.userMessageID)) return
+      if (!(row._tag === "CommentStrip" || (row._tag === "UserMessage" && row.anchor))) return
       result.set(row.userMessageID, index)
     })
     return result
@@ -884,12 +897,20 @@ export function MessageTimeline(props: {
   }
 
   createEffect(() => {
-    props.setRevealMessage?.((id) => {
-      const index = messageRowIndex().get(id)
-      if (index === undefined) return
-      virtualizer.scrollToIndex(index, { align: "center" })
-    })
     props.setScrollToEnd?.(() => virtualizer.scrollToEnd())
+    props.setScrollToMessage?.((id, behavior) => {
+      const root = listRoot()
+      const index = messageRowIndex().get(id)
+      if (!root || index === undefined) return false
+      const offset = virtualizer.getOffsetForIndex(index, "start")
+      if (!offset) return false
+      const box = root.getBoundingClientRect()
+      const sticky = root.querySelector("[data-session-title]")
+      const stickyBottom = sticky instanceof HTMLElement ? sticky.getBoundingClientRect().bottom : box.top
+      const inset = sessionMessageScrollInset({ rootTop: box.top, stickyBottom })
+      virtualizer.scrollToOffset(Math.max(0, offset[0] - inset), { behavior })
+      return true
+    })
     props.setHistoryAnchor?.({ capture: capturePrependAnchor, restore: restorePrependAnchor })
   })
 
@@ -968,8 +989,8 @@ export function MessageTimeline(props: {
     while (timelineCache.size > 16) timelineCache.delete(timelineCache.keys().next().value!)
     if (bottomAnchorFrame !== undefined) cancelAnimationFrame(bottomAnchorFrame)
     resizeAnchor.dispose()
-    props.setRevealMessage?.(() => {})
     props.setScrollToEnd?.(() => {})
+    props.setScrollToMessage?.(undefined)
     props.setHistoryAnchor?.({ capture: () => {}, restore: () => {} })
   })
 
@@ -1784,12 +1805,13 @@ export function MessageTimeline(props: {
           </>
         )}
       </Show>
-      <Show when={messageNavVisible((props.navMessages ?? props.userMessages).length) && props.onMessageSelect}>
-        {/*
-          Query container for the rail. It sizes to the timeline but holds no
-          fixed-position descendants, so `container-type` cannot re-root the
-          context menu the way declaring it on the timeline root would.
-        */}
+      <Show
+        when={
+          messageNavVisible((props.navMessages ?? props.userMessages).length) &&
+          messageNavHasRoom() &&
+          props.onMessageSelect
+        }
+      >
         <div data-slot="message-nav-gutter" class="pointer-events-none absolute inset-0 z-[45]">
           <MessageNav
             class="pointer-events-auto absolute left-2 md:left-3 top-1/2 -translate-y-1/2"
@@ -1823,6 +1845,7 @@ export function MessageTimeline(props: {
         </button>
       </div>
       <ScrollView
+        data-slot="session-timeline-scroll"
         viewportRef={bindListRoot}
         onWheel={handleListWheel}
         onTouchStart={handleListTouchStart}

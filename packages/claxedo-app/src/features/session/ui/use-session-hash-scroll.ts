@@ -2,6 +2,7 @@ import type { UserMessage } from "@opencode-ai/sdk/v2"
 import { useLocation, useNavigate } from "@solidjs/router"
 import { createEffect, createMemo, onCleanup, onMount } from "solid-js"
 import { messageIdFromHash } from "./message-id-from-hash"
+import { sessionMessageScrollTop, sessionMessageTopMargin } from "./session-message-scroll-position"
 
 export const useSessionHashScroll = (input: {
   sessionKey: () => string
@@ -17,6 +18,7 @@ export const useSessionHashScroll = (input: {
   setActiveMessage: (message: UserMessage | undefined) => void
   autoScroll: { pause: () => void; forceScrollToBottom: () => void }
   scroller: () => HTMLDivElement | undefined
+  scrollToMessageOffset: (id: string, behavior: ScrollBehavior) => boolean
   anchor: (id: string) => string
   revealMessage?: (id: string) => void
   scheduleScrollState: (el: HTMLDivElement) => void
@@ -26,11 +28,13 @@ export const useSessionHashScroll = (input: {
   const messageById = createMemo(() => new Map(visibleUserMessages().map((m) => [m.id, m])))
   let pendingKey = ""
   let clearing = false
+  let authoredHash = ""
 
   const location = useLocation()
   const navigate = useNavigate()
 
   const frames = new Set<number>()
+  const scrollEndCleanups = new Set<() => void>()
   const queue = (fn: () => void) => {
     const id = requestAnimationFrame(() => {
       frames.delete(id)
@@ -41,61 +45,122 @@ export const useSessionHashScroll = (input: {
   const cancel = () => {
     for (const id of frames) cancelAnimationFrame(id)
     frames.clear()
+    for (const cleanup of scrollEndCleanups) cleanup()
+    scrollEndCleanups.clear()
   }
 
   const clearMessageHash = () => {
     cancel()
+    authoredHash = ""
     input.consumePendingMessage(input.sessionKey())
     if (input.pendingMessage()) input.setPendingMessage(undefined)
     if (!location.hash) return
     clearing = true
-    navigate(location.pathname + location.search, { replace: true })
+    navigate(location.pathname + location.search, { replace: true, scroll: false })
   }
 
   const updateHash = (id: string) => {
     const hash = `#${input.anchor(id)}`
+    authoredHash = hash
     if (location.hash === hash) return
     clearing = false
     navigate(location.pathname + location.search + hash, {
       replace: true,
+      scroll: false,
     })
   }
 
-  const scrollToElement = (el: HTMLElement, behavior: ScrollBehavior) => {
+  const scrollToElement = (el: HTMLElement, behavior: ScrollBehavior, corrections = 2) => {
     const root = input.scroller()
     if (!root) return false
 
     const a = el.getBoundingClientRect()
     const b = root.getBoundingClientRect()
     const sticky = root.querySelector("[data-session-title]")
-    const inset = sticky instanceof HTMLElement ? sticky.offsetHeight : 0
-    const top = Math.max(0, a.top - b.top + root.scrollTop - inset)
+    const stickyBottom = sticky instanceof HTMLElement ? sticky.getBoundingClientRect().bottom : b.top
+    const top = sessionMessageScrollTop({
+      currentScrollTop: root.scrollTop,
+      rootTop: b.top,
+      stickyBottom,
+      targetTop: a.top,
+    })
+    let cleanup = () => {}
+    if (corrections > 0) {
+      const onScrollEnd = () => {
+        cleanup()
+        queue(() => {
+          if (!el.isConnected) return
+          const target = el.getBoundingClientRect()
+          const stickyTarget = root.querySelector("[data-session-title]")
+          const desired =
+            (stickyTarget instanceof HTMLElement ? stickyTarget.getBoundingClientRect().bottom : b.top) +
+            sessionMessageTopMargin
+          if (Math.abs(target.top - desired) <= 1) return
+          scrollToElement(el, behavior, corrections - 1)
+        })
+      }
+      cleanup = () => {
+        root.removeEventListener("scrollend", onScrollEnd)
+        scrollEndCleanups.delete(cleanup)
+      }
+      scrollEndCleanups.add(cleanup)
+      root.addEventListener("scrollend", onScrollEnd, { once: true })
+    }
     root.scrollTo({ top, behavior })
     return true
   }
 
-  const seek = (id: string, behavior: ScrollBehavior, left = 4): boolean => {
-    input.revealMessage?.(id)
-    const el = document.getElementById(input.anchor(id))
-    if (el) return scrollToElement(el, behavior)
+  const afterLayoutSettles = (fn: () => void, previous = "", stable = 0, left = 20) => {
+    const root = input.scroller()
+    if (!root || left <= 0) {
+      fn()
+      return
+    }
+    const current = `${Math.round(root.scrollTop)}:${root.scrollHeight}`
+    const nextStable = current === previous ? stable + 1 : 0
+    if (nextStable >= 3) {
+      fn()
+      return
+    }
+    queue(() => afterLayoutSettles(fn, current, nextStable, left - 1))
+  }
+
+  const seek = (id: string, behavior: ScrollBehavior, left = 4, revealed = false): boolean => {
+    if (!revealed) {
+      input.revealMessage?.(id)
+      afterLayoutSettles(() => seek(id, behavior, left, true))
+      return false
+    }
     if (left <= 0) return false
+    const root = input.scroller()
+    const el = document.getElementById(input.anchor(id))
+    if (left < 4 && el && scrollToElement(el, behavior)) return true
+    if (root && input.scrollToMessageOffset(id, behavior)) {
+      let cleanup = () => {}
+      const onScrollEnd = () => {
+        cleanup()
+        afterLayoutSettles(() => seek(id, behavior, left - 1, true))
+      }
+      cleanup = () => {
+        root.removeEventListener("scrollend", onScrollEnd)
+        scrollEndCleanups.delete(cleanup)
+      }
+      scrollEndCleanups.add(cleanup)
+      root.addEventListener("scrollend", onScrollEnd, { once: true })
+      return true
+    }
+    if (el && scrollToElement(el, behavior)) return true
     queue(() => {
-      seek(id, behavior, left - 1)
+      seek(id, behavior, left - 1, true)
     })
     return false
   }
 
   const scrollToMessage = (message: UserMessage, behavior: ScrollBehavior = "smooth") => {
     cancel()
-    if (input.currentMessageId() !== message.id) input.setActiveMessage(message)
-    input.revealMessage?.(message.id)
-
-    if (seek(message.id, behavior)) {
-      updateHash(message.id)
-      return
-    }
-
     updateHash(message.id)
+    if (input.currentMessageId() !== message.id) input.setActiveMessage(message)
+    seek(message.id, behavior)
   }
 
   const applyHash = (behavior: ScrollBehavior) => {
@@ -134,6 +199,11 @@ export const useSessionHashScroll = (input: {
     const hash = location.hash
     if (!hash) clearing = false
     if (!input.sessionID() || !input.messagesReady()) return
+    if (authoredHash && authoredHash === hash) {
+      authoredHash = ""
+      return
+    }
+    authoredHash = ""
     cancel()
     queue(() => applyHash("auto"))
   })
@@ -156,7 +226,7 @@ export const useSessionHashScroll = (input: {
       }
     }
 
-    if (!targetId && !clearing) targetId = messageIdFromHash(location.hash)
+    if (!targetId && !clearing) targetId = messageIdFromHash(authoredHash || location.hash)
     if (!targetId) return
 
     const pending = input.pendingMessage() === targetId
@@ -178,7 +248,7 @@ export const useSessionHashScroll = (input: {
     visibleUserMessages()
 
     let targetId = input.pendingMessage()
-    if (!targetId && !clearing) targetId = messageIdFromHash(location.hash)
+    if (!targetId && !clearing) targetId = messageIdFromHash(authoredHash || location.hash)
     if (!targetId) return
     if (messageById().has(targetId)) return
     if (!input.historyMore() || input.historyLoading()) return
@@ -192,7 +262,10 @@ export const useSessionHashScroll = (input: {
     }
   })
 
-  onCleanup(cancel)
+  onCleanup(() => {
+    authoredHash = ""
+    cancel()
+  })
 
   return {
     clearMessageHash,

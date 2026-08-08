@@ -924,9 +924,10 @@ export function captureControlPlaneStartupTelemetry(
 export function createDefaultLocalControlPlaneServices() {
   // The Convex adapter owns the authority URL env name; the composition only
   // threads the resolved presence.
+  const trust = deploymentMode(process.env)
   const authorityUrl = convexAuthorityUrlFromEnv(process.env)
   const embeddedAuth = embeddedAuthEnabled(process.env)
-  if (deploymentMode(process.env) === "hosted") {
+  if (trust === "hosted") {
     // Fail-closed hosted boot: CLAXEDO_DEPLOYMENT_MODE=hosted REFUSES to
     // start unless signed auth is fully configured and a workspace authority
     // is resolved — one thrown error naming every missing piece. A hosted
@@ -952,7 +953,9 @@ export function createDefaultLocalControlPlaneServices() {
   // SQLite here so the renderer's first session-list request does not pay for
   // migrations, repair checks, WAL checkpointing, and statement preparation.
   ClaxedoDB.raw()
-  const authority = authorityUrl ? createConvexAuthority({ url: authorityUrl }) : createSqliteWorkspaceAuthority()
+  const authority = trust === "hosted"
+    ? createConvexAuthority({ url: authorityUrl! })
+    : createSqliteWorkspaceAuthority()
   return createControlPlaneServices(
     {
       projectionStore: centralStore.projectionStore,
@@ -964,11 +967,8 @@ export function createDefaultLocalControlPlaneServices() {
       auth: embeddedAuth
         ? betterAuthAdapter({ issuer: EMBEDDED_AUTH_ISSUER, verifier: getEmbeddedAuth().verifier })
         : clerkAuthAdapter({ env: process.env, authorityConfigured: !!authorityUrl }),
-      // Convex when a backend URL is configured; otherwise the local SQLite
-      // authority so a fresh self-host deploy (no Convex/Clerk env) still has
-      // working workspace/session features instead of `requireAuthority` 503s.
-      // Signed mode without a URL never reaches here — the boot throw above
-      // keeps signed/cloud auth fail-closed on Convex.
+      // Hosted trust uses its configured Convex authority. Local trust always
+      // uses SQLite, even when development env files contain stale hosted URLs.
       authority,
       relay: localRelayFromEnv(sandboxManager, authority),
       sandbox: {
@@ -1213,14 +1213,10 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   }
   configureAgentConfig({
     ...(process.env.CLAXEDO_ACP_DIR ? { acpDir: process.env.CLAXEDO_ACP_DIR } : {}),
-    // This composition owns the Convex-versus-SQLite choice — the same rule
-    // `createDefaultLocalControlPlaneServices` applies. agent-config used to
-    // make it itself, which put the cloud control plane in the closure of every
-    // module that reads agent configuration.
-    runtimeWorkspaceAuthority: () => {
-      const authorityUrl = convexAuthorityUrlFromEnv(process.env)
-      return authorityUrl ? createConvexAuthority({ url: authorityUrl }) : undefined
-    },
+    // Reuse the authority selected by this composition. Local trust has
+    // already selected SQLite even if an ambient Convex URL is present;
+    // hosted trust has already failed closed or selected Convex.
+    runtimeWorkspaceAuthority: () => services.authority,
   })
   configureWorkspaceSupervisor({
     server_url: `http://127.0.0.1:${port}`,

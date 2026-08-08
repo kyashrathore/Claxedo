@@ -15,7 +15,7 @@ import {
   splitProps,
 } from "solid-js"
 import { isServer, render } from "solid-js/web"
-import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
+import { Icon } from "@opencode-ai/ui/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { bundledLanguages } from "shiki"
@@ -37,6 +37,7 @@ import {
   type MarkdownCacheEntry,
 } from "./markdown-cache"
 import { inlineCodeKind } from "./markdown-inline-code-kind"
+import { markdownTableText } from "./markdown-table"
 
 type RenderedBlock =
   | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code"> })
@@ -100,6 +101,7 @@ type CopyButtonState = {
 }
 
 const copyButtonState = new WeakMap<HTMLElement, CopyButtonState>()
+const viewButtonState = new WeakMap<HTMLElement, () => void>()
 
 const urlPattern = /^https?:\/\/[^\s<>()`"']+$/
 
@@ -142,8 +144,8 @@ function MarkdownCopyButton(props: { labels: Accessor<CopyLabels>; copied: Acces
         aria-label={label()}
         icon={
           <>
-            <IconV2 name="outline-copy" data-copy-icon />
-            <IconV2 name="check" data-check-icon />
+            <Icon name="copy" size="small" data-copy-icon />
+            <Icon name="check" size="small" data-check-icon />
           </>
         }
       />
@@ -177,6 +179,26 @@ function disposeCopyButtons(root: Element) {
   hosts.forEach(disposeCopyButton)
 }
 
+function disposeViewButton(host: HTMLElement) {
+  viewButtonState.get(host)?.()
+  viewButtonState.delete(host)
+}
+
+function disposeViewButtons(root: Element) {
+  const hosts = [
+    ...(root instanceof HTMLElement && root.getAttribute("data-slot") === "markdown-view-button" ? [root] : []),
+    ...Array.from(root.querySelectorAll('[data-slot="markdown-view-button"]')).filter(
+      (el): el is HTMLElement => el instanceof HTMLElement,
+    ),
+  ]
+  hosts.forEach(disposeViewButton)
+}
+
+function disposeMarkdownControls(root: Element) {
+  disposeCopyButtons(root)
+  disposeViewButtons(root)
+}
+
 const shellLanguages = new Set(["bash", "sh", "shell", "zsh", "fish", "console", "terminal"])
 
 /**
@@ -194,6 +216,7 @@ const shellLanguages = new Set(["bash", "sh", "shell", "zsh", "fish", "console",
  */
 let mermaidRenderer: ((source: string) => Promise<string>) | undefined
 let mermaidViewer: ((source: string) => void) | undefined
+let markdownTableViewer: ((table: HTMLTableElement) => void) | undefined
 
 export function setMermaidRenderer(fn: ((source: string) => Promise<string>) | undefined) {
   mermaidRenderer = fn
@@ -203,34 +226,73 @@ export function setMermaidViewer(fn: ((source: string) => void) | undefined) {
   mermaidViewer = fn
 }
 
-function createMermaidViewButton(source: string) {
-  const button = document.createElement("button")
-  button.type = "button"
-  button.title = "Open full screen"
-  button.setAttribute("aria-label", "Open diagram full screen")
-  button.setAttribute("data-slot", "mermaid-view-button")
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
-  svg.setAttribute("aria-hidden", "true")
-  svg.setAttribute("viewBox", "0 0 16 16")
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path")
-  path.setAttribute("d", "M6 2.5H2.5V6M10 2.5h3.5V6M6 13.5H2.5V10M10 13.5h3.5V10")
-  svg.appendChild(path)
-  button.appendChild(svg)
-  button.addEventListener("click", () => mermaidViewer?.(source))
-  return button
+export function setMarkdownTableViewer(fn: ((table: HTMLTableElement) => void) | undefined) {
+  markdownTableViewer = fn
 }
 
-function ensureMermaidViewButton(wrapper: HTMLElement, source: string) {
-  const existing = wrapper.querySelector('[data-slot="mermaid-view-button"]')
-  if (!mermaidViewer) {
+function createViewButton(label: string, onClick: () => void) {
+  const host = document.createElement("div")
+  host.setAttribute("data-slot", "markdown-view-button")
+  const dispose = render(
+    () => (
+      <TooltipV2 placement="top" value={label}>
+        <IconButtonV2
+          type="button"
+          size="small"
+          variant="ghost-muted"
+          aria-label={label}
+          icon={<Icon name="expand" size="small" />}
+          onClick={onClick}
+        />
+      </TooltipV2>
+    ),
+    host,
+  )
+  viewButtonState.set(host, dispose)
+  return host
+}
+
+function ensureRichControls(wrapper: HTMLElement, label: string, key: string, onView: (() => void) | undefined) {
+  let controls = wrapper.querySelector('[data-slot="markdown-rich-controls"]')
+  if (!(controls instanceof HTMLElement)) {
+    controls = document.createElement("div")
+    controls.setAttribute("data-slot", "markdown-rich-controls")
+    wrapper.appendChild(controls)
+  }
+
+  const copy = wrapper.querySelector('[data-slot="markdown-copy-button"]')
+  if (copy && copy.parentElement !== controls) controls.appendChild(copy)
+
+  const existing = controls.querySelector('[data-slot="markdown-view-button"]')
+  if (!onView) {
+    if (existing instanceof HTMLElement) disposeViewButton(existing)
     existing?.remove()
     return
   }
-  if (existing instanceof HTMLButtonElement && existing.dataset.mermaidSource === source) return
+  if (existing instanceof HTMLElement && existing.dataset.viewKey === key) return
+  if (existing instanceof HTMLElement) disposeViewButton(existing)
   existing?.remove()
-  const button = createMermaidViewButton(source)
-  button.dataset.mermaidSource = source
-  wrapper.appendChild(button)
+  const button = createViewButton(label, onView)
+  button.dataset.viewKey = key
+  controls.prepend(button)
+}
+
+function clearRichControls(wrapper: HTMLElement) {
+  const controls = wrapper.querySelector('[data-slot="markdown-rich-controls"]')
+  if (!(controls instanceof HTMLElement)) return
+  const copy = controls.querySelector('[data-slot="markdown-copy-button"]')
+  if (copy) wrapper.appendChild(copy)
+  disposeViewButtons(controls)
+  controls.remove()
+}
+
+function ensureMermaidControls(wrapper: HTMLElement, source: string) {
+  ensureRichControls(
+    wrapper,
+    "Open diagram full screen",
+    source,
+    mermaidViewer ? () => mermaidViewer?.(source) : undefined,
+  )
 }
 
 function renderMermaidBlocks(root: HTMLElement) {
@@ -244,7 +306,7 @@ function renderMermaidBlocks(root: HTMLElement) {
     const source = code.textContent ?? ""
     if (!source.trim()) continue
     if (wrapper.getAttribute("data-mermaid-source") === source) {
-      if (wrapper.getAttribute("data-mermaid-state") === "rendered") ensureMermaidViewButton(wrapper, source)
+      if (wrapper.getAttribute("data-mermaid-state") === "rendered") ensureMermaidControls(wrapper, source)
       continue
     }
     wrapper.setAttribute("data-mermaid-source", source)
@@ -266,15 +328,52 @@ function renderMermaidBlocks(root: HTMLElement) {
         }
         replaceSanitizedMarkup(diagram, safe)
         wrapper.setAttribute("data-mermaid-state", "rendered")
-        ensureMermaidViewButton(wrapper, source)
+        wrapper.setAttribute("data-markdown-rich", "mermaid")
+        ensureMermaidControls(wrapper, source)
       })
       .catch(() => {
         // Fallback: keep the code block, clear the marker so a later retry is possible.
         wrapper.querySelector('[data-slot="mermaid-diagram"]')?.remove()
-        wrapper.querySelector('[data-slot="mermaid-view-button"]')?.remove()
+        clearRichControls(wrapper)
         wrapper.removeAttribute("data-mermaid-source")
         wrapper.removeAttribute("data-mermaid-state")
+        wrapper.removeAttribute("data-markdown-rich")
       })
+  }
+}
+
+function ensureTableWrapper(table: HTMLTableElement, labels: CopyLabels) {
+  const current = table.closest('[data-component="markdown-table"]')
+  const wrapper = current instanceof HTMLElement ? current : document.createElement("div")
+  if (!current) {
+    const parent = table.parentElement
+    if (!parent) return
+    const viewport = document.createElement("div")
+    wrapper.setAttribute("data-component", "markdown-table")
+    wrapper.setAttribute("data-markdown-rich", "table")
+    viewport.setAttribute("data-slot", "markdown-table-scroll")
+    parent.replaceChild(wrapper, table)
+    viewport.appendChild(table)
+    wrapper.appendChild(viewport)
+  }
+
+  const existingCopy = wrapper.querySelector('[data-slot="markdown-copy-button"]')
+  const copy = existingCopy instanceof HTMLElement ? existingCopy : createCopyButton(labels)
+  if (!(existingCopy instanceof HTMLElement)) wrapper.appendChild(copy)
+  setCopyState(copy, labels, copy.dataset.copied === "true")
+  const openTable = markdownTableViewer
+    ? () => {
+        const clone = table.cloneNode(true)
+        if (clone instanceof HTMLTableElement) markdownTableViewer?.(clone)
+      }
+    : undefined
+  ensureRichControls(wrapper, "Open table full screen", table.textContent ?? "", openTable)
+}
+
+function decorateTables(root: HTMLDivElement, labels: CopyLabels) {
+  const tables = Array.from(root.querySelectorAll("table"))
+  for (const table of tables) {
+    if (table instanceof HTMLTableElement) ensureTableWrapper(table, labels)
   }
 }
 
@@ -385,6 +484,7 @@ function decorate(root: HTMLDivElement, labels: CopyLabels) {
   // render in the app (T15/T16).
   markInlineCode(root)
   markCodeLinks(root)
+  decorateTables(root, labels)
   renderMermaidBlocks(root)
 }
 
@@ -403,8 +503,9 @@ function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
 
     const button = target.closest('[data-slot="markdown-copy-button"]')
     if (!(button instanceof HTMLElement)) return
+    const table = button.closest('[data-component="markdown-table"]')?.querySelector("table")
     const code = button.closest('[data-component="markdown-code"]')?.querySelector("code")
-    const content = code?.textContent ?? ""
+    const content = table instanceof HTMLTableElement ? markdownTableText(table) : (code?.textContent ?? "")
     if (!content) return
     const clipboard = navigator?.clipboard
     if (!clipboard) return
@@ -429,7 +530,7 @@ function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
     for (const timeout of timeouts.values()) {
       clearTimeout(timeout)
     }
-    disposeCopyButtons(root)
+    disposeMarkdownControls(root)
   }
 }
 
@@ -571,7 +672,7 @@ export function Markdown(
     if (!container) return
     if (isServer) return
     if (content.length === 0) {
-      disposeCopyButtons(container)
+      disposeMarkdownControls(container)
       container.replaceChildren()
       return
     }
@@ -590,7 +691,7 @@ export function Markdown(
     while (container.children.length > content.length) {
       const child = container.lastElementChild
       if (!child) break
-      disposeCopyButtons(child)
+      disposeMarkdownControls(child)
       child.remove()
     }
     container
@@ -701,7 +802,7 @@ function updateBlock(container: HTMLDivElement, index: number, block: RenderedBl
       return true
     },
     onBeforeNodeDiscarded: (node) => {
-      if (node instanceof Element) disposeCopyButtons(node)
+      if (node instanceof Element) disposeMarkdownControls(node)
       return true
     },
   })
@@ -778,7 +879,7 @@ function updateCodeBlock(
     raw: block.raw,
   })
   if (current) {
-    disposeCopyButtons(current)
+    disposeMarkdownControls(current)
     current.replaceWith(next)
     return next
   }

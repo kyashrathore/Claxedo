@@ -1,10 +1,8 @@
-import "./mermaid-timeline.css"
+import "./markdown-viewer.css"
 
 const icons = {
-  close:
-    '<svg aria-hidden="true" viewBox="0 0 16 16"><path d="m4 4 8 8M12 4l-8 8"/></svg>',
-  drag:
-    '<svg aria-hidden="true" viewBox="0 0 16 16"><path d="M5.5 7V4.5a1 1 0 0 1 2 0V7m0 0V3.5a1 1 0 0 1 2 0V7m0 0V4.5a1 1 0 0 1 2 0V9m0-1V6.5a1 1 0 0 1 2 0V10c0 2.2-1.8 4-4 4H8.2a4 4 0 0 1-3.1-1.5L2.7 9.6a1.1 1.1 0 0 1 1.6-1.5L5.5 9"/></svg>',
+  close: '<svg aria-hidden="true" viewBox="0 0 16 16"><path d="m4 4 8 8M12 4l-8 8"/></svg>',
+  drag: '<svg aria-hidden="true" viewBox="0 0 16 16"><path d="M5.5 7V4.5a1 1 0 0 1 2 0V7m0 0V3.5a1 1 0 0 1 2 0V7m0 0V4.5a1 1 0 0 1 2 0V9m0-1V6.5a1 1 0 0 1 2 0V10c0 2.2-1.8 4-4 4H8.2a4 4 0 0 1-3.1-1.5L2.7 9.6a1.1 1.1 0 0 1 1.6-1.5L5.5 9"/></svg>',
   minus: '<svg aria-hidden="true" viewBox="0 0 16 16"><path d="M3.5 8h9"/></svg>',
   plus: '<svg aria-hidden="true" viewBox="0 0 16 16"><path d="M3.5 8h9M8 3.5v9"/></svg>',
 }
@@ -23,6 +21,69 @@ function button(label: string, icon: string, action: () => void) {
 }
 
 let closeActiveViewer: (() => void) | undefined
+
+export function openTableViewer(table: HTMLTableElement) {
+  closeActiveViewer?.()
+
+  const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : undefined
+  const previousOverflow = document.body.style.overflow
+  const overlay = document.createElement("div")
+  const surface = document.createElement("div")
+  const viewport = document.createElement("div")
+  const content = document.createElement("div")
+
+  overlay.setAttribute("data-component", "table-viewer")
+  surface.setAttribute("data-slot", "table-viewer-dialog")
+  surface.setAttribute("role", "dialog")
+  surface.setAttribute("aria-modal", "true")
+  surface.setAttribute("aria-label", "Table viewer")
+  viewport.setAttribute("data-slot", "table-viewer-viewport")
+  viewport.setAttribute("aria-label", "Full-screen table. Scroll horizontally or vertically to see all cells.")
+  viewport.tabIndex = 0
+  content.setAttribute("data-slot", "table-viewer-content")
+  content.appendChild(table.cloneNode(true))
+  viewport.appendChild(content)
+
+  const closeButton = button("Close full screen", icons.close, close)
+  closeButton.setAttribute("data-action", "close")
+  surface.append(viewport, closeButton)
+  overlay.appendChild(surface)
+  document.body.appendChild(overlay)
+  document.body.style.overflow = "hidden"
+
+  let closed = false
+
+  function close() {
+    if (closed) return
+    closed = true
+    overlay.remove()
+    document.body.style.overflow = previousOverflow
+    if (closeActiveViewer === close) closeActiveViewer = undefined
+    previousFocus?.focus({ preventScroll: true })
+  }
+
+  overlay.addEventListener("pointerdown", (event) => {
+    if (event.target === overlay) close()
+  })
+  overlay.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault()
+      close()
+      return
+    }
+    if (event.key !== "Tab") return
+    const focusable: HTMLElement[] = [viewport, closeButton]
+    const active = document.activeElement
+    const index = active instanceof HTMLElement ? focusable.indexOf(active) : -1
+    const next = event.shiftKey ? (index - 1 + focusable.length) % focusable.length : (index + 1) % focusable.length
+    event.preventDefault()
+    focusable[next]?.focus({ preventScroll: true })
+  })
+
+  closeActiveViewer = close
+  viewport.focus({ preventScroll: true })
+  return close
+}
 
 export function openMermaidViewer(
   source: string,
@@ -92,8 +153,7 @@ export function openMermaidViewer(
   let lastY = 0
 
   function applyTransform() {
-    content.style.transform =
-      `translate(-50%, -50%) translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`
+    content.style.transform = `translate(-50%, -50%) translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`
     zoomValue.textContent = `${Math.round(state.zoom * 100)}%`
   }
 
@@ -204,7 +264,11 @@ export function openMermaidViewer(
       content.innerHTML = safe
       const diagram = content.querySelector<SVGSVGElement>("svg")
       if (!diagram) throw new Error("Mermaid output did not contain an SVG")
-      const viewBox = diagram.getAttribute("viewBox")?.trim().split(/[\s,]+/).map(Number)
+      const viewBox = diagram
+        .getAttribute("viewBox")
+        ?.trim()
+        .split(/[\s,]+/)
+        .map(Number)
       const width = viewBox?.[2]
       const height = viewBox?.[3]
       if (width && height && Number.isFinite(width) && Number.isFinite(height)) {

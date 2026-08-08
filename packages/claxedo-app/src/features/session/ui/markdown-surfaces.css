@@ -1,0 +1,20 @@
+/*
+ * Prose remains in the readable timeline column. A table or diagram only
+ * borrows the pane gutters when its intrinsic content is wider than that
+ * column, and can borrow at most 20% of the column on either side. The second
+ * cap is the scroll viewport's usable content box, after the minimap and
+ * environment-card gutters, so shrinking the pane removes bleed first.
+ */
+[data-slot="session-timeline-scroll"] .scroll-view__viewport {
+  container: session-timeline-content / inline-size;
+}
+
+[data-timeline-row="AssistantPart"] [data-component="markdown"]
+  :is([data-markdown-rich="table"], [data-markdown-rich="mermaid"]) {
+  position: relative;
+  left: 50%;
+  width: fit-content;
+  min-width: 100%;
+  max-width: min(140%, 100cqw);
+  transform: translateX(-50%);
+}
