@@ -26,10 +26,22 @@
  *
  * Env:
  *   CLAXEDO_LOCAL_DIST_DIR      override the local build dir (default ./dist-local)
- *   CLAXEDO_MARKER_CONTROL_DIR  a build that DOES contain the identity provider
- *                               (the hosted `./dist`). When present, every marker
- *                               must fire against it — the control that turns
- *                               "no hits" into a result instead of a hope.
+ *   CLAXEDO_MARKER_CONTROL_DIR  a build that DOES contain the identity provider.
+ *                               When present, every marker must fire against it —
+ *                               the control that turns "no hits" into a result
+ *                               instead of a hope.
+ *
+ * Use `bun run build:marker-control` (./dist-marker-control) for that control,
+ * NOT the hosted `./dist`, which this comment used to recommend and which is
+ * wrong anywhere the auth env is unset — i.e. on every CI runner.
+ * `auth-client.ts` reaches `import("@clerk/clerk-js/headless")` only past an
+ * early return on an empty publishable key, so a hosted build without
+ * `VITE_CLERK_PUBLISHABLE_KEY` emits no Clerk at all and the control fails all
+ * seven markers. That failure is honest — the control is doing its job — but it
+ * reads as a broken gate rather than a missing key, which is how a correct
+ * check gets deleted. `build:marker-control` supplies `VITE_AUTH_ENABLED=true`
+ * and a syntactically-shaped fake key (never used at build time) purely to keep
+ * the provider in the graph.
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"

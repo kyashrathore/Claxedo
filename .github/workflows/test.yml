@@ -77,6 +77,60 @@ jobs:
         working-directory: packages/claxedo-app
         run: bun run build
 
+      # ---------------------------------------------------------------------
+      # Local product bundle boundary (emitted artifact, not source graph).
+      #
+      # `src/architecture/local-entry-closure.guard.test.ts` already runs in the
+      # `unit` job and proves the local entry's SOURCE closure never reaches the
+      # identity provider. It structurally CANNOT see Rollup configuration: the
+      # local config derives from the hosted one, so a `manualChunks` entry
+      # naming `@clerk/clerk-js/headless` was inherited by a build whose whole
+      # purpose is to have no identity provider in it, and the source guard was
+      # green throughout. A clean source graph and a contaminated artifact are
+      # indistinguishable without reading the emitted files. These steps read
+      # them.
+      #
+      # It lives in THIS job because this job already pays for a checkout, a
+      # `bun install`, the dist-resolved workspace build, and a production
+      # `vite build`. A dedicated job would repeat all of that to run two extra
+      # vite builds. It is deliberately NOT attached to turbo's generic `test`
+      # task: that would put a vite build in every package's test graph, which
+      # is the same mistake as wiring `^build` there (see turbo.json).
+      #
+      # Placed before the Playwright install/perf flows so a contaminated
+      # bundle fails in ~2 build-lengths instead of after the browser work.
+      # Measured 2026-08-09 on an M-series dev machine: `build:local` 20.6s,
+      # `build:marker-control` ~20s. Neither writes to `dist`, so the perf
+      # target built above is untouched.
+      #
+      # Local one-shot equivalent (from packages/claxedo-app):
+      #   bun run build:local && bun run build:marker-control && \
+      #     CLAXEDO_MARKER_CONTROL_DIR=dist-marker-control bun run check:local-bundle
+      - name: Build local product bundle
+        working-directory: packages/claxedo-app
+        run: bun run build:local
+
+      # The marker control, and it needs its OWN build rather than the `dist`
+      # produced two steps above. MEASURED, not assumed: `auth-client.ts` reaches
+      # `import("@clerk/clerk-js/headless")` only past `if (!clerkPubKey) return`,
+      # and `clerkPubKey` folds to "" when `VITE_CLERK_PUBLISHABLE_KEY` is unset —
+      # so Rollup drops the import and a plain CI `bun run build` (no `.env.local`
+      # on a runner) emits NO identity-provider code at all. Pointing the control
+      # at that `dist` fails all 7 markers and reds the gate for a reason that has
+      # nothing to do with the local bundle. `build:marker-control` sets the two
+      # env vars that keep the provider in the graph and writes to its own outDir.
+      # Without this control, "no hits" is a hope rather than a result: a marker
+      # list that stopped matching anything would pass silently forever.
+      - name: Build marker-control bundle (identity provider present)
+        working-directory: packages/claxedo-app
+        run: bun run build:marker-control
+
+      - name: Check local bundle identity (emitted artifact)
+        working-directory: packages/claxedo-app
+        env:
+          CLAXEDO_MARKER_CONTROL_DIR: dist-marker-control
+        run: bun run check:local-bundle
+
       - name: Install performance browser
         working-directory: packages/claxedo-app/perf-harness
         run: bunx playwright install chromium
