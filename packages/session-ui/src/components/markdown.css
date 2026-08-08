@@ -253,6 +253,26 @@
     color: var(--v2-icon-icon-base);
   }
 
+  [data-slot="mermaid-render-button"] {
+    position: absolute;
+    inset: 50% auto auto 50%;
+    transform: translate(-50%, -50%);
+    min-height: 28px;
+    padding: 0 10px;
+    border: 0.5px solid var(--v2-border-border-base, var(--border-weak-base));
+    border-radius: var(--radius-md);
+    background: var(--v2-background-bg-base, var(--surface-raised-base));
+    color: var(--v2-text-text-base, var(--text-strong));
+    cursor: pointer;
+    z-index: 1;
+  }
+
+  [data-slot="mermaid-render-button"]:hover,
+  [data-slot="mermaid-render-button"]:focus-visible {
+    background: var(--v2-background-bg-hover, var(--surface-inset-base));
+    outline: none;
+  }
+
   [data-slot="markdown-copy-button"] [data-check-icon] {
     display: none;
   }

@@ -1,7 +1,6 @@
 import { parseCommentNote, readCommentMetadata } from "@/features/session/data/comment-note"
 import { AssistantMessage, Part, SessionStatus, SnapshotFileDiff, UserMessage } from "@opencode-ai/sdk/v2"
 import type { PartGroup, WorkGroupTool } from "@/ui/session-kit"
-import { Data, Equal } from "effect"
 import { sessionRecoveryClass, sessionRecoveryDescription, type SessionErrorClass } from "../onboarding/first-turn-recovery"
 import { stripRelayPrefix } from "../onboarding/provider-error-detail"
 import type { SessionTurnOutcome } from "../data/session-types"
@@ -75,57 +74,71 @@ export type TimelineRowMap = {
   }
 }
 
+type TaggedRow<Tag extends string, Fields extends object> = Readonly<Fields> & { readonly _tag: Tag }
+
+function taggedRow<Tag extends string, Fields extends object>(tag: Tag) {
+  return class {
+    readonly _tag = tag
+
+    constructor(fields: Fields) {
+      Object.assign(this, fields)
+    }
+  } as unknown as new (fields: Fields) => TaggedRow<Tag, Fields>
+}
+
+function samePartRef(a: { messageID: string; partID: string }, b: { messageID: string; partID: string }) {
+  return a.messageID === b.messageID && a.partID === b.partID
+}
+
+function samePartRefs(
+  a: ReadonlyArray<{ messageID: string; partID: string }>,
+  b: ReadonlyArray<{ messageID: string; partID: string }>,
+) {
+  return a.length === b.length && a.every((ref, index) => samePartRef(ref, b[index]!))
+}
+
+function samePartGroup(a: PartGroup, b: PartGroup) {
+  if (a === b) return true
+  if (a.key !== b.key || a.type !== b.type) return false
+  if (a.type === "part") return b.type === "part" && samePartRef(a.ref, b.ref)
+  if (b.type === "part") return false
+  if (a.type === "work" && (b.type !== "work" || a.tool !== b.tool)) return false
+  return "refs" in b && samePartRefs(a.refs, b.refs)
+}
+
+function sameSummaryDiffs(a: SummaryDiff[], b: SummaryDiff[]) {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  return a.every((diff, index) => {
+    const other = b[index]
+    if (!other) return false
+    const keys = Object.keys(diff) as Array<keyof SummaryDiff>
+    const otherKeys = Object.keys(other)
+    return keys.length === otherKeys.length && keys.every((key) => Object.is(diff[key], other[key]))
+  })
+}
+
 export namespace TimelineRow {
-  export class TurnGap extends Data.TaggedClass("TurnGap")<{
-    userMessageID: string
-  }> {}
-  export class CommentStrip extends Data.TaggedClass("CommentStrip")<{
-    userMessageID: string
-  }> {}
-  export class UserMessage extends Data.TaggedClass("UserMessage")<{
-    userMessageID: string
-    anchor: boolean
-  }> {}
-  export class TurnDivider extends Data.TaggedClass("TurnDivider")<{
-    userMessageID: string
-    label: "compaction" | "interrupted"
-    durationMs?: number
-  }> {}
-  export class AssistantPart extends Data.TaggedClass("AssistantPart")<{
-    userMessageID: string
-    group: PartGroup
-    previousAssistantPart: boolean
-    lastAssistantPart: boolean
-  }> {}
-  export class Thinking extends Data.TaggedClass("Thinking")<{
-    userMessageID: string
-    reasoningHeading?: string
-  }> {}
-  export class DiffSummary extends Data.TaggedClass("DiffSummary")<{
-    userMessageID: string
-    diffs: SummaryDiff[]
-  }> {}
-  export class Error extends Data.TaggedClass("Error")<{
-    userMessageID: string
-    text: string
-    summary?: string
-    recoveryClass?: SessionErrorClass
-    error?: unknown
-    providerID?: string
-    modelID?: string
-  }> {}
-  export class Retry extends Data.TaggedClass("Retry")<{
-    userMessageID: string
-  }> {}
-  export class TurnFold extends Data.TaggedClass("TurnFold")<{
-    userMessageID: string
-    durationMs?: number
-    foldCount: number
-    folded: boolean
-    running?: boolean
-    tokens?: number
-    cost?: number
-  }> {}
+  export const TurnGap = taggedRow<"TurnGap", TimelineRowMap["TurnGap"]>("TurnGap")
+  export type TurnGap = InstanceType<typeof TurnGap>
+  export const CommentStrip = taggedRow<"CommentStrip", TimelineRowMap["CommentStrip"]>("CommentStrip")
+  export type CommentStrip = InstanceType<typeof CommentStrip>
+  export const UserMessage = taggedRow<"UserMessage", TimelineRowMap["UserMessage"]>("UserMessage")
+  export type UserMessage = InstanceType<typeof UserMessage>
+  export const TurnDivider = taggedRow<"TurnDivider", TimelineRowMap["TurnDivider"]>("TurnDivider")
+  export type TurnDivider = InstanceType<typeof TurnDivider>
+  export const AssistantPart = taggedRow<"AssistantPart", TimelineRowMap["AssistantPart"]>("AssistantPart")
+  export type AssistantPart = InstanceType<typeof AssistantPart>
+  export const Thinking = taggedRow<"Thinking", TimelineRowMap["Thinking"]>("Thinking")
+  export type Thinking = InstanceType<typeof Thinking>
+  export const DiffSummary = taggedRow<"DiffSummary", TimelineRowMap["DiffSummary"]>("DiffSummary")
+  export type DiffSummary = InstanceType<typeof DiffSummary>
+  export const Error = taggedRow<"Error", TimelineRowMap["Error"]>("Error")
+  export type Error = InstanceType<typeof Error>
+  export const Retry = taggedRow<"Retry", TimelineRowMap["Retry"]>("Retry")
+  export type Retry = InstanceType<typeof Retry>
+  export const TurnFold = taggedRow<"TurnFold", TimelineRowMap["TurnFold"]>("TurnFold")
+  export type TurnFold = InstanceType<typeof TurnFold>
 
   export type TimelineRow =
     | TurnGap
@@ -183,7 +196,32 @@ export namespace TimelineRow {
   }
 
   export function equals(a: TimelineRow, b: TimelineRow) {
-    return Equal.equals(a, b)
+    if (a === b) return true
+    if (a._tag !== b._tag || a.userMessageID !== b.userMessageID) return false
+    switch (a._tag) {
+      case "TurnGap":
+      case "CommentStrip":
+      case "Retry":
+        return true
+      case "UserMessage":
+        return b._tag === "UserMessage" && a.anchor === b.anchor
+      case "TurnDivider":
+        return b._tag === "TurnDivider" && a.label === b.label && a.durationMs === b.durationMs
+      case "AssistantPart":
+        return b._tag === "AssistantPart" && a.previousAssistantPart === b.previousAssistantPart &&
+          a.lastAssistantPart === b.lastAssistantPart && samePartGroup(a.group, b.group)
+      case "Thinking":
+        return b._tag === "Thinking" && a.reasoningHeading === b.reasoningHeading
+      case "DiffSummary":
+        return b._tag === "DiffSummary" && sameSummaryDiffs(a.diffs, b.diffs)
+      case "Error":
+        return b._tag === "Error" && a.text === b.text && a.summary === b.summary &&
+          a.recoveryClass === b.recoveryClass && a.error === b.error && a.providerID === b.providerID &&
+          a.modelID === b.modelID
+      case "TurnFold":
+        return b._tag === "TurnFold" && a.durationMs === b.durationMs && a.foldCount === b.foldCount &&
+          a.folded === b.folded && a.running === b.running && a.tokens === b.tokens && a.cost === b.cost
+    }
   }
 
   export function reuse(previous: TimelineRow[] | undefined, rows: TimelineRow[]) {

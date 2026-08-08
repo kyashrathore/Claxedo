@@ -1,5 +1,5 @@
 // Claxedo routes session commands through Workbench panes.
-import { createMemo } from "solid-js"
+import { createMemo, lazy } from "solid-js"
 import type { Accessor } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { useCommand, type CommandOption } from "@/features/session/app-ports"
@@ -12,10 +12,7 @@ import { useLocal } from "@/features/session/providers/session-selection"
 import { usePermission } from "@/features/session/providers/permission"
 import { usePrompt } from "@/features/session/providers/prompt"
 import { useSDK } from "@/features/session/app-ports"
-import { DialogSelectFile } from "@/features/session/ui/dialogs/select-file"
-import { DialogSelectModel, type PickerState } from "@/features/session/ui/model/select-model"
-import { DialogSelectMcp } from "@/features/session/ui/dialogs/select-mcp"
-import { DialogFork } from "@/features/session/ui/dialogs/fork"
+import type { PickerState } from "@/features/session/ui/model/select-model"
 import { showToast } from "@opencode-ai/ui/toast"
 import { findLast } from "@/lib/array"
 import { extractPromptFromParts } from "@/features/session/data/prompt"
@@ -46,6 +43,19 @@ import { workspaceSessionRoute, workspaceTerminalRoute } from "@/platform/identi
 import { sessionViewKey } from "@/platform/identity/session-view-key"
 import { createModelSelectionPicker } from "../commands/model-selection"
 import { focusComposerWhenReady } from "../composer/ui/composer-focus"
+
+const DialogSelectFile = lazy(() => import("@/features/session/ui/dialogs/select-file").then((module) => ({
+  default: module.DialogSelectFile,
+})))
+const DialogSelectModel = lazy(() => import("@/features/session/ui/model/select-model").then((module) => ({
+  default: module.DialogSelectModel,
+})))
+const DialogSelectMcp = lazy(() => import("@/features/session/ui/dialogs/select-mcp").then((module) => ({
+  default: module.DialogSelectMcp,
+})))
+const DialogFork = lazy(() => import("@/features/session/ui/dialogs/fork").then((module) => ({
+  default: module.DialogFork,
+})))
 
 export type SessionCommandContext = {
   sessionId: Accessor<string | undefined>
