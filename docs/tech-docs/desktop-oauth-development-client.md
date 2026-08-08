@@ -52,6 +52,35 @@ Read from the live discovery document rather than assumed:
 That is the full set of primitives Unit 6's Electron adapter needs, and none of
 them had to be worked around.
 
+## Test user, and what it proved
+
+| Field | Value |
+|---|---|
+| User ID | `user_3HcPnvAOHFn9cOuTrAb2ap0v16q` |
+| Email | `u8-desktop-spike@claxedo.com` (verified) |
+| Instance | development (`sk_test_`) |
+
+Password lives with the release/identity operator, not in the repository.
+
+Using that user, the server-side verification path was exercised end to end
+rather than assumed:
+
+1. Created a session for the user through the Backend API.
+2. Minted a session JWT from it.
+3. Compared the token's `iss` to `CLERK_JWT_ISSUER` in
+   `packages/claxedo-server/.env.local` — **match**.
+4. Verified the token's signature against `CLERK_JWKS_URL` with `jose`, the
+   same primitive the control plane uses — **verified**.
+
+That matters because it separates two failure modes the split would otherwise
+confuse. If a signed desktop later fails to authenticate, this evidence says
+the issuer, JWKS, and server configuration are already consistent for a real
+user of this instance, so the fault is in the Electron adapter or the callback
+— not in the auth configuration underneath it.
+
+Note the email domain: Clerk rejects `.test` addresses as malformed, so the
+fixture uses a real-format domain on a development instance.
+
 ## What this does NOT yet prove
 
 The plan's spike also requires, against this application: system-browser
