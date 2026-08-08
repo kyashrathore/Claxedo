@@ -13,6 +13,7 @@ import {
   type NavigationDecision,
 } from "./navigation-guard"
 import { trustWindowWithBridge } from "./ipc-caller-guard"
+import { isTrustedRendererDocumentUrl } from "./renderer-url-trust"
 
 type Globals = {
   updaterEnabled: boolean
@@ -145,19 +146,10 @@ export function wireNavigationGuard(wc: WebContents) {
 }
 
 export function isTrustedMainRendererUrl(input: string) {
-  try {
-    const expected = process.env.ELECTRON_RENDERER_URL
-      ? new URL(RENDERER_DOCUMENT, process.env.ELECTRON_RENDERER_URL)
-      : pathToFileURL(join(root, `../renderer/${RENDERER_DOCUMENT}`))
-    const actual = new URL(input)
-    expected.hash = ""
-    expected.search = ""
-    actual.hash = ""
-    actual.search = ""
-    return actual.href === expected.href
-  } catch {
-    return false
-  }
+  return isTrustedRendererDocumentUrl(input, {
+    devServerUrl: process.env.ELECTRON_RENDERER_URL,
+    packagedIndexUrl: pathToFileURL(join(root, `../renderer/${RENDERER_DOCUMENT}`)).href,
+  })
 }
 
 export function createLoadingWindow(globals: Globals) {
