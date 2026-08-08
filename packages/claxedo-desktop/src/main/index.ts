@@ -68,7 +68,9 @@ import { createWindowsWslCollector, createWslSource } from "./diagnostics/wsl-so
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand, wireFullscreenEvents } from "./ipc"
 import { installIpcCallerGuard, mainIpcCallerGuard } from "./ipc-caller-guard"
 import { setupAccount } from "./account/index"
-import { setupHostConnector } from "./host-connector/index"
+import { machineDisplayName, setupHostConnector } from "./host-connector/index"
+import { registerHostConnectorIpc } from "./host-connector/ipc"
+import { publishHostConnectorStatus } from "./host-connector/status-channel"
 import { initLogging } from "./logging"
 import { createMenu } from "./menu"
 import {
@@ -594,10 +596,19 @@ if (!account.configured) {
  * happens in `start()`. So an unsigned launch, which is most launches, enrolls
  * nothing and leaves no machine identity on disk.
  *
- * Nothing calls `start()` yet. It belongs behind an explicit user action in the
- * Remote Access surface, and enrolling silently on launch because an account
- * happens to be signed in would be the desktop deciding to publish the user's
- * laptop for them.
+ * This file still never calls `start()`, and that is the point rather than an
+ * omission: enrolling because an account happens to be signed in would be the
+ * desktop deciding to publish the user's laptop for them. The trigger now
+ * exists, and it is `registerHostConnectorIpc` below — one named operation that
+ * only runs when the user presses Enable in the Remote Access surface.
+ * `ipc-caller-guard.wiring.test.ts` holds the entry to that: it asserts this
+ * file contains no `.start(` call at all.
+ *
+ * The machine's label is chosen HERE, not sent from the renderer. It is main
+ * that signs the enrollment, so main names the thing it is signing for — and a
+ * platform word rather than `os.hostname()`, because a hostname is the laptop's
+ * identity on its network and `machine-identity.ts` explains at length why that
+ * must not travel to the control plane.
  */
 const hostConnector = account.configured
   ? setupHostConnector({
@@ -605,11 +616,37 @@ const hostConnector = account.configured
       safeStorage,
       userDataDir: app.getPath("userData"),
       platform: process.platform,
+      displayName: machineDisplayName(process.platform),
       onError: (stage, error) => logger.warn(`[host-connector] ${stage}: ${String(error)}`),
+      // The panel shows state the user did not cause — an expiry, a rejected
+      // beat, a revocation — so every transition is pushed rather than waited
+      // for. `status-channel.ts` skips a window that has gone, which matters
+      // because this fires from a heartbeat timer.
+      onStatusChange: (state) =>
+        publishHostConnectorStatus(mainWindow ?? undefined, state, hostConnectorContext()),
     })
   : undefined
-// Referenced so the composition is not dead code while its trigger is still to
-// come; `status()` reads state and starts nothing.
+
+/** The two facts the connector's own state cannot carry. See `status-channel.ts`. */
+function hostConnectorContext() {
+  return {
+    available: hostConnector !== undefined,
+    signedIn: account.configured && account.service.state().status === "signed",
+  }
+}
+
+// Registered whether or not the connector exists: an absent channel would leave
+// `window.api.hostConnector` half-built, the renderer would read the bridge as
+// missing, and the desktop would fall back to an HTTP call its own sidecar does
+// not serve. Answering `available: false` is the honest version of that.
+//
+// After `installIpcCallerGuard`, like every other registration.
+registerHostConnectorIpc({
+  ipcMain,
+  ...(hostConnector ? { connector: hostConnector } : {}),
+  signedIn: () => hostConnectorContext().signedIn,
+  onError: (stage, error) => logger.warn(`[host-connector] ${stage}: ${String(error)}`),
+})
 logger.log("host connector", { available: hostConnector !== undefined, state: hostConnector?.status().status })
 
 const diagnosticsIpc = registerIpcHandlers({
