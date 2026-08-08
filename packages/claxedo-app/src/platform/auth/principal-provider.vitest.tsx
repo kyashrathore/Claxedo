@@ -16,7 +16,7 @@ vi.mock("./auth-session", () => ({
     user: () => authState.user,
     signIn: async () => undefined,
     signOut: async () => undefined,
-    signUp: async () => undefined
+    signUp: async () => undefined,
     refreshSession: async () => undefined,
     organization: () => authState.organization,
   }),
