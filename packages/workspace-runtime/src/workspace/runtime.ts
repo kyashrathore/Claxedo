@@ -46,6 +46,7 @@ import { attachSseFanout, createSseReplayBuffer, encodeSseData, sseHeaders } fro
 import { isTerminalCompatEvent, type CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime/subagent-admission"
 import type { Context, Hono } from "hono"
+import { HTTPException } from "hono/http-exception"
 import { workspaceCapabilities } from "../capabilities"
 import { runGit } from "../git"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hub"
@@ -897,6 +898,52 @@ async function proxyOpenCode(
   })
 }
 
+/**
+ * Whether an adapter's EMPTY session list was an answer rather than a swallowed
+ * failure.
+ *
+ * `AgentHarnessAdapter.listSessions` returns `AgentSessionRow[]`, so the only
+ * failure it can report is a throw — and the OpenCode adapter does not throw:
+ * it returns `[]` for ANY non-2xx. A transient 5xx from a server that has just
+ * restarted is therefore byte-identical to a fresh install, and the one-time
+ * inventory import would record itself as done on it, hiding every existing
+ * session from generic listing forever with no retry and no error.
+ *
+ * The status is recoverable one layer down, on the proxy transport the adapter
+ * itself uses, so an empty list from a proxy adapter is confirmed by asking the
+ * same question with the status visible. Two gates keep this from costing
+ * anything it should not:
+ *
+ *  - It runs only for an EMPTY list during the once-per-directory import, so
+ *    the common path pays nothing and the confirmation never repeats.
+ *  - It never starts a harness. `transportLive()` false means the adapter's own
+ *    listing did not reach a transport either (compat off, nothing spawned), so
+ *    there is nothing to confirm and the empty stands.
+ */
+async function emptyListIsAnAnswer(
+  adapter: AgentHarnessAdapter,
+  directory: string,
+  options: { opencodeCompat?: boolean; opencodeHeaders?: HeadersInit },
+) {
+  if (!hasAdapterCapability(adapter, "http-proxy")) return true
+  // Mirrors how `defaultWorkspaceHarnessRegistry` maps the three-state host
+  // option onto the adapter's own `compat` flag: with the mechanism off the
+  // adapter answers `[]` locally without ever asking upstream, and confirming
+  // it against upstream would block the marker on a server the host has said
+  // not to consult.
+  if (options.opencodeCompat === false) return true
+  if ((adapter as HttpProxyAdapter).transportLive?.() !== true) return true
+  try {
+    const request = await (adapter as AgentHarnessAdapter & HttpProxyAdapter).getRequestFn()
+    const headers = new Headers(options.opencodeHeaders)
+    headers.set("x-opencode-directory", directory)
+    const response = await request(new Request(`${OPENCODE_INTERNAL_BASE}/session`, { headers }))
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
 async function proxyOpenCodeOrJson(c: any, adapter: AgentHarnessAdapter, fallback: () => Promise<unknown> | unknown, baseHeaders?: HeadersInit) {
   try {
     const res = await proxyOpenCode(c, adapter, baseHeaders)
@@ -1293,7 +1340,18 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       let complete = true
       const rows = await Promise.all((await sessionListAdapters()).map(async (item) => {
         try {
-          return await listSessionsForAdapter(item.adapter, item.runner, directory)
+          const listed = await listSessionsForAdapter(item.adapter, item.runner, directory)
+          // A throw is not the only way an adapter fails to answer. An empty
+          // array from a proxy adapter has to be confirmed as an ANSWER before
+          // it counts toward completeness — see `emptyListIsAnAnswer`.
+          if (!listed.length && !await emptyListIsAnAnswer(item.adapter, directory, hostOptions)) {
+            complete = false
+            sessionInventoryLog.warn("session inventory import could not confirm an empty adapter listing", {
+              directory,
+              harness: item.runner.id,
+            })
+          }
+          return listed
         } catch (error) {
           complete = false
           sessionInventoryLog.warn("session inventory import skipped an adapter", {
@@ -2018,6 +2076,34 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           // `bindDiscoveredSession` skips a row already bound to this
           // directory, so a later discovery pass neither duplicates nor
           // clobbers what this wrote.
+          //
+          // A caller-supplied id may name a session this runtime already owns.
+          // It must not be able to say which WORKSPACE that session belongs to.
+          //
+          // `bindSession` upserts on a single primary key, so a create issued
+          // against another directory REWRITES the existing row's `directory`
+          // rather than adding a second one — and the directory string is this
+          // runtime's routing identity, so the session simultaneously vanishes
+          // from its own workspace's inventory and starts resolving against the
+          // caller's directory. Nothing in a create verifies the claim: the
+          // harness is told to make a session, it is never asked which
+          // workspace the id already lives in.
+          //
+          // A repeat in the SAME directory is left alone — that is the retry
+          // path, where the upsert is a no-op. Only a cross-directory claim is
+          // refused, and it is refused before the harness is asked to create
+          // anything. Discovery may still move a session between directories
+          // (`bindDiscoveredSession`); there the HARNESS reported the session
+          // under that directory, which is the authority a create does not
+          // have.
+          if (id) {
+            const owner = (store().getSession(id) as { directory?: string } | null)?.directory
+            if (owner && owner !== directory) {
+              throw new HTTPException(409, {
+                message: `Session ${id} belongs to another workspace directory`,
+              })
+            }
+          }
           // The requested harness must be honoured here exactly as the route's
           // own `resolveAdapter` would. Resolving the ACTIVE runner instead
           // silently creates the session on the wrong adapter — and when the
@@ -2099,8 +2185,17 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           )
           return recovered
         },
+        // The store records what the harness ACCEPTED, never what the caller
+        // asked for.
+        //
+        // Writing the requested update first made the store the authority on a
+        // config no harness had agreed to: Pi refuses a model change on an
+        // active session, and the pre-write meant the refusal surfaced to the
+        // caller while the store already held — and kept serving — the model
+        // the session was not running. The adapter's returned config is a
+        // complete `SessionConfig` from every harness, so a single write after
+        // acceptance loses nothing.
         updateSessionConfig: async ({ adapter, directory, sessionId, update }) => {
-          store().updateSessionConfig(sessionId, update, { directory })
           const adapterConfig = await adapter.updateSessionConfig(sessionId, update, directory)
           return store().updateSessionConfig(sessionId, adapterConfig, { directory }) ?? adapterConfig
         },

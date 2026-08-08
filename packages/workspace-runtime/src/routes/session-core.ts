@@ -557,6 +557,11 @@ export function createSessionRoutes(opts: Opts) {
           message: errorMessage(error),
           ts: Date.now(),
         })
+        // A create that was REFUSED carries its own status — an unknown harness
+        // is a 400, an id that belongs to another workspace is a 409. Flattening
+        // those into 500 tells the caller the runtime broke when in fact the
+        // runtime declined, and a 500 is the one class of failure clients retry.
+        if (error instanceof HTTPException) throw error
         return c.json(errorBody("session_create_failed", errorMessage(error)), 500)
       }
     })

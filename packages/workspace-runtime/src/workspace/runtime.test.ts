@@ -25,7 +25,8 @@ import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { createRuntimeEventHub } from "../runtime-event-hub"
 import { RuntimeStore } from "../store"
 import { createProcessObserver, type ProcessObserverEvent } from "../managed-processes/process-observer"
-import type { AgentConfigOption, SessionConfig } from "@claxedo/agent-sdk-runtime"
+import { registerWorkspaceDirectory, unregisterWorkspaceDirectory, workspaceId } from "../target"
+import type { AgentConfigOption, SessionConfig, SessionConfigUpdate } from "@claxedo/agent-sdk-runtime"
 import {
   AcpHarnessAdapter,
   ClaudeHarnessAdapter,
@@ -47,6 +48,14 @@ const originalAcpBinary = process.env.WORKSPACE_RUNTIME_ACP_BINARY
 const originalAcpModel = process.env.CLAXEDO_ACP_MODEL
 const originalOpencodeUrl = process.env.OPENCODE_URL
 const originalWrDirectory = process.env.WORKSPACE_RUNTIME_DIRECTORY
+// `WORKSPACE_RUNTIME_WORKSPACE_ID` decides the STORE ROOT
+// (`workspaceRuntimeStoreDir`): set, it wins over WORKSPACE_RUNTIME_DATA_DIR
+// and puts the SQLite store under `~/.claxedo/workspaces/<id>/runtime`. A test
+// that set it and never put it back therefore silently moved every LATER test
+// in this file into one shared, real-home database that survives the run — so
+// a session id written by one run was still there for the next.
+const originalWrWorkspaceId = process.env.WORKSPACE_RUNTIME_WORKSPACE_ID
+const originalWrStoreDir = process.env.WORKSPACE_RUNTIME_STORE_DIR
 const originalAcpRemoteTransport = process.env[ACP_REMOTE_TRANSPORT_FLAG]
 const originalFetch = globalThis.fetch
 const loopbackExposure = loopbackWorkspaceRuntimeExposure()
@@ -93,6 +102,10 @@ afterEach(async () => {
   process.env.CLAXEDO_ACP_MODEL = originalAcpModel
   process.env.OPENCODE_URL = originalOpencodeUrl
   process.env.WORKSPACE_RUNTIME_DIRECTORY = originalWrDirectory
+  if (originalWrWorkspaceId === undefined) delete process.env.WORKSPACE_RUNTIME_WORKSPACE_ID
+  else process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = originalWrWorkspaceId
+  if (originalWrStoreDir === undefined) delete process.env.WORKSPACE_RUNTIME_STORE_DIR
+  else process.env.WORKSPACE_RUNTIME_STORE_DIR = originalWrStoreDir
   if (originalAcpRemoteTransport === undefined) delete process.env[ACP_REMOTE_TRANSPORT_FLAG]
   else process.env[ACP_REMOTE_TRANSPORT_FLAG] = originalAcpRemoteTransport
   globalThis.fetch = originalFetch
@@ -2241,6 +2254,9 @@ describe("workspace runtime auth helpers", () => {
     process.env.OPENCODE_URL = "http://opencode.test"
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
     process.env.WORKSPACE_RUNTIME_DATA_DIR = data
+    // Pinned explicitly: the store root is what these assertions turn on, and
+    // `WORKSPACE_RUNTIME_STORE_DIR` is the one setting nothing else overrides.
+    process.env.WORKSPACE_RUNTIME_STORE_DIR = path.join(data, "store")
 
     const app = new Hono()
     mountTestHost(app, { opencodeUrl: "http://opencode.test", opencodeCompat: true })
@@ -3732,6 +3748,208 @@ describe("session inventory import completeness (Unit 4)", () => {
     // and the session appears.
     failNext = false
     expect(await list()).toContain("ses_recovered")
+
+    host.dispose()
+  })
+})
+
+// ── Unit 4: a create must not move a session between workspaces ─────────────
+describe("session create workspace isolation (Unit 4)", () => {
+  test("refuses a create whose id already belongs to another directory", async () => {
+    const home = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-create-home-"))
+    const other = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-create-other-"))
+    const data = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-create-data-"))
+    tempDirs.push(home, other, data)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = home
+    process.env.WORKSPACE_RUNTIME_DATA_DIR = data
+    // Pinned explicitly: the store root is what these assertions turn on, and
+    // `WORKSPACE_RUNTIME_STORE_DIR` is the one setting nothing else overrides.
+    process.env.WORKSPACE_RUNTIME_STORE_DIR = path.join(data, "store")
+
+    // A second directory becomes addressable on this runtime the moment a
+    // session owns a worktree — that registration is exactly what makes
+    // `assertTarget` accept a `?directory=` other than the pinned one.
+    const worktreeOwner = "ses_worktree_owner"
+    registerWorkspaceDirectory({ workspaceId: workspaceId(), sessionId: worktreeOwner, directory: other })
+
+    const created: Array<{ id: string; directory: string }> = []
+    const registry: WorkspaceHarnessRegistry = [{
+      match: () => true,
+      create: () => ({
+        listSessions: async (directory: string) =>
+          created
+            .filter((row) => row.directory === directory)
+            .map((row) => ({ id: row.id, time: { created: 1, updated: 2 } })),
+        createSession: async (directory: string, _title?: string, id?: string) => {
+          const next = { id: id ?? `ses_${created.length}`, directory }
+          created.push(next)
+          return { id: next.id }
+        },
+        dispose: () => {},
+      }) as unknown as AgentHarnessAdapter,
+    }]
+
+    const app = new Hono()
+    const host = mountTestHost(app, { harness: { id: "pi", access: "native" }, harnesses: registry })
+
+    const create = (directory: string, body: Record<string, unknown>) =>
+      app.request(`http://localhost/session?directory=${encodeURIComponent(directory)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      })
+    const listIds = async (directory: string) => {
+      const response = await app.request(`http://localhost/session?directory=${encodeURIComponent(directory)}`)
+      expect(response.status).toBe(200)
+      return (await response.json() as Array<{ id: string }>).map((row) => row.id)
+    }
+
+    try {
+      expect((await create(home, { id: "ses_home", title: "Home" })).status).toBe(201)
+      expect(await listIds(home)).toContain("ses_home")
+      expect(await listIds(other)).not.toContain("ses_home")
+
+      // The claim: a create in the OTHER directory naming the existing id.
+      // Nothing about it is verified, and the store's single primary key means
+      // the bind rewrites `directory` rather than adding a row.
+      const claimed = await create(other, { id: "ses_home", title: "Claimed" })
+      expect(claimed.status).toBe(409)
+
+      // The session still belongs to the workspace that created it, and never
+      // became the other workspace's.
+      expect(await listIds(home)).toContain("ses_home")
+      expect(await listIds(other)).not.toContain("ses_home")
+    } finally {
+      unregisterWorkspaceDirectory({ workspaceId: workspaceId(), sessionId: worktreeOwner })
+      host.dispose()
+    }
+  })
+})
+
+// ── Unit 4: a swallowed list failure must not be recorded as an import ──────
+describe("session inventory import completeness, proxy adapters (Unit 4)", () => {
+  test("does not mark a directory imported when a proxy adapter's list failed", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-inventory-proxy-"))
+    const data = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-inventory-proxy-data-"))
+    tempDirs.push(dir, data)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    process.env.WORKSPACE_RUNTIME_DATA_DIR = data
+    // Pinned explicitly: the store root is what these assertions turn on, and
+    // `WORKSPACE_RUNTIME_STORE_DIR` is the one setting nothing else overrides.
+    process.env.WORKSPACE_RUNTIME_STORE_DIR = path.join(data, "store")
+
+    // The OpenCode adapter turns ANY non-2xx into `[]` rather than throwing, so
+    // a transient 5xx from a just-restarted server is byte-identical to a fresh
+    // install. The throw-based completeness check never sees it.
+    let healthy = false
+    const upstream = [{ id: "ses_hidden", title: "Present all along", time: { created: 1, updated: 2 } }]
+    const adapter = {
+      adapterCapabilities: ["http-proxy"] as const,
+      listSessions: async () => (healthy ? upstream : []),
+      transportLive: () => true,
+      getRequestFn: async () => async () =>
+        healthy
+          ? Response.json(upstream)
+          : new Response("upstream restarting", { status: 503 }),
+      dispose: () => {},
+    } as unknown as AgentHarnessAdapter
+
+    const app = new Hono()
+    const host = mountTestHost(app, {
+      harness: { id: "opencode", access: "native" },
+      harnesses: [{ match: () => true, create: () => adapter }] as WorkspaceHarnessRegistry,
+    })
+
+    const list = async () => {
+      const response = await app.request(`http://localhost/session?directory=${encodeURIComponent(dir)}`)
+      expect(response.status).toBe(200)
+      return (await response.json() as Array<{ id: string }>).map((row) => row.id)
+    }
+
+    // The failing import answers from the store...
+    expect(await list()).toEqual([])
+
+    // ...and must NOT have claimed the directory imported, or the user's
+    // sessions are hidden from generic listing forever with no retry.
+    healthy = true
+    expect(await list()).toContain("ses_hidden")
+
+    host.dispose()
+  })
+})
+
+// ── Unit 4: rejected session config must not survive in the store ───────────
+describe("session config acceptance (Unit 4)", () => {
+  test("does not persist a config the harness refused", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-config-reject-"))
+    const data = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-config-reject-data-"))
+    tempDirs.push(dir, data)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    process.env.WORKSPACE_RUNTIME_DATA_DIR = data
+    // Pinned explicitly: the store root is what these assertions turn on, and
+    // `WORKSPACE_RUNTIME_STORE_DIR` is the one setting nothing else overrides.
+    process.env.WORKSPACE_RUNTIME_STORE_DIR = path.join(data, "store")
+
+    // Pi refuses a model change once the session is active; the store must
+    // follow that refusal instead of having already recorded the new model.
+    let active = false
+    let accepted: SessionConfig = {
+      harness: { id: "pi", access: "native" },
+      model: { providerID: "pi", modelID: "first" },
+      variant: null,
+      agent: null,
+    }
+    const registry: WorkspaceHarnessRegistry = [{
+      match: () => true,
+      create: () => ({
+        listSessions: async () => [],
+        createSession: async (_directory: string, _title?: string, id?: string) => ({ id: id ?? "ses_cfg" }),
+        getSession: async (id: string) => ({ id, time: { created: 1, updated: 2 } }),
+        getSessionConfig: async () => accepted,
+        updateSessionConfig: async (_id: string, update: SessionConfigUpdate) => {
+          if (update.model !== undefined && active) throw new Error("Start a new Pi session to use another model")
+          accepted = {
+            harness: update.harness ?? accepted.harness,
+            ...(update.model === undefined ? accepted.model ? { model: accepted.model } : {} : update.model ? { model: update.model } : {}),
+            variant: update.variant === undefined ? accepted.variant ?? null : update.variant,
+            agent: update.agent === undefined ? accepted.agent ?? null : update.agent,
+          }
+          return accepted
+        },
+        dispose: () => {},
+      }) as unknown as AgentHarnessAdapter,
+    }]
+
+    const app = new Hono()
+    const host = mountTestHost(app, { harness: { id: "pi", access: "native" }, harnesses: registry })
+
+    const created = await app.request(`http://localhost/session?directory=${encodeURIComponent(dir)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: "ses_cfg", title: "Config" }),
+    })
+    expect(created.status).toBe(201)
+
+    const patchModel = (modelID: string) =>
+      app.request(`http://localhost/session/ses_cfg/config?directory=${encodeURIComponent(dir)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: { providerID: "pi", modelID } }),
+      })
+    const storedModel = async () => {
+      const response = await app.request(`http://localhost/session/ses_cfg/config?directory=${encodeURIComponent(dir)}`)
+      expect(response.status).toBe(200)
+      return (await response.json() as SessionConfig).model?.modelID
+    }
+
+    expect((await patchModel("first")).status).toBe(200)
+    expect(await storedModel()).toBe("first")
+
+    // The harness now refuses. The store must still hold what the harness
+    // actually accepted.
+    active = true
+    expect((await patchModel("second")).status).not.toBe(200)
+    expect(await storedModel()).toBe("first")
 
     host.dispose()
   })
