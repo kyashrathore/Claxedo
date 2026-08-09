@@ -1719,6 +1719,19 @@ something true, currently red, and directly tied to the product outcome.
 
 - [ ] **Unit 11: Rewire desktop to local composition, optional account auth, and Host Connector**
 
+**Status (2026-08-09):** The composition boundary is implemented and green, but
+the unit remains open for its owner-gated signed product journeys. Desktop now
+boots the single local renderer document, keeps the Electron account adapter and
+hosted contribution in separately fingerprinted lazy chunks, and packages Host
+Connector as a separately verified utility-process resource. Real signed and
+unsigned builds plus `verify:closure` and `verify:u8-package-boundary` prove that
+unsigned startup executes none of those optional resources and fixture sign-in
+loads the hosted contribution once. The remaining acceptance work is the live
+linked-host/cloud-workspace/sign-out journey set and native credential behavior
+on macOS, Windows, and protected-storage Linux; those require the release
+owner's OAuth registrations and platform runners and must not be represented by
+the existing fixture/fake-backend tests.
+
 **Scope corrected 2026-08-09, before starting.** This unit was written before
 Units 6 and 9 existed, and both delivered most of its substance. Six of the
 seven `src/main/*.ts` files its Files list names to modify DO NOT EXIST; the
@@ -1851,6 +1864,20 @@ graph.
 **Verification:** Desktop dev and production build use one local composition contract; unsigned startup loads only the local closure; signed activation keeps credentials in Electron main, activates the declared hosted contribution, and preserves the characterized local, user-hosted Relay, and cloud-workspace behavior from Unit 1.
 
 - [ ] **Unit 12: Enforce all package closures and update hosted delivery paths**
+
+**Status (2026-08-09):** The executable boundary infrastructure is implemented
+and green for app-local, local-server, Host Connector, the three server entries,
+and desktop composition. The shared verifier now composes source closure,
+normalized emitted manifests, frozen temporary-workspace builds, native
+preparation, built-entry smokes, desktop package inventory, and unsigned/signed
+activation traces; CI invokes those public closure gates. The release qualifier
+also fails closed on artifact, commit, manifest, cohort, native-credential, OAuth,
+upgrade, and hard-cut evidence drift. This unit remains open because Unit 10's
+deliberately deferred `@claxedo/cloud-app` producer/deployment cutover makes its
+cloud-app bullets inapplicable, while final release evidence still requires an
+immutable historical baseline, real multi-platform credential artifacts,
+production OAuth registrations, and live release cohorts supplied by their
+owners. No synthetic evidence satisfies those gates.
 
 **Goal:** Make the split durable in manifests, source graphs, emitted artifacts, CI/deployment workflows, and documentation references.
 
