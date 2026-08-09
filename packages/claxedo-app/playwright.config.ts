@@ -96,7 +96,7 @@ export default defineConfig({
   testMatch: "**/*.spec.ts",
   testIgnore: [
     "**/deployed-workgraph.spec.ts",
-    ...(process.env.CLAXEDO_E2E_DESKTOP === "1" ? [] : ["**/desktop-*.spec.ts"]),
+    ...(process.env.CLAXEDO_E2E_DESKTOP === "1" ? [] : ["**/desktop-*.spec.ts", "**/real-desktop-*.spec.ts"]),
   ],
   grep,
   outputDir: "./e2e/playwright/test-results",
@@ -142,7 +142,7 @@ export default defineConfig({
       testIgnore: [
         "**/mobile-*.spec.ts",
         "**/deployed-workgraph.spec.ts",
-        ...(process.env.CLAXEDO_E2E_DESKTOP === "1" ? [] : ["**/desktop-*.spec.ts"]),
+        ...(process.env.CLAXEDO_E2E_DESKTOP === "1" ? [] : ["**/desktop-*.spec.ts", "**/real-desktop-*.spec.ts"]),
       ],
       use: { ...devices["Desktop Chrome"] },
     },

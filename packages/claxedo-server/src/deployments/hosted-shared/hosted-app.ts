@@ -86,6 +86,7 @@ import { workGraphHttpTelemetry } from "../../hosts/workgraph/operational-teleme
 import { captureProduct, productIdentity } from "../../platform/telemetry/product/product"
 import type { SettlementDispatcher } from "../../hosts/workgraph/settlement-dispatcher"
 import type { WorkGraphConvexExecutor } from "../../hosts/workgraph/convex/store"
+import { sessionInventoryResponse } from "../../session/list"
 
 export type HostedAppOverrides = {
   /** Hosted relay target lookup. Omitted → the plane's composed lookup is used. */
@@ -654,7 +655,7 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
   if (!overrides.centralSessionRuntime) {
     app.get("/api/control/sessions", async (c) => {
       const workspaceId = c.req.query("workspaceId")
-      if (!workspaceId || !services.authority?.listSessions) return c.json({ sessions: [] })
+      if (!workspaceId || !services.authority?.listSessions) return c.json(sessionInventoryResponse([]))
       const authResult = await signedOrError(
         c.req.raw,
         {
@@ -665,10 +666,10 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
         services,
       )
       if ("error" in authResult) return c.json(authResult.error, authResult.status as 401 | 403 | 503)
-      if (!authResult.auth) return c.json({ sessions: [] })
-      return c.json({
-        sessions: await services.authority.listSessions(authResult.auth, { workspaceId }),
-      })
+      if (!authResult.auth) return c.json(sessionInventoryResponse([]))
+      return c.json(sessionInventoryResponse(
+        await services.authority.listSessions(authResult.auth, { workspaceId }),
+      ))
     })
     app.get("/api/control/sessions/:sessionId/gateway", async (c) => {
       const authResult = await signedOrError(

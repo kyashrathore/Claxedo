@@ -1,6 +1,6 @@
 /**
  * Shared harness for the Phase-4 `desktop-signed-*` lanes
- * (`desktop-signed-embedded-shared.spec.ts`, `desktop-signed-cloud.spec.ts`).
+ * (`desktop-signed-embedded-shared.spec.ts`, `real-desktop-signed-cloud.spec.ts`).
  *
  * WHY THIS FILE EXISTS — both signed lanes need the identical three-piece
  * boot sequence: spawn the REAL `hosted-node`-style control plane (Phase 3's
@@ -12,7 +12,7 @@
  * why that env-var-free seam is the only one a `--dir` build honours). The
  * task's own instruction is explicit: "if you find yourself copying a
  * journey, extract it to a shared helper you also own" — this is that
- * extraction, written once so `desktop-signed-cloud.spec.ts` (F3, `access:
+ * extraction, written once so `real-desktop-signed-cloud.spec.ts` (F3, `access:
  * "cloud"`) and `desktop-signed-embedded-shared.spec.ts` (F1+F2, `access:
  * "user-hosted"`) differ ONLY in the `access` argument, never in the
  * plumbing around it.
@@ -59,6 +59,7 @@ export type SignedFixtureInfo = {
    */
   controlPlaneToken: string
   controlPlaneIssuer: string
+  desktopRefreshToken: string
 }
 
 async function freePort(): Promise<number> {
@@ -107,6 +108,7 @@ export async function startSignedFixture(input: {
   opencodeScriptedProviderConfig: (v1Url: string) => unknown
   startScriptedModelServer: () => Promise<{ url: string; v1Url: string }>
   logLabel: string
+  hostHeartbeatDelayMs?: number
 }): Promise<{
   info: SignedFixtureInfo
   scriptedModel: { url: string; v1Url: string }
@@ -126,6 +128,7 @@ export async function startSignedFixture(input: {
         ...process.env,
         CLAXEDO_E2E_BACKEND_PORT: String(backendPort),
         CLAXEDO_E2E_RELAY_FIXTURE_ACCESS: input.access,
+        CLAXEDO_E2E_HOST_HEARTBEAT_DELAY_MS: String(input.hostHeartbeatDelayMs ?? 0),
         OPENCODE_CONFIG_CONTENT: JSON.stringify(input.opencodeScriptedProviderConfig(scriptedModel.v1Url)),
         TIER_REAL_API_KEY: "test-key",
         OPENCODE_DISABLE_MODELS_FETCH: "true",

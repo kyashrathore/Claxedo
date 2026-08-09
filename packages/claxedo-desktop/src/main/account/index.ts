@@ -34,6 +34,8 @@ export function setupAccount(input: {
   ipcMain: AccountIpcTarget
   env?: AccountConfigEnv
   onError?: (stage: string, error: unknown) => void
+  /** Electron secure storage is unavailable until app.whenReady(). */
+  restoreImmediately?: boolean
 }) {
   const config = readAccountConfig(input.env ?? (process.env as AccountConfigEnv))
 
@@ -106,7 +108,7 @@ export function setupAccount(input: {
 
   // Before registering: a renderer that asks for state during its first frame
   // should get the restored answer, not `unsigned` followed by a correction.
-  service.restore()
+  if (input.restoreImmediately !== false) service.restore()
   const { channels } = registerAccountIpc({ ipcMain: input.ipcMain, service })
   return { configured: true as const, service, channels }
 }

@@ -107,7 +107,7 @@ async function resolvePackagedBinary(): Promise<string> {
  * seconds of embedded-server startup, so neither "take the first" nor "take the
  * next" is correct on its own.
  */
-async function waitForShellWindow(app: ElectronApplication, timeoutMs: number): Promise<Page> {
+async function waitForShellWindow(app: ElectronApplication, timeoutMs: number, appLog: string[]): Promise<Page> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     for (const candidate of app.windows()) {
@@ -118,7 +118,9 @@ async function waitForShellWindow(app: ElectronApplication, timeoutMs: number): 
   }
   throw new Error(
     "GATING: the packaged app never opened its shell window (index.html). Windows seen: " +
-      (app.windows().map((w) => w.url()).join(", ") || "(none)"),
+      (app.windows().map((w) => w.url()).join(", ") || "(none)") +
+      "\nMain-process output:\n" +
+      (appLog.join("").trim() || "(none)"),
   )
 }
 
@@ -210,9 +212,14 @@ export async function launchPackagedApp(input: {
    * caller wants to observe.
    */
   beforeShellWindow?: (context: BrowserContext) => Promise<void>
+  /** Reuse a scratch profile across a restart. The caller remains its owner. */
+  userDataDir?: string
+  /** Keep the profile after close so a later launch can prove restoration. */
+  preserveUserDataDir?: boolean
 } = {}): Promise<PackagedApp> {
   const executablePath = await resolvePackagedBinary()
-  const userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-e2e-desktop-"))
+  const userDataDir = input.userDataDir ?? await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-e2e-desktop-"))
+  await fs.mkdir(userDataDir, { recursive: true })
   if (input.serverUrl) {
     // Written BEFORE `electron.launch()` below — see the parameter doc above for why this
     // can't be an IPC call made after boot. Plain flat JSON: electron-store's on-disk shape
@@ -328,7 +335,7 @@ export async function launchPackagedApp(input: {
   // that only inspects recorded state rather than touching the page still goes
   // GREEN against that dead handle, which is precisely the pass-while-broken
   // shape INVARIANTS.md forbids. So wait for the shell explicitly.
-  const page = await waitForShellWindow(app, input.timeoutMs ?? 60_000)
+  const page = await waitForShellWindow(app, input.timeoutMs ?? 60_000, appLog)
   await page.waitForLoadState("domcontentloaded")
 
   // ASSERT the premise rather than trusting the env surgery above. If this ever
@@ -342,8 +349,22 @@ export async function launchPackagedApp(input: {
   ).toBe("file:")
 
   const close = async () => {
-    await app.close().catch(() => {})
-    await fs.rm(userDataDir, { recursive: true, force: true }).catch(() => {})
+    const graceful = app.close().catch(() => {})
+    const closed = await Promise.race([
+      graceful.then(() => true),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 10_000)),
+    ])
+    if (!closed) {
+      app.process().kill("SIGTERM")
+      await Promise.race([
+        graceful,
+        new Promise<void>((resolve) => setTimeout(resolve, 5_000)),
+      ])
+      if (app.process().exitCode === null) app.process().kill("SIGKILL")
+    }
+    if (!input.preserveUserDataDir) {
+      await fs.rm(userDataDir, { recursive: true, force: true }).catch(() => {})
+    }
   }
 
   return { app, page, userDataDir, serverResponses, appLog, close }

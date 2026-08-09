@@ -11,7 +11,6 @@ import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import { loadUserConfig, sandboxDriverConfig } from "@claxedo/server-core/agent-config/index"
 import { type ControlPlaneServices } from "../../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { workspaceBacking } from "../../workspace/store/backing"
 import { ensureHostForRepo } from "@claxedo/server-core/sandbox/network/policy"
 import {
   deleteWorkspace,
@@ -22,7 +21,7 @@ import {
   workspaceIdFromDirectoryRef,
   type Workspace,
 } from "@claxedo/server-core/workspace/store/index"
-import { discardSupervisorSandbox, getSupervisorSandboxStatus } from "../../workspace/supervisor"
+import { discardSupervisorSandbox } from "../../workspace/supervisor"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { ControlPlaneAuthError, bearerToken, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
@@ -36,6 +35,7 @@ import { workspaceConnectionRoutes } from "../../connections/routes/connection-r
 import { sandboxDriverCredentials, sandboxDriverRoutes } from "../../sandbox/routes/sandbox-driver-routes"
 import { workspaceShareRoutes } from "./share-routes"
 import { authenticatedGitHubCloneSource } from "../repository-clone"
+import { workspaceResponse } from "./workspace-response"
 
 const createBody = z
   .object({
@@ -68,30 +68,6 @@ function slug(input: string | undefined, alt: string) {
     .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/^-+|-+$/g, "")
   return txt || alt
-}
-
-function workspaceJson(ws: Awaited<ReturnType<typeof resolveWorkspace>>) {
-  if (!ws) return
-  const live = getSupervisorSandboxStatus(ws.id)
-  const stopped = live === "stopped" ? "stopped" : undefined
-  const backing = workspaceBacking(ws)
-  const access = backing.kind === "cloud-vm" ? "cloud" : backing.kind === "user-hosted" ? "user-hosted" : "local"
-  return {
-    workspaceId: ws.id,
-    projectId: ws.project_id ?? ws.id,
-    directory: backing.kind === "local-worktree" ? ws.directory : (ws.remote_directory ?? ws.directory),
-    workspaceName: ws.workspace_name ?? null,
-    access,
-    backing,
-    kind: ws.kind,
-    driver: ws.driver ?? null,
-    status: stopped ?? ws.status ?? null,
-    git: {
-      repo: ws.repo_name ?? null,
-      branch: ws.git_branch ?? null,
-      remote: ws.git_remote ?? null,
-    },
-  }
 }
 
 function startCloudWorkspaceProvisioning(input: {
@@ -146,7 +122,7 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
         const authResult = await signedOrError(c.req.raw, options, services)
         if ("error" in authResult) return c.json(authResult.error, authResult.status)
         const directory = c.req.query("directory")
-        if (isGlobalDirectory(directory)) return c.json(workspaceJson(globalWorkspace(directory!)))
+        if (isGlobalDirectory(directory)) return c.json(workspaceResponse(globalWorkspace(directory!)))
         const explicitWorkspaceId = c.req.query("workspaceId") || c.req.query("workspace")
         const directoryWorkspaceId = explicitWorkspaceId ? undefined : workspaceIdFromDirectoryRef(directory)
         const ws = await resolveWorkspace({
@@ -215,7 +191,7 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
             throw err
           }
         }
-        return c.json(workspaceJson(ws))
+        return c.json(workspaceResponse(ws))
       })
       .get("/", async (c) => {
         const access = c.req.query("access")
@@ -530,7 +506,7 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
           remoteDirectory: remote_directory,
         })
 
-        return c.json(workspaceJson(ws))
+        return c.json(workspaceResponse(ws))
       })
   )
 }

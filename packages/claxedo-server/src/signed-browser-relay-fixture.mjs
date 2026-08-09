@@ -6,6 +6,7 @@ import { createServer } from "node:http"
 import { promisify } from "node:util"
 import { once } from "node:events"
 import { serve } from "@hono/node-server"
+import { Hono } from "hono"
 import { createRemoteJWKSet, exportJWK, generateKeyPair, jwtVerify } from "jose"
 import {
   mintHostTunnelToken,
@@ -14,11 +15,11 @@ import {
 import { createWorkspaceRuntimeApp } from "../../workspace-runtime/src/server.ts"
 import { relayWorkspaceRuntimeExposure } from "../../workspace-runtime/src/exposure.ts"
 import { createSelfHostedApp } from "./deployments/self-hosted-node/app"
-import { opencodeRequest } from "./opencode/engine.ts"
+import { opencodeRequest } from "@claxedo/server-core/opencode/engine"
 import { createControlPlaneServices } from "./authority/services.ts"
 import { createSqliteCentralStore } from "./authority/adapters/sqlite/central-store.ts"
-import { createSqliteWorkspaceAuthority } from "./authority/adapters/sqlite/workspace-authority.ts"
-import { customVerifierAuthAdapter } from "./platform/auth/auth.ts"
+import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
+import { customVerifierAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { startLocalJwksIssuer } from "./e2e-local-jwks-issuer.mjs"
 // PRE-EXISTING BREAKAGE, fixed in passing: `refactor(server): group the
 // workspace supervisor and store into directories` (78d734a70) moved this
@@ -32,6 +33,7 @@ import { configureWorkspaceSupervisor, createWorkspaceSupervisorSandboxManager, 
 import { recordSupervisorSandboxLeaseReady } from "./sandbox/stores/sqlite-supervisor-state.ts"
 import { ensureWorkspace, updateWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { startUserHostedWorkspaceTunnel, stopAllUserHostedWorkspaceTunnels, stopUserHostedWorkspaceTunnel } from "./user-hosted-tunnel.ts"
+import { HostEnrollmentRoutes } from "./routes/hosted/host-enrollment.ts"
 
 const execFileAsync = promisify(execFile)
 const workspaceId = process.env.CLAXEDO_E2E_WORKSPACE_ID?.trim() || "ws_signed_browser_relay"
@@ -52,6 +54,11 @@ const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-signed-browser-rel
 const dataDir = path.join(root, "data")
 const workspaceDir = path.join(root, "workspace")
 const opencodeRequests = []
+const desktopRefreshToken = "desktop_refresh_0"
+let currentDesktopRefreshToken = desktopRefreshToken
+let desktopRefreshes = 0
+const desktopHostRequests = []
+const hostHeartbeatDelayMs = Number(process.env.CLAXEDO_E2E_HOST_HEARTBEAT_DELAY_MS || 0)
 const runtimeConfigToken = "signed-browser-relay-runtime-config"
 let cloudRuntime
 
@@ -636,7 +643,41 @@ await authority.syncSessionMessages(browserAuth, {
 })
 
 const built = createSelfHostedApp(services)
+// This fixture predates the machine-wide Host Connector and deliberately uses
+// the self-host composition for its embedded execution + relay paths. That
+// composition must not own hosted machine-enrollment routes, so compose the
+// canonical hosted route module beside it for the signed desktop lane. This is
+// the production handler against the real SQLite authority, not a fixture
+// response; the fixture wrapper below only observes/delays requests.
+const desktopHostedRoutes = new Hono().route(
+  "/api/claxedo/host/enrollments",
+  HostEnrollmentRoutes(services, {
+    authConfig: services.auth.config,
+    ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+  }),
+)
 built.app.get("/__fixture/opencode-requests", (c) => c.json({ requests: opencodeRequests }))
+built.app.post("/__fixture/oauth/token", async (c) => {
+  const form = new URLSearchParams(await c.req.text())
+  if (form.get("grant_type") !== "refresh_token" || form.get("refresh_token") !== currentDesktopRefreshToken) {
+    return c.json({ error: "invalid_grant" }, 400)
+  }
+  desktopRefreshes += 1
+  currentDesktopRefreshToken = `desktop_refresh_${desktopRefreshes}`
+  return c.json({
+    access_token: await jwksIssuer.mint({
+      subject: browserSubject,
+      audience: controlPlaneAudience,
+      ttlSeconds: 3600,
+    }),
+    refresh_token: currentDesktopRefreshToken,
+    expires_in: 3600,
+  })
+})
+built.app.get("/__fixture/desktop-stats", (c) => c.json({
+  refreshes: desktopRefreshes,
+  hostRequests: desktopHostRequests,
+}))
 
 // Debug-only surface for live-user-hosted-relay.spec.ts (Tier L). NOT part of
 // the product API — these routes exist so the spec can drive real host-tunnel
@@ -729,7 +770,34 @@ if (access !== "cloud") {
 }
 
 const server = serve({
-  fetch: built.app.fetch,
+  fetch: async (request, ...rest) => {
+    const url = new URL(request.url)
+    if (url.pathname.startsWith("/api/claxedo/host/enrollments")) {
+      const body = request.method === "POST"
+        ? await request.clone().json().catch(() => undefined)
+        : undefined
+      desktopHostRequests.push({
+        method: request.method,
+        path: url.pathname,
+        body,
+        phase: "started",
+        at: Date.now(),
+      })
+      if (url.pathname.endsWith("/heartbeat") && hostHeartbeatDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, hostHeartbeatDelayMs))
+      }
+      const response = await desktopHostedRoutes.fetch(request, ...rest)
+      desktopHostRequests.push({
+        method: request.method,
+        path: url.pathname,
+        phase: "completed",
+        status: response.status,
+        at: Date.now(),
+      })
+      return response
+    }
+    return built.app.fetch(request, ...rest)
+  },
   port: backendPort || 0,
   hostname: "127.0.0.1",
 })
@@ -764,6 +832,7 @@ console.log(JSON.stringify({
   // verifies it and why no current spec consumes this field yet.
   controlPlaneToken: browserControlPlaneToken,
   controlPlaneIssuer: jwksIssuer.issuer,
+  desktopRefreshToken,
 }))
 
 async function shutdown() {

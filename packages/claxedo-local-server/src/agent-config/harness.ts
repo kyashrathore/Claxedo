@@ -24,6 +24,15 @@ export type OptionsResponse = {
   stale: boolean
 }
 
+/** Canonical successful response for the local harness-options proxy. */
+export function liveHarnessOptionsResponse(options: HarnessConfigOption[]): OptionsResponse {
+  return {
+    options,
+    source: "harness",
+    stale: false,
+  }
+}
+
 type NativeSdkHarnessId = Extract<AgentHarnessId, "claude" | "codex" | "cursor">
 
 export function isNativeSdkHarnessId(id: AgentHarnessId): id is NativeSdkHarnessId {

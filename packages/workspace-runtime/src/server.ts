@@ -27,6 +27,7 @@ import {
 import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER, type WorkspaceRuntimeManagementAuth, type WorkspaceRuntimeManagementTarget } from "./management-auth"
 import { WorkspaceRuntimeRoutes } from "./routes/manifest"
 import { WorktreeRoutes } from "./routes/worktree"
+import { workspaceRuntimeLivenessResponse } from "./routes/health"
 import { CheckpointRoutes } from "./routes/checkpoint"
 import {
   assertWorkspaceRuntimeExposure,
@@ -389,25 +390,15 @@ function runtimeDiagnostics(host: Host, options: WorkspaceRuntimeServerOptions) 
 
 function runtimeLiveness(host: Host, options: WorkspaceRuntimeServerOptions) {
   const detail = host.detail()
-  return {
-    ok: detail.state !== "error",
-    status: detail.state,
-    service: "workspace-runtime",
+  return workspaceRuntimeLivenessResponse({
+    state: detail.state,
+    harness: detail.harness,
+    error: detail.error,
+    harnessHealth: detail.harnessHealth,
     routeAuthBoundary: workspaceRuntimeRouteAuthBoundary(options),
     serviceExposure: options.serviceExposure ?? workspaceRuntimeServiceExposureFromEnv(),
     exposure: options.exposure ? { kind: exposureBoundaryName(options.exposure) } : undefined,
-    // Harness-health detail forwarded on the liveness probe so the client route
-    // (`agent-config-harness-routes.ts`) that fetches `/api/wr/health` can derive
-    // harness *degradation* — not just coarse process liveness. `ok`/`status`
-    // liveness semantics are unchanged: a degraded harness on a live runtime
-    // still reports `ok:true`/`status:"ready"`; degradation is carried only by the
-    // added fields below. Kept intentionally minimal (no capabilities/directory/
-    // process counts) — those stay on `/global/health`'s diagnostics.
-    agentType: detail.harness.id,
-    acpBinary: detail.harness.id === "opencode" ? null : detail.harness.connection?.kind === "process" ? detail.harness.connection.binary ?? null : null,
-    error: detail.error || null,
-    harnessHealth: detail.harnessHealth,
-  }
+  })
 }
 
 export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions = {}): WorkspaceRuntimeApp {

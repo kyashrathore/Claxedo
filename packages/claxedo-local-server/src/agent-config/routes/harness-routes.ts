@@ -28,6 +28,7 @@ import {
   sandboxSessionExists,
   type HarnessConfigOption,
   type OptionsResponse,
+  liveHarnessOptionsResponse,
   type SandboxHealth,
 } from "../harness"
 import { localAgentConfigAllowed } from "../local-auth"
@@ -364,11 +365,7 @@ async function harnessOptionsResponse(c: Context, options: AgentConfigRouteOptio
     return catalogFallback() ?? c.json(live, 502)
   }
   if (Array.isArray(live) && live.length > 0) {
-    return c.json({
-      options: live as HarnessConfigOption[],
-      source: "harness",
-      stale: false,
-    } satisfies OptionsResponse)
+    return c.json(liveHarnessOptionsResponse(live as HarnessConfigOption[]))
   }
   return catalogFallback() ?? c.json(errorBody("harness_config_options_unavailable", harnessConfigOptionsUnavailable(harness)), 502)
 }

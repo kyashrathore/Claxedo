@@ -218,6 +218,7 @@ function setupApp() {
     app.setAsDefaultProtocolClient("claxedo")
     setDockIcon()
     setupAutoUpdater()
+    if (account.configured) account.service.restore()
     await initialize()
   })
 }
@@ -581,6 +582,7 @@ installIpcCallerGuard({
 // leave open.
 const account = setupAccount({
   ipcMain,
+  restoreImmediately: false,
   onError: (stage, error) => logger.warn(`[account] ${stage}: ${String(error)}`),
 })
 if (!account.configured) {
@@ -617,6 +619,10 @@ const hostConnector = account.configured
       userDataDir: app.getPath("userData"),
       platform: process.platform,
       displayName: machineDisplayName(process.platform),
+      ...(Number.isFinite(Number(process.env.CLAXEDO_HOST_CONNECTOR_HEARTBEAT_INTERVAL_MS)) &&
+      Number(process.env.CLAXEDO_HOST_CONNECTOR_HEARTBEAT_INTERVAL_MS) > 0
+        ? { heartbeatIntervalMs: Number(process.env.CLAXEDO_HOST_CONNECTOR_HEARTBEAT_INTERVAL_MS) }
+        : {}),
       onError: (stage, error) => logger.warn(`[host-connector] ${stage}: ${String(error)}`),
       // The panel shows state the user did not cause — an expiry, a rejected
       // beat, a revocation — so every transition is pushed rather than waited

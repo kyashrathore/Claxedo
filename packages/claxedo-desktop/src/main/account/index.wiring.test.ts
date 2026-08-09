@@ -39,4 +39,18 @@ describe("setupAccount", () => {
     // what signs the user out.
     expect(source).toMatch(/refresh\(\{\s*tokenUrl: config\.tokenUrl,\s*clientId: config\.clientId,\s*refreshToken\s*\}\)/)
   })
+
+  test("restores only after Electron secure storage is ready and before renderer initialization", () => {
+    const entry = readFileSync(new URL("../index.ts", import.meta.url), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1")
+    const ready = entry.indexOf("app.whenReady().then")
+    const restore = entry.indexOf("account.service.restore()")
+    const initialize = entry.indexOf("await initialize()")
+
+    expect(entry).toContain("restoreImmediately: false")
+    expect(ready).toBeGreaterThan(-1)
+    expect(restore).toBeGreaterThan(ready)
+    expect(restore).toBeLessThan(initialize)
+  })
 })

@@ -56,6 +56,11 @@ export type SessionListResponse = {
   totalKnown?: number
 }
 
+/** Canonical flat inventory response for `GET /api/control/sessions`. */
+export function sessionInventoryResponse(sessions: unknown) {
+  return { sessions }
+}
+
 type CursorShape = {
   query: string
   updatedAt: number
