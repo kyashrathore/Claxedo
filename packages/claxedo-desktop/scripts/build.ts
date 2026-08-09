@@ -2,10 +2,7 @@
 
 import * as path from "node:path"
 
-import { write, verify } from "./contract"
 import { requireLocalServerBundle } from "./local-server"
-import { clearDesktopBoundaryManifests, verifyDesktopBoundaryManifestSet } from "./product-boundary-manifests"
-import { copyWorkspaceRuntimeTemplates } from "./utils"
 
 const root = path.resolve(import.meta.dir, "..")
 
@@ -15,6 +12,18 @@ const root = path.resolve(import.meta.dir, "..")
 // failed with a bare "missing path". Fail here instead, naming the artifact and
 // the command that produces it. Nothing is started in its place.
 console.log(`[build] local server bundle at ${requireLocalServerBundle(root)}`)
+
+// Keep the missing-bundle gate dependency-light and first. Besides making the
+// error actionable, this prevents build/manifest modules from doing any work
+// before the one production input they consume has been proven to exist.
+const [contract, manifests, utils] = await Promise.all([
+  import("./contract"),
+  import("./product-boundary-manifests"),
+  import("./utils"),
+])
+const { write, verify } = contract
+const { clearDesktopBoundaryManifests, verifyDesktopBoundaryManifestSet } = manifests
+const { copyWorkspaceRuntimeTemplates } = utils
 clearDesktopBoundaryManifests(root)
 
 const proc = Bun.spawn({
