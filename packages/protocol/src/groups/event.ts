@@ -3,7 +3,8 @@ import { EventManifest } from "@opencode-ai/schema/event-manifest"
 import { Location } from "@opencode-ai/schema/location"
 import type { Definition } from "@opencode-ai/schema/event"
 import { Schema } from "effect"
-import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { jsonDataStreamSse } from "../sse"
 
 const fields = {
   id: Event.ID,
@@ -33,7 +34,7 @@ const make = <const Definitions extends ReadonlyArray<Definition>>(definitions: 
     group: HttpApiGroup.make("server.event")
       .add(
         HttpApiEndpoint.get("event.subscribe", "/api/event", {
-          success: HttpApiSchema.StreamSse({ data: EventSchema }),
+          success: jsonDataStreamSse(EventSchema, "V2EventStream"),
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "v2.event.subscribe",

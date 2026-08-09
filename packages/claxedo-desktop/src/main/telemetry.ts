@@ -111,7 +111,7 @@ export function createTelemetryClient(env: NodeJS.ProcessEnv = process.env): Pos
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
-    setTimeout(resolve, ms).unref()
+    setTimeout(resolve, ms)
   })
 }
 

@@ -281,10 +281,22 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
   }
 
   async function installClaudeNetworkGuard(configDir: string, expectedBaseUrl: string) {
-    const realClaude = (await execFileAsync("which", ["claude"])).stdout.trim()
+    const discoveredClaude = process.platform === "win32"
+      ? (await execFileAsync("where.exe", ["claude.cmd"])).stdout.split(/\r?\n/).find(Boolean)?.trim() ?? ""
+      : (await execFileAsync("which", ["claude"])).stdout.trim()
+    const realClaude = process.platform === "win32"
+      ? path.join(path.dirname(discoveredClaude), "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe")
+      : discoveredClaude
     expect(realClaude, "the real Claude CLI is required for the native-harness E2E").toBeTruthy()
+    await expect(
+      fs.stat(realClaude).then((stat) => stat.isFile()).catch(() => false),
+      `the real Claude CLI entry point does not exist at ${realClaude}`,
+    ).resolves.toBe(true)
     const capture = path.join(configDir, "spawn-env.jsonl")
-    const wrapper = path.join(configDir, "claude-e2e-guard.cjs")
+    // The SDK recognizes .js as a Node entry point and launches it through
+    // process.execPath. It treats .cjs as a native executable; that happens to
+    // work via a shebang on POSIX, but fails before execution on Windows.
+    const wrapper = path.join(configDir, "claude-e2e-guard.js")
     await fs.writeFile(wrapper, `#!/usr/bin/env node
 const fs = require("node:fs")
 const { spawn } = require("node:child_process")
@@ -1103,7 +1115,10 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     // mocked env snapshot.
     const expectedPort = new URL(serverBase).port
     await pane.click()
-    await packaged.page.keyboard.type('echo "CLAXEDO_PORT_CHECK=$CLAXEDO_PORT"', { delay: 15 })
+    const portEchoCommand = process.platform === "win32"
+      ? "echo CLAXEDO_PORT_CHECK=%CLAXEDO_PORT%"
+      : 'echo "CLAXEDO_PORT_CHECK=$CLAXEDO_PORT"'
+    await packaged.page.keyboard.type(portEchoCommand, { delay: 15 })
     await packaged.page.keyboard.press("Enter")
     await expect(
       xtermRows,

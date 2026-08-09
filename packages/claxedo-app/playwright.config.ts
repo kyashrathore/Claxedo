@@ -58,6 +58,7 @@ const video =
     : process.env.PLAYWRIGHT_VIDEO === "1" || suite === "core"
       ? "on"
       : "retain-on-failure"
+const screenshot = process.env.PLAYWRIGHT_SCREENSHOT === "1" ? "on" : "only-on-failure"
 const workGraphReal = process.env.CLAXEDO_WORKGRAPH_REAL_E2E === "1"
 const workGraphApiPort = Number(process.env.CLAXEDO_WORKGRAPH_E2E_API_PORT ?? 4311)
 // Tier R (`real-*.spec.ts`, @tier-real): real claxedo-server + real harness
@@ -130,7 +131,7 @@ export default defineConfig({
   use: {
     baseURL,
     trace: "retain-on-failure",
-    screenshot: "only-on-failure",
+    screenshot,
     video,
   },
   projects: [

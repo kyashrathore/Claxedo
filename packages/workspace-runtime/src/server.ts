@@ -86,6 +86,8 @@ export type WorkspaceRuntimeServerOptions = {
   piModelBackend?: PiModelBackendResolver
   harness?: RuntimeRunner
   opencodeCompat?: boolean
+  /** Persist host-owned session metadata before the created lifecycle event is published. */
+  afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
   target?: WorkspaceTarget
   storeRoot?: string
   /** Host-owned root for Agent Extension replay state. See {@link WorkspaceHostOptions.agentExtensionStateRoot}. */
@@ -417,6 +419,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.piModelBackend ? { piModelBackend: options.piModelBackend } : {}),
     ...(options.harness ? { harness: options.harness } : {}),
     ...(options.opencodeCompat !== undefined ? { opencodeCompat: options.opencodeCompat } : {}),
+    ...(options.afterCreateSession ? { afterCreateSession: options.afterCreateSession } : {}),
     ...(options.target ? { target: options.target } : {}),
     ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
     ...(options.agentExtensionStateRoot ? { agentExtensionStateRoot: options.agentExtensionStateRoot } : {}),

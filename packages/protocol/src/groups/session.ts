@@ -7,6 +7,7 @@ import { AbsolutePath, NonNegativeInt, PositiveInt, RelativePath, statics } from
 import { Workspace } from "@opencode-ai/schema/workspace"
 import { Context, Effect, Encoding, Result, Schema, Struct } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
+import { jsonDataStreamSse } from "../sse"
 import {
   ConflictError,
   InvalidCursorError,
@@ -86,13 +87,15 @@ const SessionActive = Schema.Struct({
 
 export const SessionToolRegistration = Schema.Struct({
   callbackUrl: Schema.String,
-  tools: Schema.Array(Schema.Struct({
-    name: Schema.String,
-    description: Schema.String,
-    inputSchema: Schema.Record(Schema.String, Schema.Unknown),
-    outputSchema: Schema.Record(Schema.String, Schema.Unknown).pipe(Schema.optional),
-    callbackUrl: Schema.String.pipe(Schema.optional),
-  })),
+  tools: Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      description: Schema.String,
+      inputSchema: Schema.Record(Schema.String, Schema.Unknown),
+      outputSchema: Schema.Record(Schema.String, Schema.Unknown).pipe(Schema.optional),
+      callbackUrl: Schema.String.pipe(Schema.optional),
+    }),
+  ),
 })
 
 const SessionHistoryLimit = PositiveInt.check(Schema.isLessThanOrEqualTo(100))
@@ -342,7 +345,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         query: {
           after: Schema.NumberFromString.pipe(Schema.decodeTo(NonNegativeInt), Schema.optional),
         },
-        success: HttpApiSchema.StreamSse({ data: SessionEvent.Durable }),
+        success: jsonDataStreamSse(SessionEvent.Durable, "SessionDurableEventStream"),
         error: SessionNotFoundError,
       })
         .middleware(sessionLocationMiddleware)

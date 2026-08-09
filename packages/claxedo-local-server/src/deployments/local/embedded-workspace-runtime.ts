@@ -79,6 +79,7 @@ let configuredProcessObserver: ProcessObserver | undefined
 // learns the new title — see `ensureEmbeddedWorkspaceRuntime` below, which
 // taps it via `createOpencodeEvents`).
 let configuredOnSessionMetaEvent: ((event: OpencodeEvent) => void) | undefined
+let configuredOnSessionMetaCreated: ((workspace: Workspace, session: unknown) => Promise<void> | void) | undefined
 let configuredOnSessionMetaSnapshot: ((workspace: Workspace, sessions: unknown[]) => void | Promise<void>) | undefined
 
 export function configureEmbeddedWorkspaceRuntime(input: {
@@ -88,6 +89,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   routeContributions?: readonly WorkspaceRuntimeRouteContribution[]
   processObserver?: ProcessObserver
   onSessionMetaEvent?: (event: OpencodeEvent) => void
+  onSessionMetaCreated?: (workspace: Workspace, session: unknown) => Promise<void> | void
   onSessionMetaSnapshot?: (workspace: Workspace, sessions: unknown[]) => void | Promise<void>
 }) {
   configuredOpencodeRequest = input.opencodeRequest
@@ -96,6 +98,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   configuredRouteContributions = input.routeContributions ?? []
   configuredProcessObserver = input.processObserver
   configuredOnSessionMetaEvent = input.onSessionMetaEvent
+  configuredOnSessionMetaCreated = input.onSessionMetaCreated
   configuredOnSessionMetaSnapshot = input.onSessionMetaSnapshot
 }
 
@@ -163,6 +166,12 @@ function options(
     // Claxedo host decision, injected via configureEmbeddedWorkspaceRuntime
     // from the composition root (this module stays ambient-env-free).
     opencodeCompat: configuredOpencodeCompat,
+    // `createSessionRoutes` awaits this before publishing `session.lifecycle`
+    // "created", so the control-plane list can never be invalidated before
+    // its canonical projection row exists.
+    afterCreateSession: configuredOnSessionMetaCreated
+      ? ({ session }) => configuredOnSessionMetaCreated?.(ws, session)
+      : undefined,
   }
 }
 

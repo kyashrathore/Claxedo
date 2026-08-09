@@ -161,42 +161,15 @@ jobs:
         settings:
           - name: linux
             host: ubuntu-latest
-          # SKIPPED — the windows leg is disabled entirely (2026-08-02), not
-          # just non-blocking. It CANNOT pass on any released Bun: Bun on
-          # Windows re-applies a patched dependency once PER PEER VARIANT and
-          # collides on its own cache entry, so `bun install` dies before a
-          # single test runs:
-          #   error: renaming changes to cache dir: ENOTEMPTY:
-          #   effect@4.0.0-<hash>@@@1_patch_hash=<hash> (NtSetInformationFile)
-          # (the `@@@1` suffix is the peer variant). That is
-          # https://github.com/oven-sh/bun/issues/28147, FIXED UPSTREAM on
-          # 2026-07-08 — but the newest released Bun (1.3.14, our
-          # `packageManager` pin) shipped 2026-05-13, two months BEFORE the
-          # fix, so no released Bun contains it. `--linker hoisted` (see
-          # .github/actions/setup-bun) dodges the isolated linker but not the
-          # peer-variant re-application.
-          #
-          # It ran for months as continue-on-error, which kept it visible but
-          # meant a permanent red X on every run of the default branch — noise
-          # that trains people to stop reading the checks. A leg that cannot
-          # succeed and requires no monitoring earns a skip, not a standing
-          # failure.
-          #
-          # TO RESTORE: when a Bun > 1.3.14 ships, bump the `packageManager`
-          # pin, uncomment this entry AND the matching windows branches in the
-          # steps below (install + the `unit results (windows)` reporter),
-          # confirm the leg goes green, then delete this block. Linux stays
-          # blocking throughout.
-          # - name: windows
-          #   host: windows-latest
+          - name: windows
+            host: windows-latest
     runs-on: ${{ matrix.settings.host }}
-    continue-on-error: ${{ matrix.settings.host == 'windows-latest' }}
     defaults:
       run:
         shell: bash
     env:
-      # Consumed by the Linux-only mermaid verification steps below; inert on the
-      # Windows leg, which skips them.
+      # Consumed by the Linux-only mermaid verification steps below; inert on
+      # the Windows leg, which skips them.
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
     steps:
       - name: Checkout repository
@@ -228,7 +201,7 @@ jobs:
 
       # Repo-root guard, not a package suite, so it has no turbo task. Linux
       # only: it reads Markdown off disk and is OS-independent, so running it
-      # again on the (non-blocking) Windows leg buys nothing.
+      # again on the Windows leg buys nothing.
       - name: Check documentation links
         if: runner.os == 'Linux'
         run: bun run docs:check-links

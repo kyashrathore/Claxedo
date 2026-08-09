@@ -53,6 +53,23 @@ async function getSpawn() {
   return (await import("node-pty")).spawn
 }
 
+export function selectPtyCommand(input: {
+  command?: string
+  env?: NodeJS.ProcessEnv
+  platform?: NodeJS.Platform
+  userShell?: () => string | null | undefined
+}) {
+  if (input.command) return input.command
+  const env = input.env ?? process.env
+  if (env.SHELL) return env.SHELL
+  if ((input.platform ?? process.platform) === "win32") return env.COMSPEC || "cmd.exe"
+  try {
+    return (input.userShell ?? (() => os.userInfo().shell))() || "/bin/sh"
+  } catch {
+    return "/bin/sh"
+  }
+}
+
 // Lazy agent hooks setup
 const setupLog = Log.create({ service: "pty-setup" })
 const setup = { promise: undefined as Promise<void> | undefined }
@@ -447,19 +464,9 @@ export namespace Pty {
   ) {
     const createStart = performance.now()
     const id = "pty_" + crypto.randomUUID().replace(/-/g, "")
-    const command =
-      input.command ||
-      process.env.SHELL ||
-      (() => {
-        try {
-          return os.userInfo().shell
-        } catch {
-          return null
-        }
-      })() ||
-      "/bin/sh"
+    const command = selectPtyCommand({ command: input.command })
     const args = input.args || []
-    const shellName = command.split("/").pop() || ""
+    const shellName = command.split(/[\\/]/).pop() || ""
     if (/^(ba|da|k|c|z|tc|fi)?sh$/.test(shellName)) {
       args.push("-l")
     }

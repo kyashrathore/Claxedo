@@ -39,6 +39,7 @@ mock.module("@/platform/api/api", () => ({
   fixDir: (input: string | undefined) => input,
   configureApiRuntime: () => undefined,
   resetApiRuntime: () => undefined,
+  apiBearerToken: async () => null,
   normalizeUrl: (u: string | undefined) => u?.trim().replace(/\/+$/, "") || undefined,
 }))
 
@@ -202,6 +203,52 @@ describe("terminal relay lifecycle", () => {
     expect(create?.body?.initialCommand).toBeUndefined()
 
     dispose()
+  })
+
+  test("sends no cwd when a Windows terminal starts at the workspace root", async () => {
+    const calls: Array<Record<string, unknown> | undefined> = []
+    const request: typeof fetch = async (_input, init) => {
+      calls.push(jsonBody(init))
+      return Response.json({ id: "pty_windows", title: "Terminal", cwd: "C:\\repo" })
+    }
+    const { session, dispose } = createSession({
+      request,
+      directory: "C:\\repo",
+      resolveWorkspaceRuntime: async () => ({ kind: "local" }),
+    })
+
+    expect(await session.new()).toBe("pty_windows")
+    expect(calls[0]?.cwd).toBeUndefined()
+
+    dispose()
+  })
+
+  test("sends a relative cwd for a Windows terminal below the workspace root", async () => {
+    const calls: Array<Record<string, unknown> | undefined> = []
+    const request: typeof fetch = async (_input, init) => {
+      calls.push(jsonBody(init))
+      return Response.json({ id: "pty_windows_child", title: "Terminal", cwd: "C:\\repo\\packages\\app" })
+    }
+    const sdkDirectory = "C:\\REPO\\packages\\app"
+    // The route scope owns the workspace root while the SDK may point at a
+    // child directory with Windows' case-insensitive drive/path spelling.
+    const sdk = createMockSDK()
+    sdk.directory = sdkDirectory
+    let childSession: ReturnType<typeof createTerminalSession>
+    let disposeChild: () => void
+    createRoot((d) => {
+      disposeChild = d
+      childSession = createTerminalSession(sdk, "C:\\repo", {
+        claxedoServerUrl: "http://server.test",
+        request,
+        resolveWorkspaceRuntime: async () => ({ kind: "local" }),
+      })
+    })
+
+    expect(await childSession!.new()).toBe("pty_windows_child")
+    expect(calls.at(-1)?.cwd).toBe("packages/app")
+
+    disposeChild!()
   })
 
   test("routes cloud PTY create, update, clone, and delete through Workspace Relay", async () => {

@@ -64,7 +64,9 @@ describe("loopbackListener", () => {
   test("takes an OS-assigned port, not a fixed one", () => {
     // A fixed port is one another process can hold first, and RFC 8252 §7.3
     // expects an ephemeral one.
-    expect(readFileSync(new URL("./electron-seams.ts", import.meta.url), "utf8")).toContain('server.listen(0, "127.0.0.1"')
+    expect(readFileSync(new URL("./electron-seams.ts", import.meta.url), "utf8")).toContain(
+      'server.listen(0, "127.0.0.1"',
+    )
   })
 })
 
@@ -73,8 +75,8 @@ describe("credentialFile", () => {
     const file = credentialFile(tempDir())
 
     expect(file.read()).toBeUndefined()
-    file.write("{\"a\":1}")
-    expect(file.read()).toBe("{\"a\":1}")
+    file.write('{"a":1}')
+    expect(file.read()).toBe('{"a":1}')
     file.clear()
     expect(file.read()).toBeUndefined()
   })
@@ -87,8 +89,18 @@ describe("credentialFile", () => {
   test("writes owner-only", () => {
     const dir = tempDir()
     credentialFile(dir).write("{}")
+    const stored = join(dir, "account-credential.json")
 
-    expect(statSync(join(dir, "account-credential.json")).mode & 0o777).toBe(0o600)
+    expect(readFileSync(new URL("./electron-seams.ts", import.meta.url), "utf8")).toContain(
+      "writeFileSync(path, contents, { mode: 0o600 })",
+    )
+    if (process.platform === "win32") {
+      // Windows applies the userData directory's inherited ACL; POSIX mode
+      // bits are synthetic there and cannot represent that access control.
+      expect(statSync(stored).isFile()).toBe(true)
+    } else {
+      expect(statSync(stored).mode & 0o777).toBe(0o600)
+    }
   })
 })
 
@@ -133,7 +145,13 @@ describe("tokenExchange", () => {
       return new Response(JSON.stringify({ access_token: "at", expires_in: 60 }), { status: 200 })
     }) as typeof fetch)
 
-    await exchange({ tokenUrl: "https://t.test", clientId: "c", code: "code", codeVerifier: "verifier", redirectUri: "http://127.0.0.1:1/cb" })
+    await exchange({
+      tokenUrl: "https://t.test",
+      clientId: "c",
+      code: "code",
+      codeVerifier: "verifier",
+      redirectUri: "http://127.0.0.1:1/cb",
+    })
 
     const params = new URLSearchParams(body)
     expect(params.get("grant_type")).toBe("authorization_code")
@@ -143,10 +161,20 @@ describe("tokenExchange", () => {
 
   test("returns an absolute expiry, not the relative one", async () => {
     // Storing `expires_in` would make every reader remember when it was issued.
-    const exchange = tokenExchange((async () =>
-      new Response(JSON.stringify({ access_token: "at", refresh_token: "rt", expires_in: 3_600 }), { status: 200 })) as typeof fetch)
+    const exchange = tokenExchange(
+      (async () =>
+        new Response(JSON.stringify({ access_token: "at", refresh_token: "rt", expires_in: 3_600 }), {
+          status: 200,
+        })) as typeof fetch,
+    )
 
-    const tokens = await exchange({ tokenUrl: "https://t.test", clientId: "c", code: "x", codeVerifier: "v", redirectUri: "r" })
+    const tokens = await exchange({
+      tokenUrl: "https://t.test",
+      clientId: "c",
+      code: "x",
+      codeVerifier: "v",
+      redirectUri: "r",
+    })
 
     expect(tokens.expiresAt).toBeGreaterThan(Date.now() / 1000 + 3_000)
     expect(tokens.refreshToken).toBe("rt")
@@ -155,7 +183,9 @@ describe("tokenExchange", () => {
   test("fails loudly on a response with no access token", async () => {
     // An authorization server answering 200 with an error body would otherwise
     // produce a signed-in state holding `undefined`.
-    const exchange = tokenExchange((async () => new Response(JSON.stringify({ error: "invalid_grant" }), { status: 200 })) as typeof fetch)
+    const exchange = tokenExchange(
+      (async () => new Response(JSON.stringify({ error: "invalid_grant" }), { status: 200 })) as typeof fetch,
+    )
 
     await expect(
       exchange({ tokenUrl: "https://t.test", clientId: "c", code: "x", codeVerifier: "v", redirectUri: "r" }),

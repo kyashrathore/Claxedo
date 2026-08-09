@@ -58,12 +58,15 @@ diff --git a/src/convert-to-google-generative-ai-messages.ts b/src/convert-to-go
 index 4bf83e3768d4ccc8ff96e7d683abb4ccf60387ea..f257d2af8f178b7ac36771296eaa6c60c92e04ab 100644
 --- a/src/convert-to-google-generative-ai-messages.ts
 +++ b/src/convert-to-google-generative-ai-messages.ts
-@@ -350,3 +350,8 @@ export function convertToGoogleGenerativeAIMessages(
+@@ -350,5 +350,10 @@ export function convertToGoogleGenerativeAIMessages(
              })
              .filter(part => part !== undefined),
          });
+-
 +        // Empty text and reasoning parts, including signature-bearing ones, are
 +        // filtered above. Do not emit a model entry that Gemini rejects.
 +        if (contents[contents.length - 1].parts.length === 0) {
 +          contents.pop();
 +        }
++
+         break;

@@ -137,6 +137,11 @@ function isBare(specifier: string) {
   return !specifier.startsWith(".") && !specifier.startsWith("/")
 }
 
+/** Stable module identity for reports and architecture contracts on every OS. */
+function relativeModulePath(root: string, file: string) {
+  return path.relative(root, file).split(path.sep).join("/")
+}
+
 /**
  * Walk every first-party module reachable from `entry`.
  *
@@ -176,7 +181,7 @@ export function sourceClosure(input: {
       continue
     }
     for (const name of opaqueDynamicImports(source)) {
-      opaque.add(`${path.relative(root, file)} -> import(${name})`)
+      opaque.add(`${relativeModulePath(root, file)} -> import(${name})`)
     }
     for (const specifier of read(source)) {
       if (isBare(specifier)) {
@@ -185,7 +190,7 @@ export function sourceClosure(input: {
       }
       const resolved = resolveRelative(file, specifier)
       if (!resolved) {
-        unresolved.add(`${path.relative(root, file)} -> ${specifier}`)
+        unresolved.add(`${relativeModulePath(root, file)} -> ${specifier}`)
         continue
       }
       queue.push(resolved)
@@ -194,7 +199,7 @@ export function sourceClosure(input: {
 
   return {
     modules: [...seen]
-      .map((file) => ({ file, relative: path.relative(root, file) }))
+      .map((file) => ({ file, relative: relativeModulePath(root, file) }))
       .sort((a, b) => a.relative.localeCompare(b.relative)),
     packages: [...packages].sort(),
     unresolved: [...unresolved].sort(),
@@ -238,10 +243,10 @@ export function shortestForbiddenChain(input: {
         const resolved = resolveRelative(file, specifier)
         if (!resolved || seen.has(resolved)) continue
         seen.add(resolved)
-        const module = { file: resolved, relative: path.relative(root, resolved) }
+        const module = { file: resolved, relative: relativeModulePath(root, resolved) }
         const nextChain = [...chain, resolved]
         if (input.isForbidden(module)) {
-          return nextChain.map((item) => ({ file: item, relative: path.relative(root, item) }))
+          return nextChain.map((item) => ({ file: item, relative: relativeModulePath(root, item) }))
         }
         next.push({ file: resolved, chain: nextChain })
       }

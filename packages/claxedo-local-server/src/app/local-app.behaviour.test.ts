@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs"
+import { execFileSync } from "node:child_process"
 import { tmpdir } from "node:os"
 import path from "node:path"
+import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
+import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
 
 /**
@@ -30,6 +33,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  ClaxedoDB.close()
   for (const [key, value] of Object.entries(saved)) {
     if (value === undefined) delete process.env[key]
     else process.env[key] = value
@@ -39,7 +43,7 @@ afterEach(() => {
 
 function services(overrides: Record<string, unknown> = {}) {
   return {
-    auth: { config: {} },
+    auth: localOnlyAuthAdapter(),
     credentials: {
       listCredentials: async () => [],
       getCredentialByProvider: async () => undefined,
@@ -55,6 +59,8 @@ function services(overrides: Record<string, unknown> = {}) {
     projectionStore: {
       put_session_meta: vi.fn(async () => {}),
       delete_session_meta: vi.fn(async () => {}),
+      list_session_metas: vi.fn(async () => []),
+      list_session_navigation_metas: vi.fn(async () => []),
     },
     relay: {},
     sandbox: {},
@@ -169,6 +175,53 @@ describe("local composition — shell invariants", () => {
 
     expect(response.status).toBe(404)
     expect(response.headers.get("x-content-type-options")).toBe("nosniff")
+  })
+})
+
+describe("local composition — workspace registration", () => {
+  test("resolves and registers a local directory through the control-plane route", async () => {
+    const directory = path.join(dataDir, "project")
+    mkdirSync(directory)
+    execFileSync("git", ["init", directory])
+    const canonicalDirectory = realpathSync(directory)
+    const response = await app().request(
+      `http://localhost/api/claxedo/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`,
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      directory: canonicalDirectory,
+      projectId: expect.any(String),
+      workspaceId: expect.any(String),
+      kind: "local",
+      access: "local",
+      backing: {
+        kind: "local-worktree",
+        directory: canonicalDirectory,
+      },
+    })
+  })
+})
+
+describe("local composition — session inventory", () => {
+  test("serves the local projection at the local inventory route", async () => {
+    const response = await app().request("http://localhost/api/claxedo/session")
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ sessions: [] })
+  })
+
+  test("serves the paginated local session-list contract used by the rail", async () => {
+    const response = await app().request(
+      "http://localhost/api/claxedo/session-list?scope=workspace&directory=C%3A%5Cworkspace&limit=50",
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 50 },
+      items: [],
+      totalKnown: 0,
+    })
   })
 })
 

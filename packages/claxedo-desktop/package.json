@@ -59,7 +59,6 @@
     "electron-updater": "6.8.9",
     "electron-window-state": "5.0.3",
     "jsonc-parser": "3.3.1",
-    "marked": "15.0.12",
     "node-pty": "1.1.0",
     "pidtree": "1.0.0",
     "pidusage": "4.0.1",

@@ -70,13 +70,21 @@ function decodeDirectory(value: string) {
   return legacyDirectoryFromRouteKey(value) ?? value
 }
 
-function workspaceRelativeCwd(workspaceDir: string, cwd: string | undefined) {
+export function workspaceRelativeCwd(workspaceDir: string, cwd: string | undefined) {
   if (!cwd) return undefined
-  if (!cwd.startsWith("/")) return cwd
-  const workspace = workspaceDir.replace(/\/+$/, "")
-  const target = cwd.replace(/\/+$/, "")
-  if (target === workspace) return undefined
-  if (target.startsWith(`${workspace}/`)) return target.slice(workspace.length + 1)
+  const windowsAbsolute = /^[A-Za-z]:[\\/]/.test(cwd) || /^\\\\/.test(cwd)
+  const posixAbsolute = cwd.startsWith("/")
+  if (!windowsAbsolute && !posixAbsolute) return cwd
+
+  // Runtime PTY routes accept only workspace-relative cwd values. Normalize
+  // separators in the browser so Windows drive paths compare correctly without
+  // weakening the runtime's absolute-path/traversal checks.
+  const workspace = workspaceDir.replace(/\\/g, "/").replace(/\/+$/, "")
+  const target = cwd.replace(/\\/g, "/").replace(/\/+$/, "")
+  const comparableWorkspace = windowsAbsolute ? workspace.toLowerCase() : workspace
+  const comparableTarget = windowsAbsolute ? target.toLowerCase() : target
+  if (comparableTarget === comparableWorkspace) return undefined
+  if (comparableTarget.startsWith(`${comparableWorkspace}/`)) return target.slice(workspace.length + 1)
   return undefined
 }
 

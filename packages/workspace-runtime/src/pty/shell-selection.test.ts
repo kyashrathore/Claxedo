@@ -8,6 +8,7 @@
  *   if (/^(ba|da|k|c|z|tc|fi)?sh$/.test(shellName)) { args.push("-l") }
  */
 import { describe, expect, test } from "bun:test"
+import { selectPtyCommand } from "./index"
 
 // Extract the login-shell detection logic from Pty.create() for isolated testing
 function shouldAddLoginFlag(command: string): boolean {
@@ -95,6 +96,22 @@ describe("workspace-runtime shell fallback chain", () => {
 
   test("fallback /bin/sh is a valid POSIX shell", () => {
     expect(shouldAddLoginFlag("/bin/sh")).toBe(true)
+  })
+
+  test("uses COMSPEC as the Windows shell", () => {
+    expect(selectPtyCommand({
+      env: { COMSPEC: "C:\\Windows\\System32\\cmd.exe" },
+      platform: "win32",
+      userShell: () => undefined,
+    })).toBe("C:\\Windows\\System32\\cmd.exe")
+  })
+
+  test("falls back to cmd.exe on Windows when COMSPEC is absent", () => {
+    expect(selectPtyCommand({ env: {}, platform: "win32", userShell: () => undefined })).toBe("cmd.exe")
+  })
+
+  test("keeps the POSIX user-shell fallback", () => {
+    expect(selectPtyCommand({ env: {}, platform: "linux", userShell: () => "/bin/fish" })).toBe("/bin/fish")
   })
 })
 

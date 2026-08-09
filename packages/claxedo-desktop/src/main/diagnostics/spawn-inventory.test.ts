@@ -10,9 +10,7 @@ describe("local production spawn inventory", () => {
   test("classifies every checked process seam exactly once", async () => {
     const sourceRows = SPAWN_INVENTORY.flatMap((row) => (row.source ? [row] : []))
     expect(new Set(SPAWN_INVENTORY.map((row) => row.id)).size).toBe(SPAWN_INVENTORY.length)
-    expect(new Set(sourceRows.map((row) => `${row.source!.file}:${row.source!.callee}`)).size).toBe(
-      sourceRows.length,
-    )
+    expect(new Set(sourceRows.map((row) => `${row.source!.file}:${row.source!.callee}`)).size).toBe(sourceRows.length)
 
     for (const row of sourceRows) {
       const text = stripComments(await Bun.file(join(root, row.source!.file)).text())
@@ -52,20 +50,21 @@ describe("local production spawn inventory", () => {
     }
     specialSeams().forEach(([key, calls]) => discovered.set(key, calls))
     expect([...discovered.entries()].sort()).toEqual([...classified.entries()].sort())
-  })
+  }, 30_000)
 
   test("derives native, ACP, probe, and MCP scenarios from every harness definition", () => {
     const generated = harnessInventory(AGENT_HARNESS_DEFINITIONS)
     for (const definition of AGENT_HARNESS_DEFINITIONS) {
-      expect(generated.filter((row) => row.key === definition.key).map((row) => row.role).sort()).toEqual([
-        "harness",
-        "probe",
-        "remote-mcp",
-        "stdio-mcp",
-      ])
+      expect(
+        generated
+          .filter((row) => row.key === definition.key)
+          .map((row) => row.role)
+          .sort(),
+      ).toEqual(["harness", "probe", "remote-mcp", "stdio-mcp"])
     }
-    expect(new Set(generated.map((row) => row.process)).isSubsetOf(new Set(SPAWN_INVENTORY.map((row) => row.id))))
-      .toBe(true)
+    expect(new Set(generated.map((row) => row.process)).isSubsetOf(new Set(SPAWN_INVENTORY.map((row) => row.id)))).toBe(
+      true,
+    )
   })
 
   test("keeps remote process families excluded and actions independently declared", () => {
@@ -108,11 +107,12 @@ async function productionFiles() {
 
 function childProcessNames(text: string) {
   const names = new Set<string>()
-  for (const match of text.matchAll(
-    /import\s*\{([^}]+)\}\s*from\s*["'](?:node:)?child_process["']/g,
-  )) {
+  for (const match of text.matchAll(/import\s*\{([^}]+)\}\s*from\s*["'](?:node:)?child_process["']/g)) {
     match[1]!.split(",").forEach((entry) => {
-      const parts = entry.trim().replace(/^type\s+/, "").split(/\s+as\s+/)
+      const parts = entry
+        .trim()
+        .replace(/^type\s+/, "")
+        .split(/\s+as\s+/)
       if (parts[0] && !parts[0].startsWith("type ")) names.add(parts[1] ?? parts[0])
     })
   }

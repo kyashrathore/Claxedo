@@ -49,6 +49,7 @@ import {
   type AgentProcessObserver,
   type AgentProcessObserverHandle,
 } from "../../process-observer"
+import { requireCodexExecutable } from "./executable"
 
 const log = Log.create({ service: "codex-app-server-adapter" })
 const CODEX_SOURCE = "codex.app-server"
@@ -615,7 +616,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   private async startProcess(directory: string, lifecycleRevision: number, signal: AbortSignal) {
     let started: CodexAppServerProcess | undefined
     started = await CodexAppServerProcess.start({
-      binary: this.options.binary ?? "codex",
+      binary: this.options.binary ?? requireCodexExecutable(),
       directory,
       env: codexSpawnEnv({
         ...process.env,

@@ -119,6 +119,7 @@ export function SessionRoutes(
      * happens to fill rather than the authority.
      */
     createSession?: (c: unknown, directory: string, title?: string, id?: string) => Promise<{ id: string }>
+    afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
     listSubagents?: (input: {
       directory: string
       parentSessionId: string
@@ -231,6 +232,12 @@ export function SessionRoutes(
       : undefined,
     createSession: options?.createSession
       ? (c, directory, title, id) => options.createSession!(c, requiredDirectory(directory), title, id)
+      : undefined,
+    afterCreateSession: options?.afterCreateSession
+      ? (_c, directory, session) => options.afterCreateSession!({
+          directory: requiredDirectory(directory),
+          session,
+        })
       : undefined,
     listSubagents: options?.listSubagents
       ? (_c, directory, parentSessionId) => options.listSubagents!({

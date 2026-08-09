@@ -114,6 +114,15 @@ describe("PublicApi OpenAPI v2 errors", () => {
     expect(spec.paths["/api/event"]?.get?.responses?.["200"]?.content?.["text/event-stream"]?.schema).toEqual({
       $ref: "#/components/schemas/V2Event",
     })
+
+    expect(spec.components.schemas.SessionDurableEventStream).toMatchObject({
+      type: "string",
+      contentMediaType: "application/json",
+      contentSchema: { $ref: "#/components/schemas/SessionDurableEvent" },
+    })
+    expect(
+      spec.paths["/api/session/{sessionID}/event"]?.get?.responses?.["200"]?.content?.["text/event-stream"]?.schema,
+    ).toMatchObject({ properties: { data: { $ref: "#/components/schemas/SessionDurableEventStream" } } })
   })
 
   test("preserves /api auth responses", () => {

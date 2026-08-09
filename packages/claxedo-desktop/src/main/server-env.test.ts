@@ -83,30 +83,41 @@ describe("loading the server's env for development", () => {
 
 describe("desktop server data directory", () => {
   test("isolates development and beta from the production profile", () => {
-    expect(resolveDesktopServerDataDir({ channel: "dev", home: "/Users/test" })).toBe("/Users/test/.claxedo-dev")
-    expect(resolveDesktopServerDataDir({ channel: "beta", home: "/Users/test" })).toBe("/Users/test/.claxedo-beta")
-    expect(resolveDesktopServerDataDir({ channel: "prod", home: "/Users/test" })).toBe("/Users/test/.claxedo")
+    expect(resolveDesktopServerDataDir({ channel: "dev", home: "/Users/test" })).toBe(
+      join("/Users/test", ".claxedo-dev"),
+    )
+    expect(resolveDesktopServerDataDir({ channel: "beta", home: "/Users/test" })).toBe(
+      join("/Users/test", ".claxedo-beta"),
+    )
+    expect(resolveDesktopServerDataDir({ channel: "prod", home: "/Users/test" })).toBe(join("/Users/test", ".claxedo"))
   })
 
   test("preserves an explicitly configured data directory", () => {
-    expect(resolveDesktopServerDataDir({
-      channel: "dev",
-      home: "/Users/test",
-      configured: "/tmp/claxedo-custom",
-    })).toBe("/tmp/claxedo-custom")
+    expect(
+      resolveDesktopServerDataDir({
+        channel: "dev",
+        home: "/Users/test",
+        configured: "/tmp/claxedo-custom",
+      }),
+    ).toBe("/tmp/claxedo-custom")
   })
 
   test("treats a blank configured directory as unset", () => {
-    expect(resolveDesktopServerDataDir({ channel: "dev", home: "/Users/test", configured: "" }))
-      .toBe("/Users/test/.claxedo-dev")
-    expect(resolveDesktopServerDataDir({ channel: "dev", home: "/Users/test", configured: "   " }))
-      .toBe("/Users/test/.claxedo-dev")
+    expect(resolveDesktopServerDataDir({ channel: "dev", home: "/Users/test", configured: "" })).toBe(
+      join("/Users/test", ".claxedo-dev"),
+    )
+    expect(resolveDesktopServerDataDir({ channel: "dev", home: "/Users/test", configured: "   " })).toBe(
+      join("/Users/test", ".claxedo-dev"),
+    )
   })
 })
 
 describe("parsing", () => {
   test("keeps values verbatim, including internal spaces and '='", () => {
-    expect(parseEnvFile("A=a b c\nB=k=v=w\n")).toEqual([["A", "a b c"], ["B", "k=v=w"]])
+    expect(parseEnvFile("A=a b c\nB=k=v=w\n")).toEqual([
+      ["A", "a b c"],
+      ["B", "k=v=w"],
+    ])
   })
 
   test("strips one matched layer of quotes, and only a matched one", () => {
@@ -122,7 +133,10 @@ describe("parsing", () => {
   })
 
   test("tolerates `export KEY=` and space around the separator", () => {
-    expect(parseEnvFile("export A=1\nB = 2\n")).toEqual([["A", "1"], ["B", "2"]])
+    expect(parseEnvFile("export A=1\nB = 2\n")).toEqual([
+      ["A", "1"],
+      ["B", "2"],
+    ])
   })
 
   test("rejects keys that are not shell-safe rather than exporting them", () => {

@@ -1,10 +1,7 @@
 import { describe, expect, test } from "bun:test"
 
 import type { DiagnosticsTransportMessage } from "../src/shared/diagnostics-transport"
-import {
-  createDiagnosticsChildTransport,
-  windowsIdentityProbeCommand,
-} from "./diagnostics-child-transport"
+import { createDiagnosticsChildTransport, windowsIdentityProbeCommand } from "./diagnostics-child-transport"
 
 const binding = { pid: 50, launchId: "server-launch", generation: "server-generation" }
 
@@ -13,7 +10,7 @@ describe("diagnostics child owner transport", () => {
     const command = windowsIdentityProbeCommand(75, String.raw`C:\Windows`)
     const script = command.args.at(-1)!
 
-    expect(command.executable).toEndWith("System32/WindowsPowerShell/v1.0/powershell.exe")
+    expect(command.executable.replaceAll("\\", "/")).toEndWith("System32/WindowsPowerShell/v1.0/powershell.exe")
     expect(command.args.slice(0, -1)).toEqual(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command"])
     expect(script).toContain("Win32_Process")
     expect(script).toContain("ProcessId,CreationDate")
@@ -44,7 +41,11 @@ describe("diagnostics child owner transport", () => {
         pid: 75,
         workspaceId: "workspace-1",
       },
-      { stopGracefully: async () => { stops++ } },
+      {
+        stopGracefully: async () => {
+          stops++
+        },
+      },
     )
     const registration = sent[0]
     if (registration?.type !== "owner-registered") throw new Error("Expected owner registration")
@@ -124,9 +125,11 @@ describe("diagnostics child owner transport", () => {
         role: "managed-process",
         label: "Managed process",
       },
-      { stopGracefully: async () => {
-        stopped = true
-      } },
+      {
+        stopGracefully: async () => {
+          stopped = true
+        },
+      },
     )
     owner.update({ pid: 77, lifecycle: "ready" })
     const registration = sent.find((message) => message.type === "owner-registered")

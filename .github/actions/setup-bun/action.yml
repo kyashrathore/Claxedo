@@ -62,23 +62,10 @@ runs:
       shell: bash
 
     - name: Install dependencies
-      run: |
-        # Workaround for patched peer variants
-        # e.g. ./patches/ for standard-openapi
-        # https://github.com/oven-sh/bun/issues/28147
-        if [ "$RUNNER_OS" = "Windows" ]; then
-          # KNOWN RED: bun 1.3.14 cannot apply the effect@4.0.0-beta.83 patch
-          # on Windows — its cache rename dies ENOTEMPTY (NtSetInformationFile)
-          # deterministically, even in a brand-new BUN_INSTALL_CACHE_DIR and
-          # across retries (verified 3x fresh dirs, same error every time). It
-          # is oven-sh/bun#28147 (peer-variant patch application), fixed
-          # upstream after our pin. The unit(windows) job is continue-on-error
-          # for exactly this; drop this branch note when bun >1.3.14 lands.
-          export BUN_INSTALL_CACHE_DIR="$RUNNER_TEMP/bun-cache-fresh"
-          bun install --linker hoisted ${{ inputs.install-flags }}
-        else
-          bun install ${{ inputs.install-flags }}
-        fi
+      # Dependency patches run from postinstall after Bun has linked the final
+      # tree, so Windows can use the repository's normal linker and package-local
+      # executable shims just like every other platform.
+      run: bun install ${{ inputs.install-flags }}
       shell: bash
 
     - name: Save Bun dependencies

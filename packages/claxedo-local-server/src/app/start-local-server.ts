@@ -124,6 +124,9 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
         void projectLocalSessionMetaFromEvent(services.projectionStore, event)
       }
     },
+    onSessionMetaCreated: async (workspace, session) => {
+      await services.projectionStore.sync_session_meta(workspace, session)
+    },
     onSessionMetaSnapshot: async (workspace, sessions) => {
       await Promise.all(sessions.map((session) => services.projectionStore.sync_session_meta(workspace, session)))
     },

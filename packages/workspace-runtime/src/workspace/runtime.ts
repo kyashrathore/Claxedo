@@ -166,6 +166,8 @@ export type WorkspaceHostOptions = {
    * env flags into `true`/`false`.
    */
   opencodeCompat?: boolean
+  /** Host-owned projection write that completes before the created lifecycle event. */
+  afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
   /** Host-owned credential/model resolver for concrete Pi model turns. */
   piModelBackend?: PiModelBackendResolver
   harness?: RuntimeRunner
@@ -2135,6 +2137,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           })
           return session
         },
+        afterCreateSession: hostOptions.afterCreateSession,
         listSessions: (c, directory) => listSessions(c as { req: { query: (k: string) => string | undefined } }, directory),
         listSubagents: ({ parentSessionId }) => store().listSubagents?.(parentSessionId) ?? [],
         listPermissions: (c, directory) => listPermissions(c as { req: { query: (k: string) => string | undefined } }, directory),
