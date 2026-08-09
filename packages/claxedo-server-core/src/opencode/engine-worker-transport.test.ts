@@ -47,7 +47,7 @@ describe("embedded engine worker transport", () => {
       const request = input instanceof Request ? input : new Request(input)
       authorization = request.headers.get("authorization")
       return Response.json({ ok: true })
-    }) as typeof fetch
+    }) as unknown as typeof fetch
 
     configureOpenCodeEmbedPath("/tmp/opencode-node-embed.js")
     configureOpenCodeWorkerPath("/tmp/claxedo-engine-worker.js")
@@ -68,7 +68,7 @@ describe("embedded engine worker transport", () => {
     const fetchMock = vi.fn(async () => {
       throw failure
     })
-    globalThis.fetch = fetchMock as typeof fetch
+    globalThis.fetch = fetchMock as unknown as typeof fetch
 
     configureOpenCodeEmbedPath("/tmp/opencode-node-embed.js")
     configureOpenCodeWorkerPath("/tmp/claxedo-engine-worker.js")
