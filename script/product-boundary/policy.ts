@@ -104,6 +104,8 @@ export type Policy = {
       packageDir: string
       /** Defaults to the package's `build` script. */
       script?: string
+      /** Build-time prerequisite that must remain absent from the emitted product graph. */
+      inputOnly?: boolean
       /** Deterministic public build inputs required outside a git checkout. */
       environment?: Record<string, string>
     }>

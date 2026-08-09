@@ -32,6 +32,17 @@ export type SourceMapMetadata = {
   sources: string[]
 }
 
+export type EsbuildMetafile = {
+  inputs: Record<string, {
+    imports?: Array<{ path: string; kind: string; external?: boolean }>
+  }>
+  outputs: Record<string, {
+    entryPoint?: string
+    imports?: Array<{ path: string; kind: string; external?: boolean }>
+    inputs?: Record<string, unknown>
+  }>
+}
+
 function slash(value: string) {
   return value.replaceAll("\\", "/")
 }
@@ -110,6 +121,38 @@ export function normalizeSourceMapBuildManifest(input: {
     )),
     chunks: sorted(input.chunks.map(slash)),
     edges: { static: [], dynamic: [] },
+  }
+}
+
+/** Normalize esbuild/Wrangler metafiles without inspecting emitted code. */
+export function normalizeEsbuildBuildManifest(input: {
+  entry: string
+  metafile: EsbuildMetafile
+  workingDirectory: string
+  workspaceRoot: string
+}): BuildManifest {
+  const moduleId = (id: string) => normalizeModuleId(
+    path.isAbsolute(id) ? id : path.resolve(input.workingDirectory, id),
+    input.workspaceRoot,
+  )
+  const importTarget = (value: { path: string; external?: boolean }) =>
+    value.external ? normalizeModuleId(value.path, input.workspaceRoot) : moduleId(value.path)
+  const staticEdges: string[] = []
+  const dynamicEdges: string[] = []
+  for (const [from, metadata] of Object.entries(input.metafile.inputs)) {
+    for (const imported of metadata.imports ?? []) {
+      const target = imported.kind === "dynamic-import" ? dynamicEdges : staticEdges
+      target.push(edge(moduleId(from), importTarget(imported)))
+    }
+  }
+
+  return {
+    entry: normalizeModuleId(input.entry, input.workspaceRoot),
+    modules: sorted(Object.keys(input.metafile.inputs).map(moduleId)),
+    chunks: sorted(Object.entries(input.metafile.outputs)
+      .filter(([, output]) => output.entryPoint !== undefined || Object.keys(output.inputs ?? {}).length > 0)
+      .map(([output]) => slash(path.relative(input.workspaceRoot, path.resolve(input.workingDirectory, output))))),
+    edges: { static: sorted(staticEdges), dynamic: sorted(dynamicEdges) },
   }
 }
 

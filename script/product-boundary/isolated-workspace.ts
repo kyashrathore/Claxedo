@@ -136,7 +136,8 @@ export function materializeIsolatedWorkspace(policy: Policy, destination: string
   const roleFindings = productManifestRoleFindings(policy, root)
   if (roleFindings.length > 0) throw new Error(`${policy.id} ${roleFindings.join(", ")}`)
   const emittedAllowed = new Set(workspaceClosureFromBuildManifest(policy, root))
-  for (const buildPackage of policy.isolation.buildPackages ?? []) {
+  const runtimeBuildPackages = (policy.isolation.buildPackages ?? []).filter((item) => !item.inputOnly)
+  for (const buildPackage of runtimeBuildPackages) {
     if (!emittedAllowed.has(buildPackage.packageDir)) {
       throw new Error(
         `${policy.id} isolation build package is outside its emitted workspace closure: ${buildPackage.packageDir}`,
@@ -144,12 +145,21 @@ export function materializeIsolatedWorkspace(policy: Policy, destination: string
     }
   }
   const buildInputs = [
-    ...(policy.isolation.buildPackages ?? []).map((item) => item.packageDir),
+    ...runtimeBuildPackages.map((item) => item.packageDir),
     ...(policy.isolation.additionalPackageDirs ?? []),
   ]
+  const buildInputAllowed = new Set(workspaceBuildInputClosure(buildInputs, root))
+  for (const buildPackage of (policy.isolation.buildPackages ?? []).filter((item) => item.inputOnly)) {
+    if (!buildInputAllowed.has(buildPackage.packageDir)) {
+      throw new Error(
+        `${policy.id} isolation input-only build package is outside its declared build-input closure: ` +
+          buildPackage.packageDir,
+      )
+    }
+  }
   const allowed = new Set([
     ...emittedAllowed,
-    ...workspaceBuildInputClosure(buildInputs, root),
+    ...buildInputAllowed,
   ])
 
   fs.mkdirSync(destination, { recursive: true })

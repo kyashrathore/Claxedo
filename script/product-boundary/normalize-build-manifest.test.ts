@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest"
 
 import {
   normalizeModuleId,
+  normalizeEsbuildBuildManifest,
   normalizeRollupBuildManifest,
   normalizeSourceMapBuildManifest,
   serializeBuildManifest,
@@ -87,6 +88,47 @@ describe("normalize build manifest", () => {
       modules: ["packages/connector/src/index.ts", "packages/connector/src/z.ts"],
       chunks: ["dist/index.mjs"],
       edges: { static: [], dynamic: [] },
+    })
+  })
+
+  test("normalizes esbuild and Wrangler inputs, outputs, and import kinds", () => {
+    expect(normalizeEsbuildBuildManifest({
+      entry: "/repo/packages/server/src/worker.ts",
+      workingDirectory: "/repo/packages/server",
+      workspaceRoot: ROOT,
+      metafile: {
+        inputs: {
+          "src/worker.ts": {
+            imports: [
+              { path: "src/static.ts", kind: "import-statement" },
+              { path: "src/lazy.ts", kind: "dynamic-import" },
+              { path: "node:crypto", kind: "import-statement", external: true },
+            ],
+          },
+          "src/static.ts": {},
+          "src/lazy.ts": {},
+          "../../node_modules/.bun/hono@4/node_modules/hono/dist/index.js": {},
+        },
+        outputs: {
+          "dist-worker/worker.js": { entryPoint: "src/worker.ts" },
+        },
+      },
+    })).toEqual({
+      entry: "packages/server/src/worker.ts",
+      modules: [
+        "hono/dist/index.js",
+        "packages/server/src/lazy.ts",
+        "packages/server/src/static.ts",
+        "packages/server/src/worker.ts",
+      ],
+      chunks: ["packages/server/dist-worker/worker.js"],
+      edges: {
+        static: [
+          "packages/server/src/worker.ts -> node:crypto",
+          "packages/server/src/worker.ts -> packages/server/src/static.ts",
+        ],
+        dynamic: ["packages/server/src/worker.ts -> packages/server/src/lazy.ts"],
+      },
     })
   })
 })

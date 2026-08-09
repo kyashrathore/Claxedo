@@ -91,6 +91,16 @@ export const AUTHORITATIVE_CHECKS: Record<string, AuthoritativeCheck[]> = {
   ],
   "@claxedo/server": [
     {
+      label: "hosted workerd production build",
+      cwd: "packages/claxedo-server",
+      command: ["bun", "run", "build:workerd-boundary"],
+    },
+    {
+      label: "hosted workerd built entry smoke",
+      cwd: "packages/claxedo-server",
+      command: ["bun", "run", "smoke:workerd-boundary"],
+    },
+    {
       label: "cloud and self-hosted deployment closures",
       cwd: "packages/claxedo-server",
       command: [

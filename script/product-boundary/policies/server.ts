@@ -76,10 +76,49 @@ export const serverWorkerd: Policy = {
     "better-sqlite3",
     "@claxedo/workspace-runtime",
   ],
-  forbiddenModules: [`${SRC}/deployments/self-hosted-node`],
+  // The package owns all three deployments, so its package manifest correctly
+  // declares Node/self-host dependencies. The Workerd ENTRY still cannot emit
+  // them; the source and normalized Wrangler graphs own that narrower rule.
+  manifestForbiddenPackages: ["electron", "@claxedo/app", "@claxedo/desktop"],
+  forbiddenModules: [
+    `${SRC}/deployments/self-hosted-node`,
+    "packages/claxedo-local-server/src",
+    "packages/workspace-runtime/src",
+  ],
 
   control: cloudControl(`${SRC}/deployments/hosted-workerd/worker.ts`),
   ceilings: { modules: 108, packages: 13 },
+
+  emitted: {
+    file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",
+    minModules: 1_500,
+    minChunks: 1,
+    requiredModules: [
+      `${SRC}/deployments/hosted-workerd/worker.ts`,
+      `${SRC}/deployments/hosted-shared/hosted-app.ts`,
+      `${SRC}/hosts/workgraph/hosted/runtime.ts`,
+    ],
+  },
+
+  isolation: {
+    buildPackages: [
+      { packageDir: "packages/agent-event-runtime", inputOnly: true },
+      { packageDir: "packages/agent-extensions", inputOnly: true },
+      { packageDir: "packages/agent-sdk-runtime" },
+      { packageDir: "packages/workspace-relay-protocol" },
+      { packageDir: "packages/sandbox-contract", inputOnly: true },
+      { packageDir: "packages/sandbox-manager" },
+      { packageDir: "packages/workspace-relay" },
+      { packageDir: "packages/claxedo-connections" },
+      { packageDir: "packages/wakes" },
+      { packageDir: "packages/workspace-runtime", inputOnly: true },
+      { packageDir: "packages/workgraph" },
+    ],
+    commands: [
+      ["bun", "run", "build:workerd-boundary"],
+      ["bun", "run", "smoke:workerd-boundary"],
+    ],
+  },
 }
 
 export const serverSelfHosted: Policy = {

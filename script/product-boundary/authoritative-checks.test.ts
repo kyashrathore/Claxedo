@@ -37,6 +37,12 @@ describe("product boundary authoritative checks", () => {
       "local-server built entry smoke",
       "local-server published and self-hosted closure",
     ])
+    expect(AUTHORITATIVE_CHECKS["@claxedo/server"]?.map((check) => check.label)).toEqual([
+      "hosted workerd production build",
+      "hosted workerd built entry smoke",
+      "cloud and self-hosted deployment closures",
+      "self-hosted local-server public subpath",
+    ])
     expect(commands.filter((command) => command.includes("verify:closure"))).toEqual([])
   })
 

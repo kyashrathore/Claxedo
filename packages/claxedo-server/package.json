@@ -54,6 +54,8 @@
     "release:runtime": "bun run scripts/release/publish-runtime-packages.ts",
     "release:packages": "bun run scripts/release/publish-claxedo-packages.ts",
     "deploy:hosted": "bun run scripts/deploy/deploy-hosted.ts",
+    "build:workerd-boundary": "bun run scripts/boundary/build-workerd.ts",
+    "smoke:workerd-boundary": "bun run scripts/boundary/smoke-workerd.ts",
     "check:worker-safe": "bun run scripts/deploy/check-worker-safe.ts",
     "smoke:central": "bun run scripts/smoke/smoke-central.ts",
     "smoke:documents-r2": "wrangler dev --remote --port 8799 --config scripts/smoke/wrangler.documents-r2.toml",
