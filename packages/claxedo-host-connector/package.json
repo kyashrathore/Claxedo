@@ -11,15 +11,27 @@
     "directory": "packages/claxedo-host-connector"
   },
   "exports": {
-    "./*": {
-      "types": "./src/*.ts",
-      "bun": "./src/*.ts",
-      "development": "./src/*.ts",
-      "import": "./src/*.ts",
-      "default": "./src/*.ts"
+    "./connector": {
+      "types": "./src/connector.ts",
+      "bun": "./src/connector.ts",
+      "development": "./src/connector.ts",
+      "import": "./dist/connector.mjs",
+      "default": "./dist/connector.mjs"
+    },
+    "./host-identity": {
+      "types": "./src/host-identity.ts",
+      "bun": "./src/host-identity.ts",
+      "development": "./src/host-identity.ts",
+      "import": "./dist/host-identity.mjs",
+      "default": "./dist/host-identity.mjs"
     }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
+    "build": "bun ./scripts/build.ts",
+    "smoke:build": "bun ./scripts/smoke-build.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit.xml",
     "verify:closure": "bun ../../script/product-boundary/verify.ts"

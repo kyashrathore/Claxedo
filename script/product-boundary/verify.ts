@@ -29,6 +29,7 @@ import { evaluate, isFailure, type Result } from "./policy.ts"
 import { policyById, PRODUCTS } from "./policies/index.ts"
 import { runAuthoritativeChecks } from "./authoritative-checks.ts"
 import { emittedManifestFindings } from "./emitted-manifest.ts"
+import { verifyIsolatedWorkspace } from "./isolated-workspace.ts"
 
 function productFromCwd(): string {
   const manifest = path.join(process.cwd(), "package.json")
@@ -121,6 +122,9 @@ function main() {
       ok = false
       console.error(`✗ ${policy.id} emitted manifest`)
       for (const finding of findings) console.error(`  ${finding}`)
+    }
+    for (const policy of policies) {
+      if (!verifyIsolatedWorkspace(policy)) ok = false
     }
   }
 

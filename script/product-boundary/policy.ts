@@ -87,6 +87,12 @@ export type Policy = {
     requiredModules: string[]
     forbiddenChunkMarkers?: string[]
   }
+
+  /** Fresh-install build commands run with only these workspace sources. */
+  isolation?: {
+    packageDirs: string[]
+    commands: string[][]
+  }
 }
 
 export type Finding = { kind: string; detail: string }

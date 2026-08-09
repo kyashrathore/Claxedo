@@ -5,6 +5,7 @@ import { describe, expect, test } from "vitest"
 import {
   normalizeModuleId,
   normalizeRollupBuildManifest,
+  normalizeSourceMapBuildManifest,
   serializeBuildManifest,
   type RollupBundleMetadata,
 } from "./normalize-build-manifest"
@@ -72,5 +73,20 @@ describe("normalize build manifest", () => {
     expect(serializeBuildManifest(manifest)).toBe(
       '{\n  "entry": "packages/app/src/index.ts",\n  "modules": [],\n  "chunks": [],\n  "edges": {\n    "static": [],\n    "dynamic": []\n  }\n}\n',
     )
+  })
+
+  test("normalizes a single-file bundle from its external source map", () => {
+    expect(normalizeSourceMapBuildManifest({
+      entry: "/repo/packages/connector/src/index.ts",
+      sourceMap: { sources: ["../src/z.ts", "../src/index.ts", "../src/z.ts"] },
+      sourceMapDirectory: "/repo/packages/connector/dist",
+      chunks: ["dist/index.mjs"],
+      workspaceRoot: ROOT,
+    })).toEqual({
+      entry: "packages/connector/src/index.ts",
+      modules: ["packages/connector/src/index.ts", "packages/connector/src/z.ts"],
+      chunks: ["dist/index.mjs"],
+      edges: { static: [], dynamic: [] },
+    })
   })
 })

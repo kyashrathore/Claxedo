@@ -58,6 +58,16 @@ export const AUTHORITATIVE_CHECKS: Record<string, AuthoritativeCheck[]> = {
   ],
   "@claxedo/host-connector": [
     {
+      label: "host-connector production build",
+      cwd: "packages/claxedo-host-connector",
+      command: ["bun", "run", "build"],
+    },
+    {
+      label: "host-connector built entry smoke",
+      cwd: "packages/claxedo-host-connector",
+      command: ["bun", "run", "smoke:build"],
+    },
+    {
       label: "host-connector source closure",
       cwd: "packages/claxedo-host-connector",
       command: [

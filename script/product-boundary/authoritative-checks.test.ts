@@ -27,6 +27,11 @@ describe("product boundary authoritative checks", () => {
     expect(commands.some((command) => command.includes("build:local"))).toBe(true)
     expect(commands.some((command) => command.includes("build:marker-control"))).toBe(true)
     expect(commands.some((command) => command.includes("check:local-bundle"))).toBe(true)
+    expect(AUTHORITATIVE_CHECKS["@claxedo/host-connector"]?.map((check) => check.label)).toEqual([
+      "host-connector production build",
+      "host-connector built entry smoke",
+      "host-connector source closure",
+    ])
     expect(commands.filter((command) => command.includes("verify:closure"))).toEqual([])
   })
 

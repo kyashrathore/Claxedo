@@ -27,6 +27,11 @@ export type BuildManifest = {
   }
 }
 
+export type SourceMapMetadata = {
+  sourceRoot?: string
+  sources: string[]
+}
+
 function slash(value: string) {
   return value.replaceAll("\\", "/")
 }
@@ -86,6 +91,25 @@ export function normalizeRollupBuildManifest(input: {
       static: sorted(chunks.flatMap((chunk) => chunk.imports.map((target) => edge(chunk.fileName, target)))),
       dynamic: sorted(chunks.flatMap((chunk) => chunk.dynamicImports.map((target) => edge(chunk.fileName, target)))),
     },
+  }
+}
+
+/** Normalize a single-file bundler's external source-map metadata. */
+export function normalizeSourceMapBuildManifest(input: {
+  entry: string
+  sourceMap: SourceMapMetadata
+  sourceMapDirectory: string
+  chunks: string[]
+  workspaceRoot: string
+}): BuildManifest {
+  const sourceRoot = input.sourceMap.sourceRoot ?? ""
+  return {
+    entry: normalizeModuleId(input.entry, input.workspaceRoot),
+    modules: sorted(input.sourceMap.sources.map((source) =>
+      normalizeModuleId(path.resolve(input.sourceMapDirectory, sourceRoot, source), input.workspaceRoot),
+    )),
+    chunks: sorted(input.chunks.map(slash)),
+    edges: { static: [], dynamic: [] },
   }
 }
 

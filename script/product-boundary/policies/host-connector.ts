@@ -60,4 +60,16 @@ export const hostConnector: Policy = {
   },
 
   ceilings: { modules: 2, packages: 0 },
+
+  emitted: {
+    file: "packages/claxedo-host-connector/.artifacts/u8-package-split/manifests/host-connector.json",
+    minModules: 2,
+    minChunks: 2,
+    requiredModules: [`${SRC}/connector.ts`, `${SRC}/host-identity.ts`],
+  },
+
+  isolation: {
+    packageDirs: ["packages/claxedo-host-connector"],
+    commands: [["bun", "run", "build"], ["bun", "run", "smoke:build"]],
+  },
 }
