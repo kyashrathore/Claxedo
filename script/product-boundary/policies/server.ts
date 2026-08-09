@@ -44,6 +44,7 @@ export const serverCloudNode: Policy = {
     "electron",
     "@claxedo/app",
   ],
+  manifestForbiddenPackages: ["electron", "@claxedo/app", "@claxedo/desktop"],
   // `hosted-node/index.ts` had no import-graph gate of ANY kind before
   // `deployment-closures.test.ts`, and it is the entry most able to reach the
   // single binary by accident: both run on Node, so nothing about a
@@ -51,12 +52,48 @@ export const serverCloudNode: Policy = {
   // a Worker bundle. The cloud plane pulling in embedded auth, the SQLite
   // authority and local execution would simply work in CI and be wrong in
   // production.
-  forbiddenModules: [`${SRC}/deployments/self-hosted-node`],
+  forbiddenModules: [
+    `${SRC}/deployments/self-hosted-node`,
+    "packages/claxedo-local-server/src",
+  ],
 
   control: cloudControl(`${SRC}/deployments/hosted-node/index.ts`),
   // +1 package: the dependency-neutral sandbox identity/config contract moved
   // out of sandbox-manager so local/server-core no longer reach lifecycle code.
   ceilings: { modules: 132, packages: 26 },
+
+  emitted: {
+    file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-cloud-node.json",
+    minModules: 500,
+    minChunks: 1,
+    requiredModules: [
+      `${SRC}/deployments/hosted-node/index.ts`,
+      `${SRC}/deployments/hosted-shared/hosted-app.ts`,
+      `${SRC}/authority/adapters/sqlite/central-store.ts`,
+    ],
+  },
+
+  isolation: {
+    buildPackages: [
+      { packageDir: "packages/agent-event-runtime" },
+      { packageDir: "packages/agent-extensions" },
+      { packageDir: "packages/agent-sdk-runtime" },
+      { packageDir: "packages/workspace-relay-protocol" },
+      { packageDir: "packages/sandbox-contract" },
+      { packageDir: "packages/sandbox-manager" },
+      { packageDir: "packages/workspace-relay" },
+      { packageDir: "packages/claxedo-connections" },
+      { packageDir: "packages/claxedo-channels" },
+      { packageDir: "packages/wakes" },
+      { packageDir: "packages/workspace-runtime" },
+      { packageDir: "packages/workgraph" },
+    ],
+    native: ["better-sqlite3"],
+    commands: [
+      ["bun", "run", "build:hosted-node-boundary"],
+      ["bun", "run", "smoke:hosted-node-boundary"],
+    ],
+  },
 }
 
 export const serverWorkerd: Policy = {

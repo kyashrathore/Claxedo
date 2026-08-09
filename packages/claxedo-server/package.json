@@ -54,6 +54,8 @@
     "release:runtime": "bun run scripts/release/publish-runtime-packages.ts",
     "release:packages": "bun run scripts/release/publish-claxedo-packages.ts",
     "deploy:hosted": "bun run scripts/deploy/deploy-hosted.ts",
+    "build:hosted-node-boundary": "bun run scripts/boundary/build-hosted-node.ts",
+    "smoke:hosted-node-boundary": "node scripts/boundary/smoke-hosted-node.mjs",
     "build:workerd-boundary": "bun run scripts/boundary/build-workerd.ts",
     "smoke:workerd-boundary": "bun run scripts/boundary/smoke-workerd.ts",
     "check:worker-safe": "bun run scripts/deploy/check-worker-safe.ts",
