@@ -31,4 +31,26 @@ describe("usage outbox sync", () => {
     await expect(first).resolves.toEqual({ attempted: 0, delivered: 0, conflicts: 0, pending: 1 })
     expect(local.pendingOutbox).toHaveBeenCalledTimes(1)
   })
+
+  test("preserves central acknowledgements when local delivery bookkeeping fails", async () => {
+    const local = {
+      pendingOutbox: async () => [revision],
+      markDelivered: async () => { throw new Error("sqlite write failed") },
+      markConflict: async () => undefined,
+    }
+    const sync = createUsageOutboxSync({
+      local: local as never,
+      central: {
+        recordLlmTurn: async () => ({ activated: false }),
+        recordTurnUsageBatch: async () => [{ status: "accepted", activated: false }],
+      },
+    })
+    await expect(sync.flush({ org_id: "o", user_id: "u" })).resolves.toEqual({
+      attempted: 1,
+      delivered: 0,
+      conflicts: 0,
+      pending: 1,
+      acknowledged: [{ hostId: "h", sessionRef: "central:s", messageId: "m", revision: 1 }],
+    })
+  })
 })

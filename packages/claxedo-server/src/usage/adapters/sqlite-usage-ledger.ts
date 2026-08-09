@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { and, asc, eq, sql } from "drizzle-orm"
+import { and, asc, eq, gte, lte, sql } from "drizzle-orm"
 import { ClaxedoDB } from "../../platform/db"
 import {
   assertTurnUsageRevision,
@@ -167,24 +167,33 @@ export function createSqliteUsageLedger(input: {
 
     async current(filter = {}) {
       return database.use((db) => db.select().from(ClaxedoUsageTurnCurrentTable)
-        .where(filter.hostId ? eq(ClaxedoUsageTurnCurrentTable.host_id, filter.hostId) : undefined)
+        .where(and(
+          filter.hostId ? eq(ClaxedoUsageTurnCurrentTable.host_id, filter.hostId) : undefined,
+          filter.since === undefined ? undefined : gte(ClaxedoUsageTurnCurrentTable.observed_at, filter.since),
+          filter.until === undefined ? undefined : lte(ClaxedoUsageTurnCurrentTable.observed_at, filter.until),
+        ))
         .orderBy(asc(ClaxedoUsageTurnCurrentTable.observed_at))
         .all()).map(fact)
     },
 
     async pendingOutbox(filter = {}) {
-      const rows = database.use((db) => db.select({ usage: ClaxedoUsageTurnRevisionTable })
-        .from(ClaxedoUsageOutboxTable)
-        .innerJoin(ClaxedoUsageTurnRevisionTable, and(
-          eq(ClaxedoUsageTurnRevisionTable.host_id, ClaxedoUsageOutboxTable.host_id),
-          eq(ClaxedoUsageTurnRevisionTable.session_ref, ClaxedoUsageOutboxTable.session_ref),
-          eq(ClaxedoUsageTurnRevisionTable.message_id, ClaxedoUsageOutboxTable.message_id),
-          eq(ClaxedoUsageTurnRevisionTable.revision, ClaxedoUsageOutboxTable.revision),
-        ))
-        .where(eq(ClaxedoUsageOutboxTable.state, "pending"))
-        .orderBy(asc(ClaxedoUsageOutboxTable.created_at))
-        .limit(filter.limit ?? 100)
-        .all())
+      const rows = database.use((db) => {
+        const query = db.select({ usage: ClaxedoUsageTurnRevisionTable })
+          .from(ClaxedoUsageOutboxTable)
+          .innerJoin(ClaxedoUsageTurnRevisionTable, and(
+            eq(ClaxedoUsageTurnRevisionTable.host_id, ClaxedoUsageOutboxTable.host_id),
+            eq(ClaxedoUsageTurnRevisionTable.session_ref, ClaxedoUsageOutboxTable.session_ref),
+            eq(ClaxedoUsageTurnRevisionTable.message_id, ClaxedoUsageOutboxTable.message_id),
+            eq(ClaxedoUsageTurnRevisionTable.revision, ClaxedoUsageOutboxTable.revision),
+          ))
+          .where(and(
+            eq(ClaxedoUsageOutboxTable.state, "pending"),
+            filter.since === undefined ? undefined : gte(ClaxedoUsageTurnRevisionTable.observed_at, filter.since),
+            filter.until === undefined ? undefined : lte(ClaxedoUsageTurnRevisionTable.observed_at, filter.until),
+          ))
+          .orderBy(asc(ClaxedoUsageOutboxTable.created_at))
+        return filter.all === true ? query.all() : query.limit(filter.limit ?? 100).all()
+      })
       return rows.map((row) => fact(row.usage))
     },
 

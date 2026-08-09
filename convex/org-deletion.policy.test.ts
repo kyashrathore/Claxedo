@@ -75,6 +75,10 @@ function minimalValue(validator: any, anchors: Anchors): unknown {
       return []
     case "record":
       return {}
+    case "object":
+      return Object.fromEntries(Object.entries(validator.fields as Record<string, any>)
+        .filter(([, field]) => field.isOptional !== "optional")
+        .map(([name, field]) => [name, minimalValue(field, anchors)]))
     case "literal":
       return validator.value
     case "union":

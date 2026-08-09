@@ -776,7 +776,8 @@ export default defineSchema({
     updated_at: v.number(),
   })
     .index("by_bucket", ["org_id", "user_id", "date", "dimension", "value"])
-    .index("by_org_user_dimension_date", ["org_id", "user_id", "dimension", "date"]),
+    .index("by_org_user_dimension_date", ["org_id", "user_id", "dimension", "date"])
+    .index("by_org_user_dimension_value_date", ["org_id", "user_id", "dimension", "value", "date"]),
 
   agent_extension_installs: defineTable({
     workspace_id: v.id("workspaces"),

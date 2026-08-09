@@ -35,6 +35,7 @@ import { usageDate } from "./sandboxLeases"
  * who needs more should narrow the window, which is what the index rewards.
  */
 const USAGE_ROLLUP_ROW_LIMIT = 5_000
+const MAX_DASHBOARD_RANGE_MS = 90 * 86_400_000
 
 const turnStatus = v.union(v.literal("ok"), v.literal("error"))
 const sourcePlanningSessionPrefix = "ses_workgraph_source_plan_job_"
@@ -396,6 +397,7 @@ export const usageDashboard = serviceQuery({
   handler: async (ctx, args) => {
     if (args.until < args.since) throw new Error("until must not precede since")
     if (!Number.isFinite(args.since) || !Number.isFinite(args.until)) throw new Error("usage range must be finite")
+    if (args.until - args.since > MAX_DASHBOARD_RANGE_MS) throw new Error("usage range must not exceed 90 days")
     const from = usageDate(Math.max(-8_640_000_000_000_000, args.since))
     const to = usageDate(Math.min(8_640_000_000_000_000, args.until))
     const rows = args.user_id
@@ -424,6 +426,96 @@ export const usageDashboard = serviceQuery({
   },
 })
 
+/**
+ * Exact, timezone-aware dashboard projection page. The server folds these
+ * compact pages across transactions, so a dense 90-day range is complete
+ * without asking one Convex query to read an unbounded fact set.
+ */
+export const usageDashboardPage = serviceQuery({
+  args: {
+    org_id: v.string(),
+    user_id: v.string(),
+    since: v.number(),
+    until: v.number(),
+    time_zone: v.string(),
+    dimension: v.optional(v.union(
+      v.literal("harness"), v.literal("model"), v.literal("location"),
+      v.literal("session"), v.literal("workspace"),
+    )),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    if (args.until < args.since || !Number.isFinite(args.since) || !Number.isFinite(args.until)) {
+      throw new Error("usage range is invalid")
+    }
+    if (args.until - args.since > MAX_DASHBOARD_RANGE_MS) throw new Error("usage range must not exceed 90 days")
+    let formatDate: Intl.DateTimeFormat
+    try {
+      formatDate = new Intl.DateTimeFormat("en-CA", {
+        timeZone: args.time_zone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      })
+    } catch {
+      throw new Error("usage timezone is invalid")
+    }
+    const result = await ctx.db.query("llm_usage_events")
+      .withIndex("by_org_user_observed", (q: any) => q
+        .eq("org_id", args.org_id).eq("user_id", args.user_id)
+        .gte("observed_at", args.since).lte("observed_at", args.until))
+      .paginate({ cursor: args.cursor ?? null, numItems: 2_000 })
+    const fields = [
+      "turn_count", "input_tokens", "output_tokens", "reasoning_tokens", "cache_read_tokens", "cache_write_tokens",
+      "input_known_count", "output_known_count", "reasoning_known_count", "cache_read_known_count", "cache_write_known_count",
+      "partial_turn_count", "unavailable_turn_count", "error_turn_count",
+    ] as const
+    const empty = () => Object.fromEntries(fields.map((field) => [field, 0])) as Record<(typeof fields)[number], number>
+    const add = (target: Record<string, number>, delta: Record<string, number>) => {
+      for (const field of fields) target[field] = (target[field] ?? 0) + (delta[field] ?? 0)
+    }
+    const totals = empty()
+    const daily = new Map<string, ReturnType<typeof empty>>()
+    const models = new Map<string, ReturnType<typeof empty>>()
+    const breakdown = new Map<string, ReturnType<typeof empty>>()
+    for (const row of result.page) {
+      const fact = legacyRevision(row)
+      const delta = contribution(fact, 1)
+      add(totals, delta)
+      const date = formatDate.format(new Date(fact.observed_at))
+      const day = daily.get(date) ?? empty()
+      add(day, delta)
+      daily.set(date, day)
+      const model = models.get(`${fact.provider_id}/${fact.model_id}`) ?? empty()
+      add(model, delta)
+      models.set(`${fact.provider_id}/${fact.model_id}`, model)
+      if (args.dimension) {
+        const value = breakdownValue(fact, args.dimension)
+        const grouped = breakdown.get(value) ?? empty()
+        add(grouped, delta)
+        breakdown.set(value, grouped)
+      }
+    }
+    const rows = (source: Map<string, ReturnType<typeof empty>>) => [...source]
+      .map(([value, values]) => ({ value, ...values }))
+      .toSorted((a, b) => a.value.localeCompare(b.value))
+    const groupedRows = (source: Map<string, ReturnType<typeof empty>>) => rows(source).map((row) => {
+      const known_token_count = row.input_known_count + row.output_known_count + row.reasoning_known_count
+        + row.cache_read_known_count + row.cache_write_known_count
+      return { ...row, known_token_count, unknown_token_count: row.turn_count * 5 - known_token_count }
+    })
+    return {
+      totals,
+      daily: [...daily]
+        .map(([date, values]) => ({ date, ...values }))
+        .toSorted((a, b) => a.date.localeCompare(b.date)),
+      models: groupedRows(models),
+      breakdown: groupedRows(breakdown),
+      next: result.isDone ? undefined : result.continueCursor,
+    }
+  },
+})
+
 export const usageBreakdown = serviceQuery({
   args: {
     org_id: v.string(),
@@ -441,14 +533,19 @@ export const usageBreakdown = serviceQuery({
     if (args.until < args.since || !Number.isFinite(args.since) || !Number.isFinite(args.until)) {
       throw new Error("usage range is invalid")
     }
+    if (args.until - args.since > MAX_DASHBOARD_RANGE_MS) throw new Error("usage range must not exceed 90 days")
     const limit = args.limit ?? 50
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error("limit must be between 1 and 100")
     const from = usageDate(args.since)
     const to = usageDate(args.until)
     const source = await ctx.db.query("llm_usage_breakdown_daily")
-      .withIndex("by_org_user_dimension_date", (q: any) => q
-        .eq("org_id", args.org_id).eq("user_id", args.user_id).eq("dimension", args.dimension)
-        .gte("date", from).lte("date", to))
+      .withIndex("by_org_user_dimension_value_date", (q: any) => q
+        .eq("org_id", args.org_id).eq("user_id", args.user_id).eq("dimension", args.dimension))
+      .filter((q: any) => q.and(
+        args.after ? q.gt(q.field("value"), args.after) : q.gte(q.field("value"), ""),
+        q.gte(q.field("date"), from),
+        q.lte(q.field("date"), to),
+      ))
       .take(5000)
     const fields = ["turn_count", "input_tokens", "output_tokens", "reasoning_tokens", "cache_read_tokens", "cache_write_tokens", "known_token_count", "unknown_token_count"] as const
     const grouped = new Map<string, Record<string, number>>()
@@ -458,7 +555,6 @@ export const usageBreakdown = serviceQuery({
       grouped.set(row.value, item)
     }
     const rows = [...grouped.entries()]
-      .filter(([value]) => !args.after || value > args.after)
       .toSorted(([left], [right]) => left.localeCompare(right))
       .slice(0, limit + 1)
     const hasMore = rows.length > limit

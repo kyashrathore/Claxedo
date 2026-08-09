@@ -601,6 +601,9 @@ export const ORG_DIRECT_TABLES: readonly ScopedRows[] = [
 export const ORG_CLERK_TABLES: readonly ScopedRows[] = [
   { table: "sandbox_usage_daily", index: "by_org_date", field: "org_id" },
   { table: "llm_usage_events", index: "by_org_user", field: "org_id" },
+  { table: "llm_usage_revisions", index: "by_turn_revision", field: "org_id" },
+  { table: "llm_usage_daily", index: "by_org_date", field: "org_id" },
+  { table: "llm_usage_breakdown_daily", index: "by_org_user_dimension_date", field: "org_id" },
   // W6.3. Also Clerk-id-keyed, and purged rather than retained for a reason
   // worth stating: a tombstone names a `clerk_subject`, so it is a durable
   // record that a specific person was removed from a specific org. Retaining it

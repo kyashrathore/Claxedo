@@ -45,14 +45,8 @@ export function usageSeriesFromFacts(input: {
 }): UsageSeries {
   const totals = emptyUsageTotals()
   const daily = new Map<string, UsageMetricTotals>()
-  const latest = new Map<string, TurnUsageRevision>()
   const formatDate = dateFormatter(input.timeZone)
-  for (const fact of input.facts) {
-    const key = `${fact.hostId}\u0000${fact.sessionRef}\u0000${fact.messageId}`
-    const existing = latest.get(key)
-    if (!existing || fact.revision > existing.revision) latest.set(key, fact)
-  }
-  for (const fact of latest.values()) {
+  for (const fact of latestUsageFacts(input.facts)) {
     if (fact.observedAt < input.since || fact.observedAt > input.until) continue
     const values = [fact.tokens.input, fact.tokens.output, fact.tokens.reasoning, fact.tokens.cache.read, fact.tokens.cache.write]
     const contribution: UsageMetricTotals = {
@@ -71,6 +65,16 @@ export function usageSeriesFromFacts(input: {
     daily.set(key, point)
   }
   return { totals, daily: [...daily].map(([key, value]) => ({ date: key, ...value })).toSorted((a, b) => a.date.localeCompare(b.date)) }
+}
+
+export function latestUsageFacts(facts: readonly TurnUsageRevision[]) {
+  const latest = new Map<string, TurnUsageRevision>()
+  for (const fact of facts) {
+    const key = `${fact.hostId}\u0000${fact.sessionRef}\u0000${fact.messageId}`
+    const existing = latest.get(key)
+    if (!existing || fact.revision > existing.revision) latest.set(key, fact)
+  }
+  return [...latest.values()]
 }
 
 export function usageSeriesFromExternal(input: {

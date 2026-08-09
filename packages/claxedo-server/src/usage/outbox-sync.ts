@@ -1,5 +1,6 @@
 import type { UsageLedger } from "../platform/telemetry/product/metering"
 import type { SqliteUsageLedger } from "./adapters/sqlite-usage-ledger"
+import type { TurnUsageRevision } from "./contracts"
 
 export type UsageOutboxSync = {
   flush(identity?: { org_id: string; user_id: string }): Promise<{
@@ -7,6 +8,7 @@ export type UsageOutboxSync = {
     delivered: number
     conflicts: number
     pending: number
+    acknowledged?: Array<Pick<TurnUsageRevision, "hostId" | "sessionRef" | "messageId" | "revision">>
   }>
 }
 
@@ -15,7 +17,7 @@ export function createUsageOutboxSync(input: {
   central?: UsageLedger
   limit?: number
 }): UsageOutboxSync {
-  let active: Promise<{ attempted: number; delivered: number; conflicts: number; pending: number }> | undefined
+  let active: ReturnType<UsageOutboxSync["flush"]> | undefined
   const run = async (identity?: { org_id: string; user_id: string }) => {
     const pending = await input.local.pendingOutbox({ limit: input.limit ?? 100 })
     if (!identity || !input.central?.recordTurnUsageBatch || pending.length === 0) {
@@ -25,17 +27,29 @@ export function createUsageOutboxSync(input: {
     if (results.length !== pending.length) throw new Error("usage outbox acknowledgement count mismatch")
     let delivered = 0
     let conflicts = 0
+    const acknowledged: Array<Pick<TurnUsageRevision, "hostId" | "sessionRef" | "messageId" | "revision">> = []
     for (const [index, result] of results.entries()) {
       const fact = pending[index]!
+      acknowledged.push({ hostId: fact.hostId, sessionRef: fact.sessionRef, messageId: fact.messageId, revision: fact.revision })
       if (result.status === "conflict") {
-        await input.local.markConflict(fact)
-        conflicts += 1
+        try {
+          await input.local.markConflict(fact)
+          conflicts += 1
+        } catch { /* central acknowledgement still prevents this response from double-counting the pending fact */ }
       } else {
-        await input.local.markDelivered(fact)
-        delivered += 1
+        try {
+          await input.local.markDelivered(fact)
+          delivered += 1
+        } catch { /* retry remains pending and central ingest is idempotent */ }
       }
     }
-    return { attempted: pending.length, delivered, conflicts, pending: Math.max(0, pending.length - delivered - conflicts) }
+    return {
+      attempted: pending.length,
+      delivered,
+      conflicts,
+      pending: Math.max(0, pending.length - delivered - conflicts),
+      acknowledged,
+    }
   }
   return {
     flush(identity) {

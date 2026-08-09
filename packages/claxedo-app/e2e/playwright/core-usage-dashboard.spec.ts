@@ -146,7 +146,7 @@ test.describe("unified usage dashboard @core @surface-web", () => {
     await expect(dialog.getByRole("region", { name: "Estimated API cost" })).toContainText("$0.0172")
 
     await dialog.getByRole("button", { name: /Quota limits/ }).click()
-    await expect(dialog.getByRole("progressbar", { name: /anthropic five_hour/i })).toHaveAttribute("value", "25")
+    await expect(dialog.getByRole("progressbar", { name: /anthropic Session/i })).toHaveAttribute("value", "25")
     await expect(dialog.getByRole("progressbar", { name: /openai weekly/i })).toHaveAttribute("value", "40")
 
     const axe = await new AxeBuilder({ page }).include('[role="dialog"]').analyze()

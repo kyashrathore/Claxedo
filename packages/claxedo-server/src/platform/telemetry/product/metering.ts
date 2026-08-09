@@ -118,6 +118,8 @@ export type UsageLedger = {
     user_id: string
     since: number
     until: number
+    timeZone?: string
+    dimension?: "harness" | "model" | "location" | "session" | "workspace"
   }) => Promise<unknown>
   usageBreakdown?: (input: {
     org_id: string

@@ -21,6 +21,7 @@ const usageApi = anyApi as unknown as {
     resolveWorkGraphAttribution: unknown
     ingestTurnUsageBatch: unknown
     usageDashboard: unknown
+    usageDashboardPage: unknown
     usageBreakdown: unknown
   }
   sandboxLeases: { recordTenant: unknown }
@@ -84,6 +85,73 @@ function acknowledgements(result: unknown): UsageAcknowledgement[] {
   })
 }
 
+type ProjectionRow = Record<string, number | string>
+
+function mergeProjectionRows(target: Map<string, Record<string, number>>, rows: unknown, key: "date" | "value") {
+  if (!Array.isArray(rows)) return
+  for (const raw of rows) {
+    if (!raw || typeof raw !== "object") continue
+    const row = raw as Record<string, unknown>
+    const name = row[key]
+    if (typeof name !== "string") continue
+    const current = target.get(name) ?? {}
+    for (const [field, value] of Object.entries(row)) {
+      if (field !== key && typeof value === "number" && Number.isFinite(value)) current[field] = (current[field] ?? 0) + value
+    }
+    target.set(name, current)
+  }
+}
+
+async function exactDashboardProjection(
+  execute: () => ConvexExecutor,
+  serviceArgs: <T extends Record<string, unknown>>(args: T) => T & { service_token: string },
+  args: Parameters<NonNullable<UsageLedger["usageDashboard"]>>[0],
+) {
+  const totals: Record<string, number> = {}
+  const daily = new Map<string, Record<string, number>>()
+  const models = new Map<string, Record<string, number>>()
+  const breakdown = new Map<string, Record<string, number>>()
+  let cursor: string | undefined
+  const seen = new Set<string>()
+  do {
+    const page = await withTimeout(execute().query(usageApi.usageMetering.usageDashboardPage, serviceArgs({
+      org_id: args.org_id,
+      user_id: args.user_id,
+      since: args.since,
+      until: args.until,
+      time_zone: args.timeZone ?? "UTC",
+      ...(args.dimension ? { dimension: args.dimension } : {}),
+      ...(cursor ? { cursor } : {}),
+    })), controlPlaneTimeoutMs("read")) as {
+      totals?: Record<string, unknown>
+      daily?: unknown
+      models?: unknown
+      breakdown?: unknown
+      next?: unknown
+    }
+    if (!page || typeof page.totals !== "object" || !Array.isArray(page.daily)
+      || !Array.isArray(page.models) || !Array.isArray(page.breakdown)) {
+      throw new Error("Convex usage projection returned a malformed page")
+    }
+    for (const [field, value] of Object.entries(page.totals ?? {})) {
+      if (typeof value === "number" && Number.isFinite(value)) totals[field] = (totals[field] ?? 0) + value
+    }
+    mergeProjectionRows(daily, page.daily, "date")
+    mergeProjectionRows(models, page.models, "value")
+    mergeProjectionRows(breakdown, page.breakdown, "value")
+    const next = page.next
+    if (typeof next === "string" && next.length > 0) {
+      if (seen.has(next)) throw new Error("Convex usage projection repeated a cursor")
+      seen.add(next)
+      cursor = next
+    } else cursor = undefined
+  } while (cursor)
+  const rows = (source: Map<string, Record<string, number>>, key: "date" | "value") => [...source]
+    .map(([name, values]) => ({ [key]: name, ...values }) as ProjectionRow)
+    .toSorted((a, b) => String(a[key]).localeCompare(String(b[key])))
+  return { totals, daily: rows(daily, "date"), models: rows(models, "value"), breakdown: rows(breakdown, "value") }
+}
+
 export function createConvexUsageLedger(input: ConvexUsageLedgerInput = {}): UsageLedger {
   const execute = () => requireExecutor(input, undefined, { allowUnsigned: true })
   const serviceArgs = <T extends Record<string, unknown>>(args: T) => ({
@@ -134,10 +202,12 @@ export function createConvexUsageLedger(input: ConvexUsageLedgerInput = {}): Usa
       })),
       controlPlaneTimeoutMs("mutation"),
     )),
-    usageDashboard: async (args) => await withTimeout(
-      execute().query(usageApi.usageMetering.usageDashboard, serviceArgs(args)),
-      controlPlaneTimeoutMs("read"),
-    ),
+    usageDashboard: async (args) => args.timeZone
+      ? await exactDashboardProjection(execute, serviceArgs, args)
+      : await withTimeout(
+        execute().query(usageApi.usageMetering.usageDashboard, serviceArgs(args)),
+        controlPlaneTimeoutMs("read"),
+      ),
     usageBreakdown: async (args) => await withTimeout(
       execute().query(usageApi.usageMetering.usageBreakdown, serviceArgs(args)),
       controlPlaneTimeoutMs("read"),

@@ -66,4 +66,59 @@ describe("Convex usage ledger", () => {
       { org_id: "org_1", user_id: "user_1", since: 1, until: 2, dimension: "model", service_token: "service-secret" },
     ])
   })
+
+  test("folds exact timezone projection pages without losing totals or grouped rows", async () => {
+    let page = 0
+    const calls: Record<string, unknown>[] = []
+    const ledger = createConvexUsageLedger({
+      serviceToken: "service-secret",
+      executor: {
+        mutation: async () => null,
+        query: async (_function, args) => {
+          calls.push(args as Record<string, unknown>)
+          page += 1
+          return page === 1
+            ? {
+                totals: { turn_count: 1, input_tokens: 3 },
+                daily: [{ date: "2026-08-08", turn_count: 1, input_tokens: 3 }],
+                models: [{ value: "anthropic/claude", turn_count: 1, input_tokens: 3 }],
+                breakdown: [{ value: "pi", turn_count: 1, input_tokens: 3 }],
+                next: "cursor-2",
+              }
+            : {
+                totals: { turn_count: 1, input_tokens: 5 },
+                daily: [{ date: "2026-08-08", turn_count: 1, input_tokens: 5 }],
+                models: [{ value: "anthropic/claude", turn_count: 1, input_tokens: 5 }],
+                breakdown: [{ value: "opencode", turn_count: 1, input_tokens: 5 }],
+              }
+        },
+      },
+    })
+
+    await expect(ledger.usageDashboard?.({
+      org_id: "org_1", user_id: "user_1", since: 1, until: 2, timeZone: "Asia/Kolkata", dimension: "harness",
+    })).resolves.toEqual({
+      totals: { turn_count: 2, input_tokens: 8 },
+      daily: [{ date: "2026-08-08", turn_count: 2, input_tokens: 8 }],
+      models: [{ value: "anthropic/claude", turn_count: 2, input_tokens: 8 }],
+      breakdown: [
+        { value: "opencode", turn_count: 1, input_tokens: 5 },
+        { value: "pi", turn_count: 1, input_tokens: 3 },
+      ],
+    })
+    expect(calls[1]).toMatchObject({ time_zone: "Asia/Kolkata", dimension: "harness", cursor: "cursor-2" })
+  })
+
+  test("rejects a repeated projection cursor instead of returning partial totals", async () => {
+    const ledger = createConvexUsageLedger({
+      serviceToken: "service-secret",
+      executor: {
+        mutation: async () => null,
+        query: async () => ({ totals: {}, daily: [], models: [], breakdown: [], next: "stuck" }),
+      },
+    })
+    await expect(ledger.usageDashboard?.({
+      org_id: "org_1", user_id: "user_1", since: 1, until: 2, timeZone: "UTC",
+    })).rejects.toThrow("repeated a cursor")
+  })
 })

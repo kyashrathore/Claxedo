@@ -147,4 +147,17 @@ describe("sqlite usage ledger", () => {
     await ledger.writeRevision(revision({ nativeSessionId: "provider-thread-1" }))
     expect((await ledger.current())[0]?.nativeSessionId).toBe("provider-thread-1")
   })
+
+  test("bounds current and pending reads to the requested inclusive range", async () => {
+    const { ledger } = harness()
+    await ledger.writeRevision(revision({ messageId: "before", observedAt: 999 }))
+    await ledger.writeRevision(revision({ messageId: "start", observedAt: 1_000 }))
+    await ledger.writeRevision(revision({ messageId: "end", observedAt: 2_000 }))
+    await ledger.writeRevision(revision({ messageId: "after", observedAt: 2_001 }))
+
+    expect((await ledger.current({ since: 1_000, until: 2_000 })).map((item) => item.messageId))
+      .toEqual(["start", "end"])
+    expect((await ledger.pendingOutbox({ since: 1_000, until: 2_000, all: true })).map((item) => item.messageId))
+      .toEqual(["start", "end"])
+  })
 })

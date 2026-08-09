@@ -190,8 +190,8 @@ describe("revisioned turn usage ingest", () => {
       ...SERVICE,
       org_id: "org_2",
       user_id: "user_sub_1",
-      since: 0,
-      until: Number.MAX_SAFE_INTEGER,
+      since: REVISION.observed_at - 1,
+      until: REVISION.observed_at + 1,
     } as never)
     expect(foreign.totals.turn_count).toBe(0)
 
@@ -207,6 +207,39 @@ describe("revisioned turn usage ingest", () => {
     const rows = await t.run(async (ctx) => ctx.db.query("llm_usage_events").collect())
     expect(rows).toHaveLength(1)
     expect(rows[0]!.revision).toBe(1)
+  })
+
+  test("pages exact facts into client-timezone days and excludes adjacent timestamps", async () => {
+    const t = convexTest(schema, modules)
+    const start = Date.UTC(2026, 6, 10, 18, 0)
+    await t.mutation(api.usageMetering.ingestTurnUsageBatch, {
+      ...SERVICE,
+      org_id: "org_1",
+      user_id: "user_sub_1",
+      revisions: [
+        { ...REVISION, message_id: "before", observed_at: start - 1 },
+        { ...REVISION, message_id: "late", observed_at: start, input_tokens: 7 },
+        { ...REVISION, message_id: "next-day", observed_at: start + 3 * 60 * 60_000, input_tokens: 11 },
+      ],
+    } as never)
+
+    const page: any = await t.query(api.usageMetering.usageDashboardPage, {
+      ...SERVICE,
+      org_id: "org_1",
+      user_id: "user_sub_1",
+      since: start,
+      until: start + 3 * 60 * 60_000,
+      time_zone: "Asia/Kolkata",
+      dimension: "harness",
+    } as never)
+    expect(page.totals).toMatchObject({ turn_count: 2, input_tokens: 18 })
+    expect(page.daily).toEqual([
+      expect.objectContaining({ date: "2026-07-10", input_tokens: 7 }),
+      expect.objectContaining({ date: "2026-07-11", input_tokens: 11 }),
+    ])
+    expect(page.breakdown).toEqual([expect.objectContaining({
+      value: "claude-sdk", turn_count: 2, known_token_count: 6, unknown_token_count: 4,
+    })])
   })
 
   test("rejects oversized batches without a partial write", async () => {

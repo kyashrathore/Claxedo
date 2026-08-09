@@ -125,7 +125,7 @@
 .usage-source-state[data-state="available"] { color: var(--text-base); }
 .usage-quota-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 15px; }
 .usage-quota-provider { padding: 14px; border: 1px solid var(--usage-hairline); border-radius: var(--radius-7); background: var(--surface-base); }
-.usage-quota-provider header { margin-bottom: 12px; }
+.usage-quota-provider header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin-bottom: 12px; }
 .usage-quota-provider header strong { color: var(--text-strong); font-size: var(--font-size-small); text-transform: capitalize; }
 .usage-quota-provider header span { color: var(--text-weaker); font-size: var(--font-size-2x-small); }
 .usage-quota-window { display: grid; gap: 5px; margin-top: 9px; }

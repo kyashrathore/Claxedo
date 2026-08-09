@@ -56,8 +56,8 @@ export type UsageRevisionWriter = {
 }
 
 export type UsageRevisionReader = {
-  current(input?: { hostId?: string }): Promise<TurnUsageRevision[]>
-  pendingOutbox(input?: { limit?: number }): Promise<TurnUsageRevision[]>
+  current(input?: { hostId?: string; since?: number; until?: number }): Promise<TurnUsageRevision[]>
+  pendingOutbox(input?: { limit?: number; all?: boolean; since?: number; until?: number }): Promise<TurnUsageRevision[]>
 }
 
 export function knownTokenCategories(tokens: RuntimeTokenUsage): TurnUsageQuality["knownCategories"] {
