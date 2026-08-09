@@ -490,8 +490,54 @@ jobs:
             security delete-keychain "$KEYCHAIN_PATH" || true
           fi
 
-  create-release:
+  qualify-u8-release:
     needs: [prepare, build-desktop]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      attestations: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # The qualification bundle must be produced and attested by an earlier
+      # job in THIS run from the installers above. No job currently fabricates
+      # owner-gated native/OAuth evidence, so a release remains stopped until
+      # that real producer is present; draft creation may not bypass it.
+      - name: Download current-run U8 qualification bundle
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: u8-release-qualification-${{ github.sha }}
+          path: qualification
+          merge-multiple: true
+
+      - name: Verify qualification provenance and candidate SHA
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          report="qualification/qualification.json"
+          test -f "$report" || {
+            echo "Missing current-run U8 qualification. Release remains blocked until real owner/native evidence is produced for this run." >&2
+            exit 1
+          }
+          gh attestation verify "$report" --repo "$GITHUB_REPOSITORY"
+          node - "$report" "$GITHUB_SHA" <<'NODE'
+          const fs = require("node:fs")
+          const [reportFile, expectedSha] = process.argv.slice(2)
+          const report = JSON.parse(fs.readFileSync(reportFile, "utf8"))
+          if (report.schema !== "claxedo-u8-release-qualification/v1" || report.status !== "pass") {
+            throw new Error("U8 qualification report is not a pass")
+          }
+          if (report.evidence?.releaseSha !== expectedSha) {
+            throw new Error(`U8 qualification release SHA mismatch: ${String(report.evidence?.releaseSha)}`)
+          }
+          NODE
+
+  create-release:
+    needs: [prepare, build-desktop, qualify-u8-release]
     runs-on: ubuntu-latest
     permissions:
       contents: write

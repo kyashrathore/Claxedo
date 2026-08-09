@@ -152,7 +152,7 @@ export type U8ReleaseEvidence = {
   artifact: {
     sha256: string
     buildContract: { file: string; sha256: string }
-    productBoundaryPassed: boolean
+    productBoundary: GateReference
   }
   metadata: QualificationMetadata & { capturedAt: string; sampleOrder: string[] }
   boundaryManifests: Array<{ name: string; file: string; sha256: string }>
@@ -160,6 +160,7 @@ export type U8ReleaseEvidence = {
   harnesses: Record<string, HarnessSample[]>
   browser: Record<string, { positions: BrowserPosition[] }>
   desktopLifecycle: Record<string, boolean>
+  nativeArtifacts: Record<"macos" | "windows" | "linuxProtected", GateReference>
   nativeCredentials: Record<"macos" | "windows" | "linuxProtected", GateReference>
   releaseGates: Record<string, GateReference>
 }
@@ -337,6 +338,42 @@ function resolveReferencedFile(evidenceFile: string, file: string) {
   return path.resolve(path.dirname(evidenceFile), file)
 }
 
+function validateFileReference(referenceValue: unknown, evidenceFile: string, label: string) {
+  const reference = record(referenceValue, `${label} reference`)
+  exactKeys(reference, ["file", "sha256"], `${label} reference`)
+  invariant(typeof reference.file === "string" && reference.file.length > 0, `${label} reference file is missing`)
+  hashString(reference.sha256, `${label} reference sha256`)
+  const file = resolveReferencedFile(evidenceFile, reference.file)
+  invariant(fs.existsSync(file) && fs.statSync(file).isFile(), `${label} is missing at ${file}`)
+  invariant(reference.sha256 === sha256(file), `${label} hash changed`)
+  return { file, sha256: reference.sha256 as string }
+}
+
+const RELEASE_GATE_RESULT_FIELDS = {
+  hostedDevelopmentIdentity: ["developmentIdentityConfigured", "sessionValidated", "tokenExchangeValidated"],
+  betaCallbackRegistration: ["publicClientRegistered", "loopbackCallbackRegistered", "schemeCallbackRegistered"],
+  productionCallbackRegistration: ["publicClientRegistered", "loopbackCallbackRegistered", "schemeCallbackRegistered"],
+  selfHostedUpgrade: ["oldVersionStarted", "upgradeCompleted", "dataPreserved", "newVersionStarted"],
+  remoteAccessHardCut: ["preflight", "maintenanceEntered", "legacyRetired", "retirementVerified", "newAuthorityVerified", "maintenanceExited"],
+} as const
+
+function validateReleaseGateResults(gateKey: string, results: Record<string, unknown>, gateName: string) {
+  const fields = RELEASE_GATE_RESULT_FIELDS[gateKey as keyof typeof RELEASE_GATE_RESULT_FIELDS]
+  invariant(fields !== undefined, `${gateName} has no semantic result contract`)
+  exactKeys(results, fields, `${gateName}.results`)
+  for (const field of fields) invariant(results[field] === true, `${gateName}.results.${field} did not pass`)
+}
+
+function validateGateProvenance(gate: Record<string, unknown>, releaseSha: string, gateName: string) {
+  const provenance = record(gate.provenance, `${gateName}.provenance`)
+  exactKeys(provenance, ["repository", "workflow", "runId", "job", "commitSha", "attestationSha256"], `${gateName}.provenance`)
+  for (const field of ["repository", "workflow", "runId", "job"] as const) {
+    invariant(typeof provenance[field] === "string" && provenance[field].trim().length > 0, `${gateName}.provenance.${field} is missing`)
+  }
+  invariant(provenance.commitSha === releaseSha, `${gateName} provenance commit does not match release SHA`)
+  hashString(provenance.attestationSha256, `${gateName}.provenance.attestationSha256`)
+}
+
 function validateGateArtifact(input: {
   reference: unknown
   evidenceFile: string
@@ -347,13 +384,7 @@ function validateGateArtifact(input: {
   artifactSha?: string
   nativePlatform?: "macos" | "windows" | "linuxProtected"
 }) {
-  const reference = record(input.reference, `${input.gateName} reference`)
-  exactKeys(reference, ["file", "sha256"], `${input.gateName} reference`)
-  invariant(typeof reference.file === "string" && reference.file.length > 0, `${input.gateName} reference file is missing`)
-  hashString(reference.sha256, `${input.gateName} reference sha256`)
-  const file = resolveReferencedFile(input.evidenceFile, reference.file)
-  invariant(fs.existsSync(file) && fs.statSync(file).isFile(), `${input.gateName} evidence is missing at ${file}`)
-  invariant(reference.sha256 === sha256(file), `${input.gateName} evidence hash changed`)
+  const { file } = validateFileReference(input.reference, input.evidenceFile, `${input.gateName} evidence`)
   const gate = record(readJson(file), input.gateName)
   invariant(gate.schema === U8_RELEASE_GATE_SCHEMA, `${input.gateName} schema must be ${U8_RELEASE_GATE_SCHEMA}`)
   invariant(gate.gate === input.gateKey, `${input.gateName} artifact names ${String(gate.gate)}`)
@@ -361,15 +392,20 @@ function validateGateArtifact(input: {
   invariant(gate.releaseSha === input.releaseSha, `${input.gateName} release SHA does not match candidate`)
   invariant(gate.boundaryManifestSetSha256 === input.manifestSetSha, `${input.gateName} boundary manifest set does not match candidate`)
   if (input.artifactSha) invariant(gate.artifactSha256 === input.artifactSha, `${input.gateName} artifact does not match candidate`)
+  validateGateProvenance(gate, input.releaseSha, input.gateName)
   requireMetadata(gate.metadata, `${input.gateName}.metadata`)
   const results = record(gate.results, `${input.gateName}.results`)
-  invariant(Object.keys(results).length > 0, `${input.gateName}.results must not be empty`)
 
   if (input.nativePlatform) {
     invariant(gate.native === true, `${input.gateName} is not native evidence`)
     invariant(gate.platform === input.nativePlatform, `${input.gateName} platform does not match ${input.nativePlatform}`)
     invariant(typeof gate.nativeBackend === "string" && gate.nativeBackend.trim().length > 0, `${input.gateName} native backend is missing`)
     invariant(gate.protectedStorage === true, `${input.gateName} did not use protected storage`)
+    exactKeys(
+      results,
+      input.nativePlatform === "linuxProtected" ? ["credentialLifecycle", "basicTextRefused"] : ["credentialLifecycle"],
+      `${input.gateName}.results`,
+    )
     const lifecycle = record(results.credentialLifecycle, `${input.gateName}.results.credentialLifecycle`)
     exactKeys(lifecycle, ["create", "restart", "refresh", "revoke", "corruption", "lockedStore"], `${input.gateName} credential lifecycle`)
     for (const operation of ["create", "restart", "refresh", "revoke", "corruption", "lockedStore"] as const) {
@@ -378,9 +414,11 @@ function validateGateArtifact(input: {
     if (input.nativePlatform === "linuxProtected") {
       invariant(results.basicTextRefused === true, `${input.gateName} did not prove basic_text refusal`)
     }
+  } else if (input.gateKey !== "productBoundary") {
+    validateReleaseGateResults(input.gateKey, results, input.gateName)
   }
 
-  return file
+  return { file, gate, results }
 }
 
 export function qualifyU8Release(input: {
@@ -426,8 +464,6 @@ export function qualifyU8Release(input: {
   for (const [file, digest] of [...Object.entries(contractInput), ...Object.entries(contractOutput)]) {
     hashString(digest, `candidate build contract hash ${file}`)
   }
-  invariant(artifactEvidence.productBoundaryPassed === true, "candidate product-boundary gate did not pass")
-
   const manifests = evidence.boundaryManifests
   invariant(Array.isArray(manifests), "evidence.boundaryManifests must be an array")
   const manifestRecords = manifests.map((item, index) => record(item, `boundaryManifests[${String(index)}]`))
@@ -454,6 +490,25 @@ export function qualifyU8Release(input: {
   const manifestSetSha = createHash("sha256")
     .update(manifestRecords.map((item) => `${String(item.name)}:${String(item.sha256)}`).sort().join("\n"))
     .digest("hex")
+  const productBoundary = validateGateArtifact({
+    reference: artifactEvidence.productBoundary,
+    evidenceFile,
+    gateKey: "productBoundary",
+    gateName: "product-boundary gate",
+    releaseSha: evidence.releaseSha as string,
+    manifestSetSha,
+    artifactSha,
+  })
+  const productResults = productBoundary.results
+  exactKeys(productResults, ["sourceClosuresPassed", "emittedManifestsPassed", "isolatedBuildsPassed", "packagedInventoryPassed", "manifests"], "product-boundary gate.results")
+  for (const field of ["sourceClosuresPassed", "emittedManifestsPassed", "isolatedBuildsPassed", "packagedInventoryPassed"] as const) {
+    invariant(productResults[field] === true, `product-boundary gate.results.${field} did not pass`)
+  }
+  const productManifests = record(productResults.manifests, "product-boundary gate.results.manifests")
+  exactKeys(productManifests, REQUIRED_BOUNDARY_MANIFESTS, "product-boundary gate manifests")
+  for (const manifest of manifestRecords) {
+    invariant(productManifests[String(manifest.name)] === manifest.sha256, `product-boundary gate manifest ${String(manifest.name)} does not match candidate`)
+  }
 
   const memory = record(evidence.memory, "evidence.memory")
   exactKeys(memory, ["freshIdle", "postSessionIdle"], "memory cohorts")
@@ -467,6 +522,16 @@ export function qualifyU8Release(input: {
   exactKeys(lifecycle, REQUIRED_LIFECYCLE_GATES, "desktop lifecycle gates")
   for (const gate of REQUIRED_LIFECYCLE_GATES) invariant(lifecycle[gate] === true, `desktop lifecycle gate ${gate} did not pass`)
 
+  const nativeArtifacts = record(evidence.nativeArtifacts, "evidence.nativeArtifacts")
+  exactKeys(nativeArtifacts, ["macos", "windows", "linuxProtected"], "native artifacts")
+  const nativeArtifactHashes = Object.fromEntries(
+    (["macos", "windows", "linuxProtected"] as const).map((platform) => [
+      platform,
+      validateFileReference(nativeArtifacts[platform], evidenceFile, `native artifact ${platform}`).sha256,
+    ]),
+  ) as Record<"macos" | "windows" | "linuxProtected", string>
+  invariant(nativeArtifactHashes.macos === artifactSha, "selected candidate artifact must be the qualified macOS artifact")
+
   const credentials = record(evidence.nativeCredentials, "evidence.nativeCredentials")
   exactKeys(credentials, ["macos", "windows", "linuxProtected"], "native credential gates")
   for (const platform of ["macos", "windows", "linuxProtected"] as const) {
@@ -477,7 +542,7 @@ export function qualifyU8Release(input: {
       gateName: `native credential gate ${platform}`,
       releaseSha: evidence.releaseSha as string,
       manifestSetSha,
-      artifactSha,
+      artifactSha: nativeArtifactHashes[platform],
       nativePlatform: platform,
     })
   }

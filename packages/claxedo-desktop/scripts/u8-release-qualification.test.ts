@@ -30,6 +30,13 @@ function fixture() {
   roots.push(root)
   const artifact = path.join(root, "Claxedo.zip")
   fs.writeFileSync(artifact, "fingerprinted packaged artifact")
+  const nativeArtifacts = {
+    macos: artifact,
+    windows: path.join(root, "Claxedo.exe"),
+    linuxProtected: path.join(root, "Claxedo.AppImage"),
+  }
+  fs.writeFileSync(nativeArtifacts.windows, "fingerprinted Windows artifact")
+  fs.writeFileSync(nativeArtifacts.linuxProtected, "fingerprinted Linux artifact")
   const buildContract = path.join(root, "build-contract.json")
   const baselineFile = path.join(root, "baseline.json")
   const evidenceFile = path.join(root, "candidate.json")
@@ -131,7 +138,18 @@ function fixture() {
     })),
   })
   const gateFiles = new Map<string, string>()
-  const gate = (key: string, options: { artifact?: boolean; nativePlatform?: "macos" | "windows" | "linuxProtected" } = {}) => {
+  const releaseGateResults = {
+    hostedDevelopmentIdentity: { developmentIdentityConfigured: true, sessionValidated: true, tokenExchangeValidated: true },
+    betaCallbackRegistration: { publicClientRegistered: true, loopbackCallbackRegistered: true, schemeCallbackRegistered: true },
+    productionCallbackRegistration: { publicClientRegistered: true, loopbackCallbackRegistered: true, schemeCallbackRegistered: true },
+    selfHostedUpgrade: { oldVersionStarted: true, upgradeCompleted: true, dataPreserved: true, newVersionStarted: true },
+    remoteAccessHardCut: { preflight: true, maintenanceEntered: true, legacyRetired: true, retirementVerified: true, newAuthorityVerified: true, maintenanceExited: true },
+  }
+  const gate = (key: string, options: {
+    artifactSha?: string
+    nativePlatform?: "macos" | "windows" | "linuxProtected"
+    results?: Record<string, unknown>
+  } = {}) => {
     const file = path.join(root, `${key}.json`)
     const native = options.nativePlatform !== undefined
     fs.writeFileSync(file, `${JSON.stringify({
@@ -140,7 +158,15 @@ function fixture() {
       passed: true,
       releaseSha,
       boundaryManifestSetSha256: manifestSetSha,
-      ...(options.artifact ? { artifactSha256: hash(artifact) } : {}),
+      ...(options.artifactSha ? { artifactSha256: options.artifactSha } : {}),
+      provenance: {
+        repository: "claxedo/claxedo",
+        workflow: "release-claxedo.yml",
+        runId: "12345",
+        job: key,
+        commitSha: releaseSha,
+        attestationSha256: "d".repeat(64),
+      },
       metadata,
       ...(native ? {
         native: true,
@@ -148,7 +174,7 @@ function fixture() {
         nativeBackend: options.nativePlatform === "macos" ? "safeStorage/keychain" : options.nativePlatform === "windows" ? "safeStorage/dpapi" : "safeStorage/libsecret",
         protectedStorage: true,
       } : {}),
-      results: native ? {
+      results: options.results ?? (native ? {
         credentialLifecycle: {
           create: true,
           restart: true,
@@ -158,7 +184,7 @@ function fixture() {
           lockedStore: true,
         },
         ...(options.nativePlatform === "linuxProtected" ? { basicTextRefused: true } : {}),
-      } : { completed: true },
+      } : releaseGateResults[key as keyof typeof releaseGateResults]),
     }, null, 2)}\n`)
     gateFiles.set(key, file)
     return { file: path.basename(file), sha256: hash(file) }
@@ -170,7 +196,16 @@ function fixture() {
     artifact: {
       sha256: hash(artifact),
       buildContract: { file: path.basename(buildContract), sha256: hash(buildContract) },
-      productBoundaryPassed: true,
+      productBoundary: gate("productBoundary", {
+        artifactSha: hash(artifact),
+        results: {
+          sourceClosuresPassed: true,
+          emittedManifestsPassed: true,
+          isolatedBuildsPassed: true,
+          packagedInventoryPassed: true,
+          manifests: Object.fromEntries(manifests.map((manifest) => [manifest.name, manifest.sha256])),
+        },
+      }),
     },
     metadata: {
       ...metadata,
@@ -190,16 +225,21 @@ function fixture() {
       positions: [browserPosition("baseline"), browserPosition("candidate"), browserPosition("candidate"), browserPosition("baseline")],
     }])),
     desktopLifecycle: Object.fromEntries(REQUIRED_LIFECYCLE_GATES.map((gate) => [gate, true])),
+    nativeArtifacts: {
+      macos: { file: path.basename(nativeArtifacts.macos), sha256: hash(nativeArtifacts.macos) },
+      windows: { file: path.basename(nativeArtifacts.windows), sha256: hash(nativeArtifacts.windows) },
+      linuxProtected: { file: path.basename(nativeArtifacts.linuxProtected), sha256: hash(nativeArtifacts.linuxProtected) },
+    },
     nativeCredentials: {
-      macos: gate("macos", { artifact: true, nativePlatform: "macos" }),
-      windows: gate("windows", { artifact: true, nativePlatform: "windows" }),
-      linuxProtected: gate("linuxProtected", { artifact: true, nativePlatform: "linuxProtected" }),
+      macos: gate("macos", { artifactSha: hash(nativeArtifacts.macos), nativePlatform: "macos" }),
+      windows: gate("windows", { artifactSha: hash(nativeArtifacts.windows), nativePlatform: "windows" }),
+      linuxProtected: gate("linuxProtected", { artifactSha: hash(nativeArtifacts.linuxProtected), nativePlatform: "linuxProtected" }),
     },
     releaseGates: Object.fromEntries(REQUIRED_RELEASE_GATES.map((name) => [name, gate(name)])),
   }
   const writeEvidence = () => fs.writeFileSync(evidenceFile, `${JSON.stringify(evidence, null, 2)}\n`)
   writeEvidence()
-  return { root, artifact, baselineFile, evidenceFile, outputDir, baseline, evidence, gateFiles, writeEvidence }
+  return { root, artifact, nativeArtifacts, baselineFile, evidenceFile, outputDir, baseline, evidence, gateFiles, writeEvidence }
 }
 
 describe("U8 release qualification", () => {
@@ -319,5 +359,53 @@ describe("U8 release qualification", () => {
     input.writeEvidence()
 
     expect(() => qualify(input)).toThrow("does not fingerprint boundary manifest desktop-account")
+  })
+
+  test("rejects generic release-gate results without the gate's semantic proof", () => {
+    const input = fixture()
+    const gateFile = input.gateFiles.get("selfHostedUpgrade")!
+    const gate = JSON.parse(fs.readFileSync(gateFile, "utf8"))
+    gate.results = { completed: true }
+    fs.writeFileSync(gateFile, `${JSON.stringify(gate)}\n`)
+    input.evidence.releaseGates.selfHostedUpgrade!.sha256 = hash(gateFile)
+    input.writeEvidence()
+
+    expect(() => qualify(input)).toThrow("release gate selfHostedUpgrade.results keys differ")
+  })
+
+  test("binds each native credential gate to its own platform artifact", () => {
+    const input = fixture()
+    const gateFile = input.gateFiles.get("windows")!
+    const gate = JSON.parse(fs.readFileSync(gateFile, "utf8"))
+    gate.artifactSha256 = hash(input.nativeArtifacts.macos)
+    fs.writeFileSync(gateFile, `${JSON.stringify(gate)}\n`)
+    input.evidence.nativeCredentials.windows.sha256 = hash(gateFile)
+    input.writeEvidence()
+
+    expect(() => qualify(input)).toThrow("native credential gate windows artifact does not match candidate")
+  })
+
+  test("rejects self-attested product-boundary booleans and manifest drift", () => {
+    const input = fixture()
+    const gateFile = input.gateFiles.get("productBoundary")!
+    const gate = JSON.parse(fs.readFileSync(gateFile, "utf8"))
+    gate.results.manifests["server-workerd"] = "0".repeat(64)
+    fs.writeFileSync(gateFile, `${JSON.stringify(gate)}\n`)
+    input.evidence.artifact.productBoundary.sha256 = hash(gateFile)
+    input.writeEvidence()
+
+    expect(() => qualify(input)).toThrow("product-boundary gate manifest server-workerd does not match candidate")
+  })
+
+  test("rejects gate provenance captured for another commit", () => {
+    const input = fixture()
+    const gateFile = input.gateFiles.get("hostedDevelopmentIdentity")!
+    const gate = JSON.parse(fs.readFileSync(gateFile, "utf8"))
+    gate.provenance.commitSha = "f".repeat(40)
+    fs.writeFileSync(gateFile, `${JSON.stringify(gate)}\n`)
+    input.evidence.releaseGates.hostedDevelopmentIdentity!.sha256 = hash(gateFile)
+    input.writeEvidence()
+
+    expect(() => qualify(input)).toThrow("provenance commit does not match release SHA")
   })
 })

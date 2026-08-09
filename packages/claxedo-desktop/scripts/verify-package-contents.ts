@@ -26,6 +26,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 
 import { ALL_NATIVE_MODULES, isDeclaredStructuralEntry, requiredPackagedBoundaryEntries } from "./package-structure"
+import { verifyHostConnectorChildArtifact } from "../src/main/host-connector/child-artifact"
 
 const ALLOWED_NATIVE_MODULES = new Set(ALL_NATIVE_MODULES)
 
@@ -118,6 +119,12 @@ export function verifyPackageContents(root = path.resolve(import.meta.dir, "..")
   }
   const failures: string[] = []
   for (const archive of asars) {
+    const resourceDir = path.join(path.dirname(archive), "host-connector")
+    try {
+      verifyHostConnectorChildArtifact(resourceDir)
+    } catch (error) {
+      failures.push(`${archive}: ${String(error)}`)
+    }
     const found = inspectLocales(archive)
     // Only assert when a locale directory is actually present: some targets
     // (and the asar-only fixtures in tests) have no Chromium resources beside

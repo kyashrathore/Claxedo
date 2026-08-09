@@ -739,7 +739,7 @@ jobs:
   # for Linux; that is a follow-up, not required to close the gap this job
   # exists for.
   e2e-desktop:
-    name: e2e (desktop-unsigned-embedded)
+    name: e2e (desktop packaged lifecycle)
     runs-on: macos-15
     env:
       # electron-vite runs under Node, whose default ~2GB old-space does not
@@ -801,8 +801,8 @@ jobs:
           --filter=@claxedo/workspace-relay
           --filter=@claxedo/workspace-runtime
 
-      # Builds the packaged app ONCE for the whole job; every scenario in
-      # desktop-unsigned-embedded.spec.ts launches a fresh process from this
+      # Builds the signed-capable packaged app ONCE for the whole job; every
+      # unsigned scenario in desktop-unsigned-embedded.spec.ts launches a fresh process from this
       # same binary (e2e/helpers/electron-app.ts's launchPackagedApp), not a
       # fresh build. `--dir` skips DMG assembly and notarisation (the full
       # `package:mac` path is ~5 min / 1.4 GB) while still producing an
@@ -811,8 +811,10 @@ jobs:
       # bug class this lane exists to catch, is independent of the --dir
       # target. This is the exact command electron-app.ts's own GATING error
       # names when no packaged binary is found. Measured 2026-08-06: 42s / 403 MB.
-      - name: Build packaged desktop app (--dir, unsigned)
+      - name: Build packaged desktop app (--dir, signed-capable)
         working-directory: packages/claxedo-desktop
+        env:
+          VITE_AUTH_ENABLED: "true"
         run: |
           bun run build
           npx electron-builder --dir --config electron-builder.config.ts
@@ -825,7 +827,7 @@ jobs:
       # `--grep-invert "@workgraph-real|@tier-real"` already carves this spec
       # (tagged `@tier-real @surface-desktop`) out of the sharded PR lane, so
       # it only ever runs here.
-      - name: Run desktop e2e (unsigned, embedded)
+      - name: Run desktop e2e (unsigned startup and embedded execution)
         working-directory: packages/claxedo-app
         timeout-minutes: 30
         env:
@@ -837,6 +839,13 @@ jobs:
           PLAYWRIGHT_SKIP_WEBSERVER: "1"
           PLAYWRIGHT_VIDEO: "0"
         run: bun run test:e2e:desktop
+
+      - name: Run desktop e2e (signed account and Host Connector lifecycle)
+        working-directory: packages/claxedo-app
+        timeout-minutes: 30
+        env:
+          PLAYWRIGHT_VIDEO: "0"
+        run: bun run test:e2e:desktop:real
 
       - name: Upload Playwright artifacts
         if: always()

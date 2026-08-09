@@ -60,6 +60,7 @@
     "test:e2e:workgraph": "CLAXEDO_WORKGRAPH_REAL_E2E=1 CLAXEDO_E2E_SUITE=core npx playwright test --config playwright.config.ts e2e/playwright/core-workgraph.spec.ts",
     "test:e2e:real": "CLAXEDO_TIER_REAL_E2E=1 CLAXEDO_E2E_SUITE=core npx playwright test --config playwright.config.ts e2e/playwright/real-harness-local.spec.ts",
     "test:e2e:desktop": "CLAXEDO_E2E_DESKTOP=1 CLAXEDO_E2E_SUITE=core npx playwright test --config playwright.config.ts --grep @surface-desktop",
+    "test:e2e:desktop:real": "CLAXEDO_TIER_REAL_E2E=1 CLAXEDO_E2E_DESKTOP=1 CLAXEDO_E2E_SUITE=core PLAYWRIGHT_SKIP_WEBSERVER=1 npx playwright test --config playwright.config.ts e2e/playwright/real-desktop-signed-cloud.spec.ts",
     "test:e2e:live": "CLAXEDO_E2E_LIVE=1 CLAXEDO_E2E_SUITE=live npx playwright test --config playwright.config.ts",
     "test:e2e:mobile": "CLAXEDO_E2E_SUITE=core npx playwright test --project=mobile --config playwright.config.ts",
     "test:e2e:marketing": "CLAXEDO_E2E_SUITE=marketing npx playwright test --config playwright.config.ts",

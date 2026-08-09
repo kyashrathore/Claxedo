@@ -1720,13 +1720,22 @@ something true, currently red, and directly tied to the product outcome.
 - [ ] **Unit 11: Rewire desktop to local composition, optional account auth, and Host Connector**
 
 **Status (2026-08-09):** The composition boundary is implemented and green, but
-the unit remains open for its owner-gated signed product journeys. Desktop now
+the unit remains open for both repository implementation and owner-gated signed
+product journeys. Desktop now
 boots the single local renderer document, keeps the Electron account adapter and
 hosted contribution in separately fingerprinted lazy chunks, and packages Host
 Connector as a separately verified utility-process resource. Real signed and
-unsigned builds plus `verify:closure` and `verify:u8-package-boundary` prove that
-unsigned startup executes none of those optional resources and fixture sign-in
-loads the hosted contribution once. The remaining acceptance work is the live
+unsigned builds plus `verify:closure` and `verify:u8-package-boundary` prove the
+base/optional artifact boundary. The packaged fixture sign-in/sign-out journey
+is now wired into the macOS CI lifecycle lane and passes the local packaged U8
+smoke, but remains unqualified until CI records it against the release artifact.
+Unit 10 remains deferred, so
+40 reviewed matrix operations—sessions, WorkGraph, Documents, legacy host links,
+connections, sandbox/provisioning, billing, and their stream/upload
+lifecycles—do not yet have browser/Electron adapters. That is executable
+repository work, not owner evidence; `account-port.test.ts` pins the exact
+deferred set so it cannot drift or be mistaken for completion. After that
+implementation, the remaining owner-gated acceptance work is the live
 linked-host/cloud-workspace/sign-out journey set and native credential behavior
 on macOS, Windows, and protected-storage Linux; those require the release
 owner's OAuth registrations and platform runners and must not be represented by

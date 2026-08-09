@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import * as fs from "node:fs"
+import { createHash } from "node:crypto"
 import * as os from "node:os"
 import * as path from "node:path"
 
@@ -120,11 +121,23 @@ function fakeAsar(target: string, files: string[]) {
 
 function withAsar(
   files: string[],
-  options: { includeBoundary?: boolean } = {},
+  options: { includeBoundary?: boolean; includeHostConnector?: boolean; corruptHostConnector?: boolean } = {},
 ) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-asar-"))
   const packaged = options.includeBoundary === false ? files : [...files, ...requiredPackagedBoundaryEntries(files)]
-  fakeAsar(path.join(root, "dist/mac/Claxedo.app/Contents/Resources/app.asar"), packaged)
+  const resources = path.join(root, "dist/mac/Claxedo.app/Contents/Resources")
+  fakeAsar(path.join(resources, "app.asar"), packaged)
+  if (options.includeHostConnector !== false) {
+    const child = path.join(resources, "host-connector")
+    const contents = "host connector child"
+    fs.mkdirSync(child, { recursive: true })
+    fs.writeFileSync(path.join(child, "index.js"), contents)
+    fs.writeFileSync(path.join(child, "manifest.json"), JSON.stringify({
+      schema: "claxedo.host-connector-child/v1",
+      entry: "index.js",
+      sha256: options.corruptHostConnector ? "0".repeat(64) : createHash("sha256").update(contents).digest("hex"),
+    }))
+  }
   try {
     return verifyPackageContents(root).failures
   } finally {
@@ -144,6 +157,14 @@ test("a package of declared output and native modules passes", () => {
       "node_modules/@lydell/node-pty/index.js",
     ]),
   ).toEqual([])
+})
+
+test("a packaged app must carry the verified Host Connector sidecar", () => {
+  const missing = withAsar(["package.json", "out/main/index.js"], { includeHostConnector: false })
+  expect(missing).toContainEqual(expect.stringContaining("Host Connector child manifest was not found"))
+
+  const corrupt = withAsar(["package.json", "out/main/index.js"], { corruptHostConnector: true })
+  expect(corrupt).toContainEqual(expect.stringContaining("Host Connector child fingerprint mismatch"))
 })
 
 test("an undeclared structural directory fails, reported once by root", () => {

@@ -14,6 +14,13 @@ function desktopBuildStep(file: string) {
 }
 
 describe("desktop release account boundary", () => {
+  test("draft creation is structurally blocked on an attested U8 qualification", () => {
+    const workflow = readFileSync(resolve(root, ".github/workflows/release-claxedo.yml"), "utf8")
+    expect(workflow).toContain("qualify-u8-release:")
+    expect(workflow).toContain('gh attestation verify "$report"')
+    expect(workflow).toMatch(/create-release:\n\s+needs: \[prepare, build-desktop, qualify-u8-release\]/)
+  })
+
   test("electron-vite bakes the same public-client names the account adapter reads", () => {
     const config = readFileSync(resolve(root, "packages/claxedo-desktop/electron.vite.config.ts"), "utf8")
     for (const name of [
