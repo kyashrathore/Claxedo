@@ -1,5 +1,8 @@
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-import { workspaceBacking } from "@claxedo/server-core/workspace/store/backing"
+import {
+  workspaceResponse as projectWorkspaceResponse,
+  type WorkspaceResponse,
+} from "@claxedo/server-core/workspace/store/response"
 import { getSupervisorSandboxStatus } from "../../workspace/supervisor"
 
 /**
@@ -13,24 +16,7 @@ export function workspaceResponse(ws: Workspace | undefined) {
   if (!ws) return
   const live = getSupervisorSandboxStatus(ws.id)
   const stopped = live === "stopped" ? "stopped" : undefined
-  const backing = workspaceBacking(ws)
-  const access = backing.kind === "cloud-vm" ? "cloud" : backing.kind === "user-hosted" ? "user-hosted" : "local"
-  return {
-    workspaceId: ws.id,
-    projectId: ws.project_id ?? ws.id,
-    directory: backing.kind === "local-worktree" ? ws.directory : (ws.remote_directory ?? ws.directory),
-    workspaceName: ws.workspace_name ?? null,
-    access,
-    backing,
-    kind: ws.kind,
-    driver: ws.driver ?? null,
-    status: stopped ?? ws.status ?? null,
-    git: {
-      repo: ws.repo_name ?? null,
-      branch: ws.git_branch ?? null,
-      remote: ws.git_remote ?? null,
-    },
-  }
+  return projectWorkspaceResponse(ws, stopped)
 }
 
-export type WorkspaceResponse = NonNullable<ReturnType<typeof workspaceResponse>>
+export type { WorkspaceResponse }
