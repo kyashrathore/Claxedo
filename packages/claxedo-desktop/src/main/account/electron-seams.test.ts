@@ -93,6 +93,37 @@ describe("credentialFile", () => {
 })
 
 describe("tokenExchange", () => {
+  test("bounds a token endpoint that never answers", async () => {
+    const exchange = tokenExchange((async () => await new Promise<Response>(() => {})) as typeof fetch, 1)
+
+    await expect(
+      exchange({
+        tokenUrl: "https://accounts.example/token",
+        clientId: "desktop",
+        code: "code",
+        codeVerifier: "verifier",
+        redirectUri: "http://127.0.0.1/callback",
+      }),
+    ).rejects.toThrow(/timed out/)
+  })
+
+  test("cancels an exchange even when the transport has not answered", async () => {
+    const controller = new AbortController()
+    const exchange = tokenExchange((async () => await new Promise<Response>(() => {})) as typeof fetch, 60_000)
+    const pending = exchange({
+      tokenUrl: "https://accounts.example/token",
+      clientId: "desktop",
+      code: "code",
+      codeVerifier: "verifier",
+      redirectUri: "http://127.0.0.1/callback",
+      signal: controller.signal,
+    })
+
+    controller.abort(new Error("sign-in cancelled"))
+
+    await expect(pending).rejects.toThrow("sign-in cancelled")
+  })
+
   test("sends the verifier and no client secret", async () => {
     // A native app cannot keep a secret; PKCE carries the proof instead. A
     // secret appearing here would mean one was shipped in the binary.
@@ -141,6 +172,14 @@ describe("tokenExchange", () => {
 })
 
 describe("refreshExchange", () => {
+  test("reports a token endpoint timeout as unavailable", async () => {
+    const exchange = refreshExchange((async () => await new Promise<Response>(() => {})) as typeof fetch, 1)
+
+    await expect(
+      exchange({ tokenUrl: "https://accounts.example/token", clientId: "desktop", refreshToken: "rt" }),
+    ).resolves.toMatchObject({ ok: false, reason: "unavailable", detail: expect.stringContaining("timed out") })
+  })
+
   const INPUT = { tokenUrl: "https://t.test", clientId: "c", refreshToken: "rt_1" }
 
   function stub(handler: (url: string, init: RequestInit) => Response | Promise<Response>) {

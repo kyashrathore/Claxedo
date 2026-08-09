@@ -227,6 +227,8 @@ export type ElectronAPI = {
   }
   account: {
     state: () => Promise<unknown>
+    /** Pushes authoritative main-process transitions, including passive revocation. */
+    onState: (listener: (state: unknown) => void) => () => void
     signIn: () => Promise<unknown>
     signOut: () => Promise<unknown>
     run: (operation: string, input?: Record<string, unknown>) => Promise<unknown>

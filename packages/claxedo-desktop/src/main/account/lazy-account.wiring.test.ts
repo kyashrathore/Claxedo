@@ -23,4 +23,9 @@ describe("lazy account production wiring", () => {
     expect(ready).toBeGreaterThan(-1)
     expect(initialize).toBeGreaterThan(ready)
   })
+
+  test("a signed-to-unsigned transition pauses Host Connector publication", () => {
+    expect(main).toMatch(/onStateChange:\s*\(next, previous\)\s*=>/)
+    expect(main).toMatch(/previous\.status === "signed" && next\.status !== "signed"\) hostConnector\?\.stop\(\)/)
+  })
 })

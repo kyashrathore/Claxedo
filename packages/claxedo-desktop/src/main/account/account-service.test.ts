@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createAccountService, type RefreshOutcome } from "./account-service"
+import { createAccountService, type AccountState, type RefreshOutcome } from "./account-service"
 import { createCredentialStore } from "./credential-store"
 import type { CredentialStore, TokenSet } from "./credential-store"
 import { REDIRECT_PATH } from "./oauth-flow"
@@ -44,8 +44,10 @@ function service<S extends CredentialStore = ReturnType<typeof memoryStore>>(ove
   store?: S
   fetch?: Parameters<typeof createAccountService>[0]["fetch"]
   refresh?: (token: string) => Promise<RefreshOutcome>
+  exchange?: OAuthSeams["exchange"]
   now?: number
   errors?: Array<{ stage: string; error: unknown }>
+  states?: AccountState[]
 } = {}) {
   const requests: Array<{ url: string; method: string; headers: Record<string, string>; body?: string }> = []
   const store = (overrides.store ?? memoryStore()) as S
@@ -63,7 +65,7 @@ function service<S extends CredentialStore = ReturnType<typeof memoryStore>>(ove
       callback = handler
       return { port: 49_152, close: async () => {} }
     },
-    exchange: async () => TOKENS,
+    exchange: overrides.exchange ?? (async () => TOKENS),
     safeStorage: () => ({ available: true, platform: "darwin" }),
     setTimeout: () => ({ cancel: () => {} }),
   }
@@ -81,6 +83,7 @@ function service<S extends CredentialStore = ReturnType<typeof memoryStore>>(ove
       }),
     ...(overrides.refresh ? { refresh: overrides.refresh } : {}),
     ...(overrides.errors ? { onError: (stage, error) => overrides.errors!.push({ stage, error }) } : {}),
+    ...(overrides.states ? { onStateChange: (next) => overrides.states!.push(next) } : {}),
   })
   return {
     api,
@@ -170,6 +173,23 @@ describe("run", () => {
 
     await expect(api.run("account.get")).rejects.toThrow(/failed: 500/)
     expect(store.held()).toEqual(TOKENS)
+  })
+
+  test("does not return an account-scoped response that completed after sign-out", async () => {
+    let release!: (response: Response) => void
+    const pending = new Promise<Response>((resolve) => {
+      release = resolve
+    })
+    const { api } = service({ store: memoryStore(TOKENS), fetch: async () => await pending })
+    api.restore()
+
+    const operation = api.run("account.get")
+    await Promise.resolve()
+    await api.signOut()
+    release(new Response(JSON.stringify({ userId: "old-owner" }), { status: 200 }))
+
+    await expect(operation).rejects.toThrow("not signed in")
+    expect(api.state()).toEqual({ status: "unsigned" })
   })
 })
 
@@ -524,6 +544,23 @@ describe("signIn", () => {
     expect(api.state()).toMatchObject({ status: "unavailable" })
     await expect(api.run("account.get")).rejects.toThrow(/not signed in/)
   })
+
+  test("does not adopt a successful OAuth result after sign-out cancelled the attempt", async () => {
+    let release!: (tokens: TokenSet) => void
+    const exchange = new Promise<TokenSet>((resolve) => {
+      release = resolve
+    })
+    const { api, store, completeSignIn } = service({ exchange: async () => await exchange })
+
+    const signingIn = completeSignIn()
+    await Promise.resolve()
+    await api.signOut()
+    release(TOKENS)
+
+    await expect(signingIn).resolves.toMatchObject({ ok: false })
+    expect(api.state()).toEqual({ status: "unsigned" })
+    expect(store.held()).toBeUndefined()
+  })
 })
 
 describe("signOut", () => {
@@ -535,6 +572,16 @@ describe("signOut", () => {
 
     expect(store.held()).toBeUndefined()
     expect(api.state()).toEqual({ status: "unsigned" })
+  })
+
+  test("publishes the authoritative transition for lifecycle consumers", async () => {
+    const states: AccountState[] = []
+    const { api } = service({ store: memoryStore(TOKENS), states })
+    api.restore()
+
+    await api.signOut()
+
+    expect(states.at(-1)).toEqual({ status: "unsigned" })
   })
 })
 

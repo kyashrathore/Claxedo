@@ -161,6 +161,19 @@ describe("Electron-main child lifecycle", () => {
     expect(host.operations.filter((operation) => operation.name === "host.enrollCurrentMachine")).toHaveLength(1)
   })
 
+  test("retires a live child that reported stopped before launching its replacement", async () => {
+    const host = harness()
+    await host.connector.start()
+    host.children[0]!.emit({ type: "status", status: { status: "stopped", reason: "closed", detail: "remote stopped" } })
+    await until(() => host.connector.status().status === "stopped", "stopped child state")
+
+    await host.connector.start()
+
+    expect(host.children).toHaveLength(2)
+    expect(host.children[0]!.killed).toBe(true)
+    expect(host.children.filter((child) => !child.killed)).toHaveLength(1)
+  })
+
   test("pause terminates the owned process and resume restores the same identity in one new child", async () => {
     const host = harness()
     await host.connector.start()
@@ -252,6 +265,56 @@ describe("Electron-main child lifecycle", () => {
     await expect(starting).resolves.toMatchObject({ status: "stopped", reason: "error" })
   })
 
+  test("pause during pre-ready startup resolves immediately as closed", async () => {
+    const children: FakeChild[] = []
+    const connector = setupHostConnectorChild({
+      spawn: () => {
+        const child = new FakeChild(false)
+        children.push(child)
+        return child
+      },
+      loadIdentity: async () => ({ ok: true }),
+      storeIdentity: async () => ({ ok: true }),
+      clearIdentity: () => {},
+      runAccountOperation: async () => {
+        throw new Error("must not run")
+      },
+      startupTimeoutMs: 60_000,
+    })
+
+    const starting = connector.start()
+    await until(() => children.length === 1, "child spawn")
+    connector.stop()
+
+    await expect(starting).resolves.toMatchObject({ status: "stopped", reason: "closed" })
+    expect(children[0]!.killed).toBe(true)
+    expect(connector.status()).toMatchObject({ status: "stopped", reason: "closed" })
+  })
+
+  test("pause cancels a startup waiting on identity restore", async () => {
+    let release!: () => void
+    const loading = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const connector = setupHostConnectorChild({
+      spawn: () => new FakeChild(),
+      loadIdentity: async () => {
+        await loading
+        return { ok: true }
+      },
+      storeIdentity: async () => ({ ok: true }),
+      clearIdentity: () => {},
+      runAccountOperation: async () => undefined,
+    })
+
+    const starting = connector.start()
+    await Promise.resolve()
+    connector.stop()
+
+    await expect(starting).resolves.toMatchObject({ status: "stopped", reason: "closed" })
+    release()
+  })
+
   test("a child that neither becomes ready nor exits is terminated by the startup bound", async () => {
     const children: FakeChild[] = []
     const connector = setupHostConnectorChild({
@@ -290,5 +353,39 @@ describe("main-side protocol guard", () => {
 
     expect(host.operations).toHaveLength(before)
     expect(host.children[0]!.parentMessages.some((message) => message.type === "account-result" && message.requestId === "hostile")).toBe(false)
+  })
+
+  test("drops a late account result after revocation without an unhandled transport error", async () => {
+    let release!: (value: unknown) => void
+    const operation = new Promise<unknown>((resolve) => {
+      release = resolve
+    })
+    const children: FakeChild[] = []
+    const errors: Array<{ stage: string; error: unknown }> = []
+    const connector = setupHostConnectorChild({
+      spawn: () => {
+        const child = new FakeChild(false)
+        children.push(child)
+        return child
+      },
+      loadIdentity: async () => ({ ok: true }),
+      storeIdentity: async () => ({ ok: true }),
+      clearIdentity: () => {},
+      runAccountOperation: async () => await operation,
+      onError: (stage, error) => errors.push({ stage, error }),
+    })
+    const starting = connector.start()
+    await until(() => children.length === 1, "child spawn")
+    children[0]!.emit({ type: "ready" })
+    await until(() => children[0]!.parentMessages.some((message) => message.type === "bootstrap"), "bootstrap")
+    children[0]!.emit({ type: "account-operation", requestId: "late", name: "host.enrollmentNonce", input: { hostId: "h" } })
+
+    connector.revoke()
+    release({ request_id: "r", nonce: "n" })
+    await starting
+    await Bun.sleep(0)
+
+    expect(errors.find((entry) => entry.stage === "child-message")).toBeUndefined()
+    expect(children[0]!.parentMessages.some((message) => message.type === "account-result" && message.requestId === "late")).toBe(false)
   })
 })

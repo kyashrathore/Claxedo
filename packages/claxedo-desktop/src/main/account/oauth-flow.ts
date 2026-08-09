@@ -52,6 +52,7 @@ export type OAuthSeams = {
     code: string
     codeVerifier: string
     redirectUri: string
+    signal?: AbortSignal
   }) => Promise<TokenSet>
   safeStorage: () => SafeStorageReport
   /** Milliseconds; injected so a timeout test does not wait for one. */
@@ -73,9 +74,13 @@ export type SignInResult =
  */
 export function createOAuthFlow(config: OAuthConfig, seams: OAuthSeams) {
   let running = false
+  let active: AbortController | undefined
 
   return {
     isRunning: () => running,
+    cancel() {
+      active?.abort(new Error("sign-in cancelled"))
+    },
     async signIn(): Promise<SignInResult> {
       if (running) return { ok: false, reason: "already-running", detail: "a sign-in attempt is already open" }
 
@@ -86,16 +91,19 @@ export function createOAuthFlow(config: OAuthConfig, seams: OAuthSeams) {
       if (!storage.usable) return { ok: false, reason: "no-secure-storage", detail: storage.detail }
 
       running = true
+      const controller = new AbortController()
+      active = controller
       try {
-        return await attempt(config, seams)
+        return await attempt(config, seams, controller.signal)
       } finally {
+        if (active === controller) active = undefined
         running = false
       }
     },
   }
 }
 
-async function attempt(config: OAuthConfig, seams: OAuthSeams): Promise<SignInResult> {
+async function attempt(config: OAuthConfig, seams: OAuthSeams, signal: AbortSignal): Promise<SignInResult> {
   const pkce = createPkcePair()
   const state = createState()
 
@@ -108,6 +116,8 @@ async function attempt(config: OAuthConfig, seams: OAuthSeams): Promise<SignInRe
   const arrived = new Promise<Arrival>((resolve) => {
     settle = resolve
   })
+  const cancel = () => settle({ ok: false, reason: "callback-failed", detail: "sign-in cancelled" })
+  signal.addEventListener("abort", cancel, { once: true })
 
   const server = await seams.listen((url) => {
     const result = readCallback({ url, expectedState: state, redirectPath: REDIRECT_PATH })
@@ -152,6 +162,7 @@ async function attempt(config: OAuthConfig, seams: OAuthSeams): Promise<SignInRe
       code: arrival.code,
       codeVerifier: pkce.verifier,
       redirectUri: loopbackRedirectUri(server.port, REDIRECT_PATH),
+      signal,
     })
     return { ok: true, tokens }
   } catch (error) {
@@ -160,6 +171,7 @@ async function attempt(config: OAuthConfig, seams: OAuthSeams): Promise<SignInRe
     // Both, on every path. A listening socket left behind after a failed
     // attempt is a port on the user's machine that accepts authorization codes.
     timer.cancel()
+    signal.removeEventListener("abort", cancel)
     await server.close()
   }
 }

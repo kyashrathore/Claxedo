@@ -101,12 +101,53 @@ type TokenPayload = {
  * why PKCE carries the proof on the authorization-code grant, and why the
  * refresh grant sends only the client id beside the token.
  */
-function postToTokenEndpoint(fetchImpl: typeof fetch, tokenUrl: string, form: Record<string, string>) {
-  return fetchImpl(tokenUrl, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
-    body: new URLSearchParams(form).toString(),
+const TOKEN_REQUEST_TIMEOUT_MS = 30_000
+
+async function postToTokenEndpoint(
+  fetchImpl: typeof fetch,
+  tokenUrl: string,
+  form: Record<string, string>,
+  timeoutMs: number,
+  parentSignal?: AbortSignal,
+) {
+  const controller = new AbortController()
+  let rejectAborted!: (error: Error) => void
+  const aborted = new Promise<never>((_resolve, reject) => {
+    rejectAborted = reject
   })
+  const abortFromParent = () => {
+    const reason = parentSignal?.reason instanceof Error ? parentSignal.reason : new Error("token request cancelled")
+    controller.abort(reason)
+    rejectAborted(reason)
+  }
+  if (parentSignal?.aborted) abortFromParent()
+  else parentSignal?.addEventListener("abort", abortFromParent, { once: true })
+
+  let handle: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_resolve, reject) => {
+    handle = setTimeout(() => {
+      const error = new Error(`token endpoint timed out after ${String(timeoutMs)}ms`)
+      controller.abort(error)
+      reject(error)
+    }, timeoutMs)
+    handle.unref?.()
+  })
+
+  try {
+    return await Promise.race([
+      fetchImpl(tokenUrl, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
+        body: new URLSearchParams(form).toString(),
+        signal: controller.signal,
+      }),
+      timeout,
+      aborted,
+    ])
+  } finally {
+    if (handle) clearTimeout(handle)
+    parentSignal?.removeEventListener("abort", abortFromParent)
+  }
 }
 
 /**
@@ -130,7 +171,7 @@ function decodeTokenPayload(payload: TokenPayload, fallbackRefreshToken?: string
 }
 
 /** The Authorization Code exchange. */
-export function tokenExchange(fetchImpl: typeof fetch = fetch): OAuthSeams["exchange"] {
+export function tokenExchange(fetchImpl: typeof fetch = fetch, timeoutMs = TOKEN_REQUEST_TIMEOUT_MS): OAuthSeams["exchange"] {
   return async (input) => {
     const response = await postToTokenEndpoint(fetchImpl, input.tokenUrl, {
       grant_type: "authorization_code",
@@ -138,7 +179,7 @@ export function tokenExchange(fetchImpl: typeof fetch = fetch): OAuthSeams["exch
       code: input.code,
       code_verifier: input.codeVerifier,
       redirect_uri: input.redirectUri,
-    })
+    }, timeoutMs, input.signal)
     if (!response.ok) throw new Error(`token exchange failed: ${response.status}`)
     const tokens = decodeTokenPayload((await response.json()) as TokenPayload)
     // Throwing, unlike the refresh grant below: this one runs inside a sign-in
@@ -167,7 +208,7 @@ export type RefreshExchange = (input: {
  * malformed request of OUR making also produces a 400, and signing the user out
  * over our own bug is the failure that cannot be walked back.
  */
-export function refreshExchange(fetchImpl: typeof fetch = fetch): RefreshExchange {
+export function refreshExchange(fetchImpl: typeof fetch = fetch, timeoutMs = TOKEN_REQUEST_TIMEOUT_MS): RefreshExchange {
   return async (input) => {
     let response: Response
     try {
@@ -175,7 +216,7 @@ export function refreshExchange(fetchImpl: typeof fetch = fetch): RefreshExchang
         grant_type: "refresh_token",
         client_id: input.clientId,
         refresh_token: input.refreshToken,
-      })
+      }, timeoutMs)
     } catch (error) {
       // Never reached an answer — an offline laptop, DNS, a dropped TLS
       // handshake. Says nothing about the credential.

@@ -1,6 +1,6 @@
 // target layer: account
 
-import { createSignal, type Accessor } from "solid-js"
+import { createSignal, onCleanup, type Accessor } from "solid-js"
 import type { AccountPort, AccountState, HostedOperationName } from "./account-port"
 import { decodeHostedResult } from "./hosted-operations"
 
@@ -21,6 +21,7 @@ import { decodeHostedResult } from "./hosted-operations"
 /** The bridge the preload exposes. Absent in a browser build. */
 export type AccountBridge = {
   state: () => Promise<AccountState>
+  onState: (listener: (state: AccountState) => void) => () => void
   signIn: () => Promise<AccountState>
   signOut: () => Promise<AccountState>
   run: (operation: HostedOperationName, input?: Record<string, unknown>) => Promise<unknown>
@@ -38,10 +39,15 @@ export function electronAccountPort(bridge: AccountBridge): AccountPort & { refr
   // `pending`, not `unsigned`, until main answers. Reporting unsigned first
   // flashes a login prompt at a signed user on every launch.
   const [state, setState] = createSignal<AccountState>({ status: "pending" })
+  let revision = 0
 
   const adopt = async (next: Promise<AccountState>) => {
+    const startedAt = revision
     try {
-      setState(await next)
+      const resolved = await next
+      // A pushed transition is newer than the invoke response that was already
+      // in flight. Never let that stale response remount signed-only surfaces.
+      if (startedAt === revision) setState(resolved)
     } catch {
       // Recorded, not rethrown. `unavailable` IS the report — the port's whole
       // contract is that `signIn` resolves when the attempt SETTLES, and
@@ -50,11 +56,16 @@ export function electronAccountPort(bridge: AccountBridge): AccountPort & { refr
       //
       // A failing bridge is a desktop wiring problem, not a signed-out user, so
       // it must not read as one.
-      setState({ status: "unavailable", reason: "callback-failed" })
+      if (startedAt === revision) setState({ status: "unavailable", reason: "callback-failed" })
     }
   }
 
   const refresh = () => adopt(bridge.state())
+  const unsubscribe = bridge.onState((next) => {
+    revision++
+    setState(next)
+  })
+  onCleanup(unsubscribe)
   void refresh()
 
   return {
@@ -65,8 +76,17 @@ export function electronAccountPort(bridge: AccountBridge): AccountPort & { refr
     // Decoded at the boundary. Main returns whatever the server sent; a shape
     // that changed should fail HERE, naming the operation, rather than three
     // components later as `undefined is not an object`.
-    run: (async <T,>(operation: HostedOperationName, input?: Record<string, unknown>) =>
-      decodeHostedResult<T>(operation, await bridge.run(operation, input))) as AccountPort["run"],
+    run: (async <T,>(operation: HostedOperationName, input?: Record<string, unknown>) => {
+      try {
+        return decodeHostedResult<T>(operation, await bridge.run(operation, input))
+      } catch (error) {
+        // Main may have rejected the credential while serving this operation.
+        // Reconcile before the caller observes the failure so hosted surfaces
+        // cannot remain mounted against a session main has already cleared.
+        await refresh()
+        throw error
+      }
+    }) as AccountPort["run"],
   }
 }
 
@@ -83,7 +103,7 @@ export function accountBridge(scope: unknown = globalThis): AccountBridge | unde
   // All four or none. A partial bridge is a preload that changed under a
   // renderer that did not, and calling the missing half would fail at the worst
   // moment rather than at startup.
-  for (const member of ["state", "signIn", "signOut", "run"] as const) {
+  for (const member of ["state", "onState", "signIn", "signOut", "run"] as const) {
     if (typeof api[member] !== "function") return undefined
   }
   return api

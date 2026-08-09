@@ -34,6 +34,7 @@ export type AccountAssemblyInput = {
   ipcMain: AccountIpcTarget
   env?: AccountConfigEnv
   onError?: (stage: string, error: unknown) => void
+  onStateChange?: (next: AccountState, previous: AccountState) => void
 }
 
 /**
@@ -112,6 +113,7 @@ export function createAccountAssembly(input: Omit<AccountAssemblyInput, "ipcMain
     refresh: (refreshToken) => refresh({ tokenUrl: config.tokenUrl, clientId: config.clientId, refreshToken }),
     now: () => Math.floor(Date.now() / 1000),
     ...(input.onError ? { onError: input.onError } : {}),
+    ...(input.onStateChange ? { onStateChange: input.onStateChange } : {}),
   })
 
   // Before registering: a renderer that asks for state during its first frame

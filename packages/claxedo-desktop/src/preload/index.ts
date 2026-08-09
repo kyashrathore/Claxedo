@@ -246,6 +246,11 @@ const api: ElectronAPI = {
   },
   account: {
     state: () => ipcRenderer.invoke("claxedo.account.state"),
+    onState: (listener: (state: unknown) => void) => {
+      const handler = (_event: unknown, state: unknown) => listener(state)
+      ipcRenderer.on("claxedo.account.stateChanged", handler)
+      return () => ipcRenderer.removeListener("claxedo.account.stateChanged", handler)
+    },
     signIn: () => ipcRenderer.invoke("claxedo.account.signIn"),
     signOut: () => ipcRenderer.invoke("claxedo.account.signOut"),
     run: (operation: string, input?: Record<string, unknown>) =>

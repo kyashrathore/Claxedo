@@ -17,6 +17,7 @@ import { HOSTED_OPERATIONS, hostedOperationChannel, type HostedOperationName } f
 import type { AccountState } from "./account-service"
 
 export const ACCOUNT_STATE_CHANNEL = "claxedo.account.state"
+export const ACCOUNT_STATE_CHANGED_CHANNEL = "claxedo.account.stateChanged"
 export const ACCOUNT_SIGN_IN_CHANNEL = "claxedo.account.signIn"
 export const ACCOUNT_SIGN_OUT_CHANNEL = "claxedo.account.signOut"
 

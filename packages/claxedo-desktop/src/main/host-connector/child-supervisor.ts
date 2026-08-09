@@ -79,6 +79,7 @@ export function setupHostConnectorChild(input: {
   let status: HostConnectorStatus = { status: "not-started" }
   let child: HostConnectorChildProcess | undefined
   let starting: Promise<HostConnectorStatus> | undefined
+  let cancelStarting: ((error: Error) => void) | undefined
   let era = 0
   let intentionalExit = false
   const pending = new Map<string, PendingRequest>()
@@ -128,8 +129,10 @@ export function setupHostConnectorChild(input: {
     if (message.type === "account-operation") {
       try {
         const value = await input.runAccountOperation(message.name, message.input)
+        if (child !== target) return
         send(target, { type: "account-result", requestId: message.requestId, ok: true, value })
       } catch (error) {
+        if (child !== target) return
         send(target, { type: "account-result", requestId: message.requestId, ok: false, error: String(error) })
       }
       return
@@ -138,6 +141,7 @@ export function setupHostConnectorChild(input: {
       try {
         const stored = await input.storeIdentity(message.identity)
         if (!stored.ok) throw new Error(stored.detail)
+        if (child !== target) return
         send(target, { type: "identity-stored", requestId: message.requestId })
       } catch (error) {
         input.onError?.("identity-store", error)
@@ -147,9 +151,9 @@ export function setupHostConnectorChild(input: {
     }
   }
 
-  const launch = async (): Promise<HostConnectorStatus> => {
+  const launch = async (cancelled: Promise<never>): Promise<HostConnectorStatus> => {
     const startedIn = era
-    const restored = await input.loadIdentity()
+    const restored = await Promise.race([input.loadIdentity(), cancelled])
     if (startedIn !== era) return status
     if (!restored.ok) return settle({ status: "unavailable", reason: restored.reason, detail: restored.detail })
 
@@ -160,7 +164,7 @@ export function setupHostConnectorChild(input: {
     target.on("message", (message) => {
       const parsed = parseHostConnectorChildMessage(message)
       if (parsed?.type === "ready") ready.resolve()
-      void onChildMessage(target, message)
+      void onChildMessage(target, message).catch((error) => input.onError?.("child-message", error))
     })
     target.once("exit", (code) => {
       if (child !== target) return
@@ -176,17 +180,20 @@ export function setupHostConnectorChild(input: {
     })
 
     const startupTimeoutMs = input.startupTimeoutMs ?? 10_000
-    await bounded(ready.promise, startupTimeoutMs, "Host Connector child ready")
+    await bounded(Promise.race([ready.promise, cancelled]), startupTimeoutMs, "Host Connector child ready")
     if (startedIn !== era || child !== target) return status
     const requestId = crypto.randomUUID()
     const started = await bounded(
-      request(target, {
-        type: "bootstrap",
-        requestId,
-        heartbeatIntervalMs: input.heartbeatIntervalMs ?? 20_000,
-        ...(restored.identity ? { identity: restored.identity } : {}),
-        ...(input.displayName ? { displayName: input.displayName } : {}),
-      }),
+      Promise.race([
+        request(target, {
+          type: "bootstrap",
+          requestId,
+          heartbeatIntervalMs: input.heartbeatIntervalMs ?? 20_000,
+          ...(restored.identity ? { identity: restored.identity } : {}),
+          ...(input.displayName ? { displayName: input.displayName } : {}),
+        }),
+        cancelled,
+      ]),
       startupTimeoutMs,
       "Host Connector child bootstrap",
     )
@@ -197,14 +204,15 @@ export function setupHostConnectorChild(input: {
   const terminate = (reason: "closed" | "revoked" | "error", detail: string) => {
     era++
     intentionalExit = true
+    cancelStarting?.(new Error(detail))
     const target = child
-    child = undefined
     if (target) {
       try {
         target.postMessage({ type: "stop", requestId: crypto.randomUUID() })
       } finally {
         target.kill()
       }
+      if (child === target) child = undefined
     }
     rejectPending(new Error(detail))
     settle({ status: "stopped", reason, detail })
@@ -213,8 +221,22 @@ export function setupHostConnectorChild(input: {
   return {
     status: () => status,
     async start() {
+      if (starting) return starting
       if (child && status.status === "enrolled") return status
-      starting ??= launch()
+      if (child) {
+        const stale = child
+        intentionalExit = true
+        try {
+          stale.postMessage({ type: "stop", requestId: crypto.randomUUID() })
+        } finally {
+          stale.kill()
+        }
+        if (child === stale) child = undefined
+        rejectPending(new Error("restarting stopped Host Connector child"))
+      }
+      const cancellation = deferred<never>()
+      cancelStarting = cancellation.reject
+      starting = launch(cancellation.promise)
         .catch((error) => {
           if (child) {
             intentionalExit = true
@@ -222,11 +244,12 @@ export function setupHostConnectorChild(input: {
             child = undefined
           }
           input.onError?.("child-start", error)
-          if (status.status === "stopped" && status.reason === "revoked") return status
+          if (status.status === "stopped" && (status.reason === "revoked" || status.reason === "closed")) return status
           return settle({ status: "stopped", reason: "error", detail: String(error) })
         })
         .finally(() => {
           starting = undefined
+          if (cancelStarting === cancellation.reject) cancelStarting = undefined
         })
       return starting
     },

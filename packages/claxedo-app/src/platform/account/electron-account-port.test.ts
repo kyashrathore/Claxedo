@@ -15,10 +15,15 @@ import { accountBridge, electronAccountPort, type AccountBridge } from "./electr
 
 function bridge(overrides: Partial<AccountBridge> = {}) {
   const calls: Array<{ method: string; args: unknown[] }> = []
+  const listeners = new Set<(state: Awaited<ReturnType<AccountBridge["state"]>>) => void>()
   const api: AccountBridge = {
     state: async () => {
       calls.push({ method: "state", args: [] })
       return { status: "signed", identity: { userId: "user_1", email: "a@b.test" } }
+    },
+    onState: (listener) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
     },
     signIn: async () => {
       calls.push({ method: "signIn", args: [] })
@@ -39,7 +44,7 @@ function bridge(overrides: Partial<AccountBridge> = {}) {
     },
     ...overrides,
   }
-  return { api, calls }
+  return { api, calls, emit: (state: Awaited<ReturnType<AccountBridge["state"]>>) => listeners.forEach((listener) => listener(state)) }
 }
 
 /** Solid signals need an owner; `createRoot` gives one without a component. */
@@ -75,6 +80,42 @@ describe("electronAccountPort", () => {
     await port.signOut()
 
     expect(port.state()).toEqual({ status: "unsigned" })
+  })
+
+  test("adopts passive revocation pushed by Electron main", async () => {
+    const b = bridge()
+    let dispose!: () => void
+    const port = createRoot((cleanup) => {
+      dispose = cleanup
+      return electronAccountPort(b.api)
+    })
+    await port.refresh()
+
+    b.emit({ status: "unavailable", reason: "revoked" })
+
+    expect(port.state()).toEqual({ status: "unavailable", reason: "revoked" })
+    dispose()
+  })
+
+  test("does not overwrite a pushed revocation with an older state response", async () => {
+    let resolveState!: (state: Awaited<ReturnType<AccountBridge["state"]>>) => void
+    const pendingState = new Promise<Awaited<ReturnType<AccountBridge["state"]>>>((resolve) => {
+      resolveState = resolve
+    })
+    const b = bridge({ state: () => pendingState })
+    let dispose!: () => void
+    const port = createRoot((cleanup) => {
+      dispose = cleanup
+      return electronAccountPort(b.api)
+    })
+
+    b.emit({ status: "unavailable", reason: "revoked" })
+    resolveState({ status: "signed", identity: { userId: "stale" } })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(port.state()).toEqual({ status: "unavailable", reason: "revoked" })
+    dispose()
   })
 
   test("names the operation and forwards its parameters, nothing else", async () => {
@@ -121,7 +162,7 @@ describe("accountBridge", () => {
     // A preload that changed under a renderer that did not. Failing at startup
     // beats failing the first time someone clicks sign out.
     const { api } = bridge()
-    for (const missing of ["state", "signIn", "signOut", "run"] as const) {
+    for (const missing of ["state", "onState", "signIn", "signOut", "run"] as const) {
       const partial = { ...api, [missing]: undefined }
       expect(accountBridge({ api: { account: partial } }), missing).toBeUndefined()
     }

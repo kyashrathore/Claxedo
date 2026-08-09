@@ -67,11 +67,16 @@ export type AccountServiceOptions = {
   /** Hosted Server's origin. Owned here so the renderer cannot choose it. */
   serverOrigin: string
   /** Injected transport; receives an absolute URL built from the table. */
-  fetch: (url: string, init: { method: string; headers: Record<string, string>; body?: string }) => Promise<Response>
+  fetch: (
+    url: string,
+    init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal },
+  ) => Promise<Response>
   /** Exchanges a refresh token. Absent means refresh is unsupported. */
   refresh?: (refreshToken: string) => Promise<RefreshOutcome>
   now: () => number
   onError?: (stage: string, error: unknown) => void
+  /** Canonical state transition feed for main-process lifecycle consumers. */
+  onStateChange?: (next: AccountState, previous: AccountState) => void
 }
 
 export function createAccountService(options: AccountServiceOptions) {
@@ -80,12 +85,26 @@ export function createAccountService(options: AccountServiceOptions) {
   let tokens: TokenSet | undefined
   /** The one refresh exchange allowed to be in flight. See `renew`. */
   let renewing: Promise<Credential> | undefined
+  const activeRequests = new Set<AbortController>()
   /**
    * Bumped by every sign-out. A refresh that was already in flight when the
    * user signed out must not adopt its answer on arrival — that would put a
    * live token back into a process the user just cleared.
    */
   let era = 0
+
+  const setState = (next: AccountState) => {
+    const previous = state
+    state = next
+    options.onStateChange?.(next, previous)
+    return next
+  }
+
+  const cancelActiveWork = () => {
+    flow.cancel()
+    for (const request of activeRequests) request.abort(new Error("account session ended"))
+    activeRequests.clear()
+  }
 
   /**
    * Take a token set as this process's credential — persisted first.
@@ -108,7 +127,7 @@ export function createAccountService(options: AccountServiceOptions) {
       // way, and the renderer's reading of the reason — "retrying will not
       // help" — is right for both.
       const detail = `the credential could not be stored: ${String(error)}`
-      state = { status: "unavailable", reason: "no-secure-storage", detail }
+      setState({ status: "unavailable", reason: "no-secure-storage", detail })
       return { ok: false, detail }
     }
     tokens = next
@@ -179,9 +198,10 @@ export function createAccountService(options: AccountServiceOptions) {
 
   function signOutLocally(reason: "revoked" | "callback-failed", detail: string) {
     era++
+    cancelActiveWork()
     tokens = undefined
     options.store.clear()
-    state = { status: "unavailable", reason, detail }
+    setState({ status: "unavailable", reason, detail })
   }
 
   return {
@@ -192,11 +212,11 @@ export function createAccountService(options: AccountServiceOptions) {
       try {
         const storage = options.store.available()
         if (!storage.usable) {
-          state = {
+          setState({
             status: "unavailable",
             reason: "no-secure-storage",
             detail: storage.detail,
-          }
+          })
           // Give the store one non-decrypting pass so it can discard a legacy
           // `basic_text` record while preserving ciphertext behind a locked or
           // temporarily unavailable protected backend.
@@ -206,7 +226,7 @@ export function createAccountService(options: AccountServiceOptions) {
         const stored = options.store.load(options.now())
         if (!stored) return state
         tokens = stored
-        state = { status: "signed", identity: { userId: "" } }
+        setState({ status: "signed", identity: { userId: "" } })
       } catch (error) {
         options.onError?.("restore", error)
       }
@@ -214,13 +234,18 @@ export function createAccountService(options: AccountServiceOptions) {
     },
 
     async signIn(): Promise<SignInResult> {
-      state = { status: "pending" }
+      const startedIn = era
+      setState({ status: "pending" })
       const result = await flow.signIn()
+      if (startedIn !== era) {
+        return { ok: false, reason: "callback-failed", detail: "sign-in was cancelled" }
+      }
       if (!result.ok) {
-        state =
+        setState(
           result.reason === "already-running"
             ? state
-            : { status: "unavailable", reason: mapReason(result.reason), detail: result.detail }
+            : { status: "unavailable", reason: mapReason(result.reason), detail: result.detail },
+        )
         return result
       }
       const adopted = adopt(result.tokens)
@@ -231,15 +256,16 @@ export function createAccountService(options: AccountServiceOptions) {
         // that is over.
         return { ok: false, reason: "no-secure-storage", detail: adopted.detail }
       }
-      state = { status: "signed", identity: { userId: "" } }
+      setState({ status: "signed", identity: { userId: "" } })
       return result
     },
 
     async signOut() {
       era++
+      cancelActiveWork()
       tokens = undefined
       options.store.clear()
-      state = { status: "unsigned" }
+      setState({ status: "unsigned" })
     },
 
     /**
@@ -250,17 +276,28 @@ export function createAccountService(options: AccountServiceOptions) {
      * credential can live in this process at all.
      */
     async run(name: HostedOperationName, input: Record<string, unknown> = {}): Promise<unknown> {
+      const startedIn = era
       const credential = await currentAccessToken()
       if (!credential.ok) throw new Error(credential.detail)
+      if (startedIn !== era) throw new Error("not signed in")
       const request = resolveHostedOperation(name, input)
-      const response = await options.fetch(`${options.serverOrigin}${request.path}`, {
-        method: request.method,
-        headers: {
-          authorization: `Bearer ${credential.token}`,
-          ...(request.body ? { "content-type": "application/json" } : {}),
-        },
-        ...(request.body ? { body: JSON.stringify(request.body) } : {}),
-      })
+      const controller = new AbortController()
+      activeRequests.add(controller)
+      let response: Response
+      try {
+        response = await options.fetch(`${options.serverOrigin}${request.path}`, {
+          method: request.method,
+          headers: {
+            authorization: `Bearer ${credential.token}`,
+            ...(request.body ? { "content-type": "application/json" } : {}),
+          },
+          ...(request.body ? { body: JSON.stringify(request.body) } : {}),
+          signal: controller.signal,
+        })
+      } finally {
+        activeRequests.delete(controller)
+      }
+      if (startedIn !== era) throw new Error("not signed in")
       if (response.status === 401) {
         // The server disagrees with our credential. Not refreshed-and-retried
         // here: renewal already happened ahead of expiry on the way in, so a
@@ -271,9 +308,12 @@ export function createAccountService(options: AccountServiceOptions) {
         throw new Error("session rejected")
       }
       if (!response.ok) throw new Error(`operation "${name}" failed: ${response.status}`)
+      if (startedIn !== era) throw new Error("not signed in")
       // Decoded. Returning the Response would hand the renderer the headers,
       // and one of them is the one thing this design exists to withhold.
-      return await response.json().catch(() => undefined)
+      const value = await response.json().catch(() => undefined)
+      if (startedIn !== era) throw new Error("not signed in")
+      return value
     },
   }
 }

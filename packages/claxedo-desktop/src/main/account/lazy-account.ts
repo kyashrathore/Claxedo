@@ -35,6 +35,7 @@ export function setupLazyAccount(input: {
   adapterReady?: Promise<unknown>
   env?: AccountConfigEnv
   onError?: AccountAssemblyInput["onError"]
+  onStateChange?: AccountAssemblyInput["onStateChange"]
   load?: () => Promise<AccountModule>
 }): LazyAccount {
   let assembly: ReturnType<typeof createAccountAssembly> | undefined
@@ -48,6 +49,7 @@ export function setupLazyAccount(input: {
         assembly = module.createAccountAssembly({
           ...(input.env ? { env: input.env } : {}),
           ...(input.onError ? { onError: input.onError } : {}),
+          ...(input.onStateChange ? { onStateChange: input.onStateChange } : {}),
         })
         return assembly
       })

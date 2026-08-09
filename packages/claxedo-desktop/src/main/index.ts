@@ -68,6 +68,7 @@ import { createWindowsWslCollector, createWslSource } from "./diagnostics/wsl-so
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand, wireFullscreenEvents } from "./ipc"
 import { installIpcCallerGuard, mainIpcCallerGuard } from "./ipc-caller-guard"
 import { setupLazyAccount } from "./account/lazy-account"
+import { ACCOUNT_STATE_CHANGED_CHANNEL } from "./account/account-ipc"
 import { accountConfigEnvironment } from "./account/public-config"
 import { machineDisplayName, setupElectronHostConnector } from "./host-connector/electron-child"
 import { registerHostConnectorIpc } from "./host-connector/ipc"
@@ -582,12 +583,17 @@ installIpcCallerGuard({
 // an account credential, so an unguarded one would be the worst of the sixty to
 // leave open.
 const bakedAccountConfig = import.meta.env as Record<string, string | undefined>
+let hostConnector: ReturnType<typeof setupElectronHostConnector> | undefined
 const account = setupLazyAccount({
   ipcMain,
   userDataDir: app.getPath("userData"),
   adapterReady: app.whenReady(),
   env: accountConfigEnvironment(process.env, bakedAccountConfig),
   onError: (stage, error) => logger.warn(`[account] ${stage}: ${String(error)}`),
+  onStateChange: (next, previous) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(ACCOUNT_STATE_CHANGED_CHANNEL, next)
+    if (previous.status === "signed" && next.status !== "signed") hostConnector?.stop()
+  },
 })
 
 /**
@@ -611,7 +617,7 @@ const account = setupLazyAccount({
  * identity on its network and `identity-store.ts` explains at length why that
  * must not travel to the control plane.
  */
-const hostConnector = setupElectronHostConnector({
+hostConnector = setupElectronHostConnector({
   runAccountOperation: (name, params) => account.run(name as never, params),
   safeStorage,
   userDataDir: app.getPath("userData"),
@@ -636,7 +642,7 @@ const hostConnector = setupElectronHostConnector({
 /** The two facts the connector's own state cannot carry. See `status-channel.ts`. */
 function hostConnectorContext() {
   return {
-    available: true,
+    available: hostConnector !== undefined,
     signedIn: account.state().status === "signed",
   }
 }
@@ -728,7 +734,7 @@ async function stopLocalServer() {
 }
 
 async function shutdown() {
-  hostConnector.dispose()
+  hostConnector?.dispose()
   diagnosticsSmokeFixtures.dispose()
   await stopLocalServer()
   if (browserBridgePromise) {
