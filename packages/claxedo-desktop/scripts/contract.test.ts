@@ -6,6 +6,7 @@ import * as path from "node:path"
 import { spec as desktopContractSpec, verify, write, type Spec } from "./contract"
 
 const ROOT = path.resolve(import.meta.dir, "..")
+const SOURCE_COMMIT = "a".repeat(40)
 
 function temp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-contract-"))
@@ -34,9 +35,9 @@ test("verify passes for matching contract", () => {
   make(root, "out/app.js", "console.log(1)\n")
   make(root, "resources/app.js", "console.log(1)\n")
 
-  write(spec(root), "dev")
+  write(spec(root), "dev", SOURCE_COMMIT)
 
-  expect(() => verify(spec(root), "dev")).not.toThrow()
+  expect(() => verify(spec(root), "dev", SOURCE_COMMIT)).not.toThrow()
   fs.rmSync(root, { recursive: true, force: true })
 })
 
@@ -47,10 +48,10 @@ test("verify fails when an input drifts after build", () => {
   make(root, "out/app.js", "console.log(1)\n")
   make(root, "resources/app.js", "console.log(1)\n")
 
-  write(spec(root), "dev")
+  write(spec(root), "dev", SOURCE_COMMIT)
   make(root, "src/app.ts", "export const n = 2\n")
 
-  expect(() => verify(spec(root), "dev")).toThrow("input changed: src/app.ts")
+  expect(() => verify(spec(root), "dev", SOURCE_COMMIT)).toThrow("input changed: src/app.ts")
   fs.rmSync(root, { recursive: true, force: true })
 })
 
@@ -61,10 +62,23 @@ test("verify fails when mirrored outputs diverge", () => {
   make(root, "out/app.js", "console.log(1)\n")
   make(root, "resources/app.js", "console.log(1)\n")
 
-  write(spec(root), "dev")
+  write(spec(root), "dev", SOURCE_COMMIT)
   make(root, "resources/app.js", "console.log(2)\n")
 
-  expect(() => verify(spec(root), "dev")).toThrow("output changed: resources/app.js")
+  expect(() => verify(spec(root), "dev", SOURCE_COMMIT)).toThrow("output changed: resources/app.js")
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test("verify fails when the candidate commit differs from the built artifact", () => {
+  const root = temp()
+  make(root, "src/app.ts", "export const n = 1\n")
+  make(root, "config.json", "{}\n")
+  make(root, "out/app.js", "console.log(1)\n")
+  make(root, "resources/app.js", "console.log(1)\n")
+
+  write(spec(root), "dev", SOURCE_COMMIT)
+
+  expect(() => verify(spec(root), "dev", "b".repeat(40))).toThrow("build contract source commit mismatch")
   fs.rmSync(root, { recursive: true, force: true })
 })
 

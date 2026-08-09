@@ -16,6 +16,7 @@ export type Spec = {
 type Manifest = {
   built_at: string
   channel: Channel
+  source_commit: string
   input: Record<string, string>
   output: Record<string, string>
 }
@@ -200,7 +201,23 @@ export function spec(root = ROOT): Spec {
   }
 }
 
-export function write(specArg = spec(), channel = resolveChannel()) {
+function validateSourceCommit(value: string) {
+  if (!/^[0-9a-f]{40}$/.test(value)) throw new Error(`invalid build source commit: ${value || "empty"}`)
+  return value
+}
+
+function resolveSourceCommit(root: string) {
+  const supplied = process.env.CLAXEDO_BUILD_SOURCE_COMMIT ?? process.env.GITHUB_SHA
+  if (supplied) return validateSourceCommit(supplied.trim())
+  const result = Bun.spawnSync(["git", "-C", root, "rev-parse", "HEAD"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  if (result.exitCode !== 0) throw new Error(`could not resolve build source commit: ${result.stderr.toString().trim()}`)
+  return validateSourceCommit(result.stdout.toString().trim())
+}
+
+export function write(specArg = spec(), channel = resolveChannel(), sourceCommit = resolveSourceCommit(specArg.root)) {
   const input = snapshot(specArg.root, specArg.input)
   const output = snapshot(specArg.root, specArg.output)
   checkPairs(output, specArg.match)
@@ -208,6 +225,7 @@ export function write(specArg = spec(), channel = resolveChannel()) {
   const data: Manifest = {
     built_at: new Date().toISOString(),
     channel,
+    source_commit: validateSourceCommit(sourceCommit),
     input,
     output,
   }
@@ -218,10 +236,13 @@ export function write(specArg = spec(), channel = resolveChannel()) {
   return data
 }
 
-export function verify(specArg = spec(), channel = resolveChannel()) {
+export function verify(specArg = spec(), channel = resolveChannel(), sourceCommit = resolveSourceCommit(specArg.root)) {
   const saved = read(specArg)
   if (saved.channel !== channel) {
     throw new Error(`build contract channel mismatch: expected ${channel}, got ${saved.channel}`)
+  }
+  if (saved.source_commit !== validateSourceCommit(sourceCommit)) {
+    throw new Error(`build contract source commit mismatch: expected ${sourceCommit}, got ${saved.source_commit}`)
   }
 
   const input = snapshot(specArg.root, specArg.input)

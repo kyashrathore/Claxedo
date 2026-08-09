@@ -37,6 +37,7 @@
     "smoke:u8-packaged": "bun ./scripts/u8-packaged-smoke.ts",
     "smoke:u8-signed-activation": "bun ./scripts/u8-signed-activation-smoke.ts",
     "verify:u8-package-boundary": "bun ./scripts/verify-u8-package-boundary.ts",
+    "qualify:u8-release": "bun ./scripts/u8-release-qualification.ts",
     "verify:closure": "bun ../../script/product-boundary/verify.ts"
   },
   "main": "./out/main/index.js",
