@@ -55,6 +55,7 @@ describe("turn usage meter", () => {
       observation: {
         kind: "cumulative",
         providerObservationId: "obs-1",
+        nativeSessionId: "provider-thread-1",
         observedAt: 1_000,
         tokens: { input: 10, output: 2, reasoning: null, cache: { read: 3, write: null } },
       },
@@ -73,6 +74,7 @@ describe("turn usage meter", () => {
       status: "completed",
       providerId: "openai",
       modelId: "gpt-5.4",
+      nativeSessionId: "provider-thread-1",
       tokens: { input: 10, output: 8, reasoning: 1, cache: { read: 3, write: 0 } },
     })
   })

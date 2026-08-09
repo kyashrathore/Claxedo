@@ -2,7 +2,7 @@ import type { AvailableCommand, ContentBlock, ToolCallContent } from "@agentclie
 import type { RuntimeDiagnostic } from "./diagnostics"
 import type { RawHarnessEvent } from "./raw-harness-event"
 
-export const AGENT_RUNTIME_EVENT_CONTRACT_VERSION = 5
+export const AGENT_RUNTIME_EVENT_CONTRACT_VERSION = 6
 
 export type RuntimeStatus = "busy" | "idle" | "error" | "recovering"
 export type RuntimeToolStatus = "pending" | "running" | "completed" | "failed"
@@ -39,6 +39,8 @@ export type RuntimeUsageObservation = {
   /** Provider-native ordering data when the source exposes it. */
   sequence?: number
   providerObservationId?: string
+  /** Provider-native session/thread identity used only for local overlap classification. */
+  nativeSessionId?: string
   observedAt?: number
 }
 

@@ -507,6 +507,9 @@ async function startServer() {
     cwd: SERVER_DIR,
     env: {
       ...process.env,
+      // TokenTracker-backed history must scan only this hermetic fixture home;
+      // a release test may never inspect a contributor's real provider logs.
+      HOME: dataDir,
       CLAXEDO_DATA_DIR: dataDir,
       CLAXEDO_SERVER_PORT: String(BACKEND_PORT),
       // The whole tier, in four env vars — see HARNESS NOTES' injection table.
@@ -925,9 +928,32 @@ async function expectRailRowTracksTheSession(
   void promptText
 }
 
+type HarnessUsage = { turns: number; tokens: number }
+
+async function harnessUsage(harness: string): Promise<HarnessUsage> {
+  const url = new URL("/api/claxedo/usage", BACKEND_URL)
+  url.searchParams.set("since", "0")
+  url.searchParams.set("until", String(Date.now() + 60_000))
+  url.searchParams.set("timezone", "UTC")
+  url.searchParams.set("group", "harness")
+  const response = await fetch(url, { signal: AbortSignal.timeout(10_000) })
+  if (!response.ok) throw new Error(`usage metering probe failed: ${response.status} ${await response.text()}`)
+  const body = await response.json() as {
+    breakdown?: { localRows?: Array<Record<string, unknown>> }
+  }
+  const row = body.breakdown?.localRows?.find((item) => item.value === harness)
+  return {
+    turns: Number(row?.turnCount ?? 0),
+    tokens: Number(row?.input ?? 0) + Number(row?.output ?? 0) + Number(row?.reasoning ?? 0)
+      + Number(row?.cacheRead ?? 0) + Number(row?.cacheWrite ?? 0),
+  }
+}
+
 /** Drives the shared "3 scripted turns + reload, full oracle each turn" journey. */
 async function runRealHarnessJourney(page: Page, dir: string, harness: HarnessCase) {
   scripted?.resetCounts()
+  const meteringKey = harness.harnessKey ?? "opencode"
+  const usageBefore = await harnessUsage(meteringKey)
   const runId = `${Date.now()}`.slice(-6)
   const input = await openDraftPrompt(page, dir)
 
@@ -1011,6 +1037,12 @@ async function runRealHarnessJourney(page: Page, dir: string, harness: HarnessCa
     scenario: `${harness.id}-reload`,
   })
   await expectLiveTurnsSettledAfterReload(page, markers)
+
+  const usageAfter = await harnessUsage(meteringKey)
+  const exactTokensPerTurn = harness.dialect === "chat" ? 15 : 2
+  expect(usageAfter.turns - usageBefore.turns, `${harness.id} did not settle exactly one usage fact per scripted turn`).toBe(TURNS)
+  expect(usageAfter.tokens - usageBefore.tokens, `${harness.id} did not preserve the scripted provider's exact token totals`)
+    .toBe(TURNS * exactTokensPerTurn)
 
   // Behavior 6, asserted last so a reload-time re-fetch cannot inflate it.
   expectScriptedTraffic(harness.dialect, TURNS)

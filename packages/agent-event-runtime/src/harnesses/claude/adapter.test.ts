@@ -642,6 +642,7 @@ describe("claudeSdkAdapter", () => {
         contextUsed: 24542,
         observation: {
           kind: "cumulative",
+          nativeSessionId: "sdk-session-result",
           tokens: {
             input: 4,
             output: 679,

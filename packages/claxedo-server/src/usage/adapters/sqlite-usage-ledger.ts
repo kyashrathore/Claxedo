@@ -36,6 +36,7 @@ function canonicalPayload(fact: TurnUsageRevision) {
     harness: fact.harness,
     providerId: fact.providerId,
     modelId: fact.modelId,
+    nativeSessionId: fact.nativeSessionId ?? null,
     workspaceId: fact.workspaceId ?? null,
     tokens: fact.tokens,
     quality: fact.quality,
@@ -62,6 +63,7 @@ function values(fact: TurnUsageRevision, hash: string): typeof ClaxedoUsageTurnR
     harness: fact.harness,
     provider_id: fact.providerId,
     model_id: fact.modelId,
+    native_session_id: fact.nativeSessionId ?? null,
     workspace_id: fact.workspaceId ?? null,
     input_tokens: fact.tokens.input,
     output_tokens: fact.tokens.output,
@@ -92,6 +94,7 @@ function fact(row: UsageRow): TurnUsageRevision {
     harness: row.harness,
     providerId: row.provider_id,
     modelId: row.model_id,
+    ...(row.native_session_id ? { nativeSessionId: row.native_session_id } : {}),
     ...(row.workspace_id ? { workspaceId: row.workspace_id } : {}),
     tokens: {
       input: row.input_tokens,

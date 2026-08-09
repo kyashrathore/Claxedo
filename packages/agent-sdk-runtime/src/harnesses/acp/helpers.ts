@@ -102,13 +102,14 @@ export function messageUsage(usage: Usage) {
   }
 }
 
-export function runtimeUsage(usage: Usage): Extract<AgentRuntimeEvent, { type: "usage" }> {
+export function runtimeUsage(usage: Usage, nativeSessionId?: string): Extract<AgentRuntimeEvent, { type: "usage" }> {
   return {
     type: "usage",
     contextSize: usage.totalTokens,
     contextUsed: usage.totalTokens,
     observation: {
       kind: "cumulative",
+      ...(nativeSessionId ? { nativeSessionId } : {}),
       tokens: {
         input: usage.inputTokens,
         output: usage.outputTokens,

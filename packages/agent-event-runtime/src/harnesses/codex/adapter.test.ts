@@ -424,6 +424,7 @@ describe("codexAppServerAdapter", () => {
       contextUsed: 126,
       observation: {
         kind: "cumulative",
+        nativeSessionId: "thread-1",
         tokens: {
           input: 40,
           output: 14,

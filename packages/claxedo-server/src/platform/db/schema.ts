@@ -18,4 +18,5 @@ export {
   ClaxedoUsageTurnRevisionTable,
   ClaxedoUsageTurnCurrentTable,
   ClaxedoUsageOutboxTable,
+  ClaxedoUsageSourceCoverageTable,
 } from "../../usage/usage.sql"

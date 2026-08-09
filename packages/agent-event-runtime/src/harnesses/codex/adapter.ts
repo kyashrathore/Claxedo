@@ -218,7 +218,7 @@ function todosFromPlan(row: Record<string, unknown>) {
   })
 }
 
-function usage(row: Record<string, unknown>): AgentRuntimeEvent | undefined {
+function usage(row: Record<string, unknown>, nativeSessionId?: string): AgentRuntimeEvent | undefined {
   const tokenUsage = object(row.tokenUsage) ?? row
   const total = object(tokenUsage.total) ?? {}
   const last = object(tokenUsage.last) ?? {}
@@ -235,6 +235,7 @@ function usage(row: Record<string, unknown>): AgentRuntimeEvent | undefined {
     contextUsed: contextUsed ?? contextSize ?? 0,
     observation: {
       kind: "cumulative",
+      ...(nativeSessionId ? { nativeSessionId } : {}),
       ...(text(row.turnId) ? { providerObservationId: text(row.turnId) } : {}),
       tokens: {
         input: inputTokens === undefined
@@ -650,7 +651,7 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
         }
 
         case "thread/tokenUsage/updated": {
-          const usageEvent = usage(row)
+          const usageEvent = usage(row, sessionId(event, context))
           return usageEvent ? [usageEvent] : []
         }
 

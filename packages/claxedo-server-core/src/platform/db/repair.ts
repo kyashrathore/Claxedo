@@ -98,7 +98,7 @@ const sqls = [
     \`message_id\` text NOT NULL, \`revision\` integer NOT NULL, \`payload_hash\` text NOT NULL,
     \`observed_at\` integer NOT NULL, \`completed_at\` integer, \`settlement\` text NOT NULL,
     \`status\` text NOT NULL, \`location\` text NOT NULL, \`harness\` text NOT NULL,
-    \`provider_id\` text NOT NULL, \`model_id\` text NOT NULL, \`workspace_id\` text,
+    \`provider_id\` text NOT NULL, \`model_id\` text NOT NULL, \`native_session_id\` text, \`workspace_id\` text,
     \`input_tokens\` integer, \`output_tokens\` integer, \`reasoning_tokens\` integer,
     \`cache_read_tokens\` integer, \`cache_write_tokens\` integer, \`quality_json\` text NOT NULL,
     PRIMARY KEY (\`host_id\`, \`session_ref\`, \`message_id\`, \`revision\`)
@@ -109,7 +109,7 @@ const sqls = [
     \`message_id\` text NOT NULL, \`revision\` integer NOT NULL, \`payload_hash\` text NOT NULL,
     \`observed_at\` integer NOT NULL, \`completed_at\` integer, \`settlement\` text NOT NULL,
     \`status\` text NOT NULL, \`location\` text NOT NULL, \`harness\` text NOT NULL,
-    \`provider_id\` text NOT NULL, \`model_id\` text NOT NULL, \`workspace_id\` text,
+    \`provider_id\` text NOT NULL, \`model_id\` text NOT NULL, \`native_session_id\` text, \`workspace_id\` text,
     \`input_tokens\` integer, \`output_tokens\` integer, \`reasoning_tokens\` integer,
     \`cache_read_tokens\` integer, \`cache_write_tokens\` integer, \`quality_json\` text NOT NULL,
     PRIMARY KEY (\`host_id\`, \`session_ref\`, \`message_id\`)
@@ -124,6 +124,7 @@ const sqls = [
     PRIMARY KEY (\`host_id\`, \`session_ref\`, \`message_id\`, \`revision\`)
   )`,
   "CREATE INDEX IF NOT EXISTS `claxedo_usage_outbox_state_created_idx` ON `claxedo_usage_outbox` (`state`, `created_at`)",
+  "CREATE TABLE IF NOT EXISTS `claxedo_usage_source_coverage` (`source` text PRIMARY KEY NOT NULL, `started_at` integer NOT NULL)",
 ] as const
 
 const tabs = [
@@ -137,6 +138,7 @@ const tabs = [
   "claxedo_usage_turn_revision",
   "claxedo_usage_turn_current",
   "claxedo_usage_outbox",
+  "claxedo_usage_source_coverage",
 ] as const
 
 function hasTable(db: SqliteInstance, name: string) {
@@ -395,6 +397,14 @@ function ensureWorkspaceLeaseDriverColumns(db: SqliteInstance, out: string[]) {
   renameColumn(db, "claxedo_terminal_session", "provider", "driver", out)
 }
 
+function ensureUsageNativeSessionColumns(db: SqliteInstance, out: string[]) {
+  for (const table of ["claxedo_usage_turn_revision", "claxedo_usage_turn_current"] as const) {
+    if (!hasTable(db, table) || hasColumn(db, table, "native_session_id")) continue
+    db.exec(`ALTER TABLE \`${table}\` ADD COLUMN \`native_session_id\` text`)
+    out.push(`${table}.native_session_id`)
+  }
+}
+
 export function repair(db: SqliteInstance) {
   const out: string[] = tabs.filter((name) => !hasTable(db, name))
   const sessionMetaHasHost = hasTable(db, "claxedo_session_meta") && hasColumn(db, "claxedo_session_meta", "host")
@@ -427,5 +437,6 @@ export function repair(db: SqliteInstance) {
   ensureNetworkPolicyHarnessColumn(db, out)
   ensureProviderCredentialOrgColumn(db, out)
   ensureWorkspaceLeaseDriverColumns(db, out)
+  ensureUsageNativeSessionColumns(db, out)
   return out
 }

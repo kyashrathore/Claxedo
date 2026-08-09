@@ -385,6 +385,7 @@ describe("PiHarnessAdapter", () => {
       contextUsed: 2,
       observation: {
         kind: "cumulative",
+        nativeSessionId: session.id,
         tokens: {
           input: 1,
           output: 1,

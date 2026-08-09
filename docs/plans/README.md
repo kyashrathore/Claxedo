@@ -1,12 +1,20 @@
 # Claxedo Plans
 
 Status: retained plans index
-Last updated: 2026-08-07
+Last updated: 2026-08-09
 
 This directory keeps active plans and concise dated references that still help
 explain a maintained package or cross-package delivery contract.
 
 ## Retained Plans
+
+- [Unified usage dashboard implementation and runbook](../usage-dashboard.md)
+  - Completed delivery reference for revisioned provider-exact turn metering,
+    cross-machine daily projections, provenance-safe current-machine history,
+    quota parity, estimated pricing, the unified account-menu dialog, and its
+    release/privacy/recovery gates. Retained because it defines the operational
+    boundary between Claxedo usage, classified external usage, and quarantined
+    history rather than treating Total as a simple sum.
 
 - [Cross-harness subagents](./2026-08-07-002-feat-cross-harness-subagents-plan.md)
   - Active plan (U1–U13) making a subagent a first-class object on every harness

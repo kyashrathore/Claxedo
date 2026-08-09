@@ -37,6 +37,8 @@ export type TurnUsageRevision = {
   harness: string
   providerId: string
   modelId: string
+  /** Local provider-native identity used to exclude Claxedo sessions before history aggregation. */
+  nativeSessionId?: string
   workspaceId?: string
   hostId: string
   tokens: RuntimeTokenUsage

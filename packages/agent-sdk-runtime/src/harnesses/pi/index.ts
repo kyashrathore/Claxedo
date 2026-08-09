@@ -511,6 +511,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
         contextUsed: assistantUsage.totalTokens,
         observation: {
           kind: "cumulative",
+          nativeSessionId: session.id,
           tokens: {
             input: assistantUsage.input,
             output: assistantUsage.output,

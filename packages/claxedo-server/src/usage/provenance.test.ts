@@ -27,4 +27,11 @@ describe("usage provenance", () => {
     const incomplete = createUsageProvenanceClassifier([])
     expect(incomplete({ source: "codex", nativeSessionId: "direct", observedAt: 150 })).toBe("unclassified")
   })
+
+  test("uses a persisted per-source boundary without guessing about older history", () => {
+    const bounded = createUsageProvenanceClassifier([], { completeAfter: { codex: 100 } })
+    expect(bounded({ source: "codex", nativeSessionId: "old-direct", observedAt: 99 })).toBe("unclassified")
+    expect(bounded({ source: "codex", nativeSessionId: "new-direct", observedAt: 100 })).toBe("external")
+    expect(bounded({ source: "claude", nativeSessionId: "direct", observedAt: 200 })).toBe("unclassified")
+  })
 })

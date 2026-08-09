@@ -22,13 +22,13 @@ export const emptyUsageTotals = (): UsageMetricTotals => ({
   turnCount: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, unknownCategories: 0,
 })
 
-function date(timestamp: number, timeZone: string) {
+function dateFormatter(timeZone: string) {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(new Date(timestamp))
+  })
 }
 
 function add(target: UsageMetricTotals, value: UsageMetricTotals) {
@@ -46,6 +46,7 @@ export function usageSeriesFromFacts(input: {
   const totals = emptyUsageTotals()
   const daily = new Map<string, UsageMetricTotals>()
   const latest = new Map<string, TurnUsageRevision>()
+  const formatDate = dateFormatter(input.timeZone)
   for (const fact of input.facts) {
     const key = `${fact.hostId}\u0000${fact.sessionRef}\u0000${fact.messageId}`
     const existing = latest.get(key)
@@ -64,7 +65,7 @@ export function usageSeriesFromFacts(input: {
       unknownCategories: values.filter((value) => value === null).length,
     }
     add(totals, contribution)
-    const key = date(fact.observedAt, input.timeZone)
+    const key = formatDate.format(new Date(fact.observedAt))
     const point = daily.get(key) ?? emptyUsageTotals()
     add(point, contribution)
     daily.set(key, point)

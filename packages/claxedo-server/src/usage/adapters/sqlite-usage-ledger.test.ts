@@ -9,7 +9,7 @@ CREATE TABLE claxedo_usage_turn_revision (
   host_id TEXT NOT NULL, session_ref TEXT NOT NULL, session_id TEXT NOT NULL, message_id TEXT NOT NULL,
   revision INTEGER NOT NULL, payload_hash TEXT NOT NULL, observed_at INTEGER NOT NULL, completed_at INTEGER,
   settlement TEXT NOT NULL, status TEXT NOT NULL, location TEXT NOT NULL, harness TEXT NOT NULL,
-  provider_id TEXT NOT NULL, model_id TEXT NOT NULL, workspace_id TEXT,
+  provider_id TEXT NOT NULL, model_id TEXT NOT NULL, native_session_id TEXT, workspace_id TEXT,
   input_tokens INTEGER, output_tokens INTEGER, reasoning_tokens INTEGER, cache_read_tokens INTEGER,
   cache_write_tokens INTEGER, quality_json TEXT NOT NULL,
   PRIMARY KEY (host_id, session_ref, message_id, revision)
@@ -18,7 +18,7 @@ CREATE TABLE claxedo_usage_turn_current (
   host_id TEXT NOT NULL, session_ref TEXT NOT NULL, session_id TEXT NOT NULL, message_id TEXT NOT NULL,
   revision INTEGER NOT NULL, payload_hash TEXT NOT NULL, observed_at INTEGER NOT NULL, completed_at INTEGER,
   settlement TEXT NOT NULL, status TEXT NOT NULL, location TEXT NOT NULL, harness TEXT NOT NULL,
-  provider_id TEXT NOT NULL, model_id TEXT NOT NULL, workspace_id TEXT,
+  provider_id TEXT NOT NULL, model_id TEXT NOT NULL, native_session_id TEXT, workspace_id TEXT,
   input_tokens INTEGER, output_tokens INTEGER, reasoning_tokens INTEGER, cache_read_tokens INTEGER,
   cache_write_tokens INTEGER, quality_json TEXT NOT NULL,
   PRIMARY KEY (host_id, session_ref, message_id)
@@ -140,5 +140,11 @@ describe("sqlite usage ledger", () => {
     for (const forbidden of ["prompt", "response", "directory", "credential", "auth", "apiKey"]) {
       expect(encoded).not.toContain(forbidden)
     }
+  })
+
+  test("persists provider-native identity for overlap classification", async () => {
+    const { ledger } = harness()
+    await ledger.writeRevision(revision({ nativeSessionId: "provider-thread-1" }))
+    expect((await ledger.current())[0]?.nativeSessionId).toBe("provider-thread-1")
   })
 })

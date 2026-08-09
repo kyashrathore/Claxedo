@@ -8,7 +8,7 @@ import {
 
 describe("AgentRuntimeEvent contract", () => {
   test("exposes an explicit contract version and event kind registry", () => {
-    expect(AGENT_RUNTIME_EVENT_CONTRACT_VERSION).toBe(5)
+    expect(AGENT_RUNTIME_EVENT_CONTRACT_VERSION).toBe(6)
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("text-delta")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("user-message-delta")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("tool-status")

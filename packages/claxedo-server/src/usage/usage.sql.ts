@@ -15,6 +15,7 @@ const usageColumns = () => ({
   harness: text().notNull(),
   provider_id: text().notNull(),
   model_id: text().notNull(),
+  native_session_id: text(),
   workspace_id: text(),
   input_tokens: integer(),
   output_tokens: integer(),
@@ -60,4 +61,17 @@ export const ClaxedoUsageOutboxTable = sqliteTable(
     primaryKey({ columns: [table.host_id, table.session_ref, table.message_id, table.revision] }),
     index("claxedo_usage_outbox_state_created_idx").on(table.state, table.created_at),
   ],
+)
+
+/**
+ * The instant after which every Claxedo-owned native session for a scanner
+ * source is guaranteed to be represented in the local usage facts. History
+ * before this boundary stays quarantined instead of being guessed external.
+ */
+export const ClaxedoUsageSourceCoverageTable = sqliteTable(
+  "claxedo_usage_source_coverage",
+  {
+    source: text().primaryKey(),
+    started_at: integer().notNull(),
+  },
 )

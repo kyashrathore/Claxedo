@@ -18,6 +18,7 @@ type TurnContext = {
   harness: string
   providerId?: string
   modelId?: string
+  nativeSessionId?: string
 }
 
 type State = {
@@ -28,6 +29,7 @@ type State = {
   hasUsage: boolean
   providerId?: string
   modelId?: string
+  nativeSessionId?: string
   observedAt?: number
   settlement?: TurnUsageRevision["settlement"]
   status?: TurnUsageStatus
@@ -90,6 +92,7 @@ function observationKey(observation: RuntimeUsageObservation) {
     kind: observation.kind,
     sequence: observation.sequence ?? null,
     providerObservationId: observation.providerObservationId ?? null,
+    nativeSessionId: observation.nativeSessionId ?? null,
     observedAt: observation.observedAt ?? null,
     tokens: observation.tokens,
   })
@@ -133,6 +136,7 @@ export function createTurnMeter(input: {
         hasUsage: fact.quality.knownCategories.length > 0,
         providerId: fact.providerId,
         modelId: fact.modelId,
+        ...(fact.nativeSessionId ? { nativeSessionId: fact.nativeSessionId } : {}),
         observedAt: fact.observedAt,
         settlement: fact.settlement,
         status: fact.status,
@@ -188,6 +192,9 @@ export function createTurnMeter(input: {
       harness: context.harness,
       providerId: current.providerId ?? context.providerId ?? "unknown",
       modelId: current.modelId ?? context.modelId ?? "unknown",
+      ...(current.nativeSessionId ?? context.nativeSessionId
+        ? { nativeSessionId: current.nativeSessionId ?? context.nativeSessionId }
+        : {}),
       ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
       hostId: context.hostId,
       tokens: current.hasUsage ? current.tokens : unknownTokens(),
@@ -231,6 +238,7 @@ export function createTurnMeter(input: {
       current.tokens = applyObservation(current.tokens, observation)
       current.hasUsage = true
       current.observedAt = observation.observedAt ?? now()
+      current.nativeSessionId = observation.nativeSessionId ?? current.nativeSessionId
       current.quality = {
         source: "provider",
         observationKind: observation.kind,

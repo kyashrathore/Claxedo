@@ -436,6 +436,7 @@ function usageSnapshot(message: Record<string, unknown>, lastKnownContextWindow?
     contextUsed: Math.min(totalTokens, contextSize),
     observation: {
       kind: "cumulative",
+      ...(text(message.session_id) ? { nativeSessionId: text(message.session_id) } : {}),
       tokens: {
         input: number(usage.input_tokens) ?? null,
         output: number(usage.output_tokens) ?? null,

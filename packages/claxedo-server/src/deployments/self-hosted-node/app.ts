@@ -143,13 +143,14 @@ import { localHostIdentity, registrationPayload, signHostPayload } from "../../w
 import { hasUserHostedMachineTunnel, startUserHostedMachineTunnel, stopUserHostedMachineTunnel } from "../../user-hosted-tunnel"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/self-hosted-execution"
 import { createSqliteUsageLedger } from "../../usage/adapters/sqlite-usage-ledger"
+import { createSqliteUsageSourceCoverageStore, type UsageSourceCoverageStore } from "../../usage/adapters/sqlite-usage-provenance"
 import { createTurnMeter } from "../../usage/turn-meter"
 import { createConvexUsageLedger } from "../../authority/adapters/convex/usage-ledger"
 import type { UsageLedger } from "../../platform/telemetry/product/metering"
 import { createUsageOutboxSync } from "../../usage/outbox-sync"
 import { LocalUsageRoutes } from "../../usage/routes"
 import { scanTokenTrackerLocalHistory } from "../../usage/adapters/token-tracker-local-history"
-import { createUsageProvenanceClassifier } from "../../usage/provenance"
+import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "../../usage/provenance"
 
 const execFileAsync = promisify(execFile)
 
@@ -468,6 +469,7 @@ export function createSelfHostedApp(
      */
     posture?: SelfHostedPosture
     usageRevisionStore?: ReturnType<typeof createSqliteUsageLedger>
+    usageSourceCoverage?: UsageSourceCoverageStore
     usageLedger?: UsageLedger
     resolveUsageHostIdentity?: () => Promise<{ hostId: string }>
   } = {},
@@ -848,23 +850,24 @@ export function createSelfHostedApp(
       history: async ({ since, until }) => {
         const facts = await options.usageRevisionStore!.current()
         const entries = facts.flatMap((fact) => {
-          const source = fact.harness === "opencode" ? "opencode" : fact.harness === "pi" ? "pi" : undefined
-          return source ? [{
+          const source = tokenTrackerSourceForHarness(fact.harness)
+          const nativeSessionId = fact.nativeSessionId ?? (source === "opencode" || source === "pi" ? fact.sessionId : undefined)
+          return source && nativeSessionId ? [{
             source,
-            nativeSessionId: fact.sessionId,
+            nativeSessionId,
             sessionRef: fact.sessionRef,
             harness: fact.harness,
             ...(fact.workspaceId ? { workspaceId: fact.workspaceId } : {}),
-            startedAt: fact.observedAt,
-            ...(fact.completedAt ? { endedAt: fact.completedAt } : {}),
+            startedAt: 0,
           }] : []
         })
+        const completeAfter = await options.usageSourceCoverage?.starts() ?? {}
         return await scanTokenTrackerLocalHistory({
           sourceHome: os.homedir(),
           stateDir: path.join(dataDir(), "usage-scanner"),
           since,
           until,
-          classify: createUsageProvenanceClassifier(entries),
+          classify: createUsageProvenanceClassifier(entries, { completeAfter }),
         })
       },
     }))
@@ -1122,6 +1125,8 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   const opencodeCompat = process.env.CLAXEDO_DISABLE_OPENCODE_COMPAT !== "1"
   const services = options.services
   const usageRevisionStore = createSqliteUsageLedger()
+  const usageSourceCoverage = createSqliteUsageSourceCoverageStore()
+  void usageSourceCoverage.ensure(["claude", "codex", "opencode", "pi"])
   const authorityUrl = convexAuthorityUrlFromEnv(process.env)
   const usageLedger = authorityUrl && process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN?.trim()
     ? createConvexUsageLedger({ url: authorityUrl })
@@ -1356,6 +1361,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   let localSessionProjectionReady: Promise<void> | undefined
   const built = createSelfHostedApp(services, {
     usageRevisionStore,
+    usageSourceCoverage,
     ...(usageLedger ? { usageLedger } : {}),
     resolveUsageHostIdentity: localHostIdentity,
     onOpencodeAccess: () => upstreamEvents?.start(),
