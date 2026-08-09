@@ -598,16 +598,20 @@ describe("global sync inventory source helpers", () => {
   })
 
   test("inventory page source uses local control sessions for loopback global pages", async () => {
+    const requests: string[] = []
     const source = createInventoryPageSource({
       baseUrl: () => "http://127.0.0.1:4096",
       pageSize: 2,
-      platformFetch: () => async () => jsonResponse({
-        sessions: [
-          { sessionID: "ses_3", directory: "/repo/a", createdAt: 1, updatedAt: 3 },
-          { sessionID: "ses_2", directory: "/repo/a", createdAt: 1, updatedAt: 2 },
-          { sessionID: "ses_1", directory: "/repo/a", createdAt: 1, updatedAt: 1 },
-        ],
-      }),
+      platformFetch: () => async (resource) => {
+        requests.push(String(resource))
+        return jsonResponse({
+          sessions: [
+            { sessionID: "ses_3", directory: "/repo/a", createdAt: 1, updatedAt: 3 },
+            { sessionID: "ses_2", directory: "/repo/a", createdAt: 1, updatedAt: 2 },
+            { sessionID: "ses_1", directory: "/repo/a", createdAt: 1, updatedAt: 1 },
+          ],
+        })
+      },
       hasSignedAccess: () => false,
       signedWorkspaceProjects: () => [],
       signedInventorySource: emptySignedInventorySource(),
@@ -617,6 +621,7 @@ describe("global sync inventory source helpers", () => {
 
     expect(page.data.map((item) => item.id)).toEqual(["ses_3", "ses_2"])
     expect(page.cursor).toBe(2)
+    expect(requests.map((item) => new URL(item).pathname)).toEqual(["/api/claxedo/session"])
   })
 
   test("inventory page source dedupes concurrent workspace group requests", async () => {

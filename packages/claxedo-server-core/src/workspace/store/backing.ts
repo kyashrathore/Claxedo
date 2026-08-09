@@ -1,16 +1,5 @@
-import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { SandboxDriverID } from "@claxedo/sandbox-contract"
-
-/**
- * Normalized workspace backing model aligned with the target API. The
- * `kind` field replaces ad-hoc client checks against the persisted
- * `Workspace.kind` enum, which only distinguishes local vs cloud and
- * cannot represent user-hosted runtimes.
- *
- * The internal store keeps its existing `Workspace.kind: "local" |
- * "cloud"` field for backwards compatibility. This module derives the
- * normalized record without changing storage.
- */
+import type { Workspace } from "./index"
 
 export type LocalWorktreeBacking = {
   kind: "local-worktree"
@@ -44,15 +33,7 @@ function omitUndefined<T extends Record<string, unknown>>(input: T): T {
   return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as T
 }
 
-/**
- * Derive a normalized backing record from a persisted Workspace.
- *
- * Cloud workspaces with a driver are cloud-vm even before the sandbox
- * lease is attached. Cloud workspaces without a driver are user-hosted:
- * the workspace was created against the team control plane but is served
- * by a runtime the user runs themselves and reaches through the relay.
- * Anything else is local-worktree backed by `directory`.
- */
+/** Derives the public backing model from the persisted workspace record. */
 export function workspaceBacking(workspace: Workspace): WorkspaceBacking {
   if (workspace.kind === "cloud") {
     if (!workspace.driver) {

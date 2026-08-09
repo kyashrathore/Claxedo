@@ -204,7 +204,7 @@ describe("@claxedo/local-server closure", () => {
     // number is the reach that matters — a rise is a new dependency the
     // unsigned desktop now carries and is worth reading before it is bumped.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(47)
+    expect(modules.size).toBeLessThanOrEqual(48)
     expect(packages.size).toBeLessThanOrEqual(21)
   })
 })

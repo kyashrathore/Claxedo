@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
 import { workspaceBacking } from "./backing"
-import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import type { Workspace } from "./index"
 
 function ws(input: Partial<Workspace>): Workspace {
   return {

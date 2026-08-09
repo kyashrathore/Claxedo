@@ -427,7 +427,7 @@ describe("override bootstrapDirectory", () => {
       baseUrl: "https://app.claxedo.test",
       fetch: async (input, init) => {
         const req = input instanceof Request ? input : new Request(String(input), init)
-        if (req.url.includes("/api/workspace/resolve")) {
+        if (req.url.includes("/workspace/resolve")) {
           await pending
           returned.workspace++
         }
@@ -519,7 +519,7 @@ describe("override bootstrapDirectory", () => {
         harnessType: "pi",
         fetch: async (input, init) => {
           const req = input instanceof Request ? input : new Request(String(input), init)
-          if (req.url.includes("/api/workspace/resolve")) {
+          if (req.url.includes("/workspace/resolve")) {
             return new Response(JSON.stringify({ kind: "local", directory: "/tmp/ws" }), {
               status: 200,
               headers: { "Content-Type": "application/json" },
@@ -613,7 +613,7 @@ describe("override bootstrapDirectory", () => {
         fetch: async (input, init) => {
           const req = input instanceof Request ? input : new Request(String(input), init)
           urls.push(req.url)
-          if (req.url.includes("/api/workspace/resolve")) {
+          if (req.url.includes("/workspace/resolve")) {
             return new Response(JSON.stringify({ kind: "local", directory: "/tmp/ws" }), {
               status: 200,
               headers: { "Content-Type": "application/json" },
@@ -638,7 +638,7 @@ describe("override bootstrapDirectory", () => {
       globalThis.fetch = previousFetch
     }
 
-    expect(urls).toContain("http://localhost:4096/api/workspace/resolve?directory=%2Ftmp%2Fws")
+    expect(urls).toContain("http://localhost:4096/api/claxedo/workspace/resolve?directory=%2Ftmp%2Fws")
     expect(urls).toContain("http://localhost:4096/provider?harness=claude-acp&directory=%2Ftmp%2Fws")
     expect(localUrls).toContain("GET http://localhost:4096/api/claxedo/agent-config/commands")
     expect(localUrls.some((item) => item.includes("/api/claxedo/agent-config/agents"))).toBe(false)
@@ -681,7 +681,7 @@ describe("override bootstrapDirectory", () => {
         harnessType: "claude-acp",
         fetch: async (input, init) => {
           const req = input instanceof Request ? input : new Request(String(input), init)
-          if (req.url.includes("/api/workspace/resolve")) {
+          if (req.url.includes("/workspace/resolve")) {
             return new Response(JSON.stringify({ kind: "local", directory: "/tmp/ws" }), {
               status: 200,
               headers: { "Content-Type": "application/json" },
@@ -754,7 +754,7 @@ describe("override bootstrapDirectory", () => {
       fetch: async (input, init) => {
         const req = input instanceof Request ? input : new Request(String(input), init)
         urls.push(req.url)
-        if (req.url.includes("/api/workspace/resolve")) {
+        if (req.url.includes("/workspace/resolve")) {
           return new Response(JSON.stringify({
             workspaceId: "ws_cloud",
             directory: "workspace:ws_cloud",
@@ -797,7 +797,7 @@ describe("override bootstrapDirectory", () => {
     })
     await warmup()
 
-    expect(urls.some((url) => url.includes("/api/workspace/resolve"))).toBe(true)
+    expect(urls.some((url) => url.includes("/workspace/resolve"))).toBe(true)
     expect(urls).toContain("http://relay.test/workspaces/ws_cloud/provider?harness=opencode")
     expect(urls).toContain("http://relay.test/workspaces/ws_cloud/agent?harness=opencode")
     expect(urls).toContain("http://relay.test/workspaces/ws_cloud/command")
@@ -853,7 +853,7 @@ describe("override bootstrapDirectory", () => {
       fetch: async (input, init) => {
         const req = input instanceof Request ? input : new Request(String(input), init)
         urls.push(req.url)
-        if (req.url.includes("/api/workspace/resolve")) {
+        if (req.url.includes("/workspace/resolve")) {
           return new Response(JSON.stringify({
             workspaceId: "ws_cloud",
             directory: "workspace:ws_cloud",
@@ -949,7 +949,7 @@ describe("override bootstrapDirectory", () => {
       fetch: async (input, init) => {
         const req = input instanceof Request ? input : new Request(String(input), init)
         urls.push(req.url)
-        if (req.url.includes("/api/workspace/resolve")) {
+        if (req.url.includes("/workspace/resolve")) {
           throw new Error(`unexpected workspace resolve: ${req.url}`)
         }
         if (req.url.includes("/api/workspace/ws_known_bootstrap/connection")) {
@@ -1017,7 +1017,7 @@ describe("override bootstrapDirectory", () => {
       fetch: async (input, init) => {
         const req = input instanceof Request ? input : new Request(String(input), init)
         urls.push(req.url)
-        if (req.url.includes("/api/workspace/resolve")) {
+        if (req.url.includes("/workspace/resolve")) {
           return new Response(JSON.stringify({
             workspaceId: "ws_default",
             directory: "workspace:ws_default",
@@ -1095,7 +1095,7 @@ describe("override bootstrapDirectory", () => {
       fetch: async (input, init) => {
         const req = input instanceof Request ? input : new Request(String(input), init)
         urls.push(req.url)
-        if (req.url.includes("/api/workspace/resolve")) {
+        if (req.url.includes("/workspace/resolve")) {
           return new Response(JSON.stringify({
             workspaceId: "ws_raw",
             directory: "ws_raw",

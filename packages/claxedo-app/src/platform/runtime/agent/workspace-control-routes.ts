@@ -1,5 +1,6 @@
 import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
+import { centralTransportForServer } from "@/platform/runtime/server-transport"
 import {
   WORKSPACE_DEFAULT_SANDBOX_DRIVER_PATH,
   WORKSPACE_SANDBOX_DRIVERS_PATH,
@@ -35,7 +36,11 @@ export function workspaceResolveUrl(input: {
   workspaceId?: string
   create?: boolean
 }) {
-  const url = new URL("/api/workspace/resolve", controlPlaneBaseUrl(input.baseUrl))
+  const baseUrl = controlPlaneBaseUrl(input.baseUrl)
+  const path = centralTransportForServer(baseUrl) === "loopback"
+    ? "/api/claxedo/workspace/resolve"
+    : "/api/workspace/resolve"
+  const url = new URL(path, baseUrl)
   const workspaceId = input.workspaceId ?? workspaceIdFromRef(input.scope)
   if (input.scope && !workspaceId) url.searchParams.set("directory", input.scope)
   if (workspaceId) url.searchParams.set("workspaceId", workspaceId)
@@ -134,6 +139,16 @@ export function controlSessionNavigationListUrl(input: {
   if (input.git?.length) url.searchParams.set("git", input.git.join(","))
   if (input.search) url.searchParams.set("search", input.search)
   if (input.cursor) url.searchParams.set("cursor", input.cursor)
+  return url
+}
+
+export function sessionNavigationListUrl(input: {
+  baseUrl: string
+} & ControlSessionNavigationListQuery) {
+  const url = controlSessionNavigationListUrl(input)
+  if (centralTransportForServer(input.baseUrl) === "loopback") {
+    url.pathname = "/api/claxedo/session-list"
+  }
   return url
 }
 

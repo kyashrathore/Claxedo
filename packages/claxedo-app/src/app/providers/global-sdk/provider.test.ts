@@ -701,7 +701,7 @@ describe("global sdk event fetch", () => {
     const calls: string[] = []
     const liveSession: { sessionID: string; directory: string; workspaceId?: string } = { sessionID: "session-1", directory: "/repo" }
     const request = recordingFetch(calls, (url) => {
-      if (url.includes("/api/workspace/resolve")) {
+      if (url.includes("/workspace/resolve")) {
         return new Response(JSON.stringify({ workspaceId: "ws_1", kind: "cloud" }), { status: 200 })
       }
       if (url.includes("/api/workspace/ws_1/connection")) {
@@ -737,7 +737,7 @@ describe("global sdk event fetch", () => {
     const calls: string[] = []
     const liveSession: { sessionID: string; directory: string; workspaceId?: string } = { sessionID: "session-1", directory: "/repo" }
     const request = recordingFetch(calls, (url) => {
-      if (url.includes("/api/workspace/resolve")) {
+      if (url.includes("/workspace/resolve")) {
         return new Response(JSON.stringify({ workspaceId: "ws_local", kind: "local" }), { status: 200 })
       }
       return eventResponse()
@@ -751,7 +751,7 @@ describe("global sdk event fetch", () => {
     })("http://localhost:3001/global/event?sessionID=session-1")
 
     expect(calls).toEqual([
-      "http://localhost:3001/api/workspace/resolve?directory=%2Frepo",
+      "http://localhost:3001/api/claxedo/workspace/resolve?directory=%2Frepo",
       "http://localhost:3001/global/event?sessionID=session-1",
     ])
     expect(liveSession.workspaceId).toBeUndefined()
@@ -761,7 +761,7 @@ describe("global sdk event fetch", () => {
     const calls: string[] = []
     const liveSession: { sessionID: string; directory: string; workspaceId?: string } = { sessionID: "session-1", directory: "/repo" }
     const request = recordingFetch(calls, (url) => {
-      if (url.includes("/api/workspace/resolve")) {
+      if (url.includes("/workspace/resolve")) {
         return new Response(JSON.stringify({ workspaceId: "ws_local", kind: "local" }), { status: 200 })
       }
       return eventResponse()
@@ -777,7 +777,7 @@ describe("global sdk event fetch", () => {
     await eventFetch("http://localhost:3001/global/event?sessionID=session-1")
 
     expect(calls).toEqual([
-      "http://localhost:3001/api/workspace/resolve?directory=%2Frepo",
+      "http://localhost:3001/api/claxedo/workspace/resolve?directory=%2Frepo",
       "http://localhost:3001/global/event?sessionID=session-1",
       "http://localhost:3001/global/event?sessionID=session-1",
     ])
@@ -787,7 +787,7 @@ describe("global sdk event fetch", () => {
   test("signed real-directory event workspace resolution is Query-owned across reconnects", async () => {
     const calls: string[] = []
     const request = recordingFetch(calls, (url) => {
-      if (url.includes("/api/workspace/resolve")) {
+      if (url.includes("/workspace/resolve")) {
         return new Response(JSON.stringify({ workspaceId: "ws_event_query", kind: "cloud" }), { status: 200 })
       }
       if (url.includes("/api/workspace/ws_event_query/connection")) {
@@ -813,7 +813,7 @@ describe("global sdk event fetch", () => {
     await eventFetch("http://claxedo.test/global/event?sessionID=session-query")
     await eventFetch("http://claxedo.test/global/event?sessionID=session-query")
 
-    expect(calls.filter((url) => url.includes("/api/workspace/resolve"))).toEqual([
+    expect(calls.filter((url) => url.includes("/workspace/resolve"))).toEqual([
       "http://claxedo.test/api/workspace/resolve?directory=%2Frepo%2Fquery-owned-events",
     ])
     expect(calls.filter((url) => url.includes("/workspaces/ws_event_query/global/event"))).toHaveLength(2)
@@ -831,7 +831,7 @@ describe("global sdk event fetch", () => {
         url: req.url,
         authorization: req.headers.get("authorization"),
       })
-      if (req.url.includes("/api/workspace/resolve")) {
+      if (req.url.includes("/workspace/resolve")) {
         return new Response(JSON.stringify({ workspaceId: "ws_1", kind: "cloud" }), { status: 200 })
       }
       if (req.url.includes("/api/workspace/ws_1/connection")) {

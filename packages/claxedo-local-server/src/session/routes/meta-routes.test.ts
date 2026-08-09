@@ -114,6 +114,67 @@ describe("session metadata routes", () => {
     })
   })
 
+  test("local unsigned mode lists projected session metadata on the local product route", async () => {
+    await putSessionMeta("local_list_1", {
+      directory: "/tmp/local-list",
+      tags: ["global"],
+      title: "Local list row",
+    })
+
+    const res = await SessionMetaRoutes().request(
+      `http://localhost/api/claxedo/session?directory=${encodeURIComponent("/tmp/local-list")}`,
+    )
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      sessions: [expect.objectContaining({
+        sessionID: "local_list_1",
+        directory: "/tmp/local-list",
+        title: "Local list row",
+      })],
+    })
+  })
+
+  test("local unsigned mode serves bounded rail pages on the local product route", async () => {
+    const directory = `/tmp/local-navigation-${randomUUID()}`
+    await putSessionMeta("local_navigation_1", {
+      directory,
+      title: "Local navigation one",
+    })
+    await putSessionMeta("local_navigation_2", {
+      directory,
+      title: "Local navigation two",
+    })
+
+    const first = await SessionMetaRoutes().request(
+      `http://localhost/api/claxedo/session-list?scope=workspace&directory=${encodeURIComponent(directory)}&limit=1`,
+    )
+    expect(first.status).toBe(200)
+    const firstBody = await first.json() as {
+      items: Array<{ sessionId: string; directory: string }>
+      nextCursor?: string
+      totalKnown: number
+    }
+    expect(firstBody.items).toHaveLength(1)
+    expect(firstBody.items[0]?.directory).toBe(directory)
+    expect(firstBody.totalKnown).toBe(2)
+    expect(firstBody.nextCursor).toEqual(expect.any(String))
+
+    const second = await SessionMetaRoutes().request(
+      `http://localhost/api/claxedo/session-list?scope=workspace&directory=${encodeURIComponent(directory)}&limit=1&cursor=${encodeURIComponent(firstBody.nextCursor ?? "")}`,
+    )
+    expect(second.status).toBe(200)
+    const secondBody = await second.json() as {
+      items: Array<{ sessionId: string }>
+      nextCursor?: string
+    }
+    expect(secondBody.items).toHaveLength(1)
+    expect(new Set([...firstBody.items, ...secondBody.items].map((item) => item.sessionId))).toEqual(
+      new Set(["local_navigation_1", "local_navigation_2"]),
+    )
+    expect(secondBody.nextCursor).toBeUndefined()
+  })
+
   test("signed cloud mode rejects missing bearer tokens", async () => {
     const { app } = buildApp()
     const res = await app.request("http://localhost/api/claxedo/session/sess_1/meta")

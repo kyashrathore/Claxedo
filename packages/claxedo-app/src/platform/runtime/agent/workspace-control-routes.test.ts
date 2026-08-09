@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   controlSessionListUrl,
   controlSessionNavigationListUrl,
+  sessionNavigationListUrl,
   controlSessionUrl,
   controlWorkspaceUrl,
   experimentalSandboxPath,
@@ -36,6 +37,11 @@ describe("workspace control routes", () => {
       scope: "workspace:ws_123",
       create: true,
     })).toBe("https://control.example.test/api/workspace/resolve?workspaceId=ws_123&create=true")
+    expect(workspaceResolveUrl({
+      baseUrl: "http://127.0.0.1:4096/",
+      scope: "/tmp/local workspace",
+      create: true,
+    })).toBe("http://127.0.0.1:4096/api/claxedo/workspace/resolve?directory=%2Ftmp%2Flocal+workspace&create=true")
     expect(controlWorkspaceUrl({
       baseUrl: "https://control.example.test/",
       workspaceId: "daytona/custom",
@@ -69,6 +75,18 @@ describe("workspace control routes", () => {
       limit: 50,
       cursor: "cursor:1",
     }).toString()).toBe("https://control.example.test/api/control/session-list?scope=global&limit=50&projectId=proj_1&workspaceId=ws_1&directory=%2Frepo&groupBy=workspace&archived=archived&status=running%2Cidle&environment=prod&git=dirty%2Cclean&search=hello+world&cursor=cursor%3A1")
+    expect(sessionNavigationListUrl({
+      baseUrl: "http://127.0.0.1:3001/",
+      scope: "workspace",
+      directory: "/repo",
+      limit: 20,
+    }).toString()).toBe("http://127.0.0.1:3001/api/claxedo/session-list?scope=workspace&limit=20&directory=%2Frepo")
+    expect(sessionNavigationListUrl({
+      baseUrl: "https://control.example.test/",
+      scope: "workspace",
+      directory: "/repo",
+      limit: 20,
+    }).toString()).toBe("https://control.example.test/api/control/session-list?scope=workspace&limit=20&directory=%2Frepo")
   })
 
   test("builds cloud workspace lifecycle routes with encoded identities", () => {

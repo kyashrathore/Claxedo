@@ -40,6 +40,7 @@ import { createWorkspaceRuntimeProxy } from "../workspace/runtime-dispatch/middl
 import { sessionMetaProjectionTap } from "../session/session-meta-tap"
 import { AgentConfigRoutes } from "../agent-config/routes/index"
 import { SessionMetaRoutes } from "../session/routes/meta-routes"
+import { LocalWorkspaceRoutes } from "../workspace/routes/resolve-route"
 import { OpenCodeCompatRoutes } from "../opencode/compat-routes/index"
 import { CredentialRoutes } from "../credentials/routes/credential"
 import { ProviderAuthRoutes } from "../credentials/routes/provider-auth"
@@ -241,6 +242,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     agentExtensionPolicyOverrides: services.extensionPolicy.agentExtensionPolicyOverrides,
   }))
   app.route("/", SessionMetaRoutes({ services, ...authRouteOptions(services) }))
+  app.route("/api/claxedo/workspace", LocalWorkspaceRoutes(authRouteOptions(services)))
   app.route("/api/claxedo/network-policy", NetworkPolicyRoutes(authRouteOptions(services)))
 
   return { injectWebSocket }

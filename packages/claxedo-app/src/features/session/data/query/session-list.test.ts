@@ -96,6 +96,26 @@ describe("session list query cache", () => {
     expect(calls[0]?.headers.get("x-opencode-directory")).toBe("/repo")
   })
 
+  test("uses the local product session-list route for loopback rail queries", async () => {
+    const calls: string[] = []
+    await queryClient.fetchQuery(sessionListQueryOptions({
+      baseUrl: "http://127.0.0.1:3001",
+      query: {
+        scope: "workspace",
+        directory: "/repo",
+        limit: 2,
+      },
+      request: async (input) => {
+        calls.push(String(input))
+        return new Response(JSON.stringify(response()))
+      },
+    }))
+
+    expect(calls).toEqual([
+      "http://127.0.0.1:3001/api/claxedo/session-list?scope=workspace&limit=2&directory=%2Frepo",
+    ])
+  })
+
   test("preserves the control session navigation list URL shape", async () => {
     const calls: string[] = []
     await queryClient.fetchQuery(sessionListQueryOptions({

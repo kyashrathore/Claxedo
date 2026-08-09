@@ -1,13 +1,15 @@
 import type { Placement } from "@/platform/runtime/placement"
 import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import {
-  centralTransportForServer,
   createWorkspaceRuntimeRequest,
-  isLocalPersonalScope,
   unsignedLocalFetch,
   type WorkspaceRuntimeRequestOptions,
   type WorkspaceRuntimeSnapshotLike,
 } from "@/platform/runtime/agent/workspace-runtime-request"
+import {
+  centralTransportForServer,
+  isLocalPersonalScope,
+} from "@/platform/runtime/server-transport"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 
 export {

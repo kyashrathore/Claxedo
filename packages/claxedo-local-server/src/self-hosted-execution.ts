@@ -30,6 +30,7 @@ export {
 // ── Local route surface ─────────────────────────────────────────────────────
 export { AgentConfigRoutes } from "./agent-config/routes/index"
 export { SessionMetaRoutes } from "./session/routes/meta-routes"
+export { LocalWorkspaceRoutes } from "./workspace/routes/resolve-route"
 export { OpenCodeCompatRoutes } from "./opencode/compat-routes/index"
 export { CredentialRoutes } from "./credentials/routes/credential"
 export { ProviderAuthRoutes } from "./credentials/routes/provider-auth"

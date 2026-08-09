@@ -12,7 +12,20 @@ import {
 } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { parseSessionMeta, putSessionMeta, sessionMeta, type SessionMeta } from "@claxedo/server-core/session/meta/index"
+import {
+  listSessionNavigationMetas,
+  listSessionMetas,
+  parseSessionMeta,
+  putSessionMeta,
+  sessionMeta,
+  type SessionMeta,
+} from "@claxedo/server-core/session/meta/index"
+import {
+  buildSessionListResponse,
+  parseSessionListQuery,
+  sessionListStoreFilter,
+  sessionListStorePageFilter,
+} from "@claxedo/server-core/session/navigation-list"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 
 type Options = {
@@ -91,6 +104,20 @@ async function authorizeWrite(
   await authority.openWorkspace(auth, { workspaceId })
 }
 
+async function authorizeWorkspaceRead(
+  auth: SignedControlPlaneAuth | undefined,
+  options: Options,
+  workspaceId: string | undefined,
+) {
+  if (!auth) return
+  const authority = requireAuthority(options.services)
+  await authority.usersMe(auth)
+  if (!workspaceId) {
+    throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Workspace context is required")
+  }
+  await authority.openWorkspace(auth, { workspaceId })
+}
+
 function responseMeta(input: SessionMeta | undefined, auth: SignedControlPlaneAuth | undefined, sessionId: string) {
   const fallback = { sessionID: sessionId, tags: [], attachments: [] }
   if (!input) return fallback
@@ -106,6 +133,55 @@ export function SessionMetaRoutes(options: Options = {}) {
         return c.json(controlPlaneAuthErrorBody(err), err.status)
       }
       throw err
+    })
+    // The desktop-local session inventory. `/api/control/sessions` belongs to
+    // the hosted control plane and is intentionally absent from this product;
+    // local metadata is projected into the local SQLite store and read here.
+    .get("/api/claxedo/session", async (c) => {
+      const authResult = await signedOrError(c.req.raw, options)
+      if (authResult.error) return c.json(authResult.error, authResult.status)
+      const resolved = await workspace(c).catch(() => undefined)
+      await authorizeWorkspaceRead(authResult.auth, options, resolved?.id)
+      const sessions = await listSessionMetas({
+        ...(resolved?.id ? { workspaceID: resolved.id } : {}),
+        ...(c.req.query("directory") ? { directory: c.req.query("directory") } : {}),
+      })
+      return c.json({
+        sessions: sessions.map((item) => responseMeta(item, authResult.auth, item.sessionID)),
+      })
+    })
+    .get("/api/claxedo/session-list", async (c) => {
+      const authResult = await signedOrError(c.req.raw, options)
+      if (authResult.error) return c.json(authResult.error, authResult.status)
+      const resolved = await workspace(c).catch(() => undefined)
+      await authorizeWorkspaceRead(authResult.auth, options, resolved?.id)
+      try {
+        const query = parseSessionListQuery(new URL(c.req.url))
+        const canUseBoundedProjection = query.groupBy === "none" &&
+          query.environment.length === 0 &&
+          query.git.length === 0
+        if (canUseBoundedProjection) {
+          return c.json(buildSessionListResponse({
+            query,
+            sessions: await listSessionNavigationMetas(sessionListStorePageFilter(query)),
+            cursorApplied: true,
+          }))
+        }
+        return c.json(buildSessionListResponse({
+          query,
+          sessions: await listSessionMetas(sessionListStoreFilter(query)),
+        }))
+      } catch (err) {
+        if (err instanceof Error && err.message === "invalid_session_list_cursor") {
+          return c.json({
+            error: {
+              code: "invalid_session_list_cursor",
+              message: "Session list cursor does not match this query",
+            },
+          }, 400)
+        }
+        throw err
+      }
     })
     .get("/api/claxedo/session/:id/meta", async (c) => {
       const authResult = await signedOrError(c.req.raw, options)

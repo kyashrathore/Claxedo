@@ -525,7 +525,7 @@ export function createInventoryPageSource(input: InventoryPageSourceInput) {
   const authFetch = input.authFetch ?? defaultAuthFetch
 
   async function fetchLocalControlSessions(directory?: string): Promise<InventoryGlobalSession[]> {
-    const url = controlSessionListUrl({ baseUrl: inventoryServerUrl(getClaxedoServerUrl()) })
+    const url = new URL("/api/claxedo/session", inventoryServerUrl(getClaxedoServerUrl()))
     if (directory) url.searchParams.set("directory", directory)
     const res = await (input.platformFetch() ?? globalThis.fetch)(url, { headers: { Accept: "application/json" } })
     if (!res.ok) return []

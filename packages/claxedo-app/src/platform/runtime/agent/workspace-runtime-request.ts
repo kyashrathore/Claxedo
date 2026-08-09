@@ -1,11 +1,18 @@
 import { createWorkspaceRelayConnection, openWorkspaceConnection } from "@/platform/runtime/agent/workspace-relay-connection"
 import { authFetch } from "@/platform/api/api"
 import { hasBacking, type SessionRef } from "@/platform/identity/session-ref"
-import {
-  isFilesystemDirectory,
-  workspaceIdFromRef,
-} from "@/platform/identity/legacy-resolver"
+import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { queryClient } from "@/platform/query/query-client"
+import {
+  isLocalPersonalScope,
+  isLoopbackHttpUrl,
+} from "@/platform/runtime/server-transport"
+
+export {
+  centralTransportForServer,
+  isLocalPersonalScope,
+  isLoopbackHttpUrl,
+} from "@/platform/runtime/server-transport"
 
 export type WorkspaceRuntimeSnapshotLike = {
   kind?: "local" | "cloud" | "user-hosted" | null
@@ -36,27 +43,6 @@ type RelayConnection = {
 
 const relayRequestIds = new WeakMap<typeof fetch, number>()
 let nextRelayRequestId = 1
-
-export function isLoopbackHttpUrl(input: string | undefined) {
-  if (!input) return false
-  try {
-    const url = new URL(input)
-    return (url.protocol === "http:" || url.protocol === "https:")
-      && (url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1" || url.hostname === "[::1]")
-  } catch {
-    return false
-  }
-}
-
-// True only for Local Personal Mode: loopback server plus a real local
-// workspace directory. Cloud workspaces pass workspaceId separately.
-export function isLocalPersonalScope(input: { serverUrl?: string; directory?: string }) {
-  return isLoopbackHttpUrl(input.serverUrl) && isFilesystemDirectory(input.directory)
-}
-
-export function centralTransportForServer(serverUrl: string | undefined) {
-  return isLocalPersonalScope({ serverUrl, directory: "/" }) ? "loopback" : "signed-web"
-}
 
 export function unsignedLocalFetch(input: string | URL | Request, init?: RequestInit) {
   if (input instanceof Request) {

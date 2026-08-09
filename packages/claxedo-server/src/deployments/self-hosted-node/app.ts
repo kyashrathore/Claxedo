@@ -26,6 +26,7 @@ import { mirrorProcessEvents } from "../../platform/runtime/lib/process-events"
 import { DocumentsRoutes } from "../../documents/routes/index"
 import { AgentConfigRoutes, sessionMetaProjectionTap } from "@claxedo/local-server/self-hosted-execution"
 import { SessionMetaRoutes } from "@claxedo/local-server/self-hosted-execution"
+import { LocalWorkspaceRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { WorkspaceRoutes } from "../../workspace/routes/index"
 import { OpenCodeCompatRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { resolveHarnessId } from "@claxedo/local-server/self-hosted-execution"
@@ -769,6 +770,7 @@ export function createSelfHostedApp(
     }),
   )
   app.route("/", SessionMetaRoutes({ services, ...authRouteOptions(services) }))
+  app.route("/api/claxedo/workspace", LocalWorkspaceRoutes(authRouteOptions(services)))
   app.route("/api/workspace", WorkspaceRoutes(services, workspaceRouteOptions(services, connectionsHost)))
   app.route("/api/workspace", WorkspaceCheckpointRoutes(services, {
     loopbackRelayUrl: services.relay.relayUrl,

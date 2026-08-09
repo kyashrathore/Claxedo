@@ -67,6 +67,7 @@ describe("route family table", () => {
     // also matches. Longest-entry-wins is what keeps those apart.
     expect(routeFamilyFor("/api/claxedo/remote-access/devices")?.id).toBe("remote-access")
     expect(routeFamilyFor("/api/claxedo/network-policy/effective/:workspaceId")?.id).toBe("network-policy")
+    expect(routeFamilyFor("/api/claxedo/workspace/resolve")?.id).toBe("local-workspace-resolve")
     expect(routeFamilyFor("/api/workspace/:id/user-hosted/register")?.id).toBe("workspace-authority")
   })
 
@@ -129,9 +130,12 @@ describe("desktop-local product contract", () => {
       "/api/claxedo/network-policy/check",
       "/api/claxedo/network-policy/effective/:workspaceId",
       "/api/claxedo/network-policy/groups",
+      "/api/claxedo/session",
+      "/api/claxedo/session-list",
       "/api/claxedo/session/:id/meta",
       "/api/claxedo/track",
       "/api/claxedo/usage-limits",
+      "/api/claxedo/workspace/resolve",
       "/api/control",
       "/api/control/*",
       "/api/control/runtime/heartbeat",

@@ -2,7 +2,7 @@ import { queryOptions } from "@tanstack/solid-query"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import {
-  controlSessionNavigationListUrl,
+  sessionNavigationListUrl,
   type ControlSessionNavigationListQuery,
 } from "@/platform/runtime/agent/workspace-control-routes"
 import type { SessionNavigationRow } from "../../ui/navigation/session-navigation"
@@ -114,7 +114,7 @@ export function sessionListQueryOptions(input: {
   return queryOptions({
     queryKey: queryKeys.shell.sessionList(input.baseUrl, input.query),
     queryFn: async () => {
-      const res = await sessionListRequest(input)(controlSessionNavigationListUrl({
+      const res = await sessionListRequest(input)(sessionNavigationListUrl({
         baseUrl: normalizeUrl(input.baseUrl) ?? getClaxedoServerUrl(),
         ...input.query,
       }), {
@@ -143,7 +143,7 @@ export function sessionListQueryOptions(input: {
 // "created" event; it never streams the per-directory session rows the way an
 // interactive session does. The flat inventory (`GET /api/control/sessions`)
 // already refetches on that event, but the paginated per-section query
-// (`GET /api/control/session-list`) that actually feeds the rendered rail rows
+// (the product-specific session-list route) that actually feeds the rendered rail rows
 // does not — so the new session stays invisible until a full reload. Invalidate
 // every session-list query so the active section refetches and the row appears.
 export function invalidateSessionListQueries(input: { baseUrl?: string } = {}) {

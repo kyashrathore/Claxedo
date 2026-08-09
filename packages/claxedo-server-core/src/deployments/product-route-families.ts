@@ -126,7 +126,13 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
     id: "session-meta",
     owner: "local-server",
     serves: "Local session inventory and title metadata; Unit 4 moves its authority into Workspace Runtime.",
-    paths: ["/api/claxedo/session/", "/api/control", "/api/control/"],
+    paths: ["/api/claxedo/session", "/api/claxedo/session/", "/api/claxedo/session-list", "/api/control", "/api/control/"],
+  },
+  {
+    id: "local-workspace-resolve",
+    owner: "local-server",
+    serves: "Local workspace registration and lookup without importing hosted workspace authority.",
+    paths: ["/api/claxedo/workspace/resolve"],
   },
   {
     id: "network-policy",
