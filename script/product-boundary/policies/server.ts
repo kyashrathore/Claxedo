@@ -58,9 +58,10 @@ export const serverCloudNode: Policy = {
   ],
 
   control: cloudControl(`${SRC}/deployments/hosted-node/index.ts`),
-  // +1 package: the dependency-neutral sandbox identity/config contract moved
-  // out of sandbox-manager so local/server-core no longer reach lifecycle code.
-  ceilings: { modules: 132, packages: 26 },
+  // The central usage route and durable revision store add five measured
+  // modules. `tokentracker-cli` is the one added package and is the canonical
+  // pricing catalog used by the dashboard; no local-server edge is permitted.
+  ceilings: { modules: 137, packages: 27 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-cloud-node.json",
@@ -70,12 +71,10 @@ export const serverCloudNode: Policy = {
       `${SRC}/deployments/hosted-node/index.ts`,
       `${SRC}/deployments/hosted-shared/hosted-app.ts`,
       `${SRC}/authority/adapters/sqlite/central-store.ts`,
-      // Channel transports are optional at startup, but they are part of the
-      // hosted process artifact when deployment configuration enables them.
-      // These controls prevent variable dynamic imports from silently leaving
-      // declared runtime dependencies outside the emitted product.
-      "chat/dist/index.js",
-      "@chat-adapter/github/dist/index.js",
+      // Channel transports are owned and built by the externalized
+      // `@claxedo/channels` workspace package below. Its own package tests guard
+      // the optional Chat SDK imports; their internals do not belong in this
+      // server bundle's emitted-module manifest.
     ],
   },
 
@@ -130,7 +129,9 @@ export const serverWorkerd: Policy = {
   ],
 
   control: cloudControl(`${SRC}/deployments/hosted-workerd/worker.ts`),
-  ceilings: { modules: 108, packages: 13 },
+  // The shared central usage route adds one source module; its Worker path
+  // remains free of Node-only and desktop packages.
+  ceilings: { modules: 109, packages: 13 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",
@@ -196,9 +197,10 @@ export const serverSelfHosted: Policy = {
     // cleaner-than-real self-hosted product.
     requiredPackages: ["@claxedo/local-server", "better-sqlite3", "better-auth"],
   },
-  // Same intentional contract edge as hosted Node; no module or provider SDK
-  // entered the composition.
-  ceilings: { modules: 141, packages: 33 },
+  // Nine modules complete the single-binary usage pipeline: central/local
+  // routes, durable revision/provenance stores, outbox, scanner, pricing, and
+  // host identity. Package reach is unchanged.
+  ceilings: { modules: 150, packages: 33 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",
@@ -208,8 +210,8 @@ export const serverSelfHosted: Policy = {
       `${SRC}/deployments/self-hosted-node/index.ts`,
       `${SRC}/deployments/self-hosted-node/app.ts`,
       "packages/claxedo-local-server/src/self-hosted-execution.ts",
-      "chat/dist/index.js",
-      "@chat-adapter/github/dist/index.js",
+      // Chat SDK adapters remain externalized behind `@claxedo/channels` and
+      // are verified by that package rather than duplicated into this bundle.
     ],
   },
 

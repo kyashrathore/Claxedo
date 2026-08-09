@@ -1,0 +1,21 @@
+{
+  "name": "@claxedo/usage-contract",
+  "version": "0.7.0",
+  "type": "module",
+  "private": true,
+  "description": "Dependency-neutral unified usage dashboard contracts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@tsconfig/node-lts": "22.0.4",
+    "typescript": "catalog:"
+  }
+}

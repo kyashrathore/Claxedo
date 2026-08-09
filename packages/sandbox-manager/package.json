@@ -180,7 +180,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@claxedo/sandbox-contract": "workspace:0.7.0",
+    "@claxedo/sandbox-contract": "0.7.0",
     "@daytona/sdk": "0.192.0",
     "@vercel/sandbox": "1.10.2",
     "modal": "0.7.5"

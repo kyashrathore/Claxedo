@@ -100,6 +100,12 @@
  *      11, previews only the hovered user/assistant pair, and scrolls to the
  *      selected turn. Settled history is seeded into the real embedded engine's
  *      isolated SQLite projection; no browser route or application endpoint is mocked.
+ *  11. Every executable harness journey ends at the real account-menu Usage
+ *      entrypoint. The unmocked dashboard API must expose that harness's exact
+ *      settled tokens in the visible breakdown, the cost projection must keep
+ *      its billing disclaimer, Total must include the Claxedo row, and closing
+ *      the dialog must restore focus. This closes the last seam from provider
+ *      response -> runtime event -> SQLite ledger -> local route -> production UI.
  *
  * INVARIANTS — completed assistant content is never hidden by stale busy state
  *   (#3 in `e2e/INVARIANTS.md`): every oracle call here proves it against REAL
@@ -479,7 +485,11 @@ async function waitForHealth(url: string, timeoutMs = 90_000) {
 /** Harvested from live-claxedo-mcp-tools.spec.ts — never adopt a port this file did not spawn. */
 async function assertPortFree(port: number, label: string) {
   const found = await execFileAsync("lsof", ["-i", `:${port}`, "-sTCP:LISTEN", "-t"]).catch(() => undefined)
-  const pids = found?.stdout.split("\n").map((line) => line.trim()).filter(Boolean) ?? []
+  const pids =
+    found?.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean) ?? []
   if (pids.length > 0) {
     throw new Error(
       `GATING: ${label} port ${port} is already owned by PID(s) ${pids.join(", ")} that this file did not spawn. ` +
@@ -589,7 +599,9 @@ async function makeWorkspace(name: string, harnessKey = "opencode") {
   await execFileAsync("git", ["init"], { cwd: dir })
   await fs.writeFile(path.join(dir, "README.md"), `real-harness-local fixture: ${name}\n`)
   await execFileAsync("git", ["-c", "user.email=e2e@test.com", "-c", "user.name=e2e", "add", "-A"], { cwd: dir })
-  await execFileAsync("git", ["-c", "user.email=e2e@test.com", "-c", "user.name=e2e", "commit", "-m", "init"], { cwd: dir })
+  await execFileAsync("git", ["-c", "user.email=e2e@test.com", "-c", "user.name=e2e", "commit", "-m", "init"], {
+    cwd: dir,
+  })
   await registerWorkspace(dir)
   await seedDefaultHarness(dir, harnessKey)
   return dir
@@ -915,7 +927,7 @@ async function expectRailRowTracksTheSession(
   // Mid-turn: the row must show the working dot. Idle rows render a
   // relative-time label and no `[data-sidebar-status]` element at all.
   try {
-    await expect(row.locator("[data-sidebar-status=\"working\"]")).toHaveCount(1, { timeout: 20_000 })
+    await expect(row.locator('[data-sidebar-status="working"]')).toHaveCount(1, { timeout: 20_000 })
   } finally {
     releaseModelReply()
   }
@@ -923,8 +935,10 @@ async function expectRailRowTracksTheSession(
   // Once the turn settles the server has the generated title; the rail must
   // stop showing the placeholder. Matched on "not the placeholder" rather than
   // on the exact generated string, which the model chooses and may reword.
-  await expect(row.locator("[data-slot=\"session-navigation-title\"]"))
-    .not.toHaveText(/^(New Session|Untitled session)$/, { timeout: 60_000 })
+  await expect(row.locator('[data-slot="session-navigation-title"]')).not.toHaveText(
+    /^(New Session|Untitled session)$/,
+    { timeout: 60_000 },
+  )
   void promptText
 }
 
@@ -932,21 +946,69 @@ type HarnessUsage = { turns: number; tokens: number }
 
 async function harnessUsage(harness: string): Promise<HarnessUsage> {
   const url = new URL("/api/claxedo/usage", BACKEND_URL)
-  url.searchParams.set("since", "0")
-  url.searchParams.set("until", String(Date.now() + 60_000))
+  const until = Date.now() + 60_000
+  url.searchParams.set("since", String(until - 90 * 86_400_000 + 1))
+  url.searchParams.set("until", String(until))
   url.searchParams.set("timezone", "UTC")
   url.searchParams.set("group", "harness")
   const response = await fetch(url, { signal: AbortSignal.timeout(10_000) })
   if (!response.ok) throw new Error(`usage metering probe failed: ${response.status} ${await response.text()}`)
-  const body = await response.json() as {
-    breakdown?: { localRows?: Array<Record<string, unknown>> }
+  const body = (await response.json()) as {
+    breakdown?: { rows?: Array<Record<string, unknown>> }
   }
-  const row = body.breakdown?.localRows?.find((item) => item.value === harness)
+  const row = body.breakdown?.rows?.find((item) => item.value === harness)
   return {
     turns: Number(row?.turnCount ?? 0),
-    tokens: Number(row?.input ?? 0) + Number(row?.output ?? 0) + Number(row?.reasoning ?? 0)
-      + Number(row?.cacheRead ?? 0) + Number(row?.cacheWrite ?? 0),
+    tokens:
+      Number(row?.input ?? 0) +
+      Number(row?.output ?? 0) +
+      Number(row?.reasoning ?? 0) +
+      Number(row?.cacheRead ?? 0) +
+      Number(row?.cacheWrite ?? 0),
   }
+}
+
+async function expectUsageDashboardWorks(page: Page) {
+  const trigger = page.getByTestId("rail-account-trigger")
+  await trigger.focus()
+  await page.keyboard.press("Enter")
+  const usage = page.getByRole("menuitem", { name: "Usage", exact: true })
+  await expect(usage, "the real account menu did not expose the canonical Usage action").toBeVisible()
+  await usage.click()
+
+  const dialog = page.getByRole("dialog", { name: "Usage" })
+  await expect(dialog, "the real Usage dialog did not open").toBeVisible({ timeout: 30_000 })
+  await expect(dialog.getByRole("button", { name: "Usage through Claxedo" })).toHaveAttribute("aria-pressed", "true")
+  await expect(dialog.getByRole("button", { name: "30 days" })).toHaveAttribute("aria-pressed", "true")
+  await expect(dialog.getByRole("button", { name: "Tokens" })).toHaveAttribute("aria-pressed", "true")
+
+  const providerTable = dialog.getByRole("table", { name: "Usage grouped by provider" })
+  await expect(providerTable, "the real provider attribution table did not render").toBeVisible({ timeout: 30_000 })
+  await expect(providerTable).not.toContainText("Claxedo")
+  await expect(providerTable.getByRole("row").nth(1), "the real provider attribution table was empty").toBeVisible()
+  await expect(
+    dialog.getByRole("img", { name: /^Daily tokens by/ }),
+    "the exact turn did not reach the daily chart",
+  ).toBeVisible()
+
+  await dialog.getByRole("button", { name: "Cost" }).click()
+  await expect(dialog.getByRole("img", { name: /^Daily estimated API cost\./ })).toBeVisible()
+  await expect(dialog).toContainText("What these tokens would cost at API rates. Not what you were billed.")
+
+  await dialog.getByRole("button", { name: "Total local usage" }).click()
+  await expect(dialog.getByRole("table", { name: "Usage grouped by provider" })).not.toContainText("Claxedo")
+  await dialog.getByRole("button", { name: "Model", exact: true }).click()
+  await expect(dialog.getByRole("table", { name: "Usage grouped by model" })).toBeVisible()
+
+  await dialog.getByRole("button", { name: "Usage limits" }).click()
+  await expect(dialog.getByRole("heading", { name: "Quota windows" })).toBeVisible()
+  await expect(dialog.getByRole("button", { name: "Usage through Claxedo" })).toBeVisible()
+  await dialog.getByRole("button", { name: "Usage through Claxedo" }).click()
+  await expect(dialog.getByRole("table", { name: "Usage grouped by provider" })).toBeVisible()
+
+  await page.keyboard.press("Escape")
+  await expect(dialog).toHaveCount(0)
+  await expect(trigger, "closing Usage did not restore focus to the account menu trigger").toBeFocused()
 }
 
 /** Drives the shared "3 scripted turns + reload, full oracle each turn" journey. */
@@ -989,16 +1051,12 @@ async function runRealHarnessJourney(page: Page, dir: string, harness: HarnessCa
         // asserted nothing about it. Three separate rail defects shipped behind
         // that gap, all of them invisible to the mocked Tier M proofs because
         // those inject events straight onto the bus.
-        await expectRailRowTracksTheSession(
-          page,
-          decodeURIComponent(sessionId!),
-          promptText,
-          () => scripted?.setReplyDelayMs(0),
+        await expectRailRowTracksTheSession(page, decodeURIComponent(sessionId!), promptText, () =>
+          scripted?.setReplyDelayMs(0),
         )
-        await expect(
-          modelLabel,
-          `${harness.id} lost its model label during the draft-to-session handoff`,
-        ).toHaveText(selectedModelPattern)
+        await expect(modelLabel, `${harness.id} lost its model label during the draft-to-session handoff`).toHaveText(
+          selectedModelPattern,
+        )
       }
     } finally {
       if (turn === 1) scripted?.setReplyDelayMs(0)
@@ -1040,9 +1098,16 @@ async function runRealHarnessJourney(page: Page, dir: string, harness: HarnessCa
 
   const usageAfter = await harnessUsage(meteringKey)
   const exactTokensPerTurn = harness.dialect === "chat" ? 15 : 2
-  expect(usageAfter.turns - usageBefore.turns, `${harness.id} did not settle exactly one usage fact per scripted turn`).toBe(TURNS)
-  expect(usageAfter.tokens - usageBefore.tokens, `${harness.id} did not preserve the scripted provider's exact token totals`)
-    .toBe(TURNS * exactTokensPerTurn)
+  expect(
+    usageAfter.turns - usageBefore.turns,
+    `${harness.id} did not settle exactly one usage fact per scripted turn`,
+  ).toBe(TURNS)
+  expect(
+    usageAfter.tokens - usageBefore.tokens,
+    `${harness.id} did not preserve the scripted provider's exact token totals`,
+  ).toBe(TURNS * exactTokensPerTurn)
+
+  await expectUsageDashboardWorks(page)
 
   // Behavior 6, asserted last so a reload-time re-fetch cannot inflate it.
   expectScriptedTraffic(harness.dialect, TURNS)
@@ -1078,7 +1143,10 @@ async function runRealSubagentJourney(page: Page, dir: string, harness: Subagent
     const control = page.locator('[data-action="prompt-harness-model"]').last()
     await control.click()
     const picker = page.locator('[data-component="harness-model-picker"]')
-    await picker.locator('[data-slot="harness-picker-section"]').filter({ hasText: /^Effort/ }).click()
+    await picker
+      .locator('[data-slot="harness-picker-section"]')
+      .filter({ hasText: /^Effort/ })
+      .click()
     await picker.getByRole("button", { name: harness.effort, exact: true }).click()
     await expect(control).toContainText(harness.effort)
   }
@@ -1103,7 +1171,10 @@ async function runRealSubagentJourney(page: Page, dir: string, harness: Subagent
       `Delegate one child task, then reply with exactly this one token and nothing else: ${marker}`,
     )
     if (harness.permissionMode) {
-      await expect(page.locator('[data-action="prompt-permission-mode"]').last()).toHaveAttribute("data-mode", harness.permissionMode)
+      await expect(page.locator('[data-action="prompt-permission-mode"]').last()).toHaveAttribute(
+        "data-mode",
+        harness.permissionMode,
+      )
     }
     const submit = page.locator(SELECTORS.submitControl).last()
     if (harness.id === "pi") {
@@ -1117,10 +1188,12 @@ async function runRealSubagentJourney(page: Page, dir: string, harness: Subagent
     })
     await submit.click()
     await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
-    await expect.poll(
-      () => scripted?.requests.some((request) => request.reply.kind === "tool") ?? false,
-      { message: `${harness.id} never received its scripted tool payload`, timeout: 30_000 },
-    ).toBe(true)
+    await expect
+      .poll(() => scripted?.requests.some((request) => request.reply.kind === "tool") ?? false, {
+        message: `${harness.id} never received its scripted tool payload`,
+        timeout: 30_000,
+      })
+      .toBe(true)
     await expect(page.getByText("Could not save session config", { exact: true })).toHaveCount(0)
     const card = page.locator('[data-component="task-tool-card"]').last()
     await expect(card, `${harness.id} never rendered its native delegation as a subagent card`).toBeVisible({
@@ -1156,10 +1229,15 @@ async function runRealSubagentJourney(page: Page, dir: string, harness: Subagent
   const toolRequest = scripted?.requests.find((request) => request.reply.kind === "tool")
   expect(toolRequest?.reply).toEqual({ kind: "tool", ...harness.tool })
   const counts = scripted?.counts() ?? { chat: 0, messages: 0, responses: 0 }
-  expect(counts[harness.dialect], `${harness.id} did not execute through its scripted provider endpoint`).toBeGreaterThanOrEqual(2)
+  expect(
+    counts[harness.dialect],
+    `${harness.id} did not execute through its scripted provider endpoint`,
+  ).toBeGreaterThanOrEqual(2)
   for (const other of ["chat", "messages", "responses"] as const) {
     if (other === harness.dialect) continue
-    expect(counts[other], `${harness.id} leaked model traffic onto ${other}`).toBeLessThanOrEqual(other === "chat" ? 1 : 0)
+    expect(counts[other], `${harness.id} leaked model traffic onto ${other}`).toBeLessThanOrEqual(
+      other === "chat" ? 1 : 0,
+    )
   }
 }
 
@@ -1184,10 +1262,13 @@ async function runCursorHarnessBoundary(page: Page) {
   const notice = page.locator("[data-component='composer-notice'][data-notice='runtime-unavailable']")
   const modelControl = page.locator('[data-action="prompt-harness-model"]')
   await expect
-    .poll(async () => ((await notice.count()) > 0 ? "unavailable" : (await modelControl.count()) > 0 ? "ready" : "pending"), {
-      timeout: 30_000,
-      message: "composer settled into neither the cursor-ready nor the runtime-unavailable state",
-    })
+    .poll(
+      async () => ((await notice.count()) > 0 ? "unavailable" : (await modelControl.count()) > 0 ? "ready" : "pending"),
+      {
+        timeout: 30_000,
+        message: "composer settled into neither the cursor-ready nor the runtime-unavailable state",
+      },
+    )
     .not.toBe("pending")
 
   if ((await notice.count()) > 0) {
@@ -1227,12 +1308,15 @@ async function createPickerSession(dir: string) {
   })
 }
 
-async function createHarnessSession(dir: string, input: {
-  title: string
-  harness: string
-  providerID: string
-  modelID: string
-}) {
+async function createHarnessSession(
+  dir: string,
+  input: {
+    title: string
+    harness: string
+    providerID: string
+    modelID: string
+  },
+) {
   const response = await fetch(`${BACKEND_URL}/session?directory=${encodeURIComponent(dir)}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -1253,15 +1337,17 @@ async function updateSessionConfig(dir: string, sessionID: string, config: unkno
     `${BACKEND_URL}/session/${encodeURIComponent(sessionID)}/config?directory=${encodeURIComponent(dir)}`,
     { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(config) },
   )
-  if (!response.ok) throw new Error(`GATING: failed to update session config (${response.status}): ${await response.text()}`)
+  if (!response.ok)
+    throw new Error(`GATING: failed to update session config (${response.status}): ${await response.text()}`)
 }
 
 async function createPiSession(dir: string) {
   const workspaceResponse = await fetch(
     `${BACKEND_URL}/api/workspace/resolve?directory=${encodeURIComponent(dir)}&create=true`,
   )
-  if (!workspaceResponse.ok) throw new Error(`GATING: failed to resolve Pi workspace: ${await workspaceResponse.text()}`)
-  const workspace = await workspaceResponse.json() as { workspaceId: string }
+  if (!workspaceResponse.ok)
+    throw new Error(`GATING: failed to resolve Pi workspace: ${await workspaceResponse.text()}`)
+  const workspace = (await workspaceResponse.json()) as { workspaceId: string }
   const response = await fetch(`${BACKEND_URL}/api/control/sessions`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -1274,8 +1360,9 @@ async function createPiSession(dir: string) {
       toolSandbox: { kind: "workspace-runtime", workspaceId: workspace.workspaceId },
     }),
   })
-  if (!response.ok) throw new Error(`GATING: failed to create Pi session (${response.status}): ${await response.text()}`)
-  return { ...(await response.json()) as { session: { id: string } }, workspaceId: workspace.workspaceId }
+  if (!response.ok)
+    throw new Error(`GATING: failed to create Pi session (${response.status}): ${await response.text()}`)
+  return { ...((await response.json()) as { session: { id: string } }), workspaceId: workspace.workspaceId }
 }
 
 async function openExistingPrompt(page: Page, dir: string, sessionID: string, workspaceID?: string, central = false) {
@@ -1319,23 +1406,33 @@ function seedPickerTurn(dir: string, sessionID: string, turn: number) {
   const run = (sql: string, values: (string | number)[]) => database.prepare(sql).run(...values)
   database.exec("BEGIN IMMEDIATE")
   try {
-    run(
-      "INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)",
-      [messageID, sessionID, created, created, JSON.stringify({
+    run("INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)", [
+      messageID,
+      sessionID,
+      created,
+      created,
+      JSON.stringify({
         role: "user",
         time: { created },
         agent: "build",
         model: { providerID: "tier-real", modelID: "scripted-model" },
         summary: { diffs: [] },
-      })],
-    )
-    run(
-      "INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)",
-      [`prt_seed_user_${n}`, messageID, sessionID, created, created, JSON.stringify({ type: "text", text: prompt })],
-    )
-    run(
-      "INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)",
-      [assistantID, sessionID, created + 500, created + 1_500, JSON.stringify({
+      }),
+    ])
+    run("INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)", [
+      `prt_seed_user_${n}`,
+      messageID,
+      sessionID,
+      created,
+      created,
+      JSON.stringify({ type: "text", text: prompt }),
+    ])
+    run("INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)", [
+      assistantID,
+      sessionID,
+      created + 500,
+      created + 1_500,
+      JSON.stringify({
         role: "assistant",
         time: { created: created + 500, completed: created + 1_500 },
         parentID: messageID,
@@ -1347,16 +1444,20 @@ function seedPickerTurn(dir: string, sessionID: string, turn: number) {
         cost: 0,
         tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
         finish: "stop",
-      })],
-    )
-    run(
-      "INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)",
-      [`prt_seed_assistant_${n}`, assistantID, sessionID, created + 500, created + 1_500, JSON.stringify({
+      }),
+    ])
+    run("INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)", [
+      `prt_seed_assistant_${n}`,
+      assistantID,
+      sessionID,
+      created + 500,
+      created + 1_500,
+      JSON.stringify({
         type: "text",
         text: marker,
         time: { start: created + 500, end: created + 1_500 },
-      })],
-    )
+      }),
+    ])
     database.exec("COMMIT")
   } finally {
     database.close()
@@ -1402,9 +1503,7 @@ test.describe("real harness journeys @core @tier-real", () => {
     }
   })
 
-  test("opencode harness (embedded engine) completes 3 scripted turns and survives reload — behaviors 1,6,9", async ({
-    page,
-  }) => {
+  test("opencode harness completes exact turns, reload, and visible usage — behaviors 1,6,9,11", async ({ page }) => {
     const dir = await makeWorkspace("opencode")
     await seedOneProject(page, dir)
     await runRealHarnessJourney(page, dir, { id: "opencode", dialect: "chat" })
@@ -1424,23 +1523,21 @@ test.describe("real harness journeys @core @tier-real", () => {
 
     await page.goto(`/s/${session.id}#message-${turns[0]!.messageID}`, { waitUntil: "domcontentloaded" })
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
-    const sessionRoot = page.locator(
-      `[data-testid="session-page-root"][data-session-id="${session.id}"][data-session-messages-ready="true"]`,
-    ).filter({ visible: true })
-    await expect(sessionRoot).toHaveAttribute(
-      "data-session-visible-user-count",
-      String(TURN_PICKER_TURNS - 1),
-      { timeout: 30_000 },
-    )
-    await expect(page.locator('[data-component="message-nav-hovercard"]'), "turn picker rendered at 10 turns").toHaveCount(0)
+    const sessionRoot = page
+      .locator(`[data-testid="session-page-root"][data-session-id="${session.id}"][data-session-messages-ready="true"]`)
+      .filter({ visible: true })
+    await expect(sessionRoot).toHaveAttribute("data-session-visible-user-count", String(TURN_PICKER_TURNS - 1), {
+      timeout: 30_000,
+    })
+    await expect(
+      page.locator('[data-component="message-nav-hovercard"]'),
+      "turn picker rendered at 10 turns",
+    ).toHaveCount(0)
 
     turns.push(await seedPickerTurn(dir, session.id, TURN_PICKER_TURNS))
     await page.reload({ waitUntil: "domcontentloaded" })
 
-    await expect(sessionRoot).toHaveAttribute(
-      "data-session-visible-user-count",
-      String(TURN_PICKER_TURNS),
-    )
+    await expect(sessionRoot).toHaveAttribute("data-session-visible-user-count", String(TURN_PICKER_TURNS))
     const picker = sessionRoot.locator('[data-component="message-nav-hovercard"]')
     const ticks = picker.locator('[data-slot="message-nav-tick-button"]')
     await expect(picker).toBeVisible()
@@ -1462,19 +1559,25 @@ test.describe("real harness journeys @core @tier-real", () => {
     await demoBeat(page)
     await assertPreview(4)
     await expect
-      .poll(() => ticks.evaluateAll((items) => items.map((item) => {
-        const line = item.querySelector<HTMLElement>('[data-slot="message-nav-tick-line"]')!
-        return Math.round(line.getBoundingClientRect().width)
-      })))
-      .toEqual([8, 11, 15, 21, 28, 21, 15, 11, 8, 8, 8])
-    expect(await ticks.evaluateAll((items) => {
-      const styles = items.map((item) => getComputedStyle(
-        item.querySelector<HTMLElement>('[data-slot="message-nav-tick-line"]')!,
-      ))
-      return styles.flatMap((style, index) =>
-        style.backgroundColor === styles[4]!.backgroundColor && style.height === styles[4]!.height ? [index] : [],
+      .poll(() =>
+        ticks.evaluateAll((items) =>
+          items.map((item) => {
+            const line = item.querySelector<HTMLElement>('[data-slot="message-nav-tick-line"]')!
+            return Math.round(line.getBoundingClientRect().width)
+          }),
+        ),
       )
-    })).toEqual([4])
+      .toEqual([8, 11, 15, 21, 28, 21, 15, 11, 8, 8, 8])
+    expect(
+      await ticks.evaluateAll((items) => {
+        const styles = items.map((item) =>
+          getComputedStyle(item.querySelector<HTMLElement>('[data-slot="message-nav-tick-line"]')!),
+        )
+        return styles.flatMap((style, index) =>
+          style.backgroundColor === styles[4]!.backgroundColor && style.height === styles[4]!.height ? [index] : [],
+        )
+      }),
+    ).toEqual([4])
     await demoBeat(page)
     await ticks.nth(4).click()
     await expect(
@@ -1484,17 +1587,22 @@ test.describe("real harness journeys @core @tier-real", () => {
     await demoBeat(page)
   })
 
-  test("claude ACP harness (real claude-agent-acp subprocess) completes 3 scripted turns and survives reload — behaviors 2,6,8,9", async ({
+  test("claude ACP harness completes exact turns, reload, and visible usage — behaviors 2,6,8,9,11", async ({
     page,
   }) => {
     const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
     requireBinary(binary, "claude", "install the Claude CLI to include the claude-acp harness in this lane.")
     const dir = await makeWorkspace("claude-acp", "claude-acp")
     await seedOneProject(page, dir)
-    await runRealHarnessJourney(page, dir, { id: "claude-acp", dialect: "messages", option: /^Claude$/, harnessKey: "claude-acp" })
+    await runRealHarnessJourney(page, dir, {
+      id: "claude-acp",
+      dialect: "messages",
+      option: /^Claude$/,
+      harnessKey: "claude-acp",
+    })
   })
 
-  test("claude native SDK harness completes 3 scripted turns and survives reload — behaviors 3,6,8,9", async ({
+  test("claude native SDK harness completes exact turns, reload, and visible usage — behaviors 3,6,8,9,11", async ({
     page,
   }) => {
     const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
@@ -1505,7 +1613,12 @@ test.describe("real harness journeys @core @tier-real", () => {
     )
     const dir = await makeWorkspace("claude-sdk", "claude-sdk")
     await seedOneProject(page, dir)
-    await runRealHarnessJourney(page, dir, { id: "claude-sdk", dialect: "messages", option: /^Claude$/, harnessKey: "claude-sdk" })
+    await runRealHarnessJourney(page, dir, {
+      id: "claude-sdk",
+      dialect: "messages",
+      option: /^Claude$/,
+      harnessKey: "claude-sdk",
+    })
   })
 
   test("claude native SDK runs a provider-issued Agent call as an openable subagent", async ({ page }) => {
@@ -1597,28 +1710,34 @@ test.describe("real harness journeys @core @tier-real", () => {
     })
   })
 
-  test("codex ACP harness (real codex-acp subprocess) completes 3 scripted turns and survives reload — behaviors 4,6,8,9", async ({
+  test("codex ACP harness completes exact turns, reload, and visible usage — behaviors 4,6,8,9,11", async ({
     page,
   }) => {
     const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
     requireBinary(binary, "codex", "install the Codex CLI to include the codex-acp harness in this lane.")
     const dir = await makeWorkspace("codex-acp", "codex-acp")
     await seedOneProject(page, dir)
-    await runRealHarnessJourney(page, dir, { id: "codex-acp", dialect: "responses", option: /^Codex$/, harnessKey: "codex-acp" })
+    await runRealHarnessJourney(page, dir, {
+      id: "codex-acp",
+      dialect: "responses",
+      option: /^Codex$/,
+      harnessKey: "codex-acp",
+    })
   })
 
-  test("codex native SDK harness completes 3 scripted turns and survives reload — behaviors 5,6,8,9", async ({
+  test("codex native SDK harness completes exact turns, reload, and visible usage — behaviors 5,6,8,9,11", async ({
     page,
   }) => {
     const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
-    requireBinary(
-      binary,
-      "codex",
-      "the native codex-app-server harness drives the same CLI's `app-server` subcommand.",
-    )
+    requireBinary(binary, "codex", "the native codex-app-server harness drives the same CLI's `app-server` subcommand.")
     const dir = await makeWorkspace("codex-sdk", "codex-app-server")
     await seedOneProject(page, dir)
-    await runRealHarnessJourney(page, dir, { id: "codex-sdk", dialect: "responses", option: /^Codex$/, harnessKey: "codex-app-server" })
+    await runRealHarnessJourney(page, dir, {
+      id: "codex-sdk",
+      dialect: "responses",
+      option: /^Codex$/,
+      harnessKey: "codex-app-server",
+    })
   })
 
   test("codex native SDK runs a provider-issued spawn_agent call as an openable subagent", async ({ page }) => {

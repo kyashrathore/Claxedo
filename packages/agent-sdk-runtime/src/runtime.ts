@@ -259,6 +259,19 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           } as CompatEvent
         }
       }
+      if (event.type === "session.usage") {
+        // Usage emitted by the active parent turn belongs to the submitted
+        // assistant message even when a provider reports usage before its
+        // message metadata (ACP does this). Waiting for an observed provider
+        // alias creates a second, provisional metering fact keyed by the raw
+        // provider id. Child-session usage keeps its own identity.
+        if (event.properties.sessionID === sessionId) {
+          return {
+            ...event,
+            properties: { ...event.properties, messageID: stableAssistantMessageId },
+          } as CompatEvent
+        }
+      }
       return event
     }
     const parentProjector = createTurnEventProjector({

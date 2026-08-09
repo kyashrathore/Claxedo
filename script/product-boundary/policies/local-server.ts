@@ -67,11 +67,11 @@ export const localServer: Policy = {
     requiredPackages: ["@claxedo/workspace-runtime", "hono"],
   },
 
-  // Measured 2026-08-09 with `runtimeOnly`. Identical to the module count
-  // `local-closure.test.ts` records for the package's whole published surface,
-  // which is the honest reading: every published module is reachable from this
-  // entry, so the desktop server IS the package.
-  ceilings: { modules: 48, packages: 21 },
+  // Measured 2026-08-09 with `runtimeOnly`. The eight added modules are the
+  // complete local usage pipeline (route, durable ports, scanner, pricing
+  // port, outbox, host identity, and composition). Shared implementation lives
+  // in server-core, so the desktop still reaches no hosted capability package.
+  ceilings: { modules: 56, packages: 21 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

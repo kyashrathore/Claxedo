@@ -134,6 +134,7 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
     if (accountState().status !== "pending" && hostedAccount()) return "signin" as const
   })
   const [open, setOpen] = createSignal(false)
+  let trigger: HTMLButtonElement | undefined
   let preserveRootOnClose = false
   const changeOpen = (next: boolean) => {
     if (!next && preserveRootOnClose) return
@@ -142,8 +143,12 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
     props.onRailLockChange(next)
   }
   const select = (action?: () => void) => {
-    action?.()
     changeOpen(false)
+    // A dialog records the element focused when it opens so it can restore
+    // focus on close. Close the menu and focus its durable trigger first;
+    // otherwise the dialog captures the menu item that is about to unmount.
+    trigger?.focus()
+    action?.()
   }
 
   return (
@@ -157,6 +162,7 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
       onOpenChange={changeOpen}
     >
       <DropdownMenu.Trigger
+        ref={(element: HTMLButtonElement) => { trigger = element }}
         aria-label={label()}
         title={label()}
         class="group flex h-9 w-full items-center gap-2 rounded-md border border-transparent bg-surface-raised-base px-2 text-left text-text-strong outline-none transition-colors hover:bg-surface-raised-base-hover focus-visible:border-border-focus data-[expanded]:bg-surface-raised-base-hover"

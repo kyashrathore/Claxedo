@@ -15,6 +15,7 @@ export function tokenTrackerSourceForHarness(harness: string) {
   if (harness === "pi") return "pi"
   if (harness.startsWith("claude")) return "claude"
   if (harness.startsWith("codex")) return "codex"
+  if (harness.startsWith("cursor")) return "cursor"
   return undefined
 }
 

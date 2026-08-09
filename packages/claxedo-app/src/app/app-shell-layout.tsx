@@ -295,7 +295,18 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     claxedoState.rail.setWidth(shellLayout.committedRailWidth())
   }
   const openDiagnostics = () => {
-    dialog.show(() => <DialogProcessDiagnostics warmSessions={warmConversationMemorySnapshot} />)
+    const returnFocus = document.querySelector<HTMLElement>("[data-testid='rail-account-trigger']")
+    void dialog.show(
+      () => <DialogProcessDiagnostics warmSessions={warmConversationMemorySnapshot} />,
+      () => {
+        // The account menu item is removed before the dialog closes. Restore
+        // focus to the same durable trigger Usage uses after Kobalte finishes
+        // its own close microtask.
+        setTimeout(() => {
+          if (returnFocus?.isConnected) returnFocus.focus()
+        }, 0)
+      },
+    )
   }
   const openLocalDiagnostics = platform.processDiagnostics ? openDiagnostics : undefined
   const handleSidebarHotZoneEnter = () => {

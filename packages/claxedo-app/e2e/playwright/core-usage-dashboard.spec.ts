@@ -23,13 +23,16 @@ async function seedOneProject(page: Page) {
       serverUrl: window.location.origin,
       activeDirectory: dir,
     }
-    localStorage.setItem("opencode.global.dat:server", JSON.stringify({
-      list: [],
-      projects: { local: [{ worktree: dir, expanded: true }] },
-      lastProject: {},
-      workspaceServer: {},
-      closedProjects: {},
-    }))
+    localStorage.setItem(
+      "opencode.global.dat:server",
+      JSON.stringify({
+        list: [],
+        projects: { local: [{ worktree: dir, expanded: true }] },
+        lastProject: {},
+        workspaceServer: {},
+        closedProjects: {},
+      }),
+    )
   }, DIR)
 }
 
@@ -48,6 +51,7 @@ const cost = (estimatedUsd: number) => ({
   pricedTokens: 2_350,
   unpricedTokens: 0,
   catalog: { adapter: "tokentracker-cli", version: "0.75.1", source: "fixture" },
+  daily: [{ date: "2026-08-09", estimatedUsd, pricedTokens: 2_350, unpricedTokens: 0 }],
 })
 
 function response(url: URL) {
@@ -68,6 +72,7 @@ function response(url: URL) {
       totals: totals(8, 1_000, 1_000),
       daily: [{ date: "2026-08-09", ...totals(8, 1_000, 1_000) }],
       cost: cost(0.0142),
+      locationShare: { localTokens: 1_350, cloudTokens: 1_000 },
       status: "available",
       scope: "cross-machine",
     },
@@ -84,15 +89,103 @@ function response(url: URL) {
       daily: [{ date: "2026-08-09", ...totals(10, 1_200, 1_100) }],
     },
     totalCost: cost(0.0172),
+    chart: {
+      dimension: group,
+      series: [
+        {
+          value: group === "model" ? "openai/gpt-5" : "openai",
+          label: group === "model" ? "gpt-5" : "openai",
+          daily: [{ date: "2026-08-09", input: 1_000, output: 1_000, reasoning: 100, cacheRead: 200, cacheWrite: 50 }],
+        },
+        {
+          value: group === "model" ? "anthropic/claude-sonnet" : "anthropic",
+          label: group === "model" ? "claude-sonnet" : "anthropic",
+          daily: [{ date: "2026-08-09", input: 200, output: 100, reasoning: 0, cacheRead: 0, cacheWrite: 0 }],
+        },
+      ],
+    },
+    filterOptions: {
+      claxedo: { harness: ["codex-app-server", "claude-sdk"], model: ["openai/gpt-5"], location: ["local", "cloud"] },
+      total: {
+        app: ["Claxedo", "claude"],
+        model: ["openai/gpt-5", "claude/claude-sonnet"],
+        location: ["local", "cloud"],
+      },
+    },
     sync: { attempted: 1, delivered: 1, conflicts: 0, pending: 0 },
     breakdown: {
       dimension: group,
-      localRows: [
-        { value: group === "app" ? "claude" : "claude-sdk", turnCount: 2, input: 200, output: 100, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+      rows: [
+        {
+          value: group === "provider" ? "openai" : group === "model" ? "openai/gpt-5" : "codex-app-server",
+          label: group === "provider" ? "openai" : group === "model" ? "gpt-5" : "codex-app-server",
+          turnCount: 8,
+          input: 1_000,
+          output: 1_000,
+          reasoning: 100,
+          cacheRead: 200,
+          cacheWrite: 50,
+          unknownCategories: 0,
+          estimatedUsd: 0.0142,
+          pricedTokens: 2_350,
+          unpricedTokens: 0,
+          status: "final",
+        },
+        {
+          value: group === "provider" ? "anthropic" : group === "model" ? "anthropic/claude-sonnet" : "claude-sdk",
+          label: group === "provider" ? "anthropic" : group === "model" ? "claude-sonnet" : "claude-sdk",
+          turnCount: 2,
+          input: 200,
+          output: 100,
+          reasoning: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          unknownCategories: 0,
+          estimatedUsd: 0.003,
+          pricedTokens: 300,
+          unpricedTokens: 0,
+          status: "final",
+        },
       ],
-      central: {
-        rows: [{ value: group === "app" ? "claxedo" : "codex-app-server", turn_count: 8, input_tokens: 1_000, output_tokens: 1_000, reasoning_tokens: 100, cache_read_tokens: 200, cache_write_tokens: 50 }],
-      },
+      ...(url.searchParams.get("after") || group === "model"
+        ? {}
+        : { next: group === "provider" ? "anthropic" : "claude-sdk" }),
+    },
+    modelBreakdown: {
+      dimension: "model",
+      rows: [
+        {
+          value: "openai/gpt-5",
+          label: "gpt-5",
+          turnCount: 8,
+          input: 1_000,
+          output: 1_000,
+          reasoning: 100,
+          cacheRead: 200,
+          cacheWrite: 50,
+          unknownCategories: 0,
+          estimatedUsd: 0.0142,
+          pricedTokens: 2_350,
+          unpricedTokens: 0,
+          status: "final",
+        },
+        {
+          value: "anthropic/claude-sonnet",
+          label: "claude-sonnet",
+          turnCount: 2,
+          input: 200,
+          output: 100,
+          reasoning: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          unknownCategories: 0,
+          estimatedUsd: 0.003,
+          pricedTokens: 300,
+          unpricedTokens: 0,
+          status: "final",
+        },
+      ],
+      ...(url.searchParams.get("model_after") ? {} : { next: "anthropic/claude-sonnet" }),
     },
   }
 }
@@ -102,6 +195,23 @@ async function arrange(page: Page) {
   const requests: URL[] = []
   await page.route("**/api/claxedo/usage**", async (route) => {
     const url = new URL(route.request().url())
+    if (url.pathname.endsWith("/sync")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
+      })
+      return
+    }
+    const view = url.searchParams.get("view")
+    if (view !== "quota" && view !== "claxedo" && view !== "total") {
+      await route.fulfill({
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "missing usage view" }),
+      })
+      return
+    }
     requests.push(url)
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(response(url)) })
   })
@@ -126,33 +236,86 @@ test.describe("unified usage dashboard @core @surface-web", () => {
     const requests = await arrange(page)
     const { dialog, trigger } = await openUsage(page)
 
-    await expect(dialog.getByRole("button", { name: /Claxedo usage/ })).toHaveAttribute("aria-pressed", "true")
-    await expect(dialog.getByRole("button", { name: /Claxedo usage/ })).toContainText("2.4K")
-    await expect(dialog.getByRole("button", { name: /Total usage/ })).toContainText("2.7K")
-    await expect(dialog.getByRole("button", { name: "30d" })).toHaveAttribute("aria-pressed", "true")
+    await expect(dialog.getByRole("button", { name: "Usage through Claxedo" })).toHaveAttribute("aria-pressed", "true")
+    await expect(dialog.getByRole("button", { name: "Usage through Claxedo" })).toHaveText("Usage through Claxedo")
+    await expect(dialog.getByRole("button", { name: "Total local usage" })).toHaveText("Total local usage")
+    await expect(dialog.getByRole("button", { name: "30 days" })).toHaveAttribute("aria-pressed", "true")
     await expect(dialog.getByRole("button", { name: "Tokens" })).toHaveAttribute("aria-pressed", "true")
-    await expect(dialog.getByRole("table", { name: "Usage grouped by harness" })).toContainText("codex-app-server")
+    await expect(dialog.getByRole("table", { name: "Usage grouped by provider" })).toContainText("Codex")
+    await expect(dialog.getByRole("table", { name: "Usage grouped by provider" })).not.toContainText("Claxedo")
     await expect(dialog).toContainText("1 local events quarantined")
+    expect(requests.length).toBeGreaterThan(0)
+    expect(requests.every((request) => request.searchParams.get("view") === "claxedo")).toBe(true)
 
-    await dialog.getByRole("button", { name: /Total usage/ }).click()
-    await expect(dialog.getByRole("button", { name: /Total usage/ })).toHaveAttribute("aria-pressed", "true")
-    await expect.poll(() => requests.at(-1)?.searchParams.get("group")).toBe("app")
-    await dialog.getByRole("button", { name: "7d" }).click()
-    await expect.poll(() => {
-      const request = requests.at(-1)
-      return request ? Number(request.searchParams.get("until")) - Number(request.searchParams.get("since")) : 0
-    }).toBe(7 * 86_400_000)
-    await dialog.getByRole("button", { name: "Est. cost" }).click()
-    await expect(dialog.getByRole("region", { name: "Estimated API cost" })).toContainText("$0.0172")
+    await dialog.getByRole("button", { name: "Total local usage" }).click()
+    await expect.poll(() => requests.some((request) => request.searchParams.get("view") === "total")).toBe(true)
+    await expect(dialog.getByRole("button", { name: "Total local usage" })).toHaveAttribute("aria-pressed", "true")
+    await expect(dialog.getByRole("table", { name: "Usage grouped by provider" })).toContainText("Claude")
+    await expect(dialog.getByRole("table", { name: "Usage grouped by provider" })).not.toContainText("Claxedo")
+    await expect(dialog.getByRole("table", { name: "Usage grouped by model" })).toHaveCount(0)
+    await dialog.locator(".usage-chart-plot").focus()
+    const tooltip = dialog.getByRole("status")
+    await expect(tooltip).toContainText("Aug 9, 2026")
+    await expect(tooltip).toContainText("Codex")
+    await expect(tooltip).toContainText("Claude")
+    await expect(tooltip).toContainText("Total")
+    await expect
+      .poll(() => new Set(requests.map((request) => request.searchParams.get("group"))).has("provider"))
+      .toBe(true)
+    expect(requests.some((request) => request.searchParams.get("group") === "model")).toBe(false)
+    await expect(dialog.getByLabel(/Filter by/)).toHaveCount(0)
+    await expect(dialog).not.toContainText("Local ·")
+    await dialog.getByRole("button", { name: "Model", exact: true }).click()
+    await expect(dialog.getByRole("table", { name: "Usage grouped by model" })).toContainText("gpt-5")
+    await expect(dialog.getByRole("table", { name: "Usage grouped by provider" })).toHaveCount(0)
+    await dialog.getByRole("button", { name: "Next breakdown page" }).click()
+    await expect
+      .poll(() => requests.some((request) => request.searchParams.get("model_after") === "anthropic/claude-sonnet"))
+      .toBe(true)
+    await dialog.getByRole("button", { name: "Previous breakdown page" }).click()
+    await dialog.getByRole("button", { name: "Provider", exact: true }).click()
+    await dialog.getByRole("button", { name: "Next breakdown page" }).click()
+    await expect
+      .poll(() =>
+        requests.some(
+          (request) =>
+            request.searchParams.get("group") === "provider" && request.searchParams.get("after") === "anthropic",
+        ),
+      )
+      .toBe(true)
+    await dialog.getByRole("button", { name: "Previous breakdown page" }).click()
+    await dialog.getByRole("button", { name: "7 days" }).click()
+    await expect
+      .poll(() => {
+        const request = requests.findLast(
+          (candidate) =>
+            Number(candidate.searchParams.get("until")) - Number(candidate.searchParams.get("since")) ===
+            7 * 86_400_000 - 1,
+        )
+        return request ? Number(request.searchParams.get("until")) - Number(request.searchParams.get("since")) : 0
+      })
+      .toBe(7 * 86_400_000 - 1)
+    await dialog.getByRole("button", { name: "Cost" }).click()
+    await expect(dialog.getByLabel("Estimated raw token cost")).toContainText("$0.02")
+    await expect(dialog.getByRole("img", { name: /^Daily estimated API cost\./ })).toBeVisible()
 
-    await dialog.getByRole("button", { name: /Quota limits/ }).click()
+    await dialog.getByRole("button", { name: "Usage limits" }).click()
+    await expect.poll(() => requests.some((request) => request.searchParams.get("view") === "quota")).toBe(true)
     await expect(dialog.getByRole("progressbar", { name: /anthropic Session/i })).toHaveAttribute("value", "25")
     await expect(dialog.getByRole("progressbar", { name: /openai weekly/i })).toHaveAttribute("value", "40")
+    await expect(dialog.getByRole("button", { name: "Usage through Claxedo" })).toBeVisible()
+    await dialog.getByRole("button", { name: "Usage through Claxedo" }).click()
+    await expect(dialog.getByRole("button", { name: "Usage through Claxedo" })).toHaveAttribute("aria-pressed", "true")
 
     const axe = await new AxeBuilder({ page }).include('[role="dialog"]').analyze()
-    expect(axe.violations.filter((violation) => violation.impact === "critical" || violation.impact === "serious")).toEqual([])
+    expect(
+      axe.violations.filter((violation) => violation.impact === "critical" || violation.impact === "serious"),
+    ).toEqual([])
 
-    await page.keyboard.press("Escape")
+    // Axe may move the document's active element while it inspects the modal.
+    // Target the open dialog so this still exercises the real keyboard close
+    // path instead of depending on the audit library's focus side effects.
+    await dialog.press("Escape")
     await expect(dialog).toHaveCount(0)
     await expect(trigger).toBeFocused()
   })
@@ -165,7 +328,7 @@ test.describe("unified usage dashboard @core @surface-web", () => {
     expect(box).not.toBeNull()
     expect(box!.width).toBeGreaterThanOrEqual(380)
     expect(box!.height).toBeGreaterThanOrEqual(830)
-    await expect(dialog.getByRole("button", { name: /Claxedo usage/ })).toBeVisible()
-    await expect(dialog.getByRole("button", { name: /Total usage/ })).toBeVisible()
+    await expect(dialog.getByRole("button", { name: "Usage through Claxedo" })).toBeVisible()
+    await expect(dialog.getByRole("button", { name: "Total local usage" })).toBeVisible()
   })
 })

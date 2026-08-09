@@ -118,12 +118,13 @@ const sqls = [
   "CREATE INDEX IF NOT EXISTS `claxedo_usage_turn_current_workspace_idx` ON `claxedo_usage_turn_current` (`workspace_id`, `observed_at`)",
   `CREATE TABLE IF NOT EXISTS \`claxedo_usage_outbox\` (
     \`host_id\` text NOT NULL, \`session_ref\` text NOT NULL, \`message_id\` text NOT NULL,
-    \`revision\` integer NOT NULL, \`payload_hash\` text NOT NULL,
+    \`revision\` integer NOT NULL, \`payload_hash\` text NOT NULL, \`org_id\` text, \`user_id\` text,
     \`state\` text NOT NULL DEFAULT 'pending', \`attempts\` integer NOT NULL DEFAULT 0,
     \`created_at\` integer NOT NULL, \`updated_at\` integer NOT NULL,
     PRIMARY KEY (\`host_id\`, \`session_ref\`, \`message_id\`, \`revision\`)
   )`,
   "CREATE INDEX IF NOT EXISTS `claxedo_usage_outbox_state_created_idx` ON `claxedo_usage_outbox` (`state`, `created_at`)",
+  "CREATE INDEX IF NOT EXISTS `claxedo_usage_outbox_tenant_state_created_idx` ON `claxedo_usage_outbox` (`org_id`, `user_id`, `state`, `created_at`)",
   "CREATE TABLE IF NOT EXISTS `claxedo_usage_source_coverage` (`source` text PRIMARY KEY NOT NULL, `started_at` integer NOT NULL)",
 ] as const
 

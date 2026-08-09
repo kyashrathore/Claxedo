@@ -25,24 +25,18 @@ const usageColumns = () => ({
   quality_json: text().notNull(),
 })
 
-export const ClaxedoUsageTurnRevisionTable = sqliteTable(
-  "claxedo_usage_turn_revision",
-  usageColumns(),
-  (table) => [
-    primaryKey({ columns: [table.host_id, table.session_ref, table.message_id, table.revision] }),
-    index("claxedo_usage_turn_revision_observed_idx").on(table.observed_at),
-  ],
-)
+export const ClaxedoUsageTurnRevisionTable = sqliteTable("claxedo_usage_turn_revision", usageColumns(), (table) => [
+  primaryKey({ columns: [table.host_id, table.session_ref, table.message_id, table.revision] }),
+  index("claxedo_usage_turn_revision_observed_idx").on(table.observed_at),
+])
 
-export const ClaxedoUsageTurnCurrentTable = sqliteTable(
-  "claxedo_usage_turn_current",
-  usageColumns(),
-  (table) => [
-    primaryKey({ columns: [table.host_id, table.session_ref, table.message_id] }),
-    index("claxedo_usage_turn_current_observed_idx").on(table.observed_at),
-    index("claxedo_usage_turn_current_workspace_idx").on(table.workspace_id, table.observed_at),
-  ],
-)
+export const ClaxedoUsageTurnCurrentTable = sqliteTable("claxedo_usage_turn_current", usageColumns(), (table) => [
+  primaryKey({ columns: [table.host_id, table.session_ref, table.message_id] }),
+  index("claxedo_usage_turn_current_settlement_idx").on(table.settlement),
+  index("claxedo_usage_turn_current_session_message_idx").on(table.session_id, table.message_id),
+  index("claxedo_usage_turn_current_observed_idx").on(table.observed_at),
+  index("claxedo_usage_turn_current_workspace_idx").on(table.workspace_id, table.observed_at),
+])
 
 export const ClaxedoUsageOutboxTable = sqliteTable(
   "claxedo_usage_outbox",
@@ -52,7 +46,11 @@ export const ClaxedoUsageOutboxTable = sqliteTable(
     message_id: text().notNull(),
     revision: integer().notNull(),
     payload_hash: text().notNull(),
-    state: text({ enum: ["pending", "delivered", "conflict"] }).notNull().default("pending"),
+    org_id: text(),
+    user_id: text(),
+    state: text({ enum: ["pending", "delivered", "conflict"] })
+      .notNull()
+      .default("pending"),
     attempts: integer().notNull().default(0),
     created_at: integer().notNull(),
     updated_at: integer().notNull(),
@@ -60,6 +58,12 @@ export const ClaxedoUsageOutboxTable = sqliteTable(
   (table) => [
     primaryKey({ columns: [table.host_id, table.session_ref, table.message_id, table.revision] }),
     index("claxedo_usage_outbox_state_created_idx").on(table.state, table.created_at),
+    index("claxedo_usage_outbox_tenant_state_created_idx").on(
+      table.org_id,
+      table.user_id,
+      table.state,
+      table.created_at,
+    ),
   ],
 )
 
@@ -68,10 +72,7 @@ export const ClaxedoUsageOutboxTable = sqliteTable(
  * source is guaranteed to be represented in the local usage facts. History
  * before this boundary stays quarantined instead of being guessed external.
  */
-export const ClaxedoUsageSourceCoverageTable = sqliteTable(
-  "claxedo_usage_source_coverage",
-  {
-    source: text().primaryKey(),
-    started_at: integer().notNull(),
-  },
-)
+export const ClaxedoUsageSourceCoverageTable = sqliteTable("claxedo_usage_source_coverage", {
+  source: text().primaryKey(),
+  started_at: integer().notNull(),
+})

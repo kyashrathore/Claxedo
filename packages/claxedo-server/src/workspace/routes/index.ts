@@ -36,7 +36,7 @@ import { workspaceConnectionRoutes } from "../../connections/routes/connection-r
 import { sandboxDriverCredentials, sandboxDriverRoutes } from "../../sandbox/routes/sandbox-driver-routes"
 import { workspaceShareRoutes } from "./share-routes"
 import { authenticatedGitHubCloneSource } from "../repository-clone"
-import { workspaceResponse } from "./workspace-response"
+import { workspaceResponse } from "../workspace-response"
 
 const createBody = z
   .object({

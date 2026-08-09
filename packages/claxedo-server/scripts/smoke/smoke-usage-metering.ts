@@ -7,18 +7,20 @@
  * offline outbox convergence, privacy, and the committed 7/30/90-day budgets.
  */
 import { performance } from "node:perf_hooks"
-import type { TurnUsageRevision } from "../../src/usage/contracts"
-import { createUsageOutboxSync } from "../../src/usage/outbox-sync"
+import type { TurnUsageRevision } from "@claxedo/server-core/usage/contracts"
+import { createUsageOutboxSync } from "@claxedo/local-server/self-hosted-execution"
 import {
   mergeUsageSeries,
   usageSeriesFromExternal,
   usageSeriesFromFacts,
-} from "../../src/usage/projection"
-import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "../../src/usage/provenance"
+} from "@claxedo/server-core/usage/projection"
+import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "@claxedo/server-core/usage/provenance"
+import { LocalUsageRoutes } from "@claxedo/server-core/usage/routes"
 
 const DAY = 86_400_000
 const NOW = Date.UTC(2026, 7, 9, 12)
 const PROJECTION_BUDGET_MS = { 7: 40, 30: 80, 90: 180 } as const
+const ROUTE_BUDGET_MS = 5_000
 const HARNESSES = [
   "opencode",
   "claude-acp",
@@ -105,6 +107,7 @@ async function assertOfflineConvergence(revision: TurnUsageRevision) {
   let delivered = 0
   const local = {
     pendingOutbox: async () => pending,
+    claimPending: async () => pending,
     markDelivered: async () => { pending = []; delivered += 1 },
     markConflict: async () => { throw new Error("unexpected conflict") },
   }
@@ -114,7 +117,7 @@ async function assertOfflineConvergence(revision: TurnUsageRevision) {
       revisions.map(() => ({ status: "accepted" as const, activated: false })),
   }
   const sync = createUsageOutboxSync({ local: local as never, central, limit: 100 })
-  const offline = await sync.flush()
+  const offline = await sync.clearIdentity()
   invariant(offline.pending === 1 && offline.delivered === 0, "offline fact did not remain pending")
   const online = await sync.flush({ org_id: "org-1", user_id: "user-1" })
   invariant(online.delivered === 1 && delivered === 1 && pending.length === 0, "reconnect did not converge exactly once")
@@ -166,6 +169,7 @@ export async function runUsageMeteringSmoke() {
   const external = usageSeriesFromExternal({
     rows: [{
       app: "claude",
+      provider: "anthropic",
       model: "claude-sonnet-4-6",
       bucketStart: NOW - 500,
       nativeSessionId: "direct-claude",
@@ -194,6 +198,27 @@ export async function runUsageMeteringSmoke() {
     timings[`${days}d`] = Number(elapsed.toFixed(2))
   }
 
+  // Exercise the production Hono handler too: ledger read, latest-revision
+  // selection, pricing, provider breakdown, chart and JSON serialization.
+  const route = LocalUsageRoutes({
+    local: {
+      current: async () => rows,
+      pendingOutbox: async () => rows,
+    } as never,
+    identity: async () => undefined,
+    outbox: {
+      flush: async () => ({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
+      clearIdentity: async () => ({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
+    },
+  })
+  const routeStarted = performance.now()
+  const routeResponse = await route.request(`/?since=${NOW - 90 * DAY}&until=${NOW}&timezone=UTC&view=claxedo&group=provider`)
+  const routeElapsed = performance.now() - routeStarted
+  invariant(routeResponse.ok, `production route returned ${routeResponse.status}`)
+  const routeBody = await routeResponse.json() as { claxedo?: { totals?: { turnCount?: number } } }
+  invariant(routeBody.claxedo?.totals?.turnCount === rows.length, "production route lost benchmark facts")
+  invariant(routeElapsed <= ROUTE_BUDGET_MS, `production route ${routeElapsed.toFixed(1)}ms exceeded ${ROUTE_BUDGET_MS}ms`)
+
   return {
     harnesses: HARNESSES.length,
     exactTurns: projection.totals.turnCount,
@@ -201,7 +226,8 @@ export async function runUsageMeteringSmoke() {
     fixtureFacts: rows.length,
     projectionBudgetMs: PROJECTION_BUDGET_MS,
     projectionObservedMs: timings,
-    checks: ["revision-idempotency", "cross-machine", "overlap", "offline-recovery", "privacy", "7-30-90-budgets"],
+    productionRouteObservedMs: Number(routeElapsed.toFixed(2)),
+    checks: ["revision-idempotency", "cross-machine", "overlap", "offline-recovery", "privacy", "7-30-90-budgets", "production-route"],
   }
 }
 

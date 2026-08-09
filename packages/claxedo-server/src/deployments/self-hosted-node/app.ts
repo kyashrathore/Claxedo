@@ -1,6 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import os from "node:os"
+import { createHash } from "node:crypto"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import Database from "better-sqlite3"
@@ -118,7 +119,7 @@ import {
   mountLazyEmbeddedWorkGraph,
   recordLocalWorkGraphLlmUsage,
 } from "../../hosts/workgraph/composition/server-workgraph"
-import { getLocalUsageLimits, mountLocalOnlyUsageLimits } from "@claxedo/local-server/self-hosted-execution"
+import { getLocalUsageLimits } from "@claxedo/local-server/self-hosted-execution"
 import { centralModelBackend } from "../../session/runtime"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { withDataDirOwnership } from "@claxedo/server-core/platform/runtime/lib/data-dir-owner"
@@ -142,15 +143,17 @@ import { createRemoteAccessService, unavailableRemoteAccessService } from "./rem
 import { localHostIdentity, registrationPayload, signHostPayload } from "../../workspace/local-host"
 import { hasUserHostedMachineTunnel, startUserHostedMachineTunnel, stopUserHostedMachineTunnel } from "../../user-hosted-tunnel"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/self-hosted-execution"
-import { createSqliteUsageLedger } from "../../usage/adapters/sqlite-usage-ledger"
-import { createSqliteUsageSourceCoverageStore, type UsageSourceCoverageStore } from "../../usage/adapters/sqlite-usage-provenance"
-import { createTurnMeter } from "../../usage/turn-meter"
+import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
+import { createSqliteUsageSourceCoverageStore, type UsageSourceCoverageStore } from "@claxedo/server-core/usage/adapters/sqlite-usage-provenance"
+import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
 import { createConvexUsageLedger } from "../../authority/adapters/convex/usage-ledger"
 import type { UsageLedger } from "../../platform/telemetry/product/metering"
-import { createUsageOutboxSync } from "../../usage/outbox-sync"
-import { LocalUsageRoutes } from "../../usage/routes"
-import { scanTokenTrackerLocalHistory } from "../../usage/adapters/token-tracker-local-history"
-import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "../../usage/provenance"
+import { createUsageOutboxSync, type UsageOutboxSync } from "@claxedo/local-server/self-hosted-execution"
+import { LocalUsageRoutes } from "@claxedo/local-server/self-hosted-execution"
+import { scanTokenTrackerLocalHistory } from "@claxedo/local-server/self-hosted-execution"
+import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "@claxedo/server-core/usage/provenance"
+import { resolveHarnessForRequest } from "@claxedo/server-core/session/harness/resolution"
+import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
 
 const execFileAsync = promisify(execFile)
 
@@ -470,7 +473,9 @@ export function createSelfHostedApp(
     posture?: SelfHostedPosture
     usageRevisionStore?: ReturnType<typeof createSqliteUsageLedger>
     usageSourceCoverage?: UsageSourceCoverageStore
+    usageSourceCoverageReady?: Promise<void>
     usageLedger?: UsageLedger
+    usageOutbox?: UsageOutboxSync
     resolveUsageHostIdentity?: () => Promise<{ hostId: string }>
   } = {},
 ) {
@@ -524,6 +529,13 @@ export function createSelfHostedApp(
     ...(services.defaultHomeRegion ? { defaultHomeRegion: services.defaultHomeRegion } : {}),
   }
   const turnCredentials = createConnectionTurnCredentials()
+  const usageOutbox = options.usageOutbox ?? (options.usageRevisionStore
+      ? createUsageOutboxSync({
+          local: options.usageRevisionStore,
+          ...(options.usageLedger ? { central: options.usageLedger } : {}),
+          telemetry: services.telemetry,
+        })
+    : undefined)
   const centralControl = createCentralControlApp(services, {
     ...authRouteOptions(services),
     // Central Pi sessions run tools in the placement selected at session
@@ -544,6 +556,8 @@ export function createSelfHostedApp(
     ...(options.usageRevisionStore ? { usageRevisionStore: options.usageRevisionStore } : {}),
     ...(options.usageLedger ? { usageLedger: options.usageLedger } : {}),
     ...(options.resolveUsageHostIdentity ? { resolveUsageHostIdentity: options.resolveUsageHostIdentity } : {}),
+    ...(usageOutbox ? { onUsageTerminal: () => { void usageOutbox.notify() } } : {}),
+    mountPublicUsageRoute: !options.usageRevisionStore,
     ...(options.beforeLocalSessionList ? { beforeLocalSessionList: options.beforeLocalSessionList } : {}),
   })
   const controlPlaneChannels = createControlPlaneChannels({
@@ -830,16 +844,11 @@ export function createSelfHostedApp(
     git: optionalGit,
     isDirectory: async (directory) => (await fs.promises.stat(directory).catch(() => undefined))?.isDirectory() ?? false,
   }))
-  mountLocalOnlyUsageLimits(app, authRouteOptions(services))
   if (options.usageRevisionStore) {
-    const outbox = createUsageOutboxSync({
-      local: options.usageRevisionStore,
-      ...(options.usageLedger ? { central: options.usageLedger } : {}),
-    })
     app.route("/api/claxedo/usage", LocalUsageRoutes({
       local: options.usageRevisionStore,
       ...(options.usageLedger ? { central: options.usageLedger } : {}),
-      outbox,
+      outbox: usageOutbox!,
       identity: async (request) => {
         const auth = await controlPlaneAuthContext(request, authRouteOptions(services))
         return auth.mode === "signed" && auth.user.orgId
@@ -847,11 +856,13 @@ export function createSelfHostedApp(
           : undefined
       },
       quota: async (refresh) => await getLocalUsageLimits({ refresh }),
-      history: async ({ since, until }) => {
+      history: async ({ since, until, refresh }) => {
         const facts = await options.usageRevisionStore!.current()
+        const incompleteSources = new Set<string>()
         const entries = facts.flatMap((fact) => {
           const source = tokenTrackerSourceForHarness(fact.harness)
           const nativeSessionId = fact.nativeSessionId ?? (source === "opencode" || source === "pi" ? fact.sessionId : undefined)
+          if (source && !nativeSessionId) incompleteSources.add(source)
           return source && nativeSessionId ? [{
             source,
             nativeSessionId,
@@ -861,15 +872,23 @@ export function createSelfHostedApp(
             startedAt: 0,
           }] : []
         })
-        const completeAfter = await options.usageSourceCoverage?.starts() ?? {}
+        const completeSources = ["claude", "codex", "cursor", "opencode", "pi"]
+          .filter((source) => !incompleteSources.has(source))
+        const classificationKey = createHash("sha256").update(JSON.stringify({
+          entries: entries.toSorted((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+          completeSources,
+        })).digest("hex")
         return await scanTokenTrackerLocalHistory({
           sourceHome: os.homedir(),
           stateDir: path.join(dataDir(), "usage-scanner"),
           since,
           until,
-          classify: createUsageProvenanceClassifier(entries, { completeAfter }),
+          classificationKey,
+          refresh,
+          classify: createUsageProvenanceClassifier(entries, { completeSources }),
         })
       },
+      telemetry: services.telemetry,
     }))
   }
   mountControlPlaneChannels(app, {
@@ -1091,14 +1110,6 @@ export async function shutdownControlPlaneRuntime() {
   await shutdownPostHog()
 }
 
-function sessionComposerHarness(harness: ReturnType<typeof defaultHarness>) {
-  if (harness.access === "acp") return `${harness.id}-acp`
-  if (harness.id === "claude") return "claude-sdk"
-  if (harness.id === "codex") return "codex-app-server"
-  if (harness.id === "cursor") return "cursor-sdk"
-  return harness.id
-}
-
 export function startControlPlaneStack(options: ControlPlaneStackOptions) {
   return withDataDirOwnership(dataDir(), (dataDirOwner) => {
     const releaseDataDirOwner = () => {
@@ -1126,11 +1137,16 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   const services = options.services
   const usageRevisionStore = createSqliteUsageLedger()
   const usageSourceCoverage = createSqliteUsageSourceCoverageStore()
-  void usageSourceCoverage.ensure(["claude", "codex", "opencode", "pi"])
+  const usageCoverageReady = usageSourceCoverage.ensure(["claude", "codex", "cursor", "opencode", "pi"])
   const authorityUrl = convexAuthorityUrlFromEnv(process.env)
   const usageLedger = authorityUrl && process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN?.trim()
     ? createConvexUsageLedger({ url: authorityUrl })
     : undefined
+  const usageOutbox = createUsageOutboxSync({
+    local: usageRevisionStore,
+    ...(usageLedger ? { central: usageLedger } : {}),
+    telemetry: services.telemetry,
+  })
   const localUsageHost = localHostIdentity()
   const localTurnMeter = createTurnMeter({
     writer: usageRevisionStore,
@@ -1138,24 +1154,25 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     currentFilter: (fact) => fact.location === "local" || fact.location === "user-hosted",
     reconcileProvisionalOnStart: true,
     resolveContext: async ({ sessionId }) => {
-      const [meta, host, config] = await Promise.all([
+      const [meta, host] = await Promise.all([
         sessionMeta(sessionId),
         localUsageHost,
-        loadUserConfig(),
       ])
       if (!meta?.sessionRef || !meta.workspaceID) {
         throw new Error(`usage metering requires canonical workspace session metadata for ${sessionId}`)
       }
+      const harness = await resolveHarnessForRequest({ sessionId, workspaceId: meta.workspaceID })
       return {
         sessionRef: meta.sessionRef,
         workspaceId: meta.workspaceID,
         hostId: host.hostId,
         location: "local",
-        harness: sessionComposerHarness(defaultHarness(config)),
+        harness: meteringHarnessId(harness),
         ...(meta.model?.providerID ? { providerId: meta.model.providerID } : {}),
         ...(meta.model?.modelID ? { modelId: meta.model.modelID } : {}),
       }
     },
+    onTerminal: async () => { await usageOutbox.notify() },
     onDegraded: (error) => reportError(error, { tags: { source: "local_usage_metering" } }),
   })
   void localTurnMeter.start()
@@ -1362,6 +1379,8 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   const built = createSelfHostedApp(services, {
     usageRevisionStore,
     usageSourceCoverage,
+    usageSourceCoverageReady: usageCoverageReady,
+    usageOutbox,
     ...(usageLedger ? { usageLedger } : {}),
     resolveUsageHostIdentity: localHostIdentity,
     onOpencodeAccess: () => upstreamEvents?.start(),
@@ -1510,7 +1529,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     execution: workgraphExecution,
     executionCapabilities: createLocalExecutionCapabilities({
       opencodeRequest,
-      harness: async () => sessionComposerHarness(defaultHarness(await loadUserConfig())),
+      harness: async () => meteringHarnessId(defaultHarness(await loadUserConfig())),
       connections: built.connections,
       resolveTeamOwner: () => undefined,
       // Validate a New-stream directory selector against the authoritative local

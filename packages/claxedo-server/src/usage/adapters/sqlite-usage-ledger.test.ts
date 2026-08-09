@@ -1,8 +1,8 @@
 import Database from "better-sqlite3"
 import { drizzle } from "drizzle-orm/better-sqlite3"
 import { describe, expect, test } from "vitest"
-import type { TurnUsageRevision } from "../contracts"
-import { createSqliteUsageLedger } from "./sqlite-usage-ledger"
+import type { TurnUsageRevision } from "@claxedo/server-core/usage/contracts"
+import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
 
 const schema = `
 CREATE TABLE claxedo_usage_turn_revision (
@@ -25,7 +25,7 @@ CREATE TABLE claxedo_usage_turn_current (
 );
 CREATE TABLE claxedo_usage_outbox (
   host_id TEXT NOT NULL, session_ref TEXT NOT NULL, message_id TEXT NOT NULL, revision INTEGER NOT NULL,
-  payload_hash TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
+  payload_hash TEXT NOT NULL, org_id TEXT, user_id TEXT, state TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
   PRIMARY KEY (host_id, session_ref, message_id, revision)
 );`
@@ -71,21 +71,30 @@ describe("sqlite usage ledger", () => {
   test("atomically records provisional and final revisions while only the final contributes", async () => {
     const { sqlite, ledger } = harness()
     expect(await ledger.writeRevision(revision())).toEqual({ status: "accepted" })
-    expect(await ledger.writeRevision(revision({
-      revision: 2,
-      observedAt: 2_000,
-      completedAt: 2_000,
-      settlement: "final",
-      status: "completed",
-      tokens: { input: 10, output: 8, reasoning: null, cache: { read: 3, write: null } },
-    }))).toEqual({ status: "accepted" })
+    expect(
+      await ledger.writeRevision(
+        revision({
+          revision: 2,
+          observedAt: 2_000,
+          completedAt: 2_000,
+          settlement: "final",
+          status: "completed",
+          tokens: { input: 10, output: 8, reasoning: null, cache: { read: 3, write: null } },
+        }),
+      ),
+    ).toEqual({ status: "accepted" })
 
-    expect(sqlite.prepare("SELECT revision, settlement, output_tokens FROM claxedo_usage_turn_current").all())
-      .toEqual([{ revision: 2, settlement: "final", output_tokens: 8 }])
-    expect(sqlite.prepare("SELECT revision FROM claxedo_usage_turn_revision ORDER BY revision").all())
-      .toEqual([{ revision: 1 }, { revision: 2 }])
-    expect(sqlite.prepare("SELECT revision, state FROM claxedo_usage_outbox ORDER BY revision").all())
-      .toEqual([{ revision: 1, state: "pending" }, { revision: 2, state: "pending" }])
+    expect(sqlite.prepare("SELECT revision, settlement, output_tokens FROM claxedo_usage_turn_current").all()).toEqual([
+      { revision: 2, settlement: "final", output_tokens: 8 },
+    ])
+    expect(sqlite.prepare("SELECT revision FROM claxedo_usage_turn_revision ORDER BY revision").all()).toEqual([
+      { revision: 1 },
+      { revision: 2 },
+    ])
+    expect(sqlite.prepare("SELECT revision, state FROM claxedo_usage_outbox ORDER BY revision").all()).toEqual([
+      { revision: 1, state: "pending" },
+      { revision: 2, state: "pending" },
+    ])
   })
 
   test("makes identical replay idempotent and rejects stale or conflicting revisions", async () => {
@@ -94,8 +103,10 @@ describe("sqlite usage ledger", () => {
     expect(await ledger.writeRevision(first)).toEqual({ status: "accepted" })
     expect(await ledger.writeRevision(first)).toEqual({ status: "duplicate" })
     await expect(ledger.writeRevision(revision({ revision: 0 }))).rejects.toThrow("positive integer")
-    expect(await ledger.writeRevision(revision({ revision: 1, tokens: { ...first.tokens, output: 99 } })))
-      .toEqual({ status: "conflict", currentRevision: 1 })
+    expect(await ledger.writeRevision(revision({ revision: 1, tokens: { ...first.tokens, output: 99 } }))).toEqual({
+      status: "conflict",
+      currentRevision: 1,
+    })
     expect(await ledger.writeRevision(revision({ revision: 2 }))).toEqual({ status: "accepted" })
     expect(await ledger.writeRevision(first)).toEqual({ status: "stale", currentRevision: 2 })
     expect(sqlite.prepare("SELECT count(*) AS count FROM claxedo_usage_turn_revision").get()).toEqual({ count: 2 })
@@ -125,9 +136,26 @@ describe("sqlite usage ledger", () => {
     expect(await reopened.pendingOutbox()).toEqual([fact])
   })
 
+  test("durably binds pending turns to the first verified tenant across revisions", async () => {
+    const { ledger } = harness()
+    await ledger.writeRevision(revision())
+    const accountA = { org_id: "org-a", user_id: "user-a" }
+    const accountB = { org_id: "org-b", user_id: "user-b" }
+
+    expect(await ledger.claimPending(accountA)).toEqual([revision()])
+    expect(await ledger.claimPending(accountB)).toEqual([])
+
+    const final = revision({ revision: 2, settlement: "final", status: "completed" })
+    await ledger.writeRevision(final)
+    expect(await ledger.claimPending(accountB)).toEqual([])
+    expect(await ledger.claimPending(accountA)).toEqual([revision(), final])
+  })
+
   test("rolls back the fact when enqueue fails", async () => {
     const { sqlite, ledger } = harness()
-    sqlite.exec(`CREATE TRIGGER fail_usage_outbox BEFORE INSERT ON claxedo_usage_outbox BEGIN SELECT RAISE(FAIL, 'outbox down'); END`)
+    sqlite.exec(
+      `CREATE TRIGGER fail_usage_outbox BEFORE INSERT ON claxedo_usage_outbox BEGIN SELECT RAISE(FAIL, 'outbox down'); END`,
+    )
     await expect(ledger.writeRevision(revision())).rejects.toThrow("outbox down")
     expect(sqlite.prepare("SELECT count(*) AS count FROM claxedo_usage_turn_revision").get()).toEqual({ count: 0 })
     expect(sqlite.prepare("SELECT count(*) AS count FROM claxedo_usage_turn_current").get()).toEqual({ count: 0 })
@@ -155,9 +183,41 @@ describe("sqlite usage ledger", () => {
     await ledger.writeRevision(revision({ messageId: "end", observedAt: 2_000 }))
     await ledger.writeRevision(revision({ messageId: "after", observedAt: 2_001 }))
 
-    expect((await ledger.current({ since: 1_000, until: 2_000 })).map((item) => item.messageId))
-      .toEqual(["start", "end"])
-    expect((await ledger.pendingOutbox({ since: 1_000, until: 2_000, all: true })).map((item) => item.messageId))
-      .toEqual(["start", "end"])
+    expect((await ledger.current({ since: 1_000, until: 2_000 })).map((item) => item.messageId)).toEqual([
+      "start",
+      "end",
+    ])
+    expect(
+      (await ledger.pendingOutbox({ since: 1_000, until: 2_000, all: true })).map((item) => item.messageId),
+    ).toEqual(["start", "end"])
+  })
+
+  test("filters current turns by settlement for bounded startup recovery", async () => {
+    const { ledger } = harness()
+    await ledger.writeRevision(revision({ messageId: "running" }))
+    await ledger.writeRevision(
+      revision({
+        messageId: "finished",
+        settlement: "final",
+        status: "completed",
+      }),
+    )
+
+    expect((await ledger.current({ settlement: "provisional" })).map((item) => item.messageId)).toEqual(["running"])
+  })
+
+  test("finds one settled turn through its durable primary-key identity", async () => {
+    const { ledger } = harness()
+    await ledger.writeRevision(revision({ messageId: "wanted", settlement: "final", status: "completed" }))
+    await ledger.writeRevision(revision({ messageId: "other", settlement: "final", status: "completed" }))
+
+    expect(
+      (
+        await ledger.current({
+          sessionId: "same-session",
+          messageId: "wanted",
+        })
+      ).map((item) => item.messageId),
+    ).toEqual(["wanted"])
   })
 })

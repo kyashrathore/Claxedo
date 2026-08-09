@@ -109,6 +109,7 @@
   },
   "dependencies": {
     "@claxedo/agent-event-runtime": "workspace:0.7.0",
+    "@claxedo/usage-contract": "workspace:0.7.0",
     "@claxedo/workgraph": "workspace:*",
     "@clerk/clerk-js": "5.125.10",
     "@json-render/core": "0.19.0",

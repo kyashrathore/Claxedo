@@ -135,6 +135,8 @@ export type WorkspaceHostOptions = {
   processObserver?: ProcessObserver
   /** Host observer for the durable turn.finish outcome after store commit. */
   onTurnOutcome?: (input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void
+  /** Direct observer for canonical compatibility events produced by this host. */
+  onCompatEvent?: (event: CompatEnvelope) => void
   /** Parent-Session authorization and child ownership used by scoped runtime-event streams. */
   runtimeEventAuthorization?: RuntimeEventAuthorization
   /** Host-mediated resolver endpoint for opaque file-backed transcript handles. */
@@ -1120,6 +1122,12 @@ function runtimeSnapshotSignature(snapshot: AppliedRuntimeSnapshot) {
 
 export function createWorkspaceHost(options: WorkspaceHostOptions = {}): WorkspaceHost {
   const eventHub = options.eventHub ?? createRuntimeEventHub()
+  // Observe the hub itself, not `/global/event`: that route may proxy a
+  // currently-live OpenCode stream, while this host can later switch a session
+  // to Claude/Codex. The hub is the canonical producer shared by every adapter.
+  const cleanupCompatObserver = options.onCompatEvent
+    ? eventHub.subscribeGlobal(options.onCompatEvent)
+    : () => undefined
   const globalEventReplay = createSseReplayBuffer<CompatEnvelope>({
     isTerminal: (event) => isTerminalCompatEvent(event.payload),
   })
@@ -2389,6 +2397,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       },
     },
     dispose() {
+      cleanupCompatObserver()
       cleanupGlobalEventReplay()
       clear()
       for (const next of sessionAdapters.values()) {

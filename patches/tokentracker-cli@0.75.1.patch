@@ -1,167 +1,452 @@
-diff --git a/node_modules/tokentracker-cli/src/lib/embedded-history.js b/src/lib/embedded-history.js
-new file mode 100644
-index 0000000000000000000000000000000000000000..476a058a793e54801a7eea1b07de2e10ff5498b1
---- /dev/null
-+++ b/src/lib/embedded-history.js
-@@ -0,0 +1,161 @@
-+"use strict";
-+
+diff --git a/src/lib/rollout.js b/src/lib/rollout.js
+index f4a67887ad924e936fe9d5df8a999ea2b9a7b868..c863467f8e7ff95c85e8794917c9ba91ea322127 100644
+--- a/src/lib/rollout.js
++++ b/src/lib/rollout.js
+@@ -2,6 +2,7 @@ const fs = require("node:fs/promises");
+ const fssync = require("node:fs");
+ const path = require("node:path");
+ const readline = require("node:readline");
++const zlib = require("node:zlib");
+
+ const crypto = require("node:crypto");
+ const { ensureDir } = require("./fs");
+@@ -10796,6 +10797,433 @@ function isCjkCodePoint(code) {
+   );
+ }
+
 +// Side-effect-free embedding surface for hosts that need local usage without
-+// TokenTracker Cloud. This module deliberately imports no command, queue,
-+// telemetry, machine-id, runtime-config, or upload code.
-+const fs = require("node:fs");
-+const path = require("node:path");
-+const { parseCodexRolloutFile, listJsonlFiles } = require("./codex-rollout-parser");
++// TokenTracker Cloud. It reads provider-owned history only and deliberately
++// has no command, queue, telemetry, device-id, credential, or upload imports.
++const EMBEDDED_SOURCES = new Set(["claude", "codex", "cursor", "opencode", "pi"]);
++const EMBEDDED_TOKEN_KEYS = [
++  "input_tokens", "output_tokens", "reasoning_output_tokens",
++  "cached_input_tokens", "cache_creation_input_tokens",
++];
 +
-+const SUPPORTED = new Set(["claude", "codex", "opencode", "pi"]);
-+
-+function finiteToken(value) {
++function embeddedFiniteToken(value) {
++  if (value === undefined || value === null) return null;
 +  const number = Number(value);
 +  return Number.isSafeInteger(number) && number >= 0 ? number : null;
 +}
 +
-+function usage(input = {}) {
++function embeddedUsage(input = {}) {
 +  const cache = input.cache || {};
 +  return {
-+    input_tokens: finiteToken(input.input_tokens ?? input.input),
-+    output_tokens: finiteToken(input.output_tokens ?? input.output),
-+    reasoning_output_tokens: finiteToken(input.reasoning_output_tokens ?? input.reasoning),
-+    cached_input_tokens: finiteToken(input.cached_input_tokens ?? input.cache_read_input_tokens ?? cache.read),
-+    cache_creation_input_tokens: finiteToken(input.cache_creation_input_tokens ?? input.cache_creation ?? cache.write),
++    input_tokens: embeddedFiniteToken(input.input_tokens ?? input.inputTokens ?? input.input),
++    output_tokens: embeddedFiniteToken(input.output_tokens ?? input.outputTokens ?? input.output),
++    reasoning_output_tokens: embeddedFiniteToken(input.reasoning_output_tokens ?? input.reasoningTokens ?? input.reasoning),
++    cached_input_tokens: embeddedFiniteToken(input.cached_input_tokens ?? input.cache_read_input_tokens ?? input.cacheReadTokens ?? cache.read),
++    cache_creation_input_tokens: embeddedFiniteToken(input.cache_creation_input_tokens ?? input.cache_creation ?? input.cacheWriteTokens ?? cache.write),
 +  };
 +}
 +
-+function timestamp(value, fallback) {
++function embeddedTimestamp(value, fallback) {
 +  const millis = typeof value === "number" ? value : Date.parse(String(value || ""));
 +  return Number.isFinite(millis) ? millis : fallback;
 +}
 +
-+function readJsonLines(filePath) {
-+  let raw;
-+  try { raw = fs.readFileSync(filePath, "utf8"); } catch { return []; }
-+  const rows = [];
-+  for (const line of raw.split("\n")) {
-+    if (!line.trim()) continue;
-+    try { rows.push(JSON.parse(line)); } catch { /* source-specific degradation is reported by the caller */ }
-+  }
-+  return rows;
++function embeddedProvider(source, message = {}, row = {}) {
++  const explicit = message.providerID || message.providerId || message.provider_id
++    || row.providerID || row.providerId || row.provider_id || row.model_provider;
++  if (explicit) return String(explicit).toLowerCase();
++  if (source === "claude") return "anthropic";
++  if (source === "codex") return "openai";
++  const model = String(message.model || message.modelID || message.modelId || row.model || "").toLowerCase();
++  if (model.startsWith("claude")) return "anthropic";
++  if (/^(gpt-|o[1-9](?:-|$)|codex)/.test(model)) return "openai";
++  if (model.startsWith("gemini")) return "google";
++  return "unknown";
 +}
 +
-+function eventFromRow(source, filePath, row, fallbackTime) {
-+  const message = row.message || row.info || row;
++function embeddedJsonLines(filePath) {
++  let raw;
++  try { raw = fssync.readFileSync(filePath, "utf8"); } catch { return { rows: [], malformed: 1 }; }
++  const rows = [];
++  let malformed = 0;
++  for (const line of raw.split("\n")) {
++    if (!line.trim()) continue;
++    try { rows.push(JSON.parse(line)); } catch { malformed += 1; }
++  }
++  return { rows, malformed };
++}
++
++function embeddedJsonFile(filePath) {
++  try { return { row: JSON.parse(fssync.readFileSync(filePath, "utf8")), malformed: 0 }; }
++  catch { return { row: null, malformed: 1 }; }
++}
++
++function embeddedWalk(root, accept, maxDepth = 8) {
++  const files = [];
++  const visit = (directory, depth) => {
++    if (depth > maxDepth) return;
++    let entries;
++    try { entries = fssync.readdirSync(directory, { withFileTypes: true }); } catch { return; }
++    for (const entry of entries) {
++      const filePath = path.join(directory, entry.name);
++      if (entry.isDirectory()) visit(filePath, depth + 1);
++      else if (entry.isFile() && accept(filePath, entry.name)) files.push(filePath);
++    }
++  };
++  visit(root, 0);
++  return files;
++}
++
++function embeddedEvent(source, filePath, row, fallbackTime) {
++  const message = row.message || row.info || row.data || row;
 +  const role = message.role || row.role || row.type;
 +  if (role !== "assistant" && row.type !== "message") return null;
 +  const tokens = message.usage || message.tokens || row.usage || row.tokens;
 +  if (!tokens || typeof tokens !== "object") return null;
 +  return {
 +    source,
++    provider: embeddedProvider(source, message, row),
++    event_id: String(row.id || message.id || ""),
 +    native_session_id: String(row.sessionId || row.session_id || message.sessionID || message.session_id || path.basename(filePath, path.extname(filePath))),
-+    model: String(message.model || message.modelID || row.model || "unknown"),
-+    observed_at: timestamp(row.timestamp || row.created_at || message.timestamp || message.time?.completed, fallbackTime),
-+    project_ref: typeof row.cwd === "string" ? row.cwd : undefined,
-+    tokens: usage(tokens),
++    model: String(message.model || message.modelID || message.modelId || row.model || "unknown"),
++    observed_at: embeddedTimestamp(row.timestamp || row.created_at || row.timeUpdated || message.timestamp || message.time?.completed || message.time?.created, fallbackTime),
++    tokens: embeddedUsage(tokens),
 +  };
 +}
 +
-+async function scanSource(sourceHome, source, since, until) {
-+  const roots = {
-+    claude: path.join(sourceHome, ".claude", "projects"),
-+    codex: path.join(sourceHome, ".codex", "sessions"),
-+    opencode: path.join(sourceHome, ".local", "share", "opencode", "storage", "message"),
-+    pi: path.join(sourceHome, ".pi", "agent", "sessions"),
++function embeddedResult(events, malformed) {
++  return {
++    events,
++    status: malformed ? "degraded" : "available",
++    error: malformed ? `${malformed} unreadable records` : null,
 +  };
-+  const root = roots[source];
-+  if (!root || !fs.existsSync(root)) return { events: [], status: "unavailable", error: null };
-+  const files = listJsonlFiles(root);
++}
++
++const EMBEDDED_HISTORY_CURSOR_VERSION = 6;
++const EMBEDDED_HISTORY_CURSOR_FILE = "embedded-history-cursors-v6.json.gz";
++const EMBEDDED_CODEX_CURSOR_BUCKET_MS = 60_000;
++
++function embeddedHistoryFileKey(filePath) {
++  return crypto.createHash("sha256").update(filePath).digest("hex");
++}
++
++function embeddedReadHistoryCursors(stateDir) {
++  try {
++    const compressed = fssync.readFileSync(path.join(stateDir, EMBEDDED_HISTORY_CURSOR_FILE));
++    const value = JSON.parse(zlib.gunzipSync(compressed).toString("utf8"));
++    if (value?.version === EMBEDDED_HISTORY_CURSOR_VERSION && value.files && typeof value.files === "object") return value;
++  } catch {}
++  return { version: EMBEDDED_HISTORY_CURSOR_VERSION, files: {}, updatedAt: 0 };
++}
++
++function embeddedWriteHistoryCursors(stateDir, state) {
++  fssync.mkdirSync(stateDir, { recursive: true, mode: 0o700 });
++  const target = path.join(stateDir, EMBEDDED_HISTORY_CURSOR_FILE);
++  const temporary = `${target}.${process.pid}.tmp`;
++  fssync.writeFileSync(temporary, zlib.gzipSync(JSON.stringify(state), { level: 6 }), { mode: 0o600 });
++  fssync.renameSync(temporary, target);
++}
++
++function embeddedFileSignature(stat) {
++  return `${Number(stat.ino || 0)}:${Number(stat.size || 0)}:${Number(stat.mtimeMs || 0)}`;
++}
++
++function embeddedCollapseCodexEvents(events) {
++  const buckets = new Map();
++  for (const event of events) {
++    const observedAt = Math.floor(event.observed_at / EMBEDDED_CODEX_CURSOR_BUCKET_MS) * EMBEDDED_CODEX_CURSOR_BUCKET_MS;
++    const key = `${event.native_session_id}\0${event.model}\0${observedAt}`;
++    let bucket = buckets.get(key);
++    if (!bucket) {
++      bucket = {
++        ...event,
++        // Distinct rollout files can reuse one native session id and minute.
++        // Consecutive duplicates are removed while parsing each file; a
++        // second cross-file dedupe here would discard authoritative usage.
++        event_id: "",
++        observed_at: observedAt,
++        event_count: 0,
++        tokens: Object.fromEntries(EMBEDDED_TOKEN_KEYS.map((token) => [token, null])),
++      };
++      buckets.set(key, bucket);
++    }
++    bucket.event_count += Number(event.event_count || 1);
++    embeddedAdd(bucket.tokens, event.tokens);
++  }
++  return [...buckets.values()];
++}
++
++async function embeddedMapLimit(values, limit, map) {
++  const output = new Array(values.length);
++  let next = 0;
++  async function worker() {
++    while (next < values.length) {
++      const index = next++;
++      output[index] = await map(values[index], index);
++    }
++  }
++  await Promise.all(Array.from({ length: Math.min(limit, values.length) }, worker));
++  return output;
++}
++
++async function embeddedCodexEvents(filePath, stat) {
++  const { pickDelta } = require("./codex-rollout-parser");
++  const stream = fssync.createReadStream(filePath, { encoding: "utf8" });
++  const lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
 +  const events = [];
 +  let malformed = 0;
-+  for (const filePath of files) {
-+    const stat = fs.statSync(filePath);
-+    if (source === "codex") {
-+      try {
-+        const result = await parseCodexRolloutFile(filePath, {
-+          fromIso: new Date(since).toISOString(),
-+          toIso: new Date(until).toISOString(),
-+        });
-+        if (result.totals?.total_tokens > 0) events.push({
-+          source,
-+          native_session_id: String(result.sessionId || path.basename(filePath, ".jsonl")),
-+          model: String(result.model || "unknown"),
-+          observed_at: Math.min(until, Math.max(since, stat.mtimeMs)),
-+          project_ref: typeof result.cwd === "string" ? result.cwd : undefined,
-+          tokens: usage(result.totals),
-+        });
-+      } catch { malformed += 1; }
-+      continue;
++  let sessionId = path.basename(filePath, ".jsonl");
++  let model = "";
++  let previousTotals = null;
++  let previousTotalsSignature = null;
++  try {
++    for await (const line of lines) {
++      if (!line) continue;
++      let row;
++      try { row = JSON.parse(line); } catch { malformed += 1; continue; }
++      if (row.type === "session_meta") {
++        sessionId = String(row.payload?.id || sessionId);
++      } else if (row.type === "turn_context") {
++        model = String(row.payload?.model || model);
++      }
++      if (row.type !== "event_msg" || row.payload?.type !== "token_count") continue;
++      const info = row.payload?.info;
++      const lastUsage = info?.last_token_usage;
++      const totalUsage = info?.total_token_usage;
++      const observedAt = embeddedTimestamp(row.timestamp, stat.mtimeMs);
++      if ((!lastUsage || typeof lastUsage !== "object") && (!totalUsage || typeof totalUsage !== "object")) continue;
++      if (!model) continue;
++      // `last_token_usage` is a per-turn delta and can legitimately be
++      // identical for two different turns. Codex's cumulative total is the
++      // authoritative observation identity: an unchanged total is a duplicate
++      // emission, while an increased total yields the next distinct delta.
++      if (totalUsage && typeof totalUsage === "object") {
++        const signature = JSON.stringify(totalUsage);
++        if (signature === previousTotalsSignature) continue;
++        previousTotalsSignature = signature;
++      }
++      const delta = pickDelta(lastUsage, totalUsage, previousTotals);
++      if (totalUsage && typeof totalUsage === "object") previousTotals = totalUsage;
++      if (!delta || delta.total_tokens <= 0) continue;
++      const tokens = embeddedUsage(delta);
++      if (tokens.output_tokens !== null && tokens.reasoning_output_tokens !== null) {
++        tokens.output_tokens = Math.max(0, tokens.output_tokens - tokens.reasoning_output_tokens);
++      }
++      events.push({
++        source: "codex",
++        provider: "openai",
++        event_id: `${String(row.timestamp || "unknown")}:${events.length}`,
++        native_session_id: sessionId,
++        model,
++        observed_at: observedAt,
++        tokens,
++      });
 +    }
-+    const rows = readJsonLines(filePath);
-+    if (rows.length === 0 && stat.size > 0) malformed += 1;
-+    for (const row of rows) {
-+      const event = eventFromRow(source, filePath, row, stat.mtimeMs);
++  } finally {
++    lines.close();
++    stream.close?.();
++  }
++  return { events, malformed };
++}
++
++function embeddedSqliteRows(dbPath, query) {
++  try { return { rows: readSqliteJsonRows(dbPath, query, { label: "embedded history", timeout: 10_000 }), malformed: 0 }; }
++  catch { return { rows: [], malformed: 1 }; }
++}
++
++function embeddedScanOpencode(sourceHome, since, until) {
++  const root = path.join(sourceHome, ".local", "share", "opencode");
++  if (!fssync.existsSync(root)) return { events: [], status: "unavailable", error: null };
++  const events = [];
++  let malformed = 0;
++  const legacyRoot = path.join(root, "storage", "message");
++  for (const filePath of embeddedWalk(legacyRoot, (_file, name) => name.startsWith("msg_") && name.endsWith(".json"))) {
++    const result = embeddedJsonFile(filePath);
++    malformed += result.malformed;
++    if (!result.row) continue;
++    const event = embeddedEvent("opencode", filePath, result.row, fssync.statSync(filePath).mtimeMs);
++    if (event && event.observed_at >= since && event.observed_at <= until) events.push(event);
++  }
++  for (const dbPath of embeddedWalk(root, (_file, name) => /^opencode(?:[-._].*)?\.db$/.test(name), 1)) {
++    const result = embeddedSqliteRows(dbPath, "SELECT id, session_id, time_updated, data FROM message WHERE json_extract(data, '$.role') = 'assistant' ORDER BY time_created ASC");
++    malformed += result.malformed;
++    for (const row of result.rows) {
++      let data;
++      try { data = JSON.parse(row.data); } catch { malformed += 1; continue; }
++      const event = embeddedEvent("opencode", dbPath, { id: row.id, session_id: row.session_id, timeUpdated: row.time_updated, data }, fssync.statSync(dbPath).mtimeMs);
 +      if (event && event.observed_at >= since && event.observed_at <= until) events.push(event);
 +    }
 +  }
-+  return { events, status: malformed ? "degraded" : "available", error: malformed ? `${malformed} unreadable files` : null };
++  return embeddedResult(events, malformed);
 +}
 +
-+function add(target, value) {
-+  for (const key of ["input_tokens", "output_tokens", "reasoning_output_tokens", "cached_input_tokens", "cache_creation_input_tokens"]) {
-+    if (value[key] !== null) target[key] += value[key];
++function embeddedCursorModel(value) {
++  if (typeof value !== "string" || !value) return "unknown";
++  try { return String(JSON.parse(value)?.id || value); } catch { return value; }
++}
++
++function embeddedCursorEvent(row, filePath, fallbackTime) {
++  let tokens;
++  try { tokens = typeof row.usage_json === "string" ? JSON.parse(row.usage_json) : row.usage; }
++  catch { return null; }
++  if (!tokens || typeof tokens !== "object") return null;
++  return {
++    source: "cursor",
++    provider: embeddedProvider("cursor", row.model || {}, row),
++    event_id: String(row.run_id || row.runId || ""),
++    native_session_id: String(row.agent_id || row.agentId || row.run_id || row.runId || path.basename(path.dirname(filePath))),
++    model: embeddedCursorModel(row.model?.id || row.model),
++    observed_at: embeddedTimestamp(row.finished_at || row.endedAt || row.updated_at || row.updatedAt || row.created_at || row.createdAt, fallbackTime),
++    tokens: embeddedUsage(tokens),
++  };
++}
++
++function embeddedScanCursor(sourceHome, since, until) {
++  const root = path.join(sourceHome, ".cursor");
++  if (!fssync.existsSync(root)) return { events: [], status: "unavailable", error: null };
++  const events = [];
++  let malformed = 0;
++  for (const dbPath of embeddedWalk(root, (_file, name) => name === "store.db", 5)) {
++    const result = embeddedSqliteRows(dbPath, "SELECT run_id, agent_id, model, usage_json, created_at, updated_at, finished_at FROM runs WHERE usage_json IS NOT NULL");
++    if (result.malformed) {
++      const tables = embeddedSqliteRows(dbPath, "SELECT name FROM sqlite_master WHERE type = 'table'");
++      if (tables.rows.some((row) => row.name === "runs")) malformed += 1;
++      continue;
++    }
++    for (const row of result.rows) {
++      const event = embeddedCursorEvent(row, dbPath, fssync.statSync(dbPath).mtimeMs);
++      if (!event) { malformed += 1; continue; }
++      if (event.observed_at >= since && event.observed_at <= until) events.push(event);
++    }
 +  }
++  for (const filePath of embeddedWalk(root, (_file, name) => name === "runs.ndjson", 5)) {
++    const result = embeddedJsonLines(filePath);
++    malformed += result.malformed;
++    for (const row of result.rows) {
++      const event = embeddedCursorEvent(row, filePath, fssync.statSync(filePath).mtimeMs);
++      if (!event) { malformed += 1; continue; }
++      if (event.observed_at >= since && event.observed_at <= until) events.push(event);
++    }
++  }
++  return embeddedResult(events, malformed);
++}
++
++async function embeddedScanJson(sourceHome, source, since, until, historyCursor) {
++  const roots = {
++    claude: path.join(sourceHome, ".claude", "projects"),
++    codex: path.join(sourceHome, ".codex", "sessions"),
++    pi: path.join(sourceHome, ".pi", "agent", "sessions"),
++  };
++  const root = roots[source];
++  if (!root || !fssync.existsSync(root)) return { events: [], status: "unavailable", error: null };
++  const files = embeddedWalk(root, (_file, name) => name.endsWith(".jsonl"));
++  const cachedFiles = historyCursor.files || {};
++  const nextFiles = {};
++  const results = await embeddedMapLimit(files, 6, async (filePath) => {
++    let stat;
++    try { stat = fssync.statSync(filePath); } catch { return { events: [], malformed: 1 }; }
++    // mtime is an upper bound on every persisted record timestamp. Files that
++    // were already closed before the requested range cannot contribute.
++    if (stat.mtimeMs < since) return { events: [], malformed: 0 };
++    const key = embeddedHistoryFileKey(filePath);
++    const signature = embeddedFileSignature(stat);
++    const cached = cachedFiles[key];
++    if (cached?.source === source && cached.signature === signature) {
++      nextFiles[key] = cached;
++      return {
++        events: (cached.events || []).filter((event) => event.observed_at >= since && event.observed_at <= until),
++        malformed: Number(cached.malformed || 0),
++      };
++    }
++    let result;
++    if (source === "codex") {
++      try { result = await embeddedCodexEvents(filePath, stat); }
++      catch { result = { events: [], malformed: 1 }; }
++    } else {
++      const parsed = embeddedJsonLines(filePath);
++      result = {
++        malformed: parsed.malformed,
++        events: parsed.rows.flatMap((row) => {
++          const event = embeddedEvent(source, filePath, row, stat.mtimeMs);
++          if (event && source === "claude") {
++            const messageId = typeof row.message?.id === "string" ? row.message.id : "";
++            const requestId = typeof row.requestId === "string" ? row.requestId : "";
++            event.event_id = messageId || requestId ? `${messageId}:${requestId}` : "";
++          }
++          return event ? [event] : [];
++        }),
++      };
++    }
++    const persistedEvents = source === "codex" ? embeddedCollapseCodexEvents(result.events) : result.events;
++    nextFiles[key] = { source, signature, events: persistedEvents, malformed: result.malformed };
++    return {
++      events: persistedEvents.filter((event) => event.observed_at >= since && event.observed_at <= until),
++      malformed: result.malformed,
++    };
++  });
++  historyCursor.files = { ...cachedFiles, ...nextFiles };
++  const events = results.flatMap((result) => result.events);
++  const malformed = results.reduce((total, result) => total + result.malformed, 0);
++  return embeddedResult(events, malformed);
++}
++
++function embeddedAdd(target, value) {
++  for (const key of EMBEDDED_TOKEN_KEYS) if (value[key] !== null) target[key] = (target[key] ?? 0) + value[key];
 +}
 +
 +async function scanLocalHistory(options = {}) {
 +  if (options.upload !== false || options.telemetry !== false) throw new Error("embedded history requires upload:false and telemetry:false");
-+  if (!path.isAbsolute(options.sourceHome || "") || !path.isAbsolute(options.stateDir || "")) {
-+    throw new Error("embedded history requires absolute sourceHome and stateDir");
-+  }
++  if (!path.isAbsolute(options.sourceHome || "") || !path.isAbsolute(options.stateDir || "")) throw new Error("embedded history requires absolute sourceHome and stateDir");
 +  if (typeof options.classify !== "function") throw new Error("embedded history requires a provenance classifier");
 +  const since = Number(options.since);
 +  const until = Number(options.until);
 +  if (!Number.isFinite(since) || !Number.isFinite(until) || until < since) throw new Error("embedded history range is invalid");
-+  const sources = [...new Set(options.sources || [...SUPPORTED])];
++  const sources = [...new Set(options.sources || [...EMBEDDED_SOURCES])];
++  const cursorState = embeddedReadHistoryCursors(options.stateDir);
 +  const buckets = new Map();
 +  const coverage = [];
 +  let classified_claxedo = 0;
 +  let unclassified = 0;
 +  for (const source of sources) {
-+    if (!SUPPORTED.has(source)) {
++    if (!EMBEDDED_SOURCES.has(source)) {
 +      coverage.push({ source, status: "unsupported", error: "scanner has no privacy-reviewed parser" });
 +      continue;
 +    }
-+    const scan = await scanSource(options.sourceHome, source, since, until);
-+    coverage.push({ source, status: scan.status, error: scan.error });
++    const scan = source === "opencode"
++      ? embeddedScanOpencode(options.sourceHome, since, until)
++      : source === "cursor"
++        ? embeddedScanCursor(options.sourceHome, since, until)
++        : await embeddedScanJson(options.sourceHome, source, since, until, cursorState);
++    coverage.push({ source, status: scan.status, ...(scan.error ? { error: scan.error } : {}) });
++    const seen = new Set();
 +    for (const event of scan.events) {
-+      const classification = await options.classify({
-+        source: event.source,
-+        nativeSessionId: event.native_session_id,
-+        observedAt: event.observed_at,
-+      });
-+      if (classification === "claxedo") { classified_claxedo += 1; continue; }
-+      if (classification !== "external") { unclassified += 1; continue; }
++      const eventKey = source === "claude" ? event.event_id : `${event.native_session_id}\0${event.event_id}`;
++      if (event.event_id && seen.has(eventKey)) continue;
++      if (event.event_id) seen.add(eventKey);
++      const classification = await options.classify({ source: event.source, nativeSessionId: event.native_session_id, observedAt: event.observed_at });
++      const eventCount = Number(event.event_count || 1);
++      if (classification === "claxedo") { classified_claxedo += eventCount; continue; }
++      if (classification !== "external") { unclassified += eventCount; continue; }
 +      const bucketStart = Math.floor(event.observed_at / 1_800_000) * 1_800_000;
-+      const key = `${source}\0${event.model}\0${bucketStart}\0${event.native_session_id}`;
++      const key = `${source}\0${event.provider}\0${event.model}\0${bucketStart}\0${event.native_session_id}`;
 +      let bucket = buckets.get(key);
 +      if (!bucket) {
 +        bucket = {
-+          app: source,
-+          source,
-+          model: event.model,
-+          bucket_start: bucketStart,
++          app: source, source, provider: event.provider, model: event.model, bucket_start: bucketStart,
 +          native_session_id: event.native_session_id,
-+          ...(event.project_ref ? { project_ref: event.project_ref } : {}),
-+          input_tokens: 0,
-+          output_tokens: 0,
-+          reasoning_output_tokens: 0,
-+          cached_input_tokens: 0,
-+          cache_creation_input_tokens: 0,
++          input_tokens: null, output_tokens: null, reasoning_output_tokens: null,
++          cached_input_tokens: null, cache_creation_input_tokens: null,
 +        };
 +        buckets.set(key, bucket);
 +      }
-+      add(bucket, event.tokens);
++      embeddedAdd(bucket, event.tokens);
 +    }
 +  }
++  cursorState.updatedAt = Date.now();
++  embeddedWriteHistoryCursors(options.stateDir, cursorState);
 +  return { rows: [...buckets.values()], coverage, classified_claxedo, unclassified };
 +}
 +
-+module.exports = { scanLocalHistory };
+ module.exports = {
+   listRolloutFiles,
+   listRolloutFilesDeep,
+@@ -10926,4 +11354,5 @@ module.exports = {
+   parseAntigravityIncremental,
+   estimateAntigravityTokens,
+   isCjkCodePoint,
++  scanLocalHistory,
+ };

@@ -97,6 +97,12 @@ describe("startLocalServer", () => {
     expect(await response.json()).toMatchObject({ ok: true, localExecution: true })
   }, 30_000)
 
+  test("ships the unified usage endpoint in the desktop-local composition", async () => {
+    const local = await boot()
+    expect(local.app.routes.some((route) => route.method === "GET" && route.path === "/api/claxedo/usage")).toBe(true)
+    expect(local.app.routes.some((route) => route.method === "POST" && route.path === "/api/claxedo/usage/sync")).toBe(true)
+  }, 30_000)
+
   test("binds loopback only", async () => {
     // A desktop server reachable off-box is the whole network threat model, and
     // the bind address is the control that prevents it. Asserted on the bound

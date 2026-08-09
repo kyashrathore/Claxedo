@@ -79,7 +79,10 @@ export const appLocal: Policy = {
   // Measured 2026-08-09 with `runtimeOnly`, after the hosted loader moved to
   // the hosted entry, plus the dependency-light loopback transport owner.
   // No headroom: the remaining shared seam must only shrink.
-  ceilings: { modules: 809, packages: 41 },
+  // Usage adds the chart, breakdown, quota view, and shared provider-brand
+  // module to the local UI; all other dependencies were already in the
+  // renderer closure.
+  ceilings: { modules: 813, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

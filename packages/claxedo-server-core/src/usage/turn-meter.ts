@@ -31,10 +31,12 @@ type State = {
   modelId?: string
   nativeSessionId?: string
   observedAt?: number
+  completedAt?: number
   settlement?: TurnUsageRevision["settlement"]
   status?: TurnUsageStatus
   quality: TurnUsageRevision["quality"]
   lastObservationKey?: string
+  context?: TurnContext
 }
 
 const unknownTokens = (): RuntimeTokenUsage => ({
@@ -73,7 +75,7 @@ function numberOrNull(input: unknown) {
 function messageTokens(input: unknown): RuntimeTokenUsage | undefined {
   if (!input || typeof input !== "object") return
   const row = input as { input?: unknown; output?: unknown; reasoning?: unknown; cache?: unknown }
-  const cache = row.cache && typeof row.cache === "object" ? row.cache as { read?: unknown; write?: unknown } : {}
+  const cache = row.cache && typeof row.cache === "object" ? (row.cache as { read?: unknown; write?: unknown }) : {}
   const tokens = {
     input: numberOrNull(row.input),
     output: numberOrNull(row.output),
@@ -88,6 +90,12 @@ function messageTokens(input: unknown): RuntimeTokenUsage | undefined {
 }
 
 function observationKey(observation: RuntimeUsageObservation) {
+  // Delta observation ids are event identities and remain replay keys. Codex
+  // and Cursor cumulative ids identify the containing turn/run, so their
+  // evolving token snapshots must include the counters in the signature.
+  if (observation.kind === "delta" && observation.providerObservationId) {
+    return `provider:${observation.providerObservationId}`
+  }
   return JSON.stringify({
     kind: observation.kind,
     sequence: observation.sequence ?? null,
@@ -101,7 +109,11 @@ function observationKey(observation: RuntimeUsageObservation) {
 export type TurnMeter = {
   start(): Promise<void>
   consume(event: CompatEnvelope): Promise<void>
-  settle(input: { sessionId: string; messageId: string; status: Exclude<TurnUsageStatus, "running" | "completed" | "error"> }): Promise<void>
+  settle(input: {
+    sessionId: string
+    messageId: string
+    status: Exclude<TurnUsageStatus, "running" | "completed" | "error">
+  }): Promise<void>
   flush(): Promise<void>
 }
 
@@ -121,28 +133,54 @@ export function createTurnMeter(input: {
   let queue = Promise.resolve()
   let initialized = false
 
-  async function initialize() {
-    if (initialized) return
-    initialized = true
-    if (!input.reader) return
-    const recover: State[] = []
-    for (const fact of await input.reader.current()) {
-      if (input.currentFilter && !input.currentFilter(fact)) continue
-      states.set(key(fact.sessionId, fact.messageId), {
-        sessionId: fact.sessionId,
-        messageId: fact.messageId,
-        revision: fact.revision,
-        tokens: fact.tokens,
-        hasUsage: fact.quality.knownCategories.length > 0,
+  function hydrate(fact: TurnUsageRevision) {
+    const hydrated: State = {
+      sessionId: fact.sessionId,
+      messageId: fact.messageId,
+      revision: fact.revision,
+      tokens: fact.tokens,
+      hasUsage: fact.quality.knownCategories.length > 0,
+      providerId: fact.providerId,
+      modelId: fact.modelId,
+      ...(fact.nativeSessionId ? { nativeSessionId: fact.nativeSessionId } : {}),
+      observedAt: fact.observedAt,
+      settlement: fact.settlement,
+      status: fact.status,
+      quality: fact.quality,
+      ...(fact.quality.providerObservationKey
+        ? { lastObservationKey: fact.quality.providerObservationKey }
+        : fact.quality.observationKind === "delta" && fact.quality.providerObservationId
+          ? { lastObservationKey: `provider:${fact.quality.providerObservationId}` }
+          : {}),
+      ...(fact.completedAt === undefined ? {} : { completedAt: fact.completedAt }),
+      context: {
+        sessionRef: fact.sessionRef,
+        ...(fact.workspaceId ? { workspaceId: fact.workspaceId } : {}),
+        hostId: fact.hostId,
+        location: fact.location,
+        harness: fact.harness,
         providerId: fact.providerId,
         modelId: fact.modelId,
         ...(fact.nativeSessionId ? { nativeSessionId: fact.nativeSessionId } : {}),
-        observedAt: fact.observedAt,
-        settlement: fact.settlement,
-        status: fact.status,
-        quality: fact.quality,
-        ...(fact.quality.providerObservationId ? { lastObservationKey: fact.quality.providerObservationId } : {}),
-      })
+      },
+    }
+    states.set(key(fact.sessionId, fact.messageId), hydrated)
+    return hydrated
+  }
+
+  async function initialize() {
+    if (initialized) return
+    if (!input.reader) {
+      initialized = true
+      return
+    }
+    const recover: State[] = []
+    const current = input.reconcileProvisionalOnStart
+      ? await input.reader.current({ settlement: "provisional" })
+      : await input.reader.current()
+    for (const fact of current) {
+      if (input.currentFilter && !input.currentFilter(fact)) continue
+      hydrate(fact)
       if (fact.settlement === "provisional") {
         activeBySession.set(fact.sessionId, fact.messageId)
         const current = states.get(key(fact.sessionId, fact.messageId))!
@@ -158,12 +196,22 @@ export function createTurnMeter(input: {
         })
       }
     }
+    initialized = true
   }
 
-  function state(sessionId: string, messageId: string) {
+  async function state(sessionId: string, messageId: string) {
     const id = key(sessionId, messageId)
     const existing = states.get(id)
     if (existing) return existing
+    if (input.reader && input.reconcileProvisionalOnStart) {
+      const persisted = (
+        await input.reader.current({
+          sessionId,
+          messageId,
+        })
+      ).find((fact) => !input.currentFilter || input.currentFilter(fact))
+      if (persisted) return hydrate(persisted)
+    }
     const created: State = {
       sessionId,
       messageId,
@@ -176,48 +224,64 @@ export function createTurnMeter(input: {
     return created
   }
 
-  async function persist(current: State, terminal?: { settlement: TurnUsageRevision["settlement"]; status: TurnUsageStatus; completedAt?: number }) {
-    const context = await input.resolveContext({ sessionId: current.sessionId, messageId: current.messageId })
-    const revision = current.revision + 1
-    const fact: TurnUsageRevision = {
-      sessionRef: context.sessionRef,
-      sessionId: current.sessionId,
-      messageId: current.messageId,
-      revision,
-      observedAt: current.observedAt ?? now(),
-      ...(terminal?.completedAt === undefined ? {} : { completedAt: terminal.completedAt }),
-      settlement: terminal?.settlement ?? "provisional",
-      status: terminal?.status ?? "running",
-      location: context.location,
-      harness: context.harness,
-      providerId: current.providerId ?? context.providerId ?? "unknown",
-      modelId: current.modelId ?? context.modelId ?? "unknown",
-      ...(current.nativeSessionId ?? context.nativeSessionId
-        ? { nativeSessionId: current.nativeSessionId ?? context.nativeSessionId }
-        : {}),
-      ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
-      hostId: context.hostId,
-      tokens: current.hasUsage ? current.tokens : unknownTokens(),
-      quality: {
-        ...current.quality,
-        knownCategories: current.hasUsage ? knownTokenCategories(current.tokens) : [],
-      },
-    }
+  async function persist(
+    current: State,
+    terminal?: { settlement: TurnUsageRevision["settlement"]; status: TurnUsageStatus; completedAt?: number },
+  ) {
+    let fact: TurnUsageRevision | undefined
     try {
+      const context =
+        current.context ?? (await input.resolveContext({ sessionId: current.sessionId, messageId: current.messageId }))
+      current.context = context
+      const revision = current.revision + 1
+      fact = {
+        sessionRef: context.sessionRef,
+        sessionId: current.sessionId,
+        messageId: current.messageId,
+        revision,
+        observedAt: current.observedAt ?? now(),
+        ...(terminal?.completedAt === undefined ? {} : { completedAt: terminal.completedAt }),
+        settlement: terminal?.settlement ?? "provisional",
+        status: terminal?.status ?? "running",
+        location: context.location,
+        harness: context.harness,
+        providerId: current.providerId ?? context.providerId ?? "unknown",
+        modelId: current.modelId ?? context.modelId ?? "unknown",
+        ...((current.nativeSessionId ?? context.nativeSessionId)
+          ? { nativeSessionId: current.nativeSessionId ?? context.nativeSessionId }
+          : {}),
+        ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
+        hostId: context.hostId,
+        tokens: current.hasUsage ? current.tokens : unknownTokens(),
+        quality: {
+          ...current.quality,
+          knownCategories: current.hasUsage ? knownTokenCategories(current.tokens) : [],
+        },
+      }
       let result = await input.writer.writeRevision(fact)
-      if (result.status === "stale" || result.status === "conflict") {
+      if (result.status === "stale") {
         current.revision = result.currentRevision
         fact.revision = result.currentRevision + 1
         result = await input.writer.writeRevision(fact)
+      }
+      if (result.status === "conflict") {
+        input.onDegraded?.(
+          new Error(`usage revision ${fact.revision} conflicts with durable revision ${result.currentRevision}`),
+          fact,
+        )
+        return
       }
       if (result.status === "accepted" || result.status === "duplicate") {
         current.revision = fact.revision
         current.settlement = fact.settlement
         current.status = fact.status
+        current.completedAt = fact.completedAt
         if (fact.settlement !== "provisional") {
           activeBySession.delete(current.sessionId)
           await input.onTerminal?.(fact)
         }
+      } else {
+        input.onDegraded?.(new Error(`usage revision ${fact.revision} remained stale after refresh`), fact)
       }
     } catch (error) {
       input.onDegraded?.(error, fact)
@@ -232,7 +296,7 @@ export function createTurnMeter(input: {
       const observation = event.payload.properties.observation
       const messageId = event.payload.properties.messageID
       if (!observation || !messageId) return
-      const current = state(sessionId, messageId)
+      const current = await state(sessionId, messageId)
       const signature = observationKey(observation)
       if (current.lastObservationKey === signature) return
       current.tokens = applyObservation(current.tokens, observation)
@@ -243,33 +307,60 @@ export function createTurnMeter(input: {
         source: "provider",
         observationKind: observation.kind,
         ...(observation.providerObservationId ? { providerObservationId: observation.providerObservationId } : {}),
+        providerObservationKey: signature,
         knownCategories: knownTokenCategories(current.tokens),
       }
       current.lastObservationKey = signature
       activeBySession.set(sessionId, messageId)
-      await persist(current)
+      const terminalSettlement = current.settlement
+      await persist(
+        current,
+        terminalSettlement && terminalSettlement !== "provisional"
+          ? {
+              settlement:
+                terminalSettlement === "partial" || terminalSettlement === "unavailable"
+                  ? "recovered"
+                  : terminalSettlement,
+              status: current.status ?? "completed",
+              completedAt: current.completedAt ?? now(),
+            }
+          : undefined,
+      )
       return
     }
     if (event.payload.type === "message.updated") {
       const info = event.payload.properties.info
       if (info.role !== "assistant") return
-      const current = state(sessionId, info.id)
+      const current = await state(sessionId, info.id)
       current.providerId = info.providerID
       current.modelId = info.modelID
       activeBySession.set(sessionId, info.id)
+      const tokens = messageTokens(info.tokens)
+      // OpenCode publishes its authoritative token snapshot on the final
+      // assistant update, but represents terminality with `finish` followed by
+      // `message.completed` rather than populating `time.completed`. Capture
+      // usage whenever the provider supplies it; settlement remains owned by
+      // the terminal lifecycle events below.
+      if (tokens && current.quality.source !== "provider") {
+        current.tokens = tokens
+        current.hasUsage = true
+        current.observedAt = typeof info.time.completed === "number" ? info.time.completed : now()
+        current.quality = { source: "provider-message", knownCategories: knownTokenCategories(tokens) }
+      }
       const completedAt = info.time.completed
       if (typeof completedAt !== "number") {
         if (current.revision === 0) await persist(current)
         return
       }
-      if (current.status === "stopped" || current.status === "interrupted_by_steer" || current.status === "process_lost") return
-      const tokens = messageTokens(info.tokens)
-      if (tokens) {
-        current.tokens = tokens
-        current.hasUsage = true
-        current.observedAt = completedAt
-        current.quality = { source: "provider-message", knownCategories: knownTokenCategories(tokens) }
-      }
+      if (
+        current.status === "stopped" ||
+        current.status === "interrupted_by_steer" ||
+        current.status === "process_lost"
+      )
+        return
+      // `session.usage` is the canonical producer. Assistant-message tokens are
+      // a compatibility fallback and may contain schema-required zeroes for
+      // categories the provider never reported.
       const status: TurnUsageStatus = info.error ? "error" : "completed"
       if (current.settlement === "final" && current.status === status) return
       await persist(current, {
@@ -280,7 +371,7 @@ export function createTurnMeter(input: {
       return
     }
     if (event.payload.type === "message.completed") {
-      const current = state(sessionId, event.payload.properties.messageID)
+      const current = await state(sessionId, event.payload.properties.messageID)
       if (current.settlement === "final" || current.settlement === "unavailable") return
       await persist(current, {
         settlement: current.hasUsage ? "final" : "unavailable",
@@ -292,8 +383,13 @@ export function createTurnMeter(input: {
     if (event.payload.type === "session.error") {
       const messageId = activeBySession.get(sessionId)
       if (!messageId) return
-      const current = state(sessionId, messageId)
-      if (current.status === "stopped" || current.status === "interrupted_by_steer" || current.status === "process_lost") return
+      const current = await state(sessionId, messageId)
+      if (
+        current.status === "stopped" ||
+        current.status === "interrupted_by_steer" ||
+        current.status === "process_lost"
+      )
+        return
       await persist(current, {
         settlement: current.hasUsage ? "final" : "unavailable",
         status: "error",
@@ -318,7 +414,7 @@ export function createTurnMeter(input: {
     settle(value) {
       return enqueue(async () => {
         await initialize()
-        const current = state(value.sessionId, value.messageId)
+        const current = await state(value.sessionId, value.messageId)
         await persist(current, {
           settlement: current.hasUsage ? "partial" : "unavailable",
           status: value.status,

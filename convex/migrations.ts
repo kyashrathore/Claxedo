@@ -12,6 +12,7 @@ import { Migrations } from "@convex-dev/migrations"
 import { components } from "./_generated/api"
 import type { DataModel } from "./_generated/dataModel"
 import { hasLegacyLeaseFields, legacyLeaseDocument } from "./sandboxLeases"
+import { migrateLegacyLlmUsageRow } from "./usageMetering"
 import { initializeAttentionProjection, syncAttentionRecord, syncCandidateTransition } from "./workgraphAttention"
 
 export const migrations = new Migrations<DataModel>(components.migrations)
@@ -29,6 +30,16 @@ export const normalizeRuntimeLeaseLegacyFields = migrations.define({
     const row = lease as Record<string, unknown>
     if (!hasLegacyLeaseFields(row)) return
     await ctx.db.replace(lease._id, legacyLeaseDocument(row) as never)
+  },
+})
+
+// Usage-ledger EXPAND -> MIGRATE. Legacy completed-turn rows need the public
+// session reference, observed timestamp, quality metadata, rollups, and audit
+// revision before the exact dashboard reader can include them.
+export const backfillLegacyLlmUsage = migrations.define({
+  table: "llm_usage_events",
+  migrateOne: async (ctx, row) => {
+    await migrateLegacyLlmUsageRow(ctx, row)
   },
 })
 

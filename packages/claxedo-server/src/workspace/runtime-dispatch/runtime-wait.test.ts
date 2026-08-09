@@ -361,7 +361,7 @@ describe("embedded workspace runtime config hydration", () => {
       "/command",
       "/api/wr/hook/agent-lifecycle",
     ]) {
-      expect(embeddedConfigModeForPath(path)).toBe("sync")
+      expect(embeddedConfigModeForPath(path, "POST")).toBe("sync")
     }
   })
 })

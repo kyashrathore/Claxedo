@@ -19,4 +19,4 @@ export {
   ClaxedoUsageTurnCurrentTable,
   ClaxedoUsageOutboxTable,
   ClaxedoUsageSourceCoverageTable,
-} from "../../usage/usage.sql"
+} from "@claxedo/server-core/usage/usage.sql"

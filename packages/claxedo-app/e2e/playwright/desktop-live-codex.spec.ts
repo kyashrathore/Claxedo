@@ -14,7 +14,7 @@ async function compose(input: Locator, text: string) {
   await expect(input).toContainText(text, { timeout: 10_000 })
 }
 
-test("packaged Windows app completes a real Codex-authenticated session @surface-desktop-live-codex", async () => {
+test("packaged Windows app completes a real Codex-authenticated session @live @surface-desktop", async () => {
   test.setTimeout(240_000)
   const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-windows-live-codex-")))
   await execFileAsync("git", ["init"], { cwd: directory })

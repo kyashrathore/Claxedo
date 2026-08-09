@@ -1,5 +1,5 @@
 import { asc } from "drizzle-orm"
-import { ClaxedoDB } from "../../platform/db"
+import { ClaxedoDB } from "../../platform/db/index"
 import { ClaxedoUsageSourceCoverageTable } from "../usage.sql"
 
 type Database = { use<T>(callback: (db: ClaxedoDB.Client) => T): T }

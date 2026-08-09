@@ -80,5 +80,14 @@ describe("local workspace resolve route", () => {
       backing: { kind: "user-hosted" },
       kind: "cloud",
     })
+
+    const listed = await LocalWorkspaceRoutes().request("http://localhost/?access=user-hosted")
+    expect(listed.status).toBe(200)
+    await expect(listed.json()).resolves.toMatchObject({
+      workspaces: [expect.objectContaining({ workspaceId: "ws_user_hosted", access: "user-hosted" })],
+    })
+
+    const cloud = await LocalWorkspaceRoutes().request("http://localhost/?access=cloud")
+    await expect(cloud.json()).resolves.toEqual({ workspaces: [] })
   })
 })

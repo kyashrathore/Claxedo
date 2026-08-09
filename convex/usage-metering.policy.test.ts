@@ -32,13 +32,16 @@ import {
   ingestTurnUsageBatch,
   usageDashboard,
   usageBreakdown,
-  backfillLegacyLlmUsage,
   leaseEventsForSandbox,
+  migrateLegacyLlmUsageRow,
   pruneUsageFacts,
   recordLlmTurn,
   rollupSandboxUsageDaily,
   sandboxUsageDaily,
 } from "./usageMetering"
+import { createConvexUsageLedger } from "../packages/claxedo-server/src/authority/adapters/convex/usage-ledger"
+import { createUsageOutboxSync } from "../packages/claxedo-local-server/src/usage/outbox-sync"
+import type { TurnUsageRevision } from "../packages/claxedo-server-core/src/usage/contracts"
 
 declare global {
   interface ImportMeta {
@@ -116,7 +119,104 @@ const REVISION = {
   },
 }
 
+function pipelineRevision(input: {
+  hostId: string
+  messageId: string
+  observedAt: number
+  status?: TurnUsageRevision["status"]
+  settlement?: TurnUsageRevision["settlement"]
+}): TurnUsageRevision {
+  return {
+    hostId: input.hostId,
+    sessionRef: `workspace:ws_pipeline:session:${input.hostId}`,
+    sessionId: input.hostId,
+    messageId: input.messageId,
+    revision: 1,
+    observedAt: input.observedAt,
+    completedAt: input.observedAt + 1,
+    settlement: input.settlement ?? "final",
+    status: input.status ?? "completed",
+    location: input.hostId === "host-central" ? "central" : "local",
+    harness: "pi",
+    providerId: "anthropic",
+    modelId: "claude-sonnet-5",
+    workspaceId: "ws_pipeline",
+    tokens: { input: 10, output: 2, reasoning: null, cache: { read: 1, write: null } },
+    quality: { source: "provider", knownCategories: ["input", "output", "cache_read"] },
+  }
+}
+
 describe("revisioned turn usage ingest", () => {
+  test("runs signed outbox delivery through the real Convex adapter and preserves cross-machine, tenant, privacy, and retention boundaries", async () => {
+    const t = convexTest(schema, modules)
+    const captured: unknown[] = []
+    const testConvex = t as unknown as {
+      mutation: (fn: unknown, args: Record<string, unknown>) => Promise<unknown>
+      query: (fn: unknown, args: Record<string, unknown>) => Promise<unknown>
+    }
+    const executor = {
+      mutation: async (fn: unknown, args: Record<string, unknown>) => {
+        captured.push(args)
+        return await testConvex.mutation(fn, args)
+      },
+      query: async (fn: unknown, args: Record<string, unknown>) => {
+        captured.push(args)
+        return await testConvex.query(fn, args)
+      },
+    }
+    const central = createConvexUsageLedger({ serviceToken: "svc_secret", executor })
+    const observedAt = Date.UTC(2026, 7, 8, 12)
+    let pending = [
+      pipelineRevision({ hostId: "host-a", messageId: "local-complete", observedAt }),
+      pipelineRevision({ hostId: "host-central", messageId: "central-error", observedAt: observedAt + 10, status: "error" }),
+    ]
+    const local = {
+      pendingOutbox: async () => pending,
+      claimPending: async () => pending,
+      markDelivered: async (fact: TurnUsageRevision) => {
+        pending = pending.filter((row) => !(row.hostId === fact.hostId && row.messageId === fact.messageId && row.revision === fact.revision))
+      },
+      markConflict: async () => { throw new Error("unexpected conflict") },
+    }
+    const sync = createUsageOutboxSync({ local: local as never, central })
+
+    await expect(sync.clearIdentity()).resolves.toMatchObject({ attempted: 0, delivered: 0, pending: 2 })
+    await expect(sync.flush({ org_id: "org-pipeline", user_id: "user-pipeline" }))
+      .resolves.toMatchObject({ attempted: 2, delivered: 2, pending: 0 })
+
+    const machineB = await central.usageDashboard?.({
+      org_id: "org-pipeline", user_id: "user-pipeline",
+      since: observedAt - 1, until: observedAt + 100, timeZone: "UTC", dimension: "harness",
+    }) as any
+    expect(machineB.totals).toMatchObject({ turn_count: 2, input_tokens: 20, output_tokens: 4, error_turn_count: 1 })
+    expect(machineB.breakdown).toEqual([expect.objectContaining({ value: "pi", turn_count: 2 })])
+
+    const otherTenant = await central.usageDashboard?.({
+      org_id: "org-other", user_id: "user-pipeline",
+      since: observedAt - 1, until: observedAt + 100, timeZone: "UTC",
+    }) as any
+    expect(otherTenant.totals.turn_count).toBe(0)
+    await expect(createConvexUsageLedger({ serviceToken: "wrong", executor }).usageDashboard?.({
+      org_id: "org-pipeline", user_id: "user-pipeline", since: observedAt - 1, until: observedAt + 100,
+    })).rejects.toThrow()
+
+    const encoded = JSON.stringify(captured)
+    for (const forbidden of ["prompt", "response", "directory", "authorization", "api_key", "/Users/"]) {
+      expect(encoded.toLowerCase()).not.toContain(forbidden.toLowerCase())
+    }
+
+    await t.run(async (ctx) => {
+      for (const table of ["llm_usage_events", "llm_usage_revisions"] as const) {
+        for (const row of await ctx.db.query(table).collect()) await ctx.db.patch(row._id, { created_at: 1 })
+      }
+    })
+    await t.mutation(internal.usageMetering.pruneUsageFacts, { retain_ms: 400 * 86_400_000, now: observedAt + 100, limit: 100 })
+    const afterRetention = await central.usageDashboard?.({
+      org_id: "org-pipeline", user_id: "user-pipeline", since: observedAt - 1, until: observedAt + 100,
+    }) as any
+    expect(afterRetention.totals).toMatchObject({ turn_count: 2, input_tokens: 20 })
+  })
+
   test("accepts, deduplicates, rejects conflicts/stale writes, and replaces the daily contribution", async () => {
     const t = convexTest(schema, modules)
     const ingest = (revision: Record<string, unknown>) => t.mutation(api.usageMetering.ingestTurnUsageBatch, {
@@ -240,6 +340,51 @@ describe("revisioned turn usage ingest", () => {
     expect(page.breakdown).toEqual([expect.objectContaining({
       value: "claude-sdk", turn_count: 2, known_token_count: 6, unknown_token_count: 4,
     })])
+  })
+
+  test("filters exact facts while returning unfiltered filter options and pricing dimensions", async () => {
+    const t = convexTest(schema, modules)
+    await t.mutation(api.usageMetering.ingestTurnUsageBatch, {
+      ...SERVICE,
+      org_id: "org_1",
+      user_id: "user_sub_1",
+      revisions: [
+        REVISION,
+        { ...REVISION, message_id: "msg_2", harness: "codex", provider_id: "openai", model_id: "gpt-5", location: "central", input_tokens: 50 },
+      ],
+    } as never)
+    const page: any = await t.query(api.usageMetering.usageDashboardPage, {
+      ...SERVICE,
+      org_id: "org_1",
+      user_id: "user_sub_1",
+      since: REVISION.observed_at - 1,
+      until: REVISION.observed_at + 1,
+      time_zone: "UTC",
+      dimension: "harness",
+      filter_harness: "codex",
+    } as never)
+    expect(page.totals).toMatchObject({ turn_count: 1, input_tokens: 50 })
+    expect(page.breakdown).toEqual([expect.objectContaining({ value: "codex", turn_count: 1 })])
+    expect(page.daily_models).toEqual([expect.objectContaining({ value: "openai/gpt-5", input_tokens: 50 })])
+    expect(page.breakdown_models).toEqual([expect.objectContaining({ group: "codex", value: "openai/gpt-5", input_tokens: 50 })])
+    expect(page.filters).toMatchObject({
+      provider: ["anthropic", "openai"],
+      harness: ["claude-sdk", "codex"],
+      location: ["cloud", "local"],
+    })
+
+    const provider: any = await t.query(api.usageMetering.usageDashboardPage, {
+      ...SERVICE,
+      org_id: "org_1",
+      user_id: "user_sub_1",
+      since: REVISION.observed_at - 1,
+      until: REVISION.observed_at + 1,
+      time_zone: "UTC",
+      dimension: "provider",
+      filter_provider: "openai",
+    } as never)
+    expect(provider.totals).toMatchObject({ turn_count: 1, input_tokens: 50 })
+    expect(provider.breakdown).toEqual([expect.objectContaining({ value: "openai", turn_count: 1 })])
   })
 
   test("rejects oversized batches without a partial write", async () => {
@@ -714,10 +859,14 @@ describe("the rollup and retention crons keep the answer bounded and honest", ()
   test("legacy turn rows backfill once before they become retention-eligible", async () => {
     const t = convexTest(schema, modules)
     await t.run(async (ctx) => ctx.db.insert("llm_usage_events", { ...TURN, created_at: 1_000 } as never))
-    await expect(t.mutation(internal.usageMetering.backfillLegacyLlmUsage, { now: 2_000 } as never))
-      .resolves.toEqual({ backfilled: 1 })
-    await expect(t.mutation(internal.usageMetering.backfillLegacyLlmUsage, { now: 3_000 } as never))
-      .resolves.toEqual({ backfilled: 0 })
+    await expect(t.run(async (ctx) => {
+      const row = (await ctx.db.query("llm_usage_events").collect())[0]!
+      return await migrateLegacyLlmUsageRow(ctx, row, 2_000)
+    })).resolves.toBe(true)
+    await expect(t.run(async (ctx) => {
+      const row = (await ctx.db.query("llm_usage_events").collect())[0]!
+      return await migrateLegacyLlmUsageRow(ctx, row, 3_000)
+    })).resolves.toBe(false)
     const rows = await t.run(async (ctx) => ctx.db.query("llm_usage_events").collect())
     expect(rows[0]).toMatchObject({ revision: 1, settlement: "final", usage_rolled_up_at: 2_000 })
     expect(await t.run(async (ctx) => ctx.db.query("llm_usage_revisions").collect())).toHaveLength(1)
@@ -803,7 +952,7 @@ describe("the Convex function is the boundary", () => {
   })
 
   test("the cron handlers are internal: not callable by any client, so they take no token", () => {
-    for (const fn of [rollupSandboxUsageDaily, backfillLegacyLlmUsage, pruneUsageFacts]) {
+    for (const fn of [rollupSandboxUsageDaily, pruneUsageFacts]) {
       expect((fn as { isInternal?: boolean }).isInternal).toBe(true)
     }
     // The service-authed functions are NOT internal — they are called by the
@@ -838,7 +987,7 @@ describe("the Convex function is the boundary", () => {
     }
     // The crons are the stronger stance: internal visibility, no token needed
     // because no client can reach them at all.
-    for (const fn of [rollupSandboxUsageDaily, backfillLegacyLlmUsage, pruneUsageFacts]) {
+    for (const fn of [rollupSandboxUsageDaily, pruneUsageFacts]) {
       expect((fn as { isPublic?: boolean }).isPublic).toBeFalsy()
       expect(exported(fn)).not.toContain("service_token")
     }

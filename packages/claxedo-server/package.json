@@ -67,7 +67,7 @@
     "smoke:documents-session": "bun run scripts/smoke/documents-session-roundtrip.ts",
     "smoke:interactive": "bun run scripts/smoke/smoke-interactive-session.ts",
     "smoke:runtime": "bun run scripts/smoke/smoke-runtime.ts",
-    "smoke:usage": "bun run scripts/smoke/smoke-usage-metering.ts",
+    "smoke:usage": "bun run scripts/smoke/smoke-usage-metering.ts && node ./node_modules/vitest/vitest.mjs run --config vitest.convex.config.ts ../../convex/usage-metering.policy.test.ts",
     "smoke:workgraph": "bun run scripts/smoke/smoke-workgraph.ts",
     "stress:workgraph": "node ./node_modules/vitest/vitest.mjs run --config vitest.stress.config.ts --reporter=default",
     "check:package-boundary": "bun run scripts/maintenance/check-package-boundary.ts",

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { providerRows } from "./quota-limits-view"
+import { providerRows, quotaSummary } from "./quota-limits-view"
 
 describe("quota limits view", () => {
   test("preserves provider-specific windows, scoped limits, resets, and plan labels", () => {
@@ -44,5 +44,16 @@ describe("quota limits view", () => {
       expect.objectContaining({ name: "codex", issue: "Sign in again", windows: [] }),
       expect.objectContaining({ name: "cursor", issue: "Probe failed", windows: [] }),
     ])
+  })
+
+  test("summarizes provider count, most constrained window, and nearest reset", () => {
+    expect(quotaSummary({
+      claude: {
+        configured: true,
+        five_hour: { utilization: 75, resets_at: "2099-08-09T15:00:00Z" },
+        seven_day: { utilization: 20, resets_at: "2099-08-10T15:00:00Z" },
+      },
+      codex: { configured: true, primary_window: { used_percent: 40, reset_at: "2099-08-11T15:00:00Z" } },
+    })).toMatchObject({ providerCount: 2, constrainedLabel: "Session", remainingPercent: 25, nearestReset: "2099-08-09T15:00:00Z" })
   })
 })

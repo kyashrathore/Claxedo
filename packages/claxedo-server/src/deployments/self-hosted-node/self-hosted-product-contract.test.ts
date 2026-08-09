@@ -288,7 +288,7 @@ const SELF_HOSTED_NODE_ADAPTERS = [
   "/api/claxedo/session-list",
   "/api/claxedo/session/:id/meta",
   "/api/claxedo/track",
-  "/api/claxedo/usage-limits",
+  "/api/claxedo/workspace",
   "/api/claxedo/workspace/resolve",
   "/api/control",
   "/api/control/*",

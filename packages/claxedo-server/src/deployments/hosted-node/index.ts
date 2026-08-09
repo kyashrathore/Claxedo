@@ -23,7 +23,7 @@ import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { createConnectionTurnCredentials, type ConnectionTurnCredentials } from "../../connections/turn-credentials"
 import { createHostedWorkGraphRuntime } from "../../hosts/workgraph/hosted/runtime"
 import { createNodeSettlementDispatcher } from "../../hosts/workgraph/settlement-dispatcher"
-import { createSqliteUsageLedger } from "../../usage/adapters/sqlite-usage-ledger"
+import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
 import { localHostIdentity } from "../../workspace/local-host"
 
 function centralStorePorts() {

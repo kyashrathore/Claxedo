@@ -53,8 +53,8 @@ import {
   type UsageLedger,
 } from "../platform/telemetry/product/metering"
 import type { ProductDeploymentMode, ProductIdentity } from "../platform/telemetry/product/product"
-import { createTurnMeter } from "../usage/turn-meter"
-import type { TurnUsageRevision, UsageRevisionReader, UsageRevisionWriter } from "../usage/contracts"
+import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
+import type { TurnUsageRevision, UsageRevisionReader, UsageRevisionWriter } from "@claxedo/server-core/usage/contracts"
 
 type SourceChannel = "github" | "slack" | "telegram" | "discord" | "whatsapp"
 
@@ -154,6 +154,8 @@ type CentralSessionRuntimeOptions = {
     markDelivered?: (fact: TurnUsageRevision) => Promise<void>
   }
   resolveUsageHostIdentity?: () => Promise<{ hostId: string }>
+  /** Wakes the durable outbox only after terminal metering has committed. */
+  onUsageTerminal?: () => void | Promise<void>
   /** Product-plane `deployment_mode` for turn metering; defaults to self-host. */
   productDeploymentMode?: ProductDeploymentMode
   /** Deterministic model backend injection for tests and embedded deployments. */
@@ -727,7 +729,8 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
           : undefined
     if (sessionId && messageId) {
       // Capture before the AsyncLocal turn credential scope unwinds.
-      usageIdentities.set(`${sessionId}\u0000${messageId}`, turnIdentity())
+      const identity = turnIdentity()
+      if (identity) usageIdentities.set(`${sessionId}\u0000${messageId}`, identity)
       if (event.payload.type === "message.updated") {
         const created = event.payload.properties.info.time.created
         const completed = "completed" in event.payload.properties.info.time
@@ -738,7 +741,14 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
         }
       }
     }
-    void turnMeter.consume(event)
+    const metered = turnMeter.consume(event)
+    const terminal = event.payload.type === "message.completed"
+      || event.payload.type === "session.error"
+      || (event.payload.type === "message.updated" && "completed" in event.payload.properties.info.time
+        && typeof event.payload.properties.info.time.completed === "number")
+    if (terminal && options.onUsageTerminal) {
+      void metered.then(() => options.onUsageTerminal?.()).catch((error) => console.error("[central-runtime] usage terminal sync wake failed:", error))
+    }
     eventHub.publishGlobal(event)
     if (event.payload.type === "session.updated") {
       const title = typeof event.payload.properties.info.title === "string"

@@ -1941,7 +1941,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(route, SESSION_INTERACTION_SUCCESS.body, SESSION_INTERACTION_SUCCESS.status)
   })
 
-  await contractRoute(page, "**/api/workspace/resolve**", (r) =>
+  const localWorkspaceResolve = (r: Route) =>
     api(r)
       ? json(r, workspaceResolveResponse({
           id: `local-${SESSION_ID}`,
@@ -1952,8 +1952,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
           created_at: Date.now(),
           updated_at: Date.now(),
         }))
-      : r.continue(),
-  )
+      : r.continue()
+  await contractRoute(page, "**/api/workspace/resolve**", localWorkspaceResolve)
+  await contractRoute(page, "**/api/claxedo/workspace/resolve**", localWorkspaceResolve)
 
   // Onboarding reads the sandbox driver catalog on every boot to decide whether
   // the cloud steps apply at all. The default is "no provider configured", which

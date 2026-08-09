@@ -24,7 +24,23 @@
  */
 
 import { captureProduct, type ProductCaptureSink, type ProductIdentity } from "./product"
-import type { TurnUsageRevision } from "../../../usage/contracts"
+import type {
+  TurnUsageLocation,
+  TurnUsageQuality,
+  TurnUsageRevision,
+  TurnUsageSettlement,
+  TurnUsageStatus,
+} from "@claxedo/server-core/usage/contracts"
+import type { LlmTurnRecord, TurnStatus, UsageLedger } from "@claxedo/server-core/usage/ledger"
+export type { LlmTurnRecord, TurnStatus, UsageLedger } from "@claxedo/server-core/usage/ledger"
+
+export type {
+  TurnUsageLocation,
+  TurnUsageQuality,
+  TurnUsageRevision,
+  TurnUsageSettlement,
+  TurnUsageStatus,
+} from "@claxedo/server-core/usage/contracts"
 
 export const SANDBOX_LEASE_OPENED = "sandbox.lease_opened"
 export const SANDBOX_LEASE_CLOSED = "sandbox.lease_closed"
@@ -33,8 +49,6 @@ export const SESSION_STARTED = "session_started"
 export const USER_ACTIVATED = "user_activated"
 
 export type SandboxCloseReason = "idle_timeout" | "explicit_release" | "gc"
-
-export type TurnStatus = "ok" | "error"
 
 const workGraphAttribution = new Map<
   string,
@@ -64,74 +78,12 @@ export type CompatTokens = {
   cache?: { read?: number; write?: number }
 }
 
-export type LlmTurnRecord = {
-  message_id: string
-  session_id: string
-  stream_id?: string
-  run_id?: string
-  work_item_id?: string
-  harness: string
-  provider_id: string
-  model_id: string
-  input_tokens: number
-  output_tokens: number
-  reasoning_tokens: number
-  cache_read_tokens: number
-  cache_write_tokens: number
-  turn_status: TurnStatus
-  latency_ms: number
-  settlement?: "provisional" | "final" | "partial" | "unavailable" | "recovered"
-  known_token_categories?: string[]
-}
-
 /**
  * The authoritative write. PostHog capture is best-effort by design, so
  * the number a paid plan may later be gated on lands in Convex as well.
  * `activated` reports the idempotent first-ok-turn check-and-set, which is what
  * lets `user_activated` fire exactly once per user for all time.
  */
-export type UsageLedger = {
-  resolveWorkGraphAttribution?: (input: {
-    org_id: string
-    user_id: string
-    session_id: string
-  }) => Promise<Readonly<{ stream_id?: string; run_id?: string; work_item_id?: string }> | undefined>
-  recordLlmTurn: (
-    input: LlmTurnRecord & { org_id: string; user_id: string },
-  ) => Promise<{ activated: boolean }>
-  recordTurnUsageRevision?: (
-    input: TurnUsageRevision & { org_id: string; user_id: string },
-  ) => Promise<{
-    status: "accepted" | "duplicate" | "stale" | "conflict"
-    currentRevision?: number
-    activated: boolean
-  }>
-  recordTurnUsageBatch?: (
-    input: { org_id: string; user_id: string; revisions: TurnUsageRevision[] },
-  ) => Promise<Array<{
-    status: "accepted" | "duplicate" | "stale" | "conflict"
-    currentRevision?: number
-    activated: boolean
-  }>>
-  usageDashboard?: (input: {
-    org_id: string
-    user_id: string
-    since: number
-    until: number
-    timeZone?: string
-    dimension?: "harness" | "model" | "location" | "session" | "workspace"
-  }) => Promise<unknown>
-  usageBreakdown?: (input: {
-    org_id: string
-    user_id: string
-    since: number
-    until: number
-    dimension: "harness" | "model" | "location" | "session" | "workspace"
-    after?: string
-    limit?: number
-  }) => Promise<unknown>
-}
-
 /** Raw ops-plane sink, for the emission points that hold no signed tenant. */
 export type SystemCaptureSink = ProductCaptureSink
 

@@ -7,7 +7,6 @@ import { ADD_PROJECT_COMMAND_ID } from "@/features/session/ui/components/session
 import { useLanguage } from "@/platform/i18n/provider"
 import { marketplaceRoute, workGraphRoute } from "@/platform/identity/route"
 import type { AppShellState } from "./app-shell-state"
-import { DialogUsage } from "./dialogs/usage"
 
 export function useAppShellActions(input: {
   shell: AppShellState
@@ -23,8 +22,20 @@ export function useAppShellActions(input: {
     input.shell.state.layout.openWorkGraph()
     input.navigate(workGraphRoute())
   }
-  const handleUsage = () => {
-    void input.shell.dialog.show(() => DialogUsage({}))
+  const handleUsage = async () => {
+    const returnFocus = document.querySelector<HTMLElement>("[data-testid='rail-account-trigger']")
+    const { DialogUsage } = await import("./dialogs/usage")
+    void input.shell.dialog.show(
+      () => DialogUsage({}),
+      () => {
+        // Kobalte restores its own pre-dialog focus during the close microtask.
+        // Run after that restoration so the durable account trigger, rather
+        // than the menu item that was removed, owns focus.
+        setTimeout(() => {
+          if (returnFocus?.isConnected) returnFocus.focus()
+        }, 0)
+      },
+    )
   }
 
   const actions = createClaxedoLayoutActions({

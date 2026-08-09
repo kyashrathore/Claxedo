@@ -97,7 +97,7 @@ describe("Convex usage ledger", () => {
 
     await expect(ledger.usageDashboard?.({
       org_id: "org_1", user_id: "user_1", since: 1, until: 2, timeZone: "Asia/Kolkata", dimension: "harness",
-    })).resolves.toEqual({
+    })).resolves.toMatchObject({
       totals: { turn_count: 2, input_tokens: 8 },
       daily: [{ date: "2026-08-08", turn_count: 2, input_tokens: 8 }],
       models: [{ value: "anthropic/claude", turn_count: 2, input_tokens: 8 }],

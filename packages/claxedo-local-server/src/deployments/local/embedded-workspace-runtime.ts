@@ -23,7 +23,7 @@ import { createClaxedoRuntimeExposure } from "../../hosts/workspace-runtime/expo
 import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
 import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
 import { resolveClaxedoWorkspaceRuntimeTarget } from "../../hosts/workspace-runtime/target"
-import { createOpencodeEvents, type OpencodeEvent, type OpencodeEventsHandle } from "../../opencode/events"
+import type { OpencodeEvent } from "../../opencode/events"
 import type { PiModelBackendResolver } from "@claxedo/agent-sdk-runtime/adapters"
 import type { AgentTurnOutcome } from "@claxedo/agent-sdk-runtime"
 
@@ -31,12 +31,6 @@ type EmbeddedRuntime = ReturnType<typeof createWorkspaceRuntimeApp> & {
   workspace: Workspace
   applying?: Promise<void>
   reconcilingSessionMetadata?: Promise<void>
-  /**
-   * Tap on this runtime's own `/global/event` SSE stream, forwarding
-   * `session.created`/`session.updated` events to the host-configured
-   * `onSessionMetaEvent` callback. See `configureEmbeddedWorkspaceRuntime`.
-   */
-  sessionEvents?: OpencodeEventsHandle
   diagnosticsOwner?: ProcessOwnerHandle
 }
 
@@ -72,13 +66,11 @@ let configuredProcessObserver: ProcessObserver | undefined
 // re-emitted asynchronously — e.g. a post-turn ACP auto-title
 // (`maybeEmitTitle` in `packages/agent-sdk-runtime/src/runtime.ts`) or
 // opencode's own LLM-driven rename — and that update is published ONLY as an
-// SSE event on THIS runtime's own `/global/event` stream
-// (`RuntimeEventHub.publishGlobal`), never as an HTTP `PATCH /session/:id`.
-// Nothing else in claxedo-server observes that per-workspace stream, so
+// compatibility event from THIS runtime's own event hub, never as an HTTP
+// `PATCH /session/:id`. Nothing else in claxedo-server observes that hub, so
 // without this sink a harness session's title reverts to "Untitled" after a
 // server restart (the control plane's `services.projectionStore` never
-// learns the new title — see `ensureEmbeddedWorkspaceRuntime` below, which
-// taps it via `createOpencodeEvents`).
+// learns the new title).
 let configuredOnSessionMetaEvent: ((event: OpencodeEvent) => void) | undefined
 let configuredOnSessionMetaCreated: ((workspace: Workspace, session: unknown) => Promise<void> | void) | undefined
 let configuredOnSessionMetaSnapshot: ((workspace: Workspace, sessions: unknown[]) => void | Promise<void>) | undefined
@@ -145,6 +137,7 @@ function options(
     ...(configuredRouteContributions.length ? { routeContributions: configuredRouteContributions } : {}),
     ...(configuredProcessObserver ? { processObserver: configuredProcessObserver } : {}),
     ...(configuredOnTurnOutcome ? { onTurnOutcome: configuredOnTurnOutcome } : {}),
+    ...(configuredOnSessionMetaEvent ? { onCompatEvent: configuredOnSessionMetaEvent } : {}),
     exposure: createClaxedoRuntimeExposure({ kind: "embedded", guard: embeddedRuntimeGuard }),
     target: resolveClaxedoWorkspaceRuntimeTarget(ws),
     storeRoot: storeRoot(ws),
@@ -211,7 +204,6 @@ function reconcileSessionMetadata(runtime: EmbeddedRuntime) {
 }
 
 function disposeRuntime(runtime: EmbeddedRuntime) {
-  runtime.sessionEvents?.close()
   runtime.diagnosticsOwner?.exit({ reason: "disposed" })
   runtime.host.dispose()
 }
@@ -278,16 +270,6 @@ export async function ensureEmbeddedWorkspaceRuntime(
   }
   activeHost = runtime.host
   hosts.set(ws.id, runtime)
-  if (configuredOnSessionMetaEvent) {
-    // Ride the same battle-tested SSE client used for the legacy
-    // non-embedded `/global/event` bridge (`createOpencodeEvents`,
-    // `server.ts`) instead of duplicating SSE-parsing/reconnect logic — just
-    // pointed at THIS runtime's own in-process app (an ordinary in-memory
-    // `fetch`, never a real socket) instead of a real network URL.
-    const sessionEvents = createOpencodeEvents(async (req) => await runtime.app.fetch(req))
-    sessionEvents.on(configuredOnSessionMetaEvent)
-    runtime.sessionEvents = sessionEvents
-  }
   if (config === "sync") await configure(runtime)
   runtime.diagnosticsOwner?.update({ lifecycle: "ready" })
   await reconcileSessionMetadata(runtime)

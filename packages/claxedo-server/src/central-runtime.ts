@@ -20,8 +20,8 @@ import type { ConnectionTurnCredentials } from "./connections/turn-credentials"
 import type { WorkspaceSessionAdmission } from "./hosts/workspace-runtime/session-env"
 import type { UsageLedger } from "./platform/telemetry/product/metering"
 import type { ProductDeploymentMode } from "./platform/telemetry/product/product"
-import type { UsageRevisionReader, UsageRevisionWriter } from "./usage/contracts"
-import { UsageRoutes } from "./usage/routes"
+import type { UsageRevisionReader, UsageRevisionWriter } from "@claxedo/server-core/usage/contracts"
+import { UsageRoutes } from "@claxedo/server-core/usage/routes"
 
 export { createCentralSessionRuntime } from "./session/runtime"
 export { ControlPlaneAuthError, localOnlyAuthAdapter, type ControlPlaneAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
@@ -42,9 +42,12 @@ export type CentralControlAppOptions = {
   /** W5: authoritative destination for completed-turn token counts (plan D1). */
   usageLedger?: UsageLedger
   usageRevisionStore?: UsageRevisionWriter & Partial<UsageRevisionReader> & {
-    markDelivered?: (fact: import("./usage/contracts").TurnUsageRevision) => Promise<void>
+    markDelivered?: (fact: import("@claxedo/server-core/usage/contracts").TurnUsageRevision) => Promise<void>
   }
   resolveUsageHostIdentity?: () => Promise<{ hostId: string }>
+  onUsageTerminal?: () => void | Promise<void>
+  /** Local compositions mount their richer unified route at this public path. */
+  mountPublicUsageRoute?: boolean
   /** Product-plane `deployment_mode` for turn metering; defaults to self-host. */
   productDeploymentMode?: ProductDeploymentMode
 }
@@ -151,6 +154,7 @@ export function createCentralControlApp(services: ControlPlaneServices, options:
     ...(options.usageLedger ? { usageLedger: options.usageLedger } : {}),
     ...(options.usageRevisionStore ? { usageRevisionStore: options.usageRevisionStore } : {}),
     ...(options.resolveUsageHostIdentity ? { resolveUsageHostIdentity: options.resolveUsageHostIdentity } : {}),
+    ...(options.onUsageTerminal ? { onUsageTerminal: options.onUsageTerminal } : {}),
     ...(options.productDeploymentMode ? { productDeploymentMode: options.productDeploymentMode } : {}),
   })
   const app = new Hono()
@@ -177,9 +181,10 @@ export function createCentralControlApp(services: ControlPlaneServices, options:
       ledger: options.usageLedger,
       ...(options.authConfig ? { authConfig: options.authConfig } : {}),
       ...(options.verifier ? { verifier: options.verifier } : {}),
+      telemetry: services.telemetry,
     }
     app.route("/api/control/usage", UsageRoutes(usageOptions))
-    app.route("/api/claxedo/usage", UsageRoutes(usageOptions))
+    if (options.mountPublicUsageRoute !== false) app.route("/api/claxedo/usage", UsageRoutes(usageOptions))
   }
   const forwardRuntimeRequest = async (request: Request) => {
     const access = await centralRuntimeAccess(request, services, options)

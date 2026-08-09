@@ -44,8 +44,12 @@ const log = Log.create({ service: "claxedo-db" })
 const require = createRequire(import.meta.url)
 
 type Sqlite = InstanceType<typeof Database>
-type BunSqliteModule = typeof import("bun:sqlite")
-type BunDrizzleModule = typeof import("drizzle-orm/bun-sqlite")
+type BunSqliteModule = {
+  Database: new (file: string) => CompatibleSqlite
+}
+type BunDrizzleModule = {
+  drizzle: (config: { client: CompatibleSqlite }) => unknown
+}
 type CompatibleSqlite = {
   exec(sql: string): unknown
   prepare(sql: string): {

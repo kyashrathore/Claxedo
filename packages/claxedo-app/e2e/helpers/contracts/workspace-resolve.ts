@@ -8,7 +8,7 @@ import type { Workspace } from "../../../../claxedo-server-core/src/workspace/st
 import {
   workspaceResponse,
   type WorkspaceResponse,
-} from "../../../../claxedo-server/src/workspace/routes/workspace-response"
+} from "../../../../claxedo-server/src/workspace/workspace-response"
 
 export function workspaceResolveResponse(workspace: Workspace): WorkspaceResponse {
   const response = workspaceResponse(workspace)

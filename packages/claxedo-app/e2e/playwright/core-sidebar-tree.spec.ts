@@ -214,7 +214,7 @@
  *       `packages/claxedo-local-server/src/opencode/compat-routes/events.test.ts`.
  *   16. The rail's account footer (`[data-testid="rail-account-trigger"]`) is
  *       keyboard-operable and focus-restoring: Enter opens the menu
- *       (`aria-expanded="true"`) exposing View options / Usage limits /
+ *       (`aria-expanded="true"`) exposing View options / Usage /
  *       Settings / Help (Diagnostics is env-gated — see the test's comment);
  *       ArrowRight opens the focused item's submenu and moves focus into it;
  *       Escape closes the submenu and returns focus to its parent item, and a

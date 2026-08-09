@@ -47,9 +47,7 @@ const typeContractCandidates = new Set([
   "platform/remote-access/machine-remote-access-port.ts",
   "platform/query/project-meta.ts",
 ])
-const configAliasTargets = new Map([
-  ["lru_map", "lib/lru-map.ts"],
-])
+const configAliasTargets = new Map([["lru_map", "lib/lru-map.ts"]])
 
 /**
  * One edge of a product-boundary walk: the module that owned the import, the
@@ -87,8 +85,10 @@ export function shortestForbiddenImportChain(options: {
   /** Entry module, relative to `<appRoot>/src`. */
   entry: string
   isForbidden: (ref: ProductImportRef) => boolean
+  /** Dynamic imports belong to the product closure but not its eager bundle. */
+  includeDynamic?: boolean
 }): ProductBoundaryBreach | null {
-  const { appRoot, entry, isForbidden } = options
+  const { appRoot, entry, isForbidden, includeDynamic = true } = options
   const srcRoot = path.join(appRoot, "src")
   const entryFile = tryFile(path.join(srcRoot, entry))
   if (!entryFile) throw new Error(`entry not found: ${entry}`)
@@ -103,7 +103,7 @@ export function shortestForbiddenImportChain(options: {
     for (const rel of frontier) {
       const file = path.join(srcRoot, rel)
       if (!existsSync(file)) continue
-      for (const specifier of importSpecifiers(readFileSync(file, "utf8"))) {
+      for (const specifier of parsedImportSpecifiers(readFileSync(file, "utf8"), false, includeDynamic)) {
         const resolved = resolveImport(appRoot, file, specifier)
         const module = resolved ? relative(srcRoot, resolved) : null
         if (isForbidden({ specifier, module })) {
@@ -179,7 +179,9 @@ function rootFiles(appRoot: string) {
   // `local.tsx` is an HTML entry like `main.tsx`: nothing imports it, and
   // without it here the orphan guard reports the local product's entry point
   // as dead code.
-  const roots = ["app/entry/main.tsx", "app/entry/local.tsx", "app/entry/index.tsx"].filter((file) => existsSync(path.join(appRoot, "src", file)))
+  const roots = ["app/entry/main.tsx", "app/entry/local.tsx", "app/entry/index.tsx"].filter((file) =>
+    existsSync(path.join(appRoot, "src", file)),
+  )
   const pkg = JSON.parse(readFileSync(path.join(appRoot, "package.json"), "utf8")) as {
     exports?: Record<string, string>
   }
@@ -209,14 +211,14 @@ export function allImportSpecifiers(text: string) {
   return parsedImportSpecifiers(text, true)
 }
 
-function parsedImportSpecifiers(text: string, includeTypeOnly: boolean) {
+function parsedImportSpecifiers(text: string, includeTypeOnly: boolean, includeDynamic = true) {
   const clean = stripComments(text)
   const specs = new Set<string>()
   let match: RegExpExecArray | null
   importPattern.lastIndex = 0
   while ((match = importPattern.exec(clean))) {
     if (match[5]) {
-      specs.add(match[5])
+      if (includeDynamic) specs.add(match[5])
       continue
     }
     if (match[4]) {
@@ -277,9 +279,7 @@ function configAliasRootModules(appRoot: string) {
   if (!existsSync(configPath)) return []
   const config = readFileSync(configPath, "utf8")
   return [...configAliasTargets].flatMap(([alias, target]) =>
-    config.includes(`find: "${alias}"`) && config.includes(`./src/${target}`)
-      ? [target]
-      : [],
+    config.includes(`find: "${alias}"`) && config.includes(`./src/${target}`) ? [target] : [],
   )
 }
 
@@ -301,13 +301,7 @@ export function resolveImport(appRoot: string, fromFile: string, specifier: stri
 }
 
 function tryFile(base: string): string | null {
-  const candidates = [
-    base,
-    `${base}.ts`,
-    `${base}.tsx`,
-    path.join(base, "index.ts"),
-    path.join(base, "index.tsx"),
-  ]
+  const candidates = [base, `${base}.ts`, `${base}.tsx`, path.join(base, "index.ts"), path.join(base, "index.tsx")]
   return candidates.find((candidate) => existsSync(candidate) && statSync(candidate).isFile()) ?? null
 }
 
@@ -318,7 +312,10 @@ function isTypeOnlyClause(keyword: string, clause: string) {
   const beforeBrace = named ? clause.slice(0, named.index).trim() : clause
   if (beforeBrace.replace(/,/g, "").trim().length > 0) return false
   if (!named) return false
-  const bindings = named[1].split(",").map((binding) => binding.trim()).filter(Boolean)
+  const bindings = named[1]
+    .split(",")
+    .map((binding) => binding.trim())
+    .filter(Boolean)
   return bindings.length > 0 && bindings.every((binding) => /^type\b/.test(binding))
 }
 
@@ -367,9 +364,10 @@ export function stripComments(text: string) {
       }
       if (
         (state === "single" && char === "'") ||
-        (state === "double" && char === "\"") ||
+        (state === "double" && char === '"') ||
         (state === "template" && char === "`")
-      ) state = "code"
+      )
+        state = "code"
       continue
     }
 
@@ -386,7 +384,7 @@ export function stripComments(text: string) {
       continue
     }
     if (char === "'") state = "single"
-    if (char === "\"") state = "double"
+    if (char === '"') state = "double"
     if (char === "`") state = "template"
   }
   return output

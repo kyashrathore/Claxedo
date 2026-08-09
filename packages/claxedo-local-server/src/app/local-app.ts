@@ -47,8 +47,8 @@ import { ProviderAuthRoutes } from "../credentials/routes/provider-auth"
 import { NetworkPolicyRoutes } from "../sandbox/network/network-policy-routes"
 import { BootstrapRoutes } from "../deployments/shared-routes/bootstrap"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "../deployments/local/server-workspace-pty-proxy"
-import { mountLocalOnlyUsageLimits } from "../deployments/local/server-usage-limits"
 import { resolveHarnessId } from "../opencode/compat-routes/provider-config"
+import { LocalUsageRoutes } from "@claxedo/server-core/usage/routes"
 
 /**
  * Paths whose responses carry credential material.
@@ -87,6 +87,7 @@ export type LocalAppOptions = {
   updateCentralSessionModel?: (sessionId: string, model: { providerID: string; modelID: string }) => Promise<void>
   invalidateCentralSession?: (sessionId: string) => void
   env?: NodeJS.ProcessEnv
+  usage?: Parameters<typeof LocalUsageRoutes>[0]
 }
 
 const TrackBody = z.object({
@@ -221,7 +222,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     app.all("/workspaces/:workspaceId/*", options.workspaceRelayProxy)
   }
   mountWorkspaceRuntimePtyWebSocketProxy(app, upgradeWebSocket, runtimeProxyOptions)
-  mountLocalOnlyUsageLimits(app, authRouteOptions(services))
+  if (options.usage) app.route("/api/claxedo/usage", LocalUsageRoutes(options.usage))
 
   // Routes workspace-owned traffic ahead of route matching, so scoped
   // `/global/event`, `/api/claxedo/events` and `/api/wr/runtime-events` stay
@@ -242,7 +243,12 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     agentExtensionPolicyOverrides: services.extensionPolicy.agentExtensionPolicyOverrides,
   }))
   app.route("/", SessionMetaRoutes({ services, ...authRouteOptions(services) }))
-  app.route("/api/claxedo/workspace", LocalWorkspaceRoutes(authRouteOptions(services)))
+  const localWorkspaceRoutes = LocalWorkspaceRoutes(authRouteOptions(services))
+  app.route("/api/claxedo/workspace", localWorkspaceRoutes)
+  // The renderer's inventory contract uses the hosted-compatible list path in
+  // every product. On desktop, the authoritative local workspace store answers
+  // it; this avoids treating an intentionally absent hosted router as a 404.
+  app.route("/api/workspace", localWorkspaceRoutes)
   app.route("/api/claxedo/network-policy", NetworkPolicyRoutes(authRouteOptions(services)))
 
   return { injectWebSocket }

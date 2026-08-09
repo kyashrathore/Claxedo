@@ -203,6 +203,8 @@ describe("Claxedo Cloud deployment workflow", () => {
     expect(deployedBrowserConfig).toContain('args: ["--disable-blink-features=AutomationControlled"]')
     expect(appPlaywrightConfig.match(/"\*\*\/deployed-workgraph\.spec\.ts"/g)).toHaveLength(3)
     expect(appPlaywrightConfig.match(/"\*\*\/desktop-\*\.spec\.ts"/g)).toHaveLength(2)
-    expect(appPlaywrightConfig).toContain('process.env.CLAXEDO_E2E_DESKTOP === "1" ? [] : ["**/desktop-*.spec.ts"]')
+    expect(appPlaywrightConfig).toContain(
+      'process.env.CLAXEDO_E2E_DESKTOP === "1" ? [] : ["**/desktop-*.spec.ts", "**/real-desktop-*.spec.ts"]',
+    )
   })
 })

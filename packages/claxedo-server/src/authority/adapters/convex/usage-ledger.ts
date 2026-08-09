@@ -13,7 +13,7 @@ import { requireExecutor, requireServiceToken } from "../../../authority/adapter
 import type { ConvexExecutor } from "../../../authority/adapters/convex/workspace-authority/types"
 import { controlPlaneTimeoutMs, withTimeout } from "../../../authority/adapters/convex/timeout"
 import type { LlmTurnRecord, UsageLedger } from "../../../platform/telemetry/product/metering"
-import type { TurnUsageRevision } from "../../../usage/contracts"
+import type { TurnUsageRevision } from "@claxedo/server-core/usage/contracts"
 
 const usageApi = anyApi as unknown as {
   usageMetering: {
@@ -102,6 +102,24 @@ function mergeProjectionRows(target: Map<string, Record<string, number>>, rows: 
   }
 }
 
+type CompositeProjection = Map<string, { keys: Record<string, string>; values: Record<string, number> }>
+
+function mergeCompositeRows(target: CompositeProjection, rows: unknown, keys: string[]) {
+  if (!Array.isArray(rows)) return
+  for (const raw of rows) {
+    if (!raw || typeof raw !== "object") continue
+    const row = raw as Record<string, unknown>
+    if (keys.some((key) => typeof row[key] !== "string")) continue
+    const names = Object.fromEntries(keys.map((key) => [key, String(row[key])]))
+    const id = keys.map((key) => names[key]).join("\u0000")
+    const current = target.get(id) ?? { keys: names, values: {} }
+    for (const [field, value] of Object.entries(row)) {
+      if (!keys.includes(field) && typeof value === "number" && Number.isFinite(value)) current.values[field] = (current.values[field] ?? 0) + value
+    }
+    target.set(id, current)
+  }
+}
+
 async function exactDashboardProjection(
   execute: () => ConvexExecutor,
   serviceArgs: <T extends Record<string, unknown>>(args: T) => T & { service_token: string },
@@ -110,7 +128,13 @@ async function exactDashboardProjection(
   const totals: Record<string, number> = {}
   const daily = new Map<string, Record<string, number>>()
   const models = new Map<string, Record<string, number>>()
+  const locations = new Map<string, Record<string, number>>()
   const breakdown = new Map<string, Record<string, number>>()
+  const dailyModels: CompositeProjection = new Map()
+  const dailyBreakdown: CompositeProjection = new Map()
+  const breakdownModels: CompositeProjection = new Map()
+  const filters = new Map<string, Set<string>>()
+  const facts: Array<Record<string, unknown>> = []
   let cursor: string | undefined
   const seen = new Set<string>()
   do {
@@ -121,12 +145,24 @@ async function exactDashboardProjection(
       until: args.until,
       time_zone: args.timeZone ?? "UTC",
       ...(args.dimension ? { dimension: args.dimension } : {}),
+      ...(args.filters?.provider ? { filter_provider: args.filters.provider } : {}),
+      ...(args.filters?.harness ? { filter_harness: args.filters.harness } : {}),
+      ...(args.filters?.model ? { filter_model: args.filters.model } : {}),
+      ...(args.filters?.location ? { filter_location: args.filters.location } : {}),
+      ...(args.filters?.session ? { filter_session: args.filters.session } : {}),
+      ...(args.filters?.workspace ? { filter_workspace: args.filters.workspace } : {}),
       ...(cursor ? { cursor } : {}),
     })), controlPlaneTimeoutMs("read")) as {
       totals?: Record<string, unknown>
       daily?: unknown
       models?: unknown
+      locations?: unknown
       breakdown?: unknown
+      daily_models?: unknown
+      daily_breakdown?: unknown
+      breakdown_models?: unknown
+      filters?: unknown
+      facts?: unknown
       next?: unknown
     }
     if (!page || typeof page.totals !== "object" || !Array.isArray(page.daily)
@@ -138,7 +174,22 @@ async function exactDashboardProjection(
     }
     mergeProjectionRows(daily, page.daily, "date")
     mergeProjectionRows(models, page.models, "value")
+    mergeProjectionRows(locations, page.locations, "value")
     mergeProjectionRows(breakdown, page.breakdown, "value")
+    mergeCompositeRows(dailyModels, page.daily_models, ["date", "value"])
+    mergeCompositeRows(dailyBreakdown, page.daily_breakdown, ["date", "value"])
+    mergeCompositeRows(breakdownModels, page.breakdown_models, ["group", "value"])
+    if (Array.isArray(page.facts)) {
+      for (const fact of page.facts) if (fact && typeof fact === "object") facts.push(fact as Record<string, unknown>)
+    }
+    if (page.filters && typeof page.filters === "object") {
+      for (const [dimension, raw] of Object.entries(page.filters as Record<string, unknown>)) {
+        if (!Array.isArray(raw)) continue
+        const values = filters.get(dimension) ?? new Set<string>()
+        for (const value of raw) if (typeof value === "string") values.add(value)
+        filters.set(dimension, values)
+      }
+    }
     const next = page.next
     if (typeof next === "string" && next.length > 0) {
       if (seen.has(next)) throw new Error("Convex usage projection repeated a cursor")
@@ -149,7 +200,19 @@ async function exactDashboardProjection(
   const rows = (source: Map<string, Record<string, number>>, key: "date" | "value") => [...source]
     .map(([name, values]) => ({ [key]: name, ...values }) as ProjectionRow)
     .toSorted((a, b) => String(a[key]).localeCompare(String(b[key])))
-  return { totals, daily: rows(daily, "date"), models: rows(models, "value"), breakdown: rows(breakdown, "value") }
+  const composite = (source: CompositeProjection) => [...source.values()].map((item) => ({ ...item.keys, ...item.values }))
+  return {
+    totals,
+    daily: rows(daily, "date"),
+    models: rows(models, "value"),
+    locations: rows(locations, "value"),
+    breakdown: rows(breakdown, "value"),
+    dailyModels: composite(dailyModels).toSorted((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.value).localeCompare(String(b.value))),
+    dailyBreakdown: composite(dailyBreakdown).toSorted((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.value).localeCompare(String(b.value))),
+    breakdownModels: composite(breakdownModels).toSorted((a, b) => String(a.group).localeCompare(String(b.group)) || String(a.value).localeCompare(String(b.value))),
+    filters: Object.fromEntries([...filters].map(([dimension, values]) => [dimension, [...values].toSorted()])),
+    facts,
+  }
 }
 
 export function createConvexUsageLedger(input: ConvexUsageLedgerInput = {}): UsageLedger {

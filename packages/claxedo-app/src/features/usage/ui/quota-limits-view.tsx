@@ -84,6 +84,22 @@ export function providerRows(snapshot: unknown): Provider[] {
   })
 }
 
+export function quotaSummary(snapshot: unknown) {
+  const providers = providerRows(snapshot)
+  const windows = providers.flatMap((provider) => provider.windows)
+  const constrained = windows.toSorted((a, b) => b.percent - a.percent)[0]
+  const nearestReset = windows
+    .map((window) => window.resetsAt)
+    .filter((value): value is string => Boolean(value) && Number.isFinite(Date.parse(value!)))
+    .toSorted((a, b) => Date.parse(a) - Date.parse(b))[0]
+  return {
+    providerCount: providers.length,
+    constrainedLabel: constrained?.label,
+    remainingPercent: constrained ? 100 - constrained.percent : undefined,
+    nearestReset,
+  }
+}
+
 export function QuotaLimitsView(props: { status: string; snapshot?: unknown; error?: string }) {
   const providers = createMemo(() => providerRows(props.snapshot))
   return (

@@ -376,6 +376,7 @@
   --icon-strong-disabled: #c7c7c7;
   --icon-strong-focus: #020202;
   --icon-brand-base: #171717;
+  --icon-provider-claude-base: #d97757;
   --icon-interactive-base: #034cff;
   --icon-success-base: #7add71;
   --icon-success-hover: #4cc944;
@@ -647,6 +648,7 @@
     --icon-strong-disabled: #3e3e3e;
     --icon-strong-focus: #fdfcfc;
     --icon-brand-base: #ffffff;
+    --icon-provider-claude-base: #d97757;
     --icon-interactive-base: #034cff;
     --icon-success-base: #12c905;
     --icon-success-hover: #35c02d;

@@ -9,7 +9,7 @@ import { createCentralSessionRuntime } from "./runtime"
 import { createCentralControlApp } from "../central-runtime"
 import { createConnectionTurnCredentials } from "../connections/turn-credentials"
 import { piProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-catalog"
-import type { TurnUsageRevision } from "../usage/contracts"
+import type { TurnUsageRevision } from "@claxedo/server-core/usage/contracts"
 
 function services(): ControlPlaneServices {
   return {
@@ -1011,6 +1011,19 @@ describe("createCentralSessionRuntime", () => {
 
     expect(response.status).toBe(200)
     expect(new TextDecoder().decode(next.value)).toContain(`"sessionId":"${session.id}"`)
+  })
+
+  test("lets a local composition reserve the public usage path while retaining the control route", () => {
+    const control = createCentralControlApp(services(), {
+      usageLedger: {
+        recordLlmTurn: async () => ({ activated: false }),
+        usageDashboard: async () => ({ totals: {}, daily: [] }),
+      },
+      mountPublicUsageRoute: false,
+    })
+    const paths = control.app.routes.map((route) => route.path)
+    expect(paths.some((path) => path.startsWith("/api/control/usage"))).toBe(true)
+    expect(paths.some((path) => path.startsWith("/api/claxedo/usage"))).toBe(false)
   })
 
   test("aborts an active central hybrid turn through the session route", async () => {

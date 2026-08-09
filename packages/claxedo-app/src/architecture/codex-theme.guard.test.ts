@@ -18,9 +18,9 @@ const migratedTokens = [
 
 describe("Codex theme architecture", () => {
   test("recognizes a reintroduced migrated-token definition", () => {
-    expect(migratedTokenDefinitions([
-      { path: "bad.css", text: ":root { --codex-shadow-overlay: 0 0 #0000; }" },
-    ])).toEqual(["bad.css: --codex-shadow-overlay"])
+    expect(
+      migratedTokenDefinitions([{ path: "bad.css", text: ":root { --codex-shadow-overlay: 0 0 #0000; }" }]),
+    ).toEqual(["bad.css: --codex-shadow-overlay"])
   })
 
   test("keeps migrated semantic tokens out of every stylesheet", () => {
@@ -108,8 +108,62 @@ describe("Codex theme architecture", () => {
       "claxedo-command-palette",
       "claxedo-settings-dialog",
     ]
-    expect(files.flatMap((file) => retired.filter((name) => readFileSync(file, "utf8").includes(name))
-      .map((name) => `${path.relative(appRoot, file)}: ${name}`))).toEqual([])
+    expect(
+      files.flatMap((file) =>
+        retired
+          .filter((name) => readFileSync(file, "utf8").includes(name))
+          .map((name) => `${path.relative(appRoot, file)}: ${name}`),
+      ),
+    ).toEqual([])
+  })
+
+  test("keeps page-scale workspaces on the page canvas instead of the dialog surface", () => {
+    const shell = read("src/app/styles/app-shell.css")
+    const owners = [
+      read("src/app/dialogs/settings.tsx"),
+      read("src/app/dialogs/usage.tsx"),
+      read("src/features/processes/ui/dialog-process-diagnostics.tsx"),
+    ]
+
+    expect(shell).toMatch(/\.workspace-page-dialog\s*{[^}]*background:\s*var\(--background-base\)/s)
+    expect(owners.every((source) => source.includes("workspace-page-dialog"))).toBe(true)
+    expect(owners.every((source) => source.includes("workspace-page-dialog-shell"))).toBe(true)
+  })
+
+  test("keeps Usage and Diagnostics on the same page-dialog design contract", () => {
+    const usage = read("src/features/usage/ui/usage-dashboard.tsx")
+    const usageChart = read("src/features/usage/ui/usage-chart.tsx")
+    const diagnostics = read("src/features/processes/ui/dialog-process-diagnostics.tsx")
+    const diagnosticsChart = read("src/features/processes/ui/diagnostics/timeline.tsx")
+    const shared = [
+      "workspace-page-dashboard",
+      "workspace-page-header",
+      "workspace-page-title",
+      "workspace-page-toolbar",
+      "workspace-page-segmented",
+      "workspace-page-refresh-button",
+      "workspace-page-notices",
+    ]
+
+    expect(shared.filter((name) => !usage.includes(name))).toEqual([])
+    expect(shared.filter((name) => !diagnostics.includes(name))).toEqual([])
+
+    const sharedData = [
+      "workspace-data-chart",
+      "workspace-data-heading",
+      "workspace-data-kicker",
+      "workspace-data-legend",
+      "workspace-data-chart-frame",
+      "workspace-data-chart-plot",
+      "workspace-data-chart-grid",
+      "workspace-data-chart-area",
+      "workspace-data-chart-line",
+      "workspace-data-tooltip",
+    ]
+    expect(sharedData.filter((name) => !usageChart.includes(name))).toEqual([])
+    expect(sharedData.filter((name) => !diagnosticsChart.includes(name))).toEqual([])
+    expect(usage).toContain("workspace-data-metric-strip")
+    expect(diagnostics).toContain("workspace-data-metric-strip")
   })
 })
 
@@ -118,7 +172,12 @@ function read(relative: string) {
 }
 
 function forbiddenImportantDeclarations(css: string) {
-  return Array.from(css.matchAll(/\b(?:box-shadow|border(?:-[a-z-]+)?|border-radius|background(?:-[a-z-]+)?|color|font(?:-[a-z-]+)?)\s*:[^;{}]*!important/gi), (match) => match[0])
+  return Array.from(
+    css.matchAll(
+      /\b(?:box-shadow|border(?:-[a-z-]+)?|border-radius|background(?:-[a-z-]+)?|color|font(?:-[a-z-]+)?)\s*:[^;{}]*!important/gi,
+    ),
+    (match) => match[0],
+  )
 }
 
 function missingConsumers(consumers: Record<string, string[]>) {
@@ -128,7 +187,9 @@ function missingConsumers(consumers: Record<string, string[]>) {
 }
 
 function migratedTokenDefinitions(files: SourceFile[]) {
-  return files.flatMap((file) => migratedTokens
-    .filter((token) => new RegExp(`${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:`).test(file.text))
-    .map((token) => `${file.path}: ${token}`))
+  return files.flatMap((file) =>
+    migratedTokens
+      .filter((token) => new RegExp(`${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:`).test(file.text))
+      .map((token) => `${file.path}: ${token}`),
+  )
 }

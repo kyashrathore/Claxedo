@@ -9,7 +9,7 @@ import { claude, pi } from "./harnesses"
 import { createMemoryRuntimeStore } from "./stores/memory"
 import { createSqliteRuntimeStore } from "./stores/sqlite"
 import { createConvexRuntimeStore } from "./stores/convex"
-import { buildAssistantMessage, buildSession, messagePartUpdated, messageUpdated, permissionAsked, questionAsked, sessionError, sessionIdle, sessionUpdated } from "./compat-events"
+import { buildAssistantMessage, buildSession, messagePartUpdated, messageUpdated, permissionAsked, questionAsked, sessionError, sessionIdle, sessionUpdated, sessionUsage } from "./compat-events"
 import type { AgentRuntimeStreamEvent } from "./index"
 import { storeRows } from "./test-utils/store-internals"
 
@@ -209,6 +209,18 @@ describe("createAgentRuntime", () => {
       store,
       harnesses: [testHarness({
         sendMessage: async function* (id) {
+          // ACP providers can publish the authoritative usage observation
+          // before assistant metadata establishes the provider-id alias.
+          yield sessionUsage({
+            sessionID: id,
+            messageID: "actual-assistant",
+            contextSize: 12,
+            contextUsed: 12,
+            observation: {
+              kind: "cumulative",
+              tokens: { input: 7, output: 5, reasoning: null, cache: { read: null, write: null } },
+            },
+          })
           yield messageUpdated(buildAssistantMessage({
             id: "actual-assistant",
             sessionID: id,
@@ -235,7 +247,7 @@ describe("createAgentRuntime", () => {
     const events = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
 
     await runtime.turns.start({ sessionId: session.id, messageId: "msg_1", text: "hello" })
-    await events
+    const published = await events
     await tick()
 
     expect(rows.getMessages(session.id)).toMatchObject([
@@ -246,6 +258,9 @@ describe("createAgentRuntime", () => {
       },
     ])
     expect(rows.getMessages(session.id)).toHaveLength(2)
+    expect(published.find((event) => event.payload.type === "session.usage")?.payload).toMatchObject({
+      properties: { sessionID: session.id, messageID: "msg_1_r" },
+    })
     runtime.dispose()
   })
 

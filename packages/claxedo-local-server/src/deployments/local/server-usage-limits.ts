@@ -1,7 +1,7 @@
 /**
- * Local-only usage-limits endpoint backing the status-bar usage button:
- * remaining quota windows per installed harness (Claude 5h/weekly, Codex
- * session/weekly, Copilot, ...), probed via tokentracker-cli's library surface.
+ * Local usage-limit probe for the unified Usage endpoint: remaining quota
+ * windows per installed harness (Claude 5h/weekly, Codex session/weekly,
+ * Copilot, ...), read through tokentracker-cli's library surface.
  *
  * Security constraints on the tokentracker-cli dependency (audited 2026-07-10
  * at 0.75.1; bunfig.toml exempts it from the release-age gate on that basis):
@@ -16,13 +16,14 @@
  * the Worker import graph, and mounted only in server.ts (local app).
  */
 import os from "node:os"
-import type { Hono as HonoType } from "hono"
-import { localOnlyProjection } from "@claxedo/server-core/platform/http/local-only-projection"
-import { errorBody } from "@claxedo/server-core/platform/http/http"
-
-type UsageLimitsRouteOptions = Omit<Parameters<typeof localOnlyProjection>[0], "label">
-
-type UsageLimitsModule = typeof import("tokentracker-cli/src/lib/usage-limits.js")
+type UsageLimitsModule = {
+  getUsageLimits(options?: {
+    home?: string
+    env?: NodeJS.ProcessEnv
+    providerTimeoutMs?: number
+  }): Promise<{ fetched_at: string } & Record<string, unknown>>
+  resetUsageLimitsCache(): void
+}
 
 let loaded: Promise<UsageLimitsModule> | undefined
 
@@ -30,25 +31,13 @@ function loadUsageLimits(): Promise<UsageLimitsModule> {
   // The library path emits no telemetry today; pin it off in case a future
   // (re-audited) version moves the heartbeat call.
   process.env.TOKENTRACKER_NO_TELEMETRY ??= "1"
-  return import("tokentracker-cli/src/lib/usage-limits.js")
+  // @ts-expect-error TokenTracker ships no declarations; UsageLimitsModule is
+  // the audited boundary and its pinned runtime shape has a contract test.
+  return import("tokentracker-cli/src/lib/usage-limits.js") as Promise<UsageLimitsModule>
 }
 
 export async function getLocalUsageLimits(input: { refresh?: boolean } = {}) {
   const mod = await (loaded ??= loadUsageLimits())
   if (input.refresh) mod.resetUsageLimitsCache()
   return await mod.getUsageLimits({ home: os.homedir(), env: process.env })
-}
-
-export function mountLocalOnlyUsageLimits(app: HonoType, options: UsageLimitsRouteOptions) {
-  app.use("/api/claxedo/usage-limits", localOnlyProjection({ ...options, label: "UsageLimits" }))
-  app.get("/api/claxedo/usage-limits", async (c) => {
-    try {
-      return c.json(await getLocalUsageLimits({ refresh: c.req.query("refresh") === "1" }))
-    } catch (err) {
-      return c.json(
-        errorBody("usage_limits_failed", err instanceof Error ? err.message : String(err)),
-        500,
-      )
-    }
-  })
 }

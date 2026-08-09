@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { createUsageProvenanceClassifier } from "./provenance"
+import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "@claxedo/server-core/usage/provenance"
 
 describe("usage provenance", () => {
   const classify = createUsageProvenanceClassifier([{
@@ -33,5 +33,10 @@ describe("usage provenance", () => {
     expect(bounded({ source: "codex", nativeSessionId: "old-direct", observedAt: 99 })).toBe("unclassified")
     expect(bounded({ source: "codex", nativeSessionId: "new-direct", observedAt: 100 })).toBe("external")
     expect(bounded({ source: "claude", nativeSessionId: "direct", observedAt: 200 })).toBe("unclassified")
+  })
+
+  test("maps every TokenTracker-backed Claxedo harness family to its native source", () => {
+    expect(["claude-sdk", "codex-app-server", "cursor-sdk", "opencode", "pi"].map(tokenTrackerSourceForHarness))
+      .toEqual(["claude", "codex", "cursor", "opencode", "pi"])
   })
 })

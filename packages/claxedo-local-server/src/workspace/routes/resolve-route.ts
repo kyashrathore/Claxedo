@@ -1,5 +1,5 @@
 import { Hono } from "hono"
-import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
+import { listWorkspaces, resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { workspaceResponse } from "@claxedo/server-core/workspace/store/response"
 import {
   controlPlaneRouteAuth,
@@ -8,6 +8,19 @@ import {
 
 export function LocalWorkspaceRoutes(options: ControlPlaneRouteAuthOptions = {}) {
   return new Hono()
+    .get("/", controlPlaneRouteAuth(options), async (c) => {
+      const access = c.req.query("access")
+      if (access && access !== "local" && access !== "cloud" && access !== "user-hosted") {
+        return c.json({ error: { code: "workspace_access_invalid", message: "workspace access is invalid" } }, 400)
+      }
+      const workspaces = (await listWorkspaces())
+        .flatMap((workspace) => {
+          const response = workspaceResponse(workspace)
+          return response ? [response] : []
+        })
+        .filter((workspace) => !access || workspace.access === access)
+      return c.json({ workspaces })
+    })
     .use("/resolve", controlPlaneRouteAuth(options))
     .get("/resolve", async (c) => {
       const workspaceId = c.req.query("workspaceId") || c.req.query("workspace")

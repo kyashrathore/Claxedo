@@ -16,36 +16,40 @@ const state = vi.hoisted(() => {
     }),
     stop: vi.fn(),
     kill: vi.fn(),
-    scanSessionMemory: vi.fn<(
-      request: LocalDiagnostics.SessionMemoryScanRequest,
-    ) => Promise<LocalDiagnostics.SessionMemoryScanResult>>(),
+    scanSessionMemory:
+      vi.fn<
+        (request: LocalDiagnostics.SessionMemoryScanRequest) => Promise<LocalDiagnostics.SessionMemoryScanResult>
+      >(),
   }
 })
 
-const warmSnapshot = [{
-  // Also present in the store, so it exercises the merge onto an existing row.
-  sessionId: "019-task",
-  mounted: true,
-  recency: 0,
-  messageCount: 120,
-  buckets: {
-    chatBytes: 12 * 1024 ** 2,
-    imageBytes: 6 * 1024 ** 2,
-    compactionBytes: 2 * 1024 ** 2,
-    totalBytes: 20 * 1024 ** 2,
+const warmSnapshot = [
+  {
+    // Also present in the store, so it exercises the merge onto an existing row.
+    sessionId: "019-task",
+    mounted: true,
+    recency: 0,
+    messageCount: 120,
+    buckets: {
+      chatBytes: 12 * 1024 ** 2,
+      imageBytes: 6 * 1024 ** 2,
+      compactionBytes: 2 * 1024 ** 2,
+      totalBytes: 20 * 1024 ** 2,
+    },
   },
-}, {
-  sessionId: "ses_warm",
-  mounted: false,
-  recency: 1,
-  messageCount: 42,
-  buckets: {
-    chatBytes: 4 * 1024 ** 2,
-    imageBytes: 8 * 1024 ** 2,
-    compactionBytes: 2 * 1024 ** 2,
-    totalBytes: 14 * 1024 ** 2,
+  {
+    sessionId: "ses_warm",
+    mounted: false,
+    recency: 1,
+    messageCount: 42,
+    buckets: {
+      chatBytes: 4 * 1024 ** 2,
+      imageBytes: 8 * 1024 ** 2,
+      compactionBytes: 2 * 1024 ** 2,
+      totalBytes: 14 * 1024 ** 2,
+    },
   },
-}] satisfies LocalDiagnostics.WarmSessionMemory[]
+] satisfies LocalDiagnostics.WarmSessionMemory[]
 
 vi.mock("@/platform/runtime/platform-provider", () => ({
   usePlatform: () => ({
@@ -61,17 +65,23 @@ vi.mock("@/platform/runtime/platform-provider", () => ({
 }))
 
 vi.mock("@opencode-ai/ui/dialog", () => ({
-  Dialog: (props: { title: string; children: JSX.Element }) => (
-    <div role="dialog" aria-label={props.title}>{props.children}</div>
+  Dialog: (props: { "aria-label"?: string; class?: string; children: JSX.Element }) => (
+    <div role="dialog" aria-label={props["aria-label"]} class={props.class}>
+      {props.children}
+    </div>
   ),
 }))
 
+vi.mock("@opencode-ai/ui/context/dialog", () => ({
+  useDialog: () => ({ close: vi.fn() }),
+}))
+
 vi.mock("@opencode-ai/ui/button", () => ({
-  Button: (props: {
-    children: JSX.Element
-    disabled?: boolean
-    onClick?: () => void
-  }) => <button type="button" disabled={props.disabled} onClick={props.onClick}>{props.children}</button>,
+  Button: (props: { children: JSX.Element; disabled?: boolean; onClick?: () => void }) => (
+    <button type="button" disabled={props.disabled} onClick={props.onClick}>
+      {props.children}
+    </button>
+  ),
 }))
 
 import { DialogProcessDiagnostics } from "./dialog-process-diagnostics"
@@ -100,14 +110,26 @@ beforeEach(() => {
 
 afterEach(() => cleanup())
 
-const showTab = (name: string) => fireEvent.click(screen.getByRole("tab", { name }))
+const showTab = (name: string) => fireEvent.click(screen.getByRole("button", { name }))
 
 describe("local performance diagnostics dialog", () => {
   test("loads retained startup history, subscribes once, and renders ranked local ownership", async () => {
     render(() => <DialogProcessDiagnostics />)
 
+    expect(screen.getByRole("dialog", { name: "Local performance diagnostics" })).toHaveClass(
+      "workspace-page-dialog-shell",
+      "usage-dialog-shell",
+      "claxedo-diagnostics-dialog",
+    )
+    expect(screen.getByRole("group", { name: "Diagnostics sections" })).toHaveClass("workspace-page-segmented")
+    expect(screen.getByRole("button", { name: "Refresh diagnostics" })).toHaveClass("workspace-page-refresh-button")
     expect(screen.getByText("Loading retained startup history…")).toBeInTheDocument()
     expect(await screen.findByText("CPU and memory history")).toBeInTheDocument()
+    expect(screen.getByRole("region", { name: "Retained window summary" })).toHaveClass("workspace-data-metric-strip")
+    const chart = screen.getByRole("img", { name: /CPU and memory timeline/ }).closest("section")
+    expect(chart).toHaveClass("workspace-data-chart")
+    expect(chart?.querySelectorAll(".workspace-data-chart-area")).toHaveLength(2)
+    expect(chart?.querySelectorAll(".workspace-data-chart-line")).toHaveLength(2)
     expect(screen.getByText("Collector active")).toBeInTheDocument()
     expect(screen.getByText(/Workspace model work shares/)).toBeInTheDocument()
 
@@ -200,10 +222,12 @@ describe("local performance diagnostics dialog", () => {
     fireEvent.click(owner)
     fireEvent.click(screen.getByRole("button", { name: "Stop gracefully" }))
 
-    await waitFor(() => expect(state.stop).toHaveBeenCalledWith({
-      action: "stop",
-      token: "opaque-diagnostics-token-0001",
-    }))
+    await waitFor(() =>
+      expect(state.stop).toHaveBeenCalledWith({
+        action: "stop",
+        token: "opaque-diagnostics-token-0001",
+      }),
+    )
     expect(state.stop.mock.calls[0]?.[0]).not.toHaveProperty("pid")
     expect(await screen.findByText("Stopped the selected local owner.")).toBeInTheDocument()
     expect(state.getSnapshot).toHaveBeenCalledTimes(2)
@@ -221,14 +245,8 @@ describe("local performance diagnostics dialog", () => {
     expect(axis.getByText("KiB")).toBeInTheDocument()
     expect(axis.getByText("8")).toBeInTheDocument()
     expect(axis.getByText("6")).toBeInTheDocument()
-    expect(chart).toHaveAttribute(
-      "aria-label",
-      expect.stringContaining("CPU axis 0 to 80%, peak 80%"),
-    )
-    expect(chart).toHaveAttribute(
-      "aria-label",
-      expect.stringContaining("Memory impact axis 0 to 8 KiB, peak 8 KiB"),
-    )
+    expect(chart).toHaveAttribute("aria-label", expect.stringContaining("CPU axis 0 to 80%, peak 80%"))
+    expect(chart).toHaveAttribute("aria-label", expect.stringContaining("Memory impact axis 0 to 8 KiB, peak 8 KiB"))
     expect(screen.queryByRole("slider")).not.toBeInTheDocument()
   })
 
@@ -256,8 +274,7 @@ describe("local performance diagnostics dialog", () => {
     expect(values.getByText("Session · session ses_abc")).toBeInTheDocument()
 
     fireEvent.pointerLeave(chart)
-    await waitFor(() =>
-      expect(view.container.querySelector('[data-testid="diagnostics-hover-readout"]')).toBeNull())
+    await waitFor(() => expect(view.container.querySelector('[data-testid="diagnostics-hover-readout"]')).toBeNull())
   })
 
   test("announces source transitions without announcing routine samples", async () => {
@@ -270,11 +287,13 @@ describe("local performance diagnostics dialog", () => {
     state.listener()?.({
       ...snapshot(),
       capturedAt: 5_000,
-      sources: [{
-        ...snapshot().sources[0]!,
-        state: "degraded",
-        reason: "source-timeout",
-      }],
+      sources: [
+        {
+          ...snapshot().sources[0]!,
+          state: "degraded",
+          reason: "source-timeout",
+        },
+      ],
     })
     await waitFor(() => expect(live).toHaveTextContent("linux-proc on host changed from healthy to degraded"))
   })
@@ -285,15 +304,12 @@ describe("local performance diagnostics dialog", () => {
 
     await screen.findByText("CPU and memory history")
     showTab("Processes")
-    const contributors = [...view.container.querySelectorAll<HTMLElement>(
-      '[data-testid="diagnostics-contributor"]',
-    )]
+    const contributors = [...view.container.querySelectorAll<HTMLElement>('[data-testid="diagnostics-contributor"]')]
     expect(new Set(contributors.map((item) => item.dataset.ownerKind))).toEqual(
       new Set(["electron-main", "server", "sidecar", "harness"]),
     )
     expect(
-      contributors.some((item) =>
-        item.dataset.ownerKind === "harness" && Number(item.dataset.rssChange) > 0),
+      contributors.some((item) => item.dataset.ownerKind === "harness" && Number(item.dataset.rssChange) > 0),
     ).toBe(true)
     const range = view.container.querySelector<HTMLElement>('[aria-label="Retained window summary"]')!
     expect(Number(range.dataset.diagnosticsRangeStart)).toBe(1_000)
@@ -331,7 +347,8 @@ function taskSnapshot(): LocalDiagnostics.RetainedSnapshot {
       item.id,
       roles[index]!,
       item.label,
-    ))
+    ),
+  )
   const samples = [
     taskPoint(1_000, processes[0]!.identity.id, 75, 20_000),
     taskPoint(1_000, processes[1]!.identity.id, 15, 30_000),
@@ -351,11 +368,13 @@ function taskSnapshot(): LocalDiagnostics.RetainedSnapshot {
     owners,
     processes,
     samples,
-    sources: [{
-      ...snapshot().sources[0]!,
-      state: "degraded",
-      reason: "source-timeout",
-    }],
+    sources: [
+      {
+        ...snapshot().sources[0]!,
+        state: "degraded",
+        reason: "source-timeout",
+      },
+    ],
     markers: [
       {
         type: "lifecycle",
@@ -386,11 +405,7 @@ function taskSnapshot(): LocalDiagnostics.RetainedSnapshot {
   }
 }
 
-function owner(
-  id: string,
-  kind: LocalDiagnostics.OwnerKind,
-  label: string,
-): LocalDiagnostics.OwnerIdentity {
+function owner(id: string, kind: LocalDiagnostics.OwnerKind, label: string): LocalDiagnostics.OwnerIdentity {
   return {
     id,
     kind,
@@ -442,54 +457,56 @@ function snapshot(): LocalDiagnostics.RetainedSnapshot {
     retainedFromAt: 1_000,
     targetWindowMs: 15 * 60_000,
     retention: { state: "complete" },
-    owners: [{
-      id: "owner-codex",
-      kind: "harness",
-      label: "Codex harness",
-      launchId: "launch-codex",
-      access: "local",
-      lifecycle: "current",
-      harnessId: "codex",
-    }],
-    processes: [{
-      identity: {
-        id: "host:42:100",
-        domain: "host",
-        pid: 42,
-        creation: { state: "available", value: "100", source: "linux-proc" },
+    owners: [
+      {
+        id: "owner-codex",
+        kind: "harness",
+        label: "Codex harness",
         launchId: "launch-codex",
+        access: "local",
+        lifecycle: "current",
+        harnessId: "codex",
       },
-      ownerId: "owner-codex",
-      role: "harness",
-      label: "Codex harness",
-      lifecycle: "running",
-      actionEligibility: {
-        state: "eligible",
-        actions: [
-          { action: "stop", token: "opaque-diagnostics-token-0001", expiresAt: 20_000 },
-          { action: "kill", token: "opaque-diagnostics-token-0002", expiresAt: 20_000 },
-        ],
-      },
-    }],
-    samples: [
-      point(1_000, 1, 1_000),
-      point(2_000, 80, 8_000),
-      point(3_000, 2, 3_000),
     ],
-    sources: [{
-      source: "linux-proc",
-      domain: "host",
-      accuracy: "estimated",
-      capabilities: {
-        cpu: true,
-        rss: true,
-        ancestry: true,
-        creationIdentity: true,
-        actionIdentity: true,
+    processes: [
+      {
+        identity: {
+          id: "host:42:100",
+          domain: "host",
+          pid: 42,
+          creation: { state: "available", value: "100", source: "linux-proc" },
+          launchId: "launch-codex",
+        },
+        ownerId: "owner-codex",
+        role: "harness",
+        label: "Codex harness",
+        lifecycle: "running",
+        actionEligibility: {
+          state: "eligible",
+          actions: [
+            { action: "stop", token: "opaque-diagnostics-token-0001", expiresAt: 20_000 },
+            { action: "kill", token: "opaque-diagnostics-token-0002", expiresAt: 20_000 },
+          ],
+        },
       },
-      state: "healthy",
-      lastSuccessAt: 3_000,
-    }],
+    ],
+    samples: [point(1_000, 1, 1_000), point(2_000, 80, 8_000), point(3_000, 2, 3_000)],
+    sources: [
+      {
+        source: "linux-proc",
+        domain: "host",
+        accuracy: "estimated",
+        capabilities: {
+          cpu: true,
+          rss: true,
+          ancestry: true,
+          creationIdentity: true,
+          actionIdentity: true,
+        },
+        state: "healthy",
+        lastSuccessAt: 3_000,
+      },
+    ],
     markers: [
       {
         type: "lifecycle",
@@ -562,18 +579,20 @@ function sessionMemoryScan(): LocalDiagnostics.SessionMemoryScanResult {
       totalBytes: 112 * 1024 ** 2,
     },
     resident: warmSnapshot[1]!.buckets,
-    sources: [{
-      harness: "claxedo",
-      profile: "native",
-      state: "scanned",
-      sessionCount: 2,
-      buckets: {
-        chatBytes: 42 * 1024 ** 2,
-        imageBytes: 60 * 1024 ** 2,
-        compactionBytes: 10 * 1024 ** 2,
-        totalBytes: 112 * 1024 ** 2,
+    sources: [
+      {
+        harness: "claxedo",
+        profile: "native",
+        state: "scanned",
+        sessionCount: 2,
+        buckets: {
+          chatBytes: 42 * 1024 ** 2,
+          imageBytes: 60 * 1024 ** 2,
+          compactionBytes: 10 * 1024 ** 2,
+          totalBytes: 112 * 1024 ** 2,
+        },
       },
-    }],
+    ],
     sessions: [
       {
         sessionId: "019-task",

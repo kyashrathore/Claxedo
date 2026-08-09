@@ -61,6 +61,129 @@ const execFileAsync = promisify(execFile)
 // the first window legitimately takes longer than a dev-server page load.
 const BOOT_TIMEOUT = 90_000
 
+async function workspacePageDesignSignature(dialog: Locator) {
+  return dialog.evaluate(async (element) => {
+    // The shared segmented control deliberately animates paint for 120ms. Read
+    // its settled design, not an arbitrary interpolation frame after a click.
+    await new Promise((resolve) => setTimeout(resolve, 160))
+    const read = (selector: string) => {
+      const node = element.querySelector<HTMLElement>(selector)
+      if (!node) throw new Error(`Missing workspace-page design node: ${selector}`)
+      return { node, style: getComputedStyle(node) }
+    }
+    const probes: HTMLElement[] = []
+    if (!element.querySelector(".workspace-data-metric-strip")) {
+      const probe = document.createElement("div")
+      probe.className = "workspace-data-metric-strip"
+      probe.style.cssText = "position:absolute;visibility:hidden;pointer-events:none"
+      probe.append(document.createElement("div"), document.createElement("div"))
+      element.append(probe)
+      probes.push(probe)
+    }
+    if (!element.querySelector(".workspace-data-chart")) {
+      const probe = document.createElement("section")
+      probe.className = "workspace-data-chart"
+      probe.style.cssText = "position:absolute;visibility:hidden;pointer-events:none"
+      const heading = document.createElement("div")
+      heading.className = "workspace-data-heading"
+      heading.append(document.createElement("h3"))
+      probe.append(heading)
+      element.append(probe)
+      probes.push(probe)
+    }
+    const root = getComputedStyle(element)
+    const dashboard = read(".workspace-page-dashboard")
+    const header = read(".workspace-page-header")
+    const title = read(".workspace-page-title h2")
+    const segmented = read(".workspace-page-segmented")
+    const selected = read('.workspace-page-segmented button:is([aria-pressed="true"], [aria-selected="true"])')
+    const refresh = read(".workspace-page-refresh-button")
+    const metricStrip = read(".workspace-data-metric-strip")
+    const metricCell = read(".workspace-data-metric-strip > div")
+    const chart = read(".workspace-data-chart")
+    const chartHeading = read(".workspace-data-heading h3")
+    const bounds = element.getBoundingClientRect()
+
+    const signature = {
+      root: {
+        width: bounds.width,
+        height: bounds.height,
+        background: root.backgroundColor,
+        borderRadius: root.borderRadius,
+      },
+      dashboard: {
+        padding: dashboard.style.padding,
+        gap: dashboard.style.gap,
+        overflow: dashboard.style.overflow,
+      },
+      header: {
+        alignItems: header.style.alignItems,
+        justifyContent: header.style.justifyContent,
+        gap: header.style.gap,
+      },
+      title: {
+        color: title.style.color,
+        fontFamily: title.style.fontFamily,
+        fontSize: title.style.fontSize,
+        fontWeight: title.style.fontWeight,
+        letterSpacing: title.style.letterSpacing,
+        lineHeight: title.style.lineHeight,
+        margin: title.style.margin,
+      },
+      segmented: {
+        padding: segmented.style.padding,
+        border: segmented.style.border,
+        borderRadius: segmented.style.borderRadius,
+        background: segmented.style.backgroundColor,
+      },
+      selected: {
+        surfaceToken: selected.style.getPropertyValue("--surface-raised-stronger-non-alpha"),
+        textToken: selected.style.getPropertyValue("--text-strong"),
+        minHeight: selected.style.minHeight,
+        padding: selected.style.padding,
+        borderRadius: selected.style.borderRadius,
+        color: selected.style.color,
+        background: selected.style.backgroundColor,
+        fontSize: selected.style.fontSize,
+        boxShadow: selected.style.boxShadow,
+      },
+      refresh: {
+        minWidth: refresh.style.minWidth,
+        minHeight: refresh.style.minHeight,
+        padding: refresh.style.padding,
+        border: refresh.style.border,
+        borderRadius: refresh.style.borderRadius,
+        color: refresh.style.color,
+      },
+      metricStrip: {
+        border: metricStrip.style.border,
+        borderRadius: metricStrip.style.borderRadius,
+        background: metricStrip.style.backgroundColor,
+      },
+      metricCell: {
+        minHeight: metricCell.style.minHeight,
+        padding: metricCell.style.padding,
+        borderRight: metricCell.style.borderRight,
+      },
+      chart: {
+        padding: chart.style.padding,
+        borderWidth: chart.style.borderWidth,
+        borderStyle: chart.style.borderStyle,
+        background: chart.style.backgroundColor,
+      },
+      chartHeading: {
+        color: chartHeading.style.color,
+        fontFamily: chartHeading.style.fontFamily,
+        fontSize: chartHeading.style.fontSize,
+        fontWeight: chartHeading.style.fontWeight,
+        margin: chartHeading.style.margin,
+      },
+    }
+    probes.forEach((probe) => probe.remove())
+    return signature
+  })
+}
+
 // `@core` is REQUIRED, not decorative: `playwright.config.ts`'s suite registry
 // maps `core` to /@core/, and a spec carrying no lane tag executes in NO lane
 // and nobody notices — the registry's own comment records `a11y-sweep.spec.ts`
@@ -109,6 +232,85 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
     packaged = await launchPackagedApp({ timeoutMs: BOOT_TIMEOUT })
     const url = await expectServerReachable(packaged, 45_000)
     expect(url).toMatch(/^https?:\/\//)
+  })
+
+  test("Usage opens on the Codex page canvas and every top-level view remains reachable", async () => {
+    const dir = await makeScratchWorkspace("usage")
+    packaged = await launchPackagedApp({ timeoutMs: BOOT_TIMEOUT })
+    const serverBase = new URL(await expectServerReachable(packaged, 45_000)).origin
+    const workspaceId = await registerWorkspace(serverBase, dir)
+    await openWorkspaceProject(packaged, dir, workspaceId)
+
+    const trigger = packaged.page.getByTestId("rail-account-trigger")
+    await expect(trigger).toBeVisible()
+    await trigger.click()
+    await packaged.page.getByRole("menuitem", { name: "Usage", exact: true }).click()
+
+    const dialog = packaged.page.getByRole("dialog", { name: "Usage" })
+    await expect(dialog).toBeVisible({ timeout: 30_000 })
+    await expect(dialog).toHaveClass(/workspace-page-dialog/)
+    await expect(dialog).toHaveClass(/workspace-page-dialog-shell/)
+    const canvas = await dialog.evaluate((element) => {
+      const probe = document.createElement("div")
+      probe.style.background = "var(--background-base)"
+      element.append(probe)
+      const expected = getComputedStyle(probe).backgroundColor
+      probe.remove()
+      const actual = getComputedStyle(element).backgroundColor
+      return { actual, expected }
+    })
+    expect(canvas.actual).toBe(canvas.expected)
+
+    for (const name of ["Usage limits", "Usage through Claxedo", "Total local usage"]) {
+      await expect(dialog.getByRole("button", { name })).toBeVisible()
+    }
+    await dialog.getByRole("button", { name: "Usage limits" }).click()
+    await expect(dialog.getByRole("button", { name: "Usage limits" })).toHaveAttribute("aria-pressed", "true")
+    await dialog.getByRole("button", { name: "Total local usage" }).click()
+    await expect(dialog.getByRole("button", { name: "Total local usage" })).toHaveAttribute("aria-pressed", "true")
+    await expect(dialog.getByRole("heading", { name: "By provider" })).toBeVisible({ timeout: 45_000 })
+    await dialog.getByRole("button", { name: "Usage through Claxedo" }).click()
+    await expect(dialog.getByRole("button", { name: "Usage through Claxedo" })).toHaveAttribute("aria-pressed", "true")
+    const usageDesign = await workspacePageDesignSignature(dialog)
+
+    await packaged.page.keyboard.press("Escape")
+    await expect(dialog).toHaveCount(0)
+    await expect(trigger).toBeFocused()
+
+    await trigger.click()
+    await packaged.page.getByRole("menuitem", { name: "Diagnostics", exact: true }).click()
+    const diagnostics = packaged.page.getByRole("dialog", { name: "Local performance diagnostics" })
+    await expect(diagnostics).toBeVisible({ timeout: 30_000 })
+    await expect(diagnostics).toHaveClass(/workspace-page-dialog-shell/)
+    await expect(diagnostics.getByRole("button", { name: "Activity" })).toHaveAttribute("aria-pressed", "true")
+    await diagnostics.getByRole("button", { name: "Session memory", exact: true }).click()
+    await expect(diagnostics.getByRole("button", { name: "Session memory", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    )
+    await diagnostics.getByRole("button", { name: "Activity" }).click()
+    await expect(diagnostics.locator(".workspace-data-metric-strip")).toBeVisible()
+    await expect(diagnostics.locator(".workspace-data-chart")).toBeVisible()
+    const diagnosticsTabs = await diagnostics.locator(".claxedo-diagnostics-tabs button").evaluateAll((buttons) =>
+      buttons.map((button) => {
+        const element = button as HTMLElement
+        const bounds = element.getBoundingClientRect()
+        return {
+          left: bounds.left,
+          right: bounds.right,
+          clientWidth: element.clientWidth,
+          scrollWidth: element.scrollWidth,
+        }
+      }),
+    )
+    expect(diagnosticsTabs.every((button) => button.scrollWidth <= button.clientWidth + 1)).toBe(true)
+    expect(diagnosticsTabs.slice(1).every((button, index) => diagnosticsTabs[index]!.right <= button.left)).toBe(true)
+    const diagnosticsDesign = await workspacePageDesignSignature(diagnostics)
+    expect(diagnosticsDesign).toEqual(usageDesign)
+
+    await packaged.page.keyboard.press("Escape")
+    await expect(diagnostics).toHaveCount(0)
+    await expect(trigger).toBeFocused()
   })
 
   /**
@@ -176,10 +378,9 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
     // produces the toast this test exists to catch. Mirrors the plan's own
     // "Error-toast audit" sampling window (t=3/8/15/25s) rather than reading
     // immediately after first paint.
-    await expect(
-      packaged.page.locator("[data-claxedo]"),
-      "shell never painted during boot",
-    ).toBeVisible({ timeout: 30_000 })
+    await expect(packaged.page.locator("[data-claxedo]"), "shell never painted during boot").toBeVisible({
+      timeout: 30_000,
+    })
     await expectServerReachable(packaged, 45_000)
     await packaged.page.waitForTimeout(5_000)
 
@@ -234,11 +435,9 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
     await execFileAsync("git", ["init", "-b", "main"], { cwd: dir })
     await fs.writeFile(path.join(dir, "README.md"), `desktop-unsigned-embedded fixture: ${label}\n`)
     await execFileAsync("git", ["-c", "user.email=e2e@test.com", "-c", "user.name=e2e", "add", "-A"], { cwd: dir })
-    await execFileAsync(
-      "git",
-      ["-c", "user.email=e2e@test.com", "-c", "user.name=e2e", "commit", "-m", "init"],
-      { cwd: dir },
-    )
+    await execFileAsync("git", ["-c", "user.email=e2e@test.com", "-c", "user.name=e2e", "commit", "-m", "init"], {
+      cwd: dir,
+    })
     return dir
   }
 
@@ -281,15 +480,20 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
   }
 
   async function installClaudeNetworkGuard(configDir: string, expectedBaseUrl: string) {
-    const discoveredClaude = process.platform === "win32"
-      ? (await execFileAsync("where.exe", ["claude.cmd"])).stdout.split(/\r?\n/).find(Boolean)?.trim() ?? ""
-      : (await execFileAsync("which", ["claude"])).stdout.trim()
-    const realClaude = process.platform === "win32"
-      ? path.join(path.dirname(discoveredClaude), "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe")
-      : discoveredClaude
+    const discoveredClaude =
+      process.platform === "win32"
+        ? ((await execFileAsync("where.exe", ["claude.cmd"])).stdout.split(/\r?\n/).find(Boolean)?.trim() ?? "")
+        : (await execFileAsync("which", ["claude"])).stdout.trim()
+    const realClaude =
+      process.platform === "win32"
+        ? path.join(path.dirname(discoveredClaude), "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe")
+        : discoveredClaude
     expect(realClaude, "the real Claude CLI is required for the native-harness E2E").toBeTruthy()
     await expect(
-      fs.stat(realClaude).then((stat) => stat.isFile()).catch(() => false),
+      fs
+        .stat(realClaude)
+        .then((stat) => stat.isFile())
+        .catch(() => false),
       `the real Claude CLI entry point does not exist at ${realClaude}`,
     ).resolves.toBe(true)
     const capture = path.join(configDir, "spawn-env.jsonl")
@@ -297,7 +501,9 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
     // process.execPath. It treats .cjs as a native executable; that happens to
     // work via a shebang on POSIX, but fails before execution on Windows.
     const wrapper = path.join(configDir, "claude-e2e-guard.js")
-    await fs.writeFile(wrapper, `#!/usr/bin/env node
+    await fs.writeFile(
+      wrapper,
+      `#!/usr/bin/env node
 const fs = require("node:fs")
 const { spawn } = require("node:child_process")
 const capture = ${JSON.stringify(capture)}
@@ -320,7 +526,9 @@ const child = spawn(${JSON.stringify(realClaude)}, process.argv.slice(2), { env:
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, () => child.kill(signal))
 child.on("error", (error) => { console.error(error); process.exit(1) })
 child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : process.exit(code ?? 1))
-`, { mode: 0o755 })
+`,
+      { mode: 0o755 },
+    )
     return { wrapper, capture }
   }
 
@@ -457,9 +665,13 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     // letting this test pick an OpenCode Sonnet while claiming native Claude.
     // Reopen Harness and require the Native SDK row itself to own selection.
     await picker.locator('[data-slot="harness-picker-section"]').first().click()
-    await expect(nativeClaude, "native Claude never became the selected harness").toHaveAttribute("aria-current", "true", {
-      timeout: 45_000,
-    })
+    await expect(nativeClaude, "native Claude never became the selected harness").toHaveAttribute(
+      "aria-current",
+      "true",
+      {
+        timeout: 45_000,
+      },
+    )
     await picker.locator('[data-slot="harness-picker-section"]').nth(1).click()
     await expect(control, "native Claude model catalog never resolved").not.toContainText(
       /Loading models|Select model|^$/,
@@ -468,8 +680,13 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     const search = page.getByRole("textbox", { name: /Search models/i }).last()
     await expect(search).toBeVisible({ timeout: 10_000 })
     await search.fill("Sonnet")
-    const model = page.locator('[data-component="harness-model-picker"]').getByText(/Sonnet/i).first()
-    await expect(model, "the real Claude catalog did not expose an explicit Sonnet model").toBeVisible({ timeout: 15_000 })
+    const model = page
+      .locator('[data-component="harness-model-picker"]')
+      .getByText(/Sonnet/i)
+      .first()
+    await expect(model, "the real Claude catalog did not expose an explicit Sonnet model").toBeVisible({
+      timeout: 15_000,
+    })
     await model.click()
     await expect(control).toContainText(/Sonnet/i, { timeout: 10_000 })
   }
@@ -498,9 +715,9 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
   }
 
   async function currentSessionIds(page: Page): Promise<string[]> {
-    const ids = await page.locator(RAIL_SELECTORS.allSessionRows).evaluateAll((els) =>
-      els.map((el) => el.getAttribute("data-session-id")),
-    )
+    const ids = await page
+      .locator(RAIL_SELECTORS.allSessionRows)
+      .evaluateAll((els) => els.map((el) => el.getAttribute("data-session-id")))
     return ids.filter((id): id is string => !!id)
   }
 
@@ -520,18 +737,21 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
       const found = ids.find((id) => !before.includes(id))
       if (found) return found
       if (Date.now() > deadline) {
-        const inventory = await page.evaluate(async () => {
-          const serverUrl = performance.getEntriesByType("resource")
-            .map((entry) => entry.name)
-            .find((url) => /^https?:/.test(url) && /\/api\/claxedo\//.test(url))
-          if (!serverUrl) return { error: "no local-server resource URL was observed" }
-          const response = await fetch(new URL("/api/claxedo/session", serverUrl))
-          return {
-            url: response.url,
-            status: response.status,
-            body: await response.text(),
-          }
-        }).catch((error) => ({ error: String(error) }))
+        const inventory = await page
+          .evaluate(async () => {
+            const serverUrl = performance
+              .getEntriesByType("resource")
+              .map((entry) => entry.name)
+              .find((url) => /^https?:/.test(url) && /\/api\/claxedo\//.test(url))
+            if (!serverUrl) return { error: "no local-server resource URL was observed" }
+            const response = await fetch(new URL("/api/claxedo/session", serverUrl))
+            return {
+              url: response.url,
+              status: response.status,
+              body: await response.text(),
+            }
+          })
+          .catch((error) => ({ error: String(error) }))
         throw new Error(
           `GATING: no new rail session row appeared within ${timeoutMs}ms (defects 1/2/7: file:// API base, ` +
             `dropped invalidation, or no event stream). Rows seen: ${JSON.stringify(ids)}. ` +
@@ -651,7 +871,8 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     // the real wire (plan line 108), not merely inferred from the DOM.
     // Registered BEFORE the click so the response can't race the listener.
     const sessionPostSeen = packaged.page.waitForResponse(
-      (res) => res.request().method() === "POST" && new URL(res.url()).pathname.endsWith("/session") && res.status() === 201,
+      (res) =>
+        res.request().method() === "POST" && new URL(res.url()).pathname.endsWith("/session") && res.status() === 201,
       { timeout: 20_000 },
     )
     await submitDraft(packaged.page)
@@ -684,7 +905,11 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
       "the existing session can continue but its harness/model label fell back to Select model",
     ).not.toContainText(/Loading models|Select model|^$/, { timeout: 5_000 })
     const marker2 = "B4_MARKER"
-    await composeText(packaged.page, composerInput(packaged.page), `Reply with exactly this one token, nothing else: ${marker2}`)
+    await composeText(
+      packaged.page,
+      composerInput(packaged.page),
+      `Reply with exactly this one token, nothing else: ${marker2}`,
+    )
     await expect(
       visibleSubmit(packaged.page),
       'defect 9 / open issue #16: the second send is refused ("Select an agent and model")',
@@ -822,7 +1047,10 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     await composeText(packaged.page, input, "Reply with exactly this one token, nothing else: B8_MARK")
     await submitDraft(packaged.page)
     const sessionId = await waitForNewSessionId(packaged.page, before)
-    await expectAssistantReplyVisible(packaged.page, "B8_MARK", { spec: "desktop-unsigned-embedded", scenario: "b8-seed" })
+    await expectAssistantReplyVisible(packaged.page, "B8_MARK", {
+      spec: "desktop-unsigned-embedded",
+      scenario: "b8-seed",
+    })
     const titleBefore = await expectRailTitleSettled({ page: packaged.page, sessionId })
 
     await packaged.page.reload()
@@ -877,7 +1105,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     // stuck past 5s.
     await expect(
       control,
-      'open issue #15: draft never resolved a concrete model past 5s with no reload',
+      "open issue #15: draft never resolved a concrete model past 5s with no reload",
     ).not.toContainText(/Loading models|Select model|^$/, { timeout: 5_000 })
 
     await composeText(packaged.page, input, "Reply with exactly this one token, nothing else: C1_MARK")
@@ -947,21 +1175,25 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
       harness: { id: "claude", access: "native" },
       model: { providerID: "claude-sdk" },
     })
-    await expectGuardedClaudeTraffic("real Claude native harness never reached the redirected Anthropic Messages endpoint")
+    await expectGuardedClaudeTraffic(
+      "real Claude native harness never reached the redirected Anthropic Messages endpoint",
+    )
     const spawnEnvironments = (await fs.readFile(guardedClaude.capture, "utf8"))
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line) as Record<string, unknown>)
     expect(spawnEnvironments.length).toBeGreaterThan(0)
-    expect(spawnEnvironments).toEqual(spawnEnvironments.map(() => ({
-      baseUrl: scripted!.url,
-      apiBaseUrl: scripted!.url,
-      apiKeyFixture: true,
-      authTokenFixture: true,
-      oauthTokenFixture: true,
-      adminEnvUnionDisabled: true,
-      configDir: claudeConfigDir,
-    })))
+    expect(spawnEnvironments).toEqual(
+      spawnEnvironments.map(() => ({
+        baseUrl: scripted!.url,
+        apiBaseUrl: scripted!.url,
+        apiKeyFixture: true,
+        authTokenFixture: true,
+        oauthTokenFixture: true,
+        adminEnvUnionDisabled: true,
+        configDir: claudeConfigDir,
+      })),
+    )
     expect(scripted.counts().chat).toBe(0)
     expect(scripted.counts().responses).toBe(0)
     await expect(packaged.page.locator('[data-action="prompt-submit"]:visible').last()).toHaveAttribute(
@@ -985,7 +1217,9 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     await packaged.page.waitForLoadState("domcontentloaded")
     await expectRailRowVisible({ page: packaged.page, sessionId })
     await packaged.page.locator(RAIL_SELECTORS.sessionRow(sessionId)).click()
-    await expect(model, "reload replaced the persisted real Claude model").toHaveText(modelLabelPattern, { timeout: 10_000 })
+    await expect(model, "reload replaced the persisted real Claude model").toHaveText(modelLabelPattern, {
+      timeout: 10_000,
+    })
     await expect(control).not.toContainText(/Loading models|Select model|^$/)
     await control.click()
     const picker = packaged.page.locator('[data-component="harness-model-picker"]')
@@ -1001,7 +1235,9 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
       "Reply with exactly this one token, nothing else: C4_CLAUDE_RELOAD",
     )
     await submitDraft(packaged.page)
-    await expectGuardedClaudeTraffic("the real Claude native harness did not reach the scripted Messages endpoint after reload")
+    await expectGuardedClaudeTraffic(
+      "the real Claude native harness did not reach the scripted Messages endpoint after reload",
+    )
     expect(scripted.counts().chat).toBe(0)
     expect(scripted.counts().responses).toBe(0)
     await expectAssistantReplyVisible(packaged.page, "C4_CLAUDE_RELOAD", {
@@ -1115,9 +1351,10 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     // mocked env snapshot.
     const expectedPort = new URL(serverBase).port
     await pane.click()
-    const portEchoCommand = process.platform === "win32"
-      ? "echo CLAXEDO_PORT_CHECK=%CLAXEDO_PORT%"
-      : 'echo "CLAXEDO_PORT_CHECK=$CLAXEDO_PORT"'
+    const portEchoCommand =
+      process.platform === "win32"
+        ? "echo CLAXEDO_PORT_CHECK=%CLAXEDO_PORT%"
+        : 'echo "CLAXEDO_PORT_CHECK=$CLAXEDO_PORT"'
     await packaged.page.keyboard.type(portEchoCommand, { delay: 15 })
     await packaged.page.keyboard.press("Enter")
     await expect(

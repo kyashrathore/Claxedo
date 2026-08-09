@@ -35,7 +35,10 @@ import { usageDate } from "./sandboxLeases"
  * who needs more should narrow the window, which is what the index rewards.
  */
 const USAGE_ROLLUP_ROW_LIMIT = 5_000
-const MAX_DASHBOARD_RANGE_MS = 90 * 86_400_000
+// A local 90-calendar-day range can span an extra hour across a fall-back DST
+// transition. Keep a small explicit allowance while still rejecting 91 days.
+const MAX_DASHBOARD_RANGE_MS = 90 * 86_400_000 + 2 * 3_600_000
+const MAX_DASHBOARD_CALENDAR_DAYS = 91
 
 const turnStatus = v.union(v.literal("ok"), v.literal("error"))
 const sourcePlanningSessionPrefix = "ses_workgraph_source_plan_job_"
@@ -230,13 +233,14 @@ async function adjustDaily(ctx: { db: any }, identity: { org_id: string; user_id
   else await ctx.db.patch(existing._id, { ...next, updated_at: now })
 }
 
-const breakdownDimensions = ["harness", "model", "location", "session", "workspace"] as const
+const breakdownDimensions = ["provider", "harness", "model", "location", "session", "workspace"] as const
 type BreakdownDimension = (typeof breakdownDimensions)[number]
 
 function breakdownValue(fact: RevisionFact, dimension: BreakdownDimension) {
+  if (dimension === "provider") return fact.provider_id
   if (dimension === "harness") return fact.harness
   if (dimension === "model") return `${fact.provider_id}/${fact.model_id}`
-  if (dimension === "location") return fact.location
+  if (dimension === "location") return fact.location === "local" || fact.location === "user-hosted" ? "local" : "cloud"
   if (dimension === "session") return fact.session_ref
   return fact.workspace_id ?? "unavailable"
 }
@@ -439,9 +443,15 @@ export const usageDashboardPage = serviceQuery({
     until: v.number(),
     time_zone: v.string(),
     dimension: v.optional(v.union(
-      v.literal("harness"), v.literal("model"), v.literal("location"),
+      v.literal("provider"), v.literal("harness"), v.literal("model"), v.literal("location"),
       v.literal("session"), v.literal("workspace"),
     )),
+    filter_provider: v.optional(v.string()),
+    filter_harness: v.optional(v.string()),
+    filter_model: v.optional(v.string()),
+    filter_location: v.optional(v.string()),
+    filter_session: v.optional(v.string()),
+    filter_workspace: v.optional(v.string()),
     cursor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -477,23 +487,62 @@ export const usageDashboardPage = serviceQuery({
     const totals = empty()
     const daily = new Map<string, ReturnType<typeof empty>>()
     const models = new Map<string, ReturnType<typeof empty>>()
+    const locations = new Map<string, ReturnType<typeof empty>>()
     const breakdown = new Map<string, ReturnType<typeof empty>>()
+    const dailyModels = new Map<string, { date: string; value: string; totals: ReturnType<typeof empty> }>()
+    const dailyBreakdown = new Map<string, { date: string; value: string; totals: ReturnType<typeof empty> }>()
+    const breakdownModels = new Map<string, { group: string; value: string; totals: ReturnType<typeof empty> }>()
+    const filters = {
+      provider: new Set<string>(), harness: new Set<string>(), model: new Set<string>(), location: new Set<string>(),
+      session: new Set<string>(), workspace: new Set<string>(),
+    }
+    const facts: RevisionFact[] = []
     for (const row of result.page) {
       const fact = legacyRevision(row)
+      const modelValue = `${fact.provider_id}/${fact.model_id}`
+      const locationValue = fact.location === "local" || fact.location === "user-hosted" ? "local" : "cloud"
+      filters.provider.add(fact.provider_id)
+      filters.harness.add(fact.harness)
+      filters.model.add(modelValue)
+      filters.location.add(locationValue)
+      filters.session.add(fact.session_ref)
+      filters.workspace.add(fact.workspace_id ?? "unavailable")
+      if ((args.filter_provider && fact.provider_id !== args.filter_provider)
+        || (args.filter_harness && fact.harness !== args.filter_harness)
+        || (args.filter_model && modelValue !== args.filter_model)
+        || (args.filter_location && locationValue !== args.filter_location)
+        || (args.filter_session && fact.session_ref !== args.filter_session)
+        || (args.filter_workspace && (fact.workspace_id ?? "unavailable") !== args.filter_workspace)) continue
+      facts.push(fact)
       const delta = contribution(fact, 1)
       add(totals, delta)
       const date = formatDate.format(new Date(fact.observed_at))
       const day = daily.get(date) ?? empty()
       add(day, delta)
       daily.set(date, day)
-      const model = models.get(`${fact.provider_id}/${fact.model_id}`) ?? empty()
+      const model = models.get(modelValue) ?? empty()
       add(model, delta)
-      models.set(`${fact.provider_id}/${fact.model_id}`, model)
+      models.set(modelValue, model)
+      const location = locations.get(locationValue) ?? empty()
+      add(location, delta)
+      locations.set(locationValue, location)
+      const dailyModelKey = `${date}\u0000${modelValue}`
+      const dailyModel = dailyModels.get(dailyModelKey) ?? { date, value: modelValue, totals: empty() }
+      add(dailyModel.totals, delta)
+      dailyModels.set(dailyModelKey, dailyModel)
       if (args.dimension) {
         const value = breakdownValue(fact, args.dimension)
         const grouped = breakdown.get(value) ?? empty()
         add(grouped, delta)
         breakdown.set(value, grouped)
+        const breakdownModelKey = `${value}\u0000${modelValue}`
+        const breakdownModel = breakdownModels.get(breakdownModelKey) ?? { group: value, value: modelValue, totals: empty() }
+        add(breakdownModel.totals, delta)
+        breakdownModels.set(breakdownModelKey, breakdownModel)
+        const dailyBreakdownKey = `${date}\u0000${value}`
+        const dailyGroup = dailyBreakdown.get(dailyBreakdownKey) ?? { date, value, totals: empty() }
+        add(dailyGroup.totals, delta)
+        dailyBreakdown.set(dailyBreakdownKey, dailyGroup)
       }
     }
     const rows = (source: Map<string, ReturnType<typeof empty>>) => [...source]
@@ -510,7 +559,22 @@ export const usageDashboardPage = serviceQuery({
         .map(([date, values]) => ({ date, ...values }))
         .toSorted((a, b) => a.date.localeCompare(b.date)),
       models: groupedRows(models),
+      locations: groupedRows(locations),
       breakdown: groupedRows(breakdown),
+      daily_models: [...dailyModels.values()]
+        .map((item) => ({ date: item.date, value: item.value, ...item.totals }))
+        .toSorted((a, b) => a.date.localeCompare(b.date) || a.value.localeCompare(b.value)),
+      daily_breakdown: [...dailyBreakdown.values()]
+        .map((item) => ({ date: item.date, value: item.value, ...item.totals }))
+        .toSorted((a, b) => a.date.localeCompare(b.date) || a.value.localeCompare(b.value)),
+      breakdown_models: [...breakdownModels.values()]
+        .map((item) => ({ group: item.group, value: item.value, ...item.totals }))
+        .toSorted((a, b) => a.group.localeCompare(b.group) || a.value.localeCompare(b.value)),
+      filters: Object.fromEntries(Object.entries(filters).map(([key, values]) => [key, [...values].toSorted()])),
+      // The local composer needs turn identities to replace a pending newer
+      // revision instead of adding it on top of this central contribution.
+      // These are the same bounded facts already read for this page.
+      facts,
       next: result.isDone ? undefined : result.continueCursor,
     }
   },
@@ -523,7 +587,7 @@ export const usageBreakdown = serviceQuery({
     since: v.number(),
     until: v.number(),
     dimension: v.union(
-      v.literal("harness"), v.literal("model"), v.literal("location"),
+      v.literal("provider"), v.literal("harness"), v.literal("model"), v.literal("location"),
       v.literal("session"), v.literal("workspace"),
     ),
     after: v.optional(v.string()),
@@ -539,14 +603,18 @@ export const usageBreakdown = serviceQuery({
     const from = usageDate(args.since)
     const to = usageDate(args.until)
     const source = await ctx.db.query("llm_usage_breakdown_daily")
-      .withIndex("by_org_user_dimension_value_date", (q: any) => q
-        .eq("org_id", args.org_id).eq("user_id", args.user_id).eq("dimension", args.dimension))
+      .withIndex("by_org_user_dimension_value_date", (q: any) => {
+        const range = q.eq("org_id", args.org_id).eq("user_id", args.user_id).eq("dimension", args.dimension)
+        return args.after ? range.gt("value", args.after) : range.gte("value", "")
+      })
       .filter((q: any) => q.and(
-        args.after ? q.gt(q.field("value"), args.after) : q.gte(q.field("value"), ""),
         q.gte(q.field("date"), from),
         q.lte(q.field("date"), to),
       ))
-      .take(5000)
+      // There is at most one bucket per value/date. Reading enough rows for
+      // `limit + 1` complete values makes the value cursor exact at the full
+      // 90-day API range without an unbounded collect.
+      .take((limit + 1) * MAX_DASHBOARD_CALENDAR_DAYS)
     const fields = ["turn_count", "input_tokens", "output_tokens", "reasoning_tokens", "cache_read_tokens", "cache_write_tokens", "known_token_count", "unknown_token_count"] as const
     const grouped = new Map<string, Record<string, number>>()
     for (const row of source) {
@@ -909,36 +977,28 @@ export const rollupSandboxUsageDaily = cronMutation({
 // ---------------------------------------------------------------------------
 
 /** Expand/backfill legacy completed rows before retention or new readers rely on projections. */
-export const backfillLegacyLlmUsage = cronMutation({
-  args: { limit: v.optional(v.number()), now: v.optional(v.number()) },
-  handler: async (ctx, args) => {
-    const now = args.now ?? Date.now()
-    const pending = await ctx.db.query("llm_usage_events")
-      .withIndex("by_usage_rolled_up_at", (q: any) => q.eq("usage_rolled_up_at", undefined))
-      .take(args.limit ?? 100)
-    for (const row of pending) {
-      const fact = legacyRevision(row)
-      assertRevision(fact)
-      const identity = { org_id: row.org_id, user_id: row.user_id }
-      const hash = fingerprint(fact)
-      await adjustDaily(ctx, identity, fact, 1, now)
-      await adjustBreakdowns(ctx, identity, fact, 1, now)
-      await ctx.db.patch(row._id, {
-        ...fact,
-        payload_hash: hash,
-        usage_rolled_up_at: now,
-        updated_at: now,
-      })
-      const revision = await ctx.db.query("llm_usage_revisions")
-        .withIndex("by_turn_revision", (q: any) => q
-          .eq("org_id", row.org_id).eq("session_ref", fact.session_ref)
-          .eq("message_id", fact.message_id).eq("revision", fact.revision))
-        .unique()
-      if (!revision) await ctx.db.insert("llm_usage_revisions", { ...identity, ...fact, payload_hash: hash, created_at: now })
-    }
-    return { backfilled: pending.length }
-  },
-})
+export async function migrateLegacyLlmUsageRow(ctx: { db: any }, row: any, now = Date.now()) {
+  if (row.usage_rolled_up_at !== undefined) return false
+  const fact = legacyRevision(row)
+  assertRevision(fact)
+  const identity = { org_id: row.org_id, user_id: row.user_id }
+  const hash = fingerprint(fact)
+  await adjustDaily(ctx, identity, fact, 1, now)
+  await adjustBreakdowns(ctx, identity, fact, 1, now)
+  await ctx.db.patch(row._id, {
+    ...fact,
+    payload_hash: hash,
+    usage_rolled_up_at: now,
+    updated_at: now,
+  })
+  const revision = await ctx.db.query("llm_usage_revisions")
+    .withIndex("by_turn_revision", (q: any) => q
+      .eq("org_id", row.org_id).eq("session_ref", fact.session_ref)
+      .eq("message_id", fact.message_id).eq("revision", fact.revision))
+    .unique()
+  if (!revision) await ctx.db.insert("llm_usage_revisions", { ...identity, ...fact, payload_hash: hash, created_at: now })
+  return true
+}
 
 /**
  * Prune raw fact rows past the retention window; rollups are kept.
@@ -959,20 +1019,16 @@ export const pruneUsageFacts = cronMutation({
     const cutoff = now - args.retain_ms
     const limit = args.limit ?? 1000
 
-    const leaseFacts = (await ctx.db
+    const leaseFacts = await ctx.db
       .query("sandbox_lease_events")
-      .withIndex("by_created_at", (q) => q.lt("created_at", cutoff))
-      .collect())
-      .filter((row) => row.rolled_up_at !== undefined)
-      .slice(0, limit)
+      .withIndex("by_rolled_up_at", (q) => q.gte("rolled_up_at", 0).lt("rolled_up_at", cutoff))
+      .take(limit)
     for (const row of leaseFacts) await ctx.db.delete(row._id)
 
-    const turnFacts = (await ctx.db
+    const turnFacts = await ctx.db
       .query("llm_usage_events")
-      .withIndex("by_created_at", (q) => q.lt("created_at", cutoff))
-      .collect())
-      .filter((row) => row.usage_rolled_up_at !== undefined)
-      .slice(0, limit)
+      .withIndex("by_usage_rolled_up_at", (q) => q.gte("usage_rolled_up_at", 0).lt("usage_rolled_up_at", cutoff))
+      .take(limit)
     for (const row of turnFacts) await ctx.db.delete(row._id)
 
     const revisions = (await ctx.db

@@ -2,4 +2,3 @@ export { DialogEditProject } from "../../features/workspaces/ui/dialog-edit-proj
 export { DialogDeleteSession, type DialogDeleteSessionProps } from "../../features/session/ui/components/dialogs/delete-session-dialog"
 export { DialogRecoverWorkspace, type DialogRecoverWorkspaceProps } from "../../features/workspaces/ui/dialogs/recover-workspace-dialog"
 export { DialogDeleteWorkspace, type DialogDeleteWorkspaceProps } from "../../features/workspaces/ui/dialogs/delete-workspace-dialog"
-export { DialogUsage } from "./usage"

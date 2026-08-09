@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest"
 import fs from "node:fs"
 import path from "node:path"
-import { normalizeRuntimeLeaseLegacyFields, run } from "./migrations"
+import { backfillLegacyLlmUsage, normalizeRuntimeLeaseLegacyFields, run } from "./migrations"
 
 // D14 — Convex schema evolution discipline (ADR 016 §5): the MIGRATE step of expand-migrate-contract runs exclusively
 // through the @convex-dev/migrations component. This test pins the mechanism:
@@ -21,6 +21,14 @@ describe("Convex migrations discipline (D14)", () => {
   test("migration functions are internal: runnable only with deploy credentials, never by clients", () => {
     expect((run as { isInternal?: boolean }).isInternal).toBe(true)
     expect((normalizeRuntimeLeaseLegacyFields as { isInternal?: boolean }).isInternal).toBe(true)
+    expect((backfillLegacyLlmUsage as { isInternal?: boolean }).isInternal).toBe(true)
+  })
+
+  test("usage ledger expansion backfills through the migration component", () => {
+    const source = fs.readFileSync(path.join(convexRoot, "migrations.ts"), "utf8")
+    expect(source).toContain("export const backfillLegacyLlmUsage = migrations.define")
+    expect(source).toContain('table: "llm_usage_events"')
+    expect(source).toContain("migrateLegacyLlmUsageRow")
   })
 
   test("migration #001 retro-registers the runtime_leases legacy-field backfill", () => {

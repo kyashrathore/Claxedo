@@ -13,6 +13,14 @@ export type SessionHarness = NonNullable<UserAgentConfig["harness"]>
 export type SessionConfig = AgentSessionConfig
 export type SessionConfigUpdate = AgentSessionConfigUpdate
 
+export function meteringHarnessId(harness: SessionHarness) {
+  if (harness.access === "acp") return `${harness.id}-acp`
+  if (harness.id === "claude") return "claude-sdk"
+  if (harness.id === "codex") return "codex-app-server"
+  if (harness.id === "cursor") return "cursor-sdk"
+  return harness.id
+}
+
 type Row = {
   workspaceId: string
   sessionId: string

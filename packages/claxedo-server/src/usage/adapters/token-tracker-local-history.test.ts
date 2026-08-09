@@ -2,8 +2,10 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { scanTokenTrackerLocalHistory } from "./token-tracker-local-history"
-import { createUsageProvenanceClassifier } from "../provenance"
+import { gunzipSync } from "node:zlib"
+import Database from "better-sqlite3"
+import { scanTokenTrackerLocalHistory } from "@claxedo/local-server/self-hosted-execution"
+import { createUsageProvenanceClassifier } from "@claxedo/server-core/usage/provenance"
 
 const roots: string[] = []
 afterEach(async () => {
@@ -53,35 +55,315 @@ describe("TokenTracker embedded local history", () => {
       since: observedAt - 1_000,
       until: observedAt + 1_000,
       sources: ["claude"],
+      classificationKey: "fixture-overlap-v1",
       classify,
     })
     expect(snapshot.rows).toEqual([expect.objectContaining({
       app: "claude",
       nativeSessionId: "direct",
-      tokens: expect.objectContaining({ input: 10, output: 20, cacheRead: 3 }),
+      tokens: { input: 10, output: 20, reasoning: null, cacheRead: 3, cacheWrite: null },
     })])
     expect(snapshot.classifiedClaxedo).toBe(1)
     expect(snapshot.unclassified).toBe(0)
     expect(JSON.stringify(snapshot)).not.toContain("secret-project")
     expect(JSON.stringify(snapshot)).not.toContain("private response")
     expect(fetchSpy).not.toHaveBeenCalled()
-    await expect(fs.stat(stateDir)).rejects.toThrow()
+    await expect(fs.stat(stateDir)).resolves.toMatchObject({ mode: expect.any(Number) })
   })
 
-  test("reports a corrupt source as degraded while unsupported sources stay quarantined", async () => {
+  test("serializes identical scans and reuses the Claxedo-owned cache", async () => {
     const { root, observedAt } = await fixture()
-    await fs.writeFile(path.join(root, ".claude", "projects", "fixture", "broken.jsonl"), "not-json\n")
+    const stateDir = path.join(root, "state")
+    const classify = vi.fn(() => "external" as const)
+    const input = {
+      sourceHome: root,
+      stateDir,
+      since: observedAt - 1_000,
+      until: observedAt + 1_000,
+      sources: ["claude"],
+      classificationKey: "fixture-direct-v1",
+      classify,
+    }
+    const [first, concurrent] = await Promise.all([
+      scanTokenTrackerLocalHistory(input),
+      scanTokenTrackerLocalHistory(input),
+    ])
+    expect(concurrent).toEqual(first)
+    expect(classify).toHaveBeenCalledTimes(2)
+
+    classify.mockClear()
+    await expect(scanTokenTrackerLocalHistory(input)).resolves.toEqual(first)
+    expect(classify).not.toHaveBeenCalled()
+    await expect(scanTokenTrackerLocalHistory({ ...input, refresh: true })).resolves.toEqual(first)
+    expect(classify).toHaveBeenCalledTimes(2)
+
+    const cursorText = gunzipSync(await fs.readFile(path.join(stateDir, "embedded-history-cursors-v6.json.gz"))).toString("utf8")
+    const cursor = JSON.parse(cursorText) as { version: number; files: Record<string, unknown> }
+    expect(cursor.version).toBe(6)
+    expect(Object.keys(cursor.files)).toHaveLength(2)
+    expect(Object.keys(cursor.files).every((key) => /^[a-f0-9]{64}$/.test(key))).toBe(true)
+    expect(cursorText).not.toContain(root)
+    expect(cursorText).not.toContain("secret-project")
+    expect(cursorText).not.toContain("private response")
+  })
+
+  test("refreshes a changed file while reusing unchanged file cursors within a numeric warm budget", async () => {
+    const { root, observedAt } = await fixture()
+    const stateDir = path.join(root, "state")
+    const input = {
+      sourceHome: root,
+      stateDir,
+      since: observedAt - 1_000,
+      until: observedAt + 1_000,
+      sources: ["claude"],
+      classificationKey: "fixture-incremental-v1",
+      classify: () => "external" as const,
+    }
+    await scanTokenTrackerLocalHistory(input)
+    const direct = path.join(root, ".claude", "projects", "fixture", "direct.jsonl")
+    await fs.appendFile(direct, `${JSON.stringify({
+      sessionId: "direct",
+      timestamp: new Date(observedAt).toISOString(),
+      message: { role: "assistant", model: "claude-sonnet-4-5", usage: { input_tokens: 7, output_tokens: 1 } },
+    })}\n`)
+
+    const startedAt = performance.now()
+    const refreshed = await scanTokenTrackerLocalHistory({ ...input, refresh: true })
+    const elapsedMs = performance.now() - startedAt
+    expect(refreshed.rows.find((row) => row.nativeSessionId === "direct")?.tokens).toMatchObject({ input: 17, output: 21 })
+    expect(elapsedMs).toBeLessThan(1_000)
+  })
+
+  test("reports mixed valid and corrupt JSONL as degraded", async () => {
+    const { root, observedAt } = await fixture()
+    await fs.appendFile(path.join(root, ".claude", "projects", "fixture", "direct.jsonl"), "not-json\n")
     const snapshot = await scanTokenTrackerLocalHistory({
       sourceHome: root,
       stateDir: path.join(root, "state"),
       since: observedAt - 1_000,
       until: observedAt + 1_000,
-      sources: ["claude", "cursor"],
+      sources: ["claude"],
+      classificationKey: "fixture-corrupt-v1",
       classify: () => "external",
     })
-    expect(snapshot.coverage).toEqual([
-      expect.objectContaining({ source: "claude", status: "degraded" }),
-      expect.objectContaining({ source: "cursor", status: "unsupported" }),
-    ])
+    expect(snapshot.rows).toHaveLength(2)
+    expect(snapshot.coverage).toEqual([expect.objectContaining({ source: "claude", status: "degraded" })])
+  })
+
+  test("uses Codex last-token deltas, drops duplicate emissions, and keeps reasoning disjoint", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-codex-history-"))
+    roots.push(root)
+    const sessions = path.join(root, ".codex", "sessions", "2026", "08", "08")
+    await fs.mkdir(sessions, { recursive: true })
+    const observedAt = Date.UTC(2026, 7, 8, 12)
+    const usage = (timestamp: number, last: Record<string, number>, total: Record<string, number>) => JSON.stringify({
+      timestamp: new Date(timestamp).toISOString(),
+      type: "event_msg",
+      payload: { type: "token_count", info: { last_token_usage: last, total_token_usage: total } },
+    })
+    const first = {
+      input_tokens: 100, cached_input_tokens: 60, output_tokens: 20,
+      reasoning_output_tokens: 6, total_tokens: 120,
+    }
+    const second = {
+      input_tokens: 50, cached_input_tokens: 20, output_tokens: 10,
+      reasoning_output_tokens: 2, total_tokens: 60,
+    }
+    await fs.writeFile(path.join(sessions, "rollout.jsonl"), [
+      JSON.stringify({ type: "session_meta", payload: { id: "codex-direct", model_provider: "openai" } }),
+      JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.6-sol" } }),
+      usage(observedAt, first, first),
+      JSON.stringify({
+        timestamp: new Date(observedAt).toISOString(),
+        type: "event_msg",
+        payload: { type: "compat", msg: { type: "token_count", info: { last_token_usage: { ...first, cached_input_tokens: 9_999_999 } } } },
+      }),
+      usage(observedAt + 1, first, first),
+      usage(observedAt + 2, second, {
+        input_tokens: 150, cached_input_tokens: 80, output_tokens: 30,
+        reasoning_output_tokens: 8, total_tokens: 180,
+      }),
+    ].join("\n"))
+
+    const snapshot = await scanTokenTrackerLocalHistory({
+      sourceHome: root,
+      stateDir: path.join(root, "state"),
+      since: observedAt - 1,
+      until: observedAt + 10,
+      sources: ["codex"],
+      classificationKey: "fixture-codex-deltas-v1",
+      classify: () => "external",
+    })
+
+    expect(snapshot.rows).toEqual([expect.objectContaining({
+      app: "codex",
+      provider: "openai",
+      nativeSessionId: "codex-direct",
+      model: "gpt-5.6-sol",
+      tokens: { input: 70, output: 22, reasoning: 8, cacheRead: 80, cacheWrite: 0 },
+    })])
+    const totals = snapshot.rows[0]!.tokens
+    expect((totals.input ?? 0) + (totals.output ?? 0) + (totals.reasoning ?? 0) + (totals.cacheRead ?? 0) + (totals.cacheWrite ?? 0)).toBe(180)
+  })
+
+  test("keeps distinct Codex turns whose last-token deltas are identical", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-codex-identical-turns-"))
+    roots.push(root)
+    const sessions = path.join(root, ".codex", "sessions", "2026", "08", "08")
+    await fs.mkdir(sessions, { recursive: true })
+    const observedAt = Date.UTC(2026, 7, 8, 12)
+    const delta = {
+      input_tokens: 100, cached_input_tokens: 60, output_tokens: 20,
+      reasoning_output_tokens: 6, total_tokens: 120,
+    }
+    const row = (timestamp: number, total: Record<string, number>) => JSON.stringify({
+      timestamp: new Date(timestamp).toISOString(),
+      type: "event_msg",
+      payload: { type: "token_count", info: { last_token_usage: delta, total_token_usage: total } },
+    })
+    await fs.writeFile(path.join(sessions, "rollout.jsonl"), [
+      JSON.stringify({ type: "session_meta", payload: { id: "codex-identical", model_provider: "openai" } }),
+      JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.6-sol" } }),
+      row(observedAt, delta),
+      row(observedAt + 1, {
+        input_tokens: 200, cached_input_tokens: 120, output_tokens: 40,
+        reasoning_output_tokens: 12, total_tokens: 240,
+      }),
+    ].join("\n"))
+
+    const snapshot = await scanTokenTrackerLocalHistory({
+      sourceHome: root,
+      stateDir: path.join(root, "state"),
+      since: observedAt - 1,
+      until: observedAt + 10,
+      sources: ["codex"],
+      classificationKey: "fixture-codex-identical-turns-v1",
+      classify: () => "external",
+    })
+
+    expect(snapshot.rows).toEqual([expect.objectContaining({
+      nativeSessionId: "codex-identical",
+      tokens: { input: 80, output: 28, reasoning: 12, cacheRead: 120, cacheWrite: 0 },
+    })])
+  })
+
+  test("deduplicates copied Claude messages globally across resumed transcripts", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-claude-dedupe-"))
+    roots.push(root)
+    const project = path.join(root, ".claude", "projects", "fixture")
+    await fs.mkdir(project, { recursive: true })
+    const observedAt = Date.UTC(2026, 7, 8, 12)
+    const copied = (sessionId: string, rowId: string) => JSON.stringify({
+      id: rowId,
+      type: "assistant",
+      sessionId,
+      requestId: "request-1",
+      timestamp: new Date(observedAt).toISOString(),
+      message: {
+        id: "message-1",
+        role: "assistant",
+        model: "claude-opus-5",
+        usage: { input_tokens: 10, output_tokens: 2, cache_read_input_tokens: 100 },
+      },
+    })
+    await fs.writeFile(path.join(project, "original.jsonl"), copied("session-1", "row-1"))
+    await fs.writeFile(path.join(project, "resumed.jsonl"), copied("session-2", "row-2"))
+
+    const snapshot = await scanTokenTrackerLocalHistory({
+      sourceHome: root,
+      stateDir: path.join(root, "state"),
+      since: observedAt - 1,
+      until: observedAt + 1,
+      sources: ["claude"],
+      classificationKey: "fixture-claude-global-dedupe-v1",
+      classify: () => "external",
+    })
+
+    expect(snapshot.rows).toHaveLength(1)
+    expect(snapshot.rows[0]?.provider).toBe("anthropic")
+    expect(snapshot.rows[0]?.tokens).toMatchObject({ input: 10, output: 2, cacheRead: 100 })
+  })
+
+  test("reads legacy and SQLite OpenCode histories before provenance aggregation", async () => {
+    const { root, observedAt } = await fixture()
+    const storage = path.join(root, ".local", "share", "opencode")
+    const legacy = path.join(storage, "storage", "message", "session-legacy")
+    await fs.mkdir(legacy, { recursive: true })
+    await fs.writeFile(path.join(legacy, "msg_legacy.json"), JSON.stringify({
+      id: "msg_legacy",
+      sessionID: "opencode-direct",
+      role: "assistant",
+      modelID: "gpt-5.4",
+      time: { completed: observedAt },
+      tokens: { input: 7, output: 2, reasoning: 1, cache: { read: 3 } },
+    }))
+    const db = new Database(path.join(storage, "opencode.db"))
+    db.exec("CREATE TABLE message (id TEXT, session_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT)")
+    const insert = db.prepare("INSERT INTO message VALUES (?, ?, ?, ?, ?)")
+    insert.run("msg_db", "opencode-claxedo", observedAt, observedAt, JSON.stringify({
+      role: "assistant",
+      modelID: "claude-sonnet-4-5",
+      time: { completed: observedAt },
+      tokens: { input: 11, output: 4, cache: { read: 5, write: 2 } },
+    }))
+    db.close()
+
+    const snapshot = await scanTokenTrackerLocalHistory({
+      sourceHome: root,
+      stateDir: path.join(root, "state"),
+      since: observedAt - 1,
+      until: observedAt + 1,
+      sources: ["opencode"],
+      classificationKey: "fixture-opencode-v1",
+      classify: ({ nativeSessionId }) => nativeSessionId === "opencode-claxedo" ? "claxedo" : "external",
+    })
+
+    expect(snapshot.rows).toEqual([expect.objectContaining({
+      app: "opencode",
+      nativeSessionId: "opencode-direct",
+      model: "gpt-5.4",
+      tokens: { input: 7, output: 2, reasoning: 1, cacheRead: 3, cacheWrite: null },
+    })])
+    expect(snapshot.classifiedClaxedo).toBe(1)
+    expect(snapshot.coverage).toEqual([{ source: "opencode", status: "available" }])
+  })
+
+  test("reads Cursor SDK run stores and excludes Claxedo-launched agent ids", async () => {
+    const { root, observedAt } = await fixture()
+    const cursorRoot = path.join(root, ".cursor", "sdk")
+    await fs.mkdir(cursorRoot, { recursive: true })
+    const db = new Database(path.join(cursorRoot, "store.db"))
+    db.exec(`CREATE TABLE runs (
+      run_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, model TEXT, usage_json TEXT,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL, finished_at TEXT
+    )`)
+    const insert = db.prepare("INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?)")
+    const at = new Date(observedAt).toISOString()
+    insert.run("run-direct", "cursor-direct", "cursor-fast", JSON.stringify({
+      inputTokens: 13, outputTokens: 5, cacheReadTokens: 2, cacheWriteTokens: 1,
+    }), at, at, at)
+    insert.run("run-claxedo", "cursor-claxedo", "cursor-fast", JSON.stringify({
+      inputTokens: 17, outputTokens: 6, cacheReadTokens: 0, cacheWriteTokens: 0,
+    }), at, at, at)
+    db.close()
+
+    const snapshot = await scanTokenTrackerLocalHistory({
+      sourceHome: root,
+      stateDir: path.join(root, "state"),
+      since: observedAt - 1,
+      until: observedAt + 1,
+      sources: ["cursor"],
+      classificationKey: "fixture-cursor-v1",
+      classify: ({ nativeSessionId }) => nativeSessionId === "cursor-claxedo" ? "claxedo" : "external",
+    })
+
+    expect(snapshot.rows).toEqual([expect.objectContaining({
+      app: "cursor",
+      nativeSessionId: "cursor-direct",
+      model: "cursor-fast",
+      tokens: { input: 13, output: 5, reasoning: null, cacheRead: 2, cacheWrite: 1 },
+    })])
+    expect(snapshot.classifiedClaxedo).toBe(1)
+    expect(snapshot.coverage).toEqual([{ source: "cursor", status: "available" }])
   })
 })

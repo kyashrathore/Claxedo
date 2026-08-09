@@ -3,7 +3,7 @@ import {
   workspaceResponse as projectWorkspaceResponse,
   type WorkspaceResponse,
 } from "@claxedo/server-core/workspace/store/response"
-import { getSupervisorSandboxStatus } from "../../workspace/supervisor"
+import { getSupervisorSandboxStatus } from "./supervisor"
 
 /**
  * Canonical JSON projection returned by `GET /api/workspace/resolve`.

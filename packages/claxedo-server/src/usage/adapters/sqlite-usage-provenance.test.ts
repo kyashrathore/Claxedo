@@ -1,7 +1,7 @@
 import Database from "better-sqlite3"
 import { drizzle } from "drizzle-orm/better-sqlite3"
 import { describe, expect, test } from "vitest"
-import { createSqliteUsageSourceCoverageStore } from "./sqlite-usage-provenance"
+import { createSqliteUsageSourceCoverageStore } from "@claxedo/server-core/usage/adapters/sqlite-usage-provenance"
 
 function harness(now: () => number) {
   const sqlite = new Database(":memory:")

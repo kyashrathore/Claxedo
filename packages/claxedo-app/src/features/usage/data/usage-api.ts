@@ -1,47 +1,28 @@
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
-
-export type UsageTotals = {
-  turnCount: number
-  input: number
-  output: number
-  reasoning: number
-  cacheRead: number
-  cacheWrite: number
-  unknownCategories: number
-}
-
-export type UsageSeries = { totals: UsageTotals; daily: Array<UsageTotals & { date: string }> }
-export type UsageCost = {
-  estimatedUsd: number
-  pricedTokens: number
-  unpricedTokens: number
-  catalog: { adapter: string; version: string; source: string }
-}
-
-export type UnifiedUsageResponse = {
-  version: 1
-  range: { since: number; until: number; timeZone: string }
-  quota: { status: "available" | "unavailable" | "degraded"; snapshot?: unknown; error?: string }
-  claxedo: UsageSeries & { cost: UsageCost; status: "available" | "stale" | "degraded"; scope: "local" | "cross-machine"; error?: string }
-  externalLocal: UsageSeries & {
-    status: "available" | "unavailable" | "degraded"
-    coverage: Array<{ source: string; status: string; error?: string }>
-    unclassified: number
-    cost: UsageCost
-    error?: string
-  }
-  total: UsageSeries
-  totalCost: UsageCost
-  breakdown?: unknown
-  sync: { attempted: number; delivered: number; conflicts: number; pending: number }
-}
+import type { UnifiedUsageResponse, UsageFilters } from "@claxedo/usage-contract"
+export type {
+  UnifiedUsageResponse,
+  UsageBreakdownPage,
+  UsageBreakdownRow,
+  UsageChartSeries,
+  UsageCost,
+  UsageFilterDimension,
+  UsageFilterOptions,
+  UsageFilters,
+  UsageSeries,
+  UsageTotals,
+} from "@claxedo/usage-contract"
 
 export type UsageRequest = {
   since: number
   until: number
   timeZone: string
-  group?: "harness" | "model" | "location" | "session" | "workspace" | "app"
-  refresh?: boolean
+  view?: "quota" | "claxedo" | "total"
+  group?: "provider" | "harness" | "model" | "location" | "session" | "workspace" | "app"
+  filters?: UsageFilters
+  after?: string
+  modelAfter?: string
+  limit?: number
   refreshNonce?: number
 }
 
@@ -51,11 +32,40 @@ export async function fetchUnifiedUsage(input: UsageRequest): Promise<UnifiedUsa
   target.searchParams.set("since", String(input.since))
   target.searchParams.set("until", String(input.until))
   target.searchParams.set("timezone", input.timeZone)
+  if (input.view) target.searchParams.set("view", input.view)
   if (input.group) target.searchParams.set("group", input.group)
-  if (input.refresh || input.refreshNonce) target.searchParams.set("refresh", "1")
+  for (const [dimension, value] of Object.entries(input.filters ?? {})) {
+    if (value) target.searchParams.set(`filter_${dimension}`, value)
+  }
+  if (input.after) target.searchParams.set("after", input.after)
+  if (input.modelAfter) target.searchParams.set("model_after", input.modelAfter)
+  if (input.limit) target.searchParams.set("limit", String(input.limit))
+  if (input.refreshNonce) target.searchParams.set("refresh_nonce", String(input.refreshNonce))
   const response = await authFetch(String(target))
   if (!response.ok) throw new Error((await response.text()) || `Usage request failed: ${response.status}`)
-  const body = await response.json() as UnifiedUsageResponse
+  const body = (await response.json()) as UnifiedUsageResponse
   if (body.version !== 1) throw new Error("Unsupported usage response version")
   return body
+}
+
+export async function syncUsageOutbox(): Promise<{
+  attempted: number
+  delivered: number
+  conflicts: number
+  pending: number
+}> {
+  const serverUrl = getClaxedoServerUrl()
+  const target = new URL("/api/claxedo/usage/sync", normalizeUrl(serverUrl) ?? serverUrl)
+  const response = await authFetch(String(target), { method: "POST" })
+  if (!response.ok) throw new Error((await response.text()) || `Usage sync failed: ${response.status}`)
+  return await response.json()
+}
+
+export function installUsageOutboxWakeups() {
+  const wake = () => {
+    void syncUsageOutbox().catch(() => undefined)
+  }
+  wake()
+  window.addEventListener("online", wake)
+  return () => window.removeEventListener("online", wake)
 }

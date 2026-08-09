@@ -2,39 +2,176 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-li
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { afterEach, describe, expect, test, vi } from "vitest"
 
-const mocks = vi.hoisted(() => ({ fetchUnifiedUsage: vi.fn(async () => ({
-  version: 1 as const,
-  range: { since: 0, until: 1, timeZone: "UTC" },
-  quota: { status: "available" as const, snapshot: {} },
-  claxedo: {
-    totals: { turnCount: 2, input: 100, output: 20, reasoning: 5, cacheRead: 3, cacheWrite: 0, unknownCategories: 1 }, daily: [],
-    cost: { estimatedUsd: .12, pricedTokens: 128, unpricedTokens: 0, catalog: { adapter: "tokentracker", version: "0.75.1", source: "seed" } },
-    status: "available" as const, scope: "cross-machine" as const,
-  },
-  externalLocal: {
-    totals: { turnCount: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, unknownCategories: 0 }, daily: [], cost: { estimatedUsd: 0, pricedTokens: 0, unpricedTokens: 0, catalog: { adapter: "tokentracker", version: "0.75.1", source: "seed" } },
-    status: "available" as const, coverage: [], unclassified: 0,
-  },
-  total: { totals: { turnCount: 2, input: 100, output: 20, reasoning: 5, cacheRead: 3, cacheWrite: 0, unknownCategories: 1 }, daily: [] },
-  totalCost: { estimatedUsd: .12, pricedTokens: 128, unpricedTokens: 0, catalog: { adapter: "tokentracker", version: "0.75.1", source: "seed" } },
-  sync: { attempted: 0, delivered: 0, conflicts: 0, pending: 0 },
-})) }))
+const mocks = vi.hoisted(() => ({
+  fetchUnifiedUsage: vi.fn(async (_request?: { view?: string }) => ({
+    version: 1 as const,
+    range: { since: 0, until: 1, timeZone: "UTC" },
+    quota: { status: "available" as const, snapshot: {} },
+    claxedo: {
+      totals: { turnCount: 2, input: 100, output: 20, reasoning: 5, cacheRead: 3, cacheWrite: 0, unknownCategories: 1 },
+      daily: [],
+      cost: {
+        estimatedUsd: 0.12,
+        pricedTokens: 128,
+        unpricedTokens: 0,
+        catalog: { adapter: "tokentracker", version: "0.75.1", source: "seed" },
+      },
+      status: "available" as const,
+      scope: "cross-machine" as const,
+    },
+    externalLocal: {
+      totals: { turnCount: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, unknownCategories: 0 },
+      daily: [],
+      cost: {
+        estimatedUsd: 0,
+        pricedTokens: 0,
+        unpricedTokens: 0,
+        catalog: { adapter: "tokentracker", version: "0.75.1", source: "seed" },
+      },
+      status: "available" as const,
+      coverage: [],
+      unclassified: 0,
+    },
+    total: {
+      totals: { turnCount: 2, input: 100, output: 20, reasoning: 5, cacheRead: 3, cacheWrite: 0, unknownCategories: 1 },
+      daily: [],
+    },
+    totalCost: {
+      estimatedUsd: 0.12,
+      pricedTokens: 128,
+      unpricedTokens: 0,
+      catalog: { adapter: "tokentracker", version: "0.75.1", source: "seed" },
+    },
+    breakdown: {
+      dimension: "provider",
+      rows: [
+        {
+          value: "openai",
+          label: "OpenAI",
+          turnCount: 2,
+          input: 100,
+          output: 20,
+          reasoning: 5,
+          cacheRead: 3,
+          cacheWrite: 0,
+          unknownCategories: 0,
+          estimatedUsd: 0.12,
+          pricedTokens: 128,
+          unpricedTokens: 0,
+          status: "final" as const,
+        },
+      ],
+      next: "provider-next",
+    },
+    modelBreakdown: { dimension: "model", rows: [] },
+    sync: { attempted: 0, delivered: 0, conflicts: 0, pending: 0 },
+  })),
+}))
 
-vi.mock("../data/usage-api", async (original) => ({ ...(await original<typeof import("../data/usage-api")>()), fetchUnifiedUsage: mocks.fetchUnifiedUsage }))
+vi.mock("../data/usage-api", async (original) => ({
+  ...(await original<typeof import("../data/usage-api")>()),
+  fetchUnifiedUsage: mocks.fetchUnifiedUsage,
+}))
 
 import { UsageDashboard } from "./usage-dashboard"
 
-afterEach(() => { cleanup(); mocks.fetchUnifiedUsage.mockClear() })
+afterEach(() => {
+  cleanup()
+  mocks.fetchUnifiedUsage.mockClear()
+})
 
 describe("UsageDashboard", () => {
-  test("defaults to Claxedo, 30 days, and Tokens; cards select one shared detail surface", async () => {
+  test("defaults to Claxedo, 30 days, and Tokens; compact switchers select one detail surface", async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    render(() => <QueryClientProvider client={client}><UsageDashboard /></QueryClientProvider>)
-    await waitFor(() => expect(screen.getByRole("button", { name: /Claxedo usage/ })).toHaveAttribute("aria-pressed", "true"))
-    expect(screen.getByRole("button", { name: "30d" })).toHaveAttribute("aria-pressed", "true")
+    render(() => (
+      <QueryClientProvider client={client}>
+        <UsageDashboard />
+      </QueryClientProvider>
+    ))
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Usage through Claxedo" })).toHaveAttribute("aria-pressed", "true"),
+    )
+    expect(mocks.fetchUnifiedUsage.mock.calls.map(([request]) => request.view)).toEqual(["claxedo"])
+    expect(screen.getByRole("button", { name: "30 days" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.getByRole("button", { name: "Tokens" })).toHaveAttribute("aria-pressed", "true")
-    fireEvent.click(screen.getByRole("button", { name: /Total usage/ }))
-    expect(screen.getByRole("button", { name: /Total usage/ })).toHaveAttribute("aria-pressed", "true")
-    expect(screen.getByLabelText("Group by")).toHaveValue("app")
+    fireEvent.click(screen.getByRole("button", { name: "Usage limits" }))
+    expect(screen.getByRole("button", { name: "Usage limits" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("button", { name: "Usage through Claxedo" })).toBeVisible()
+    expect(screen.getByRole("button", { name: "Total local usage" })).toBeVisible()
+    fireEvent.click(screen.getByRole("button", { name: "Total local usage" }))
+    expect(screen.getByRole("button", { name: "Total local usage" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.queryByText("Group by")).not.toBeInTheDocument()
+    expect(await screen.findByRole("heading", { name: "By provider" })).toBeVisible()
+    expect(screen.queryByRole("heading", { name: "By model" })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Model" }))
+    expect(await screen.findByRole("heading", { name: "By model" })).toBeVisible()
+    expect(screen.queryByRole("heading", { name: "By provider" })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Filter by/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Local ·/)).not.toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "Data quality" })).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(mocks.fetchUnifiedUsage.mock.calls.some(([request]) => request.view === "total")).toBe(true),
+    )
+    expect(mocks.fetchUnifiedUsage.mock.calls.some(([request]) => request.view === "claxedo")).toBe(true)
+    expect(mocks.fetchUnifiedUsage.mock.calls.some(([request]) => request.group === "model")).toBe(false)
+    expect(mocks.fetchUnifiedUsage.mock.calls.some(([request]) => request.group === "provider")).toBe(true)
+  })
+
+  test("sends a distinct nonce for a manual refresh", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(() => (
+      <QueryClientProvider client={client}>
+        <UsageDashboard />
+      </QueryClientProvider>
+    ))
+    await screen.findByRole("heading", { name: "By provider" })
+    fireEvent.click(screen.getByRole("button", { name: "Refresh usage" }))
+    await waitFor(() =>
+      expect(mocks.fetchUnifiedUsage.mock.calls.some(([request]) => (request.refreshNonce ?? 0) > 0)).toBe(true),
+    )
+    const refreshed = mocks.fetchUnifiedUsage.mock.calls.find(([request]) => (request.refreshNonce ?? 0) > 0)?.[0]
+    expect(refreshed?.refreshNonce).not.toBe(0)
+  })
+
+  test("does not relabel Claxedo data while a delayed Total request is pending", async () => {
+    const original = mocks.fetchUnifiedUsage.getMockImplementation()
+    if (!original) throw new Error("missing usage fixture")
+    let resolveTotal!: (value: Awaited<ReturnType<typeof original>>) => void
+    const pendingTotal = new Promise<Awaited<ReturnType<typeof original>>>((resolve) => {
+      resolveTotal = resolve
+    })
+    mocks.fetchUnifiedUsage.mockImplementation((request) =>
+      request.view === "total" ? pendingTotal : original(request),
+    )
+    try {
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      render(() => (
+        <QueryClientProvider client={client}>
+          <UsageDashboard />
+        </QueryClientProvider>
+      ))
+      await screen.findByRole("heading", { name: "By provider" })
+      fireEvent.click(screen.getByRole("button", { name: "Total local usage" }))
+      expect(await screen.findByText("Scanning local usage history…")).toBeVisible()
+      expect(screen.queryByLabelText("Token category totals")).not.toBeInTheDocument()
+      resolveTotal(await original({ view: "total" }))
+      expect(await screen.findByRole("heading", { name: "By provider" })).toBeVisible()
+    } finally {
+      mocks.fetchUnifiedUsage.mockImplementation(original)
+    }
+  })
+
+  test("shows an unavailable state instead of zero-valued usage after an initial failure", async () => {
+    mocks.fetchUnifiedUsage.mockRejectedValueOnce(new Error("scanner offline"))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(() => (
+      <QueryClientProvider client={client}>
+        <UsageDashboard />
+      </QueryClientProvider>
+    ))
+    expect(await screen.findByText("Usage unavailable · scanner offline")).toBeVisible()
+    expect(screen.getByRole("button", { name: "Usage through Claxedo" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("button", { name: "Usage through Claxedo" })).not.toHaveTextContent("—")
+    expect(screen.queryByLabelText("Token category totals")).not.toBeInTheDocument()
   })
 })

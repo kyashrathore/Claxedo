@@ -1256,7 +1256,7 @@ test.describe("core processes @core", () => {
     await expect(page.getByRole("menu")).toBeVisible()
     // The always-present items confirm the menu actually opened...
     await expect(page.getByRole("menuitem", { name: "Settings" })).toBeVisible()
-    await expect(page.getByRole("menuitem", { name: "Usage limits" })).toBeVisible()
+    await expect(page.getByRole("menuitem", { name: "Usage", exact: true })).toBeVisible()
     // ...while Diagnostics never renders on web.
     await expect(page.getByRole("menuitem", { name: "Diagnostics" })).toHaveCount(0)
   })

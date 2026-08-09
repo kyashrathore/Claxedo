@@ -760,7 +760,7 @@ export default defineSchema({
     user_id: v.string(),
     date: v.string(),
     dimension: v.union(
-      v.literal("harness"), v.literal("model"), v.literal("location"),
+      v.literal("provider"), v.literal("harness"), v.literal("model"), v.literal("location"),
       v.literal("session"), v.literal("workspace"),
     ),
     value: v.string(),

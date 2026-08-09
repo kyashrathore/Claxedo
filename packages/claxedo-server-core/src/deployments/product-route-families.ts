@@ -132,7 +132,7 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
     id: "local-workspace-resolve",
     owner: "local-server",
     serves: "Local workspace registration and lookup without importing hosted workspace authority.",
-    paths: ["/api/claxedo/workspace/resolve"],
+    paths: ["/api/claxedo/workspace", "/api/claxedo/workspace/resolve"],
   },
   {
     id: "network-policy",
@@ -141,10 +141,10 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
     paths: ["/api/claxedo/network-policy", "/api/claxedo/network-policy/"],
   },
   {
-    id: "usage-limits",
+    id: "usage",
     owner: "local-server",
-    serves: "Provider usage-limit readout for the local status surface.",
-    paths: ["/api/claxedo/usage-limits"],
+    serves: "Unified local, cross-machine, external history, and provider quota usage projection.",
+    paths: ["/api/claxedo/usage", "/api/claxedo/usage/"],
   },
 
   // ── Hosted control plane: stays in @claxedo/server ────────────────────────

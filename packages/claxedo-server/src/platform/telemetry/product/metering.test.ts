@@ -35,7 +35,7 @@ import {
   type UsageLedger,
 } from "./metering"
 import type { ProductIdentity } from "./product"
-import type { TurnUsageRevision } from "../../../usage/contracts"
+import type { TurnUsageRevision } from "@claxedo/server-core/usage/contracts"
 
 /**
  * The fake provider's usage object as the agent runtime hands it over —
@@ -235,6 +235,41 @@ describe("llm_turn_completed carries the provider's usage object verbatim", () =
       cache_read_tokens: FAKE_PROVIDER_USAGE.cache.read,
       cache_write_tokens: FAKE_PROVIDER_USAGE.cache.write,
     })
+  })
+
+  test("retains the verified turn identity when later lifecycle events run outside its async scope", async () => {
+    const captured = captureSink()
+    const turnCredentials = createConnectionTurnCredentials()
+    const recorded: Array<TurnUsageRevision & { org_id: string; user_id: string }> = []
+    const runtime = createCentralSessionRuntime(services(captured.sink), {
+      turnCredentials,
+      usageLedger: {
+        recordLlmTurn: async () => ({ activated: false }),
+        recordTurnUsageRevision: async (fact) => {
+          recorded.push(fact)
+          return { status: "accepted", activated: false }
+        },
+      },
+    })
+    const info = buildAssistantMessage({
+      id: "msg-scope", sessionID: "session-scope", parentID: "user-scope", agent: "build",
+      model: { providerID: "anthropic", modelID: "claude-sonnet-5" }, directory: "/w", created: 1_000,
+    })
+    const credential = turnCredentials.mint({ sessionId: "session-scope", subject: "user-scope", orgId: "org-scope" })
+
+    turnCredentials.run(credential, () => runtime.publishGlobal({ directory: "/w", payload: messageUpdated(info) }))
+    runtime.publishGlobal({
+      directory: "/w",
+      payload: sessionUsage({
+        sessionID: "session-scope", messageID: "msg-scope", contextSize: 100, contextUsed: 10,
+        observation: { kind: "cumulative", tokens: FAKE_PROVIDER_USAGE },
+      }),
+    })
+    runtime.publishGlobal({ directory: "/w", payload: messageCompleted("session-scope", "msg-scope") })
+    await runtime.flushUsage()
+    await vi.waitFor(() => expect(recorded).toHaveLength(1))
+
+    expect(recorded[0]).toMatchObject({ org_id: "org-scope", user_id: "user-scope", messageId: "msg-scope" })
   })
 
   test("hosted WorkGraph turns derive attribution from the deterministic Session identity", async () => {

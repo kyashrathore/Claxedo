@@ -58,12 +58,26 @@ const ROOT = path.resolve(import.meta.dirname, "../..")
 // entry does not reach the config/credential consumers and therefore did not
 // move. No module or provider SDK was added to either closure.
 const ENTRIES = [
-  { name: "hosted-node", entry: "src/deployments/hosted-node/index.ts", modules: 132, packages: 26 },
-  { name: "hosted-workerd", entry: "src/deployments/hosted-workerd/worker.ts", modules: 108, packages: 13 },
+  // +8 modules (132 -> 140) for the unified usage ledger: the route,
+  // projection/pricing path, revision contract, turn meter, SQLite ledger and
+  // its schema, plus the existing local-host identity owner used to stamp
+  // durable facts. The only package edges are Node `fs` for that durable local
+  // ledger and the pinned, read-only `tokentracker-cli` pricing catalog.
+  // Combined with dev's sandbox-contract split, the exact package count is 28.
+  { name: "hosted-node", entry: "src/deployments/hosted-node/index.ts", modules: 140, packages: 28 },
+  // The usage authority and dev's host-enrollment extraction add one runtime
+  // module each relative to their common base; neither adds a Worker package.
+  { name: "hosted-workerd", entry: "src/deployments/hosted-workerd/worker.ts", modules: 109, packages: 13 },
   // +1 module (139 -> 140) on 2026-08-08: `deployments/route-ownership.ts`,
   // the composition guard the self-hosted app now installs alongside the
   // hosted core. One dependency-free module, no new package.
-  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 141, packages: 33 },
+  // +12 modules (141 -> 153) for the same canonical usage path plus the
+  // self-host-only history/provenance adapters, durable outbox, and Convex
+  // ledger adapter. The one package edge is the pinned, read-only
+  // `tokentracker-cli` scanner/pricing library. Combined with dev's
+  // sandbox-contract split, the exact package count is 34. These are exact,
+  // not headroom.
+  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 153, packages: 34 },
 ] as const
 
 /** The two cloud compositions. Neither runs a workspace on its own box. */

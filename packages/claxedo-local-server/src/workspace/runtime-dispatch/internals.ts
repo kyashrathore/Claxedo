@@ -281,7 +281,16 @@ async function proxyTarget(hit: Hit, options: Parameters<typeof proxy>[2], path:
   return target
 }
 
-export function embeddedConfigModeForPath(pathname: string): EmbeddedWorkspaceRuntimeConfigMode {
+export function embeddedConfigModeForPath(
+  pathname: string,
+  method = "GET",
+): EmbeddedWorkspaceRuntimeConfigMode {
+  // Runtime configuration is a launch/mutation precondition, not a read
+  // precondition. If an extension cannot be materialized safely (for example,
+  // because an unmanaged skill already occupies its target), blocking reads
+  // turns one actionable extension error into an unusable workspace shell.
+  // Mutations still fail closed on the same authoritative apply operation.
+  if (method === "GET" || method === "HEAD") return "skip"
   if (
     pathname === "/api/wr/health"
     || pathname === "/api/wr/capabilities"
@@ -337,7 +346,7 @@ export function embeddedRuntimeTargetUrl(requestUrl: URL, targetPath: string): U
 export async function embedded(c: Context, ws: NonNullable<Awaited<ReturnType<typeof resolveWorkspace>>>, pathname?: string) {
   const url = new URL(c.req.url)
   const targetPath = pathname ?? url.pathname
-  const runtime = await ensureEmbeddedWorkspaceRuntime(ws, { config: embeddedConfigModeForPath(targetPath) })
+  const runtime = await ensureEmbeddedWorkspaceRuntime(ws, { config: embeddedConfigModeForPath(targetPath, c.req.method) })
   const target = embeddedRuntimeTargetUrl(url, targetPath)
   if (target.searchParams.has("directory")) target.searchParams.set("directory", ws.directory)
   const headers = opencodeHeaders(c.req.raw.headers)
