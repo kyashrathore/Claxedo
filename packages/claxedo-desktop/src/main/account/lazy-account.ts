@@ -31,6 +31,8 @@ const unsigned: AccountState = { status: "unsigned" }
 export function setupLazyAccount(input: {
   ipcMain: AccountIpcTarget
   userDataDir: string
+  /** Gate Electron-backed adapter construction until secure storage is ready. */
+  adapterReady?: Promise<unknown>
   env?: AccountConfigEnv
   onError?: AccountAssemblyInput["onError"]
   load?: () => Promise<AccountModule>
@@ -40,13 +42,15 @@ export function setupLazyAccount(input: {
 
   const load = input.load ?? (async () => await import("./index"))
   const ensureLoaded = () => {
-    loading ??= load().then((module) => {
-      assembly = module.createAccountAssembly({
-        ...(input.env ? { env: input.env } : {}),
-        ...(input.onError ? { onError: input.onError } : {}),
+    loading ??= Promise.resolve(input.adapterReady)
+      .then(load)
+      .then((module) => {
+        assembly = module.createAccountAssembly({
+          ...(input.env ? { env: input.env } : {}),
+          ...(input.onError ? { onError: input.onError } : {}),
+        })
+        return assembly
       })
-      return assembly
-    })
     return loading
   }
 

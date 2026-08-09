@@ -51,6 +51,8 @@ export type MockRoute = {
   resolved: string
   /** Source text of the whole `page.route(...)` call, used to check hand-back expressions. */
   body: string
+  /** Registered with the explicit canonical-contract marker. */
+  bound: boolean
 }
 
 export type RouteShadow = {
@@ -128,21 +130,22 @@ export function mockRuntimePath(appRoot: string) {
  * catch — just one level up.
  */
 export function mockRouteCallCount(appRoot: string) {
-  return readFileSync(mockRuntimePath(appRoot), "utf8").match(/page\.route\(/g)?.length ?? 0
+  return readFileSync(mockRuntimePath(appRoot), "utf8").match(/(?:page\.route|contractRoute)\(/g)?.length ?? 0
 }
 
 export function mockRoutes(appRoot: string): MockRoute[] {
   const source = readFileSync(mockRuntimePath(appRoot), "utf8")
   const routes: MockRoute[] = []
-  const call = /page\.route\(\s*(`[^`]*`|"[^"]*")/g
+  const call = /(page\.route|contractRoute)\(\s*(?:page\s*,\s*)?(`[^`]*`|"[^"]*")/g
   for (const match of source.matchAll(call)) {
     const open = source.indexOf("(", match.index!)
-    const raw = match[1]!.slice(1, -1)
+    const raw = match[2]!.slice(1, -1)
     routes.push({
       line: source.slice(0, match.index!).split("\n").length,
       raw,
       resolved: resolveTemplate(raw),
       body: balancedCall(source, open),
+      bound: match[1] === "contractRoute",
     })
   }
   return routes

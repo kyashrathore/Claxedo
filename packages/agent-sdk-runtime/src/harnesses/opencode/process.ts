@@ -30,6 +30,29 @@ const IDLE_TIMEOUT_MS = (() => {
   return Number.isFinite(v) && v > 0 ? Math.round(v) : 30_000
 })()
 
+export function openCodeSpawnConfigContent(
+  configured: string | undefined,
+  mcp: Record<string, ResolvedMcpServer>,
+) {
+  const parsed = configured?.trim() ? JSON.parse(configured) as unknown : {}
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("OPENCODE_CONFIG_CONTENT must contain a JSON object")
+  }
+  const base = parsed as Record<string, unknown>
+  const generated = toOpencodeConfig(mcp)
+  const generatedMcp = generated.mcp as Record<string, unknown> | undefined
+  const configuredMcp = base.mcp && typeof base.mcp === "object" && !Array.isArray(base.mcp)
+    ? base.mcp as Record<string, unknown>
+    : undefined
+  return JSON.stringify({
+    ...base,
+    ...generated,
+    ...(configuredMcp || generatedMcp
+      ? { mcp: { ...(configuredMcp ?? {}), ...(generatedMcp ?? {}) } }
+      : {}),
+  })
+}
+
 /** A running server plus the credential this launch requires. */
 export type OpenCodeServerConnection = {
   url: string
@@ -158,7 +181,7 @@ export class OpenCodeServerProcess {
     const auth = opencodeAuthContent(this.input.auth())
     const env = spawnEnv({
       ...process.env,
-      OPENCODE_CONFIG_CONTENT: JSON.stringify(toOpencodeConfig(this.input.config())),
+      OPENCODE_CONFIG_CONTENT: openCodeSpawnConfigContent(process.env.OPENCODE_CONFIG_CONTENT, this.input.config()),
       // Through the environment, never argv — see `launchCredential`.
       OPENCODE_SERVER_PASSWORD: credential,
       ...(auth ? { OPENCODE_AUTH_CONTENT: auth } : {}),

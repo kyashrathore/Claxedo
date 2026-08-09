@@ -18,6 +18,7 @@ import {
   parseSessionListQuery,
   sessionListStoreFilter,
   sessionListStorePageFilter,
+  sessionInventoryResponse,
 } from "../list"
 
 type Options = {
@@ -381,18 +382,18 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         if (isLoopbackLocalRequest(c.req.raw) && !isSignedHostedBrowserRequest(c.req.raw)) {
           const directory = c.req.query("directory")
           const workspaceId = c.req.query("workspaceId")
-          return c.json({
-            sessions: await services.projectionStore.list_session_metas({
+          return c.json(sessionInventoryResponse(
+            await services.projectionStore.list_session_metas({
               ...(directory ? { directory } : {}),
               ...(workspaceId ? { workspaceID: workspaceId } : {}),
             }),
-          })
+          ))
         }
         const auth = await signedAuth(c.req.raw, options)
         const workspaceId = requiredWorkspaceId(c.req.query("workspaceId"))
-        return c.json({
-          sessions: await requireAuthority(services).listSessions(auth, { workspaceId }),
-        })
+        return c.json(sessionInventoryResponse(
+          await requireAuthority(services).listSessions(auth, { workspaceId }),
+        ))
       } catch (err) {
         if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
         throw err

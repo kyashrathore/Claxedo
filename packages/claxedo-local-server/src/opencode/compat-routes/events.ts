@@ -42,7 +42,7 @@ type ConnectedFrame = {
   payload: { id: string; type: "server.connected"; properties: Record<string, unknown> }
 }
 
-function connectedFrame(): ConnectedFrame {
+export function connectedFrame(): ConnectedFrame {
   return {
     directory: "global",
     payload: { id: randomUUID(), type: "server.connected", properties: {} },

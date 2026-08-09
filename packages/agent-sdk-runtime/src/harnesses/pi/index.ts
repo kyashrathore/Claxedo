@@ -54,6 +54,7 @@ import {
 
 type PiSession = {
   id: string
+  directory?: RuntimeDirectory
   parentID?: string
   title: string | null
   created: number
@@ -218,8 +219,10 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     return session.agent
   }
 
-  async listSessions(_directory: RuntimeDirectory) {
-    return [...this.sessions.values()].map(row)
+  async listSessions(directory: RuntimeDirectory) {
+    return [...this.sessions.values()]
+      .filter((session) => session.directory === directory)
+      .map(row)
   }
 
   async getSession(id: string, _directory: RuntimeDirectory) {
@@ -264,6 +267,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     processObservation.update({ lifecycle: "ready" })
     this.sessions.set(input.id, {
       id: input.id,
+      ...(placement.directory ? { directory: placement.directory } : input.directory ? { directory: input.directory } : {}),
       ...(input.parentID ? { parentID: input.parentID } : {}),
       title: input.title ?? null,
       created: now,

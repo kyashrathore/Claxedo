@@ -80,15 +80,28 @@ describe("setupLazyAccount", () => {
     try {
       writeFileSync(join(dir, ACCOUNT_CREDENTIAL_RECORD), "record")
       const target = ipc()
+      let releaseAdapter!: () => void
+      const adapterReady = new Promise<void>((resolve) => {
+        releaseAdapter = resolve
+      })
+      let loads = 0
       const account = setupLazyAccount({
         ipcMain: target.target,
         userDataDir: dir,
+        adapterReady,
         load: async () => ({
-          createAccountAssembly: () => fixture({ status: "signed", identity: { userId: "owner" } }),
+          createAccountAssembly: () => {
+            loads++
+            return fixture({ status: "signed", identity: { userId: "owner" } })
+          },
         }),
       })
 
+      await Promise.resolve()
+      expect(loads).toBe(0)
+      releaseAdapter()
       await account.ready
+      expect(loads).toBe(1)
       expect(await target.handlers.get(ACCOUNT_STATE_CHANNEL)?.({})).toEqual({
         status: "signed",
         identity: { userId: "owner" },

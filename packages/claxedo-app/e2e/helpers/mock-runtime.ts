@@ -17,6 +17,15 @@ import type { Page, Route } from "@playwright/test"
 import type { SessionHarness } from "../../../agent-sdk-runtime/src"
 import { normalizeHarnessIdentity } from "../../../agent-sdk-runtime/src/harness-types"
 import {
+  runtimeEventEnvelope,
+  type RuntimeEventEnvelope,
+  type RuntimeEventEnvelopeInput,
+} from "../../../agent-sdk-runtime/src/runtime-event-hub"
+import type {
+  ClaxedoEvent,
+  OpenCodeEvent,
+} from "../../../claxedo-server-core/src/platform/runtime/lib/bus"
+import {
   assistantIdForUserMessage,
   parseSessionPromptRequest,
   SESSION_PROMPT_SUCCESS,
@@ -45,6 +54,30 @@ import {
   type PermissionResponseValue,
   type QuestionReplyBody,
 } from "./contracts/session-interactions"
+import { emptySessionNavigationListResponse } from "./contracts/session-list"
+import { emptySessionInventoryResponse } from "./contracts/session-inventory"
+import { workspaceResolveResponse } from "./contracts/workspace-resolve"
+import { unconfiguredWorkspaceDriversResponse } from "./contracts/workspace-drivers"
+import {
+  localHarnessOptionsResponse,
+  runtimeHarnessOptionsResponse,
+  type BoundHarnessConfigOption,
+} from "./contracts/harness-options"
+import { readyRuntimeHealthResponse } from "./contracts/runtime-health"
+import {
+  activeWorktreeResponse,
+  emptyWorktreeListResponse,
+  parseWorktreeCreateBody,
+  WORKTREE_CREATE_SUCCESS_STATUS,
+} from "./contracts/worktrees"
+import { driveEmptyRuntimeDiffRoute } from "./contracts/runtime-diff"
+import { contractRoute } from "./contracts/contract-route"
+import {
+  centralStreamHeartbeat,
+  runtimeStreamHeartbeat,
+  sseFrame,
+  workspaceStreamHeartbeat,
+} from "./contracts/sse"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -93,7 +126,15 @@ export type MockEvent =
   // AND flat unwrapped ClaxedoEvent payloads (e.g. `session.lifecycle`) that
   // carry their fields at the top level instead of nested under `properties`
   // — see emitFlat()/ClaxedoEventsProvider's flat-event parsing.
-  | ({ type: string; properties?: unknown } & Record<string, unknown>)
+  | ({ type: string; properties?: Record<string, unknown> } & Record<string, unknown>)
+
+type MockWireEvent = MockEvent | ClaxedoEvent | RuntimeEventEnvelope
+
+// Compile-time tripwire: every wrapped frame emitted by the mock must remain a
+// real OpenCode-compatible event. Flat Claxedo events and contract-v4 runtime
+// envelopes use their own typed emitters below.
+const _mockEventContract: MockEvent extends OpenCodeEvent ? true : never = true
+void _mockEventContract
 
 export type MockMessageInfo = {
   id: string
@@ -457,7 +498,12 @@ export type MockRuntimeHandles = {
    * via `useClaxedoEvents()`; use `emit()` for opencode-SDK-shaped events
    * consumed via `globalSDK.event`.
    */
-  emitFlat: (payload: MockEvent) => void
+  emitFlat: (payload: ClaxedoEvent) => void
+  /**
+   * Publish one canonical contract-v4 frame on `/api/wr/runtime-events`.
+   * The real route does not carry OpenCode `{directory,payload}` envelopes.
+   */
+  emitRuntime: (payload: RuntimeEventEnvelopeInput) => void
   /**
    * Releases a `holdAbort: true` abort response. A no-op when `holdAbort` is unset
    * (the abort answered immediately) and idempotent, so a `finally` can call it
@@ -499,7 +545,7 @@ function wait(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
-type PendingEvent = { directory: string; payload: MockEvent; flat?: boolean }
+type PendingEvent = { directory: string; payload: MockWireEvent; flat?: boolean }
 
 // BROADCAST semantics, not a drain-once work queue. A route this bus backs
 // (e.g. `/api/wr/events`) can be polled by SEVERAL independent, concurrently
@@ -555,7 +601,7 @@ type PendingEvent = { directory: string; payload: MockEvent; flat?: boolean }
 //   a connection at "now" and bootstraps its cursor with an opening heartbeat
 //   frame. The mock keeps full-log-on-first-connect because specs emit before
 //   the app has finished booting and rely on catching up.
-type LoggedEvent = { seq: number; directory: string; payload: MockEvent; flat?: boolean }
+type LoggedEvent = { seq: number; directory: string; payload: MockWireEvent; flat?: boolean }
 
 class EventBus {
   private log: LoggedEvent[] = []
@@ -570,12 +616,12 @@ class EventBus {
     for (const resolve of waiters) resolve()
   }
 
-  emit(directory: string, payload: MockEvent) {
+  emit(directory: string, payload: MockWireEvent) {
     this.append({ directory, payload })
   }
 
   /** See `MockRuntimeHandles.emitFlat` — appends an unwrapped SSE frame. */
-  emitFlat(payload: MockEvent) {
+  emitFlat(payload: MockWireEvent) {
     this.append({ directory: "", payload, flat: true })
   }
 
@@ -615,11 +661,11 @@ class FanoutBus {
     return bus
   }
 
-  emit(directory: string, payload: MockEvent) {
+  emit(directory: string, payload: MockWireEvent) {
     for (const channel of this.channels) channel.emit(directory, payload)
   }
 
-  emitFlat(payload: MockEvent) {
+  emitFlat(payload: MockWireEvent) {
     for (const channel of this.channels) channel.emitFlat(payload)
   }
 }
@@ -634,12 +680,12 @@ function lastEventIdOf(route: Route): number | undefined {
 
 // Every event frame carries its sequence as an SSE `id:` line so id-tracking
 // readers (global-sdk's sseJsonStream) build the cursor they resume with.
-function sseBody(batch: LoggedEvent[]) {
-  if (batch.length === 0) return ": heartbeat\n\n"
+function sseBody(batch: LoggedEvent[], emptyFrame: () => string) {
+  if (batch.length === 0) return emptyFrame()
   return batch
     .map(
       ({ seq, directory, payload, flat }) =>
-        `id: ${seq}\ndata: ${JSON.stringify(flat ? payload : { directory, payload })}\n\n`,
+        sseFrame(flat ? payload : { directory, payload }, String(seq)),
     )
     .join("")
 }
@@ -843,22 +889,19 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       })
     : undefined
 
-  const fanout = new FanoutBus()
-  const busGlobal = fanout.channel() // /global/event + /event
-  // /api/wr/events and /api/wr/runtime-events are DIFFERENT app consumers
-  // (ClaxedoEventsProvider's claxedoBus stream vs global-sdk's runtime event
-  // stream) that can be connected CONCURRENTLY. They must not share one
-  // EventBus: `drain()` hands the entire pending batch to whichever route's
-  // blocked connection resolves first, so a shared queue turns delivery into
-  // a lottery — observed concretely as `emitFlat()`'d `session.lifecycle`
-  // events (consumable only by ClaxedoEventsProvider on /api/wr/events)
-  // vanishing into the /api/wr/runtime-events consumer, which discards
-  // non-envelope frames (core-sidebar-tree behavior 15's initial failure).
-  // Same reasoning as the FanoutBus class comment above — one queue per
-  // consumer route, emit()/emitFlat() fan out to all.
-  const busWrEvents = fanout.channel() // /api/wr/events (primary origin)
-  const busWrRuntime = fanout.channel() // /api/wr/runtime-events (primary origin)
-  const busRelay = fanout.channel() // cloud relay origin mounts
+  // The two real SSE families carry different contracts and therefore have
+  // different producers. Compat/OpenCode events (plus flat Claxedo bus events)
+  // use `/global/event`, `/event`, and `/api/wr/events`. Contract-v4
+  // `RuntimeEventEnvelope`s use `/api/wr/runtime-events` only. The old mock put
+  // every event on both families, so a spec could pass against a frame shape the
+  // real runtime-events route can never emit.
+  const compatFanout = new FanoutBus()
+  const runtimeFanout = new FanoutBus()
+  const busGlobal = compatFanout.channel() // /global/event + /event
+  const busWrEvents = compatFanout.channel() // /api/wr/events (primary origin)
+  const busRelayEvents = compatFanout.channel() // cloud relay compat/event mounts
+  const busWrRuntime = runtimeFanout.channel() // /api/wr/runtime-events (primary origin)
+  const busRelayRuntime = runtimeFanout.channel() // cloud relay runtime-events mount
   let messages: MockMessageRow[] = []
   let sessionCreated = false
   let harnessPollCount = 0
@@ -886,15 +929,18 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     }
   })
 
-  const emit = (payload: MockEvent, directory: string = DIR) => fanout.emit(directory, payload)
+  const emit = (payload: MockEvent, directory: string = DIR) => compatFanout.emit(directory, payload)
   // See `wrEventsHandler` below for why flat frames additionally enter a
   // replay list: /api/wr/events is polled by two different app consumers and
   // must broadcast flat frames to all of them, not queue them to one.
   const FLAT_WR_REPLAY_WINDOW_MS = 6_000
-  const flatWrReplay: Array<{ payload: MockEvent; until: number }> = []
-  const emitFlat = (payload: MockEvent) => {
+  const flatWrReplay: Array<{ payload: ClaxedoEvent; until: number }> = []
+  const emitFlat = (payload: ClaxedoEvent) => {
     flatWrReplay.push({ payload, until: Date.now() + FLAT_WR_REPLAY_WINDOW_MS })
-    fanout.emitFlat(payload)
+    compatFanout.emitFlat(payload)
+  }
+  const emitRuntime = (payload: RuntimeEventEnvelopeInput) => {
+    runtimeFanout.emitFlat(runtimeEventEnvelope(payload))
   }
 
   // NOTE: there is deliberately no wrapped-frame counterpart to `flatWrReplay`.
@@ -912,6 +958,19 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
 
   function harnessModel() {
     return harnessModels[harness]?.[0] ?? BIG_PICKLE
+  }
+
+  function harnessConfigOptions(type: Harness, model = harnessModels[type]?.[0] ?? BIG_PICKLE): BoundHarnessConfigOption[] {
+    return [
+      {
+        id: "model",
+        name: "Model",
+        category: "model",
+        type: "select",
+        currentValue: model.id,
+        selectOptions: harnessModels[type] ?? [model],
+      },
+    ]
   }
 
   function harnessStatusPayload() {
@@ -1390,9 +1449,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // Reply text convention (`cloud ack <n>: <text>`) matches
   // `core-cloud-provisioning.spec.ts`'s own proven `installCloudRuntimeMock` — kept
   // identical so specs asserting on it (this file's cloud lane included) share one
-  // vocabulary. Delivered via the SAME `emit()` as the local lane: `emit()` fans out
-  // through `FanoutBus` to every channel, `busRelay` included, so whichever concrete SSE
-  // route ends up mattering for a given app code path already carries the event.
+  // vocabulary. Delivered via the compat event family; contract-v4 runtime events use
+  // the separate `emitRuntime()` producer and `/api/wr/runtime-events` channel.
   async function driveCloudTurn(input: {
     userID: string
     assistantID: string
@@ -1538,15 +1596,20 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     const url = new URL(route.request().url())
     if (url.pathname !== "/global/event" && url.pathname !== "/event") return route.fallback()
     const batch = await busGlobal.drain(sseIdleTimeoutMs, lastEventIdOf(route))
-    await route.fulfill({ status: 200, contentType: "text/event-stream", body: sseBody(batch) }).catch(() => {})
+    const cursor = lastEventIdOf(route)
+    await route.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body: sseBody(batch, () => centralStreamHeartbeat(cursor)),
+    }).catch(() => {})
   }
   // Broadest first: `**/event?**` also matches `.../global/event?…`, so registering it
   // LAST (Playwright matches most-recently-registered-first) would have left the
   // `/global/event` line permanently unreachable. Inert here — both point at the same
   // handler, which dispatches on pathname itself — but the ordering is written the
   // right way round so the shadowing guard has nothing to allowlist.
-  await page.route("**/event?**", eventStreamHandler)
-  await page.route("**/global/event?**", eventStreamHandler)
+  await contractRoute(page, "**/event?**", eventStreamHandler)
+  await contractRoute(page, "**/global/event?**", eventStreamHandler)
 
   // Sessions on the /w/<dir>/session/<id> route shape consume live events from
   // GET /api/wr/events (see src/app/providers/global-sdk/provider.tsx), NOT
@@ -1593,8 +1656,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // deliberately carry NO `id:` line — they must not advance an
     // id-tracking reader's cursor.
     const body =
-      sseBody(batch.filter((entry) => !entry.flat)) +
-      replays.map((entry) => `data: ${JSON.stringify(entry.payload)}\n\n`).join("")
+      sseBody(batch.filter((entry) => !entry.flat), () => workspaceStreamHeartbeat(lastEventIdOf(route))) +
+      replays.map((entry) => sseFrame(entry.payload)).join("")
     await route.fulfill({ status: 200, contentType: "text/event-stream", body }).catch(() => {})
   }
   const wrRuntimeEventsHandler = async (route: Route) => {
@@ -1604,10 +1667,14 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       return json(route, { error: "Forbidden" }, 403)
     }
     const batch = await busWrRuntime.drain(sseIdleTimeoutMs, lastEventIdOf(route))
-    await route.fulfill({ status: 200, contentType: "text/event-stream", body: sseBody(batch) }).catch(() => {})
+    await route.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body: sseBody(batch, runtimeStreamHeartbeat),
+    }).catch(() => {})
   }
-  await page.route("**/api/wr/events**", wrEventsHandler)
-  await page.route("**/api/wr/runtime-events**", wrRuntimeEventsHandler)
+  await contractRoute(page, "**/api/wr/events**", wrEventsHandler)
+  await contractRoute(page, "**/api/wr/runtime-events**", wrRuntimeEventsHandler)
 
   // GET /api/control/session-list (`src/utils/workspace-control-routes.ts`
   // `controlSessionNavigationListUrl`) backs the rail sidebar's session list
@@ -1619,17 +1686,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // calling installMockRuntime, which wins per Playwright's last-registered-first
   // matching — see core-boot-deep-links-home.spec.ts's installSessionListMock,
   // the pattern this default is modeled on).
-  await page.route("**/api/control/session-list**", (route) => {
+  await contractRoute(page, "**/api/control/session-list**", (route) => {
     if (!api(route)) return route.continue()
-    return route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        view: { scope: "global", groupBy: "none", sort: "updated_desc", limit: 50 },
-        items: [],
-        totalKnown: 0,
-      }),
-    })
+    return json(route, emptySessionNavigationListResponse(route.request().url()))
   })
 
   // GET /api/control/sessions — the FLAT session inventory on the control plane
@@ -1650,10 +1709,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // EMPTY body is not a stub here — it is the route's own answer on this exact request:
   // `fetchLocalControlSessions` sends no `workspaceId`, and the handler's first line is
   // `if (!workspaceId || !services.authority?.listSessions) return c.json({ sessions: [] })`.
-  await page.route("**/api/control/sessions**", (r) => {
+  await contractRoute(page, "**/api/control/sessions**", (r) => {
     if (!api(r)) return r.continue()
     if (new URL(r.request().url()).pathname !== "/api/control/sessions") return r.fallback()
-    return json(r, { sessions: [] })
+    return json(r, emptySessionInventoryResponse())
   })
 
   await page.route("**/path**", (r) => {
@@ -1852,7 +1911,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(route, modeState(harness))
   })
 
-  await page.route("**/session/*/permissions/*", async (route) => {
+  await contractRoute(page, "**/session/*/permissions/*", async (route) => {
     if (!api(route)) return route.continue()
     if (route.request().method() !== "POST") return route.fallback()
     // Throws on ANY value that is not exactly "once" | "always" | "reject". That
@@ -1865,7 +1924,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(route, SESSION_INTERACTION_SUCCESS.body, SESSION_INTERACTION_SUCCESS.status)
   })
 
-  await page.route("**/question/*/reply", async (route) => {
+  await contractRoute(page, "**/question/*/reply", async (route) => {
     if (!api(route)) return route.continue()
     if (route.request().method() !== "POST") return route.fallback()
     requests.questionReplies.push(
@@ -1874,7 +1933,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(route, SESSION_INTERACTION_SUCCESS.body, SESSION_INTERACTION_SUCCESS.status)
   })
 
-  await page.route("**/question/*/reject", async (route) => {
+  await contractRoute(page, "**/question/*/reject", async (route) => {
     if (!api(route)) return route.continue()
     if (route.request().method() !== "POST") return route.fallback()
     parseQuestionRejectRequest(route.request().postDataJSON?.() ?? undefined, route.request().url())
@@ -1882,9 +1941,17 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(route, SESSION_INTERACTION_SUCCESS.body, SESSION_INTERACTION_SUCCESS.status)
   })
 
-  await page.route("**/api/workspace/resolve**", (r) =>
+  await contractRoute(page, "**/api/workspace/resolve**", (r) =>
     api(r)
-      ? json(r, { workspaceId: `local-${SESSION_ID}`, directory: DIR, kind: "local", status: "ready" })
+      ? json(r, workspaceResolveResponse({
+          id: `local-${SESSION_ID}`,
+          project_id: PROJECT_ID,
+          directory: DIR,
+          kind: "local",
+          status: "ready",
+          created_at: Date.now(),
+          updated_at: Date.now(),
+        }))
       : r.continue(),
   )
 
@@ -1892,12 +1959,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // the cloud steps apply at all. The default is "no provider configured", which
   // is the honest zero state: a local-only machine has no cloud, so setup is the
   // two required steps. Specs that exercise the cloud steps override this.
-  await page.route("**/api/workspace/drivers**", (r) =>
+  await contractRoute(page, "**/api/workspace/drivers**", (r) =>
     api(r)
-      ? json(r, {
-        default_driver: "daytona",
-        drivers: [{ id: "daytona", label: "Daytona", fields: [], configured: false, source: "local", default: true }],
-      })
+      ? json(r, unconfiguredWorkspaceDriversResponse())
       : r.continue(),
   )
 
@@ -1915,38 +1979,12 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       : r.continue(),
   )
 
-  // `/vcs/file` is checked BEFORE `/vcs` — `endsWith("/vcs")` is false for
-  // `/api/wr/diff/vcs/file`, but the ordering is written explicitly anyway because
-  // getting it backwards is silent: the app would receive `[]` where it expects an
-  // object. That single-file endpoint used to fall through this handler entirely
-  // (it matched none of the three suffixes, so `body === undefined` and the request
-  // escaped to the dev server's `index.html`), and the relay-origin copy further
-  // below actively answered `[]` for it — its `else` branch is unconditional.
-  //
-  // CONTRACT (workspace-runtime/src/routes/diff.ts:142-168 → `filePatchDiff`,
-  // workspace-files/diff.ts:505-527): 200 with `Partial<FileDiff> & { file: string }`.
-  // A file with no diff to show is `{ file, patch: "" }` — the function's own final
-  // return — NOT an empty array and NOT an absent body. `file` echoes the `file`
-  // query param, which the route requires (400 `file_required` without it).
-  function diffBody(url: URL): unknown {
-    const pathname = url.pathname
-    if (pathname.endsWith("/refs")) return { branches: [], tags: [], recent: [] }
-    if (pathname.endsWith("/targets")) return {}
-    if (pathname.endsWith("/vcs/file")) return { file: url.searchParams.get("file") ?? "", patch: "" }
-    if (pathname.endsWith("/vcs")) return []
-    return undefined
-  }
-  /** The cloud/relay lanes have no fallthrough of their own — an unknown diff path there
-   * previously became `[]`, the WRONG shape for three of the four endpoints. Empty
-   * `/vcs`-style is still the least-surprising default, but it is now the default only
-   * for paths the suffix table does not name. */
-  const relayDiffBody = (url: URL) => diffBody(url) ?? []
-  await page.route("**/api/wr/diff/**", (r) => {
+  const runtimeDiffHandler = async (r: Route) => {
     if (!api(r)) return r.continue()
-    const body = diffBody(new URL(r.request().url()))
-    if (body === undefined) return r.fallback()
-    return json(r, body)
-  })
+    const response = await driveEmptyRuntimeDiffRoute(r.request().url())
+    return json(r, response.body, response.status)
+  }
+  await contractRoute(page, "**/api/wr/diff/**", runtimeDiffHandler)
 
   // ------------------------------------------------------------------------
   // File browser / search surface on the PRIMARY origin.
@@ -2087,27 +2125,13 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await page.route("**/file?**", fileBrowserHandler)
   await page.route("**/file/**", fileBrowserHandler)
 
-  await page.route("**/api/claxedo/agent-config/harness/options**", (r) => {
+  await contractRoute(page, "**/api/claxedo/agent-config/harness/options**", (r) => {
     if (!api(r)) return r.continue()
     requests.harnessOptionsCount += 1
-    const model = harnessModel()
-    return json(r, {
-      source: "runner",
-      stale: false,
-      options: [
-        {
-          id: "model",
-          name: "Model",
-          category: "model",
-          type: "select",
-          currentValue: model.id,
-          selectOptions: harnessModels[harness] ?? [model],
-        },
-      ],
-    })
+    return json(r, localHarnessOptionsResponse(harnessConfigOptions(harness, harnessModel())))
   })
 
-  await page.route("**/api/claxedo/agent-config/harness**", async (r) => {
+  await contractRoute(page, "**/api/claxedo/agent-config/harness**", async (r) => {
     if (!api(r)) return r.continue()
     if (new URL(r.request().url()).pathname !== "/api/claxedo/agent-config/harness") return r.fallback()
     requests.harnessPostCount += 1
@@ -2181,7 +2205,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // never ran at all — see the exclusion there.) Specs now seed
   // `options.sessionStatuses` and/or drive `handles.setSessionStatus` per session id;
   // sessions absent from the map read as idle everywhere, exactly as on the wire.
-  await page.route("**/session/status**", (r) =>
+  await contractRoute(page, "**/session/status**", (r) =>
     api(r) ? json(r, sessionStatusResponseBody(Object.fromEntries(liveSessionStatuses))) : r.continue(),
   )
 
@@ -2232,7 +2256,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await page.route("**/experimental/session", handleSessionList)
   await page.route("**/experimental/session?**", handleSessionList)
 
-  await page.route("**/session/*/config**", async (route) => {
+  await contractRoute(page, "**/session/*/config**", async (route) => {
     if (!api(route)) return route.continue()
     if (route.request().method() === "PATCH") {
       requests.configPatchCount += 1
@@ -2303,7 +2327,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       : r.continue(),
   )
 
-  await page.route("**/session/*/prompt_async**", async (route) => {
+  await contractRoute(page, "**/session/*/prompt_async**", async (route) => {
     if (!api(route)) return route.continue()
     if (options.dispatchFailure) {
       return json(route, { error: "dispatch failed" }, 500)
@@ -2385,7 +2409,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return route.fulfill({ status: 204, body: "" })
   })
 
-  await page.route("**/session/*/command**", async (route) => {
+  await contractRoute(page, "**/session/*/command**", async (route) => {
     if (!api(route)) return route.continue()
     const url = new URL(route.request().url())
     if (!url.pathname.match(/^\/session\/[^/]+\/command$/)) return route.fallback()
@@ -2532,19 +2556,22 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // with cloud info, breaking any spec exercising both lanes in one page (e.g. the
     // same-pane local -> cloud draft navigation in core-harness-ownership-cloud
     // behavior 5).
-    await page.route(`**/api/workspace/resolve**`, (r) => {
+    await contractRoute(page, `**/api/workspace/resolve**`, (r) => {
       if (!api(r)) return r.continue()
       const url = new URL(r.request().url())
       const q = url.searchParams.get("workspaceId") ?? url.searchParams.get("directory") ?? ""
       if (q !== workspaceId && !q.includes(workspaceId)) return r.fallback()
-      return json(r, {
-        workspaceId,
-        projectID: CLOUD_PROJECT_ID,
-        projectId: CLOUD_PROJECT_ID,
+      return json(r, workspaceResolveResponse({
+        id: workspaceId,
+        project_id: CLOUD_PROJECT_ID,
         directory: workspaceId,
+        remote_directory: workspaceId,
         kind: "cloud",
+        driver: "daytona",
         status: "ready",
-      })
+        created_at: Date.now(),
+        updated_at: Date.now(),
+      }))
     })
 
     await page.route(`${base}/vcs**`, (r) => json(r, {}))
@@ -2572,7 +2599,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     await page.route(`${base}/provider?**`, (r) => json(r, cloudProviderResponse()))
     await page.route(`${base}/provider/auth`, (r) => json(r, {}))
     await page.route(`${base}/provider/auth?**`, (r) => json(r, {}))
-    await page.route(`${base}/api/wr/health`, (r) => json(r, { healthy: true }))
+    await contractRoute(page, `${base}/api/wr/health`, (r) => json(r, readyRuntimeHealthResponse(cloudHarness)))
     // Worktree admission on the cloud draft-submit path
     // (prepareWorkspaceSessionWorktree, src/platform/runtime/cloud/workspace-runtime-store.ts):
     // submit-directory.ts POSTs /api/wr/worktrees after the draft workspace resolves
@@ -2580,53 +2607,55 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // returns an invalid record — so this lane must answer with a well-formed
     // worktree (path + branch + baseCommit), matching core-cloud-provisioning's
     // proven inline mock.
-    await page.route(`${base}/api/wr/worktrees**`, (r) => {
-      if (r.request().method() !== "POST") return json(r, { worktrees: [] })
-      return json(r, {
-        worktree: { path: workspaceId, branch: "main", baseCommit: "e2e-base-commit" },
-      })
+    await contractRoute(page, `${base}/api/wr/worktrees**`, (r) => {
+      if (r.request().method() !== "POST") return json(r, emptyWorktreeListResponse())
+      const parsed = parseWorktreeCreateBody(r.request().postDataJSON?.() ?? null)
+      if (!parsed.ok) return json(r, parsed.body, parsed.status)
+      return json(
+        r,
+        activeWorktreeResponse({
+          workspaceId,
+          sessionId: parsed.value.sessionId,
+          path: workspaceId,
+          baseCommit: parsed.value.baseCommit,
+        }),
+        WORKTREE_CREATE_SUCCESS_STATUS,
+      )
     })
-    await page.route(`${base}/api/wr/harness-config-options**`, (r) => {
+    await contractRoute(page, `${base}/api/wr/harness-config-options**`, (r) => {
       const url = new URL(r.request().url())
       const type = (url.searchParams.get("harness") as Harness | null) ?? cloudHarness
       requests.cloudHarnessOptionsCount += 1
       requests.cloudHarnessOptionsHarnesses.push(type)
       const model = harnessModels[type]?.[0] ?? BIG_PICKLE
-      return json(r, {
-        source: "runner",
-        stale: false,
-        options: [
-          {
-            id: "model",
-            name: "Model",
-            category: "model",
-            type: "select",
-            currentValue: model.id,
-            selectOptions: harnessModels[type] ?? [model],
-          },
-        ],
-      })
+      return json(r, runtimeHarnessOptionsResponse(harnessConfigOptions(type, model)))
     })
-    // Same suffix table as the primary-origin handler above, `/vcs/file` included.
-    // The `else` branch here used to be an unconditional `[]`, so this lane
-    // answered an ARRAY for the single-file patch endpoint where the app expects
-    // `{ file, patch }`.
-    await page.route(`${base}/api/wr/diff/**`, (r) => json(r, relayDiffBody(new URL(r.request().url()))))
+    await contractRoute(page, `${base}/api/wr/diff/**`, runtimeDiffHandler)
 
     const relayEventHandler = async (route: Route) => {
-      const batch = await busRelay.drain(sseIdleTimeoutMs, lastEventIdOf(route))
-      await route.fulfill({ status: 200, contentType: "text/event-stream", body: sseBody(batch) }).catch(() => {})
+      const batch = await busRelayEvents.drain(sseIdleTimeoutMs, lastEventIdOf(route))
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: sseBody(batch, () => workspaceStreamHeartbeat(lastEventIdOf(route))),
+      }).catch(() => {})
     }
-    // `/api/wr/events` + `/api/wr/runtime-events` are the primary channel
-    // (`ClaxedoEventsProvider`'s workspace target, `claxedo-events.tsx`); `/global/event`
-    // + `/event` are mounted too as a defensive fallback for `global-sdk.tsx`'s classic
-    // loop, matching `core-cloud-provisioning.spec.ts`'s proven mock — all four drain
-    // the SAME `busRelay` channel, which (post slot-broadcast fix above) safely
-    // broadcasts one copy to each concurrently-connected reader.
-    await page.route(`${base}/api/wr/events**`, relayEventHandler)
-    await page.route(`${base}/api/wr/runtime-events**`, relayEventHandler)
-    await page.route(`${base}/global/event**`, relayEventHandler)
-    await page.route(`${base}/event**`, relayEventHandler)
+    const relayRuntimeEventHandler = async (route: Route) => {
+      const batch = await busRelayRuntime.drain(sseIdleTimeoutMs, lastEventIdOf(route))
+      await route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: sseBody(batch, runtimeStreamHeartbeat),
+      }).catch(() => {})
+    }
+    // `/api/wr/events` is the flat/compat workspace bus; `/global/event` + `/event`
+    // are defensive aliases for the classic loop. `/api/wr/runtime-events` is a
+    // distinct contract-v4 channel, matching the real runtime rather than receiving
+    // duplicate compat frames.
+    await contractRoute(page, `${base}/api/wr/events**`, relayEventHandler)
+    await contractRoute(page, `${base}/api/wr/runtime-events**`, relayRuntimeEventHandler)
+    await contractRoute(page, `${base}/global/event**`, relayEventHandler)
+    await contractRoute(page, `${base}/event**`, relayEventHandler)
 
     // Same live-map contract as the local lane (`./contracts/session-status.ts`) and the
     // same `liveSessionStatuses` state, so `handles.setSessionStatus` drives whichever
@@ -2634,7 +2663,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // the session existed — an idle-VALUED entry no server path can emit; every consumer
     // decoded it exactly as it decodes the absent key it is now, so the shape changed
     // and the behavior did not.
-    await page.route(`${base}/session/status**`, (r) =>
+    await contractRoute(page, `${base}/session/status**`, (r) =>
       json(r, sessionStatusResponseBody(Object.fromEntries(liveSessionStatuses))),
     )
 
@@ -2662,7 +2691,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     await page.route(`${base}/session`, handleCloudSessionList)
     await page.route(`${base}/session?**`, handleCloudSessionList)
 
-    await page.route(`${base}/session/*/config**`, async (route) => {
+    await contractRoute(page, `${base}/session/*/config**`, async (route) => {
       if (!api(route)) return route.continue()
       if (route.request().method() === "PATCH") {
         const url = route.request().url()
@@ -2706,7 +2735,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     )
     await page.route(`${base}/session/*/todo**`, (r) => json(r, []))
     await page.route(`${base}/session/*/message**`, (r) => json(r, cloudMessages))
-    await page.route(`${base}/session/*/prompt_async**`, async (route) => {
+    await contractRoute(page, `${base}/session/*/prompt_async**`, async (route) => {
       if (!api(route)) return route.continue()
       requests.cloudPromptCount += 1
       // CONTRACT: same real-server binding as the local lane above. The relay
@@ -2759,33 +2788,21 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // Bare (un-prefixed) relay routes kept for existing callers that mount `cloud`
     // without exercising the full session lane above (e.g. specs asserting only on
     // `/api/wr/events` delivery to a workspace-scoped pane).
-    await page.route(`${relayOrigin}/api/wr/health`, (r) => json(r, { healthy: true }))
-    await page.route(`${relayOrigin}/api/wr/harness-config-options`, (r) => {
+    await contractRoute(page, `${relayOrigin}/api/wr/health`, (r) => json(r, readyRuntimeHealthResponse(harness)))
+    await contractRoute(page, `${relayOrigin}/api/wr/harness-config-options`, (r) => {
       const model = harnessModel()
-      return json(r, {
-        source: "runner",
-        stale: false,
-        options: [
-          {
-            id: "model",
-            name: "Model",
-            category: "model",
-            type: "select",
-            currentValue: model.id,
-            selectOptions: harnessModels[harness] ?? [model],
-          },
-        ],
-      })
+      return json(r, runtimeHarnessOptionsResponse(harnessConfigOptions(harness, model)))
     })
-    await page.route(`${relayOrigin}/api/wr/diff/**`, (r) => json(r, relayDiffBody(new URL(r.request().url()))))
-    await page.route(`${relayOrigin}/api/wr/events`, relayEventHandler)
-    await page.route(`${relayOrigin}/api/wr/runtime-events`, relayEventHandler)
+    await contractRoute(page, `${relayOrigin}/api/wr/diff/**`, runtimeDiffHandler)
+    await contractRoute(page, `${relayOrigin}/api/wr/events`, relayEventHandler)
+    await contractRoute(page, `${relayOrigin}/api/wr/runtime-events`, relayRuntimeEventHandler)
   }
 
   return {
     requests,
     emit,
     emitFlat,
+    emitRuntime,
     releaseAbort: () => releaseAbort(),
     setSessionStatus,
     session: { id: SESSION_ID, dir: DIR, projectId: PROJECT_ID },

@@ -228,7 +228,7 @@ Operational lessons paid for in hours of chasing false signals. Do not relearn t
    never a bare `git commit` when other sessions may have work staged.
 6. **Two concurrent `launchPackagedApp()` calls on the same machine are NOT
    independent, even with distinct `--user-data-dir`s.** Found 2026-08-06 authoring
-   `desktop-signed-embedded-shared.spec.ts`/`desktop-signed-cloud.spec.ts`: an
+   `desktop-signed-embedded-shared.spec.ts`/`real-desktop-signed-cloud.spec.ts`: an
    otherwise-clean `A1` scenario failed with `electron.launch: Target page, context or
    browser has been closed` after only ~190ms, no window ever opening, main-process
    `exitCode: 0`. Root-caused, not guessed: `packages/claxedo-desktop/src/main/

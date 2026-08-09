@@ -585,6 +585,7 @@ const bakedAccountConfig = import.meta.env as Record<string, string | undefined>
 const account = setupLazyAccount({
   ipcMain,
   userDataDir: app.getPath("userData"),
+  adapterReady: app.whenReady(),
   env: accountConfigEnvironment(process.env, bakedAccountConfig),
   onError: (stage, error) => logger.warn(`[account] ${stage}: ${String(error)}`),
 })
@@ -619,6 +620,10 @@ const hostConnector = setupElectronHostConnector({
   mainDir: MAIN_DIR,
   resourcesPath: process.resourcesPath,
   displayName: machineDisplayName(process.platform),
+  ...(Number.isFinite(Number(process.env.CLAXEDO_HOST_CONNECTOR_HEARTBEAT_INTERVAL_MS)) &&
+  Number(process.env.CLAXEDO_HOST_CONNECTOR_HEARTBEAT_INTERVAL_MS) > 0
+    ? { heartbeatIntervalMs: Number(process.env.CLAXEDO_HOST_CONNECTOR_HEARTBEAT_INTERVAL_MS) }
+    : {}),
   onError: (stage, error) => logger.warn(`[host-connector] ${stage}: ${String(error)}`),
   // The panel shows state the user did not cause — an expiry, a rejected
   // beat, a revocation — so every transition is pushed rather than waited
