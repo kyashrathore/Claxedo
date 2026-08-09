@@ -4,7 +4,7 @@ import os from "node:os"
 import path from "node:path"
 
 import { REPO_ROOT } from "./closure"
-import { emittedManifestFindings } from "./emitted-manifest"
+import { emittedManifestFindings, readBuildManifest } from "./emitted-manifest"
 import type { Policy } from "./policy"
 
 const ROOT_FILES = [
@@ -71,39 +71,53 @@ export function productManifestRoleFindings(policy: Policy, root = REPO_ROOT): s
     ...manifest.peerDependencies,
   })
   return dependencies.flatMap((dependency) =>
-    policy.forbiddenPackages.some((forbidden) => matchesPackage(dependency, forbidden))
+    (policy.manifestForbiddenPackages ?? policy.forbiddenPackages).some((forbidden) => matchesPackage(dependency, forbidden))
       ? [`forbidden manifest dependency: ${dependency}`]
       : [],
   )
 }
 
-export function workspaceDependencyClosure(packageDir: string, root = REPO_ROOT): string[] {
-  const byName = new Map<string, { dir: string; manifest: WorkspaceManifest }>()
+/** Derive source access from the exact normalized graph emitted by the entry build. */
+export function workspaceClosureFromBuildManifest(policy: Policy, root = REPO_ROOT): string[] {
+  if (!policy.emitted) throw new Error(`${policy.id} isolation requires an emitted entry manifest`)
+  const manifest = readBuildManifest(path.join(root, policy.emitted.file))
+  const workspaceDirs = workspacePackageDirs(root).sort((a, b) => b.length - a.length)
+  const allowed = new Set<string>([policy.packageDir])
+  for (const module of manifest.modules) {
+    const packageDir = workspaceDirs.find((dir) => module === dir || module.startsWith(`${dir}/`))
+    if (packageDir) allowed.add(packageDir)
+  }
+  return [...allowed].sort()
+}
+
+function workspaceBuildInputClosure(packageDirs: string[], root: string): string[] {
+  const byName = new Map<string, string>()
   for (const dir of workspacePackageDirs(root)) {
     const manifest = JSON.parse(fs.readFileSync(path.join(root, dir, "package.json"), "utf8")) as WorkspaceManifest
-    if (manifest.name) byName.set(manifest.name, { dir, manifest })
+    if (manifest.name) byName.set(manifest.name, dir)
   }
-
-  const allowed = new Set<string>()
-  const frontier = [packageDir]
+  const closure = new Set<string>()
+  const frontier = [...packageDirs]
   while (frontier.length > 0) {
     const dir = frontier.shift()!
-    if (allowed.has(dir)) continue
+    if (closure.has(dir)) continue
     const file = path.join(root, dir, "package.json")
-    if (!fs.existsSync(file)) throw new Error(`isolation package is not a workspace: ${dir}`)
-    allowed.add(dir)
+    if (!fs.existsSync(file)) throw new Error(`isolation build input is not a workspace: ${dir}`)
+    closure.add(dir)
     const manifest = JSON.parse(fs.readFileSync(file, "utf8")) as WorkspaceManifest
-    const names = Object.keys({
+    for (const name of Object.keys({
       ...manifest.dependencies,
       ...manifest.optionalDependencies,
       ...manifest.peerDependencies,
-    })
-    for (const name of names) {
-      const workspace = byName.get(name)
-      if (workspace && !allowed.has(workspace.dir)) frontier.push(workspace.dir)
+      // Repository-owned build scripts may import workspace tools declared as
+      // dev dependencies (OpenCode's node build imports @opencode-ai/script).
+      ...(manifest as WorkspaceManifest & { devDependencies?: Record<string, string> }).devDependencies,
+    })) {
+      const dependency = byName.get(name)
+      if (dependency && !closure.has(dependency)) frontier.push(dependency)
     }
   }
-  return [...allowed].sort()
+  return [...closure]
 }
 
 function copyAllowedPackage(source: string, destination: string) {
@@ -121,9 +135,21 @@ export function materializeIsolatedWorkspace(policy: Policy, destination: string
   if (!policy.isolation) throw new Error(`${policy.id} declares no isolation commands`)
   const roleFindings = productManifestRoleFindings(policy, root)
   if (roleFindings.length > 0) throw new Error(`${policy.id} ${roleFindings.join(", ")}`)
-  const allowed = new Set([
-    ...workspaceDependencyClosure(policy.packageDir, root),
+  const emittedAllowed = new Set(workspaceClosureFromBuildManifest(policy, root))
+  for (const buildPackage of policy.isolation.buildPackages ?? []) {
+    if (!emittedAllowed.has(buildPackage.packageDir)) {
+      throw new Error(
+        `${policy.id} isolation build package is outside its emitted workspace closure: ${buildPackage.packageDir}`,
+      )
+    }
+  }
+  const buildInputs = [
+    ...(policy.isolation.buildPackages ?? []).map((item) => item.packageDir),
     ...(policy.isolation.additionalPackageDirs ?? []),
+  ]
+  const allowed = new Set([
+    ...emittedAllowed,
+    ...workspaceBuildInputClosure(buildInputs, root),
   ])
 
   fs.mkdirSync(destination, { recursive: true })
@@ -155,9 +181,6 @@ export function materializeIsolatedWorkspace(policy: Policy, destination: string
   }
   for (const buildPackage of policy.isolation.buildPackages ?? []) {
     const dir = buildPackage.packageDir
-    if (!allowed.has(dir)) {
-      throw new Error(`${policy.id} isolation build package is outside its workspace dependency closure: ${dir}`)
-    }
     const manifest = JSON.parse(fs.readFileSync(path.join(destination, dir, "package.json"), "utf8")) as {
       scripts?: Record<string, string>
     }

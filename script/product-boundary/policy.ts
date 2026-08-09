@@ -41,6 +41,11 @@ export type Policy = {
 
   /** Bare package names this entry may never reach, matched by package prefix. */
   forbiddenPackages: string[]
+  /**
+   * Package-manifest role violations. Defaults to `forbiddenPackages`; shared
+   * multi-entry packages may narrow this to what the package as a whole bans.
+   */
+  manifestForbiddenPackages?: string[]
   /** Repo-relative module prefixes this entry may never reach. */
   forbiddenModules: string[]
   /**
@@ -90,7 +95,7 @@ export type Policy = {
 
   /** Fresh-install build commands run with only these workspace sources. */
   isolation?: {
-    /** Extra tool packages beyond the target's transitive workspace deps. */
+    /** Extra repository-owned build tools absent from the emitted entry graph. */
     additionalPackageDirs?: string[]
     /** Repo-relative non-package build inputs read by allowed build scripts. */
     additionalFiles?: string[]

@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test } from "vitest"
 import {
   materializeIsolatedWorkspace,
   verifyIsolatedWorkspace,
-  workspaceDependencyClosure,
+  workspaceClosureFromBuildManifest,
   type IsolatedCommand,
 } from "./isolated-workspace"
 import type { Policy } from "./policy"
@@ -36,6 +36,14 @@ function fakeRepository() {
       dependencies: { hono: "1.0.0", ...(dependency ? { [dependency]: "workspace:*" } : {}) },
     }))
   }
+  const artifact = path.join(root, "packages/allowed/.artifacts/manifest.json")
+  fs.mkdirSync(path.dirname(artifact), { recursive: true })
+  fs.writeFileSync(artifact, JSON.stringify({
+    entry: "packages/allowed/src/index.ts",
+    modules: ["packages/allowed/src/index.ts", "packages/allowed-dependency/src/index.ts"],
+    chunks: ["packages/allowed/dist/index.js"],
+    edges: { static: [], dynamic: [] },
+  }))
   return root
 }
 
@@ -49,6 +57,12 @@ function policy(): Policy {
     forbiddenPackages: [],
     forbiddenModules: [],
     control: { minModules: 1, requiredModules: [] },
+    emitted: {
+      file: "packages/allowed/.artifacts/manifest.json",
+      minModules: 1,
+      minChunks: 1,
+      requiredModules: ["packages/allowed/src/index.ts"],
+    },
     isolation: {
       additionalFiles: [".github/BUILD_INPUT"],
       buildPackages: [{ packageDir: "packages/allowed-dependency", environment: { FIXTURE_MODE: "isolated" } }],
@@ -75,9 +89,9 @@ describe("isolated workspace", () => {
     expect(stub.dependencies).toEqual({ hono: "1.0.0" })
   })
 
-  test("derives the allowlist from transitive workspace dependencies", () => {
+  test("derives the allowlist from the emitted entry manifest", () => {
     const root = fakeRepository()
-    expect(workspaceDependencyClosure("packages/allowed", root)).toEqual([
+    expect(workspaceClosureFromBuildManifest(policy(), root)).toEqual([
       "packages/allowed",
       "packages/allowed-dependency",
     ])
@@ -106,6 +120,16 @@ describe("isolated workspace", () => {
     const ok = verifyIsolatedWorkspace(policy(), (input) => {
       seen.push(input)
       temporary = input.cwd.includes("packages/allowed") ? path.resolve(input.cwd, "../..") : input.cwd
+      if (input.cwd.endsWith("packages/allowed")) {
+        const manifest = path.join(input.cwd, ".artifacts/manifest.json")
+        fs.mkdirSync(path.dirname(manifest), { recursive: true })
+        fs.writeFileSync(manifest, JSON.stringify({
+          entry: "packages/allowed/src/index.ts",
+          modules: ["packages/allowed/src/index.ts"],
+          chunks: ["packages/allowed/dist/index.js"],
+          edges: { static: [], dynamic: [] },
+        }))
+      }
       return 0
     }, root)
 
@@ -129,7 +153,7 @@ describe("isolated workspace", () => {
     input.isolation!.buildPackages = [{ packageDir: "packages/excluded" }]
 
     expect(() => materializeIsolatedWorkspace(input, destination, root)).toThrow(
-      "isolation build package is outside its workspace dependency closure",
+      "isolation build package is outside its emitted workspace closure",
     )
   })
 
@@ -164,12 +188,6 @@ describe("isolated workspace", () => {
     const root = fakeRepository()
     let temporary = ""
     const input = policy()
-    input.emitted = {
-      file: "packages/allowed/.artifacts/manifest.json",
-      minModules: 1,
-      minChunks: 1,
-      requiredModules: ["packages/allowed/src/index.ts"],
-    }
     const ok = verifyIsolatedWorkspace(input, (command) => {
       temporary = command.cwd.includes("packages/") ? path.resolve(command.cwd, "../..") : command.cwd
       return 0
