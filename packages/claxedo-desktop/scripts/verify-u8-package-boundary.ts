@@ -6,19 +6,22 @@ export type U8PackageBoundaryStep = {
   env?: Record<string, string>
 }
 
-export function u8PackageBoundarySteps(platform: NodeJS.Platform = process.platform): U8PackageBoundaryStep[] {
+export function u8PackageBoundarySteps(
+  platform: NodeJS.Platform = process.platform,
+  options: { existingPackage?: boolean } = {},
+): U8PackageBoundaryStep[] {
   if (platform !== "darwin") {
     throw new Error("verify:u8-package-boundary requires macOS because the contract qualifies a packaged macOS artifact")
   }
   return [
-    {
+    ...(!options.existingPackage ? [{
       label: "signed-capable package",
       command: ["bun", "run", "package:mac", "--", "--dir", "--publish", "never"],
       env: {
         VITE_AUTH_ENABLED: "true",
         CSC_IDENTITY_AUTO_DISCOVERY: "false",
       },
-    },
+    }] : []),
     {
       label: "packaged resource inventory",
       command: ["bun", "./scripts/verify-package-contents.ts"],
@@ -48,6 +51,12 @@ async function runStep(step: U8PackageBoundaryStep) {
 }
 
 if (import.meta.main) {
-  for (const step of u8PackageBoundarySteps()) await runStep(step)
+  const args = new Set(process.argv.slice(2))
+  const supported = new Set(["--existing-package"])
+  const unknown = [...args].filter((argument) => !supported.has(argument))
+  if (unknown.length > 0) throw new Error(`unknown verify:u8-package-boundary argument(s): ${unknown.join(", ")}`)
+  for (const step of u8PackageBoundarySteps(process.platform, { existingPackage: args.has("--existing-package") })) {
+    await runStep(step)
+  }
   console.log("[u8-package-boundary] packaged resource, unsigned startup, and signed activation contracts passed")
 }

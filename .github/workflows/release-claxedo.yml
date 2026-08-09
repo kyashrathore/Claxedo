@@ -440,6 +440,11 @@ jobs:
           CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH: ${{ matrix.arch }}
         run: bun run smoke:diagnostics:packaged
 
+      - name: Verify packaged U8 boundary (macOS)
+        if: runner.os == 'macOS' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
+        working-directory: packages/claxedo-desktop
+        run: bun ./scripts/verify-u8-package-boundary.ts --existing-package
+
       - name: Run packaged diagnostics smoke (Windows)
         if: runner.os == 'Windows' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
         working-directory: packages/claxedo-desktop

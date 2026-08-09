@@ -196,6 +196,11 @@ jobs:
           CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH: ${{ matrix.arch }}
         run: bun run smoke:diagnostics:packaged
 
+      - name: Verify packaged U8 boundary (macOS)
+        if: inputs.only != true && runner.os == 'macOS' && (inputs.leg == 'all' || inputs.leg == matrix.leg || inputs.leg == matrix.platform)
+        working-directory: packages/claxedo-desktop
+        run: bun ./scripts/verify-u8-package-boundary.ts --existing-package
+
       - name: Run packaged diagnostics smoke (Linux)
         if: inputs.only != true && runner.os == 'Linux' && (inputs.leg == 'all' || inputs.leg == matrix.leg || inputs.leg == matrix.platform)
         working-directory: packages/claxedo-desktop

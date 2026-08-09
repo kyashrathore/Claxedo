@@ -21,6 +21,14 @@ describe("U8 package boundary public gate", () => {
     expect(() => u8PackageBoundarySteps("linux")).toThrow(/requires macOS/)
   })
 
+  test("reuses the release workflow's exact package without rebuilding it", () => {
+    expect(u8PackageBoundarySteps("darwin", { existingPackage: true })).toEqual([
+      { label: "packaged resource inventory", command: ["bun", "./scripts/verify-package-contents.ts"] },
+      { label: "unsigned startup trace", command: ["bun", "./scripts/u8-packaged-smoke.ts"] },
+      { label: "signed activation trace", command: ["bun", "./scripts/u8-signed-activation-smoke.ts"] },
+    ])
+  })
+
   test("the two traces select distinct real packaged scenarios", () => {
     expect(u8SmokeCommand("unsigned")).toContain("unsigned startup")
     expect(u8SmokeCommand("signed-activation")).toContain("fixture OAuth activates")
