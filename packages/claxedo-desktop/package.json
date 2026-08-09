@@ -34,6 +34,9 @@
     "package:win:inner": "electron-builder --win --config electron-builder.config.ts",
     "package:linux": "bun ./scripts/package.ts --linux",
     "package:linux:inner": "electron-builder --linux --config electron-builder.config.ts",
+    "smoke:u8-packaged": "bun ./scripts/u8-packaged-smoke.ts",
+    "smoke:u8-signed-activation": "bun ./scripts/u8-signed-activation-smoke.ts",
+    "verify:u8-package-boundary": "bun ./scripts/verify-u8-package-boundary.ts",
     "verify:closure": "bun ../../script/product-boundary/verify.ts"
   },
   "main": "./out/main/index.js",

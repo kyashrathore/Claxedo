@@ -31,45 +31,15 @@
 const EXTERNAL_SCHEMES = new Set(["http:", "https:", "mailto:"])
 
 /**
- * Which product this desktop build is, and therefore which document is THE app
- * document.
+ * The one renderer document every desktop emits and loads.
  *
- * Here rather than in `windows.ts` because "what is the app document" is this
- * module's question: `isTrustedMainRendererUrl` compares against exactly this
- * name, and a build that emitted one document while the guard trusted another
- * would either load a blank window or — far worse — trust a document that is
- * not ours. Electron-free like the rest of this file, which is also what lets
- * `vite.renderer.ts` and `electron.vite.config.ts` import it, so the name the
- * build EMITS and the name main LOADS come from one function instead of two
- * string literals that agree until they don't.
- *
- * The discriminator is `VITE_AUTH_ENABLED`, the discriminator this repository
- * already has: `getDefaultConfig()` reads it for `authEnabled`, the release
- * workflow sets it, and `analytics.ts` calls it the cloud discriminator. A
- * second product flag would only create a way for the two to disagree.
- *
- * Unset means LOCAL on purpose. A build that says nothing about its product
- * ships no identity provider; the cost of forgetting the flag is a desktop
- * without hosted surfaces, not a desktop that leaked them.
+ * Signed capability is not a second document. A signed-capable release starts
+ * from this exact local composition and loads its separately fingerprinted
+ * hosted contribution chunk only after Electron main reports a signed account.
+ * Keeping the document constant makes the unsigned startup path identical in a
+ * self-build and an official release.
  */
-export type DesktopProductMode = "local" | "signed"
-
-export function desktopProductMode(env: { VITE_AUTH_ENABLED?: string | undefined }): DesktopProductMode {
-  return env.VITE_AUTH_ENABLED?.trim() === "true" ? "signed" : "local"
-}
-
-/**
- * The renderer document each product emits and loads.
- *
- * Distinct names, not one name with different contents, and that is the point:
- * exactly one of these is an input to the renderer build, so the other's entry
- * module — and everything only it imports — is absent from the artifact rather
- * than present and unreached. The file name is the observable evidence of which
- * product got built.
- */
-export function rendererDocument(mode: DesktopProductMode) {
-  return mode === "signed" ? "index.html" : "index.local.html"
-}
+export const MAIN_RENDERER_DOCUMENT = "index.local.html"
 
 export function isSafeExternalUrl(input: string) {
   try {

@@ -5,7 +5,8 @@ import path from "node:path"
 
 const configRequire = createRequire(import.meta.url)
 
-import { createElectronRenderer, desktopDir, desktopProductModeForBuild } from "./vite.renderer"
+import { createElectronRenderer, desktopDir } from "./vite.renderer"
+import { desktopMainBoundaryManifestPlugin } from "./scripts/product-boundary-manifests"
 
 const channel = (() => {
   const raw = process.env.CLAXEDO_CHANNEL
@@ -28,6 +29,23 @@ const telemetryDefines = Object.fromEntries(
   ]),
 )
 
+// Public OAuth client metadata has the same packaged-runtime constraint as
+// telemetry: Electron main cannot recover CI's environment on an end user's
+// machine. These values identify endpoints and a public client; no client
+// secret is accepted or baked.
+const accountDefines = Object.fromEntries(
+  ([
+    "CLAXEDO_ACCOUNT_AUTHORIZE_URL",
+    "CLAXEDO_ACCOUNT_TOKEN_URL",
+    "CLAXEDO_ACCOUNT_CLIENT_ID",
+    "CLAXEDO_ACCOUNT_SCOPE",
+    "CLAXEDO_SERVER_ORIGIN",
+  ] as const).map((name) => [
+    `import.meta.env.${name}`,
+    JSON.stringify(process.env[name]?.trim() || undefined),
+  ]),
+)
+
 // ── Config ──
 
 export default defineConfig(({ mode }) => {
@@ -35,16 +53,8 @@ export default defineConfig(({ mode }) => {
     main: {
       define: {
         ...telemetryDefines,
+        ...accountDefines,
         "import.meta.env.CLAXEDO_CHANNEL": JSON.stringify(channel),
-        // Which product this build is, for `src/main/windows.ts`. BAKED for the
-        // same reason the telemetry keys above are: the main process runs on an
-        // end user's machine, where VITE_AUTH_ENABLED does not exist, so a main
-        // process reading it at runtime would always resolve `local` and a
-        // signed build would load a document it did not emit. Resolved through
-        // `desktopProductModeForBuild`, the same function that selects the
-        // renderer's HTML input, so the emitted document and the loaded
-        // document cannot disagree.
-        "import.meta.env.CLAXEDO_PRODUCT_MODE": JSON.stringify(desktopProductModeForBuild(mode)),
         // The reviewed CIM script, CRLF-normalized + UTF-16LE + base64 — the
         // shape PowerShell's -EncodedCommand takes. A define rather than a
         // module import so nothing ever has to PARSE the .ps1: bun runs
@@ -61,6 +71,7 @@ export default defineConfig(({ mode }) => {
         ),
       },
       plugins: [
+        desktopMainBoundaryManifestPlugin(desktopDir),
         {
           name: "copy-claxedo-server",
           closeBundle() {
@@ -86,6 +97,11 @@ export default defineConfig(({ mode }) => {
             index: "src/main/index.ts",
             "process-metrics-worker": "src/main/diagnostics/process-metrics-worker-entry.ts",
             "session-memory-worker": "src/main/diagnostics/session-memory-worker-entry.ts",
+          },
+          output: {
+            manualChunks(id) {
+              if (id.endsWith("/src/main/account/index.ts")) return "desktop-account"
+            },
           },
         },
       },

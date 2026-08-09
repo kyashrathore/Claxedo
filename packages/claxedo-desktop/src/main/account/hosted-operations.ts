@@ -115,9 +115,9 @@ export const HOSTED_OPERATIONS = {
   // MAIN-ONLY. `publicKey` and `signature` are the machine identity, and the
   // route stores whatever public key it is handed — so a caller that supplies
   // them enrolls a machine whose private half nobody else holds. The only
-  // legitimate caller is `setupHostConnector`, which is given
-  // `account.service.run` in-process and fills these from the key
-  // `host-connector/machine-identity.ts` owns; the renderer reaches the same
+  // legitimate caller is the Host Connector child. Electron brokers this
+  // fixed named operation and the child fills these from the key bootstrapped
+  // by `host-connector/identity-store.ts`; the renderer reaches the same
   // feature through the connector's own zero-argument IPC. That refusal is
   // enforced by `RENDERER_WITHHELD_OPERATIONS` in `account-ipc.ts`, which is
   // where the whole argument is written down.

@@ -105,6 +105,98 @@ export function normalizeRollupBuildManifest(input: {
   }
 }
 
+function rollupEntryChunkMatches(input: {
+  entry: string
+  chunks: RollupChunkMetadata[]
+  workspaceRoot: string
+}) {
+  const entry = normalizeModuleId(input.entry, input.workspaceRoot)
+  return {
+    entry,
+    matches: input.chunks.filter((chunk) =>
+      Object.keys(chunk.modules).some((id) => normalizeModuleId(id, input.workspaceRoot) === entry),
+    ),
+  }
+}
+
+function rollupEntryChunk(input: {
+  entry: string
+  chunks: RollupChunkMetadata[]
+  workspaceRoot: string
+}) {
+  const { entry, matches } = rollupEntryChunkMatches(input)
+  if (matches.length !== 1) {
+    throw new Error(
+      `expected exactly one Rollup chunk containing ${entry}; found ${matches.map((chunk) => chunk.fileName).join(", ") || "none"}`,
+    )
+  }
+  return matches[0]!
+}
+
+/**
+ * Normalize only the chunks reachable from one runtime entry.
+ *
+ * Rollup's bundle object contains every emitted entry and lazy chunk. That is
+ * the right input for {@link normalizeRollupBuildManifest}, but it is not an
+ * honest unsigned-startup trace: a dynamic import's target is present in the
+ * artifact without being loaded by the static entry graph. This variant keeps
+ * that dynamic edge as evidence while excluding the target's chunks/modules.
+ * Callers that describe an activated optional contribution can opt into its
+ * dynamic descendants and exclude chunks already owned by the base closure.
+ */
+export function normalizeRollupEntryBuildManifest(input: {
+  entry: string
+  bundle: RollupBundleMetadata
+  workspaceRoot: string
+  includeDynamicImports?: boolean
+  excludeChunks?: Iterable<string>
+  /** Lazy entry modules that are edges from this closure, not part of it. */
+  cutAtEntries?: Iterable<string>
+}): BuildManifest {
+  const chunks = Object.values(input.bundle).filter((item): item is RollupChunkMetadata => item.type === "chunk")
+  const byFileName = new Map(chunks.map((chunk) => [slash(chunk.fileName), chunk]))
+  const excluded = new Set([...(input.excludeChunks ?? [])].map(slash))
+  for (const entry of input.cutAtEntries ?? []) {
+    const match = rollupEntryChunkMatches({ entry, chunks, workspaceRoot: input.workspaceRoot })
+    if (match.matches.length > 1) {
+      throw new Error(
+        `expected at most one Rollup cut-point chunk containing ${match.entry}; ` +
+          `found ${match.matches.map((chunk) => chunk.fileName).join(", ")}`,
+      )
+    }
+    if (match.matches[0]) excluded.add(slash(match.matches[0].fileName))
+  }
+  const reached = new Map<string, RollupChunkMetadata>()
+  const pending = [rollupEntryChunk({ entry: input.entry, chunks, workspaceRoot: input.workspaceRoot })]
+
+  while (pending.length > 0) {
+    const chunk = pending.pop()!
+    const fileName = slash(chunk.fileName)
+    if (reached.has(fileName) || excluded.has(fileName)) continue
+    reached.set(fileName, chunk)
+    const targets = input.includeDynamicImports
+      ? [...chunk.imports, ...chunk.dynamicImports]
+      : chunk.imports
+    for (const target of targets) {
+      const dependency = byFileName.get(slash(target))
+      if (dependency) pending.push(dependency)
+    }
+  }
+
+  const selected = [...reached.values()]
+  return {
+    entry: normalizeModuleId(input.entry, input.workspaceRoot),
+    modules: sorted(selected.flatMap((chunk) =>
+      Object.keys(chunk.modules).map((id) => normalizeModuleId(id, input.workspaceRoot)),
+    )),
+    chunks: sorted(selected.map((chunk) => slash(chunk.fileName))),
+    edges: {
+      static: sorted(selected.flatMap((chunk) => chunk.imports.map((target) => edge(chunk.fileName, target)))),
+      dynamic: sorted(selected.flatMap((chunk) => chunk.dynamicImports.map((target) => edge(chunk.fileName, target)))),
+    },
+  }
+}
+
 /** Normalize a single-file bundler's external source-map metadata. */
 export function normalizeSourceMapBuildManifest(input: {
   entry: string

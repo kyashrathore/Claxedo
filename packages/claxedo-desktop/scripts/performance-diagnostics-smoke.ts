@@ -679,7 +679,7 @@ async function connectToPackagedApp(port: number, application: Bun.Subprocess) {
       webSocketDebuggerUrl: string
     }>>).catch(() => [])
     const target = targets.find((item) =>
-      item.type === "page" && item.url.includes("/out/renderer/index.html"))
+      item.type === "page" && item.url.includes("/out/renderer/index.local.html"))
     if (target) return await createCdpClient(target.webSocketDebuggerUrl)
     await Bun.sleep(250)
   }

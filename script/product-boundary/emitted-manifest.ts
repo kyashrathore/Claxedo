@@ -52,11 +52,11 @@ export function emittedManifestFindings(policy: Policy, root = REPO_ROOT): strin
   for (const required of policy.emitted.requiredModules) {
     if (!manifest.modules.includes(required)) findings.push(`required emitted module missing: ${required}`)
   }
-  for (const forbidden of policy.forbiddenModules) {
+  for (const forbidden of policy.emitted.forbiddenModules ?? policy.forbiddenModules) {
     const hits = manifest.modules.filter((module) => matchesPrefix(module, forbidden))
     if (hits.length > 0) findings.push(`forbidden emitted module ${forbidden}: ${hits.join(", ")}`)
   }
-  for (const forbidden of policy.forbiddenPackages) {
+  for (const forbidden of policy.emitted.forbiddenPackages ?? policy.forbiddenPackages) {
     const hits = manifest.modules.filter((module) => matchesPrefix(module, forbidden))
     if (hits.length > 0) findings.push(`forbidden emitted package ${forbidden}: ${hits.join(", ")}`)
   }

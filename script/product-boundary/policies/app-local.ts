@@ -66,6 +66,9 @@ export const appLocal: Policy = {
       // resolution silently died — the failure that would ALSO hide the
       // identity provider and report a clean local product.
       `${SRC}/platform/api/api.ts`,
+      // Owns the loopback-vs-hosted route split without importing relay or
+      // hosted workspace machinery into the local product closure.
+      `${SRC}/platform/runtime/server-transport.ts`,
       // Reached only through `#terminal-backend`, the build-config virtual
       // module. Same reasoning, different resolver.
       `${SRC}/features/terminal/core/backend/xterm.ts`,
@@ -74,8 +77,9 @@ export const appLocal: Policy = {
   },
 
   // Measured 2026-08-09 with `runtimeOnly`, after the hosted loader moved to
-  // the hosted entry. No headroom: the remaining shared seam must only shrink.
-  ceilings: { modules: 808, packages: 41 },
+  // the hosted entry, plus the dependency-light loopback transport owner.
+  // No headroom: the remaining shared seam must only shrink.
+  ceilings: { modules: 809, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

@@ -19,7 +19,7 @@
  * of the same fact, and the one that arrived second would win.
  */
 
-import type { HostConnectorStatus } from "./index"
+import type { HostConnectorStatus } from "./child-supervisor"
 
 export const HOST_CONNECTOR_STATUS_CHANNEL = "claxedo.hostConnector.status"
 

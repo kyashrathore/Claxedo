@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtempSync, readFileSync, existsSync, readdirSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { readFileSync, existsSync, readdirSync } from "node:fs"
 import path from "node:path"
 import {
   HOST_CONNECTOR_OPERATIONS,
@@ -8,7 +7,7 @@ import {
   registerHostConnectorIpc,
   type HostConnectorIpcTarget,
 } from "./ipc"
-import { setupHostConnector, type HostConnectorSetup } from "./index"
+import type { HostConnectorSetup, HostConnectorStatus } from "./child-supervisor"
 
 /**
  * The trigger the Remote Access surface presses, and the two properties that
@@ -47,50 +46,42 @@ function ipcMain() {
   }
 }
 
-/** A `safeStorage` that really encrypts nothing but claims a real backend. */
-const safeStorage = {
-  isEncryptionAvailable: () => true,
-  encryptString: (plain: string) => Buffer.from(plain),
-  decryptString: (buffer: Buffer) => buffer.toString(),
-  getSelectedStorageBackend: () => "gnome_libsecret",
-}
-
 /**
- * A real connector over a recording account runner.
- *
- * `setupHostConnector` is the production assembly — the real machine identity,
- * the real handshake, the real transport decoding. Only the account's `run` and
- * the timer are seams, which is what makes "the start operation reaches the
- * connector" a claim about the shipped path.
+ * An IPC-local connector double. The child handshake and Electron lifecycle
+ * are integration-tested in child-supervisor.test.ts and
+ * scripts/host-connector-boot.test.ts; this suite owns only the renderer's
+ * closed operation surface and sanitized projection.
  */
 function connectorHarness(input: { bearer?: string } = {}) {
   const operations: Array<{ name: string; params?: Record<string, unknown> }> = []
   const bearer = input.bearer ?? "bearer-do-not-leak"
-  const enrollment = {
-    enrollment_id: "enr_1",
-    host_id: "host_1",
-    expires_at: 1_000,
-    // A control plane that echoed a credential back. It must not survive even
-    // one layer: `accountConnectorTransport` decodes three named fields, and
-    // the status projection drops what is left. Two narrowings, neither of
-    // which is allowed to be the only one.
-    token: bearer,
-  }
-
-  const connector = setupHostConnector({
-    run: async (name, params) => {
-      operations.push({ name, ...(params ? { params } : {}) })
-      if (name === "host.enrollmentNonce") return { request_id: "req_1", nonce: "n_1", expires_at: 2_000, token: bearer }
-      if (name === "host.enrollCurrentMachine") return { enrollment }
-      if (name === "host.enrollmentHeartbeat") return { expires_at: 3_000 }
-      throw new Error(`unexpected operation ${name}`)
+  let generation = 0
+  let state: HostConnectorStatus = { status: "not-started" }
+  const connector: HostConnectorSetup = {
+    status: () => state,
+    start: async () => {
+      if (state.status === "enrolled") return state
+      const hostId = `host_${String(generation)}`
+      operations.push({ name: "host.enrollmentNonce", params: { hostId } })
+      operations.push({
+        name: "host.enrollCurrentMachine",
+        params: { hostId, publicKey: `public_${String(generation)}`, displayName: "macOS" },
+      })
+      state = {
+        status: "enrolled",
+        enrollment: { enrollment_id: "enr_1", host_id: hostId, expires_at: 1_000 },
+      }
+      return state
     },
-    safeStorage,
-    userDataDir: mkdtempSync(path.join(tmpdir(), "claxedo-hc-ipc-")),
-    platform: "darwin",
-    displayName: "macOS",
-    setInterval: () => ({ cancel: () => {} }),
-  })
+    stop: () => {
+      state = { status: "stopped", reason: "closed", detail: "connector closed" }
+    },
+    revoke: () => {
+      generation++
+      state = { status: "stopped", reason: "revoked", detail: "remote access revoked on this machine" }
+    },
+    dispose: () => {},
+  }
 
   return { connector, operations, bearer }
 }
@@ -326,7 +317,7 @@ describe("wiring in the real entry", () => {
   test("still starts nothing at launch", () => {
     // The trigger now exists, so this matters more than it did: the ONLY caller
     // of `start()` must be the IPC operation the user's click reaches.
-    expect(code).toContain("setupHostConnector({")
+    expect(code).toContain("setupElectronHostConnector({")
     expect(code).not.toMatch(/hostConnector[?.]*\.start\(/)
   })
 
@@ -337,54 +328,5 @@ describe("wiring in the real entry", () => {
       .filter((file) => readFileSync(path.join(import.meta.dir, "..", file), "utf8").includes("registerHostConnectorIpc({"))
 
     expect(files).toEqual(["index.ts"])
-  })
-})
-
-describe("the connector's own lifecycle", () => {
-  test("revoke leaves nothing on disk for a later launch to reuse", async () => {
-    const dir = mkdtempSync(path.join(tmpdir(), "claxedo-hc-revoke-"))
-    const connector: HostConnectorSetup = setupHostConnector({
-      run: async (name) => {
-        if (name === "host.enrollmentNonce") return { request_id: "r", nonce: "n", expires_at: 1 }
-        if (name === "host.enrollCurrentMachine") {
-          return { enrollment: { enrollment_id: "e", host_id: "h", expires_at: 1 } }
-        }
-        return {}
-      },
-      safeStorage,
-      userDataDir: dir,
-      platform: "darwin",
-      setInterval: () => ({ cancel: () => {} }),
-    })
-
-    await connector.start()
-    const identity = path.join(dir, "host-machine-identity.json")
-    expect(existsSync(identity)).toBe(true)
-
-    connector.revoke()
-
-    expect(existsSync(identity)).toBe(false)
-    expect(connector.status()).toMatchObject({ status: "stopped", reason: "revoked" })
-  })
-
-  test("pause announces the transition rather than changing state silently", () => {
-    const seen: string[] = []
-    const connector = setupHostConnector({
-      run: async () => {
-        throw new Error("offline")
-      },
-      safeStorage,
-      userDataDir: mkdtempSync(path.join(tmpdir(), "claxedo-hc-pause-")),
-      platform: "darwin",
-      setInterval: () => ({ cancel: () => {} }),
-      onStatusChange: (status) => seen.push(status.status),
-    })
-
-    connector.revoke()
-
-    // The panel shows state the user did not cause; a stop that only assigned
-    // would leave a revoked machine looking published until something else
-    // happened to push.
-    expect(seen).toEqual(["stopped"])
   })
 })

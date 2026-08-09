@@ -212,30 +212,19 @@ describe("desktop server launch wiring", () => {
   test("the renderer boots through the app package entry, not a source-relative path", () => {
     // Unit 11 swaps this for the local app entry. Keeping it a package
     // specifier is what lets the boundary guards see the edge at all.
-    const renderer = read("src/renderer/index.tsx")
+    const renderer = read("src/renderer/shell.tsx")
     expect(renderer).toMatch(/from "@claxedo\/app(\/[^"]*)?"/)
     expect(renderer).not.toContain("../../claxedo-app/src")
   })
 
-  test("the renderer supplies the bearer to the shared transport, at module scope", () => {
-    // `@claxedo/app`'s `platform/api/api.ts` used to import `getAuthToken`
-    // itself. It stays in `@claxedo/app` while the Clerk producer moves to
-    // `@claxedo/cloud-app`, so that import was a cycle across the package
-    // boundary; the transport now NAMES a bearer source and each composition
-    // root supplies one.
-    //
-    // Which makes this a call site, not a type — exactly the failure shape the
-    // WorkGraph doorbell shipped with. Drop this line and the signed desktop
-    // keeps compiling, keeps launching, and silently sends every Hosted Server
-    // request without an Authorization header.
-    const renderer = read("src/renderer/index.tsx")
-
-    expect(renderer).toMatch(/configureApiRuntime\(\{\s*bearerToken:\s*getAuthToken\s*\}\)/)
-    // Module scope, not inside a component: the other `configureApiRuntime`
-    // call runs during `ServerGate`'s render, once the sidecar URL and password
-    // are known, and anything reaching `authFetch` before then would have no
-    // bearer at all.
-    expect(renderer).toMatch(/^configureApiRuntime\(\{ bearerToken: getAuthToken \}\)$/m)
+  test("the renderer never receives an account bearer", () => {
+    // Signed desktop calls cross the closed Electron AccountPort operation map.
+    // Neither the base entry nor its optional activation may recreate a browser
+    // auth session or hand a raw bearer to shared fetch.
+    for (const renderer of [read("src/renderer/local.tsx"), read("src/renderer/hosted-contributions.ts")]) {
+      expect(renderer).not.toMatch(/^import[^\n]*@claxedo\/app\/auth/m)
+      expect(renderer).not.toMatch(/^configureApiRuntime\(/m)
+    }
   })
 
   test("binds machine remote access to the Host Connector, with no HTTP fallback", () => {
@@ -244,9 +233,9 @@ describe("desktop server launch wiring", () => {
     // Connector; `@claxedo/local-server` serves none of those paths, so without
     // this line "Enable remote access" posts into a 404 and every suite stays
     // green because nothing was watching the transport.
-    const renderer = read("src/renderer/index.tsx")
+    const renderer = read("src/renderer/hosted-contributions.ts")
 
-    expect(renderer).toMatch(/^configureDesktopMachineRemoteAccess\(\)$/m)
+    expect(renderer).toMatch(/^\s*configureDesktopMachineRemoteAccess\(\)$/m)
     // And never the browser one. The desktop binding refuses rather than falls
     // back when the preload exposes no bridge; a root that also bound the HTTP
     // implementation would reintroduce the bug in the shape of resilience.

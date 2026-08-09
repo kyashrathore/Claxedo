@@ -147,9 +147,11 @@ jobs:
           CLAXEDO_CHANNEL: prod
           RUST_TARGET: ${{ matrix.target }}
           VITE_AUTH_ENABLED: "true"
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
-          VITE_CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
-          VITE_CLAXEDO_SERVER_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+          CLAXEDO_ACCOUNT_AUTHORIZE_URL: ${{ vars.CLAXEDO_ACCOUNT_AUTHORIZE_URL }}
+          CLAXEDO_ACCOUNT_TOKEN_URL: ${{ vars.CLAXEDO_ACCOUNT_TOKEN_URL }}
+          CLAXEDO_ACCOUNT_CLIENT_ID: ${{ vars.CLAXEDO_ACCOUNT_CLIENT_ID }}
+          CLAXEDO_ACCOUNT_SCOPE: ${{ vars.CLAXEDO_ACCOUNT_SCOPE }}
+          CLAXEDO_SERVER_ORIGIN: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
         working-directory: packages/claxedo-desktop
         run: bun run build
 

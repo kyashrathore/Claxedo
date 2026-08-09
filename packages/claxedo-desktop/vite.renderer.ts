@@ -4,7 +4,8 @@ import tailwindcss from "@tailwindcss/vite"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { desktopProductMode, rendererDocument, type DesktopProductMode } from "./src/main/navigation-guard"
+import { MAIN_RENDERER_DOCUMENT } from "./src/main/navigation-guard"
+import { desktopRendererBoundaryManifestPlugin } from "./scripts/product-boundary-manifests"
 
 const normalize = (value: string) => value.replaceAll("\\", "/")
 
@@ -14,35 +15,20 @@ const agentEventRuntimeDir = normalize(fileURLToPath(new URL("../agent-event-run
 const rendererRoot = normalize(path.join(desktopDir, "src/renderer"))
 // Post-divorce (plan 006): the renderer resolves @/ against claxedo-app, not packages/app.
 const upstreamRoot = normalize(fileURLToPath(new URL("../claxedo-app/src/", import.meta.url)))
-/**
- * Which product this desktop build is.
- *
- * Resolved from the SAME environment `createElectronRenderer` already loads, by
- * the same function `src/main/windows.ts` reads its baked answer from. Exported
- * so `electron.vite.config.ts` can bake it into the main process without a
- * second `loadEnv` call and a second copy of the rule.
- */
-export function desktopProductModeForBuild(mode: string): DesktopProductMode {
-  return desktopProductMode(loadEnv(mode, claxedoAppDir, "VITE_"))
-}
-
 export function createElectronRenderer(mode: string): UserConfig {
   const env = loadEnv(mode, claxedoAppDir, "VITE_")
   const terminal = env.VITE_TERMINAL_BACKEND || "xterm"
-  // Exactly ONE main document, chosen by product.
-  //
-  // This is the line that stops an unsigned desktop shipping the hosted control
-  // plane, and it has to be an INPUT selection rather than a runtime branch:
-  // rollup links whatever an input's graph reaches, so listing both documents
-  // would put `index.tsx` — and through `@claxedo/app/auth`, `auth-client.ts`
-  // and Clerk — into the local artifact no matter which one main then loaded.
-  const document = rendererDocument(desktopProductMode(env))
+  const hostedActivationEnabled = env.VITE_AUTH_ENABLED?.trim() === "true"
 
   return {
     define: {
       __DEMO_ENABLED__: "false",
+      // Replaced before Rollup links the graph. A self-build (unset/false)
+      // removes the dynamic import entirely; a release emits it as a hashed
+      // chunk while keeping the base document and its startup path local.
+      __CLAXEDO_HOSTED_ACTIVATION_ENABLED__: JSON.stringify(hostedActivationEnabled),
     },
-    plugins: [solidPlugin(), tailwindcss()],
+    plugins: [solidPlugin(), tailwindcss(), desktopRendererBoundaryManifestPlugin(desktopDir)],
     publicDir: normalize(path.join(claxedoAppDir, "public")),
     root: rendererRoot,
     worker: {
@@ -66,10 +52,20 @@ export function createElectronRenderer(mode: string): UserConfig {
       sourcemap: "hidden",
       rollupOptions: {
         input: {
-          main: normalize(path.join(rendererRoot, document)),
+          main: normalize(path.join(rendererRoot, MAIN_RENDERER_DOCUMENT)),
           loading: normalize(path.join(rendererRoot, "loading.html")),
         },
         output: {
+          // Name the optional facade without forcing it into a manual chunk.
+          // A manual chunk made Vite place its shared preload helper inside
+          // the hosted file, which in turn added a modulepreload tag to the
+          // local HTML and fetched the capability during unsigned startup.
+          chunkFileNames(chunk) {
+            if (chunk.facadeModuleId?.endsWith("/src/renderer/hosted-contributions.ts")) {
+              return "assets/desktop-hosted-contributions-[hash].js"
+            }
+            return "assets/[name]-[hash].js"
+          },
           manualChunks(id) {
             // Mermaid's classDiagram and classDiagram-v2 are separate dynamic
             // imports that produce byte-identical chunks. Merge them.

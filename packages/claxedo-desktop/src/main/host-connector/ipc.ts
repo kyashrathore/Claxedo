@@ -42,7 +42,7 @@
  */
 
 import type { IpcMainInvokeEvent } from "electron"
-import type { HostConnectorStatus } from "./index"
+import type { HostConnectorStatus } from "./child-supervisor"
 import { toStatusEvent, type HostConnectorStatusEvent } from "./status-channel"
 
 /**
@@ -70,7 +70,7 @@ export type HostConnectorIpcTarget = {
 /**
  * What this surface needs from the connector.
  *
- * Narrower than `HostConnectorSetup` on purpose: `setupHostConnector` also
+ * Narrower than `HostConnectorSetup` on purpose: the child supervisor also
  * exposes wiring the IPC layer has no business calling, and a parameter typed
  * as the whole thing is an invitation to reach for it.
  */
@@ -124,7 +124,7 @@ export function registerHostConnectorIpc(input: {
       try {
         return snapshot(await connector.start())
       } catch (error) {
-        // `setupHostConnector.start` already settles its own failures; this
+        // The child supervisor already settles its own failures; this
         // catches an unknown escape, because in main an unhandled rejection
         // from an invoke handler leaves the renderer's promise pending forever
         // and the button spinning.

@@ -100,7 +100,7 @@ async function resolvePackagedBinary(): Promise<string> {
 
 
 /**
- * Resolve the main shell window (`index.html`), ignoring the boot splash.
+ * Resolve the main local shell window (`index.local.html`), ignoring the boot splash.
  *
  * Polls rather than relying on a single `window` event: the shell may already
  * exist by the time we look, and it may also replace the splash after several
@@ -112,12 +112,12 @@ async function waitForShellWindow(app: ElectronApplication, timeoutMs: number): 
   while (Date.now() < deadline) {
     for (const candidate of app.windows()) {
       if (candidate.isClosed()) continue
-      if (candidate.url().includes("index.html")) return candidate
+      if (candidate.url().includes("index.local.html")) return candidate
     }
     await new Promise((resolve) => setTimeout(resolve, 250))
   }
   throw new Error(
-    "GATING: the packaged app never opened its shell window (index.html). Windows seen: " +
+    "GATING: the packaged app never opened its local shell window (index.local.html). Windows seen: " +
       (app.windows().map((w) => w.url()).join(", ") || "(none)"),
   )
 }
@@ -200,7 +200,7 @@ export async function launchPackagedApp(input: {
    * `electron.launch()` resolves, before EITHER window (splash or shell) is
    * queried. This is the only point at which `context().addInitScript(...)`
    * can still land before the shell's first navigation: this function's own
-   * `waitForShellWindow()` below blocks until `index.html` has already
+   * `waitForShellWindow()` below blocks until `index.local.html` has already
    * loaded, so a `Page`-level `addInitScript` call on the page it returns is
    * provably too late — the app's real bootstrap fetches and any boot-time
    * toast have already run by then. `boot-observer.ts`'s `installBootObserver`
@@ -321,7 +321,7 @@ export async function launchPackagedApp(input: {
 
   // NOT `firstWindow()`. The desktop app opens TWO windows: a splash
   // (`loading.html`, windows.ts:171) while the embedded server boots, and then
-  // the real shell (`index.html`, windows.ts:101). `firstWindow()` resolves to
+  // the real shell (`index.local.html`, windows.ts). `firstWindow()` resolves to
   // the SPLASH, which is destroyed the moment the shell is ready — so every
   // subsequent interaction dies with "Target page, context or browser has been
   // closed" about two seconds in (measured 2026-08-06). Worse, an assertion
@@ -342,7 +342,11 @@ export async function launchPackagedApp(input: {
   ).toBe("file:")
 
   const close = async () => {
-    await app.close().catch(() => {})
+    const closed = await Promise.race([
+      app.close().then(() => true).catch(() => false),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 5_000)),
+    ])
+    if (!closed) app.process().kill()
     await fs.rm(userDataDir, { recursive: true, force: true }).catch(() => {})
   }
 

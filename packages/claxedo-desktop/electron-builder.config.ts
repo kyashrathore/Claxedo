@@ -2,7 +2,11 @@ import type { Configuration } from "electron-builder"
 import { existsSync, readdirSync } from "node:fs"
 import { join, resolve } from "node:path"
 
-import { NATIVE_MODULES as BASE_NATIVE_MODULES, asarStructuralGlobs } from "./scripts/package-structure"
+import {
+  HOST_CONNECTOR_EXTRA_RESOURCE,
+  NATIVE_MODULES as BASE_NATIVE_MODULES,
+  asarStructuralGlobs,
+} from "./scripts/package-structure"
 import { resolveTargetOsArch } from "./scripts/target-platform"
 
 const channel = (() => {
@@ -154,6 +158,11 @@ const getBase = (): Configuration => ({
       from: "resources/acp/",
       to: "acp/",
       filter: ["**/*"],
+    },
+    {
+      // The separately fingerprinted Host Connector runs as a child process
+      // beside app.asar; neither main nor renderer imports its implementation.
+      ...HOST_CONNECTOR_EXTRA_RESOURCE,
     },
     {
       // The claxedo-server bundle externalizes `opencode/node-embed`; the

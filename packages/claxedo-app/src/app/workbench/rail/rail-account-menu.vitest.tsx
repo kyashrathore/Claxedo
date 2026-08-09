@@ -3,9 +3,12 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
 const state = vi.hoisted(() => ({
   authEnabled: true,
+  hostedCapable: false,
   sandboxEnabled: false,
   platform: "web" as "web" | "desktop",
   status: "signed" as "loading" | "anonymous" | "signed",
+  accountStatus: "signed" as "unsigned" | "pending" | "signed" | "unavailable",
+  accountIdentity: { userId: "user_1", displayName: "Yash Rathore" } as Record<string, string>,
   user: {} as Record<string, unknown>,
   signIn: vi.fn(async () => undefined),
   signOut: vi.fn(async () => undefined),
@@ -20,8 +23,25 @@ vi.mock("@/platform/auth/auth-session", () => ({
   }),
 }))
 
+vi.mock("@/platform/account/account-provider", () => ({
+  useAccountPort: () => ({
+    state: () => state.accountStatus === "signed"
+      ? { status: "signed", identity: state.accountIdentity }
+      : state.accountStatus === "unavailable"
+        ? { status: "unavailable", reason: "callback-failed" }
+        : { status: state.accountStatus },
+    signIn: state.signIn,
+    signOut: state.signOut,
+    run: vi.fn(async () => undefined),
+  }),
+}))
+
 vi.mock("@/app/providers/config", () => ({
-  useConfigOptional: () => ({ authEnabled: state.authEnabled, sandboxEnabled: state.sandboxEnabled }),
+  useConfigOptional: () => ({
+    authEnabled: state.authEnabled,
+    sandboxEnabled: state.sandboxEnabled,
+    ...(state.hostedCapable ? { loadHostedContributions: async () => ({ contents: [] }) } : {}),
+  }),
 }))
 
 vi.mock("@claxedo/app", () => ({
@@ -40,9 +60,12 @@ import { RailAccountMenu } from "./rail-account-menu"
 
 beforeEach(() => {
   state.authEnabled = true
+  state.hostedCapable = false
   state.sandboxEnabled = false
   state.platform = "web"
   state.status = "signed"
+  state.accountStatus = "signed"
+  state.accountIdentity = { userId: "user_1", displayName: "Yash Rathore" }
   state.user = { fullName: "Yash Rathore", imageUrl: "https://example.test/avatar.png" }
   state.signIn.mockClear()
   state.signOut.mockClear()
@@ -95,6 +118,17 @@ describe("RailAccountMenu", () => {
     [{}, "Account"],
   ])("uses the signed identity fallback order", (user, label) => {
     state.user = user
+    state.accountIdentity = {
+      userId: "user_1",
+      ...(typeof user.fullName === "string" ? { displayName: user.fullName } : {}),
+      ...(typeof user.username === "string" ? { displayName: user.username } : {}),
+      ...(typeof user.primaryEmailAddress === "object" && user.primaryEmailAddress && "emailAddress" in user.primaryEmailAddress
+        ? { email: String(user.primaryEmailAddress.emailAddress) }
+        : {}),
+      ...(Array.isArray(user.emailAddresses) && user.emailAddresses[0]?.emailAddress
+        ? { email: String(user.emailAddresses[0].emailAddress) }
+        : {}),
+    }
     renderMenu()
 
     const trigger = screen.getByRole("button", { name: label })
@@ -113,18 +147,20 @@ describe("RailAccountMenu", () => {
 
   test("shows Sign in only for auth-enabled anonymous mode", async () => {
     state.status = "anonymous"
+    state.accountStatus = "unsigned"
     state.user = {}
     renderMenu()
 
     await openMenu("Sign in")
     selectMenuItem("Sign in")
 
-    await waitFor(() => expect(state.signIn).toHaveBeenCalledWith({ redirectUrl: window.location.href }))
+    await waitFor(() => expect(state.signIn).toHaveBeenCalledWith())
     expect(screen.queryByRole("menuitem", { name: "Log out" })).toBeNull()
   })
 
   test("shows Local workspace without auth commands when auth is disabled", async () => {
     state.status = "anonymous"
+    state.accountStatus = "unsigned"
     state.authEnabled = false
     state.user = {}
     renderMenu()
@@ -134,8 +170,24 @@ describe("RailAccountMenu", () => {
     expect(screen.queryByRole("menuitem", { name: "Log out" })).toBeNull()
   })
 
+  test("offers Electron account sign-in when the local renderer has a hosted contribution", async () => {
+    state.status = "anonymous"
+    state.accountStatus = "unsigned"
+    state.authEnabled = false
+    state.hostedCapable = true
+    state.platform = "desktop"
+    state.user = {}
+    renderMenu()
+
+    await openMenu("Sign in")
+    selectMenuItem("Sign in")
+
+    await waitFor(() => expect(state.signIn).toHaveBeenCalledWith())
+  })
+
   test("keeps non-auth actions available while auth is loading", async () => {
     state.status = "loading"
+    state.accountStatus = "pending"
     state.user = {}
     // Diagnostics is desktop-only, so drive the desktop platform to exercise it.
     state.platform = "desktop"

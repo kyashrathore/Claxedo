@@ -4,6 +4,7 @@ import { Show, createContext, createMemo, createSignal, onCleanup, useContext, t
 
 import { useConfigOptional } from "@/app/providers/config"
 import { useAuthSession } from "@/platform/auth/auth-session"
+import { useAccountPort } from "@/platform/account/account-provider"
 import { authDisplayEmail, type AuthDisplayUser } from "@/platform/auth/auth-display"
 import { ClaxedoIcon as Icon, type ClaxedoIconName } from "@/ui/controls/claxedo-icon"
 import { useLanguage, usePlatform } from "@claxedo/app"
@@ -110,20 +111,26 @@ export function RailAccountSubmenu(props: {
 
 export function RailAccountMenu(props: RailAccountMenuProps) {
   const auth = useAuthSession()
+  const account = useAccountPort()
   const config = useConfigOptional()
   const language = useLanguage()
   const user = createMemo(() => auth.user() as AuthDisplayUser | undefined)
-  const signed = createMemo(() => auth.status() === "signed")
-  const local = createMemo(() => auth.status() !== "loading" && !signed() && config?.authEnabled !== true)
+  const accountState = createMemo(() => account.state())
+  const signed = createMemo(() => accountState().status === "signed")
+  const hostedAccount = createMemo(() => config?.authEnabled === true || config?.loadHostedContributions !== undefined)
+  const local = createMemo(() => accountState().status !== "pending" && !signed() && !hostedAccount())
   const label = createMemo(() => {
-    if (signed()) return user()?.fullName ?? user()?.username ?? authDisplayEmail(user()) ?? language.t("settings.general.section.account")
-    if (auth.status() === "loading") return language.t("settings.general.section.account")
-    return config?.authEnabled === true ? "Sign in" : "Local workspace"
+    const state = accountState()
+    if (state.status === "signed") {
+      return state.identity.displayName ?? state.identity.email ?? language.t("settings.general.section.account")
+    }
+    if (state.status === "pending") return language.t("settings.general.section.account")
+    return hostedAccount() ? "Sign in" : "Local workspace"
   })
-  const image = createMemo(() => signed() ? user()?.imageUrl ?? undefined : undefined)
+  const image = createMemo(() => signed() && auth.status() === "signed" ? user()?.imageUrl ?? undefined : undefined)
   const authAction = createMemo(() => {
     if (signed()) return "logout" as const
-    if (auth.status() === "anonymous" && config?.authEnabled === true) return "signin" as const
+    if (accountState().status !== "pending" && hostedAccount()) return "signin" as const
   })
   const [open, setOpen] = createSignal(false)
   let preserveRootOnClose = false
@@ -233,11 +240,11 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
             <DropdownMenu.Item
               onSelect={() => {
                 if (authAction() === "signin") {
-                  void auth.signIn({ redirectUrl: window.location.href })
+                  void account.signIn()
                   changeOpen(false)
                   return
                 }
-                void auth.signOut()
+                void account.signOut()
                 changeOpen(false)
               }}
             >

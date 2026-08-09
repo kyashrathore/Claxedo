@@ -50,7 +50,7 @@ export const ACCOUNT_SIGN_OUT_CHANNEL = "claxedo.account.signOut"
  *
  * The machine identity is a P-256 private key that never expires and is the
  * entire authorisation for reaching this laptop remotely.
- * `host-connector/machine-identity.ts` owns it, keeps it inside the OS secure
+ * `host-connector/identity-store.ts` owns it, keeps it inside the OS secure
  * store, and refuses to mint one when that store is a lie. The renderer has no
  * part in it and cannot produce one.
  *
@@ -65,12 +65,12 @@ export const ACCOUNT_SIGN_OUT_CHANNEL = "claxedo.account.signOut"
  * `convex/hostEnrollments.ts` PATCHES an existing row for the same `host_id`,
  * overwriting `public_key` and clearing `paused_at`/`revoked_at` — the exact
  * "same machine id presenting a different public key" takeover
- * `machine-identity.ts` describes as indistinguishable from an attacker, and an
+ * `identity-store.ts` treats as unusable, and an
  * un-revoke of a machine the user revoked.
  *
- * These stay in the table because MAIN performs them: `setupHostConnector` in
- * `index.ts` is handed `account.service.run` directly, in-process, and the
- * connector fills `publicKey` and `signature` from the key it holds. The
+ * These stay in the table because MAIN brokers them for the separately built
+ * Host Connector child. The child fills `publicKey` and `signature` from the
+ * in-memory bootstrap key, while Electron attaches account authorization. The
  * renderer's route to the same feature is the Host Connector's own IPC
  * (`host-connector/ipc.ts`), whose four operations take NO ARGUMENTS: pressing
  * Enable calls `claxedo.hostConnector.start`, and main decides everything
@@ -80,9 +80,9 @@ export const ACCOUNT_SIGN_OUT_CHANNEL = "claxedo.account.signOut"
  *
  * Withheld rather than re-shaped, deliberately. Deriving the fields inside the
  * operation table would mean `account/` reading the machine key, and the two
- * are kept apart on purpose: `host-connector/index.ts` takes `run` as a NAME
- * because the connector must not see the account credential, and the account
- * must not see the machine key. The renderer is the only caller that has no
+ * are kept apart on purpose: `host-connector/child-supervisor.ts` brokers only
+ * fixed operation names because the child must not see the account credential,
+ * and account code must not receive the machine key. The renderer is the only caller that has no
  * business here, so the renderer is what gets refused.
  *
  * The channel is still REGISTERED. Dropping it would make the IPC surface stop

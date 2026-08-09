@@ -5,38 +5,67 @@ const DESKTOP = "packages/claxedo-desktop/src"
 const APP = "packages/claxedo-app/src"
 
 /**
- * The desktop is a COMPOSITION artifact, so its boundary is stated as two
- * closures rather than one.
+ * The desktop is a COMPOSITION artifact, so its boundary is stated as three
+ * closures rather than one: static main, lazy account, and renderer shell.
  *
  * Electron main and the renderer are separate processes with opposite rules,
  * and collapsing them into one policy is what makes a desktop boundary check
- * meaningless: main is SUPPOSED to hold the account adapter and the Host
- * Connector — it owns the machine key and the OAuth flow — while the unsigned
- * renderer must hold neither.
+ * meaningless. Static main owns the Host Connector child supervisor (not its
+ * implementation), the lazy account chunk owns OAuth credentials, and the
+ * renderer sees neither.
  */
 
 /**
- * Electron main, unsigned build.
- *
- * The plan's wording is that the desktop account closure "explicitly permits
- * Electron main's account adapter". So `src/main/account/**` (10 modules) and
- * `src/main/host-connector/**` (4 modules) are reached from
- * `src/main/index.ts` and that is correct — they are the privileged side of the
- * IPC seam, and moving them out of main would put the machine private key in
- * the renderer.
- *
- * What main must never hold is the OTHER product's implementation: the browser
- * identity SDK, the hosted control plane, or the app's authenticated-identity
- * subpath. `hosted-operations.ts` is the account adapter's exhaustive handler
- * map — it attaches the bearer itself and never takes one from the renderer —
- * so a `@clerk/clerk-js` edge here would mean the browser SDK had been pulled
- * into a Node process that cannot run it.
+ * The source walk deliberately sees string-literal dynamic imports, while the
+ * emitted manifest cuts at `account/index.ts`. That pairing proves both that
+ * the complete main composition is clean and that unsigned startup loads only
+ * the lazy broker, not the credential-bearing account adapter.
  */
-export const desktopAccountComposition: Policy = {
-  id: "desktop-account-composition",
-  summary: "@claxedo/desktop Electron main composition (src/main/index.ts)",
+export const desktopMainComposition: Policy = {
+  id: "desktop-main-composition",
+  summary: "@claxedo/desktop Electron main base composition (src/main/index.ts)",
   packageDir: "packages/claxedo-desktop",
   entry: `${DESKTOP}/main/index.ts`,
+  roots: [DESKTOP],
+  forbiddenPackages: [
+    "@clerk/clerk-js",
+    "convex",
+    "@claxedo/server",
+    "@claxedo/workgraph",
+    "@claxedo/local-server",
+    "@claxedo/host-connector",
+  ],
+  forbiddenModules: [`${DESKTOP}/renderer`],
+  control: {
+    minModules: 55,
+    requiredModules: [
+      `${DESKTOP}/main/index.ts`,
+      `${DESKTOP}/main/account/lazy-account.ts`,
+      `${DESKTOP}/main/host-connector/electron-child.ts`,
+      `${DESKTOP}/main/host-connector/child-supervisor.ts`,
+      `${DESKTOP}/main/navigation-guard.ts`,
+    ],
+    requiredPackages: ["electron"],
+  },
+  ceilings: { modules: 65, packages: 23 },
+  emitted: {
+    file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
+    minModules: 35,
+    minChunks: 3,
+    requiredModules: [
+      `${DESKTOP}/main/index.ts`,
+      `${DESKTOP}/main/account/lazy-account.ts`,
+      `${DESKTOP}/main/host-connector/electron-child.ts`,
+      `${DESKTOP}/main/host-connector/child-supervisor.ts`,
+    ],
+  },
+}
+
+export const desktopAccountComposition: Policy = {
+  id: "desktop-account-composition",
+  summary: "@claxedo/desktop lazy Electron account composition (src/main/account/index.ts)",
+  packageDir: "packages/claxedo-desktop",
+  entry: `${DESKTOP}/main/account/index.ts`,
   roots: [DESKTOP],
 
   forbiddenPackages: [
@@ -51,41 +80,44 @@ export const desktopAccountComposition: Policy = {
     // Main composes the local server as a separate child process
     // (`scripts/claxedo-server-entry.ts`), never in-process.
     "@claxedo/local-server",
+    "@claxedo/host-connector",
   ],
   forbiddenModules: [
     // The renderer is a different process with a different module system.
     // A main-process import of renderer source would bundle DOM code into Node.
     `${DESKTOP}/renderer`,
+    `${DESKTOP}/main/host-connector`,
   ],
 
   control: {
-    minModules: 40,
+    minModules: 10,
     requiredModules: [
-      `${DESKTOP}/main/index.ts`,
-      // The permitted-but-load-bearing halves. If the walk lost these, every
-      // "main holds no hosted code" answer below would be vacuous.
       `${DESKTOP}/main/account/index.ts`,
       `${DESKTOP}/main/account/hosted-operations.ts`,
-      `${DESKTOP}/main/host-connector/index.ts`,
-      // The window/product-mode decision, reached only through main's own
-      // relative graph.
-      `${DESKTOP}/main/navigation-guard.ts`,
+      `${DESKTOP}/main/account/credential-store.ts`,
     ],
-    // Main owns the connector process and the Electron surface. Both absent
-    // means the walk read no bare specifier at all.
-    requiredPackages: ["@claxedo/host-connector", "electron"],
+    requiredPackages: ["electron"],
   },
 
-  ceilings: { modules: 56, packages: 21 },
+  ceilings: { modules: 15, packages: 6 },
+  emitted: {
+    file: "packages/claxedo-desktop/out/product-boundary/desktop-account.json",
+    minModules: 10,
+    minChunks: 1,
+    requiredModules: [
+      `${DESKTOP}/main/account/index.ts`,
+      `${DESKTOP}/main/account/hosted-operations.ts`,
+      `${DESKTOP}/main/account/credential-store.ts`,
+    ],
+  },
 }
 
 /**
  * The UNSIGNED desktop renderer.
  *
- * `index.tsx` is the signed entry; `local.tsx` is this one. The difference is
- * not a flag, and that is the lesson the whole split is built on — a single
- * entry with `if (signedBuild)` still ships the identity provider, because the
- * import graph does not care whether the branch runs.
+ * `local.tsx` is the only renderer entry. Hosted contributions are reached
+ * through a dynamic import after Electron reports signed account state; the
+ * emitted manifest below follows only the base entry's static chunk graph.
  *
  * This crosses INTO `@claxedo/app` on purpose. The desktop renderer composes
  * that package's shared shell, so "what does the unsigned desktop reach" is
@@ -96,9 +128,10 @@ export const desktopAccountComposition: Policy = {
  * desktop shipped Clerk to every unsigned launch while the app's own local
  * guard stayed green.
  *
- * NOT covered: this is the SOURCE graph. The desktop has no emitted-artifact
- * scan equivalent to `check-local-bundle-identity.ts` — see the note in
- * `verify.ts`.
+ * The source closure deliberately includes the dynamic hosted contribution so
+ * it can reject a Clerk/Convex leak anywhere in the shipped renderer graph.
+ * The emitted manifest is the narrower unsigned-startup proof: it cuts at the
+ * optional chunk while retaining the dynamic edge as build metadata.
  */
 export const desktopRendererUnsigned: Policy = {
   id: "desktop-renderer-unsigned",
@@ -142,5 +175,60 @@ export const desktopRendererUnsigned: Policy = {
     requiredPackages: ["solid-js", "@claxedo/workgraph"],
   },
 
-  ceilings: { modules: 886, packages: 62 },
+  ceilings: { modules: 900, packages: 62 },
+  emitted: {
+    file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
+    minModules: 700,
+    minChunks: 1,
+    requiredModules: [
+      `${DESKTOP}/renderer/local.tsx`,
+      `${DESKTOP}/renderer/shell.tsx`,
+      `${APP}/app/entry/app.tsx`,
+    ],
+    forbiddenModules: [
+      `${DESKTOP}/renderer/hosted-contributions.ts`,
+      `${APP}/app/composition/hosted-contribution-loader.ts`,
+      `${APP}/platform/remote-access/machine-remote-access.ts`,
+    ],
+    forbiddenChunkMarkers: ["desktop-hosted-contributions"],
+  },
+}
+
+/** Optional renderer subtree activated only through Electron's AccountPort. */
+export const desktopHostedContribution: Policy = {
+  id: "desktop-hosted-contribution",
+  summary: "@claxedo/desktop optional hosted contribution (src/renderer/hosted-contributions.ts)",
+  packageDir: "packages/claxedo-desktop",
+  entry: `${DESKTOP}/renderer/hosted-contributions.ts`,
+  roots: [DESKTOP, APP],
+  aliases: APP_ALIASES,
+  followed: [{ name: "@claxedo/app", dir: "packages/claxedo-app" }],
+  forbiddenPackages: ["@clerk/clerk-js", "convex", "@claxedo/host-connector", "electron"],
+  forbiddenModules: [
+    `${APP}/platform/auth/auth-client.ts`,
+    `${APP}/app/entry/auth.ts`,
+    `${APP}/app/entry/main.tsx`,
+    `${DESKTOP}/main`,
+  ],
+  permittedOutsideRoots: MANIFEST_READS,
+  control: {
+    minModules: 250,
+    requiredModules: [
+      `${DESKTOP}/renderer/hosted-contributions.ts`,
+      `${APP}/app/composition/hosted-contribution-loader.ts`,
+      `${APP}/platform/remote-access/machine-remote-access.ts`,
+    ],
+    requiredPackages: ["solid-js", "@claxedo/workgraph"],
+  },
+  ceilings: { modules: 300, packages: 40 },
+  emitted: {
+    file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-hosted-contributions.json",
+    minModules: 500,
+    minChunks: 50,
+    requiredModules: [
+      `${DESKTOP}/renderer/hosted-contributions.ts`,
+      `${APP}/app/composition/hosted-contribution-loader.ts`,
+      `${APP}/platform/remote-access/machine-remote-access.ts`,
+    ],
+  },
 }

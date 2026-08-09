@@ -42,7 +42,7 @@ export interface ClaxedoConfig {
   daytonaApiKey?: string
   /** URL for the standalone claxedo-server (PTY, events, agent hooks) */
   claxedoServerUrl?: string
-  /** Hosted product-owned implementation; absent from the local artifact. */
+  /** Hosted product-owned implementation; absent from an unsigned artifact. */
   loadHostedContributions?: HostedContributionLoader
 }
 
@@ -78,23 +78,17 @@ export function initClaxedo(config: ClaxedoConfig): void {
     server: serverExtensions(config),
   })
 
-  // `hostedComposition` answers "may this build ever hold hosted
-  // contributions", which is what gates activation. It is NOT the account:
-  // a hosted build serves unsigned windows too, and gating registration on a
-  // signed account here would empty the composition of every window before
-  // sign-in. Removal on sign-out is the account's half, and
-  // `app/composition/hosted-contribution-sync.tsx` drives it.
-  //
-  // Unit 11 replaces this with the Electron account port's signed state, so a
-  // signed desktop activates the same contribution entry from a real account
-  // rather than a build-time environment variable — and the two halves become
-  // one question.
+  // `hostedComposition` answers whether this build has a hosted implementation
+  // it may load. Browser hosted builds activate immediately (`authEnabled`);
+  // desktop releases supply the loader but leave auth disabled because Electron
+  // main owns the account. In that composition HostedContributionSync follows
+  // the Electron AccountPort and activates only after it reports `signed`.
   const contributions = configureProductContributions({
     local: localContentSurfaces,
     register: registerContentSurface,
     unregister: unregisterContentSurface,
     loadHosted: config.loadHostedContributions,
-    hostedComposition: () => config.authEnabled === true,
+    hostedComposition: () => config.authEnabled === true || config.loadHostedContributions !== undefined,
   })
 
   // Starting the identity provider is NOT this function's job.
@@ -108,6 +102,8 @@ export function initClaxedo(config: ClaxedoConfig): void {
   // So the hosted entry starts it (`app/entry/main.tsx`), which is where the
   // decision to have an identity provider is actually made, and this function
   // keeps only the parts both products share.
+  if (config.loadHostedContributions) contributions.expectHosted()
+
   if (config.authEnabled) {
     // Hosted composition: WorkGraph and Documents arrive as one lazily
     // imported contribution set rather than as static imports of this entry.
@@ -116,7 +112,6 @@ export function initClaxedo(config: ClaxedoConfig): void {
     // and the split matters: restored-state pruning must know that WorkGraph
     // tabs are legal in this build BEFORE the dynamic import lands, or a hosted
     // reload would drop every restored WorkGraph tab in the gap.
-    contributions.expectHosted()
     void contributions.activateHosted().catch(() => {})
   }
 }

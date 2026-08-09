@@ -7,7 +7,7 @@ import { isSafeExternalUrl, navigationDecision, windowOpenDecision } from "./nav
 // navigate off the app document" is a remote-code-execution question, not a
 // navigation-UX question. These pin the policy that keeps it pinned.
 
-const APP_URL = "file:///Applications/Claxedo.app/Contents/renderer/index.html"
+const APP_URL = "file:///Applications/Claxedo.app/Contents/renderer/index.local.html"
 const isTrusted = (input: string) => input.split("#")[0]!.split("?")[0] === APP_URL
 
 describe("isSafeExternalUrl", () => {

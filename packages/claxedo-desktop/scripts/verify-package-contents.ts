@@ -25,7 +25,7 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 
-import { ALL_NATIVE_MODULES, isDeclaredStructuralEntry } from "./package-structure"
+import { ALL_NATIVE_MODULES, isDeclaredStructuralEntry, requiredPackagedBoundaryEntries } from "./package-structure"
 
 const ALLOWED_NATIVE_MODULES = new Set(ALL_NATIVE_MODULES)
 
@@ -134,6 +134,11 @@ export function verifyPackageContents(root = path.resolve(import.meta.dir, "..")
   }
   for (const archive of asars) {
     const entries = asarHeaderFiles(archive)
+    for (const required of requiredPackagedBoundaryEntries(entries)) {
+      if (!entries.includes(required)) {
+        failures.push(`${archive}: required product-boundary manifest is missing: ${required}`)
+      }
+    }
     const offenders = entries
       .filter((entry) => entry.startsWith("node_modules/"))
       .map((entry) => {

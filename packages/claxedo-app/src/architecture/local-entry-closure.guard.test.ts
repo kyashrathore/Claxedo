@@ -211,16 +211,18 @@ describe("the local entry", () => {
     // ANONYMOUS — account menu stuck on "Local workspace", with a green suite.
     expect(hosted).toMatch(/configureAuthSession\s*\(\s*useAuth\s*\)/)
 
-    // BOTH signed-capable composition roots, not just the web one. The desktop
-    // renderer is a third root that mounts the same shell and is signed-in
-    // capable; it was missed on the first pass precisely because nothing here
-    // was looking at it.
-    const desktopRenderer = readFileSync(
-      path.join(appRoot, "../claxedo-desktop/src/renderer/index.tsx"),
+    // The desktop is signed through Electron main, not a second renderer auth
+    // provider. Its base and optional contribution chunk therefore bind neither
+    // browser auth seam and receive no bearer.
+    const desktopBase = readFileSync(path.join(appRoot, "../claxedo-desktop/src/renderer/local.tsx"), "utf8")
+    const desktopHosted = readFileSync(
+      path.join(appRoot, "../claxedo-desktop/src/renderer/hosted-contributions.ts"),
       "utf8",
     )
-    expect(desktopRenderer).toMatch(/configureAuthSession\s*\(\s*useAuth\s*\)/)
-    expect(desktopRenderer).toMatch(/configureApiRuntime\(\{\s*bearerToken:\s*getAuthToken\s*\}\)/)
+    for (const desktopRenderer of [desktopBase, desktopHosted]) {
+      expect(desktopRenderer).not.toMatch(/^\s*configureAuthSession\s*\(/m)
+      expect(desktopRenderer).not.toMatch(/^\s*configureApiRuntime\s*\(/m)
+    }
 
     // And the local entry cannot bind either one even by accident: it imports
     // neither the transport nor the provider (asserted above, over specifiers).
@@ -238,7 +240,7 @@ describe("the local entry", () => {
     // Three roots, three different correct answers, none of them a default.
     const hosted = readFileSync(path.join(appRoot, "src/app/entry/main.tsx"), "utf8")
     const desktopRenderer = readFileSync(
-      path.join(appRoot, "../claxedo-desktop/src/renderer/index.tsx"),
+      path.join(appRoot, "../claxedo-desktop/src/renderer/hosted-contributions.ts"),
       "utf8",
     )
     const local = readFileSync(path.join(appRoot, "src/app/entry/local.tsx"), "utf8")

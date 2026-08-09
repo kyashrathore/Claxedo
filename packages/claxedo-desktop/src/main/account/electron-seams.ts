@@ -12,6 +12,7 @@ import { readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import type { CallbackDisposition, OAuthSeams, TokenSet } from "./oauth-flow"
 import type { CredentialFile } from "./credential-store"
+import { ACCOUNT_CREDENTIAL_RECORD } from "./marker"
 import type { RefreshOutcome } from "./account-service"
 
 /**
@@ -57,7 +58,7 @@ export function loopbackListener(): OAuthSeams["listen"] {
 
 /** The credential file, in Electron's per-app userData directory. */
 export function credentialFile(userDataDir: string): CredentialFile {
-  const path = join(userDataDir, "account-credential.json")
+  const path = join(userDataDir, ACCOUNT_CREDENTIAL_RECORD)
   return {
     read: () => {
       try {

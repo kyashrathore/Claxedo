@@ -37,6 +37,11 @@ describe("product boundary authoritative checks", () => {
       "local-server built entry smoke",
       "local-server published and self-hosted closure",
     ])
+    expect(AUTHORITATIVE_CHECKS["@claxedo/desktop"]?.map((check) => check.label)).toEqual([
+      "desktop production build with optional contributions",
+      "unsigned renderer and packaged-resource boundaries",
+    ])
+    expect(AUTHORITATIVE_CHECKS["@claxedo/desktop"]?.[0]?.env).toEqual({ VITE_AUTH_ENABLED: "true" })
     expect(AUTHORITATIVE_CHECKS["@claxedo/server"]?.map((check) => check.label)).toEqual([
       "hosted Node production build",
       "hosted Node built entry smoke",

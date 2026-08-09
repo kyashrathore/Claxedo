@@ -90,6 +90,9 @@ export type Policy = {
     minModules: number
     minChunks: number
     requiredModules: string[]
+    /** Entry-specific emitted cut points beyond the full source graph rules. */
+    forbiddenModules?: string[]
+    forbiddenPackages?: string[]
     forbiddenChunkMarkers?: string[]
   }
 

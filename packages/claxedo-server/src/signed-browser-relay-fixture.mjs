@@ -14,11 +14,11 @@ import {
 import { createWorkspaceRuntimeApp } from "../../workspace-runtime/src/server.ts"
 import { relayWorkspaceRuntimeExposure } from "../../workspace-runtime/src/exposure.ts"
 import { createSelfHostedApp } from "./deployments/self-hosted-node/app"
-import { opencodeRequest } from "./opencode/engine.ts"
+import { opencodeRequest } from "@claxedo/server-core/opencode/engine"
 import { createControlPlaneServices } from "./authority/services.ts"
 import { createSqliteCentralStore } from "./authority/adapters/sqlite/central-store.ts"
-import { createSqliteWorkspaceAuthority } from "./authority/adapters/sqlite/workspace-authority.ts"
-import { customVerifierAuthAdapter } from "./platform/auth/auth.ts"
+import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
+import { customVerifierAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { startLocalJwksIssuer } from "./e2e-local-jwks-issuer.mjs"
 // PRE-EXISTING BREAKAGE, fixed in passing: `refactor(server): group the
 // workspace supervisor and store into directories` (78d734a70) moved this

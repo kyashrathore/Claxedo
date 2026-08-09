@@ -110,15 +110,20 @@ function sources(root: string, skip: (file: string) => boolean = () => false): s
   return out
 }
 
-test("Electron main imports the connector — the scan can see it at all", () => {
-  // Positive control for every negative assertion below. Without it, a broken
-  // specifier regex would report the whole repository clean.
-  const main = sources(path.join(PACKAGE_DIR, "src/main"))
-  const importers = main.filter((file) =>
-    specifiers(fs.readFileSync(file, "utf8")).some((s) => s === CONNECTOR || s.startsWith(`${CONNECTOR}/`)),
-  )
+test("the separately built child entry imports the connector while its main assembly does not", () => {
+  // Positive control for every negative assertion below. The executable owns
+  // the implementation; the dependency-light Electron supervisor owns only
+  // the fixed protocol and lifecycle.
+  const childEntry = path.join(import.meta.dir, "host-connector-entry.ts")
+  expect(
+    specifiers(fs.readFileSync(childEntry, "utf8")).filter(
+      (specifier) => specifier === CONNECTOR || specifier.startsWith(`${CONNECTOR}/`),
+    ),
+  ).toEqual(["@claxedo/host-connector/connector", "@claxedo/host-connector/host-identity"])
 
-  expect(importers.length).toBeGreaterThan(0)
+  const mainAssembly = walk(path.join(PACKAGE_DIR, "src/main/host-connector/electron-child.ts"))
+  expect([...mainAssembly.packages].filter((name) => name === CONNECTOR || name.startsWith(`${CONNECTOR}/`))).toEqual([])
+  expect([...mainAssembly.files].some((file) => file.endsWith("/host-connector/child-supervisor.ts"))).toBe(true)
 })
 
 test("the bundled local-server's import closure never reaches Host Connector", () => {

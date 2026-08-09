@@ -7,7 +7,7 @@ import {
   toStatusEvent,
   type StatusTarget,
 } from "./status-channel"
-import type { HostConnectorStatus } from "./index"
+import type { HostConnectorStatus } from "./child-supervisor"
 
 /**
  * The status push, and the two things about it that are security decisions
@@ -129,42 +129,5 @@ describe("the channel's direction", () => {
 
     expect(code).toContain("webContents.send")
     expect(code.length).toBeGreaterThan(500)
-  })
-})
-
-describe("transitions reach the channel", () => {
-  test("every state change is announced, not just polled", async () => {
-    // The panel shows state the user did not cause, so a pull would only
-    // update when it happened to ask. Driven through the real `setupHostConnector`
-    // rather than a stub, because the property is that EVERY assignment goes
-    // through the announcement — a future branch that sets state directly is
-    // exactly what this catches.
-    const { setupHostConnector } = await import("./index")
-    const { mkdtempSync } = await import("node:fs")
-    const { tmpdir } = await import("node:os")
-    const path2 = await import("node:path")
-
-    const seen: string[] = []
-    const connector = setupHostConnector({
-      run: async () => {
-        throw new Error("control plane unreachable")
-      },
-      safeStorage: {
-        isEncryptionAvailable: () => true,
-        encryptString: (plain: string) => Buffer.from(plain),
-        decryptString: (buf: Buffer) => buf.toString(),
-        getSelectedStorageBackend: () => "gnome_libsecret",
-      },
-      userDataDir: mkdtempSync(path2.join(tmpdir(), "claxedo-status-")),
-      platform: "darwin",
-      setInterval: () => ({ cancel: () => {} }),
-      onStatusChange: (status) => seen.push(status.status),
-    })
-
-    await connector.start()
-
-    // A failed start is a transition the panel must see: it is the difference
-    // between "enrolling" and "this machine is not connected".
-    expect(seen).toContain("stopped")
   })
 })

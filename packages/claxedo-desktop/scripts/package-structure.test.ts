@@ -6,10 +6,12 @@ import * as path from "node:path"
 import {
   ALL_NATIVE_MODULES,
   ASAR_STRUCTURAL_ROOTS,
+  HOST_CONNECTOR_EXTRA_RESOURCE,
   NATIVE_MODULES,
   WINDOWS_NATIVE_MODULES,
   asarStructuralGlobs,
   isDeclaredStructuralEntry,
+  requiredPackagedBoundaryEntries,
 } from "./package-structure"
 import { verifyPackageContents } from "./verify-package-contents"
 
@@ -71,6 +73,16 @@ test("the config's native-module list and the verifier's allowlist cannot drift"
   }
 })
 
+test("the packaged Host Connector child uses the one declared extra-resource boundary", () => {
+  const config = fs.readFileSync(path.resolve(import.meta.dir, "../electron-builder.config.ts"), "utf8")
+  expect(config).toContain("...HOST_CONNECTOR_EXTRA_RESOURCE")
+  expect(HOST_CONNECTOR_EXTRA_RESOURCE).toEqual({
+    from: "resources/host-connector/",
+    to: "host-connector/",
+    filter: ["index.js", "manifest.json"],
+  })
+})
+
 test("only the declared roots count as structural", () => {
   expect(isDeclaredStructuralEntry("out/main/index.js")).toBe(true)
   expect(isDeclaredStructuralEntry("out/main/claxedo-server/index.js")).toBe(true)
@@ -106,9 +118,13 @@ function fakeAsar(target: string, files: string[]) {
   fs.writeFileSync(target, Buffer.concat([head, json]))
 }
 
-function withAsar(files: string[]) {
+function withAsar(
+  files: string[],
+  options: { includeBoundary?: boolean } = {},
+) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-asar-"))
-  fakeAsar(path.join(root, "dist/mac/Claxedo.app/Contents/Resources/app.asar"), files)
+  const packaged = options.includeBoundary === false ? files : [...files, ...requiredPackagedBoundaryEntries(files)]
+  fakeAsar(path.join(root, "dist/mac/Claxedo.app/Contents/Resources/app.asar"), packaged)
   try {
     return verifyPackageContents(root).failures
   } finally {
@@ -147,4 +163,41 @@ test("an undeclared node_modules package still fails", () => {
 
   expect(failures.length).toBe(1)
   expect(failures[0]).toContain("node_modules/hono")
+})
+
+test("a packaged app must carry the always-local boundary manifests", () => {
+  expect(withAsar(["package.json", "out/main/index.js"])).toEqual([])
+
+  const failures = withAsar(["package.json", "out/main/index.js", "out/product-boundary/desktop-main.json"], {
+    includeBoundary: false,
+  })
+  expect(failures).toContainEqual(
+    expect.stringContaining("required product-boundary manifest is missing: out/product-boundary/desktop-renderer-local.json"),
+  )
+})
+
+test("a packaged hosted-contribution chunk requires its separate boundary manifest", () => {
+  const files = [
+    "package.json",
+    "out/main/index.js",
+    "out/renderer/assets/desktop-hosted-contributions-abc123.js",
+  ]
+  expect(withAsar(files)).toEqual([])
+
+  const failures = withAsar(files, { includeBoundary: false })
+  expect(failures).toContainEqual(
+    expect.stringContaining(
+      "required product-boundary manifest is missing: out/product-boundary/desktop-renderer-hosted-contributions.json",
+    ),
+  )
+})
+
+test("a packaged account chunk requires its separate boundary manifest", () => {
+  const files = ["package.json", "out/main/index.js", "out/main/desktop-account-abc123.js"]
+  expect(withAsar(files)).toEqual([])
+
+  const failures = withAsar(files, { includeBoundary: false })
+  expect(failures).toContainEqual(
+    expect.stringContaining("required product-boundary manifest is missing: out/product-boundary/desktop-account.json"),
+  )
 })

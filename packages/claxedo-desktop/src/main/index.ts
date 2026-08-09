@@ -67,8 +67,9 @@ import { createOwnerOperationBridge } from "./diagnostics/owner-operation-bridge
 import { createWindowsWslCollector, createWslSource } from "./diagnostics/wsl-source"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand, wireFullscreenEvents } from "./ipc"
 import { installIpcCallerGuard, mainIpcCallerGuard } from "./ipc-caller-guard"
-import { setupAccount } from "./account/index"
-import { machineDisplayName, setupHostConnector } from "./host-connector/index"
+import { setupLazyAccount } from "./account/lazy-account"
+import { accountConfigEnvironment } from "./account/public-config"
+import { machineDisplayName, setupElectronHostConnector } from "./host-connector/electron-child"
 import { registerHostConnectorIpc } from "./host-connector/ipc"
 import { publishHostConnectorStatus } from "./host-connector/status-channel"
 import { initLogging } from "./logging"
@@ -218,6 +219,7 @@ function setupApp() {
     app.setAsDefaultProtocolClient("claxedo")
     setDockIcon()
     setupAutoUpdater()
+    await account.ready
     await initialize()
   })
 }
@@ -579,15 +581,13 @@ installIpcCallerGuard({
 // After the guard above, like every other registration — these channels spend
 // an account credential, so an unguarded one would be the worst of the sixty to
 // leave open.
-const account = setupAccount({
+const bakedAccountConfig = import.meta.env as Record<string, string | undefined>
+const account = setupLazyAccount({
   ipcMain,
+  userDataDir: app.getPath("userData"),
+  env: accountConfigEnvironment(process.env, bakedAccountConfig),
   onError: (stage, error) => logger.warn(`[account] ${stage}: ${String(error)}`),
 })
-if (!account.configured) {
-  // Stated at boot rather than discovered when a user clicks Sign in. This is
-  // the shape of a build shipped without its OAuth client registered.
-  logger.warn(`[account] sign-in unavailable; missing config: ${account.missing.join(", ")}`)
-}
 
 /**
  * Machine remote access, constructed but NOT started.
@@ -607,31 +607,32 @@ if (!account.configured) {
  * The machine's label is chosen HERE, not sent from the renderer. It is main
  * that signs the enrollment, so main names the thing it is signing for — and a
  * platform word rather than `os.hostname()`, because a hostname is the laptop's
- * identity on its network and `machine-identity.ts` explains at length why that
+ * identity on its network and `identity-store.ts` explains at length why that
  * must not travel to the control plane.
  */
-const hostConnector = account.configured
-  ? setupHostConnector({
-      run: (name, params) => account.service.run(name as never, params),
-      safeStorage,
-      userDataDir: app.getPath("userData"),
-      platform: process.platform,
-      displayName: machineDisplayName(process.platform),
-      onError: (stage, error) => logger.warn(`[host-connector] ${stage}: ${String(error)}`),
-      // The panel shows state the user did not cause — an expiry, a rejected
-      // beat, a revocation — so every transition is pushed rather than waited
-      // for. `status-channel.ts` skips a window that has gone, which matters
-      // because this fires from a heartbeat timer.
-      onStatusChange: (state) =>
-        publishHostConnectorStatus(mainWindow ?? undefined, state, hostConnectorContext()),
-    })
-  : undefined
+const hostConnector = setupElectronHostConnector({
+  runAccountOperation: (name, params) => account.run(name as never, params),
+  safeStorage,
+  userDataDir: app.getPath("userData"),
+  fork: utilityProcess.fork,
+  packaged: IS_PACKAGED,
+  mainDir: MAIN_DIR,
+  resourcesPath: process.resourcesPath,
+  displayName: machineDisplayName(process.platform),
+  onError: (stage, error) => logger.warn(`[host-connector] ${stage}: ${String(error)}`),
+  // The panel shows state the user did not cause — an expiry, a rejected
+  // beat, a revocation — so every transition is pushed rather than waited
+  // for. `status-channel.ts` skips a window that has gone, which matters
+  // because this fires from a heartbeat timer.
+  onStatusChange: (state) =>
+    publishHostConnectorStatus(mainWindow ?? undefined, state, hostConnectorContext()),
+})
 
 /** The two facts the connector's own state cannot carry. See `status-channel.ts`. */
 function hostConnectorContext() {
   return {
-    available: hostConnector !== undefined,
-    signedIn: account.configured && account.service.state().status === "signed",
+    available: true,
+    signedIn: account.state().status === "signed",
   }
 }
 
@@ -643,11 +644,11 @@ function hostConnectorContext() {
 // After `installIpcCallerGuard`, like every other registration.
 registerHostConnectorIpc({
   ipcMain,
-  ...(hostConnector ? { connector: hostConnector } : {}),
+  connector: hostConnector,
   signedIn: () => hostConnectorContext().signedIn,
   onError: (stage, error) => logger.warn(`[host-connector] ${stage}: ${String(error)}`),
 })
-logger.log("host connector", { available: hostConnector !== undefined, state: hostConnector?.status().status })
+logger.log("host connector", { available: true, state: hostConnector.status().status })
 
 const diagnosticsIpc = registerIpcHandlers({
   killSidecar: () => stopLocalServer(),
@@ -722,6 +723,7 @@ async function stopLocalServer() {
 }
 
 async function shutdown() {
+  hostConnector.dispose()
   diagnosticsSmokeFixtures.dispose()
   await stopLocalServer()
   if (browserBridgePromise) {

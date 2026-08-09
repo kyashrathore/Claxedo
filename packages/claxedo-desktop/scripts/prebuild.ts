@@ -14,6 +14,7 @@ import { createRequire } from "node:module"
 import * as path from "path"
 
 import { bundleClaxedoServer } from "./bundle-claxedo-server"
+import { bundleHostConnector } from "./bundle-host-connector"
 import { buildMemoryImpactHelper } from "./build-memory-impact-helper"
 import { LOCAL_SERVER_ENTRY, resolveLocalServerEntry } from "./local-server"
 import { copyIcons as copyChannelIcons } from "./utils"
@@ -132,7 +133,7 @@ async function copyAcpBinaries() {
 
 // ── Main ──
 
-// Icon and ACP copying are independent of the server bundle and run alongside it.
-await Promise.all([copyIcons(), copyAcpBinaries(), bundleServer(), buildMemoryImpactHelper()])
+// Optional child and server are separate bundles and fingerprint independently.
+await Promise.all([copyIcons(), copyAcpBinaries(), bundleServer(), bundleHostConnector(), buildMemoryImpactHelper()])
 
 log("Done.")

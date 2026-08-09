@@ -244,7 +244,7 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
 
   /**
    * Registers `dir` as a real local workspace via the same
-   * `GET /api/workspace/resolve?directory=...&create=true` the app's own boot
+   * `GET /api/claxedo/workspace/resolve?directory=...&create=true` the app's own boot
    * fires on first navigation (`real-harness-local.spec.ts`'s
    * `registerWorkspace` uses the identical endpoint for the identical reason):
    * until this resolves, a project seeded into the rail below 404s on every
@@ -253,7 +253,7 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
    * `[data-testid="project-group"][data-project-id]` is keyed by.
    */
   async function registerWorkspace(serverBase: string, dir: string): Promise<string> {
-    const url = `${serverBase}/api/workspace/resolve?directory=${encodeURIComponent(dir)}&create=true`
+    const url = `${serverBase}/api/claxedo/workspace/resolve?directory=${encodeURIComponent(dir)}&create=true`
     const res = await fetch(url)
     if (!res.ok) {
       throw new Error(
@@ -346,7 +346,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     const projectGroup = app.page.locator(`[data-testid="project-group"][data-project-id="${workspaceId}"]`)
     await expect(
       projectGroup,
-      `project group for workspace "${workspaceId}" (registered via /api/workspace/resolve) never rendered in the rail`,
+      `project group for workspace "${workspaceId}" (registered via /api/claxedo/workspace/resolve) never rendered in the rail`,
     ).toBeVisible({ timeout: 20_000 })
     return projectGroup
   }
@@ -508,9 +508,22 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
       const found = ids.find((id) => !before.includes(id))
       if (found) return found
       if (Date.now() > deadline) {
+        const inventory = await page.evaluate(async () => {
+          const serverUrl = performance.getEntriesByType("resource")
+            .map((entry) => entry.name)
+            .find((url) => /^https?:/.test(url) && /\/api\/claxedo\//.test(url))
+          if (!serverUrl) return { error: "no local-server resource URL was observed" }
+          const response = await fetch(new URL("/api/claxedo/session", serverUrl))
+          return {
+            url: response.url,
+            status: response.status,
+            body: await response.text(),
+          }
+        }).catch((error) => ({ error: String(error) }))
         throw new Error(
           `GATING: no new rail session row appeared within ${timeoutMs}ms (defects 1/2/7: file:// API base, ` +
-            `dropped invalidation, or no event stream). Rows seen: ${JSON.stringify(ids)}`,
+            `dropped invalidation, or no event stream). Rows seen: ${JSON.stringify(ids)}. ` +
+            `Local inventory: ${JSON.stringify(inventory)}`,
         )
       }
       await page.waitForTimeout(200)

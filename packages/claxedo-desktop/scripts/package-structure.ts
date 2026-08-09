@@ -14,6 +14,12 @@
  * cannot be bundled.
  */
 
+import {
+  DESKTOP_ACCOUNT_BOUNDARY_MANIFEST,
+  DESKTOP_HOSTED_CONTRIBUTION_BOUNDARY_MANIFEST,
+  REQUIRED_DESKTOP_BOUNDARY_MANIFEST_ENTRIES,
+} from "./product-boundary-manifests"
+
 /** Native modules that cannot be bundled and therefore ship as real files. */
 export const NATIVE_MODULES = ["better-sqlite3", "node-pty", "@lydell/node-pty"] as const
 
@@ -60,6 +66,13 @@ export const ASAR_STRUCTURAL_ROOTS = ["out", "resources/icons"] as const
  */
 export const ASAR_STRUCTURAL_FILES = ["package.json"] as const
 
+/** Separately executed Host Connector child shipped beside app.asar. */
+export const HOST_CONNECTOR_EXTRA_RESOURCE = {
+  from: "resources/host-connector/",
+  to: "host-connector/",
+  filter: ["index.js", "manifest.json"],
+} as const
+
 /** The positive `files` globs for electron-builder, derived from the roots. */
 export function asarStructuralGlobs(): string[] {
   return ASAR_STRUCTURAL_ROOTS.map((root) => `${root}/**/*`)
@@ -74,4 +87,19 @@ export function asarStructuralGlobs(): string[] {
 export function isDeclaredStructuralEntry(entry: string): boolean {
   if (ASAR_STRUCTURAL_FILES.includes(entry as (typeof ASAR_STRUCTURAL_FILES)[number])) return true
   return ASAR_STRUCTURAL_ROOTS.some((root) => entry === root || entry.startsWith(`${root}/`))
+}
+
+/** Build-tool evidence that must survive into the packaged asar. */
+export function requiredPackagedBoundaryEntries(entries: readonly string[] = []): string[] {
+  const accountShips = entries.some((entry) =>
+    entry.startsWith("out/main/") && entry.includes("desktop-account-"),
+  )
+  const hostedContributionShips = entries.some((entry) =>
+    entry.startsWith("out/renderer/") && entry.includes("desktop-hosted-contributions-"),
+  )
+  return [
+    ...REQUIRED_DESKTOP_BOUNDARY_MANIFEST_ENTRIES,
+    ...(accountShips ? [DESKTOP_ACCOUNT_BOUNDARY_MANIFEST] : []),
+    ...(hostedContributionShips ? [DESKTOP_HOSTED_CONTRIBUTION_BOUNDARY_MANIFEST] : []),
+  ]
 }

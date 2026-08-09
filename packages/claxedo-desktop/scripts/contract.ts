@@ -3,11 +3,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 
 import { resolveChannel, type Channel } from "./utils"
-// The renderer document is product-mode dependent and `navigation-guard.ts`
-// owns that answer for main, the vite config and this contract alike. Importing
-// it rather than repeating the mapping is what stops the packaged output list
-// and the thing actually emitted from drifting apart.
-import { desktopProductMode, rendererDocument } from "../src/main/navigation-guard"
+import { MAIN_RENDERER_DOCUMENT } from "../src/main/navigation-guard"
 
 export type Spec = {
   file: string
@@ -118,10 +114,13 @@ export function spec(root = ROOT): Spec {
     "scripts/copy-bundles.ts",
     "scripts/contract.ts",
     "scripts/finalize-latest-yml.ts",
+    "scripts/bundle-host-connector.ts",
+    "scripts/host-connector-entry.ts",
     // How the desktop resolves its server, and what the packaged app may
     // contain: both decide the artifact, so both belong in its fingerprint.
     "scripts/local-server.ts",
     "scripts/package-structure.ts",
+    "scripts/product-boundary-manifests.ts",
     "scripts/package.ts",
     "scripts/prepare.ts",
     "scripts/prebuild.ts",
@@ -131,6 +130,11 @@ export function spec(root = ROOT): Spec {
     "scripts/verify-package-contents.ts",
     "vite.renderer.ts",
     "src",
+    "src/main/host-connector/child-artifact.ts",
+    "src/main/host-connector/child-protocol.ts",
+    "src/main/host-connector/child-supervisor.ts",
+    "src/main/host-connector/electron-child.ts",
+    "src/main/host-connector/identity-store.ts",
     "../agent-event-runtime/package.json",
     "../agent-event-runtime/src",
     "../agent-sdk-runtime/package.json",
@@ -177,15 +181,15 @@ export function spec(root = ROOT): Spec {
       "out/main/index.js",
       "out/preload/index.cjs",
       "out/preload/browser-preload.cjs",
-      // Which document this build emits depends on the product mode, so it is
-      // derived rather than named. An unsigned build emits `index.local.html`
-      // and nothing else; hard-coding `index.html` passed only because
-      // `VITE_AUTH_ENABLED=true` is set in `claxedo-app/.env.local` and in the
-      // release workflow, so every build anyone had run was the signed one.
-      `out/renderer/${rendererDocument(desktopProductMode(process.env))}`,
+      // Every build starts from the local shell. Hosted capability remains a
+      // separately fingerprinted dynamic contribution, never a second HTML
+      // document selected by an environment-dependent mode.
+      `out/renderer/${MAIN_RENDERER_DOCUMENT}`,
       "out/renderer/loading.html",
+      "out/product-boundary",
       "out/templates",
       "resources/claxedo-server",
+      "resources/host-connector",
       "resources/icons/128x128@2x.png",
       "resources/icons/icon.icns",
       "resources/icons/icon.ico",

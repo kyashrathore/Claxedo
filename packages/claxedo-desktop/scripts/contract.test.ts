@@ -68,18 +68,10 @@ test("verify fails when mirrored outputs diverge", () => {
   fs.rmSync(root, { recursive: true, force: true })
 })
 
-test("the packaged output names the renderer document this product mode emits", () => {
-  // The contract lists what a build must produce. It named `index.html`
-  // unconditionally, which was correct only by accident: `VITE_AUTH_ENABLED=true`
-  // is set in `claxedo-app/.env.local` and in `release-claxedo.yml`, so every
-  // build anyone had ever run was the signed one. An unsigned build emits
-  // `index.local.html` and nothing else, and would have failed its own contract
-  // for a file it was never supposed to write.
-  //
-  // Driving `spec()` under both env shapes rather than reading the source: the
-  // first version of this guard grepped `contract.ts` for the helper call, and
-  // the mutation that hard-codes the document back SURVIVED it — the string was
-  // present, the behaviour was not.
+test("the packaged output always names the local renderer document and separate child resources", () => {
+  // Hosted capability changes only the optional dynamic contribution. The
+  // renderer document and separately fingerprinted resource roots are stable
+  // under either environment shape.
   const documentFor = (authEnabled: string | undefined) => {
     const previous = process.env.VITE_AUTH_ENABLED
     if (authEnabled === undefined) delete process.env.VITE_AUTH_ENABLED
@@ -92,9 +84,22 @@ test("the packaged output names the renderer document this product mode emits", 
     }
   }
 
-  expect(documentFor("true")).toContain("out/renderer/index.html")
-  expect(documentFor("true")).not.toContain("out/renderer/index.local.html")
+  expect(documentFor("true")).toContain("out/renderer/index.local.html")
+  expect(documentFor("true")).not.toContain("out/renderer/index.html")
 
   expect(documentFor(undefined)).toContain("out/renderer/index.local.html")
   expect(documentFor(undefined)).not.toContain("out/renderer/index.html")
+  expect(desktopContractSpec(ROOT).output).toContain("out/product-boundary")
+  expect(desktopContractSpec(ROOT).output).toContain("resources/host-connector")
+  expect(desktopContractSpec(ROOT).input).toEqual(expect.arrayContaining([
+    "scripts/bundle-host-connector.ts",
+    "scripts/host-connector-entry.ts",
+    "src/main/host-connector/child-artifact.ts",
+    "src/main/host-connector/child-protocol.ts",
+    "src/main/host-connector/child-supervisor.ts",
+    "src/main/host-connector/electron-child.ts",
+    "src/main/host-connector/identity-store.ts",
+    "../claxedo-host-connector/package.json",
+    "../claxedo-host-connector/src",
+  ]))
 })

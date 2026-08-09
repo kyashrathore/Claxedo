@@ -60,6 +60,7 @@ export const localServer: Policy = {
       // stopped at the re-export.
       `${SRC}/app/start-local-server.ts`,
       `${SRC}/app/local-app.ts`,
+      `${SRC}/workspace/routes/resolve-route.ts`,
     ],
     // The embedded runtime and the HTTP framework. A walk that read no imports
     // reports neither.
@@ -70,7 +71,7 @@ export const localServer: Policy = {
   // `local-closure.test.ts` records for the package's whole published surface,
   // which is the honest reading: every published module is reachable from this
   // entry, so the desktop server IS the package.
-  ceilings: { modules: 47, packages: 21 },
+  ceilings: { modules: 48, packages: 21 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

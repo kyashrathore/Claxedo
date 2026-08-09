@@ -85,4 +85,17 @@ describe("emitted manifest boundary", () => {
       "forbidden emitted chunk marker clerk: assets/vendor-clerk.js",
     ])
   })
+
+  test("supports a narrower static emitted closure than the full source graph", () => {
+    const { root, policy } = fixture({
+      entry: "packages/app/src/index.ts",
+      modules: ["packages/app/src/index.ts", "packages/app/src/lazy/optional.ts"],
+      chunks: ["assets/index.js"],
+      edges: { static: [], dynamic: ["assets/index.js -> assets/optional.js"] },
+    })
+    policy.emitted!.forbiddenModules = ["packages/app/src/lazy"]
+    expect(emittedManifestFindings(policy, root)).toEqual([
+      "forbidden emitted module packages/app/src/lazy: packages/app/src/lazy/optional.ts",
+    ])
+  })
 })

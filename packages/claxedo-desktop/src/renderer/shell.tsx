@@ -1,32 +1,19 @@
 /**
- * The desktop shell, shared by both desktop renderer entries.
+ * The desktop shell beneath the one local renderer entry.
  *
- * There are two of them — `index.tsx` (signed) and `local.tsx` (unsigned) — and
- * the reason is the same one that produced `@claxedo/app`'s `local.tsx`: a
- * single entry with `if (signedBuild)` still SHIPS the identity provider,
- * because the import graph does not care whether the branch runs. Splitting the
- * entry is the only thing that removes the module from the bundle.
+ * `local.tsx` is the one base entry. Signed capability, when built, is a
+ * separately fingerprinted dynamic contribution chunk and still imports no
+ * renderer identity provider: Electron main owns the account.
  *
- * So the split runs exactly along the identity seam and nowhere else. This
- * module owns everything both products genuinely share — the Electron platform
- * descriptor, the server gate, deep links, menu commands, error reporting,
- * telemetry — and it imports NOTHING from `@claxedo/app/auth`. What it cannot
- * own is the three port bindings, because each one is the act of handing the
- * shared app an identity provider, and only one of the two products has one.
+ * The optional split runs exactly along the hosted-capability seam and nowhere
+ * else. This module owns the Electron platform descriptor, server gate, deep
+ * links, menu commands, error reporting, and telemetry, while importing
+ * nothing from `@claxedo/app/auth`. The optional module owns only the hosted
+ * contribution loader and its Electron machine-remote-access binding.
  *
- * The bearer arrives as an argument instead. `options.getAuthToken` is the
- * whole difference in this file's contract:
- *
- *   - present  → this is the signed build; the caller has already bound the
- *                transport, the auth session, and machine remote access.
- *   - absent   → this is the unsigned build; those ports stay unbound, which is
- *                what an anonymous product actually is.
- *
- * `authEnabled` is DERIVED from that presence rather than read from the
- * environment a second time. `getDefaultConfig()` reads `VITE_AUTH_ENABLED`,
- * which is also what selects the entry at build time; deriving it here makes
- * the two structurally incapable of disagreeing, so there is no build that
- * composes hosted contributions while having no provider to sign in with.
+ * The optional loader arrives as an argument. Its presence means the build may
+ * activate hosted contributions after the Electron AccountPort becomes signed;
+ * it does not make the renderer an authenticated transport.
  */
 
 import "./webview-zoom"
@@ -75,16 +62,7 @@ type Platform = AppPlatform & {
 }
 
 export type DesktopRendererOptions = {
-  /**
-   * The account bearer, supplied only by a build that HAS an identity provider.
-   *
-   * Deliberately optional rather than a stub returning `null`, for the same
-   * reason `@claxedo/app`'s `local.tsx` omits it: a stub would let a hosted
-   * surface compile against the unsigned platform descriptor and fail at
-   * runtime, whereas its absence is a type error at the call site, which is
-   * where that mistake belongs.
-   */
-  getAuthToken?: () => Promise<string | null>
+  loadHostedContributions?: ReturnType<typeof getDefaultConfig>["loadHostedContributions"]
 }
 
 export function startDesktopRenderer(options: DesktopRendererOptions = {}) {
@@ -203,12 +181,14 @@ function installErrorReporting() {
 }
 
 function bootstrapDesktop(options: DesktopRendererOptions, root: HTMLElement) {
-  const getAuthToken = options.getAuthToken
-  // See the header: the build that bound a bearer is the build that has an
-  // identity provider, and `authEnabled` is exactly that question. Reading
-  // `VITE_AUTH_ENABLED` here as well would let a renderer compose hosted
-  // contributions it can never sign into.
-  const config = { ...getDefaultConfig(), authEnabled: getAuthToken !== undefined }
+  // Desktop identity is never a renderer auth session. `authEnabled` stays
+  // false even in a signed-capable release; the Electron AccountPort owns the
+  // transition that activates `loadHostedContributions`.
+  const config = {
+    ...getDefaultConfig(),
+    authEnabled: false,
+    loadHostedContributions: options.loadHostedContributions,
+  }
   initClaxedo(config)
 
   initPostHog()
@@ -222,7 +202,7 @@ function bootstrapDesktop(options: DesktopRendererOptions, root: HTMLElement) {
   })()
 
   // The desktop renderer knows its plane synchronously — no provider mount needed.
-  setDeploymentMode(resolveDeploymentMode({ platform: "desktop", authEnabled: config.authEnabled === true }))
+  setDeploymentMode(resolveDeploymentMode({ platform: "desktop", authEnabled: false }))
   phCapture("app_launched", {
     ...identityProps(),
     surface: "app_shell",
@@ -466,7 +446,6 @@ function bootstrapDesktop(options: DesktopRendererOptions, root: HTMLElement) {
       },
 
       // Absent on the unsigned build, not stubbed. See `DesktopRendererOptions`.
-      ...(getAuthToken ? { getAuthToken } : {}),
     }
   }
 

@@ -56,9 +56,9 @@ describe("ipc caller guard wiring", () => {
     // `setupAccount` is a different call site that a future refactor could move
     // above the install without touching `registerIpcHandlers`.
     const installed = entry.indexOf("installIpcCallerGuard({")
-    const account = entry.indexOf("setupAccount({")
+    const account = entry.indexOf("setupLazyAccount({")
 
-    expect(account, "index.ts must set up the account").toBeGreaterThan(-1)
+    expect(account, "index.ts must set up the lazy account protocol").toBeGreaterThan(-1)
     expect(installed).toBeLessThan(account)
   })
 
@@ -69,14 +69,14 @@ describe("ipc caller guard wiring", () => {
     // happened to be signed in.
     //
     // Asserted over the entry's code with comment lines stripped: the prose
-    // above `setupHostConnector` in index.ts explains the rule and names the
+    // above `setupElectronHostConnector` in index.ts explains the rule and names the
     // method, so scanning raw text would pass with a real call present.
     const code = entry
       .split("\n")
       .filter((line) => !line.trimStart().startsWith("//") && !line.trimStart().startsWith("*"))
       .join("\n")
 
-    expect(code, "index.ts must construct the connector").toContain("setupHostConnector({")
+    expect(code, "index.ts must construct the connector").toContain("setupElectronHostConnector({")
     expect(code, "launch must not start it").not.toMatch(/hostConnector[?.]*\.start\(/)
   })
 

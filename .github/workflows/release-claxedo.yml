@@ -137,20 +137,21 @@ jobs:
 
   build-desktop:
     needs: [prepare, diagnostics-dependency-trust, diagnostics-performance]
-    # The VITE_* cloud vars are environment-scoped, not repo-level.
+    # Desktop public OAuth/control-plane values are environment-scoped, not
+    # repo-level.
     #
     # KNOWN DEFECT, deliberately not fixed here: this workflow builds the
     # signed installers users download, but resolves `staging`. Every shipped
-    # release therefore carries staging's Clerk publishable key (a `pk_test_`
-    # one), the `-staging` control plane URL, and staging's PostHog project —
+    # release therefore carries staging's desktop OAuth client registration,
+    # the `-staging` control plane URL, and staging's PostHog project —
     # so real user installs are indistinguishable from test runs.
     #
     # Switching this to `production` is a ONE-WORD change, but it must not
     # happen until the production environment carries real values for
-    # CLAXEDO_CONTROL_PLANE_URL, VITE_CLERK_PUBLISHABLE_KEY and VITE_CONVEX_URL.
+    # CLAXEDO_CONTROL_PLANE_URL and CLAXEDO_ACCOUNT_* public-client values.
     # Flipping it first would ship builds pointing at nothing, which is worse
     # than the current mislabelling. The production environment already holds
-    # the correct PostHog project (337043); those three are what remain.
+    # the correct PostHog project (337043); that registration is what remains.
     environment: staging
     runs-on: ${{ matrix.host }}
     env:
@@ -277,13 +278,19 @@ jobs:
         env:
           CLAXEDO_CHANNEL: prod
           RUST_TARGET: ${{ matrix.target }}
-          # Bake cloud sign-in support (same vars as the hosted web deploy).
-          # Without these the packaged app is local-only: authEnabled is a
-          # build-time flag and Clerk needs its publishable key at build time.
+          # Emit the optional hosted-contribution chunk, while keeping the
+          # renderer's base document and account boundary local/tokenless.
           VITE_AUTH_ENABLED: "true"
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
-          VITE_CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
-          VITE_CLAXEDO_SERVER_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+          # Public OAuth-client registration baked into Electron main. These
+          # are endpoints/client identity, never a client secret; the PKCE
+          # verifier and refreshable credential remain in Electron + the OS
+          # protected store. Missing registration leaves the same artifact's
+          # unsigned local product usable and reports signed mode unavailable.
+          CLAXEDO_ACCOUNT_AUTHORIZE_URL: ${{ vars.CLAXEDO_ACCOUNT_AUTHORIZE_URL }}
+          CLAXEDO_ACCOUNT_TOKEN_URL: ${{ vars.CLAXEDO_ACCOUNT_TOKEN_URL }}
+          CLAXEDO_ACCOUNT_CLIENT_ID: ${{ vars.CLAXEDO_ACCOUNT_CLIENT_ID }}
+          CLAXEDO_ACCOUNT_SCOPE: ${{ vars.CLAXEDO_ACCOUNT_SCOPE }}
+          CLAXEDO_SERVER_ORIGIN: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
           # Telemetry has to be BAKED here, in both halves of the app, because
           # a packaged build runs on a user's machine where none of these
           # variables exist. Reading them only at runtime is why shipped

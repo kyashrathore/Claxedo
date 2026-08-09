@@ -4,6 +4,7 @@ import * as path from "node:path"
 
 import { write, verify } from "./contract"
 import { requireLocalServerBundle } from "./local-server"
+import { clearDesktopBoundaryManifests, verifyDesktopBoundaryManifestSet } from "./product-boundary-manifests"
 import { copyWorkspaceRuntimeTemplates } from "./utils"
 
 const root = path.resolve(import.meta.dir, "..")
@@ -14,6 +15,7 @@ const root = path.resolve(import.meta.dir, "..")
 // failed with a bare "missing path". Fail here instead, naming the artifact and
 // the command that produces it. Nothing is started in its place.
 console.log(`[build] local server bundle at ${requireLocalServerBundle(root)}`)
+clearDesktopBoundaryManifests(root)
 
 const proc = Bun.spawn({
   cmd: ["bun", "run", "build:inner"],
@@ -30,6 +32,9 @@ if (await proc.exited !== 0) {
 
 const copied = copyWorkspaceRuntimeTemplates(path.join(root, "out/templates"))
 console.log(`[build] copied workspace-runtime templates from ${copied.src} to ${copied.dest}`)
+
+const boundaryManifests = verifyDesktopBoundaryManifestSet(root)
+console.log(`[build] product boundary manifests: ${boundaryManifests.join(", ")}`)
 
 write()
 const saved = verify()

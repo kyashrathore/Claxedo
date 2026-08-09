@@ -11,6 +11,7 @@ import { createRequire } from "node:module"
 import * as path from "path"
 
 import { bundleClaxedoServer } from "./bundle-claxedo-server"
+import { bundleHostConnector } from "./bundle-host-connector"
 import { buildMemoryImpactHelper } from "./build-memory-impact-helper"
 import {
   LOCAL_SERVER_ENTRY,
@@ -56,6 +57,8 @@ try {
 
 await ensureElectronNativeModules()
 await buildMemoryImpactHelper()
+const hostConnector = await bundleHostConnector()
+console.log(`[predev] Host Connector child bundled (${hostConnector.manifest.sha256})`)
 
 async function patchDevBundleMetadata() {
   if (process.platform !== "darwin") return

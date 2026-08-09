@@ -120,7 +120,7 @@ async function waitForTarget() {
     const target = targets.find((item) =>
       item.type === "page" &&
       item.webSocketDebuggerUrl &&
-      item.url.includes("index.html"),
+      item.url.includes("index.local.html"),
     )
     if (target?.webSocketDebuggerUrl) return target
     await delay(250)

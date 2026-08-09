@@ -155,6 +155,12 @@ export const AUTHORITATIVE_CHECKS: Record<string, AuthoritativeCheck[]> = {
   ],
   "@claxedo/desktop": [
     {
+      label: "desktop production build with optional contributions",
+      cwd: "packages/claxedo-desktop",
+      command: ["bun", "run", "build"],
+      env: { VITE_AUTH_ENABLED: "true" },
+    },
+    {
       label: "unsigned renderer and packaged-resource boundaries",
       cwd: "packages/claxedo-desktop",
       command: [

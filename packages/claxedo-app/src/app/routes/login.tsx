@@ -1,6 +1,6 @@
 import { createSignal, onMount, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import { useAuthSession } from "@/platform/auth/auth-session";
+import { useAccountPort } from "@/platform/account/account-provider";
 
 export interface LoginPageProps {
   /** App branding name (defaults to "Claxedo") */
@@ -17,11 +17,12 @@ export interface LoginPageProps {
 
 /**
  * LoginPage component for Claxedo cloud authentication.
- * Uses Clerk for authentication.
+ * Uses the product account port. Hosted web binds Clerk behind that port;
+ * desktop binds Electron main, where the OAuth credential stays.
  */
 export default function LoginPage(props: LoginPageProps = {}) {
   const navigate = useNavigate();
-  const auth = useAuthSession();
+  const account = useAccountPort();
   const [redirecting, setRedirecting] = createSignal(false);
 
   const appName = () => props.appName ?? "Claxedo";
@@ -29,20 +30,20 @@ export default function LoginPage(props: LoginPageProps = {}) {
   const redirectUrl = () => props.redirectUrl ?? "/";
 
   onMount(async () => {
-    if (auth.status() === "signed") {
+    if (account.state().status === "signed") {
       navigate(redirectUrl(), { replace: true });
       return;
     }
   });
 
-  if (auth.status() === "signed") {
+  if (account.state().status === "signed") {
     navigate(redirectUrl(), { replace: true });
     return null;
   }
 
   const continueToClerk = async () => {
     setRedirecting(true);
-    await auth.signIn({ redirectUrl: redirectUrl() }).finally(() => setRedirecting(false));
+    await account.signIn().finally(() => setRedirecting(false));
   };
 
   return (

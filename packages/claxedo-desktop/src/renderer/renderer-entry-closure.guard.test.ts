@@ -6,7 +6,7 @@ import {
   resolveImport,
   stripComments,
 } from "../../../claxedo-app/src/architecture/import-graph"
-import { desktopProductMode, rendererDocument } from "../main/navigation-guard"
+import { MAIN_RENDERER_DOCUMENT } from "../main/navigation-guard"
 
 /**
  * What each desktop renderer entry actually pulls in.
@@ -94,7 +94,7 @@ const label = (file: string) => path.relative(appSrc, file).split(path.sep).join
  * bundle. Bare package specifiers are recorded but not followed — `@clerk/…` is
  * a breach wherever it appears and its internals are not this repo's graph.
  */
-function closure(entryFile: string) {
+function closure(entryFile: string, options: { followDynamic?: boolean } = {}) {
   const edges: Edge[] = []
   const seen = new Set([entryFile])
   let frontier = [entryFile]
@@ -113,7 +113,7 @@ function closure(entryFile: string) {
           module: resolved ? label(resolved) : null,
           dynamic: dynamic.has(specifier),
         })
-        if (!resolved || seen.has(resolved)) continue
+        if (!resolved || seen.has(resolved) || (dynamic.has(specifier) && options.followDynamic === false)) continue
         seen.add(resolved)
         next.push(resolved)
       }
@@ -127,8 +127,9 @@ function closure(entryFile: string) {
 const entryFile = (name: string) => path.join(desktopRoot, "src/renderer", name)
 const read = (rel: string) => readFileSync(path.join(desktopRoot, rel), "utf8")
 
-const UNSIGNED = closure(entryFile("local.tsx"))
-const SIGNED = closure(entryFile("index.tsx"))
+const BASE = closure(entryFile("local.tsx"), { followDynamic: false })
+const RELEASE = closure(entryFile("local.tsx"))
+const HOSTED_ACTIVATION = closure(entryFile("hosted-contributions.ts"))
 const APP_LOCAL = closure(path.join(appSrc, "app/entry/local.tsx"))
 
 /** The identity provider, by every name it travels under. */
@@ -169,48 +170,27 @@ const BINDINGS = {
 } satisfies Record<string, RegExp>
 
 describe("the unsigned desktop renderer entry", () => {
-  test("is what the local product document loads, and the local product is the default build", () => {
-    // The entry is only meaningful if a build actually points at it. Both
-    // halves matter: `desktopProductMode` decides which document is emitted and
-    // which one `src/main/windows.ts` loads, and the document decides which
-    // entry module rollup links.
-    expect(desktopProductMode({})).toBe("local")
-    expect(desktopProductMode({ VITE_AUTH_ENABLED: "false" })).toBe("local")
-    expect(desktopProductMode({ VITE_AUTH_ENABLED: "true" })).toBe("signed")
-
-    const document = rendererDocument("local")
-    expect(document).toBe("index.local.html")
-    expect(read(`src/renderer/${document}`)).toContain('src="./local.tsx"')
+  test("is what the one desktop document loads", () => {
+    expect(MAIN_RENDERER_DOCUMENT).toBe("index.local.html")
+    expect(read(`src/renderer/${MAIN_RENDERER_DOCUMENT}`)).toContain('src="./local.tsx"')
     expect(existsSync(entryFile("local.tsx"))).toBe(true)
+    expect(existsSync(entryFile("index.tsx"))).toBe(false)
+    expect(existsSync(entryFile("index.html"))).toBe(false)
   })
 
   test.each(Object.entries(IDENTITY))("does not reach %s", (_name, isMatch) => {
-    expect(UNSIGNED.edges.filter(isMatch)).toEqual([])
+    expect(BASE.edges.filter(isMatch)).toEqual([])
   })
 
-  test("the signed entry reaches every one of them, so the walk is not measuring nothing", () => {
-    // Positive control. A resolver that answered null everywhere — which is
-    // exactly what the shared `resolveImport` does for `@claxedo/app/auth`, and
-    // why this file resolves subpaths through the manifest — would report the
-    // unsigned closure clean and look like a finished migration.
-    for (const [name, isMatch] of Object.entries(IDENTITY)) {
-      if (name === "convex") continue // no product reaches Convex from the renderer
-      expect(SIGNED.edges.filter(isMatch).length, `the signed entry should reach ${name}`).toBeGreaterThan(0)
-    }
-    // And the chain is the real one, hop by hop, not a bare package name
-    // appearing somewhere in the graph.
-    expect(SIGNED.edges).toContainEqual({
-      from: "../../claxedo-desktop/src/renderer/index.tsx",
-      specifier: "@claxedo/app/auth",
-      module: "app/entry/auth.ts",
-      dynamic: false,
+  test("keeps the optional activation behind one literal dynamic edge", () => {
+    expect(RELEASE.edges).toContainEqual({
+      from: "../../claxedo-desktop/src/renderer/local.tsx",
+      specifier: "./hosted-contributions",
+      module: "../../claxedo-desktop/src/renderer/hosted-contributions.ts",
+      dynamic: true,
     })
-    expect(SIGNED.edges).toContainEqual({
-      from: "app/entry/auth.ts",
-      specifier: "@/platform/auth/auth-client",
-      module: "platform/auth/auth-client.ts",
-      dynamic: false,
-    })
+    expect(BASE.modules.has("../../claxedo-desktop/src/renderer/hosted-contributions.ts")).toBe(false)
+    expect(RELEASE.modules.has("../../claxedo-desktop/src/renderer/hosted-contributions.ts")).toBe(true)
   })
 
   test("adds no hosted capability that the local browser product does not already have", () => {
@@ -223,13 +203,13 @@ describe("the unsigned desktop renderer entry", () => {
     // What is desktop's to hold is that its own entry and shell reach for none
     // of them directly. Set difference, so the day app-side work removes one the
     // assertion tightens by itself instead of going stale.
-    const introduced = hostedModules(UNSIGNED.modules).filter((module) => !APP_LOCAL.modules.has(module))
+    const introduced = hostedModules(BASE.modules).filter((module) => !APP_LOCAL.modules.has(module))
     expect(introduced).toEqual([])
 
     // Positive control for the difference: the marker set is non-empty in both
     // closures, so an empty result means "no delta", never "nothing scanned".
     expect(hostedModules(APP_LOCAL.modules).length).toBeGreaterThan(0)
-    expect(hostedModules(UNSIGNED.modules).length).toBeGreaterThan(0)
+    expect(hostedModules(BASE.modules).length).toBeGreaterThan(0)
   })
 
   test("binds none of the three ports, and passes the shell no bearer", () => {
@@ -244,35 +224,29 @@ describe("the unsigned desktop renderer entry", () => {
     // descriptor omit `getAuthToken` and `authEnabled` resolve false; an
     // argument here would compose hosted contributions in a build with no
     // provider to sign into.
-    expect(entry).toMatch(/startDesktopRenderer\(\s*\)/)
+    expect(entry).toMatch(/startDesktopRenderer\(\{\s*loadHostedContributions\s*\}\)/)
   })
 })
 
-describe("the signed desktop renderer entry", () => {
-  test("is what the signed product document loads", () => {
-    const document = rendererDocument("signed")
-    expect(document).toBe("index.html")
-    expect(read(`src/renderer/${document}`)).toContain('src="./index.tsx"')
+describe("the optional signed activation", () => {
+  test.each(Object.entries(IDENTITY))("also reaches no renderer identity surface: %s", (_name, isMatch) => {
+    expect(HOSTED_ACTIVATION.edges.filter(isMatch)).toEqual([])
   })
 
-  test("binds all three ports at module scope, and supplies the bearer", () => {
-    // The mirror of the assertion above, and the reason the split is a split
-    // rather than a deletion: a signed desktop legitimately wants these.
-    const entry = stripComments(read("src/renderer/index.tsx"))
-    expect(entry).toMatch(/^configureApiRuntime\(\{ bearerToken: getAuthToken \}\)$/m)
-    expect(entry).toMatch(/^configureAuthSession\(useAuth\)$/m)
-    expect(entry).toMatch(/^configureDesktopMachineRemoteAccess\(\)$/m)
-    expect(entry).toMatch(/startDesktopRenderer\(\{ getAuthToken \}\)/)
-    // Never the browser implementation: the desktop sidecar serves none of
-    // `/api/claxedo/remote-access/*`, so an HTTP fallback would post into a 404
-    // wearing the costume of resilience.
-    expect(entry).not.toContain("configureHttpMachineRemoteAccess")
+  test("binds machine remote access through Electron and loads the hosted content set", () => {
+    const activation = stripComments(read("src/renderer/hosted-contributions.ts"))
+    expect(activation).toMatch(/^\s*configureDesktopMachineRemoteAccess\(\)$/m)
+    expect(activation).toContain("hostedContributionLoader()")
+    expect(activation).not.toContain("configureHttpMachineRemoteAccess")
+    expect(activation).not.toContain("configureApiRuntime")
+    expect(activation).not.toContain("configureAuthSession")
+    expect(hostedModules(HOSTED_ACTIVATION.modules).length).toBeGreaterThan(0)
   })
 })
 
 describe("the shared desktop shell", () => {
   test("holds no identity surface, so the split cannot be undone from the middle", () => {
-    // Both entries import this module. An identity import or a port binding
+    // The base entry imports this module. An identity import or a port binding
     // here would put the provider back in the unsigned bundle while both
     // entries still looked correct in review.
     const shell = stripComments(readFileSync(entryFile("shell.tsx"), "utf8"))
@@ -283,22 +257,20 @@ describe("the shared desktop shell", () => {
   })
 })
 
-describe("the renderer build emits one document per product", () => {
+describe("the renderer build keeps one local base document", () => {
   /**
    * Run the real config rather than read it.
    *
    * The rollup INPUT is the property that matters: rollup links whatever an
    * input's graph reaches, so a config listing both documents would put
-   * `index.tsx` — and through it Clerk — into the local artifact no matter which
-   * document main then loaded. A text assertion cannot tell "computes the
-   * document" from "uses the document"; an earlier version of this test did
-   * exactly that and stayed green while the input was reverted to a hard-coded
-   * `index.html`.
+   * a second document would reintroduce a second renderer composition root.
+   * A text assertion cannot tell "names the local document" from "uses it";
+   * this runs the real config under both capability settings.
    *
    * `loadEnv` gives prefixed `process.env` values precedence over `.env` files,
    * which is what lets this drive both products from one process.
    */
-  async function inputFor(authEnabled: string | undefined) {
+  async function configFor(authEnabled: string | undefined) {
     const previous = process.env.VITE_AUTH_ENABLED
     if (authEnabled === undefined) delete process.env.VITE_AUTH_ENABLED
     else process.env.VITE_AUTH_ENABLED = authEnabled
@@ -306,7 +278,10 @@ describe("the renderer build emits one document per product", () => {
       const { createElectronRenderer } = await import("../../vite.renderer")
       const config = createElectronRenderer("production")
       const input = config.build?.rollupOptions?.input as Record<string, string>
-      return Object.fromEntries(Object.entries(input).map(([name, file]) => [name, path.basename(file)]))
+      return {
+        input: Object.fromEntries(Object.entries(input).map(([name, file]) => [name, path.basename(file)])),
+        hostedActivation: config.define?.__CLAXEDO_HOSTED_ACTIVATION_ENABLED__,
+      }
     } finally {
       if (previous === undefined) delete process.env.VITE_AUTH_ENABLED
       else process.env.VITE_AUTH_ENABLED = previous
@@ -315,47 +290,32 @@ describe("the renderer build emits one document per product", () => {
 
   test("an unsigned build's only entry document is the local one", async () => {
     // Explicit values only. `loadEnv` also reads `claxedo-app/.env.local`, so
-    // "unset" resolves to whatever that developer's file says — the unset rule
-    // is `desktopProductMode({})`'s to state, and it is asserted there as a pure
-    // function rather than against a machine's dotfiles.
-    expect(await inputFor("false")).toEqual({ main: "index.local.html", loading: "loading.html" })
+    // "unset" resolves to whatever that developer's file says, so use an
+    // explicit false to prove the unsigned build.
+    expect(await configFor("false")).toEqual({
+      input: { main: "index.local.html", loading: "loading.html" },
+      hostedActivation: "false",
+    })
   })
 
-  test("a signed build's only entry document is the hosted one", async () => {
-    expect(await inputFor("true")).toEqual({ main: "index.html", loading: "loading.html" })
+  test("a signed-capable build keeps the same local base document", async () => {
+    expect(await configFor("true")).toEqual({
+      input: { main: "index.local.html", loading: "loading.html" },
+      hostedActivation: "true",
+    })
   })
 })
 
-describe("the product mode reaches the main process", () => {
-  test("the build defines exactly the key windows.ts reads", () => {
-    // `src/main/windows.ts` picks the document from a BAKED value, because the
-    // user's machine has no VITE_AUTH_ENABLED. If the define were dropped, main
-    // would resolve `local` and a signed build would load a document it never
-    // emitted — a blank window, past a green suite. Key matched to key, both
-    // read out of the code rather than asserted as literals in two places.
+describe("the local base document reaches main and the renderer build", () => {
+  test("main and the renderer build import one canonical document constant", () => {
     const main = stripComments(read("src/main/windows.ts"))
-    const key = main.match(/import\.meta\.env\.(CLAXEDO_[A-Z_]+)/)?.[1]
-    expect(key).toBe("CLAXEDO_PRODUCT_MODE")
+    expect(main).toContain("const RENDERER_DOCUMENT = MAIN_RENDERER_DOCUMENT")
+    expect(stripComments(read("vite.renderer.ts"))).toContain("MAIN_RENDERER_DOCUMENT")
+    expect(stripComments(read("electron.vite.config.ts"))).not.toContain("CLAXEDO_PRODUCT_MODE")
 
-    const config = stripComments(read("electron.vite.config.ts"))
-    expect(config).toContain(`"import.meta.env.${key}"`)
-    expect(config).toContain("desktopProductModeForBuild(mode)")
-  })
-
-  test("main and the renderer build resolve the document through one function", () => {
-    // Two string literals that agree until they don't is exactly how a shipped
-    // renderer ends up unloadable, so both callers go through
-    // `rendererDocument`.
-    const main = stripComments(read("src/main/windows.ts"))
-    expect(main).toContain("rendererDocument(PRODUCT_MODE)")
-    expect(stripComments(read("vite.renderer.ts"))).toContain("rendererDocument(desktopProductMode(env))")
-
-    // And NO literal document name survives in main. Computing the constant is
+    // And NO literal document name survives in main. Importing the constant is
     // not the property that matters — USING it is, at both sites: the window
-    // load and the navigation guard's trusted-URL comparison. A first version of
-    // this test asserted only the line above and stayed green while
-    // `loadMainWindow` was reverted to a hard-coded `"index.html"`, which is the
-    // exact regression it exists to catch.
+    // load and the navigation guard's trusted-URL comparison.
     expect(main.match(/["'`][\w.]*\.html["'`]/g) ?? []).toEqual(["\"loading.html\""])
     expect(main).toContain("loadWindow(win, RENDERER_DOCUMENT)")
     expect(main).toContain("new URL(RENDERER_DOCUMENT, process.env.ELECTRON_RENDERER_URL)")

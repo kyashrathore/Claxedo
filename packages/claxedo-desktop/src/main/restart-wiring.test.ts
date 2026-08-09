@@ -73,6 +73,6 @@ describe("restart wiring", () => {
     expect(relaunchAt).toBeGreaterThan(-1)
     expect(killAt).toBeGreaterThan(relaunchAt)
     // And the renderer must not have kept its own copy of the old flow.
-    expect(await read("src/renderer/index.tsx")).not.toMatch(/killSidecar/)
+    expect(await read("src/renderer/local.tsx")).not.toMatch(/killSidecar/)
   })
 })

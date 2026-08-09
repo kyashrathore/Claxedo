@@ -30,11 +30,21 @@ const SIGN_IN_TIMEOUT_MS = 5 * 60_000
  * these channels spend a credential, so an unguarded one is the worst of the
  * sixty to leave open. `ipc-caller-guard.wiring.test.ts` pins the ordering.
  */
-export function setupAccount(input: {
+export type AccountAssemblyInput = {
   ipcMain: AccountIpcTarget
   env?: AccountConfigEnv
   onError?: (stage: string, error: unknown) => void
-}) {
+}
+
+/**
+ * Construct the account adapter without registering IPC.
+ *
+ * The lazy main-process broker owns the one IPC registration and calls this
+ * only after sign-in is requested or a nonsecret credential marker exists.
+ * Keeping construction separate from registration is what lets unsigned boot
+ * expose the closed protocol without importing Electron OAuth/storage code.
+ */
+export function createAccountAssembly(input: Omit<AccountAssemblyInput, "ipcMain">) {
   const config = readAccountConfig(input.env ?? (process.env as AccountConfigEnv))
 
   if (!config.configured) {
@@ -45,8 +55,9 @@ export function setupAccount(input: {
       reason: "callback-failed",
       detail: `this build has no account client configured (missing: ${config.missing.join(", ")})`,
     }
-    registerAccountIpc({
-      ipcMain: input.ipcMain,
+    return {
+      configured: false as const,
+      missing: config.missing,
       service: {
         state: () => unavailable,
         signIn: async () => unavailable,
@@ -55,8 +66,7 @@ export function setupAccount(input: {
           throw new Error(unavailable.detail)
         },
       },
-    })
-    return { configured: false as const, missing: config.missing }
+    }
   }
 
   const store = createCredentialStore({
@@ -107,6 +117,15 @@ export function setupAccount(input: {
   // Before registering: a renderer that asks for state during its first frame
   // should get the restored answer, not `unsigned` followed by a correction.
   service.restore()
-  const { channels } = registerAccountIpc({ ipcMain: input.ipcMain, service })
-  return { configured: true as const, service, channels }
+  return { configured: true as const, service }
+}
+
+export type AccountAssembly = ReturnType<typeof createAccountAssembly>
+
+export function setupAccount(input: AccountAssemblyInput) {
+  const account = createAccountAssembly(input)
+  const { channels } = registerAccountIpc({ ipcMain: input.ipcMain, service: account.service })
+  return account.configured
+    ? { ...account, channels }
+    : { configured: false as const, missing: account.missing, channels }
 }
