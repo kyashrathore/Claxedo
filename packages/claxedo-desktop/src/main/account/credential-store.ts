@@ -59,25 +59,30 @@ export function createCredentialStore(input: {
   onRejected?: (reason: string) => void
 }): CredentialStore {
   const backend = () => input.safeStorage.getSelectedStorageBackend?.() ?? "unknown"
-  const verdict = () =>
-    secureStorageVerdict({
-      available: input.safeStorage.isEncryptionAvailable(),
-      backend: backend(),
-      platform: input.platform,
-    })
+  const storage = () => {
+    const selectedBackend = backend()
+    return {
+      backend: selectedBackend,
+      verdict: secureStorageVerdict({
+        available: input.safeStorage.isEncryptionAvailable(),
+        backend: selectedBackend,
+        platform: input.platform,
+      }),
+    }
+  }
 
   return {
-    available: verdict,
+    available: () => storage().verdict,
 
     save(tokens) {
-      const usable = verdict()
+      const secure = storage()
       // Checked again at write time, not just before OAuth: the keyring can go
       // away mid-session (a locked wallet, a logged-out session bus), and
       // writing anyway is precisely the failure this module exists to prevent.
-      if (!usable.usable) throw new Error(`refusing to store a credential: ${usable.detail}`)
+      if (!secure.verdict.usable) throw new Error(`refusing to store a credential: ${secure.verdict.detail}`)
       const record: StoredCredential = {
         ciphertext: input.safeStorage.encryptString(JSON.stringify(tokens)).toString("base64"),
-        backend: backend(),
+        backend: secure.backend,
         expiresAt: tokens.expiresAt,
       }
       input.file.write(JSON.stringify(record))
@@ -91,9 +96,25 @@ export function createCredentialStore(input: {
         record = JSON.parse(contents) as StoredCredential
       } catch {
         input.onRejected?.("stored credential could not be parsed")
+        input.file.clear()
         return undefined
       }
-      const disposition = storedCredentialDisposition({ stored: record, currentBackend: backend(), now })
+
+      const secure = storage()
+      if (!secure.verdict.usable) {
+        // `basic_text` is not a temporarily locked keyring. A record bearing
+        // that backend can only have been written by an old/broken producer,
+        // so it must never be decrypted and must not survive for a future
+        // reader to promote. Other unavailable backends are recoverable: keep
+        // their ciphertext intact until the OS store becomes usable again.
+        if (input.platform === "linux" && secure.backend === "basic_text" && record.backend === "basic_text") {
+          input.onRejected?.("stored credential unusable: basic_text is not protected storage")
+          input.file.clear()
+        }
+        return undefined
+      }
+
+      const disposition = storedCredentialDisposition({ stored: record, currentBackend: secure.backend, now })
       if (disposition.state === "dead") {
         input.onRejected?.(`stored credential unusable: ${disposition.reason}`)
         // Cleared rather than left in place. A credential we will never use

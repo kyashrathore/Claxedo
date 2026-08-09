@@ -437,6 +437,28 @@ describe("restore", () => {
     expect(service().api.restore()).toEqual({ status: "unsigned" })
   })
 
+  test("reports unavailable secure storage without adopting or deleting a credential", () => {
+    const store = memoryStore(TOKENS)
+    let loads = 0
+    store.available = () => ({
+      usable: false,
+      reason: "no-secure-storage",
+      detail: "the OS credential store is locked",
+    })
+    store.load = () => {
+      loads++
+      return undefined
+    }
+
+    expect(service({ store }).api.restore()).toEqual({
+      status: "unavailable",
+      reason: "no-secure-storage",
+      detail: "the OS credential store is locked",
+    })
+    expect(loads).toBe(1)
+    expect(store.held()).toEqual(TOKENS)
+  })
+
   test("never throws, because this runs during launch", () => {
     // A stale or unreadable credential must not be able to prevent the app
     // from starting.

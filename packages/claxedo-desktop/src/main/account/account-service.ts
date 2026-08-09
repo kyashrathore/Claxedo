@@ -190,6 +190,19 @@ export function createAccountService(options: AccountServiceOptions) {
     /** Restores a stored credential at boot. Never throws — this runs on launch. */
     restore() {
       try {
+        const storage = options.store.available()
+        if (!storage.usable) {
+          state = {
+            status: "unavailable",
+            reason: "no-secure-storage",
+            detail: storage.detail,
+          }
+          // Give the store one non-decrypting pass so it can discard a legacy
+          // `basic_text` record while preserving ciphertext behind a locked or
+          // temporarily unavailable protected backend.
+          options.store.load(options.now())
+          return state
+        }
         const stored = options.store.load(options.now())
         if (!stored) return state
         tokens = stored

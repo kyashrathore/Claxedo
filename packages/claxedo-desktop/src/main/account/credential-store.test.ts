@@ -124,6 +124,52 @@ describe("load", () => {
     expect(harness.rejections[0]).toContain("backend-changed")
   })
 
+  test("refuses and clears a legacy credential written under basic_text without decrypting it", () => {
+    let decrypts = 0
+    const harness = store({
+      safeStorage: {
+        getSelectedStorageBackend: () => "basic_text",
+        decryptString: () => {
+          decrypts++
+          return JSON.stringify(TOKENS)
+        },
+      },
+    })
+    harness.file.write(JSON.stringify({
+      ciphertext: Buffer.from("legacy plaintext-equivalent record").toString("base64"),
+      backend: "basic_text",
+      expiresAt: TOKENS.expiresAt,
+    }))
+
+    expect(harness.store.load(1_000)).toBeUndefined()
+    expect(harness.file.contents()).toBeUndefined()
+    expect(decrypts).toBe(0)
+    expect(harness.rejections[0]).toContain("basic_text")
+  })
+
+  test("preserves a protected record while the OS encryption backend is unavailable", () => {
+    let decrypts = 0
+    const harness = store({
+      safeStorage: {
+        isEncryptionAvailable: () => false,
+        decryptString: () => {
+          decrypts++
+          throw new Error("keyring locked")
+        },
+      },
+    })
+    const record = JSON.stringify({
+      ciphertext: Buffer.from("protected record").toString("base64"),
+      backend: "gnome_libsecret",
+      expiresAt: TOKENS.expiresAt,
+    })
+    harness.file.write(record)
+
+    expect(harness.store.load(1_000)).toBeUndefined()
+    expect(harness.file.contents()).toBe(record)
+    expect(decrypts).toBe(0)
+  })
+
   test("keeps a credential whose access token expired but whose refresh token lives", () => {
     // `expiresAt` on the record is the ACCESS token's. Treating it as the
     // record's own expiry deleted the refresh token unread — so a user who left
