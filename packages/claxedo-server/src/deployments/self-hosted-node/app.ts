@@ -1222,7 +1222,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     // Reuse the authority selected by this composition. Local trust has
     // already selected SQLite even if an ambient Convex URL is present;
     // hosted trust has already failed closed or selected Convex.
-    runtimeWorkspaceAuthority: () => services.authority,
+    ...(services.authority ? { workspaceAuthority: services.authority } : {}),
   })
   configureWorkspaceSupervisor({
     server_url: `http://127.0.0.1:${port}`,
