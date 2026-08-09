@@ -63,12 +63,34 @@ describe("TokenTracker embedded local history", () => {
       nativeSessionId: "direct",
       tokens: { input: 10, output: 20, reasoning: null, cacheRead: 3, cacheWrite: null },
     })])
+    expect(snapshot.totalRows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ nativeSessionId: "direct" }),
+      expect.objectContaining({ nativeSessionId: "native-claxedo" }),
+    ]))
+    expect(snapshot.totalRows).toHaveLength(2)
     expect(snapshot.classifiedClaxedo).toBe(1)
     expect(snapshot.unclassified).toBe(0)
     expect(JSON.stringify(snapshot)).not.toContain("secret-project")
     expect(JSON.stringify(snapshot)).not.toContain("private response")
     expect(fetchSpy).not.toHaveBeenCalled()
     await expect(fs.stat(stateDir)).resolves.toMatchObject({ mode: expect.any(Number) })
+  })
+
+  test("retains pre-coverage rows for Total without calling them external", async () => {
+    const { root, observedAt } = await fixture()
+    const snapshot = await scanTokenTrackerLocalHistory({
+      sourceHome: root,
+      stateDir: path.join(root, "state"),
+      since: observedAt - 1_000,
+      until: observedAt + 1_000,
+      sources: ["claude"],
+      classificationKey: "fixture-unclassified-total-v1",
+      classify: () => "unclassified",
+    })
+
+    expect(snapshot.rows).toEqual([])
+    expect(snapshot.totalRows).toHaveLength(2)
+    expect(snapshot.unclassified).toBe(2)
   })
 
   test("serializes identical scans and reuses the Claxedo-owned cache", async () => {
@@ -97,9 +119,9 @@ describe("TokenTracker embedded local history", () => {
     await expect(scanTokenTrackerLocalHistory({ ...input, refresh: true })).resolves.toEqual(first)
     expect(classify).toHaveBeenCalledTimes(2)
 
-    const cursorText = gunzipSync(await fs.readFile(path.join(stateDir, "embedded-history-cursors-v6.json.gz"))).toString("utf8")
+    const cursorText = gunzipSync(await fs.readFile(path.join(stateDir, "embedded-history-cursors-v7.json.gz"))).toString("utf8")
     const cursor = JSON.parse(cursorText) as { version: number; files: Record<string, unknown> }
-    expect(cursor.version).toBe(6)
+    expect(cursor.version).toBe(7)
     expect(Object.keys(cursor.files)).toHaveLength(2)
     expect(Object.keys(cursor.files).every((key) => /^[a-f0-9]{64}$/.test(key))).toBe(true)
     expect(cursorText).not.toContain(root)
@@ -206,12 +228,12 @@ describe("TokenTracker embedded local history", () => {
     expect((totals.input ?? 0) + (totals.output ?? 0) + (totals.reasoning ?? 0) + (totals.cacheRead ?? 0) + (totals.cacheWrite ?? 0)).toBe(180)
   })
 
-  test("keeps distinct Codex turns whose last-token deltas are identical", async () => {
+  test("counts completed Codex responses instead of intermediate token snapshots", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-codex-identical-turns-"))
     roots.push(root)
     const sessions = path.join(root, ".codex", "sessions", "2026", "08", "08")
     await fs.mkdir(sessions, { recursive: true })
-    const observedAt = Date.UTC(2026, 7, 8, 12)
+    const observedAt = Date.UTC(2026, 7, 8, 12, 29, 59)
     const delta = {
       input_tokens: 100, cached_input_tokens: 60, output_tokens: 20,
       reasoning_output_tokens: 6, total_tokens: 120,
@@ -229,13 +251,18 @@ describe("TokenTracker embedded local history", () => {
         input_tokens: 200, cached_input_tokens: 120, output_tokens: 40,
         reasoning_output_tokens: 12, total_tokens: 240,
       }),
+      JSON.stringify({
+        timestamp: new Date(observedAt + 2_000).toISOString(),
+        type: "event_msg",
+        payload: { type: "agent_message", message: "done" },
+      }),
     ].join("\n"))
 
     const snapshot = await scanTokenTrackerLocalHistory({
       sourceHome: root,
       stateDir: path.join(root, "state"),
-      since: observedAt - 1,
-      until: observedAt + 10,
+      since: observedAt - 60_000,
+      until: observedAt + 3_000,
       sources: ["codex"],
       classificationKey: "fixture-codex-identical-turns-v1",
       classify: () => "external",
@@ -243,6 +270,7 @@ describe("TokenTracker embedded local history", () => {
 
     expect(snapshot.rows).toEqual([expect.objectContaining({
       nativeSessionId: "codex-identical",
+      turnCount: 1,
       tokens: { input: 80, output: 28, reasoning: 12, cacheRead: 120, cacheWrite: 0 },
     })])
   })

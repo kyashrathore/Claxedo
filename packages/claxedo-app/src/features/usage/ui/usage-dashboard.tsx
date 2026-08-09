@@ -157,7 +157,7 @@ export function UsageDashboard() {
             <Show when={selected() === "total" && snapshot.externalLocal.status !== "available"}>
               <p>
                 {snapshot.externalLocal.error ??
-                  "Current-machine app history is unavailable in this deployment; Total still includes Claxedo usage."}
+                  "Current-machine provider history is unavailable; Total local usage cannot be measured."}
               </p>
             </Show>
             <For
@@ -241,7 +241,13 @@ export function UsageDashboard() {
                   </div>
                 </aside>
                 <div class="usage-detail-main">
-                  <UsageChart series={activeSeries()} chart={data()?.chart} cost={activeCost()} metric={metric()} />
+                  <UsageChart
+                    series={activeSeries()}
+                    chart={data()?.chart}
+                    cost={activeCost()}
+                    metric={metric()}
+                    range={data()!.range}
+                  />
                 </div>
               </div>
 
@@ -332,7 +338,7 @@ export function UsageDashboard() {
           <span>{totalTokens(claxedo()).toLocaleString()} Claxedo tokens in range</span>
           <Show when={(data()?.externalLocal.unclassified ?? 0) > 0}>
             <span class="usage-coverage-warning">
-              {data()!.externalLocal.unclassified} local events quarantined: provenance could not be proven.
+              {data()!.externalLocal.unclassified} local events counted in Total without Claxedo ownership attribution.
             </span>
           </Show>
           <span>Missing token categories stay unknown; they are never filled with zero.</span>

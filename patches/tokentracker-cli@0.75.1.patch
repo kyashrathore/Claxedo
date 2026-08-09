@@ -10,7 +10,7 @@ index f4a67887ad924e936fe9d5df8a999ea2b9a7b868..c863467f8e7ff95c85e8794917c9ba91
 
  const crypto = require("node:crypto");
  const { ensureDir } = require("./fs");
-@@ -10796,6 +10797,433 @@ function isCjkCodePoint(code) {
+@@ -10796,6 +10797,461 @@ function isCjkCodePoint(code) {
    );
  }
 
@@ -116,8 +116,8 @@ index f4a67887ad924e936fe9d5df8a999ea2b9a7b868..c863467f8e7ff95c85e8794917c9ba91
 +  };
 +}
 +
-+const EMBEDDED_HISTORY_CURSOR_VERSION = 6;
-+const EMBEDDED_HISTORY_CURSOR_FILE = "embedded-history-cursors-v6.json.gz";
++const EMBEDDED_HISTORY_CURSOR_VERSION = 7;
++const EMBEDDED_HISTORY_CURSOR_FILE = "embedded-history-cursors-v7.json.gz";
 +const EMBEDDED_CODEX_CURSOR_BUCKET_MS = 60_000;
 +
 +function embeddedHistoryFileKey(filePath) {
@@ -164,7 +164,7 @@ index f4a67887ad924e936fe9d5df8a999ea2b9a7b868..c863467f8e7ff95c85e8794917c9ba91
 +      };
 +      buckets.set(key, bucket);
 +    }
-+    bucket.event_count += Number(event.event_count || 1);
++    bucket.event_count += Number(event.event_count ?? 1);
 +    embeddedAdd(bucket.tokens, event.tokens);
 +  }
 +  return [...buckets.values()];
@@ -188,6 +188,7 @@ index f4a67887ad924e936fe9d5df8a999ea2b9a7b868..c863467f8e7ff95c85e8794917c9ba91
 +  const stream = fssync.createReadStream(filePath, { encoding: "utf8" });
 +  const lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
 +  const events = [];
++  const completedTurns = [];
 +  let malformed = 0;
 +  let sessionId = path.basename(filePath, ".jsonl");
 +  let model = "";
@@ -202,6 +203,8 @@ index f4a67887ad924e936fe9d5df8a999ea2b9a7b868..c863467f8e7ff95c85e8794917c9ba91
 +        sessionId = String(row.payload?.id || sessionId);
 +      } else if (row.type === "turn_context") {
 +        model = String(row.payload?.model || model);
++      } else if (row.type === "event_msg" && row.payload?.type === "agent_message" && model) {
++        completedTurns.push({ model, observed_at: embeddedTimestamp(row.timestamp, stat.mtimeMs) });
 +      }
 +      if (row.type !== "event_msg" || row.payload?.type !== "token_count") continue;
 +      const info = row.payload?.info;
@@ -239,6 +242,23 @@ index f4a67887ad924e936fe9d5df8a999ea2b9a7b868..c863467f8e7ff95c85e8794917c9ba91
 +  } finally {
 +    lines.close();
 +    stream.close?.();
++  }
++  const eventsByModel = new Map();
++  for (const event of events) {
++    event.event_count = 0;
++    const values = eventsByModel.get(event.model);
++    if (values) values.push(event);
++    else eventsByModel.set(event.model, [event]);
++  }
++  const nextEventByModel = new Map();
++  for (const turn of completedTurns) {
++    const values = eventsByModel.get(turn.model);
++    if (!values?.length) continue;
++    let index = nextEventByModel.get(turn.model) || 0;
++    while (index + 1 < values.length && values[index + 1].observed_at <= turn.observed_at) index += 1;
++    nextEventByModel.set(turn.model, index);
++    const event = values[index];
++    if (event.observed_at <= turn.observed_at) event.event_count += 1;
 +  }
 +  return { events, malformed };
 +}
@@ -388,6 +408,24 @@ index f4a67887ad924e936fe9d5df8a999ea2b9a7b868..c863467f8e7ff95c85e8794917c9ba91
 +  for (const key of EMBEDDED_TOKEN_KEYS) if (value[key] !== null) target[key] = (target[key] ?? 0) + value[key];
 +}
 +
++function embeddedBucketEvent(buckets, source, event) {
++  const bucketStart = Math.floor(event.observed_at / 1_800_000) * 1_800_000;
++  const key = `${source}\0${event.provider}\0${event.model}\0${bucketStart}\0${event.native_session_id}`;
++  let bucket = buckets.get(key);
++  if (!bucket) {
++    bucket = {
++      app: source, source, provider: event.provider, model: event.model, bucket_start: bucketStart,
++      native_session_id: event.native_session_id,
++      event_count: 0,
++      input_tokens: null, output_tokens: null, reasoning_output_tokens: null,
++      cached_input_tokens: null, cache_creation_input_tokens: null,
++    };
++    buckets.set(key, bucket);
++  }
++  bucket.event_count += Number(event.event_count ?? 1);
++  embeddedAdd(bucket, event.tokens);
++}
++
 +async function scanLocalHistory(options = {}) {
 +  if (options.upload !== false || options.telemetry !== false) throw new Error("embedded history requires upload:false and telemetry:false");
 +  if (!path.isAbsolute(options.sourceHome || "") || !path.isAbsolute(options.stateDir || "")) throw new Error("embedded history requires absolute sourceHome and stateDir");
@@ -398,6 +436,7 @@ index f4a67887ad924e936fe9d5df8a999ea2b9a7b868..c863467f8e7ff95c85e8794917c9ba91
 +  const sources = [...new Set(options.sources || [...EMBEDDED_SOURCES])];
 +  const cursorState = embeddedReadHistoryCursors(options.stateDir);
 +  const buckets = new Map();
++  const totalBuckets = new Map();
 +  const coverage = [];
 +  let classified_claxedo = 0;
 +  let unclassified = 0;
@@ -417,34 +456,23 @@ index f4a67887ad924e936fe9d5df8a999ea2b9a7b868..c863467f8e7ff95c85e8794917c9ba91
 +      const eventKey = source === "claude" ? event.event_id : `${event.native_session_id}\0${event.event_id}`;
 +      if (event.event_id && seen.has(eventKey)) continue;
 +      if (event.event_id) seen.add(eventKey);
++      embeddedBucketEvent(totalBuckets, source, event);
 +      const classification = await options.classify({ source: event.source, nativeSessionId: event.native_session_id, observedAt: event.observed_at });
-+      const eventCount = Number(event.event_count || 1);
++      const eventCount = Number(event.event_count ?? 1);
 +      if (classification === "claxedo") { classified_claxedo += eventCount; continue; }
 +      if (classification !== "external") { unclassified += eventCount; continue; }
-+      const bucketStart = Math.floor(event.observed_at / 1_800_000) * 1_800_000;
-+      const key = `${source}\0${event.provider}\0${event.model}\0${bucketStart}\0${event.native_session_id}`;
-+      let bucket = buckets.get(key);
-+      if (!bucket) {
-+        bucket = {
-+          app: source, source, provider: event.provider, model: event.model, bucket_start: bucketStart,
-+          native_session_id: event.native_session_id,
-+          input_tokens: null, output_tokens: null, reasoning_output_tokens: null,
-+          cached_input_tokens: null, cache_creation_input_tokens: null,
-+        };
-+        buckets.set(key, bucket);
-+      }
-+      embeddedAdd(bucket, event.tokens);
++      embeddedBucketEvent(buckets, source, event);
 +    }
 +  }
 +  cursorState.updatedAt = Date.now();
 +  embeddedWriteHistoryCursors(options.stateDir, cursorState);
-+  return { rows: [...buckets.values()], coverage, classified_claxedo, unclassified };
++  return { rows: [...buckets.values()], total_rows: [...totalBuckets.values()], coverage, classified_claxedo, unclassified };
 +}
 +
  module.exports = {
    listRolloutFiles,
    listRolloutFilesDeep,
-@@ -10926,4 +11354,5 @@ module.exports = {
+@@ -10926,4 +11382,5 @@ module.exports = {
    parseAntigravityIncremental,
    estimateAntigravityTokens,
    isCjkCodePoint,

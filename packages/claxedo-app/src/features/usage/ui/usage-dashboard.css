@@ -263,7 +263,8 @@
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
-.usage-chart-focus {
+.usage-chart-focus,
+.usage-chart-point {
   fill: var(--surface-raised-stronger-non-alpha);
   stroke: var(--usage-brand-color, var(--usage-neutral));
   stroke-width: 2;

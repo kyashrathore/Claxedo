@@ -243,7 +243,7 @@ test.describe("unified usage dashboard @core @surface-web", () => {
     await expect(dialog.getByRole("button", { name: "Tokens" })).toHaveAttribute("aria-pressed", "true")
     await expect(dialog.getByRole("table", { name: "Usage grouped by provider" })).toContainText("Codex")
     await expect(dialog.getByRole("table", { name: "Usage grouped by provider" })).not.toContainText("Claxedo")
-    await expect(dialog).toContainText("1 local events quarantined")
+    await expect(dialog).toContainText("1 local events counted in Total without Claxedo ownership attribution")
     expect(requests.length).toBeGreaterThan(0)
     expect(requests.every((request) => request.searchParams.get("view") === "claxedo")).toBe(true)
 

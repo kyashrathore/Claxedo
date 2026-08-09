@@ -298,7 +298,7 @@ describe("local unified usage route", () => {
     quality: { source: "provider", knownCategories: ["input", "output", "cache_read"] },
   } as const
 
-  test("merges central with pending local and classified external exactly once", async () => {
+  test("keeps cross-machine Claxedo usage separate from authoritative Total local history", async () => {
     const local = { current: async () => [fact], pendingOutbox: async () => [fact] } as never
     const app = LocalUsageRoutes({
       local,
@@ -308,27 +308,75 @@ describe("local unified usage route", () => {
         recordLlmTurn: async () => ({ activated: false }),
         usageDashboard: async () => ({ totals: { turn_count: 1, input_tokens: 20 }, daily: [] }),
       },
-      history: async () => ({
-        rows: [
-          {
-            app: "claude",
-            provider: "anthropic",
-            model: "m",
-            bucketStart: 10,
-            nativeSessionId: "direct",
-            tokens: { input: 5, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
-          },
-        ],
-        coverage: [{ source: "claude", status: "available" }],
-        classifiedClaxedo: 1,
-        unclassified: 0,
-      }),
+      history: async () => {
+        const direct = {
+          app: "claude",
+          provider: "anthropic",
+          model: "m",
+          bucketStart: 10,
+          nativeSessionId: "direct",
+          turnCount: 1,
+          tokens: { input: 5, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+        }
+        const throughClaxedo = {
+          app: "pi",
+          provider: "anthropic",
+          model: "m",
+          bucketStart: 10,
+          nativeSessionId: "native-claxedo",
+          turnCount: 1,
+          tokens: { input: 10, output: 2, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+        }
+        return {
+          rows: [direct],
+          totalRows: [direct, throughClaxedo],
+          coverage: [{ source: "claude", status: "available" }],
+          classifiedClaxedo: 1,
+          unclassified: 0,
+        }
+      },
     })
     const response = await app.request("/?since=0&until=20&timezone=UTC&view=total")
     const body = (await response.json()) as any
     expect(body.claxedo.totals.input).toBe(30)
-    expect(body.total.totals.input).toBe(35)
+    expect(body.total.totals.input).toBe(15)
     expect(body.claxedo.scope).toBe("cross-machine")
+  })
+
+  test("builds Total local usage from provider history even when attribution is quarantined", async () => {
+    const row = {
+      app: "codex",
+      provider: "openai",
+      model: "gpt-5.6-sol",
+      bucketStart: 10,
+      nativeSessionId: "historical-codex",
+      turnCount: 123,
+      tokens: { input: 50, output: 5, reasoning: 2, cacheRead: 100, cacheWrite: 0 },
+    }
+    const app = LocalUsageRoutes({
+      local: { current: async () => [], pendingOutbox: async () => [] } as never,
+      identity: async () => undefined,
+      outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
+      history: async () => ({
+        rows: [],
+        totalRows: [row],
+        coverage: [{ source: "codex", status: "available" }],
+        classifiedClaxedo: 0,
+        unclassified: 1,
+      }),
+    })
+
+    const response = await app.request("/?since=0&until=20&timezone=UTC&view=total&group=provider")
+    const body = (await response.json()) as any
+    expect(body.externalLocal.totals.input).toBe(0)
+    expect(body.total.totals).toMatchObject({ turnCount: 123, input: 50, output: 5, reasoning: 2, cacheRead: 100 })
+    expect(body.breakdown.rows).toEqual([
+      expect.objectContaining({ value: "openai", turnCount: 123, input: 50, output: 5, reasoning: 2, cacheRead: 100 }),
+    ])
+    expect(body.chart.series).toEqual([
+      expect.objectContaining({ value: "openai", daily: [expect.objectContaining({ input: 50 })] }),
+    ])
+    expect(body.externalLocal.unclassified).toBe(1)
   })
 
   test("anonymous requests stay local and source failures do not zero Claxedo", async () => {
@@ -357,6 +405,18 @@ describe("local unified usage route", () => {
             model: "gpt-5.6-sol",
             bucketStart: 10,
             nativeSessionId: "direct",
+            turnCount: 1,
+            tokens: { input: 5, output: 2, reasoning: 1, cacheRead: 7, cacheWrite: null },
+          },
+        ],
+        totalRows: [
+          {
+            app: "codex",
+            provider: "openai",
+            model: "gpt-5.6-sol",
+            bucketStart: 10,
+            nativeSessionId: "direct",
+            turnCount: 1,
             tokens: { input: 5, output: 2, reasoning: 1, cacheRead: 7, cacheWrite: null },
           },
         ],
@@ -398,6 +458,18 @@ describe("local unified usage route", () => {
             model: "gpt-5.6-sol",
             bucketStart: 10,
             nativeSessionId: "direct",
+            turnCount: 1,
+            tokens: { input: 5, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+          },
+        ],
+        totalRows: [
+          {
+            app: "codex",
+            provider: "openai",
+            model: "gpt-5.6-sol",
+            bucketStart: 10,
+            nativeSessionId: "direct",
+            turnCount: 1,
             tokens: { input: 5, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
           },
         ],
@@ -441,6 +513,7 @@ describe("local unified usage route", () => {
   test("consumes a refresh nonce once across pagination and refetches", async () => {
     const history = vi.fn(async ({ refresh }: { refresh: boolean }) => ({
       rows: [],
+      totalRows: [],
       coverage: [],
       classifiedClaxedo: 0,
       unclassified: 0,
@@ -465,7 +538,13 @@ describe("local unified usage route", () => {
     const current = vi.fn(async () => [fact])
     const pendingOutbox = vi.fn(async () => [fact])
     const identity = vi.fn(async () => undefined)
-    const history = vi.fn(async () => ({ rows: [], coverage: [], classifiedClaxedo: 0, unclassified: 0 }))
+    const history = vi.fn(async () => ({
+      rows: [],
+      totalRows: [],
+      coverage: [],
+      classifiedClaxedo: 0,
+      unclassified: 0,
+    }))
     const quota = vi.fn(async () => ({ providers: [] }))
     const app = LocalUsageRoutes({
       local: { current, pendingOutbox } as never,
@@ -534,7 +613,28 @@ describe("local unified usage route", () => {
             model: "m",
             bucketStart: 10,
             nativeSessionId: "direct",
+            turnCount: 1,
             tokens: { input: 5, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+          },
+        ],
+        totalRows: [
+          {
+            app: "claude",
+            provider: "anthropic",
+            model: "m",
+            bucketStart: 10,
+            nativeSessionId: "direct",
+            turnCount: 1,
+            tokens: { input: 5, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+          },
+          {
+            app: "pi",
+            provider: "anthropic",
+            model: "m",
+            bucketStart: 10,
+            nativeSessionId: "claxedo-pi",
+            turnCount: 1,
+            tokens: { input: 20, output: 2, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
           },
         ],
         coverage: [],
@@ -548,7 +648,7 @@ describe("local unified usage route", () => {
     expect(body.claxedo.totals.input).toBe(20)
     expect(body.breakdown.rows).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ value: "Claxedo", turnCount: 1, input: 20 }),
+        expect.objectContaining({ value: "pi", turnCount: 1, input: 20 }),
         expect.objectContaining({ value: "claude", turnCount: 1, input: 5 }),
       ]),
     )
@@ -556,7 +656,7 @@ describe("local unified usage route", () => {
     expect(body.chart.series).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          value: "Claxedo",
+          value: "pi",
           daily: [expect.objectContaining({ date: "1970-01-01", input: 20, output: 2 })],
         }),
         expect.objectContaining({

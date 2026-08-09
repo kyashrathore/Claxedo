@@ -4,11 +4,18 @@ import { UsageChart } from "./usage-chart"
 
 afterEach(cleanup)
 
+const singleDayRange = {
+  since: new Date("2026-08-08T00:00:00Z").getTime(),
+  until: new Date("2026-08-08T23:59:59Z").getTime(),
+  timeZone: "UTC",
+}
+
 describe("UsageChart", () => {
   test("exposes the chart summary and a keyboard-accessible nearest-day tooltip", () => {
     const view = render(() => (
       <UsageChart
         metric="tokens"
+        range={singleDayRange}
         series={{
           totals: {
             turnCount: 1,
@@ -42,10 +49,53 @@ describe("UsageChart", () => {
     expect(screen.getByRole("status")).toHaveTextContent("12 tokens")
   })
 
+  test("keeps a single measured day at its real position in the selected range", () => {
+    const view = render(() => (
+      <UsageChart
+        metric="tokens"
+        range={{
+          since: new Date("2026-05-12T00:00:00Z").getTime(),
+          until: new Date("2026-08-09T23:59:59Z").getTime(),
+          timeZone: "UTC",
+        }}
+        series={{
+          totals: {
+            turnCount: 1,
+            input: 10,
+            output: 2,
+            reasoning: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            unknownCategories: 0,
+          },
+          daily: [
+            {
+              date: "2026-08-09",
+              turnCount: 1,
+              input: 10,
+              output: 2,
+              reasoning: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              unknownCategories: 0,
+            },
+          ],
+        }}
+      />
+    ))
+
+    const axisLabels = [...view.container.querySelectorAll(".usage-chart-axis span")].map((node) => node.textContent)
+    expect(axisLabels).toEqual(["May 12, 2026", "Jun 26, 2026", "Aug 9, 2026"])
+    expect(view.container.querySelectorAll(".usage-chart-area")).toHaveLength(0)
+    expect(view.container.querySelector(".usage-chart-line")?.getAttribute("d")).toMatch(/^M960,/)
+    expect(view.container.querySelector(".usage-chart-point")).toHaveAttribute("cx", "960")
+  })
+
   test("renders provider-token series for each grouped value", () => {
     const view = render(() => (
       <UsageChart
         metric="tokens"
+        range={singleDayRange}
         series={{
           totals: {
             turnCount: 2,
@@ -87,6 +137,7 @@ describe("UsageChart", () => {
     const view = render(() => (
       <UsageChart
         metric="cost"
+        range={singleDayRange}
         series={{
           totals: {
             turnCount: 1,
@@ -127,18 +178,21 @@ describe("UsageChart", () => {
     const chartSeries = Array.from({ length: 7 }, (_, index) => ({
       value: `provider-${index + 1}`,
       label: `Provider ${index + 1}`,
-      daily: [{
-        date: "2026-08-08",
-        input: index + 1,
-        output: 0,
-        reasoning: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-      }],
+      daily: [
+        {
+          date: "2026-08-08",
+          input: index + 1,
+          output: 0,
+          reasoning: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+        },
+      ],
     }))
     const view = render(() => (
       <UsageChart
         metric="tokens"
+        range={singleDayRange}
         series={{
           totals: {
             turnCount: 7,
@@ -158,10 +212,10 @@ describe("UsageChart", () => {
     expect(screen.getByText("Other")).toBeInTheDocument()
     expect(screen.queryByText("Provider 1")).not.toBeInTheDocument()
     expect(screen.queryByText("Provider 2")).not.toBeInTheDocument()
-    const areas = [...view.container.querySelectorAll<SVGPathElement>(".usage-chart-area")]
-    expect(areas).toHaveLength(6)
-    expect(areas[0]).toHaveAttribute("data-stack-bottom", "0")
-    expect(areas[1]).toHaveAttribute("data-stack-bottom", "7")
+    const points = [...view.container.querySelectorAll<SVGCircleElement>(".usage-chart-point")]
+    expect(points).toHaveLength(6)
+    expect(points[0]).toHaveAttribute("data-stack-bottom", "0")
+    expect(points[1]).toHaveAttribute("data-stack-bottom", "7")
 
     fireEvent.focus(view.container.querySelector(".usage-chart-plot")!)
     expect(screen.getByRole("status")).toHaveTextContent("Other3 tokens")

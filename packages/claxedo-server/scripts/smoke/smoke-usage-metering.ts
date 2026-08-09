@@ -173,6 +173,7 @@ export async function runUsageMeteringSmoke() {
       model: "claude-sonnet-4-6",
       bucketStart: NOW - 500,
       nativeSessionId: "direct-claude",
+      turnCount: 1,
       tokens: { input: 40, output: 10, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
     }],
     since: NOW - 30 * DAY,

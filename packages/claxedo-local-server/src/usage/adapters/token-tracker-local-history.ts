@@ -9,19 +9,21 @@ export type ExternalUsageBucket = {
   model: string
   bucketStart: number
   nativeSessionId: string
+  turnCount: number
   tokens: { input: number | null; output: number | null; reasoning: number | null; cacheRead: number | null; cacheWrite: number | null }
 }
 
 export type LocalHistorySnapshot = {
   rows: ExternalUsageBucket[]
+  totalRows: ExternalUsageBucket[]
   coverage: Array<{ source: string; status: "available" | "degraded" | "unavailable" | "unsupported"; error?: string }>
   classifiedClaxedo: number
   unclassified: number
 }
 
-const CACHE_VERSION = 5
+const CACHE_VERSION = 7
 const CACHE_TTL_MS = 5 * 60_000
-const CACHE_FILE = "local-history-v5.json"
+const CACHE_FILE = "local-history-v7.json"
 const scans = new Map<string, Promise<LocalHistorySnapshot>>()
 
 type EmbeddedHistoryRow = {
@@ -30,6 +32,7 @@ type EmbeddedHistoryRow = {
   model: string
   bucket_start: number
   native_session_id: string
+  event_count: number
   input_tokens: number | null
   output_tokens: number | null
   reasoning_output_tokens: number | null
@@ -49,6 +52,7 @@ type TokenTrackerHistoryModule = {
     classify(input: { source?: string; nativeSessionId?: string; observedAt: number }): UsageProvenance | Promise<UsageProvenance>
   }): Promise<{
     rows: EmbeddedHistoryRow[]
+    total_rows: EmbeddedHistoryRow[]
     coverage: Array<{ source: string; status: "available" | "degraded" | "unavailable" | "unsupported"; error?: string | null }>
     classified_claxedo: number
     unclassified: number
@@ -132,21 +136,24 @@ export async function scanTokenTrackerLocalHistory(input: {
         observedAt: event.observedAt,
       }),
     })
+    const mapRow = (row: EmbeddedHistoryRow): ExternalUsageBucket => ({
+      app: row.app,
+      provider: row.provider,
+      model: row.model,
+      bucketStart: row.bucket_start,
+      nativeSessionId: row.native_session_id,
+      turnCount: row.event_count,
+      tokens: {
+        input: row.input_tokens,
+        output: row.output_tokens,
+        reasoning: row.reasoning_output_tokens,
+        cacheRead: row.cached_input_tokens,
+        cacheWrite: row.cache_creation_input_tokens,
+      },
+    })
     const snapshot: LocalHistorySnapshot = {
-      rows: result.rows.map((row) => ({
-        app: row.app,
-        provider: row.provider,
-        model: row.model,
-        bucketStart: row.bucket_start,
-        nativeSessionId: row.native_session_id,
-        tokens: {
-          input: row.input_tokens,
-          output: row.output_tokens,
-          reasoning: row.reasoning_output_tokens,
-          cacheRead: row.cached_input_tokens,
-          cacheWrite: row.cache_creation_input_tokens,
-        },
-      })),
+      rows: result.rows.map(mapRow),
+      totalRows: result.total_rows.map(mapRow),
       coverage: result.coverage.map((item) => ({
         source: item.source,
         status: item.status,

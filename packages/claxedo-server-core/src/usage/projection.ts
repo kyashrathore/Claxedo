@@ -6,6 +6,7 @@ export type ExternalUsageBucket = {
   model: string
   bucketStart: number
   nativeSessionId: string
+  turnCount: number
   tokens: { input: number | null; output: number | null; reasoning: number | null; cacheRead: number | null; cacheWrite: number | null }
 }
 
@@ -131,7 +132,8 @@ export function usageSeriesFromExternal(input: {
   until: number
   timeZone: string
 }): UsageSeries {
-  const facts = input.rows.map((row): TurnUsageRevision => ({
+  const rows = input.rows.filter((row) => row.bucketStart >= input.since && row.bucketStart <= input.until)
+  const facts = rows.map((row): TurnUsageRevision => ({
     hostId: "external-local",
     sessionRef: `external:${row.app}:${row.nativeSessionId}`,
     sessionId: row.nativeSessionId,
@@ -165,7 +167,16 @@ export function usageSeriesFromExternal(input: {
       ],
     },
   }))
-  return usageSeriesFromFacts({ ...input, facts })
+  const series = usageSeriesFromFacts({ ...input, facts })
+  const dailyTurnCounts = new Map<string, number>()
+  const formatDate = usageDateFormatter(input.timeZone)
+  for (const row of rows) {
+    const date = formatDate.format(new Date(row.bucketStart))
+    dailyTurnCounts.set(date, (dailyTurnCounts.get(date) ?? 0) + row.turnCount)
+  }
+  series.totals.turnCount = rows.reduce((sum, row) => sum + row.turnCount, 0)
+  for (const point of series.daily) point.turnCount = dailyTurnCounts.get(point.date) ?? 0
+  return series
 }
 
 export function mergeUsageSeries(...series: readonly UsageSeries[]): UsageSeries {

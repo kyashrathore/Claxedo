@@ -46,12 +46,17 @@ remain unknown and are never filled with zero.
    present.
 6. On a local deployment, the embedded TokenTracker adapter scans provider
    history without command, queue, upload, telemetry, auth, or device-token
-   modules. Classification happens before aggregation:
-   - a matching provider-native manifest identity is `claxedo` and excluded;
+   modules. The provider-native history is the authoritative source for Total
+   local usage and is aggregated exactly once regardless of Claxedo ownership.
+   A separate attribution projection classifies the same observations before
+   aggregation:
+   - a matching provider-native manifest identity is `claxedo` and excluded
+     from external-only attribution;
    - a non-matching identity after that source's persisted coverage boundary is
-     `external` and included in Total;
-   - missing identity or incomplete provenance is `unclassified`, quarantined,
-     and shown as a coverage warning.
+     `external` and included in external-only attribution;
+   - missing identity or incomplete provenance is `unclassified`, quarantined
+     from ownership attribution, and shown as a coverage warning. It remains in
+     Total because its provider-native identity has already been deduplicated.
 7. `LocalUsageRoutes` starts central rollups, current-machine pending revisions,
    classified external history, and quota snapshots concurrently under
    independent deadlines. It composes pricing and the requested breakdown from
@@ -65,9 +70,10 @@ remain unknown and are never filled with zero.
    canonical server rows carry exact token categories, cost coverage, status,
    pagination cursors, and safe workspace/session drill-down links.
 
-The authoritative stores are SQLite latest revisions for local truth, Convex
-daily rollups for cross-machine truth, and the persisted per-source coverage
-boundary for deciding when an unmatched local-history identity may be called
+The authoritative stores are SQLite latest revisions for usage through
+Claxedo, Convex daily rollups for cross-machine Claxedo truth, provider-native
+history for Total local usage, and the persisted per-source coverage boundary
+for deciding when an unmatched local-history identity may be attributed as
 external.
 
 ## Local scanner and pricing audit
@@ -137,6 +143,8 @@ account IDs, auth headers, TokenTracker device tokens, or transcript bodies.
    test passes.
 3. Do not classify events before the persisted source boundary as external.
 4. Do not bypass missing native identity. Those rows must remain quarantined.
+   Quarantine applies to Claxedo/external ownership attribution, not to the
+   deduplicated provider-native Total.
 
 ### Unpriced-model spikes
 
@@ -189,7 +197,8 @@ quota and are not a release gate.
 - Hosted web marks current-machine external history unavailable; it does not
   fake a Total from unavailable local data.
 - Central failure leaves local and pending Claxedo usage visible as stale.
-- Scanner failure degrades only external history.
+- Scanner failure degrades Total local usage and external ownership attribution;
+  usage through Claxedo remains independently available.
 - Quota failure degrades only provider windows.
 - Pricing failure or an unknown model never removes tokens.
 - An invalid revision, tenant-crossing request, or unsigned central query is

@@ -36,6 +36,7 @@ type ExternalUsageBucket = {
   model: string
   bucketStart: number
   nativeSessionId: string
+  turnCount: number
   tokens: {
     input: number | null
     output: number | null
@@ -47,6 +48,7 @@ type ExternalUsageBucket = {
 
 type LocalHistorySnapshot = {
   rows: ExternalUsageBucket[]
+  totalRows: ExternalUsageBucket[]
   coverage: Array<{ source: string; status: "available" | "degraded" | "unavailable" | "unsupported"; error?: string }>
   classifiedClaxedo: number
   unclassified: number
@@ -1050,7 +1052,13 @@ export function LocalUsageRoutes(input: {
             .then((value) => ({ value }))
             .catch((error) => ({ error: error instanceof Error ? error.message : String(error) }))
         : Promise.resolve({
-            value: { rows: [], coverage: [], classifiedClaxedo: 0, unclassified: 0 } as LocalHistorySnapshot,
+            value: {
+              rows: [],
+              totalRows: [],
+              coverage: [],
+              classifiedClaxedo: 0,
+              unclassified: 0,
+            } as LocalHistorySnapshot,
           })
     let identity: Awaited<ReturnType<typeof input.identity>>
     try {
@@ -1155,15 +1163,26 @@ export function LocalUsageRoutes(input: {
     const history =
       "value" in historyResult
         ? historyResult.value
-        : (historyCache.get(historyKey) ?? { rows: [], coverage: [], classifiedClaxedo: 0, unclassified: 0 })
+        : (historyCache.get(historyKey) ?? {
+            rows: [],
+            totalRows: [],
+            coverage: [],
+            classifiedClaxedo: 0,
+            unclassified: 0,
+          })
     const historyError = "error" in historyResult ? historyResult.error : undefined
     // Keep the range boundary authoritative even for cached or future scanner
     // implementations; every downstream total, price, chart and option uses
     // this same bounded collection.
     const historyRows = history.rows.filter((row) => row.bucketStart >= since && row.bucketStart <= until)
     const externalRows = historyRows.filter((row) => externalMatches(row, filters))
+    const totalRows = history.totalRows
+      .filter((row) => row.bucketStart >= since && row.bucketStart <= until)
+      .filter((row) => externalMatches(row, filters))
     const externalSeries = usageSeriesFromExternal({ rows: externalRows, since, until, timeZone })
     const externalCost = await priceExternal(externalRows, timeZone)
+    const totalSeries = usageSeriesFromExternal({ rows: totalRows, since, until, timeZone })
+    const totalCost = await priceExternal(totalRows, timeZone)
     const centralSource = central as
       | {
           breakdown?: unknown
@@ -1178,9 +1197,9 @@ export function LocalUsageRoutes(input: {
     if (group && dimensions.has(group as never)) {
       const dimension =
         group === "app" ? undefined : (group as "provider" | "harness" | "model" | "location" | "session" | "workspace")
-      const externalBreakdownRows =
+      const localHistoryBreakdownRows =
         view === "total"
-          ? externalRows.map((row) => ({
+          ? totalRows.map((row) => ({
               value:
                 group === "app"
                   ? row.app
@@ -1191,7 +1210,7 @@ export function LocalUsageRoutes(input: {
                       : group === "location"
                         ? "local"
                         : "unavailable",
-              turnCount: 1,
+              turnCount: row.turnCount,
               ...row.tokens,
               unknownCategories: [
                 row.tokens.input,
@@ -1203,13 +1222,14 @@ export function LocalUsageRoutes(input: {
             }))
           : []
       const rows =
-        group === "app"
-          ? mergeBreakdownRows(includeClaxedo ? [appBreakdownRow(claxedoSeries)] : [], externalBreakdownRows)
-          : mergeBreakdownRows(
-              includeClaxedo ? aggregateCentralSource?.breakdown : [],
-              includeClaxedo && dimension ? groupUsageFacts(localFacts, dimension) : [],
-              externalBreakdownRows,
-            )
+        view === "total"
+          ? mergeBreakdownRows(localHistoryBreakdownRows)
+          : group === "app"
+            ? mergeBreakdownRows(includeClaxedo ? [appBreakdownRow(claxedoSeries)] : [])
+            : mergeBreakdownRows(
+                includeClaxedo ? aggregateCentralSource?.breakdown : [],
+                includeClaxedo && dimension ? groupUsageFacts(localFacts, dimension) : [],
+              )
       const centralModelRows =
         group === "app"
           ? (aggregateCentralSource?.models ?? []).map((row) => ({ ...row, group: "Claxedo" }))
@@ -1228,9 +1248,9 @@ export function LocalUsageRoutes(input: {
           : dimension
             ? modelBreakdownFromFacts(localFacts, dimension)
             : []
-      const externalModelRows =
+      const localHistoryModelRows =
         view === "total"
-          ? externalRows.map((row) => ({
+          ? totalRows.map((row) => ({
               group:
                 group === "app"
                   ? row.app
@@ -1252,15 +1272,15 @@ export function LocalUsageRoutes(input: {
       breakdown = await canonicalBreakdownPage({
         dimension: group as UsageFilterDimension,
         rows,
-        modelRows: [...centralModelRows, ...localModelRows, ...externalModelRows],
+        modelRows: view === "total" ? localHistoryModelRows : [...centralModelRows, ...localModelRows],
         ...(c.req.query("after") ? { after: c.req.query("after") } : {}),
         ...(requestedLimit === undefined ? {} : { limit: requestedLimit }),
       })
-      const externalModels =
+      const localHistoryModels =
         view === "total"
-          ? externalRows.map((row) => ({
+          ? totalRows.map((row) => ({
               value: usageModelKey(row.provider, row.model),
-              turnCount: 1,
+              turnCount: row.turnCount,
               ...row.tokens,
               unknownCategories: [
                 row.tokens.input,
@@ -1273,36 +1293,42 @@ export function LocalUsageRoutes(input: {
           : []
       modelBreakdown = await canonicalBreakdownPage({
         dimension: "model",
-        rows: mergeBreakdownRows(
-          includeClaxedo ? aggregateCentralSource?.models : [],
-          includeClaxedo ? groupUsageFacts(localFacts, "model") : [],
-          externalModels,
-        ),
+        rows:
+          view === "total"
+            ? mergeBreakdownRows(localHistoryModels)
+            : mergeBreakdownRows(
+                includeClaxedo ? aggregateCentralSource?.models : [],
+                includeClaxedo ? groupUsageFacts(localFacts, "model") : [],
+              ),
         ...(c.req.query("model_after") ? { after: c.req.query("model_after") } : {}),
         ...(requestedLimit === undefined ? {} : { limit: requestedLimit }),
       })
     }
     const chart = group
-      ? mergeChartSeries(
-          group,
-          group === "app"
-            ? includeClaxedo
-              ? chartRowsFromSeries("Claxedo", claxedoSeries)
-              : []
-            : includeClaxedo
-              ? aggregateCentralSource?.dailyBreakdown
+      ? view === "total"
+        ? mergeChartSeries(
+            group,
+            group === "app" || group === "provider" || group === "model" || group === "location"
+              ? chartRowsFromExternal(totalRows, group, timeZone)
               : [],
-          group !== "app" && includeClaxedo
-            ? chartRowsFromFacts(
-                localFacts,
-                group as "provider" | "harness" | "model" | "location" | "session" | "workspace",
-                timeZone,
-              )
-            : [],
-          view === "total" && (group === "app" || group === "provider" || group === "model" || group === "location")
-            ? chartRowsFromExternal(externalRows, group, timeZone)
-            : [],
-        )
+          )
+        : mergeChartSeries(
+            group,
+            group === "app"
+              ? includeClaxedo
+                ? chartRowsFromSeries("Claxedo", claxedoSeries)
+                : []
+              : includeClaxedo
+                ? aggregateCentralSource?.dailyBreakdown
+                : [],
+            group !== "app" && includeClaxedo
+              ? chartRowsFromFacts(
+                  localFacts,
+                  group as "provider" | "harness" | "model" | "location" | "session" | "workspace",
+                  timeZone,
+                )
+              : [],
+          )
       : undefined
     const response: UnifiedUsageResponse = {
       version: 1,
@@ -1329,19 +1355,14 @@ export function LocalUsageRoutes(input: {
         unclassified: history.unclassified,
         ...(historyError ? { error: historyError } : {}),
       },
-      total: mergeUsageSeries(claxedoSeries, externalSeries),
-      totalCost: mergeCost(claxedoCost, externalCost),
+      total: totalSeries,
+      totalCost,
       filterOptions: {
         claxedo: mergeFilterOptions(
           (central as { filters?: Record<string, string[]> } | undefined)?.filters,
           usageFactFilterOptions(allClaxedoFacts),
         ),
-        total: mergeFilterOptions(
-          { app: ["Claxedo"] },
-          (central as { filters?: Record<string, string[]> } | undefined)?.filters,
-          usageFactFilterOptions(allClaxedoFacts),
-          externalFilterOptions(historyRows),
-        ),
+        total: externalFilterOptions(history.totalRows),
       },
       sync,
       ...(breakdown ? { breakdown } : {}),

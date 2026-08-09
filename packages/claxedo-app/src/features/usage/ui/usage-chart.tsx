@@ -1,6 +1,6 @@
 import { For, Show, createMemo, createSignal } from "solid-js"
 import { monotonePath } from "@/ui/charts/monotone-path"
-import type { UsageChartSeries, UsageCost, UsageSeries } from "../data/usage-api"
+import type { UnifiedUsageResponse, UsageChartSeries, UsageCost, UsageSeries } from "../data/usage-api"
 import { UsageBrandLabel, usageBrand } from "./usage-brand"
 
 const WIDTH = 960
@@ -14,6 +14,19 @@ const total = (
 
 const compact = (value: number) =>
   new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value)
+
+function calendarDate(timestamp: number, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(timestamp)
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((value) => value.type === type)?.value ?? ""
+  return `${part("year")}-${part("month")}-${part("day")}`
+}
+
+const dateOrdinal = (date: string) => Date.parse(`${date}T00:00:00Z`)
 
 function niceScale(peak: number) {
   if (peak <= 0) return { max: 0, ticks: [0] }
@@ -31,6 +44,7 @@ export function UsageChart(props: {
   chart?: UsageChartSeries
   cost?: UsageCost
   metric: "tokens" | "cost"
+  range: UnifiedUsageResponse["range"]
 }) {
   const [activeIndex, setActiveIndex] = createSignal<number>()
   const rows = createMemo(() => {
@@ -93,7 +107,21 @@ export function UsageChart(props: {
     return niceScale(peak)
   })
   const toY = (value: number) => (scale().max === 0 ? HEIGHT : HEIGHT - (value / scale().max) * (HEIGHT - PLOT_TOP))
-  const stepX = createMemo(() => (dates().length <= 1 ? 0 : WIDTH / (dates().length - 1)))
+  const domain = createMemo(() => {
+    const start = calendarDate(props.range.since, props.range.timeZone)
+    const end = calendarDate(props.range.until, props.range.timeZone)
+    const startOrdinal = dateOrdinal(start)
+    const endOrdinal = dateOrdinal(end)
+    const middle = new Date(Math.round((startOrdinal + endOrdinal) / 2 / 86_400_000) * 86_400_000)
+      .toISOString()
+      .slice(0, 10)
+    return { start, middle, end, startOrdinal, endOrdinal }
+  })
+  const toX = (date: string) => {
+    const span = domain().endOrdinal - domain().startOrdinal
+    if (span <= 0) return WIDTH / 2
+    return Math.min(WIDTH, Math.max(0, ((dateOrdinal(date) - domain().startOrdinal) / span) * WIDTH))
+  }
   const rendered = createMemo(() => {
     const cumulative = new Map(dates().map((date) => [date, 0]))
     return rows().map((series) => {
@@ -108,23 +136,20 @@ export function UsageChart(props: {
           value,
           bottom,
           top,
-          x: dates().length <= 1 ? WIDTH / 2 : index * stepX(),
+          x: toX(date),
           y: toY(top),
           bottomY: toY(bottom),
         }
       })
-      const path = points.length === 1 ? `M0,${points[0]!.y} L${WIDTH},${points[0]!.y}` : monotonePath(points)
+      const path = monotonePath(points)
       const bottomPoints = points.map((point) => ({ x: point.x, y: point.bottomY })).reverse()
-      const bottomPath =
-        points.length === 1
-          ? `L${WIDTH},${points[0]!.bottomY} L0,${points[0]!.bottomY}`
-          : monotonePath(bottomPoints).replace(/^M/, "L")
+      const bottomPath = points.length > 1 ? monotonePath(bottomPoints).replace(/^M/, "L") : ""
       return {
         ...series,
         brand: usageBrand(`${series.value} ${series.label}`),
         points,
         path,
-        areaPath: `${path} ${bottomPath} Z`,
+        areaPath: points.length > 1 ? `${path} ${bottomPath} Z` : undefined,
       }
     })
   })
@@ -148,15 +173,19 @@ export function UsageChart(props: {
     () =>
       `${props.metric === "cost" ? "Daily estimated API cost" : `Daily tokens by ${props.chart?.dimension ?? "total"}`}. ${rows()
         .map((row) => row.label)
-        .join(
-          ", ",
-        )}. ${dates()[0] ?? "No dates"} to ${dates().at(-1) ?? "no dates"}. Peak ${scale().max.toLocaleString()}.`,
+        .join(", ")}. ${domain().start} to ${domain().end}. Peak ${scale().max.toLocaleString()}.`,
   )
   const setNearestDay = (clientX: number, element: HTMLDivElement) => {
     const bounds = element.getBoundingClientRect()
     if (bounds.width === 0 || dates().length === 0) return
-    const fraction = Math.min(1, Math.max(0, (clientX - bounds.left) / bounds.width))
-    setActiveIndex(Math.round(fraction * (dates().length - 1)))
+    const target = Math.min(1, Math.max(0, (clientX - bounds.left) / bounds.width)) * WIDTH
+    setActiveIndex(
+      dates().reduce(
+        (nearest, date, index) =>
+          Math.abs(toX(date) - target) < Math.abs(toX(dates()[nearest]!) - target) ? index : nearest,
+        0,
+      ),
+    )
   }
   const moveFocus = (delta: number) =>
     setActiveIndex((current) => Math.min(dates().length - 1, Math.max(0, (current ?? 0) + delta)))
@@ -205,20 +234,36 @@ export function UsageChart(props: {
                 </g>
                 <For each={rendered()}>
                   {(series) => (
-                    <path
-                      class={`workspace-data-chart-area usage-chart-area usage-chart-series-${series.brand}`}
-                      d={series.areaPath}
-                      data-stack-bottom={Math.min(...series.points.map((point) => point.bottom))}
-                      data-stack-top={Math.max(...series.points.map((point) => point.top))}
-                    />
+                    <Show when={series.areaPath} keyed>
+                      {(areaPath) => (
+                        <path
+                          class={`workspace-data-chart-area usage-chart-area usage-chart-series-${series.brand}`}
+                          d={areaPath}
+                          data-stack-bottom={Math.min(...series.points.map((point) => point.bottom))}
+                          data-stack-top={Math.max(...series.points.map((point) => point.top))}
+                        />
+                      )}
+                    </Show>
                   )}
                 </For>
                 <For each={rendered()}>
                   {(series) => (
-                    <path
-                      class={`workspace-data-chart-line usage-chart-line usage-chart-series-${series.brand}`}
-                      d={series.path}
-                    />
+                    <>
+                      <path
+                        class={`workspace-data-chart-line usage-chart-line usage-chart-series-${series.brand}`}
+                        d={series.path}
+                      />
+                      <Show when={series.points.length === 1}>
+                        <circle
+                          class={`workspace-data-chart-point usage-chart-point usage-chart-series-${series.brand}`}
+                          cx={series.points[0]!.x}
+                          cy={series.points[0]!.y}
+                          r="3"
+                          data-stack-bottom={series.points[0]!.bottom}
+                          data-stack-top={series.points[0]!.top}
+                        />
+                      </Show>
+                    </>
                   )}
                 </For>
                 <Show when={active()} keyed>
@@ -267,9 +312,9 @@ export function UsageChart(props: {
             </div>
           </div>
           <div class="workspace-data-chart-axis usage-chart-axis" aria-hidden="true">
-            <span>{dateLabel(dates()[0]!)}</span>
-            <span>{dateLabel(dates()[Math.floor(dates().length / 2)]!)}</span>
-            <span>{dateLabel(dates().at(-1)!)}</span>
+            <span>{dateLabel(domain().start)}</span>
+            <span>{dateLabel(domain().middle)}</span>
+            <span>{dateLabel(domain().end)}</span>
           </div>
         </div>
       </Show>
