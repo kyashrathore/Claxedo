@@ -54,7 +54,9 @@ export const serverCloudNode: Policy = {
   forbiddenModules: [`${SRC}/deployments/self-hosted-node`],
 
   control: cloudControl(`${SRC}/deployments/hosted-node/index.ts`),
-  ceilings: { modules: 132, packages: 25 },
+  // +1 package: the dependency-neutral sandbox identity/config contract moved
+  // out of sandbox-manager so local/server-core no longer reach lifecycle code.
+  ceilings: { modules: 132, packages: 26 },
 }
 
 export const serverWorkerd: Policy = {
@@ -109,5 +111,7 @@ export const serverSelfHosted: Policy = {
     // cleaner-than-real self-hosted product.
     requiredPackages: ["@claxedo/local-server", "better-sqlite3", "better-auth"],
   },
-  ceilings: { modules: 141, packages: 32 },
+  // Same intentional contract edge as hosted Node; no module or provider SDK
+  // entered the composition.
+  ceilings: { modules: 141, packages: 33 },
 }

@@ -103,15 +103,8 @@ jobs:
       # `build:marker-control` ~20s. Neither writes to `dist`, so the perf
       # target built above is untouched.
       #
-      # Local one-shot equivalent (from packages/claxedo-app):
-      #   bun run build:local && bun run build:marker-control && \
-      #     CLAXEDO_MARKER_CONTROL_DIR=dist-marker-control bun run check:local-bundle
-      - name: Build local product bundle
-        working-directory: packages/claxedo-app
-        run: bun run build:local
-
-      # The marker control, and it needs its OWN build rather than the `dist`
-      # produced two steps above. MEASURED, not assumed: `auth-client.ts` reaches
+      # The marker control needs its OWN build rather than the `dist`
+      # produced earlier in this job. MEASURED, not assumed: `auth-client.ts` reaches
       # `import("@clerk/clerk-js/headless")` only past `if (!clerkPubKey) return`,
       # and `clerkPubKey` folds to "" when `VITE_CLERK_PUBLISHABLE_KEY` is unset —
       # so Rollup drops the import and a plain CI `bun run build` (no `.env.local`
@@ -121,15 +114,12 @@ jobs:
       # env vars that keep the provider in the graph and writes to its own outDir.
       # Without this control, "no hits" is a hope rather than a result: a marker
       # list that stopped matching anything would pass silently forever.
-      - name: Build marker-control bundle (identity provider present)
+      # `verify:closure` composes the source guard, local build, marker-control
+      # build and emitted scanner in that order; CI runs the same public command
+      # a reviewer runs locally instead of restating its internals here.
+      - name: Verify local renderer product boundary
         working-directory: packages/claxedo-app
-        run: bun run build:marker-control
-
-      - name: Check local bundle identity (emitted artifact)
-        working-directory: packages/claxedo-app
-        env:
-          CLAXEDO_MARKER_CONTROL_DIR: dist-marker-control
-        run: bun run check:local-bundle
+        run: bun run verify:closure
 
       - name: Install performance browser
         working-directory: packages/claxedo-app/perf-harness
@@ -312,6 +302,18 @@ jobs:
           --filter=@claxedo/workspace-relay-protocol
           --filter=@claxedo/workspace-relay
           --filter=@claxedo/workspace-runtime
+
+      # The app's emitted boundary runs in `diagnostics`, where the two Vite
+      # builds already lived. These four are source/package checks and are fast;
+      # run each product's public command so a future gate added to the shared
+      # command table is gated here automatically.
+      - name: Verify product package boundaries
+        if: runner.os == 'Linux'
+        run: |
+          bun run --cwd packages/claxedo-local-server verify:closure
+          bun run --cwd packages/claxedo-host-connector verify:closure
+          bun run --cwd packages/claxedo-server verify:closure
+          bun run --cwd packages/claxedo-desktop verify:closure
 
       # `bun turbo test` used to be a near-no-op: turbo.json declared only five
       # package-scoped `#test` entries, and turbo runs nothing for a package it

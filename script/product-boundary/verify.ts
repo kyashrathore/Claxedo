@@ -4,7 +4,9 @@
  * The plan's Execution Protocol asks each product package to expose one named
  * script that proves its boundary, so a reviewer runs one command per product
  * instead of knowing five test paths. This is that entry point; the policies in
- * `./policies` are the data and `./policy.ts` is the shared evaluator.
+ * `./policies` are the data and `./policy.ts` is the shared evaluator. After a
+ * product's shared policies pass, `./authoritative-checks.ts` composes its
+ * existing product-owned tests, builds, artifact scanners, and package checks.
  *
  * Selection is by PACKAGE NAME, read from the caller's `package.json`, not by a
  * flag each script repeats. A package whose name has no policy fails loudly
@@ -25,6 +27,7 @@ import * as path from "node:path"
 import { REPO_ROOT } from "./closure.ts"
 import { evaluate, isFailure, type Result } from "./policy.ts"
 import { policyById, PRODUCTS } from "./policies/index.ts"
+import { runAuthoritativeChecks } from "./authoritative-checks.ts"
 
 function productFromCwd(): string {
   const manifest = path.join(process.cwd(), "package.json")
@@ -86,24 +89,35 @@ function main() {
   const productFlag = argv.indexOf("--product")
   const product = productFlag >= 0 ? argv[productFlag + 1] : undefined
 
-  const policies = all
-    ? Object.keys(PRODUCTS).flatMap((name) => policiesFor(name))
-    : policiesFor(product ?? productFromCwd())
-
-  if (policies.length === 0) throw new Error("selected no policies — refusing to report success")
+  const products = all ? Object.keys(PRODUCTS) : [product ?? productFromCwd()]
+  if (products.length === 0) throw new Error("selected no products — refusing to report success")
 
   let ok = true
-  for (const policy of policies) {
-    const result = evaluate(policy)
-    if (!report(result)) ok = false
-    if (isFailure(result)) ok = false
+  let policyCount = 0
+  for (const selectedProduct of products) {
+    const policies = policiesFor(selectedProduct)
+    if (policies.length === 0) throw new Error(`${selectedProduct} selected no policies — refusing to report success`)
+    let policyOk = true
+    for (const policy of policies) {
+      policyCount += 1
+      const result = evaluate(policy)
+      if (!report(result) || isFailure(result)) policyOk = false
+    }
+    if (!policyOk) {
+      ok = false
+      continue
+    }
+    if (!runAuthoritativeChecks(selectedProduct)) ok = false
   }
 
   if (!ok) {
     console.error(`\nproduct boundary FAILED (repo ${REPO_ROOT})`)
     process.exit(1)
   }
-  console.log(`\nproduct boundary holds — ${policies.length} ${policies.length === 1 ? "policy" : "policies"}`)
+  console.log(
+    `\nproduct boundary holds — ${products.length} ${products.length === 1 ? "product" : "products"}, ` +
+      `${policyCount} ${policyCount === 1 ? "policy" : "policies"}, authoritative checks passed`,
+  )
 }
 
 try {

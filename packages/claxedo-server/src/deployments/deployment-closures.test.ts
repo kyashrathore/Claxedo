@@ -51,13 +51,19 @@ const ROOT = path.resolve(import.meta.dirname, "../..")
 // composes `createConvexAuthority`, and it is one module rather than three:
 // the five methods live in one file, importing only what the adapter's other
 // modules already do (`./api`, `./executor`, the auth types). No new package.
+// +1 package on hosted-node and self-hosted-node on 2026-08-09:
+// `@claxedo/sandbox-contract`, the dependency-neutral driver identity and
+// credential schema those compositions already used from sandbox-manager.
+// The edge moved so local/server-core no longer reach lifecycle code; workerd's
+// entry does not reach the config/credential consumers and therefore did not
+// move. No module or provider SDK was added to either closure.
 const ENTRIES = [
-  { name: "hosted-node", entry: "src/deployments/hosted-node/index.ts", modules: 132, packages: 25 },
+  { name: "hosted-node", entry: "src/deployments/hosted-node/index.ts", modules: 132, packages: 26 },
   { name: "hosted-workerd", entry: "src/deployments/hosted-workerd/worker.ts", modules: 108, packages: 13 },
   // +1 module (139 -> 140) on 2026-08-08: `deployments/route-ownership.ts`,
   // the composition guard the self-hosted app now installs alongside the
   // hosted core. One dependency-free module, no new package.
-  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 141, packages: 32 },
+  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 141, packages: 33 },
 ] as const
 
 /** The two cloud compositions. Neither runs a workspace on its own box. */
