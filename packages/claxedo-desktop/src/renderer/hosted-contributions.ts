@@ -9,7 +9,7 @@
  */
 
 import { hostedContributionLoader } from "@/app/composition/hosted-contribution-loader"
-import { configureDesktopMachineRemoteAccess } from "@/platform/remote-access/machine-remote-access"
+import { configureDesktopMachineRemoteAccess } from "./remote-access/electron-machine-remote-access-binding"
 
 const loadHostedContent = hostedContributionLoader()
 

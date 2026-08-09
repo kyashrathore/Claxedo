@@ -26,7 +26,7 @@ import { ConfigProvider } from "../providers/config"
 import { Persist, resetDemoPersisted, setPersisted } from "@/platform/persistence/persist"
 import { configureWorkspaceStartup } from "@/platform/runtime/workspace-startup"
 import { cloudWorkspaceStartup } from "@/platform/runtime/cloud/workspace-runtime-store"
-import { configureHttpMachineRemoteAccess } from "@/platform/remote-access/machine-remote-access"
+import { configureHttpMachineRemoteAccess } from "@/platform/remote-access/http-machine-remote-access-binding"
 import { hostedContributionLoader } from "@/app/composition/hosted-contribution-loader"
 
 /**

@@ -8,8 +8,8 @@ import {
 } from "./electron-machine-remote-access"
 
 /**
- * The desktop's half of the port: the regression, and the constraints on the
- * fix.
+ * The desktop-owned half of the port: the regression, and the constraints on
+ * the fix.
  *
  * The regression is that "Enable remote access" performed an HTTP POST to
  * `/api/claxedo/remote-access/enable`, a path the desktop's sidecar

@@ -188,7 +188,8 @@ export const desktopRendererUnsigned: Policy = {
     forbiddenModules: [
       `${DESKTOP}/renderer/hosted-contributions.ts`,
       `${APP}/app/composition/hosted-contribution-loader.ts`,
-      `${APP}/platform/remote-access/machine-remote-access.ts`,
+      `${DESKTOP}/renderer/remote-access/electron-machine-remote-access-binding.ts`,
+      `${DESKTOP}/renderer/remote-access/electron-machine-remote-access.ts`,
     ],
     forbiddenChunkMarkers: ["desktop-hosted-contributions"],
   },
@@ -216,7 +217,8 @@ export const desktopHostedContribution: Policy = {
     requiredModules: [
       `${DESKTOP}/renderer/hosted-contributions.ts`,
       `${APP}/app/composition/hosted-contribution-loader.ts`,
-      `${APP}/platform/remote-access/machine-remote-access.ts`,
+      `${DESKTOP}/renderer/remote-access/electron-machine-remote-access-binding.ts`,
+      `${DESKTOP}/renderer/remote-access/electron-machine-remote-access.ts`,
     ],
     requiredPackages: ["solid-js", "@claxedo/workgraph"],
   },
@@ -228,7 +230,8 @@ export const desktopHostedContribution: Policy = {
     requiredModules: [
       `${DESKTOP}/renderer/hosted-contributions.ts`,
       `${APP}/app/composition/hosted-contribution-loader.ts`,
-      `${APP}/platform/remote-access/machine-remote-access.ts`,
+      `${DESKTOP}/renderer/remote-access/electron-machine-remote-access-binding.ts`,
+      `${DESKTOP}/renderer/remote-access/electron-machine-remote-access.ts`,
     ],
   },
 }

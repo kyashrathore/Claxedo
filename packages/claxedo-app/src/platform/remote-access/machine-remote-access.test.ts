@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import {
-  configureDesktopMachineRemoteAccess,
-  configureHttpMachineRemoteAccess,
   configureMachineRemoteAccess,
   machineRemoteAccess,
   resetMachineRemoteAccess,
@@ -41,50 +39,5 @@ describe("machine remote access binding", () => {
 
     configureMachineRemoteAccess(stub("second"))
     await expect(machineRemoteAccess()?.enable({ displayName: "a", startAtLogin: false })).rejects.toThrow("second")
-  })
-})
-
-describe("which mechanism each product binds", () => {
-  test("the HTTP root reaches the routes its own server serves", async () => {
-    const calls: string[] = []
-    configureHttpMachineRemoteAccess(async (path, init) => {
-      calls.push(`${init?.method ?? "GET"} ${path}`)
-      return Response.json({ host_id: "h", connection_count: 0 })
-    })
-
-    await machineRemoteAccess()?.enable({ displayName: "Mac", startAtLogin: false })
-
-    expect(calls).toEqual(["POST /api/claxedo/remote-access/enable"])
-  })
-
-  test("the desktop root reaches the Host Connector, and issues no request", async () => {
-    const calls: string[] = []
-    const snapshot = { status: "enrolled", available: true, signedIn: true }
-    const bridge = {
-      status: async () => snapshot,
-      start: async () => {
-        calls.push("start")
-        return snapshot
-      },
-      pause: async () => snapshot,
-      revoke: async () => snapshot,
-      onStatus: () => () => {},
-    }
-
-    expect(configureDesktopMachineRemoteAccess({ api: { hostConnector: bridge } })).toBe(true)
-    await machineRemoteAccess()?.enable({ displayName: "Mac", startAtLogin: false })
-
-    expect(calls).toEqual(["start"])
-    // The tell that it is the Electron port and not the HTTP one: enumerating
-    // the account's machines is not one of the four operations.
-    expect(machineRemoteAccess()?.devices).toBeUndefined()
-  })
-
-  test("the desktop root binds NOTHING when the preload exposes no bridge", () => {
-    // Never a fall back to HTTP. The desktop's sidecar serves none of those
-    // routes, so a fallback would post into a 404 — the regression, returning
-    // dressed as resilience.
-    expect(configureDesktopMachineRemoteAccess({})).toBe(false)
-    expect(machineRemoteAccess()).toBeUndefined()
   })
 })

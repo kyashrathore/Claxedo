@@ -1,7 +1,7 @@
 import type {
   MachineRemoteAccessPort,
   MachineRemoteAccessStatus,
-} from "./machine-remote-access-port"
+} from "@/platform/remote-access/machine-remote-access-port"
 
 /**
  * The port over Electron IPC, where the Host Connector lives.
@@ -31,10 +31,9 @@ import type {
 /**
  * What every host-connector operation answers with.
  *
- * Declared here rather than imported from the desktop package, the same way
- * `electron-account-port.ts` declares `AccountBridge`: `@claxedo/app` does not
- * depend on `claxedo-desktop`, and the desktop's own contract test is what
- * holds the two in step.
+ * Declared beside the desktop adapter rather than imported from Electron main,
+ * so the renderer never depends on main-process implementation modules. The
+ * desktop's contract tests hold both sides in step.
  */
 export type HostConnectorSnapshot = {
   /** `not-started` | `unavailable` | `idle` | `enrolled` | `stopped`. */

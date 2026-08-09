@@ -1,8 +1,3 @@
-import {
-  electronMachineRemoteAccess,
-  hostConnectorBridge,
-} from "./electron-machine-remote-access"
-import { httpMachineRemoteAccess, type RemoteAccessRequest } from "./http-machine-remote-access"
 import type { MachineRemoteAccessPort } from "./machine-remote-access-port"
 
 /**
@@ -15,10 +10,10 @@ import type { MachineRemoteAccessPort } from "./machine-remote-access-port"
  *
  * Bound by:
  *
- *   - `app/entry/main.tsx` — the hosted and self-hosted browser entry, which
- *     talks to a server that serves `/api/claxedo/remote-access/*`.
- *   - `claxedo-desktop/src/renderer/index.tsx` — Electron, which reaches the
- *     Host Connector in main by named IPC.
+ * Product-specific composition roots bind this registry through separate
+ * binding modules. Keeping those implementations out of this base-safe module
+ * is what lets the unsigned desktop renderer read the port without shipping
+ * or loading the optional Electron Host Connector adapter.
  *
  * `app/entry/local.tsx` binds nothing on purpose: `@claxedo/local-server`
  * serves none of those routes and there is no Electron main under it, so a
@@ -45,31 +40,4 @@ export function resetMachineRemoteAccess() {
 /** The bound port, or undefined in a build that cannot publish a machine. */
 export function machineRemoteAccess(): MachineRemoteAccessPort | undefined {
   return boundPort
-}
-
-/**
- * Bind the product that serves its own `/api/claxedo/remote-access/*` routes.
- *
- * Self-hosted Node, and hosted. `request` is the authenticated transport the
- * entry already owns; this layer decides the path and the verb, which is the
- * whole point of the seam.
- */
-export function configureHttpMachineRemoteAccess(request: RemoteAccessRequest) {
-  configureMachineRemoteAccess(httpMachineRemoteAccess({ request }))
-}
-
-/**
- * Bind the desktop to the Host Connector in Electron main.
- *
- * Returns whether a bridge was found, and binds NOTHING when there is none.
- * There is deliberately no fall back to the HTTP implementation: the desktop's
- * sidecar serves none of those routes, so falling back would post into a 404 —
- * which is precisely the regression this port exists to close, and it would
- * come back looking like resilience.
- */
-export function configureDesktopMachineRemoteAccess(scope?: unknown): boolean {
-  const bridge = scope === undefined ? hostConnectorBridge() : hostConnectorBridge(scope)
-  if (!bridge) return false
-  configureMachineRemoteAccess(electronMachineRemoteAccess(bridge))
-  return true
 }

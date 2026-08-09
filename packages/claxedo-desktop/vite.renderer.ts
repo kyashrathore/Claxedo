@@ -56,10 +56,8 @@ export function createElectronRenderer(mode: string): UserConfig {
           loading: normalize(path.join(rendererRoot, "loading.html")),
         },
         output: {
-          // Name the optional facade without forcing it into a manual chunk.
-          // A manual chunk made Vite place its shared preload helper inside
-          // the hosted file, which in turn added a modulepreload tag to the
-          // local HTML and fetched the capability during unsigned startup.
+          // Keep the optional facade recognizable while Rollup owns the
+          // dependency-safe split produced by the dynamic import.
           chunkFileNames(chunk) {
             if (chunk.facadeModuleId?.endsWith("/src/renderer/hosted-contributions.ts")) {
               return "assets/desktop-hosted-contributions-[hash].js"
