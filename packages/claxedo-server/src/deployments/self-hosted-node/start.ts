@@ -55,18 +55,13 @@ export function staticAppPosture(staticDir: string | undefined) {
 /**
  * Which workspace authority this environment will actually compose.
  *
- * `createDefaultLocalControlPlaneServices` decides it on one line:
- *
- *   `authorityUrl ? createConvexAuthority({ url: authorityUrl }) : createSqliteWorkspaceAuthority()`
- *
- * and `authorityUrl` is `convexAuthorityUrlFromEnv(process.env)`. This calls
- * that same helper on the same environment, so the posture reports the
- * authority the process is about to build rather than the one the product is
- * supposed to have. It used to be a literal `true`, which made "your data
- * stays in local SQLite" a claim a constant made about a branch it never read.
+ * `createDefaultLocalControlPlaneServices` chooses Convex only for hosted
+ * trust; local trust deliberately stays on SQLite even when a developer's
+ * environment contains a stale hosted URL. Read both inputs here too, so the
+ * posture reports the authority the composition is about to build.
  */
 export function selectedWorkspaceAuthority(env: NodeJS.ProcessEnv): "convex" | "sqlite" {
-  return convexAuthorityUrlFromEnv(env) ? "convex" : "sqlite"
+  return deploymentMode(env) === "hosted" && convexAuthorityUrlFromEnv(env) ? "convex" : "sqlite"
 }
 
 /**
@@ -88,12 +83,9 @@ export function selfHostedPosture(env: NodeJS.ProcessEnv) {
     // composition that builds none cannot pass by omission.
     authority: true,
     // The data-residency claim, and therefore the one that must never be a
-    // literal. `CLAXEDO_WORKSPACE_AUTHORITY_URL` makes this false, and
-    // `assertSelfHostedPosture` then refuses to start — deliberately, because
-    // a self-hosted binary writing workspace, project and session state into a
-    // remote control plane is the exact outcome an operator chose self-hosting
-    // to avoid. An operator who genuinely wants a remote authority wants the
-    // hosted composition (`start:hosted`), which is built for it.
+    // literal. A stale hosted URL cannot make this false in local trust because
+    // the composition ignores that URL too. Hosted trust still reports Convex
+    // and is rejected: that environment wants the hosted composition.
     sqliteAuthority: workspaceAuthority === "sqlite",
     // The product IS local execution; `createDefaultLocalControlPlaneServices`
     // composes it, and `createSelfHostedApp` refuses outright without it.

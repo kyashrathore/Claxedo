@@ -25,7 +25,10 @@ const result = await Bun.build({
   format: "esm",
   splitting: false,
   sourcemap: "external",
-  external: ["@lydell/node-pty", "better-sqlite3", "node-pty"],
+  // Native modules and the independently built embedded engine are resources
+  // supplied by the composition host. Keeping the engine's public port lazy
+  // prevents this local-execution facade from silently packaging OpenCode.
+  external: ["@lydell/node-pty", "better-sqlite3", "node-pty", "opencode/node-embed"],
   plugins: [{
     name: "jsonc-parser-esm",
     setup(build) {

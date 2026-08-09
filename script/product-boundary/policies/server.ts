@@ -70,6 +70,12 @@ export const serverCloudNode: Policy = {
       `${SRC}/deployments/hosted-node/index.ts`,
       `${SRC}/deployments/hosted-shared/hosted-app.ts`,
       `${SRC}/authority/adapters/sqlite/central-store.ts`,
+      // Channel transports are optional at startup, but they are part of the
+      // hosted process artifact when deployment configuration enables them.
+      // These controls prevent variable dynamic imports from silently leaving
+      // declared runtime dependencies outside the emitted product.
+      "chat/dist/index.js",
+      "@chat-adapter/github/dist/index.js",
     ],
   },
 
@@ -172,7 +178,10 @@ export const serverSelfHosted: Policy = {
     "electron",
     "@claxedo/desktop",
   ],
-  forbiddenModules: [],
+  forbiddenModules: [
+    `${SRC}/deployments/hosted-node`,
+    `${SRC}/deployments/hosted-workerd`,
+  ],
 
   control: {
     minModules: 50,
@@ -190,4 +199,56 @@ export const serverSelfHosted: Policy = {
   // Same intentional contract edge as hosted Node; no module or provider SDK
   // entered the composition.
   ceilings: { modules: 141, packages: 33 },
+
+  emitted: {
+    file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",
+    minModules: 2_500,
+    minChunks: 1,
+    requiredModules: [
+      `${SRC}/deployments/self-hosted-node/index.ts`,
+      `${SRC}/deployments/self-hosted-node/app.ts`,
+      "packages/claxedo-local-server/src/self-hosted-execution.ts",
+      "chat/dist/index.js",
+      "@chat-adapter/github/dist/index.js",
+    ],
+  },
+
+  isolation: {
+    additionalPackageDirs: ["packages/opencode"],
+    additionalFiles: [".github/TEAM_MEMBERS"],
+    buildPackages: [
+      { packageDir: "packages/agent-event-runtime" },
+      { packageDir: "packages/agent-extensions" },
+      { packageDir: "packages/agent-sdk-runtime" },
+      { packageDir: "packages/workspace-relay-protocol" },
+      { packageDir: "packages/sandbox-contract" },
+      { packageDir: "packages/sandbox-manager" },
+      { packageDir: "packages/workspace-relay" },
+      { packageDir: "packages/claxedo-connections" },
+      { packageDir: "packages/claxedo-channels" },
+      { packageDir: "packages/wakes" },
+      { packageDir: "packages/workspace-runtime" },
+      { packageDir: "packages/workgraph" },
+      { packageDir: "packages/claxedo-mcp" },
+      { packageDir: "packages/claxedo-local-server" },
+      {
+        packageDir: "packages/opencode",
+        script: "build:node",
+        inputOnly: true,
+        environment: {
+          OPENCODE_CHANNEL: "selfhost-boundary",
+          OPENCODE_VERSION: "0.0.0-boundary",
+        },
+      },
+    ],
+    packageExports: [{
+      packageDir: "packages/claxedo-local-server",
+      exports: ["./self-hosted-execution"],
+    }],
+    native: ["better-sqlite3", "node-pty"],
+    commands: [
+      ["bun", "run", "build:self-hosted-boundary"],
+      ["bun", "run", "smoke:self-hosted-boundary"],
+    ],
+  },
 }

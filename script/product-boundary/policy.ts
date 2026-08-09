@@ -109,6 +109,12 @@ export type Policy = {
       /** Deterministic public build inputs required outside a git checkout. */
       environment?: Record<string, string>
     }>
+    /**
+     * Narrow an allowed workspace dependency to named public ports. Source
+     * behind those exports remains available to its own build, but undeclared
+     * sibling/deep package imports cannot resolve in the isolated install.
+     */
+    packageExports?: Array<{ packageDir: string; exports: string[] }>
     native?: Array<"node-pty" | "better-sqlite3">
     commands: string[][]
   }

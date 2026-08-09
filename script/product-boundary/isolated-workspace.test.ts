@@ -97,6 +97,30 @@ describe("isolated workspace", () => {
     ])
   })
 
+  test("restricts an allowed package to the declared public export ports", () => {
+    const root = fakeRepository()
+    const destination = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-isolation-output-"))
+    roots.push(destination)
+    const file = path.join(root, "packages/allowed-dependency/package.json")
+    const manifest = JSON.parse(fs.readFileSync(file, "utf8"))
+    manifest.exports = {
+      ".": "./src/index.ts",
+      "./permitted": "./src/index.ts",
+      "./*": "./src/*.ts",
+    }
+    fs.writeFileSync(file, JSON.stringify(manifest))
+    const input = policy()
+    input.isolation!.packageExports = [{
+      packageDir: "packages/allowed-dependency",
+      exports: ["./permitted"],
+    }]
+
+    materializeIsolatedWorkspace(input, destination, root)
+
+    const isolated = JSON.parse(fs.readFileSync(path.join(destination, file.slice(root.length + 1)), "utf8"))
+    expect(isolated.exports).toEqual({ "./permitted": "./src/index.ts" })
+  })
+
   test("rejects an unused forbidden dependency declared by the product", () => {
     const root = fakeRepository()
     const destination = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-isolation-output-"))

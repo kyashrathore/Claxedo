@@ -130,6 +130,25 @@ function copyAllowedPackage(source: string, destination: string) {
   })
 }
 
+function restrictPackageExports(
+  destination: string,
+  restriction: NonNullable<NonNullable<Policy["isolation"]>["packageExports"]>[number],
+) {
+  const file = path.join(destination, restriction.packageDir, "package.json")
+  const manifest = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>
+  if (!manifest.exports || typeof manifest.exports !== "object" || Array.isArray(manifest.exports)) {
+    throw new Error(`${restriction.packageDir} has no subpath export map to restrict`)
+  }
+  const existing = manifest.exports as Record<string, unknown>
+  const selected: Record<string, unknown> = {}
+  for (const name of restriction.exports) {
+    if (!(name in existing)) throw new Error(`${restriction.packageDir} does not export ${name}`)
+    selected[name] = existing[name]
+  }
+  manifest.exports = selected
+  fs.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`)
+}
+
 /** Materialize sources for only the policy's allowlisted workspace packages. */
 export function materializeIsolatedWorkspace(policy: Policy, destination: string, root = REPO_ROOT) {
   if (!policy.isolation) throw new Error(`${policy.id} declares no isolation commands`)
@@ -188,6 +207,12 @@ export function materializeIsolatedWorkspace(policy: Policy, destination: string
     if (!fs.existsSync(path.join(destination, dir, "package.json"))) {
       throw new Error(`${policy.id} isolation package is not a workspace: ${dir}`)
     }
+  }
+  for (const restriction of policy.isolation.packageExports ?? []) {
+    if (!allowed.has(restriction.packageDir)) {
+      throw new Error(`${policy.id} isolation export restriction names an excluded package: ${restriction.packageDir}`)
+    }
+    restrictPackageExports(destination, restriction)
   }
   for (const buildPackage of policy.isolation.buildPackages ?? []) {
     const dir = buildPackage.packageDir

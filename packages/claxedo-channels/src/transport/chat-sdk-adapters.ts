@@ -15,16 +15,38 @@ type ChatConstructor = new (input: {
 }) => ChatSdkBot & { webhooks?: Partial<Record<ChannelId, ChannelWebhookHandler>> }
 
 const CHAT_SDK_ADAPTERS = {
-  github: { specifier: "@chat-adapter/github", factory: "createGitHubAdapter" },
-  slack: { specifier: "@chat-adapter/slack", factory: "createSlackAdapter" },
-  telegram: { specifier: "@chat-adapter/telegram", factory: "createTelegramAdapter" },
-  discord: { specifier: "@chat-adapter/discord", factory: "createDiscordAdapter" },
-  whatsapp: { specifier: "@chat-adapter/whatsapp", factory: "createWhatsAppAdapter" },
-} as const satisfies Record<ChannelId, { specifier: string; factory: string }>
+  github: {
+    specifier: "@chat-adapter/github",
+    factory: "createGitHubAdapter",
+    load: async () => await import("@chat-adapter/github") as Record<string, unknown>,
+  },
+  slack: {
+    specifier: "@chat-adapter/slack",
+    factory: "createSlackAdapter",
+    load: async () => await import("@chat-adapter/slack") as Record<string, unknown>,
+  },
+  telegram: {
+    specifier: "@chat-adapter/telegram",
+    factory: "createTelegramAdapter",
+    load: async () => await import("@chat-adapter/telegram") as Record<string, unknown>,
+  },
+  discord: {
+    specifier: "@chat-adapter/discord",
+    factory: "createDiscordAdapter",
+    load: async () => await import("@chat-adapter/discord") as Record<string, unknown>,
+  },
+  whatsapp: {
+    specifier: "@chat-adapter/whatsapp",
+    factory: "createWhatsAppAdapter",
+    load: async () => await import("@chat-adapter/whatsapp") as Record<string, unknown>,
+  },
+} as const satisfies Record<ChannelId, {
+  specifier: string
+  factory: string
+  load: () => Promise<Record<string, unknown>>
+}>
 
-async function dynamicImport(specifier: string) {
-  return await import(specifier) as Record<string, unknown>
-}
+const loadChatSdk = async () => await import("chat") as Record<string, unknown>
 
 function factory(module: Record<string, unknown>, name: string) {
   const value = module[name]
@@ -39,15 +61,15 @@ export async function createChatSdkBot(input: {
   importer?: ModuleImporter
   onAdapterError?: (input: { channel: ChannelId; error: unknown }) => void
 }) {
-  const importer = input.importer ?? dynamicImport
-  const chatModule = await importer("chat")
+  const chatModule = await (input.importer ? input.importer("chat") : loadChatSdk())
   const Chat = chatModule.Chat
   if (typeof Chat !== "function") throw new Error("Chat SDK Chat constructor is not available")
   const entries = (await Promise.all(input.registrations.map(async (registration) => {
     if (!registration.enabled || registration.transport !== "chat-sdk" || registration.channel === "fake") return []
     try {
       const config = CHAT_SDK_ADAPTERS[registration.channel]
-      return [[registration.channel, factory(await importer(config.specifier), config.factory)()]]
+      const module = await (input.importer ? input.importer(config.specifier) : config.load())
+      return [[registration.channel, factory(module, config.factory)()]]
     } catch (error) {
       input.onAdapterError?.({ channel: registration.channel, error })
       return []

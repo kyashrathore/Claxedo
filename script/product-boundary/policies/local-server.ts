@@ -87,7 +87,6 @@ export const localServer: Policy = {
 
   isolation: {
     native: ["node-pty", "better-sqlite3"],
-    additionalFiles: [".github/TEAM_MEMBERS"],
     // These packages publish dist-only exports. Build them in dependency order
     // inside the isolated workspace so the Local Server bundle never consumes
     // outputs left behind by a developer's existing checkout.
@@ -98,14 +97,6 @@ export const localServer: Policy = {
       { packageDir: "packages/workspace-relay-protocol" },
       { packageDir: "packages/workspace-relay" },
       { packageDir: "packages/workspace-runtime" },
-      {
-        packageDir: "packages/opencode",
-        script: "build:node",
-        // packages/script otherwise shells out to git to discover the branch.
-        // Isolation deliberately has no .git directory, so pass the same
-        // public channel value the dev release build owns explicitly.
-        environment: { OPENCODE_CHANNEL: "dev" },
-      },
     ],
     commands: [["bun", "run", "build"], ["bun", "run", "smoke:build"]],
   },

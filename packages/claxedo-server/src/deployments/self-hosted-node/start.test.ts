@@ -138,19 +138,14 @@ describe("the reported authority is the one the composition builds", () => {
     expect(() => assertSelfHostedPosture(posture)).not.toThrow()
   })
 
-  test("with an authority URL it composes remote Convex, and refuses to start", async () => {
-    // The whole finding. `CLAXEDO_WORKSPACE_AUTHORITY_URL` makes
-    // `createDefaultLocalControlPlaneServices` build the REMOTE authority —
-    // workspaces, projects and sessions land in someone else's control plane —
-    // while the posture used to report `sqliteAuthority: true` from a literal
-    // and wave the boot through. Refusing is the deliberate choice: a
-    // deployment that wants a remote authority wants the hosted composition.
+  test("local trust ignores a stale authority URL in both composition and posture", async () => {
+    // A developer may have a hosted URL in an ambient env file, but local
+    // trust must neither move self-hosted data to Convex nor refuse to boot.
     const { composed, posture } = await compose("https://authority.example.convex.cloud")
 
-    expect(composed).toEqual(["convex"])
-    expect(posture.sqliteAuthority).toBe(false)
-    expect(() => assertSelfHostedPosture(posture)).toThrow(SelfHostedCompositionError)
-    expect(() => assertSelfHostedPosture(posture)).toThrow(/not the local SQLite one/)
+    expect(composed).toEqual(["sqlite"])
+    expect(posture.sqliteAuthority).toBe(true)
+    expect(() => assertSelfHostedPosture(posture)).not.toThrow()
   })
 
   test("a blank authority URL is not a remote authority", async () => {
