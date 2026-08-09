@@ -6,12 +6,23 @@ import { fileURLToPath } from "url"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-const dir = path.resolve(__dirname, "..")
+const repository = path.resolve(__dirname, "../../..")
 
 if (process.platform !== "win32") {
-  const root = path.join(dir, "node_modules", "node-pty", "prebuilds")
-  const dirs = await fs.readdir(root, { withFileTypes: true }).catch(() => [])
-  const files = dirs.filter((x) => x.isDirectory()).map((x) => path.join(root, x.name, "spawn-helper"))
+  // Bun keeps the installed package in its root content-addressed store; a
+  // package-local node_modules link exists only when that workspace declares
+  // node-pty directly. The old packages/core-relative lookup therefore did
+  // nothing in a fresh --ignore-scripts install, even though it reported
+  // success. Repair every installed node-pty copy at the authoritative store.
+  const store = path.join(repository, "node_modules", ".bun")
+  const packages = await fs.readdir(store, { withFileTypes: true }).catch(() => [])
+  const roots = packages
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith("node-pty@"))
+    .map((entry) => path.join(store, entry.name, "node_modules", "node-pty", "prebuilds"))
+  const files = (await Promise.all(roots.map(async (root) => {
+    const dirs = await fs.readdir(root, { withFileTypes: true }).catch(() => [])
+    return dirs.filter((entry) => entry.isDirectory()).map((entry) => path.join(root, entry.name, "spawn-helper"))
+  }))).flat()
   const result = await Promise.all(
     files.map(async (file) => {
       const stat = await fs.stat(file).catch(() => undefined)

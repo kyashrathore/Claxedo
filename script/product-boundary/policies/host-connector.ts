@@ -69,7 +69,6 @@ export const hostConnector: Policy = {
   },
 
   isolation: {
-    packageDirs: ["packages/claxedo-host-connector"],
     commands: [["bun", "run", "build"], ["bun", "run", "smoke:build"]],
   },
 }

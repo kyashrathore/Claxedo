@@ -11,6 +11,13 @@
     "directory": "packages/claxedo-local-server"
   },
   "exports": {
+    "./self-hosted-execution": {
+      "types": "./src/self-hosted-execution.ts",
+      "bun": "./src/self-hosted-execution.ts",
+      "development": "./src/self-hosted-execution.ts",
+      "import": "./dist/self-hosted-execution.js",
+      "default": "./dist/self-hosted-execution.js"
+    },
     "./*": {
       "types": "./src/*.ts",
       "bun": "./src/*.ts",
@@ -20,6 +27,8 @@
     }
   },
   "scripts": {
+    "build": "bun ./scripts/build.ts",
+    "smoke:build": "node ./scripts/smoke-build.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit.xml",
     "verify:closure": "bun ../../script/product-boundary/verify.ts"
@@ -31,7 +40,10 @@
     "@claxedo/server-core": "workspace:*",
     "@claxedo/workspace-runtime": "workspace:*",
     "@hono/node-ws": "1.3.1",
+    "@lydell/node-pty": "catalog:",
+    "better-sqlite3": "13.0.1",
     "hono": "4.10.7",
+    "node-pty": "1.1.0",
     "tokentracker-cli": "0.75.1",
     "zod": "4.4.3"
   },

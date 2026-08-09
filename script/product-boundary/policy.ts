@@ -90,7 +90,19 @@ export type Policy = {
 
   /** Fresh-install build commands run with only these workspace sources. */
   isolation?: {
-    packageDirs: string[]
+    /** Extra tool packages beyond the target's transitive workspace deps. */
+    additionalPackageDirs?: string[]
+    /** Repo-relative non-package build inputs read by allowed build scripts. */
+    additionalFiles?: string[]
+    /** Allowed workspace packages whose declared build output this entry consumes. */
+    buildPackages?: Array<{
+      packageDir: string
+      /** Defaults to the package's `build` script. */
+      script?: string
+      /** Deterministic public build inputs required outside a git checkout. */
+      environment?: Record<string, string>
+    }>
+    native?: Array<"node-pty" | "better-sqlite3">
     commands: string[][]
   }
 }

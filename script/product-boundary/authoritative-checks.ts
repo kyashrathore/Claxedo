@@ -44,6 +44,16 @@ export const AUTHORITATIVE_CHECKS: Record<string, AuthoritativeCheck[]> = {
   ],
   "@claxedo/local-server": [
     {
+      label: "local-server production build",
+      cwd: "packages/claxedo-local-server",
+      command: ["bun", "run", "build"],
+    },
+    {
+      label: "local-server built entry smoke",
+      cwd: "packages/claxedo-local-server",
+      command: ["bun", "run", "smoke:build"],
+    },
+    {
       label: "local-server published and self-hosted closure",
       cwd: "packages/claxedo-local-server",
       command: [

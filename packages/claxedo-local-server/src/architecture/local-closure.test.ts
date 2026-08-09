@@ -43,7 +43,7 @@ function filesUnder(dir: string): string[] {
 }
 
 /**
- * The producers this package publishes, derived from its `exports` map.
+ * The SOURCE producers this package publishes, derived from its `exports` map.
  *
  * This used to be a hand-written list of thirteen route and composition files,
  * and that made the gate silent for everything written after it: a new producer
@@ -51,12 +51,13 @@ function filesUnder(dir: string): string[] {
  * green about it. The manifest is the only statement of what a consumer can
  * import, so the manifest is what the measurement reads.
  *
- * `exports` here is a single `./*` -> `./src/*.ts` pattern, so every source
- * module is publishable and every source module is a producer. That is the
- * honest reading of this manifest rather than a shortcut around it: expanding
- * the pattern against the tree is what makes a new file measured the moment it
- * lands. If the map is ever narrowed to named subpaths, this derivation narrows
- * with it and needs no edit here.
+ * Most exports are `./*` -> `./src/*.ts`, so every source module is publishable
+ * and every source module is a producer. The production self-hosted entry also
+ * has an `import` target under `dist/`; that emitted bundle is measured from
+ * Bun's source map by Unit 12's shared verifier. Feeding the generated bundle
+ * back into this SOURCE walk would count its dynamic-import expressions and
+ * external packages as if they were authored modules, duplicating the emitted
+ * gate and making a build artifact change the source answer.
  *
  * Two kinds of matched file are dropped. Tests match the pattern but are not
  * shipped and are allowed edges a product module is not — a test may reach for
@@ -69,6 +70,7 @@ function producers(): string[] {
   )
   const matched = new Set<string>()
   for (const target of new Set(Object.values(manifest().exports ?? {}).flatMap(exportTargets))) {
+    if (!target.startsWith("./src/")) continue
     if (!target.includes("*")) {
       matched.add(target)
       continue

@@ -42,7 +42,15 @@ export const localServer: Policy = {
     "@claxedo/app",
     "@clerk/clerk-js",
   ],
-  forbiddenModules: [],
+  forbiddenModules: [
+    "packages/claxedo-server/src",
+    "packages/claxedo-app/src",
+    "packages/sandbox-manager/src",
+    "packages/workgraph/src",
+    "packages/claxedo-channels/src",
+    "packages/claxedo-connections/src",
+    "packages/wakes/src",
+  ],
 
   control: {
     minModules: 30,
@@ -63,4 +71,42 @@ export const localServer: Policy = {
   // which is the honest reading: every published module is reachable from this
   // entry, so the desktop server IS the package.
   ceilings: { modules: 47, packages: 21 },
+
+  emitted: {
+    file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",
+    minModules: 500,
+    minChunks: 1,
+    requiredModules: [
+      // The facade is all re-exports and therefore has no generated range in
+      // Bun's source map. `entry` above still pins it; these prove its bodies.
+      `${SRC}/app/start-local-server.ts`,
+      `${SRC}/app/local-app.ts`,
+      "packages/claxedo-server-core/src/platform/db/db.ts",
+    ],
+  },
+
+  isolation: {
+    native: ["node-pty", "better-sqlite3"],
+    additionalFiles: [".github/TEAM_MEMBERS"],
+    // These packages publish dist-only exports. Build them in dependency order
+    // inside the isolated workspace so the Local Server bundle never consumes
+    // outputs left behind by a developer's existing checkout.
+    buildPackages: [
+      { packageDir: "packages/agent-event-runtime" },
+      { packageDir: "packages/agent-extensions" },
+      { packageDir: "packages/agent-sdk-runtime" },
+      { packageDir: "packages/workspace-relay-protocol" },
+      { packageDir: "packages/workspace-relay" },
+      { packageDir: "packages/workspace-runtime" },
+      {
+        packageDir: "packages/opencode",
+        script: "build:node",
+        // packages/script otherwise shells out to git to discover the branch.
+        // Isolation deliberately has no .git directory, so pass the same
+        // public channel value the dev release build owns explicitly.
+        environment: { OPENCODE_CHANNEL: "dev" },
+      },
+    ],
+    commands: [["bun", "run", "build"], ["bun", "run", "smoke:build"]],
+  },
 }
