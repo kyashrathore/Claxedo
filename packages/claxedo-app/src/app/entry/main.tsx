@@ -27,6 +27,7 @@ import { Persist, resetDemoPersisted, setPersisted } from "@/platform/persistenc
 import { configureWorkspaceStartup } from "@/platform/runtime/workspace-startup"
 import { cloudWorkspaceStartup } from "@/platform/runtime/cloud/workspace-runtime-store"
 import { configureHttpMachineRemoteAccess } from "@/platform/remote-access/machine-remote-access"
+import { hostedContributionLoader } from "@/app/composition/hosted-contribution-loader"
 
 /**
  * Bind the hosted workspace-startup implementation.
@@ -103,7 +104,13 @@ configureApiRuntime({ bearerToken: getAuthToken })
 configureAuthSession(useAuth)
 
 // Initialize cloud extensions before rendering
-const config = getDefaultConfig()
+const config = {
+  ...getDefaultConfig(),
+  // The hosted entry owns the only value edge to the hosted implementations.
+  // Supplying the loader here lets Rollup remove the dynamic chunk entirely
+  // from local.tsx instead of merely leaving it dormant at runtime.
+  loadHostedContributions: hostedContributionLoader(),
+}
 initClaxedo(config)
 
 // The hosted entry starts the identity provider. `initClaxedo` deliberately

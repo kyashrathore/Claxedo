@@ -59,8 +59,8 @@ export type ProductContributionsInput = {
   local: readonly ContentSurfaceContribution[]
   register: (surface: ContentSurfaceContribution) => void
   unregister: (surface: ContentSurfaceContribution) => void
-  /** Loads the hosted set. Dynamic, so the local entry never links it. */
-  loadHosted: HostedContributionLoader
+  /** Loads the hosted set. Absent from a composition that cannot host it. */
+  loadHosted?: HostedContributionLoader
   /**
    * Whether this composition may hold hosted contributions at all.
    *
@@ -121,7 +121,12 @@ export function createProductContributions(input: ProductContributionsInput): Pr
 
   const hosted: HostedContributionPort = createHostedContributionPort<ContentSurfaceContribution>({
     signedIn: input.hostedComposition,
-    load: async () => (await input.loadHosted()).contentSurfaces,
+    load: async () => {
+      if (!input.loadHosted) {
+        throw new Error("Hosted contribution loader is not configured for this product composition")
+      }
+      return (await input.loadHosted()).contentSurfaces
+    },
     register: input.register,
     unregister: input.unregister,
     // The LOCAL ids, and only those. Everything else in the registry is either
@@ -182,18 +187,4 @@ export function productContributions(): ProductContributions {
     throw new Error("Product contributions are not configured; call configureProductContributions() from the app entry")
   }
   return instance
-}
-
-/**
- * Load the hosted contribution set.
- *
- * The dynamic import lives HERE rather than inside a local-owned module: this
- * is the one edge from the local composition to hosted code, and keeping it in
- * a single named place is what lets the boundary guards point at it.
- */
-export function hostedContributionLoader(): HostedContributionLoader {
-  return async () => {
-    const hosted = await import("../integrations/hosted-content-surfaces")
-    return { contentSurfaces: hosted.hostedContentSurfaces }
-  }
 }

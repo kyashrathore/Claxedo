@@ -8,7 +8,7 @@ import { setExtensions } from "../../features/extensions/index"
 import { appExtensions } from "../../features/extensions/index"
 import { serverExtensions } from "../../features/extensions/index"
 import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "@/platform/api/local-server"
-import { configureProductContributions, hostedContributionLoader } from "@/app/composition/product-contributions"
+import { configureProductContributions, type HostedContributionLoader } from "@/app/composition/product-contributions"
 import {
   localContentSurfaces,
   registerContentSurface,
@@ -42,6 +42,8 @@ export interface ClaxedoConfig {
   daytonaApiKey?: string
   /** URL for the standalone claxedo-server (PTY, events, agent hooks) */
   claxedoServerUrl?: string
+  /** Hosted product-owned implementation; absent from the local artifact. */
+  loadHostedContributions?: HostedContributionLoader
 }
 
 /**
@@ -91,7 +93,7 @@ export function initClaxedo(config: ClaxedoConfig): void {
     local: localContentSurfaces,
     register: registerContentSurface,
     unregister: unregisterContentSurface,
-    loadHosted: hostedContributionLoader(),
+    loadHosted: config.loadHostedContributions,
     hostedComposition: () => config.authEnabled === true,
   })
 

@@ -78,6 +78,15 @@ export type Policy = {
    * grows.
    */
   ceilings?: { modules: number; packages: number }
+
+  /** Build-tool metadata emitted by this policy's real production build. */
+  emitted?: {
+    file: string
+    minModules: number
+    minChunks: number
+    requiredModules: string[]
+    forbiddenChunkMarkers?: string[]
+  }
 }
 
 export type Finding = { kind: string; detail: string }

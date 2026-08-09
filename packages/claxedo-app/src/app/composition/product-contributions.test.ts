@@ -249,4 +249,16 @@ describe("hosted contributions follow the account", () => {
     expect(app.loads()).toBe(0)
     expect(app.registered).toEqual([])
   })
+
+  test("a hosted composition without its product-owned loader fails closed", async () => {
+    const contributions = createProductContributions({
+      local: [],
+      register: () => {},
+      unregister: () => {},
+      hostedComposition: () => true,
+    })
+
+    await expect(contributions.activateHosted()).rejects.toThrow("loader is not configured")
+    expect(contributions.hostedActive()).toBe(false)
+  })
 })

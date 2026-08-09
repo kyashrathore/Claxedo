@@ -20,14 +20,14 @@ const SRC = "packages/claxedo-app/src"
  *    build whose whole purpose was to have no identity provider in it. The
  *    emitted half is `scripts/check-local-bundle-identity.ts`, which
  *    `verify:closure` runs after a real `build:local`.
- *  - Hosted CAPABILITIES are still reachable and are NOT forbidden here, because
- *    they genuinely are in the graph today: 29 modules under `features/workgraph/`,
- *    29 under `features/documents/`, `platform/runtime/cloud/workspace-runtime-store.ts`,
- *    `platform/auth/auth-session.ts`, and the two login routes, all through the
- *    shared shell `app/entry/app.tsx`. Unit 10 was to move them into
- *    `@claxedo/cloud-app` and is DEFERRED, so forbidding them here would fail
- *    on real code rather than gate anything. The module ceiling is what keeps
- *    that set from quietly growing in the meantime.
+ *  - The hosted IMPLEMENTATION SET is forbidden and absent, including its
+ *    WorkGraph/Documents renderer chunk. A small shared contract/data seam is
+ *    still reachable today: two modules under `features/workgraph/`, seven
+ *    under `features/documents/`, the unbound cloud workspace port module,
+ *    anonymous auth-session abstraction, and login route. Unit 10 was to move
+ *    those remaining hosted contracts into `@claxedo/cloud-app` and is
+ *    DEFERRED, so forbidding their whole roots here would fail on real code
+ *    rather than gate anything. The exact ceiling keeps that seam shrinking.
  *
  * What IS enforced is the part that was actually finished: no identity
  * provider, no Convex, and no module route to `auth-client.ts` — the four
@@ -48,6 +48,9 @@ export const appLocal: Policy = {
     `${SRC}/platform/auth/auth-client.ts`,
     // The hosted browser entry. A local build reaching it would start Clerk.
     `${SRC}/app/entry/main.tsx`,
+    // The hosted implementation set. Its loader is injected by main.tsx, so a
+    // local build must not carry even its lazy chunk.
+    `${SRC}/app/integrations/hosted-content-surfaces.tsx`,
   ],
   permittedOutsideRoots: MANIFEST_READS,
 
@@ -70,7 +73,21 @@ export const appLocal: Policy = {
     requiredPackages: ["solid-js", "@claxedo/workgraph"],
   },
 
-  // Measured 2026-08-09 with `runtimeOnly`. No headroom on purpose: a ceiling
-  // with slack lets a closure grow by a fifth without anyone reading it.
-  ceilings: { modules: 861, packages: 63 },
+  // Measured 2026-08-09 with `runtimeOnly`, after the hosted loader moved to
+  // the hosted entry. No headroom: the remaining shared seam must only shrink.
+  ceilings: { modules: 808, packages: 41 },
+
+  emitted: {
+    file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",
+    // Positive controls measured from the real Vite build. Deliberately loose
+    // enough for dependency pruning, but far above an empty/partial manifest.
+    minModules: 2_000,
+    minChunks: 300,
+    requiredModules: [
+      `${SRC}/app/entry/local.tsx`,
+      `${SRC}/app/entry/app.tsx`,
+      `${SRC}/features/terminal/core/backend/xterm.ts`,
+    ],
+    forbiddenChunkMarkers: ["clerk", "convex", "hosted-content-surfaces"],
+  },
 }

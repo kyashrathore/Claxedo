@@ -28,6 +28,7 @@ import { REPO_ROOT } from "./closure.ts"
 import { evaluate, isFailure, type Result } from "./policy.ts"
 import { policyById, PRODUCTS } from "./policies/index.ts"
 import { runAuthoritativeChecks } from "./authoritative-checks.ts"
+import { emittedManifestFindings } from "./emitted-manifest.ts"
 
 function productFromCwd(): string {
   const manifest = path.join(process.cwd(), "package.json")
@@ -107,7 +108,20 @@ function main() {
       ok = false
       continue
     }
-    if (!runAuthoritativeChecks(selectedProduct)) ok = false
+    if (!runAuthoritativeChecks(selectedProduct)) {
+      ok = false
+      continue
+    }
+    for (const policy of policies) {
+      const findings = emittedManifestFindings(policy)
+      if (findings.length === 0) {
+        if (policy.emitted) console.log(`✓ ${policy.id} emitted manifest — build-tool module/chunk boundary`)
+        continue
+      }
+      ok = false
+      console.error(`✗ ${policy.id} emitted manifest`)
+      for (const finding of findings) console.error(`  ${finding}`)
+    }
   }
 
   if (!ok) {

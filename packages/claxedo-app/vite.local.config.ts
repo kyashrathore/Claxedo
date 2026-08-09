@@ -1,5 +1,8 @@
 import { defineConfig, type UserConfig } from "vite"
 import cloud from "./vite.cloud.config"
+import { fileURLToPath } from "node:url"
+
+import { productBoundaryBuildManifestPlugin } from "../../script/product-boundary/rollup-build-manifest-plugin"
 
 /**
  * Packages a local build has no identity provider to use.
@@ -58,6 +61,7 @@ const namesForbiddenPackage = (ids: readonly unknown[]) =>
  */
 export default defineConfig((env) => {
   const base = (typeof cloud === "function" ? cloud(env as never) : cloud) as UserConfig
+  const workspaceRoot = fileURLToPath(new URL("../..", import.meta.url))
 
   // Refused rather than worked around. Both shapes are expressible and neither
   // is what the hosted config does today; inheriting one silently would mean
@@ -74,6 +78,14 @@ export default defineConfig((env) => {
 
   return {
     ...base,
+    plugins: [
+      ...(base.plugins ?? []),
+      productBoundaryBuildManifestPlugin({
+        entry: fileURLToPath(new URL("./src/app/entry/local.tsx", import.meta.url)),
+        file: fileURLToPath(new URL("./.artifacts/u8-package-split/manifests/app-local.json", import.meta.url)),
+        workspaceRoot,
+      }),
+    ],
     build: {
       ...base.build,
       outDir: "dist-local",
