@@ -1,4 +1,4 @@
-import { DateTime } from "luxon"
+import { formatDateTimeMed } from "@/lib/relative-time"
 
 export function createSessionContextFormatter(locale: string) {
   return {
@@ -14,7 +14,7 @@ export function createSessionContextFormatter(locale: string) {
     },
     time(value: number | undefined) {
       if (!value) return "—"
-      return DateTime.fromMillis(value).setLocale(locale).toLocaleString(DateTime.DATETIME_MED)
+      return formatDateTimeMed(value, locale)
     },
   }
 }
