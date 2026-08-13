@@ -117,7 +117,7 @@ const modelsContextInput = {
     // CONNECTED provider — so `list()` starts as defaults-only. The full model
     // set for connected providers is fetched lazily, when a model picker is
     // actually opened (`ModelList` calls `hydrate` on mount). `providers.load`
-    // single-flights per provider and merges each `/provider?provider=<id>`
+    // single-flights per provider and merges each `GET /provider with ?provider=<id>`
     // detail into the same query cache, so repeated opens cost nothing.
     const hydrate = () => hydrateConnectedProviderDetails(providers)
 
