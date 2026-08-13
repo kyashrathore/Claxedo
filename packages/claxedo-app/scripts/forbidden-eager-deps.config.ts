@@ -155,6 +155,18 @@ export const FORBIDDEN_DEPS: ForbiddenDep[] = [
       "ChatClient construction; EventType must move inside that boundary too.",
   },
   {
+    label: "zod (TEMP probe)",
+    specifiers: ["zod"],
+    markers: [],
+    estGzip: "~57 KB gz",
+  },
+  {
+    label: "@claxedo/workgraph/contracts (TEMP probe)",
+    specifiers: ["@claxedo/workgraph/contracts", "@claxedo/workgraph"],
+    markers: [],
+    estGzip: "~15 KB gz",
+  },
+  {
     label: "effect (Effect runtime — deferrable: only 3 trivial usages)",
     specifiers: ["effect"],
     // effect mangles its internals; the static check is authoritative. Leave markers
@@ -175,5 +187,10 @@ export const FORBIDDEN_DEPS: ForbiddenDep[] = [
  * The static check has no allowlist by design — a static eager edge is always a bug.
  */
 export const BUILD_MARKER_ALLOWLIST: string[] = [
-  // (intentionally empty — every forbidden marker should be absent from the entry chunk)
+  // conversation-chat-client.ts's lazy boundary names the property it re-exposes
+  // (`{ ChatClient: mod.ChatClient }`) and constructs `new runtime.ChatClient(...)`,
+  // so the identifier appears in main as a dynamic-import trigger. The library
+  // BODY is still guarded by the "StreamProcessor" marker, which only exists in
+  // @tanstack/ai-client's own code.
+  "ChatClient",
 ]
