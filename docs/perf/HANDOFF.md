@@ -415,3 +415,32 @@ rejected sets are summarised in sections 4 and 5 above. The predecessor's ideas 
 plus 11.1. **Two ideas remain untested anywhere**: `perf(server): lazy-load remote sandbox drivers` and
 `optimize(claxedo-idle-footprint): suspend idle host metrics` (section 10), plus the terminal batching
 ceilings above. Nothing else surfaced by the scan lacks a recorded outcome.
+
+### 11.5 The `wip: preserve renderer memory and performance experiments` commits
+
+`99b93d31c` (on the 0809 snapshot) and `da90f885a` (0808) are two near-identical WIP checkpoints —
+**82 files / +3,630 -1,007** and **84 files / +3,623 -1,031** — and they are NOT represented by
+patch-id on the live `optimize/claxedo-sub60-under500` branch. They are the largest unrecorded thing
+in the archive, so their content is summarised here before the branches are dropped.
+
+What they touch, from the diffstat:
+
+- `packages/ui/src/context/marked.tsx` (+227/+235) and a new `marked-native.test.ts` — a MARKDOWN
+  RENDERING experiment, and the largest single hunk. Directly adjacent to this effort's measured
+  finding that markdown highlighting is a worker round trip whose phases are wall-clock across an
+  `await`, not main-thread CPU, and that the completed-code cache is per-component-instance so every
+  remount re-does it (recorded as UNFIXED).
+- `packages/session-ui/src/components/markdown.tsx` (+170/+179) and `message-part.tsx` (+58) — the same
+  surface this effort measured at 52-58 ms per switch for three code blocks.
+- `packages/session-ui/src/pierre/virtualizer.ts` (+11) — the virtualizer whose `renderOverscan`
+  starting at 1 was later measured and documented here.
+- A new `packages/ui/src/components/inline-svg-sprite.ts` (+46) plus changes to `icon.tsx`,
+  `file-icon.tsx`, `provider-icon.tsx`, `codex-icons.tsx` — an ICON SPRITE INLINING experiment. **This
+  one has no counterpart anywhere in this effort and no recorded outcome.** It is a plausible
+  bundle-size and first-paint lever that was never measured under the current gates.
+
+So of the five 0809 commits absent from the live branch: `defer provider bootstrap` survives in this
+branch as `44b0b3fa0`; `host server in node mode` and `unload idle embedded engine` were re-tested here
+and REJECTED with numbers (worker transport: +129 ms, +130 MiB, CPU failing 2 of 6); `lazy-load optional
+work surfaces` is superseded by progressive loading that measurably already ships; and the WIP pair is
+summarised above. **The one idea in them with no recorded outcome is the inline SVG sprite.**
