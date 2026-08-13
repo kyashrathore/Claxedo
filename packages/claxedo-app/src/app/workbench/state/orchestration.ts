@@ -9,6 +9,7 @@
 // One content is one tab: each `contentId` is the same id the Workbench uses
 // and lives in `state.meta`.
 
+import { measureRendererPhase } from "@/platform/performance/renderer-trace"
 import type { ContentMeta, ContentPayload, ContentType } from "./types"
 import { PINNED_CONTENT_TYPES } from "./types"
 import { selectEvictableSurfaces } from "./surface-budget"
@@ -65,18 +66,6 @@ export type LayoutOrchestrationApi = {
 }
 
 const PINNED_TYPES = PINNED_CONTENT_TYPES
-
-function measureRendererPhase<T>(name: string, task: () => T) {
-  if (
-    typeof window === "undefined" ||
-    (window as unknown as Record<string, unknown>).__claxedoPerfTrace !== true
-  ) return task()
-  const started = performance.now()
-  const result = task()
-  const phases = (window as unknown as Record<string, unknown>).__claxedoPerfRendererPhases
-  if (Array.isArray(phases)) phases.push({ name, durationMs: performance.now() - started })
-  return result
-}
 
 const newId = (type: ContentType) => {
   const prefix =
