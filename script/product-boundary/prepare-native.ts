@@ -17,7 +17,7 @@ const probe = native === "better-sqlite3"
      const row = db.prepare("select 1 as ready").get();
      db.close();
      if (row.ready !== 1) process.exit(2);`
-  : `const names = ["node-pty", "@lydell/node-pty"];
+  : `const names = ["@lydell/node-pty"];
      const timer = setTimeout(() => process.exit(3), 5000);
      Promise.all(names.map((name) => new Promise((resolve, reject) => {
        const pty = requireFromWorkspace(name);

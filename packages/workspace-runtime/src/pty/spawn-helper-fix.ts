@@ -1,9 +1,11 @@
 /**
  * Bun's package manager may strip execute bits from prebuilt native binaries.
- * node-pty requires its `spawn-helper` binary to be executable — without it,
- * posix_spawnp fails and PTY creation throws.
+ * @lydell/node-pty requires its `spawn-helper` binary to be executable on
+ * macOS — without it, posix_spawnp fails and PTY creation throws. (Linux
+ * prebuilds carry no spawn-helper; Windows never uses one.)
  *
- * Call ensureSpawnHelper() once before first use of node-pty to fix this.
+ * Call ensureSpawnHelper() once before first use of @lydell/node-pty to fix
+ * this.
  */
 import * as fs from "fs"
 import * as path from "path"
@@ -13,8 +15,14 @@ const require = createRequire(import.meta.url)
 
 export function spawnHelperPath(): string | undefined {
   try {
-    const pkgDir = path.dirname(require.resolve("node-pty/package.json"))
-    return path.join(pkgDir, "prebuilds", `${process.platform}-${process.arch}`, "spawn-helper")
+    // The platform package (`@lydell/node-pty-<platform>-<arch>`) is an
+    // optionalDependency of the wrapper, which bun links only inside its
+    // content-addressed store. require.resolve realpaths the wrapper, so its
+    // scope directory is the one place the platform package is ALWAYS a
+    // sibling — both in the store and in a packaged app's node_modules.
+    const wrapperDir = path.dirname(require.resolve("@lydell/node-pty/package.json"))
+    const platform = `${process.platform}-${process.arch}`
+    return path.join(path.dirname(wrapperDir), `node-pty-${platform}`, "prebuilds", platform, "spawn-helper")
   } catch {
     return undefined
   }

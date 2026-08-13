@@ -24,7 +24,7 @@ type ExitHandler = (event: { exitCode: number }) => void
 const fakeProcesses = new Map<number, { dataHandlers: DataHandler[]; exitHandlers: ExitHandler[] }>()
 let nextPid = 52000
 
-mock.module("node-pty", () => ({
+mock.module("@lydell/node-pty", () => ({
   spawn(command: string, args: string[], options: { cwd?: string; env?: Record<string, string> }) {
     const pid = nextPid++
     fakeProcesses.set(pid, { dataHandlers: [], exitHandlers: [] })
