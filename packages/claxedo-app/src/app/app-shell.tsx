@@ -9,6 +9,7 @@
  * coordinated via claxedo layout state and rendered through multi-pane leaves.
  */
 
+import { markRendererPhase } from "@/platform/performance/renderer-trace"
 import "./styles/app-shell.css"
 import { createEffect, createMemo, lazy, onCleanup, onMount, type ParentProps } from "solid-js"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
@@ -182,11 +183,5 @@ export function ClaxedoAppShellInner(props: ParentProps) {
 }
 
 function traceModuleEvaluation(name: string) {
-  const target = window as unknown as {
-    __claxedoPerfTrace?: boolean
-    __claxedoPerfRendererPhases?: Array<{ name: string; durationMs: number }>
-  }
-  if (!target.__claxedoPerfTrace) return
-  performance.mark(name)
-  target.__claxedoPerfRendererPhases?.push({ name, durationMs: 0 })
+  markRendererPhase(name)
 }

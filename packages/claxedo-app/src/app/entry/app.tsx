@@ -1,4 +1,5 @@
 // Claxedo owns the app shell here so auth, hosted routes, query persistence, and the Workbench layout are mounted directly.
+import { rendererTraceEnabled } from "@/platform/performance/renderer-trace"
 import "@/app/styles/index.css"
 import "@/app/styles/ui-overrides.css"
 import { I18nProvider } from "@opencode-ai/ui/context"
@@ -47,7 +48,7 @@ import { HostedContributionSync } from "@/app/composition/hosted-contribution-sy
 import { ClaxedoEventsProvider } from "@/app/integrations/claxedo-events"
 import { loadFileComponent } from "@/ui/session-kit-loaders"
 
-if ((window as unknown as Record<string, unknown>).__claxedoPerfTrace === true) {
+if (rendererTraceEnabled()) {
   performance.mark("runtime.appEntryModuleEvaluated")
 }
 
