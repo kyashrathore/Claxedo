@@ -12,6 +12,7 @@ import type { ProjectItem } from "@/features/session/app-ports"
 import { usePrompt } from "@/features/session/providers/prompt"
 import type { Process } from "@/features/processes/data/process"
 import { getClaxedoServerUrl } from "@/platform/api/api"
+import { workspaceVcsQuery } from "@/platform/runtime/workspace-query"
 import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
 import { sameWorkspaceDirectory } from "@/platform/runtime/agent/signed-workspace"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -555,14 +556,25 @@ export function SessionEnvironmentCardMount() {
     return { files: files.length, added, removed }
   })
 
-  // Branch, with retry + refetch-on-focus: the old one-shot resource cached a
-  // single boot-time failure as "no branch" until the card remounted, and a
-  // branch switch in the terminal never showed up.
-  const vcsQuery = useQuery(() => ({
-    queryKey: ["session-environment", "vcs", directory()],
-    enabled: visible(),
-    queryFn: () => sdk.client.vcs.get().then((res) => res.data?.branch ?? null),
-  }))
+  // Branch, through the CANONICAL runtime vcs query (queryKeys.runtime.vcs) —
+  // the same silo bootstrap warms at boot and review-tab/new-session read —
+  // so this card is a cache hit instead of a second raw `/vcs` fetch. useQuery
+  // (not a one-shot resource) keeps the old fix: a boot-time failure retries
+  // on the next observation instead of caching "no branch" until remount.
+  const vcsQuery = useQuery(() => {
+    const workspace = sdk.workspace()
+    return {
+      ...workspaceVcsQuery({
+        baseUrl: sdk.url,
+        directory: directory()!,
+        client: sdk.client,
+        workspaceId: workspace?.workspaceId,
+        workspace,
+        signedControlPlane: workspace?.kind === "cloud" || workspace?.kind === "user-hosted",
+      }),
+      enabled: visible(),
+    }
+  })
 
   // The Project record that owns the session directory — either its git-worktree
   // root or one of its sandbox directories. Shared by the project name and the
@@ -630,7 +642,7 @@ export function SessionEnvironmentCardMount() {
 
   const source: SessionEnvironmentSource = {
     changes,
-    branch: () => vcsQuery.data ?? undefined,
+    branch: () => vcsQuery.data?.branch ?? undefined,
     isolation,
     worktreeDir: directory,
     projectName,
