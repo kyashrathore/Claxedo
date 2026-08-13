@@ -1,4 +1,4 @@
-import { useMarked } from "@opencode-ai/ui/context/marked"
+import { OpenCodeTheme, useMarked } from "@opencode-ai/ui/context/marked"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
 import morphdom from "morphdom"
 import { checksum } from "@opencode-ai/core/util/encode"
@@ -36,6 +36,7 @@ import {
   touchCachedMarkdown,
   type MarkdownCacheEntry,
 } from "./markdown-cache"
+import { getCachedCodeHighlight, highlightCodeThroughCache } from "./markdown-code-cache"
 import { inlineCodeKind } from "./markdown-inline-code-kind"
 import { markdownTableText } from "./markdown-table"
 import {
@@ -78,11 +79,17 @@ function fallback(markdown: string) {
   return escape(markdown).replace(/\r\n?/g, "\n").replace(/\n/g, "<br>")
 }
 
+function codeLanguageName(language: string | undefined) {
+  return language && language in bundledLanguages ? language : "text"
+}
+
 async function code(text: string, language: string | undefined, key: string, complete = false) {
-  const name = language && language in bundledLanguages ? language : "text"
+  const name = codeLanguageName(language)
   try {
-    const result = await highlightStreamingCode(key, text, name, complete)
-    return { language: name, generation: result.generation, stable: result.stable, unstable: result.unstable }
+    return await highlightCodeThroughCache(text, name, OpenCodeTheme.name, complete, async () => {
+      const result = await highlightStreamingCode(key, text, name, complete)
+      return { language: name, generation: result.generation, stable: result.stable, unstable: result.unstable }
+    })
   } catch (error) {
     if (
       !(error instanceof MarkdownWorkerDisposedError) &&
@@ -610,8 +617,22 @@ function initialResult(text: string, key: string | undefined, projection: Projec
   if (!text) return { text, blocks: [] }
   const base = key ?? checksum(text)
   if (base) {
-    const blocks = projection.blocks.flatMap((block, index) => {
-      if (block.mode === "code") return []
+    const blocks = projection.blocks.flatMap((block, index): RenderedBlock[] => {
+      if (block.mode === "code") {
+        if (!block.complete) return []
+        const cached = getCachedCodeHighlight(block.src, codeLanguageName(block.language), OpenCodeTheme.name)
+        if (!cached) return []
+        return [
+          {
+            key: markdownBlockKey(owner, key, index, block.mode),
+            mode: block.mode,
+            raw: block.raw,
+            hash: String(block.raw.length),
+            complete: true,
+            ...cached,
+          },
+        ]
+      }
       const cacheKey = `${base}:${index}:${block.mode}`
       const cached = getCachedMarkdown(cacheKey)
       if (cached?.raw !== block.raw) return []
@@ -648,7 +669,6 @@ export function Markdown(
   const [root, setRoot] = createSignal<HTMLDivElement>()
   const owner = createUniqueId()
   const activeCodeKeys = new Set<string>()
-  const completedCode = new Map<string, Extract<RenderedBlock, { mode: "code" }>>()
   const projection = createMemo((previous: Projection | undefined) => {
     const started = rendererClock()
     const result = project(previous, local.text, local.streaming ?? false)
@@ -686,12 +706,12 @@ export function Markdown(
           const blockKey = markdownBlockKey(owner, src.key, index, block.mode)
 
           if (block.mode === "code") {
-            const cached = completedCode.get(blockKey)
-            if (block.complete && cached?.raw === block.raw) return cached
             const started = rendererClock()
+            // Completed blocks read through the module-scope highlight cache
+            // inside `code()`, so a remount resolves without a worker round trip.
             const result = await code(block.src, block.language, blockKey, block.complete)
             traceRenderer(`markdown.highlight.chars-${block.src.length}.language-${result.language}`, started)
-            const rendered = {
+            return {
               key: blockKey,
               mode: block.mode,
               raw: block.raw,
@@ -699,8 +719,6 @@ export function Markdown(
               complete: !!block.complete,
               ...result,
             }
-            if (block.complete) completedCode.set(blockKey, rendered)
-            return rendered
           }
 
           if (key) {
@@ -793,7 +811,6 @@ export function Markdown(
   onCleanup(() => {
     if (copyCleanup) copyCleanup()
     activeCodeKeys.forEach(disposeCode)
-    completedCode.clear()
   })
 
   return (
