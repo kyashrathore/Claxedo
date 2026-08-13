@@ -128,7 +128,7 @@ async function bundleClaudeAgentAcp() {
   const tmpDir = path.resolve(ACP_DIR, ".claude-acp-tmp")
 
   log("Bundling claude-agent-acp...")
-  await $`bun build ${entry} --outdir ${tmpDir} --target=node`
+  await $`bun build ${entry} --outdir ${tmpDir} --target=node --minify`
   let bundled = fs.readFileSync(path.join(tmpDir, "index.js"), "utf-8")
   bundled = bundled.replace(/^#!.*\n/, "")
   fs.writeFileSync(
@@ -157,7 +157,7 @@ async function bundleCodexAcp() {
   // syntax in the extensionless file. No runtime ships inside the app: the
   // adapter runs on the user's Node and spawns the user's system `codex`.
   log("Bundling codex-acp...")
-  await $`bun build ${path.resolve(SCRIPT_DIR, "codex-acp-entry.ts")} --outdir ${tmpDir} --target=node`
+  await $`bun build ${path.resolve(SCRIPT_DIR, "codex-acp-entry.ts")} --outdir ${tmpDir} --target=node --minify`
   let bundled = fs.readFileSync(path.join(tmpDir, "codex-acp-entry.js"), "utf-8")
   bundled = bundled.replace(/^#!.*\n/, "")
   fs.writeFileSync(
