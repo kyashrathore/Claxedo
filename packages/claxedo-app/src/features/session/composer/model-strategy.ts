@@ -96,6 +96,29 @@ export function selectRuntimeModel(input: unknown, selected: SubmitModelInfo | u
   })
 }
 
+/**
+ * The provider whose full detail must load before a saved selection can be
+ * validated — or `undefined` when nothing is missing.
+ *
+ * The boot catalog is an INDEX: every provider's id/name, but only the one
+ * default model per connected provider. A saved selection of any OTHER model
+ * of a connected provider is therefore indistinguishable from an invalid one
+ * until that provider's detail (`/provider?provider=<id>`) merges in. This
+ * names the exact miss: the provider is connected and present, yet the
+ * selected model is absent from its model table.
+ */
+export function selectionProviderDetailNeeded(input: {
+  model: ModelKey | undefined
+  connected: ReadonlySet<string>
+  provider: { models: Record<string, unknown> } | undefined
+}): string | undefined {
+  if (!input.model) return undefined
+  if (!input.connected.has(input.model.providerID)) return undefined
+  if (!input.provider) return undefined
+  if (input.provider.models[input.model.modelID]) return undefined
+  return input.model.providerID
+}
+
 export function firstValidSelectionModel(input: {
   selections: Array<{ model?: ModelKey } | undefined>
   valid: (model: ModelKey) => boolean
