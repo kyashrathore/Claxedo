@@ -1,3 +1,4 @@
+export * from "./author"
 export * from "./ownership"
 export * from "./projection"
 export * from "./runtime-event"

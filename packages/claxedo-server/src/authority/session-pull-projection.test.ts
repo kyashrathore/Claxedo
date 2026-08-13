@@ -74,6 +74,15 @@ const signedAuth = {
 // touches its unavailable path; the tests assert on projection effects, not codes.
 function presentAuthority() {
   return {
+    // Runtime requests are stamped with the resolved actor from the authority.
+    usersMe: vi.fn(async () => ({
+      subject: signedAuth.user.subject,
+      user_id: "user_1",
+      actor_id: "user_1",
+      actor_kind: "human",
+      actor_public_id: "user_1_pub",
+      actor_name: "User One",
+    })),
     openWorkspace: vi.fn(async () => ({
       workspace: { org_id: "org_1", access: "cloud", backing: "cloud-vm" },
     })),

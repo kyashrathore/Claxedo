@@ -10,6 +10,25 @@ export { TranscriptRoutes } from "./routes/transcript"
 export { AgentHookRoutes } from "./routes/agent-hook"
 export { createSessionRoutes } from "./routes/session-core"
 export type { RuntimeSessionBusEvent, SessionLifecycleEvent } from "./routes/session-core"
+export {
+  managedWorkspaceSessionAccessPolicy,
+  SESSION_CORE_ROUTE_ACCESS,
+  SESSION_V2_PROXY_ROUTE_ACCESS,
+  sessionAccessContext,
+  sessionAccessDenied,
+} from "./session-access-policy"
+export type {
+  SessionAccessActor,
+  SessionAccessAuthor,
+  SessionAccessDecision,
+  SessionAccessOperation,
+  SessionAccessPolicy,
+  SessionAccessPolicyInput,
+  SessionAuthorityInput,
+  SessionAuthorityPredicate,
+  ManagedWorkspaceSessionAccessPolicyOptions,
+  SessionWorkspaceAuthority,
+} from "./session-access-policy"
 export { sessionStatusSnapshot } from "./routes/session-status-snapshot"
 export type { CompatEvent, CompatEnvelope, CompatPart } from "./compat-events"
 export { eventSessionId, toCompatEvent, withDir } from "./compat-events"

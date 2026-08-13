@@ -1,15 +1,24 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test"
-import { Hono } from "hono"
-import type { UpgradeWebSocket } from "hono/ws"
+import fs from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
+import { Hono, type Context } from "hono"
+import type { UpgradeWebSocket, WSEvents, WSContext } from "hono/ws"
 import { PtyRoutes } from "./pty"
 import { Pty } from "../pty/index"
 import { errorBody, JSON_BODY_LIMIT_BYTES } from "./http"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import type { SessionAccessPolicy } from "../session-access-policy"
+import { createDiskHistory } from "../pty/history-disk"
 
 const upgradeWebSocket = (() => () => new Response(null, { status: 501 })) as unknown as UpgradeWebSocket
 const previousDirectory = process.env.WORKSPACE_RUNTIME_DIRECTORY
+const previousHistoryDirectory = process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR
 
-function relayAuth(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["role"]): NonNullable<RelayHostAuthContext["relayHostAuth"]> {
+function relayAuth(
+  role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["role"],
+  actorId = "user_1",
+): NonNullable<RelayHostAuthContext["relayHostAuth"]> {
   const now = Math.floor(Date.now() / 1000)
   return {
     iss: "workspace-relay",
@@ -19,11 +28,26 @@ function relayAuth(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["rol
     workspace_id: "ws_1",
     host_id: "host_1",
     role,
+    actor_id: actorId,
+    actor_kind: "human",
     access: "cloud",
     backing: "cloud-vm",
     exp: now + 60,
     iat: now,
     jti: "jti_1",
+  }
+}
+
+function privateSessionPolicy(owners: Record<string, string>): SessionAccessPolicy {
+  const allowed = (actorId: string | undefined, sessionId: string | undefined) =>
+    !!sessionId && owners[sessionId] === actorId
+  return {
+    sessionAuthority: "managed-private",
+    authorize: async (input) => allowed(input.actor?.actorId, input.sessionId)
+      ? { allowed: true }
+      : { allowed: false, status: 403, code: "private_session", message: "Session is private" },
+    filterSessions: async (input) => input.sessionIds.filter((sessionId) => allowed(input.actor?.actorId, sessionId)),
+    authorizePrefix: async () => ({ allowed: true }),
   }
 }
 
@@ -37,12 +61,24 @@ function appForRole(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["ro
   return app
 }
 
+function appForActor(actorId: string, policy: SessionAccessPolicy) {
+  const app = new Hono<{ Variables: RelayHostAuthContext }>()
+  app.use("*", async (c, next) => {
+    c.set("relayHostAuth", relayAuth("editor", actorId))
+    return await next()
+  })
+  app.route("/", PtyRoutes(upgradeWebSocket, undefined, policy))
+  return app
+}
+
 afterEach(() => {
   if (previousDirectory === undefined) {
     delete process.env.WORKSPACE_RUNTIME_DIRECTORY
   } else {
     process.env.WORKSPACE_RUNTIME_DIRECTORY = previousDirectory
   }
+  if (previousHistoryDirectory === undefined) delete process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR
+  else process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR = previousHistoryDirectory
 })
 
 describe("PtyRoutes", () => {
@@ -143,6 +179,209 @@ describe("PtyRoutes", () => {
     expect(res.status).toBe(200)
   })
 
+  test("isolates PTY list, detail, scrollback connect, and delete between editors", async () => {
+    const info = (id: string, sessionId?: string): Pty.Info => ({
+      id,
+      ...(sessionId ? { sessionId } : {}),
+      title: id,
+      command: "/bin/sh",
+      args: [],
+      cwd: "/workspace",
+      status: "running",
+      pid: 1,
+    })
+    const rows = [info("pty_a", "session_a"), info("pty_b", "session_b"), info("pty_local")]
+    const list = spyOn(Pty, "list").mockReturnValue(rows)
+    const get = spyOn(Pty, "get").mockImplementation((id) => rows.find((row) => row.id === id))
+    const remove = spyOn(Pty, "remove").mockResolvedValue(undefined)
+    const policy = privateSessionPolicy({ session_a: "editor_a", session_b: "editor_b" })
+
+    try {
+      const editorA = appForActor("editor_a", policy)
+      const editorB = appForActor("editor_b", policy)
+
+      await expect((await editorA.request("http://localhost/")).json()).resolves.toEqual([rows[0]])
+      await expect((await editorB.request("http://localhost/")).json()).resolves.toEqual([rows[1]])
+
+      expect((await editorA.request("http://localhost/pty_b")).status).toBe(403)
+      expect((await editorA.request("http://localhost/pty_b/connect", {
+        headers: { connection: "Upgrade", upgrade: "websocket" },
+      })).status).toBe(403)
+      expect((await editorA.request("http://localhost/pty_b", { method: "DELETE" })).status).toBe(403)
+      expect(remove).not.toHaveBeenCalled()
+
+      expect((await editorB.request("http://localhost/pty_b")).status).toBe(200)
+      expect((await editorB.request("http://localhost/pty_b/connect", {
+        headers: { connection: "Upgrade", upgrade: "websocket" },
+      })).status).toBe(501)
+      expect((await editorB.request("http://localhost/pty_b", { method: "DELETE" })).status).toBe(200)
+      expect(remove).toHaveBeenCalledWith("pty_b")
+    } finally {
+      list.mockRestore()
+      get.mockRestore()
+      remove.mockRestore()
+    }
+  })
+
+  test("closes a passive PTY reader within the bounded authorization refresh after access is revoked", async () => {
+    let events: WSEvents | undefined
+    let allowed = true
+    let guardedSocket: Parameters<typeof Pty.connect>[1] | undefined
+    const rawSocket = {
+      readyState: 1,
+      bufferedAmount: 0,
+      send: spyOn({ call() {} }, "call"),
+      close: spyOn({ call(_code?: number, _reason?: string) {} }, "call"),
+    }
+    const disconnected = spyOn({ call() {} }, "call")
+    const upgrade = ((createEvents: (c: Context) => WSEvents | Promise<WSEvents>) => async (c: Context) => {
+      events = await createEvents(c)
+      return new Response(null, { status: 200 })
+    }) as unknown as UpgradeWebSocket
+    const info: Pty.Info = {
+      id: "pty_private",
+      sessionId: "session_private",
+      title: "Private terminal",
+      command: "/bin/sh",
+      args: [],
+      cwd: "/workspace",
+      status: "running",
+      pid: 1,
+    }
+    const get = spyOn(Pty, "get").mockReturnValue(info)
+    const connect = spyOn(Pty, "connect").mockImplementation((_id, socket) => {
+      guardedSocket = socket
+      return { onMessage() {}, onClose: disconnected }
+    })
+    const policy: SessionAccessPolicy = {
+      sessionAuthority: "managed-private",
+      authorize: async () => allowed
+        ? { allowed: true }
+        : { allowed: false, status: 403, code: "private_session", message: "Session is private" },
+      filterSessions: async (input) => input.sessionIds,
+      authorizePrefix: async () => ({ allowed: true }),
+    }
+    const app = new Hono<{ Variables: RelayHostAuthContext }>()
+    app.use("*", async (c, next) => {
+      c.set("relayHostAuth", relayAuth("editor", "participant"))
+      return await next()
+    })
+    app.route("/", PtyRoutes(upgrade, undefined, policy))
+
+    try {
+      expect((await app.request("http://localhost/pty_private/connect", {
+        headers: { connection: "Upgrade", upgrade: "websocket" },
+      })).status).toBe(200)
+      events?.onOpen?.(new Event("open"), {
+        raw: rawSocket,
+        close: rawSocket.close,
+      } as unknown as WSContext)
+      expect(guardedSocket).toBeDefined()
+
+      allowed = false
+      await new Promise((resolve) => setTimeout(resolve, 1_050))
+      guardedSocket!.send("private output after removal")
+
+      expect(rawSocket.send).not.toHaveBeenCalled()
+      expect(rawSocket.close).toHaveBeenCalledWith(1008, "Session access denied")
+      expect(disconnected).toHaveBeenCalledTimes(1)
+    } finally {
+      get.mockRestore()
+      connect.mockRestore()
+    }
+  })
+
+  test("requires and authorizes a persisted session identity for managed PTY creation", async () => {
+    const create = spyOn(Pty, "create").mockImplementation(async (input) => ({
+      id: "pty_created",
+      sessionId: input.sessionId,
+      title: "Terminal",
+      command: "/bin/sh",
+      args: [],
+      cwd: "/workspace",
+      status: "running" as const,
+      pid: 1,
+    }))
+    const app = appForActor("editor_a", privateSessionPolicy({ session_a: "editor_a" }))
+
+    try {
+      const missing = await app.request("http://localhost/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Terminal" }),
+      })
+      expect(missing.status).toBe(400)
+      expect(create).not.toHaveBeenCalled()
+
+      const denied = await app.request("http://localhost/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Terminal", sessionId: "session_b" }),
+      })
+      expect(denied.status).toBe(403)
+      expect(create).not.toHaveBeenCalled()
+
+      const allowed = await app.request("http://localhost/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Terminal", sessionId: "session_a" }),
+      })
+      expect(allowed.status).toBe(200)
+      await expect(allowed.json()).resolves.toMatchObject({ sessionId: "session_a" })
+      expect(create).toHaveBeenCalledTimes(1)
+    } finally {
+      create.mockRestore()
+    }
+  })
+
+  test("prevents an editor from restoring another private session's disk scrollback", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pty-private-history-"))
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = path.join(root, "workspace")
+    process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR = path.join(root, "history")
+    const history = await createDiskHistory({
+      directory: process.env.WORKSPACE_RUNTIME_DIRECTORY,
+      id: "pty_private_a",
+      limit: 1024,
+      sessionId: "session_a",
+    })
+    history.append("editor A private scrollback")
+    await history.close()
+    const create = spyOn(Pty, "create").mockImplementation(async (input) => ({
+      id: "pty_replacement",
+      sessionId: input.sessionId,
+      title: "Terminal",
+      command: "/bin/sh",
+      args: [],
+      cwd: process.env.WORKSPACE_RUNTIME_DIRECTORY!,
+      status: "running" as const,
+      pid: 1,
+    }))
+    const policy = privateSessionPolicy({ session_a: "editor_a", session_b: "editor_b" })
+
+    try {
+      const response = await appForActor("editor_b", policy).request("http://localhost/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: "session_b",
+          env: { previousPtyId: "pty_private_a" },
+        }),
+      })
+
+      expect(response.status).toBe(403)
+      await expect(response.json()).resolves.toEqual({
+        error: {
+          code: "pty_history_forbidden",
+          message: "PTY history belongs to another session",
+        },
+      })
+      expect(create).not.toHaveBeenCalled()
+    } finally {
+      create.mockRestore()
+      await fs.rm(root, { recursive: true, force: true })
+    }
+  })
+
   test("rejects create requests outside the pinned workspace before spawning", async () => {
     process.env.WORKSPACE_RUNTIME_DIRECTORY = "/tmp/workspace-runtime-pty"
     const app = PtyRoutes(upgradeWebSocket)
@@ -173,6 +412,19 @@ describe("PtyRoutes", () => {
       error: {
         code: "pty_invalid_path",
         message: "workspace path must be relative",
+      },
+    })
+
+    const escapingArg = await app.request("http://localhost/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command: "cat", args: ["~/.local/share/opencode/opencode.db"] }),
+    })
+    expect(escapingArg.status).toBe(400)
+    await expect(escapingArg.json()).resolves.toEqual({
+      error: {
+        code: "pty_invalid_path",
+        message: "workspace command path must be relative",
       },
     })
   })

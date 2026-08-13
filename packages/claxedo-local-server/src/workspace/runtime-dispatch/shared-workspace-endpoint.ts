@@ -15,6 +15,7 @@ import {
   ensureCloudRuntime,
   noWr,
   proxy,
+  requireRuntimeProxyActor,
   type RuntimeProxyOptions,
 } from "./internals"
 
@@ -39,7 +40,12 @@ async function localWorkspaceRelayProxyWithOptions(c: Context, options: RuntimeP
 
   try {
     const pathname = new URL(c.req.url).pathname.replace(/^\/workspaces\/[^/]+/, "") || "/"
-    if (ws.kind !== "cloud") return await embedded(c, ws, pathname)
+    if (ws.kind !== "cloud") {
+      if (options.requireRelayActor) {
+        requireRuntimeProxyActor(await options.resolveRelayActor?.(c.req.raw, ws.id), true)
+      }
+      return await embedded(c, ws, pathname)
+    }
 
     const runtime = await ensureCloudRuntime(ws, options)
     const current = await resolveWorkspace({ workspaceId: ws.id }) ?? ws
@@ -56,6 +62,8 @@ async function localWorkspaceRelayProxyWithOptions(c: Context, options: RuntimeP
       sandboxManager: options.sandboxManager,
       ...(options.relayProvider ? { relayProvider: options.relayProvider } : {}),
       ...(options.defaultHomeRegion ? { defaultHomeRegion: options.defaultHomeRegion } : {}),
+      ...(options.resolveRelayActor ? { resolveRelayActor: options.resolveRelayActor } : {}),
+      ...(options.requireRelayActor ? { requireRelayActor: true } : {}),
     })
   } catch (error) {
     return noWr(c, error)

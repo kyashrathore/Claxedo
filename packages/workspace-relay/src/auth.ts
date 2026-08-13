@@ -15,6 +15,27 @@ export type RelayAccess = RelayClaimPair["access"]
 export type RelayBacking = RelayClaimPair["backing"]
 export type RelayJwtAlgorithm = (typeof algorithms)[number]
 export type RelayRole = "viewer" | "editor" | "admin" | "owner"
+export type ActorKind = "human" | "agent"
+
+type OptionalActorClaims =
+  | { actor_id: string; actor_kind: ActorKind }
+  | { actor_id?: undefined; actor_kind?: undefined }
+
+type OptionalActorInput =
+  | { actorId: string; actorKind: ActorKind }
+  | { actorId?: undefined; actorKind?: undefined }
+
+type OptionalActorProfileClaims = {
+  actor_public_id?: string
+  actor_name?: string
+  actor_avatar_url?: string
+}
+
+type OptionalActorProfileInput = {
+  actorPublicId?: string
+  actorName?: string
+  actorAvatarUrl?: string
+}
 
 export type RuntimeAccessTokenClaims = {
   iss: typeof runtimeAccessTokenIssuer
@@ -27,7 +48,7 @@ export type RuntimeAccessTokenClaims = {
   exp: number
   iat: number
   jti: string
-}
+} & OptionalActorClaims & OptionalActorProfileClaims
 
 export type RelayHostTokenClaims = {
   iss: typeof relayHostTokenIssuer
@@ -40,7 +61,7 @@ export type RelayHostTokenClaims = {
   exp: number
   iat: number
   jti: string
-} & RelayClaimPair
+} & RelayClaimPair & OptionalActorClaims & OptionalActorProfileClaims
 
 export type HostTunnelTokenClaims = {
   iss: typeof runtimeAccessTokenIssuer
@@ -66,7 +87,7 @@ export class WorkspaceRelayAuthError extends Error {
   }
 }
 
-type RuntimeInput = {
+type RuntimeInput = OptionalActorInput & OptionalActorProfileInput & {
   subject: string
   orgId: string
   workspaceId: string
@@ -140,6 +161,48 @@ function roleClaim(payload: JWTPayload) {
   return value === "viewer" || value === "editor" || value === "admin" || value === "owner" ? value : undefined
 }
 
+function actorKindClaim(payload: JWTPayload) {
+  const value = stringClaim(payload, "actor_kind")
+  return value === "human" || value === "agent" ? value : undefined
+}
+
+function actorClaims(payload: JWTPayload): OptionalActorClaims | undefined {
+  const actor_id = stringClaim(payload, "actor_id")
+  const actor_kind = actorKindClaim(payload)
+  if (!actor_id && !actor_kind) return { actor_id: undefined, actor_kind: undefined }
+  if (!actor_id || !actor_kind) return
+  return { actor_id, actor_kind }
+}
+
+function actorPayload(input: OptionalActorInput) {
+  if (!input.actorId && !input.actorKind) return {}
+  if (!input.actorId || !input.actorKind) {
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Actor identity claims are incomplete")
+  }
+  return { actor_id: input.actorId, actor_kind: input.actorKind }
+}
+
+function actorProfileClaims(payload: JWTPayload): OptionalActorProfileClaims | undefined {
+  const actor_public_id = stringClaim(payload, "actor_public_id")
+  const actor_name = stringClaim(payload, "actor_name")
+  const actor_avatar_url = stringClaim(payload, "actor_avatar_url")
+  if (!actor_public_id && !actor_name && !actor_avatar_url) return {}
+  if (!actor_public_id || !actor_name) return
+  return { actor_public_id, actor_name, ...(actor_avatar_url ? { actor_avatar_url } : {}) }
+}
+
+function actorProfilePayload(input: OptionalActorProfileInput) {
+  if (!input.actorPublicId && !input.actorName && !input.actorAvatarUrl) return {}
+  if (!input.actorPublicId || !input.actorName) {
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Actor display profile claims are incomplete")
+  }
+  return {
+    actor_public_id: input.actorPublicId,
+    actor_name: input.actorName,
+    ...(input.actorAvatarUrl ? { actor_avatar_url: input.actorAvatarUrl } : {}),
+  }
+}
+
 export function isRelayClaimPair(input: { access?: unknown; backing?: unknown }): input is RelayClaimPair {
   return (
     input.access === "cloud" && input.backing === "cloud-vm"
@@ -211,6 +274,8 @@ type RelaySigningKey = CryptoKey | Uint8Array
 export async function mintRuntimeAccessToken(input: RuntimeInput, key: RelaySigningKey, alg: RelayJwtAlgorithm) {
   const now = seconds(input.now)
   return await new SignJWT({
+    ...actorPayload(input),
+    ...actorProfilePayload(input),
     org_id: input.orgId,
     workspace_id: input.workspaceId,
     host_id: input.hostId,
@@ -305,6 +370,8 @@ export async function mintRelayHostToken(input: RelayHostInput, key: RelaySignin
   const protectedHeader: { alg: RelayJwtAlgorithm; kid?: string } = { alg: requireAlgorithm(alg) }
   if (input.kid) protectedHeader.kid = input.kid
   return await new SignJWT({
+    ...actorPayload(input),
+    ...actorProfilePayload(input),
     org_id: input.orgId,
     workspace_id: input.workspaceId,
     host_id: input.hostId,
@@ -344,7 +411,9 @@ function runtimeClaims(payload: JWTPayload): RuntimeAccessTokenClaims | undefine
   const workspace_id = stringClaim(payload, "workspace_id")
   const host_id = stringClaim(payload, "host_id")
   const role = roleClaim(payload)
-  if (!exp || !iat || !sub || !jti || !org_id || !workspace_id || !host_id || !role) return
+  const actor = actorClaims(payload)
+  const actorProfile = actorProfileClaims(payload)
+  if (!exp || !iat || !sub || !jti || !org_id || !workspace_id || !host_id || !role || !actor || !actorProfile) return
   return {
     iss: runtimeAccessTokenIssuer,
     aud: runtimeAccessTokenAudience,
@@ -353,6 +422,8 @@ function runtimeClaims(payload: JWTPayload): RuntimeAccessTokenClaims | undefine
     workspace_id,
     host_id,
     role,
+    ...actor,
+    ...actorProfile,
     exp,
     iat,
     jti,

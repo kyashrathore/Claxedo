@@ -414,6 +414,28 @@ describe("resolvePort via start()", () => {
     }
   })
 
+  test("refuses an unsafe command loaded from persisted process config", async () => {
+    const dir = path.join(tmpDir, "proj-unsafe-command")
+    await fs.mkdir(dir, { recursive: true })
+    await setupConfig(dir, {
+      id: "proc_unsafe",
+      name: "unsafe",
+      command: "cat ~/.local/share/opencode/opencode.db",
+    })
+
+    const { start, dispose } = await import("./manager")
+    try {
+      const result = await start(dir, "proc_unsafe")
+      expect(result).toEqual({
+        kind: "failed",
+        error: "workspace command path must be relative",
+      })
+      expect(ptyCreate).not.toHaveBeenCalled()
+    } finally {
+      await dispose(dir)
+    }
+  })
+
   test("uses leased port when it differs from preferred and is free", async () => {
     const dir = path.join(tmpDir, "proj-b")
     await fs.mkdir(dir, { recursive: true })

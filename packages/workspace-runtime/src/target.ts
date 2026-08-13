@@ -101,19 +101,75 @@ async function existingPath(input: string) {
   }
 }
 
-export async function resolveWorkspacePath(root: string, input: string | undefined): Promise<string> {
+export async function resolveWorkspacePath(
+  root: string,
+  input: string | undefined,
+  // allowAbsoluteWithinRoot: permit an absolute path IFF it resolves inside the
+  // workspace root. The containment + realpath checks below still reject any
+  // path that escapes the workspace, so this does NOT reopen the M0 RCE (reading
+  // e.g. the global ~/.local/share/opencode DB stays blocked — it's outside the
+  // root). It only lets in-workspace absolute paths through, which the document
+  // hydration feature legitimately produces.
+  options: { allowAbsoluteWithinRoot?: boolean } = {},
+): Promise<string> {
   const base = path.resolve(root)
   const txt = input?.trim()
   if (!txt) return base
   if (txt.includes("\0")) throw new WorkspaceTargetError("workspace path cannot contain null bytes")
-  if (path.isAbsolute(txt)) throw new WorkspaceTargetError("workspace path must be relative")
-
-  const candidate = path.resolve(base, txt)
-  if (!inside(base, candidate)) throw new WorkspaceTargetError("workspace path escapes configured directory")
+  const absolute = path.isAbsolute(txt)
+  if (absolute && !options.allowAbsoluteWithinRoot) throw new WorkspaceTargetError("workspace path must be relative")
 
   const realRoot = await fs.realpath(base)
+  const candidate = absolute ? path.resolve(txt) : path.resolve(base, txt)
+  // Lexical pre-check. An absolute input may already be realpath-resolved
+  // (e.g. /private/var/... on macOS) while `base` is not (/var/...), so accept
+  // containment under either the raw or the realpath'd root; the realpath check
+  // below is the authoritative, symlink-safe boundary.
+  if (!inside(base, candidate) && !inside(realRoot, candidate)) {
+    throw new WorkspaceTargetError("workspace path escapes configured directory")
+  }
+
   const realExisting = await existingPath(candidate)
   if (!inside(realRoot, realExisting)) throw new WorkspaceTargetError("workspace path escapes configured directory")
 
   return candidate
+}
+
+const commandPathPattern = /(^|[\s"'=,;(])((?:\/|~\/|\.\.?\/|\$HOME\/|\$\{HOME\}\/)[^\s"'`,;|&)]+)/g
+
+function commandPathReferences(input: string) {
+  return [...input.matchAll(commandPathPattern)].map((match) => ({
+    value: match[2]!.replace(/[\]}]+$/, ""),
+    offset: match.index + match[1]!.length,
+  }))
+}
+
+function executableReference(input: string, offset: number) {
+  const prefix = input.slice(0, offset).trim()
+  return prefix === "" || prefix === "\"" || prefix === "'"
+}
+
+export async function resolveWorkspaceCommandPaths(
+  root: string,
+  input: { command?: string; args?: string[]; allowAbsoluteExecutable?: boolean },
+) {
+  for (const reference of commandPathReferences(input.command ?? "")) {
+    if (input.allowAbsoluteExecutable && path.isAbsolute(reference.value) && executableReference(input.command!, reference.offset)) {
+      continue
+    }
+    if (reference.value.startsWith("~/") || reference.value.startsWith("$HOME/") || reference.value.startsWith("${HOME}/")) {
+      throw new WorkspaceTargetError("workspace command path must be relative")
+    }
+    // Absolute paths are permitted only when they resolve inside the workspace
+    // (e.g. hydrated document paths); escapes are still rejected by containment.
+    await resolveWorkspacePath(root, reference.value, { allowAbsoluteWithinRoot: true })
+  }
+  for (const arg of input.args ?? []) {
+    for (const reference of commandPathReferences(arg)) {
+      if (reference.value.startsWith("~/") || reference.value.startsWith("$HOME/") || reference.value.startsWith("${HOME}/")) {
+        throw new WorkspaceTargetError("workspace command path must be relative")
+      }
+      await resolveWorkspacePath(root, reference.value, { allowAbsoluteWithinRoot: true })
+    }
+  }
 }

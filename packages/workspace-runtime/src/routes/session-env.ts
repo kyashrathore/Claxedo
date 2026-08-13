@@ -2,10 +2,12 @@ import { Hono } from "hono"
 import fs from "fs"
 import path from "path"
 import { spawn } from "child_process"
-import { assertTarget, resolveWorkspacePath, WorkspaceTargetError } from "../target"
+import { assertTarget, resolveWorkspaceCommandPaths, resolveWorkspacePath, WorkspaceTargetError } from "../target"
 import { buildSafeEnv } from "../pty/env"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import type { ProcessObserver } from "../managed-processes/process-observer"
+import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import { denyWorkspaceViewers } from "./workspace-role"
 
 const EXEC_KILL_GRACE_MS = 250
 
@@ -269,12 +271,12 @@ function terminateExec(
 }
 
 export function SessionEnvRoutes(processObserver?: ProcessObserver) {
-  return new Hono()
+  return new Hono<{ Variables: RelayHostAuthContext }>()
     .onError((cause, c) => {
       if (isRequestBodyTooLarge(cause)) return c.json(requestBodyTooLargeBody(), 413)
       throw cause
     })
-    .post("/exec", async (c) => {
+    .post("/exec", denyWorkspaceViewers("Workspace role does not allow shell execution"), async (c) => {
       const base = root(c)
       const body = await jsonBody(c)
       const command = stringValue(body.command)
@@ -282,6 +284,7 @@ export function SessionEnvRoutes(processObserver?: ProcessObserver) {
       let cwd: string
       try {
         cwd = await verifiedPath(base, stringValue(body.cwd), true)
+        await resolveWorkspaceCommandPaths(base, { command, allowAbsoluteExecutable: true })
       } catch (cause) {
         return err(c, cause)
       }

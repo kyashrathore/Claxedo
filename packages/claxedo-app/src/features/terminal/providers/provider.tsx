@@ -26,6 +26,13 @@ const SERVER_SCOPED_PERSIST = import.meta.env.VITE_SERVER_SCOPED_PERSIST === "tr
 
 type TerminalSession = ReturnType<typeof createTerminalSession>
 
+type NewTerminalInput = {
+  initialCommand?: string
+  title?: string
+  previousPtyId?: string
+  sessionId?: string
+}
+
 type TerminalCacheEntry = {
   value: TerminalSession
   release: VoidFunction
@@ -114,10 +121,12 @@ function pty(value: unknown): LocalPTY | undefined {
   const scrollY = num(value.scrollY)
   const cursor = num(value.cursor)
   const initialCommand = str(value.initialCommand)
+  const sessionId = str(value.sessionId)
   const direct = num(value.titleNumber)
 
   return {
     id,
+    ...(sessionId !== undefined ? { sessionId } : {}),
     title,
     titleNumber: direct && direct > 0 ? direct : (titleNumber(title) ?? 0),
     ...(cwd !== undefined ? { cwd } : {}),
@@ -290,25 +299,35 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
   })
   onCleanup(unsub)
 
-  const unsubCreated = ptyEvent("pty.created", ({ info }: { info: { id: string; title?: string; cwd?: string } }) => {
+  const unsubCreated = ptyEvent("pty.created", ({ info }: { info: { id: string; sessionId?: string; title?: string; cwd?: string } }) => {
     if (!info?.id) return
     setStore("all", (all) => {
-      return mergeCreatedTerminal(all, { id: info.id, title: info.title, cwd: info.cwd })
+      return mergeCreatedTerminal(all, {
+        id: info.id,
+        sessionId: info.sessionId,
+        title: info.title,
+        cwd: info.cwd,
+      })
     })
     if (!store.active) setStore("active", info.id)
   })
   onCleanup(unsubCreated)
 
-  const unsubUpdated = ptyEvent("pty.updated", ({ info }: { info: { id: string; title?: string; cwd?: string } }) => {
+  const unsubUpdated = ptyEvent("pty.updated", ({ info }: { info: { id: string; sessionId?: string; title?: string; cwd?: string } }) => {
     const index = store.all.findIndex((x) => x.id === info.id)
     if (index === -1) return
     const cur = store.all[index]
-    if (info.title === undefined && info.cwd === undefined) return
-    if ((info.title ?? cur.title) === cur.title && (info.cwd ?? cur.cwd) === cur.cwd) return
+    if (info.title === undefined && info.cwd === undefined && info.sessionId === undefined) return
+    if (
+      (info.title ?? cur.title) === cur.title
+      && (info.cwd ?? cur.cwd) === cur.cwd
+      && (info.sessionId ?? cur.sessionId) === cur.sessionId
+    ) return
     setStore("all", index, (existing) => ({
       ...existing,
       title: info.title ?? existing.title,
       cwd: info.cwd ?? existing.cwd,
+      sessionId: info.sessionId ?? existing.sessionId,
     }))
   })
   onCleanup(unsubUpdated)
@@ -410,6 +429,7 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
           ...existing,
           title: input.title ?? existing.title,
           cwd: input.cwd ?? existing.cwd,
+          sessionId: input.sessionId ?? existing.sessionId,
           initialCommand: existing.initialCommand ?? input.initialCommand,
         }))
         return
@@ -426,7 +446,7 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
       })
       if (!store.active) setStore("active", input.id)
     },
-    new(initialCommand?: string, title?: string, previousPtyId?: string): Promise<string | undefined> {
+    new(input: NewTerminalInput = {}): Promise<string | undefined> {
       const existingTitleNumbers = new Set(
         store.all.flatMap((pty) => {
           const direct = Number.isFinite(pty.titleNumber) && pty.titleNumber > 0 ? pty.titleNumber : undefined
@@ -443,13 +463,14 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
         ) ?? 1
 
       // Use provided title or default to "Terminal N"
-      const terminalTitle = title ? `${title} ${nextNumber}` : `Terminal ${nextNumber}`
-      const launch = launchCommand(initialCommand)
+      const terminalTitle = input.title ? `${input.title} ${nextNumber}` : `Terminal ${nextNumber}`
+      const launch = launchCommand(input.initialCommand)
 
       const ptyBody = {
+        ...(input.sessionId ? { sessionId: input.sessionId } : {}),
         title: terminalTitle,
         ...(workspaceId ? {} : { cwd: workspaceRelativeCwd(decodedDir, sdk.directory) }),
-        ...(launch ? launch : initialCommand ? { initialCommand } : {}),
+        ...(launch ? launch : input.initialCommand ? { initialCommand: input.initialCommand } : {}),
         // Pass agent hooks environment variables
         // CLAXEDO_TAB_ID will be set to the PTY ID since the tab is created after
         // The listener will find the tab by terminalId
@@ -459,7 +480,7 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
           // When restoring a closed terminal (Cmd+Shift+T), pass the old PTY ID
           // via env since the generated SDK strips unknown body fields.
           // The server reads this to rename/restore disk history.
-          ...(previousPtyId ? { previousPtyId } : {}),
+          ...(input.previousPtyId ? { previousPtyId: input.previousPtyId } : {}),
         },
       }
 
@@ -467,12 +488,17 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
         method: "POST",
         body: JSON.stringify(ptyBody),
       })
-        .then((res) => ptyResponse<{ id: string; title: string; cwd?: string }>(res))
+        .then((res) => ptyResponse<{ id: string; sessionId?: string; title: string; cwd?: string }>(res))
         .then((pty) => {
           const id = pty.id
           if (!id) return undefined
           setStore("all", (all) => {
-            const merged = mergeCreatedTerminal(all, { id, title: terminalTitle, cwd: pty.cwd })
+            const merged = mergeCreatedTerminal(all, {
+              id,
+              sessionId: pty.sessionId ?? input.sessionId,
+              title: terminalTitle,
+              cwd: pty.cwd,
+            })
             const idx = merged.findIndex((item) => item.id === id)
             if (idx === -1) return merged
             return merged
@@ -517,7 +543,7 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
         }),
       }).catch(() => {})
     },
-    async clone(id: string): Promise<string | undefined> {
+    async clone(id: string, sessionId = store.all.find((item) => item.id === id)?.sessionId): Promise<string | undefined> {
       const index = store.all.findIndex((x) => x.id === id)
       const pty = store.all[index]
       if (!pty) return undefined
@@ -527,6 +553,7 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
       const clone = await runtime.transport.fetch(ptyPath(``, runtime.workspaceId), {
         method: "POST",
         body: JSON.stringify({
+          ...(sessionId ? { sessionId } : {}),
           title: pty.title,
           ...(cloneCwd ? { cwd: cloneCwd } : {}),
           env: {
@@ -734,18 +761,18 @@ function createTerminalContextValue() {
     ensure: (pty: Partial<LocalPTY> & { id: string }) => {
       safeWorkspace()?.ensure(pty)
     },
-    new: (initialCommand?: string, title?: string, previousPtyId?: string) => {
+    new: (input?: NewTerminalInput) => {
       const current = safeWorkspace()
       if (!current) return
-      return current.new(initialCommand, title, previousPtyId)
+      return current.new(input)
     },
     update: (pty: Partial<LocalPTY> & { id: string }) => {
       safeWorkspace()?.update(pty)
     },
-    clone: (id: string) => {
+    clone: (id: string, sessionId?: string) => {
       const current = safeWorkspace()
       if (!current) return undefined
-      return current.clone(id)
+      return current.clone(id, sessionId)
     },
     open: (id: string) => {
       safeWorkspace()?.open(id)

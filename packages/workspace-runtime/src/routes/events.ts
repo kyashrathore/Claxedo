@@ -1,8 +1,14 @@
 import { streamSSE } from "hono/streaming"
-import { attachSseFanout, createSseReplayBuffer, type SseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
+import { attachSseFanout, type SseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
 import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION } from "@claxedo/agent-event-runtime"
 import type { RuntimeEventEnvelope, RuntimeEventHub } from "../runtime-event-hub"
 import type { Context } from "hono"
+import {
+  createIdentityAwareEventSource,
+  defaultEventDeliveryPolicy,
+  eventDeliveryPrincipal,
+  type EventDeliveryOptions,
+} from "../event-delivery"
 
 function isTerminalRuntimeEvent(event: RuntimeEventEnvelope) {
   return event.payload.type === "finish" ||
@@ -15,33 +21,62 @@ export type RuntimeEventAuthorization = {
   resolveParentSessionId: (event: RuntimeEventEnvelope) => string | undefined
 }
 
-export function runtimeEventsHandler(eventHub: RuntimeEventHub, authorization?: RuntimeEventAuthorization) {
-  const replay = createSseReplayBuffer<RuntimeEventEnvelope>({ isTerminal: isTerminalRuntimeEvent })
-  eventHub.subscribeRuntime((event) => {
-    replay.push(event)
+export type RuntimeEventOptions = EventDeliveryOptions<RuntimeEventEnvelope> & Partial<RuntimeEventAuthorization>
+
+export function runtimeEventsHandler(
+  eventHub: RuntimeEventHub,
+  options: RuntimeEventOptions = {},
+) {
+  const source = createIdentityAwareEventSource({
+    subscribe: eventHub.subscribeRuntime,
+    policy: options.policy ?? defaultEventDeliveryPolicy,
+    sessionId: (event) => event.sessionId,
+    isTerminal: isTerminalRuntimeEvent,
   })
+  source.open({ mode: "unmanaged-local", connectionId: "local-replay" })
   return async function handler(c: Context) {
     const parentSessionId = c.req.query("parentSessionId")
-    if (parentSessionId && (!authorization || !await authorization.authorizeParent(c, parentSessionId))) {
+    if (parentSessionId && (!options.authorizeParent || !await options.authorizeParent(c, parentSessionId))) {
       return c.json({ error: "Forbidden" }, 403)
     }
     const allows = (event: RuntimeEventEnvelope) => {
-      const eventParentSessionId = authorization?.resolveParentSessionId(event)
+      const eventParentSessionId = options.resolveParentSessionId?.(event)
       if (eventParentSessionId) return eventParentSessionId === parentSessionId
       if (!parentSessionId) return true
       return event.sessionId === parentSessionId
     }
-    const scopedReplay = parentSessionId || authorization ? filterReplay(replay, allows) : replay
+    const opened = source.open(await (options.principal?.(c) ?? eventDeliveryPrincipal(c)))
+    await opened.ready
+    const scopedReplay = parentSessionId || options.resolveParentSessionId
+      ? filterReplay(opened.replay, allows)
+      : opened.replay
     return streamSSE(c, async (stream) => {
-      const cleanup = attachSseFanout({
-        subscribe: (listener) => eventHub.subscribeRuntime((event) => {
+      const heartbeat = { type: "heartbeat" } as const
+      let cleanup: () => void = () => {}
+      cleanup = attachSseFanout<RuntimeEventEnvelope | typeof heartbeat>({
+        subscribe: (listener) => opened.subscribe((event) => {
           if (allows(event)) listener(event)
+        }, () => {
+          cleanup()
+          stream.abort()
         }),
-        write: (event, meta) => stream.writeSSE({
-          ...(meta?.id ? { id: meta.id } : {}),
-          data: JSON.stringify(event),
-        }),
-        heartbeat: { type: "heartbeat" },
+        write: async (event, meta) => {
+          const frame = "contractVersion" in event ? event as RuntimeEventEnvelope : undefined
+          if (frame) {
+            const decision = await opened.decide(frame)
+            if (decision === "omit") return
+            if (decision === "terminate") {
+              cleanup()
+              stream.abort()
+              return
+            }
+          }
+          return stream.writeSSE({
+            ...(meta?.id ? { id: meta.id } : {}),
+            data: JSON.stringify(event),
+          })
+        },
+        heartbeat,
         heartbeatMs: 30_000,
         lastEventId: c.req.header("last-event-id"),
         replay: scopedReplay,

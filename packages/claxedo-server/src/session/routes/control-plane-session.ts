@@ -45,6 +45,18 @@ function requiredWorkspaceId(value: string | undefined) {
   throw new ControlPlaneAuthError(400, "workspace_id_required", "workspaceId is required")
 }
 
+async function participantBody(req: Request) {
+  const body = await req.json().catch(() => undefined)
+  if (!body || typeof body !== "object" || Array.isArray(body)) return
+  const input = body as Record<string, unknown>
+  const workspaceId = typeof input.workspaceId === "string" ? input.workspaceId.trim() : ""
+  const participantTokenIdentifier = typeof input.participantTokenIdentifier === "string"
+    ? input.participantTokenIdentifier.trim()
+    : ""
+  if (!workspaceId || !participantTokenIdentifier) return
+  return { workspaceId, participantTokenIdentifier }
+}
+
 function sessionListWorkspaceId(query: ReturnType<typeof parseSessionListQuery>) {
   return query.workspaceId ??
     (query.scope === "project" && query.projectId?.startsWith("ws_") ? query.projectId : undefined)
@@ -426,6 +438,50 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         return c.json(sessionInventoryResponse(
           await requireAuthority(services).listSessions(auth, { workspaceId }),
         ))
+      } catch (err) {
+        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
+        throw err
+      }
+    })
+    .post("/sessions/:sessionId/participants", async (c) => {
+      const body = await participantBody(c.req.raw)
+      if (!body) {
+        return c.json({
+          error: {
+            code: "session_participant_input_required",
+            message: "workspaceId and participantTokenIdentifier are required",
+          },
+        }, 400)
+      }
+      try {
+        const auth = await signedAuth(c.req.raw, options)
+        return c.json(await requireAuthority(services).addSessionParticipant(auth, {
+          sessionId: c.req.param("sessionId"),
+          workspaceId: body.workspaceId,
+          participantTokenIdentifier: body.participantTokenIdentifier,
+        }))
+      } catch (err) {
+        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
+        throw err
+      }
+    })
+    .delete("/sessions/:sessionId/participants", async (c) => {
+      const body = await participantBody(c.req.raw)
+      if (!body) {
+        return c.json({
+          error: {
+            code: "session_participant_input_required",
+            message: "workspaceId and participantTokenIdentifier are required",
+          },
+        }, 400)
+      }
+      try {
+        const auth = await signedAuth(c.req.raw, options)
+        return c.json(await requireAuthority(services).removeSessionParticipant(auth, {
+          sessionId: c.req.param("sessionId"),
+          workspaceId: body.workspaceId,
+          participantTokenIdentifier: body.participantTokenIdentifier,
+        }))
       } catch (err) {
         if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
         throw err

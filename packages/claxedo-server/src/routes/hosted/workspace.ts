@@ -156,6 +156,7 @@ const refreshConnectionBody = z
 // the client-produced signature over the challenge nonce.
 const registerBody = z
   .object({
+    orgId: z.string().optional(),
     hostId: z.string(),
     publicKey: z.string(),
     challengeId: z.string(),
@@ -183,6 +184,7 @@ const challengeBody = z
 
 const createCloudBody = z
   .object({
+    orgId: z.string().optional(),
     projectId: z.string().optional(),
     projectName: z.string().optional(),
     workspaceName: z.string().optional(),
@@ -406,6 +408,19 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status)
         const body = parsed.body
 
+        try {
+          const authority = requireAuthority(services)
+          if (body.orgId && !authority.authorizeWorkspaceCreate) {
+            throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", "Workspace creation authorization is unavailable")
+          }
+          await authority.authorizeWorkspaceCreate?.(auth, {
+            ...(body.orgId?.trim() ? { orgId: body.orgId.trim() } : {}),
+          })
+        } catch (err) {
+          if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
+          throw err
+        }
+
         const sandboxManager = services?.sandbox.sandboxManager
         if (!sandboxManager) {
           // No sandbox driver composed (no native driver credentials, or the
@@ -500,6 +515,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           await authority.usersMe(auth)
           await authority.createCloudWorkspace(auth, {
             workspaceId,
+            ...(body.orgId?.trim() ? { orgId: body.orgId.trim() } : {}),
             projectId,
             displayName,
             repoUrl,
@@ -731,6 +747,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           // Only after host proof: register/refresh the workspace for sharing.
           const workspace = await authority.registerLocalForSharing(auth, {
             workspaceId,
+            ...(body.orgId?.trim() ? { orgId: body.orgId.trim() } : {}),
             displayName: body.displayName ?? workspaceId,
             ...(options.defaultHomeRegion ? { homeRegion: options.defaultHomeRegion } : {}),
             ...(body.projectId ? { projectId: body.projectId } : {}),

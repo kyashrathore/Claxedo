@@ -2,10 +2,16 @@ import { describe, expect, test } from "bun:test"
 import { Hono } from "hono"
 import { createBus, type WorkspaceRuntimeEvent } from "../bus"
 import { runtimeBusEventsHandler } from "./runtime-events"
+import { sessionEventDeliveryPolicy, type EventDeliveryPrincipal } from "../event-delivery"
+import { remoteWorkspaceSessionAccessPolicy } from "../remote-session-authority"
+import type { SessionAccessPolicy } from "../session-access-policy"
 
-function mount(bus: ReturnType<typeof createBus<WorkspaceRuntimeEvent>>) {
+function mount(
+  bus: ReturnType<typeof createBus<WorkspaceRuntimeEvent>>,
+  options?: Parameters<typeof runtimeBusEventsHandler>[1],
+) {
   const app = new Hono()
-  app.get("/api/wr/events", runtimeBusEventsHandler(bus))
+  app.get("/api/wr/events", runtimeBusEventsHandler(bus, options))
   return app
 }
 
@@ -14,12 +20,13 @@ type Connection = {
   text: () => string
   /** Reads chunks until `match` is satisfied by the accumulated text, or fails. */
   until: (match: (text: string) => boolean, label: string) => Promise<string>
+  ended: () => Promise<boolean>
   close: () => void
 }
 
-async function connect(app: Hono, lastEventId?: string): Promise<Connection> {
+async function connect(app: Hono, lastEventId?: string, actor?: string): Promise<Connection> {
   const ac = new AbortController()
-  const res = await app.request("http://localhost/api/wr/events", {
+  const res = await app.request(`http://localhost/api/wr/events${actor ? `?actor=${actor}` : ""}`, {
     ...(lastEventId === undefined ? {} : { headers: { "Last-Event-ID": lastEventId } }),
     signal: ac.signal,
   })
@@ -41,6 +48,17 @@ async function connect(app: Hono, lastEventId?: string): Promise<Connection> {
       }
       if (match(text)) return text
       throw new Error(`${label}\n--- stream so far ---\n${text}`)
+    },
+    async ended() {
+      return await Promise.race([
+        (async () => {
+          for (let reads = 0; reads < 10; reads += 1) {
+            if ((await reader.read()).done) return true
+          }
+          return false
+        })(),
+        new Promise<false>((resolve) => setTimeout(() => resolve(false), 500)),
+      ])
     },
     close: () => ac.abort(),
   }
@@ -77,6 +95,51 @@ function bootstrapId(text: string) {
 }
 
 describe("runtimeBusEventsHandler — /api/wr/events replay", () => {
+  test("isolates PTY transcript events between private-session editors", async () => {
+    const bus = createBus<WorkspaceRuntimeEvent>()
+    const policy: SessionAccessPolicy = {
+      sessionAuthority: "managed-private",
+      authorize: async (input) => input.sessionId === "session_a" && input.actor?.actorId === "editor_a"
+        ? { allowed: true }
+        : { allowed: false, status: 403, code: "private_session", message: "Session is private" },
+      filterSessions: async () => [],
+      authorizePrefix: async () => ({ allowed: true }),
+    }
+    const principal = (actorId: string): EventDeliveryPrincipal => ({
+      mode: "verified",
+      connectionId: actorId,
+      actorId,
+      actorKind: "human",
+      orgId: "org_1",
+      workspaceId: "ws_1",
+      role: "editor",
+    })
+    const app = mount(bus, {
+      principal: (c) => principal(c.req.query("actor")!),
+      policy: sessionEventDeliveryPolicy(policy),
+    })
+    const owner = await connect(app, undefined, "editor_a")
+    const other = await connect(app, undefined, "editor_b")
+    await owner.until((seen) => seen.includes("heartbeat"), "owner did not connect")
+    await other.until((seen) => seen.includes("heartbeat"), "other editor did not connect")
+
+    bus.publish({
+      type: "pty.stream",
+      id: "pty_a",
+      sessionId: "session_a",
+      kind: "data",
+      tail: "private terminal transcript",
+    })
+    bus.publish({ type: "process.status", directory: "/repo", configId: "public_process", status: "running" })
+    const ownerText = await owner.until((seen) => seen.includes("private terminal transcript"), "owner missed PTY transcript")
+    const otherText = await other.until((seen) => seen.includes("public_process"), "other editor missed public event")
+    owner.close()
+    other.close()
+
+    expect(ownerText).toContain("private terminal transcript")
+    expect(otherText).not.toContain("private terminal transcript")
+  })
+
   test("opens with a heartbeat carrying the cursor the connection resumes from", async () => {
     const bus = createBus<WorkspaceRuntimeEvent>()
     const app = mount(bus)
@@ -198,5 +261,101 @@ describe("runtimeBusEventsHandler — /api/wr/events replay", () => {
     stream.close()
 
     expect(text).toContain("\"id\":\"pty_1\"")
+  })
+
+  test("the remote authority proof isolates live/replay and tears down a revoked participant", async () => {
+    const bus = createBus<WorkspaceRuntimeEvent>()
+    const participants = new Set(["actor_participant"])
+    const expiredProofs = new Set<string>()
+    const authorityCalls: Array<{ actorId: string; authorization: string; action: string }> = []
+    const remotePolicy = remoteWorkspaceSessionAccessPolicy({
+      url: "https://control.test/api/runtime-authority/session-authorize",
+      fetch: async (_input, init) => {
+        const authorization = new Headers(init?.headers).get("authorization") ?? ""
+        const actorId = authorization.replace(/^Bearer rht-/, "")
+        const body = JSON.parse(String(init?.body)) as { action: string }
+        authorityCalls.push({ actorId, authorization, action: body.action })
+        if (expiredProofs.has(actorId)) {
+          return Response.json({ error: { code: "relay_host_token_invalid" } }, { status: 401 })
+        }
+        return participants.has(actorId)
+          ? Response.json({ allowed: true })
+          : Response.json({ error: { code: "session_private" } }, { status: 403 })
+      },
+    })
+    const identity = (actorId: string, connectionId: string): EventDeliveryPrincipal => ({
+      mode: "verified",
+      connectionId,
+      actorId,
+      actorKind: "human",
+      orgId: "org_1",
+      workspaceId: "ws_1",
+      role: "editor",
+      credential: `Bearer rht-${actorId}`,
+    })
+    let connection = 0
+    const app = mount(bus, {
+      principal: (c) => identity(c.req.query("actor")!, `connection_${++connection}`),
+      policy: sessionEventDeliveryPolicy(remotePolicy),
+    })
+    const allowed = await connect(app, undefined, "actor_participant")
+    const denied = await connect(app, undefined, "actor_workspace_only")
+    await allowed.until((seen) => seen.includes("heartbeat"), "participant did not connect")
+    await denied.until((seen) => seen.includes("heartbeat"), "workspace member did not connect")
+
+    bus.publish({
+      type: "session.lifecycle",
+      phase: "created",
+      directory: "/repo",
+      sessionID: "ses_private",
+      ts: 1,
+    })
+    bus.publish({ type: "process.status", directory: "/repo", configId: "proc_1", status: "running" })
+    const allowedLive = await allowed.until((seen) => seen.includes("ses_private"), "participant missed live session event")
+    const deniedLive = await denied.until((seen) => seen.includes("proc_1"), "workspace event did not arrive")
+    allowed.close()
+    denied.close()
+
+    expect(allowedLive).toContain("ses_private")
+    expect(deniedLive).not.toContain("ses_private")
+
+    const allowedReplay = await connect(app, "0", "actor_participant")
+    const deniedReplay = await connect(app, "0", "actor_workspace_only")
+    const allowedText = await allowedReplay.until((seen) => seen.includes("ses_private"), "participant missed replay")
+    const deniedText = await deniedReplay.until((seen) => seen.includes("proc_1"), "workspace replay did not arrive")
+
+    expect(allowedText).toContain("ses_private")
+    expect(deniedText).not.toContain("ses_private")
+    expect(deniedText).not.toContain("stream.replay-gap")
+    expect(authorityCalls).toContainEqual({
+      actorId: "actor_participant",
+      authorization: "Bearer rht-actor_participant",
+      action: "read",
+    })
+
+    participants.delete("actor_participant")
+    bus.publish({
+      type: "session.lifecycle",
+      phase: "creating",
+      directory: "/repo",
+      sessionID: "ses_private",
+      ts: 2,
+    })
+    expect(await allowedReplay.ended()).toBe(true)
+    allowedReplay.close()
+    deniedReplay.close()
+
+    const expired = await connect(app, undefined, "actor_expired")
+    await expired.until((seen) => seen.includes("heartbeat"), "expiring proof did not connect")
+    expiredProofs.add("actor_expired")
+    bus.publish({
+      type: "session.lifecycle",
+      phase: "created",
+      directory: "/repo",
+      sessionID: "ses_other_private",
+      ts: 3,
+    })
+    expect(await expired.ended()).toBe(true)
+    expired.close()
   })
 })

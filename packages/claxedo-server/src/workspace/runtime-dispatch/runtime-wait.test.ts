@@ -315,6 +315,8 @@ describe("workspaceRuntimeProxy startup wait", () => {
       workspaceId: "ws_1",
       hostId: "host_1",
       subject: "control-plane",
+      actorId: "control-plane",
+      actorKind: "agent",
       orgId: "org_1",
       role: "owner",
       ttlMs: 10 * 60_000,

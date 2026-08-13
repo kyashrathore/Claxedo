@@ -1,5 +1,6 @@
 export type LocalPTY = {
   id: string
+  sessionId?: string
   title: string
   titleNumber: number
   cwd?: string
@@ -50,12 +51,18 @@ function nextNum(all: LocalPTY[]) {
 
 export function mergeCreatedTerminal(
   all: LocalPTY[],
-  info: { id: string; title?: string; cwd?: string },
+  info: { id: string; sessionId?: string; title?: string; cwd?: string },
 ) {
   const existing = all.find((pty) => pty.id === info.id)
   if (existing) return all
   const parsed = info.title ? titleNum(info.title) : undefined
   const titleNumber = parsed ?? nextNum(all)
   const title = info.title ?? `Terminal ${titleNumber}`
-  return [...all, { id: info.id, title, titleNumber, cwd: info.cwd }]
+  return [...all, {
+    id: info.id,
+    ...(info.sessionId ? { sessionId: info.sessionId } : {}),
+    title,
+    titleNumber,
+    cwd: info.cwd,
+  }]
 }

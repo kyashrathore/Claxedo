@@ -54,6 +54,73 @@ export function sessionAuthority(input: ConvexAuthorityInput, serviceArgs: Servi
         }),
       )
     },
+    async authorizeSessionWrite(
+      auth: SignedControlPlaneAuth,
+      args: { sessionId: string; workspaceId: string },
+    ) {
+      await requireAllowed(await requireExecutor(input, auth).query(convexApi.sessions.authorizeWrite, {
+        session_id: args.sessionId,
+        workspace_id: args.workspaceId,
+      }))
+    },
+    async authorizeRuntimeSession(args: {
+      actorId: string
+      actorKind: "human" | "agent"
+      sessionId: string
+      workspaceId: string
+      action: "read" | "write"
+    }) {
+      await requireAllowed(await requireExecutor(input, undefined, { allowUnsigned: true }).query(
+        convexApi.sessions.authorizeRuntime,
+        {
+          ...serviceArgs(),
+          actor_id: args.actorId,
+          actor_kind: args.actorKind,
+          session_id: args.sessionId,
+          workspace_id: args.workspaceId,
+          action: args.action,
+        },
+      ))
+    },
+    async registerRuntimeSession(args: {
+      actorId: string
+      actorKind: "human" | "agent"
+      sessionId: string
+      workspaceId: string
+      title?: string
+    }) {
+      return requireExecutor(input, undefined, { allowUnsigned: true }).mutation(
+        convexApi.sessions.registerRuntime,
+        {
+          ...serviceArgs(),
+          actor_id: args.actorId,
+          actor_kind: args.actorKind,
+          session_id: args.sessionId,
+          workspace_id: args.workspaceId,
+          ...(args.title ? { title: args.title } : {}),
+        },
+      )
+    },
+    async addSessionParticipant(
+      auth: SignedControlPlaneAuth,
+      args: { sessionId: string; workspaceId: string; participantTokenIdentifier: string },
+    ) {
+      return requireExecutor(input, auth).mutation(convexApi.sessions.addParticipant, {
+        session_id: args.sessionId,
+        workspace_id: args.workspaceId,
+        participant_token_identifier: args.participantTokenIdentifier,
+      })
+    },
+    async removeSessionParticipant(
+      auth: SignedControlPlaneAuth,
+      args: { sessionId: string; workspaceId: string; participantTokenIdentifier: string },
+    ) {
+      return requireExecutor(input, auth).mutation(convexApi.sessions.removeParticipant, {
+        session_id: args.sessionId,
+        workspace_id: args.workspaceId,
+        participant_token_identifier: args.participantTokenIdentifier,
+      })
+    },
     async listSessions(
       auth: SignedControlPlaneAuth,
       args: {

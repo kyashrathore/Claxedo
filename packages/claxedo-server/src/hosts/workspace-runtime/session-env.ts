@@ -131,6 +131,8 @@ function createCloudSandboxRequester(
       workspaceId: ws.id,
       hostId: active.hostId,
       subject: options.subject ?? "control-plane",
+      actorId: options.actorId ?? "control-plane",
+      actorKind: options.actorKind ?? "agent",
       orgId: orgId!,
       role: options.role ?? "owner",
       ttlMs: 10 * 60_000,

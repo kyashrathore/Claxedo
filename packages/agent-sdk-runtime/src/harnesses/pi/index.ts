@@ -458,6 +458,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
           sessionID: id,
           agent: input.agent,
           model: input.model,
+          ...(input.author ? { author: input.author } : {}),
           ...(input.tools ? { tools: input.tools } : {}),
           ...(input.format ? { format: input.format } : {}),
           ...(input.system ? { system: input.system } : {}),
@@ -509,6 +510,23 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
       session.updated = Date.now()
     }
     const completed = Date.now()
+    if (input.userMessageId) {
+      const prompt = promptText(input.parts)
+      putMessage(session, {
+        info: buildUserMessage({
+          id: input.userMessageId,
+          sessionID: id,
+          agent: input.agent,
+          model: input.model,
+          ...(input.author ? { author: input.author } : {}),
+          ...(input.tools ? { tools: input.tools } : {}),
+          ...(input.format ? { format: input.format } : {}),
+          ...(input.system ? { system: input.system } : {}),
+          ...(input.variant ? { variant: input.variant } : {}),
+        }),
+        parts: prompt ? [textPart({ sessionId: id, messageId: input.userMessageId, text: prompt, suffix: "input" })] : [],
+      })
+    }
     if (assistantUsage) {
       yield emit({
         type: "usage",

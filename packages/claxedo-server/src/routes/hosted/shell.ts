@@ -371,27 +371,25 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
       // room routes by owner and applies the same per-event `eventVisibleTo`
       // scoping the local Node bus does — to REPLAYED frames as much as live
       // ones, since a room's retention ring is shared by every member of an org.
-      const authorize = () => controlPlaneAuthContext(c.req.raw, {
-        config: options.authConfig,
-        ...(options.verifier ? { verifier: options.verifier } : {}),
-      })
-      const ctx = await authorize()
+      const authorize = async () => {
+        const auth = await controlPlaneAuthContext(c.req.raw, {
+          config: options.authConfig,
+          ...(options.verifier ? { verifier: options.verifier } : {}),
+        })
+        const orgId = auth.mode === "signed" && options.resolveOrgId
+          ? await options.resolveOrgId(auth)
+          : undefined
+        return { auth, ...(orgId ? { orgId } : {}) }
+      }
+      const subscriber = await authorize()
       // The cursor is read here and forwarded, not resolved here: the room owns
       // the sequence, so it is the only party that can turn a cursor-less
       // connection into a resume point.
       const lastEventId = c.req.header("last-event-id")
       if (options.liveSyncRoom) {
-        // Resolve the internal org id ONCE per connect (not per heartbeat or
-        // event) so the subscriber's room and visibility identity share the
-        // namespace publishers stamp. A resolution failure fails the connect
-        // (the client's reconnect loop retries); silently degrading to the
-        // owner room would strand this caller's org events until reconnect.
-        const orgId = ctx.mode === "signed" && options.resolveOrgId
-          ? await options.resolveOrgId(ctx)
-          : undefined
         return await connectLiveSyncRoom(
           options.liveSyncRoom,
-          { auth: ctx, ...(orgId ? { orgId } : {}) },
+          subscriber,
           heartbeatMs,
           authorize,
           lastEventId,

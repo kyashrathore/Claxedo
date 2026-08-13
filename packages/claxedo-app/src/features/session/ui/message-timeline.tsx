@@ -107,6 +107,7 @@ import { formatDuration } from "@/ui/session-kit"
 import { installTimelineMermaid } from "./mermaid-timeline"
 import { installTimelineTables } from "./table-timeline"
 import { sessionMessageScrollInset } from "./session-message-scroll-position"
+import { MessageAuthorLane } from "./message-author"
 import {
   timelineAnchorClickTarget,
   timelineExternalSourceClickTarget,
@@ -1460,11 +1461,13 @@ export function MessageTimeline(props: MessageTimelineProps) {
               {(message) => (
                 <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
                   <div data-slot="session-turn-message-content" aria-live="off">
-                    <Message
-                      message={message()}
-                      parts={getMsgParts(userMessageRow().userMessageID)}
-                      actions={props.actions}
-                    />
+                    <MessageAuthorLane message={message()}>
+                      <Message
+                        message={message()}
+                        parts={getMsgParts(userMessageRow().userMessageID)}
+                        actions={props.actions}
+                      />
+                    </MessageAuthorLane>
                   </div>
                 </div>
               )}

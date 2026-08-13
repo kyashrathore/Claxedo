@@ -10,6 +10,7 @@ import {
   upsertUser,
   workspaceByPublicId,
 } from "./model"
+import { canonicalRepoKey, defaultProjectId, ensureOwnerOrg, ensureProject } from "./workspaces"
 
 const workspaceId = { workspace_id: v.string() }
 const serviceUser = v.object({
@@ -182,9 +183,18 @@ async function registerForUser(ctx: any, user: { _id: unknown }, args: {
   // insert for a new workspace; the route's subsequent registerLocalForSharing
   // call then just patches metadata onto this doc).
   const workspace = existing_workspace ?? await (async () => {
+    const org = await ensureOwnerOrg(ctx, user)
+    const project = await ensureProject(ctx, {
+      projectId: defaultProjectId(),
+      orgId: org._id,
+      ownerUserId: user._id,
+      repoKey: canonicalRepoKey({ workspaceId: args.workspace_id }),
+    })
     const doc = {
       workspace_id: args.workspace_id,
+      org_id: org._id,
       owner_user_id: user._id,
+      project_id: project.project_id,
       backing: "local-worktree" as const,
       access: "user-hosted" as const,
       display_name: args.display_name ?? args.workspace_id,

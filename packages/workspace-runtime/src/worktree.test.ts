@@ -45,6 +45,25 @@ afterEach(async () => {
 })
 
 describe("WorkspaceWorktreeManager", () => {
+  test("does not expose another workspace's worktree for the same session id", async () => {
+    const { manager, store } = await fixture()
+    store.putWorktree({
+      workspaceId: "workspace-other",
+      sessionId: "session-shared",
+      branch: "claxedo/session/session-shared",
+      baseCommit: "base",
+      path: "/outside/worktree",
+      state: "active",
+      createdAt: 1,
+      updatedAt: 1,
+      lastActivityAt: 1,
+    })
+
+    expect(manager.get("session-shared")).toBeUndefined()
+    manager.close()
+    store.close()
+  })
+
   test("serializes concurrent creation and isolates branches", async () => {
     const { manager, store } = await fixture()
     const [first, second] = await Promise.all([

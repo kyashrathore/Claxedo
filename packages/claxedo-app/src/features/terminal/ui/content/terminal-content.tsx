@@ -232,6 +232,7 @@ function TerminalContentInner(props: {
       }
       terminal.ensure({
         id: tid,
+        ...(props.meta.sessionId ? { sessionId: props.meta.sessionId } : {}),
         title: title(),
         cwd: dir,
       })
@@ -249,7 +250,12 @@ function TerminalContentInner(props: {
     const previousPtyId = consumed?.previousPtyId
 
     setCreateError(undefined)
-    const created = terminal.new(nextCommand, nextTitle, previousPtyId)
+    const created = terminal.new({
+      initialCommand: nextCommand,
+      title: nextTitle,
+      previousPtyId,
+      sessionId: props.meta.sessionId,
+    })
     if (!created) {
       createStarted = false
       setCreateError("Terminal context is not available for this workspace.")
@@ -349,7 +355,11 @@ function TerminalContentInner(props: {
     if (error instanceof WebSocketCloseError && error.code === 1008) {
       let newId: string | undefined
       try {
-        newId = await trackRecovery(recoveryAlias, id, () => terminal.clone(id) ?? Promise.resolve(undefined))
+        newId = await trackRecovery(
+          recoveryAlias,
+          id,
+          () => terminal.clone(id, props.meta.sessionId) ?? Promise.resolve(undefined),
+        )
       } catch {
         // clone failed; keep the existing terminal visible.
       }

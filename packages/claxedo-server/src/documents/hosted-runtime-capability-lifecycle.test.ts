@@ -197,6 +197,14 @@ describe("hosted runtime capability lifecycle", () => {
 function runtimeServices() {
   return {
     authority: {
+      usersMe: vi.fn(async () => ({
+        subject: "user_1",
+        user_id: "user_1",
+        actor_id: "user_1",
+        actor_kind: "human" as const,
+        actor_public_id: "user_1",
+        actor_name: "User One",
+      })),
       resolveSession: vi.fn(async () => ({ workspace_id: "ws_1" })),
       authorizeSessionRead: vi.fn(async () => undefined),
       openWorkspace: vi.fn(async () => ({

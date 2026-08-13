@@ -14,6 +14,7 @@ import type { DataModel } from "./_generated/dataModel"
 import { hasLegacyLeaseFields, legacyLeaseDocument } from "./sandboxLeases"
 import { migrateLegacyLlmUsageRow } from "./usageMetering"
 import { initializeAttentionProjection, syncAttentionRecord, syncCandidateTransition } from "./workgraphAttention"
+import { canonicalRepoKey } from "./workspaces"
 
 export const migrations = new Migrations<DataModel>(components.migrations)
 
@@ -42,6 +43,259 @@ export const backfillLegacyLlmUsage = migrations.define({
     await migrateLegacyLlmUsageRow(ctx, row)
   },
 })
+
+// Single-tenant -> tenant-explicit rollout. These migrations deliberately
+// remain separate ledger entries and must run in the documented order. Every
+// transform is idempotent, preserves legacy fields for rollback, and refuses
+// to guess when stored provenance admits more than one tenant.
+export const backfillUserActorIdentity = migrations.define({
+  table: "users",
+  migrateOne: async (ctx, user) => {
+    if (user.public_id && user.kind) return
+    await ctx.db.patch(user._id, {
+      public_id: user.public_id ?? `usr_${crypto.randomUUID()}`,
+      kind: user.kind ?? "human",
+    })
+  },
+})
+
+export const backfillProjectTenantIdentity = migrations.define({
+  table: "projects",
+  migrateOne: migrateProjectTenantIdentity,
+})
+
+export const reconcileProjectMembershipProjectIds = migrations.define({
+  table: "project_memberships",
+  migrateOne: async (ctx, membership) => {
+    const project = await projectFromStoredIdentity(ctx, membership.project_id)
+    if (!project?.project_id) throw new Error(`project_membership_unresolved:${membership._id}`)
+    if (membership.project_id === project.project_id) return
+    const duplicate = await ctx.db
+      .query("project_memberships")
+      .withIndex("by_project_user", (query) => query.eq("project_id", project.project_id).eq("user_id", membership.user_id))
+      .unique()
+    if (duplicate && duplicate._id !== membership._id) {
+      throw new Error(`project_membership_duplicate:${membership._id}:${duplicate._id}`)
+    }
+    await ctx.db.patch(membership._id, { project_id: project.project_id })
+  },
+})
+
+export const backfillWorkspaceTenantIdentity = migrations.define({
+  table: "workspaces",
+  migrateOne: migrateWorkspaceTenantIdentity,
+})
+
+export const backfillSessionTenantIdentity = migrations.define({
+  table: "session_history",
+  migrateOne: async (ctx, session) => {
+    const workspace = await ctx.db.get(session.workspace_id)
+    if (!workspace) throw new Error(`session_workspace_missing:${session._id}`)
+    if (!workspace.org_id || !workspace.project_id) {
+      throw new Error(`session_workspace_not_migrated:${session._id}:${workspace._id}`)
+    }
+    const storedProject = session.project_id
+      ? await projectFromStoredIdentity(ctx, session.project_id)
+      : undefined
+    if (session.project_id && !storedProject) throw new Error(`session_project_missing:${session._id}`)
+    if (session.org_id && session.org_id !== workspace.org_id) {
+      throw new Error(`session_workspace_tenant_conflict:${session._id}:${workspace._id}`)
+    }
+    if (storedProject?.org_id && storedProject.org_id !== workspace.org_id) {
+      throw new Error(`session_project_tenant_conflict:${session._id}:${storedProject._id}`)
+    }
+    const projectId = storedProject?.project_id ?? workspace.project_id
+    if (!projectId) throw new Error(`session_project_unresolved:${session._id}`)
+    await ctx.db.patch(session._id, {
+      org_id: session.org_id ?? workspace.org_id,
+      project_id: projectId,
+      created_by_user_id: session.created_by_user_id ?? workspace.owner_user_id,
+    })
+  },
+})
+
+// Contract probes are ledger-backed scans rather than an unbounded ad-hoc
+// query. A completed status for all five proves every row in that deployment
+// satisfies the future required schema before the contract release is pushed.
+export const verifyUserActorIdentityContract = migrations.define({
+  table: "users",
+  migrateOne: (_ctx, user) => {
+    if (!user.public_id || !user.kind) throw new Error(`user_identity_incomplete:${user._id}`)
+  },
+})
+
+export const verifyProjectTenantIdentityContract = migrations.define({
+  table: "projects",
+  migrateOne: (_ctx, project) => {
+    if (
+      !project.project_id
+      || !project.org_id
+      || !project.repo_key
+      || !project.owner_user_id
+      || project.created_at === undefined
+      || project.updated_at === undefined
+    ) throw new Error(`project_identity_incomplete:${project._id}`)
+  },
+})
+
+export const verifyProjectMembershipIdentityContract = migrations.define({
+  table: "project_memberships",
+  migrateOne: async (ctx, membership) => {
+    const project = await projectFromStoredIdentity(ctx, membership.project_id)
+    if (!project?.project_id || membership.project_id !== project.project_id) {
+      throw new Error(`project_membership_identity_incomplete:${membership._id}`)
+    }
+  },
+})
+
+export const verifyWorkspaceTenantIdentityContract = migrations.define({
+  table: "workspaces",
+  migrateOne: (_ctx, workspace) => {
+    if (!workspace.org_id || !workspace.project_id) {
+      throw new Error(`workspace_identity_incomplete:${workspace._id}`)
+    }
+  },
+})
+
+export const verifySessionTenantIdentityContract = migrations.define({
+  table: "session_history",
+  migrateOne: (_ctx, session) => {
+    if (!session.org_id || !session.project_id || !session.created_by_user_id) {
+      throw new Error(`session_identity_incomplete:${session._id}`)
+    }
+  },
+})
+
+export async function migrateProjectTenantIdentity(ctx: any, project: any) {
+  const projectId = stringValue(project.project_id) ?? stringValue(project.externalId) ?? `prj_legacy_${project._id}`
+  const duplicate = await ctx.db
+    .query("projects")
+    .withIndex("by_project_id", (query: any) => query.eq("project_id", projectId))
+    .unique()
+  if (duplicate && duplicate._id !== project._id) {
+    throw new Error(`project_public_id_duplicate:${project._id}:${duplicate._id}`)
+  }
+  const organization = project.org_id
+    ? await ctx.db.get(project.org_id)
+    : await organizationFromLegacyIdentity(ctx, project.organizationId)
+      ?? await uniqueUserOrganization(ctx, project.owner_user_id)
+  if (!organization) throw new Error(`project_organization_unresolved:${project._id}`)
+  const ownerUserId = project.owner_user_id ?? organization.owner_user_id
+  if (!ownerUserId) throw new Error(`project_owner_unresolved:${project._id}`)
+  const repoKey = canonicalRepoKey({
+    repoKey: stringValue(project.repo_key),
+    repoUrl: stringValue(project.repoUrl),
+    workspaceId: projectId,
+  })
+  const repoDuplicate = await ctx.db
+    .query("projects")
+    .withIndex("by_org_repo_key", (query: any) => query.eq("org_id", organization._id).eq("repo_key", repoKey))
+    .unique()
+  if (repoDuplicate && repoDuplicate._id !== project._id) {
+    throw new Error(`project_repo_key_duplicate:${project._id}:${repoDuplicate._id}`)
+  }
+  const createdAt = project.created_at ?? project.createdAt ?? project._creationTime
+  await ctx.db.patch(project._id, {
+    project_id: projectId,
+    org_id: organization._id,
+    repo_key: repoKey,
+    owner_user_id: ownerUserId,
+    created_at: createdAt,
+    updated_at: project.updated_at ?? project.updatedAt ?? createdAt,
+  })
+}
+
+export async function migrateWorkspaceTenantIdentity(ctx: any, workspace: any) {
+  const storedProject = workspace.project_id
+    ? await projectFromStoredIdentity(ctx, workspace.project_id)
+    : undefined
+  if (workspace.project_id && !storedProject) throw new Error(`workspace_project_missing:${workspace._id}`)
+  const organization = workspace.org_id
+    ? await ctx.db.get(workspace.org_id)
+    : storedProject?.org_id
+      ? await ctx.db.get(storedProject.org_id)
+      : await uniqueUserOrganization(ctx, workspace.owner_user_id)
+  if (!organization) throw new Error(`workspace_organization_unresolved:${workspace._id}`)
+  if (storedProject?.org_id && storedProject.org_id !== organization._id) {
+    throw new Error(`workspace_project_tenant_conflict:${workspace._id}:${storedProject._id}`)
+  }
+  const repoKey = canonicalRepoKey({
+    repoUrl: stringValue(workspace.repo_url) ?? stringValue(workspace.remote_directory),
+    workspaceId: workspace.workspace_id,
+  })
+  const matching = storedProject ?? await ctx.db
+    .query("projects")
+    .withIndex("by_org_repo_key", (query: any) => query.eq("org_id", organization._id).eq("repo_key", repoKey))
+    .unique()
+  const project = matching ?? await insertMigratedWorkspaceProject(ctx, workspace, organization._id, repoKey)
+  if (!project.project_id) throw new Error(`workspace_project_unresolved:${workspace._id}`)
+  await ctx.db.patch(workspace._id, {
+    org_id: organization._id,
+    project_id: project.project_id,
+  })
+}
+
+async function insertMigratedWorkspaceProject(ctx: any, workspace: any, organizationId: any, repoKey: string) {
+  const projectId = `prj_legacy_${workspace.workspace_id}`
+  const existing = await ctx.db
+    .query("projects")
+    .withIndex("by_project_id", (query: any) => query.eq("project_id", projectId))
+    .unique()
+  if (existing) {
+    if (existing.org_id !== organizationId || existing.repo_key !== repoKey) {
+      throw new Error(`workspace_project_identity_conflict:${workspace._id}:${existing._id}`)
+    }
+    return existing
+  }
+  const now = workspace.created_at ?? workspace._creationTime
+  const id = await ctx.db.insert("projects", {
+    project_id: projectId,
+    org_id: organizationId,
+    repo_key: repoKey,
+    owner_user_id: workspace.owner_user_id,
+    created_at: now,
+    updated_at: workspace.updated_at ?? now,
+  })
+  return await ctx.db.get(id)
+}
+
+async function projectFromStoredIdentity(ctx: any, value: unknown) {
+  if (typeof value !== "string") return
+  const documentId = ctx.db.normalizeId("projects", value)
+  const document = documentId ? await ctx.db.get(documentId) : undefined
+  if (document) return document
+  return await ctx.db
+    .query("projects")
+    .withIndex("by_project_id", (query: any) => query.eq("project_id", value))
+    .unique()
+}
+
+async function organizationFromLegacyIdentity(ctx: any, value: unknown) {
+  if (typeof value !== "string") return
+  const documentId = ctx.db.normalizeId("orgs", value)
+  const document = documentId ? await ctx.db.get(documentId) : undefined
+  if (document) return document
+  return await ctx.db
+    .query("orgs")
+    .withIndex("by_clerk_org_id", (query: any) => query.eq("clerk_org_id", value))
+    .unique()
+}
+
+async function uniqueUserOrganization(ctx: any, userId: unknown) {
+  if (!userId) return
+  const memberships = await ctx.db
+    .query("org_memberships")
+    .withIndex("by_user", (query: any) => query.eq("user_id", userId))
+    .collect()
+  const organizations = (await Promise.all(memberships.map((membership: any) => ctx.db.get(membership.org_id))))
+    .filter((organization: any) => organization && !organization.deleted_at)
+  if (organizations.length !== 1) return
+  return organizations[0]
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.length > 0 ? value : undefined
+}
 
 export const initializeWorkGraphAttention = migrations.define({
   table: "workgraphs",

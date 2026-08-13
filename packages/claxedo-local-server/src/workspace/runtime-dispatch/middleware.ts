@@ -22,6 +22,7 @@ import {
   noWr,
   proxy,
   requestWorkspace,
+  requireRuntimeProxyActor,
   resolveWorkspaceHit,
   runtimeOwned,
   type RuntimeProxyOptions,
@@ -51,13 +52,20 @@ async function workspaceRuntimeProxyWithOptions(
       directory: input.directory,
     })
     if (!ws) return next()
-    if (ws.kind !== "cloud") return await embedded(c, ws)
+    if (ws.kind !== "cloud") {
+      if (options.requireRelayActor) {
+        requireRuntimeProxyActor(await options.resolveRelayActor?.(c.req.raw, ws.id), true)
+      }
+      return await embedded(c, ws)
+    }
     const hit = await resolveWorkspaceHit(ws, options)
     if (!hit) return next()
     return await proxy(c, hit, {
       sandboxManager: options.sandboxManager,
       ...(options.relayProvider ? { relayProvider: options.relayProvider } : {}),
       ...(options.defaultHomeRegion ? { defaultHomeRegion: options.defaultHomeRegion } : {}),
+      ...(options.resolveRelayActor ? { resolveRelayActor: options.resolveRelayActor } : {}),
+      ...(options.requireRelayActor ? { requireRelayActor: true } : {}),
     })
   } catch (err) {
     return noWr(c, err)

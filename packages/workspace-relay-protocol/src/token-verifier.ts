@@ -29,11 +29,21 @@ export type TokenVerifierBaseClaims = {
 export type RuntimeAccessVerifierClaims = TokenVerifierBaseClaims & {
   org_id: string
   role: "viewer" | "editor" | "admin" | "owner"
+  actor_id?: string
+  actor_kind?: "human" | "agent"
+  actor_public_id?: string
+  actor_name?: string
+  actor_avatar_url?: string
 }
 
 export type RelayHostVerifierClaims = TokenVerifierBaseClaims & {
   org_id: string
   role: "viewer" | "editor" | "admin" | "owner"
+  actor_id?: string
+  actor_kind?: "human" | "agent"
+  actor_public_id?: string
+  actor_name?: string
+  actor_avatar_url?: string
 } & (
   | { access: "cloud"; backing: "cloud-vm" }
   | { access: "user-hosted"; backing: "local-worktree" }

@@ -5,6 +5,7 @@ import path from "path"
 import { Hono } from "hono"
 import { SessionEnvRoutes, SESSION_ENV_GREP_MAX_FILE_BYTES } from "./session-env"
 import { errorBody, JSON_BODY_LIMIT_BYTES } from "./http"
+import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import {
   createProcessObserver,
   type ProcessObserver,
@@ -19,8 +20,28 @@ async function temp() {
   return directory
 }
 
-function app(processObserver?: ProcessObserver) {
-  const out = new Hono()
+function app(processObserver?: ProcessObserver, role?: "viewer" | "editor") {
+  const out = new Hono<{ Variables: RelayHostAuthContext }>()
+  if (role) {
+    out.use("*", async (c, next) => {
+      const now = Math.floor(Date.now() / 1000)
+      c.set("relayHostAuth", {
+        iss: "workspace-relay",
+        aud: "workspace-host-service",
+        sub: "user_1",
+        org_id: "org_1",
+        workspace_id: "ws_1",
+        host_id: "host_1",
+        role,
+        access: "cloud",
+        backing: "cloud-vm",
+        exp: now + 60,
+        iat: now,
+        jti: "jti_1",
+      })
+      return await next()
+    })
+  }
   out.route("/api/wr/session-env", SessionEnvRoutes(processObserver))
   return out
 }
@@ -198,6 +219,39 @@ describe("SessionEnvRoutes", () => {
         },
       })
     }
+  })
+
+  test("denies shell execution to authenticated viewers", async () => {
+    const directory = await temp()
+    const response = await app(undefined, "viewer").request(url("/exec", directory), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command: "printf blocked" }),
+    })
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual(errorBody(
+      "relay_role_denied",
+      "Workspace role does not allow shell execution",
+    ))
+  })
+
+  test("rejects exec cwd and command paths outside the workspace", async () => {
+    const directory = await temp()
+    const server = app()
+    const cwd = await server.request(url("/exec", directory), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command: "printf blocked", cwd: path.join(directory, "..") }),
+    })
+    const command = await server.request(url("/exec", directory), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command: "cat ~/.local/share/opencode/opencode.db" }),
+    })
+
+    expect(cwd.status).toBe(403)
+    expect(command.status).toBe(403)
   })
 
   test("attributes Pi SessionEnv children by session without retaining shell text", async () => {

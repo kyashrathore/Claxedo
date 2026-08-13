@@ -135,6 +135,7 @@ export function sandboxDriver(env: HostedWorkerEnv): SandboxDriver | undefined {
       ...(clean(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) ? { workspaceDir: clean(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) } : {}),
       ...(clean(env.CLAXEDO_RUNTIME_RUNNER) ? { runner: clean(env.CLAXEDO_RUNTIME_RUNNER) } : {}),
       controlEnv: {
+        ...(runtimeSessionAuthorityUrl(env) ? { sessionAuthorityUrl: runtimeSessionAuthorityUrl(env) } : {}),
         ...(clean(env.CLAXEDO_RELAY_JWKS_URL) ? { relayJwksUrl: clean(env.CLAXEDO_RELAY_JWKS_URL) } : {}),
         ...(clean(env.CLAXEDO_RELAY_HOST_VERIFY_PEM)
           ? { relayVerifyPem: clean(env.CLAXEDO_RELAY_HOST_VERIFY_PEM) }
@@ -173,6 +174,7 @@ export function sandboxDriver(env: HostedWorkerEnv): SandboxDriver | undefined {
       ...(clean(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) ? { workspaceDir: clean(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) } : {}),
       ...(clean(env.CLAXEDO_RUNTIME_RUNNER) ? { runner: clean(env.CLAXEDO_RUNTIME_RUNNER) } : {}),
       controlEnv: {
+        ...(runtimeSessionAuthorityUrl(env) ? { sessionAuthorityUrl: runtimeSessionAuthorityUrl(env) } : {}),
         ...(clean(env.CLAXEDO_RELAY_JWKS_URL) ? { relayJwksUrl: clean(env.CLAXEDO_RELAY_JWKS_URL) } : {}),
         ...(clean(env.CLAXEDO_RELAY_HOST_VERIFY_PEM)
           ? { relayVerifyPem: clean(env.CLAXEDO_RELAY_HOST_VERIFY_PEM) }
@@ -188,6 +190,9 @@ export function sandboxDriver(env: HostedWorkerEnv): SandboxDriver | undefined {
     const apiToken = clean(env.EXE_DEV_API_TOKEN)
     if (!apiToken) return
     const runtimeEnv = {
+      ...(runtimeSessionAuthorityUrl(env)
+        ? { WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: runtimeSessionAuthorityUrl(env)! }
+        : {}),
       ...(clean(env.CLAXEDO_RELAY_JWKS_URL)
         ? { WORKSPACE_RUNTIME_RELAY_JWKS_URL: clean(env.CLAXEDO_RELAY_JWKS_URL)! }
         : {}),
@@ -226,6 +231,13 @@ export function sandboxDriver(env: HostedWorkerEnv): SandboxDriver | undefined {
     autoStopMs: positiveInteger(env, "CLAXEDO_SANDBOX_AUTO_STOP_MS", 30 * 60_000),
     autoDeleteMs: positiveInteger(env, "CLAXEDO_SANDBOX_AUTO_DELETE_MS", 24 * 60 * 60_000),
   })
+}
+
+function runtimeSessionAuthorityUrl(env: HostedWorkerEnv) {
+  const controlPlane = clean(env.CLAXEDO_PUBLIC_URL)
+  return controlPlane
+    ? `${controlPlane.replace(/\/+$/g, "")}/api/runtime-authority/session-authorize`
+    : undefined
 }
 
 /**

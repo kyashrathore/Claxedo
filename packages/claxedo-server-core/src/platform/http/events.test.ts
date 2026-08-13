@@ -305,6 +305,43 @@ describe("eventsHandler — signed stream is filtered per-event", () => {
     expect(received).toContain("doc_mine")
     expect(received).not.toContain("doc_other")
   }, 10_000)
+
+  test("closes an established org stream before delivering another event after membership changes", async () => {
+    const bus = createBus<ClaxedoEvent>()
+    let currentOrgId = "org_internal_x"
+    const app = mountHandler({
+      bus,
+      authConfig: baseConfig,
+      verifier: async () => ({
+        mode: "signed",
+        user: {
+          subject: "user_a",
+          tokenIdentifier: "https://example.clerk.dev|user_a",
+          issuer: "https://example.clerk.dev",
+        },
+      }),
+      resolveOrgId: async () => currentOrgId,
+    })
+    const res = await app.request("/api/claxedo/events", {
+      headers: { authorization: "Bearer valid-token" },
+    })
+    const reader = res.body!.getReader()
+    const first = await reader.read()
+    expect(new TextDecoder().decode(first.value)).toContain("heartbeat")
+
+    currentOrgId = "org_personal_user_a"
+    bus.publish({
+      type: "document.changed",
+      documentId: "doc_after_removal",
+      orgId: "org_internal_x",
+      projectId: "proj_1",
+      ts: 2,
+    })
+
+    const next = await reader.read()
+    expect(next.done).toBe(true)
+    expect(next.value).toBeUndefined()
+  }, 10_000)
 })
 
 // ─── SSE replay ────────────────────────────────────────────────────────────
@@ -312,9 +349,10 @@ describe("eventsHandler — signed stream is filtered per-event", () => {
 // Mirrors `packages/workspace-runtime/src/routes/runtime-events.test.ts`. This
 // stream was subscribe-on-connect only, so every frame published while a
 // consumer sat in its reconnect gap was gone for good. The central twist the
-// workspace stream does not have: the retention ring is shared across every
-// identity, so the per-identity `eventVisibleTo` filter has to be re-applied at
-// REPLAY time or a reconnect leaks other tenants' frames.
+// workspace stream does not have: the source retention ring is shared across
+// every identity, while subscriber cursor rings must contain only frames that
+// identity can see. The same `eventVisibleTo` predicate is re-applied at final
+// delivery for both replay and live frames.
 
 type ReplayConnection = {
   text: () => string
@@ -540,12 +578,10 @@ describe("eventsHandler — /api/claxedo/events replay", () => {
   })
 
   test("replay re-applies the identity filter: another tenant's frame is NOT replayed", async () => {
-    // THE central-stream hazard. The retention ring is shared by every identity
-    // — it has to be, because the frames worth recovering are the ones
-    // published while nobody was connected — so the only thing standing between
-    // user_b and user_a's events on a Last-Event-ID reconnect is that
-    // `eventVisibleTo` runs on the WRITE path, which replayed frames traverse
-    // exactly like live ones.
+    // THE central-stream hazard. Source retention is shared by every identity
+    // because frames published while nobody is connected still need recovery.
+    // user_b's cursor ring is filtered before ids are assigned, and the write
+    // path re-applies the same predicate to replayed frames.
     const bus = createBus<ClaxedoEvent>()
     const app = mountSignedAs(bus, "user_b")
 
@@ -559,9 +595,32 @@ describe("eventsHandler — /api/claxedo/events replay", () => {
     stream.close()
 
     expect(text).not.toContain("user_a")
-    // The id is still the SHARED publish-order sequence, not a per-identity
-    // renumbering: a cursor has to mean the same thing on every connection.
-    expect(frames(text).find((frame) => frame.data?.includes("user_b"))?.id).toBe("2")
+    expect(frames(text).find((frame) => frame.data?.includes("user_b"))?.id).toBe("1")
+  })
+
+  test("another tenant's traffic cannot create a false replay gap", async () => {
+    const bus = createBus<ClaxedoEvent>()
+    const app = mountSignedAs(bus, "user_b")
+
+    // Register user_b's stable cursor scope, then disconnect while user_a is
+    // busy enough to overflow the shared source retention ring.
+    const first = await connect(app, { bearer: "valid-token" })
+    const opened = await first.until((seen) => seen.includes("heartbeat"), "no cursor bootstrap frame")
+    expect(bootstrapId(opened)).toBe("0")
+    first.close()
+
+    for (let i = 1; i <= 300; i += 1) {
+      bus.publish({ type: "workgraph.changed", ownerUserId: "user_a", ts: i })
+    }
+    bus.publish({ type: "workgraph.changed", ownerUserId: "user_b", ts: 301 })
+
+    const second = await connect(app, { lastEventId: "0", bearer: "valid-token" })
+    const text = await second.until((seen) => seen.includes("user_b"), "own replay frame never arrived")
+    second.close()
+
+    expect(text).not.toContain("stream.replay-gap")
+    expect(text).not.toContain("user_a")
+    expect(frames(text).find((frame) => frame.data?.includes("user_b"))?.id).toBe("1")
   })
 
   test("an invisible frame is dropped on the live path too, and does not block the next visible one", async () => {

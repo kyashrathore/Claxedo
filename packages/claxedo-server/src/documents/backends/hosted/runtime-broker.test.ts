@@ -37,6 +37,7 @@ describe("hosted document runtime broker", () => {
     const authorizeSessionRead = vi.fn(async () => undefined)
     const services = {
       authority: {
+        usersMe: vi.fn(async () => ({ actor_id: "actor_1", actor_kind: "human" as const, actor_public_id: "usr_public_1", actor_name: "Test User" })),
         resolveSession: vi.fn(async () => ({ workspace_id: "ws_1" })),
         authorizeSessionRead,
         openWorkspace: vi.fn(async () => ({ role: "editor", workspace: { workspace_id: "ws_1", org_id: "org_1", project_id: "project_1" } })),
@@ -107,6 +108,7 @@ describe("hosted document runtime broker", () => {
   test("fails closed when the session runtime is unreachable", async () => {
     const services = {
       authority: {
+        usersMe: vi.fn(async () => ({ actor_id: "actor_1", actor_kind: "human" as const, actor_public_id: "usr_public_1", actor_name: "Test User" })),
         resolveSession: vi.fn(async () => ({ workspace_id: "ws_1" })),
         authorizeSessionRead: vi.fn(async () => undefined),
         openWorkspace: vi.fn(async () => ({ role: "editor", workspace: { workspace_id: "ws_1", org_id: "org_1", project_id: "project_1" } })),
@@ -124,6 +126,7 @@ describe("hosted document runtime broker", () => {
     const mint = vi.fn()
     const services = {
       authority: {
+        usersMe: vi.fn(async () => ({ actor_id: "actor_1", actor_kind: "human" as const, actor_public_id: "usr_public_1", actor_name: "Test User" })),
         resolveSession: vi.fn(async () => ({ workspace_id: "ws_1" })),
         authorizeSessionRead: vi.fn(async () => undefined),
         openWorkspace: vi.fn(async () => ({ role: "viewer", workspace: {
@@ -150,6 +153,7 @@ describe("hosted document runtime broker", () => {
     }
     const services = {
       authority: {
+        usersMe: vi.fn(async () => ({ actor_id: "actor_1", actor_kind: "human" as const, actor_public_id: "usr_public_1", actor_name: "Test User" })),
         resolveSession: vi.fn(async () => ({ workspace_id: "cloud_ws" })),
         authorizeSessionRead: vi.fn(async () => undefined),
         openWorkspace: vi.fn(async () => ({ role: "editor", workspace: {
@@ -216,6 +220,7 @@ describe("hosted document runtime broker", () => {
     try {
       const services = {
         authority: {
+          usersMe: vi.fn(async () => ({ actor_id: "actor_1", actor_kind: "human" as const, actor_public_id: "usr_public_1", actor_name: "Test User" })),
           resolveSession: vi.fn(async () => ({ workspace_id: "ws_1" })),
           authorizeSessionRead: vi.fn(async () => undefined),
           openWorkspace: vi.fn(async () => ({ role: "editor", workspace: { workspace_id: "ws_1", org_id: "org_1", project_id: "project_1" } })),
@@ -310,6 +315,7 @@ describe("hosted document runtime broker", () => {
     try {
       const services = {
         authority: {
+          usersMe: vi.fn(async () => ({ actor_id: "actor_1", actor_kind: "human" as const, actor_public_id: "usr_public_1", actor_name: "Test User" })),
           resolveSession: vi.fn(async () => ({ workspace_id: "ws_1" })),
           authorizeSessionRead: vi.fn(async () => undefined),
           openWorkspace: vi.fn(async () => ({
@@ -407,6 +413,7 @@ async function runtimeFixture() {
   const key = await generateKeyPair("EdDSA", { extractable: true })
   const services = {
     authority: {
+      usersMe: vi.fn(async () => ({ actor_id: "actor_1", actor_kind: "human" as const, actor_public_id: "usr_public_1", actor_name: "Test User" })),
       resolveSession: vi.fn(async () => ({ workspace_id: "ws_1" })),
       authorizeSessionRead: vi.fn(async () => undefined),
       openWorkspace: vi.fn(async () => ({ role: "editor", workspace: {

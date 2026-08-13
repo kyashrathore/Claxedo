@@ -506,12 +506,17 @@ function targetUrl(target: WorkspaceRelayTarget, path: string, search: string) {
 const RELAY_VIEWER_DENIED_PATH = /^\/api\/wr\/pty(?:\/|$)/
 
 function relayRuntimePath(request: Request) {
-  return new URL(request.url).pathname.replace(/^\/workspaces\/[^/]+\/?/, "/")
-}
-
-function relayAuthorizationPath(path: string) {
   try {
-    return decodeURIComponent(path)
+    const decoded = decodeURIComponent(new URL(request.url).pathname.replace(/^\/workspaces\/[^/]+\/?/, "/"))
+      .replace(/^\/+/, "/")
+    // Authorize on the SAME pathname that will be forwarded. `targetUrl` resolves
+    // the path through `new URL`, which parses any `?`/`#` a decoded %3F/%23
+    // introduced as query/fragment and drops it from the pathname. Resolve it the
+    // same way here so a viewer cannot smuggle `/api/wr/pty%3Fx` (authz sees
+    // "/api/wr/pty?x", which the deny regex misses, but forwarding hits the real
+    // "/api/wr/pty") past the gate. Query strings ride in `request.url` search,
+    // not the pathname, so legitimate requests are unaffected.
+    return new URL(decoded.replace(/^\/+/, ""), "http://relay.invalid/").pathname
   } catch {
     return undefined
   }
@@ -520,8 +525,7 @@ function relayAuthorizationPath(path: string) {
 function roleAllowsRelayRequest(role: RelayRole, method: string, path: string) {
   if (role === "owner" || role === "admin" || role === "editor") return true
   if (role === "viewer") {
-    const authorizationPath = relayAuthorizationPath(path)
-    if (!authorizationPath || RELAY_VIEWER_DENIED_PATH.test(authorizationPath)) return false
+    if (RELAY_VIEWER_DENIED_PATH.test(path)) return false
     return method === "GET" || method === "HEAD" || method === "OPTIONS"
   }
   return false
@@ -542,6 +546,11 @@ function relayHostTokenCacheKey(
   return [
     claims.jti,
     claims.sub,
+    claims.actor_id ?? "",
+    claims.actor_kind ?? "",
+    claims.actor_public_id ?? "",
+    claims.actor_name ?? "",
+    claims.actor_avatar_url ?? "",
     claims.org_id,
     claims.role,
     claims.workspace_id,
@@ -672,6 +681,7 @@ async function relayHostTokenFor(
     const token = await trace.span("rht-mint", async () => {
       promise = mintRelayHostToken({
         subject: claims.sub,
+        ...relayActorInput(claims),
         orgId: claims.org_id,
         role: claims.role,
         ...target,
@@ -701,12 +711,28 @@ async function uncachedRelayHostTokenFor(
   return await trace.span("rht-mint", async () =>
     await mintRelayHostToken({
       subject: claims.sub,
+      ...relayActorInput(claims),
       orgId: claims.org_id,
       role: claims.role,
       ...target,
       ...(options.relayHostMintKid ? { kid: options.relayHostMintKid } : {}),
     }, options.relayHostSigningKey, options.relayHostAlgorithm)
   )
+}
+
+function relayActorInput(claims: RuntimeAccessTokenClaims) {
+  if (!claims.actor_id) return { actorId: undefined, actorKind: undefined } as const
+  return {
+    actorId: claims.actor_id,
+    actorKind: claims.actor_kind,
+    ...(claims.actor_public_id && claims.actor_name
+      ? {
+          actorPublicId: claims.actor_public_id,
+          actorName: claims.actor_name,
+          ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
+        }
+      : {}),
+  } as const
 }
 
 export function workspaceRelayTargetUrl(target: WorkspaceRelayTarget, path: string, search: string) {
@@ -982,7 +1008,7 @@ export async function authorizeWorkspaceRelayRequest(
       }
     }
     const path = relayRuntimePath(request)
-    if (!roleAllowsRelayRequest(claims.role, request.method, path)) {
+    if (!path || !roleAllowsRelayRequest(claims.role, request.method, path)) {
       return {
         ok: false,
         code: "relay_role_denied",

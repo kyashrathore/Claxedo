@@ -3,6 +3,7 @@ import {
   authedMutation,
   authedQuery,
   authorizeWorkspace,
+  orgMembership,
   readUser,
   roleAllows,
   serviceMutation,
@@ -12,6 +13,19 @@ import {
 } from "./model"
 
 const workspaceId = { workspace_id: v.string() }
+
+export const authorizeCreate = authedQuery({
+  args: { org_id: v.optional(v.id("orgs")) },
+  handler: async (ctx, args) => {
+    if (!args.org_id) return { allowed: true }
+    const user = await readUser(ctx)
+    const org = await ctx.db.get(args.org_id)
+    const membership = org ? await orgMembership(ctx.db, org._id, user._id) : undefined
+    return {
+      allowed: !!org && !org.deleted_at && (membership?.role === "owner" || membership?.role === "admin"),
+    }
+  },
+})
 
 // Mirrors `CLAXEDO_REGIONS` in packages/claxedo-server/src/region. Convex only
 // VALIDATES supplied regions; it never defaults one — normalization to the
@@ -26,7 +40,7 @@ function validatedHomeRegion(input?: string) {
   return input
 }
 
-async function ensureOwnerOrg(ctx: any, user: { _id: unknown; name?: string; email?: string }) {
+export async function ensureOwnerOrg(ctx: any, user: { _id: unknown; name?: string; email?: string }) {
   const existing = (
     await ctx.db
       .query("orgs")
@@ -52,37 +66,66 @@ async function ensureOwnerOrg(ctx: any, user: { _id: unknown; name?: string; ema
   return await ctx.db.get(orgId)
 }
 
-async function ensureProject(
+async function creationOrg(ctx: any, user: { _id: unknown; name?: string; email?: string }, orgId?: unknown) {
+  if (!orgId) return ensureOwnerOrg(ctx, user)
+  const org = await ctx.db.get(orgId)
+  const membership = org ? await orgMembership(ctx.db, org._id, user._id) : undefined
+  if (!org || org.deleted_at || !membership || membership.role === "member") {
+    throw new Error("workspace_create_forbidden")
+  }
+  return org
+}
+
+export async function ensureProject(
   ctx: any,
   input: {
     projectId: string
     orgId: unknown
     ownerUserId: unknown
+    repoKey?: string
   },
 ) {
-  const existing = await ctx.db
+  const requested = await ctx.db
     .query("projects")
     .withIndex("by_project_id", (q: any) => q.eq("project_id", input.projectId))
     .unique()
+  if (requested && requested.org_id !== input.orgId) throw new Error("project_tenant_conflict")
+  const repoKey = input.repoKey ?? requested?.repo_key ?? `workspace:${input.projectId}`
+  const matching = await ctx.db
+    .query("projects")
+    .withIndex("by_org_repo_key", (q: any) => q.eq("org_id", input.orgId).eq("repo_key", repoKey))
+    .unique()
+  if (requested && matching && requested._id !== matching._id) throw new Error("project_repo_conflict")
+  if (requested && requested.repo_key !== repoKey) {
+    const requestedRepoKey = canonicalRepoKey({ repoKey: requested.repo_key, workspaceId: input.projectId })
+    if (requestedRepoKey !== repoKey && !requested.repo_key.startsWith("workspace:")) {
+      throw new Error("project_repo_conflict")
+    }
+    if (matching) throw new Error("project_repo_conflict")
+    await ctx.db.patch(requested._id, { repo_key: repoKey, updated_at: Date.now() })
+  }
+  const existing = matching ?? requested
   const now = Date.now()
   const projectId =
     existing?._id ??
     (await ctx.db.insert("projects", {
       project_id: input.projectId,
       org_id: input.orgId,
+      repo_key: repoKey,
       owner_user_id: input.ownerUserId,
       created_at: now,
       updated_at: now,
     }))
+  const publicProjectId = existing?.project_id ?? input.projectId
   const membership = (
     await ctx.db
       .query("project_memberships")
-      .withIndex("by_project_user", (q: any) => q.eq("project_id", projectId))
+      .withIndex("by_project_user", (q: any) => q.eq("project_id", publicProjectId))
       .collect()
   ).find((item: any) => item.user_id === input.ownerUserId)
   if (!membership) {
     await ctx.db.insert("project_memberships", {
-      project_id: projectId,
+      project_id: publicProjectId,
       user_id: input.ownerUserId,
       role: "owner",
       created_at: now,
@@ -92,8 +135,29 @@ async function ensureProject(
   return await ctx.db.get(projectId)
 }
 
-function defaultProjectId(workspaceId: string) {
-  return `prj_${workspaceId}`
+export function defaultProjectId() {
+  return `prj_${crypto.randomUUID()}`
+}
+
+export function canonicalRepoKey(input: {
+  repoKey?: string
+  repoUrl?: string
+  remoteDirectory?: string
+  workspaceId: string
+}) {
+  if (input.repoKey) {
+    const stored = input.repoKey.trim()
+    if (stored.startsWith("workspace:")) return stored
+    if (stored.startsWith("/") || /^[A-Za-z]:[\\/]/.test(stored)) {
+      return stored.replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase()
+    }
+    return canonicalRepoUrl(stored)
+  }
+  if (input.repoUrl) return canonicalRepoUrl(input.repoUrl)
+  if (input.remoteDirectory) {
+    return input.remoteDirectory.trim().replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase()
+  }
+  return `workspace:${input.workspaceId}`
 }
 
 async function requireWorkGraphOwner(ctx: any, input: { organizationId: unknown; ownerUserId: unknown }) {
@@ -134,7 +198,7 @@ async function ensureWorkspaceMembership(ctx: any, workspaceId: unknown, ownerUs
  * and a `.git` suffix dropped, host lowercased (DNS is case-insensitive; the
  * path keeps its case — a false merge is worse than a missed one).
  */
-function canonicalRepoKey(url: string) {
+function canonicalRepoUrl(url: string) {
   const trimmed = url.trim().replace(/\/+$/, "").replace(/\.git$/i, "")
   const scp = trimmed.match(/^[^@/\s]+@([^:/\s]+):(.+)$/)
   if (scp) return `${String(scp[1]).toLowerCase()}/${scp[2]}`
@@ -152,7 +216,7 @@ async function workGraphProject(
     repoUrl?: string
   },
 ) {
-  const wanted = input.repoUrl ? canonicalRepoKey(input.repoUrl) : undefined
+  const wanted = input.repoUrl ? canonicalRepoUrl(input.repoUrl) : undefined
   const matchingWorkspace = wanted
     ? (
         await ctx.db
@@ -163,12 +227,13 @@ async function workGraphProject(
         !workspace.deleted_at &&
         workspace.project_id &&
         typeof workspace.repo_url === "string" &&
-        canonicalRepoKey(workspace.repo_url) === wanted)
+        canonicalRepoUrl(workspace.repo_url) === wanted)
     : undefined
   return await ensureProject(ctx, {
-    projectId: matchingWorkspace?.project_id ?? defaultProjectId(input.workspaceId),
+    projectId: matchingWorkspace?.project_id ?? defaultProjectId(),
     orgId: input.organizationId,
     ownerUserId: input.ownerUserId,
+    repoKey: canonicalRepoKey({ repoUrl: input.repoUrl, workspaceId: input.workspaceId }),
   })
 }
 
@@ -275,6 +340,7 @@ export const list = authedQuery({
 export const createCloud = authedMutation({
   args: {
     workspace_id: v.string(),
+    org_id: v.optional(v.id("orgs")),
     project_id: v.optional(v.string()),
     display_name: v.string(),
     repo_url: v.optional(v.string()),
@@ -317,11 +383,12 @@ export const createCloud = authedMutation({
       }
       return { workspace_doc_id: existing._id }
     }
-    const org = await ensureOwnerOrg(ctx, user)
+    const org = await creationOrg(ctx, user, args.org_id)
     const project = await ensureProject(ctx, {
-      projectId: args.project_id ?? defaultProjectId(args.workspace_id),
+      projectId: args.project_id ?? defaultProjectId(),
       orgId: org._id,
       ownerUserId: user._id,
+      repoKey: canonicalRepoKey({ repoUrl: args.repo_url, workspaceId: args.workspace_id }),
     })
     const home_region = validatedHomeRegion(args.home_region)
     const now = Date.now()
@@ -375,6 +442,7 @@ export const ensureWorkGraph = serviceMutation({
           projectId: existing.project_id,
           orgId: args.organization_id,
           ownerUserId: args.owner_user_id,
+          repoKey: canonicalRepoKey({ repoUrl: existing.repo_url, workspaceId: args.workspace_id }),
         })
       : await workGraphProject(ctx, {
           organizationId: args.organization_id,
@@ -427,6 +495,7 @@ export const ensureWorkGraph = serviceMutation({
 export const registerLocalForSharing = authedMutation({
   args: {
     workspace_id: v.string(),
+    org_id: v.optional(v.id("orgs")),
     display_name: v.string(),
     project_id: v.optional(v.string()),
     repo_url: v.optional(v.string()),
@@ -437,17 +506,25 @@ export const registerLocalForSharing = authedMutation({
   },
   handler: async (ctx, args) => {
     const user = await upsertUser(ctx)
-    const org = await ensureOwnerOrg(ctx, user)
+    const existing = await workspaceByPublicId(ctx.db, args.workspace_id)
+    if (existing && !(await authorizeWorkspace(ctx, existing, "admin"))) throw new Error("Workspace not found")
+    const org = existing
+      ? (existing.org_id ? await ctx.db.get(existing.org_id) : undefined)
+      : await creationOrg(ctx, user, args.org_id)
+    if (!org || org.deleted_at) throw new Error("workspace_tenant_missing")
     const project = await ensureProject(ctx, {
-      projectId: args.project_id ?? defaultProjectId(args.workspace_id),
+      projectId: existing?.project_id ?? args.project_id ?? defaultProjectId(),
       orgId: org._id,
       ownerUserId: user._id,
+      repoKey: canonicalRepoKey({
+        repoUrl: args.repo_url ?? existing?.repo_url,
+        remoteDirectory: args.remote_directory ?? existing?.remote_directory,
+        workspaceId: args.workspace_id,
+      }),
     })
     const requestedHomeRegion = validatedHomeRegion(args.home_region)
     const now = Date.now()
-    const existing = await workspaceByPublicId(ctx.db, args.workspace_id)
     if (existing) {
-      if (!(await authorizeWorkspace(ctx, existing, "admin"))) throw new Error("Workspace not found")
       // Never silently flip a cloud workspace's backing: registering it as a
       // user-hosted local workspace is a conflict, not an update.
       if (existing.backing === "cloud-vm" || existing.access === "cloud") {
@@ -457,8 +534,6 @@ export const registerLocalForSharing = authedMutation({
       }
       const home_region = existing.home_region ?? requestedHomeRegion
       await ctx.db.patch(existing._id, {
-        org_id: org._id,
-        owner_user_id: user._id,
         backing: "local-worktree",
         access: "user-hosted",
         ...(home_region ? { home_region } : {}),

@@ -14,23 +14,35 @@ import type { RuntimeEventHub } from "../runtime-event-hub"
 import { WorkspaceRuntimeApiPrefix, WorkspaceRuntimeRoutes } from "../routes/manifest"
 import { assertWorkspaceRuntimeExposure, type WorkspaceRuntimeExposure } from "../exposure"
 import type { ProcessObserver } from "../managed-processes/process-observer"
+import { sessionEventDeliveryPolicy } from "../event-delivery"
+import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
 
 type Socket = Parameters<typeof PtyRoutes>[0]
 
-export function mountWorkspacePty(app: Hono, upgradeWebSocket: Socket, processObserver?: ProcessObserver) {
-  app.route(WorkspaceRuntimeRoutes.pty, PtyRoutes(upgradeWebSocket, processObserver))
+export function mountWorkspacePty(
+  app: Hono,
+  upgradeWebSocket: Socket,
+  processObserver?: ProcessObserver,
+  sessionAccessPolicy?: SessionAccessPolicy,
+) {
+  app.route(WorkspaceRuntimeRoutes.pty, PtyRoutes(upgradeWebSocket, processObserver, sessionAccessPolicy))
 }
 
-export function mountWorkspaceAgentHooks(app: Hono) {
-  app.route(WorkspaceRuntimeRoutes.hook, AgentHookRoutes())
+export function mountWorkspaceAgentHooks(app: Hono, sessionAccessPolicy?: SessionAccessPolicy) {
+  app.route(WorkspaceRuntimeRoutes.hook, AgentHookRoutes({ sessionAccessPolicy }))
 }
 
 export function mountWorkspaceEvents(app: Hono, options: {
   eventHub: RuntimeEventHub
   runtimeEventAuthorization?: RuntimeEventAuthorization
+  sessionAccessPolicy?: SessionAccessPolicy
 }) {
-  app.get(WorkspaceRuntimeRoutes.events, runtimeBusEventsHandler())
-  app.get(WorkspaceRuntimeRoutes.runtimeEvents, runtimeEventsHandler(options.eventHub, options.runtimeEventAuthorization))
+  const policy = sessionEventDeliveryPolicy(options.sessionAccessPolicy ?? managedWorkspaceSessionAccessPolicy())
+  app.get(WorkspaceRuntimeRoutes.events, runtimeBusEventsHandler(undefined, { policy }))
+  app.get(WorkspaceRuntimeRoutes.runtimeEvents, runtimeEventsHandler(options.eventHub, {
+    policy,
+    ...(options.runtimeEventAuthorization ?? {}),
+  }))
 }
 
 export type WorkspaceTranscriptRoutesOptions = {
@@ -70,14 +82,15 @@ export function mountWorkspaceCore(
   options: {
     eventHub: RuntimeEventHub
     exposure: WorkspaceRuntimeExposure
+    sessionAccessPolicy?: SessionAccessPolicy
     processObserver?: ProcessObserver
     runtimeEventAuthorization?: RuntimeEventAuthorization
     transcripts?: WorkspaceTranscriptRoutesOptions
   },
 ) {
   assertWorkspaceRuntimeExposure({ exposure: options.exposure, env: process.env })
-  mountWorkspacePty(app, upgradeWebSocket, options.processObserver)
-  mountWorkspaceAgentHooks(app)
+  mountWorkspacePty(app, upgradeWebSocket, options.processObserver, options.sessionAccessPolicy)
+  mountWorkspaceAgentHooks(app, options.sessionAccessPolicy)
   mountWorkspaceEvents(app, options)
   if (options.transcripts) mountWorkspaceTranscripts(app, options.transcripts)
   mountWorkspaceProcess(app)

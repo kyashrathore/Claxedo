@@ -30,12 +30,14 @@ describe("convex-test AtomicWorkGraphStore conformance v9", () => {
       const first = await ctx.db.insert("users", {
         token_identifier: String(input.owners.first.ownerUserId),
         clerk_subject: String(input.owners.first.ownerUserId),
+        kind: "human",
         created_at: 1,
         updated_at: 1,
       })
       const second = await ctx.db.insert("users", {
         token_identifier: String(input.owners.second.ownerUserId),
         clerk_subject: String(input.owners.second.ownerUserId),
+        kind: "human",
         created_at: 1,
         updated_at: 1,
       })

@@ -10,6 +10,8 @@ export type SandboxFetchOptions = {
   loopbackRelayUrl?: string
   defaultHomeRegion?: ClaxedoRegion
   subject?: string
+  actorId?: string
+  actorKind?: "human" | "agent"
   orgId?: string
   role?: RelayTokenInput["role"]
   /** Inspect an already-ready runtime without waking or reprovisioning it. */
@@ -49,6 +51,8 @@ export async function sandboxFetch(
     workspaceId: ws.id,
     hostId: target.hostId,
     subject: options.subject ?? "control-plane",
+    actorId: options.actorId ?? "control-plane",
+    actorKind: options.actorKind ?? "agent",
     orgId,
     role: options.role ?? "owner",
     ttlMs: 10 * 60_000,

@@ -70,6 +70,8 @@ async function harness(
     auditEvents,
     token: (role: "viewer" | "editor" | "admin" | "owner" = "editor") => mintRuntimeAccessToken({
       subject: "user_1",
+      actorId: "actor_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -214,6 +216,57 @@ describe("workspace relay server", () => {
     expect(forwardedAuth.length).toBe(2)
     expect(forwardedAuth[0]).toBe(forwardedAuth[1])
     expect(second.headers.get("server-timing") ?? "").toContain("rht-cache;dur=")
+  })
+
+  test("isolates cached Relay Host Tokens by verified actor identity", async () => {
+    const forwarded: string[] = []
+    const relay = await harness({
+      relayHostTokenCacheTtlMs: 30_000,
+      tokenVerifier: {
+        async verify(token) {
+          return {
+            subject: "shared-subject",
+            scopes: ["workspace:write"],
+            claims: {
+              iss: "claxedo-control-plane",
+              aud: "workspace-relay",
+              sub: "shared-subject",
+              actor_id: token === "actor-a-token" ? "actor_a" : "actor_b",
+              actor_kind: "human",
+              actor_public_id: token === "actor-a-token" ? "usr_public_a" : "usr_public_b",
+              actor_name: token === "actor-a-token" ? "Ada" : "Grace",
+              org_id: "org_1",
+              workspace_id: "ws_1",
+              host_id: "host_1",
+              role: "editor",
+              exp: Math.floor(Date.now() / 1000) + 300,
+              iat: Math.floor(Date.now() / 1000),
+              jti: "shared-jti",
+            },
+          }
+        },
+      },
+      fetch: ((_url, init) => {
+        forwarded.push(new Request("http://host.test", init).headers.get("authorization")!.replace(/^Bearer /, ""))
+        return Promise.resolve(new Response("ok"))
+      }) as typeof fetch,
+    })
+
+    for (const token of ["actor-a-token", "actor-b-token"]) {
+      const response = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+        headers: { authorization: `Bearer ${token}` },
+      })
+      expect(response.status).toBe(200)
+    }
+
+    await expect(Promise.all(forwarded.map((token) => verifyRelayHostToken(token, relay.relayHost.publicKey, {
+      workspaceId: "ws_1",
+      hostId: "host_1",
+    })))).resolves.toMatchObject([
+      { actor_id: "actor_a", actor_kind: "human", actor_public_id: "usr_public_a", actor_name: "Ada" },
+      { actor_id: "actor_b", actor_kind: "human", actor_public_id: "usr_public_b", actor_name: "Grace" },
+    ])
+    expect(new Set(forwarded).size).toBe(2)
   })
 
   test("coalesces concurrent Relay Host Token mints after authorization gates pass", async () => {
@@ -528,6 +581,41 @@ describe("workspace relay server", () => {
       },
     })
     expect(relay.forwarded).toEqual([])
+  })
+
+  test("normalizes terminal paths before authorizing and forwarding", async () => {
+    const relay = await harness({
+      fetch: ((url, init) => {
+        relay.forwarded.push({ url: String(url), request: new Request(url, init) })
+        return Promise.resolve(new Response("ok"))
+      }) as typeof fetch,
+    })
+    // %3F/%23 decode to ?/# which forwarding resolves away, hitting the real
+    // /api/wr/pty — the viewer gate must deny on the resolved pathname, not the
+    // raw decoded string.
+    const paths = ["//api/wr/pty", "/%2Fapi/wr/pty", "/api/wr/pty%3Fx", "/api/wr/pty%23x"]
+
+    for (const path of paths) {
+      const res = await relay.app.request(`http://relay.test/workspaces/ws_1${path}`, {
+        headers: { authorization: `Bearer ${await relay.token("viewer")}` },
+      })
+
+      expect(res.status).toBe(403)
+    }
+
+    for (const role of ["editor", "admin", "owner"] as const) {
+      for (const path of paths) {
+        const res = await relay.app.request(`http://relay.test/workspaces/ws_1${path}`, {
+          headers: { authorization: `Bearer ${await relay.token(role)}` },
+        })
+
+        expect(res.status).toBe(200)
+      }
+    }
+
+    expect(relay.forwarded.map((item) => item.url)).toEqual(
+      Array.from({ length: 12 }, () => "https://host.example.test/api/wr/pty"),
+    )
   })
 
   test("allows editor admin and owner relay write requests", async () => {

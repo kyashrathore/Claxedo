@@ -43,6 +43,14 @@ export type WorkspaceVisibility = {
   updatedAt?: number
 }
 
+export type RuntimeActorIdentity = {
+  actorId: string
+  actorKind: "human" | "agent"
+  actorPublicId?: string
+  actorName?: string
+  actorAvatarUrl?: string
+}
+
 export type WorkspaceRecord = {
   workspace_id?: string
   org_id?: string
@@ -81,23 +89,25 @@ export type WorkspaceAuthority = {
     threadKey: string
     projectId: string
     action: ProjectAction
-  }) => Promise<AuthorizeProjectResult>
+  }) => Promise<AuthorizeProjectResult & Partial<RuntimeActorIdentity>>
   authorizeChannelWorkspace: (args: {
     channel: string
     externalUserId: string
     threadKey: string
     workspaceId: string
     action: ProjectAction
-  }) => Promise<void>
+  }) => Promise<RuntimeActorIdentity | void>
 
   // workspaces
   authorizeWorkspaceOpen: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<void>
+  authorizeWorkspaceCreate?: (auth: SignedControlPlaneAuth, args: { orgId?: string }) => Promise<void>
   openWorkspace: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<WorkspaceOpenResult>
   listWorkspaces: (auth: SignedControlPlaneAuth) => Promise<unknown>
   registerLocalForSharing: (
     auth: SignedControlPlaneAuth,
     args: {
       workspaceId: string
+      orgId?: string
       displayName: string
       projectId?: string
       repoUrl?: string
@@ -196,6 +206,7 @@ export type WorkspaceAuthority = {
     auth: SignedControlPlaneAuth,
     args: {
       workspaceId: string
+      orgId?: string
       projectId?: string
       displayName: string
       repoUrl?: string
@@ -230,6 +241,32 @@ export type WorkspaceAuthority = {
     auth: SignedControlPlaneAuth,
     args: { sessionId: string; workspaceId: string },
   ) => Promise<void>
+  authorizeSessionWrite: (
+    auth: SignedControlPlaneAuth,
+    args: { sessionId: string; workspaceId: string },
+  ) => Promise<void>
+  authorizeRuntimeSession?: (args: {
+    actorId: string
+    actorKind: "human" | "agent"
+    sessionId: string
+    workspaceId: string
+    action: "read" | "write"
+  }) => Promise<void>
+  registerRuntimeSession?: (args: {
+    actorId: string
+    actorKind: "human" | "agent"
+    sessionId: string
+    workspaceId: string
+    title?: string
+  }) => Promise<unknown>
+  addSessionParticipant: (
+    auth: SignedControlPlaneAuth,
+    args: { sessionId: string; workspaceId: string; participantTokenIdentifier: string },
+  ) => Promise<unknown>
+  removeSessionParticipant: (
+    auth: SignedControlPlaneAuth,
+    args: { sessionId: string; workspaceId: string; participantTokenIdentifier: string },
+  ) => Promise<unknown>
   listSessions: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<unknown>
   resolveSession?: (auth: SignedControlPlaneAuth, args: { sessionId: string }) => Promise<unknown>
   readSessionMessages: (

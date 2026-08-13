@@ -138,19 +138,24 @@ vi.mock("@/features/terminal/app-ports", () => ({
 import { TerminalContent } from "./terminal-content"
 import { workspaceTerminalRoute } from "@/platform/identity/route"
 
-function terminalMeta(id: string, title: string, workspaceRouteId?: string) {
+function terminalMeta(
+  id: string,
+  title: string,
+  identity: { sessionId?: string; workspaceRouteId?: string } = {},
+) {
   return {
     id: `content-${id}`,
     type: "terminal",
     scope: "directory",
     directory: "/repo",
     terminalId: id,
+    ...(identity.sessionId ? { sessionId: identity.sessionId } : {}),
     content: {
       type: "terminal",
       directory: "/repo",
       terminalId: id,
       title,
-      ...(workspaceRouteId ? { workspaceRouteId } : {}),
+      ...(identity.workspaceRouteId ? { workspaceRouteId: identity.workspaceRouteId } : {}),
     },
   } as const
 }
@@ -184,7 +189,8 @@ describe("TerminalContent switching", () => {
 
   test("creates two terminal panes and keeps them mounted through repeated switches", async () => {
     h.ptys.splice(0)
-    h.terminalNew.mockImplementation(async (_command?: string, title?: string) => {
+    h.terminalNew.mockImplementation(async (options: { title?: string }) => {
+      const title = options.title
       const id = title === "Terminal 2" ? "pty-two" : "pty-one"
       h.ptys.push({ id, title: title ?? "Terminal", cwd: "/repo" })
       return id
@@ -226,6 +232,26 @@ describe("TerminalContent switching", () => {
     expect(h.fit.mock.calls.length).toBeGreaterThanOrEqual(4)
   })
 
+  test("passes the authoritative content session to managed PTY creation", async () => {
+    h.ptys.splice(0)
+    h.terminalNew.mockResolvedValue("pty-private")
+
+    render(() => (
+      <TerminalContent
+        meta={terminalMeta("pending-private", "Private terminal", { sessionId: "session_private" })}
+        ctx={{ paneId: "pane-private", isVisible: () => true }}
+      />
+    ))
+
+    await waitFor(() => expect(h.terminalNew).toHaveBeenCalled())
+    expect(h.terminalNew).toHaveBeenCalledWith({
+      initialCommand: undefined,
+      previousPtyId: undefined,
+      sessionId: "session_private",
+      title: "Private terminal",
+    })
+  })
+
   test("replaces the route when recovery swaps a real terminal id", async () => {
     h.ptys.splice(0, h.ptys.length, { id: "pty-new", title: "Terminal 1", cwd: "/repo" })
     h.pathname = workspaceTerminalRoute("ws_terminal", "pty-old")
@@ -251,7 +277,7 @@ describe("TerminalContent switching", () => {
 
     render(() => (
       <TerminalContent
-        meta={terminalMeta("pty-one", "Terminal 1", "ws_terminal")}
+        meta={terminalMeta("pty-one", "Terminal 1", { workspaceRouteId: "ws_terminal" })}
         ctx={{ paneId: "pane-one", isVisible: () => true }}
       />
     ))
@@ -271,7 +297,7 @@ describe("TerminalContent switching", () => {
 
     render(() => (
       <TerminalContent
-        meta={terminalMeta("pty-one", "Terminal 1", "ws_terminal")}
+        meta={terminalMeta("pty-one", "Terminal 1", { workspaceRouteId: "ws_terminal" })}
         ctx={{ paneId: "pane-one", isVisible: () => true }}
       />
     ))
@@ -294,7 +320,7 @@ describe("TerminalContent switching", () => {
 
     render(() => (
       <TerminalContent
-        meta={terminalMeta("pending-local", "Terminal", "ws_local")}
+        meta={terminalMeta("pending-local", "Terminal", { workspaceRouteId: "ws_local" })}
         ctx={{ paneId: "pane-one", isVisible: () => true }}
       />
     ))

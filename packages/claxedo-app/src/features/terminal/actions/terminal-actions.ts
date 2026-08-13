@@ -13,10 +13,16 @@ export function createTerminalActions(props: ActionProps, nav: Nav) {
   ): { contentId: string | undefined; pendingId: string } => {
     const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
     const tabTitle = title || "Terminal"
+    const focusedContentId = props.state.wb.selectors.focusedContent()
+    const sessionId = focusedContentId ? props.state.meta.get(focusedContentId)?.sessionId : undefined
     let contentId: string | undefined
     batch(() => {
       if (paneId) props.state.wb.split.focus(paneId)
-      contentId = props.state.layout.openTerminal(workspaceDir, pendingId, tabTitle, { command, workspaceRouteId })
+      contentId = props.state.layout.openTerminal(workspaceDir, pendingId, tabTitle, {
+        command,
+        ...(sessionId ? { sessionId } : {}),
+        ...(workspaceRouteId ? { workspaceRouteId } : {}),
+      })
       props.state.workspacePanel.close()
       if (contentId) {
         props.state.terminal.queueCreateForContent(contentId, workspaceDir, command, title, paneId)

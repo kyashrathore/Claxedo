@@ -23,7 +23,7 @@ import {
   type WorkspaceRelayAuthorizeTrace,
   type WorkspaceRelayOptions,
 } from "./server"
-import { WorkspaceRelayAuthError, verifyHostTunnelToken } from "./auth"
+import { WorkspaceRelayAuthError, verifyHostTunnelToken, type RuntimeAccessTokenClaims } from "./auth"
 import { createOriginMatcher, DEFAULT_RELAY_APP_ORIGINS } from "./cors-origins"
 import { bearerToken } from "./http"
 
@@ -36,6 +36,7 @@ export const WORKSPACE_RELAY_IDLE_TIMEOUT_SECONDS = 45
 
 type RelayClientWebSocketData = {
   kind: "client"
+  claims: RuntimeAccessTokenClaims
   upstreamUrl: string
   headers: Record<string, string>
   queue: Array<{ payload: string | Buffer<ArrayBuffer>; queuedAt: number }>
@@ -44,6 +45,8 @@ type RelayClientWebSocketData = {
   upstream?: WebSocket
   upstreamOpenTimer?: ReturnType<typeof setTimeout>
   trace?: RelayClientWebSocketTrace
+  accessCheckTimer?: ReturnType<typeof setInterval>
+  expiryTimer?: ReturnType<typeof setTimeout>
 }
 
 type RelayClientWebSocketTrace = {
@@ -70,11 +73,14 @@ type RelayHostTunnelWebSocketData = {
 
 type RelayUserHostedClientWebSocketData = {
   kind: "user-hosted-client"
+  claims: RuntimeAccessTokenClaims
   hostId: string
   workspaceId: string
   channelId: string
   path: string
   relayHostToken: string
+  accessCheckTimer?: ReturnType<typeof setInterval>
+  expiryTimer?: ReturnType<typeof setTimeout>
 }
 
 type RelayWebSocketData =
@@ -142,6 +148,12 @@ export type WorkspaceRelayBackpressureOptions = {
 }
 
 export type WorkspaceRelayBunOptions = WorkspaceRelayHostTunnelOptions & WorkspaceRelayBackpressureOptions
+  & {
+    /** How often established user WebSockets are re-checked for revocation. Defaults to 30s. */
+    runtimeAccessTokenActiveCheckIntervalMs?: number
+    /** Clock injection used to calculate the local token-expiry deadline. */
+    now?: () => number
+  }
 
 export type WorkspaceRelayBunTelemetry = {
   getFragmentationStats(): FragmentationStats
@@ -455,25 +467,19 @@ function isEventStream(input: TunnelHeaderMap) {
 }
 
 // Same default policy the HTTP path and the Cloudflare adapter apply
-// (./cors-origins). This used to be a hardcoded regex matching ONLY
-// `*.opencode.ai` plus loopback, which both trusted upstream's hosted app and
-// denied Claxedo's own `*.claxedo.com`.
-//
-// KNOWN GAP: unlike src/server.ts, this still ignores
-// `options.allowedOrigins` (CLAXEDO_RELAY_ALLOWED_ORIGINS), because these
-// helpers are module-level and have no access to the options bag. A
-// self-hosted deployment's custom list is honored on the HTTP path but not on
-// the WebSocket upgrade below.
+// (./cors-origins). The Bun adapter compiles an options-specific matcher for
+// WebSocket admission while these module-level helpers retain the product
+// default for call sites without an options bag.
 const defaultRelayOriginMatcher = createOriginMatcher(DEFAULT_RELAY_APP_ORIGINS)
 
-function allowedCorsOrigin(origin: string | null) {
+function allowedCorsOrigin(origin: string | null, matcher = defaultRelayOriginMatcher) {
   if (!origin) return
-  if (defaultRelayOriginMatcher(origin)) return origin
+  if (matcher(origin)) return origin
 }
 
-function requireAllowedOrigin(request: Request) {
+function requireAllowedOrigin(request: Request, matcher = defaultRelayOriginMatcher) {
   const origin = request.headers.get("origin")
-  if (allowedCorsOrigin(origin)) return null
+  if (allowedCorsOrigin(origin, matcher)) return null
   return jsonError(
     "origin_not_allowed",
     "Origin is not in the allowlist",
@@ -1044,6 +1050,53 @@ async function authorizeHostTunnel(
   }
 }
 
+const RUNTIME_ACCESS_TOKEN_ACTIVE_CHECK_INTERVAL_MS_DEFAULT = 30_000
+
+type RelayAccessWatchedWebSocketData = RelayClientWebSocketData | RelayUserHostedClientWebSocketData
+
+function clearClientAccessWatchers(data: RelayAccessWatchedWebSocketData) {
+  if (data.accessCheckTimer) clearInterval(data.accessCheckTimer)
+  if (data.expiryTimer) clearTimeout(data.expiryTimer)
+  data.accessCheckTimer = undefined
+  data.expiryTimer = undefined
+}
+
+/**
+ * Keeps authorization of an established Bun WebSocket current. Runtime Access
+ * Tokens are admission credentials, but a membership change revokes their jti
+ * centrally. Re-checking that jti closes an idle connection within one bounded
+ * interval; the local exp timer is the hard upper bound even if the resolver is
+ * unavailable.
+ */
+function watchClientAccess(
+  ws: Bun.ServerWebSocket<RelayAccessWatchedWebSocketData>,
+  options: WorkspaceRelayOptions,
+  bunOptions: WorkspaceRelayBunOptions,
+) {
+  const now = bunOptions.now ?? Date.now
+  const close = (reason: string) => {
+    clearClientAccessWatchers(ws.data)
+    closeWebSocket(ws, 1008, reason, 1008)
+  }
+  ws.data.expiryTimer = setTimeout(
+    () => close("Runtime Access Token expired"),
+    Math.max(0, ws.data.claims.exp * 1000 - now()),
+  )
+  if (typeof ws.data.expiryTimer.unref === "function") ws.data.expiryTimer.unref()
+  const intervalMs = bunOptions.runtimeAccessTokenActiveCheckIntervalMs
+    ?? RUNTIME_ACCESS_TOKEN_ACTIVE_CHECK_INTERVAL_MS_DEFAULT
+  if (!options.isRuntimeAccessTokenActive || intervalMs <= 0) return
+  ws.data.accessCheckTimer = setInterval(() => {
+    void Promise.resolve(options.isRuntimeAccessTokenActive!(ws.data.claims))
+      .then((active) => {
+        if (!active.active) close(active.reason)
+      })
+      // A resolver outage cannot extend this socket past the local exp timer.
+      .catch(() => {})
+  }, intervalMs)
+  if (typeof ws.data.accessCheckTimer.unref === "function") ws.data.accessCheckTimer.unref()
+}
+
 export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptions: WorkspaceRelayBunOptions = {}) {
   const hostTunnels = new Map<string, Bun.ServerWebSocket<RelayHostTunnelWebSocketData>>()
   const relayClients = new Set<Bun.ServerWebSocket<RelayClientWebSocketData>>()
@@ -1052,6 +1105,9 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
   const hostTunnelStateDebounce = new Map<string, HostTunnelStateEntry>()
   const fragmentationStats = createFragmentationStats()
   const slowConsumerStats = createSlowConsumerStats()
+  const relayOriginMatcher = options.allowedOrigins
+    ? createOriginMatcher(options.allowedOrigins)
+    : defaultRelayOriginMatcher
   const telemetry: WorkspaceRelayBunTelemetry = {
     getFragmentationStats: () => readFragmentationStats(fragmentationStats),
     resetFragmentationStats: () => resetFragmentationStats(fragmentationStats),
@@ -1271,7 +1327,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
       }
       const relay = await authorizeWorkspaceRelayRequest(options, request, workspaceId)
       if (!relay.ok) return relay.response
-      const originDenied = requireAllowedOrigin(request)
+      const originDenied = requireAllowedOrigin(request, relayOriginMatcher)
       if (originDenied) return originDenied
       if (relay.request.target.access === "user-hosted") {
         const tunnel = hostTunnel(hostTunnels, relay.request.target.hostId)
@@ -1293,6 +1349,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
         if (server.upgrade(request, {
           data: {
             kind: "user-hosted-client",
+            claims: relay.request.claims,
             hostId: relay.request.target.hostId,
             workspaceId: relay.request.target.workspaceId,
             channelId: crypto.randomUUID(),
@@ -1312,6 +1369,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
       if (server.upgrade(request, {
         data: {
           kind: "client",
+          claims: relay.request.claims,
           upstreamUrl: workspaceRelayTargetUrl(
             relay.request.target,
             relay.request.path,
@@ -1552,6 +1610,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           return
         }
         if (ws.data.kind === "user-hosted-client") {
+          watchClientAccess(ws as Bun.ServerWebSocket<RelayUserHostedClientWebSocketData>, options, bunOptions)
           const tunnel = hostTunnel(hostTunnels, ws.data.hostId)
           if (!tunnel) {
             ws.close(1011, "User-hosted tunnel disconnected")
@@ -1581,6 +1640,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           return
         }
         relayClients.add(ws as Bun.ServerWebSocket<RelayClientWebSocketData>)
+        watchClientAccess(ws as Bun.ServerWebSocket<RelayClientWebSocketData>, options, bunOptions)
         const data = ws.data
         const UpstreamWebSocket = bunOptions.upstreamWebSocket ?? (WebSocket as unknown as UpstreamWebSocketConstructor)
         if (data.trace) data.trace.upstreamStartedAt = performance.now()
@@ -1650,6 +1710,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           return
         }
         if (ws.data.kind === "user-hosted-client") {
+          clearClientAccessWatchers(ws.data)
           const tunnel = hostTunnel(hostTunnels, ws.data.hostId)
           tunnel?.data.channels.delete(ws.data.channelId)
           if (tunnel?.readyState === WebSocket.OPEN) {
@@ -1664,6 +1725,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           return
         }
         relayClients.delete(ws as Bun.ServerWebSocket<RelayClientWebSocketData>)
+        clearClientAccessWatchers(ws.data)
         if (ws.data.upstreamOpenTimer) clearTimeout(ws.data.upstreamOpenTimer)
         if (ws.data.upstream) closeWebSocket(ws.data.upstream, code, reason, 1000)
       },

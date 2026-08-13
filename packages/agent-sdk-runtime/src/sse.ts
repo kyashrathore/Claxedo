@@ -26,13 +26,15 @@ export function createSseReplayBuffer<T>(input?: {
   maxEvents?: number
   maxTerminalEvents?: number
   isTerminal?: (payload: T) => boolean
+  /** Continue a principal-local cursor after its replay ring was evicted. */
+  initialSequence?: number
 }): SseReplayBuffer<T> {
   const maxEvents = Math.max(1, Math.floor(input?.maxEvents ?? 256))
   const maxTerminalEvents = Math.max(1, Math.floor(input?.maxTerminalEvents ?? 64))
   const events: Array<{ id: string; seq: number; payload: T }> = []
   const terminal: Array<{ id: string; seq: number; payload: T }> = []
   const ids = new WeakMap<object, string>()
-  let seq = 0
+  let seq = Math.max(0, Math.floor(input?.initialSequence ?? 0))
 
   const isTerminal = (payload: T) => input?.isTerminal?.(payload) === true
   const trim = <U>(items: U[], max: number) => {

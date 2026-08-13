@@ -11,7 +11,9 @@ import { Pty } from "../pty/index"
 import { Process } from "../managed-processes/schema"
 import * as ProcessManager from "../managed-processes/manager"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
-import { assertTarget, WorkspaceTargetError } from "../target"
+import { assertTarget, resolveWorkspaceCommandPaths, resolveWorkspacePath, WorkspaceTargetError } from "../target"
+import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import { denyWorkspaceViewers } from "./workspace-role"
 
 function dir(c: { req: { query: (k: string) => string | undefined; header: (k: string) => string | undefined } }): string {
   return assertTarget(c.req.query("directory") || c.req.header("x-opencode-directory"))
@@ -91,17 +93,30 @@ async function init(c: { req: { query: (k: string) => string | undefined; header
   return directory
 }
 
+async function validateConfig(directory: string, config: Partial<Process.ProcessConfig>) {
+  if (config.cwd) await resolveWorkspacePath(directory, config.cwd)
+  await resolveWorkspaceCommandPaths(directory, {
+    command: config.command,
+    args: config.args,
+    allowAbsoluteExecutable: true,
+  })
+}
+
 export const ProcessRoutes = lazy(() =>
-  new Hono()
+  new Hono<{ Variables: RelayHostAuthContext }>()
     .onError((err, c) => {
       if (isRequestBodyTooLarge(err)) {
         return c.json(requestBodyTooLargeBody(), 413)
       }
       if (err instanceof WorkspaceTargetError) {
+        if (!err.message.includes("pinned")) {
+          return c.json(errorBody("process_invalid_path", err.message), 400)
+        }
         return c.json(errorBody("process_invalid_directory", "Process directory must match configured workspace"), 400)
       }
       throw err
     })
+    .use("*", denyWorkspaceViewers("Workspace role does not allow process access"))
     .get("/", async (c) => {
       const directory = await init(c)
       const configs = ProcessManager.configs(directory)
@@ -114,6 +129,7 @@ export const ProcessRoutes = lazy(() =>
         c,
         {} as Omit<Process.ProcessConfig, "id"> & { id?: string },
       )
+      await validateConfig(directory, body)
       const config = await ProcessManager.addConfig(directory, body)
       return c.json(config, 201)
     })
@@ -122,6 +138,8 @@ export const ProcessRoutes = lazy(() =>
       const id = c.req.param("id")
       const updates = await boundedJsonBody<Partial<Omit<Process.ProcessConfig, "id">>>(c, {})
       try {
+        const existing = ProcessManager.configs(directory).find((config) => config.id === id)
+        if (existing) await validateConfig(directory, { ...existing, ...updates })
         const updated = await ProcessManager.updateConfig(directory, id, updates)
         return c.json(updated)
       } catch (err) {

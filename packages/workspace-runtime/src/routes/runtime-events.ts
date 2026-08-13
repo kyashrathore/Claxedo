@@ -1,7 +1,13 @@
 import type { Context } from "hono"
 import { streamSSE } from "hono/streaming"
-import { attachSseFanout, createSseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
+import { attachSseFanout } from "@claxedo/agent-sdk-runtime/sse"
 import { workspaceRuntimeBus, type WorkspaceRuntimeEvent } from "../bus"
+import {
+  createIdentityAwareEventSource,
+  defaultEventDeliveryPolicy,
+  eventDeliveryPrincipal,
+  type EventDeliveryOptions,
+} from "../event-delivery"
 
 /**
  * Synthetic frame written in place of a replay when the requested cursor has
@@ -97,7 +103,10 @@ type WorkspaceRuntimeBus = Pick<typeof workspaceRuntimeBus, "subscribe">
  * "the last frame I applied", so that a frame dropped from a saturated pending
  * queue is redelivered on the next reconnect instead of being skipped over.
  */
-export function runtimeBusEventsHandler(bus: WorkspaceRuntimeBus = workspaceRuntimeBus) {
+export function runtimeBusEventsHandler(
+  bus: WorkspaceRuntimeBus = workspaceRuntimeBus,
+  options: EventDeliveryOptions<StreamFrame> = {},
+) {
   // Retention matches `./events.ts` (256 frames, plus a 64-frame terminal
   // ring). Sizing is deliberate rather than copied: this bus carries control
   // frames only — pty/process lifecycle, agent lifecycle, session lifecycle —
@@ -108,44 +117,76 @@ export function runtimeBusEventsHandler(bus: WorkspaceRuntimeBus = workspaceRunt
   // the worst client gap (45s heartbeat watchdog + 2s reconnect floor) can
   // span in any realistic workload, and keeping the two SSE routes on one
   // number keeps one thing to reason about.
-  const replay = createSseReplayBuffer<StreamFrame>({ isTerminal: isTerminalBusEvent })
-  bus.subscribe((event) => {
-    replay.push(event)
+  const source = createIdentityAwareEventSource<StreamFrame>({
+    subscribe: bus.subscribe,
+    policy: options.policy ?? defaultEventDeliveryPolicy,
+    sessionId: (event) => {
+      if (event.type === "pty.created" || event.type === "pty.updated") return event.info.sessionId
+      if (event.type === "pty.exited" || event.type === "pty.deleted" || event.type === "pty.stream") {
+        return event.sessionId
+      }
+      if (event.type === "agent.lifecycle") return event.sessionId
+      if (event.type === "session.lifecycle") return event.sessionID
+      return undefined
+    },
+    sensitive: (event) => event.type === "agent.lifecycle" && (!!event.prompt || !!event.lastAssistantMessage),
+    isTerminal: isTerminalBusEvent,
   })
-  return (c: Context) => streamSSE(c, async (stream) => {
-    const heartbeat = { type: "heartbeat" } as const
-    const cursor = c.req.header("last-event-id") ?? replay.lastId() ?? "0"
+  source.open({ mode: "unmanaged-local", connectionId: "local-replay" })
+  return async (c: Context) => {
+    const opened = source.open(await (options.principal?.(c) ?? eventDeliveryPrincipal(c)))
+    await opened.ready
+    return streamSSE(c, async (stream) => {
+      const heartbeat = { type: "heartbeat" } as const
+      const cursor = c.req.header("last-event-id") ?? opened.replay.lastId() ?? "0"
 
-    await stream
-      .writeSSE({ id: cursor, data: JSON.stringify(heartbeat) })
-      .catch(() => {})
+      await stream
+        .writeSSE({ id: cursor, data: JSON.stringify(heartbeat) })
+        .catch(() => {})
 
-    const cleanup = attachSseFanout<StreamFrame>({
-      subscribe: bus.subscribe,
-      write: (event, meta) => stream.writeSSE({
-        ...(meta?.id ? { id: meta.id } : {}),
-        data: JSON.stringify(event),
-      }),
-      heartbeat,
-      heartbeatMs: 30_000,
-      lastEventId: cursor,
-      replay,
-      replayLive: false,
-      replayGap: ({ lastEventId, throughId }) => ({
-        type: "stream.replay-gap",
-        code: "runtime.sse_replay_gap",
-        message: "Workspace runtime event replay cursor is no longer available; refetch runtime state.",
-        severity: "warn",
-        ...(lastEventId ? { lastEventId } : {}),
-        ...(throughId ? { throughId } : {}),
-      }),
-    })
+      let cleanup: () => void = () => {}
+      cleanup = attachSseFanout<StreamFrame>({
+        subscribe: (listener) => opened.subscribe(listener, () => {
+          cleanup()
+          stream.abort()
+        }),
+        write: async (event, meta) => {
+          const frame = "type" in event && event.type !== "heartbeat" ? event as StreamFrame : undefined
+          if (frame) {
+            const decision = await opened.decide(frame)
+            if (decision === "omit") return
+            if (decision === "terminate") {
+              cleanup()
+              stream.abort()
+              return
+            }
+          }
+          return stream.writeSSE({
+            ...(meta?.id ? { id: meta.id } : {}),
+            data: JSON.stringify(event),
+          })
+        },
+        heartbeat,
+        heartbeatMs: 30_000,
+        lastEventId: cursor,
+        replay: opened.replay,
+        replayLive: false,
+        replayGap: ({ lastEventId, throughId }) => ({
+          type: "stream.replay-gap",
+          code: "runtime.sse_replay_gap",
+          message: "Workspace runtime event replay cursor is no longer available; refetch runtime state.",
+          severity: "warn",
+          ...(lastEventId ? { lastEventId } : {}),
+          ...(throughId ? { throughId } : {}),
+        }),
+      })
 
-    await new Promise<void>((resolve) => {
-      stream.onAbort(() => {
-        cleanup()
-        resolve()
+      await new Promise<void>((resolve) => {
+        stream.onAbort(() => {
+          cleanup()
+          resolve()
+        })
       })
     })
-  })
+  }
 }

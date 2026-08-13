@@ -659,7 +659,7 @@ describe("createCentralSessionRuntime", () => {
     turns.dispose()
   })
 
-  test("mints the signed subject at the central message entry point", async () => {
+  test("authorizes signed central reads and writes before minting the turn subject", async () => {
     const svc = services()
     const sessionId = "signed-session"
     svc.projectionStore.session_meta = vi.fn(async () => ({
@@ -672,7 +672,10 @@ describe("createCentralSessionRuntime", () => {
       tags: [],
       attachments: [],
     }))
-    const authority = { authorizeSessionRead: vi.fn(async () => {}) }
+    const authority = {
+      authorizeSessionRead: vi.fn(async () => {}),
+      authorizeSessionWrite: vi.fn(async () => {}),
+    }
     svc.authority = authority as never
     const turns = createConnectionTurnCredentials({ random: () => "signed-turn" })
     const control = createCentralControlApp(svc, {
@@ -684,6 +687,11 @@ describe("createCentralSessionRuntime", () => {
       turnCredentials: turns,
     })
     await control.runtime.createHybridSession({ title: "Signed" })
+
+    const read = await control.app.request(`http://relay.example/api/control/session/${sessionId}`, {
+      headers: { authorization: "Bearer signed-token" },
+    })
+    expect(read.status).toBe(200)
 
     const res = await control.app.request(`http://relay.example/api/control/session/${sessionId}/message`, {
       method: "POST",
@@ -699,6 +707,12 @@ describe("createCentralSessionRuntime", () => {
     expect(res.status).toBe(200)
     expect(turns.resolve("signed-turn")).toEqual({ sessionId, subject: "user-a" })
     expect(authority.authorizeSessionRead).toHaveBeenCalledWith(expect.objectContaining({
+      user: expect.objectContaining({ subject: "user-a" }),
+    }), {
+      sessionId,
+      workspaceId: "workspace-1",
+    })
+    expect(authority.authorizeSessionWrite).toHaveBeenCalledWith(expect.objectContaining({
       user: expect.objectContaining({ subject: "user-a" }),
     }), {
       sessionId,
