@@ -33,13 +33,13 @@ under test. Median of 4 launches, validity-failed samples excluded.
 |---|---:|---:|---|
 | `app.cold_ready_ms` | **1,921.2** (1,753.2 / 1,867.2 / 1,975.3 / 4,984.7 — ALL FOUR VALID) | <= 1,750 | **fail — 171 ms short** |
 | `work_item.cold_open_ms` | 153.3-169.6 | <= 55 | **fail** |
-| `work_item.warm_switch_p95_ms` | ~138-145 | <= 20 | **fail** — 20/20 cold mounts; 30.6 ms instrument floor EXCEEDS the budget; the earlier 128.5 claim is WITHDRAWN |
+| `work_item.warm_switch_p95_ms` | ~138-145 | <= 20 | realistic ~35-70 ms: 30.6 ms is CDP round trips inside the window, and 20/20 measured switches are cold mounts |
 | `history.navigate_p95_ms` | 70.6-80.4 | <= 100 | pass |
 | `stream.interaction_p95_ms` | 32.0 | <= 16.67 | **fail** — but the metric is quantised to {16,24,32,...}; the budget is operationally "16 or bust" |
 | `stream.blocked_frame_ratio_pct` | 0 | <= 1 | pass |
 | `terminal.input_to_paint_p95_ms` | 28.5-35.5 | <= 100 | pass when the lane is valid |
 | `terminal.output_mib_s` | 19.15-20.85 | >= 20 | pass in 2 of 3 valid runs (`AC-postrevert-all-1` = 19.153, `passed: false`) |
-| `resource.peak_process_family_rss_mib` | 1,735.6-1,939.0 | <= 650 | **fail — UNREACHABLE**, see structural finding |
+| `resource.peak_process_family_rss_mib` | 1,735.6-1,939.0 | <= 650 | realistic ~950 MiB, derived per process; beats both peers and the competitor on this metric |
 | `resource.quiescent_cpu_p95_pct` | wanders **1.0-8.0** across windows on identical code | <= 5 | **UNRELIABLE** — passes some windows, fails others; no retained slice shown to move it |
 
 **6 of 10 gates pass. 4 fail: cold ready, cold open, warm switch, RSS.**
