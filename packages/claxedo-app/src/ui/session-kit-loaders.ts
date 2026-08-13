@@ -21,3 +21,23 @@ export async function loadMarkdownComponent() {
   ])
   return module.Markdown
 }
+
+let markdownPrewarmStarted = false
+
+/**
+ * Idle-time warm-up for the Markdown/highlight stack. Without it, the first
+ * session switch pays the markdown chunk's module evaluation (marked + shiki's
+ * `bundledLanguages` + the highlight worker URL) and the @pierre/diffs theme
+ * registration inside the switch window (observed as ~35ms of `markdown.parse`
+ * warm-up). Loading stays behind a dynamic import so the forbidden-eager-deps
+ * guard is unaffected — call this only from an idle callback after boot.
+ */
+export function prewarmMarkdownStack() {
+  if (markdownPrewarmStarted) return
+  markdownPrewarmStarted = true
+  void loadMarkdownComponent().catch(() => {
+    // Network hiccup: allow a later idle callback (or the real first render)
+    // to retry the import.
+    markdownPrewarmStarted = false
+  })
+}
