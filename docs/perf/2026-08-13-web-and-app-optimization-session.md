@@ -97,3 +97,17 @@ desktop per §1.2's transfer list.
 - Renderer `--js-flags` (HANDOFF §1.1) deliberately NOT set: no way to
   measure renderer RSS here, and unmeasured flags on the interaction path
   violate the measurement rules.
+
+## Addendum: the §11.5 icon-sprite outcome (recorded, closing the ledger)
+
+The predecessor's "inline SVG sprite" prototype — the one idea in the WIP
+archive with no recorded outcome — turned out to have LANDED in `7045033` +
+`7e66409`: OpenCodeIcon injects one 110-symbol sprite and renders <use>, and
+the codex/file/provider icons already lazy-materialize an external sprite
+asset. Measured 2026-08-13 (happy-dom, 500 instances, 21 runs ×2): sprite is
+36–38% faster warm / 13–18% cold than per-instance inline paths; DOM nodes
+only −13% in-view and net-neutral counting the sprite root, so the render-cost
+rationale holds and the DOM-memory rationale does not. Keep; no code change.
+Remaining follow-up: icon.tsx still carries its ~42 kB icon record in the
+eager chunk solely to build the sprite at runtime — externalizing it like the
+codex sprite asset is the bundle-size item.
