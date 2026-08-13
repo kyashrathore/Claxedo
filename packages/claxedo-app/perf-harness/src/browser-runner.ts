@@ -1109,9 +1109,31 @@ function responseFor(url: URL, fixture: ReturnType<typeof fixtureFor>, method = 
   if (pathName === "/global/health") return { healthy: true, version: "perf-browser" }
   if (pathName === "/experimental/session") return experimentalSessions(url, fixture)
   if (pathName === "/api/control/session-list") return sessionNavigationPage(url, fixture)
+  // Loopback rewrite of the SAME navigation contract: on a loopback server
+  // `sessionNavigationListUrl` (workspace-control-routes.ts:145-153) rewrites
+  // `/api/control/session-list` to `/api/claxedo/session-list`, served by the
+  // desktop-local product (claxedo-local-server meta-routes.ts:153) from the
+  // shared `buildSessionListResponse` producer — one fixture builder for both.
+  if (pathName === "/api/claxedo/session-list") return sessionNavigationPage(url, fixture)
   if (pathName === "/api/workspace") return { workspaces: controlWorkspaces(fixture) }
   if (pathName === "/api/workspace/resolve") return resolvedWorkspace(url, fixture)
+  // Loopback rewrite of workspace resolve (`workspaceResolveUrl`,
+  // workspace-control-routes.ts:39-42) — identical response shape.
+  if (pathName === "/api/claxedo/workspace/resolve") return resolvedWorkspace(url, fixture)
   if (pathName === "/api/control/sessions") return { sessions: controlSessions(fixture, url.searchParams.get("workspaceId")) }
+  // The desktop-local flat session inventory (claxedo-local-server
+  // meta-routes.ts:140-152, `GET /api/claxedo/session` → `{ sessions:
+  // SessionMeta[] }`), read by `fetchLocalControlSessions`
+  // (features/session/data/sync/inventory-source.ts:527-535) on loopback
+  // transport and mapped through `controlMetaToGlobalSession`.
+  if (pathName === "/api/claxedo/session") {
+    return { sessions: localSessionMetas(fixture, url.searchParams.get("directory")) }
+  }
+  // Usage outbox sync (features/usage/data/usage-api.ts `syncUsageOutbox`),
+  // fired on boot by `installUsageOutboxWakeups`. Contract: the four counters.
+  if (pathName === "/api/claxedo/usage/sync") {
+    return { attempted: 0, delivered: 0, conflicts: 0, pending: 0 }
+  }
   if (pathName === "/api/claxedo/diff/vcs" || pathName === "/api/wr/diff/vcs") {
     return changedFilesForVcs(url, fixture)
   }
@@ -1390,6 +1412,25 @@ function controlWorkspaces(fixture: ReturnType<typeof fixtureFor>) {
     backing: "local",
     created_at: 1_700_000_000_000 + index,
     updated_at: 1_700_000_010_000 + index,
+  }))
+}
+
+// SessionMeta rows for the desktop-local `GET /api/claxedo/session` inventory
+// (claxedo-server-core session/meta/types.ts `SessionMeta`): camelCase times,
+// `sessionID`, and required `tags`/`attachments`, filtered by `?directory=`
+// exactly like the real handler's `listSessionMetas({ directory })`.
+function localSessionMetas(fixture: ReturnType<typeof fixtureFor>, directory?: string | null) {
+  return sessionsForDirectory(fixture, directory).map((session) => ({
+    sessionRef: `local:${session.directory}:session:${session.id}`,
+    sessionID: session.id,
+    host: "central",
+    title: session.title,
+    directory: session.directory,
+    projectID: session.projectID,
+    createdAt: session.time.created,
+    updatedAt: session.time.updated,
+    tags: [],
+    attachments: [],
   }))
 }
 

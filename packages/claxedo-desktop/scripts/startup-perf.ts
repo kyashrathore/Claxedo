@@ -19,8 +19,13 @@ type Sample = {
   systemCpu: number
 }
 
-if (process.platform !== "darwin") {
-  throw new Error("Desktop startup resource profiling currently requires macOS ps")
+// procps accepts the same BSD-style `ps -axo pid=,ppid=,%cpu=,rss=,command=`
+// invocation used below, so the sampler runs unchanged on Linux (e.g. a
+// headless container under xvfb-run). Note the %cpu semantics differ: Linux
+// reports a lifetime average where macOS reports a recent window, so compare
+// CPU figures only within one platform.
+if (process.platform !== "darwin" && process.platform !== "linux") {
+  throw new Error("Desktop startup resource profiling requires macOS or Linux ps")
 }
 
 const packageDir = path.resolve(import.meta.dir, "..")
