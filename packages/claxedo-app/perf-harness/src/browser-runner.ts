@@ -1,3 +1,4 @@
+import { appendFileSync } from "node:fs"
 import { mkdir, mkdtemp, rename, rm } from "node:fs/promises"
 import net from "node:net"
 import { tmpdir } from "node:os"
@@ -966,6 +967,17 @@ export function claxedoStateSeed(
 const UNMATCHED_MOCK_PATH = Symbol("perf.unmatched-mock-path")
 const warnedUnmatchedPaths = new Set<string>()
 
+// Request-timeline lane: CLAXEDO_PERF_REQUEST_LOG=<path> appends one JSONL row
+// per mocked API request (wall-clock ms, method, path+query, status) plus a
+// `boot` marker per page, so serial waterfalls / duplicate fetches / 404
+// storms can be diffed across runs. Off (and zero-cost) unless the env is set.
+const requestLogPath = process.env.CLAXEDO_PERF_REQUEST_LOG
+let requestLogBootSeq = 0
+function logMockRequest(row: Record<string, unknown>) {
+  if (!requestLogPath) return
+  appendFileSync(requestLogPath, `${JSON.stringify(row)}\n`)
+}
+
 // Long-poll SSE, mirroring e2e/helpers/mock-runtime.ts's drain pattern
 // (route.fulfill cannot stream, so a "live" stream is a request HELD open for
 // an idle window, then closed with a benign frame; the app reconnects with
@@ -997,11 +1009,45 @@ async function installMockApi(
   monitor: ReturnType<typeof monitorPage>,
 ) {
   const sseConnects = new Map<string, number>()
+  const bootSeq = ++requestLogBootSeq
+  const bootStarted = Date.now()
+  logMockRequest({ boot: bootSeq, at: bootStarted })
+  // CLAXEDO_PERF_FETCH_STACKS=1 (needs CLAXEDO_PERF_REQUEST_LOG too): wrap
+  // window.fetch in the page and append the JS initiator stack of each API
+  // request to the request log, so duplicate fetches can be attributed to
+  // their call sites (minified frames still identify distinct callers).
+  if (requestLogPath && process.env.CLAXEDO_PERF_FETCH_STACKS === "1") {
+    page.on("console", (message) => {
+      if (!message.text().startsWith("[FETCH_STACK]")) return
+      logMockRequest({ boot: bootSeq, t: Date.now() - bootStarted, stack: message.text().slice("[FETCH_STACK]".length) })
+    })
+    await page.addInitScript(() => {
+      const original = globalThis.fetch
+      const wrapped = function (this: unknown, input: RequestInfo | URL, init?: RequestInit) {
+        try {
+          const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+          if (/workspace\/resolve|\/provider|\/api\/claxedo\/session|\/vcs|permission-mode|\/meta(?:\?|$)|\/session\/[^/]+\/config/.test(url)) {
+            console.debug(`[FETCH_STACK]${url} :: ${new Error("stack").stack?.split("\n").slice(2, 8).join(" | ")}`)
+          }
+        } catch {}
+        return original.call(this, input, init)
+      }
+      globalThis.fetch = wrapped as typeof globalThis.fetch
+    })
+  }
   await page.routeWebSocket(/\/api\/wr\/pty\/[^/]+\/connect(?:\?|$)/, (socket) => {
     socket.send("perf terminal ready\r\n")
   })
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url())
+    const logRow = (status: number, note?: string) => logMockRequest({
+      boot: bootSeq,
+      t: Date.now() - bootStarted,
+      method: route.request().method(),
+      path: `${url.pathname}${url.search}`,
+      status,
+      ...(note ? { note } : {}),
+    })
     if (
       process.env.PERF_DEBUG_ERRORS &&
       (url.pathname.includes("session") || url.pathname.includes("workspace"))
@@ -1022,6 +1068,7 @@ async function installMockApi(
       // hold — and only genuine RE-connects are held for the idle window.
       const connects = (sseConnects.get(url.pathname) ?? 0) + 1
       sseConnects.set(url.pathname, connects)
+      logRow(200, `sse connect#${connects}`)
       if (connects > 3) await Bun.sleep(SSE_IDLE_HOLD_MS)
       return route.fulfill({
         status: 200,
@@ -1031,8 +1078,12 @@ async function installMockApi(
       }).catch(() => undefined)
     }
     const body = responseFor(url, fixture, route.request().method())
-    if (body === undefined) return route.fallback()
+    if (body === undefined) {
+      logRow(0, "fallback")
+      return route.fallback()
+    }
     if (body === UNMATCHED_MOCK_PATH) {
+      logRow(404, "unmatched")
       const key = `${route.request().method()} ${url.pathname}`
       if (!monitor.unmatchedMockPaths.includes(key)) monitor.unmatchedMockPaths.push(key)
       if (process.env.PERF_DEBUG_ERRORS || !warnedUnmatchedPaths.has(key)) {
@@ -1046,6 +1097,7 @@ async function installMockApi(
         body: JSON.stringify({ error: "perf-harness mock: unmatched path", path: url.pathname }),
       })
     }
+    logRow(200)
     return route.fulfill({
       status: 200,
       contentType: "application/json",

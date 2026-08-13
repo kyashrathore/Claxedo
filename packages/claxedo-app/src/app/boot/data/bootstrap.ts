@@ -495,8 +495,20 @@ export async function bootstrapDirectory(input: {
   // (access-denied / offline view), so the old per-call "Failed to load models"
   // toast + 403-suppression dance is deleted (BUG-9). Failures here propagate
   // silently to callers (all `.catch(() => undefined)`), with no toast spam.
-  const fetchProviderOrNotify = (workspace?: WorkspaceRuntimeSnapshot | null) =>
-    fetchProvider(workspace)
+  //
+  // Fetch-once within this bootstrap: the pre-paint fetch below and the idle
+  // warmup both ask for the same catalog (`fetchProvider` is a raw fetch, not
+  // a cached query), which measured as two identical `GET /provider?harness=…`
+  // requests per boot on the launch-project perf lane. A successful fetch
+  // satisfies both; the warmup only refetches when the first attempt failed
+  // (e.g. the runtime was still coming up pre-paint).
+  let providerFetched = false
+  const fetchProviderOrNotify = (workspace?: WorkspaceRuntimeSnapshot | null) => {
+    if (providerFetched) return Promise.resolve()
+    return fetchProvider(workspace).then(() => {
+      providerFetched = true
+    })
+  }
 
   const resolveWorkspace = () => {
     if (input.workspace) return Promise.resolve(input.workspace)
