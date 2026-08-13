@@ -5,7 +5,7 @@
  * and uses the runtime event bus directly.
  */
 
-import { type IPty } from "node-pty"
+import { type IPty } from "@lydell/node-pty"
 import z from "zod/v3"
 import { Log } from "../log"
 import type { WSContext } from "hono/ws"
@@ -50,7 +50,7 @@ import type {
 
 async function getSpawn() {
   await ensureSpawnHelper()
-  return (await import("node-pty")).spawn
+  return (await import("@lydell/node-pty")).spawn
 }
 
 export function selectPtyCommand(input: {
@@ -361,6 +361,9 @@ export namespace Pty {
       }
       session.subscribers.clear()
 
+      // unref'd: an exited session's retention sweep must not hold the
+      // process open — a runtime (or test runner) with nothing else left to
+      // do should exit instead of idling out this timer.
       setTimeout(() => {
         if (sessions.get(id) === session) {
           for (const ws of session.subscribers) {
@@ -370,7 +373,7 @@ export namespace Pty {
           sessions.delete(id)
           session.removed = true
         }
-      }, 1000 * 60)
+      }, 1000 * 60).unref?.()
       return
     }
 
@@ -658,7 +661,7 @@ export namespace Pty {
       // to mark. Kept as session state and prepended at replay time instead,
       // which makes it immune to trimming by construction.
       restoredNoticePending: shouldMarkRestored({ previousPtyId, restoredLength: restored.length }),
-      // node-pty's own default geometry; the client's first resize on attach
+      // @lydell/node-pty's own default geometry; the client's first resize on attach
       // brings both the pty and this emulator to the real size. Geometry only
       // affects where the emulator wraps, not which modes it records, so a
       // brief mismatch cannot corrupt the preamble.

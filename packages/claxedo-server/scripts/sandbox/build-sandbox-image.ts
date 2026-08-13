@@ -14,7 +14,7 @@ type Exec = (cmd: string, args: string[], opts?: { cwd?: string; env?: NodeJS.Pr
 // collected dependency set (versions come from workspace package.jsons).
 const IMAGE_REQUIRED_DEPENDENCIES = [
   "better-sqlite3",
-  "node-pty",
+  "@lydell/node-pty",
   "@agentclientprotocol/claude-agent-acp",
   "@agentclientprotocol/codex-acp",
 ]

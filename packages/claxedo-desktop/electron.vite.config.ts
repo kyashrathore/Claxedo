@@ -96,7 +96,7 @@ export default defineConfig(({ mode }) => {
         // stay external — they ship as the app's sole node_modules content.
         externalizeDeps: false,
         rollupOptions: {
-          external: ["better-sqlite3", "node-pty", "@lydell/node-pty", "@vscode/windows-process-tree"],
+          external: ["better-sqlite3", "@lydell/node-pty", "@vscode/windows-process-tree"],
           input: {
             index: "src/main/index.ts",
             "process-metrics-worker": "src/main/diagnostics/process-metrics-worker-entry.ts",

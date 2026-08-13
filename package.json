@@ -134,7 +134,6 @@
     "@vscode/windows-process-tree",
     "better-sqlite3",
     "esbuild",
-    "node-pty",
     "protobufjs",
     "web-tree-sitter",
     "electron"
