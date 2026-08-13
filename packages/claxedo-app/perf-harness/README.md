@@ -76,6 +76,15 @@ Neither flag changes a normal release or CI run.
 separate because Chrome's sampler perturbs short frame measurements; profile
 runs provide attribution and never provide gating timing evidence.
 
+`CLAXEDO_PERF_REQUEST_LOG=<path>` appends one JSONL row per mocked API request
+(ms since page setup, method, path+query, status, plus a `boot` marker per
+page), for diffing the boot/interaction request graph across runs — serial
+waterfalls, duplicate fetches, 404 storms. `CLAXEDO_PERF_FETCH_STACKS=1`
+additionally records the in-page `fetch` initiator stack for
+resolve/provider/session-shaped requests into the same log, attributing each
+duplicate to its call site. Both are off (and zero-cost) unless set; neither
+changes a normal release or CI run.
+
 The 8ms event-loop heartbeat runs in every release and diagnostic measurement.
 It distinguishes application main-thread unavailability from the headless
 browser's own rAF cadence without enabling mutation observers or CPU sampling.

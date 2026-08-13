@@ -1,5 +1,7 @@
 import type { LspStatus, McpStatus, Session, Todo, VcsInfo } from "@opencode-ai/sdk/v2/client"
 import { authFetch, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
+import { queryClient } from "@/platform/query/query-client"
+import { queryKeys } from "@/platform/query/keys"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import {
   createAgentRuntimeClient,
@@ -76,12 +78,33 @@ export function createHttpWorkspaceRuntimeBackend(input: {
   const request = input.request ?? authFetch
   const strictSignedRuntime = input.signedControlPlane === true
 
+  // Runs through the shared query cache under the SAME key `workspaceResolveQuery`
+  // (workspace-query.ts) uses, so a status read (vcs/mcp/lsp) that needs the
+  // workspace record reuses a resolve that bootstrap or any other consumer
+  // fetched in the last 15s — and concurrent callers share one in-flight
+  // request. Measured on the launch-project perf lane: every idle-warmup
+  // `getVcs` re-fetched `/api/claxedo/workspace/resolve?directory=...` raw,
+  // milliseconds after the same directory had already been resolved.
   async function resolveWorkspaceRuntime(directory: string) {
-    const res = await request(workspaceResolveUrl({ baseUrl, scope: directory }), {
-      headers: { Accept: "application/json" },
-    })
-    if (!res.ok) return null
-    return await readJson<WorkspaceRuntimeSnapshot>(res)
+    try {
+      return await queryClient.fetchQuery({
+        queryKey: queryKeys.runtime.workspace({ baseUrl, directory }),
+        staleTime: 15 * 1000,
+        // Same semantics as `resolveWorkspace` below (null on 404, throw on
+        // other bad statuses) so the shared cache entry never stores a fake
+        // null for a transient failure. This caller keeps its old "resolve
+        // failed → no workspace record" degradation via the catch.
+        queryFn: async () => {
+          const res = await request(workspaceResolveUrl({ baseUrl, scope: directory }), {
+            headers: { Accept: "application/json" },
+          })
+          if (res.status === 404) return null
+          return await readJson<WorkspaceRuntimeSnapshot>(res)
+        },
+      })
+    } catch {
+      return null
+    }
   }
 
   async function runtimeJson<T>(
