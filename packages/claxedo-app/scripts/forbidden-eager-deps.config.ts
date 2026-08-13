@@ -135,12 +135,15 @@ export const FORBIDDEN_DEPS: ForbiddenDep[] = [
   },
   {
     label: "@pierre/diffs + shiki (diff renderer + syntax highlighter)",
-    specifiers: ["@pierre/diffs"],
+    specifiers: ["@pierre/diffs", "shiki", "@shikijs/"],
     markers: ["FileRenderer", "DiffHunksRenderer"],
     estGzip: "~97 KB gz (pierre ~51 + shiki ~46)",
     fixHint:
-      "lazy() every File/diff render edge: app.tsx File provider, rail-layout ReviewWorkspace, " +
-      "and defer marked.tsx registerCustomTheme into loadMarkdownHighlighter.",
+      "an eager module is importing the @/ui/session-kit barrel (its export * lines reach " +
+      "session-ui file/markdown/message-part, whose bodies pull pierre+shiki). Eager code must " +
+      "use the light boundaries instead: @/ui/session-kit-prompt for the composer engine, " +
+      "useFileComponent() (app.tsx lazy File provider) for file/diff renders, and " +
+      "session-kit-loaders loadMarkdownComponent()/loadFileComponent() for on-demand renders.",
   },
   {
     label: "@tanstack/ai-client + @tanstack/ai/client (ChatClient / SSE→parts)",

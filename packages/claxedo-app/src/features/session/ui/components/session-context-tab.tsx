@@ -3,19 +3,24 @@
  * Workbench-owned SessionParamsProvider.
  */
 
-import { createMemo, createEffect, on, onCleanup, For, Show } from "solid-js"
+import { createMemo, createEffect, lazy, on, onCleanup, For, Show, Suspense } from "solid-js"
 import type { JSX } from "solid-js"
+import { Dynamic } from "solid-js/web"
 import { useQuery } from "@tanstack/solid-query"
 import { useLayout } from "@/features/session/app-ports"
 import { checksum } from "@/lib/encode"
 import { findLast } from "@/lib/array"
 import { same } from "@/lib/same"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { useData } from "@/ui/session-kit"
 import { Accordion } from "@opencode-ai/ui/accordion"
 import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
-import { File } from "@/ui/session-kit"
-import { Markdown } from "@/ui/session-kit"
+// NOT `File`/`Markdown` from "@/ui/session-kit": this tab is in the eager main
+// chunk (session-screen.tsx stays eager by design), and the session-kit barrel
+// statically pulls @pierre/diffs + shiki. The File render edge goes through the
+// app's FileComponentProvider (app.tsx supplies the lazy File), and Markdown
+// crosses the loadMarkdownComponent() dynamic boundary.
+import { useFileComponent } from "@opencode-ai/ui/context/file"
+import { loadMarkdownComponent } from "@/ui/session-kit-loaders"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import type { Message, Part, UserMessage } from "@opencode-ai/sdk/v2/client"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -46,7 +51,13 @@ function Stat(props: { label: string; value: JSX.Element }) {
   )
 }
 
+const LazyMarkdown = lazy(() => loadMarkdownComponent().then((Markdown) => ({ default: Markdown })))
+
 function RawMessageContent(props: { message: Message; getParts: (id: string) => Part[]; onRendered: () => void }) {
+  // The lazy File the app shell registered on FileComponentProvider (app.tsx);
+  // same render edge the review surface uses. Props are identical to the
+  // session-ui File component this used to import statically.
+  const File = useFileComponent()
   const file = createMemo(() => {
     const parts = props.getParts(props.message.id)
     const contents = JSON.stringify({ message: props.message, parts }, null, 2)
@@ -58,7 +69,8 @@ function RawMessageContent(props: { message: Message; getParts: (id: string) => 
   })
 
   return (
-    <File
+    <Dynamic
+      component={File}
       mode="text"
       file={file()}
       overflow="wrap"
@@ -103,7 +115,6 @@ const emptyUserMessages: UserMessage[] = []
 
 export function SessionContextTab() {
   const sessionParams = useSessionParams()
-  const data = useData()
   const sessionSync = useSessionSyncOptional()
   const layout = useLayout()
   const language = useLanguage()
@@ -351,7 +362,9 @@ export function SessionContextTab() {
             <div class="flex flex-col gap-2">
               <div class="text-12-regular text-text-weak">{language.t("context.systemPrompt.title")}</div>
               <div class="border border-border-base rounded-md bg-surface-base px-3 py-2">
-                <Markdown text={prompt()} class="text-12-regular" />
+                <Suspense fallback={null}>
+                  <LazyMarkdown text={prompt()} class="text-12-regular" />
+                </Suspense>
               </div>
             </div>
           )}

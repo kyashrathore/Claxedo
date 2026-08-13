@@ -382,7 +382,15 @@ function deepSessionUiImportMetric(): Metric {
     description: "deep `@opencode-ai/session-ui/*` import lines outside the session-ui barrel",
     scan: (files) =>
       files
-        .filter((file) => file.path !== "ui/session-kit.ts" && file.path !== "ui/session-kit-loaders.ts")
+        .filter(
+          (file) =>
+            file.path !== "ui/session-kit.ts" &&
+            file.path !== "ui/session-kit-loaders.ts" &&
+            // The light boundary for the eager composer's prompt-input engine —
+            // split from session-kit.ts so the eager chunk never imports the
+            // barrel that statically reaches @pierre/diffs + shiki.
+            file.path !== "ui/session-kit-prompt.ts",
+        )
         .flatMap((file) =>
           file.text
             .split("\n")
