@@ -43,6 +43,23 @@ export type ForbiddenDep = {
    * Optional note rendered on failure: where the fix lives / how it was deferred.
    */
   fixHint?: string
+  /**
+   * Which static graph the dep must be absent from:
+   *
+   *   - "entry-chunk" (default): the graph rooted at main.tsx only — the code
+   *     that runs before ANY dynamic import resolves.
+   *   - "boot-closure": additionally the chunks the authenticated app awaits
+   *     before first paint (preloadRuntimeProviders() in app/entry/app.tsx:
+   *     runtime-providers → feature-ports + secondary-feature-ports →
+   *     app-shell-bootstrap). Those are separate chunks, but they all load and
+   *     evaluate at boot, so a heavy dep in them still delays first paint.
+   *
+   * "boot-closure" is strictly wider. It is opt-in per dep because some deps on
+   * this list are known to still ride boot-time chunks through seams owned by
+   * other workstreams (e.g. pierre/shiki via directory-scope → session-kit);
+   * widening the scope for those would fail CI on pre-existing chains.
+   */
+  scope?: "entry-chunk" | "boot-closure"
 }
 
 /**
@@ -155,16 +172,33 @@ export const FORBIDDEN_DEPS: ForbiddenDep[] = [
       "ChatClient construction; EventType must move inside that boundary too.",
   },
   {
-    label: "zod (TEMP probe)",
+    label: "zod (schema runtime — zod4 classic is effectively un-tree-shakable)",
     specifiers: ["zod"],
+    // zod mangles its internals to no stable identifier; the static check is
+    // the guard (scope "boot-closure" so it covers the pre-first-paint chunks).
     markers: [],
-    estGzip: "~57 KB gz",
+    estGzip: "~57 KB gz (~252 KB min)",
+    scope: "boot-closure",
+    fixHint:
+      "boot code must not import zod statically. Existing boundaries: " +
+      "app/providers/global-sdk/provider.tsx uses the plain isAbortError() predicate (no schema); " +
+      "features/processes/data/client.ts lazy-loads ./process via loadProcessSchemas() on the first process API call; " +
+      "app/integrations/feature-ports.ts wires turnDocumentIntoWork as a dynamic import of doc-workgraph; " +
+      "app/integrations/settings-source-views.ts lazy-loads features/workgraph/api on first source-view call. " +
+      "Route new boot-path validation through one of those seams or a plain predicate.",
   },
   {
-    label: "@claxedo/workgraph/contracts (TEMP probe)",
-    specifiers: ["@claxedo/workgraph/contracts", "@claxedo/workgraph"],
+    label: "@claxedo/workgraph/contracts (zod-based WorkGraph DTO schemas)",
+    specifiers: ["@claxedo/workgraph/contracts"],
+    // First-party package; its runtime body is zod schema construction, which
+    // mangles like zod itself. Rely on the static check.
     markers: [],
-    estGzip: "~15 KB gz",
+    estGzip: "~15 KB gz (plus it drags zod in)",
+    scope: "boot-closure",
+    fixHint:
+      "value-imports of @claxedo/workgraph/contracts belong behind the same lazy seams as zod: " +
+      "features/workgraph/api.ts and app/integrations/doc-workgraph.ts are loaded via dynamic import " +
+      "(feature-ports turnDocumentIntoWork, settings-source-views client()). Type-only imports are fine — they erase.",
   },
   {
     label: "effect (Effect runtime — deferrable: only 3 trivial usages)",
