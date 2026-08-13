@@ -20,6 +20,11 @@ export async function bundleClaxedoServer(source: string, destination: string) {
     target: "node",
     format: "esm",
     splitting: true,
+    // identifiers stays OFF deliberately: this closure inlines third-party
+    // packages (hono, drizzle, zod, tokentracker-cli) whose freedom from
+    // function/class-name reliance we cannot prove, and mangled names would
+    // also degrade server-side stack traces. Our own server code was grepped
+    // clean (only `err.name === "AbortError"`, a runtime property).
     minify: {
       syntax: true,
       whitespace: true,
@@ -125,6 +130,12 @@ export async function bundleClaxedoEngineWorker(source: string, destination: str
     target: "node",
     format: "esm",
     naming: "index.[ext]",
+    // Same shape as the server bundle above, identifiers off for the same
+    // reason.
+    minify: {
+      syntax: true,
+      whitespace: true,
+    },
   })
   if (!result.success) throw new AggregateError(result.logs, "Failed to bundle claxedo engine worker")
   return path.join(destination, "index.js")

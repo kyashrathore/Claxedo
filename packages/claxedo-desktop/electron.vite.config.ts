@@ -89,6 +89,9 @@ export default defineConfig(({ mode }) => {
         },
       ],
       build: {
+        // electron-vite's presets default to minify:false; esbuild-minify the
+        // main bundle to cut shipped bytes. No sourcemap settings change.
+        minify: "esbuild",
         // Bundle every dependency into the main process. Only native modules
         // stay external — they ship as the app's sole node_modules content.
         externalizeDeps: false,
@@ -161,6 +164,8 @@ export default defineConfig(({ mode }) => {
         },
       ],
       build: {
+        // Same as main: electron-vite defaults minify off; esbuild-minify.
+        minify: "esbuild",
         // Fully self-contained preload: inline every dependency; only
         // electron and node builtins stay external (see external fn below).
         externalizeDeps: false,
