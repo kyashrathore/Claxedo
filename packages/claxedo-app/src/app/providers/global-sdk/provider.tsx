@@ -1,3 +1,4 @@
+import { isAbortError } from "@/lib/abort-error"
 import type { Event as OpenCodeEvent, Project } from "@opencode-ai/sdk/v2/client"
 import { createOpencodeCompatProjection, runtimeOwnsOpencodeCompatProjection, type CompatEvent, type OpencodeCompatProjection } from "@claxedo/agent-event-runtime/opencode-compat"
 import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION, type AgentRuntimeEvent } from "@claxedo/agent-event-runtime/contracts"
@@ -41,19 +42,6 @@ function runtimeWorkspaceKind(input: unknown) {
   if (input === "local" || input === "cloud" || input === USER_HOSTED_WORKSPACE_KIND) return input
 }
 
-// Plain predicate instead of a zod schema: this was the ONLY zod usage on the
-// boot path and it pulled the whole (un-tree-shakable) zod runtime into the
-// app-shell chunk. Mirrors `z.object({ name: z.literal("AbortError") })
-// .safeParse(x).success` exactly: non-null non-array object whose `name` reads
-// "AbortError" (own or prototype property — covers DOMException).
-function isAbortError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    !Array.isArray(error) &&
-    (error as { name?: unknown }).name === "AbortError"
-  )
-}
 
 export function nextLiveSession(
   current: LiveSession | undefined,

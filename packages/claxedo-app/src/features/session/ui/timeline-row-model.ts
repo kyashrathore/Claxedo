@@ -65,6 +65,7 @@ function taggedRow<Tag extends string, Fields extends object>(tag: Tag) {
     constructor(fields: Fields) {
       Object.assign(this, fields)
     }
+    // as-any: Object.assign applies the field set, so TS cannot verify the shape.
   } as unknown as new (fields: Fields) => TaggedRow<Tag, Fields>
 }
 

@@ -164,38 +164,9 @@ const DECLARED_SOURCES: DeclaredSource[] = [
       { commandId: "permissions.autoaccept", raw: "mod+shift+a", evidence: `"mod+shift+a"` },
     ],
   },
-  {
-    source: "titlebar-tab-bindings",
-    file: "../app/workbench/titlebar/titlebar.tsx",
-    bindings: [
-      { commandId: "tab.prev", raw: "mod+option+ArrowLeft", evidence: "mod+option+ArrowLeft" },
-      { commandId: "tab.next", raw: "mod+option+ArrowRight", evidence: "mod+option+ArrowRight" },
-      // tab.1..tab.9 are one template: keybind: `mod+${number}`.
-      ...Array.from({ length: 9 }, (_, i) => ({
-        commandId: `tab.${i + 1}`,
-        raw: `mod+${i + 1}`,
-        evidence: "mod+${number}",
-        sourceToken: "mod+${number}",
-      })),
-    ],
-  },
-  {
-    source: "titlebar-history",
-    file: "../app/workbench/titlebar/titlebar.tsx",
-    bindings: [
-      { commandId: "common.goBack", raw: "mod+[", evidence: `"mod+["` },
-      { commandId: "common.goForward", raw: "mod+]", evidence: `"mod+]"` },
-    ],
-  },
-  {
-    source: "titlebar-quit-capture",
-    file: "../app/workbench/titlebar/titlebar.tsx",
-    // Capture-phase listener that matches Cmd/Meta+W with no other modifiers.
-    // There is no literal "mod+w" string; the evidence is the match guard.
-    bindings: [
-      { commandId: "titlebar.tab.close.capture", raw: "mod+w", evidence: `event.key.toLowerCase() !== "w"`, sourceToken: null },
-    ],
-  },
+  // The legacy titlebar (titlebar.tsx) and its tab/history/quit bindings were
+  // deleted with the shell rewrite's dead-code sweep; the workbench owns tab
+  // navigation now and declares its chords below.
   {
     source: "app-shell-commands",
     file: "../app/app-shell-commands.ts",
@@ -229,15 +200,15 @@ interface CollisionDecision {
 const KNOWN_CHORD_COLLISIONS: CollisionDecision[] = [
   {
     chord: canonicalizeChord("mod+w"),
-    // Order of specificity: titlebar session-tab close (capture-phase, V2
-    // titlebar) > session-commands tab.close (file tab) > workbench closePane
-    // (pane) > rail claxedo.pane.close (palette-only; owns the desktop last-pane
-    // Quit dialog). Unifying all four behind a single `claxedo.pane.close`
-    // command that internally walks that fallback chain is WP-C2 phase 2 — it
-    // requires migrating the workbench window-listener, which is out of phase-1
-    // ownership. See WP-C2 report §W9.
+    // Order of specificity: session-commands tab.close (file tab) > workbench
+    // closePane (pane) > rail claxedo.pane.close (palette-only; owns the
+    // desktop last-pane Quit dialog). The legacy titlebar's capture-phase
+    // session-tab close was deleted with the titlebar. Unifying the rest
+    // behind a single `claxedo.pane.close` command that internally walks that
+    // fallback chain is WP-C2 phase 2 — it requires migrating the workbench
+    // window-listener, which is out of phase-1 ownership. See WP-C2 report §W9.
     decision:
-      "capture(titlebar session-tab) > tab.close(file tab) > workbench closePane(pane) > claxedo.pane.close(last-pane Quit). Single-owner unification deferred to WP-C2 phase 2 (workbench listener migration).",
+      "tab.close(file tab) > workbench closePane(pane) > claxedo.pane.close(last-pane Quit). Single-owner unification deferred to WP-C2 phase 2 (workbench listener migration).",
     phase2: true,
   },
   {
@@ -259,22 +230,10 @@ const KNOWN_CHORD_COLLISIONS: CollisionDecision[] = [
     // editable ownership; the shared chord is intentional and documented.
     decision: "fileTree.toggle owns mod+shift+e in the registry; prompt.mode.normal is prompt-editor-local (fires before bubbling). No runtime double-fire.",
   },
-  {
-    chord: canonicalizeChord("mod+alt+ArrowLeft"),
-    decision: "workbench focusLeft (geometric pane focus) owns mod+alt+Arrow; titlebar tab.prev (hidden session-tab cycle) is superseded/undiscoverable. Re-chord or drop in phase 2.",
-    phase2: true,
-  },
-  {
-    chord: canonicalizeChord("mod+alt+ArrowRight"),
-    decision: "workbench focusRight (geometric pane focus) owns mod+alt+Arrow; titlebar tab.next (hidden session-tab cycle) is superseded/undiscoverable. Re-chord or drop in phase 2.",
-    phase2: true,
-  },
-  ...Array.from({ length: 9 }, (_, i) => ({
-    chord: canonicalizeChord(`mod+${i + 1}`),
-    decision:
-      "rail claxedo.surface.N (workbench surface switch, palette-visible) owns mod+N; titlebar tab.N (hidden session-tab jump) is superseded/undiscoverable. Re-chord or drop in phase 2.",
-    phase2: true,
-  })),
+  // mod+alt+Arrow and mod+1..9 collided only with the legacy titlebar's hidden
+  // session-tab bindings ("superseded/undiscoverable — re-chord or drop in
+  // phase 2"). Deleting the titlebar WAS that drop; the workbench and rail
+  // owners keep their chords collision-free.
 ]
 
 // ---------------------------------------------------------------------------
@@ -402,16 +361,13 @@ describe("WP-C2 keyboard binding surface", () => {
         "prompt-mode-commands",
         "rail-keyboard-commands",
         "session-commands",
-        "titlebar-history",
-        "titlebar-quit-capture",
-        "titlebar-tab-bindings",
         "workbench-keyboard",
       ].sort(),
     )
   })
 
-  test("mod+w is bound by exactly the three live handlers the inventory names", () => {
+  test("mod+w is bound by exactly the two live handlers the inventory names", () => {
     const modW = collisions(allBindings()).find((entry) => entry.chord === canonicalizeChord("mod+w"))
-    expect(modW?.commandIds.sort()).toEqual(["tab.close", "titlebar.tab.close.capture", "workbench.closePane"].sort())
+    expect(modW?.commandIds.sort()).toEqual(["tab.close", "workbench.closePane"].sort())
   })
 })
