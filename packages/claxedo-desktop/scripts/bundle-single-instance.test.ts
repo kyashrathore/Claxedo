@@ -50,7 +50,7 @@ describe("shipped claxedo-server bundle", () => {
     // words like "convex" or "workgraph" still occur as DATA — a network-policy
     // hostname allowlist, a route-ownership prefix table, an event-name switch
     // — and matching those would fail for the wrong reason.
-    await bundleClaxedoServer(path.resolve(import.meta.dir, "claxedo-server-entry.ts"), OUT)
+    await bundleClaxedoServer(path.resolve(import.meta.dir, "claxedo-server-boot.ts"), OUT)
 
     const text = emitted(OUT).map((file) => fs.readFileSync(file, "utf8")).join("\n")
     const forbidden = {
@@ -68,7 +68,7 @@ describe("shipped claxedo-server bundle", () => {
   }, 300_000)
 
   test("emits exactly one copy of each stateful shared module", async () => {
-    await bundleClaxedoServer(path.resolve(import.meta.dir, "claxedo-server-entry.ts"), OUT)
+    await bundleClaxedoServer(path.resolve(import.meta.dir, "claxedo-server-boot.ts"), OUT)
 
     // Each marker must appear once in its module's source and NOWHERE else in
     // the tree — a marker that also matches a log line or comment somewhere
