@@ -22,9 +22,7 @@ function workspaceDirectoryRef(directory: string) {
   return !!workspaceRuntimeRef(directory)
 }
 
-function workspaceRuntimeRef(directory: string) {
-  return sessionWorkspaceRuntimeRef({ directory })
-}
+const workspaceRuntimeRef = (directory: string) => sessionWorkspaceRuntimeRef({ directory })
 
 import { createDirectoryCacheManager } from "@/platform/sync/directory-cache-manager"
 import { wasRolledBackDraft } from "../../../features/session/submit/rolled-back-drafts"
@@ -235,6 +233,7 @@ function createGlobalSync() {
     pageSize: PAGE,
     platformFetch: () => platform.fetch,
     authFetch,
+    queryClient,
     hasSignedAccess,
     signedWorkspaceProjects,
     signedInventorySource,

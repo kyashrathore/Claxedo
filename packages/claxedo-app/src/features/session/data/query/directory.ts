@@ -110,7 +110,9 @@ export function agentListQuery(input: {
                 input.directory,
               )
               : undefined) ??
-            await runtimeWorkspaceResolveQuery({ baseUrl: input.baseUrl, request: input.request, directory: input.directory }).queryFn()
+            // Through the query cache (shared runtime key), not `.queryFn()`
+            // directly — a fresh boot-time resolve answers without refetching.
+            await queryClient.fetchQuery(workspaceResolveQuery({ baseUrl: input.baseUrl, request: input.request, directory: input.directory }))
         return workspaceScopedResourceList({
           baseUrl,
           directory: input.directory,

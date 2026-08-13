@@ -513,6 +513,13 @@ type InventoryPageSourceInput = {
   pageSize: number
   platformFetch: () => typeof fetch | undefined
   authFetch?: typeof fetch
+  /**
+   * Dedupes the local control-session list the same way the signed source
+   * dedupes its control-plane lists (`CONTROL_SESSIONS_DEDUPE_MS`): the boot
+   * snapshot's flat + grouped fetches and the sidebar's back-to-back workspace
+   * reloads all read one list instead of refetching it four times.
+   */
+  queryClient: QueryClient
   hasSignedAccess: () => boolean
   signedWorkspaceProjects: () => unknown[]
   signedInventorySource: Pick<
@@ -525,13 +532,20 @@ export function createInventoryPageSource(input: InventoryPageSourceInput) {
   const authFetch = input.authFetch ?? defaultAuthFetch
 
   async function fetchLocalControlSessions(directory?: string): Promise<InventoryGlobalSession[]> {
-    const url = new URL("/api/claxedo/session", inventoryServerUrl(getClaxedoServerUrl()))
-    if (directory) url.searchParams.set("directory", directory)
-    const res = await (input.platformFetch() ?? globalThis.fetch)(url, { headers: { Accept: "application/json" } })
-    if (!res.ok) return []
-    const body = rec(await res.json().catch(() => ({ sessions: [] })))
-    const rows = Array.isArray(body?.sessions) ? body.sessions : []
-    return rows.map(controlMetaToGlobalSession).filter((session) => !!session.id)
+    const serverUrl = inventoryServerUrl(getClaxedoServerUrl())
+    return await input.queryClient.fetchQuery({
+      queryKey: ["shell", "local-control-sessions", serverUrl, directory ?? ""] as const,
+      queryFn: async () => {
+        const url = new URL("/api/claxedo/session", serverUrl)
+        if (directory) url.searchParams.set("directory", directory)
+        const res = await (input.platformFetch() ?? globalThis.fetch)(url, { headers: { Accept: "application/json" } })
+        if (!res.ok) return []
+        const body = rec(await res.json().catch(() => ({ sessions: [] })))
+        const rows = Array.isArray(body?.sessions) ? body.sessions : []
+        return rows.map(controlMetaToGlobalSession).filter((session) => !!session.id)
+      },
+      staleTime: CONTROL_SESSIONS_DEDUPE_MS,
+    })
   }
 
   async function fetchLocalWorkspaceRuntimeSessions(directory: string): Promise<InventoryGlobalSession[]> {

@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import {
+  fetchRouteSessionMeta,
   routeBridgeClaxedoSessionMetaUrl,
+  routeBridgeSessionConfigHarness,
   routeBridgeSessionConfigUrl,
   routeBridgeSessionMessagesProbeUrl,
   routeKnownSessionDirectory,
@@ -80,5 +82,70 @@ describe("session probe URL builders", () => {
   test("session ids are percent-encoded into the path", () => {
     const url = routeBridgeClaxedoSessionMetaUrl({ serverUrl: SERVER, sessionID: "ses/weird id" })
     expect(url.pathname).toBe("/api/claxedo/session/ses%2Fweird%20id/meta")
+  })
+})
+
+// Falsifiers for the boot request graph's duplicated /s/:id probes: the two
+// resolution paths race for the same session at boot, and each probe must be
+// shared while in flight — but a LATER resolution must ask the server again.
+describe("session probe single-flight", () => {
+  const deferredJson = (body: unknown, calls: string[]) => {
+    let release!: () => void
+    const released = new Promise<void>((resolve) => (release = resolve))
+    const request: typeof fetch = async (resource) => {
+      calls.push(String(resource))
+      await released
+      return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } })
+    }
+    return { request, release }
+  }
+
+  test("concurrent meta probes for one session share a single request", async () => {
+    const calls: string[] = []
+    const { request, release } = deferredJson({ directory: "/repo", title: "One" }, calls)
+
+    const first = fetchRouteSessionMeta({ serverUrl: SERVER, sessionID: "ses_meta_sf", request })
+    const second = fetchRouteSessionMeta({ serverUrl: SERVER, sessionID: "ses_meta_sf", request })
+    release()
+    const [metaA, metaB] = await Promise.all([first, second])
+
+    expect(calls).toHaveLength(1)
+    expect(metaA).toEqual({ directory: "/repo", title: "One" })
+    expect(metaB).toEqual(metaA)
+
+    // Settled: a later resolution fetches again instead of reusing a stale answer.
+    const again = deferredJson({ directory: "/repo", title: "Two" }, calls)
+    again.release()
+    expect(await fetchRouteSessionMeta({ serverUrl: SERVER, sessionID: "ses_meta_sf", request: again.request })).toEqual({
+      directory: "/repo",
+      title: "Two",
+    })
+    expect(calls).toHaveLength(2)
+  })
+
+  test("concurrent config probes for one session share a single request", async () => {
+    const calls: string[] = []
+    const { request, release } = deferredJson({ harness: { id: "codex-acp" } }, calls)
+
+    const input = { serverUrl: SERVER, sessionID: "ses_config_sf", workspaceDirectory: "/repo", request }
+    const first = routeBridgeSessionConfigHarness(input)
+    const second = routeBridgeSessionConfigHarness(input)
+    release()
+    const [harnessA, harnessB] = await Promise.all([first, second])
+
+    expect(calls).toHaveLength(1)
+    expect(harnessA).toEqual(harnessB)
+  })
+
+  test("meta probes for different sessions do not share", async () => {
+    const calls: string[] = []
+    const { request, release } = deferredJson({ directory: "/repo" }, calls)
+
+    const first = fetchRouteSessionMeta({ serverUrl: SERVER, sessionID: "ses_a_iso", request })
+    const second = fetchRouteSessionMeta({ serverUrl: SERVER, sessionID: "ses_b_iso", request })
+    release()
+    await Promise.all([first, second])
+
+    expect(calls).toHaveLength(2)
   })
 })
