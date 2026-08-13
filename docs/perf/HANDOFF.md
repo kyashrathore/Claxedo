@@ -686,3 +686,44 @@ warning, a display, load <= 4, keep-awake), or an EC2 `mac2.metal` dedicated hos
 raised. Both must run one attempt at a time: **parallel runs on one machine do not speed the benchmark
 up, they invalidate it** — two orphaned test suites corrupted fourteen runs here, and the terminal echo
 defect only reproduces under the harness's own per-second load.
+
+### 12.6 Service credentials — what the TEN GATES need, and what everything else needs
+
+**THE TEN GATES NEED NONE.** Verified rather than assumed: no file under
+`packages/claxedo-app/perf-harness/src/` references `CLERK`, `CONVEX`, `AWS_`, `CLOUDFLARE`, `DAYTONA`,
+`MODAL`, `VERCEL_` or `POSTHOG`. The benchmark launches the packaged app against a locally materialised
+corpus (digest-pinned, `8c8ac43d…`) with the app's own local server, on an isolated profile and data
+dir. It is offline by construction. **A cloud host provisioned only with a build toolchain can produce
+every number in this document — the constraint is the platform and the preflight, not credentials.**
+
+One caveat that is NOT a credential but behaves like one: with `CLAXEDO_BENCH_ISOLATE_AMBIENT` unset,
+the embedded engine reads the operator's `~/.config/opencode/opencode.json`, so any plugin installed
+there runs inside the measured boot — which is how a third-party plugin's uncached network fetch came to
+sit on the critical path. **Set `CLAXEDO_BENCH_ISOLATE_AMBIENT=1` on any cloud host** or you are
+measuring that host's config.
+
+**Everything BEYOND the gates does need credentials.** The canonical list is
+`packages/claxedo-server/.env.example`. Grouped by what it unlocks:
+
+| lane | variables | needed for |
+|---|---|---|
+| **the ten gates** | *(none)* | — |
+| signed / cloud e2e | `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY` or `VITE_CLERK_PUBLISHABLE_KEY`, `CLERK_JWT_ISSUER`, `CLERK_JWKS_URL`; `CONVEX_URL` / `CONVEX_DEPLOYMENT` / `CONVEX_SITE_URL` | ~40 of the Playwright specs touch signed/cloud paths; `real-provider-preflight` names the exact four Clerk vars it refuses to run without |
+| real-tier e2e | `CLAXEDO_TIER_REAL_E2E=1`, `TIER_REAL_API_KEY`, plus `CLAXEDO_TIER_REAL_BACKEND_PORT` | the `@tier-real` grep-excluded suites |
+| live/local e2e | `CLAXEDO_E2E_LIVE`, `CLAXEDO_E2E_LIVE_BACKEND_PORT`, `CLAXEDO_E2E_DESKTOP_BIN`, `CLAXEDO_ENABLE_DOCKER_SANDBOX`, `CODEX_CONFIG` | the live-backend and desktop-binary lanes |
+| web signed lanes | `CLAXEDO_WEB_SIGNED_{CLOUD,USERHOSTED}_{PREVIEW,BACKEND}_PORT` | the web surface this effort never measured (1.2) |
+| sandbox drivers | `DAYTONA_API_KEY`, `MODAL_TOKEN_ID`/`_SECRET`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_SANDBOX_WORKER_URL`, `VERCEL_TOKEN`/`_TEAM_ID`/`_PROJECT_ID` | remote sandbox execution — also the subject of one untested predecessor idea (section 10) |
+| relay / workspace auth | `CLAXEDO_WORKSPACE_RELAY_URL`, `CLAXEDO_RELAY_{ISSUER,AUDIENCE,JWT_PRIVATE_KEY_JWK,HOST_PUBLIC_KEY_JWK,JWT_ALG}`, `CLAXEDO_SUPERVISOR_BACKPLANE_TOKEN`, `CLAXEDO_CF_KV_URL`/`_TOKEN` | hosted workspace paths |
+| agent harnesses | provider credentials or the vendor CLIs on `PATH` (`claude`, `codex`, `cursor-agent`); `AWS_BEARER_TOKEN_BEDROCK` / `AWS_REGION` for Bedrock | **the multi-turn per-harness metric that does not exist yet** — see below |
+| telemetry (optional) | `CLAXEDO_POSTHOG_KEY`/`_HOST` (or unprefixed), `SENTRY_RELEASE` | absent means no client is built and nothing is sent |
+
+**For the multi-turn session metric specifically** (create a session, send N turns, measure per harness),
+which this effort designed but never built: it needs whatever the chosen harness needs — an API key for
+a native SDK harness, or the vendor CLI installed for an ACP harness. That is the one lane where cloud
+credentials become unavoidable, and it is also the lane where wall-clock is contaminated by the model
+provider's own latency, so it needs a time-to-first-token style measurement rather than a duration.
+
+**Recommended cloud split.** Give the headless Linux fleet nothing but a toolchain — it needs no
+credentials for any of the server-side work. Give the macOS gate runner
+`CLAXEDO_BENCH_ISOLATE_AMBIENT=1` and nothing else. Provision Clerk/Convex only on whatever host runs
+the e2e lanes, and harness credentials only on the host that runs the multi-turn metric.
