@@ -320,3 +320,30 @@ guard, the git short-circuit — which are worth having whether or not any gate 
 
 **The goal as specified is not achievable. That conclusion is measured, not asserted, and every number
 behind it is reproducible from `artifacts/agent-app-benchmark/`.**
+
+---
+
+## 10. PREDECESSOR WORK — `backup/claxedo-sub60-pre-dev-rebase-2026080{8,9}`
+
+An earlier idle-memory/footprint effort (7-8 August), snapshotted twice before its own rebase. Its
+commits exist ONLY on these two branches — 14 unique on `-20260809`, 2 on `-20260808` (a one-day-older
+copy of two of them; the branches are divergent, not ancestor/descendant). Patch-id comparison against
+this branch: **1 of 14 survived** — `defer provider bootstrap`, now `44b0b3fa0`.
+
+Recorded here so the branches can be deleted without losing what they mean.
+
+| commit | this effort's finding |
+|---|---|
+| `optimize(claxedo-idle-memory): unmount hidden non-terminal surfaces` **+ its Revert** | Tried and reverted THERE too. Re-tested here as `content-visibility: hidden`: saved 55 MiB, cost stream 24 -> 32/40 ms and produced a 104.7 ms history sample. Reverted. The stashed surface is deliberately `content-visibility: visible` and the comment records why. |
+| `optimize(claxedo-idle-footprint): host server in node mode` | The desktop already forks the server child with `ELECTRON_RUN_AS_NODE=1` — same Mach-O as main, not node, not bun. Measured consequence: there is no "already-loaded Node runtime" to share, so a `utilityProcess` buys lifecycle ergonomics, not RSS. |
+| `refactor(desktop): unload idle embedded engine` | Re-tested as the worker transport. **Measured +129 ms cold ready, +130 MiB RSS, CPU failing 2 of 6.** The engine did move (server child 374.6 -> ~190 MiB) but the worker costs 310, so one process became two for +125 net — and the idle-exit never fired. **`peak_process_family_rss_mib` is a PEAK, so a process that exits later cannot reduce it even in principle.** Do not retry. |
+| `optimize(claxedo-idle-footprint): bound server heap` | Now shipping as `claxedoServerExecArgv()` = `--expose-gc --optimize-for-size --max-old-space-size=512`. Note the side effect nobody had modelled: those flags are in the V8 FLAG HASH, so the compile-cache directory tag differs (`ff1546d9` vs `f02d4d51`) and a cache generated without them is never read. |
+| `perf(server): lazy-load remote sandbox drivers` | **NOT re-tested here.** Still open. Cheap to check whether the drivers are in the server child's static closure — the 9.11 MB closure is now enumerated (23 files) by the compile-cache generator, so this is a grep. |
+| `optimize(claxedo-idle-footprint): suspend idle host metrics` | **NOT re-tested here.** Adjacent to a measured finding: the always-armed periodics are a 10 s wake detector, a 20 s health peek and a 60 s workgraph poll — all far too infrequent to matter per-switch, but they do land in the quiescent-CPU window, which has a 1.0 pp least count. |
+| `optimize(claxedo-idle-memory): defer provider bootstrap` | The ONLY one that survived into this branch (`44b0b3fa0`). |
+| `feat(desktop): lazy-load optional work surfaces` | Superseded: progressive loading is now measured to ship at every level — a 4-turn initial history window, `renderOverscan` starting at 1, off-thread markdown, lazily imported timeline/composer. Twelve rendered rows against a 217-row conversation. "Render less up front" is not available. |
+| `test(desktop)`: restored-state memory benchmark, empty-shell distinction, fixture validation, core-runtime gating | Superseded by the agent-app benchmark and its 452 artifact runs, but the INTENT is worth keeping: an "empty shell" cohort is exactly what would separate the ~1,380 MiB architectural floor from the ~540 MiB of per-scenario carry-over measured here at **716 MiB**. |
+
+**Two ideas from that branch remain untested here** — lazy remote sandbox drivers and suspending idle
+host metrics. Both are cheap to check and neither is likely to move a gate: server-child work is masked
+by the `/provider` barrier for time, and by the renderer's >=83% share for memory.
