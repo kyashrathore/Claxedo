@@ -5,8 +5,7 @@ import { createContext, useContext, onCleanup, onMount, createSignal, type Paren
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useLanguage } from "@/platform/i18n/provider"
 import { createRefreshQueue } from "@/platform/sync/global-sync/queue"
-import { prewarmMarkdownStack } from "@/ui/session-kit-loaders"
-
+import { scheduleMarkdownPrewarm } from "@/ui/session-kit-loaders"
 function sanitizeProject(project: Project) {
   if (!project.icon?.url && !project.icon?.override) return project
   return {
@@ -736,15 +735,7 @@ function createGlobalSync() {
     void (centralTransportForServer(globalSDK.url) === "loopback"
       ? bootstrapInitialShell({ baseUrl: globalSDK.url, request: globalThis.fetch, setGlobalState, fallback: bootstrap })
       : bootstrap())
-    // Warm the Markdown/highlight stack once boot settles instead of paying its
-    // chunk evaluation (marked + shiki + @pierre/diffs theme) inside the first
-    // session switch. requestIdleCallback keeps it strictly off the boot
-    // critical path; environments without it (test DOMs) simply skip the warmup
-    // and load lazily on first render, exactly as before.
-    if (typeof requestIdleCallback === "function") {
-      const idle = requestIdleCallback(() => prewarmMarkdownStack())
-      onCleanup(() => cancelIdleCallback(idle))
-    }
+    onCleanup(scheduleMarkdownPrewarm())
   })
 
   function projectMeta(directory: string, patch: ProjectMeta) {

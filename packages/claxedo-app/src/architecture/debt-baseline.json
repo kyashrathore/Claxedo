@@ -1,6 +1,6 @@
 {
   "asAnyCasts": 25,
-  "asAnyCastsTest": 22,
+  "asAnyCastsTest": 23,
   "conversationHydrationEntrypoints": 0,
   "deepSessionUiImports": 0,
   "directoryStringParams": 330,
@@ -16,7 +16,7 @@
   "propsDestructuring": 1,
   "queryMirrorEffects": 6,
   "runtimeGatewayOutsideTransport": 0,
-  "sdkImportingFiles": 86,
+  "sdkImportingFiles": 87,
   "setQueryDataCalls": 85,
   "setQueryDataFiles": 36,
   "signedControlPlaneAccess": 0,
