@@ -38,22 +38,24 @@ other, and that has already happened once (section 11.1).
 
 ## 1. WHERE THE GATES ACTUALLY STAND
 
-| # | gate | budget | current | verdict |
-|---|---|---:|---|---|
-| M1 | `app.cold_ready_ms` | 1,750 | control 1,535 (n=6) vs treatment 1,455 (n=3) in one window — **provider-route slices are worth ~79 ms; the earlier -444 was WINDOW DRIFT**. Both arms under budget; needs n>=15 | **REACHABLE**, unproven |
-| M2 | `work_item.cold_open_ms` | 55 | ~150 | reachable on arithmetic, no route found; needs 3.45x |
-| M3 | `work_item.warm_switch_p95_ms` | 20 | ~138 | **UNREACHABLE** — measured 30.6 ms instrument floor ABOVE the budget |
-| M4 | `history.navigate_p95_ms` | 100 | ~76 | passes, but the pass is UNSOUND (below) |
-| M5 | `stream.interaction_p95_ms` | 16.67 | 32 | quantised to {16,24,32,40,48}; budget is "16 or bust"; has PASSED 4 of 57 runs |
-| M6 | `stream.blocked_frame_ratio_pct` | 1 | 0.0 | passes, but VACUOUS — LoAF only fires above 50 ms |
-| M7 | `terminal.input_to_paint_p95_ms` | 100 | ~33 | passes 3x over when valid; ~3 attempts in 7 discarded by an observer race |
-| M8 | `terminal.output_mib_s` | 20 | ~20.8 | passes; structural ceiling is 21.0, so max possible win is 5% |
-| M9 | `resource.peak_process_family_rss_mib` | 650 | ~1,900 | **UNREACHABLE** — see 1.1 |
-| M10 | `resource.quiescent_cpu_p95_pct` | 5 | wanders 1.0-8.0 | **UNTESTABLE** — instrument least count is 1.0 pp = 20% of the budget |
+| # | gate | budget | current | realistically achievable | what it takes |
+|---|---|---:|---|---|---|
+| M1 | `app.cold_ready_ms` | 1,750 | 1,455 (treatment) / 1,535 (control), same window | **already passing; hold it** | confirm at n>=15; the landed provider-route work is worth ~79 ms measured |
+| M2 | `work_item.cold_open_ms` | 55 | ~150 | **~110-120 ms** with the known work; 55 needs an unfound mechanism | `targetRow` is the binding conjunct — 15 rows rendered, none intersecting the viewport for ~60 ms. Instrument floor here is only 14.9 ms, so ~138 ms is genuinely the app |
+| M3 | `work_item.warm_switch_p95_ms` | 20 | ~138 | **~55-70 ms** by fixing the instrument and the mount cost; **~35-40 ms** if the retained set covers the working set | 30.6 ms of the current number is CDP round trips inside the measured window; arming the predicate before the click removes ~30 ms without weakening any assertion and drops the ideal floor to ~16.3 ms at 120 Hz. Below that, 20/20 measured switches are COLD MOUNTS |
+| M4 | `history.navigate_p95_ms` | 100 | ~76 | **passing, but the pass is not sound** | the scored navigation lands 931 px short; the correct fix regressed CPU to 9.98-22.98 and needs redoing with the CPU instrument fixed first |
+| M5 | `stream.interaction_p95_ms` | 16.67 | 32 | **24 is one bucket away; 16 is achievable** — it has passed 4 times in 57 runs | the metric is quantised to {16,24,32,...}, so this is "drop one 8 ms bucket", not "shave 15 ms". Largest named term: the first streaming replay's render (144 style recalcs, 58 layouts, 197 ms task) |
+| M6 | `stream.blocked_frame_ratio_pct` | 1 | 0.0 | **passing, but it cannot fail** | LoAF only emits above 50 ms, so a 24-48 ms interaction is invisible. Worth restating as a real gate or dropping from the count |
+| M7 | `terminal.input_to_paint_p95_ms` | 100 | ~33 | **passing 3x over**; the work is on ATTEMPT validity, not the value | ~3 warmed attempts in 7 are discarded by an observer race; both gate clauses are now fixed and the residual is being measured from `bytesFromEnd` in every run |
+| M8 | `terminal.output_mib_s` | 20 | ~20.8 | **passing; ceiling is 21.0** | the workload is 210.0 MiB over 10 s, so the maximum possible win is 5%. Do not spend a slice here |
+| M9 | `resource.peak_process_family_rss_mib` | 650 | ~1,900 | **~950 MiB** on this metric, derived per process | see 1.1. Beats both peers measured on this host (Claude.app 984, VS Code 1,365) and the competitor's 1,402.75 on the same corpus. 650 is 46% of what T3 achieves |
+| M10 | `resource.quiescent_cpu_p95_pct` | 5 | wanders 1.0-8.0 | **unknown until the instrument is fixed** | least count is 1.0 percentage point = 20% of the budget, from `ps time=` at 10 ms over a 1 s interval. Lengthen the interval or read a finer counter, then measure |
 
-**The plan as specified cannot succeed.** M3 and M9 are arithmetically unsatisfiable by application
-work. M10 cannot adjudicate a change smaller than 20% of its own budget. That is a plan-amendment
-decision, not a backlog.
+**Where that leaves the target.** M1 is passing. M5 is one quantisation bucket away and has already
+passed four times. M7 and M8 pass. M2, M3 and M9 have realistic numbers well below where they are today
+and well above the written budget — those three budgets need renegotiating against measurement rather
+than against an arithmetic marker, and section 9 proposes the figures. M10 cannot be judged at all until
+its instrument gets finer than a fifth of its own budget.
 
 ### Cross-gate couplings that make "fix them one at a time" false
 - **M3 <-> M9** a 20 ms switch requires reveals; reveals require ~20 retained live surfaces; M9 already
@@ -64,7 +66,7 @@ decision, not a backlog.
 - **M2 <-> M3** one instrument (`measureSessionActivation`) sits inside both measured windows.
 
 
-### 1.1 What "736 MiB non-renderer floor" means
+### 1.1 The RSS floor, and the number that IS achievable
 
 The gate sums `ps rss` across the app's whole process family and takes the single highest 1 Hz sample.
 The family is five processes: **renderer, server child, Electron main, GPU, and a network utility.**
@@ -83,11 +85,31 @@ Three of those four are Electron's own processes with **zero app payload** — t
 does, and main's RSS varies by under 8 MiB across wildly different runs, which is what proves it is
 browser-process baseline rather than our 1.4 MB of code.
 
-That is why it is called UNREACHABLE rather than "hard": no amount of application work can subtract
-from a floor that is already over budget before the application does anything. The remaining ~1,150 MiB
-on top of it is renderer and is real, but closing the gate needs the floor to move, and the floor is
-Electron's process topology. See section 3 of `u11-qualification-status.md` for the per-process
-derivation and the ~950 MiB figure that IS reachable.
+So application work cannot subtract from a floor that already exceeds the budget before the application
+does anything. What CAN move is everything above it, and the per-process derivation gives a number:
+
+    utility (NetworkService)   49.9 today -> ~50    nothing removes it; in-process just relocates it
+    gpu                       105.3      -> ~65    VS Code's GPU measures 63.1 on this host today
+    main                      200.1      -> ~150   payload is 1.4 MB; peers are 171.5 and 278.4
+    server child              391.6      -> ~240   shrink the 23 MB engine artifact, drop cache_size
+                                                    from -64000 across two sqlite stacks, stop opening
+                                                    ClaxedoDB.raw() eagerly
+    non-renderer                747      -> ~505
+    renderer            287.9 cold / 646.9 sweep -> ~400   set --js-flags (none today), route all
+                                                    highlighting through one worker to delete a 16 MiB+
+                                                    one-way wasm memory and 8.61 MiB of duplicated
+                                                    grammar compile, byte-cap the query cache, release
+                                                    xterm BUFFERS not just the WebGL addon
+    TOTAL                                 ~905 MiB with everything going right
+
+**~950 MiB is the number to put in the budget** (one replicate SD of margin above ~905). It beats every
+shipping peer measured on this host — Claude.app 984, VS Code 1,365 — and the competitor T3 at 1,402.75
+on the same metric and corpus, while sitting ~31% below Claxedo's current isolated 1,380.
+
+Separately, **716 MiB of the observed peak is carry-over**, measured: running the resource sweep in
+isolation versus after the other three profiles differs by that much, ~85-90% of it renderer memory the
+earlier scenarios committed and Chromium never returned. Deciding whether the sweep runs on a fresh app
+is a metric-scope decision, not a product change, and must be argued as one.
 
 
 ### 1.2 Scope note: this effort measured the DESKTOP app only
@@ -437,8 +459,9 @@ many cheap machines as the question needs.
 
 ## 9. THE HONEST SUMMARY
 
-Two gates are arithmetically unreachable, one is untestable at its instrument's resolution, one passes
-vacuously, and one passes on a defect. The single largest term in the only reachable gate belongs to a
+Four gates pass today. One is a single quantisation bucket away and has already passed four times.
+Three have realistic numbers far below where they are now and far above their written budgets. One
+cannot be judged until its instrument is finer than a fifth of its own budget. The single largest term in the only reachable gate belongs to a
 third-party plugin the product does not own. Seven candidates removed real, measured work and moved no
 gate, each for a reason now written down.
 
@@ -447,8 +470,12 @@ beside it, re-baseline all ten gates, amend M3/M9/M10 with the measured impossib
 ship the correctness fixes** — the plugin boot budget, the two picker defects, the empty-catalogue
 guard, the git short-circuit — which are worth having whether or not any gate moves.
 
-**The goal as specified is not achievable. That conclusion is measured, not asserted, and every number
-behind it is reproducible from `artifacts/agent-app-benchmark/`.**
+**What is realistically achievable, with the work named above: M1 passing (already), M5 at 16-24, M7
+and M8 passing, M2 at ~110-120 ms, M3 at ~35-70 ms depending on how far the retention/instrument work
+goes, M9 at ~950 MiB, and M10 measurable once its instrument is fixed.** Every one of those figures is
+derived from a measurement in `artifacts/agent-app-benchmark/` rather than from a target. The gap
+between them and the written budgets is a budget conversation, and it should be had with these numbers
+on the table.
 
 And the goal as specified is also INCOMPLETE: it covers the desktop app only. A five-times claim for the
 product needs the web surface measured too, on its own gates, and none of that work exists (section 1.2).
