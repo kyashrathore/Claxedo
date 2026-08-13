@@ -199,12 +199,12 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     sidebarMountFrame = requestAnimationFrame(() => {
       sidebarMountFrame = requestAnimationFrame(() => {
         sidebarMountFrame = undefined
-        const trace = (window as unknown as Record<string, unknown>).__claxedoPerfTrace === true
+        const trace = window.__claxedoPerfTrace === true
           ? performance.now()
           : undefined
         setSidebarMounted(true)
         if (trace !== undefined) {
-          const phases = (window as unknown as Record<string, unknown>).__claxedoPerfRendererPhases
+          const phases = window.__claxedoPerfRendererPhases
           if (Array.isArray(phases)) phases.push({ name: "shell.sidebarMounted", durationMs: performance.now() - trace })
         }
       })
