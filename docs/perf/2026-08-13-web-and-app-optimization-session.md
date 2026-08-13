@@ -202,3 +202,8 @@ silo (2× per boot).
 storm-safe; retries capped/jittered; the two non-rail queryMirrorEffects are
 guarded one-shot handoffs; bootstrapDirectory's serialization is a real data
 dependency.
+
+**H1–H5 closed (see final commit):** all five duplicate sources fixed and
+A-B-A verified; total boot requests 48 → 39. The residual second /config GET
+is a distinct consumer (agent-runtime-client session hydration), recorded as
+an observation, not a dupe.
