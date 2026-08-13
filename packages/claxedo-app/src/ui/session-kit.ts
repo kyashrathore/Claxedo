@@ -1,7 +1,7 @@
 // Centralized upstream session-ui imports. App code imports this file so an
 // upstream package reshuffle is localized to one boundary.
 export * from "@opencode-ai/session-ui/basic-tool"
-export * from "@opencode-ai/session-ui/context"
+export * from "./session-kit-context"
 export * from "@opencode-ai/session-ui/dock-prompt"
 export * from "@opencode-ai/session-ui/file"
 export * from "@opencode-ai/session-ui/format-duration"

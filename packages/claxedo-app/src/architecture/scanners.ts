@@ -389,7 +389,11 @@ function deepSessionUiImportMetric(): Metric {
             // The light boundary for the eager composer's prompt-input engine —
             // split from session-kit.ts so the eager chunk never imports the
             // barrel that statically reaches @pierre/diffs + shiki.
-            file.path !== "ui/session-kit-prompt.ts",
+            file.path !== "ui/session-kit-prompt.ts" &&
+            // Same split for the data context: directory-scope mounts
+            // DataProvider during boot, and session-ui/context's only pierre
+            // edge is `import type`.
+            file.path !== "ui/session-kit-context.ts",
         )
         .flatMap((file) =>
           file.text
