@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <radialGradient id="glow" cx="88%" cy="10%" r="70%"><stop offset="0" stop-color="#36241d"/><stop offset=".58" stop-color="#0b0d0a"/></radialGradient>
+    <pattern id="grid" width="34" height="34" patternUnits="userSpaceOnUse"><path d="M34 0H0v34" fill="none" stroke="#fff" stroke-opacity=".035"/></pattern>
+  </defs>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+  <circle cx="66" cy="62" r="8" fill="#fab283"/>
+  <text x="88" y="69" fill="#fab283" font-family="ui-monospace,monospace" font-size="18" font-weight="700" letter-spacing="2">CLAXEDO</text>
+  <text x="1138" y="69" text-anchor="end" fill="#8d9385" font-family="ui-monospace,monospace" font-size="16" letter-spacing="1.7">CODING AGENT MACHINE DEMAND</text>
+  <text x="62" y="182" fill="#eff0e6" font-family="Arial,sans-serif" font-size="88" font-weight="500" letter-spacing="-4">Every</text>
+  <text x="302" y="182" fill="#fab283" font-family="Arial,sans-serif" font-size="104" font-weight="700" letter-spacing="-6">10.8s</text>
+  <text x="62" y="238" fill="#aeb4a4" font-family="ui-monospace,monospace" font-size="18" letter-spacing=".8">MEDIAN INTERVAL BEFORE A FULL MACHINE WAS NEEDED AGAIN</text>
+  <rect x="62" y="304" width="1076" height="124" rx="8" fill="#151515" stroke="#3a4034"/>
+  <line x1="600" y1="304" x2="600" y2="428" stroke="#3a4034"/>
+  <text x="92" y="357" fill="#fab283" font-family="ui-monospace,monospace" font-size="38" font-weight="700">98.1s</text>
+  <text x="92" y="392" fill="#8d9385" font-family="ui-monospace,monospace" font-size="14" letter-spacing="1">P95 RETURN INTERVAL</text>
+  <text x="630" y="357" fill="#fab283" font-family="ui-monospace,monospace" font-size="38" font-weight="700">92,390</text>
+  <text x="630" y="392" fill="#8d9385" font-family="ui-monospace,monospace" font-size="14" letter-spacing="1">MEASURED INTERVALS</text>
+  <line x1="62" y1="484" x2="1138" y2="484" stroke="#3a4034"/>
+  <text x="62" y="542" fill="#eff0e6" font-family="ui-monospace,monospace" font-size="22" font-weight="700">416,467</text>
+  <text x="62" y="572" fill="#8d9385" font-family="ui-monospace,monospace" font-size="14">EXECUTION CALLS</text>
+  <text x="322" y="542" fill="#eff0e6" font-family="ui-monospace,monospace" font-size="22" font-weight="700">13,561</text>
+  <text x="322" y="572" fill="#8d9385" font-family="ui-monospace,monospace" font-size="14">RESOLVED TURNS</text>
+  <text x="572" y="542" fill="#fab283" font-family="ui-monospace,monospace" font-size="22" font-weight="700">64.01%</text>
+  <text x="572" y="572" fill="#8d9385" font-family="ui-monospace,monospace" font-size="14">TURNS NEEDED A FULL MACHINE</text>
+  <text x="945" y="555" fill="#8d9385" font-family="ui-monospace,monospace" font-size="16">claxedo.com</text>
+</svg>

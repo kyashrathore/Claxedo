@@ -54,6 +54,21 @@ if (["/", "/download", "/pricing"].includes(normalizedPath)) {
   })
 }
 
+if (normalizedPath === routes.agentRuntimeStudy) {
+  graph.push({
+    "@type": "Article",
+    "@id": canonicalUrl(`${routes.agentRuntimeStudy}#article`),
+    headline: "How often do coding agents need a full machine?",
+    description: "Across 416,467 coding-agent execution calls, the median interval before a full machine was needed again was 10.8 seconds.",
+    datePublished: "2026-08-09",
+    dateModified: "2026-08-09",
+    mainEntityOfPage: canonicalUrl(routes.agentRuntimeStudy),
+    image: canonicalUrl("/agent-runtime-study-og.png"),
+    author: { "@id": canonicalUrl("/#organization") },
+    publisher: { "@id": canonicalUrl("/#organization") },
+  })
+}
+
 const value = JSON.stringify({ "@context": "https://schema.org", "@graph": graph }).replaceAll("<", "\\u003c")
 ---
 <script is:inline type="application/ld+json" set:html={value} />

@@ -160,6 +160,18 @@ export const claims = [
     verifiedAt: "2026-07-22",
   },
   {
+    id: "agent-runtime-study",
+    publicWording: "Across 92,390 measured intervals in one local corpus, the median time before a coding agent needed a full machine again was 10.8 seconds.",
+    owner: "Agent Runtime Stats",
+    evidence: [
+      "packages/agent-runtime-stats/data/2026-08-09-runtime-study.json",
+      "packages/agent-runtime-stats/src/analyze.js",
+      "packages/agent-runtime-stats/test/behavior.test.js",
+    ],
+    status: "verified",
+    verifiedAt: "2026-08-09",
+  },
+  {
     id: "hosted-source-parity",
     publicWording: "The hosted and self-hosted products run the same complete source composition.",
     owner: "Claxedo operations",

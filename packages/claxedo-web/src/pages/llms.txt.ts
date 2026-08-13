@@ -1,6 +1,6 @@
 import type { APIRoute } from "astro"
 import { currentComparisons } from "../content/competitors"
-import { canonicalUrl } from "../content/routes"
+import { canonicalUrl, routes } from "../content/routes"
 
 const body = [
   "# Claxedo",
@@ -12,6 +12,7 @@ const body = [
   `- Cloudflare deployment reference: ${canonicalUrl("/framework/deploy/hosted-control-plane#agent-deploy")}`,
   `- Download: ${canonicalUrl("/download")}`,
   `- Framework: ${canonicalUrl("/framework")}`,
+  `- Agent runtime study: ${canonicalUrl(routes.agentRuntimeStudy)}`,
   `- Agent entry and deployment safety: ${canonicalUrl("/start.md")}`,
   `- Guide: ${canonicalUrl("/framework/guides/introduction")}`,
   `- API reference: ${canonicalUrl("/framework/api/overview")}`,

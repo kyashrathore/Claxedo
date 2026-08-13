@@ -6,6 +6,7 @@ export const routes = {
   pricing: "/pricing",
   download: "/download",
   framework: "/framework",
+  agentRuntimeStudy: "/how-often-do-coding-agents-need-a-full-machine",
   deploy: "/framework/deploy/cloudflare-full-stack",
   compare: "/compare",
   privacy: "/privacy",

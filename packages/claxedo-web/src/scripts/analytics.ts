@@ -9,7 +9,16 @@
 export const conversionEventNames = ["download_app", "explore_framework"] as const
 export type ConversionEventName = (typeof conversionEventNames)[number]
 
-export const conversionRoutes = ["/", "/app", "/compare", "/download", "/framework", "/pricing", "/404"] as const
+export const conversionRoutes = [
+  "/",
+  "/app",
+  "/compare",
+  "/download",
+  "/framework",
+  "/how-often-do-coding-agents-need-a-full-machine",
+  "/pricing",
+  "/404",
+] as const
 
 export const conversionRoute = (pathname: string) => {
   const route = pathname.replace(/\/$/, "") || "/"
