@@ -87,6 +87,8 @@ export type LocalServer = {
    */
   hostname: string
   app: Hono
+  /** Resolves when the listener accepts connections; see startOwned. */
+  ready: Promise<void>
   /** Stops accepting connections and releases everything this started. */
   stop: () => Promise<void>
 }
@@ -270,7 +272,15 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   const upstreamEvents = opencodeCompat ? createOpencodeEvents(opencodeRequest, { autoStart: false }) : undefined
 
   const hostname = options.hostname ?? (process.env.CLAXEDO_SERVER_HOST?.trim() || "127.0.0.1")
+  // The listening event resolves `ready` for callers that must not announce
+  // the URL before the socket accepts connections (the desktop child sends
+  // its ready IPC from it, and Electron main health-checks immediately on
+  // receipt). Nothing here awaits it — startOwned stays synchronous through
+  // serve(), which the compile-cache boot ordering depends on.
   const server = serve({ fetch: app.fetch, port, hostname })
+  const ready = new Promise<void>((resolve) => {
+    server.once("listening", () => resolve())
+  })
   injectWebSocket(server)
 
   let stopOperation: Promise<void> | undefined
@@ -301,7 +311,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     supervisor: workspaceSupervisorInstalled(),
   })
 
-  return { port, hostname, app, stop }
+  return { port, hostname, app, ready, stop }
 }
 
 export { sessionMetaProjectionTap }
