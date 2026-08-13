@@ -30,7 +30,7 @@ const DESKTOP_PACKAGES = [
   "@claxedo/local-server",
   "@claxedo/server",
   "better-sqlite3",
-  "node-pty",
+  "@lydell/node-pty",
 ]
 
 /** In-package source roots that will own Electron-specific adapters. */

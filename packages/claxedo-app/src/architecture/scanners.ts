@@ -250,15 +250,33 @@ export function workGraphNativePickerViolations(files: SourceFile[]): Finding[] 
 export const APP_ROOT_ROUTE_FILE = "app/entry/app.tsx"
 
 // Provider + route markers that must be present in app/entry/app.tsx's route spine.
+// GlobalSyncProvider moved into the lazily loaded runtime-providers module
+// (progressive shell loading), so the spine marker here is the composition
+// point <RuntimeProviders and runtimeProvidersSpineViolations() asserts the
+// provider inside that module — the invariant now spans the two files.
 const APP_ROUTE_SPINE_REQUIRED = [
   "<ServerProvider",
-  "<GlobalSyncProvider>",
+  "<RuntimeProviders",
   'path="/:dir"',
   'path="/s/:sessionId"',
   'path="/w/:workspaceId"',
   'path="/permissions"',
   'path="/config"',
 ] as const
+
+export const APP_RUNTIME_PROVIDERS_FILE = "app/entry/runtime-providers.tsx"
+
+const RUNTIME_PROVIDERS_REQUIRED = ["<GlobalSyncProvider>"] as const
+
+export function runtimeProvidersSpineViolations(source: string): Finding[] {
+  const findings: Finding[] = []
+  for (const token of RUNTIME_PROVIDERS_REQUIRED) {
+    if (!source.includes(token)) {
+      findings.push({ file: APP_RUNTIME_PROVIDERS_FILE, line: 1, match: `missing route-spine marker: ${token}` })
+    }
+  }
+  return findings
+}
 
 // Retired upstream constructs that must NOT reappear in app/entry/app.tsx.
 const APP_ROUTE_SPINE_FORBIDDEN = ["ServerKey"] as const
