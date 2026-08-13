@@ -36,7 +36,6 @@
     "@tsconfig/node22": "catalog:",
     "@types/bun": "catalog:",
     "@types/katex": "0.16.7",
-    "@types/luxon": "catalog:",
     "@typescript/native-preview": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:"
@@ -59,7 +58,6 @@
     "dompurify": "3.3.1",
     "fuzzysort": "catalog:",
     "katex": "0.16.47",
-    "luxon": "catalog:",
     "marked": "catalog:",
     "marked-shiki": "catalog:",
     "morphdom": "2.7.8",
