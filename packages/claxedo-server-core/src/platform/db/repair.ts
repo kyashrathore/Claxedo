@@ -1,3 +1,11 @@
+/**
+ * Bump when repair() learns a new fix. The boot gate in db.ts hashes this
+ * constant into the persisted schema fingerprint, so a bump invalidates every
+ * stored fingerprint and forces one full repair pass per database even when
+ * the schema itself has not changed.
+ */
+export const REPAIR_VERSION = 1
+
 type SqliteInstance = {
   exec(sql: string): unknown
   prepare(sql: string): {
