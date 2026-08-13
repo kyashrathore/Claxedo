@@ -40,7 +40,7 @@ import * as TerminalFit from "@/features/terminal/workbench/terminal-fit"
 import * as SessionQueries from "@/features/session/data/sync/queries"
 import * as SessionCache from "@/features/session/data/sync/directory-session-cache"
 import * as CloudStartup from "@/features/session/ui/components/cloud-startup-view"
-import * as DocWorkGraph from "@/app/integrations/doc-workgraph"
+import type * as DocWorkGraph from "@/app/integrations/doc-workgraph"
 import * as DocumentMentions from "@/app/integrations/document-mentions"
 import * as AIConnectResolution from "@/app/integrations/ai-connect-resolution"
 import * as RailGitRemote from "@/app/workbench/rail/rail-git-remote"
@@ -68,6 +68,9 @@ const DialogSettings = lazy(() =>
 const DialogSelectDirectory = lazy(() =>
   import("@/app/dialogs/select-directory").then((module) => ({ default: module.DialogSelectDirectory })),
 )
+
+const turnDocumentIntoWorkLazily: typeof DocWorkGraph.turnDocumentIntoWork = (request) =>
+  import("@/app/integrations/doc-workgraph").then((module) => module.turnDocumentIntoWork(request))
 
 export function useOnboardingFunnel() {
   const platform = usePlatform()
@@ -146,7 +149,13 @@ configureDocumentsAppPorts({
   ensureLocalProject: ProjectEnsure.ensureLocalProject,
   surfaceRoute: SurfaceRoute.surfaceRoute,
   SessionPaneScope: SessionScope.SessionPaneScope,
-  turnDocumentIntoWork: DocWorkGraph.turnDocumentIntoWork,
+  // Lazy boundary: doc-workgraph statically imports @claxedo/workgraph/contracts
+  // (zod-based schemas) plus the documents action schemas, which would ride the
+  // boot-path feature-ports chunk. The port only needs the FUNCTION when a user
+  // actually turns a document into work, and it is already async — so the
+  // zod-heavy module graph loads on first invocation instead of at boot.
+  // Guarded by scripts/forbidden-eager-deps.config.ts (zod + workgraph/contracts).
+  turnDocumentIntoWork: turnDocumentIntoWorkLazily,
 })
 
 configureWorkGraphAppPorts({

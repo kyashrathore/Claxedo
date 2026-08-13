@@ -1,4 +1,4 @@
-import { Process } from "./process"
+import type { Process } from "./process"
 import { createTransport } from "@/platform/runtime/transport"
 import {
   centralTransportForServer,
@@ -6,6 +6,19 @@ import {
 } from "@/platform/runtime/transport"
 
 type Fetch = typeof globalThis.fetch
+
+/**
+ * Lazy boundary: ./process defines its wire schemas with zod, and this module is
+ * on the boot path (feature-ports wires createProcessClient into the session app
+ * ports at startup). Only the request methods need the schemas, so zod loads on
+ * the first process API call instead of riding the boot chunk. Guarded by
+ * scripts/forbidden-eager-deps.config.ts (zod entry).
+ */
+let processSchemasLoad: Promise<typeof Process> | undefined
+function loadProcessSchemas() {
+  processSchemasLoad ??= import("./process").then((module) => module.Process)
+  return processSchemasLoad
+}
 
 type Input = {
   baseUrl: string
@@ -54,11 +67,11 @@ function detail(raw: unknown, code: number) {
   return `HTTP ${code}`
 }
 
-function launch(raw: unknown, code: number) {
-  const hit = Process.LaunchResult.safeParse(raw)
+function launch(schemas: typeof Process, raw: unknown, code: number) {
+  const hit = schemas.LaunchResult.safeParse(raw)
   if (hit.success) return hit.data
 
-  const proc = Process.ManagedProcess.safeParse(raw)
+  const proc = schemas.ManagedProcess.safeParse(raw)
   if (proc.success) {
     return {
       kind: "started",
@@ -66,7 +79,7 @@ function launch(raw: unknown, code: number) {
     } satisfies Process.LaunchResult
   }
 
-  const clash = Process.PortConflictInfo.safeParse(raw)
+  const clash = schemas.PortConflictInfo.safeParse(raw)
   if (clash.success) {
     return {
       kind: "port_conflict",
@@ -74,7 +87,7 @@ function launch(raw: unknown, code: number) {
     } satisfies Process.LaunchResult
   }
 
-  const routeClash = Process.RouteConflictInfo.safeParse(raw)
+  const routeClash = schemas.RouteConflictInfo.safeParse(raw)
   if (routeClash.success) {
     return {
       kind: "route_conflict",
@@ -142,7 +155,7 @@ export function createProcessClient(input: Input) {
         method: "POST",
         ...(body ? { body } : {}),
       })
-      const out = launch(raw, res.status)
+      const out = launch(await loadProcessSchemas(), raw, res.status)
       if (out.kind === "port_conflict" && opts?.interactive === false && !portConflict) {
         return start(id, { ...opts, portConflict: "pick-new" })
       }
@@ -163,7 +176,7 @@ export function createProcessClient(input: Input) {
       const { res, raw } = await req(`/${encodeURIComponent(id)}/restart`, {
         method: "POST",
       })
-      return launch(raw, res.status)
+      return launch(await loadProcessSchemas(), raw, res.status)
     } catch (err) {
       return {
         kind: "failed",
@@ -176,7 +189,7 @@ export function createProcessClient(input: Input) {
     async list(init?: RequestInit): Promise<Process.ListResponse> {
       const { res, raw } = await req("", { method: "GET", ...init })
       if (!res.ok) throw new Error(detail(raw, res.status))
-      return Process.ListResponse.parse(raw)
+      return (await loadProcessSchemas()).ListResponse.parse(raw)
     },
 
     async createConfig(config: unknown): Promise<Process.ProcessConfig> {
@@ -185,7 +198,7 @@ export function createProcessClient(input: Input) {
         body: JSON.stringify(config),
       })
       if (!res.ok) throw new Error(detail(raw, res.status))
-      return Process.ProcessConfig.parse(raw)
+      return (await loadProcessSchemas()).ProcessConfig.parse(raw)
     },
 
     async updateConfig(id: string, config: unknown): Promise<Process.ProcessConfig> {
@@ -194,7 +207,7 @@ export function createProcessClient(input: Input) {
         body: JSON.stringify(config),
       })
       if (!res.ok) throw new Error(detail(raw, res.status))
-      return Process.ProcessConfig.parse(raw)
+      return (await loadProcessSchemas()).ProcessConfig.parse(raw)
     },
 
     async deleteConfig(id: string) {
