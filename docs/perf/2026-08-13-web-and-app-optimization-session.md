@@ -111,3 +111,26 @@ rationale holds and the DOM-memory rationale does not. Keep; no code change.
 Remaining follow-up: icon.tsx still carries its ~42 kB icon record in the
 eager chunk solely to build the sprite at runtime — externalizing it like the
 codex sprite asset is the bundle-size item.
+
+## Addendum 2: the founding web-vitals baseline (browser lane, headless Chromium 149)
+
+The repo's own browser perf lane (`perf-harness` browser adapter, 5 scenarios,
+paired diagnostics A/B) ran headless in this container — the first time the
+web surface has real interaction numbers. A branch-point control is
+IMPOSSIBLE: the base tree's production build fails outright (the missing
+renderer-trace module), so these are the founding numbers, on commit a0d9bde:
+
+| scenario | p95 frame | worst task | tasks >16.67ms | verdict |
+|---|---:|---:|---:|---|
+| launch-project | 0.64 ms | 63–71 ms | 24–26/~6k | tail only |
+| session-switch | 0.02 ms | 37–43 ms | 20/~31k | tail only |
+| live-terminal-switch | 6.15 ms | 39–41 ms | 9–10/~400 | tail only |
+| large-diff-toggle | 8.09 ms | 73–91 ms | 7–12/~1k | tail only |
+| workspace-switch | 0.02 ms | 27–33 ms | 3/~4k | tail only |
+
+p95 frames are all comfortably 60Hz; every failure is a TAIL long task — the
+same one-big-flush shape the desktop effort measured (M3 cold mounts, M5
+first-replay render). Known harness caveat: every scenario also warns "only
+1 of N seeded sessions visible in the session inventory" — the seeding
+contract has drifted from the app's inventory path and needs its own fix
+before the inventory-dependent assertions mean anything.
