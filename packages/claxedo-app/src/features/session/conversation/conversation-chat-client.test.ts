@@ -19,8 +19,22 @@ describe("createConversationChatClient", () => {
   test("rehydrates from the cached snapshot on construct", () => {
     queryClient.setQueryData(conversationSnapshotKey("ses_seed"), [uiMessage("msg_1", "hi")])
     const entry = createConversationChatClient("ses_seed")
-    expect(entry.client.getMessages().map((m) => m.id)).toEqual(["msg_1"])
     expect(entry.handle.messages().map((m) => m.id)).toEqual(["msg_1"])
+  })
+
+  test("keeps messages across the lazy ChatClient swap", async () => {
+    queryClient.setQueryData(conversationSnapshotKey("ses_swap"), [uiMessage("msg_1", "hi")])
+    const entry = createConversationChatClient("ses_swap")
+    // Buffer phase: sync reads/writes work before @tanstack/ai-client resolves.
+    entry.handle.setMessages([uiMessage("msg_1", "hi"), uiMessage("msg_2", "yo")])
+    await entry.ready
+    // Real-client phase: the ChatClient took over with the buffered messages.
+    expect(entry.handle.messages().map((m) => m.id)).toEqual(["msg_1", "msg_2"])
+    const before = entry.version()
+    entry.handle.setMessages([uiMessage("msg_3", "sup")])
+    expect(entry.handle.messages().map((m) => m.id)).toEqual(["msg_3"])
+    expect(readConversationSnapshot("ses_swap")?.map((m) => m.id)).toEqual(["msg_3"])
+    expect(entry.version()).toBeGreaterThan(before)
   })
 
   test("compacts duplicate cached messages on construct and write", () => {
