@@ -159,3 +159,46 @@ before the inventory-dependent assertions mean anything.
   need a seeded project profile (fresh profiles have no rail).
 - Browser-lane caveat for successors: identical builds swing up to 3× between
   runs on this container — use interleaved pairs, never single runs.
+
+## Addendum 4: the reactivity-and-network-gates hunt (three-agent sweep)
+
+The round the Suspense-detach fix predicted: systematic hunt over Solid
+reactivity and network gating, all interleaved-pair measured.
+
+**Workbench store replacement (6dc8e59, the big one).** Every reducer returns
+fresh references and production applied them with plain setState — wholesale
+node replacement. Every navigation.show destroyed/recreated every pane div
+(the "slot move" relayout) and re-ran every focusedContent() reader (the
+thousands-of-updates click flush). The workbench's own test harness already
+used reconcile — production drifted from its own contract. Fixed with
+reconcile(key:'id') + a falsifier vitest that drives the real provider
+(verified red on the old wiring). Rail rows also rebuilt wholesale per switch
+(eager active read at build time) — now lazy accessors over createSelector.
+Pairs: session-switch completion 676→503/468 ms, workspace-switch 1090→657 ms.
+
+**Streaming tick storm (6d9b5bb).** Every part delta re-ran row construction
+for EVERY turn (O(all parts) per 60 Hz tick) — per-message equality gates now
+lean on the projection's WeakMap identity stability, pinned by a tripwire
+test. No lane scenario exercises streaming (gap recorded); the shiki warm-up
+also moved to post-boot idle.
+
+**Boot request graph (139ee05).** New request-log lane (JSONL + fetch-stack
+attribution) mapped ~51 boot requests, zero fire-and-fail. Three duplicate
+sources fixed (double provider catalog fetch, raw fallback resolve, split
+runtime cache key): resolve 20→16, /provider 12→8 per 4-boot run, A-B-A
+verified.
+
+**Handoff queue (stack-attributed, fixes live in named files):**
+H1 4× GET /api/claxedo/session per boot (global-sync snapshot Promise.all +
+double reloadWorkspace; note HANDOFF lists "local inventory single-flight"
+as tried-and-reverted — retry per protocol). H2 route-bridge /s/:id probes
+fetch meta and config ×2 concurrently. H3 3× permission-mode (share one
+query). H4 shell.ts/directory.ts call .queryFn() directly, bypassing the
+cache. H5 session-environment-card raw /vcs beside the queryKeys.runtime.vcs
+silo (2× per boot).
+
+**Honest nulls, all with evidence:** global-sdk event path already coalesced
+(16 ms frames + batch); composer grain keyed correctly; QueryClient defaults
+storm-safe; retries capped/jittered; the two non-rail queryMirrorEffects are
+guarded one-shot handoffs; bootstrapDirectory's serialization is a real data
+dependency.
