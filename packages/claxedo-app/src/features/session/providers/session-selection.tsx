@@ -36,6 +36,7 @@ import {
   firstConnectedModel,
   getConfiguredAgentVariant,
   resolveModelVariant,
+  selectionProviderDetailNeeded,
   type ModelKey,
 } from "@/features/session/composer/model-strategy"
 
@@ -382,6 +383,23 @@ const localContextInput = {
 
     const fallback = createMemo<ModelKey | undefined>(() => savedModel() ?? recentModel() ?? configuredModel() ?? defaultModel())
 
+    // Heal an index-shaped catalog under a saved selection. Boot fetches the
+    // provider INDEX (one default model per connected provider), so a restored
+    // NON-default selection fails `validModel` — and without this the composer
+    // silently fell back to the provider default until the user happened to
+    // open Manage models. Loading the one provider's detail is idempotent
+    // (`providers.load` single-flights and caches per provider), so this
+    // settles after at most one small request per selected provider.
+    createEffect(() => {
+      const providerId = selectionProviderDetailNeeded({
+        model: scope()?.model,
+        connected: connected(),
+        provider: providers.all().get(scope()?.model?.providerID ?? ""),
+      })
+      if (!providerId) return
+      void providers.load(providerId).catch(() => undefined)
+    })
+
     const agent = {
       list,
       current() {
@@ -506,6 +524,7 @@ const localContextInput = {
       current,
       recent,
       list: models.list,
+      hydrate: models.hydrate,
       cycle(direction: 1 | -1) {
         const items = recent()
         const item = current()
