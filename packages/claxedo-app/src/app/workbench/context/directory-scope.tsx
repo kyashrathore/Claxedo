@@ -25,7 +25,7 @@ import { DataProvider } from "@/ui/session-kit-context"
 import { SessionSyncProvider } from "@/features/session/providers/session-sync"
 import { WorkspaceSDKProvider } from "./workspace-sdk-provider"
 import { sessionRoute } from "@/platform/identity/route"
-import { isDirectorylessPiSession, type SessionRef } from "@/platform/identity/session-ref"
+import type { SessionRef } from "@/platform/identity/session-ref"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { fetchSessionMessagesByTransport } from "../../../features/session/store/session-transport"
 import { registeredConversationSnapshot } from "../../../features/session/conversation/conversation-registry"
@@ -193,11 +193,14 @@ export function DirectoryScope(props: ParentProps<{
   }))
   const draftSession = () => !props.sessionId?.() || props.sessionId?.() === "new"
   const canUseDraftCacheFallback = () => active() && draftSession()
+  // Any routed, already-created session can mount on the empty fallback cache:
+  // the session content loads its own messages, and the cache rows arrive when
+  // the warm settles. Gating LOCAL scopes out of this fallback left them on the
+  // spinner until the warm resolved — and on the retryable error screen when it
+  // failed — for content that never needed the cache to render.
   const canUseRouteSessionFallback = () => {
     const sessionId = props.sessionId?.()
-    return active() && !!sessionId && sessionId !== "new" && (
-      !!runtimeRef() || isDirectorylessPiSession({ directory: props.directory, sessionRef: props.sessionRef?.() })
-    )
+    return active() && !!sessionId && sessionId !== "new"
   }
   const data = () => props.workspaceReady()
     ? sessionCacheQuery.data ?? (canUseDraftCacheFallback() || canUseRouteSessionFallback() ? draftCacheData() : undefined)
