@@ -46,7 +46,6 @@ const result = await build({
     "@opencode-ai/sdk",
     "@opencode-ai/sdk/*",
     "better-sqlite3",
-    "node-pty",
     // The server-core transport owns a deliberately lazy embedded-engine
     // loader. Hosted Node supplies hosted services and never selects it; keep
     // that import lazy instead of folding the local OpenCode/PTY runtime into

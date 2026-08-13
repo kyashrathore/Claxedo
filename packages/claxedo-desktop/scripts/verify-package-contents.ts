@@ -5,8 +5,9 @@
  *
  * 1. Every JavaScript dependency is bundled from an entry point at build time,
  *    so the packaged asar must contain no node_modules beyond the native
- *    modules that cannot be bundled (better-sqlite3, node-pty,
- *    @lydell/node-pty, plus @vscode/windows-process-tree on Windows).
+ *    modules that cannot be bundled (better-sqlite3, @lydell/node-pty and its
+ *    per-target platform package, plus @vscode/windows-process-tree on
+ *    Windows).
  *
  * 1b. And nothing else structural: every remaining asar entry must fall under
  *    a root `electron-builder.config.ts` declares. Both files read that

@@ -274,7 +274,7 @@ async function ensureElectronNativeModules() {
   const betterSqliteDir = path.dirname(resolvePackageFile("better-sqlite3/package.json"))
 
   if (electronCanLoadBetterSqlite()) return
-  signNativeModules([betterSqliteDir, optionalPackageDir("node-pty")].filter((dir): dir is string => !!dir))
+  signNativeModules([betterSqliteDir, lydellPtyPlatformDir()].filter((dir): dir is string => !!dir))
 
   if (electronCanLoadBetterSqlite()) return
 
@@ -336,6 +336,19 @@ function optionalPackageDir(packageName: string) {
   } catch {
     return undefined
   }
+}
+
+/**
+ * `@lydell/node-pty`'s platform binary package for THIS host. bun links the
+ * optionalDependency only inside its store, so it is unreachable by name from
+ * here — but require.resolve realpaths the wrapper into the store, where the
+ * platform package is always the wrapper's scope sibling.
+ */
+function lydellPtyPlatformDir() {
+  const wrapper = optionalPackageDir("@lydell/node-pty")
+  if (!wrapper) return undefined
+  const dir = path.join(path.dirname(wrapper), `node-pty-${process.platform}-${process.arch}`)
+  return fs.existsSync(dir) ? dir : undefined
 }
 
 function resolvePackageFile(specifier: string) {

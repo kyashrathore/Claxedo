@@ -30,6 +30,10 @@ const targetOsArch = resolveTargetOsArch()
 // and the check can no longer disagree about what is allowed to ship.
 const NATIVE_MODULES = [
   ...BASE_NATIVE_MODULES,
+  // The wrapper's platform-specific binary package for the build TARGET; it
+  // ships beside the wrapper via the `files` from/to entry below, and this
+  // spelling keeps it asar-unpacked so its pty.node loads as a real file.
+  `@lydell/node-pty-${targetOsArch}`,
   ...(targetOsArch.startsWith("win32-") ? ["@vscode/windows-process-tree"] : []),
 ]
 
@@ -39,7 +43,6 @@ const NATIVE_MODULES = [
 // node-gyp rebuilds, never at runtime.
 const NATIVE_PLATFORM_FILES = [
   `**/node_modules/better-sqlite3/prebuilds/${targetOsArch}.node`,
-  `**/node_modules/node-pty/prebuilds/${targetOsArch}/**`,
 ]
 
 // Absolute directory of `@lydell/node-pty-<platform>-<arch>` for the build
@@ -156,22 +159,18 @@ const getBase = (): Configuration => ({
     ...NATIVE_MODULES.map((name) => `**/node_modules/${name}/**`),
     "!**/node_modules/better-sqlite3/deps/**",
     "!**/node_modules/better-sqlite3/prebuilds/**",
-    "!**/node_modules/node-pty/prebuilds/**",
-    // node-pty's build-only trees. Its loader (lib/utils.js) probes
-    // build/Release and build/Debug, then falls through to
-    // prebuilds/<platform>-<arch> — the variant NATIVE_PLATFORM_FILES ships —
-    // and resolves spawn-helper from whichever directory the .node actually
-    // loaded from, so dropping build/ makes the shipped prebuild (which
-    // carries its own spawn-helper) authoritative. third_party/ (conpty and
-    // winpty sources), deps/, and src/ are node-gyp compile inputs only.
-    "!**/node_modules/node-pty/build/**",
-    "!**/node_modules/node-pty/deps/**",
-    "!**/node_modules/node-pty/src/**",
-    "!**/node_modules/node-pty/third_party/**",
     ...NATIVE_PLATFORM_FILES,
-    // AFTER the platform re-include above, so it wins over the target
-    // prebuild glob: Windows debug symbols (27 MB of .pdb) never ship.
-    "!**/node_modules/node-pty/prebuilds/**/*.pdb",
+    {
+      // The `@lydell/node-pty` wrapper (a desktop dependency, shipped by the
+      // glob above) `require()`s its platform binary package by computed name;
+      // in-asar code (workspace-runtime's PTY, the claxedo-server bundle)
+      // resolves both from the asar's node_modules. bun keeps this
+      // optionalDependency only in its store — never linked anywhere a files
+      // glob would find it — so it is copied in explicitly from the located
+      // store path. Same store-scan as the engine's extraResources sibling.
+      from: PTY_PLATFORM_PACKAGE_DIR,
+      to: `node_modules/@lydell/node-pty-${targetOsArch}/`,
+    },
   ],
   asarUnpack: NATIVE_MODULES.map((name) => `**/node_modules/${name}/**`),
   extraResources: [
