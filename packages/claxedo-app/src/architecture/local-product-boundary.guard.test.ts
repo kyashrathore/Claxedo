@@ -67,19 +67,17 @@ export function isHostedCapability(ref: ProductImportRef) {
  * split rather than a lazy import.
  *
  * That hop is gone. Starting the identity provider moved to the hosted entry,
- * and the auth surface moved to `@claxedo/app/auth`. What the published entry
- * still reaches is `app/routes/login.tsx`, which is a LOGIN ROUTE — genuinely
- * hosted, on Unit 10's move list, and a much later hop.
+ * and the auth surface moved to `@claxedo/app/auth`. The last recorded reach
+ * was `app/routes/login.tsx` through the entry barrel's route re-exports; the
+ * eager-bundle trim removed those re-exports (the barrel now exports only what
+ * its three consumers import), so the published entry reaches NO hosted
+ * capability at all.
  *
- * Kept as a recorded chain rather than deleted: the value is that a NEW route
- * from the published entry to an identity provider fails here instead of
- * blending into a known one.
+ * Kept as a recorded value rather than deleted: with null pinned, ANY new
+ * route from the published entry to an identity provider fails here instead
+ * of blending into a known one.
  */
-const PRE_SPLIT_HOSTED_REACH = {
-  chain: ["app/entry/index.tsx"],
-  specifier: "../routes/login",
-  module: "app/routes/login.tsx",
-}
+const PRE_SPLIT_HOSTED_REACH = null
 
 function fixtureApp(files: Record<string, string>) {
   const root = mkdtempSync(path.join(tmpdir(), "claxedo-local-boundary-"))
