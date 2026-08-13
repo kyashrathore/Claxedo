@@ -122,6 +122,7 @@ export const FORBIDDEN_DEPS: ForbiddenDep[] = [
     specifiers: ["marked"],
     markers: ["Tokenizer", "Lexer"],
     estGzip: "~12-14 KB gz",
+    scope: "boot-closure",
     fixHint:
       "build jsParser lazily inside the `if (!props.nativeParser)` branch of marked.tsx " +
       "so `import { marked }` / `import markedKatex` become dynamic.",
@@ -155,6 +156,7 @@ export const FORBIDDEN_DEPS: ForbiddenDep[] = [
     specifiers: ["@pierre/diffs", "shiki", "@shikijs/"],
     markers: ["FileRenderer", "DiffHunksRenderer"],
     estGzip: "~97 KB gz (pierre ~51 + shiki ~46)",
+    scope: "boot-closure",
     fixHint:
       "an eager module is importing the @/ui/session-kit barrel (its export * lines reach " +
       "session-ui file/markdown/message-part, whose bodies pull pierre+shiki). Eager code must " +
