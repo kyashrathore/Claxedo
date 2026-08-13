@@ -50,15 +50,19 @@ function scanImportSpecifiers(match: (file: string, specifier: string) => boolea
   ).sort()
 }
 
+// The shell rewrite replaced the <ClaxedoAppShellHost> JSX mount with a
+// signal-driven load: runtime-providers dynamic-imports @/app/app-shell-bootstrap,
+// which lazy()-imports ./app-shell. "One shell layout entrypoint" now means
+// exactly one import edge at each of those two seams.
 function scanEntrypointHosts() {
-  return productionSourceFiles().flatMap((file) => {
-    const text = readFileSync(file, "utf8")
-    return [...text.matchAll(/<ClaxedoAppShellHost\b/g)].map(() => `${relative(file)}:ClaxedoAppShellHost`)
-  }).sort()
+  return scanImportSpecifiers((_file, specifier) => specifier === "@/app/app-shell-bootstrap")
 }
 
 function scanLayoutLazyImports() {
-  return scanImportSpecifiers((_file, specifier) => specifier === "@/app/app-shell")
+  return scanImportSpecifiers(
+    (file, specifier) =>
+      specifier === "@/app/app-shell" || (specifier === "./app-shell" && relative(file).startsWith("app/")),
+  )
 }
 
 function scanPagesLayoutImports() {
