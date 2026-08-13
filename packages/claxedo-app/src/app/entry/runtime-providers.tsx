@@ -1,3 +1,4 @@
+import { markRendererPhase } from "@/platform/performance/renderer-trace"
 import { createEffect, createSignal, type Component, type ParentProps } from "solid-js"
 import { GlobalSyncProvider } from "@/app/providers/global-sync/provider"
 import { PermissionProvider } from "@/features/session/providers/permission"
@@ -83,11 +84,5 @@ export function RuntimeProviders(props: ParentProps & { onPainted: () => void })
 }
 
 function trace(name: string, durationMs: number) {
-  const target = window as unknown as {
-    __claxedoPerfTrace?: boolean
-    __claxedoPerfRendererPhases?: Array<{ name: string; durationMs: number }>
-  }
-  if (!target.__claxedoPerfTrace) return
-  performance.mark(name)
-  target.__claxedoPerfRendererPhases?.push({ name, durationMs })
+  markRendererPhase(name, durationMs)
 }
