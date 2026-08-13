@@ -603,3 +603,86 @@ branch as `44b0b3fa0`; `host server in node mode` and `unload idle embedded engi
 and REJECTED with numbers (worker transport: +129 ms, +130 MiB, CPU failing 2 of 6); `lazy-load optional
 work surfaces` is superseded by progressive loading that measurably already ships; and the WIP pair is
 summarised above. **The one idea in them with no recorded outcome is the inline SVG sprite.**
+
+---
+
+## 12. RUNNING THIS ELSEWHERE — environment, and what a cloud host can and cannot do
+
+### 12.1 There are NO required environment variables
+
+The benchmark takes everything on the command line and sets the app's environment itself. A complete run
+is:
+
+    bun run --cwd packages/claxedo-app/perf-harness benchmark:agent-app -- \
+      --app "$PWD/packages/claxedo-desktop/dist/mac-arm64/Claxedo Dev.app" \
+      --profiles all \
+      --run-profile iteration \
+      --seed 1729 \
+      --targets packages/claxedo-app/perf-harness/targets/five-times.json \
+      --output artifacts/agent-app-benchmark/<run-name>
+
+All six flags are required by the CLI (`--app --profiles --run-profile --seed --targets --output`), and
+`--output` must be an EMPTY directory or `prepareOutput` throws. The launcher then sets
+`CLAXEDO_DESKTOP_USER_DATA_DIR`, `CLAXEDO_DATA_DIR`, `CLAXEDO_SERVER_PORT`, `CLAXEDO_DEVTOOLS=0` and
+`GOMAXPROCS` for the app; you do not set those.
+
+### 12.2 Optional variables, all off by default
+
+| variable | effect |
+|---|---|
+| `CLAXEDO_BENCH_ISOLATE_AMBIENT=1` | pins `XDG_CONFIG_HOME` / `XDG_CACHE_HOME` / `HOME` to an empty dir under the run's own profile, so the operator's global OpenCode config and its third-party plugins are out of scope. Recorded in `provenance.json` as `ambientEnvironment`. **Set this for any reproducible/CI run** |
+| `CLAXEDO_BENCH_STARTUP_CLOCK=1` | writes `startup-clock-lead.json` with shared epoch-ms stamps across server child, main and renderer, and TEES the child's stdio to `app-stdout.log` instead of dropping it |
+| `GOMAXPROCS` | defaults to `2`; it is a Go runtime variable and constrains nothing in Electron/V8 — do not reason from it |
+| `CLAXEDO_PERF_*` | the older browser-flow lane (`CLAXEDO_PERF_SKIP_BUILD`, `_RECORD_VIDEO`, `_CPU_PROFILE`, `_TRACE`, `_MOCK_PORT`, ...). Not used by `benchmark:agent-app` |
+
+### 12.3 The preflight is what actually gates a run, and it is strict
+
+Each of these FAILS the attempt rather than warning, and all are checked on the host, not configured:
+
+    AC power                 `pmset -g batt` must report "Now drawing from 'AC Power'"
+    thermal + performance    no recorded thermal or performance warning
+    display                  at least one identifiable display
+    QUIET HOST               1-minute load average <= 4  (added by this effort)
+    keep-awake               `caffeinate -dimsu` on darwin, `systemd-inhibit` on linux
+    clock continuity         wall and monotonic clocks compared before/after
+
+`captureHostState` throws outright on any platform that is not darwin or linux.
+
+### 12.4 What a cloud host can and cannot run
+
+**CANNOT — the ten gates.** The artifact is a macOS arm64 Electron app; the metrics are vsync-quantised
+frame timings, GPU compositing, and a process-family RSS sum over five processes. A Linux VM has no
+macOS and no display compositor; Cloudflare Workers have no processes. AWS EC2 Mac instances exist but
+are **dedicated-host only** and this account's `mac1`/`mac2` host quota is **0** — allocation fails with
+`HostLimitExceeded` in every region tried (ap-south-1, us-east-1, us-west-2, eu-west-1). Raising that
+quota is a console request; `mac2.metal` is arm64 and the right target if you do.
+
+**CAN, and this is where the parallelism is.** Everything headless and server-side: the engine import,
+the provider initializer and its catalogue passes, request counts and duplicate fetches, loop occupancy,
+unit suites and typechecks. Demonstrated here: **140 measurements — 20 catalogue sizes x 7 replicates —
+sharded across three Graviton instances and collected in 2.0 seconds of wall time**, giving 8.75 us per
+catalogue model at R^2 0.9995.
+
+Recipe that worked:
+
+    aws ec2 run-instances --region ap-south-1 --image-id <al2023-arm64> \
+      --instance-type c7g.2xlarge --key-name <key> --security-group-ids <sg> \
+      --subnet-id <subnet> --associate-public-ip-address
+    # then: dnf install nodejs (or bun), scp the engine artifact + probe, run
+
+**Gotchas that cost time here, in the order they bit:**
+- The account vCPU limit was **16**, so three `c7g.2xlarge` failed and two `c7g.xlarge` were used.
+- The operator's public IP CHANGED mid-session and silently broke SSH until the security group was
+  re-authorised for the new `/32`.
+- The engine artifact will not import without its native deps; either stub `@lydell/node-pty` or run
+  against the packaged layout.
+- `timeout` is not on macOS by default — do not put it in a driver script.
+- **Terminate the instances.** They are ~$0.30/hr total and nothing reaps them.
+
+### 12.5 If you want the gates in CI
+
+The honest options are a self-hosted macOS arm64 runner that satisfies the preflight (AC, no thermal
+warning, a display, load <= 4, keep-awake), or an EC2 `mac2.metal` dedicated host once the quota is
+raised. Both must run one attempt at a time: **parallel runs on one machine do not speed the benchmark
+up, they invalidate it** — two orphaned test suites corrupted fourteen runs here, and the terminal echo
+defect only reproduces under the harness's own per-second load.
