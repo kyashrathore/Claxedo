@@ -47,25 +47,42 @@ export function createWakeDetector(input: {
   shouldReconcile: () => boolean
 }): () => void {
   let lastTick = Date.now()
+  let timer: ReturnType<typeof setInterval> | undefined
 
-  const timer = setInterval(() => {
-    const now = Date.now()
-    const gap = now - lastTick
-    lastTick = now
-    if (gap > SLEEP_THRESHOLD && input.shouldReconcile()) {
-      input.onWake()
-    }
-  }, TICK_INTERVAL)
+  // The interval exists only to catch a sleep that happens while the tab is
+  // visible; a hidden tab gets the visibilitychange fast-path on return, so
+  // ticking while hidden is pure idle CPU. Pause it and restart on reveal.
+  const startTicking = () => {
+    if (timer !== undefined) return
+    lastTick = Date.now()
+    timer = setInterval(() => {
+      const now = Date.now()
+      const gap = now - lastTick
+      lastTick = now
+      if (gap > SLEEP_THRESHOLD && input.shouldReconcile()) {
+        input.onWake()
+      }
+    }, TICK_INTERVAL)
+  }
+  const stopTicking = () => {
+    if (timer === undefined) return
+    clearInterval(timer)
+    timer = undefined
+  }
 
   const onVisibilityChange = () => {
-    if (document.visibilityState === "visible" && input.shouldReconcile()) {
-      input.onWake()
+    if (document.visibilityState === "visible") {
+      startTicking()
+      if (input.shouldReconcile()) input.onWake()
+      return
     }
+    stopTicking()
   }
   document.addEventListener("visibilitychange", onVisibilityChange)
+  if (document.visibilityState === "visible") startTicking()
 
   return () => {
-    clearInterval(timer)
+    stopTicking()
     document.removeEventListener("visibilitychange", onVisibilityChange)
   }
 }
