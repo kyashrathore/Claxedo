@@ -134,3 +134,28 @@ first-replay render). Known harness caveat: every scenario also warns "only
 1 of N seeded sessions visible in the session inventory" — the seeding
 contract has drifted from the app's inventory path and needs its own fix
 before the inventory-dependent assertions mean anything.
+
+## Addendum 3: the 5x round — Suspense detach fix, Linux desktop app, honest nulls
+
+- **Session-switch structural fix (a0b91a5)**: the app-shell's only Suspense
+  detached the ENTIRE app DOM on every session switch. Pane-local Suspense +
+  restore-first offset reconnect: switch completion 2,559/1,641 → 615/603 ms
+  (2.6–4.2×), renderer tasks in the measured window ~37–55k → ~1.2k. The same
+  commit dropped large-diff-toggle's worst task from 63.8–94.6 to
+  22.4–38.1 ms (independent interleaved measurement by the other lane).
+- **Diff-toggle lane: NULL, reverted** per the measurement rules — windowed
+  header rendering beat the OLD baseline but regressed against the new HEAD
+  in contamination-checked interleaved pairs. Mechanisms recorded for
+  successors: requestIdleCallback admits heavy sticky accordion headers 2 at
+  a time at 17–54 ms/tick (review-session.tsx:296), style recalc grows with
+  sticky header count, and split/unified toggle rebuilds the FileDiff because
+  the two modes use two worker pools (file.tsx:1086).
+- **The Linux desktop app runs headless in this container** (xvfb-run,
+  --no-sandbox/--disable-gpu): found and fixed a SHIPPED boot defect — the
+  server child crashed on `server.ready` (undefined) right after listening,
+  killing the embedded server in every packaged build. LocalServer now
+  exposes a real listening-resolved `ready`. Shell stage: readyMs 5,036,
+  settled family RSS ~1,007 MiB on this 4-core container. Full-stage numbers
+  need a seeded project profile (fresh profiles have no rail).
+- Browser-lane caveat for successors: identical builds swing up to 3× between
+  runs on this container — use interleaved pairs, never single runs.
