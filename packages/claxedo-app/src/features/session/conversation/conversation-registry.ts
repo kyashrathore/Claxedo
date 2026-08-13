@@ -177,7 +177,7 @@ export function conversationEntryIdsForTest() {
 
 export function warmConversationMemorySnapshot() {
   return [...entries.values()].toReversed().map((entry, recency) => {
-    const messages = entry.client.getMessages()
+    const messages = entry.handle.messages()
     return {
       sessionId: entry.sessionID,
       mounted: entry.refs > 0,
@@ -216,7 +216,7 @@ function conversationMessages(sessionID: string | undefined): UIMessage[] {
   const entry = entries.get(sessionID)
   if (!entry) return readConversationSnapshot(sessionID) ?? []
   entry.version()
-  return entry.client.getMessages()
+  return entry.handle.messages()
 }
 
 function sessionIdFromEvent(event: Event) {
