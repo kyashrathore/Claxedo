@@ -3,12 +3,12 @@ import { Config } from "@/config/config"
 import { ModelsDev } from "@opencode-ai/core/models-dev"
 import { Provider } from "@/provider/provider"
 
-import { mapValues } from "remeda"
 import { Effect, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { ProviderAuthApiError } from "../groups/provider"
+import { providerListBody } from "./provider-list-cache"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 
 function mapProviderAuthError<A, R>(self: Effect.Effect<A, ProviderAuth.Error, R>) {
@@ -37,64 +37,25 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
     const provider = yield* Provider.Service
     const svc = yield* ProviderAuth.Service
 
-    const list = Effect.fn("ProviderHttpApi.list")(function* () {
+    // Raw route: serves memoized wire bytes. Payload derivation and the
+    // success-schema encode live in provider-list-cache.ts, which runs the
+    // exact encode the framework would (`Schema.encodeUnknownSync(ListResult)`
+    // + JSON.stringify) once per distinct (connected, catalog, models, config)
+    // input set and replays the validated bytes on hits — see the trade note
+    // and fail-closed key argument there.
+    const listRaw = Effect.fn("ProviderHttpApi.list")(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest
       const url = new URL(request.url, "http://opencode.local")
-      const selectedProvider = url.searchParams.get("provider")
-      const indexOnly = url.searchParams.get("view") === "index"
+      const query = {
+        selectedProvider: url.searchParams.get("provider"),
+        indexOnly: url.searchParams.get("view") === "index",
+      }
       const config = yield* cfg.get()
       const all = yield* ModelsDev.Service.use((s) => s.get())
-      const disabled = new Set(config.disabled_providers ?? [])
-      const enabled = config.enabled_providers ? new Set(config.enabled_providers) : undefined
-      const filtered = Object.fromEntries(
-        Object.entries(all).filter(([key]) => (enabled ? enabled.has(key) : true) && !disabled.has(key)),
-      )
       const connected = yield* provider.list()
-      const connectedIDs = Object.keys(connected)
-      if (indexOnly) {
-        const defaults = Provider.defaultModelIDs(connected)
-        const providers = new Map(
-          Object.entries(filtered).map(([id, item]) => [id, { id, name: item.name }] as const),
-        )
-        Object.entries(connected).forEach(([id, item]) => providers.set(id, { id, name: item.name }))
-        return {
-          all: [...providers.values()].map((item) => {
-            const connectedProvider = connected[ProviderV2.ID.make(item.id)]
-            const defaultModel = defaults[item.id]
-            return {
-              id: ProviderV2.ID.make(item.id),
-              name: item.name,
-              source: connectedProvider?.source ?? "custom" as const,
-              env: [],
-              options: {},
-              models: connectedProvider && defaultModel && connectedProvider.models[defaultModel]
-                ? { [defaultModel]: Provider.toPublicInfo(connectedProvider).models[defaultModel]! }
-                : {},
-            }
-          }),
-          default: defaults,
-          connected: connectedIDs,
-        }
-      }
-      if (selectedProvider) {
-        const id = ProviderV2.ID.make(selectedProvider)
-        const selected = connected[id] ?? (filtered[selectedProvider] ? Provider.fromModelsDevProvider(filtered[selectedProvider]) : undefined)
-        return {
-          all: selected ? [Provider.toPublicInfo(selected)] : [],
-          default: Provider.defaultModelIDs({ ...connected, ...(selected ? { [id]: selected } : {}) }),
-          connected: connectedIDs,
-        }
-      }
-      const providers = Object.assign(
-        mapValues(filtered, (item) => Provider.fromModelsDevProvider(item)),
-        connected,
-      )
-      const defaults = Provider.defaultModelIDs(providers)
-      return {
-        all: Object.values(providers).map(Provider.toPublicInfo),
-        default: defaults,
-        connected: connectedIDs,
-      }
+      const catalog = yield* provider.catalog()
+      const body = yield* Effect.promise(() => providerListBody({ all, catalog, connected, config }, query))
+      return HttpServerResponse.text(body, { contentType: "application/json" })
     })
 
     const auth = Effect.fn("ProviderHttpApi.auth")(function* () {
@@ -144,7 +105,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
     })
 
     return handlers
-      .handle("list", list)
+      .handleRaw("list", listRaw)
       .handle("auth", auth)
       .handleRaw("authorize", authorizeRaw)
       .handle("callback", callback)
