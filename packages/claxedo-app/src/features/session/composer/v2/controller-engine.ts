@@ -20,6 +20,7 @@
 //     `ImageAttachmentPart` in `providers/prompt.tsx`)
 //   - document mentions (the picker stays a Claxedo surface on the `@` list)
 import { batch, createEffect, createMemo, createSignal } from "solid-js"
+import { readWithoutSuspending } from "@/features/session/composer/suspense-safe-resource"
 import { createPromptInputV2Controller, type PromptInputV2Suggestion } from "@/ui/session-kit"
 import { promptDraftControllerInput } from "@/features/session/providers/prompt"
 import type { ContentPart } from "@/features/session/providers/prompt"
@@ -77,7 +78,7 @@ export function createControllerComposerEngine(input: ComposerEngineBuildInput):
 
   const agentOptions = createMemo(() => promptAgentOptions(input.agents()))
   const slashCommands = createMemo(() =>
-    promptSlashCommands({ commandOptions: input.commandOptions(), customCommands: input.customCommands() }),
+    promptSlashCommands({ commandOptions: input.commandOptions(), customCommands: readWithoutSuspending(input.customCommands) }),
   )
   const contextOptions = createMemo<AtOption[]>(() => {
     if (documentPicker.open()) return promptDocumentOptions(documentPicker.documents())

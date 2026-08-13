@@ -6,6 +6,7 @@
 // not have to take them with it — both engines build their option lists from the
 // same functions, which is what keeps the two paths producing identical lists.
 import { createEffect, createMemo, type Accessor } from "solid-js"
+import { readWithoutSuspending } from "../suspense-safe-resource"
 import { useFilteredList } from "@opencode-ai/ui/hooks"
 import type { AtOption, SlashCommand } from "@/features/session/composer/ui/slash-popover"
 import {
@@ -40,7 +41,7 @@ export function createPromptPopoverController(props: {
   const slashCommands = createMemo(() =>
     promptSlashCommands({
       commandOptions: props.commandOptions(),
-      customCommands: props.customCommands(),
+      customCommands: readWithoutSuspending(props.customCommands),
     }),
   )
 
