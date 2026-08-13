@@ -1,5 +1,4 @@
 import { Button } from "@opencode-ai/ui/button"
-import QRCode from "qrcode"
 import { For, Show, createResource, type Component } from "solid-js"
 import { REMOTE_ACCESS_PHONE_COPY, type RemoteAccessAvailability } from "./remote-access-state"
 
@@ -25,7 +24,10 @@ export type RemoteAccessSurfaceProps = {
 export const RemoteAccessSurface: Component<RemoteAccessSurfaceProps> = (props) => {
   const [qr] = createResource(
     () => props.availability.state === "enabled" ? props.workspaceLink : undefined,
-    (link) => QRCode.toDataURL(link, { width: 224, margin: 1 }),
+    async (link) => {
+      const { default: QRCode } = await import("qrcode")
+      return QRCode.toDataURL(link, { width: 224, margin: 1 })
+    },
   )
 
   return (
