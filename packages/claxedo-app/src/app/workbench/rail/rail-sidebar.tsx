@@ -1,3 +1,11 @@
+import {
+  SIDEBAR_SESSION_STATUS_FRESH_MS,
+  relativeTime,
+  sameRequestIds,
+  sidebarRequestDebug,
+  sidebarSessionStatusBatches,
+  sidebarStatusTargetFresh,
+} from "./rail-sidebar-status"
 import { measureRendererPhase } from "@/platform/performance/renderer-trace"
 
 // RETAINED INSTRUMENTATION — do not delete individual marks. Consumer:
@@ -25,7 +33,7 @@ let groupsMarked = false
  * - Can be pinned open via toggle button
  */
 
-import { For, Show, Switch, Match, createMemo, createSignal, onCleanup, onMount, createEffect, on, type JSX } from "solid-js"
+import { For, Show, Switch, Match, createMemo, createSelector, createSignal, onCleanup, onMount, createEffect, on, type JSX } from "solid-js"
 import { GlobalNavigation } from "./global-navigation"
 import { useQueries, useQuery } from "@tanstack/solid-query"
 import { useClaxedoState, type ContentMeta } from "../state/index"
@@ -113,7 +121,6 @@ export type { ProjectItem, RuntimeKind, SessionItem, WorkspaceInfo, WorkspaceIte
 const VIEW_KEY = "claxedo.session-view.v1"
 const GLOBAL_TAG = "global"
 const GLOBAL_SHOW_TAG = "global:default"
-const SIDEBAR_SESSION_STATUS_FRESH_MS = 10_000
 const SESSION_GROUP_PAGE_SIZE = 5
 
 type SessionListNoticeVariant = "loading" | "error" | "empty" | "done"
@@ -395,44 +402,6 @@ function git(input: Pick<SessionItem, "git"> | Pick<SessionInventoryRow, "git">)
     input.git?.branch ? `branch:${input.git.branch}` : undefined,
   ].filter((item): item is string => !!item)
   return uniq(all)
-}
-
-function relativeTime(ts: number) {
-  const diff = Date.now() - ts
-  const sec = Math.floor(diff / 1000)
-  if (sec < 10) return "now"
-  if (sec < 60) return `${sec}s`
-  const min = Math.floor(sec / 60)
-  if (min < 60) return `${min}m`
-  const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr}h`
-  const day = Math.floor(hr / 24)
-  if (day < 30) return `${day}d`
-  const mo = Math.floor(day / 30)
-  if (mo < 12) return `${mo}mo`
-  return `${Math.floor(mo / 12)}y`
-}
-
-function sidebarRequestDebug(...args: unknown[]) {
-  if (typeof localStorage === "undefined") return
-  if (localStorage.getItem("claxedo.debug.sidebar-requests") !== "1") return
-  console.debug("[claxedo:sidebar-requests]", ...args)
-}
-
-const sidebarSessionStatusBatches = new Map<string, { updatedAt: number; inFlight?: Promise<void> }>()
-
-function sameRequestIds(previous: { id: string }[] | undefined, next: { id: string }[]) {
-  if (!previous || previous.length !== next.length) return false
-  return previous.every((item, index) => item.id === next[index]?.id)
-}
-
-function sidebarStatusTargetFresh(sessionID: string, now = Date.now()) {
-  const status = queryClient.getQueryState(shellDataKeys.sessionId(sessionID, "status"))
-  const requests = queryClient.getQueryState(shellDataKeys.sessionId(sessionID, "requests"))
-  return status?.data !== undefined &&
-    requests?.data !== undefined &&
-    now - status.dataUpdatedAt < SIDEBAR_SESSION_STATUS_FRESH_MS &&
-    now - requests.dataUpdatedAt < SIDEBAR_SESSION_STATUS_FRESH_MS
 }
 
 function replaceSessionUrl(session: Row) {
@@ -1132,14 +1101,22 @@ export function RailSidebar(props: RailSidebarProps) {
     })
   }
 
-  const sessionActiveInWorkbench = (session: Row, directory: string) => {
+  // Both "is this row the active one?" sources are broadcast signals (the
+  // focused workbench surface, the route's active session). `createSelector`
+  // gives each row a per-key subscription, so a session switch re-runs the
+  // bindings of the TWO affected rows instead of every row in every section.
+  const workbenchActiveSessionKey = createMemo(() => {
     const focusedId = claxedoState.wb.selectors.focusedContent()
     const focused = focusedId ? claxedoState.meta.get(focusedId) : undefined
-    return !!focused &&
-      (focused.type === "session" || focused.type === "context") &&
-      focused.directory === directory &&
-      focused.sessionId === session.id
-  }
+    if (!focused || (focused.type !== "session" && focused.type !== "context")) return undefined
+    return `${focused.directory}\0${focused.sessionId}`
+  })
+  const isWorkbenchActiveSession = createSelector<string | undefined, string>(workbenchActiveSessionKey)
+  const sessionActiveInWorkbench = (session: Row, directory: string) =>
+    isWorkbenchActiveSession(`${directory}\0${session.id}`)
+  const isRouteActiveSession = createSelector<string | undefined, string>(
+    () => (props.activeSessionId ? `${props.activeDirectory}\0${props.activeSessionId}` : undefined),
+  )
 
   const sessionDirectory = (session: Row) => session.directory ?? session.project.worktree
   const sessionWorkbenchRef = (session: Row) => {
@@ -1216,17 +1193,30 @@ export function RailSidebar(props: RailSidebarProps) {
   const sessionDisplayRow = (session: Row, input?: {
     nested?: boolean
     showMetadata?: boolean
-    active?: boolean
+    /** Lazy for the same reason as `timeLabel` below — see `get active()`. */
+    active?: () => boolean
   }): SessionNavigationDisplayRow => {
     const metadata = sessionMetadata(session, input?.showMetadata)
     const time = session.time
+    const inputActive = input?.active
     return {
       source: sessionSourceRow(session),
       title: sessionRowTitle(session.title),
       directory: sessionDirectory(session),
-      active: !!input?.active ||
-        !!session.active ||
-        (props.activeDirectory === sessionDirectory(session) && props.activeSessionId === session.id),
+      // `active` is read HERE, lazily, for the same reason as `timeLabel`:
+      // the activation sources (route active session, focused workbench
+      // surface) change on EVERY session switch, and reading them while
+      // BUILDING the row invalidated the whole rows array — every row object
+      // in every section was rebuilt so that TWO rows could change. As an
+      // accessor over `createSelector` keys, a switch re-runs only the
+      // active-reading bindings of the outgoing and incoming rows.
+      // Must stay an accessor: spreading this object would evaluate it
+      // eagerly and restore the whole-list invalidation.
+      get active() {
+        return (inputActive ? inputActive() : false) ||
+          !!session.active ||
+          isRouteActiveSession(`${sessionDirectory(session)}\0${session.id}`)
+      },
       ...(input?.nested ? { nested: true } : {}),
       status: sessionStatus(session),
       // `clock()` is read HERE, lazily, instead of at the top of this builder.
@@ -2177,7 +2167,9 @@ export function RailSidebar(props: RailSidebarProps) {
             <SessionNavigation
               rows={sectionRows().map((session) => sessionDisplayRow(session, {
                 nested: true,
-                active: sessionActiveInWorkbench(session, section.workspaceDir),
+                // Thunk, not a value: evaluating the workbench-focus read here
+                // would subscribe this whole rows map to every focus change.
+                active: () => sessionActiveInWorkbench(session, section.workspaceDir),
               }))}
               onActivate={(item) => activateSessionFromRows(sectionRows(), item)}
               onArchive={(item) => archiveSessionFromRows(sectionRows(), item, reconcileArchivedSessionListRow)}

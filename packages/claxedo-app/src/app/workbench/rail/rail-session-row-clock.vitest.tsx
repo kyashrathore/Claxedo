@@ -203,6 +203,21 @@ describe("rail session row clock invalidation", () => {
     expect(row.timeLabel).toBe("2d")
   })
 
+  test("active is a lazy accessor, not a precomputed value", async () => {
+    const row = await renderSidebarWithSession()
+
+    // Same contract as `timeLabel`: the activation sources (route active
+    // session, focused workbench surface) are broadcast signals that change on
+    // every session switch. If `active` is computed while BUILDING the row,
+    // every switch rebuilds every row object in every section. The accessor
+    // keeps the row referentially stable so only the two affected rows'
+    // bindings re-run.
+    const descriptor = Object.getOwnPropertyDescriptor(row, "active")
+    expect(typeof descriptor?.get).toBe("function")
+    expect(descriptor?.value).toBeUndefined()
+    expect(row.active).toBe(false)
+  })
+
   test("a clock tick re-runs the timeLabel binding and nothing else on the row", async () => {
     {
       const row = await renderSidebarWithSession()
