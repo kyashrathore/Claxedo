@@ -11,7 +11,7 @@
   "isSignedInGates": 0,
   "isWorkspaceIdRef": 2,
   "legacyDirectoryRouteKeyRefs": 2,
-  "moduleScopeMutableState": 57,
+  "moduleScopeMutableState": 58,
   "productionTimerAllowlistTimers": 5,
   "propsDestructuring": 1,
   "queryMirrorEffects": 6,
@@ -23,5 +23,5 @@
   "suppressionFlags": 7,
   "timerDrivenDataPolls": 1,
   "untrackCalls": 21,
-  "userHostedComparisons": 64
+  "userHostedComparisons": 65
 }
