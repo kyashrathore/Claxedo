@@ -64,7 +64,12 @@ export function createTimelineResizeAnchor() {
         const item = input.virtualizer.measurementsCache[index]
         const previous = item ? (input.virtualizer.itemSizeCache.get(item.key) ?? item.size) : undefined
         const root = input.root()
-        if (root && previous !== undefined && Math.abs(size - previous) > root.clientHeight) {
+        // Pinning exists to keep the rows a mid-history reader is looking at
+        // mounted while a huge resize shifts the range. While bottom-anchored
+        // the anchor re-scroll wins immediately, so the pin scan — a forced
+        // layout (getBoundingClientRect per rendered row) inside the resize
+        // flush — buys nothing and is skipped.
+        if (root && previous !== undefined && !input.shouldAnchorBottom() && Math.abs(size - previous) > root.clientHeight) {
           const view = root.getBoundingClientRect()
           pinnedIndexes = [...root.querySelectorAll<HTMLElement>("[data-index]")]
             .filter((element) => {

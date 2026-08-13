@@ -1,4 +1,4 @@
-import { Show, createEffect, createMemo, createSignal, lazy, onCleanup } from "solid-js"
+import { Show, Suspense, createEffect, createMemo, createSignal, lazy, onCleanup } from "solid-js"
 import type { ContentMeta } from "@/features/session/app-ports"
 import { useClaxedoState } from "@/features/session/app-ports"
 import type { PaneCtx } from "@/features/session/app-ports"
@@ -135,6 +135,14 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
     </Show>
   )
   return (
+    // Pane-local suspense boundary. Session surfaces create session-scoped
+    // queries/lazy chunks on first activation; without this boundary the
+    // nearest Suspense is the app-shell bootstrap one, so a session switch
+    // suspends the ENTIRE shell — Solid detaches the whole app DOM, every
+    // scroll position resets, and the timeline re-renders its range twice
+    // (top, then re-anchor to bottom) inside long main-thread tasks. Keeping
+    // the boundary here confines the loading state to this pane.
+    <Suspense fallback={realSessionLoading()}>
     <Show when={shouldRenderSession()} fallback={stashedSession()}>
         <Show
           when={!missingSessionRef()}
@@ -196,7 +204,12 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
                       reserved gutter is keyed off `:has(.session-envcard)`, so an
                       unmounted card reclaims the width with no extra rule. */}
                   <Show when={!draftSession()}>
-                    <SessionEnvironmentCardMount />
+                    {/* The card's lazy chunk must not blank the conversation
+                        behind the pane-level loading fallback — contain its
+                        suspension to the card's own (empty) region. */}
+                    <Suspense fallback={null}>
+                      <SessionEnvironmentCardMount />
+                    </Suspense>
                   </Show>
                 </div>
               </SessionPaneScope>
@@ -204,5 +217,6 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
           </Show>
         </Show>
     </Show>
+    </Suspense>
   )
 }

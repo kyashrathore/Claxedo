@@ -17,6 +17,7 @@ import { useNavigate } from "@solidjs/router"
 import { useMutation, useQuery } from "@tanstack/solid-query"
 import { createVirtualizer, defaultRangeExtractor, elementScroll, type VirtualItem } from "@tanstack/solid-virtual"
 import { observeElementOffsetReconnectAware, observeElementRectDeduped } from "./message-timeline-observe-offset"
+import { markRendererPhase } from "@/platform/performance/renderer-trace"
 import { Button } from "@opencode-ai/ui/button"
 import { Card } from "@opencode-ai/ui/card"
 import {
@@ -817,6 +818,7 @@ export function MessageTimeline(props: {
   }
 
   onMount(() => {
+    markRendererPhase(`timeline.mount.${ownerSessionKey}`)
     requestAnimationFrame(scheduleInitialReveal)
   })
 
