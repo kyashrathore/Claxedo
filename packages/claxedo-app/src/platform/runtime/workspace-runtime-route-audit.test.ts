@@ -94,7 +94,6 @@ const routeParamBoundary = new Set([
   "app/routes/directory-layout.tsx", // route entry resolves directory provider scope
   "app/workbench/state/route-bridge.tsx", // route-to-state bridge owns params
   "features/session/ui/dialogs/fork.tsx",
-  "app/workbench/titlebar/titlebar.tsx",
   "platform/comments/provider.tsx",
   "features/session/providers/permission.tsx",
 ])
@@ -104,15 +103,11 @@ const routeParamBoundary = new Set([
 // divorce those aliases resolve to the same claxedo-owned context modules, so
 // these imports are correct; new claxedo code should still use relative paths.
 const vendoredCommandAliasBoundary = new Set([
-  "app/workbench/titlebar/titlebar.tsx",
   "features/settings/ui/keybinds.tsx",
-  "app/entry/windows-app-menu.tsx",
 ])
 
 const vendoredPlatformAliasBoundary = new Set([
   "app/controls/link.tsx",
-  "app/workbench/titlebar/titlebar.tsx",
-  "app/entry/windows-app-menu.tsx",
   "app/dialogs/select-server.tsx",
   "features/review/providers/highlights.tsx",
 ])
@@ -1297,7 +1292,6 @@ describe("workspace runtime route audit", () => {
       "platform/identity/route.ts",
       "lib/encode.ts",
       "features/session/ui/dialogs/fork.tsx",
-      "app/workbench/titlebar/titlebar.tsx",
       "lib/base64.ts",
       "features/session/providers/permission-auto-respond.ts",
     ])
@@ -1689,8 +1683,10 @@ describe("workspace runtime route audit", () => {
     // here — strictly stronger ownership than the old import from ../desktop-menu.
     expect(platform).toMatch(/export type DesktopMenuAction =/)
     expect(platform).not.toMatch(/from "[^"]*desktop-menu"/)
-    const desktopMenu = await Bun.file(path.join(root, "app/entry/desktop-menu.ts")).text()
-    expect(desktopMenu).toMatch(/export type \{ DesktopMenuAction \} from "@\/platform\/runtime\/platform-provider"/)
+    // app/entry/desktop-menu.ts (the legacy re-export) and its one consumer,
+    // the legacy windows-app-menu, were deleted with the legacy titlebar; the
+    // platform context is now the sole owner of the type.
+    expect(await Bun.file(path.join(root, "app/entry/desktop-menu.ts")).exists()).toBe(false)
     expect(platform).not.toMatch(/\.\.\/\.\.\/\.\.\/app\/src\/desktop-menu/)
     expect(platform).not.toMatch(/getWslEnabled/)
   })
@@ -1719,10 +1715,10 @@ describe("workspace runtime route audit", () => {
     expect(language).toMatch(/loadLocaleDict/)
     expect(language).toMatch(/normalizeLocale/)
     expect(language).not.toMatch(/createResource/)
-    expect(index).toMatch(/@\/platform\/i18n\/provider/)
-    expect(index).toMatch(/loadLocaleDict/)
-    expect(index).toMatch(/normalizeLocale/)
-    expect(index).toMatch(/type Locale/)
+    // The entry barrel no longer re-exports the i18n surface (the eager-bundle
+    // trim cut every re-export without an external consumer); the provider
+    // module above is the single owner.
+    expect(index).not.toMatch(/@\/platform\/i18n\/provider/)
     expect(offenders).toEqual([])
   })
 
@@ -1781,7 +1777,11 @@ describe("workspace runtime route audit", () => {
     expect(desktopRenderer).not.toMatch(/name:\s*"claxedo-override-resolver"/)
     expect(desktopRenderer).not.toMatch(/firstPartyOwners/)
     expect(desktopRenderer).not.toMatch(/\.\.\/app\/src/)
-    expect(desktopRenderer).toMatch(/plugins:\s*\[solidPlugin\(\), tailwindcss\(\)\]/)
+    // The boundary-manifest plugin is a first-party build-report emitter, not
+    // a resolver; the invariant is that no override-resolver plugin returns.
+    expect(desktopRenderer).toMatch(
+      /plugins:\s*\[solidPlugin\(\), tailwindcss\(\), desktopRendererBoundaryManifestPlugin\(desktopDir\)\]/,
+    )
     expect(desktopRenderer).toMatch(/find:\s*"@\/"/)
     expect(desktopRenderer).toMatch(
       /const upstreamRoot = normalize\(fileURLToPath\(new URL\("\.\.\/claxedo-app\/src\/", import\.meta\.url\)\)\)/,
@@ -2644,7 +2644,6 @@ describe("workspace runtime route audit", () => {
 
   test("SessionComposerState reads todo, request, and status state from shell session queries", async () => {
     const text = await Bun.file(path.join(root, sessionComposerState)).text()
-    const index = await Bun.file(path.join(root, sessionComposer)).text()
     const region = await Bun.file(path.join(root, sessionComposerRegion)).text()
     const sessionPageText = await Bun.file(path.join(root, sessionPage)).text()
 
@@ -2652,11 +2651,12 @@ describe("workspace runtime route audit", () => {
     expect(
       await Bun.file(path.join(root, "overrides/features/session/ui/composer/session-composer-state.ts")).exists(),
     ).toBe(false)
-    expect(await Bun.file(path.join(root, sessionComposer)).exists()).toBe(true)
+    // The composer barrel (features/session/ui/composer/index.ts) was deleted:
+    // both consumers import the region and state modules directly, so the
+    // orphan guard flagged it once the entry barrel stopped re-exporting it.
+    expect(await Bun.file(path.join(root, sessionComposer)).exists()).toBe(false)
     expect(await Bun.file(path.join(root, sessionComposerRegion)).exists()).toBe(true)
     expect(await Bun.file(path.join(root, sessionComposerState)).exists()).toBe(true)
-    expect(index).toMatch(/\.\/session-composer-region/)
-    expect(index).toMatch(/\.\/session-composer-state/)
     // Region imports the SessionComposerState type from its colocated state
     // module (a relative sibling import after WP-B6 alignment), never
     // re-declaring it and never reaching for the @/ package alias.
@@ -2728,14 +2728,11 @@ describe("workspace runtime route audit", () => {
     expect(text).not.toMatch(/sync\./)
   })
 
-  test("upstream titlebar tab enrichment reads session rows from directory cache", async () => {
-    const text = await Bun.file(path.join(root, "app/workbench/titlebar/titlebar.tsx")).text()
-
-    expect(text).toMatch(/useQuery\(\(\) => directorySessionCacheQuery\(tab\.dir\)\)/)
-    expect(text).toMatch(/sessionsQuery\.data\?\.session\.find\(\(session\) => session\.id === tab\.sessionId\)/)
-    expect(text).not.toMatch(/useGlobalSync/)
-    expect(text).not.toMatch(/createDirSyncContext/)
-    expect(text).not.toMatch(/sync\.session\.get/)
+  test("the legacy upstream titlebar stays deleted", async () => {
+    // Replaced by workbench-shell-header + titlebar-drag-region in the shell
+    // rewrite; the file was dead weight the orphan guard flagged once its last
+    // re-export left the entry barrel.
+    expect(await Bun.file(path.join(root, "app/workbench/titlebar/titlebar.tsx")).exists()).toBe(false)
   })
 
   test("upstream new-session empty views read project and branch inputs from query caches", async () => {
@@ -3025,11 +3022,13 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/@\/platform\/i18n\/provider/)
     expect(text).not.toMatch(/\.\.\/\.\.\/utils\/api/)
     expect(text).not.toMatch(/\.\.\/\.\.\/cloud\/runtime\/workspace-runtime-store/)
-    // app/entry/index.tsx re-exports the first-party Terminal directly; the pane
-    // consumers now mount it through the first-party RoleGuardedTerminal
-    // wrapper (role-gated terminal). Either path resolves to the first-party
-    // @/features/terminal/ui/terminal, never an override.
-    expect(await Bun.file(path.join(root, "app/entry/index.tsx")).text()).toMatch(/@\/features\/terminal\/ui\/terminal/)
+    // The entry barrel no longer re-exports Terminal (the eager-bundle trim);
+    // pane consumers mount it through the first-party RoleGuardedTerminal
+    // wrapper, which resolves to @/features/terminal/ui/terminal, never an
+    // override.
+    expect(await Bun.file(path.join(root, "app/entry/index.tsx")).text()).not.toMatch(
+      /@\/features\/terminal\/ui\/terminal/,
+    )
     expect(await Bun.file(path.join(root, "features/terminal/ui/content/terminal-content.tsx")).text()).toMatch(
       /role-guarded-terminal/,
     )

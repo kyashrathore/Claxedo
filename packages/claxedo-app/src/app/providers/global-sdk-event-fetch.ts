@@ -60,7 +60,7 @@ export function createControlPlaneEventFetch(input: ControlPlaneEventFetchInput)
     if (session?.host === "central") return input.fetch(request)
     // A signed-out local desktop already receives canonical local workspace
     // events through its loopback compat stream. Do not ask the local product
-    // for the hosted `/api/workspace/resolve` authority merely because a local
+    // for the hosted `api/workspace/resolve` authority merely because a local
     // session has a filesystem directory.
     if (
       centralTransportForServer(url.origin) === "loopback" &&

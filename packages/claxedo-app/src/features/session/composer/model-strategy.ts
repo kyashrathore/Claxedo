@@ -103,7 +103,7 @@ export function selectRuntimeModel(input: unknown, selected: SubmitModelInfo | u
  * The boot catalog is an INDEX: every provider's id/name, but only the one
  * default model per connected provider. A saved selection of any OTHER model
  * of a connected provider is therefore indistinguishable from an invalid one
- * until that provider's detail (`/provider?provider=<id>`) merges in. This
+ * until that provider's detail (`GET /provider with ?provider=<id>`) merges in. This
  * names the exact miss: the provider is connected and present, yet the
  * selected model is absent from its model table.
  */
