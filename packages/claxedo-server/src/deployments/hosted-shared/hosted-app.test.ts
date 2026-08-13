@@ -64,7 +64,12 @@ function fakePlane(
     },
     authority: {
       auditAllow: vi.fn(),
-      usersMe: vi.fn(async () => ({ id: "user_1", user_id: "user_1" })),
+      usersMe: vi.fn(async () => ({
+        id: "user_1",
+        user_id: "user_1",
+        actor_public_id: "usr_public_1",
+        actor_name: "Test User",
+      })),
       resolveOrgId: vi.fn(async (auth) => `org_${auth.user.subject}`),
       authorizeProject: vi.fn(async (auth, args) =>
         auth.user.subject === "tenant_a" && args.orgId === "org_tenant_a"
@@ -831,7 +836,12 @@ describe("hosted app", () => {
       },
     }
     const convex = {
-      usersMe: vi.fn(async () => ({ subject: "user_1" })),
+      usersMe: vi.fn(async () => ({
+        subject: "user_1",
+        user_id: "user_1",
+        actor_public_id: "usr_public_1",
+        actor_name: "Test User",
+      })),
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
@@ -907,7 +917,12 @@ describe("hosted app", () => {
       },
     }
     const convex = {
-      usersMe: vi.fn(async () => ({ subject: "user_1" })),
+      usersMe: vi.fn(async () => ({
+        subject: "user_1",
+        user_id: "user_1",
+        actor_public_id: "usr_public_1",
+        actor_name: "Test User",
+      })),
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "editor",

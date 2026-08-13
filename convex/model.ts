@@ -106,6 +106,7 @@ export async function upsertUser(ctx: { db: GenericDatabaseWriter<any> } & Ident
           .first()
       : null)
   const patch = {
+    public_id: existing?.public_id ?? `usr_${crypto.randomUUID()}`,
     token_identifier: identity.tokenIdentifier,
     clerk_subject: identity.subject,
     issuer: identity.issuer,
@@ -143,6 +144,7 @@ export async function upsertServiceUser(ctx: { db: GenericDatabaseWriter<any> },
     .withIndex("by_token_identifier", (q) => q.eq("token_identifier", input.token_identifier))
     .unique()
   const patch = {
+    public_id: existing?.public_id ?? `usr_${crypto.randomUUID()}`,
     clerk_subject: input.subject,
     issuer: input.issuer,
     email: input.email,
@@ -249,6 +251,11 @@ export async function orgMembershipRole(db: Db, userId: unknown, orgId: unknown)
 // in convex/workspaces.ts already treats the two as equivalent, and orgs
 // created before the membership row existed would otherwise have no admin.
 export async function orgAdminForUser(db: Db, userId: unknown, orgId: unknown) {
+  // Expand-safety: a workspace/session row still awaiting the tenancy migration
+  // carries org_id: undefined. Degrade to "no org authority" rather than
+  // crashing on db.get(undefined), so code deployed during the migration window
+  // can still read legacy rows (matches the guarded pattern at sessions.ts:320).
+  if (!orgId) return false
   const org = await db.get(orgId as never)
   if (!org || org.deleted_at) return false
   const role = await orgMembershipRole(db, userId, orgId)
@@ -257,6 +264,7 @@ export async function orgAdminForUser(db: Db, userId: unknown, orgId: unknown) {
 }
 
 async function directOrgRole(db: Db, userId: unknown, orgId: unknown) {
+  if (!orgId) return
   const org = await db.get(orgId as never)
   if (org?.deleted_at) return
   const role = await orgMembershipRole(db, userId, orgId)
@@ -281,12 +289,12 @@ async function orgShareRole(db: Db, userId: unknown, workspaceId: unknown) {
 export async function workspaceRoleForUser(ctx: { db: Db }, workspace: Record<string, unknown>, user: { _id: unknown }) {
   if (workspace.deleted_at) return
   const project = typeof workspace.project_id === "string"
-    ? await projectByPublicId(ctx.db, workspace.project_id)
+    ? await projectByPublicId(ctx.db, workspace.project_id, workspace.org_id)
     : undefined
   return combineRolePrecedence({
     owner: workspace.owner_user_id === user._id,
     directWorkspace: await directWorkspaceRole(ctx.db, user._id, workspace._id),
-    directProject: project ? await directProjectRole(ctx.db, user._id, project._id) : undefined,
+    directProject: project ? await directProjectRole(ctx.db, user._id, project.project_id) : undefined,
     directOrg: workspace.org_id ? await directOrgRole(ctx.db, user._id, workspace.org_id) : undefined,
     share: await shareRole(ctx.db, user._id, workspace._id),
     orgShare: await orgShareRole(ctx.db, user._id, workspace._id),
@@ -301,7 +309,7 @@ export async function projectRoleForUser(ctx: { db: Db }, project: Record<string
   if (project.deleted_at) return
   return combineRolePrecedence({
     owner: project.owner_user_id === user._id,
-    directProject: await directProjectRole(ctx.db, user._id, project._id),
+    directProject: await directProjectRole(ctx.db, user._id, project.project_id),
     directOrg: await directOrgRole(ctx.db, user._id, project.org_id),
   })
 }
@@ -337,11 +345,13 @@ export async function workspaceByPublicId(db: Db, workspaceId: string) {
     .unique()
 }
 
-export async function projectByPublicId(db: Db, projectId: string) {
-  return await db
+export async function projectByPublicId(db: Db, projectId: string, orgId?: unknown) {
+  const project = await db
     .query("projects")
     .withIndex("by_project_id", (q) => q.eq("project_id", projectId))
     .unique()
+  if (project && orgId !== undefined && project.org_id !== orgId) return undefined
+  return project
 }
 
 export async function orgByClerkOrgId(db: Db, clerkOrgId: string) {

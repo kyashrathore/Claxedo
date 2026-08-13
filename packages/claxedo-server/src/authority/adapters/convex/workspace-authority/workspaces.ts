@@ -6,6 +6,11 @@ import type { ConvexAuthorityInput, ServiceArgs } from "./types"
 
 export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: ServiceArgs) {
   return {
+    async authorizeWorkspaceCreate(auth: SignedControlPlaneAuth, args: { orgId?: string }) {
+      await requireAllowed(await requireExecutor(input, auth).query(convexApi.workspaces.authorizeCreate, {
+        ...(args.orgId ? { org_id: args.orgId } : {}),
+      }))
+    },
     async authorizeWorkspaceOpen(auth: SignedControlPlaneAuth, args: {
       workspaceId: string
     }) {
@@ -71,6 +76,7 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
     },
     async registerLocalForSharing(auth: SignedControlPlaneAuth, args: {
       workspaceId: string
+      orgId?: string
       displayName: string
       projectId?: string
       repoUrl?: string
@@ -81,6 +87,7 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
     }) {
       const body = {
         workspace_id: args.workspaceId,
+        ...(args.orgId ? { org_id: args.orgId } : {}),
         display_name: args.displayName,
         ...(args.projectId ? { project_id: args.projectId } : {}),
         ...(args.repoUrl ? { repo_url: args.repoUrl } : {}),
@@ -201,6 +208,7 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
     },
     async createCloudWorkspace(auth: SignedControlPlaneAuth, args: {
       workspaceId: string
+      orgId?: string
       projectId?: string
       displayName: string
       repoUrl?: string
@@ -210,6 +218,7 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
     }) {
       return requireExecutor(input, auth).mutation(convexApi.workspaces.createCloud, {
         workspace_id: args.workspaceId,
+        ...(args.orgId ? { org_id: args.orgId } : {}),
         ...(args.projectId ? { project_id: args.projectId } : {}),
         display_name: args.displayName,
         ...(args.repoUrl ? { repo_url: args.repoUrl } : {}),

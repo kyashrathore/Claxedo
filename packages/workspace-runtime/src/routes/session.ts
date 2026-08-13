@@ -25,6 +25,7 @@ import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hu
 import { assertTarget, registeredWorkspaceDirectory, workspaceId } from "../target"
 import { sessionStatusSnapshot } from "./session-status-snapshot"
 import type { SessionPromptBody } from "../session/service"
+import type { SessionAccessPolicy } from "../session-access-policy"
 
 function bridgeLifecycleEvent(event: Parameters<RuntimeEventHub["publishGlobal"]>[0]) {
   const payload = event.payload as { type?: unknown; properties?: Record<string, unknown> }
@@ -105,6 +106,7 @@ export function SessionRoutes(
   getAdapter: (input?: { sessionId?: string; directory?: string; harness?: SessionHarness }) => AgentHarnessAdapter | Promise<AgentHarnessAdapter>,
   options?: {
     eventHub?: RuntimeEventHub
+    sessionAccessPolicy?: SessionAccessPolicy
     beforeSessionOperation?: (input: { sessionId: string; operation: string }) => Response | undefined
     resolveRuntime?: (input?: { sessionId?: string; directory?: string; harness?: SessionHarness }) => AgentRuntime | Promise<AgentRuntime | undefined> | undefined
     listPermissions?: (c: unknown, directory: string) => Promise<AgentPermissionRow[]>
@@ -235,6 +237,7 @@ export function SessionRoutes(
       : undefined,
     resolveDirectory: (c, input) => dir(c as never, input),
     beforeSessionOperation: (_c, input) => options?.beforeSessionOperation?.(input),
+    sessionAccessPolicy: options?.sessionAccessPolicy,
     listPermissions: options?.listPermissions
       ? (c, directory) => options.listPermissions!(c, requiredDirectory(directory))
       : undefined,

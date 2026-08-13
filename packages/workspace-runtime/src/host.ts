@@ -1,5 +1,19 @@
 export { workspaceRuntimeBus, claxedoBus } from "./bus"
 export type { WorkspaceRuntimeEvent, ClaxedoEvent, PtyInfo } from "./bus"
+export {
+  createIdentityAwareEventSource,
+  agentRuntimeEventDeliveryPolicy,
+  defaultEventDeliveryPolicy,
+  eventDeliveryPrincipal,
+  sessionEventDeliveryPolicy,
+} from "./event-delivery"
+export type {
+  EventDeliveryDecision,
+  EventDeliveryOptions,
+  EventDeliveryPolicy,
+  EventDeliveryPrincipal,
+  IdentityAwareEventSource,
+} from "./event-delivery"
 export { createRuntimeEventHub } from "./runtime-event-hub"
 export type {
   RuntimeEventEnvelope,

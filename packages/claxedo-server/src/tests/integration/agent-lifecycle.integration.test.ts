@@ -1063,7 +1063,14 @@ describe("agent lifecycle integration", () => {
         eventType: "Start",
       })
 
-      const res = await fetch(`${base()}/api/wr/hook/agent-lifecycle?${params}`)
+      // Lifecycle ingestion is POST-only: a GET carries its payload in the URL,
+      // where it lands in access logs and is reachable by cross-site navigation.
+      // The notify hook template posts form-encoded, so this does too.
+      const res = await fetch(`${base()}/api/wr/hook/agent-lifecycle?${q(ws)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: params,
+      })
       expect(res.status).toBe(200)
 
       const event = await stream.event

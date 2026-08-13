@@ -76,6 +76,14 @@ type Turn = {
   format?: UserMessage["format"]
   system?: string
   variant?: string
+  actorId?: string
+  actorKind?: "human" | "agent"
+  author?: {
+    id: string
+    name: string
+    avatarUrl?: string
+    kind: "human" | "agent"
+  }
 }
 
 type TurnFinish = {
@@ -1433,10 +1441,8 @@ export class RuntimeStore {
       )
   }
 
-  getWorktree(sessionId: string): WorkspaceWorktreeRecord | undefined {
-    const row = this.db
-      .prepare(
-        `
+  getWorktree(workspaceId: string, sessionId: string): WorkspaceWorktreeRecord | undefined {
+    const row = this.db.prepare(`
       SELECT
         workspace_id,
         session_id,
@@ -1448,22 +1454,18 @@ export class RuntimeStore {
         updated_at,
         last_activity_at
       FROM workspace_worktree
-      WHERE session_id = ?
-    `,
-      )
-      .get(sessionId) as
-      | {
-          workspace_id: string
-          session_id: string
-          branch: string
-          base_commit: string
-          path: string
-          state: WorkspaceWorktreeRecord["state"]
-          created_at: number
-          updated_at: number
-          last_activity_at: number
-        }
-      | undefined
+      WHERE workspace_id = ? AND session_id = ?
+    `).get(workspaceId, sessionId) as {
+      workspace_id: string
+      session_id: string
+      branch: string
+      base_commit: string
+      path: string
+      state: WorkspaceWorktreeRecord["state"]
+      created_at: number
+      updated_at: number
+      last_activity_at: number
+    } | undefined
     if (!row) return
     return {
       workspaceId: row.workspace_id,
@@ -1487,10 +1489,8 @@ export class RuntimeStore {
       FROM workspace_worktree
       WHERE workspace_id = ?
       ORDER BY last_activity_at DESC, session_id ASC
-    `,
-        )
-        .all(workspaceId) as Array<{ session_id: string }>
-    ).map((row) => this.getWorktree(row.session_id)!)
+    `).all(workspaceId) as Array<{ session_id: string }>)
+      .map((row) => this.getWorktree(workspaceId, row.session_id)!)
   }
 
   private importJsonlJournals() {
@@ -2011,6 +2011,7 @@ export class RuntimeStore {
             ...(control.format ? { format: control.format } : {}),
             ...(control.system ? { system: control.system } : {}),
             ...(control.variant ? { variant: control.variant } : {}),
+            ...(control.author ? { author: control.author } : {}),
           }) as unknown as Record<string, unknown>,
           row.ts,
         )
@@ -2342,6 +2343,7 @@ export class RuntimeStore {
                 ...(control.format ? { format: control.format } : {}),
                 ...(control.system ? { system: control.system } : {}),
                 ...(control.variant ? { variant: control.variant } : {}),
+                ...(control.author ? { author: control.author } : {}),
               }),
             ),
             ...buildUserPromptParts(row.sessionId, control.userMessageId, control.parts).map(messagePartUpdated),
@@ -2373,6 +2375,9 @@ export class RuntimeStore {
     format?: UserMessage["format"]
     system?: string
     variant?: string
+    actorId?: string
+    actorKind?: "human" | "agent"
+    author?: Turn["author"]
   }) {
     const active = this.db
       .prepare(
@@ -2426,6 +2431,8 @@ export class RuntimeStore {
         ...(input.format ? { format: input.format } : {}),
         ...(input.system ? { system: input.system } : {}),
         ...(input.variant ? { variant: input.variant } : {}),
+        ...(input.actorId && input.actorKind ? { actorId: input.actorId, actorKind: input.actorKind } : {}),
+        ...(input.author ? { author: input.author } : {}),
       },
     }
     const committed = this.commit(row)

@@ -329,6 +329,14 @@ const messageBase = {
   sessionID: partBase.sessionID,
 }
 
+export const MessageAuthor = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  avatarUrl: Schema.String.pipe(optional),
+  kind: Schema.Literals(["human", "agent"]),
+}).annotate({ identifier: "ClaxedoMessageAuthor" })
+export interface MessageAuthor extends Schema.Schema.Type<typeof MessageAuthor> {}
+
 export const User = Schema.Struct({
   ...messageBase,
   role: Schema.Literal("user"),
@@ -351,6 +359,7 @@ export const User = Schema.Struct({
   }),
   system: Schema.optional(Schema.String),
   tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
+  claxedo: Schema.Struct({ author: MessageAuthor }).pipe(optional),
 }).annotate({ identifier: "UserMessage" })
 export type User = Types.DeepMutable<Schema.Schema.Type<typeof User>>
 

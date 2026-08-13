@@ -8,6 +8,23 @@ export function historyPath(directory: string, id: string, root = workspaceRunti
   return path.join(root, key, `${id}.log`)
 }
 
+function historySessionPath(directory: string, id: string, root = workspaceRuntimePtyHistoryDir()) {
+  return historyPath(directory, id, root).replace(/\.log$/, ".session.json")
+}
+
+export async function readHistorySessionId(
+  directory: string,
+  id: string,
+  root = workspaceRuntimePtyHistoryDir(),
+) {
+  try {
+    const parsed = JSON.parse(await fs.readFile(historySessionPath(directory, id, root), "utf8")) as { sessionId?: unknown }
+    return typeof parsed.sessionId === "string" && parsed.sessionId ? parsed.sessionId : undefined
+  } catch {
+    return
+  }
+}
+
 export async function renameHistory(
   directory: string,
   oldId: string,
@@ -18,6 +35,10 @@ export async function renameHistory(
   const newPath = historyPath(directory, newId, root)
   await fs.mkdir(path.dirname(newPath), { recursive: true })
   await fs.rename(oldPath, newPath)
+  await fs.rename(
+    historySessionPath(directory, oldId, root),
+    historySessionPath(directory, newId, root),
+  ).catch(() => {})
 }
 
 /**
@@ -65,6 +86,7 @@ export async function cleanupOrphanedHistory(
         const fstat = await fs.stat(filePath)
         if (now - fstat.mtimeMs > maxAgeMs) {
           await fs.rm(filePath, { force: true })
+          await fs.rm(filePath.replace(/\.log$/, ".session.json"), { force: true })
           removed += 1
         }
       } catch {}
@@ -99,7 +121,7 @@ export async function cleanupOrphanedHistory(
  * `session.buffer`, which has its own separate 2 MB cap — so removing this
  * changed nothing about what a live client sees.
  */
-export async function createDiskHistory(input: { directory: string; id: string; limit: number }) {
+export async function createDiskHistory(input: { directory: string; id: string; limit: number; sessionId?: string }) {
   const file = historyPath(input.directory, input.id)
   /** Approximate on-disk size. Only ever used to decide when to compact, so a
    *  code-unit/byte discrepancy on non-ASCII content is harmless. */
@@ -150,6 +172,9 @@ export async function createDiskHistory(input: { directory: string; id: string; 
     .catch(() => {
       bytes = 0
     })
+  if (input.sessionId) {
+    await fs.writeFile(historySessionPath(input.directory, input.id), JSON.stringify({ sessionId: input.sessionId }))
+  }
 
   return {
     append(data: string) {

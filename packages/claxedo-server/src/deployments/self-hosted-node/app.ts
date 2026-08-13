@@ -102,6 +102,9 @@ import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "@claxedo/server
 import { createControlPlaneRelayProvider } from "@claxedo/server-core/adapters/relay/index"
 import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
+import { RuntimeSessionAuthorityRoutes } from "../../routes/runtime-session-authority"
+import { relayRole } from "../../workspace/route-support"
+import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import {
   ensureWorkspace,
   getWorkspaceByDirectory,
@@ -538,6 +541,30 @@ export function createSelfHostedApp(
     ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
     ...(services.relay.provider ? { relayProvider: services.relay.provider } : {}),
     ...(services.defaultHomeRegion ? { defaultHomeRegion: services.defaultHomeRegion } : {}),
+    ...(services.auth.config.enabled ? { requireRelayActor: true } : {}),
+    ...(services.authority
+      ? {
+          resolveRelayActor: async (request: Request, workspaceId: string) => {
+            const auth = await controlPlaneAuthContext(request, {
+              config: services.auth.config,
+              ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+            })
+            if (auth.mode !== "signed") return
+            const [actor, workspace] = await Promise.all([
+              resolveRuntimeActor(services.authority!, auth),
+              services.authority!.openWorkspace(auth, { workspaceId }),
+            ])
+            const orgId = workspace.workspace?.org_id
+            if (typeof orgId !== "string") throw new Error("Workspace organization is unavailable")
+            return {
+              ...actor,
+              subject: auth.user.subject,
+              orgId,
+              role: relayRole(workspace.role),
+            }
+          },
+        }
+      : {}),
   }
   const turnCredentials = createConnectionTurnCredentials()
   const usageOutbox = options.usageOutbox ?? (options.usageRevisionStore
@@ -823,6 +850,7 @@ export function createSelfHostedApp(
     defaultHomeRegion: services.defaultHomeRegion,
     allowUnsignedLocal: true,
   }))
+  app.route("/api/runtime-authority", RuntimeSessionAuthorityRoutes(services))
   app.route("/api/control", ControlPlaneHttpRoutes(services, authRouteOptions(services)))
   app.route("/", centralControl.app)
   app.route(

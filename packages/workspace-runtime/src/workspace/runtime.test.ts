@@ -21,7 +21,8 @@ import {
 import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
 import { ConfigRoutes } from "../routes/config"
 import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER, type WorkspaceRuntimeManagementAuth } from "../management-auth"
-import { loopbackWorkspaceRuntimeExposure } from "../exposure"
+import { loopbackWorkspaceRuntimeExposure, privateNetworkWorkspaceRuntimeExposure } from "../exposure"
+import type { SessionAccessPolicy } from "../session-access-policy"
 import { createRuntimeEventHub } from "../runtime-event-hub"
 import { RuntimeStore } from "../store"
 import { createProcessObserver, type ProcessObserverEvent } from "../managed-processes/process-observer"
@@ -2021,6 +2022,61 @@ describe("workspace runtime auth helpers", () => {
     expect(await event.text()).toContain("server.connected")
 
     expect(seen.map((s) => s.path)).toEqual(["/provider", "/experimental/tool/ids", "/global/event"])
+  })
+
+  test("managed proxied event streams drop malformed frames while preserving public heartbeats", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-managed-events-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const encoder = new TextEncoder()
+    const handler: OpenCodeRequestFn = async () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ payload: { type: "server.heartbeat", properties: {} } })}\n\n`))
+        controller.enqueue(encoder.encode("data: not-json\n\n"))
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ payload: { type: "future.transcript", properties: { text: "secret" } } })}\n\n`))
+        controller.close()
+      },
+    }), { headers: { "Content-Type": "text/event-stream" } })
+    const policy: SessionAccessPolicy = {
+      sessionAuthority: "managed-private",
+      authorize: async () => ({ allowed: true }),
+      authorizePrefix: async () => ({ allowed: true }),
+      filterSessions: async (input) => input.sessionIds,
+    }
+    const host = createWorkspaceHost({
+      opencodeRequest: handler,
+      opencodeCompat: true,
+      sessionAccessPolicy: policy,
+    })
+    const app = new Hono()
+    app.use("*", async (c, next) => {
+      ;(c as unknown as { set(name: string, value: unknown): void }).set("relayHostAuth", {
+        workspace_id: "workspace_1",
+        org_id: "org_1",
+        role: "editor",
+      })
+      await next()
+    })
+    host.mount(app, {
+      exposure: privateNetworkWorkspaceRuntimeExposure({
+        name: "runtime-test",
+        guard: () => true,
+        runtimeAuth: () => true,
+      }),
+    })
+    await host.apply({ version: 1, runner: { type: "opencode" }, auth: {}, mcp: {} })
+
+    const response = await app.request("http://localhost/global/event", {
+      headers: { Accept: "text/event-stream" },
+    })
+    const body = await response.text()
+
+    expect(response.status).toBe(200)
+    expect(body).toContain("server.heartbeat")
+    expect(body).not.toContain("not-json")
+    expect(body).not.toContain("future.transcript")
+    expect(body).not.toContain("secret")
+    host.dispose()
   })
 
   test("proxies the real Session V2 model, create, prompt, and history contract", async () => {

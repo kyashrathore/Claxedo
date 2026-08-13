@@ -16,6 +16,7 @@ import {
 } from "./model"
 import { isLiveLease } from "./sandboxLeases"
 import { WORKGRAPH_OWNER_TABLES, ownerDeletionIndex } from "./workgraphOwnerDeletion"
+import { revokeWorkspaceUserTokens } from "./runtimeAccessTokens"
 
 export async function personalOrgForUser(ctx: any, user: { _id: unknown; name?: string; email?: string }) {
   const existing = (await ctx.db
@@ -77,6 +78,37 @@ export const ensurePersonalOrg = authedMutation({
   },
 })
 
+export const createTeam = authedMutation({
+  args: {
+    name: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const name = args.name.trim()
+    if (!name) throw new Error("team_name_required")
+    const user = await upsertUser(ctx)
+    const now = Date.now()
+    // Mirrored subscription fields are owned solely by the Polar mirror in
+    // convex/billing.ts (single-writer guard I-3). A new team defaults to the
+    // free tier via ABSENT fields — fail-closed, same convention as
+    // personalOrgForUser / ensurePersonalOrg, which set none.
+    const orgId = await ctx.db.insert("orgs", {
+      name,
+      kind: "team",
+      owner_user_id: user._id,
+      created_at: now,
+      updated_at: now,
+    })
+    await ctx.db.insert("org_memberships", {
+      org_id: orgId,
+      user_id: user._id,
+      role: "owner",
+      created_at: now,
+      updated_at: now,
+    })
+    return { org_id: orgId, name, role: "owner" as const }
+  },
+})
+
 export const resolveForMe = authedMutation({
   args: {
     clerk_org_id: v.optional(v.string()),
@@ -133,6 +165,7 @@ async function upsertClerkUser(ctx: any, data: Record<string, any>) {
     .unique()
   const now = Date.now()
   const patch = {
+    public_id: existing?.public_id ?? `usr_${crypto.randomUUID()}`,
     clerk_subject: subject,
     email: data.email_addresses?.[0]?.email_address,
     name: [data.first_name, data.last_name].filter(Boolean).join(" ") || undefined,
@@ -224,6 +257,9 @@ async function upsertClerkMembership(ctx: any, data: Record<string, any>) {
     updated_at: Date.now(),
   }
   if (existing) {
+    if ((existing.role === "owner" || existing.role === "admin") && patch.role === "member") {
+      await revokeOrgWorkspaceTokens(ctx, orgId, user._id, Date.now())
+    }
     await ctx.db.patch(existing._id, patch)
     return
   }
@@ -273,6 +309,7 @@ async function deleteClerkMembership(ctx: any, data: Record<string, any>) {
   const membership = await orgMembership(ctx.db, org._id, user._id)
   if (!membership) return
   const revokedRole = membership.role
+  await revokeOrgWorkspaceTokens(ctx, org._id, user._id, Date.now())
   await ctx.db.delete(membership._id)
   // W6.3: the delete path previously wrote NO audit record at all, which made
   // the single most security-relevant event in the mirror — access being taken
@@ -292,6 +329,16 @@ async function deleteClerkMembership(ctx: any, data: Record<string, any>) {
       clerk_updated_at: updatedAt,
     },
   })
+}
+
+export async function revokeOrgWorkspaceTokens(ctx: any, orgId: unknown, userId: unknown, now: number) {
+  const workspaces = await ctx.db
+    .query("workspaces")
+    .withIndex("by_org", (q: any) => q.eq("org_id", orgId))
+    .collect()
+  for (const workspace of workspaces.filter((workspace: any) => !workspace.deleted_at)) {
+    await revokeWorkspaceUserTokens(ctx, workspace._id, userId, now)
+  }
 }
 
 /**
@@ -641,6 +688,12 @@ const ORG_SESSION_CASCADE: ParentCascade = {
     // `by_session_ordinal` — so transcripts are only reachable through their
     // session row. Deleting sessions first would strand every message.
     { table: "session_messages", index: "by_session_ordinal", field: "session_id", parentKey: "session_id" },
+    // Same reachability, same reason to purge: a participant row names a
+    // specific PERSON who could read a specific session's transcript, which is
+    // personal data under any retention policy. Its only scoping indexes are
+    // `by_session_user` and `by_user` — neither names a workspace or an org —
+    // so like the transcript it is only reachable through its session.
+    { table: "session_participants", index: "by_session_user", field: "session_id", parentKey: "session_id" },
   ],
 }
 
@@ -649,6 +702,12 @@ const ORG_PROJECT_CASCADE: ParentCascade = {
   index: "by_org",
   field: "org_id",
   children: [
+    { table: "project_memberships", index: "by_project_user", field: "project_id", parentKey: "project_id" },
+    // Legacy rows written before reconcileProjectMembershipProjectIds keyed
+    // `project_id` on the project's Convex doc _id rather than its public id.
+    // Drain those too so an org purge cannot orphan personal membership rows if
+    // it runs before that migration. Disjoint from the pass above (a row holds
+    // one keying or the other), so no double-delete.
     { table: "project_memberships", index: "by_project_user", field: "project_id", parentKey: "_id" },
   ],
 }

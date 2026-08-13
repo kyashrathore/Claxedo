@@ -120,6 +120,7 @@ export type DaytonaSandboxDriverOptions = {
     relayJwksUrl?: string
     relayVerifyPem?: string
     managementJwksUrl?: string
+    sessionAuthorityUrl?: string
   }
   /** Dynamic runtime env that needs the acquired sandbox id or current lease. */
   env?: (input: SandboxDriverEnsureInput, sandbox: DaytonaSandboxLike) => Record<string, string> | Promise<Record<string, string>>
@@ -236,6 +237,7 @@ export function createDaytonaSandboxDriver(
     if (options.controlEnv?.relayJwksUrl) env.WORKSPACE_RUNTIME_RELAY_JWKS_URL = options.controlEnv.relayJwksUrl
     if (options.controlEnv?.relayVerifyPem) env.WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM = options.controlEnv.relayVerifyPem
     if (options.controlEnv?.managementJwksUrl) env.WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL = options.controlEnv.managementJwksUrl
+    if (options.controlEnv?.sessionAuthorityUrl) env.WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL = options.controlEnv.sessionAuthorityUrl
     return env
   }
 

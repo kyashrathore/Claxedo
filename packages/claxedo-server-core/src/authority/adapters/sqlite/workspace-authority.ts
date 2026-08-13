@@ -10,6 +10,7 @@ import {
   openAuthorityDb,
   projectByPublicId,
   projectRoleForUser,
+  sqliteRepoKey,
   upsertUser,
   userBySubject,
   workspaceByPublicId,
@@ -30,28 +31,6 @@ import {
 // backend functions (convex/workspaces.ts, convex/localHostLinks.ts, ...).
 // Node-only (better-sqlite3 via the store): hosted/Worker compositions must
 // never import this module (worker.import-graph guard).
-
-/**
- * The ONE seam where unsigned-local mode gets an identity.
- *
- * Routes only ever hand the authority a `SignedControlPlaneAuth`; in
- * unsigned-local mode `routeAuth` yields `undefined` and auth-guarded call
- * sites skip the authority entirely. Callers that want the local single-user
- * to act against this authority (composition roots, session pull flows, tests)
- * construct the synthetic identity HERE — never inline — so the stable
- * subject/tokenIdentifier pair exists in exactly one place.
- */
-export function localControlPlaneAuth(): SignedControlPlaneAuth {
-  return {
-    mode: "signed",
-    token: "",
-    user: {
-      subject: "local",
-      tokenIdentifier: "local:default",
-      issuer: "claxedo-local",
-    },
-  }
-}
 
 // Mirrors convex/localHostLinks.ts TTL policy.
 const DEFAULT_TTL_MS = 60_000
@@ -249,8 +228,8 @@ function validatedHomeRegion(input?: string) {
   return input
 }
 
-function defaultProjectId(workspaceId: string) {
-  return `prj_${workspaceId}`
+function defaultProjectId() {
+  return `prj_${randomToken()}`
 }
 
 function denied(): never {
@@ -276,6 +255,31 @@ function jsonText(input: unknown) {
     return JSON.stringify(input) ?? "null"
   } catch {
     return "null"
+  }
+}
+
+function messageWithPublicAuthor(input: unknown, user?: {
+  public_id: string | null
+  name: string | null
+  image_url: string | null
+  kind: string | null
+}) {
+  const row = object(input)
+  const info = object(row?.info)
+  if (!row || !info || info.role !== "user" || !user?.public_id) return input
+  return {
+    ...row,
+    info: {
+      ...info,
+      claxedo: {
+        author: {
+          id: user.public_id,
+          name: user.name ?? (user.kind === "agent" ? "Agent" : "User"),
+          kind: user.kind === "agent" ? "agent" : "human",
+          ...(user.image_url ? { avatarUrl: user.image_url } : {}),
+        },
+      },
+    },
   }
 }
 
@@ -338,12 +342,24 @@ export function createSqliteWorkspaceAuthority(
 
   const ownedProject = (db: SqliteAuthorityDb, who: AuthorityUser, input: {
     workspaceId: string
+    orgId?: string
     projectId?: string
+    repoUrl?: string
+    remoteDirectory?: string
   }) => {
-    const orgId = ensurePersonalOrg(db, who)
+    const orgId = input.orgId ?? ensurePersonalOrg(db, who)
+    if (input.orgId) {
+      const membership = db.prepare(`
+        SELECT m.role FROM org_memberships m
+        JOIN orgs o ON o.org_id = m.org_id
+        WHERE m.org_id = ? AND m.token_identifier = ? AND o.deleted_at IS NULL
+      `).get(input.orgId, who.token_identifier) as { role: string } | undefined
+      if (membership?.role !== "owner" && membership?.role !== "admin") denied()
+    }
     const projectId = ensureProject(db, {
-      projectId: input.projectId ?? defaultProjectId(input.workspaceId),
+      projectId: input.projectId ?? defaultProjectId(),
       orgId,
+      repoKey: sqliteRepoKey(input.repoUrl ?? input.remoteDirectory, input.workspaceId),
       owner: who,
     })
     return { orgId, projectId }
@@ -399,8 +415,36 @@ export function createSqliteWorkspaceAuthority(
       WHERE channel = ? AND external_user_id = ? AND revoked_at IS NULL
     `).get(args.channel, args.externalUserId) as { token_identifier: string } | undefined
     if (!link) return
-    return db.prepare(`SELECT token_identifier, subject FROM users WHERE token_identifier = ?`)
+    return db.prepare(`SELECT token_identifier, public_id, subject, name, image_url FROM users WHERE token_identifier = ?`)
       .get(link.token_identifier) as AuthorityUser | undefined
+  }
+
+  type SessionRow = {
+    session_id: string
+    workspace_id: string
+    created_by_token_identifier: string
+    deleted_at: number | null
+  }
+
+  const sessionRole = (
+    db: SqliteAuthorityDb,
+    workspace: WorkspaceRow,
+    session: SessionRow,
+    who: AuthorityUser,
+    action: WorkspaceAction,
+  ) => {
+    const role = authorizeWorkspaceForUser(db, workspace, who, action)
+    if (!role) return
+    if (session.created_by_token_identifier === who.token_identifier) return role
+    const participant = db.prepare(`
+      SELECT revoked_at FROM session_participants WHERE session_id = ? AND actor_token_identifier = ?
+    `).get(session.session_id, who.token_identifier) as { revoked_at: number | null } | undefined
+    if (participant && !participant.revoked_at) return role
+    if (!workspace.org_id) return
+    const membership = db.prepare(`
+      SELECT role FROM org_memberships WHERE org_id = ? AND token_identifier = ?
+    `).get(workspace.org_id, who.token_identifier) as { role: string } | undefined
+    if (membership?.role === "admin" || membership?.role === "owner") return role
   }
 
   // Mirror of convex/projects.ts `authResult`: role (optionally action-gated)
@@ -440,9 +484,10 @@ export function createSqliteWorkspaceAuthority(
   }) => {
     for (const session of input.sessions) {
       const now = Date.now()
-      const existing = db.prepare(`SELECT workspace_id FROM session_history WHERE session_id = ?`)
-        .get(session.sessionId) as { workspace_id: string } | undefined
+      const existing = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`)
+        .get(session.sessionId) as SessionRow | undefined
       if (existing && existing.workspace_id !== input.workspace.workspace_id) throw new Error("Session not found")
+      if (existing && !sessionRole(db, input.workspace, existing, input.who, "write")) denied()
       if (existing) {
         db.prepare(`
           UPDATE session_history SET title = ?, updated_at = ?, deleted_at = NULL WHERE session_id = ?
@@ -459,6 +504,18 @@ export function createSqliteWorkspaceAuthority(
         session.title ?? null,
         session.createdAt ?? now,
         session.updatedAt ?? now,
+      )
+      db.prepare(`
+        INSERT INTO session_participants (
+          session_id, workspace_id, actor_token_identifier, added_by_token_identifier, created_at
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (session_id, actor_token_identifier) DO NOTHING
+      `).run(
+        session.sessionId,
+        input.workspace.workspace_id,
+        input.who.token_identifier,
+        input.who.token_identifier,
+        now,
       )
     }
   }
@@ -478,6 +535,11 @@ export function createSqliteWorkspaceAuthority(
       const orgId = ensurePersonalOrg(db, who)
       return {
         user_id: who.token_identifier,
+        actor_id: who.token_identifier,
+        actor_kind: auth.tokenKind === "cli" ? "agent" as const : "human" as const,
+        actor_public_id: who.public_id,
+        actor_name: who.name ?? (auth.tokenKind === "cli" ? "Agent" : "User"),
+        actor_avatar_url: who.image_url,
         subject: who.subject,
         token_identifier: who.token_identifier,
         org_id: orgId,
@@ -520,13 +582,22 @@ export function createSqliteWorkspaceAuthority(
       if (!project) return { ok: false }
       return projectResultFor(db, project, who, { action: args.action, orgId: args.orgId })
     },
-    async authorizeChannelProject(args): Promise<ProjectRoleResult> {
+    async authorizeChannelProject(args) {
       const db = database()
       const who = linkedChannelUser(db, args)
       if (!who) return { ok: false }
       const project = projectByPublicId(db, args.projectId)
       if (!project) return { ok: false }
-      return projectResultFor(db, project, who, { action: args.action })
+      const result = projectResultFor(db, project, who, { action: args.action })
+      if (!result.ok) return result
+      return {
+        ...result,
+        actorId: who.token_identifier,
+        actorKind: "human",
+        ...(who.public_id
+          ? { actorPublicId: who.public_id, actorName: who.name ?? "User", ...(who.image_url ? { actorAvatarUrl: who.image_url } : {}) }
+          : {}),
+      }
     },
     async authorizeChannelWorkspace(args) {
       const db = database()
@@ -534,9 +605,27 @@ export function createSqliteWorkspaceAuthority(
       if (!who) denied()
       const workspace = workspaceByPublicId(db, args.workspaceId)
       if (!workspace || !authorizeWorkspaceForUser(db, workspace, who, args.action)) denied()
+      return {
+        actorId: who.token_identifier,
+        actorKind: "human" as const,
+        ...(who.public_id
+          ? { actorPublicId: who.public_id, actorName: who.name ?? "User", ...(who.image_url ? { actorAvatarUrl: who.image_url } : {}) }
+          : {}),
+      }
     },
 
     // --- workspaces (convex/workspaces.ts, convex/workspaceShares.ts) ------
+    async authorizeWorkspaceCreate(auth: SignedControlPlaneAuth, args) {
+      if (!args.orgId) return
+      const db = database()
+      const who = user(auth)
+      const membership = db.prepare(`
+        SELECT m.role FROM org_memberships m
+        JOIN orgs o ON o.org_id = m.org_id
+        WHERE m.org_id = ? AND m.token_identifier = ? AND o.deleted_at IS NULL
+      `).get(args.orgId, who.token_identifier) as { role: string } | undefined
+      if (membership?.role !== "owner" && membership?.role !== "admin") denied()
+    },
     async authorizeWorkspaceOpen(auth: SignedControlPlaneAuth, args) {
       const db = database()
       const who = user(auth)
@@ -575,7 +664,6 @@ export function createSqliteWorkspaceAuthority(
     async registerLocalForSharing(auth: SignedControlPlaneAuth, args) {
       const db = database()
       const who = user(auth)
-      const { orgId, projectId } = ownedProject(db, who, args)
       const requestedHomeRegion = validatedHomeRegion(args.homeRegion)
       const now = Date.now()
       const existing = workspaceByPublicId(db, args.workspaceId)
@@ -584,10 +672,20 @@ export function createSqliteWorkspaceAuthority(
         if (existing.backing === "cloud-vm" || existing.access === "cloud") {
           throw new Error("workspace_backing_conflict: cannot register a cloud workspace as a user-hosted local workspace")
         }
+        if (!existing.org_id || !existing.project_id) throw new Error("workspace_tenant_missing")
+        const projectId = ensureProject(db, {
+          projectId: existing.project_id,
+          orgId: existing.org_id,
+          repoKey: sqliteRepoKey(
+            args.repoUrl ?? existing.repo_url ?? args.remoteDirectory ?? existing.remote_directory,
+            args.workspaceId,
+          ),
+          owner: who,
+        })
         const home_region = existing.home_region ?? requestedHomeRegion
         db.prepare(`
           UPDATE workspaces SET
-            org_id = ?, owner_token_identifier = ?, project_id = ?,
+            project_id = ?,
             backing = 'local-worktree', access = 'user-hosted',
             home_region = COALESCE(?, home_region),
             display_name = ?,
@@ -599,8 +697,6 @@ export function createSqliteWorkspaceAuthority(
             updated_at = ?
           WHERE workspace_id = ?
         `).run(
-          orgId,
-          who.token_identifier,
           projectId,
           home_region ?? null,
           args.displayName,
@@ -613,6 +709,7 @@ export function createSqliteWorkspaceAuthority(
         )
         return { workspace_doc_id: args.workspaceId, workspace_id: args.workspaceId, home_region }
       }
+      const { orgId, projectId } = ownedProject(db, who, args)
       db.prepare(`
         INSERT INTO workspaces (
           workspace_id, org_id, project_id, owner_token_identifier, backing, access,
@@ -992,10 +1089,20 @@ export function createSqliteWorkspaceAuthority(
           if (!authorizeWorkspaceForUser(db, currentWorkspace, who, "admin")) throw new Error("Workspace not found")
           refuseCloudWorkspace(currentWorkspace)
         } else {
+          const { orgId, projectId } = ownedProject(db, who, { workspaceId: args.workspaceId })
           db.prepare(`
-            INSERT INTO workspaces (workspace_id, owner_token_identifier, backing, access, display_name, created_at, updated_at)
-            VALUES (?, ?, 'local-worktree', 'user-hosted', ?, ?, ?)
-          `).run(args.workspaceId, who.token_identifier, args.displayName ?? args.workspaceId, claimedAt, claimedAt)
+            INSERT INTO workspaces (
+              workspace_id, org_id, project_id, owner_token_identifier, backing, access, display_name, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, 'local-worktree', 'user-hosted', ?, ?, ?)
+          `).run(
+            args.workspaceId,
+            orgId,
+            projectId,
+            who.token_identifier,
+            args.displayName ?? args.workspaceId,
+            claimedAt,
+            claimedAt,
+          )
         }
         const workspace = currentWorkspace ?? workspaceByPublicId(db, args.workspaceId)!
         const expiresAt = claimedAt + ttl(args.ttlMs)
@@ -1125,30 +1232,146 @@ export function createSqliteWorkspaceAuthority(
       const who = user(auth)
       const workspace = workspaceByPublicId(db, args.workspaceId)
       if (!workspace) denied()
-      const session = db.prepare(`SELECT workspace_id, deleted_at FROM session_history WHERE session_id = ?`)
-        .get(args.sessionId) as { workspace_id: string; deleted_at: number | null } | undefined
+      const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId) as SessionRow | undefined
       if (!session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
-      if (!authorizeWorkspaceForUser(db, workspace, who, "read")) denied()
+      if (!sessionRole(db, workspace, session, who, "read")) denied()
+    },
+    async authorizeSessionWrite(auth: SignedControlPlaneAuth, args) {
+      const db = database()
+      const who = user(auth)
+      const workspace = workspaceByPublicId(db, args.workspaceId)
+      const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId) as SessionRow | undefined
+      if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
+      if (!sessionRole(db, workspace, session, who, "write")) denied()
+    },
+    async authorizeRuntimeSession(args) {
+      const db = database()
+      const who = db.prepare(`SELECT * FROM users WHERE token_identifier = ?`).get(args.actorId) as AuthorityUser | undefined
+      if (!who || (who.kind ?? "human") !== args.actorKind) denied()
+      const workspace = workspaceByPublicId(db, args.workspaceId)
+      const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId) as SessionRow | undefined
+      if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
+      if (!sessionRole(db, workspace, session, who, args.action)) denied()
+    },
+    async registerRuntimeSession(args) {
+      const db = database()
+      const who = db.prepare(`SELECT * FROM users WHERE token_identifier = ?`).get(args.actorId) as AuthorityUser | undefined
+      if (!who || (who.kind ?? "human") !== args.actorKind) denied()
+      const workspace = workspaceByPublicId(db, args.workspaceId)
+      if (!workspace || !authorizeWorkspaceForUser(db, workspace, who, "write")) denied()
+      return db.transaction(() => {
+        const existing = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`)
+          .get(args.sessionId) as SessionRow | undefined
+        if (
+          existing
+          && (existing.workspace_id !== args.workspaceId || existing.created_by_token_identifier !== who.token_identifier)
+        ) denied()
+        const now = Date.now()
+        if (existing) {
+          db.prepare(`
+            UPDATE session_history
+            SET title = COALESCE(?, title), updated_at = ?, deleted_at = NULL
+            WHERE session_id = ?
+          `).run(args.title ?? null, now, args.sessionId)
+        } else {
+          db.prepare(`
+            INSERT INTO session_history (
+              session_id, workspace_id, created_by_token_identifier, title, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+          `).run(args.sessionId, args.workspaceId, who.token_identifier, args.title ?? null, now, now)
+        }
+        db.prepare(`
+          INSERT INTO session_participants (
+            session_id, workspace_id, actor_token_identifier, added_by_token_identifier, created_at, revoked_at
+          ) VALUES (?, ?, ?, ?, ?, NULL)
+          ON CONFLICT (session_id, actor_token_identifier) DO UPDATE SET
+            workspace_id = excluded.workspace_id,
+            added_by_token_identifier = excluded.added_by_token_identifier,
+            revoked_at = NULL
+        `).run(args.sessionId, args.workspaceId, who.token_identifier, who.token_identifier, now)
+        return { registered: !existing }
+      })()
+    },
+    async addSessionParticipant(auth: SignedControlPlaneAuth, args) {
+      const db = database()
+      const who = user(auth)
+      const workspace = workspaceByPublicId(db, args.workspaceId)
+      const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId) as SessionRow | undefined
+      if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
+      const membership = workspace.org_id ? db.prepare(`
+        SELECT role FROM org_memberships WHERE org_id = ? AND token_identifier = ?
+      `).get(workspace.org_id, who.token_identifier) as { role: string } | undefined : undefined
+      if (
+        session.created_by_token_identifier !== who.token_identifier
+        && membership?.role !== "admin"
+        && membership?.role !== "owner"
+      ) denied()
+      const participant = db.prepare(`SELECT token_identifier, subject FROM users WHERE token_identifier = ?`)
+        .get(args.participantTokenIdentifier) as AuthorityUser | undefined
+      if (!participant || !authorizeWorkspaceForUser(db, workspace, participant, "read")) denied()
+      const now = Date.now()
+      db.prepare(`
+        INSERT INTO session_participants (
+          session_id, workspace_id, actor_token_identifier, added_by_token_identifier, created_at, revoked_at
+        ) VALUES (?, ?, ?, ?, ?, NULL)
+        ON CONFLICT (session_id, actor_token_identifier) DO UPDATE SET
+          added_by_token_identifier = excluded.added_by_token_identifier,
+          created_at = excluded.created_at,
+          revoked_at = NULL
+      `).run(args.sessionId, args.workspaceId, participant.token_identifier, who.token_identifier, now)
+      return { participant_id: `${args.sessionId}:${participant.token_identifier}` }
+    },
+    async removeSessionParticipant(auth: SignedControlPlaneAuth, args) {
+      const db = database()
+      const who = user(auth)
+      const workspace = workspaceByPublicId(db, args.workspaceId)
+      const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId) as SessionRow | undefined
+      if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
+      const membership = workspace.org_id ? db.prepare(`
+        SELECT role FROM org_memberships WHERE org_id = ? AND token_identifier = ?
+      `).get(workspace.org_id, who.token_identifier) as { role: string } | undefined : undefined
+      if (
+        session.created_by_token_identifier !== who.token_identifier
+        && membership?.role !== "admin"
+        && membership?.role !== "owner"
+      ) denied()
+      if (args.participantTokenIdentifier === session.created_by_token_identifier) return { removed: false }
+      const result = db.prepare(`
+        UPDATE session_participants SET revoked_at = ?
+        WHERE session_id = ? AND actor_token_identifier = ? AND revoked_at IS NULL
+      `).run(Date.now(), args.sessionId, args.participantTokenIdentifier)
+      return { removed: result.changes > 0 }
     },
     async listSessions(auth: SignedControlPlaneAuth, args) {
       const db = database()
       const who = user(auth)
       const workspace = workspaceByPublicId(db, args.workspaceId)
       if (!workspace || !authorizeWorkspaceForUser(db, workspace, who, "read")) return []
-      return db.prepare(`
-        SELECT session_id, title, created_at, updated_at FROM session_history
+      const membership = workspace.org_id ? db.prepare(`
+        SELECT role FROM org_memberships WHERE org_id = ? AND token_identifier = ?
+      `).get(workspace.org_id, who.token_identifier) as { role: string } | undefined : undefined
+      const participantSessions = new Set((db.prepare(`
+        SELECT session_id FROM session_participants
+        WHERE workspace_id = ? AND actor_token_identifier = ? AND revoked_at IS NULL
+      `).all(args.workspaceId, who.token_identifier) as Array<{ session_id: string }>).map((row) => row.session_id))
+      return (db.prepare(`
+        SELECT * FROM session_history
         WHERE workspace_id = ? AND deleted_at IS NULL
         ORDER BY updated_at DESC
-      `).all(args.workspaceId) as unknown[]
+      `).all(args.workspaceId) as SessionRow[]).filter((session) =>
+        session.created_by_token_identifier === who.token_identifier
+        || membership?.role === "admin"
+        || membership?.role === "owner"
+        || participantSessions.has(session.session_id)
+      )
     },
     async readSessionMessages(auth: SignedControlPlaneAuth, args) {
       const db = database()
       const who = user(auth)
       const workspace = workspaceByPublicId(db, args.workspaceId)
-      const session = db.prepare(`SELECT workspace_id, deleted_at FROM session_history WHERE session_id = ?`)
-        .get(args.sessionId) as { workspace_id: string; deleted_at: number | null } | undefined
+      const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId) as SessionRow | undefined
       const role = workspace && session && session.workspace_id === args.workspaceId && !session.deleted_at
-        ? authorizeWorkspaceForUser(db, workspace, who, "read")
+        ? sessionRole(db, workspace, session, who, "read")
         : undefined
       if (!role) return { allowed: false, messages: [] }
       if (args.before !== undefined && args.limit === undefined) {
@@ -1161,14 +1384,24 @@ export function createSqliteWorkspaceAuthority(
       )) {
         throw new AgentMessagePageError(400, `Message page limit must be between 1 and ${MAX_MESSAGE_PAGE_LIMIT}`)
       }
+      type MessageAuthorRow = {
+        data: string
+        public_id: string | null
+        name: string | null
+        image_url: string | null
+        kind: string | null
+      }
       if (args.limit === undefined) {
         const rows = db.prepare(`
-          SELECT data FROM session_messages WHERE session_id = ? AND workspace_id = ? ORDER BY ordinal ASC
-        `).all(args.sessionId, args.workspaceId) as Array<{ data: string }>
+          SELECT m.data, u.public_id, u.name, u.image_url, u.kind
+          FROM session_messages m
+          LEFT JOIN users u ON u.token_identifier = m.author_actor_id
+          WHERE m.session_id = ? AND m.workspace_id = ? ORDER BY m.ordinal ASC
+        `).all(args.sessionId, args.workspaceId) as MessageAuthorRow[]
         return {
           allowed: true,
           role,
-          messages: rows.map((row) => JSON.parse(row.data) as unknown),
+          messages: rows.map((row) => messageWithPublicAuthor(JSON.parse(row.data) as unknown, row)),
         }
       }
       const beforeOrdinal = args.before === undefined
@@ -1176,21 +1409,25 @@ export function createSqliteWorkspaceAuthority(
         : decodeMessagePageCursor(args.sessionId, args.before)
       const rows = (beforeOrdinal === undefined
         ? db.prepare(`
-            SELECT ordinal, data FROM session_messages
-            WHERE session_id = ? AND workspace_id = ?
-            ORDER BY ordinal DESC LIMIT ?
+            SELECT m.ordinal, m.data, u.public_id, u.name, u.image_url, u.kind
+            FROM session_messages m
+            LEFT JOIN users u ON u.token_identifier = m.author_actor_id
+            WHERE m.session_id = ? AND m.workspace_id = ?
+            ORDER BY m.ordinal DESC LIMIT ?
           `).all(args.sessionId, args.workspaceId, args.limit + 1)
         : db.prepare(`
-            SELECT ordinal, data FROM session_messages
-            WHERE session_id = ? AND workspace_id = ? AND ordinal < ?
-            ORDER BY ordinal DESC LIMIT ?
-          `).all(args.sessionId, args.workspaceId, beforeOrdinal, args.limit + 1)) as Array<{ ordinal: number; data: string }>
+            SELECT m.ordinal, m.data, u.public_id, u.name, u.image_url, u.kind
+            FROM session_messages m
+            LEFT JOIN users u ON u.token_identifier = m.author_actor_id
+            WHERE m.session_id = ? AND m.workspace_id = ? AND m.ordinal < ?
+            ORDER BY m.ordinal DESC LIMIT ?
+          `).all(args.sessionId, args.workspaceId, beforeOrdinal, args.limit + 1)) as Array<MessageAuthorRow & { ordinal: number }>
       const hasMore = rows.length > args.limit
       const selected = rows.slice(0, args.limit).reverse()
       return {
         allowed: true,
         role,
-        messages: selected.map((row) => JSON.parse(row.data) as unknown),
+        messages: selected.map((row) => messageWithPublicAuthor(JSON.parse(row.data) as unknown, row)),
         ...(hasMore && selected[0]
           ? { nextCursor: encodeMessagePageCursor(args.sessionId, selected[0].ordinal) }
           : {}),
@@ -1203,13 +1440,13 @@ export function createSqliteWorkspaceAuthority(
       const now = Date.now()
       return db.transaction(() => {
         const existing = db.prepare(`
-          SELECT workspace_id, deleted_at, max_event_ordinal FROM session_history WHERE session_id = ?
-        `).get(args.sessionId) as {
-          workspace_id: string
-          deleted_at: number | null
+          SELECT session_id, workspace_id, created_by_token_identifier, deleted_at, max_event_ordinal
+          FROM session_history WHERE session_id = ?
+        `).get(args.sessionId) as SessionRow & {
           max_event_ordinal: number
         } | undefined
         if (existing && existing.workspace_id !== args.workspaceId) throw new Error("Session not found")
+        if (existing && !sessionRole(db, workspace, existing, who, "write")) denied()
         if (args.maxEventOrdinal !== undefined && args.maxEventOrdinal < (existing?.max_event_ordinal ?? 0)) {
           return { ok: true, applied: false, maxEventOrdinal: existing?.max_event_ordinal ?? 0 }
         }
@@ -1235,14 +1472,25 @@ export function createSqliteWorkspaceAuthority(
               session_id, workspace_id, created_by_token_identifier, created_at, updated_at, max_event_ordinal
             ) VALUES (?, ?, ?, ?, ?, ?)
           `).run(args.sessionId, workspace.workspace_id, who.token_identifier, now, now, args.maxEventOrdinal ?? 0)
+          db.prepare(`
+            INSERT INTO session_participants (
+              session_id, workspace_id, actor_token_identifier, added_by_token_identifier, created_at
+            ) VALUES (?, ?, ?, ?, ?)
+          `).run(args.sessionId, workspace.workspace_id, who.token_identifier, who.token_identifier, now)
         }
+        const existingAuthors = new Map((db.prepare(`
+          SELECT message_id, author_actor_id FROM session_messages WHERE session_id = ? AND workspace_id = ?
+        `).all(args.sessionId, args.workspaceId) as Array<{ message_id: string; author_actor_id: string | null }>)
+          .map((row) => [row.message_id, row.author_actor_id]))
         // Replace-all: observable read shape (ordered `data` payloads) matches
         // the Convex per-row diffing without carrying its patch bookkeeping.
         deleteMessageRows(db, args.sessionId, args.workspaceId)
         const insert = db.prepare(`
-          INSERT INTO session_messages (session_id, workspace_id, message_id, role, ordinal, data, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO session_messages (
+            session_id, workspace_id, message_id, author_actor_id, role, ordinal, data, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT (session_id, message_id) DO UPDATE SET
+            author_actor_id = COALESCE(session_messages.author_actor_id, excluded.author_actor_id),
             role = excluded.role, ordinal = excluded.ordinal, data = excluded.data, updated_at = excluded.updated_at
         `)
         for (let ordinal = 0; ordinal < args.messages.length; ordinal += 1) {
@@ -1251,7 +1499,8 @@ export function createSqliteWorkspaceAuthority(
           const info = object(row?.info)
           const messageId = txt(row?.id) ?? txt(info?.id) ?? `${args.sessionId}:${ordinal}`
           const role = txt(row?.role) ?? txt(info?.role) ?? null
-          insert.run(args.sessionId, args.workspaceId, messageId, role, ordinal, jsonText(message), now, now)
+          const author = role === "user" ? existingAuthors.get(messageId) ?? who.token_identifier : null
+          insert.run(args.sessionId, args.workspaceId, messageId, author, role, ordinal, jsonText(message), now, now)
         }
         return args.maxEventOrdinal === undefined
           ? { ok: true }
@@ -1275,9 +1524,12 @@ export function createSqliteWorkspaceAuthority(
         upsertVisibilityRows(db, { who, workspace, sessions: args.sessions })
         const incoming = new Set(args.sessions.map((session) => session.sessionId))
         const now = Date.now()
-        const rows = db.prepare(`SELECT session_id FROM session_history WHERE workspace_id = ? AND deleted_at IS NULL`)
-          .all(args.workspaceId) as Array<{ session_id: string }>
-        for (const row of rows.filter((item) => !incoming.has(item.session_id))) {
+        const rows = db.prepare(`SELECT * FROM session_history WHERE workspace_id = ? AND deleted_at IS NULL`)
+          .all(args.workspaceId) as SessionRow[]
+        for (const row of rows.filter((item) =>
+          item.created_by_token_identifier === who.token_identifier
+          && !incoming.has(item.session_id))) {
+          if (!sessionRole(db, workspace, row, who, "write")) denied()
           db.prepare(`UPDATE session_history SET deleted_at = ?, updated_at = ? WHERE session_id = ?`)
             .run(now, now, row.session_id)
           deleteMessageRows(db, row.session_id, args.workspaceId)
@@ -1288,10 +1540,11 @@ export function createSqliteWorkspaceAuthority(
     async deleteSessionVisibility(auth: SignedControlPlaneAuth, args) {
       const db = database()
       const who = user(auth)
-      requireWorkspace(db, who, args.workspaceId, "write")
-      const session = db.prepare(`SELECT workspace_id FROM session_history WHERE session_id = ?`)
-        .get(args.sessionId) as { workspace_id: string } | undefined
+      const workspace = requireWorkspace(db, who, args.workspaceId, "write")
+      const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`)
+        .get(args.sessionId) as SessionRow | undefined
       if (!session || session.workspace_id !== args.workspaceId) return { ok: true }
+      if (!sessionRole(db, workspace, session, who, "write")) denied()
       db.transaction(() => {
         const now = Date.now()
         db.prepare(`UPDATE session_history SET deleted_at = ?, updated_at = ? WHERE session_id = ?`)

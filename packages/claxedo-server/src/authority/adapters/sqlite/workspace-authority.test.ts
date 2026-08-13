@@ -4,7 +4,8 @@ import path from "node:path"
 import { generateKeyPairSync, sign as signData, type KeyObject } from "node:crypto"
 import { describe, expect, test, vi } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { createSqliteWorkspaceAuthority, localControlPlaneAuth } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
+import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
+import { localControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { ensurePersonalOrg, ensureProject, openAuthorityDb, upsertUser } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 
 function signedAuth(subject: string): SignedControlPlaneAuth {
@@ -81,13 +82,179 @@ describe("sqlite workspace authority", () => {
     database.close()
   })
 
+  test("project repo identity reuses within an org and isolates across orgs", () => {
+    const handle = openAuthorityDb({ path: ":memory:" })
+    const database = handle()
+    const user = upsertUser(database, {
+      token_identifier: owner.user.tokenIdentifier,
+      subject: owner.user.subject,
+      issuer: owner.user.issuer,
+      kind: "human",
+    })
+
+    const first = ensureProject(database, {
+      projectId: "prj_first",
+      orgId: "org_a",
+      repoKey: "https://github.com/claxedo/opencode",
+      owner: user,
+    })
+    const reused = ensureProject(database, {
+      projectId: "prj_second",
+      orgId: "org_a",
+      repoKey: "https://github.com/claxedo/opencode",
+      owner: user,
+    })
+    const isolated = ensureProject(database, {
+      projectId: "prj_third",
+      orgId: "org_b",
+      repoKey: "https://github.com/claxedo/opencode",
+      owner: user,
+    })
+
+    expect(reused).toBe(first)
+    expect(isolated).not.toBe(first)
+    expect(database.prepare("SELECT project_id, org_id, repo_key FROM projects ORDER BY org_id").all()).toEqual([
+      { project_id: first, org_id: "org_a", repo_key: "https://github.com/claxedo/opencode" },
+      { project_id: isolated, org_id: "org_b", repo_key: "https://github.com/claxedo/opencode" },
+    ])
+    handle.close()
+  })
+
+  test("session mirror attributes only admitted user messages to the signed actor", async () => {
+    const { authority, database } = fileAuthority()
+    await authority.createCloudWorkspace(owner, { workspaceId: "ws_author", displayName: "Author" })
+    await authority.syncSessionMessages(owner, {
+      workspaceId: "ws_author",
+      sessionId: "ses_author",
+      messages: [
+        { info: { id: "msg_user", role: "user" }, parts: [] },
+        { info: { id: "msg_assistant", role: "assistant" }, parts: [] },
+      ],
+    })
+
+    expect(database().prepare(`
+      SELECT message_id, author_actor_id FROM session_messages WHERE session_id = ? ORDER BY ordinal
+    `).all("ses_author")).toEqual([
+      { message_id: "msg_user", author_actor_id: owner.user.tokenIdentifier },
+      { message_id: "msg_assistant", author_actor_id: null },
+    ])
+    database.close()
+  })
+
+  test("private sessions require creator enrollment or an active participant", async () => {
+    const authority = memoryAuthority()
+    await authority.createCloudWorkspace(owner, { workspaceId: "ws_private", displayName: "Private" })
+    await authority.usersMe(other)
+    await authority.grantWorkspaceShare(owner, {
+      workspaceId: "ws_private",
+      role: "editor",
+      grantedToTokenIdentifier: other.user.tokenIdentifier,
+    })
+    await authority.syncSessionMessages(owner, {
+      workspaceId: "ws_private",
+      sessionId: "ses_private",
+      messages: [{ info: { id: "msg_1", role: "user" }, parts: [] }],
+    })
+
+    await expect(authority.readSessionMessages(other, {
+      workspaceId: "ws_private",
+      sessionId: "ses_private",
+    })).resolves.toEqual({ allowed: false, messages: [] })
+    await expect(authority.syncSessionMessages(other, {
+      workspaceId: "ws_private",
+      sessionId: "ses_private",
+      messages: [{ info: { id: "msg_spoof", role: "user" }, parts: [] }],
+    })).rejects.toMatchObject({ status: 403 })
+    await expect(authority.upsertSessionVisibility(other, {
+      workspaceId: "ws_private",
+      sessions: [{ sessionId: "ses_private", title: "Spoofed" }],
+    })).rejects.toMatchObject({ status: 403 })
+
+    await authority.addSessionParticipant(owner, {
+      workspaceId: "ws_private",
+      sessionId: "ses_private",
+      participantTokenIdentifier: other.user.tokenIdentifier,
+    })
+    await expect(authority.readSessionMessages(other, {
+      workspaceId: "ws_private",
+      sessionId: "ses_private",
+    })).resolves.toMatchObject({ allowed: true, role: "editor" })
+    await expect(authority.syncSessionMessages(other, {
+      workspaceId: "ws_private",
+      sessionId: "ses_private",
+      messages: [{ info: { id: "msg_2", role: "user" }, parts: [] }],
+    })).resolves.toEqual({ ok: true })
+    await expect(authority.replaceSessionVisibility(other, {
+      workspaceId: "ws_private",
+      sessions: [],
+    })).resolves.toEqual({ ok: true })
+    await expect(authority.readSessionMessages(owner, {
+      workspaceId: "ws_private",
+      sessionId: "ses_private",
+    })).resolves.toMatchObject({ allowed: true })
+    await expect(authority.addSessionParticipant(other, {
+      workspaceId: "ws_private",
+      sessionId: "ses_private",
+      participantTokenIdentifier: owner.user.tokenIdentifier,
+    })).rejects.toMatchObject({ status: 403 })
+
+    await authority.removeSessionParticipant(owner, {
+      workspaceId: "ws_private",
+      sessionId: "ses_private",
+      participantTokenIdentifier: other.user.tokenIdentifier,
+    })
+    await expect(authority.readSessionMessages(other, {
+      workspaceId: "ws_private",
+      sessionId: "ses_private",
+    })).resolves.toEqual({ allowed: false, messages: [] })
+    await expect(authority.deleteSessionVisibility(other, {
+      workspaceId: "ws_private",
+      sessionId: "ses_private",
+    })).rejects.toMatchObject({ status: 403 })
+  })
+
+  test("registers a runtime-created session and creator participation atomically", async () => {
+    const { authority, database } = fileAuthority()
+    await authority.createCloudWorkspace(owner, { workspaceId: "ws_runtime_create", displayName: "Runtime create" })
+    const actor = await authority.usersMe(owner) as { actor_id: string }
+
+    await authority.registerRuntimeSession?.({
+      actorId: actor.actor_id,
+      actorKind: "human",
+      workspaceId: "ws_runtime_create",
+      sessionId: "ses_runtime_create",
+      title: "Created remotely",
+    })
+
+    expect(database().prepare("SELECT session_id, workspace_id, created_by_token_identifier, title FROM session_history").get()).toEqual({
+      session_id: "ses_runtime_create",
+      workspace_id: "ws_runtime_create",
+      created_by_token_identifier: actor.actor_id,
+      title: "Created remotely",
+    })
+    expect(database().prepare("SELECT session_id, workspace_id, actor_token_identifier, added_by_token_identifier FROM session_participants").get()).toEqual({
+      session_id: "ses_runtime_create",
+      workspace_id: "ws_runtime_create",
+      actor_token_identifier: actor.actor_id,
+      added_by_token_identifier: actor.actor_id,
+    })
+    await expect(authority.authorizeRuntimeSession?.({
+      actorId: actor.actor_id,
+      actorKind: "human",
+      workspaceId: "ws_runtime_create",
+      sessionId: "ses_runtime_create",
+      action: "write",
+    })).resolves.toBeUndefined()
+    database.close()
+  })
+
   test("creator owns the workspace; others are denied until a share grant flips it", async () => {
     const authority = memoryAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_1", displayName: "One" })
 
     const listed = await authority.listWorkspaces(owner) as Array<{ workspace_id: string; project_id: string; role: string; access: string }>
     expect(listed).toHaveLength(1)
-    expect(listed[0]).toMatchObject({ workspace_id: "ws_1", project_id: "prj_ws_1", role: "owner", access: "cloud" })
+    expect(listed[0]).toMatchObject({ workspace_id: "ws_1", project_id: expect.stringMatching(/^prj_/), role: "owner", access: "cloud" })
 
     const opened = await authority.openWorkspace(owner, { workspaceId: "ws_1" })
     expect(opened.allowed).toBe(true)
@@ -153,7 +320,12 @@ describe("sqlite workspace authority", () => {
 
     // Registration created the workspace, owned by the proving caller.
     const opened = await authority.openWorkspace(owner, { workspaceId: "ws_local" })
-    expect(opened.workspace).toMatchObject({ backing: "local-worktree", access: "user-hosted" })
+    expect(opened.workspace).toMatchObject({
+      org_id: expect.stringMatching(/^org_/),
+      project_id: expect.stringMatching(/^prj_[0-9a-f-]{36}$/),
+      backing: "local-worktree",
+      access: "user-hosted",
+    })
 
     // A used challenge cannot register again.
     await expect(authority.registerLocalHostLink(owner, {
@@ -410,7 +582,20 @@ describe("sqlite workspace authority", () => {
       messages: unknown[]
     }
     expect(read.allowed).toBe(true)
-    expect(read.messages).toEqual([{ info: { id: "msg_1", role: "user" }, parts: [] }])
+    expect(read.messages).toEqual([{
+      info: {
+        id: "msg_1",
+        role: "user",
+        claxedo: {
+          author: {
+            id: expect.stringMatching(/^usr_[0-9a-f-]{36}$/),
+            name: "User",
+            kind: "human",
+          },
+        },
+      },
+      parts: [],
+    }])
 
     await authority.replaceSessionVisibility(owner, { workspaceId: "ws_s", sessions: [] })
     expect(await authority.listSessions(owner, { workspaceId: "ws_s" })).toEqual([])
@@ -594,7 +779,12 @@ describe("sqlite workspace authority store transactions", () => {
       BEGIN SELECT RAISE(FAIL, 'forced project-membership failure'); END
     `)
 
-    expect(() => ensureProject(database(), { projectId: "prj_rollback", orgId, owner: user }))
+    expect(() => ensureProject(database(), {
+      projectId: "prj_rollback",
+      orgId,
+      repoKey: "workspace:prj_rollback",
+      owner: user,
+    }))
       .toThrow("forced project-membership failure")
     expect(database().prepare("SELECT project_id FROM projects WHERE project_id = ?").get("prj_rollback"))
       .toBeUndefined()

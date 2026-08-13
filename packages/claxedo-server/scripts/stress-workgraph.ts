@@ -59,6 +59,7 @@ describe("WorkGraph stress gates", () => {
       const ownerUserId = await ctx.db.insert("users", {
         token_identifier: "issuer|stress-owner",
         clerk_subject: "stress-owner",
+        kind: "human",
         created_at: 1,
         updated_at: 1,
       })
@@ -153,6 +154,7 @@ describe("WorkGraph stress gates", () => {
       const ownerUserId = await ctx.db.insert("users", {
         token_identifier: "dirty-stress-owner",
         clerk_subject: "dirty-stress-owner",
+        kind: "human",
         created_at: 1,
         updated_at: 1,
       })

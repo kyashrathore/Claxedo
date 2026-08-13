@@ -8,7 +8,7 @@ type ConvexApi = {
     authorizeProject: ConvexQuery
     authorizeWorkspace: ConvexQuery
   }
-  users: { me: ConvexMutation }
+  users: { me: ConvexMutation; meForService: ConvexMutation }
   orgs: {
     listForMe: ConvexQuery
     resolveForMe: ConvexMutation
@@ -19,6 +19,11 @@ type ConvexApi = {
   }
   sessions: {
     authorizeRead: ConvexQuery
+    authorizeWrite: ConvexQuery
+    authorizeRuntime: ConvexQuery
+    registerRuntime: ConvexMutation
+    addParticipant: ConvexMutation
+    removeParticipant: ConvexMutation
     list: ConvexQuery
     resolve: ConvexQuery
     readMessages: ConvexQuery
@@ -32,6 +37,7 @@ type ConvexApi = {
     deleteVisibilityForService: ConvexMutation
   }
   workspaces: {
+    authorizeCreate: ConvexQuery
     open: ConvexQuery
     list: ConvexQuery
     listForService: ConvexQuery

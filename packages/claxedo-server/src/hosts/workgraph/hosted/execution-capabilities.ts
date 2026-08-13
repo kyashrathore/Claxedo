@@ -146,6 +146,8 @@ async function readHostedCatalog(
     workspaceId,
     hostId: placement.hostId,
     subject: auth.user.subject,
+    actorId: context.ownerUserId,
+    actorKind: "human",
     orgId,
     role: "owner",
     ttlMs: 10 * 60_000,

@@ -3,7 +3,7 @@ import { removeTestTempDir } from "./harnesses/shared/test-temp-dir"
 import { tmpdir } from "os"
 import path from "path"
 import { describe, expect, test } from "bun:test"
-import { createAgentRuntime } from "./runtime"
+import { AgentRuntimeTurnConflictError, createAgentRuntime } from "./runtime"
 import type { AgentHarnessFactory, AgentRuntimeAbortResult } from "./runtime"
 import type { AgentHarnessAdapter } from "./adapter-contract"
 import { claude, pi } from "./harnesses"
@@ -41,6 +41,7 @@ function testHarness(options: {
   abort?: (id: string) => Promise<AgentRuntimeAbortResult>
   runtimeConfigCalls?: string[]
   commitsStreamEvents?: boolean
+  permissionModeCalls?: string[]
 } = {}): AgentHarnessFactory {
   const adapter: AgentHarnessAdapter = {
     ...(options.commitsStreamEvents ? { commitsStreamEvents: true as const } : {}),
@@ -86,6 +87,14 @@ function testHarness(options: {
     async getMessages() {
       return []
     },
+    ...(options.permissionModeCalls
+      ? {
+          async setPermissionMode(_sessionId: string, modeId: string) {
+            options.permissionModeCalls?.push(modeId)
+            return { currentModeId: modeId, modes: [], appliesFrom: "next-turn" as const }
+          },
+        }
+      : {}),
     dispose() {},
     ...(options.abort ? { abort: options.abort } : {}),
   }
@@ -385,6 +394,10 @@ describe("createAgentRuntime", () => {
     })
     expect(opening.slice(0, 3)).toEqual(["busy", "user", "assistant"])
     expect(opening.filter((event) => event === "busy")).toHaveLength(1)
+    const userMessages = published.filter((event) =>
+      event.payload.type === "message.updated" && event.payload.properties.info.role === "user"
+    )
+    expect(userMessages).toHaveLength(1)
     await tick()
     await expect(runtime.sessions.get(session.id)).resolves.toMatchObject({
       status: null,
@@ -616,6 +629,61 @@ describe("createAgentRuntime", () => {
     runtime.dispose()
   })
 
+  test("event subscriptions attach identity and stop an already-open subscriber after revocation", async () => {
+    const decisions: string[] = []
+    let revoked = false
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [testHarness({
+        sendMessage: async function* (id) {
+          yield sessionUpdated(buildSession({ id, directory: "/repo", title: "Session" }))
+          yield { type: "finish", sessionId: id }
+        },
+      })],
+      eventDelivery: ({ identity }) => {
+        decisions.push(`${identity.actorKind}:${identity.actorId}:${identity.connectionId}`)
+        if (identity.actorId !== "actor_participant") return "terminate"
+        return revoked ? "terminate" : "deliver"
+      },
+    })
+    const session = await runtime.sessions.create({
+      directory: "/repo",
+      harness: { id: "pi", access: "native" },
+    })
+    const allowed = runtime.events.subscribe({
+      sessionId: session.id,
+      identity: {
+        connectionId: "connection_allowed",
+        actorId: "actor_participant",
+        actorKind: "human",
+        orgId: "org_1",
+        workspaceId: "ws_1",
+        role: "editor",
+      },
+    })[Symbol.asyncIterator]()
+    const denied = runtime.events.subscribe({
+      sessionId: session.id,
+      identity: {
+        connectionId: "connection_denied",
+        actorId: "actor_workspace_only",
+        actorKind: "human",
+        orgId: "org_1",
+        workspaceId: "ws_1",
+        role: "editor",
+      },
+    })[Symbol.asyncIterator]()
+
+    await runtime.turns.start({ sessionId: session.id, messageId: "msg_identity", text: "hello" })
+    await expect(allowed.next()).resolves.toMatchObject({ done: false })
+    await expect(denied.next()).resolves.toEqual({ done: true, value: undefined })
+    revoked = true
+    await expect(allowed.next()).resolves.toEqual({ done: true, value: undefined })
+
+    expect(decisions).toContain("human:actor_participant:connection_allowed")
+    expect(decisions).toContain("human:actor_workspace_only:connection_denied")
+    runtime.dispose()
+  })
+
   test("rejects turn starts before returning when the session is unknown", async () => {
     const runtime = createAgentRuntime({
       store: createMemoryRuntimeStore(),
@@ -673,45 +741,78 @@ describe("createAgentRuntime", () => {
     runtime.dispose()
   })
 
-  test("rejects a concurrent turn before persisting any part of it", async () => {
-    let release!: () => void
-    const firstTurn = new Promise<void>((resolve) => {
-      release = resolve
+  test("atomically rejects a second turn before permission or message state changes", async () => {
+    let finish: (() => void) | undefined
+    const blocked = new Promise<void>((resolve) => {
+      finish = resolve
     })
+    const permissionModeCalls: string[] = []
     const store = createMemoryRuntimeStore()
     const rows = storeRows(store)
     const runtime = createAgentRuntime({
       store,
       harnesses: [testHarness({
+        permissionModeCalls,
         sendMessage: async function* (id) {
-          await firstTurn
+          await blocked
           yield { type: "finish", sessionId: id }
         },
       })],
     })
     const session = await runtime.sessions.create({
-      directory: "/repo",
+      directory: undefined,
       harness: { id: "pi", access: "native" },
     })
 
-    await runtime.turns.start({ sessionId: session.id, messageId: "msg_1", text: "first" })
+    await runtime.turns.start({
+      sessionId: session.id,
+      messageId: "winner",
+      text: "first",
+      permissionMode: "winner-mode",
+    })
     await expect(runtime.turns.start({
       sessionId: session.id,
-      messageId: "msg_2",
+      messageId: "loser",
       text: "second",
-    })).rejects.toThrow("Session is already processing a message")
+      permissionMode: "loser-mode",
+    })).rejects.toBeInstanceOf(AgentRuntimeTurnConflictError)
 
-    expect(rows.getMessages(session.id)).toMatchObject([
-      { info: { id: "msg_1", role: "user" } },
-      { info: { id: "msg_1_r", role: "assistant" } },
-    ])
-    expect(rows.getMessages(session.id)).toHaveLength(2)
-    await expect(runtime.sessions.get(session.id)).resolves.toMatchObject({
-      status: "busy",
+    expect(permissionModeCalls).toEqual(["winner-mode"])
+    expect((rows.getMessages(session.id) as Array<{ info: { id: string } }>).map((message) => message.info.id))
+      .toEqual(["winner", "winner_r"])
+
+    finish?.()
+    await tick()
+    runtime.dispose()
+  })
+
+  test("keeps admission busy after abort until the original turn settles", async () => {
+    const finishes: Array<() => void> = []
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [testHarness({
+        sendMessage: async function* (id) {
+          await new Promise<void>((resolve) => finishes.push(resolve))
+          yield { type: "finish", sessionId: id }
+        },
+        abort: async () => ({ ok: true, status: "cancelled" }),
+      })],
     })
-    expect(lastTurnOf(rows, session.id)).toBeUndefined()
+    const session = await runtime.sessions.create({
+      directory: undefined,
+      harness: { id: "pi", access: "native" },
+    })
 
-    release()
+    await runtime.turns.start({ sessionId: session.id, messageId: "first", text: "first" })
+    await expect(runtime.turns.abort(session.id)).resolves.toEqual({ ok: true, status: "cancelled" })
+    await expect(runtime.turns.start({ sessionId: session.id, messageId: "second", text: "second" }))
+      .rejects.toBeInstanceOf(AgentRuntimeTurnConflictError)
+
+    finishes[0]?.()
+    await tick()
+    await runtime.turns.start({ sessionId: session.id, messageId: "third", text: "third" })
+
+    finishes[1]?.()
     await tick()
     runtime.dispose()
   })
@@ -905,73 +1006,6 @@ describe("createAgentRuntime", () => {
     await expect(runtime.sessions.get(session.id)).resolves.toMatchObject({
       status: null,
       lastTurn: { status: "cancelled", reason: "abort", assistantMessageId: "msg_1_r" },
-    })
-    runtime.dispose()
-  })
-
-  test("an acknowledged abort releases admission and fences a stuck turn's late events", async () => {
-    let releaseFirst: (() => void) | undefined
-    const firstTurn = new Promise<void>((resolve) => {
-      releaseFirst = resolve
-    })
-    const store = createMemoryRuntimeStore()
-    const rows = storeRows(store)
-    const runtime = createAgentRuntime({
-      store,
-      harnesses: [testHarness({
-        sendMessage: async function* (id, prompt) {
-          if (prompt.userMessageId === "msg_1") {
-            await firstTurn
-            yield messagePartUpdated({
-              id: "stale-part",
-              sessionID: id,
-              messageID: prompt.assistantMessageId,
-              type: "text",
-              text: "stale reply",
-            })
-            yield { type: "finish", sessionId: id }
-            return
-          }
-          yield messagePartUpdated({
-            id: "replacement-part",
-            sessionID: id,
-            messageID: prompt.assistantMessageId,
-            type: "text",
-            text: "replacement reply",
-          })
-          yield { type: "finish", sessionId: id }
-        },
-        abort: async () => ({ ok: true, status: "cancelled" }),
-      })],
-    })
-    const session = await runtime.sessions.create({
-      directory: undefined,
-      harness: { id: "pi", access: "native" },
-    })
-
-    const abortedEvents = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
-    await runtime.turns.start({ sessionId: session.id, messageId: "msg_1", text: "first" })
-    await expect(runtime.turns.abort(session.id)).resolves.toEqual({ ok: true, status: "cancelled" })
-    await expect(abortedEvents).resolves.toEqual(expect.arrayContaining([
-      expect.objectContaining({ payload: { type: "finish", sessionId: session.id } }),
-    ]))
-
-    const replacementEvents = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
-    await expect(runtime.turns.start({
-      sessionId: session.id,
-      messageId: "msg_2",
-      text: "replacement",
-    })).resolves.toMatchObject({ userMessageId: "msg_2" })
-    await replacementEvents
-
-    releaseFirst?.()
-    await tick()
-
-    expect(JSON.stringify(rows.getMessages(session.id))).toContain("replacement reply")
-    expect(JSON.stringify(rows.getMessages(session.id))).not.toContain("stale reply")
-    await expect(runtime.sessions.get(session.id)).resolves.toMatchObject({
-      status: null,
-      lastTurn: { status: "completed", assistantMessageId: "msg_2_r" },
     })
     runtime.dispose()
   })

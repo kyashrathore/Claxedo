@@ -20,6 +20,11 @@ async function keys() {
 
 const base = {
   subject: "user_1",
+  actorId: "actor_1",
+  actorKind: "human" as const,
+  actorPublicId: "usr_public_1",
+  actorName: "Ada Lovelace",
+  actorAvatarUrl: "https://example.test/ada.png",
   orgId: "org_1",
   workspaceId: "ws_1",
   hostId: "host_1",
@@ -39,11 +44,91 @@ describe("workspace relay auth", () => {
       iss: "claxedo-control-plane",
       aud: "workspace-relay",
       sub: "user_1",
+      actor_id: "actor_1",
+      actor_kind: "human",
+      actor_public_id: "usr_public_1",
+      actor_name: "Ada Lovelace",
+      actor_avatar_url: "https://example.test/ada.png",
       workspace_id: "ws_1",
       host_id: "host_1",
       role: "editor",
       jti: "jti_1",
     })
+  })
+
+  test("accepts legacy Runtime Access Tokens without actor claims during the in-flight migration", async () => {
+    const key = await keys()
+    const token = await new SignJWT({
+      org_id: base.orgId,
+      workspace_id: base.workspaceId,
+      host_id: base.hostId,
+      role: base.role,
+    })
+      .setProtectedHeader({ alg: "EdDSA" })
+      .setIssuer(runtimeAccessTokenIssuer)
+      .setAudience(runtimeAccessTokenAudience)
+      .setSubject(base.subject)
+      .setIssuedAt()
+      .setExpirationTime("30m")
+      .setJti("legacy_jti")
+      .sign(key.privateKey)
+
+    await expect(verifyRuntimeAccessToken(token, key.publicKey, {
+      workspaceId: "ws_1",
+      hostId: "host_1",
+    })).resolves.toMatchObject({
+      sub: "user_1",
+      actor_id: undefined,
+      actor_kind: undefined,
+    })
+  })
+
+  test("rejects tokens that carry only one actor claim", async () => {
+    const key = await keys()
+    const token = await new SignJWT({
+      org_id: base.orgId,
+      workspace_id: base.workspaceId,
+      host_id: base.hostId,
+      role: base.role,
+      actor_id: "actor_1",
+    })
+      .setProtectedHeader({ alg: "EdDSA" })
+      .setIssuer(runtimeAccessTokenIssuer)
+      .setAudience(runtimeAccessTokenAudience)
+      .setSubject(base.subject)
+      .setIssuedAt()
+      .setExpirationTime("30m")
+      .setJti("partial_actor_jti")
+      .sign(key.privateKey)
+
+    await expect(verifyRuntimeAccessToken(token, key.publicKey, {
+      workspaceId: "ws_1",
+      hostId: "host_1",
+    })).rejects.toMatchObject({ code: "relay_token_claims_invalid" })
+  })
+
+  test("rejects incomplete signed actor display profiles", async () => {
+    const key = await keys()
+    const token = await new SignJWT({
+      org_id: base.orgId,
+      workspace_id: base.workspaceId,
+      host_id: base.hostId,
+      role: base.role,
+      actor_id: base.actorId,
+      actor_kind: base.actorKind,
+      actor_public_id: base.actorPublicId,
+    })
+      .setProtectedHeader({ alg: "EdDSA" })
+      .setIssuer(runtimeAccessTokenIssuer)
+      .setAudience(runtimeAccessTokenAudience)
+      .setSubject(base.subject)
+      .setIssuedAt()
+      .setExpirationTime("30m")
+      .setJti("incomplete_profile")
+      .sign(key.privateKey)
+
+    await expect(verifyRuntimeAccessToken(token, key.publicKey, { workspaceId: base.workspaceId }))
+      .rejects.toMatchObject({ code: "relay_token_claims_invalid" })
   })
 
   test("rejects Runtime Access Tokens for the wrong workspace or host", async () => {

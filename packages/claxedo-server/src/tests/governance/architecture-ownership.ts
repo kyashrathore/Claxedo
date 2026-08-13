@@ -277,6 +277,32 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
+    module: "routes/runtime-session-authority.ts",
+    status: OwnershipStatus.Canonical,
+    owner: "runtime session authority oracle",
+    reason:
+      "Isolated workspace runtimes cannot read session participation themselves. They present their already-verified Relay Host Token as an opaque proof; this route re-verifies the relay signature and expiry, then derives actor and workspace ONLY from signed claims — a request body can never assert an actor. Mounted at /api/runtime-authority by server.ts and hosted-app.ts alike.",
+    tests: [
+      "routes/runtime-session-authority.test.ts",
+      "authority/two-user-runtime-transport.acceptance.test.ts",
+      "tests/governance/codebase-shape.test.ts",
+    ],
+    routeSamples: ["/api/runtime-authority/session-authorize"],
+  },
+  {
+    area: "route",
+    module: "../../claxedo-server-core/src/platform/auth/runtime-actor.ts",
+    status: OwnershipStatus.Canonical,
+    owner: "signed runtime actor resolver",
+    reason:
+      "Single place that turns verified control-plane auth into the actor identity forwarded to a runtime, so the proxy, hosted broker, local relay, and connection routes cannot each invent their own actor derivation.",
+    tests: [
+      "authority/runtime-actor.test.ts",
+      "authority/two-user-runtime-transport.acceptance.test.ts",
+    ],
+  },
+  {
+    area: "route",
     module: "../../claxedo-server-core/src/platform/http/local-only-projection.ts",
     status: OwnershipStatus.Canonical,
     owner: "local-only route guard",

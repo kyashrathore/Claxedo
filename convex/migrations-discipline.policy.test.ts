@@ -44,6 +44,28 @@ describe("Convex migrations discipline (D14)", () => {
     expect(schema).toContain("remote_access_enabled: v.optional(v.boolean())")
   })
 
+  test("tenant identity rollout remains additive until ledger-backed contract probes complete", () => {
+    const source = fs.readFileSync(path.join(convexRoot, "migrations.ts"), "utf8")
+    const schema = fs.readFileSync(path.join(convexRoot, "schema.ts"), "utf8")
+    for (const migration of [
+      "backfillUserActorIdentity",
+      "backfillProjectTenantIdentity",
+      "reconcileProjectMembershipProjectIds",
+      "backfillWorkspaceTenantIdentity",
+      "backfillSessionTenantIdentity",
+      "verifyUserActorIdentityContract",
+      "verifyProjectTenantIdentityContract",
+      "verifyProjectMembershipIdentityContract",
+      "verifyWorkspaceTenantIdentityContract",
+      "verifySessionTenantIdentityContract",
+    ]) expect(source).toContain(`export const ${migration} = migrations.define`)
+    expect(schema).toContain('kind: v.optional(v.union(v.literal("human"), v.literal("agent")))')
+    expect(schema).toContain('org_id: v.optional(v.id("orgs"))')
+    expect(schema).toContain("repo_key: v.optional(v.string())")
+    expect(schema).toContain('project_id: v.union(v.id("projects"), v.string())')
+    expect(schema).toContain('created_by_user_id: v.optional(v.id("users"))')
+  })
+
   test("the retired hand-rolled backfill survives only as the documented break-glass export", () => {
     // architecture.test.ts pins that the export exists (the maintenance script
     // still calls it); this pins that it stays marked retired so new backfills

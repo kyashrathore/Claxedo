@@ -16,7 +16,10 @@ import type {
 export function identityAuthority(input: ConvexAuthorityInput, serviceArgs: ServiceArgs) {
   return {
     async usersMe(auth: SignedControlPlaneAuth) {
-      if (isCliAccessAuth(auth)) return { user_id: cliServiceUser(auth).token_identifier }
+      if (isCliAccessAuth(auth)) return requireExecutor(input, undefined, { allowUnsigned: true }).mutation(
+        convexApi.users.meForService,
+        serviceArgs(auth),
+      )
       return requireExecutor(input, auth).mutation(convexApi.users.me, {})
     },
     async listOrgs(auth: SignedControlPlaneAuth) {
@@ -54,14 +57,38 @@ export function identityAuthority(input: ConvexAuthorityInput, serviceArgs: Serv
       projectId: string
       action: ProjectAction
     }): Promise<AuthorizeProjectResult> {
-      return projectResult(await requireExecutor(input, undefined, { allowUnsigned: true }).query(convexApi.channelIdentities.authorizeProject, {
+      const result = await requireExecutor(input, undefined, { allowUnsigned: true }).query(convexApi.channelIdentities.authorizeProject, {
         service_token: requireServiceToken(),
         channel: args.channel,
         external_user_id: args.externalUserId,
         thread_key: args.threadKey,
         project_id: args.projectId,
         action: args.action,
-      }))
+      }) as {
+        actor_id?: string
+        actor_kind?: "human" | "agent"
+        actor_public_id?: string
+        actor_name?: string
+        actor_avatar_url?: string
+      }
+      const project = projectResult(result)
+      if (!project.ok) return project
+      return {
+        ...project,
+        ...(result.actor_id && result.actor_kind
+          ? {
+              actorId: result.actor_id,
+              actorKind: result.actor_kind,
+              ...(result.actor_public_id && result.actor_name
+                ? {
+                    actorPublicId: result.actor_public_id,
+                    actorName: result.actor_name,
+                    ...(result.actor_avatar_url ? { actorAvatarUrl: result.actor_avatar_url } : {}),
+                  }
+                : {}),
+            }
+          : {}),
+      }
     },
     async authorizeChannelWorkspace(args: {
       channel: string
@@ -70,14 +97,33 @@ export function identityAuthority(input: ConvexAuthorityInput, serviceArgs: Serv
       workspaceId: string
       action: ProjectAction
     }) {
-      await requireAllowed(await requireExecutor(input, undefined, { allowUnsigned: true }).query(convexApi.channelIdentities.authorizeWorkspace, {
+      const result = await requireExecutor(input, undefined, { allowUnsigned: true }).query(convexApi.channelIdentities.authorizeWorkspace, {
         service_token: requireServiceToken(),
         channel: args.channel,
         external_user_id: args.externalUserId,
         thread_key: args.threadKey,
         workspace_id: args.workspaceId,
         action: args.action,
-      }))
+      }) as {
+        allowed?: boolean
+        actor_id?: string
+        actor_kind?: "human" | "agent"
+        actor_public_id?: string
+        actor_name?: string
+        actor_avatar_url?: string
+      }
+      await requireAllowed(result)
+      if (result.actor_id && result.actor_kind) return {
+        actorId: result.actor_id,
+        actorKind: result.actor_kind,
+        ...(result.actor_public_id && result.actor_name
+          ? {
+              actorPublicId: result.actor_public_id,
+              actorName: result.actor_name,
+              ...(result.actor_avatar_url ? { actorAvatarUrl: result.actor_avatar_url } : {}),
+            }
+          : {}),
+      }
     },
   }
 }

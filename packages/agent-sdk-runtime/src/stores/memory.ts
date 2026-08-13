@@ -11,7 +11,7 @@ import {
 import type { AssistantMessage } from "@opencode-ai/sdk/v2"
 import { chunk } from "../status"
 import { firstTurnErrorData } from "../first-turn-error"
-import type { AgentTurnOutcome, SessionConfig, SessionConfigUpdate } from "../index"
+import type { AgentTurnOutcome, PromptInput, SessionConfig, SessionConfigUpdate } from "../index"
 import type { AgentRuntimeStore } from "../runtime"
 import type {
   AgentRuntimeCommittedCompatOutput,
@@ -81,6 +81,8 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   private seq = new Map<string, number>()
   private subagentAdmission = createMemorySubagentAdmissionStore()
   private subagents: MemoryRuntimeStoreSnapshot["subagents"] = []
+  private turnLeases = new Map<string, string>()
+  private nextTurnLease = 0
 
   listSessions(directory: string) {
     return [...this.sessions.values()]
@@ -172,12 +174,25 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     this.seq.delete(id)
     this.subagents = this.subagents.filter((row) => row.parentSessionId !== id)
     this.hydrateSubagents()
+    this.turnLeases.delete(id)
     this.deleteSessionInteractions(id)
     this.afterChange()
   }
 
   getAgentSessionId(id: string) {
     return this.sessions.get(id)?.agentSessionId ?? null
+  }
+
+  acquireTurnLease(sessionId: string) {
+    if (this.turnLeases.has(sessionId)) return
+    const leaseId = `${sessionId}:${++this.nextTurnLease}`
+    this.turnLeases.set(sessionId, leaseId)
+    return leaseId
+  }
+
+  releaseTurnLease(sessionId: string, leaseId: string) {
+    if (this.turnLeases.get(sessionId) !== leaseId) return
+    this.turnLeases.delete(sessionId)
   }
 
   startTurn(input: {
@@ -192,6 +207,9 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     format?: unknown
     system?: string
     variant?: string
+    actorId?: string
+    actorKind?: "human" | "agent"
+    author?: PromptInput["author"]
   }): AgentRuntimeTurnStartOutput {
     const session = this.sessions.get(input.sessionId)
     const activeTurn = session?.activeTurn
@@ -220,6 +238,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
               ...(input.format ? { format: input.format as never } : {}),
               ...(input.system ? { system: input.system } : {}),
               ...(input.variant ? { variant: input.variant } : {}),
+              ...(input.author ? { author: input.author } : {}),
             })),
             ...buildUserPromptParts(input.sessionId, input.userMessageId, input.parts).map(messagePartUpdated),
           ]

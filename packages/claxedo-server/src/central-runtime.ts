@@ -77,6 +77,7 @@ async function authorizeSignedCentralRuntimeSession(
   services: ControlPlaneServices,
   auth: SignedControlPlaneAuth,
   sessionId: string,
+  action: "read" | "write",
 ) {
   const meta = await services.projectionStore.session_meta(sessionId)
   if (meta?.host !== "central") {
@@ -93,7 +94,8 @@ async function authorizeSignedCentralRuntimeSession(
       "Signed central session access requires workspace scope",
     )
   }
-  await requireAuthority(services).authorizeSessionRead(auth, {
+  const authority = requireAuthority(services)
+  await (action === "read" ? authority.authorizeSessionRead : authority.authorizeSessionWrite)(auth, {
     sessionId,
     workspaceId: meta.workspaceID,
   })
@@ -129,7 +131,12 @@ async function centralRuntimeAccess(
         "Signed central runtime access requires a central session",
       )
     }
-    await authorizeSignedCentralRuntimeSession(services, auth, sessionId)
+    await authorizeSignedCentralRuntimeSession(
+      services,
+      auth,
+      sessionId,
+      ["GET", "HEAD", "OPTIONS"].includes(request.method) ? "read" : "write",
+    )
     // The org travels with the subject so a completed turn can be keyed to
     // a tenant. Both come from the same verified token, and the org claim is
     // absent on personal-account sign-ins — the metering path treats that as

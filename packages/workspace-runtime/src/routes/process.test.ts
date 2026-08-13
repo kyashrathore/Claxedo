@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { ProcessRoutes, createProcessRoutes } from "./process"
 import { errorBody, JSON_BODY_LIMIT_BYTES } from "./http"
+import { Hono } from "hono"
+import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 
 let previousDirectory: string | undefined
 
@@ -190,6 +192,52 @@ describe("ProcessRoutes logs", () => {
         })
       ).status,
     ).toBe(404)
+  })
+
+  test("denies process routes to authenticated viewers", async () => {
+    const app = new Hono<{ Variables: RelayHostAuthContext }>()
+    app.use("*", async (c, next) => {
+      const now = Math.floor(Date.now() / 1000)
+      c.set("relayHostAuth", {
+        iss: "workspace-relay",
+        aud: "workspace-host-service",
+        sub: "user_1",
+        org_id: "org_1",
+        workspace_id: "ws_1",
+        host_id: "host_1",
+        role: "viewer",
+        access: "cloud",
+        backing: "cloud-vm",
+        exp: now + 60,
+        iat: now,
+        jti: "jti_1",
+      })
+      return await next()
+    })
+    app.route("/", ProcessRoutes())
+
+    const response = await app.request("http://localhost/")
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual(errorBody(
+      "relay_role_denied",
+      "Workspace role does not allow process access",
+    ))
+  })
+
+  test("rejects managed-process cwd and args outside the workspace", async () => {
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = "/tmp/workspace-runtime-process"
+    const request = (body: Record<string, unknown>) => ProcessRoutes().request(
+      "http://localhost/?directory=/tmp/workspace-runtime-process",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "blocked", command: "cat", ...body }),
+      },
+    )
+
+    expect((await request({ cwd: "/tmp" })).status).toBe(400)
+    expect((await request({ args: ["~/.local/share/opencode/opencode.db"] })).status).toBe(400)
+    expect((await request({ command: "cat ~/.local/share/opencode/opencode.db" })).status).toBe(400)
   })
 
   test("rejects oversized process route bodies", async () => {

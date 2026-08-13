@@ -291,6 +291,20 @@ describe("LiveSyncRoom — fan-out core", () => {
     expect(namespace.instances.get("org:org_internal_acme")!.size).toBe(0)
   })
 
+  test("closes a held org stream when current authority moves the member to another org", async () => {
+    const namespace = createHibernatingNamespace()
+    const response = await connectLiveSyncRoom(
+      namespace,
+      subscriber("alice", "org_internal_acme"),
+      1,
+      async () => subscriber("alice", "org_personal_alice"),
+    )
+    const reader = response.body!.getReader()
+    expect(await readFrame(reader)).toEqual({ type: "heartbeat" })
+    await expect(reader.read()).rejects.toThrow("live-sync authorization changed")
+    expect(namespace.instances.get("org:org_internal_acme")!.size).toBe(0)
+  })
+
   test("closes a stalled SSE bridge before its queue can grow without bound", async () => {
     const namespace = createHibernatingNamespace()
     const response = await connectLiveSyncRoom(namespace, subscriber("alice", "org_internal_acme"), 60_000)
@@ -543,6 +557,16 @@ describe("LiveSyncRoom — Last-Event-ID replay", () => {
     expect(opened.frames).toEqual([{ id: "0", data: { type: "heartbeat" } }])
   })
 
+  test("evicts disconnected replay scopes and bounds reconnect cursor tombstones", async () => {
+    const room = new LiveSyncRoom({}, {})
+    for (let index = 0; index < 300; index += 1) {
+      await openRoom(room, { subject: `actor_${index}` })
+    }
+
+    expect(room.replayScopeCount).toBe(0)
+    expect(room.replayTombstoneCount).toBe(256)
+  })
+
   test("a cursor-less connection is NOT served the retained log", async () => {
     const room = new LiveSyncRoom({}, {})
     await pushEvent(room, workgraphChanged("alice"))
@@ -584,7 +608,7 @@ describe("LiveSyncRoom — Last-Event-ID replay", () => {
         code: "claxedo.sse_replay_gap",
         severity: "warn",
         lastEventId: "1",
-        throughId: "258",
+        throughId: "256",
       },
     })
     // The notice REPLACES the partial replay — a reader must refetch, not
@@ -616,9 +640,24 @@ describe("LiveSyncRoom — Last-Event-ID replay", () => {
 
     const opened = await openRoom(room, { subject: "carol", lastEventId: "0" })
     expect(JSON.stringify(opened.frames)).not.toContain("alice")
-    // The id stays the room's SHARED publish-order sequence, not a per-identity
-    // renumbering: a cursor has to mean the same thing on every connection.
-    expect(opened.frames[1]).toMatchObject({ id: "2", data: { ownerUserId: "carol" } })
+    // Per-principal replay ids contain no hole for Alice's intentionally
+    // invisible frame, so Carol's first visible frame is cursor 1.
+    expect(opened.frames[1]).toMatchObject({ id: "1", data: { ownerUserId: "carol" } })
+  })
+
+  test("another identity's retained traffic cannot create a replay-gap for a quiet subscriber", async () => {
+    const room = new LiveSyncRoom({}, {})
+    const initial = await openRoom(room, { subject: "carol" })
+    expect(initial.frames).toEqual([{ id: "0", data: { type: "heartbeat" } }])
+
+    for (let index = 0; index < 300; index += 1) {
+      await pushEvent(room, workgraphChanged("alice"))
+    }
+    await pushEvent(room, workgraphChanged("carol"))
+
+    const reconnected = await openRoom(room, { subject: "carol", lastEventId: "0" })
+    expect(JSON.stringify(reconnected.frames)).not.toContain("stream.replay-gap")
+    expect(reconnected.frames[1]).toMatchObject({ id: "1", data: { ownerUserId: "carol" } })
   })
 
   test("an org-scoped frame is not replayed to a signed caller from another org", async () => {

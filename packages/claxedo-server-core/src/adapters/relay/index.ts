@@ -7,16 +7,17 @@ import {
   type HostTunnelTokenSigner,
   type RuntimeAccessTokenSigner,
 } from "@claxedo/server-core/platform/auth/runtime-access-token"
-import type { RelayRole } from "@claxedo/workspace-relay"
 import type {
   RelayProvider,
   RelayTarget,
   RelayToken,
   RelayTokenInput,
+  HostTunnelTokenInput,
 } from "@claxedo/server-core/adapters/relay-port"
 import type { RelayTargetLookup } from "@claxedo/server-core/adapters/relay-port"
 
 export type {
+  HostTunnelTokenInput,
   RelayProvider,
   RelayTarget,
   RelayToken,
@@ -69,6 +70,15 @@ export function createControlPlaneRelayProvider(options: ControlPlaneRelayProvid
       const ttlSeconds = clampedRelayTtlSeconds(input.ttlMs, RUNTIME_ACCESS_TOKEN_TTL_BOUNDS_SECONDS)
       const token = await options.runtimeAccessTokenSigner({
         subject: input.subject,
+        actorId: input.actorId,
+        actorKind: input.actorKind,
+        ...(input.actorPublicId && input.actorName
+          ? {
+              actorPublicId: input.actorPublicId,
+              actorName: input.actorName,
+              ...(input.actorAvatarUrl ? { actorAvatarUrl: input.actorAvatarUrl } : {}),
+            }
+          : {}),
         orgId: input.orgId,
         workspaceId: input.workspaceId,
         hostId: input.hostId,

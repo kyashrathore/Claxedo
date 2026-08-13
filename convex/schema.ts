@@ -33,12 +33,15 @@ const workGraphMasterStatusShape = {
 
 export default defineSchema({
   users: defineTable({
+    public_id: v.optional(v.string()),
     token_identifier: v.string(),
     clerk_subject: v.optional(v.string()),
     issuer: v.optional(v.string()),
     email: v.optional(v.string()),
     name: v.optional(v.string()),
     image_url: v.optional(v.string()),
+    // EXPAND: legacy rows may not carry an actor kind until
+    // migrations:backfillUserActorIdentity completes on every deployment.
     kind: v.optional(v.union(v.literal("human"), v.literal("agent"))),
     // Compatibility envelope for rows written before the hosted remote-access
     // switch moved out of the user document.
@@ -55,6 +58,7 @@ export default defineSchema({
     created_at: v.number(),
     updated_at: v.number(),
   })
+    .index("by_public_id", ["public_id"])
     .index("by_token_identifier", ["token_identifier"])
     .index("by_clerk_subject", ["clerk_subject"]),
 
@@ -62,7 +66,7 @@ export default defineSchema({
     clerk_org_id: v.optional(v.string()),
     slug: v.optional(v.string()),
     name: v.string(),
-    kind: v.optional(v.union(v.literal("personal"), v.literal("clerk"))),
+    kind: v.optional(v.union(v.literal("personal"), v.literal("clerk"), v.literal("team"))),
     owner_user_id: v.optional(v.id("users")),
     deleted_at: v.optional(v.number()),
     clerk_updated_at: v.optional(v.number()),
@@ -202,6 +206,8 @@ export default defineSchema({
 
   workspaces: defineTable({
     workspace_id: v.string(),
+    // EXPAND: these become required only in the contract release after the
+    // workspace tenancy migration ledger is complete everywhere.
     org_id: v.optional(v.id("orgs")),
     owner_user_id: v.id("users"),
     project_id: v.optional(v.string()),
@@ -227,12 +233,12 @@ export default defineSchema({
     .index("by_workspace_id", ["workspace_id"]),
 
   projects: defineTable({
+    // EXPAND: current writers use the snake_case identity below while the
+    // migration accepts the legacy camelCase project document unchanged.
     project_id: v.optional(v.string()),
     org_id: v.optional(v.id("orgs")),
+    repo_key: v.optional(v.string()),
     owner_user_id: v.optional(v.id("users")),
-    // Legacy staging/dev rows used camelCase project metadata before the
-    // org/workspace schema landed. Keep these optional so code can deploy and
-    // migrate/read around old rows without deleting dev data.
     externalId: v.optional(v.string()),
     organizationId: v.optional(v.string()),
     name: v.optional(v.string()),
@@ -245,10 +251,13 @@ export default defineSchema({
   })
     .index("by_project_id", ["project_id"])
     .index("by_org", ["org_id"])
+    .index("by_org_repo_key", ["org_id", "repo_key"])
     .index("by_owner", ["owner_user_id"]),
 
   project_memberships: defineTable({
-    project_id: v.id("projects"),
+    // EXPAND: old rows point at the Convex project document; current rows use
+    // the stable public project id. The migration reconciles both shapes.
+    project_id: v.union(v.id("projects"), v.string()),
     user_id: v.id("users"),
     role: workspaceRole,
     created_at: v.number(),
@@ -383,7 +392,7 @@ export default defineSchema({
     session_id: v.string(),
     workspace_id: v.id("workspaces"),
     org_id: v.optional(v.id("orgs")),
-    project_id: v.optional(v.id("projects")),
+    project_id: v.optional(v.union(v.id("projects"), v.string())),
     created_by_user_id: v.optional(v.id("users")),
     title: v.optional(v.string()),
     directory_hint: v.optional(v.string()),
@@ -393,12 +402,14 @@ export default defineSchema({
     deleted_at: v.optional(v.number()),
   })
     .index("by_session_id", ["session_id"])
+    .index("by_created_by_user", ["created_by_user_id"])
     .index("by_workspace_updated", ["workspace_id", "updated_at"]),
 
   session_messages: defineTable({
     session_id: v.string(),
     workspace_id: v.id("workspaces"),
     message_id: v.string(),
+    author_actor_id: v.optional(v.id("users")),
     role: v.optional(v.string()),
     ordinal: v.number(),
     data: v.any(),
@@ -407,6 +418,17 @@ export default defineSchema({
   })
     .index("by_session_ordinal", ["session_id", "ordinal"])
     .index("by_message_id", ["message_id"]),
+
+  session_participants: defineTable({
+    session_id: v.string(),
+    workspace_id: v.id("workspaces"),
+    user_id: v.id("users"),
+    added_by_user_id: v.id("users"),
+    created_at: v.number(),
+    revoked_at: v.optional(v.number()),
+  })
+    .index("by_session_user", ["session_id", "user_id"])
+    .index("by_user", ["user_id"]),
 
   runtime_access_tokens: defineTable({
     jti: v.string(),
@@ -1620,7 +1642,10 @@ export default defineSchema({
     user_id: v.optional(v.id("users")),
     org_id: v.optional(v.id("orgs")),
     workspace_id: v.optional(v.id("workspaces")),
-    project_id: v.optional(v.id("projects")),
+    // Public opaque project id, matching every other table's convention. Was
+    // v.id("projects") — the lone outlier — but no writer sets it, so aligning
+    // the type is safe (all existing rows have it absent).
+    project_id: v.optional(v.string()),
     acting_for_user_id: v.optional(v.id("users")),
     host_id: v.optional(v.string()),
     action: v.string(),

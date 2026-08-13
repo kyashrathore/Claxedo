@@ -223,10 +223,18 @@ function services(): ControlPlaneServices {
     telemetry: { capture: vi.fn() },
     localExecution: { enabled: true },
     authority: {
-      usersMe: vi.fn(async () => ({})),
+      usersMe: vi.fn(async () => ({
+        actor_id: "actor_1",
+        actor_kind: "human" as const,
+        actor_public_id: "usr_public_1",
+        actor_name: "Test User",
+      })),
       listOrgs: vi.fn(async () => []),
       resolveOrgId: vi.fn(async () => "org_1" as never),
       authorizeSessionRead: vi.fn(async () => {}),
+      authorizeSessionWrite: vi.fn(async () => {}),
+      addSessionParticipant: vi.fn(async () => ({})),
+      removeSessionParticipant: vi.fn(async () => ({})),
       authorizeWorkspaceOpen: vi.fn(async () => {}),
       projectRole: vi.fn(async () => ({ ok: false as const })),
       authorizeProject: vi.fn(async () => ({ ok: false as const })),
@@ -1861,6 +1869,10 @@ describe("workspace routes signed control plane authority", () => {
     expect(mocks.ensureSupervisorSandbox).not.toHaveBeenCalled()
     expect(signer).toHaveBeenCalledWith({
       subject: "user_1",
+      actorId: "actor_1",
+      actorKind: "human",
+      actorPublicId: "usr_public_1",
+      actorName: "Test User",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "ws_1",
@@ -1958,6 +1970,10 @@ describe("workspace routes signed control plane authority", () => {
     expect(mocks.ensureSupervisorSandbox).not.toHaveBeenCalled()
     expect(signer).toHaveBeenCalledWith({
       subject: "user_1",
+      actorId: "actor_1",
+      actorKind: "human",
+      actorPublicId: "usr_public_1",
+      actorName: "Test User",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_manager",
@@ -2096,12 +2112,24 @@ describe("workspace routes signed control plane authority", () => {
     expect(mocks.ensureSupervisorSandbox).not.toHaveBeenCalled()
     expect(signer).toHaveBeenCalledWith({
       subject: "local",
+      actorId: "actor_1",
+      actorKind: "human",
+      actorPublicId: "usr_public_1",
+      actorName: "Test User",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_manager",
       role: "owner",
     })
-    expect(svc.authority?.usersMe).not.toHaveBeenCalled()
+    expect(svc.authority?.usersMe).toHaveBeenCalledWith({
+      mode: "signed",
+      token: "",
+      user: {
+        subject: "local",
+        tokenIdentifier: "local:default",
+        issuer: "claxedo-local",
+      },
+    })
     expect(svc.authority?.openWorkspace).not.toHaveBeenCalled()
     expect(svc.authority?.recordRuntimeAccessToken).not.toHaveBeenCalled()
   })
@@ -2294,6 +2322,10 @@ describe("workspace routes signed control plane authority", () => {
     })
     expect(signer).toHaveBeenCalledWith({
       subject: "user_2",
+      actorId: "actor_1",
+      actorKind: "human",
+      actorPublicId: "usr_public_1",
+      actorName: "Test User",
       orgId: "org_1",
       workspaceId: "ws_shared",
       hostId: "host_1",
@@ -2569,6 +2601,10 @@ describe("workspace routes signed control plane authority", () => {
     })
     expect(signer).toHaveBeenCalledWith({
       subject: "user_1",
+      actorId: "actor_1",
+      actorKind: "human",
+      actorPublicId: "usr_public_1",
+      actorName: "Test User",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "ws_1",

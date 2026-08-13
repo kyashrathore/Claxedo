@@ -11,6 +11,7 @@ import type {
 } from "./types"
 
 const LIVE_EVENT_READY_TIMEOUT_MS = 1_500
+const PROMPT_ADMISSION_CONFLICT_CODE = "session_turn_in_progress"
 
 export async function waitForPendingWorktree(input: WaitForPendingWorktreeContext) {
   const worktree = WorktreeState.get(input.sessionDirectory)
@@ -58,13 +59,31 @@ export async function waitForPendingWorktree(input: WaitForPendingWorktreeContex
 
 export function rollbackPromptDispatch(input: RollbackPromptDispatchContext) {
   clearPendingPrompt(input.sessionID)
-  setPromptSessionStatus({ sessionID: input.sessionID, status: { type: "idle" } })
+  const admissionConflict = isPromptAdmissionConflict(input.err)
+  if (!admissionConflict) setPromptSessionStatus({ sessionID: input.sessionID, status: { type: "idle" } })
   input.clearBoot()
-  input.reportCloudStartupError(input.err)
+  if (!admissionConflict) input.reportCloudStartupError(input.err)
   input.showSendFailed(input.err)
   input.removeSubmittedPrompt()
   input.restoreSubmittedComments()
   input.restoreInput()
+}
+
+export function isPromptAdmissionConflict(error: unknown) {
+  const record = error && typeof error === "object" ? error as Record<string, unknown> : undefined
+  if (record?.code === PROMPT_ADMISSION_CONFLICT_CODE) return true
+  const data = record?.data && typeof record.data === "object" ? record.data as Record<string, unknown> : undefined
+  if (data?.code === PROMPT_ADMISSION_CONFLICT_CODE) return true
+  const candidates = [record?.responseBody, record?.message]
+  return candidates.some((candidate) => {
+    if (typeof candidate !== "string") return false
+    try {
+      const body = JSON.parse(candidate) as { error?: { code?: unknown } }
+      return body.error?.code === PROMPT_ADMISSION_CONFLICT_CODE
+    } catch {
+      return false
+    }
+  })
 }
 
 async function prepareLiveEventsBestEffort(run: SendPromptRequestContext["prepareLiveEvents"]) {

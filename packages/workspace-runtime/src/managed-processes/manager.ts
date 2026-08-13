@@ -22,6 +22,7 @@ import * as PortLease from "./port-lease"
 import { Process } from "./schema"
 import { findFreePort, findPidOnPort, tryPort } from "./port-picker"
 import type { ProcessObserver } from "./process-observer"
+import { resolveWorkspaceCommandPaths, resolveWorkspacePath } from "../target"
 
 // -- Global port registry (cross-workspace, outside per-directory state) ------
 // Maps assigned port → workspace info so port conflict detection can tell the
@@ -967,6 +968,19 @@ async function startOnce(
     log.error("config not found", { configId })
     return miss()
   }
+  const target = await Promise.all([
+    resolveWorkspacePath(directory, config.cwd),
+    resolveWorkspaceCommandPaths(directory, {
+      command: config.command,
+      args: config.args,
+      allowAbsoluteExecutable: true,
+    }),
+  ]).then(
+    ([cwd]) => ({ ok: true as const, cwd }),
+    (error) => ({ ok: false as const, error }),
+  )
+  if (!target.ok) return fail(target.error instanceof Error ? target.error.message : String(target.error))
+  const cwd = target.cwd
 
   const existing = s.processes.get(configId)
   if (existing && (existing.status === "running" || existing.status === "starting")) {
@@ -1007,8 +1021,6 @@ async function startOnce(
     log.error("dependency resolution failed", { configId, err: String(err) })
     return fail(`Dependency resolution failed: ${String(err)}`)
   }
-
-  const cwd = config.cwd ? path.resolve(directory, config.cwd) : directory
 
   // --- Port assignment ---
   let assignedPort: number | undefined

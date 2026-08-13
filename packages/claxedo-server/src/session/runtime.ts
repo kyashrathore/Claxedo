@@ -587,10 +587,19 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     })
     return true
   }
+  const sessionAccessPolicy = {
+    authorize: () => ({ allowed: true as const }),
+    authorizePrefix: () => ({ allowed: true as const }),
+    filterSessions: (input: { sessionIds: readonly string[] }) => input.sessionIds,
+  }
   const routes = createSessionRoutes({
+    // Central requests are authorized by centralRuntimeAccess before they reach
+    // this router. Keeping an explicit policy here makes route composition
+    // complete while the outer authority owns creator/participant checks.
+    sessionAccessPolicy,
     resolveAdapter: () => adapter,
     beforeSessionOperation: async (_c, input) => {
-      if (input.operation === "delete_session") await terminateBackgrounds(input.sessionId, "interrupted")
+      if (input.operation === "delete") await terminateBackgrounds(input.sessionId, "interrupted")
     },
     resolveRuntime: async (_c, input) => {
       if (input?.sessionId) await ensureCentralRuntimeSession(input.sessionId)

@@ -14,10 +14,14 @@ export function WorkspaceCheckpointRoutes(
     .get("/:id/checkpoints", async (c) => {
       const access = await authorized(c.req.raw, c.req.param("id"), services, options)
       if ("response" in access) return access.response
-      return c.json(await service(access.auth, services!, options).inspect(c.req.param("id")))
+      const workspaceId = c.req.param("id")
+      const inspected = await service(access.auth, services!, options).inspect(workspaceId)
+      if (!access.auth) return c.json(inspected)
+      const visible = await requireAuthority(services).listSessions(access.auth, { workspaceId })
+      return c.json(filterCheckpointSessions(inspected, visible))
     })
     .post("/:id/checkpoints", async (c) => {
-      const access = await authorized(c.req.raw, c.req.param("id"), services, options)
+      const access = await authorized(c.req.raw, c.req.param("id"), services, options, true)
       if ("response" in access) return access.response
       const body = await c.req.json().catch(() => ({})) as { policy?: unknown; retentionExpiresAt?: unknown }
       if (body.policy !== undefined && body.policy !== "drain" && body.policy !== "interrupt") {
@@ -37,7 +41,7 @@ export function WorkspaceCheckpointRoutes(
       }
     })
     .post("/:id/checkpoints/:checkpointId/restore", async (c) => {
-      const access = await authorized(c.req.raw, c.req.param("id"), services, options)
+      const access = await authorized(c.req.raw, c.req.param("id"), services, options, true)
       if ("response" in access) return access.response
       const body = await c.req.json().catch(() => ({})) as { approved?: unknown }
       if (body.approved !== true) {
@@ -57,7 +61,7 @@ export function WorkspaceCheckpointRoutes(
       }
     })
     .post("/:id/lifecycle/:operation", async (c) => {
-      const access = await authorized(c.req.raw, c.req.param("id"), services, options)
+      const access = await authorized(c.req.raw, c.req.param("id"), services, options, true)
       if ("response" in access) return access.response
       const operation = c.req.param("operation")
       const body = await c.req.json().catch(() => ({})) as { approved?: unknown; checkpointId?: unknown }
@@ -88,17 +92,45 @@ export function WorkspaceCheckpointRoutes(
     })
 }
 
+export function filterCheckpointSessions<T extends { worktrees?: unknown }>(input: T, visible: unknown): T {
+  if (!Array.isArray(input.worktrees)) return input
+  const sessionIds = new Set(
+    (Array.isArray(visible)
+      ? visible
+      : visible && typeof visible === "object" && Array.isArray((visible as { sessions?: unknown }).sessions)
+        ? (visible as { sessions: unknown[] }).sessions
+        : [])
+      .flatMap((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return []
+        const row = item as Record<string, unknown>
+        const id = row.session_id ?? row.sessionId ?? row.id
+        return typeof id === "string" ? [id] : []
+      }),
+  )
+  return {
+    ...input,
+    worktrees: input.worktrees.filter((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return false
+      const row = item as Record<string, unknown>
+      const sessionId = row.sessionId ?? row.session_id
+      return typeof sessionId !== "string" || sessionIds.has(sessionId)
+    }),
+  }
+}
+
 async function authorized(
   request: Request,
   workspaceId: string,
   services: ControlPlaneServices | undefined,
   options: { allowUnsignedLocal?: boolean },
+  write = false,
 ) {
   if (options.allowUnsignedLocal && services && !services.auth.config.enabled) {
     return { auth: undefined }
   }
   const auth = await signedOrError(request, {
     authConfig: services?.auth.config ?? controlPlaneAuthConfig(),
+    verifier: services?.auth.verifier,
     requireSigned: true,
   }, services)
   if ("error" in auth) {
@@ -108,7 +140,14 @@ async function authorized(
     return { response: Response.json({ error: { code: "missing_bearer_token", message: "Authorization is required" } }, { status: 401 }) }
   }
   try {
-    await requireAuthority(services).authorizeWorkspaceOpen(auth.auth, { workspaceId })
+    const authority = requireAuthority(services)
+    if (!write) await authority.authorizeWorkspaceOpen(auth.auth, { workspaceId })
+    if (write) {
+      const opened = await authority.openWorkspace(auth.auth, { workspaceId })
+      if (!opened.allowed || !workspaceCheckpointRoleAllowsWrite(opened.role)) {
+        throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Workspace write authority is required")
+      }
+    }
     return { auth: auth.auth }
   } catch (error) {
     if (error instanceof ControlPlaneAuthError) {
@@ -116,6 +155,10 @@ async function authorized(
     }
     throw error
   }
+}
+
+export function workspaceCheckpointRoleAllowsWrite(role: string | undefined) {
+  return role === "editor" || role === "admin" || role === "owner"
 }
 
 function service(

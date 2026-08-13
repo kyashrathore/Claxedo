@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import fs from "node:fs"
 import path from "node:path"
-import type { ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
+import { ControlPlaneAuthError, type ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
@@ -97,6 +97,7 @@ function fakeAuthority(overrides: Record<string, unknown> = {}) {
     // The authority's OWN org id space (Convex document ids). The cap must not
     // use this — lease rows are stamped with the Clerk claim.
     resolveOrgId: vi.fn(async () => "convex_org_doc_id"),
+    authorizeWorkspaceCreate: vi.fn(async () => undefined),
     createCloudWorkspace: vi.fn(async () => ({ workspace_id: "ignored" })),
     pauseLocalHostLink: vi.fn(async () => ({ paused: true, count: 1 })),
     auditAllow: vi.fn(async () => ({})),
@@ -205,6 +206,29 @@ describe("POST /create rate limiting", () => {
 })
 
 describe("POST /create per-tenant concurrent lease cap", () => {
+  test("denies a plain team member before infrastructure provisioning", async () => {
+    const authority = fakeAuthority({
+      authorizeWorkspaceCreate: vi.fn(async () => {
+        throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "workspace_create_forbidden")
+      }),
+    })
+    const { app, ensure } = buildApp({ authority })
+    const response = await app.fetch(new Request("http://cp.test/create", {
+      method: "POST",
+      headers: { authorization: "Bearer team_member", "content-type": "application/json" },
+      body: JSON.stringify({
+        orgId: "org_team",
+        projectId: "proj_team",
+        repoUrl: "https://github.com/acme/team.git",
+      }),
+    }))
+
+    expect(response.status, JSON.stringify(await response.clone().json())).toBe(403)
+    expect(authority.authorizeWorkspaceCreate).toHaveBeenCalledWith(expect.anything(), { orgId: "org_team" })
+    expect(authority.createCloudWorkspace).not.toHaveBeenCalled()
+    expect(ensure).not.toHaveBeenCalled()
+  })
+
   test("refuses a create once the org already holds the cap, before any workspace exists", async () => {
     const { app, authority, ensure } = buildApp({
       options: { sandboxLeaseCap: 3, countActiveOrgSandboxLeases: async () => 3 },

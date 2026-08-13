@@ -8,7 +8,6 @@
 import { type IPty } from "@lydell/node-pty"
 import z from "zod/v3"
 import { Log } from "../log"
-import type { WSContext } from "hono/ws"
 import * as fs from "fs"
 import * as os from "os"
 import * as path from "path"
@@ -30,7 +29,7 @@ import {
   flushWriteQueue,
 } from "./write-queue"
 import { decodeInput } from "./decode-input"
-import { sendWebSocketWithBackpressure } from "./websocket-backpressure"
+import { sendWebSocketWithBackpressure, type WebSocketBackpressureSocket } from "./websocket-backpressure"
 import { safeChunkEnd, safeStartIndex } from "./safe-slice"
 import { createMarkerScanner } from "./marker-scan"
 import { SHELL_READY_MARKER } from "./shell-ready"
@@ -176,7 +175,7 @@ export namespace Pty {
 
   export const osc7 = osc7Parser
 
-  function safeReplay(ws: WSContext, replay: string) {
+  function safeReplay(ws: WebSocketBackpressureSocket, replay: string) {
     if (!replay) return true
     try {
       let i = 0
@@ -240,6 +239,7 @@ export namespace Pty {
 
   export const Info = z.object({
     id: z.string(),
+    sessionId: z.string().optional(),
     title: z.string(),
     command: z.string(),
     args: z.array(z.string()),
@@ -251,6 +251,7 @@ export namespace Pty {
   export type Info = z.infer<typeof Info>
 
   export const CreateInput = z.object({
+    sessionId: z.string().optional(),
     command: z.string().optional(),
     args: z.array(z.string()).optional(),
     cwd: z.string().optional(),
@@ -306,7 +307,7 @@ export namespace Pty {
     history: Awaited<ReturnType<typeof createDiskHistory>>
     osc7: string
     processExitBuf: string
-    subscribers: Set<WSContext>
+    subscribers: Set<WebSocketBackpressureSocket>
     exited: boolean
     removed: boolean
     ready: boolean
@@ -366,7 +367,13 @@ export namespace Pty {
     session.interruptTimer = setTimeout(() => {
       session.interruptTimer = undefined
       if (session.exited || session.removed || session.info.status !== "running") return
-      workspaceRuntimeBus.publish({ type: "pty.stream", id, kind: "command-exit", exitCode: 130 })
+      workspaceRuntimeBus.publish({
+        type: "pty.stream",
+        id,
+        ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}),
+        kind: "command-exit",
+        exitCode: 130,
+      })
     }, 150)
   }
 
@@ -637,6 +644,7 @@ export namespace Pty {
 
     const info = {
       id,
+      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
       title: input.title || `Terminal ${id.slice(-4)}`,
       command,
       args,
@@ -676,7 +684,12 @@ export namespace Pty {
     }
 
     const t4 = performance.now()
-    const history = await createDiskHistory({ directory: cwd, id, limit: HISTORY_LIMIT })
+    const history = await createDiskHistory({
+      directory: cwd,
+      id,
+      limit: HISTORY_LIMIT,
+      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    })
     // Fire-and-forget, once per process, after the first terminal exists.
     sweepStaleHistoryOnce()
     const diskHistoryMs = performance.now() - t4
@@ -800,7 +813,13 @@ export namespace Pty {
         try {
           session.process.write("\x15")
         } catch {}
-        workspaceRuntimeBus.publish({ type: "pty.stream", id, kind: "command-exit", exitCode: exitParsed.exitCode })
+        workspaceRuntimeBus.publish({
+          type: "pty.stream",
+          id,
+          ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}),
+          kind: "command-exit",
+          exitCode: exitParsed.exitCode,
+        })
       }
 
       // Mirror into the headless emulator BEFORE broadcasting, so a client that
@@ -823,7 +842,13 @@ export namespace Pty {
       }
       if (session.managed && busy(data)) {
         session.addrInUse = true
-        workspaceRuntimeBus.publish({ type: "pty.stream", id, kind: "data", tail: snapshot(id, 16_384) })
+        workspaceRuntimeBus.publish({
+          type: "pty.stream",
+          id,
+          ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}),
+          kind: "data",
+          tail: snapshot(id, 16_384),
+        })
       }
 
       const filtered = (() => {
@@ -852,8 +877,21 @@ export namespace Pty {
       log.info("session exited", { id, exitCode })
       session.info.status = "exited"
       const tail = snapshot(id, 16_384)
-      workspaceRuntimeBus.publish({ type: "pty.exited", id, exitCode, tail })
-      workspaceRuntimeBus.publish({ type: "pty.stream", id, kind: "exit", exitCode, tail })
+      workspaceRuntimeBus.publish({
+        type: "pty.exited",
+        id,
+        ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}),
+        exitCode,
+        tail,
+      })
+      workspaceRuntimeBus.publish({
+        type: "pty.stream",
+        id,
+        ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}),
+        kind: "exit",
+        exitCode,
+        tail,
+      })
       session.owner?.exit({ reason: "exited", exitCode })
       await cleanupSession(id, session, "exit")
     })
@@ -895,7 +933,11 @@ export namespace Pty {
         sessions.delete(id)
       }
       if (!alreadyExited) session.owner?.exit({ reason: "disposed" })
-      workspaceRuntimeBus.publish({ type: "pty.deleted", id })
+      workspaceRuntimeBus.publish({
+        type: "pty.deleted",
+        id,
+        ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}),
+      })
     })()
     await session.removeOperation
   }
@@ -932,7 +974,7 @@ export namespace Pty {
     }
   }
 
-  export function connect(id: string, ws: WSContext, cursor?: number) {
+  export function connect(id: string, ws: WebSocketBackpressureSocket, cursor?: number) {
     const session = sessions.get(id)
     if (!session) {
       ws.close(1008, "Session not found")
@@ -974,7 +1016,13 @@ export namespace Pty {
     const body = showNotice ? data + SESSION_RESTORED_NOTICE : data
     if (!safeReplay(ws, preamble + body)) {
       session.subscribers.delete(ws)
-      workspaceRuntimeBus.publish({ type: "pty.stream", id, kind: "error", message: "replay_send_failed" })
+      workspaceRuntimeBus.publish({
+        type: "pty.stream",
+        id,
+        ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}),
+        kind: "error",
+        message: "replay_send_failed",
+      })
       ws.close()
       return
     }
@@ -1007,7 +1055,12 @@ export namespace Pty {
       onClose: () => {
         log.info("client disconnected from session", { id })
         session.subscribers.delete(ws)
-        workspaceRuntimeBus.publish({ type: "pty.stream", id, kind: "disconnect" })
+        workspaceRuntimeBus.publish({
+          type: "pty.stream",
+          id,
+          ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}),
+          kind: "disconnect",
+        })
         if (session.subscribers.size === 0) {
           session.ready = false
           armOrphanTimer(id, session)

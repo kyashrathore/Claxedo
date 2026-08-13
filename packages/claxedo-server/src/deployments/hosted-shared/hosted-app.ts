@@ -51,6 +51,7 @@ import { HostedControlRoutes } from "../../routes/hosted/control"
 import { HostedWorkerCompositionError, type HostedControlPlane } from "../../authority/hosted-services"
 import { configureCliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
 import type { ControlPlaneServices } from "../../authority/services"
+import { RuntimeSessionAuthorityRoutes } from "../../routes/runtime-session-authority"
 import {
   createFixedWindowConnectionRateLimiter,
   createLayeredRateLimiter,
@@ -585,6 +586,7 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
   app.route("/api/workspace", WorkspaceCheckpointRoutes(services, {
     defaultHomeRegion: services.defaultHomeRegion,
   }))
+  app.route("/api/runtime-authority", RuntimeSessionAuthorityRoutes(services, { env: plane.env }))
 
   app.all("/api/workgraph", forwardWorkGraph)
   app.all("/api/workgraph/*", forwardWorkGraph)

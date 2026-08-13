@@ -2,6 +2,7 @@ import type { ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import type { ControlPlaneServices } from "./services"
 import { resolveWorkspaceRuntimeTarget } from "./runtime-target"
 
@@ -168,6 +169,9 @@ async function runtimeFetch(
     workspaceId: input.workspaceId,
     hostId: input.hostId,
     subject: auth?.mode === "signed" ? auth.user.subject : "control-plane",
+    ...(auth?.mode === "signed"
+      ? await resolveRuntimeActor(requireAuthority(services), auth)
+      : { actorId: "control-plane", actorKind: "agent" as const }),
     orgId,
     role: "owner",
     ttlMs: 10 * 60_000,

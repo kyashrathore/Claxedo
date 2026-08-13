@@ -39,7 +39,12 @@ export type LayoutOrchestrationApi = {
   openCentralSession(sessionId: string, title?: string, opts?: OpenCentralSessionOptions): string
   openDraftSession(providerDirectory: string, draftId: string, opts?: { focus?: boolean }): string
   completeDraftSession(input: { draftId: string; directory: string; sessionId: string; title?: string; sessionRef?: SessionRef }): string | undefined
-  openTerminal(directory: string, terminalId: string, title?: string, opts?: { focus?: boolean; command?: string; workspaceRouteId?: string }): string
+  openTerminal(
+    directory: string,
+    terminalId: string,
+    title?: string,
+    opts?: { focus?: boolean; command?: string; sessionId?: string; workspaceRouteId?: string },
+  ): string
   openPage(pageId: string, title?: string, directory?: string, filePath?: string, opts?: { workspaceRouteId?: string }): string
   openPagesIndex(directory?: string, opts?: { workspaceRouteId?: string }): string
   openMarketplace(): string
@@ -469,6 +474,7 @@ export function createLayoutOrchestration(input: {
               scope: "directory",
               directory,
               terminalId,
+              ...(opts?.sessionId ? { sessionId: opts.sessionId } : {}),
             },
             payload: {
               type: "terminal",

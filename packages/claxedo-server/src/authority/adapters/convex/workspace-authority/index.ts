@@ -37,9 +37,9 @@ export function convexAuthorityUrlFromEnv(env: Record<string, string | undefined
 }
 
 export function createConvexAuthority(input: ConvexAuthorityInput = {}): WorkspaceAuthority {
-  const serviceArgs = (auth: SignedControlPlaneAuth) => ({
+  const serviceArgs = (auth?: SignedControlPlaneAuth) => ({
     service_token: requireServiceToken(input),
-    user: cliServiceUser(auth),
+    ...(auth ? { user: cliServiceUser(auth) } : {}),
   })
   return {
     ...identityAuthority(input, serviceArgs),

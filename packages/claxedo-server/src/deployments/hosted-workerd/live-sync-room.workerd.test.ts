@@ -223,13 +223,17 @@ describe("LiveSyncRoom workerd integration", () => {
     expect(await shared.nudge("carol")).toMatchObject({ delivered: 0 })
 
     // Cursor 0 means "serve the whole retained log". Carol must still receive
-    // only her own frame, and it must keep the SHARED id — a cursor has to mean
-    // the same thing on every connection to this room, so ids are never
-    // renumbered per identity.
+    // only her own frame, and it carries HER sequence's id: ids are minted per
+    // principal, after `eventVisibleTo`, so alice's frame consumes no id in
+    // carol's ring. A cursor therefore means the same thing on every connection
+    // BY THE SAME IDENTITY — which is the only way one is ever presented — and
+    // a busy org peer can neither hole carol's sequence nor trip a false
+    // replay-gap notice on it. Same scoping as the Node sibling in
+    // `routes/events.ts`.
     const carol = await shared.connect("carol", "0")
     const frames = await carol.until(2, "carol's own frame was not replayed")
     expect(frames[0]).toEqual({ id: "0", data: { type: "heartbeat" } })
-    expect(frames[1]).toMatchObject({ id: "2", data: { ownerUserId: "carol" } })
+    expect(frames[1]).toMatchObject({ id: "1", data: { ownerUserId: "carol" } })
     expect(frames.some((frame) => JSON.stringify(frame.data).includes("alice"))).toBe(false)
     await carol.cancel()
   })

@@ -1,17 +1,18 @@
 import type {
   AssistantMessage,
-  EventMessageUpdated,
   EventPermissionReplied,
   EventQuestionRejected,
   EventServerConnected,
   EventSessionCompacted,
   EventSessionDiff,
-  Message,
   Session,
   Todo,
   UserMessage,
 } from "@opencode-ai/sdk/v2"
 import type {
+  ClaxedoMessageAuthor,
+  ClaxedoMessageInfoExtension,
+  EventMessageUpdated,
   EventMessageCompleted,
   EventMessagePartUpdated,
   EventMessagePartDelta,
@@ -32,6 +33,7 @@ import type {
   PermissionRequest,
   QuestionRequest,
 } from "@claxedo/agent-event-runtime/opencode-compat"
+import { withClaxedoMessageAuthor } from "@claxedo/agent-event-runtime/opencode-compat"
 import type { StatusCompat } from "./status"
 import { firstTurnErrorData } from "./first-turn-error"
 
@@ -103,15 +105,24 @@ export function toCompatEvent(input: unknown): CompatEvent | null {
 }
 
 export function eventSessionId(event: CompatEvent): string | undefined {
+  // Frames on the global event stream originate from untrusted upstreams and
+  // may be partial. This runs inside a stream transform where a throw tears
+  // down the SSE connection for every subscriber, so read the nested shapes
+  // defensively and fall back to "no session id" rather than crashing.
+  const properties = (event.properties ?? {}) as {
+    info?: { id?: string; sessionID?: string }
+    part?: { sessionID?: string }
+    sessionID?: string
+  }
   switch (event.type) {
     case "message.updated":
-      return event.properties.info.sessionID
+      return properties.info?.sessionID
     case "session.updated":
-      return event.properties.info.id
+      return properties.info?.id
     case "message.part.updated":
-      return event.properties.sessionID ?? event.properties.part.sessionID
+      return properties.sessionID ?? properties.part?.sessionID
     case "message.part.delta":
-      return event.properties.sessionID
+      return properties.sessionID
     case "message.completed":
     case "permission.asked":
     case "permission.replied":
@@ -127,9 +138,9 @@ export function eventSessionId(event: CompatEvent): string | undefined {
     case "session.config":
     case "session.usage":
     case "runtime.diagnostic":
-      return event.properties.sessionID
+      return properties.sessionID
     case "session.error":
-      return event.properties.sessionID
+      return properties.sessionID
     default:
       return undefined
   }
@@ -149,8 +160,9 @@ export function buildUserMessage(input: {
   format?: CompatPromptFormat
   system?: string
   variant?: string
-}): UserMessage {
-  return {
+  author?: ClaxedoMessageAuthor
+}): UserMessage & ClaxedoMessageInfoExtension {
+  return withClaxedoMessageAuthor({
     id: input.id,
     sessionID: input.sessionID,
     role: "user",
@@ -161,7 +173,7 @@ export function buildUserMessage(input: {
     ...(input.format ? { format: input.format as UserMessage["format"] } : {}),
     ...(input.system ? { system: input.system } : {}),
     ...(input.variant ? { variant: input.variant } : {}),
-  }
+  }, input.author)
 }
 
 export function buildAssistantMessage(input: {
@@ -222,7 +234,7 @@ export function buildSession(input: {
   }
 }
 
-export function messageUpdated(info: Message): EventMessageUpdated {
+export function messageUpdated(info: EventMessageUpdated["properties"]["info"]): EventMessageUpdated {
   return {
     id: `message.updated:${info.id}`,
     type: "message.updated",

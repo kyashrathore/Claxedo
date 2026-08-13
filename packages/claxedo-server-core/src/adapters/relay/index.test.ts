@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest"
 import { createControlPlaneRelayProvider } from "."
 
 describe("control-plane relay provider", () => {
+  const actor = { actorId: "actor_1", actorKind: "human" as const }
   test("resolves the configured relay endpoint for a workspace home region", () => {
     const provider = createControlPlaneRelayProvider({
       relay: {
@@ -70,6 +71,7 @@ describe("control-plane relay provider", () => {
     })
 
     await expect(provider.mintRuntimeAccessToken({
+      ...actor,
       workspaceId: "ws_1",
       hostId: "host_1",
       subject: "user_1",
@@ -82,6 +84,7 @@ describe("control-plane relay provider", () => {
       jti: "rat_jti",
     })
     expect(runtimeAccessTokenSigner).toHaveBeenCalledWith({
+      ...actor,
       subject: "user_1",
       orgId: "org_1",
       workspaceId: "ws_1",
@@ -90,6 +93,7 @@ describe("control-plane relay provider", () => {
       ttlSeconds: 15 * 60, // 60s requested, below RAT minimum → clamped up
     })
     expect(recordRuntimeAccessToken).toHaveBeenCalledWith({
+      ...actor,
       workspaceId: "ws_1",
       hostId: "host_1",
       subject: "user_1",
@@ -120,7 +124,7 @@ describe("control-plane relay provider", () => {
       targetLookup: vi.fn(),
       recordRuntimeAccessToken: vi.fn(),
     })
-    const base = { workspaceId: "ws_1", hostId: "host_1", subject: "user_1", orgId: "org_1" }
+    const base = { ...actor, workspaceId: "ws_1", hostId: "host_1", subject: "user_1", orgId: "org_1" }
 
     // In-bounds requests are honored exactly.
     await provider.mintRuntimeAccessToken({ ...base, ttlMs: 20 * 60_000 })
@@ -154,6 +158,7 @@ describe("control-plane relay provider", () => {
     })
 
     await expect(provider.mintRuntimeAccessToken({
+      ...actor,
       workspaceId: "ws_1",
       hostId: "host_1",
       subject: "user_1",
@@ -161,6 +166,7 @@ describe("control-plane relay provider", () => {
     })).rejects.toThrow("org id required")
 
     await provider.mintRuntimeAccessToken({
+      ...actor,
       workspaceId: "ws_1",
       hostId: "host_1",
       subject: "user_1",
@@ -170,6 +176,7 @@ describe("control-plane relay provider", () => {
 
     expect(runtimeAccessTokenSigner).toHaveBeenCalledTimes(1)
     expect(runtimeAccessTokenSigner).toHaveBeenLastCalledWith({
+      ...actor,
       subject: "user_1",
       orgId: "org_1",
       workspaceId: "ws_1",
@@ -195,6 +202,7 @@ describe("control-plane relay provider", () => {
     })
 
     await expect(provider.mintRuntimeAccessToken({
+      ...actor,
       workspaceId: "ws_1",
       hostId: "host_1",
       subject: "user_1",

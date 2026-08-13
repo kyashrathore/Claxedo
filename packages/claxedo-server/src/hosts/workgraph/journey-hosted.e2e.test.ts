@@ -74,6 +74,7 @@ describe("WorkGraph hosted headless journey", () => {
       const ownerUserId = await ctx.db.insert("users", {
         token_identifier: "issuer|hosted-owner",
         clerk_subject: "hosted-owner",
+        kind: "human",
         created_at: 1,
         updated_at: 1,
       })
@@ -172,6 +173,7 @@ describe("WorkGraph hosted headless journey", () => {
       const ownerUserId = await ctx.db.insert("users", {
         token_identifier: "issuer|hosted-owner",
         clerk_subject: "hosted-owner",
+        kind: "human",
         created_at: 1,
         updated_at: 1,
       })
@@ -453,6 +455,7 @@ describe("WorkGraph hosted headless journey", () => {
       const ownerUserId = await ctx.db.insert("users", {
         token_identifier: "issuer|hosted-owner",
         clerk_subject: "hosted-owner",
+        kind: "human",
         created_at: 1,
         updated_at: 1,
       })
