@@ -18,6 +18,7 @@ import {
   normalizeProjectList,
   projectCatalogMissingWorkspace,
   providerAuthQuery,
+  providerCacheHarness,
   projectListQuery,
   providerListQuery,
 } from "@/platform/query/control-plane"
@@ -191,9 +192,7 @@ function setDirectoryProjectQuery(baseUrl: string | undefined, directory: Bootst
  * opencode bootstrap would warm a cache nothing reads. Every other harness
  * serves a different catalog and gets its own key.
  */
-function providerQueryHarness(harnessType: string | undefined) {
-  return !harnessType || harnessType === "opencode" ? undefined : harnessType
-}
+const providerQueryHarness = providerCacheHarness
 
 /**
  * Publishes a bootstrapped catalog under the key its harness owns.

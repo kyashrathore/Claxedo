@@ -1,14 +1,61 @@
 import { describe, expect, test } from "bun:test"
-import type { Project, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
+import type { Model, Project, Provider, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
 import {
   normalizeProjectList,
   projectCatalogMissingWorkspace,
   projectListQuery,
   providerAuthQuery,
+  providerCacheHarness,
   providerDetailsQuery,
   providerListQuery,
 } from "./control-plane"
 import { mergeProviderIndexWithDetails, normalizeProviderList } from "./provider-list"
+
+/**
+ * A REAL `Provider`, not a type assertion.
+ *
+ * These fixtures used to be object literals forced past `ProviderListResponse`,
+ * which asserted on a shape the wire can never produce: `Provider` requires
+ * `source`, `options` and complete `Model` values, while `normalizeProviderList`
+ * reads `models[].status` and `mergeProviderIndexWithDetails` reads `source`.
+ * Forcing the type meant these tests exercised a shape production never sees —
+ * and the debt ratchet caught it. Building the real thing costs one helper and
+ * makes the `status !== "deprecated"` filter reachable from here.
+ */
+function model(id: string, status: Model["status"] = "active"): Model {
+  return {
+    id,
+    providerID: "opencode",
+    api: { id, url: "https://api.test", npm: "@test/sdk" },
+    name: id,
+    capabilities: {
+      temperature: true,
+      reasoning: false,
+      attachment: false,
+      toolcall: true,
+      input: { text: true, audio: false, image: false, video: false, pdf: false },
+      output: { text: true, audio: false, image: false, video: false, pdf: false },
+      interleaved: false,
+    },
+    status,
+  }
+}
+
+function provider(id: string, models: Model[]): Provider {
+  return {
+    id,
+    name: id,
+    source: "config",
+    env: [],
+    options: {},
+    models: Object.fromEntries(models.map((item) => [item.id, item])),
+  }
+}
+
+function catalog(providers: Provider[], connected: string[] = []): ProviderListResponse {
+  return { all: providers, connected, default: {} }
+}
+
 
 function project(id: string, worktree: string): Project {
   return {
@@ -214,5 +261,64 @@ describe("control-plane query helpers", () => {
     expect(calls).toEqual([
       "http://example.test/provider?provider=anthropic&harness=pi&directory=workspace%3Aws_1",
     ])
+  })
+})
+
+describe("provider cache identity", () => {
+  // `/provider` resolves an ABSENT `?harness=` to the configured default
+  // harness (`resolveHarnessId` -> `defaultHarness`, falling back to
+  // `opencode`), so an unqualified request and an `opencode`-qualified one are
+  // the same catalog. Keying on the wire qualifier made them two cache entries
+  // and the cold boot fetched that one catalog twice — 1,079.5 ms (first, also
+  // paying the engine's first-use compile) and 568.6 ms (warm) — with the
+  // second warming an entry no reader looks at.
+  const client = {} as Parameters<typeof providerListQuery>[0]["client"]
+
+  test("an opencode-qualified query shares the unqualified key, because they are the same catalog", () => {
+    expect(providerListQuery({ baseUrl: "http://x", client, directory: "/repo", harnessType: "opencode" }).queryKey)
+      .toEqual(providerListQuery({ baseUrl: "http://x", client, directory: "/repo" }).queryKey)
+  })
+
+  test("every OTHER harness keeps its own key, because it serves a different catalog", () => {
+    const unqualified = providerListQuery({ baseUrl: "http://x", client, directory: "/repo" }).queryKey
+    expect(providerListQuery({ baseUrl: "http://x", client, directory: "/repo", harnessType: "pi" }).queryKey)
+      .not.toEqual(unqualified)
+    // ...and two non-default harnesses stay distinct from each other.
+    expect(providerListQuery({ baseUrl: "http://x", client, directory: "/repo", harnessType: "pi" }).queryKey)
+      .not.toEqual(providerListQuery({ baseUrl: "http://x", client, directory: "/repo", harnessType: "codex" }).queryKey)
+  })
+
+  test("providerCacheHarness is the single place that decides key identity", () => {
+    expect(providerCacheHarness(undefined)).toBeUndefined()
+    expect(providerCacheHarness("opencode")).toBeUndefined()
+    expect(providerCacheHarness("pi")).toBe("pi")
+  })
+})
+
+describe("an empty provider catalog never replaces a populated one", () => {
+  // The rule used to be enforced by ONE writer (`setProviderQuery` in
+  // bootstrap.ts) while the merge that owns how catalogs combine did not know
+  // it. FOUR writers reach this key — `setBootstrapProviderQueries`, the
+  // directory bootstrap's provider fetch, the globalSync patch handler
+  // (`provider.tsx`, which writes `patch.provider` straight in), and
+  // `providerListQuery`'s own `structuralSharing` — and only one was careful.
+  // These pin the rule at the merge, so it holds for every consumer.
+  const populated = normalizeProviderList(catalog([provider("opencode", [model("gpt-5")])], ["opencode"]))
+  const empty = normalizeProviderList(catalog([]))
+
+  test("keeps the populated catalog when an empty one arrives", () => {
+    const merged = mergeProviderIndexWithDetails(populated, empty)
+    expect([...merged.all.keys()]).toEqual(["opencode"])
+    expect(merged.connected).toEqual(["opencode"])
+  })
+
+  test("an empty catalog is still accepted when there is nothing to protect", () => {
+    expect(mergeProviderIndexWithDetails(undefined, empty).all.size).toBe(0)
+    expect(mergeProviderIndexWithDetails(empty, empty).all.size).toBe(0)
+  })
+
+  test("a populated catalog still replaces a populated one — this is not a freeze", () => {
+    const next = normalizeProviderList(catalog([provider("anthropic", [model("sonnet")])], ["anthropic"]))
+    expect([...mergeProviderIndexWithDetails(populated, next).all.keys()]).toEqual(["anthropic"])
   })
 })
