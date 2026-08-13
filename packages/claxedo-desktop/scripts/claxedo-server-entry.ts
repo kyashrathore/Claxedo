@@ -7,8 +7,16 @@ import { startLocalServer } from "@claxedo/local-server/self-hosted-execution"
 import type { DiagnosticsBinding } from "../src/shared/diagnostics-transport"
 import { claxedoServerStartup, watchDesktopParent } from "./claxedo-server-startup"
 import { createDiagnosticsChildTransport } from "./diagnostics-child-transport"
+import { claxedoServerReadyMessage } from "../src/shared/claxedo-server-lifecycle"
+import { recordStartupClock } from "../src/shared/startup-clock-probe"
 
+// The V8 compile cache is already enabled and already seeded by the time this
+// module is COMPILED, let alone evaluated: `claxedo-server-boot.ts` is the
+// bundle's entry and reaches this file through a dynamic import. It cannot be
+// done from here — a graph is compiled before its own bodies run, so a cache
+// switched on in this body would arrive 9.11 MB too late.
 const startup = claxedoServerStartup(process.env)
+
 const terminate = () => process.kill(process.pid, "SIGTERM")
 watchDesktopParent({
   pid: startup.desktopParentPid,
@@ -21,13 +29,19 @@ const transport = binding && parent
   : undefined
 parent?.listen((message) => void transport?.onMessage(message))
 
-startLocalServer({
+const server = startLocalServer({
   port: startup.port,
   ...(startup.opencodeUrl ? { opencodeUrl: startup.opencodeUrl } : {}),
   opencodePassword: startup.opencodePassword,
   ...(startup.opencodeEmbedPath ? { opencodeEmbedPath: startup.opencodeEmbedPath } : {}),
-  ...(startup.opencodeWorkerPath ? { opencodeWorkerPath: startup.opencodeWorkerPath } : {}),
   ...(transport ? { processObserver: transport.observer } : {}),
+})
+void server.ready.then(() => {
+  // The IPC send goes FIRST and unconditionally: the probe below is a
+  // diagnostic, and a diagnostic that can delay the message main waits on to
+  // publish the server URL would be measuring a cost it created.
+  parent?.send(claxedoServerReadyMessage(startup.port))
+  recordStartupClock("server-listening", { port: startup.port })
 })
 
 // Bundle evaluation creates a large temporary object graph. The long-lived

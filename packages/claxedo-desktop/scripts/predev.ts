@@ -10,8 +10,18 @@ import * as fs from "fs"
 import { createRequire } from "node:module"
 import * as path from "path"
 
-import { bundleClaxedoEngineWorker, bundleClaxedoServer } from "./bundle-claxedo-server"
+import { bundleClaxedoEngineWorker, bundleClaxedoServer, resolveDeferredServerEntry } from "./bundle-claxedo-server"
+import {
+  buildClaxedoServerCompileCache,
+  buildOpenCodeCompileCache,
+  resolveElectronBinary,
+} from "./build-opencode-compile-cache"
 import { bundleHostConnector } from "./bundle-host-connector"
+import {
+  CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME,
+  OPENCODE_COMPILE_CACHE_DIR_NAME,
+  OPENCODE_COMPILE_CACHE_MANIFEST_NAME,
+} from "../src/shared/opencode-compile-cache"
 import { buildMemoryImpactHelper } from "./build-memory-impact-helper"
 import {
   LOCAL_SERVER_ENTRY,
@@ -145,9 +155,13 @@ if (outputIsStale(workspaceRuntimeOutput, [
   console.log(`[predev] workspace-runtime is current`)
 }
 
-const serverSource = path.resolve(SCRIPT_DIR, "claxedo-server-entry.ts")
+// The BOOT stub, not the product entry: it seeds the compile cache and then
+// reaches `claxedo-server-entry.ts` through a dynamic import, so the 9.11 MB
+// closure behind it is compiled after the cache is live.
+const serverSource = path.resolve(SCRIPT_DIR, "claxedo-server-boot.ts")
 const serverEntry = localServerBundleEntry(PACKAGE_DIR)
 const serverDest = path.dirname(serverEntry)
+let serverDeferredEntry: string | undefined
 const workerSource = path.resolve(SCRIPT_DIR, "claxedo-engine-worker-entry.ts")
 const workerPolicySource = path.resolve(SCRIPT_DIR, "claxedo-engine-worker-policy.ts")
 const workerDest = path.resolve(PACKAGE_DIR, "resources/claxedo-engine-worker")
@@ -173,6 +187,8 @@ console.log(`[predev] Local server entry: ${LOCAL_SERVER_ENTRY} → ${resolveLoc
 if (fs.existsSync(serverSource) && outputIsStale(serverEntry, [
   path.resolve(SCRIPT_DIR, "bundle-claxedo-server.ts"),
   serverSource,
+  path.resolve(SCRIPT_DIR, "claxedo-server-entry.ts"),
+  path.resolve(PACKAGE_DIR, "src/shared/claxedo-server-lifecycle.ts"),
   path.resolve(CLAXEDO_SERVER_DIR, "src"),
   // The shared core beneath it. Without this, editing a core module leaves the
   // bundle looking current and the desktop runs stale code with nothing said.
@@ -183,13 +199,66 @@ if (fs.existsSync(serverSource) && outputIsStale(serverEntry, [
   path.resolve(PACKAGE_DIR, "../workgraph/src"),
   path.resolve(PACKAGE_DIR, "../workspace-runtime/src"),
 ])) {
-  console.log(`[predev] Bundling claxedo-server...`)
+  console.log(`[predev] Compiling standalone claxedo-server...`)
   const bundled = await bundleClaxedoServer(serverSource, serverDest)
-  console.log(`[predev] claxedo-server bundled to ${bundled.entry} (${Math.ceil(bundled.outputBytes / 1024 / 1024)} MB split)`)
+  console.log(`[predev] claxedo-server compiled to ${bundled.entry} (${Math.ceil(bundled.outputBytes / 1024 / 1024)} MB standalone)`)
+  serverDeferredEntry = bundled.deferredEntry
 } else if (fs.existsSync(serverSource)) {
   console.log(`[predev] claxedo-server bundle is current`)
 } else {
   console.warn(`[predev] claxedo-server source not found at ${serverSource}, skipping`)
+}
+
+// The compile cache embeds a hash of the engine SOURCE and of the V8 flags, so
+// it must be regenerated whenever either changes. A stale cache is not a wrong
+// answer — V8 rejects it and the engine compiles — but it is a silently lost
+// ~155 ms, so it is gated on both inputs rather than on the engine alone.
+const compileCacheDir = path.resolve(PACKAGE_DIR, "resources", OPENCODE_COMPILE_CACHE_DIR_NAME)
+if (outputIsStale(path.join(compileCacheDir, OPENCODE_COMPILE_CACHE_MANIFEST_NAME), [
+  embeddedOpenCode,
+  path.resolve(PACKAGE_DIR, "src/main/server-runtime-policy.ts"),
+  path.resolve(SCRIPT_DIR, "build-opencode-compile-cache.ts"),
+  path.resolve(PACKAGE_DIR, "src/shared/opencode-compile-cache.ts"),
+])) {
+  console.log(`[predev] Generating the OpenCode V8 compile cache...`)
+  const compileCache = await buildOpenCodeCompileCache({
+    enginePath: embeddedOpenCode,
+    outputDir: compileCacheDir,
+    electronPath: resolveElectronBinary(PACKAGE_DIR),
+    log: (message) => console.log(`[predev] compile cache: ${message}`),
+  })
+  for (const entry of compileCache.manifest.entries) {
+    console.log(`[predev] compile cache: ${entry.file} (${entry.type}, ${entry.bytes} bytes)`)
+  }
+} else {
+  console.log(`[predev] OpenCode V8 compile cache is current`)
+}
+
+// The server bundle's own closure. Gated on the BUNDLE, because the bundle is
+// what it caches: a chunk whose content hash moved is a source hash V8 rejects,
+// which is not a wrong answer but is a silently lost 41 ms.
+const serverCompileCacheDir = path.resolve(PACKAGE_DIR, "resources", CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME)
+if (fs.existsSync(serverEntry)) {
+  serverDeferredEntry ??= resolveDeferredServerEntry(serverEntry)
+  if (outputIsStale(path.join(serverCompileCacheDir, OPENCODE_COMPILE_CACHE_MANIFEST_NAME), [
+    serverDeferredEntry,
+    path.resolve(PACKAGE_DIR, "src/main/server-runtime-policy.ts"),
+    path.resolve(SCRIPT_DIR, "build-opencode-compile-cache.ts"),
+    path.resolve(PACKAGE_DIR, "src/shared/opencode-compile-cache.ts"),
+  ])) {
+    console.log(`[predev] Generating the claxedo-server V8 compile cache...`)
+    const serverCache = await buildClaxedoServerCompileCache({
+      deferredEntryPath: serverDeferredEntry,
+      bundleDir: serverDest,
+      outputDir: serverCompileCacheDir,
+      electronPath: resolveElectronBinary(PACKAGE_DIR),
+      log: (message) => console.log(`[predev] server compile cache: ${message}`),
+    })
+    const bytes = serverCache.manifest.entries.reduce((total, entry) => total + entry.bytes, 0)
+    console.log(`[predev] server compile cache: ${serverCache.manifest.entries.length} entr(ies), ${bytes} bytes`)
+  } else {
+    console.log(`[predev] claxedo-server V8 compile cache is current`)
+  }
 }
 
 if (outputIsStale(workerEntry, [workerSource, workerPolicySource, path.resolve(SCRIPT_DIR, "bundle-claxedo-server.ts")])) {
