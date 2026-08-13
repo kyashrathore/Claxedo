@@ -58,7 +58,7 @@ function createInstance(input: {
   return instance
 }
 
-test("reports a divergent native offset once and ignores equal offsets and unrelated mutations", async () => {
+test("restores the stored offset after reconnect and ignores equal offsets and unrelated mutations", async () => {
   const route = document.createElement("section")
   const viewport = document.createElement("div")
   const unrelated = document.createElement("div")
@@ -66,6 +66,7 @@ test("reports a divergent native offset once and ignores equal offsets and unrel
   document.body.append(route)
   const instance = createInstance({ viewport })
   instance.scrollOffset = 79_400
+  viewport.scrollTop = 79_400
   const calls: [number, boolean][] = []
   const cleanup = observeElementOffsetReconnectAware(instance, (offset, isScrolling) => {
     calls.push([offset, isScrolling])
@@ -78,30 +79,35 @@ test("reports a divergent native offset once and ignores equal offsets and unrel
   await frames(2)
   expect(calls).toEqual([])
 
+  // Reinsertion resets the browser scroll position; the wrapper writes the
+  // virtualizer's stored offset back instead of re-deriving the range from
+  // the reset value (which would rebuild the row set twice).
   route.remove()
+  viewport.scrollTop = 0
   document.body.append(route)
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  await frames(3)
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  expect(calls).toEqual([[0, false]])
+  await until(() => viewport.scrollTop === 79_400)
+  expect(calls).toEqual([])
+  expect(viewport.scrollTop).toBe(79_400)
 
   route.remove()
+  viewport.scrollTop = 0
   document.body.append(route)
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  await frames(3)
-  expect(calls).toEqual([[0, false]])
+  await until(() => viewport.scrollTop === 79_400)
+  expect(calls).toEqual([])
+  expect(viewport.scrollTop).toBe(79_400)
 
   cleanup?.()
   route.remove()
 })
 
-test("keeps checking until stale reset-delay callbacks can no longer win", async () => {
+test("keeps enforcing the stored offset until stale reset-delay callbacks can no longer win", async () => {
   const route = document.createElement("section")
   const viewport = document.createElement("div")
   route.append(viewport)
   document.body.append(route)
   const instance = createInstance({ viewport, isScrollingResetDelay: 20 })
   instance.scrollOffset = 79_400
+  viewport.scrollTop = 79_400
   const calls: number[] = []
   const cleanup = observeElementOffsetReconnectAware(instance, (offset) => {
     calls.push(offset)
@@ -109,32 +115,34 @@ test("keeps checking until stale reset-delay callbacks can no longer win", async
   })
 
   route.remove()
+  viewport.scrollTop = 0
   document.body.append(route)
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  await frames(1)
-  expect(instance.scrollOffset).toBe(0)
+  await until(() => viewport.scrollTop === 79_400)
+  expect(viewport.scrollTop).toBe(79_400)
 
-  instance.scrollOffset = 79_400
-  await new Promise((resolve) => setTimeout(resolve, 25))
-  await frames(3)
+  // A stale reset-delay callback moves the virtualizer mid-window; the check
+  // loop keeps the element and the virtualizer consistent for the whole
+  // window instead of leaving them disagreeing.
+  instance.scrollOffset = 400
+  await until(() => viewport.scrollTop === 400)
 
-  expect(instance.scrollOffset).toBe(0)
-  expect(calls).toEqual([0, 0])
+  expect(viewport.scrollTop).toBe(400)
+  expect(calls).toEqual([])
   cleanup?.()
   route.remove()
 })
 
 test.each([
-  { name: "LTR", isRtl: false, expected: 240 },
-  { name: "RTL", isRtl: true, expected: -240 },
-])("reports the TanStack horizontal $name offset after reconnect", async ({ isRtl, expected }) => {
+  { name: "LTR", isRtl: false, expectedNative: 120 },
+  { name: "RTL", isRtl: true, expectedNative: -120 },
+])("restores the stored TanStack horizontal $name offset after reconnect", async ({ isRtl, expectedNative }) => {
   const route = document.createElement("section")
   const viewport = document.createElement("div")
   route.append(viewport)
   document.body.append(route)
-  viewport.scrollLeft = 240
   const instance = createInstance({ viewport, horizontal: true, isRtl })
-  instance.scrollOffset = 0
+  instance.scrollOffset = 120
+  viewport.scrollLeft = expectedNative
   const calls: [number, boolean][] = []
   const cleanup = observeElementOffsetReconnectAware(instance, (offset, isScrolling) => {
     calls.push([offset, isScrolling])
@@ -142,11 +150,12 @@ test.each([
   })
 
   route.remove()
+  viewport.scrollLeft = 0
   document.body.append(route)
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  await frames(3)
+  await until(() => viewport.scrollLeft === expectedNative)
 
-  expect(calls).toEqual([[expected, false]])
+  expect(calls).toEqual([])
+  expect(viewport.scrollLeft).toBe(expectedNative)
   cleanup?.()
   route.remove()
 })
@@ -229,5 +238,15 @@ test("cleanup cancels reconnect checks and delegated offset observation", async 
 async function frames(count: number) {
   for (let index = 0; index < count; index++) {
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  }
+}
+
+// Frame-count waits race the MutationObserver/rAF interleaving under shared
+// happy-dom globals; wait for the observable outcome with a bounded deadline.
+async function until(predicate: () => boolean, timeoutMs = 1_000) {
+  const start = Date.now()
+  while (!predicate() && Date.now() - start < timeoutMs) {
+    await frames(1)
+    await new Promise((resolve) => setTimeout(resolve, 0))
   }
 }
