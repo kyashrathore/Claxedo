@@ -7,6 +7,10 @@ import {
   NATIVE_MODULES as BASE_NATIVE_MODULES,
   asarStructuralGlobs,
 } from "./scripts/package-structure"
+import {
+  CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME,
+  OPENCODE_COMPILE_CACHE_DIR_NAME,
+} from "./src/shared/opencode-compile-cache"
 import { resolveTargetOsArch } from "./scripts/target-platform"
 
 const channel = (() => {
@@ -177,6 +181,26 @@ const getBase = (): Configuration => ({
       from: "../opencode/dist/node/",
       to: "opencode-engine/",
       filter: ["**/*", "!**/*.map"],
+    },
+    {
+      // The prebuilt V8 compile cache for that artifact. It ships as its own
+      // sibling rather than inside opencode-engine/ because that directory is
+      // a verbatim copy of the engine's dist output, and because the utility
+      // process must be able to tell "no cache was generated" from "the engine
+      // is missing". The cache is only ever READ from here — it is copied into
+      // the running user's own cache directory, never written in place.
+      from: `resources/${OPENCODE_COMPILE_CACHE_DIR_NAME}/`,
+      to: `${OPENCODE_COMPILE_CACHE_DIR_NAME}/`,
+      filter: ["**/*"],
+    },
+    {
+      // The same, for the server bundle's own static closure. Kept OUT of
+      // resources/claxedo-server/ deliberately: that directory is rebuilt from
+      // scratch by `bundleClaxedoServer`, which would delete a cache generated
+      // into it, and it is copied into the asar as the server bundle itself.
+      from: `resources/${CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME}/`,
+      to: `${CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME}/`,
+      filter: ["**/*"],
     },
     {
       // The engine keeps ONE external (`@lydell/node-pty` — a native module

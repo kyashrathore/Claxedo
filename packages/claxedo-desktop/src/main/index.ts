@@ -5,7 +5,7 @@ import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { Event, IpcMainInvokeEvent, MessageBoxOptions } from "electron"
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, session } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, session, utilityProcess } from "electron"
 import { trustMainRendererOrigin } from "./renderer-origin"
 import pkg from "electron-updater"
 import treeKill from "tree-kill"
@@ -58,10 +58,16 @@ import { setupBrowserTab } from "./browser/setup"
 import { CHANNEL, IS_PACKAGED, UPDATER_ENABLED } from "./constants"
 import { findFreePort, resolveBaseServerPort } from "./server-port"
 import { runRestart } from "../shared/restart-policy"
+import {
+  CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME,
+  OPENCODE_COMPILE_CACHE_DIR_NAME,
+} from "../shared/opencode-compile-cache"
 import type { DiagnosticsWebContents } from "./diagnostics/ipc"
 import { createElectronSource } from "./diagnostics/electron-source"
 import { createProcessMetricsSource } from "./diagnostics/process-metrics-source"
 import { claxedoServerForkOptions } from "./server-child-process"
+import { embeddedServerReadiness } from "./server-readiness"
+import { recordStartupClock } from "../shared/startup-clock-probe"
 import { createProfiler } from "./diagnostics/profiler"
 import { createSessionMemoryScanner } from "./diagnostics/session-memory-worker"
 import { createOwnerOperationBridge } from "./diagnostics/owner-operation-bridge"
@@ -100,6 +106,7 @@ import {
   matchesDiagnosticsBinding,
   parseDiagnosticsTransportMessage,
 } from "../shared/diagnostics-transport"
+import { parseClaxedoServerReadyMessage } from "../shared/claxedo-server-lifecycle"
 
 type ServerConnection =
   | { variant: "existing"; url: string }
@@ -275,27 +282,55 @@ function getOpenCodeEmbedPath(): string {
     : join(MAIN_DIR, "../../../opencode/dist/node/node.js")
 }
 
-function getOpenCodeWorkerPath(): string {
+// The prebuilt V8 compile cache for that artifact, generated at build time by
+// scripts/build-opencode-compile-cache.ts and shipped as an extraResources
+// sibling of the engine. The utility process seeds it into the running user's
+// own cache directory before the first engine import; see
+// src/shared/opencode-compile-cache.ts for why it cannot simply be copied.
+// Absent (a build that skipped generation) is not an error: the engine compiles
+// as it always did.
+function getOpenCodeCompileCachePath(): string {
   return IS_PACKAGED
-    ? join(MAIN_DIR, "claxedo-engine-worker/index.js")
-    : join(MAIN_DIR, "../../resources/claxedo-engine-worker/index.js")
+    ? join(process.resourcesPath, OPENCODE_COMPILE_CACHE_DIR_NAME)
+    : join(MAIN_DIR, "../../resources", OPENCODE_COMPILE_CACHE_DIR_NAME)
+}
+
+// The same, for the server bundle's OWN 9.11 MB static closure. It is a second
+// shipped set rather than more entries in the engine's, because the two are
+// generated from different artifacts and their manifests are relative to
+// different roots — the engine's directory and the server bundle's directory.
+function getClaxedoServerCompileCachePath(): string {
+  return IS_PACKAGED
+    ? join(process.resourcesPath, CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME)
+    : join(MAIN_DIR, "../../resources", CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME)
 }
 
 async function startClaxedoServer(): Promise<{ url: string }> {
   const claxedoPort = await findFreePort(resolveBaseServerPort())
   const serverPath = getClaxedoServerPath()
   const openCodeEmbedPath = getOpenCodeEmbedPath()
-  const openCodeWorkerPath = getOpenCodeWorkerPath()
-  logger.log("starting claxedo-server with on-demand OpenCode", { serverPath, claxedoPort, openCodeEmbedPath, openCodeWorkerPath })
+  const openCodeCompileCachePath = getOpenCodeCompileCachePath()
+  const claxedoServerCompileCachePath = getClaxedoServerCompileCachePath()
+  // No worker path: the desktop runs the engine IN-PROCESS in the server child,
+  // deliberately. Splitting it into a forked worker was implemented and
+  // measured — six runs against a v5 control — and it regressed three gates:
+  // cold ready 1,875 -> 2,004 ms, peak family RSS ~1,930 -> 2,060 MiB, and
+  // quiescent CPU failed its 5% budget in two of six runs. The engine did move
+  // as designed (server child 374.6 -> ~190 MiB) but the worker costs 310 MiB,
+  // so one process became two for +125 MiB net. And the idle-exit that was
+  // supposed to repay it never fires: the worker was alive in all 18 process
+  // snapshots of a run, including the quiescent window. `peak_process_family_
+  // rss_mib` is a PEAK, so a process that exits later cannot reduce it even in
+  // principle. The worker transport itself is correct and stays — self-hosted
+  // uses it (`deployments/self-hosted-node/app.ts` calls
+  // `configureOpenCodeWorkerPath`). This product opts out.
+  logger.log("starting claxedo-server with in-process OpenCode", { serverPath, claxedoPort, openCodeEmbedPath })
 
   if (!existsSync(serverPath)) {
     throw new Error(`Claxedo server bundle was not found at ${serverPath}. Rebuild the desktop app and try again.`)
   }
   if (!existsSync(openCodeEmbedPath)) {
     throw new Error(`OpenCode engine artifact was not found at ${openCodeEmbedPath}. Rebuild the desktop app and try again.`)
-  }
-  if (!existsSync(openCodeWorkerPath)) {
-    throw new Error(`OpenCode worker artifact was not found at ${openCodeWorkerPath}. Rebuild the desktop app and try again.`)
   }
 
   const acpDir = IS_PACKAGED
@@ -349,11 +384,17 @@ async function startClaxedoServer(): Promise<{ url: string }> {
         CLAXEDO_DATA_DIR: serverDataDir,
         CLAXEDO_DESKTOP_PARENT_PID: String(process.pid),
         CLAXEDO_CHILD_OPENCODE_EMBED_PATH: openCodeEmbedPath,
-        CLAXEDO_CHILD_OPENCODE_WORKER_PATH: openCodeWorkerPath,
+        ...(existsSync(openCodeCompileCachePath)
+          ? { CLAXEDO_CHILD_OPENCODE_COMPILE_CACHE_DIR: openCodeCompileCachePath }
+          : {}),
+        ...(existsSync(claxedoServerCompileCachePath)
+          ? { CLAXEDO_CHILD_SERVER_COMPILE_CACHE_DIR: claxedoServerCompileCachePath }
+          : {}),
         CLAXEDO_DIAGNOSTICS_LAUNCH_ID: serverLaunchId,
         CLAXEDO_DIAGNOSTICS_GENERATION: serverGeneration,
       }),
     )
+    const listening = defer<void>()
     let ownerBridge: ReturnType<typeof createOwnerOperationBridge> | undefined
     const connectOwnerBridge = () => {
       if (!child.pid || ownerBridge) return
@@ -370,7 +411,20 @@ async function startClaxedoServer(): Promise<{ url: string }> {
         })
     }
     child.on("spawn", connectOwnerBridge)
+    recordStartupClock("main-server-forked", { pid: child.pid ?? 0 })
     child.on("message", (input) => {
+      const ready = parseClaxedoServerReadyMessage(input)
+      if (ready) {
+        recordStartupClock("main-server-ready-message", { port: ready.port })
+        if (ready.port === claxedoPort) listening.resolve()
+        else {
+          logger.warn("claxedo-server reported an unexpected port", {
+            expected: claxedoPort,
+            actual: ready.port,
+          })
+        }
+        return
+      }
       connectOwnerBridge()
       if (!child.pid || !ownerBridge) return
       const binding = {
@@ -417,34 +471,46 @@ async function startClaxedoServer(): Promise<{ url: string }> {
     }
     claxedoServerHandle = handle
     child.on("error", (error) => {
+      listening.reject(error)
       logger.error("claxedo-server child process failed", { error: String(error) })
     })
     child.once("exit", (code) => {
       ownerBridge?.dispose()
       exited.resolve(code)
+      listening.reject(new Error(`claxedo-server exited before listening (code ${String(code)})`))
       if (claxedoServerHandle === handle) claxedoServerHandle = null
       if (!quitting && code !== 0) logger.error("claxedo-server child process exited", { code })
     })
 
     const claxedoUrl = `http://127.0.0.1:${claxedoPort}`
-    for (let i = 0; i < 50; i++) {
-      await new Promise((r) => setTimeout(r, 100))
-      try {
-        const res = await fetch(`${claxedoUrl}/api/claxedo/health`, { signal: AbortSignal.timeout(1000) })
-        if (res.ok) {
-          logger.log("claxedo-server healthy", { url: claxedoUrl })
-          diagnosticsProfiler.recordLifecycle({
-            event: "server-ready",
-            ownerId: "owner-claxedo-server",
-          })
-          return { url: claxedoUrl }
-        }
-      } catch {}
+    const readiness = embeddedServerReadiness({ healthUrl: `${claxedoUrl}/api/claxedo/health` })
+    try {
+      // Paid HERE, while this process has nothing to do but wait for the child.
+      // The same request costs ~11 ms more the first time any fetch is made,
+      // and left to `verify()` that cost lands after the child reports
+      // listening and before the renderer is unblocked. See
+      // `server-readiness.ts`. Inside the try so that even an impossible
+      // failure takes the same close-the-child path as every other one.
+      readiness.prepare()
+      await Promise.race([
+        listening.promise,
+        delay(30_000).then(() => {
+          throw new Error("The embedded Claxedo server did not report that it was listening in time.")
+        }),
+      ])
+      await readiness.verify()
+      recordStartupClock("main-server-health-verified")
+      logger.log("claxedo-server healthy", { url: claxedoUrl })
+      diagnosticsProfiler.recordLifecycle({
+        event: "server-ready",
+        ownerId: "owner-claxedo-server",
+      })
+      return { url: claxedoUrl }
+    } catch (error) {
+      logger.warn("embedded server readiness check failed", { error: String(error) })
+      await handle.close()
+      throw error
     }
-
-    logger.warn("embedded server readiness check failed")
-    await handle.close()
-    throw new Error("The embedded Claxedo server did not become healthy in time.")
   } catch (err) {
     logger.error("claxedo-server failed to start", { error: String(err) })
     throw err
@@ -509,6 +575,10 @@ async function initialize() {
 
       logger.log("server connection started")
       serverReady.resolve({ url: serverConnection.url, password: null })
+      // Stamped after the publish, never before it: this is the instant the
+      // renderer's pending `awaitInitialization` can learn the server URL, and
+      // therefore the earliest instant any renderer request can exist.
+      recordStartupClock("main-server-ready-published")
 
       logger.log("loading task finished")
     } catch (cause) {
@@ -526,15 +596,17 @@ async function initialize() {
     ...(process.env.CLAXEDO_PERF_STAGE ? { startupIsolationStage: process.env.CLAXEDO_PERF_STAGE } : {}),
   }
 
-  // Keep renderer compilation out of the embedded-server startup window.
-  // A deferred, native-backed window stays responsive without booting another
-  // renderer; migrations retain the progress UI because they can take longer.
+  // The renderer's initialization IPC already waits for `serverReady`, so its
+  // module graph can load alongside the sidecar without opening a socket early.
+  // Keeping those independent cold paths serial added the whole renderer load
+  // after server readiness. A first-run migration retains the progress window
+  // because it owns a separate, potentially long-lived user-visible flow.
   const startupWindow = needsMigration ? createLoadingWindow(globals) : undefined
   if (startupWindow) {
     await delay(1000)
   } else {
-    logger.log("showing deferred main window")
-    mainWindow = createMainWindow(globals, { deferLoad: true })
+    logger.log("loading main window alongside embedded server")
+    mainWindow = createMainWindow(globals)
     registerDiagnosticsWindow(mainWindow)
     wireFullscreenEvents(mainWindow)
     wireMenu()
@@ -545,16 +617,19 @@ async function initialize() {
   } catch (error) {
     logger.error("embedded server initialization failed", { error: String(error) })
     setInitStep({ phase: "done" })
-    showMainWindow(globals)
-    startupWindow?.close()
+    if (startupWindow) {
+      showMainWindow(globals)
+      startupWindow.close()
+    }
     return
   }
   setInitStep({ phase: "done" })
 
-  if (startupWindow) await loadingComplete.promise
-
-  showMainWindow(globals)
-  startupWindow?.close()
+  if (startupWindow) {
+    await loadingComplete.promise
+    showMainWindow(globals)
+    startupWindow.close()
+  }
 }
 
 function showMainWindow(globals: Parameters<typeof createMainWindow>[0]) {
