@@ -12,6 +12,28 @@ to continue without repeating anything.
 **Artifacts** 452 run directories under `artifacts/agent-app-benchmark/`, each with immutable
 `summary.json`, `attempt.json`, `provenance.json` and diagnostics dumps.
 
+
+### Where everything lives
+
+| what | where |
+|---|---|
+| **This branch** | `integrate/claxedo-memory-buckets` @ `fb1ab0132`, 34 ahead of `dev` |
+| **This worktree** | `.worktrees/codex/memory-workgraph-perf/.worktrees/integrate/claxedo-memory-buckets` |
+| **Full evidence record** | `docs/perf/u11-qualification-status.md` (~3,600 lines, this worktree) |
+| **Gate verdict table** | `docs/perf/gate-arithmetic-verdicts.md` (this worktree) |
+| **Dependency decisions** | `docs/perf/u8-dependency-decision.md`, `vercel-labs-{scriptc,native-sdk}-spike.md` |
+| **The plan being executed** | `docs/plans/2026-08-09-001-five-times-faster-than-t3-plan.md` |
+| **PREDECESSOR worktree** | `/Users/yashvardhansingh/test/opencode/.worktrees/codex/memory-workgraph-perf` (branch `optimize/claxedo-sub60-under500`) |
+| **PREDECESSOR experiment doc** | `docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md` in THAT worktree — 854 lines, a 43-row Memory Action Table and a 17-row Packaged Transcript Regression Ledger, measuring everything in NATIVE PHYSICAL FOOTPRINT |
+| **Run artifacts** | `artifacts/agent-app-benchmark/` — 452+ directories, each with `summary.json`, `attempt.json`, `provenance.json`, diagnostics dumps |
+| **This session's transcript** | `~/.prime/agent/sessions/019fe7c0-2b55-7448-bfb3-61762ae4e6f2.jsonl` (37.2 MB) |
+| **Sub-agent transcripts** | `~/.prime/agent/session-artifacts/019fe7c0-.../sub-*/` — 103 files, 126.6 MB, 105 sub-sessions |
+| **Ablation scripts** | `/tmp/ablate-{provider-lazy-database,provider-handler-reuse,provider-encode-raw,plugin-boot-defect}.py` with persisted arms |
+
+**Read the predecessor doc before proposing any memory work.** It measures in physical footprint while
+this record measures summed `ps rss`; the same change can be a large win in one and a regression in the
+other, and that has already happened once (section 11.1).
+
 ---
 
 ## 1. WHERE THE GATES ACTUALLY STAND
@@ -26,7 +48,7 @@ to continue without repeating anything.
 | M6 | `stream.blocked_frame_ratio_pct` | 1 | 0.0 | passes, but VACUOUS — LoAF only fires above 50 ms |
 | M7 | `terminal.input_to_paint_p95_ms` | 100 | ~33 | passes 3x over when valid; ~3 attempts in 7 discarded by an observer race |
 | M8 | `terminal.output_mib_s` | 20 | ~20.8 | passes; structural ceiling is 21.0, so max possible win is 5% |
-| M9 | `resource.peak_process_family_rss_mib` | 650 | ~1,900 | **UNREACHABLE** — 736 MiB non-renderer floor before any session work |
+| M9 | `resource.peak_process_family_rss_mib` | 650 | ~1,900 | **UNREACHABLE** — see 1.1 |
 | M10 | `resource.quiescent_cpu_p95_pct` | 5 | wanders 1.0-8.0 | **UNTESTABLE** — instrument least count is 1.0 pp = 20% of the budget |
 
 **The plan as specified cannot succeed.** M3 and M9 are arithmetically unsatisfiable by application
@@ -40,6 +62,56 @@ decision, not a backlog.
   5.99 same-session control.
 - **M7 <-> M8/M9** all three available observer fixes launder themselves through another gate.
 - **M2 <-> M3** one instrument (`measureSessionActivation`) sits inside both measured windows.
+
+
+### 1.1 What "736 MiB non-renderer floor" means
+
+The gate sums `ps rss` across the app's whole process family and takes the single highest 1 Hz sample.
+The family is five processes: **renderer, server child, Electron main, GPU, and a network utility.**
+
+"Non-renderer floor" = the other FOUR added together, measured at the FIRST ownership snapshot of a run
+— immediately after launch, before the benchmark has opened a session, switched a tab, or streamed
+anything. Across **379 recorded launches** that number has never been below **676.0 MiB**, with a median
+of **745.3 MiB**.
+
+So even if the renderer used **zero bytes**, the app would still measure ~676-745 MiB against a 650 MiB
+budget, at the moment it finishes starting. Cold first-snapshot breakdown: server child 391.6, Electron
+main 200.1, GPU 105.3, network utility 49.9.
+
+Three of those four are Electron's own processes with **zero app payload** — the utility is
+`network.mojom.NetworkService` and measures 49.5-50.2 across all 379 runs regardless of what the app
+does, and main's RSS varies by under 8 MiB across wildly different runs, which is what proves it is
+browser-process baseline rather than our 1.4 MB of code.
+
+That is why it is called UNREACHABLE rather than "hard": no amount of application work can subtract
+from a floor that is already over budget before the application does anything. The remaining ~1,150 MiB
+on top of it is renderer and is real, but closing the gate needs the floor to move, and the floor is
+Electron's process topology. See section 3 of `u11-qualification-status.md` for the per-process
+derivation and the ~950 MiB figure that IS reachable.
+
+
+### 1.2 Scope note: this effort measured the DESKTOP app only
+
+Every gate, artifact and finding in this document is the packaged macOS Electron app driven through
+CDP. **The web app was never measured.** That is a real gap in the goal rather than an oversight to
+paper over: the product ships a web surface (`packages/claxedo-web`, and the browser flow lane
+`perf-harness/src/browser-runner.ts` with its own fixture server on port 4455) and none of the ten gates
+covers it.
+
+What transfers and what does not, so a successor does not re-derive it:
+- **Transfers:** everything renderer-side and algorithmic — the provider catalogue passes, markdown
+  highlighting off-thread, the 4-turn history window, `renderOverscan` starting at 1, the query cache
+  having no byte cap, the per-instance completed-code cache that a remount discards.
+- **Does NOT transfer:** every process-level finding. There is no server child, no Electron main, no GPU
+  process and no network utility, so the 736 MiB non-renderer floor, the worker-transport result and the
+  compile-cache work are all desktop-only. `peak_process_family_rss_mib` has no meaning in a browser tab.
+- **Different instrument entirely:** the browser lane already exists and already fixtures
+  `/api/claxedo/session-list`, `/api/claxedo/session`, `POST /api/claxedo/usage/sync` and
+  `/api/claxedo/workspace/resolve`, so its numbers are NOT comparable to the packaged app's and must not
+  be pooled with them.
+
+A web-app performance goal needs its own gate set, its own budgets and its own corpus digest. The
+measurement rules in section 6 apply unchanged.
 
 ---
 
@@ -60,6 +132,53 @@ OPERATOR'S `~/.config/opencode/opencode.json`, awaits an **uncached network fetc
 timeout** in its constructor, on every boot, with a second fetch as its timeout fallback. The harness
 pinned the profile, data dir and corpus by SHA but spawned the app with the operator's full
 environment, so this has been inside every measured boot for the entire effort.
+
+
+### 2.1 Two questions this raises, both fair, one of which is a real defect
+
+**"Why load a huge provider list when the selected harness is not opencode?"** — It does not, and that
+was checked rather than assumed. `providerBody` (both the compat route and the server's own bootstrap
+route) reads `resolveHarnessId(...)` FIRST and returns `piProviderCatalog(env)` or
+`localProviderCatalog(harnessId, options)` without touching the engine unless the resolved harness IS
+opencode. And when it is opencode, it asks the engine for `?view=index`, not the full catalogue — the
+app-visible body is **7.7 KB**, not 4.7 MB. The full-list ask was removed 252 commits ago in
+`c9d0a8051`.
+
+What remains true and IS a cost: the DEFAULT harness on a machine with no user config is opencode
+(`defaultHarness` falls back to `{ id: "opencode" }`), so on the benchmark profile that branch is always
+taken. And `view=index` still requires `State`, so the engine still pays the full initializer —
+`InstanceStore.load` 596-676 ms plus `Provider.list` 246-270 ms — regardless of how little of the
+catalogue is returned. **The request shape was never the cost; the initializer is.**
+
+**"Why is a plugin inside a harness a blocker for us before that harness is even selected?"** — THIS ONE
+IS A REAL DEFECT, and it is the sharper version of the finding in section 2.
+
+The plugin does not belong to a harness the user picked. It is installed in the OPERATOR'S GLOBAL
+OpenCode config (`~/.config/opencode/opencode.json`), and it is constructed by
+`InstanceBootstrap -> config.get() -> plugin.init()` as part of bringing up the OpenCode INSTANCE — not
+as part of selecting a harness. `/provider` carries `InstanceContextMiddleware`, which AWAITS
+`store.load({directory})` before the handler body runs, so ANY engine-bound request pays the whole
+plugin set, in construction order, before it can be answered.
+
+That means a plugin whose constructor does an uncached network fetch with a 5,000 ms timeout —
+measured at 366-395 ms typical, >5 s worst case — sits in front of the first engine request of every
+boot, whether or not the user ever uses the provider that plugin exists to authenticate.
+
+Three separate things follow, and they are deliberately kept apart:
+
+1. **Bounded degradation (SHIPPED).** `PLUGIN_INIT_BUDGET_MS = 1_000` stops the sum growing without
+   limit and stops a hung plugin wedging the app. It buys 0 ms in the normal case by design.
+2. **Reclaiming the 366-395 ms (NOT AVAILABLE TODAY).** A budget short enough to cut it would race the
+   first `/provider` and could silently omit a configured provider, because `Provider.state` and
+   `ProviderAuth.state` derive from `list()` ONCE and `InstanceState.invalidate` has ZERO call sites in
+   src. Reclaiming it needs three pieces of machinery that do not exist, and even then MOVES the cost
+   rather than removing it.
+3. **Lazy plugin construction per harness — NOT TRIED, and the most promising unexplored direction.**
+   Nothing in the current design ties a plugin's construction to whether its harness or provider is
+   ever used. If plugins could be constructed on first USE of the thing they extend, rather than during
+   instance bootstrap, the boot path would not pay for a provider the session never selects. That is a
+   design change in the engine, it interacts with the same no-invalidation problem as (2), and it is
+   recorded here as an open direction rather than a scoped slice.
 
 ---
 
@@ -122,9 +241,13 @@ Each of these is implemented, tested with a red/green ablation, and typechecked.
 
 ---
 
-## 5. WHAT WAS TRIED AND REJECTED — DO NOT RETRY THESE
+## 5. WHAT WAS TRIED — WHAT I OBSERVED, AND WHAT WOULD MAKE IT WORTH RETRYING
 
-**Reverted after packaged measurement:** session-owner retarget (2 steps), local inventory
+Nothing here is forbidden. Each entry is what was measured and the condition under which the result
+would no longer hold. **If that condition has changed, retry it — and if you do, say so, because the
+same idea has now been tried twice in two efforts without either knowing about the other.**
+
+**Reverted after packaged measurement** — each was implemented, packaged and measured, and each lost. Retry any of them only with a same-session control and n>=15 for cold ready or n>=5 for RSS: session-owner retarget (2 steps), local inventory
 single-flight, terminal-stream byte cache, timeline warm-snapshot reveal (32-entry LRU — made warm
 switch AND history worse), cold-activation first-fold hydration, Bun server sidecar (NAPI panic),
 markdown batch parse, cross-mount highlight reuse, `content-visibility: hidden` (saved 55 MiB, cost
@@ -132,29 +255,35 @@ stream and history), `adoptNode`, shell-bootstrap warm + rail gate, mode-scan gu
 hash-scroll fix (CPU 5.99 -> 9.98-22.98), Markdown pending-resource no-op, query-persister coalescing,
 engine pre-load, worker transport, provider dedupe (Slice B), markdown completed-code cache.
 
-**Killed by proof rather than measurement, with the reason:**
+**Killed by proof rather than measurement — with what would change the answer:**
 
-- **Engine pre-load — ZERO-SUM, proven arithmetically.** `/provider` -356 ms but `globalSync.ready`
+- **Engine pre-load — ZERO-SUM, proven arithmetically.** RETRY IF: the readiness path stops running on the same thread as the engine import, or the import stops being synchronous.
+  OBSERVED: `/provider` -356 ms but `globalSync.ready`
   +371; the cluster ends at the same instant (841.3 vs 849.1). And no placement exists: 663-698 ms of
   blocking against a ~330 ms quiet window.
-- **Prewarming `/provider` at server start — dead by MECHANISM.** `startOwned` is synchronous; from
+- **Prewarming `/provider` at server start — dead by MECHANISM.** RETRY IF: `startOwned` gains a real suspension point before `serve()`, or the engine import moves off the server child's main thread.
+  OBSERVED: `startOwned` is synchronous; from
   `configureAgentConfig` to `serve()` there is **not one `await` on the executing path**, so the
   prewarm's first act runs in the microtask drain BEFORE the listen callback, and that act is a
   synchronous ~370 ms engine import on the one thread that owes readiness an answer. The overlappable
   waits are all downstream of it. Negative isolated AND ambient.
-- **Worker transport — measured +129 ms cold ready, +130 MiB RSS, CPU failing 2 of 6.** The engine did
+- **Worker transport.** RETRY IF: the gate stops being a `Math.max` peak, or the metric moves to physical footprint — the predecessor effort measured this SAME idea as a large WIN on native footprint (315/290/292 MiB, section 11.1).
+  OBSERVED: +129 ms cold ready, +130 MiB RSS, CPU failing 2 of 6. The engine did
   move (server child 374.6 -> ~190 MiB) but the worker costs 310, so one process became two for
   +125 net, and the idle-exit never fired. **`peak_process_family_rss_mib` is a PEAK, so a process that
   exits later cannot reduce it even in principle.**
-- **`/provider` raw encode (`handleRaw` + `jsonUnsafe`) — killed at its own byte gate.** Effect's
+- **`/provider` raw encode (`handleRaw` + `jsonUnsafe`).** RETRY IF: construction order is aligned to schema declaration order at every `Info` site, or the acceptance bar is deliberately relaxed from byte to key-order-canonical equality (which changes bytes for any ETag/hash consumer).
+  OBSERVED: killed at its own byte gate. Effect's
   Struct encode REORDERS keys into schema declaration order; `Info` declares
   `(id, name, source, ...)` while `fromModelsDevProvider` constructs `(id, source, name, ...)`. Same
   byte count, same values, pure ordering. The transform argument HELD and it still died.
-- **Making the app request `view=index` — already true.** The compat route
+- **Making the app request `view=index`.** RETRY IF: a client is found that hits the engine's FULL-list branch on the boot path — none was.
+  OBSERVED: already true. The compat route
   (`provider-config.ts:30-48`) already sends `view=index`; the full-list ask was removed 252 commits
   ago. The two engine `/provider` requests COMPLETE AT THE SAME INSTANT (1,315.5 / 1,315.4) — two
   waiters on ONE shared init, so there is no dedupe win either.
-- **Reclaiming the plugin's 366-395 ms — needs three pieces of machinery that do not exist**
+- **Reclaiming the plugin's 366-395 ms.** RETRY IF: `InstanceState` gains a non-destructive refresh and a generation counter, or plugin construction becomes lazy per harness (section 2.1).
+  OBSERVED: needs three pieces of machinery that do not exist
   (split volatile identity out of derived state; a non-destructive refresh; a generation counter), and
   even then it MOVES the cost rather than removing it, with duplicate token refreshes.
   `InstanceState.invalidate` has ZERO call sites in src, and `ScopedCache.invalidate` closes the entry
@@ -320,6 +449,9 @@ guard, the git short-circuit — which are worth having whether or not any gate 
 
 **The goal as specified is not achievable. That conclusion is measured, not asserted, and every number
 behind it is reproducible from `artifacts/agent-app-benchmark/`.**
+
+And the goal as specified is also INCOMPLETE: it covers the desktop app only. A five-times claim for the
+product needs the web surface measured too, on its own gates, and none of that work exists (section 1.2).
 
 ---
 
