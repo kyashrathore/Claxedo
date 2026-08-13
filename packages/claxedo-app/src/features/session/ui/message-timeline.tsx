@@ -1,3 +1,4 @@
+import { sameArrayItems, samePartsRecord, sameTurnOutcome } from "./timeline-row-equality"
 import {
   createEffect,
   createMemo,
@@ -128,40 +129,6 @@ const emptyParts: PartType[] = []
 const emptyTools: ToolPart[] = []
 const emptyAssistantMessages: AssistantMessage[] = []
 const idle = { type: "idle" as const }
-
-// Identity-based equality gates for the per-message row memos. Unchanged
-// messages keep their object identities across conversation snapshots, so
-// element-wise `===` is exact and cheap.
-function sameArrayItems<T>(previous: readonly T[], next: readonly T[]) {
-  if (previous === next) return true
-  if (previous.length !== next.length) return false
-  for (let i = 0; i < previous.length; i++) {
-    if (previous[i] !== next[i]) return false
-  }
-  return true
-}
-
-function samePartsRecord(previous: Record<string, PartType[]>, next: Record<string, PartType[]>) {
-  const previousKeys = Object.keys(previous)
-  if (previousKeys.length !== Object.keys(next).length) return false
-  for (const key of previousKeys) {
-    if (previous[key] !== next[key]) return false
-  }
-  return true
-}
-
-// `lastTurn` rides on the directory session-cache row, whose object identity
-// changes on every cache write; compare the fields the timeline consumes so a
-// row refresh with an unchanged outcome does not invalidate every turn.
-function sameTurnOutcome(previous: SessionTurnOutcome | undefined, next: SessionTurnOutcome | undefined) {
-  if (previous === next) return true
-  if (!previous || !next) return false
-  return (
-    previous.status === next.status &&
-    previous.completedAt === next.completedAt &&
-    previous.assistantMessageId === next.assistantMessageId
-  )
-}
 
 const sessionStatusQuery = (_sessionID: string | undefined, _client: ReturnType<typeof useSDK>["client"]) => ({
   queryKey: ["session-status", _sessionID],
