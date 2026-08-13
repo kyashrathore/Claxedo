@@ -41,3 +41,17 @@ export function prewarmMarkdownStack() {
     markdownPrewarmStarted = false
   })
 }
+
+
+/**
+ * Warm the Markdown/highlight stack once boot settles instead of paying its
+ * chunk evaluation (marked + shiki + @pierre/diffs theme) inside the first
+ * session switch. requestIdleCallback keeps it strictly off the boot critical
+ * path; environments without it (test DOMs) skip the warmup and load lazily on
+ * first render, exactly as before. Returns a disposer for onCleanup.
+ */
+export function scheduleMarkdownPrewarm(): () => void {
+  if (typeof requestIdleCallback !== "function") return () => {}
+  const idle = requestIdleCallback(() => prewarmMarkdownStack())
+  return () => cancelIdleCallback(idle)
+}
