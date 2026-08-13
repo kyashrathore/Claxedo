@@ -8,7 +8,7 @@ import { useServer } from "@/app/connection/server"
 import { useQuery } from "@tanstack/solid-query"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
 import { useClaxedoEventsOptional } from "../../integrations/claxedo-events"
-import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
+import { getClaxedoServerUrl } from "@/platform/api/api"
 import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { wasRolledBackDraft } from "../../../features/session/submit/rolled-back-drafts"
 import { suppressedByFastSessionSwitch } from "@/platform/runtime/session-switch"
@@ -39,8 +39,8 @@ import {
 import { createRouteIntentAdapter, isRouteIntentClosed, sessionInventoryTarget } from "./route-intent"
 import { routeSessionHarness } from "./route-session-harness"
 import {
+  fetchRouteSessionMeta,
   probeRouteSessionDirectory,
-  routeBridgeClaxedoSessionMetaUrl,
   routeBridgeSessionConfigHarness,
   routeKnownSessionDirectory,
   routeSessionMetaIsCentral,
@@ -314,30 +314,10 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
       }
       const cached = cachedRouteSessionTarget(id)
       if (cached) return cached
-      const session = await authFetch(
-        routeBridgeClaxedoSessionMetaUrl({
-          serverUrl: getClaxedoServerUrl(),
-          sessionID: id,
-        }),
-      )
-        .then((response) =>
-          response.ok
-            ? (response.json() as Promise<{
-                directory?: unknown
-                title?: unknown
-                workspaceID?: unknown
-                workspaceId?: unknown
-                harness?: unknown
-                runner?: unknown
-                harnessType?: unknown
-                config?: unknown
-                host?: unknown
-                sessionRef?: unknown
-                session_ref?: unknown
-              }>)
-            : undefined,
-        )
-        .catch(() => undefined)
+      const session = await fetchRouteSessionMeta({
+        serverUrl: getClaxedoServerUrl(),
+        sessionID: id,
+      })
       if (routeSessionMetaIsCentral(session)) return
       const sessionWorkspaceId =
         typeof session?.workspaceID === "string"
@@ -438,29 +418,10 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     if (routeSessionMetaLookupDone.has(sessionId)) return false
     routeSessionMetaLookups.add(sessionId)
     markRouteSessionMetaLookupChanged()
-    void authFetch(
-      routeBridgeClaxedoSessionMetaUrl({
-        serverUrl: getClaxedoServerUrl(),
-        sessionID: sessionId,
-      }),
-    )
-      .then((response) =>
-        response.ok
-          ? (response.json() as Promise<{
-              directory?: unknown
-              title?: unknown
-              workspaceID?: unknown
-              workspaceId?: unknown
-              harness?: unknown
-              runner?: unknown
-              harnessType?: unknown
-              config?: unknown
-              host?: unknown
-              sessionRef?: unknown
-              session_ref?: unknown
-            }>)
-          : undefined,
-      )
+    void fetchRouteSessionMeta({
+      serverUrl: getClaxedoServerUrl(),
+      sessionID: sessionId,
+    })
       .then(async (session) => {
         if (routeSessionMetaIsCentral(session)) {
           const workspaceId = typeof session?.workspaceID === "string"
