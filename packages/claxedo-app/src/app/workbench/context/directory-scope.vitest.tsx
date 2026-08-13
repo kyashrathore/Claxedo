@@ -145,7 +145,7 @@ vi.mock("@/platform/comments/provider", () => ({
   CommentsProvider: (props: any) => <>{props.children}</>,
 }))
 
-vi.mock("@/ui/session-kit", () => ({
+vi.mock("@/ui/session-kit-context", () => ({
   DataProvider: (props: any) => {
     state.dataProviderProps = props
     return <>{props.children}</>
