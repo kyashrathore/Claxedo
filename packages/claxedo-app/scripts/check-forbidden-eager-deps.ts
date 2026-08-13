@@ -28,6 +28,7 @@ const appRoot = path.resolve(here, "..")
 const repoRoot = path.resolve(appRoot, "../..")
 const appSrc = path.join(appRoot, "src")
 const uiSrc = path.resolve(appRoot, "../ui/src")
+const sessionUiSrc = path.resolve(appRoot, "../session-ui/src")
 
 const ENTRY = path.join(appSrc, "app/entry/main.tsx")
 
@@ -66,7 +67,40 @@ function resolveUiSubpath(spec: string): string | null {
   return path.join(uiSrc, "components", sub)
 }
 
+// @opencode-ai/session-ui subpath exports -> packages/session-ui/src. Mirrors
+// ../session-ui/package.json "exports" (exact entries first, then the "./*"
+// components wildcard). Without this the walker treated session-ui as a bare
+// node_modules leaf, so an eager chain like session-kit.ts -> session-ui/file
+// -> @pierre/diffs was invisible to the guard (found 2026-08: the session-kit
+// barrel rode the eager chunk through the composer + session-context-tab).
+function resolveSessionUiSubpath(spec: string): string | null {
+  const rest = spec.slice("@opencode-ai/session-ui".length).replace(/^\//, "")
+  if (!rest) return null
+  const exact: Record<string, string> = {
+    "session-diff": "components/session-diff.ts",
+    "message-file": "components/message-file.ts",
+    "message-part-text": "components/message-part-text.ts",
+    "format-duration": "components/format-duration.ts",
+    "markdown-stream": "components/markdown-stream.ts",
+    "markdown-cache": "components/markdown-cache.tsx",
+    "line-comment-styles": "components/line-comment-styles.ts",
+    pierre: "pierre/index.ts",
+    context: "context/index.ts",
+    "v2/prompt-input": "v2/components/prompt-input/index.tsx",
+    "v2/prompt-input/interaction": "v2/components/prompt-input/interaction.ts",
+    "v2/prompt-input/store": "v2/components/prompt-input/store.ts",
+    "v2/prompt-input/types": "v2/components/prompt-input/types.ts",
+  }
+  if (exact[rest]) return path.join(sessionUiSrc, exact[rest])
+  if (rest === "styles") return null // CSS entry — not a JS edge
+  if (rest.startsWith("pierre/")) return path.join(sessionUiSrc, "pierre", rest.slice("pierre/".length))
+  if (rest.startsWith("context/")) return path.join(sessionUiSrc, "context", rest.slice("context/".length))
+  if (rest.startsWith("v2/")) return path.join(sessionUiSrc, "v2/components", rest.slice("v2/".length))
+  return path.join(sessionUiSrc, "components", rest)
+}
+
 const UI_PKG_PREFIXES = ["@opencode-ai/ui/", "@opencode-ai/ui"]
+const SESSION_UI_PKG = "@opencode-ai/session-ui"
 const CLAXEDO_APP_PKG = "@claxedo/app"
 
 // ---------------------------------------------------------------------------
@@ -105,7 +139,12 @@ function applyAlias(spec: string): string | null {
  * is a bare/3rd-party module (a graph leaf we do NOT recurse into — we only care
  * whether the *specifier itself* is forbidden).
  */
-function resolveToFile(spec: string, fromFile: string): string | null {
+function resolveToFile(rawSpec: string, fromFile: string): string | null {
+  // Strip vite resource queries (e.g. "./x.worker.ts?worker&url") so the module
+  // body behind the query is still walked. NOTE: this is only reached when the
+  // specifier itself is not forbidden — a forbidden bare spec with a query
+  // (e.g. "@pierre/diffs/worker/worker.js?worker&url") is matched before this.
+  const spec = rawSpec.split("?")[0]
   // relative
   if (spec.startsWith("./") || spec.startsWith("../")) {
     return tryFile(path.resolve(path.dirname(fromFile), spec))
@@ -118,6 +157,12 @@ function resolveToFile(spec: string, fromFile: string): string | null {
   // @opencode-ai/ui — resolve into packages/ui/src so we can keep walking
   if (UI_PKG_PREFIXES.some((p) => spec === p.replace(/\/$/, "") || spec.startsWith(p))) {
     const target = resolveUiSubpath(spec)
+    return target ? tryFile(target) : null
+  }
+  // @opencode-ai/session-ui — resolve into packages/session-ui/src so chains like
+  // session-kit.ts -> session-ui/file -> @pierre/diffs stay visible to the walk
+  if (spec === SESSION_UI_PKG || spec.startsWith(SESSION_UI_PKG + "/")) {
+    const target = resolveSessionUiSubpath(spec)
     return target ? tryFile(target) : null
   }
   // aliased (@/, @claxedo/, #terminal-backend, ...)

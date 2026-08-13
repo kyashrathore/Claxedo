@@ -21,7 +21,10 @@
 //   - document mentions (the picker stays a Claxedo surface on the `@` list)
 import { batch, createEffect, createMemo, createSignal } from "solid-js"
 import { readWithoutSuspending } from "@/features/session/composer/suspense-safe-resource"
-import { createPromptInputV2Controller, type PromptInputV2Suggestion } from "@/ui/session-kit"
+// From the LIGHT prompt boundary, NOT "@/ui/session-kit": this engine is in the
+// eager main chunk (composer.tsx is statically reachable from the boot entry),
+// and the session-kit barrel statically pulls @pierre/diffs + shiki.
+import { createPromptInputV2Controller, type PromptInputV2Suggestion } from "@/ui/session-kit-prompt"
 import { promptDraftControllerInput } from "@/features/session/providers/prompt"
 import type { ContentPart } from "@/features/session/providers/prompt"
 import {
