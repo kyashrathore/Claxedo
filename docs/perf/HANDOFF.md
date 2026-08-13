@@ -347,3 +347,71 @@ Recorded here so the branches can be deleted without losing what they mean.
 **Two ideas from that branch remain untested here** — lazy remote sandbox drivers and suspending idle
 host metrics. Both are cheap to check and neither is likely to move a gate: server-child work is masked
 by the `/provider` barrier for time, and by the renderer's >=83% share for memory.
+
+---
+
+## 11. COMPLETE IDEA LEDGER — including the predecessor effort
+
+Scanned to build this: the predecessor plan
+`docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md` in the PARENT worktree
+`/Users/yashvardhansingh/test/opencode/.worktrees/codex/memory-workgraph-perf` (854 lines, a 43-row
+Memory Action Table and a 17-row Packaged Transcript Regression Ledger), this session's own log
+(37.2 MB), and all 103 sub-agent transcripts (126.6 MB across 105 sub-sessions). Decision-language
+scan returned 5,053 distinct snippets across 92 sub-sessions; an idea-phrase scan returned 4,852
+distinct phrases, of which **only 9 recurred without any trace in these docs** and are resolved below.
+
+### 11.1 Predecessor effort — the idle-memory campaign (7-8 August)
+
+Its own ledger is the authority and it is NOT reproduced here line by line; it lives in the plan file
+above and measures everything in NATIVE PHYSICAL FOOTPRINT, not summed RSS — which is the origin of
+the 650 MiB budget mismatch documented in this record. Trajectory it records:
+**1,040.8 MB observed -> 865 MiB controlled baseline -> 643 -> 465 -> 431 -> 315/290/292 MiB median.**
+
+Stages this record had NOT previously carried, now added:
+
+| stage | action | measured result |
+|---|---|---|
+| 0B | manual checkpoint on the packaged app | 1,450.6 MB over eight rows; renderer 758.3 MB |
+| 7 | WorkGraph and Documents default-off, lazy, absent from unsigned composition (`9774813b0`) | 643 -> 465 MiB restored-state median; 440 MiB clean profile |
+| 10 | lazy-load broader shared-server imports | 431 MiB median |
+| 12 | run OpenCode in a DISPOSABLE CHILD PROCESS (`1ae63e856`) | 315 / 290 / 292 MiB, median 292 |
+| V1 | revalidate default-off WorkGraph/Documents against clean `dev`, three fresh paired runs | post-idle 556 -> 469 MiB; empty-shell 743 -> 712 |
+
+**Stage 12 is the one to read before anyone proposes it again.** "OpenCode in a disposable child
+process" measured a large win THERE, on native footprint. Re-tested in THIS effort as the worker
+transport it measured **+129 ms cold ready, +130 MiB summed RSS, quiescent CPU failing 2 of 6**, and
+the idle-exit never fired. The two results are not contradictory: they are measured in different UNITS
+on different METRICS. Footprint rewards a process that exits; `peak_process_family_rss_mib` is a
+`Math.max` over a 1 Hz sample and cannot, even in principle.
+
+### 11.2 The 17-row Packaged Transcript Regression Ledger
+
+A structured hypothesis table for a rendering regression (preview-versus-rich rows, range admission,
+initial reveal and bottom settlement, and so on), each row carrying a candidate behaviour, how it could
+contribute, and a priority. Not re-tested here — this effort measured latency and memory gates, not
+that regression — but it is the right shape for a hypothesis ledger and it remains open.
+
+### 11.3 Ideas found ONLY in sub-agent transcripts
+
+The phrase scan surfaced nine recurring items with no trace in either doc. Seven are not performance
+candidates at all — capability-graph acyclicity, capability acquisition and intersection, prewarmed
+Hetzner/AWS leases, PTY capability replies — they belong to other work. The two that are real:
+
+- **Terminal backpressure and batching ceilings.** `features/terminal/ui/terminal-limits.ts` exists and
+  holds the tuning constants for the write path (`pending`, `pendingBytes`, `overloaded`, a frame
+  cancel and a write timeout), extracted from `terminal.tsx` to bring that file under its size ceiling.
+  **Never varied as an experiment in this effort.** It is directly adjacent to two measured findings:
+  the terminal echo race, whose whole mechanism is parsed-batch SIZE against a 64 KiB observer window;
+  and `terminal.output_mib_s`, which passes at 20.8 against a structural ceiling of 21.0. Anyone tuning
+  those constants must screen BOTH — the batching ceiling is the variable the echo defect is measured
+  in.
+- **Packaging-time skips** (`skipping icon copy`, `skipping react-grab inline`) are build-script warning
+  paths, not runtime candidates. Recorded so the scan is complete, not because they are levers.
+
+### 11.4 Completeness statement
+
+Every idea from this session with an outcome is in `u11-qualification-status.md`; the retained and
+rejected sets are summarised in sections 4 and 5 above. The predecessor's ideas are in its own plan file
+plus 11.1. **Two ideas remain untested anywhere**: `perf(server): lazy-load remote sandbox drivers` and
+`optimize(claxedo-idle-footprint): suspend idle host metrics` (section 10), plus the terminal batching
+ceilings above. Nothing else surfaced by the scan lacks a recorded outcome.
