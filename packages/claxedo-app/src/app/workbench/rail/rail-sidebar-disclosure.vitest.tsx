@@ -7,11 +7,26 @@ import { ClaxedoStateProvider } from "../state/index"
 import { emptyClaxedoState } from "../state/persistence"
 import { RailSidebar, SessionListNotice, type ProjectItem } from "./rail-sidebar"
 
-vi.mock("@claxedo/app", () => ({
-  getAvatarColors: () => ({ background: "#000", color: "#fff" }),
+// rail-sidebar imports these from their owner modules, not the entry barrel;
+// the old "@claxedo/app" mock stopped covering anything when the imports moved
+// (masked until the branch's broken renderer-trace import was fixed and this
+// file could load again).
+vi.mock("@/platform/i18n/provider", () => ({
   useLanguage: () => ({ t: (key: string) => key }),
-  usePlatform: () => ({ platform: "web" }),
+}))
+
+vi.mock("@/app/connection/server", () => ({
   useServer: () => ({ isLocal: () => true }),
+}))
+
+vi.mock("@/platform/account/account-provider", () => ({
+  useAccountPort: () => ({
+    state: () => ({ status: "signed-out" }),
+    signIn: async () => undefined,
+    signOut: async () => undefined,
+    run: async () => undefined,
+  }),
+  AccountPortProvider: (props: { children: unknown }) => props.children,
 }))
 
 vi.mock("@/app/providers/global-sdk/provider", () => ({
