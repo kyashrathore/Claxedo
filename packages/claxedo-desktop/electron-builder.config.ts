@@ -129,6 +129,8 @@ const PAK_ELECTRON_LANGUAGES = [
 
 const getBase = (): Configuration => ({
   artifactName: "claxedo-desktop-${os}-${arch}.${ext}",
+  // Smallest download electron-builder can produce; costs packaging time only.
+  compression: "maximum",
   // Never node-gyp-rebuild the workspace's native deps against Electron's
   // headers. Everything native that SHIPS is a prebuild selected by
   // NATIVE_PLATFORM_FILES; the rebuild step only recompiles modules that are
@@ -146,12 +148,30 @@ const getBase = (): Configuration => ({
     // because it is executed as a separate process and asar paths are not real
     // filesystem paths.
     ...asarStructuralGlobs(),
+    // The renderer builds with sourcemap:"hidden" for PostHog symbolication;
+    // the release workflow uploads and deletes the maps before packaging, but
+    // a local `package:*` run must not ship them either.
+    "!out/**/*.map",
     "!**/node_modules/**",
     ...NATIVE_MODULES.map((name) => `**/node_modules/${name}/**`),
     "!**/node_modules/better-sqlite3/deps/**",
     "!**/node_modules/better-sqlite3/prebuilds/**",
     "!**/node_modules/node-pty/prebuilds/**",
+    // node-pty's build-only trees. Its loader (lib/utils.js) probes
+    // build/Release and build/Debug, then falls through to
+    // prebuilds/<platform>-<arch> — the variant NATIVE_PLATFORM_FILES ships —
+    // and resolves spawn-helper from whichever directory the .node actually
+    // loaded from, so dropping build/ makes the shipped prebuild (which
+    // carries its own spawn-helper) authoritative. third_party/ (conpty and
+    // winpty sources), deps/, and src/ are node-gyp compile inputs only.
+    "!**/node_modules/node-pty/build/**",
+    "!**/node_modules/node-pty/deps/**",
+    "!**/node_modules/node-pty/src/**",
+    "!**/node_modules/node-pty/third_party/**",
     ...NATIVE_PLATFORM_FILES,
+    // AFTER the platform re-include above, so it wins over the target
+    // prebuild glob: Windows debug symbols (27 MB of .pdb) never ship.
+    "!**/node_modules/node-pty/prebuilds/**/*.pdb",
   ],
   asarUnpack: NATIVE_MODULES.map((name) => `**/node_modules/${name}/**`),
   extraResources: [

@@ -50,6 +50,10 @@ export function createElectronRenderer(mode: string): UserConfig {
       // deletes every *.map before packaging. Mirrors claxedo-app's
       // vite.cloud.config.ts.
       sourcemap: "hidden",
+      // electron-vite's renderer preset defaults minify off (plain Vite would
+      // default to esbuild). Minified chunks still symbolicate through the
+      // hidden maps above, so PostHog triage is unaffected.
+      minify: "esbuild",
       rollupOptions: {
         input: {
           main: normalize(path.join(rendererRoot, MAIN_RENDERER_DOCUMENT)),
