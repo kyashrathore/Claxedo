@@ -9,25 +9,27 @@
   <separator />
   <scroll grow="1">
     <column gap="8" padding="12">
-      <if test="{hasRows == false}">
-        <text>No messages yet — say something below.</text>
+      <if test="{hasRows}">
+        <for each="rows" key="id" as="r">
+          <if test="{r.isUser}">
+            <card><column padding="8"><text wrap="true">{r.body}</text></column></card>
+          </if>
+          <if test="{r.isAssistant}">
+            <markdown source="{r.body}" />
+          </if>
+          <if test="{r.isOther}">
+            <text foreground="destructive" wrap="true">{r.body}</text>
+          </if>
+        </for>
       </if>
-      <for each="rows" key="id" as="r">
-        <if test="{r.isUser}">
-          <card><column padding="8"><text wrap="true">{r.body}</text></column></card>
-        </if>
-        <if test="{r.isAssistant}">
-          <markdown source="{r.body}" />
-        </if>
-        <if test="{r.isUser == false and r.isAssistant == false}">
-          <text foreground="destructive" wrap="true">{r.body}</text>
-        </if>
-      </for>
+      <else>
+        <text>No messages yet — say something below.</text>
+      </else>
     </column>
   </scroll>
   <separator />
   <row gap="8" padding="8" cross="end">
-    <textarea grow="1" placeholder="Ask anything..." value="{draft}" on-input="draft_input" />
-    <button variant="primary" on-press="submit" disabled="{canSend == false}">Send</button>
+    <textarea grow="1" placeholder="Ask anything..." text="{draft}" on-input="draft_input" />
+    <button variant="primary" on-press="submit" disabled="{sendDisabled}">Send</button>
   </row>
 </column>

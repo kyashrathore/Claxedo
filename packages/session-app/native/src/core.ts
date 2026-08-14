@@ -9,84 +9,36 @@
 // `services/claxedo.ts` for the day the channel decode lands.
 
 import { Cmd, Sub, utf8Bytes } from "@native-sdk/core";
+import type { TextInputEvent } from "@native-sdk/core/text";
 import { claxedoLoadTranscript, claxedoSendPrompt } from "@native-sdk/services";
 import type { PromptRequest, StreamRequest, TranscriptResult } from "./shared.ts";
 
 const DRAFT_CAPACITY = 16384;
 
-// The runtime text-control vocabulary, mirrored structurally (matching stays
-// structural across the emission boundary). Mirrored HERE instead of importing
-// `@native-sdk/core/text` because that module's own engine does not clear the
-// external core compiler's integer-proof pass in SDK 0.9.0 (SC4022/SC4023 in
-// sdk/text.ts) — recorded upstream finding; swap back to the SDK engine when
-// it proves.
-export interface TextRange {
-  readonly start: number;
-  readonly end: number;
-}
-
-export interface TextSelection {
-  readonly anchor: number;
-  readonly focus: number;
-}
-
-export type TextCaretDirection =
-  | "previous"
-  | "next"
-  | "previous_word"
-  | "next_word"
-  | "start"
-  | "end";
-
-export interface TextCaretMove {
-  readonly direction: TextCaretDirection;
-  readonly extend: boolean;
-}
-
-export type TextInputEvent =
-  | { readonly kind: "insert_text"; readonly text: Uint8Array }
-  | { readonly kind: "delete_backward" }
-  | { readonly kind: "delete_forward" }
-  | { readonly kind: "delete_word_backward" }
-  | { readonly kind: "delete_word_forward" }
-  | { readonly kind: "clear" }
-  | { readonly kind: "move_caret"; readonly move: TextCaretMove }
-  | { readonly kind: "set_selection"; readonly selection: TextSelection }
-  | { readonly kind: "set_composition"; readonly text: Uint8Array; readonly cursor: number | null }
-  | { readonly kind: "commit_composition" }
-  | { readonly kind: "cancel_composition" };
-
-export interface TextEditState {
-  readonly text: Uint8Array;
-  readonly selection: TextSelection;
-  readonly composition: TextRange | null;
-}
-
 /// Minimal caret-at-end editor: insert appends, delete_backward removes one
 /// UTF-8 character, clear empties. Caret/selection fidelity returns with the
 /// SDK engine.
-function applyDraftEvent(state: TextEditState, event: TextInputEvent): TextEditState | null {
+function applyDraftEvent(text: Uint8Array, event: TextInputEvent): Uint8Array | null {
   switch (event.kind) {
     case "insert_text": {
-      if (state.text.length + event.text.length > DRAFT_CAPACITY) return null;
-      const merged = new Uint8Array(state.text.length + event.text.length);
-      merged.set(state.text, 0);
-      merged.set(event.text, state.text.length);
-      return { text: merged, selection: { anchor: merged.length, focus: merged.length }, composition: null };
+      if (text.length + event.text.length > DRAFT_CAPACITY) return null;
+      const merged = new Uint8Array(text.length + event.text.length);
+      merged.set(text, 0);
+      merged.set(event.text, text.length);
+      return merged;
     }
     case "delete_backward": {
-      if (state.text.length === 0) return state;
-      let end = state.text.length - 1;
-      while (end > 0 && (state.text[end] & 0xc0) === 0x80) {
+      if (text.length === 0) return text;
+      let end = text.length - 1;
+      while (end > 0 && (text[end] & 0xc0) === 0x80) {
         end = end - 1;
       }
-      const trimmed = state.text.slice(0, end);
-      return { text: trimmed, selection: { anchor: trimmed.length, focus: trimmed.length }, composition: null };
+      return text.slice(0, end);
     }
     case "clear":
-      return { text: utf8Bytes(""), selection: { anchor: 0, focus: 0 }, composition: null };
+      return utf8Bytes("");
     default:
-      return state;
+      return text;
   }
 }
 
@@ -94,6 +46,7 @@ export interface Row {
   readonly id: number;
   readonly isUser: boolean;
   readonly isAssistant: boolean;
+  readonly isOther: boolean;
   readonly body: Uint8Array;
 }
 
@@ -101,9 +54,13 @@ export interface Model {
   readonly title: Uint8Array;
   readonly connection: Uint8Array;
   readonly rows: readonly Row[];
-  readonly draft: TextEditState;
+  readonly draft: Uint8Array;
   readonly sending: boolean;
   readonly polling: boolean;
+  /** Derived, maintained by update — markup binds fields, and the runtime
+   * wires fields more reliably than helper bindings today. */
+  readonly hasRows: boolean;
+  readonly sendDisabled: boolean;
 }
 
 export type Msg =
@@ -126,31 +83,25 @@ export const viewUnbound = [
   "polling",
 ] as const;
 
-function emptyDraft(): TextEditState {
-  return {
-    text: utf8Bytes(""),
-    selection: { anchor: 0, focus: 0 },
-    composition: null,
-  };
-}
-
 export function initialModel(): Model {
   return {
     title: utf8Bytes("Claxedo session"),
     connection: utf8Bytes("connecting"),
     rows: [],
-    draft: emptyDraft(),
+    draft: utf8Bytes(""),
     sending: false,
     polling: true,
+    hasRows: false,
+    sendDisabled: true,
   };
 }
 
-export function hasRows(model: Model): boolean {
-  return model.rows.length > 0;
-}
-
-export function canSend(model: Model): boolean {
-  return !model.sending && model.draft.text.length > 0;
+/** Re-derives the maintained booleans after any rows/draft/sending change. */
+function derived(model: Model): Model {
+  const hasRows = model.rows.length > 0;
+  const sendDisabled = model.sending || model.draft.length === 0;
+  if (model.hasRows === hasRows && model.sendDisabled === sendDisabled) return model;
+  return { ...model, hasRows, sendDisabled };
 }
 
 function request(): StreamRequest {
@@ -164,6 +115,7 @@ function seededRows(result: TranscriptResult): Row[] {
       id: index + 1,
       isUser: item.isUser,
       isAssistant: !item.isUser,
+      isOther: false,
       body: item.body,
     });
   }
@@ -177,35 +129,37 @@ export function update(model: Model, msg: Msg): Model | [Model, Cmd<Msg>] {
     case "tick":
       return [model, claxedoLoadTranscript(request(), { key: "transcript", ok: "transcript_loaded", err: "transcript_failed" })];
     case "transcript_loaded":
-      return {
+      return derived({
         ...model,
         connection: utf8Bytes("live"),
         rows: seededRows(msg.result),
         title: msg.result.title.length > 0 ? msg.result.title : model.title,
-      };
+      });
     case "transcript_failed":
       return { ...model, connection: utf8Bytes("error") };
     case "draft_input": {
       const next = applyDraftEvent(model.draft, msg.edit);
       if (next === null) return model;
-      return { ...model, draft: next };
+      return derived({ ...model, draft: next });
     }
     case "submit": {
-      if (model.sending || model.draft.text.length === 0) return model;
-      const prompt: PromptRequest = { directory: utf8Bytes("/root/session-app-real"), text: model.draft.text };
+      if (model.sending || model.draft.length === 0) return model;
+      const prompt: PromptRequest = { directory: utf8Bytes("/root/session-app-real"), text: model.draft };
       const rows = model.rows.slice();
-      rows.push({ id: rows.length + 1, isUser: true, isAssistant: false, body: model.draft.text });
+      rows.push({ id: rows.length + 1, isUser: true, isAssistant: false, isOther: false, body: model.draft });
       return [
-        { ...model, rows, draft: emptyDraft(), sending: true },
+        derived({ ...model, rows, draft: utf8Bytes(""), sending: true }),
         claxedoSendPrompt(prompt, { key: "prompt", ok: "prompt_sent", err: "prompt_failed" }),
       ];
     }
-    case "prompt_sent":
-      return { ...model, sending: false, rows: seededRows(msg.result).length > 0 ? seededRows(msg.result) : model.rows };
+    case "prompt_sent": {
+      const reloaded = seededRows(msg.result);
+      return derived({ ...model, sending: false, rows: reloaded.length > 0 ? reloaded : model.rows });
+    }
     case "prompt_failed": {
       const rows = model.rows.slice();
-      rows.push({ id: rows.length + 1, isUser: false, isAssistant: false, body: msg.error });
-      return { ...model, sending: false, rows };
+      rows.push({ id: rows.length + 1, isUser: false, isAssistant: false, isOther: true, body: msg.error });
+      return derived({ ...model, sending: false, rows });
     }
   }
 }
