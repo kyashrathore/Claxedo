@@ -88,6 +88,21 @@ timeline).
 checklist on macOS + Windows. *Pass*: no product-breaking gaps; residual
 gaps are upstream issues to file, listed with links.
 
+**U11 — Solid 2.0 as the web renderer (owner's decision, sub-plan 03).**
+Two parts. (a) The existing web app's Solid 1 → 2 migration: staged
+microtask writes, compute/apply effects, store drafts, removed
+`batch`/`onMount`/`createResource`/`produce`, `@solidjs/web` — touches
+most of `claxedo-app`; the e2e suite and perf gates are the acceptance
+harness, and the effort must be priced by migrating ONE heavy feature
+(the session timeline) first. (b) The Elm bridge on Solid 2 semantics:
+confirm a `reconcile` equivalent exists for draft-setter stores, else
+write the keyed structural diff; prove streaming still repaints at
+binding granularity under microtask-committed writes (the 60Hz gate on
+the corpus, re-run under Solid 2).
+*Kill/deferral criterion*: if the RC churns breaking between pinned
+upgrades twice in Phase 0–1, freeze on the last good pin and re-evaluate
+at Solid 2 stable rather than chasing it.
+
 **U8 — Pre-1.0 platform risk.** "APIs still move, and the toolkit is
 evolving quickly" (their words). Not spikeable — managed: pin exact SDK
 versions (their compiler ships exact-pinned already), vendor the token
