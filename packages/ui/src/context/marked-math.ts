@@ -1,4 +1,9 @@
 import katex from "katex"
+// KaTeX's CSS rides with this lazily-imported module (see styles/index.css),
+// so the .katex* rules and their 21 @font-face declarations stay out of the
+// render-blocking main stylesheet. Every .katex element in the app is produced
+// by renderToString below, so loading this module always precedes needing it.
+import "katex/dist/katex.min.css"
 
 function renderMathInText(text: string): string {
   let result = text
