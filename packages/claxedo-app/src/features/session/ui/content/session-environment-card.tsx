@@ -558,7 +558,7 @@ export function SessionEnvironmentCardMount() {
 
   // Branch, through the CANONICAL runtime vcs query (queryKeys.runtime.vcs) —
   // the same silo bootstrap warms at boot and review-tab/new-session read —
-  // so this card is a cache hit instead of a second raw `/vcs` fetch. useQuery
+  // so this card is a cache hit instead of a second raw vcs fetch. useQuery
   // (not a one-shot resource) keeps the old fix: a boot-time failure retries
   // on the next observation instead of caching "no branch" until remount.
   const vcsQuery = useQuery(() => {
