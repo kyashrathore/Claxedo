@@ -45,12 +45,13 @@ Porting UI and domain logic at once is how ports die.
 
 - **ADR-1 — web target**: Native SDK has NO browser target (WebViews exist
   for embedding web content in the desktop app, not for running the app on
-  the web). Therefore the web strategy is decided, not spiked: **dual
-  frontend** — web KEEPS the existing (now fast: 292 kB gzip eager, boot
-  waterfall killed) Solid app. "Same look" is enforced by a shared design-
-  token source compiled to both CSS and Native SDK tokens, plus a
-  screenshot-parity harness. This is simpler than the GPUI plan's W1/W2
-  fork: there is no wasm option to spike.
+  the web). The web keeps a browser-native frontend — but per the owner's
+  follow-up directive this is NOT two hand-written apps: sub-plan 03
+  defines a dual-target composition (shared pure-TS core + one closed-
+  grammar view definition with a web renderer built from the existing
+  Solid components), so the same definitions run in the browser directly
+  and compile into the native binary. The existing (now fast: 292 kB gzip
+  eager) Solid app is the strangler host for that shared layer on web.
 - **ADR-2 — one process + server child**: the native app spawns the server
   child exactly as Electron main does (same env contract; the ready
   handshake currently uses Node IPC `process.send` — see uncertainty U4 in
@@ -113,8 +114,9 @@ Plus the new named gate: transcript text is selectable everywhere.
 
 | # | file | owns |
 |---|---|---|
-| 01 | 01-uncertainties-mvp.md | the eight uncertainties, MVP slices, kill criteria |
+| 01 | 01-uncertainties-mvp.md | uncertainties U1–U8, MVP slices, kill criteria |
 | 02 | 02-harness-roster.md | multi-harness parity; DeepSeek Harness evaluation (carried over) |
+| 03 | 03-dual-target-composition.md | one definition composing to web-direct AND native-compiled (adds U9/U10) |
 
 Further sub-plans (tokens compiler, data layer, workbench mapping) are
 written AFTER Phase 0 verdicts, so they are grounded in what the spikes
