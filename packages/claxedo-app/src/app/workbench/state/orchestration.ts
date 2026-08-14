@@ -42,6 +42,7 @@ export type LayoutOrchestrationApi = {
   openPage(pageId: string, title?: string, directory?: string, filePath?: string): string
   openPagesIndex(directory?: string): string
   openMarketplace(): string
+  openExtensionView(viewId: string, title: string): string
   openWorkGraph(): string
   openWorkspaceWorkGraph(directory: WorkspaceDirectoryRef): string
   openTaskComposer(directory?: WorkspaceDirectoryRef): string
@@ -522,6 +523,27 @@ export function createLayoutOrchestration(input: {
           payload: {
             type: "marketplace",
             title: "Marketplace",
+          },
+        }
+      })
+    },
+
+    openExtensionView(viewId, title) {
+      // One tab per view id, like the marketplace: reopening focuses it.
+      const existing = meta.find((m) => m.type === "extension-view" && m.viewId === viewId)
+      return showOrCreate(existing, () => {
+        const id = newId("extension-view")
+        return {
+          meta: {
+            id,
+            type: "extension-view",
+            scope: "global",
+            viewId,
+          },
+          payload: {
+            type: "extension-view",
+            viewId,
+            title,
           },
         }
       })
