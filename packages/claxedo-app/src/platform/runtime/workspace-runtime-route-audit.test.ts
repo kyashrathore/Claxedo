@@ -108,7 +108,6 @@ const vendoredCommandAliasBoundary = new Set([
 
 const vendoredPlatformAliasBoundary = new Set([
   "app/controls/link.tsx",
-  "app/dialogs/select-server.tsx",
   "features/review/providers/highlights.tsx",
 ])
 
@@ -1761,7 +1760,10 @@ describe("workspace runtime route audit", () => {
     expect(appViteConfig).toMatch(
       /find: "@\/", replacement: normalizePath\(fileURLToPath\(new URL\("\.\/src\/", import\.meta\.url\)\)\)/,
     )
-    expect(appViteConfig).toMatch(/plugins:\s*\[solidPlugin\(\), tailwindcss\(\)\]/)
+    // bootChunkModulepreloadPlugin injects <link rel="modulepreload"> for the
+    // boot chunks at build time; the invariant is that no override-resolver
+    // plugin returns.
+    expect(appViteConfig).toMatch(/plugins:\s*\[solidPlugin\(\), tailwindcss\(\), bootChunkModulepreloadPlugin\(\)\]/)
     expect(appVitestConfig).not.toMatch(/firstPartyOwners/)
     expect(appVitestConfig).not.toMatch(/\.\.\/app\/src/)
     expect(appVitestConfig).toMatch(
@@ -3332,8 +3334,11 @@ describe("workspace runtime route audit", () => {
 
     expect(helper).toMatch(/directorySessionCacheQueryOptions\(\{ directory \}\)/)
     expect(helper).toMatch(/DirectorySessionCacheValue/)
-    expect(text).toMatch(/shellDataKeys\.sessionId\(sessionID, "requests"\)/)
-    expect(text).toMatch(/queryClient\.getQueryState\(shellDataKeys\.sessionId\(sessionID, "requests"\)\)/)
+    // The status-freshness helpers split into rail-sidebar-status.ts (rail
+    // reactivity work); the badges invariant spans the pair.
+    const statusHelper = await Bun.file(path.join(root, "app/workbench/rail/rail-sidebar-status.ts")).text()
+    expect(statusHelper).toMatch(/queryClient\.getQueryState\(shellDataKeys\.sessionId\(sessionID, "requests"\)\)/)
+    expect(text + statusHelper).toMatch(/shellDataKeys\.sessionId\(sessionID, "requests"\)/)
     expect(text).not.toMatch(/useGlobalSync/)
     expect(text).not.toMatch(/globalSync\.child/)
     expect(text).not.toMatch(/sessionStore\.session/)

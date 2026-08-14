@@ -191,8 +191,6 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
           find: "lru_map",
           replacement: normalizePath(fileURLToPath(new URL("./src/lib/lru-map.ts", import.meta.url))),
         },
-        // Resolve packages only available in upstream's node_modules
-        { find: "@solid-primitives/active-element", replacement: normalizePath(fileURLToPath(new URL("../app/node_modules/@solid-primitives/active-element/dist/index.js", import.meta.url))) },
         // General @/ alias (lowest priority) — resolves to claxedo's own src
         // (upstream packages/app fully vendored; divorce plan 006)
         { find: "@/", replacement: normalizePath(fileURLToPath(new URL("./src/", import.meta.url))) },
