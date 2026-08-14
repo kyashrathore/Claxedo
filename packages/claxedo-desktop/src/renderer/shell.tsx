@@ -38,7 +38,7 @@ import {
   resolveDeploymentMode,
   setDeploymentMode,
 } from "@/platform/telemetry/analytics"
-import { ConfigProvider } from "@/app/providers"
+import { ConfigProvider } from "@/app/providers/config"
 import { getDefaultConfig, initClaxedo } from "@claxedo/app"
 import { configureApiRuntime } from "@/platform/api/api"
 import type { LinuxDisplayBackend, ServerReadyData } from "../preload/types"

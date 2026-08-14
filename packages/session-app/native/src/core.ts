@@ -9,11 +9,86 @@
 // `services/claxedo.ts` for the day the channel decode lands.
 
 import { Cmd, Sub, utf8Bytes } from "@native-sdk/core";
-import { applyTextInputEvent, type TextEditState, type TextInputEvent } from "@native-sdk/core/text";
 import { claxedoLoadTranscript, claxedoSendPrompt } from "@native-sdk/services";
 import type { PromptRequest, StreamRequest, TranscriptResult } from "./shared.ts";
 
 const DRAFT_CAPACITY = 16384;
+
+// The runtime text-control vocabulary, mirrored structurally (matching stays
+// structural across the emission boundary). Mirrored HERE instead of importing
+// `@native-sdk/core/text` because that module's own engine does not clear the
+// external core compiler's integer-proof pass in SDK 0.9.0 (SC4022/SC4023 in
+// sdk/text.ts) — recorded upstream finding; swap back to the SDK engine when
+// it proves.
+export interface TextRange {
+  readonly start: number;
+  readonly end: number;
+}
+
+export interface TextSelection {
+  readonly anchor: number;
+  readonly focus: number;
+}
+
+export type TextCaretDirection =
+  | "previous"
+  | "next"
+  | "previous_word"
+  | "next_word"
+  | "start"
+  | "end";
+
+export interface TextCaretMove {
+  readonly direction: TextCaretDirection;
+  readonly extend: boolean;
+}
+
+export type TextInputEvent =
+  | { readonly kind: "insert_text"; readonly text: Uint8Array }
+  | { readonly kind: "delete_backward" }
+  | { readonly kind: "delete_forward" }
+  | { readonly kind: "delete_word_backward" }
+  | { readonly kind: "delete_word_forward" }
+  | { readonly kind: "clear" }
+  | { readonly kind: "move_caret"; readonly move: TextCaretMove }
+  | { readonly kind: "set_selection"; readonly selection: TextSelection }
+  | { readonly kind: "set_composition"; readonly text: Uint8Array; readonly cursor: number | null }
+  | { readonly kind: "commit_composition" }
+  | { readonly kind: "cancel_composition" };
+
+export interface TextEditState {
+  readonly text: Uint8Array;
+  readonly selection: TextSelection;
+  readonly composition: TextRange | null;
+}
+
+/// Minimal caret-at-end editor: insert appends, delete_backward removes one
+/// UTF-8 character, clear empties. Caret/selection fidelity returns with the
+/// SDK engine.
+function applyDraftEvent(state: TextEditState, event: TextInputEvent): TextEditState | null {
+  switch (event.kind) {
+    case "insert_text": {
+      if (state.text.length + event.text.length > DRAFT_CAPACITY) return null;
+      const merged = new Uint8Array(state.text.length + event.text.length);
+      merged.set(state.text, 0);
+      merged.set(event.text, state.text.length);
+      return { text: merged, selection: { anchor: merged.length, focus: merged.length }, composition: null };
+    }
+    case "delete_backward": {
+      if (state.text.length === 0) return state;
+      let end = state.text.length - 1;
+      while (end > 0 && (state.text[end] & 0xc0) === 0x80) {
+        end = end - 1;
+      }
+      const trimmed = state.text.slice(0, end);
+      return { text: trimmed, selection: { anchor: trimmed.length, focus: trimmed.length }, composition: null };
+    }
+    case "clear":
+      return { text: utf8Bytes(""), selection: { anchor: 0, focus: 0 }, composition: null };
+    default:
+      return state;
+  }
+}
 
 export interface Row {
   readonly id: number;
@@ -111,7 +186,7 @@ export function update(model: Model, msg: Msg): Model | [Model, Cmd<Msg>] {
     case "transcript_failed":
       return { ...model, connection: utf8Bytes("error") };
     case "draft_input": {
-      const next = applyTextInputEvent(model.draft, msg.edit, DRAFT_CAPACITY);
+      const next = applyDraftEvent(model.draft, msg.edit);
       if (next === null) return model;
       return { ...model, draft: next };
     }
