@@ -7,6 +7,10 @@
   src: url("/assets/JetBrainsMonoNerdFontMono-Regular.woff2") format("woff2");
   font-weight: normal;
   font-style: normal;
+  /* 1 MB terminal-only font: never let text wait on it. The mono fallback
+     paints immediately and swaps when the file lands (it only downloads once
+     a terminal actually renders with this family). */
+  font-display: swap;
 }
 
 @layer components {
