@@ -93,6 +93,7 @@ is compatible with either way. Every sub-plan is written so its Rust core
 | 10 | 10-feature-parity-matrix.md | exhaustive feature inventory → sub-plan ownership, gaps |
 | 11 | 11-web-target.md | ADR-1 spike design and decision record |
 | 12 | 12-migration-testing-perf.md | strangler order, parity harness, perf gates carried over |
+| 13 | 13-harness-roster.md | multi-harness parity; DeepSeek Harness (dsh) evaluation |
 
 ## Phasing
 
