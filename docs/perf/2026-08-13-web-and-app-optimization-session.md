@@ -207,3 +207,26 @@ dependency.
 A-B-A verified; total boot requests 48 → 39. The residual second /config GET
 is a distinct consumer (agent-runtime-client session hydration), recorded as
 an observation, not a dupe.
+
+## Addendum 5: unused code, duplicate deps, critical rendering path
+
+- **Duplicate deps**: sourcemap scan found 12 packages shipping in 2+
+  versions; the six same-major ones unified (two @tanstack/query-cores
+  collapsed via solid-query+persist 5.99.2; diff/dompurify/solid-primitives
+  aligned with root overrides; bun needed install --force to relink stale
+  nested store links). The six survivors are cross-major mermaid/cytoscape
+  internals. drizzle-orm dropped from local-server (zero refs).
+- **Critical rendering path**: the four boot chunks were a 3-hop discovery
+  waterfall — a hash-safe transformIndexHtml plugin now modulepreloads them
+  (+closure): fetchStart 810–1166 ms → 55–59 ms at 40 ms RTT (~1.1 s of
+  serial discovery gone). KaTeX CSS (28.8 kB + 21 font faces) left the
+  render-blocking stylesheet for the lazy math chunk: main.css 441→411 kB
+  (66→58 kB gz). Tailwind stops scanning test files/doc comments (the
+  .[file:...] garbage utilities; build warnings 3→0); terminal font gains
+  font-display: swap. Theme-preload script inspected: minimal, correct,
+  keep.
+- **Unused code**: 22 zero-import dependencies removed across the three web
+  packages (incl. effect and the motion pins that split framer-motion),
+  ~15 dead files deleted, claxedo-app's export map cut 12→2 subpaths, and
+  the standing desktop-menu test error removed. Story-only components and
+  seven deployment-knob VITE_ flags recorded as risky-not-dead.
