@@ -266,6 +266,43 @@ describe("state/persistence", () => {
     expect(result.state.meta.marketplace_1?.content?.type).toBe("marketplace")
   })
 
+  test("preserves extension-view content and its view id on validation", () => {
+    const input = emptyClaxedoState()
+    input.workbench = {
+      panes: [{ id: "pane_1", contentId: "ext_1" }],
+      split: { direction: "h", sizes: [1], root: { t: "leaf", id: "pane_1" } },
+      contentIds: ["ext_1"],
+      contentRecency: ["ext_1"],
+      focusedPaneId: "pane_1",
+      layoutSnapshots: {},
+    }
+    input.meta = {
+      ext_1: {
+        id: "ext_1",
+        type: "extension-view",
+        scope: "global",
+        viewId: "hello-clock.clock",
+        content: {
+          type: "extension-view",
+          viewId: "hello-clock.clock",
+          title: "Clock",
+        },
+      },
+    }
+
+    const result = validate(input)
+
+    expect(result.dirty).toBe(false)
+    expect(result.state.meta.ext_1?.type).toBe("extension-view")
+    expect(result.state.meta.ext_1?.viewId).toBe("hello-clock.clock")
+
+    // The meta-level viewId also backfills from the payload, so a state
+    // written before the whitelist carried it still restores the view.
+    const legacy = structuredClone(input)
+    delete legacy.meta.ext_1!.viewId
+    expect(validate(legacy).state.meta.ext_1?.viewId).toBe("hello-clock.clock")
+  })
+
   describe("surface budget", () => {
     const sessionAt = (index: number) => ({
       id: `content_${index}`,

@@ -78,6 +78,7 @@ function validateMeta(input: unknown): ContentMeta | undefined {
     terminalId: str(input.terminalId),
     filePath: str(input.filePath),
     pageId: str(input.pageId),
+    viewId: str(input.viewId),
     content: isObject(input.content) ? (input.content as ContentPayload) : undefined,
   }
   if (meta.content) {
@@ -86,6 +87,7 @@ function validateMeta(input: unknown): ContentMeta | undefined {
     meta.terminalId = meta.terminalId ?? str(meta.content.terminalId)
     meta.filePath = meta.filePath ?? str(meta.content.filePath)
     meta.pageId = meta.pageId ?? str(meta.content.pageId)
+    if (meta.content.type === "extension-view") meta.viewId = meta.viewId ?? str(meta.content.viewId)
   }
   return meta
 }
