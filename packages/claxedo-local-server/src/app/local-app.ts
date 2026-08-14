@@ -49,6 +49,7 @@ import { BootstrapRoutes } from "../deployments/shared-routes/bootstrap"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "../deployments/local/server-workspace-pty-proxy"
 import { resolveHarnessId } from "../opencode/compat-routes/provider-config"
 import { LocalUsageRoutes } from "@claxedo/server-core/usage/routes"
+import { UserExtensionRoutes } from "../extensions/user-extension-routes"
 
 /**
  * Paths whose responses carry credential material.
@@ -250,6 +251,11 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   // it; this avoids treating an intentionally absent hosted router as a 404.
   app.route("/api/workspace", localWorkspaceRoutes)
   app.route("/api/claxedo/network-policy", NetworkPolicyRoutes(authRouteOptions(services)))
+  // User-extension manifests and modules from `dataDir()/extensions`. The
+  // route family disables itself on hosted/signed deployments; mounting it
+  // unconditionally keeps that decision in one place (the routes) instead of
+  // duplicating the environment check here.
+  app.route("/api/claxedo/extensions", UserExtensionRoutes({ env }))
 
   return { injectWebSocket }
 }
