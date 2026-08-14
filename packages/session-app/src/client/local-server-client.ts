@@ -25,6 +25,15 @@ export type SessionSummary = {
 }
 
 export type LocalServerClient = {
+  /**
+   * Registers/resolves the directory as a local workspace on the control
+   * plane (`GET /api/claxedo/workspace/resolve?directory=…`). On the desktop-
+   * local server the session routes are dispatched per-workspace, so this
+   * must run once before them; servers without the route (bare
+   * workspace-runtime, the fake dev runtime) return 404 and the client
+   * treats that as "no resolution needed".
+   */
+  resolveWorkspace(directory: string): Promise<void>
   listSessions(directory: string): Promise<SessionSummary[]>
   createSession(input: { directory: string; harness?: string; title?: string }): Promise<SessionSummary>
   loadTranscript(sessionId: string, directory: string): Promise<TranscriptMessage[]>
@@ -58,6 +67,14 @@ export function createLocalServerClient(options: {
   }
 
   return {
+    async resolveWorkspace(directory) {
+      // create=true: same call ensureLocalProject makes — registers the
+      // directory as a local workspace when it isn't one yet.
+      const response = await fetcher(url("/api/claxedo/workspace/resolve", { directory, create: "true" }))
+      if (response.status === 404) return
+      if (!response.ok) throw new Error(`workspace resolve failed: ${response.status}`)
+    },
+
     async listSessions(directory) {
       const body = await json<unknown>(await fetcher(url("/session", { directory })))
       if (!Array.isArray(body)) return []
