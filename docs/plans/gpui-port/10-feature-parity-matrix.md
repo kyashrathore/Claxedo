@@ -12,6 +12,7 @@ plan bug.
 | Session timeline + streaming | 03 | |
 | Composer (modes, attachments, todo dock) | 04 | |
 | Model/harness pickers (incl. detail-load fix) | 04 | |
+| Harness roster (embedded/ACP/CLI; dsh candidate) | 13 | server-side; both frontends inherit |
 | Terminal surfaces + restore | 05 | |
 | Rail (projects/workspaces/sessions, load-more, status badges) | 06 | |
 | Panes/splits/tabs, layout persistence (v5) | 06 | |
