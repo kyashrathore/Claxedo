@@ -1,0 +1,140 @@
+/*
+ * Session-app look. Variable names follow the main app's v2 token vocabulary
+ * so the S5 token compiler can later overwrite this :root block from the
+ * canonical source — matching structure now, pixel parity gated later.
+ */
+
+:root {
+  --v2-background-base: #101012;
+  --v2-surface-base: #17171a;
+  --v2-surface-raised: #1d1d21;
+  --v2-border-weak: #26262b;
+  --v2-text-base: #e8e8ea;
+  --v2-text-muted: #9b9ba3;
+  --v2-accent: #7aa2f7;
+  --v2-success: #9ece6a;
+  --v2-warning: #e0af68;
+  --v2-destructive: #f7768e;
+  --font-family-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-family-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--v2-background-base);
+  color: var(--v2-text-base);
+  font-family: var(--font-family-sans);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+#root, .session { height: 100vh; display: flex; flex-direction: column; }
+
+.session-header {
+  display: flex; align-items: center; gap: 8px;
+  height: 36px; padding: 0 12px; flex-shrink: 0;
+  border-bottom: 1px solid var(--v2-border-weak);
+  background: var(--v2-background-base);
+}
+.session-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill {
+  font-size: 11px; padding: 1px 8px; border-radius: 999px;
+  border: 1px solid var(--v2-border-weak); color: var(--v2-text-muted);
+}
+.status-busy { color: var(--v2-warning); border-color: var(--v2-warning); }
+.status-error { color: var(--v2-destructive); border-color: var(--v2-destructive); }
+.connection-live { color: var(--v2-success); border-color: var(--v2-success); }
+.connection-error, .connection-closed { color: var(--v2-destructive); border-color: var(--v2-destructive); }
+
+.timeline { flex: 1; overflow-y: auto; padding: 16px 0 24px; }
+.timeline .row {
+  max-width: 760px; margin: 0 auto 10px; padding: 8px 14px; border-radius: 8px;
+}
+.empty { text-align: center; color: var(--v2-text-muted); padding: 48px 0; }
+
+.row.user {
+  background: var(--v2-surface-raised);
+  border: 1px solid var(--v2-border-weak);
+  white-space: pre-wrap;
+  margin-left: auto; margin-right: calc((100% - 760px) / 2); max-width: 560px;
+}
+@media (max-width: 800px) { .row.user { margin-right: 16px; } .timeline .row { margin-left: 16px; margin-right: 16px; } }
+
+.row.assistant { padding: 2px 14px; }
+.row.assistant .cursor {
+  display: inline-block; width: 7px; height: 14px; margin-left: 2px;
+  background: var(--v2-text-muted); animation: blink 1s steps(2) infinite; vertical-align: text-bottom;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+.row.thinking, .row.plan {
+  border: 1px solid var(--v2-border-weak); background: var(--v2-surface-base);
+}
+.row.thinking summary, .row.plan summary { cursor: pointer; color: var(--v2-text-muted); font-size: 12px; }
+
+.row.tool {
+  display: flex; align-items: center; gap: 8px;
+  border: 1px solid var(--v2-border-weak); background: var(--v2-surface-base);
+  font-family: var(--font-family-mono); font-size: 12px; padding: 5px 12px;
+}
+.tool-status { width: 8px; height: 8px; border-radius: 999px; background: var(--v2-text-muted); flex-shrink: 0; }
+.tool-running .tool-status { background: var(--v2-warning); animation: blink 1.2s steps(2) infinite; }
+.tool-completed .tool-status { background: var(--v2-success); }
+.tool-failed .tool-status { background: var(--v2-destructive); }
+.tool-name { font-weight: 600; }
+.tool-summary { color: var(--v2-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-error { color: var(--v2-destructive); }
+
+.row.notice { font-size: 12px; color: var(--v2-text-muted); border-left: 2px solid var(--v2-border-weak); border-radius: 0; }
+.severity-error { color: var(--v2-destructive); border-left-color: var(--v2-destructive); }
+.severity-warn { color: var(--v2-warning); border-left-color: var(--v2-warning); }
+
+.row.todos { border: 1px solid var(--v2-border-weak); background: var(--v2-surface-base); }
+.todo { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+.todo-marker { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--v2-text-muted); flex-shrink: 0; }
+.todo-completed { color: var(--v2-text-muted); text-decoration: line-through; }
+.todo-completed .todo-marker { background: var(--v2-success); border-color: var(--v2-success); }
+.todo-in_progress .todo-marker, .todo-running .todo-marker { border-color: var(--v2-warning); }
+
+.markdown { overflow-wrap: anywhere; }
+.markdown pre {
+  background: var(--v2-surface-raised); border: 1px solid var(--v2-border-weak);
+  border-radius: 6px; padding: 10px 12px; overflow-x: auto;
+  font-family: var(--font-family-mono); font-size: 12px;
+}
+.markdown code { font-family: var(--font-family-mono); font-size: 12px; background: var(--v2-surface-raised); padding: 1px 4px; border-radius: 4px; }
+.markdown pre code { background: none; padding: 0; }
+.markdown a { color: var(--v2-accent); }
+.markdown blockquote { border-left: 3px solid var(--v2-border-weak); margin: 6px 0; padding: 2px 12px; color: var(--v2-text-muted); }
+.markdown table { border-collapse: collapse; }
+.markdown th, .markdown td { border: 1px solid var(--v2-border-weak); padding: 4px 10px; }
+.markdown h1, .markdown h2, .markdown h3 { font-size: 1.05em; margin: 12px 0 4px; }
+
+.composer {
+  display: flex; gap: 8px; padding: 12px; flex-shrink: 0;
+  border-top: 1px solid var(--v2-border-weak); background: var(--v2-background-base);
+}
+.composer-input {
+  flex: 1; min-height: 52px; max-height: 200px; resize: vertical;
+  background: var(--v2-surface-base); color: var(--v2-text-base);
+  border: 1px solid var(--v2-border-weak); border-radius: 8px; padding: 10px 12px;
+  font-family: var(--font-family-sans); font-size: 13px;
+}
+.composer-input:focus { outline: none; border-color: var(--v2-accent); }
+.composer-send {
+  align-self: flex-end; height: 32px; padding: 0 16px; border-radius: 6px; border: none;
+  background: var(--v2-accent); color: #0b0b0d; font-weight: 600; cursor: pointer;
+}
+.composer-send:disabled { opacity: 0.4; cursor: default; }
+
+.picker { max-width: 560px; margin: 64px auto; }
+.picker h1 { font-size: 16px; }
+.picker button {
+  display: block; width: 100%; text-align: left; margin-bottom: 6px; padding: 10px 14px;
+  background: var(--v2-surface-base); color: var(--v2-text-base);
+  border: 1px solid var(--v2-border-weak); border-radius: 8px; cursor: pointer;
+}
+.picker button:hover { border-color: var(--v2-accent); }
+.picker .muted { color: var(--v2-text-muted); font-size: 12px; }

@@ -56,7 +56,20 @@ function applyModelDiff(draft: SessionModel, previous: SessionModel, next: Sessi
   const rows = next.rows
   const prevRows = previous.rows
   for (let i = 0; i < rows.length; i++) {
-    if (prevRows[i] !== rows[i]) draft.rows[i] = rows[i]
+    if (prevRows[i] === rows[i]) continue
+    const target = draft.rows[i]
+    // Same logical row (kind + id): write only the changed FIELDS, so <For>
+    // keeps the row's DOM and just the bound leaves (markdown text, status)
+    // update. Replacing the object would re-create the row's DOM per token.
+    if (target && target.kind === rows[i].kind && target.id === rows[i].id) {
+      const nextRow = rows[i] as unknown as Record<string, unknown>
+      const draftRow = target as unknown as Record<string, unknown>
+      for (const key of Object.keys(nextRow)) {
+        if (draftRow[key] !== nextRow[key]) draftRow[key] = nextRow[key]
+      }
+    } else {
+      draft.rows[i] = rows[i]
+    }
   }
   if (draft.rows.length > rows.length) draft.rows.length = rows.length
 }
