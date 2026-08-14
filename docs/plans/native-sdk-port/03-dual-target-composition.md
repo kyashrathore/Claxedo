@@ -100,6 +100,37 @@ U9/U10's slices.
    (Zig, esc-registry). Parity matrix tracks which surfaces are
    grammar-defined vs escape-hatched per platform.
 
+## Web renderer framework — decision record (2026-08-14)
+
+**Owner's decision: Solid 2.0.** Evaluated field: Solid 1.x (full widget-kit
+reuse, `reconcile` built in, measured fast in this app), Solid 2.0 (RC;
+staged microtask writes, compute/apply effects, stores in core,
+`@solidjs/web`, removed `batch`/`onMount`/`createResource`/`produce`),
+Svelte 5 (best codegen target, stable, no kit reuse), Vue Vapor / Preact /
+Lit (no kit reuse, weaker fit), React (wrong update model for token
+streaming). The grammar keeps the framework swappable — emitters are
+per-framework, definitions never change — so this decision binds the
+emitter, the widget kit, and the `runCore` bridge, not the view sources.
+
+Consequences accepted with the decision:
+- **The existing web app migrates Solid 1 → 2 as its own workstream**
+  (breaking changes touch effects, stores, resources, and mount points
+  across the app). Running Solid 1 host + Solid 2 islands in one page —
+  two reactive runtimes — is rejected: it re-introduces exactly the
+  duplicate-dependency weight this perf effort removed. Migration lands
+  first, gated by the existing e2e suite and perf gates.
+- **Two moving platforms at once** (Solid 2 RC + Native SDK pre-1.0).
+  Mitigations: pin exact RC versions; upgrade deliberately per release,
+  never transitively; the `runCore` bridge and widget kit are the ONLY
+  code allowed to touch framework APIs directly (guard-enforced), so
+  churn is contained to two modules.
+- **Verify the Elm bridge on Solid 2 semantics**: writes are staged and
+  commit on microtasks, and `produce` is gone in favor of draft-mutating
+  store setters. Whether a `reconcile` equivalent ships in 2.0 is
+  unconfirmed — if absent, the bridge carries its own keyed structural
+  diff applied through a draft setter. This is U11's spike, not an
+  assumption.
+
 ## Failure containment
 
 If Native SDK stalls (pre-1.0 churn, U8) or the grammar proves too
