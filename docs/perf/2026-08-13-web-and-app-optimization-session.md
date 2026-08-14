@@ -230,3 +230,35 @@ an observation, not a dupe.
   ~15 dead files deleted, claxedo-app's export map cut 12→2 subpaths, and
   the standing desktop-menu test error removed. Story-only components and
   seven deployment-knob VITE_ flags recorded as risky-not-dead.
+
+## Addendum 6: full verification pass vs baseline
+
+**perf-harness unit suite: 64/68, 4 pre-existing errors** — two MORE
+never-committed modules from the origin worktree (src/idle-process-family,
+src/agent-browser-observer — the desktop lane's session-activation and
+process-family instruments; git log --all confirms they never existed in any
+commit). Unlike renderer-trace these are measurement instruments with
+paid-for semantics; reconstructing them blind would fabricate the very
+instruments HANDOFF documents. They must come from the origin macOS
+worktree. Their absence only blocks the desktop (macOS) benchmark lane and
+its two unit-test files — the browser lane and all product code are
+unaffected.
+
+**Browser lane vs the founding baseline** (two fresh --all passes at HEAD;
+note the baseline predates the seed fix, so baseline scenarios rendered ONE
+session where current runs render all seeded sessions — the comparison is
+conservative against current numbers):
+
+| scenario | metric | baseline (a0d9bde) | now (2 runs) |
+|---|---|---:|---:|
+| session-switch | completion | 1,272.8 ms | 502.4 / 505.0 ms (**2.5x**) |
+| session-switch | tasks in window | ~31k | 820 / 862 (**~36x fewer**) |
+| large-diff-toggle | worst task | 73–91 ms | 19.9 / 42.5 ms |
+| large-diff-toggle | tasks >16.67ms | 7–12 | 2 / 2 |
+| launch-project | completion | 1,123 ms | 1,065 / 1,083 ms |
+| live-terminal-switch | worst task | 39–41 ms | 84.6–85.3 ms* |
+| workspace-switch | completion | 203.9 ms | 313.6 ms* |
+
+*terminal and workspace-switch now render 3 terminals / 5 workspaces of
+seeded content the baseline never displayed (broken inventory) — these two
+rows are not comparable and need a fresh like-for-like baseline.
