@@ -1,0 +1,21 @@
+{
+  "name": "@claxedo/session-app",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Standalone session UI — the first dual-target slice: one shared core, rendered by Solid 2 on web and Native SDK on desktop, against the local Claxedo server over AgentRuntimeEvent.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "bun test ./src"
+  },
+  "dependencies": {
+    "@solidjs/web": "2.0.0-rc.0",
+    "marked": "17.0.1",
+    "solid-js": "2.0.0-rc.0"
+  },
+  "devDependencies": {
+    "@solidjs/vite-plugin": "3.0.0-next.28",
+    "vite": "^7.0.0"
+  }
+}
