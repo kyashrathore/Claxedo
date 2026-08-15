@@ -10,6 +10,7 @@
  */
 
 import { For, Show, createSignal, createEffect, type JSX } from "solid-js"
+import { Portal } from "@solidjs/web"
 import type { SessionModel, SessionMsg } from "../core/model"
 
 type Dispatch = (msg: SessionMsg) => void
@@ -114,16 +115,30 @@ export function Composer(props: { model: SessionModel; dispatch: Dispatch }) {
   )
 }
 
-/** Shared dismissal + open-state plumbing for the toolbar menus. */
+/**
+ * Shared dismissal + open-state plumbing for the toolbar menus. Menus render
+ * through a Portal (like the real app's Kobalte menus), so dismissal treats a
+ * click inside ANY `.menu-surface` as inside — only one menu is open at a
+ * time, and the anchor rect is captured at open for fixed positioning.
+ */
 function useMenu() {
   const [open, setOpen] = createSignal(false)
+  const [anchor, setAnchor] = createSignal<DOMRect | undefined>(undefined)
   let root: HTMLDivElement | undefined
+  const toggle = () => {
+    if (open()) return setOpen(false)
+    if (root) setAnchor(root.getBoundingClientRect())
+    setOpen(true)
+  }
   createEffect(
     () => open(),
     (isOpen) => {
       if (!isOpen) return
       const onPointer = (event: PointerEvent) => {
-        if (root && !root.contains(event.target as Node)) setOpen(false)
+        const target = event.target as Element
+        if (root?.contains(target)) return
+        if (target.closest?.(".menu-surface")) return
+        setOpen(false)
       }
       const onKey = (event: KeyboardEvent) => {
         if (event.key === "Escape") setOpen(false)
@@ -136,7 +151,44 @@ function useMenu() {
       }
     },
   )
-  return { open, setOpen, setRoot: (el: HTMLDivElement) => (root = el) }
+  return { open, setOpen, toggle, anchor, setRoot: (el: HTMLDivElement) => (root = el) }
+}
+
+/** Portaled, trigger-anchored menu surface (spec §5.5 geometry). */
+function MenuSurface(props: {
+  anchor: DOMRect | undefined
+  align?: "start" | "end"
+  gutter?: number
+  class?: string
+  component?: string
+  children: JSX.Element
+}) {
+  const style = () => {
+    const rect = props.anchor
+    if (!rect) return { position: "fixed" as const, visibility: "hidden" as const }
+    const gutter = props.gutter ?? 8
+    const base = {
+      position: "fixed" as const,
+      bottom: `${window.innerHeight - rect.top + gutter}px`,
+      "z-index": "100",
+    }
+    if (props.align === "end") {
+      return { ...base, right: `${Math.max(12, window.innerWidth - rect.right)}px` }
+    }
+    return { ...base, left: `${Math.max(12, Math.min(rect.left, window.innerWidth - 372))}px` }
+  }
+  return (
+    <Portal>
+      <div
+        class={`claxedo-composer-menu menu-surface ${props.class ?? ""}`}
+        data-component={props.component}
+        role="menu"
+        style={style()}
+      >
+        {props.children}
+      </div>
+    </Portal>
+  )
 }
 
 function MenuItem(props: {
@@ -183,12 +235,12 @@ function AddMenu() {
         aria-haspopup="true"
         data-expanded={menu.open() ? "" : undefined}
         class="composer-add"
-        onClick={() => menu.setOpen(!menu.open())}
+        onClick={() => menu.toggle()}
       >
         <PlusIcon />
       </button>
       <Show when={menu.open()}>
-        <div class="claxedo-composer-menu menu-surface" role="menu">
+        <MenuSurface anchor={menu.anchor()}>
           <div class="menu-group-header">Add</div>
           <For each={items}>{(item) => (
             <button type="button" role="menuitem" class="menu-item" data-action={item.action} onClick={() => menu.setOpen(false)}>
@@ -196,7 +248,7 @@ function AddMenu() {
               <span class="menu-item-hint">{item.hint}</span>
             </button>
           )}</For>
-        </div>
+        </MenuSurface>
       </Show>
     </div>
   )
@@ -217,13 +269,13 @@ function PermissionChip(props: { model: SessionModel; dispatch: Dispatch; label:
           data-expanded={menu.open() ? "" : undefined}
           class="composer-chip"
           data-active={active() ? "" : undefined}
-          onClick={() => menu.setOpen(!menu.open())}
+          onClick={() => menu.toggle()}
         >
           <ShieldIcon active={active()} />
           <span data-slot="composer-control-label" class="composer-chip-label">{props.label}</span>
         </button>
         <Show when={menu.open()}>
-          <div class="claxedo-composer-menu menu-surface" role="menu">
+          <MenuSurface anchor={menu.anchor()}>
             <For each={composer().permissionModes}>{(mode) => (
               <MenuItem
                 label={mode.name}
@@ -235,7 +287,7 @@ function PermissionChip(props: { model: SessionModel; dispatch: Dispatch; label:
                 }}
               />
             )}</For>
-          </div>
+          </MenuSurface>
         </Show>
       </div>
     </Show>
@@ -257,13 +309,13 @@ function ProjectChip(props: { model: SessionModel; dispatch: Dispatch }) {
           aria-haspopup="true"
           data-expanded={menu.open() ? "" : undefined}
           class="composer-chip"
-          onClick={() => menu.setOpen(!menu.open())}
+          onClick={() => menu.toggle()}
         >
           <FolderIcon />
           <span data-slot="composer-control-label" class="composer-chip-label">{label()}</span>
         </button>
         <Show when={menu.open()}>
-          <div class="claxedo-composer-menu menu-surface" role="menu">
+          <MenuSurface anchor={menu.anchor()}>
             <For each={["local", "cloud", "user-hosted"].filter((access) => composer().workspaces.some((w) => w.access === access))}>{(access) => (
               <>
                 <div class="menu-group-header">{access.toUpperCase()}</div>
@@ -280,7 +332,7 @@ function ProjectChip(props: { model: SessionModel; dispatch: Dispatch }) {
                 )}</For>
               </>
             )}</For>
-          </div>
+          </MenuSurface>
         </Show>
       </div>
     </Show>
@@ -301,7 +353,7 @@ function WorktreeChip(props: { model: SessionModel; dispatch: Dispatch }) {
           aria-haspopup="true"
           data-expanded={menu.open() ? "" : undefined}
           class="composer-chip"
-          onClick={() => menu.setOpen(!menu.open())}
+          onClick={() => menu.toggle()}
         >
           <BranchIcon />
           <span data-slot="composer-control-label" class="composer-chip-label">
@@ -309,7 +361,7 @@ function WorktreeChip(props: { model: SessionModel; dispatch: Dispatch }) {
           </span>
         </button>
         <Show when={menu.open()}>
-          <div class="claxedo-composer-menu menu-surface" role="menu">
+          <MenuSurface anchor={menu.anchor()}>
             <Show
               when={!naming()}
               fallback={
@@ -346,7 +398,7 @@ function WorktreeChip(props: { model: SessionModel; dispatch: Dispatch }) {
                 + New worktree
               </button>
             </Show>
-          </div>
+          </MenuSurface>
         </Show>
       </div>
     </Show>
@@ -375,7 +427,7 @@ function HarnessModelPicker(props: {
         aria-haspopup="true"
         data-expanded={menu.open() ? "" : undefined}
         class="composer-chip composer-harness-model"
-        onClick={() => menu.setOpen(!menu.open())}
+        onClick={() => menu.toggle()}
       >
         <span data-slot="composer-control-label" class="composer-chip-label">{props.label}</span>
         <Show when={props.effortLabel && composer().efforts.length > 1}>
@@ -384,10 +436,12 @@ function HarnessModelPicker(props: {
         <ChevronDownIcon />
       </button>
       <Show when={menu.open()}>
-        <div
-          class="claxedo-composer-menu claxedo-composer-menu-picker menu-surface harness-picker-surface"
-          data-component="harness-model-picker"
-          role="menu"
+        <MenuSurface
+          anchor={menu.anchor()}
+          align="end"
+          gutter={4}
+          class="claxedo-composer-menu-picker harness-picker-surface"
+          component="harness-model-picker"
         >
           <button type="button" class="picker-section-header" data-open={section() === "harness" ? "" : undefined} onClick={() => setSection("harness")}>
             Harness
@@ -450,7 +504,7 @@ function HarnessModelPicker(props: {
               </Show>
             </div>
           </Show>
-        </div>
+        </MenuSurface>
       </Show>
     </div>
   )
