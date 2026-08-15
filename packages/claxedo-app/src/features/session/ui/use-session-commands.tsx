@@ -1,5 +1,6 @@
 // Claxedo routes session commands through Workbench panes.
-import { createMemo, lazy } from "solid-js"
+import { createMemo } from "solid-js"
+import { lazyDialog } from "@/lib/lazy-dialog"
 import type { Accessor } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { useCommand, type CommandOption } from "@/features/session/app-ports"
@@ -44,16 +45,16 @@ import { sessionViewKey } from "@/platform/identity/session-view-key"
 import { createModelSelectionPicker } from "../commands/model-selection"
 import { focusComposerWhenReady } from "../composer/ui/composer-focus"
 
-const DialogSelectFile = lazy(() => import("@/features/session/ui/dialogs/select-file").then((module) => ({
+const DialogSelectFile = lazyDialog(() => import("@/features/session/ui/dialogs/select-file").then((module) => ({
   default: module.DialogSelectFile,
 })))
-const DialogSelectModel = lazy(() => import("@/features/session/ui/model/select-model").then((module) => ({
+const DialogSelectModel = lazyDialog(() => import("@/features/session/ui/model/select-model").then((module) => ({
   default: module.DialogSelectModel,
 })))
-const DialogSelectMcp = lazy(() => import("@/features/session/ui/dialogs/select-mcp").then((module) => ({
+const DialogSelectMcp = lazyDialog(() => import("@/features/session/ui/dialogs/select-mcp").then((module) => ({
   default: module.DialogSelectMcp,
 })))
-const DialogFork = lazy(() => import("@/features/session/ui/dialogs/fork").then((module) => ({
+const DialogFork = lazyDialog(() => import("@/features/session/ui/dialogs/fork").then((module) => ({
   default: module.DialogFork,
 })))
 

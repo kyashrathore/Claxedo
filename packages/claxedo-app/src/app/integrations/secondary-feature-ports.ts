@@ -1,5 +1,6 @@
 import { rendererTraceEnabled } from "@/platform/performance/renderer-trace"
 import { lazy } from "solid-js"
+import { lazyDialog } from "@/lib/lazy-dialog"
 import { configureTerminalAppPorts } from "@/features/terminal/app-ports"
 import { configureSettingsAppPorts } from "@/features/settings/app-ports"
 import { configureOnboardingAppPorts } from "@/features/onboarding/app-ports"
@@ -25,16 +26,16 @@ import * as Prompt from "@/features/session/providers/prompt"
 import * as PanePreferences from "@/features/session/preferences/pane"
 import { DialogConnectIntegration, useOnboardingFunnel } from "./feature-ports"
 
-const DialogConnectProvider = lazy(() =>
+const DialogConnectProvider = lazyDialog(() =>
   import("@/app/dialogs/connect-provider").then((module) => ({ default: module.DialogConnectProvider })),
 )
-const DialogAIConnect = lazy(() =>
+const DialogAIConnect = lazyDialog(() =>
   import("@/app/dialogs/connect-ai").then((module) => ({ default: module.DialogAIConnect })),
 )
-const DialogSelectProvider = lazy(() =>
+const DialogSelectProvider = lazyDialog(() =>
   import("@/app/dialogs/select-provider").then((module) => ({ default: module.DialogSelectProvider })),
 )
-const DialogCustomProvider = lazy(() =>
+const DialogCustomProvider = lazyDialog(() =>
   import("@/app/dialogs/custom-provider").then((module) => ({ default: module.DialogCustomProvider })),
 )
 const ProviderList = lazy(() =>
@@ -46,7 +47,7 @@ const ProviderConnectForm = lazy(() =>
 const SandboxDriverLogo = lazy(() =>
   import("@/features/settings/ui/sandbox-driver-logo").then((module) => ({ default: module.SandboxDriverLogo })),
 )
-const DialogReleaseNotes = lazy(() =>
+const DialogReleaseNotes = lazyDialog(() =>
   import("@/app/dialogs/release-notes").then((module) => ({ default: module.DialogReleaseNotes })),
 )
 
