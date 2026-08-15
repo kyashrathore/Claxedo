@@ -262,3 +262,84 @@ conservative against current numbers):
 *terminal and workspace-switch now render 3 terminals / 5 workspaces of
 seeded content the baseline never displayed (broken inventory) — these two
 rows are not comparable and need a fresh like-for-like baseline.
+
+## Addendum 7: post-e2e-repair benchmark round (2026-08-15, this container)
+
+Context: between Addendum 6 and this round, the e2e suite went 75-failed →
+335/337 (two load-flakes), fixing among other things the progressive-reveal
+cap that silently dropped timeline rows (2a54c64's renderRangeLimit latch),
+the lazy-CSS pane collapse, dialog-suspense remounts, and the solid-query
+client-suspension trap (vendored patch). Full commit trail e61d2f8..6cd6a05.
+
+### Browser lane (two full --all passes at 6cd6a05, ABBA per pass)
+
+| flow | metric | founding baseline (a0d9bde) | Addendum 6 "now" | this round (2 passes) |
+|---|---|---:|---:|---:|
+| launch-project | completion | 1,123 ms | 1,065 / 1,083 ms† | 2,399 / 2,418 ms |
+| session-switch | completion | 1,272.8 ms | 502.4 / 505.0 ms† | 831 / 760 ms |
+| session-switch | tasks in window | ~31k | 820 / 862 | 926 / 1,072 |
+| large-diff-toggle | worst task | 73–91 ms | 19.9 / 42.5 ms | 31.8 / 39.4 ms |
+| live-terminal-switch | worst task | 39–41 ms* | 84.6–85.3 ms* | 67.3 / 65.5 ms |
+| workspace-switch | completion | 203.9 ms* | 313.6 ms* | 443.8 / 415.4 ms |
+
+† **The Addendum 6 timeline numbers are invalid as a baseline.** They were
+measured while the progressive-reveal cap latched `renderRangeLimit` at its
+first-paint value, so those runs silently rendered a FRACTION of each
+transcript (the same defect the e2e oracle caught as "assistant reply never
+appeared"). This round is the first correct-rendering measurement of these
+flows. Debug sub-metrics at 6cd6a05 pin the launch delta entirely to
+`transcript_render_ms` (2,411 ms of the 2,429 completion;
+`launch_first_window_ms` 302, `launch_workspace_ready_ms` 412) — the shell
+did not get slower; the transcript now actually renders. Founding-baseline
+comparisons that remain honest: session-switch is still ~1.6x faster than
+a0d9bde WITH full rendering; large-diff worst task still ~2x better.
+Rows marked * carry the Addendum 6 seeded-content caveat.
+
+Known gap in the harness fixture, same drift family as the e2e round:
+`GET /api/claxedo/extensions` is unmatched ([perf-mock] log line) — one
+fixture line when this lane is next touched.
+
+### Server child (same method as the headline table: Node 22, n=3)
+
+| metric | pre-effort | Addendum-era | this round |
+|---|---:|---:|---:|
+| engine artifact (shipped) | 23.08 MB | 9.96 MB + 3.66 MB JSON | unchanged (9,955,488 B + 3,658,251 B) |
+| import time | ~1,385 ms | ~1,118 ms | 1,261 / 1,366 / 1,390 ms |
+| RSS after import | ~281.7 MiB | ~244.4 MiB | 241.9 / 243.2 / 245.0 MiB |
+
+The −41% artifact and −37 MiB RSS wins hold exactly; import time sits
+between the two prior marks (same-container noise band).
+
+### Bundle (final HEAD build)
+
+| asset | pre-effort | Addendum 6 | this round |
+|---|---:|---:|---:|
+| main JS raw / gzip | 2,585.3 / 748.4 kB | 959.7 / 292.4 kB | 939 / 286 kB |
+| main CSS raw | 475.1 kB | 441.4 kB | 417 kB |
+
+The e2e round deliberately moved CSS back into the eager bundle
+(envcard shell, menu/select/tooltip v2 sheets — all load-bearing for
+always-rendered markup); net bundle still shrank below Addendum 6.
+
+### Desktop lane (packaged Linux app, xvfb, this container)
+
+Packaged at 6cd6a05 (`bun run package:linux`; the unpacked binary — the
+distributable target step fails in this container, irrelevant to
+measurement), fresh profile, `CLAXEDO_PERF_READY_SELECTOR="[data-claxedo]"`,
+`xvfb-run --no-sandbox --disable-gpu`:
+
+| metric | Addendum 3 | this round |
+|---|---:|---:|
+| session list ready (after-renderer) | 5,036 ms | 5,273 ms |
+| settled process-family RSS | ~1,007 MiB | 1,023 MiB @ ~15s / 915 MiB @ ~40s |
+
+Both within same-container noise of the Addendum 3 marks — the e2e-repair
+round did not move desktop cold start or idle memory.
+
+### Gate-harness lane (M2/M3/M9/M10 instruments)
+
+Still blocked in this container: `idle-process-family.ts` and
+`agent-browser-observer.ts` exist in no commit (macOS-origin worktree only,
+per HANDOFF); the four perf-harness unit errors are their unresolvable
+imports. Not reconstructed — fabricating measurement instruments would
+fabricate their evidence.
