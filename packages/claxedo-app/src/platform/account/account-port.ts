@@ -91,8 +91,12 @@ export type HostedOperationName =
 export type AccountPort = {
   /** Current account state. Reactive in the renderer; a snapshot here. */
   state: () => AccountState
-  /** Begins sign-in. Resolves when the attempt settles, not when it succeeds. */
-  signIn: () => Promise<void>
+  /**
+   * Begins sign-in. Resolves when the attempt settles, not when it succeeds.
+   * `redirectUrl` is where the browser flow lands after the provider returns;
+   * the desktop port ignores it — main owns that flow end to end.
+   */
+  signIn: (options?: { redirectUrl?: string }) => Promise<void>
   signOut: () => Promise<void>
   /**
    * Runs one named hosted operation and returns its decoded result.

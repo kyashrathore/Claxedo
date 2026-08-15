@@ -19,8 +19,8 @@ import type { AccountPort, AccountState, HostedOperationName } from "./account-p
 export function browserAccountPort(auth: AuthSession, run: RunHostedOperation): AccountPort {
   return {
     state: () => accountState(auth),
-    signIn: async () => {
-      await auth.signIn()
+    signIn: async (options) => {
+      await auth.signIn(options)
     },
     signOut: async () => {
       await auth.signOut()
