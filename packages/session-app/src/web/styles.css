@@ -154,9 +154,7 @@ body {
 .composer-card {
   position: relative; z-index: 10; min-height: 96px; width: 100%;
   display: flex; flex-direction: column;
-  /* Real app: overflow clip + portaled menus. Until menus are portaled,
-     the card must let them escape. */
-  border-radius: 10px; overflow: visible;
+  border-radius: 10px; overflow: clip;
   background: var(--v2-background-bg-base);
   box-shadow: var(--v2-elevation-raised), 0 0 0 0.5px var(--shell-surface-composer);
 }
@@ -232,14 +230,13 @@ body {
 /* Menus (spec §5.5) */
 .menu-root { position: relative; display: flex; }
 .menu-surface {
-  position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 50;
+  /* Portaled: position comes inline from the trigger anchor. */
   display: flex; flex-direction: column;
   width: min(360px, calc(100vw - 24px)); padding: 4px;
   border: 0; border-radius: var(--surface-overlay-radius, 8px);
   background: var(--overlay-surface); box-shadow: var(--v2-elevation-floating);
   max-height: min(420px, 60vh); overflow-y: auto;
 }
-.composer-selection-controls .menu-surface { left: auto; right: 0; bottom: calc(100% + 4px); }
 .harness-picker-surface { width: min(304px, calc(100vw - 24px)); padding: 6px; }
 
 .menu-item {
