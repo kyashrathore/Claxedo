@@ -37,7 +37,23 @@ export type LocalServerClient = {
   listSessions(directory: string): Promise<SessionSummary[]>
   createSession(input: { directory: string; harness?: string; title?: string }): Promise<SessionSummary>
   loadTranscript(sessionId: string, directory: string): Promise<TranscriptMessage[]>
-  sendPrompt(input: { sessionId: string; directory: string; text: string }): Promise<void>
+  /**
+   * Sends a prompt. Beyond the text, the input carries the composer's
+   * selection using the EXACT field names of the server's `SessionPromptBody`
+   * (workspace-runtime/src/session/service.ts): `model: {providerID,
+   * modelID}`, `agent`, `variant` (reasoning effort), `permissionMode`.
+   * Absent fields are omitted from the body, never sent as null.
+   */
+  sendPrompt(input: {
+    sessionId: string
+    directory: string
+    text: string
+    model?: { providerID: string; modelID: string }
+    agent?: string
+    variant?: string
+    permissionMode?: string
+    messageID?: string
+  }): Promise<void>
   /**
    * Subscribes to the runtime-event stream. Returns a disposer. The reader
    * reconnects with backoff; connection state changes surface through
@@ -118,7 +134,14 @@ export function createLocalServerClient(options: {
         await fetcher(url(`/session/${encodeURIComponent(input.sessionId)}/message`, { directory: input.directory }), {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ parts: [{ type: "text", text: input.text }] }),
+          body: JSON.stringify({
+            parts: [{ type: "text", text: input.text }],
+            ...(input.model ? { model: { providerID: input.model.providerID, modelID: input.model.modelID } } : {}),
+            ...(input.agent ? { agent: input.agent } : {}),
+            ...(input.variant ? { variant: input.variant } : {}),
+            ...(input.permissionMode ? { permissionMode: input.permissionMode } : {}),
+            ...(input.messageID ? { messageID: input.messageID } : {}),
+          }),
         }),
       )
     },
