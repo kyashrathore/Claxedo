@@ -31,8 +31,8 @@ import { removeSessionInventoryQueryData, useSessionInventoryActions } from "../
 import { getSessionPrefetch, getSessionPrefetchPromise, SESSION_PREFETCH_TTL, type SessionPrefetchMeta } from "@/platform/sync/session-prefetch"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { queryClient } from "@/platform/query/query-client"
-import { isWorkspaceReady } from "@/features/session/app-ports"
-import { useWorkspaceQuery } from "@/features/session/app-ports"
+import { settledQueryData as settledData } from "@/platform/query/settled-query-data"
+import { isWorkspaceReady, useWorkspaceQuery } from "@/features/session/app-ports"
 import { scheduleSessionProjectionPull } from "@/platform/runtime/agent/session-projection"
 import { removeDirectorySession, upsertDirectorySession } from "../data/sync/directory-session-cache"
 import { FAST_SESSION_SWITCH_NETWORK_QUIET_MS, FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS, FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS, fastSessionSwitchQuietDelay, fastSessionSwitchNetworkQuiet, suppressedByFastSessionSwitch } from "@/platform/runtime/session-switch"
@@ -585,36 +585,36 @@ export function createSessionController(input: {
   const todos = createMemo(() => {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return []
-    return todoQuery.data ?? []
+    return settledData(todoQuery) ?? []
   })
 
   const diffs = createMemo(() => {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return []
-    return list(diffQuery.data)
+    return list(settledData(diffQuery))
   })
   const diffsReady = createMemo(() => {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return true
-    return diffQuery.data !== undefined
+    return settledData(diffQuery) !== undefined
   })
 
   const status = createMemo(() => {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return idleSessionStatus
-    return statusQuery.data ?? idleSessionStatus
+    return settledData(statusQuery) ?? idleSessionStatus
   })
 
   const permissionRequest = createMemo(() => {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return undefined
-    return requestQuery.data?.permissions[0]
+    return settledData(requestQuery)?.permissions[0]
   })
 
   const questionRequest = createMemo(() => {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return undefined
-    return requestQuery.data?.questions[0]
+    return settledData(requestQuery)?.questions[0]
   })
 
   const blocked = createMemo(() => !!permissionRequest() || !!questionRequest())
@@ -622,15 +622,15 @@ export function createSessionController(input: {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES
     if (!usesClaxedoSessionTransport(sessionID, input.directory())) return DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES
-    return capabilitiesQuery.data ?? PENDING_SCOPED_TRANSPORT_CAPABILITIES
+    return settledData(capabilitiesQuery) ?? PENDING_SCOPED_TRANSPORT_CAPABILITIES
   })
   const activeTurn = createMemo(() => {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return false
     return isSessionTurnActive({
       status: status(),
-      permissions: requestQuery.data?.permissions,
-      questions: requestQuery.data?.questions,
+      permissions: settledData(requestQuery)?.permissions,
+      questions: settledData(requestQuery)?.questions,
     })
   })
 

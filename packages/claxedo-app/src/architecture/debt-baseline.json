@@ -14,7 +14,7 @@
   "moduleScopeMutableState": 58,
   "productionTimerAllowlistTimers": 5,
   "propsDestructuring": 1,
-  "queryMirrorEffects": 6,
+  "queryMirrorEffects": 5,
   "runtimeGatewayOutsideTransport": 0,
   "sdkImportingFiles": 87,
   "setQueryDataCalls": 85,

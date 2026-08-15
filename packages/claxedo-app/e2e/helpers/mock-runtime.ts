@@ -939,14 +939,59 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // contract: fold every emitted `message.part.updated` snapshot into the
   // message row the REST route serves.
   const persistEmittedPart = (payload: MockEvent) => {
-    if ((payload as { type?: string }).type !== "message.part.updated") return
-    const part = (payload as { properties?: { part?: { id?: string; messageID?: string } } }).properties?.part
-    if (!part?.id || !part.messageID) return
-    messages = messages.map((row) =>
-      row.info.id === part.messageID
-        ? { ...row, parts: [...row.parts.filter((item) => item.id !== part.id), part as MockPart] }
-        : row,
-    )
+    const type = (payload as { type?: string }).type
+    // Mirror message-info updates too: replay() re-OPENS a settled assistant row
+    // (emits its info with `time.completed` stripped) before streaming fixture
+    // parts, then re-settles it. If the REST rows keep the old SETTLED info
+    // while the stream is re-opened, a refetch snapshotted mid-replay reports
+    // "settled with only the original text part" — a state the real runtime can
+    // never serve — and the app's canonical reconcile PRUNES every
+    // already-streamed fixture part while the settled-message guard blocks
+    // their re-delivery, leaving the turn permanently textless/tool-less.
+    if (type === "message.updated") {
+      const info = (payload as { properties?: { info?: { id?: string } } }).properties?.info
+      if (!info?.id) return
+      messages = messages.map((row) =>
+        row.info.id === info.id ? { ...row, info: info as MockMessageInfo } : row,
+      )
+      return
+    }
+    if (type === "message.part.updated") {
+      const part = (payload as { properties?: { part?: { id?: string; messageID?: string } } }).properties?.part
+      if (!part?.id || !part.messageID) return
+      messages = messages.map((row) =>
+        row.info.id === part.messageID
+          ? { ...row, parts: [...row.parts.filter((item) => item.id !== part.id), part as MockPart] }
+          : row,
+      )
+      return
+    }
+    // Deltas must fold into the persisted snapshot too: `reconcileStoredParts`
+    // lets the canonical REST payload win on CONTENT, so a part persisted from
+    // its initial `message.part.updated` (empty/partial text) would RESET the
+    // delta-accumulated text in the app on the next refetch.
+    if (type === "message.part.delta") {
+      const properties = (payload as {
+        properties?: { messageID?: string; partID?: string; field?: string; delta?: unknown }
+      }).properties
+      if (!properties?.messageID || !properties.partID || typeof properties.delta !== "string") return
+      const field = properties.field ?? "text"
+      messages = messages.map((row) =>
+        row.info.id === properties.messageID
+          ? {
+              ...row,
+              parts: row.parts.map((item) =>
+                item.id === properties.partID
+                  ? {
+                      ...item,
+                      [field]: `${(item as unknown as Record<string, unknown>)[field] ?? ""}${properties.delta}`,
+                    }
+                  : item,
+              ),
+            }
+          : row,
+      )
+    }
   }
   const emit = (payload: MockEvent, directory: string = DIR) => {
     persistEmittedPart(payload)
@@ -2021,18 +2066,27 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(route, SESSION_INTERACTION_SUCCESS.body, SESSION_INTERACTION_SUCCESS.status)
   })
 
-  const localWorkspaceResolve = (r: Route) =>
-    api(r)
-      ? json(r, workspaceResolveResponse({
-          id: `local-${SESSION_ID}`,
-          project_id: PROJECT_ID,
-          directory: DIR,
-          kind: "local",
-          status: "ready",
-          created_at: Date.now(),
-          updated_at: Date.now(),
-        }))
-      : r.continue()
+  // Echo the REQUESTED directory back as the workspace identity, mirroring
+  // the real local resolve route. The old default answered a fixed
+  // `local-${SESSION_ID}` for EVERY directory — the "bogus" shared-helper gap
+  // core-sidebar-tree.spec.ts documents and overrides: once the app resolved
+  // that id, the route bridge upgraded the pane onto `/w/local-<sessionId>`
+  // MID-FLOW, remounting the pane scope (keyed on the workspace key) under
+  // the user — observed as the fork spec's slash popover closing and its
+  // fork navigation landing on the bogus scope's slug.
+  const localWorkspaceResolve = (r: Route) => {
+    if (!api(r)) return r.continue()
+    const directory = new URL(r.request().url()).searchParams.get("directory") ?? DIR
+    return json(r, workspaceResolveResponse({
+      id: directory,
+      project_id: PROJECT_ID,
+      directory,
+      kind: "local",
+      status: "ready",
+      created_at: Date.now(),
+      updated_at: Date.now(),
+    }))
+  }
   await contractRoute(page, "**/api/workspace/resolve**", localWorkspaceResolve)
   await contractRoute(page, "**/api/claxedo/workspace/resolve**", localWorkspaceResolve)
 
