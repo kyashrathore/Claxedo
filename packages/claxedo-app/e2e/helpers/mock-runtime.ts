@@ -1607,8 +1607,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // a same-origin STATIC ASSET served by vite/preview, not an API escape.
   // Registered after the catch-all recorder (= tried before it): continue()
   // lets the web server answer while keeping the request out of the escape
-  // ledger.
-  await page.route("**/assets/icons/**/sprite.svg**", (r) => r.continue())
+  // ledger. Two spellings: the dev server serves the source path
+  // (/ui/src/assets/icons/codex/sprite.svg), the prebuilt bundle a
+  // fingerprinted asset (/assets/sprite-<hash>.svg).
+  await page.route("**/*sprite*.svg*", (r) => r.continue())
 
   await page.route("**/api/claxedo/bootstrap**", (r) =>
     api(r)
