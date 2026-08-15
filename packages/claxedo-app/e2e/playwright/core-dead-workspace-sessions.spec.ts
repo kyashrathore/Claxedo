@@ -270,7 +270,10 @@ async function installDeadWorkspace(page: Page, opts: { sessions?: StoredSession
     if (path.startsWith(`/api/workspace/${WORKSPACE_ID}/checkpoints`)) return json(route, { worktrees: [] })
 
     // ---- The central control plane: authoritative, workspace-independent ----
-    if (path === "/api/control/session-list") {
+    // Loopback transports rewrite this to `/api/claxedo/session-list`
+    // (workspace-control-routes.ts:150) — accept both spellings so the query
+    // recording keeps capturing whichever one the app uses.
+    if (path === "/api/control/session-list" || path === "/api/claxedo/session-list") {
       state.sessionListQueries.push(url.search)
       const limit = Number(url.searchParams.get("limit") ?? "5") || 5
       const rows = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt).map(navigationRow)

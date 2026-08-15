@@ -414,7 +414,10 @@ async function installUserHostedRuntimeMock(
     // `src/context/global-sync/inventory-source.ts` and
     // `src/providers/claxedo-events.tsx`). Not part of Behavior 3's runtime
     // lane, so never counted in `bareHitsDuringReady`.
-    if (url.pathname === "/api/control/session-list") {
+    // The bare origin here is loopback, so the app rewrites the list path to
+    // `/api/claxedo/session-list` (workspace-control-routes.ts:150); a signed
+    // host would still use `/api/control/...` — answer both.
+    if (url.pathname === "/api/control/session-list" || url.pathname === "/api/claxedo/session-list") {
       return json(route, { view: { scope: "global", groupBy: "none", sort: "updated_desc", limit: 50 }, items: [], groups: [] })
     }
     if (url.pathname === "/api/control/sessions") return json(route, { sessions: [] })

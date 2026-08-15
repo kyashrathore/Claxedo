@@ -247,7 +247,7 @@
  *   idle→working→done cycle it shares a code path with IS covered). The mobile
  *   drawer is IN scope and covered by BEHAVIORS #14.
  */
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page, type Route } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
 
 const DIR = "/tmp/e2e-core-sidebar-tree"
@@ -365,7 +365,7 @@ async function installSessionTreeFixtures(page: Page, opts: { dir: string; proje
     attachments: [],
   })
 
-  await page.route("**/api/control/session-list**", async (route) => {
+  const sessionListHandler = async (route: Route) => {
     const url = new URL(route.request().url())
     sessionListRequests.push(url.search)
     if (sessionListDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, sessionListDelayMs))
@@ -401,7 +401,12 @@ async function installSessionTreeFixtures(page: Page, opts: { dir: string; proje
         totalKnown: filtered.length,
       }),
     })
-  })
+  }
+  await page.route("**/api/control/session-list**", sessionListHandler)
+  // On loopback transports the app rewrites the session-list path to
+  // `/api/claxedo/session-list` (workspace-control-routes.ts:150) — answer
+  // both with the same handler.
+  await page.route("**/api/claxedo/session-list**", sessionListHandler)
 
   await page.route("**/api/control/sessions**", async (route) => {
     return route.fulfill({
@@ -423,7 +428,7 @@ async function installSessionTreeFixtures(page: Page, opts: { dir: string; proje
     })
   })
 
-  await page.route("**/api/workspace/resolve**", async (route) => {
+  const workspaceResolveHandler = async (route: Route) => {
     const url = new URL(route.request().url())
     const directory = url.searchParams.get("directory") ?? opts.dir
     return route.fulfill({
@@ -431,7 +436,12 @@ async function installSessionTreeFixtures(page: Page, opts: { dir: string; proje
       contentType: "application/json",
       body: JSON.stringify({ workspaceId: directory, directory, kind: "local", status: "ready" }),
     })
-  })
+  }
+  await page.route("**/api/workspace/resolve**", workspaceResolveHandler)
+  // Loopback transports rewrite resolve to `/api/claxedo/workspace/resolve`
+  // (workspace-control-routes.ts:41) — same handler must win there too, or
+  // mock-runtime's bogus `local-${sessionId}` default answers instead.
+  await page.route("**/api/claxedo/workspace/resolve**", workspaceResolveHandler)
 
   // Archive PATCH: `installMockRuntime`'s generic `**/session/*` catch-all
   // answers any method (including PATCH) with a canned 200 and doesn't track
