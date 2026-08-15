@@ -14,7 +14,8 @@
 import { render } from "@solidjs/web"
 import { For, Show, createSignal } from "solid-js"
 import { createLocalServerClient, type LocalServerClient, type SessionSummary } from "../client/local-server-client"
-import { initSessionModel } from "../core/model"
+import { createComposerClient } from "../client/composer-client"
+import { initSessionModel, type ComposerResource } from "../core/model"
 import { runCore } from "./run-core"
 import { SessionView } from "./app"
 import "./styles.css"
@@ -39,14 +40,99 @@ function bootSession(client: LocalServerClient, sessionId: string, directory: st
   // Fire-and-forget: on the desktop-local server this makes the directory's
   // workspace routes live before the transcript/stream requests race in.
   const resolved = client.resolveWorkspace(directory).catch(() => {})
+  const composerClient = createComposerClient({ baseUrl: serverUrl })
+  const fail = (dispatch: (msg: Parameters<typeof handle.dispatch>[0]) => void, resource: ComposerResource) =>
+    (error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error)
+      console.warn(`[composer] ${resource} load failed: ${message}`)
+      dispatch({ type: "ComposerLoadFailed", resource, error: message })
+    }
+
   const handle = runCore(initSessionModel({ sessionId, directory }), (effect, dispatch) => {
-    if (effect.kind === "send-prompt") {
-      client
-        .sendPrompt({ sessionId: effect.sessionId, directory: effect.directory, text: effect.text })
-        .then(() => dispatch({ type: "PromptAccepted" }))
-        .catch((error) => dispatch({ type: "PromptFailed", error: error instanceof Error ? error.message : String(error) }))
+    switch (effect.kind) {
+      case "send-prompt":
+        client
+          .sendPrompt({
+            sessionId: effect.sessionId,
+            directory: effect.directory,
+            text: effect.text,
+            ...(effect.model ? { model: effect.model } : {}),
+            ...(effect.agent ? { agent: effect.agent } : {}),
+            ...(effect.variant ? { variant: effect.variant } : {}),
+            ...(effect.permissionMode ? { permissionMode: effect.permissionMode } : {}),
+          })
+          .then(() => dispatch({ type: "PromptAccepted" }))
+          .catch((error) => dispatch({ type: "PromptFailed", error: error instanceof Error ? error.message : String(error) }))
+        break
+      case "load-roster":
+        composerClient
+          .listHarnesses(effect.directory)
+          .then((harnesses) => dispatch({ type: "RosterLoaded", harnesses }))
+          .catch(fail(dispatch, "roster"))
+        break
+      case "load-models":
+        // ACP harnesses expose models+thought-levels through harness options;
+        // opencode/pi answer 404 there ("exposed through /provider") — fall
+        // back to the provider catalog for those.
+        composerClient
+          .harnessOptions({ directory: effect.directory, harness: effect.harness })
+          .then((result) => {
+            if (result.models.length > 0) return { models: result.models, efforts: result.efforts }
+            return composerClient
+              .providerCatalog({ directory: effect.directory, harness: effect.harness })
+              .then((catalog) => ({
+                models: catalog.providers.flatMap((provider) => provider.models),
+                efforts: [],
+              }))
+          })
+          .catch(() =>
+            composerClient
+              .providerCatalog({ directory: effect.directory, harness: effect.harness })
+              .then((catalog) => ({
+                models: catalog.providers.flatMap((provider) => provider.models),
+                efforts: [],
+              })),
+          )
+          .then((result) =>
+            dispatch({ type: "ModelsLoaded", harness: effect.harness, models: result.models, efforts: result.efforts }),
+          )
+          .catch(fail(dispatch, "models"))
+        break
+      case "load-modes":
+        composerClient
+          .permissionModes({ directory: effect.directory, harness: effect.harness })
+          .then((result) =>
+            dispatch({
+              type: "ModesLoaded",
+              harness: effect.harness,
+              modes: result.modes,
+              ...(result.currentModeId ? { currentModeId: result.currentModeId } : {}),
+              ...(result.unsupported ? { unsupported: result.unsupported } : {}),
+            }),
+          )
+          .catch(fail(dispatch, "modes"))
+        break
+      case "load-workspaces":
+        composerClient
+          .listWorkspaces()
+          .then((workspaces) => dispatch({ type: "WorkspacesLoaded", workspaces }))
+          .catch(fail(dispatch, "workspaces"))
+        break
+      case "load-worktrees":
+        composerClient
+          .listWorktrees(effect.directory)
+          .then((worktrees) => dispatch({ type: "WorktreesLoaded", directory: effect.directory, worktrees }))
+          .catch(fail(dispatch, "worktrees"))
+        break
+      case "create-worktree":
+        composerClient
+          .createWorktree({ directory: effect.directory, ...(effect.name ? { name: effect.name } : {}) })
+          .then((worktree) => dispatch({ type: "WorktreeCreated", worktree }))
+          .catch(fail(dispatch, "worktree-create"))
+        break
     }
   })
+  handle.dispatch({ type: "ComposerOpened" })
 
   void resolved.then(() =>
     client
@@ -63,6 +149,7 @@ function bootSession(client: LocalServerClient, sessionId: string, directory: st
     onConnection: (state) => handle.dispatch({ type: "ConnectionChanged", state }),
   })
 
+  ;(globalThis as { __model?: unknown }).__model = handle.model
   render(() => <SessionView model={handle.model} dispatch={handle.dispatch} />, root)
 }
 

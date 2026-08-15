@@ -31,6 +31,36 @@ describe("local server client", () => {
     expect(sent?.body).toEqual({ parts: [{ type: "text", text: "hello" }] })
   })
 
+  test("a prompt with a composer selection carries the exact SessionPromptBody fields", async () => {
+    let sent: unknown
+    const client = createLocalServerClient({
+      baseUrl: "http://127.0.0.1:1707",
+      fetcher: async (_url, init) => {
+        sent = JSON.parse(String(init?.body))
+        return response({ ok: true })
+      },
+    })
+    await client.sendPrompt({
+      sessionId: "s1",
+      directory: "/tmp/p",
+      text: "go",
+      model: { providerID: "anthropic", modelID: "claude-opus-4-8" },
+      agent: "build",
+      variant: "high",
+      permissionMode: "plan",
+      messageID: "msg_1",
+    })
+    // Field names must match workspace-runtime's SessionPromptBody exactly.
+    expect(sent).toEqual({
+      parts: [{ type: "text", text: "go" }],
+      model: { providerID: "anthropic", modelID: "claude-opus-4-8" },
+      agent: "build",
+      variant: "high",
+      permissionMode: "plan",
+      messageID: "msg_1",
+    })
+  })
+
   test("surfaces non-2xx as errors with the body excerpt", async () => {
     const client = createLocalServerClient({
       baseUrl: "http://127.0.0.1:1707",

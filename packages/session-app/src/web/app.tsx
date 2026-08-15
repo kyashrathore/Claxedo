@@ -11,6 +11,7 @@
 import { For, Show, createMemo } from "solid-js"
 import type { SessionModel, SessionMsg, TimelineRow } from "../core/model"
 import { renderMarkdown } from "./markdown"
+import { Composer } from "./composer"
 
 type Dispatch = (msg: SessionMsg) => void
 
@@ -111,29 +112,3 @@ function ToolRow(props: { row: Extract<TimelineRow, { kind: "tool" }> }) {
   )
 }
 
-function Composer(props: { model: SessionModel; dispatch: Dispatch }) {
-  return (
-    <footer class="composer">
-      <textarea
-        class="composer-input"
-        placeholder="Ask anything…"
-        value={props.model.draft}
-        disabled={props.model.sending}
-        onInput={(event) => props.dispatch({ type: "DraftEdited", text: event.currentTarget.value })}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey) {
-            event.preventDefault()
-            props.dispatch({ type: "SubmitPrompt" })
-          }
-        }}
-      />
-      <button
-        class="composer-send"
-        disabled={props.model.sending || props.model.draft.trim() === ""}
-        onClick={() => props.dispatch({ type: "SubmitPrompt" })}
-      >
-        {props.model.sending ? "Sending…" : "Send"}
-      </button>
-    </footer>
-  )
-}
