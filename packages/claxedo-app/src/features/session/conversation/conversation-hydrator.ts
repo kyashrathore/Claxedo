@@ -17,9 +17,30 @@ export function resolveStoredMessages<T extends { id: string }>(input: {
   mode?: "replace" | "prepend"
 }) {
   if (input.mode === "prepend") return mergeByID(input.existing ?? [], input.next)
-  if (input.next.length > 0) return input.next
+  if (input.next.length > 0) return reuseUnchanged(input.existing, input.next)
   if ((input.existing?.length ?? 0) === 0) return input.next
   return input.existing!
+}
+
+/**
+ * Identity-preserving replace, mirroring `reconcileStoredParts`' contract: the
+ * canonical payload wins on membership, order, and content, but every row that
+ * is CONTENT-EQUAL to one we already hold keeps its existing object — and a
+ * fully unchanged list hands back the SAME array. Without this, every
+ * turn-settle/hydrate refetch minted a fresh message-info object per row, so
+ * reactive consumers re-rendered the whole timeline for a no-op payload —
+ * observed as the turn fold snapping shut (and clicks landing on the wrong
+ * element) whenever a background refetch raced an open turn.
+ */
+function reuseUnchanged<T extends { id: string }>(existing: T[] | undefined, next: T[]) {
+  if (!existing || existing.length === 0) return next
+  const before = new Map(existing.map((item) => [item.id, item] as const))
+  const resolved = next.map((item) => {
+    const prior = before.get(item.id)
+    return prior && (prior === item || JSON.stringify(prior) === JSON.stringify(item)) ? prior : item
+  })
+  const unchanged = existing.length === resolved.length && resolved.every((item, index) => existing[index] === item)
+  return unchanged ? existing : resolved
 }
 
 export function resolveStoredParts<T extends { id: string }>(existing: T[] | undefined, next: T[]) {

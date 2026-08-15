@@ -73,10 +73,26 @@ export function ContentRenderer(props: ContentRendererProps): JSX.Element {
           >
             {(resolved) =>
               resolved.renderer({
-                meta: m(),
+                // Getters, not eager reads: reading `m()` (or `principal()`)
+                // synchronously here subscribes THIS render scope, so every
+                // metadata patch — including a plain title update landing from
+                // auto-title or the directory-session cache — re-ran the
+                // renderer and REMOUNTED the whole surface. For a session pane
+                // that teardown detached the sticky header, dropped composer
+                // focus to <body> (closing an open slash popover mid-typing),
+                // and rebuilt every timeline row. Surface components that need
+                // live metadata already re-derive it reactively from the store
+                // by id (e.g. `SessionContent`'s own `state.meta.get(...)`
+                // memo); the getter keeps `context.meta` current for lazy
+                // readers without coupling their lifetime to patch frequency.
+                get meta() {
+                  return m()
+                },
                 ctx: props.ctx,
                 fallbackDirectory: props.fallbackDirectory,
-                canUseDocuments: documentsAccess({ principal: principal(), serverUrl: server.url }),
+                get canUseDocuments() {
+                  return documentsAccess({ principal: principal(), serverUrl: server.url })
+                },
               })
             }
           </Show>
