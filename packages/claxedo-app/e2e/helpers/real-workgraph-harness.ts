@@ -1839,7 +1839,9 @@ async function respond(
       })
       return
     }
-    if (incoming.method === "GET" && pathname === "/api/control/session-list") {
+    // Loopback transports rewrite the list path to `/api/claxedo/session-list`
+    // (workspace-control-routes.ts:150) — serve both spellings.
+    if (incoming.method === "GET" && (pathname === "/api/control/session-list" || pathname === "/api/claxedo/session-list")) {
       const query = parseSessionListQuery(url)
       sendJson(outgoing, buildSessionListResponse({
         query,

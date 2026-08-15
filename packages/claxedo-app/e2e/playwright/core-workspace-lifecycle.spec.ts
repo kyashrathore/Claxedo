@@ -398,11 +398,14 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
   // always hits `/api/control/session-list`, signed or not; something else
   // separately hits the plural `/api/control/sessions` — both confirmed live via
   // the same standalone probe referenced above).
-  await page.route("**/api/control/session-list**", (r) =>
+  const handleControlSessionList = (r: import("@playwright/test").Route) =>
     api(r.request())
       ? json(r, { view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 50 }, items: [], totalKnown: 0 })
-      : r.continue(),
-  )
+      : r.continue()
+  await page.route("**/api/control/session-list**", handleControlSessionList)
+  // Loopback transports rewrite the path to `/api/claxedo/session-list`
+  // (workspace-control-routes.ts:150) — same handler serves both.
+  await page.route("**/api/claxedo/session-list**", handleControlSessionList)
   await page.route("**/api/control/sessions**", (r) => (api(r.request()) ? json(r, []) : r.continue()))
 }
 

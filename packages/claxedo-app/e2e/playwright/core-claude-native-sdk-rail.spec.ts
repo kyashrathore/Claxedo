@@ -50,7 +50,7 @@
  * only `agentLifecycleTitle` does, and only from a delivered `agent.lifecycle`.
  */
 
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page, type Route } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
 
 const DIR = "/tmp/e2e-claude-native-sdk-rail"
@@ -90,7 +90,7 @@ async function installSessionListFixture(
     attachments: [],
   })
 
-  await page.route("**/api/control/session-list**", async (route) => {
+  const sessionListHandler = async (route: Route) => {
     const url = new URL(route.request().url())
     const limit = Number(url.searchParams.get("limit") ?? "5") || 5
     const items = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, limit)
@@ -103,7 +103,13 @@ async function installSessionListFixture(
         nextCursor: undefined,
       }),
     })
-  })
+  }
+  await page.route("**/api/control/session-list**", sessionListHandler)
+  // Loopback transports rewrite the list path to `/api/claxedo/session-list`
+  // (workspace-control-routes.ts:150); same handler answers both so the
+  // stale-fixture refetch in scenario 2 still lands HERE, not on the
+  // mock-runtime empty-list default.
+  await page.route("**/api/claxedo/session-list**", sessionListHandler)
 
   return { setSessions: (next: FixtureSession[]) => { sessions = [...next] } }
 }

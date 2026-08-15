@@ -444,7 +444,9 @@ async function installCloudRuntimeMock(
     // ---- Control-plane session catalog (sidebar list; separate from the
     // /workspaces/:id/session CRUD lane above — a signed-control-plane cloud
     // workspace's sidebar reads THIS, not the runtime's own /session list) ----
-    if (url.pathname === "/api/control/session-list") {
+    // Loopback origins rewrite this to `/api/claxedo/session-list`
+    // (workspace-control-routes.ts:150) — accept both spellings.
+    if (url.pathname === "/api/control/session-list" || url.pathname === "/api/claxedo/session-list") {
       const rows = sessionCreated
         ? [{
             type: "session",
