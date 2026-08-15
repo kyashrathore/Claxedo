@@ -6,6 +6,19 @@ binary (Native SDK). Local, unsigned, unauthed, against the real Claxedo
 local server. This package is the living proof for
 `docs/plans/native-sdk-port/03-dual-target-composition.md`.
 
+## Quickstart (local machine)
+
+```bash
+git fetch origin claude/claxedo-perf-optimization-1yzgej
+git checkout claude/claxedo-perf-optimization-1yzgej
+bun install
+packages/session-app/dev/run.sh            # or: dev/run.sh /path/to/any/git/repo
+```
+
+First run builds the embedded engine artifact (~1 min), then serves the app
+at http://localhost:4460 against the real local server on 127.0.0.1:4480 and
+prints the exact URL to open. Requires bun + node 20+.
+
 ## Layout
 
 - `src/core/` — the shared Elm-shaped core: model, `update`, runtime-event
