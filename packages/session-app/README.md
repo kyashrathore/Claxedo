@@ -13,8 +13,13 @@ local server. This package is the living proof for
   untouched rows (pinned by tests); type-checked against the canonical
   `AgentRuntimeEvent` union by `contract.test.ts`. `bun test ./src`.
 - `src/client/` — local-server client: workspace resolve (create=true),
-  `/session` list/create, transcript, prompt, `/api/wr/runtime-events` SSE
-  with reconnect.
+  `/session` list/create, transcript, prompt (carries the composer selection
+  as `SessionPromptBody` fields: `model`, `agent`, `variant`,
+  `permissionMode`), `/api/wr/runtime-events` SSE with reconnect. Plus
+  `composer-client.ts`: harness roster + active harness, harness model/effort
+  options, `/provider` catalog, permission modes, workspaces, worktree
+  list/create, credential providers + API-key put (endpoints verified live —
+  see `docs/api-verification.md`).
 - `src/web/` — Solid 2 (2.0.0-rc.0) renderer: `run-core.ts` bridges the pure
   core into a store (authoritative model outside the store — writes commit on
   microtasks; keyed field-level diff so `<For>` keeps row DOM during
@@ -66,3 +71,29 @@ local server. This package is the living proof for
    binds only bare fields, so precompute booleans in the core); iteration is
    `<for each key as>`; text controls bind `text="{bytes}"` and `on-input`
    requires the canonical `TextInputEvent` (type-only import works).
+
+## Parity status (2026-08-15)
+
+Verified live against the real local server (playwright-driven):
+- Harness roster chip: all 8 harnesses (ACP/SDK/native classes), active one
+  auto-selected.
+- Model picker: real `/provider` catalog (5 configured providers), sticky
+  provider groups, selection carried into the prompt body (`model
+  {providerID, modelID}`).
+- Effort: thought-level options for harnesses exposing them; model-variant
+  efforts for catalog models are decoded (`decodeModelVariants`) — UI wiring
+  for variant efforts on catalog models is the next slice.
+- Permission modes: per-harness modes render and select when the harness
+  reports them (hidden when unsupported, like the real app).
+- Project chip: real workspaces (local + cloud access kinds).
+- Worktree chip: list + "+ New worktree" create through the real compat
+  routes.
+- Provider setup: `putCredential`/`listCredentialProviders` are wired and
+  live-tested in the client; the API-key entry UI hangs off the model picker
+  next.
+
+Known deltas from exact-pixel parity (tracked, spec'd in
+docs/visual-spec.md): menus render in-flow (real app portals them; the card
+is `overflow: visible` until then), the merged picker lacks the model
+search field, and the timeline uses the simplified row set rather than the
+full BasicTool/turn-fold chrome.

@@ -53,6 +53,11 @@ function applyModelDiff(draft: SessionModel, previous: SessionModel, next: Sessi
       ;(draft as Record<string, unknown>)[key] = next[key]
     }
   }
+  // The composer subtree is replaced wholesale on change: its lists are
+  // small and menu-scoped, so object-level granularity is enough there.
+  if (previous.composer !== next.composer) {
+    ;(draft as { composer: SessionModel["composer"] }).composer = next.composer
+  }
   const rows = next.rows
   const prevRows = previous.rows
   for (let i = 0; i < rows.length; i++) {
