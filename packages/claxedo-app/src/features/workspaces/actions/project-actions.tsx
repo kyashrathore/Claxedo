@@ -520,15 +520,24 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
 
   const handleRemoveProject = (project: ProjectItem) => {
     const current = props.activeProjectId()
+    // Navigate away BEFORE purging tabs. While the route still names the
+    // removed workspace (`/w/<dir>/session`), route-intent recreates the draft
+    // surface the purge just closed (`route-intent.ts` receive() opens a
+    // `sessionId: "new"` draft for a workspace session route), route-sync then
+    // keeps the URL parked on the removed workspace, and
+    // `autoOpenActiveProject` (`app-shell-state.ts`, `ignoreClosed: true`)
+    // silently re-opens the project the user just removed — the sidebar row
+    // came back within a second of the (successful) optimistic removal.
+    // Leaving the route first makes the purge below final.
+    if (current === project.worktree) {
+      props.navigate("/")
+    }
     for (const dir of projectDirectories(project)) {
       purgeWorkspaceState(dir)
       props.state.workspace.cleanupDeletedWorktree(dir, project.id)
     }
     removeProjectFromInventory(project)
     props.layout.projects.close(project.worktree)
-    if (current === project.worktree) {
-      props.navigate("/")
-    }
     void deleteProjectWorkspace(project).catch((err) => {
       showToast({
         title: "Failed to remove project",

@@ -2,6 +2,18 @@
 import { rendererTraceEnabled } from "@/platform/performance/renderer-trace"
 import "@/app/styles/index.css"
 import "@/app/styles/ui-overrides.css"
+// The v2 overlay component sheets ride the eager bundle on purpose: they are
+// the declared consumers of the theme geometry tokens ui-overrides.css binds
+// (`--surface-overlay-radius`/`--surface-overlay-shadow` — see
+// src/architecture/codex-theme.guard.test.ts "keeps every Codex geometry input
+// connected to its component declaration"). Importing only the components
+// lazily let code-splitting move these sheets into the composer/markdown
+// chunks, so any surface rendered before those chunks load (and the theme
+// contract itself) saw the overlay geometry silently fall to 0. Vite dedupes:
+// the lazy chunks reuse this eager copy instead of emitting a second one.
+import "@opencode-ai/ui/v2/menu-v2.css"
+import "@opencode-ai/ui/v2/select-v2.css"
+import "@opencode-ai/ui/v2/tooltip-v2.css"
 import { I18nProvider } from "@opencode-ai/ui/context"
 import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
