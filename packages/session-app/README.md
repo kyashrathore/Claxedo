@@ -93,7 +93,8 @@ Verified live against the real local server (playwright-driven):
   next.
 
 Known deltas from exact-pixel parity (tracked, spec'd in
-docs/visual-spec.md): menus render in-flow (real app portals them; the card
-is `overflow: visible` until then), the merged picker lacks the model
-search field, and the timeline uses the simplified row set rather than the
-full BasicTool/turn-fold chrome.
+docs/visual-spec.md): the merged picker lacks the model search field, and
+the timeline uses the simplified row set rather than the full
+BasicTool/turn-fold chrome. Menus are portaled (@solidjs/web Portal) with
+trigger-anchored fixed positioning, and the card keeps its spec-correct
+`overflow: clip`.
