@@ -21,7 +21,7 @@ to continue without repeating anything.
 | **This worktree** | `.worktrees/codex/memory-workgraph-perf/.worktrees/integrate/claxedo-memory-buckets` |
 | **Full evidence record** | `docs/perf/u11-qualification-status.md` (~3,600 lines, this worktree) |
 | **Gate verdict table** | `docs/perf/gate-arithmetic-verdicts.md` (this worktree) |
-| **Dependency decisions** | `docs/perf/u8-dependency-decision.md`, `vercel-labs-{scriptc,native-sdk}-spike.md` |
+| **Dependency decisions** | `docs/perf/u8-dependency-decision.md`, `vercel-labs-scriptc-spike.md` |
 | **The plan being executed** | `docs/plans/2026-08-09-001-five-times-faster-than-t3-plan.md` |
 | **PREDECESSOR worktree** | `/Users/yashvardhansingh/test/opencode/.worktrees/codex/memory-workgraph-perf` (branch `optimize/claxedo-sub60-under500`) |
 | **PREDECESSOR experiment doc** | `docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md` in THAT worktree — 854 lines, a 43-row Memory Action Table and a 17-row Packaged Transcript Regression Ledger, measuring everything in NATIVE PHYSICAL FOOTPRINT |
