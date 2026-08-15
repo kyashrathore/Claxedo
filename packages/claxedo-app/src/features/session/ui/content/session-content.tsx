@@ -6,6 +6,13 @@ import { SessionPaneScope } from "../components/session-pane-scope"
 import SessionPage from "@/features/session/ui/session-screen"
 import { hasBacking, isDirectorylessPiSession, localSessionRefForDirectory, retargetSessionRef } from "@/platform/identity/session-ref"
 import { SessionLoadingSurface } from "./session-loading-surface"
+// The `.session-envcard-shell` / `.session-envcard-primary` layout rules must
+// arrive with THIS component: the shell markup below renders unconditionally,
+// while the card component that also imports this stylesheet is a lazy chunk
+// that may never load (local sessions mount no card). Without the eager import
+// the shell has no flex layout and the whole session page collapses to zero
+// height — present in the DOM, painted nowhere, clickable never.
+import "./session-environment-card.css"
 
 const SessionEnvironmentCardMount = lazy(() =>
   import("./session-environment-card").then((module) => ({

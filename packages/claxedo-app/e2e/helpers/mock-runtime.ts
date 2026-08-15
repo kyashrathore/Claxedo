@@ -1576,6 +1576,19 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
 
   await page.route("**/health", (r) => (api(r) ? json(r, { healthy: true }) : r.continue()))
 
+  // GET /api/claxedo/extensions — the user-extension listing the renderer's
+  // extension loader fetches once at boot (src/platform/extensions/
+  // user-extensions.ts:150, served by claxedo-local-server's
+  // UserExtensionRoutes). CONTRACT: `{ extensions: [...], skipped: [...] }`;
+  // empty means "no user extensions installed", which is the truthful answer
+  // for a mock runtime. Without this the fetch escapes and every spec boots
+  // with a "[user-extensions] listing failed" warning riding on a dead request.
+  await page.route("**/api/claxedo/extensions", (r) => {
+    if (!api(r)) return r.continue()
+    if (new URL(r.request().url()).pathname !== "/api/claxedo/extensions") return r.fallback()
+    return json(r, { extensions: [], skipped: [] })
+  })
+
   await page.route("**/api/claxedo/bootstrap**", (r) =>
     api(r)
       ? json(r, {
@@ -1691,6 +1704,17 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(route, emptySessionNavigationListResponse(route.request().url()))
   })
 
+  // The SAME rail-sidebar list on the loopback transport: `sessionNavigationListUrl`
+  // (src/platform/runtime/agent/workspace-control-routes.ts:145-153) rewrites the
+  // path to `/api/claxedo/session-list` whenever the server base URL is loopback —
+  // which the mock's 127.0.0.1 origin always is. Introduced by the canonical
+  // response projection refactor; without this twin stub every spec boots with the
+  // sidebar stuck on "Could not load sessions." because the request escapes.
+  await contractRoute(page, "**/api/claxedo/session-list**", (route) => {
+    if (!api(route)) return route.continue()
+    return json(route, emptySessionNavigationListResponse(route.request().url()))
+  })
+
   // GET /api/control/sessions — the FLAT session inventory on the control plane
   // (`controlSessionListUrl`, src/platform/runtime/agent/workspace-control-routes.ts:76-85),
   // read by `fetchLocalControlSessions`
@@ -1748,7 +1772,18 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
 
   await page.route("**/project**", (r) => {
     if (!api(r)) return r.continue()
-    if (!["/project", "/experimental/project"].includes(new URL(r.request().url()).pathname)) return r.fallback()
+    const pathname = new URL(r.request().url()).pathname
+    // GET /project/current — the engine's project row for this worktree,
+    // fetched (with retries) by boot's `projectCurrentQuery`; it is the request
+    // that registers the workspace in the claxedo store, so an escape here
+    // means every boot burns its retry budget against a dead request.
+    if (pathname === "/project/current") return json(r, localProjectRow())
+    // PATCH /project/:id — project metadata writes (`client.project.update`).
+    // Echo the row: the mock's project properties are fixed per install.
+    if (r.request().method() === "PATCH" && pathname === `/project/${PROJECT_ID}`) {
+      return json(r, localProjectRow())
+    }
+    if (!["/project", "/experimental/project"].includes(pathname)) return r.fallback()
     return json(r, [localProjectRow(), ...(cloud ? [cloudProjectRow()] : [])])
   })
 
