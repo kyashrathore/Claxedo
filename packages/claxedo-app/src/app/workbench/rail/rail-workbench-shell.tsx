@@ -81,6 +81,8 @@ export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
             activeGlobal={props.activeGlobal}
             canCreateTerminal={props.canCreateTerminal}
             canUseDocuments={props.canUseDocuments}
+            focusedPanelTarget={props.focusedPanelTarget}
+            hasWorkspacePanelTarget={props.hasWorkspacePanelTarget}
             onCloseSurface={props.onCloseSurface}
             onFloatingChromeRef={props.onWorkspacePanelFloatingChromeRef}
             onNewPage={() => props.onNewPage?.()}
@@ -95,10 +97,13 @@ export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
             onToggleWorkspacePanelFullWidth={props.onToggleWorkspacePanelFullWidth}
             sidebarPinned={props.sidebarPinned}
             switcherItems={props.switcherItems}
+            toggleFocusedWorkspaceNavigator={props.toggleFocusedWorkspaceNavigator}
             topBarRight={props.topBarRight}
             trafficLightPad={props.trafficLightPad}
             workspacePanelBridgeChromeVisible={props.workspacePanelBridgeChromeVisible}
+            workspacePanelForFocusedTarget={props.workspacePanelForFocusedTarget}
             workspacePanelFullWidth={props.workspacePanelFullWidth}
+            workspacePanelNavigator={props.workspacePanelNavigator}
             workspacePanelVisualOpen={props.workspacePanelVisualOpen}
           />
         </Show>
