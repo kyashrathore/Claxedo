@@ -598,9 +598,13 @@ export function MessageTimeline(props: {
     if (prependAnchorFrame !== undefined) cancelAnimationFrame(prependAnchorFrame)
     let frames = 0
     let stable = 0
+    const resolveRowStart = (key: string) => {
+      const index = timelineRows().findIndex((row) => TimelineRow.key(row) === key)
+      return index < 0 ? undefined : virtualizer.getOffsetForIndex(index, "start")?.[0]
+    }
     const apply = () => {
       prependAnchorFrame = undefined
-      if (applyTimelinePrependAnchor(root, anchor) === "adjusted") {
+      if (applyTimelinePrependAnchor(root, anchor, resolveRowStart) === "adjusted") {
         stable = 0
       } else {
         stable += 1
@@ -686,22 +690,32 @@ export function MessageTimeline(props: {
     scrollEndThreshold: 80,
     overscan: 50,
     paddingEnd: 64,
-    rangeExtractor: (range) => {
+    // A getter, not a stable closure: the virtualizer memoizes the extractor's
+    // output keyed on the extractor's IDENTITY plus the computed range/count
+    // (virtual-core getVirtualIndexes deps). Solid signals read while the
+    // extractor RUNS are invisible to that memo, so a stable closure serves
+    // stale indexes whenever only those signals change (the renderRangeLimit
+    // ramp after a reload left the timeline mounting one row forever).
+    // Reading them here — at option-read time inside the adapter's tracked
+    // setOptions pass — subscribes the virtualizer and mints a new identity.
+    get rangeExtractor() {
       const rows = timelineRows()
       const activeID = activeMessageID()
-      const active = activeID
-        ? rows.findLastIndex((row) => "userMessageID" in row && row.userMessageID === activeID)
-        : -1
-      const indexes = defaultRangeExtractor({ ...range, overscan: renderOverscan() })
-      const visibleIndexes = props.shouldAnchorBottom() && renderRangeLimit() < indexes.length
-        ? indexes.slice(-renderRangeLimit())
-        : indexes
-      return filterVirtualIndexes(
-        [...new Set([...resizeAnchor.pinnedIndexes(), ...visibleIndexes, ...(active < 0 ? [] : [active])])].sort(
-          (a, b) => a - b,
-        ),
-        range.count,
-      )
+      const overscan = renderOverscan()
+      const rangeLimit = renderRangeLimit()
+      const pinned = resizeAnchor.pinnedIndexes()
+      const anchorBottom = props.shouldAnchorBottom()
+      return (range: { startIndex: number; endIndex: number; overscan: number; count: number }) => {
+        const active = activeID
+          ? rows.findLastIndex((row) => "userMessageID" in row && row.userMessageID === activeID)
+          : -1
+        const indexes = defaultRangeExtractor({ ...range, overscan })
+        const visibleIndexes = anchorBottom && rangeLimit < indexes.length ? indexes.slice(-rangeLimit) : indexes
+        return filterVirtualIndexes(
+          [...new Set([...pinned, ...visibleIndexes, ...(active < 0 ? [] : [active])])].sort((a, b) => a - b),
+          range.count,
+        )
+      }
     },
   })
   resizeAnchor.install({
@@ -786,6 +800,10 @@ export function MessageTimeline(props: {
         if (stableFrames <= 0) {
           setProgressiveReady(true)
           setInitialRevealReady(true)
+          // The staged limit only bounds pre-reveal mount work. Once revealed,
+          // the viewport range is the bound; a retained cap would slice every
+          // later-appended row out of the bottom-anchored range forever.
+          setRenderRangeLimit(Number.MAX_SAFE_INTEGER)
           return
         }
         progressiveFrame = requestAnimationFrame(settle)
@@ -864,15 +882,21 @@ export function MessageTimeline(props: {
     bottomAnchorSessionKey = key
     if (!props.shouldAnchorBottom()) return
     if (bottomAnchorFrame !== undefined) cancelAnimationFrame(bottomAnchorFrame)
-    if (progressiveFrame !== undefined) cancelAnimationFrame(progressiveFrame)
+    if (progressiveFrame !== undefined) {
+      // Pause the ramp for this frame but clear the handle — a dangling id
+      // makes scheduleProgressiveRows a permanent no-op (timeline stays
+      // hidden and range-capped).
+      cancelAnimationFrame(progressiveFrame)
+      progressiveFrame = undefined
+    }
     clearPrependAnchor()
     if (prependAnchorFrame !== undefined) cancelAnimationFrame(prependAnchorFrame)
     bottomAnchorFrame = requestAnimationFrame(() => {
       bottomAnchorFrame = undefined
       if (sessionKey() !== key) return
       const root = listRoot()
-      if (root && root.scrollHeight - root.clientHeight - root.scrollTop <= 1) return
-      virtualizer.scrollToEnd()
+      if (!(root && root.scrollHeight - root.clientHeight - root.scrollTop <= 1)) virtualizer.scrollToEnd()
+      scheduleProgressiveRows()
     })
   }
 
@@ -893,6 +917,7 @@ export function MessageTimeline(props: {
     turnFold.persist()
     while (timelineCache.size > 16) timelineCache.delete(timelineCache.keys().next().value!)
     if (bottomAnchorFrame !== undefined) cancelAnimationFrame(bottomAnchorFrame)
+    if (progressiveFrame !== undefined) cancelAnimationFrame(progressiveFrame)
     resizeAnchor.dispose()
     props.setScrollToEnd?.(() => {})
     props.setScrollToMessage?.(undefined)
