@@ -492,12 +492,22 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
               const pid = paneId()
               if (!pid) {
                 // Stashed content stays mounted but fully hidden and cheap.
+                // `visibility: hidden` is load-bearing: it is what makes the
+                // stashed slot invisible to CSS visibility queries (Playwright
+                // `:visible`, `elementFromPoint`) while keeping layout alive —
+                // `opacity: 0` alone still counts as visible, so a stale
+                // cross-workspace draft composer read as a second "visible"
+                // composer/chip. `content-visibility: visible` stays so the
+                // contents keep their rendering state and virtualizer
+                // observers keep firing while stashed; aria-hidden/inert on
+                // the slot cover the accessibility tree and interaction.
 	                return {
 	                  position: "absolute",
 	                  inset: "0",
 	                  width: "100%",
 	                  height: "100%",
 	                  opacity: "0",
+	                  visibility: "hidden",
 	                  "content-visibility": "visible",
 	                  contain: "strict",
 	                  "pointer-events": "none",

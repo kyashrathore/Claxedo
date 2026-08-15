@@ -434,7 +434,11 @@ async function installCloudRuntimeMock(
     if (url.pathname === "/command") return json(route, [{ name: "build", description: "Build command" }])
     if (url.pathname === "/permission") return json(route, [])
     if (url.pathname === "/question") return json(route, [])
-    if (url.pathname === "/api/workspace/resolve" && url.searchParams.get("workspaceId") !== WORKSPACE_ID) {
+    // Loopback central URLs rewrite this to `/api/claxedo/workspace/resolve`
+    // (workspace-control-routes.ts:40-42); the real local server mounts the same
+    // LocalWorkspaceRoutes at both prefixes (claxedo-local-server/src/app/
+    // local-app.ts) — answer both spellings.
+    if ((url.pathname === "/api/workspace/resolve" || url.pathname === "/api/claxedo/workspace/resolve") && url.searchParams.get("workspaceId") !== WORKSPACE_ID) {
       return json(route, { workspaceId: `local:${PROJECT_ID}`, directory: DIR, kind: "local", status: "ready" })
     }
     if (url.pathname === "/global/event" || url.pathname === "/event") {
@@ -504,7 +508,8 @@ async function installCloudRuntimeMock(
     }
 
     // ---- Workspace resolve (provisioning progress, polled repeatedly) ----
-    if (url.pathname === "/api/workspace/resolve" && url.searchParams.get("workspaceId") === WORKSPACE_ID) {
+    // Both spellings, same as above: the loopback central rewrites the path.
+    if ((url.pathname === "/api/workspace/resolve" || url.pathname === "/api/claxedo/workspace/resolve") && url.searchParams.get("workspaceId") === WORKSPACE_ID) {
       startAutoAdvance()
       return json(route, {
         workspaceId: WORKSPACE_ID,

@@ -929,7 +929,29 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     }
   })
 
-  const emit = (payload: MockEvent, directory: string = DIR) => compatFanout.emit(directory, payload)
+  // The real runtime PERSISTS every part it streams before/at emit, so a later
+  // `GET /session/:id/message` refetch always lists it. The app relies on that:
+  // `reconcileStoredParts` (src/features/session/store/message-page.ts) treats
+  // the REST body as CANONICAL for a settled assistant message and PRUNES any
+  // stored part id the body does not list — so a mock that emits a part over
+  // SSE without persisting it here makes the app delete that part (e.g. a
+  // subagent task card) on the next session re-entry. Mirror the real
+  // contract: fold every emitted `message.part.updated` snapshot into the
+  // message row the REST route serves.
+  const persistEmittedPart = (payload: MockEvent) => {
+    if ((payload as { type?: string }).type !== "message.part.updated") return
+    const part = (payload as { properties?: { part?: { id?: string; messageID?: string } } }).properties?.part
+    if (!part?.id || !part.messageID) return
+    messages = messages.map((row) =>
+      row.info.id === part.messageID
+        ? { ...row, parts: [...row.parts.filter((item) => item.id !== part.id), part as MockPart] }
+        : row,
+    )
+  }
+  const emit = (payload: MockEvent, directory: string = DIR) => {
+    persistEmittedPart(payload)
+    compatFanout.emit(directory, payload)
+  }
   // See `wrEventsHandler` below for why flat frames additionally enter a
   // replay list: /api/wr/events is polled by two different app consumers and
   // must broadcast flat frames to all of them, not queue them to one.
@@ -2615,22 +2637,40 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // with cloud info, breaking any spec exercising both lanes in one page (e.g. the
     // same-pane local -> cloud draft navigation in core-harness-ownership-cloud
     // behavior 5).
+    // Two spellings, one response: loopback central URLs rewrite the path to
+    // `/api/claxedo/workspace/resolve` (workspace-control-routes.ts:40-42), and
+    // the real local server mounts the SAME LocalWorkspaceRoutes at both
+    // prefixes (claxedo-local-server/src/app/local-app.ts — `/api/claxedo/
+    // workspace` and `/api/workspace`). Registering only the old spelling let
+    // the loopback request skip this override and land on the default LOCAL
+    // resolve above, mis-typing the cloud workspace as `kind: "local"`.
+    // The handlers stay INLINE (not a shared const) so the shadowing guard
+    // (src/architecture/mock-route-shadowing.ts) can see each registration's
+    // own `r.fallback()` hand-back expression in its body.
+    const cloudResolveBody = () => workspaceResolveResponse({
+      id: workspaceId,
+      project_id: CLOUD_PROJECT_ID,
+      directory: workspaceId,
+      remote_directory: workspaceId,
+      kind: "cloud",
+      driver: "daytona",
+      status: "ready",
+      created_at: Date.now(),
+      updated_at: Date.now(),
+    })
     await contractRoute(page, `**/api/workspace/resolve**`, (r) => {
       if (!api(r)) return r.continue()
       const url = new URL(r.request().url())
       const q = url.searchParams.get("workspaceId") ?? url.searchParams.get("directory") ?? ""
       if (q !== workspaceId && !q.includes(workspaceId)) return r.fallback()
-      return json(r, workspaceResolveResponse({
-        id: workspaceId,
-        project_id: CLOUD_PROJECT_ID,
-        directory: workspaceId,
-        remote_directory: workspaceId,
-        kind: "cloud",
-        driver: "daytona",
-        status: "ready",
-        created_at: Date.now(),
-        updated_at: Date.now(),
-      }))
+      return json(r, cloudResolveBody())
+    })
+    await contractRoute(page, `**/api/claxedo/workspace/resolve**`, (r) => {
+      if (!api(r)) return r.continue()
+      const url = new URL(r.request().url())
+      const q = url.searchParams.get("workspaceId") ?? url.searchParams.get("directory") ?? ""
+      if (q !== workspaceId && !q.includes(workspaceId)) return r.fallback()
+      return json(r, cloudResolveBody())
     })
 
     await page.route(`${base}/vcs**`, (r) => json(r, {}))
