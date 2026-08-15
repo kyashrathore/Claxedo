@@ -10,6 +10,28 @@ export type SessionClient = Parameters<typeof createHttpSessionBackend>[0]["clie
 export type { SessionTransportCapabilities }
 export { DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES }
 
+// Capabilities reported while a scoped-transport session's capabilities fetch
+// is still in flight. Optional affordances (permission answering, fork,
+// revert, ...) stay hidden until the transport confirms them — offering one it
+// lacks would break on click. Abort is the exception and keeps DEFAULT's
+// `true`: every shipped harness reports abort:true (agent-sdk-runtime
+// harnesses acp/opencode/pi and the shared sdk-runtime-adapter), and the
+// composer's stop control renders from `working() && canAbort()` — a
+// pessimistic abort:false here suppressed the stop icon for the ENTIRE first
+// turn of a freshly created native session, because `syncSessionCapabilities`
+// only runs at delayed first-fold hydration, which lands after a short first
+// turn has already gone idle.
+export const PENDING_SCOPED_TRANSPORT_CAPABILITIES: SessionTransportCapabilities = {
+  ...DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES,
+  permissions: false,
+  questions: false,
+  commands: false,
+  fork: false,
+  revert: false,
+  unrevert: false,
+  configOptions: false,
+}
+
 export function usesClaxedoSessionTransport(sessionID: string | undefined, directory?: string) {
   return usesScopedSessionTransport(sessionID, directory)
 }

@@ -15,6 +15,7 @@ import {
   fetchSessionByTransport,
   fetchSessionMessagesByTransport,
   fetchSessionTodoByTransport,
+  PENDING_SCOPED_TRANSPORT_CAPABILITIES,
   type SessionTransportCapabilities,
   usesClaxedoSessionTransport,
 } from "./session-transport"
@@ -171,18 +172,6 @@ const HYDRATE_FRESH_MS = 15_000
 export const ACTIVE_SESSION_STATUS_POLL_DELAY_MS = 60_000
 export const ACTIVE_SESSION_STATUS_POLL_INTERVAL_MS = 5_000
 const ACCEPTED_PROMPT_REFRESH_ATTEMPT_DELAYS_MS = [0, 600, 1_200, 2_400, 4_000, 8_000, 12_000] as const
-const PENDING_SCOPED_TRANSPORT_CAPABILITIES: SessionTransportCapabilities = {
-  ...DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES,
-  abort: false,
-  permissions: false,
-  questions: false,
-  commands: false,
-  fork: false,
-  revert: false,
-  unrevert: false,
-  configOptions: false,
-}
-
 type ActiveSessionStatusPollStartedKeys = Pick<Set<string>, "has" | "add">
 
 export async function waitForFirstActiveSessionStatusPoll(input: {
@@ -599,22 +588,28 @@ export function createSessionController(input: {
     return settledData(diffQuery) !== undefined
   })
 
+  // status/request are LIVE mirrors: on the draft->session handoff their
+  // fresh observers sit in "pending" for the first fetch while the turn is
+  // already busy, so a settled-only read reports idle exactly when the stop
+  // control must show. Plain .data is safe here — the vendored solid-query
+  // patch removed client-side query suspension globally, which is what the
+  // settled gate existed to avoid.
   const status = createMemo(() => {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return idleSessionStatus
-    return settledData(statusQuery) ?? idleSessionStatus
+    return statusQuery.data ?? idleSessionStatus
   })
 
   const permissionRequest = createMemo(() => {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return undefined
-    return settledData(requestQuery)?.permissions[0]
+    return requestQuery.data?.permissions[0]
   })
 
   const questionRequest = createMemo(() => {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return undefined
-    return settledData(requestQuery)?.questions[0]
+    return requestQuery.data?.questions[0]
   })
 
   const blocked = createMemo(() => !!permissionRequest() || !!questionRequest())
@@ -629,8 +624,8 @@ export function createSessionController(input: {
     if (!sessionID || sessionID === "new") return false
     return isSessionTurnActive({
       status: status(),
-      permissions: settledData(requestQuery)?.permissions,
-      questions: settledData(requestQuery)?.questions,
+      permissions: requestQuery.data?.permissions,
+      questions: requestQuery.data?.questions,
     })
   })
 
