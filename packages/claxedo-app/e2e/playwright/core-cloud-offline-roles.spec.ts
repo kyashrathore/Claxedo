@@ -440,7 +440,9 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
       })
     }
     if (url.pathname === "/api/control/sessions") return json(route, [])
-    if (url.pathname === "/api/control/session-list") return json(route, { sessions: [], nextCursor: null })
+    // Loopback origins rewrite this to `/api/claxedo/session-list`
+    // (workspace-control-routes.ts:150) — answer both spellings.
+    if (url.pathname === "/api/control/session-list" || url.pathname === "/api/claxedo/session-list") return json(route, { sessions: [], nextCursor: null })
 
     // ---- Same-origin: boot-time control-plane surface ----
     // With the query persister installed eagerly (no longer deferred to idle),
