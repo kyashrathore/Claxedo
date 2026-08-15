@@ -1589,6 +1589,27 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(r, { extensions: [], skipped: [] })
   })
 
+  // POST /api/claxedo/usage/sync — the usage outbox flush fired on boot by
+  // `installUsageOutboxWakeups` (src/features/usage/data/usage-api.ts:63-76)
+  // against the CENTRAL server URL, which `.env.local` points at
+  // 127.0.0.1:3001 where nothing listens. CONTRACT: the four counters
+  // (mirrors perf-harness/src/browser-runner.ts:1186 and the real route
+  // asserted in claxedo-local-server start-local-server.test.ts:103). Zeroes
+  // are the truthful mock answer: an empty outbox has nothing to deliver.
+  await page.route("**/api/claxedo/usage/sync", (r) => {
+    if (!api(r)) return r.continue()
+    if (new URL(r.request().url()).pathname !== "/api/claxedo/usage/sync") return r.fallback()
+    return json(r, { attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
+  })
+
+  // The icon sprite is fetch()ed (resourceType "fetch"), so without a handler
+  // it lands in `requests.unhandled` and trips the tripwire specs — but it is
+  // a same-origin STATIC ASSET served by vite/preview, not an API escape.
+  // Registered after the catch-all recorder (= tried before it): continue()
+  // lets the web server answer while keeping the request out of the escape
+  // ledger.
+  await page.route("**/assets/icons/**/sprite.svg**", (r) => r.continue())
+
   await page.route("**/api/claxedo/bootstrap**", (r) =>
     api(r)
       ? json(r, {
