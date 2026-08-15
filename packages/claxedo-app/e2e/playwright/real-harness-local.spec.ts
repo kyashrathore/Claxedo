@@ -423,7 +423,13 @@
  */
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { execFile, spawn, type ChildProcess } from "node:child_process"
-import { DatabaseSync as SQLiteDatabase } from "node:sqlite"
+// `node:sqlite` needs Node >= 22.5, but Playwright LOADS this file during
+// collection in every lane (grep filters tests, not files), and the browser
+// lanes run under Node 20 where a top-level import kills the whole run with
+// "No such built-in module". Required lazily inside the one Tier-R seeding
+// helper that uses it, so only the lane that actually opens the engine
+// database needs the newer runtime.
+import { createRequire } from "node:module"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -1401,6 +1407,8 @@ function seedPickerTurn(dir: string, sessionID: string, turn: number) {
   const messageID = `msg_seed_user_${n}`
   const assistantID = `msg_seed_assistant_${n}`
   const created = Date.now() - (TURN_PICKER_TURNS - turn + 1) * 60_000
+  const { DatabaseSync: SQLiteDatabase } = createRequire(import.meta.url)("node:sqlite") as
+    typeof import("node:sqlite")
   const database = new SQLiteDatabase(path.join(dataDir, "opencode-engine", "opencode.db"))
   database.exec("PRAGMA busy_timeout = 5000")
   const run = (sql: string, values: (string | number)[]) => database.prepare(sql).run(...values)
