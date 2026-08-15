@@ -761,6 +761,20 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     await scroller.hover()
     for (let attempt = 0; attempt < 30; attempt++) {
       await page.mouse.wheel(0, -400)
+      // `mouse.wheel` resolves when the input is DISPATCHED, not once the page
+      // has actually scrolled (Playwright's documented wheel caveat). Without
+      // an in-page settle the rendered-count read below races the scroll event:
+      // the loop sees a stale count and fires 1-2 EXTRA wheels after the reveal
+      // already happened. Those extra wheels are real user gestures, and the
+      // app deliberately yields the prepend anchor to a user gesture
+      // (timelineInteractionPlan's clearPrependAnchor, view-state.ts) — so they
+      // legitimately drag the viewport up off the compensated position, and the
+      // anchor assertions below end up measuring user overscroll instead of
+      // preserveScroll (observed: settled.top=0 under dev serving; a one-wheel
+      // overshoot leaving the witness just below the fold under prebuilt). A
+      // double rAF spans the browser's scroll processing plus the same-task
+      // reveal + attribute flush, so the count read is never stale.
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
       const revealed = await root.getAttribute("data-session-rendered-user-count")
       if (revealed === String(turnCount)) break
     }
@@ -819,12 +833,24 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
       }
       return w.__e2eScrollSamples ?? []
     })
-    const heightBefore = samples.find((s) => s.kind === "init")?.height ?? 0
     const settled = await scroller.evaluate((el) => ({ top: el.scrollTop, height: el.scrollHeight, client: el.clientHeight }))
+    // "The reveal really prepended" is proven by the rendered-user-count flip
+    // (renderedBefore -> turnCount, asserted above), zero duplicate rows, and
+    // the in-viewport witness below — NOT by comparing raw scrollHeights across
+    // the gesture. The pre-gesture scrollHeight counts every unmounted windowed
+    // row at the virtualizer's ESTIMATE (timelineInitialEstimatedItemSize,
+    // ~180px) while these single-line turns measure ~65-74px once mounted, so
+    // the init sample is inflated by more than the two prepended turns add:
+    // measured content genuinely grew 871 -> 1082 real px in the recorded
+    // failure while the raw delta read -428. Estimates converge to measurements
+    // as rows mount, which makes any cross-gesture height delta a comparison of
+    // two different measurement regimes. The settled geometry must still
+    // OVERFLOW (windowing + reveal only make sense on overflowing content), and
+    // the samples ride the failure message for diagnosis.
     expect(
-      settled.height - heightBefore,
-      `revealing older turns must grow the scrollable content. samples=${JSON.stringify(samples)} settled=${JSON.stringify(settled)}`,
-    ).toBeGreaterThan(100)
+      settled.height,
+      `revealed content must still overflow the scroller. samples=${JSON.stringify(samples)} settled=${JSON.stringify(settled)}`,
+    ).toBeGreaterThan(settled.client + 100)
     expect(
       settled.top,
       "preserveScroll must compensate scrollTop by the prepended height (a no-op or jump-to-top leaves it in the <200px trigger zone)",
