@@ -117,7 +117,22 @@ export function createLayoutOrchestration(input: {
   const restoreContentFocus = (id: string) => {
     const origin = meta.get(id)?.returnFocus
     if (!origin || typeof document === "undefined") return
-    const attempt = (remaining: number) => {
+    // Focus can be lost twice on the way back to the parent surface: the
+    // target may not be rendered yet (virtualized timeline still mounting),
+    // and a re-render inside the frame budget can REPLACE the node we just
+    // focused — the browser then drops focus to <body>. So a successful
+    // focus() does not end the loop: keep watching for the rest of the budget
+    // and re-assert onto the replacement node, but only while focus sits on
+    // <body> — the user moving focus to any real element ends the restore.
+    const attempt = (remaining: number, focused?: HTMLElement) => {
+      if (focused) {
+        if (focused.isConnected && document.activeElement === focused) {
+          if (remaining > 0) requestAnimationFrame(() => attempt(remaining - 1, focused))
+          return
+        }
+        const active = document.activeElement
+        if (active && active !== document.body && active.isConnected) return
+      }
       const exact = origin.originId
         ? document.querySelector<HTMLElement>(`[data-subagent-origin-id="${CSS.escape(origin.originId)}"]`)
         : undefined
@@ -129,10 +144,11 @@ export function createLayoutOrchestration(input: {
       const target = exact ?? marker?.closest<HTMLElement>("a, button") ?? marker
       if (target && target.getClientRects().length > 0) {
         target.focus()
-        target.scrollIntoView({ block: "center" })
+        if (!focused) target.scrollIntoView({ block: "center" })
+        if (remaining > 0) requestAnimationFrame(() => attempt(remaining - 1, target))
         return
       }
-      if (remaining > 0) requestAnimationFrame(() => attempt(remaining - 1))
+      if (remaining > 0) requestAnimationFrame(() => attempt(remaining - 1, focused))
     }
     queueMicrotask(() => attempt(60))
   }

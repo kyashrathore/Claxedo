@@ -160,6 +160,7 @@
     "@ai-sdk/xai@3.0.82": "patches/@ai-sdk%2Fxai@3.0.82.patch",
     "@ai-sdk/google@3.0.73": "patches/@ai-sdk%2Fgoogle@3.0.73.patch",
     "@modelcontextprotocol/sdk@1.29.0": "patches/@modelcontextprotocol%2Fsdk@1.29.0.patch",
+    "@tanstack/solid-query@5.99.2": "patches/@tanstack%2Fsolid-query@5.99.2.patch",
     "@tanstack/virtual-core@3.17.3": "patches/@tanstack%2Fvirtual-core@3.17.3.patch",
     "tokentracker-cli@0.75.1": "patches/tokentracker-cli@0.75.1.patch"
   }
