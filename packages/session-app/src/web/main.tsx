@@ -21,7 +21,7 @@ import { SessionView } from "./app"
 import "./styles.css"
 
 const params = new URLSearchParams(location.search)
-const serverUrl = params.get("server") ?? "http://127.0.0.1:1707"
+const serverUrl = params.get("server") ?? "http://127.0.0.1:4480"
 const directory = params.get("directory") ?? ""
 const sessionId = params.get("session")
 
