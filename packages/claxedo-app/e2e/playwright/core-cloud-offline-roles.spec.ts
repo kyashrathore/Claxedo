@@ -385,8 +385,22 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
       return
     }
 
+    // The Codex icon sprite is fetch()ed (resourceType "fetch"), so `api()` is
+    // true for it — but it is a same-origin STATIC ASSET served by
+    // vite/preview, not an API escape. Let the web server answer it.
+    if (/sprite[^/]*\.svg$/.test(url.pathname)) return route.continue()
+
     // ---- Same-origin: bootstrap + composer-harness (central claxedo-server) ----
     if (url.pathname === "/api/claxedo/bootstrap") return json(route, bootstrapBody())
+    // Boot-time central-server surface fired against the loopback central URL
+    // (`.env.local`'s VITE_CLAXEDO_SERVER_URL). All three are tolerated by the
+    // app when they fail, but answering them keeps the unhandled ledger clean.
+    // Real routes: claxedo-local-server/src/app/local-app.ts mounts
+    // UserExtensionRoutes at /api/claxedo/extensions and LocalUsageRoutes at
+    // /api/claxedo/usage; meta-routes.ts serves GET /api/claxedo/session.
+    if (url.pathname === "/api/claxedo/extensions") return json(route, { extensions: [], skipped: [] })
+    if (url.pathname === "/api/claxedo/session") return json(route, { sessions: [] })
+    if (url.pathname === "/api/claxedo/usage/sync") return json(route, { attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
     // The app boot's `ConnectionGate` (src/app.tsx) polls `GET /api/claxedo/health`
     // (src/utils/server-health.ts's `checkServerHealth` -> `claxedoHealthUrl`), NOT
     // `/health` — a bare `/health`/`/global/health` match here left that request
@@ -428,7 +442,11 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
       state.refreshHits.push(UH_WORKSPACE_ID)
       return json(route, mintBody(UH_WORKSPACE_ID, "user-hosted", state.uhMint))
     }
-    if (url.pathname === "/api/workspace/resolve") {
+    // Loopback central URLs rewrite this to `/api/claxedo/workspace/resolve`
+    // (workspace-control-routes.ts:40-42); the real local server mounts the same
+    // LocalWorkspaceRoutes at both prefixes (claxedo-local-server/src/app/
+    // local-app.ts) — answer both spellings.
+    if (url.pathname === "/api/workspace/resolve" || url.pathname === "/api/claxedo/workspace/resolve") {
       const workspaceId = url.searchParams.get("workspaceId")
       const directory = url.searchParams.get("directory")
       const uh = workspaceId === UH_WORKSPACE_ID || directory === UH_DIR
