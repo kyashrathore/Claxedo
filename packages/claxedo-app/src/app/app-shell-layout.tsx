@@ -26,6 +26,7 @@ import {
   type ParentProps,
   type JSX,
 } from "solid-js"
+import { lazyDialog } from "@/lib/lazy-dialog"
 import { useClaxedoState, type ContentMeta } from "./workbench/state/index"
 import type { ProjectItem } from "./workbench/rail/domain-types"
 import { emitTerminalFit } from "../features/terminal/workbench/terminal-fit"
@@ -72,7 +73,7 @@ const RailWorkbenchShell = lazy(() =>
     default: module.RailWorkbenchShell,
   })),
 )
-const DialogProcessDiagnostics = lazy(() =>
+const DialogProcessDiagnostics = lazyDialog(() =>
   import("../features/processes/ui/dialog-process-diagnostics").then((module) => ({
     default: module.DialogProcessDiagnostics,
   })),

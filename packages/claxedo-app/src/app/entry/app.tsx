@@ -32,7 +32,6 @@ import { getClaxedoServerUrl, isDemoMode, isHostedAppHostname } from "@/platform
 import { QueryClientProvider } from "@tanstack/solid-query"
 import { useCheckServerHealth } from "@/app/connection/server-health"
 import { ClaxedoSplash } from "@/ui/controls/claxedo-logo"
-import { CloudAutoSwitch } from "@/features/workspaces/ui/cloud-auto-switch"
 import { useConfigOptional } from "@/app/providers/config"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { useAuthSession } from "@/platform/auth/auth-session"
@@ -346,6 +345,30 @@ function CloudAuthGate(props: ParentProps) {
   )
 }
 
+/**
+ * Automatically restores workspace routing when navigating directly to a cloud
+ * session URL that requires connection to a cloud sandbox. Lives in the app
+ * layer (its only mount point) and reads `useServer` from the connection
+ * provider directly: it renders ABOVE `RuntimeProviders`, i.e. before the
+ * lazily-imported `app/integrations/feature-ports` wiring has evaluated, so it
+ * must not go through the workspaces app-ports proxy — that proxy throws
+ * "Workspaces app ports are not configured" until the wiring lands, which
+ * crashed boot whenever `authEnabled` resolved first on a cold load.
+ */
+function CloudAutoSwitch(props: ParentProps) {
+  const server = useServer()
+
+  createEffect(() => {
+    const current = server.url
+    if (/^https?:\/\/[^/]+\/(w|s)\//.test(current)) {
+      const origin = current.split("/").slice(0, 3).join("/")
+      if (origin) server.setActive(origin)
+    }
+  })
+
+  return <>{props.children}</>
+}
+
 function AuthenticatedProviders(props: ParentProps) {
   const config = useConfigOptional()
 
@@ -439,9 +462,15 @@ export function AppInterface(props: {
       <Route
         path="/login"
         component={() => (
-          <Suspense fallback={<Loading />}>
-            <LoginPage />
-          </Suspense>
+          // /login mounts directly under the Router, OUTSIDE the workbench's
+          // AuthenticatedProviders — LoginPage reads the account port, so the
+          // route brings its own provider (self-sufficient: it reads the
+          // module-bound auth session and the optional Electron bridge).
+          <AccountPortProvider>
+            <Suspense fallback={<Loading />}>
+              <LoginPage />
+            </Suspense>
+          </AccountPortProvider>
         )}
       />
       <Route

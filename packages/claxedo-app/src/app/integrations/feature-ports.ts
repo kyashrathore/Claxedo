@@ -48,25 +48,25 @@ import * as RailGitRemote from "@/app/workbench/rail/rail-git-remote"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { createOnboardingFunnel } from "@/features/onboarding"
 import { capture as captureTelemetry, identityProps } from "@/platform/telemetry/analytics"
-import { lazy } from "solid-js"
+import { lazyDialog } from "@/lib/lazy-dialog"
 
-export const DialogConnectIntegration = lazy(() =>
+export const DialogConnectIntegration = lazyDialog(() =>
   import("@/app/dialogs/connect-integration").then((module) => ({ default: module.DialogConnectIntegration })),
 )
-const DialogRecoverWorkspace = lazy(() =>
+const DialogRecoverWorkspace = lazyDialog(() =>
   import("@/features/workspaces/ui/dialogs/recover-workspace-dialog").then((module) => ({
     default: module.DialogRecoverWorkspace,
   })),
 )
-const DialogDeleteWorkspace = lazy(() =>
+const DialogDeleteWorkspace = lazyDialog(() =>
   import("@/features/workspaces/ui/dialogs/delete-workspace-dialog").then((module) => ({
     default: module.DialogDeleteWorkspace,
   })),
 )
-const DialogSettings = lazy(() =>
+const DialogSettings = lazyDialog(() =>
   import("@/app/dialogs/settings").then((module) => ({ default: module.DialogSettings })),
 )
-const DialogSelectDirectory = lazy(() =>
+const DialogSelectDirectory = lazyDialog(() =>
   import("@/app/dialogs/select-directory").then((module) => ({ default: module.DialogSelectDirectory })),
 )
 
