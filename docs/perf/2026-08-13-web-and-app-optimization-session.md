@@ -343,3 +343,54 @@ Still blocked in this container: `idle-process-family.ts` and
 per HANDOFF); the four perf-harness unit errors are their unresolvable
 imports. Not reconstructed — fabricating measurement instruments would
 fabricate their evidence.
+
+## Addendum 8: is core navigation 60hz? (measured at b19a085, two interleaved passes)
+
+**No flow earns the badge; every flow's typical frame is nonetheless inside
+the 60hz budget.** The badge (`verdictFor`, frame-sampler.ts:110) turns red
+if ANY single renderer interval exceeds 16.67 ms — allowance zero — so one
+mount spike in twenty thousand frames reads the same as a sustained stall.
+Reported separately below: the distribution (what the user feels while
+moving) and the tail (what the gate fails on).
+
+Method: `bun run run:debug` twice (pass B with `CLAXEDO_PERF_SKIP_BUILD=1`,
+same bundle), 4 ABBA contexts per flow, quiet 4-core container. App-
+attributable = `headline.mainThreadTasksMs` (what the app gate counts);
+host gaps = `unattributedSchedulingGapsMs`, which the harness already
+excludes from the app verdict — they are container noise, listed only to
+show how much of it there was.
+
+| flow (pass A / pass B) | p95 frame (ms) | steady-state class | worst app task (ms) | app tasks >16.67 | samples | frames within 60hz | host gaps >16.67 |
+|---|---:|---|---:|---:|---:|---:|---:|
+| launch-project | 0.39 / 0.35 | 120hz | 81.2 / 83.1 | 30 / 36 | 18,693 / 17,980 | 99.84% / 99.80% | 45 / 46 |
+| session-switch | 8.72 / 4.88 | 120hz (straddles) | 47.3 / 68.3 | 24 / 26 | 722 / 941 | 96.68% / 97.24% | 19 / 20 |
+| live-terminal-switch | 14.52 / 15.60 | 60hz | 42.9 / 37.4 | 8 / 7 | 216 / 190 | 96.30% / 96.32% | 8 / 8 |
+| large-diff-toggle | 6.60 / 6.02 | 120hz | 32.2 / 33.5 | 3 / 3 | 964 / 987 | 99.69% / 99.70% | 8 / 16 |
+| workspace-switch | 0.48 / 1.75 | 120hz | 75.5 / 53.3 | 11 / 11 | 1,764 / 895 | 99.38% / 98.77% | 8 / 6 |
+
+Reading it:
+- **p95 is under 16.67 ms in all five flows**, and under 8.33 ms in four —
+  ordinary frames during navigation are 60hz-capable, mostly 120hz-capable.
+- **What fails is the tail**: 0.16–3.7% of intervals miss the deadline,
+  concentrated at mount/transition boundaries (worst tasks 32–83 ms).
+- **Highest risk is `live-terminal-switch`**: it has both the highest miss
+  density (3.7%) and a p95 (14.5–15.6 ms) sitting just under the ceiling —
+  the only flow where ordinary frames are near the edge rather than an
+  order of magnitude clear of it. `terminal_resize_ms` p95 ~101 ms.
+- **Best behaved is `large-diff-toggle`**: 3 misses per ~1,000 frames.
+  Addendum 6 recorded 7–12 over-budget tasks here; this is a real
+  improvement, not noise.
+- `session-switch` p95 swings 4.88↔8.72 between passes — the container's
+  documented ~3x variance; treat its class as "120hz on a quiet host,
+  60hz under load".
+
+Named sub-metrics (pass A p50/p95, ms): launch_first_window 219/250,
+launch_workspace_ready 312/357, transcript_render 2,310/2,320;
+single_switch 300/305; terminal_switch 25/28, terminal_resize 95/101;
+review_panel_open 30/35, vcs_load 65/114, first_hunk_ready 408/442;
+file_tree_load 29/34, file_tree_data 53/54.
+
+If the zero-allowance badge is to go green, the work is tail-shaped, not
+throughput-shaped: attack the 30–80 ms mount/transition tasks (the
+transcript first-render dominating launch, the terminal resize path), not
+the steady-state render loop, which is already comfortably inside budget.
