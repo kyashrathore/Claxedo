@@ -2261,7 +2261,14 @@ async function measureInPageSessionFirstFoldSwitch(
           timeline.dataset.sessionTimelineProgressiveReady === "true" &&
           getComputedStyle(timeline).visibility !== "hidden" &&
           Number(timeline.dataset.sessionTimelineKeyCount ?? "0") > 0 &&
-          !!timeline.querySelector<HTMLElement>("[data-timeline-key]")?.textContent?.trim()
+          // Same defect as `waitForTranscript` (fixed in 9d16de0): sampling
+          // only the FIRST `[data-timeline-key]` in DOM order makes readiness
+          // depend on whether a `TurnGap` — an aria-hidden, deliberately empty
+          // spacer row that routinely leads a cold mount — happens to lead the
+          // list. Require SOME mounted row to carry content instead.
+          Array.from(timeline.querySelectorAll<HTMLElement>("[data-timeline-key]")).some(
+            (row) => (row.textContent ?? "").trim(),
+          )
         const inlineDiffReady = !!timeline?.querySelector(
           "[data-timeline-row-rich-ready='true'] [data-component='edit-content']",
         )
