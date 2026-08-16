@@ -29,6 +29,7 @@ import {
   sessionTodoQueryOptions,
 } from "../data/sync/queries"
 import { removeSessionInventoryQueryData, useSessionInventoryActions } from "../data/sync/session-inventory"
+import { enforceSessionCacheCeiling } from "../data/sync/session-cache-cleanup"
 import { getSessionPrefetch, getSessionPrefetchPromise, SESSION_PREFETCH_TTL, type SessionPrefetchMeta } from "@/platform/sync/session-prefetch"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { queryClient } from "@/platform/query/query-client"
@@ -1014,6 +1015,9 @@ export function createSessionController(input: {
           // scope workspaceId so the runtime stream relays for relay-backed
           // workspaces whose `directory` is a non-ref filesystem path.
           markLiveSession(globalSDK.event, id, directory, signedControlPlane ? input.workspaceId?.() : undefined, input.sessionRef?.()?.host)
+          // Hydration is the moment this session's shell caches come alive, so
+          // it is where the count-based ceiling belongs.
+          enforceSessionCacheCeiling(id)
           void syncSessionCapabilities(id)
           void syncSessionHistory(id, { bypassQuiet: true }).then((synced) =>
             sessionHydrationDebug("sync-session-complete", { directory, sessionID: id, synced }))
