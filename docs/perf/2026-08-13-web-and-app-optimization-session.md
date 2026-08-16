@@ -600,3 +600,95 @@ The dead cap was found by grepping for callers of an exported limit, not by
 measurement — a policy can be perfectly written, tested-looking and entirely
 inert. Worth repeating for the other limits in this table: `MAX_OPEN_SURFACES`
 and `MAX_WEBGL_RENDERERS` were both verified to have live call sites.
+
+---
+
+## Addendum 12 — the count caps do not bound the load (2026-08-16)
+
+Addendum 11 closed the "no count bound" gap on per-session caches. Measuring
+what those counts actually admit showed the count was the wrong dimension.
+
+### What one session weighs
+
+Measured with the app's own `estimateConversationMemory` on representative
+transcripts:
+
+| transcript | per message | 20k messages |
+| --- | ---: | ---: |
+| plain text | ~677 B | 12.9 MB |
+| tool calls | ~2.1 kB | 39.4 MB |
+
+`SESSION_CACHE_LIMIT` retains 40 sessions, so forty heavy ones is ~1.6 GB
+with every documented limit reading green: 3/40 sessions used, 32 conversation
+clients free, 10 tabs free. The other two caps cannot cover it — both are also
+counts, and evicting a `ChatClient` deliberately LEAVES its transcript in the
+query cache, so the bytes outlive the structure that is capped.
+
+`SESSION_CACHE_BYTE_BUDGET` (128 MiB of estimated payload) now runs alongside
+the count ceiling. Eviction stays lossless: transcripts persist per session in
+IndexedDB and rehydrate on reopen.
+
+### Two ceilings need two passes
+
+A single loop over `count > limit || bytes > budget` evicts coldest-first
+regardless of weight, so one huge session sweeps away every cheap session the
+user is cycling between while freeing nothing. A test caught it. The count
+pass takes any cold session; the byte pass only considers sessions that
+actually hold a transcript.
+
+### The measurement nearly cost more than it saved
+
+Sizing is a deep walk proportional to the bytes it counts, and the first
+implementation ran it synchronously at hydration:
+
+| cache state | cold pass | warm pass |
+| --- | ---: | ---: |
+| 2 sessions x 20k messages | 189 ms | 0.27 ms |
+| 10 sessions x 20k messages | 868 ms | 0.56 ms |
+| 40 sessions x 20k messages | 3325 ms | 0.25 ms |
+
+Next to a ~257 ms session switch that is a far larger regression than the
+51 ms Addendum 10's style fix bought. Two changes fixed it:
+
+- **Memoize** on the snapshot array, keyed by identity AND the query's
+  `dataUpdatedAt`. Neither alone is sufficient: `compactConversationSnapshot`
+  returns the caller's array untouched when there is nothing to dedupe, so a
+  transcript can grow behind a stable reference. 215x on the warm path.
+- **Defer** the whole pass to `requestIdleCallback`. Hydration is the right
+  trigger and the wrong place — nothing about reclaiming memory has to happen
+  before the pane paints. This also makes the cost self-limiting: sessions
+  enter the cache one hydration at a time and every hydration schedules a
+  pass, so each pass finds at most one unmeasured transcript.
+
+Sessions that cannot be evicted (OPEN or BUSY) are sized from their last
+measurement — a streaming turn rewrites its transcript on every delta and
+would otherwise miss the memo on every pass, paying a full re-walk to refine
+a number that changes no decision.
+
+### Verification
+
+`session-switch` on the perf harness, HEAD vs `dd43725` (the commit before
+the byte budget), one interleaved ABBA run each plus a repeat on HEAD:
+
+| build | pooled p95 (ms) | worst task (ms) | completion (ms) |
+| --- | ---: | ---: | ---: |
+| dd43725 (pre-budget) | 5.35 | 47.28 | 418.20 |
+| HEAD | 7.53 | 44.17 | 415.78 |
+| HEAD (repeat) | 2.59 | 56.63 | 419.76 |
+
+Completion is indistinguishable, and the baseline's p95 sits inside HEAD's
+own 2.59–7.53 range — the memory ceiling costs nothing measurable on the
+switch flow. The flow's 60Hz verdict stays red for the pre-existing
+tail-shaped reason documented in Addendum 10; that is unchanged by this work.
+
+Two runs per side at this machine's ~3x run-to-run variance is weak evidence
+for a small regression and adequate for "no large one". A tighter bound would
+need the interleaved-pair protocol used for the style fix.
+
+### Correction to Addendum 11's gap list
+
+Gap 1 ("workspace/directory-scoped caches have no count bound") is not a
+memory growth source: `workspaceQueryOptions` and `shellDataKeys.workspaceForSession`
+have zero callers in the tree, so that key family stores nothing. It is dead
+code, not an unbounded cache. Gaps 2 (terminal scrollback) and 3 (pane-mounted
+surfaces) stand.
