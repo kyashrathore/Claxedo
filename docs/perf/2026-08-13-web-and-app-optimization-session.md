@@ -507,3 +507,41 @@ effects — after which M2 becomes bankable.
   scheduling, so the 80 ms debounce is not the resize cost.
 - `cursorBlink: true` on three attached terminals — plausible additional GPU
   churn, unmeasured.
+
+## Addendum 10: baseline on the CORRECTED instrument (two passes, ba4c74f)
+
+Both readiness clauses that sampled an arbitrary first row are fixed
+(9d16de0, ba4c74f), so these are the first numbers where flow completion
+reflects rendering rather than whichever row happened to lead the list.
+**These are not app improvements** — the app is unchanged from Addendum 8
+apart from the one-pass mount, which measured NULL. The instrument got more
+accurate; the numbers moved because they were wrong before.
+
+| flow | completion (Add. 8 -> now) | p95 | worst | misses / samples | miss % |
+|---|---|---:|---:|---|---:|
+| launch-project | 2,399/2,418 -> **1,275 / 1,056** | 0.75 / 0.68 | 95 / 79 | 35/5,169 · 31/4,664 | 0.68 / 0.66 |
+| session-switch | 831/760 -> **632 / 505** | 10.38 / 6.82 | 70 / 58 | 27/807 · 23/837 | 3.35 / 2.75 |
+| live-terminal-switch | 181/218 -> **131 / 150** | 14.89 / 15.24 | 30 / 41 | 7/179 · 9/195 | 3.91 / 4.62 |
+| large-diff-toggle | 477/524 -> **350 / 406** | 5.15 / 6.73 | 18 / 35 | 3/1,102 · 5/1,026 | 0.27 / 0.49 |
+| workspace-switch | 444/415 -> **234 / 281** | 1.96 / 1.56 | 76 / 65 | 10/982 · 11/1,253 | 1.02 / 0.88 |
+
+Every flow moved, not just launch-project: both patched clauses sit on
+readiness paths that several flows wait through.
+
+What survives from Addendum 8's conclusions, now on trustworthy data:
+- **p95 is still inside the 16.67 ms budget in all five flows**, and inside
+  8.33 ms in four (session-switch straddles: 6.82-10.38).
+- **The failure is still tail-shaped**: 0.27-4.62% of intervals miss.
+- **`live-terminal-switch` is still the highest-risk flow** — highest miss
+  density (3.9-4.6%) and the p95 nearest the ceiling (14.9-15.2 ms). That
+  conclusion has now held across two independent instrument states, which is
+  the strongest evidence in this document for where to spend next.
+- `large-diff-toggle` read 18.1 ms worst in pass 1 — a hair over the line and
+  briefly the cheapest-looking green. Pass 2 read 35.0 ms. A single run is
+  not a result; recorded here because the wrong read was tempting.
+
+Method note for successors: read the RELATIVE STDDEV before the median.
+Both defects corrected in this round were visible as variance anomalies in
+data already collected (a "render" metric reproducing to 0.2% beside a boot
+metric scattering 19%), and both were missed for exactly as long as nobody
+looked at the spread.
