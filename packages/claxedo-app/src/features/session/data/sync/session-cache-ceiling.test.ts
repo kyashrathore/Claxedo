@@ -7,6 +7,7 @@ import {
   SESSION_CACHE_BYTE_BUDGET,
   SESSION_CACHE_LIMIT,
   enforceSessionCacheCeiling,
+  scheduleSessionCacheCeiling,
 } from "./session-cache-cleanup"
 
 // The ceiling that bounds per-session cache growth under mixed load. Before
@@ -169,6 +170,27 @@ describe("session cache ceiling", () => {
     // Over budget and unevictable is the honest outcome: blanking a mounted
     // pane to hit a number would trade a memory limit for a broken screen.
     expect(cached(pinned)).toBe(true)
+  })
+
+  test("scheduling runs the ceiling off the hydration path, once per burst", async () => {
+    // Sizing a transcript is a deep walk, so the pass must not run inside the
+    // hydration that triggers it — and a burst of switches must not queue one
+    // pass each. The last session of the burst is the one being opened, so it
+    // is the one the deferred pass must keep.
+    const total = SESSION_CACHE_LIMIT + 10
+    for (let i = 0; i < total; i++) {
+      seed(`ses_${i}`)
+      scheduleSessionCacheCeiling(`ses_${i}`)
+    }
+
+    // Nothing has run yet: hydration returned without paying for the sweep.
+    expect(cached("ses_0")).toBe(true)
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    const alive = Array.from({ length: total }, (_, i) => `ses_${i}`).filter(cached)
+    expect(alive.length).toBeLessThanOrEqual(SESSION_CACHE_LIMIT)
+    expect(cached(`ses_${total - 1}`)).toBe(true)
   })
 
   test("a growing BUSY session does not drag others out of the cache", () => {
