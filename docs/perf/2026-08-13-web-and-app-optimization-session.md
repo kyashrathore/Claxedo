@@ -287,13 +287,33 @@ measured while the progressive-reveal cap latched `renderRangeLimit` at its
 first-paint value, so those runs silently rendered a FRACTION of each
 transcript (the same defect the e2e oracle caught as "assistant reply never
 appeared"). This round is the first correct-rendering measurement of these
-flows. Debug sub-metrics at 6cd6a05 pin the launch delta entirely to
-`transcript_render_ms` (2,411 ms of the 2,429 completion;
-`launch_first_window_ms` 302, `launch_workspace_ready_ms` 412) — the shell
-did not get slower; the transcript now actually renders. Founding-baseline
-comparisons that remain honest: session-switch is still ~1.6x faster than
-a0d9bde WITH full rendering; large-diff worst task still ~2x better.
-Rows marked * carry the Addendum 6 seeded-content caveat.
+flows. Founding-baseline comparisons that remain honest: session-switch is
+still ~1.6x faster than a0d9bde WITH full rendering; large-diff worst task
+still ~2x better. Rows marked * carry the Addendum 6 seeded-content caveat.
+
+> **[CORRECTED 2026-08-16 — the launch-project row above is a MEASUREMENT
+> ARTIFACT, and the explanation this addendum originally gave for it was
+> wrong.]** This addendum claimed the 1,123 -> 2,4xx ms launch change was
+> "the shell did not get slower; the transcript now actually renders". That
+> attribution does not survive checking. `transcript_render_ms` was pinned to
+> a wall-clock SSE reconnect timer, not to rendering: the harness's readiness
+> clause required THE FIRST `[data-timeline-key]` row in DOM order to carry
+> text, and `TurnGap` (an aria-hidden, deliberately empty spacer row) leads
+> the list on a cold mount, so readiness waited ~1.25 s past a transcript
+> that was already rendered and visible, until the 2 s reconnect advisory
+> vanished and grew the scroller. Fixed in 9d16de0 (some mounted row must
+> have content; the expected-text proof is unchanged). With the corrected
+> instrument the same tree measures **completion 1,118 ms and
+> `transcript_render_ms` 1,094 ms** — i.e. essentially the founding
+> baseline's 1,123 ms, with no launch regression to explain.
+> The tell was in this addendum's own data and was missed: `transcript_
+> render_ms` reproduced at 0.2-0.9% relative stddev while
+> `launch_workspace_ready_ms` beside it scattered 7-19% on the same host.
+> Sub-1% reproducibility on a 3x-swinging container is a clock, not work.
+> The causal chain is worth keeping: releasing the reveal cap (af356f8,
+> correct and necessary) changed which rows mount, a spacer started leading
+> the list, and that tripped the latent gate defect. Pre-9d16de0 and
+> post-9d16de0 `transcript_render_ms` values are NOT comparable.
 
 Known gap in the harness fixture, same drift family as the e2e round:
 `GET /api/claxedo/extensions` is unmatched ([perf-mock] log line) — one
@@ -368,10 +388,21 @@ show how much of it there was.
 | large-diff-toggle | 6.60 / 6.02 | 120hz | 32.2 / 33.5 | 3 / 3 | 964 / 987 | 99.69% / 99.70% | 8 / 16 |
 | workspace-switch | 0.48 / 1.75 | 120hz | 75.5 / 53.3 | 11 / 11 | 1,764 / 895 | 99.38% / 98.77% | 8 / 6 |
 
+> **[CORRECTED 2026-08-16 — launch-project's sample count and miss density
+> above are inflated by the same artifact.]** ~1.25 s of that flow was the
+> harness polling a transcript that had already rendered (see the correction
+> in Addendum 7), and the frame sampler recorded throughout, so the ~18k
+> denominator contains ~13k phantom idle samples. With the corrected gate
+> (9d16de0) the same tree measures **31 misses in 5,226 samples = 0.59%**,
+> not 0.16%. The p95 conclusion is unaffected (0.74 ms measured after the
+> fix), and no other flow is affected — the artifact was specific to
+> launch-project's readiness clause.
+
 Reading it:
 - **p95 is under 16.67 ms in all five flows**, and under 8.33 ms in four —
   ordinary frames during navigation are 60hz-capable, mostly 120hz-capable.
-- **What fails is the tail**: 0.16–3.7% of intervals miss the deadline,
+- **What fails is the tail**: 0.3–3.7% of intervals miss the deadline
+  (launch-project 0.59% after the correction above),
   concentrated at mount/transition boundaries (worst tasks 32–83 ms).
 - **Highest risk is `live-terminal-switch`**: it has both the highest miss
   density (3.7%) and a p95 (14.5–15.6 ms) sitting just under the ceiling —

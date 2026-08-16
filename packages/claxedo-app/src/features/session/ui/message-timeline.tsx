@@ -783,32 +783,25 @@ export function MessageTimeline(props: {
   let progressiveFrame: number | undefined
   const scheduleProgressiveRows = () => {
     if (progressiveReady() || progressiveFrame !== undefined) return
+    // One mount pass, not one row per frame. The timeline stays
+    // `visibility: hidden` for the whole pre-reveal window, so per-frame
+    // staging never showed a row earlier — it only spent one blank frame per
+    // row (~16ms each at 60hz) before anything became visible. Mounting the
+    // whole initial fold in a single frame keeps the identical pre-reveal
+    // bound and then releases the cap exactly as before.
     const step = () => {
       progressiveFrame = undefined
-      const length = timelineRows().length
-      const targetCount = Math.min(8, length)
-      const currentCount = renderRangeLimit()
-      if (currentCount < targetCount) {
-        const nextCount = currentCount + 1
-        if (renderRangeLimit() < nextCount) setRenderRangeLimit(nextCount)
-        progressiveFrame = requestAnimationFrame(step)
-        return
-      }
-      let stableFrames = 2
-      const settle = () => {
-        stableFrames -= 1
-        if (stableFrames <= 0) {
-          setProgressiveReady(true)
-          setInitialRevealReady(true)
-          // The staged limit only bounds pre-reveal mount work. Once revealed,
-          // the viewport range is the bound; a retained cap would slice every
-          // later-appended row out of the bottom-anchored range forever.
-          setRenderRangeLimit(Number.MAX_SAFE_INTEGER)
-          return
-        }
-        progressiveFrame = requestAnimationFrame(settle)
-      }
-      progressiveFrame = requestAnimationFrame(settle)
+      const targetCount = Math.min(8, timelineRows().length)
+      if (renderRangeLimit() < targetCount) setRenderRangeLimit(targetCount)
+      progressiveFrame = requestAnimationFrame(() => {
+        progressiveFrame = undefined
+        setProgressiveReady(true)
+        setInitialRevealReady(true)
+        // The staged limit only bounds pre-reveal mount work. Once revealed,
+        // the viewport range is the bound; a retained cap would slice every
+        // later-appended row out of the bottom-anchored range forever.
+        setRenderRangeLimit(Number.MAX_SAFE_INTEGER)
+      })
     }
     progressiveFrame = requestAnimationFrame(step)
   }
