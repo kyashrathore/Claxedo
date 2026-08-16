@@ -1069,7 +1069,7 @@ async function installMockApi(
       const connects = (sseConnects.get(url.pathname) ?? 0) + 1
       sseConnects.set(url.pathname, connects)
       logRow(200, `sse connect#${connects}`)
-      if (connects > 3) await Bun.sleep(SSE_IDLE_HOLD_MS)
+      if (connects > Number(process.env.CLAXEDO_PERF_SSE_FREE_CONNECTS ?? "3")) await Bun.sleep(SSE_IDLE_HOLD_MS)
       return route.fulfill({
         status: 200,
         contentType: "text/event-stream",
@@ -2117,8 +2117,24 @@ async function waitForTranscript(page: Page, fixture: ReturnType<typeof fixtureF
         if (timeline.dataset.sessionTimelineProgressiveReady !== "true") return false
         if (getComputedStyle(timeline).visibility === "hidden") return false
         if (Number(timeline.dataset.sessionTimelineKeyCount ?? "0") <= 0) return false
-        const renderedRow = timeline.querySelector<HTMLElement>("[data-timeline-key]")
-        if (!renderedRow || !(renderedRow.textContent ?? "").trim()) return false
+        // "Some mounted row has rendered content" — NOT "the first row in DOM
+        // order has content". `TurnGap` (message-timeline.tsx:1398) is a real
+        // timeline row that is `aria-hidden` and deliberately EMPTY, and on a
+        // cold mount with overscan 1 it is routinely the first row above the
+        // fold. Sampling only `querySelector` therefore made readiness depend
+        // on which arbitrary row happened to lead the list: with a spacer
+        // leading, this clause stayed false for ~1.25 s after the transcript
+        // was fully rendered and visible, and only flipped when an unrelated
+        // event (the 2 s SSE reconnect advisory disappearing, growing the
+        // scroller by 28 px) mounted two more rows. That pinned
+        // `transcript_render_ms` to RECONNECT_DELAY_MS + first-connect ~= 2.28 s
+        // and made it insensitive to transcript work — a wall-clock timer
+        // wearing a render metric's name (its relative stddev was 0.002 on a
+        // host where real work scatters 7-19%).
+        // The content proof is unchanged and still independent: the expected
+        // text assertion below has to pass either way.
+        const rows = Array.from(timeline.querySelectorAll<HTMLElement>("[data-timeline-key]"))
+        if (!rows.some((row) => (row.textContent ?? "").trim())) return false
         return (timeline.textContent ?? "").includes(expected)
       }),
     { id: sessionID, expected: text },
