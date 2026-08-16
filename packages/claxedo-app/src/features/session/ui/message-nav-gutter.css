@@ -4,14 +4,25 @@
  * table or diagram—starts with 12px of breathing room after it. The component
  * only mounts the rail when its ResizeObserver confirms the pane can afford
  * this gutter, so a narrow split does not retain empty padding.
+ *
+ * Keyed off `data-session-timeline-nav-gutter`, which message-timeline.tsx sets
+ * from the SAME memo that mounts the rail — deliberately not `:has([data-slot=
+ * "message-nav-gutter"])`. A `:has()` here makes the timeline root a Blink
+ * `:has()` invalidation anchor, and the timeline is the most mutated subtree in
+ * the app: every re-check schedules the document's aggregated `:has` descendant
+ * invalidation set (keyed on `data-slot`/`data-component`, which nearly every
+ * element in this UI kit carries) across the whole transcript. Measured on the
+ * session-switch perf flow, this root plus `.session-envcard-shell` accounted
+ * for 3426 of 3756 style invalidations and ~21% of RecalcStyleDuration.
+ * Never reintroduce a `:has()` whose subject is an ancestor of the timeline.
  */
-[data-session-timeline-root]:has([data-slot="message-nav-gutter"]) .scroll-view__viewport {
+[data-session-timeline-root][data-session-timeline-nav-gutter] .scroll-view__viewport {
   padding-left: 60px;
   transition: padding-left 150ms ease;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-session-timeline-root]:has([data-slot="message-nav-gutter"]) .scroll-view__viewport {
+  [data-session-timeline-root][data-session-timeline-nav-gutter] .scroll-view__viewport {
     transition: none;
   }
 }
