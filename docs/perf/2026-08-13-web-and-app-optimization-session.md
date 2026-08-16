@@ -394,3 +394,85 @@ If the zero-allowance badge is to go green, the work is tail-shaped, not
 throughput-shaped: attack the 30–80 ms mount/transition tasks (the
 transcript first-render dominating launch, the terminal resize path), not
 the steady-state render loop, which is already comfortably inside budget.
+
+## Addendum 9: terminal-tail attempt — NULL, with two mechanisms recorded
+
+Attacked the worst 60hz flow from Addendum 8 (`live-terminal-switch`: highest
+miss density, p95 nearest the ceiling). **Nothing landed.** Both candidate
+changes were reverted; the tree is unchanged. The profiling below is the
+deliverable — it is what a successor would otherwise have to re-derive.
+
+### Where the tail actually comes from
+
+`CLAXEDO_PERF_CAUSAL=1` populates `headline.causal.traceTasks` with real
+trace-event attribution. Across the 20 long tasks of one flow:
+**Commit 240 ms · JS (rAF + calls) 137 ms · other 66 ms**, with the worst
+tasks 52/43/32 ms of pure `Commit`. Whole-flow app script is only 105 ms,
+layout 2.4 ms, style recalc 21 ms. Per-thread totals confirm the shape:
+
+```
+149.7 ms CrRendererMain RunTask   86.2 ms CrRendererMain Commit
+ 94.9 ms VizCompositorThread       71.4 ms CrGpuMain (70.9 GPUTask)
+  9.2 ms RasterTask   <- rasterization is NOT the cost
+```
+
+So the flow's misses are the main thread blocking on GPU-side surface and
+texture work, not on application JavaScript. **Optimising app logic cannot
+move this flow.** Two contributors were found and measured:
+
+**M1 — identity filters force per-slot render surfaces.** Every workbench
+content slot carried Tailwind `saturate-100` → `filter: saturate(1)`:
+visually identity, but any non-`none` filter gives the slot its own cc render
+surface, so a 1160x912 xterm WebGL canvas is rasterized into a separate
+texture and filtered every commit instead of being composited as a plain
+texture quad. Removing it measured `terminal_resize_ms` 98 -> 78 ms (no
+overlap across runs) and, combined with M2, worst task 41 -> 28 ms and
+Commit 196 -> 163 ms.
+**Why it did not land:** it also made terminal switching reproducibly
+SLOWER, 27.6 -> 41 ms with zero overlap — that cached surface was preserving
+the newly-shown terminal's pixels across a switch. Paying certain, felt
+latency on a frequent interaction to improve a gate that stays red either way
+is the wrong trade (same discipline as Addendum 3's diff-toggle NULL). A
+successor wanting M1 needs the surface only DURING the switch (e.g. a
+transient `will-change`/containment applied to the incoming slot), not
+permanently on every slot.
+
+**M2 — the glyph atlas was rebuilt on every resize settle, per terminal.**
+`clearTextureAtlas()` ran unconditionally in the coordinator's `refresh()`,
+for all three attached terminals (the two inactive ones are stashed
+`visibility:hidden` + `contain:strict`, NOT `display:none`, so they keep
+settling). Instrumented: 781 glyph `fillText` + 781 `fillRect` and 14 atlas
+clears per flow, for a terminal showing one seeded line. Guarding the rebuild
+(recovery sources `mount`/`visibility`/`retry-fit`, plus a
+`dpr|fontSize|fontFamily|letterSpacing|lineHeight|cellW|cellH` signature, and
+first-settle) cut it to 7 clears / 677 rasterizations and measured, over 3
+runs vs a 5-run baseline (medians): **p95 frame 17.16 -> 13.60 ms** (below
+the 60hz ceiling), over-budget tasks **10 -> 7** with clean separation
+(9,9,10,10,12 vs 7,7,7), miss density 5.13% -> 3.83%, script 83 -> 68 ms,
+switch and resize unchanged.
+**Why it did not land:** `core-terminal.spec.ts` goes **11/11 -> 9/11**,
+reproducibly, on a quiet host, in the same serving mode — `:933` (an
+externally exited PTY clears its tracked agent status) and `:977` (the
+sidebar status dot mirrors agent.lifecycle). Both PASS in isolation with the
+change applied, and pristine HEAD passes the full spec in the same mode, so
+this is an order/state-dependent coupling, not flake or contention. The
+coordinator half of the change is inert (it only threads the coalesced
+request sources through to `refresh`); `xterm.refresh()` still runs first on
+every settle, so the observable difference is the skipped atlas rebuild
+itself. Unproven hypothesis for the successor: terminal agent-status
+detection is coupled to the full re-render an atlas clear forces. If that is
+real, the correct fix is decoupling status detection from repaint side
+effects — after which M2 becomes bankable.
+
+### Also true, deliberately not pursued
+- Hidden terminals still repaint. Skipping them needs a "became visible"
+  signal that does not exist: stashed slots keep their full rect under
+  `contain:strict` (no ResizeObserver on return) and
+  `requestTerminalFitOnPaneChange` fires only on pane-count/split-root
+  change, not a tab swap. Emitting one is a cross-feature workbench contract
+  change, too big to justify on measurement alone.
+- `SETTLE_MS`/eager-rAF: verified the burst→one-settle design works as
+  documented; `terminal_resize_ms` tracked compositing (M1), never
+  scheduling, so the 80 ms debounce is not the resize cost.
+- `cursorBlink: true` on three attached terminals — plausible additional GPU
+  churn, unmeasured.
