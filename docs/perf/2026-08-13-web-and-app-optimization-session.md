@@ -545,3 +545,58 @@ Both defects corrected in this round were visible as variance anomalies in
 data already collected (a "render" metric reproducing to 0.2% beside a boot
 metric scattering 19%), and both were missed for exactly as long as nobody
 looked at the spread.
+
+## Addendum 11: memory bounds under mixed load — the inventory, and a dead cap
+
+Audit of every per-N structure the renderer retains under the load that
+matters: many sessions, several harnesses, multiple active workspaces,
+terminals. Read from source; the measurement of the resulting ceiling is
+tracked separately (harness at scratchpad/mem-mixed.mjs).
+
+| dimension | bound | enforced? | notes |
+|---|---|---|---|
+| workbench tabs (surfaces) | 10, LRU | yes | `MAX_OPEN_SURFACES`; contents mounted in a pane are EXEMPT, so splits raise the effective floor |
+| conversation chat clients | 32, LRU | yes | only UNMOUNTED entries evictable (`refs > 0` pins) |
+| **per-session shell caches** | **40, LRU** | **NO -> now yes** | `SESSION_CACHE_LIMIT` + `pickSessionCacheEvictions` shipped in 2531335 with zero callers and no tests. Wired in 004375f |
+| WebGL terminal renderers | 12 | yes | `MAX_WEBGL_RENDERERS`; beyond it terminals fall back to the DOM renderer |
+| terminal scrollback | 5,000 lines PER terminal | per-instance only | no global budget across terminals |
+| workspace connection runtimes | released on teardown | yes | bounded by ACTIVE workspaces |
+| query cache (all keys) | `gcTime` 30 min | time only | no entry-count cap; every refetch resets the clock |
+| workspace/directory-scoped caches | none by count | no | pruned only by explicit project removal (`project-actions.tsx:372-374`) |
+
+### The structural problem the dead cap created
+
+The two structures that ARE capped both spill into the uncapped one **by
+design**. The workbench evicts a tab but its caches remain; the conversation
+registry's own comment says eviction "loses no data: the message snapshot
+persists in the query cache". So the caps relieved the cheap structures by
+moving data into the one with no ceiling — and the ceiling that was supposed
+to catch it never ran. Under mixed load every session touched left
+status/requests/todo/diff behind, bounded only by a 30-minute clock that its
+own refetches reset.
+
+Wired at hydration (the moment a session's shell caches come alive), with
+recency derived from the query cache's own `dataUpdatedAt` rather than a
+parallel set — the cache already knows what it holds and when each entry was
+written, so the ranking cannot drift from the thing it ranks. Exemptions:
+OPEN sessions (a mounted tab must not lose what it renders from) and BUSY
+sessions (a background turn is exactly what a recency-ranked eviction hits
+first).
+
+### Remaining gaps, in priority order
+
+1. **Workspace/directory-scoped caches have no count bound.** Same shape as
+   the session gap, one level up: bounded only by how many workspaces a user
+   visits inside `gcTime`. No `WORKSPACE_CACHE_LIMIT` exists to wire.
+2. **Terminal scrollback has no global budget.** 5,000 lines each is fine for
+   one terminal and is ~12x that with the WebGL cap saturated; nothing caps
+   the aggregate.
+3. **Pane-mounted surfaces are exempt from the tab cap**, so a split
+   workbench can hold more live surfaces than `MAX_OPEN_SURFACES` suggests.
+
+### Method note
+
+The dead cap was found by grepping for callers of an exported limit, not by
+measurement — a policy can be perfectly written, tested-looking and entirely
+inert. Worth repeating for the other limits in this table: `MAX_OPEN_SURFACES`
+and `MAX_WEBGL_RENDERERS` were both verified to have live call sites.
