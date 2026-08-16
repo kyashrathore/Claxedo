@@ -1,4 +1,4 @@
-import { createMemo, createRoot, For, Match, Show, Switch } from "solid-js"
+import { createEffect, createMemo, createRoot, For, Match, onCleanup, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
@@ -442,6 +442,13 @@ export type SessionEnvironmentCardState = {
   toggle: () => void
 }
 
+/**
+ * How much of the shell's right gutter a painted card occupies. `undefined`
+ * while no card is painted. The shell reserves the matching `padding-right` on
+ * the timeline viewport and composer dock from this.
+ */
+export type SessionEnvironmentCardOccupancy = "expanded" | "collapsed"
+
 /** Route-restorable collapse preference, shared by the mount and its tests. */
 export function createSessionEnvironmentCardState(): SessionEnvironmentCardState {
   const [ui, setUi, , ready] = persisted(
@@ -480,9 +487,13 @@ export function sessionEnvironmentCardState(): SessionEnvironmentCardState {
  * (otherwise it duplicates the panel). It expects to be placed as a direct
  * child of the `.session-envcard-shell` flex row.
  *
- * Deliberately NOT gated on pane focus. Visibility here is not free: the
- * reserved gutter is keyed off `:has(.session-envcard)`, so mounting or
- * unmounting the card changes `padding-right` on the timeline's scroll viewport
+ * Visibility (and the collapse width) is reported to the shell through
+ * `onOccupancy` — this component owns that policy, and the shell only lays out
+ * against it.
+ *
+ * Deliberately NOT gated on pane focus. Visibility here is not free: the shell
+ * reserves the gutter from that report, so mounting or unmounting the card
+ * changes `padding-right` on the timeline's scroll viewport
  * and the composer dock — which relays out and repaints the entire transcript.
  * Tying that to focus meant every click between split panes redrew both
  * timelines. One card per pane, stable for as long as the pane is on screen.
@@ -494,7 +505,9 @@ export function sessionEnvironmentCardState(): SessionEnvironmentCardState {
  * the surface moved. Cards never stacked either way — each is absolutely
  * positioned inside its own pane's shell.)
  */
-export function SessionEnvironmentCardMount() {
+export function SessionEnvironmentCardMount(props: {
+  onOccupancy?: (occupancy: SessionEnvironmentCardOccupancy | undefined) => void
+}) {
   const sdk = useSDK()
   const state = useClaxedoState()
   const queryOptions = useShellQueryOptions()
@@ -509,6 +522,12 @@ export function SessionEnvironmentCardMount() {
   // the default (expanded) and correcting it a tick later is the visible
   // expand-then-collapse flash. `ready` is already true on the sync (web) path.
   const painted = () => visible() && collapse.ready()
+  // The shell cannot see any of the above (panel state, persisted collapse, the
+  // card's own lazy chunk), so publish the one fact its layout needs.
+  createEffect(() => {
+    props.onOccupancy?.(painted() ? (collapse.collapsed() ? "collapsed" : "expanded") : undefined)
+  })
+  onCleanup(() => props.onOccupancy?.(undefined))
 
   // Isolation, from typed sources only:
   //  - cloud: a signed workspace kind (cloud/user-hosted — never local) or a

@@ -339,8 +339,14 @@ export async function measureInteraction(page: Page, label: string, action: () =
   cdp.on("Tracing.dataCollected", (event) => {
     traceEvents.push(...event.value as unknown as TraceEvent[])
   })
+  // Blink's invalidation tracking emits one instant event per invalidated
+  // element, which is heavy enough to distort the very timings it explains —
+  // hence its own opt-in, and hence attribution-only: never gating evidence.
+  const styleDumpPath = process.env.CLAXEDO_PERF_STYLE_DUMP
   await cdp.send("Tracing.start", {
-    categories: traceDetailsEnabled
+    categories: styleDumpPath
+      ? "__metadata,devtools.timeline,disabled-by-default-devtools.timeline,disabled-by-default-devtools.timeline.invalidationTracking"
+      : traceDetailsEnabled
       ? "__metadata,devtools.timeline,disabled-by-default-devtools.timeline,v8.execute,blink.user_timing"
       : "__metadata,devtools.timeline,disabled-by-default-devtools.timeline",
     transferMode: "ReportEvents",
@@ -387,6 +393,28 @@ export async function measureInteraction(page: Page, label: string, action: () =
   await cdp.send("Tracing.end")
   await complete
   await cdp.detach()
+  // Style/layout invalidation attribution. `recalcStyleMs` says style recalc is
+  // expensive; only these events say WHICH element and WHICH selector feature
+  // caused it. `ScheduleStyleInvalidationTracking` names the node and the
+  // changed attribute / class / pseudo (`changedPseudo: "has"` for a `:has()`
+  // anchor re-check) and carries the scheduling JS stack;
+  // `StyleInvalidatorInvalidationTracking` names every element the resulting
+  // invalidation set then swept, with the selector part that matched. Joining
+  // them on `invalidationSet` turns "style is slow" into "this attribute write
+  // on this element dirtied these N elements through this selector".
+  if (styleDumpPath) {
+    const wanted = new Set([
+      "UpdateLayoutTree",
+      "ScheduleStyleInvalidationTracking",
+      "StyleRecalcInvalidationTracking",
+      "StyleInvalidatorInvalidationTracking",
+      "LayoutInvalidationTracking",
+      "InvalidateLayout",
+    ])
+    const rows = (traceEvents as unknown as Array<Record<string, unknown>>)
+      .filter((event) => wanted.has(event.name as string))
+    await Bun.write(`${styleDumpPath}.${label}.jsonl`, rows.map((row) => JSON.stringify(row)).join("\n"))
+  }
   if (causal) causal.performance = performanceMetricDelta(performanceBefore, performanceAfter)
   if (causal && profile) causal.cpuProfile = summarizeCpuProfile(profile.profile)
   if (causal && traceEvents.length > 0) causal.traceTasks = summarizeTraceTasks(traceEvents)

@@ -308,6 +308,12 @@ export function MessageTimeline(props: {
   // Capture phase runs before the link's default action (see above).
   const [timelineRoot, setTimelineRoot] = createSignal<HTMLDivElement>()
   const messageNavHasRoom = createMessageNavRoom(timelineRoot)
+  // One memo drives BOTH the rail's mount and `data-session-timeline-nav-gutter`
+  // on the root, so message-nav-gutter.css reserves the gutter without a `:has()`
+  // anchor over the timeline — see that file for why the anchor was expensive.
+  const messageNavGutterVisible = createMemo(() =>
+    messageNavVisible((props.navMessages ?? props.userMessages).length) && messageNavHasRoom() && !!props.onMessageSelect,
+  )
 
   const registerTimelineRoot = (el: HTMLDivElement) => {
     setTimelineRoot(el)
@@ -1674,6 +1680,7 @@ export function MessageTimeline(props: {
       data-session-timeline-key-count={String(virtualRowKeys().length)}
       data-session-timeline-reveal-ready={initialRevealReady() ? "true" : "false"}
       data-session-timeline-progressive-ready={progressiveReady() ? "true" : "false"}
+      data-session-timeline-nav-gutter={messageNavGutterVisible() ? "" : undefined}
       style={{ visibility: timelineInitialRevealVisibility({ ready: initialRevealReady() }) }}
       onClick={handleTimelinePathClick}
       onContextMenu={handleTimelineContextMenu}
@@ -1689,13 +1696,7 @@ export function MessageTimeline(props: {
           />
         )}
       </Show>
-      <Show
-        when={
-          messageNavVisible((props.navMessages ?? props.userMessages).length) &&
-          messageNavHasRoom() &&
-          props.onMessageSelect
-        }
-      >
+      <Show when={messageNavGutterVisible()}>
         <div data-slot="message-nav-gutter" class="pointer-events-none absolute inset-0 z-[45]">
           <MessageNav
             class="pointer-events-auto absolute left-2 md:left-3 top-1/2 -translate-y-1/2"

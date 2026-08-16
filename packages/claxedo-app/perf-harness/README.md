@@ -76,6 +76,17 @@ Neither flag changes a normal release or CI run.
 separate because Chrome's sampler perturbs short frame measurements; profile
 runs provide attribution and never provide gating timing evidence.
 
+`CLAXEDO_PERF_STYLE_DUMP=<path>` writes `<path>.<flow>.jsonl` with Blink's raw
+style/layout invalidation trace — `ScheduleStyleInvalidationTracking` (the node
+and the changed attribute/class/pseudo that scheduled an invalidation, plus the
+JS stack that wrote it), `StyleInvalidatorInvalidationTracking` (every element
+the resulting set swept, with the selector part that matched), and
+`UpdateLayoutTree` element counts. Join the two tracking events on their shared
+`invalidationSet` id to turn a large `recalcStyleMs` into a named cause. It is
+attribution-only: the tracking category emits one event per invalidated element,
+so its own overhead inflates the run's timings — read the counts, not the clock.
+Off (and zero-cost) unless set.
+
 `CLAXEDO_PERF_REQUEST_LOG=<path>` appends one JSONL row per mocked API request
 (ms since page setup, method, path+query, status, plus a `boot` marker per
 page), for diffing the boot/interaction request graph across runs — serial
