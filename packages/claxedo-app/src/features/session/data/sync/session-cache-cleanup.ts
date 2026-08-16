@@ -128,6 +128,50 @@ function liveSessionsColdestFirst(): string[] {
  *    session's UI, and a background turn is exactly the case a recency-ranked
  *    eviction would otherwise hit first.
  */
+/**
+ * The session id awaiting a ceiling pass, or `undefined` when none is pending.
+ * A scheduling latch, not state anything reads for truth: it coalesces a burst
+ * of switches into one pass and holds only the most recent target, which is the
+ * one that must survive eviction by the time the pass runs.
+ */
+let pendingCeilingSessionId: string | undefined
+
+/**
+ * Run the ceiling once the renderer is idle.
+ *
+ * Sizing a transcript is a deep walk (~2 ms per MB), so a session whose
+ * transcript is new to the cache costs real time to measure — ~26 ms for a
+ * 20k-message session, and 3.3 s in the pathological case of forty large
+ * transcripts arriving unmeasured. Hydration is the moment those caches come
+ * alive, which makes it the right TRIGGER and the wrong PLACE to run: the user
+ * is waiting on the pane they just opened, and nothing about reclaiming memory
+ * has to happen before it paints.
+ *
+ * Deferring also makes the steady-state cost self-limiting. Sessions enter the
+ * cache one hydration at a time, and every hydration schedules a pass, so each
+ * pass finds at most one transcript it has not already measured; the rest are
+ * served from the memo. The pathological figure above needs forty transcripts
+ * to materialise between two passes, which no path in the app produces.
+ */
+export function scheduleSessionCacheCeiling(sessionId: string) {
+  if (!sessionId || sessionId === "new") return
+  const alreadyScheduled = pendingCeilingSessionId !== undefined
+  pendingCeilingSessionId = sessionId
+  if (alreadyScheduled) return
+  const run = () => {
+    const target = pendingCeilingSessionId
+    pendingCeilingSessionId = undefined
+    if (target) enforceSessionCacheCeiling(target)
+  }
+  const idle = typeof globalThis.requestIdleCallback === "function"
+    ? globalThis.requestIdleCallback
+    : undefined
+  // Fall back rather than skip: an environment without `requestIdleCallback`
+  // (Safari, test DOMs) still has to honour the memory ceiling.
+  if (idle) idle(run, { timeout: 2_000 })
+  else setTimeout(run, 0)
+}
+
 export function enforceSessionCacheCeiling(sessionId: string) {
   if (!sessionId || sessionId === "new") return []
   const coldestFirst = liveSessionsColdestFirst().filter((id) => id !== sessionId)
