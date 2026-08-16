@@ -8,6 +8,7 @@ import { shellDataKeys } from "@/platform/sync/keys"
 import type { ConversationChatHandle } from "./opencode-conversation"
 import { conversationPersistence } from "./conversation-persistence"
 import { compactConversationSnapshot } from "./conversation-snapshot"
+import { estimateConversationMemory } from "./conversation-memory"
 
 /**
  * One canonical conversation store per session: a registry-owned TanStack
@@ -45,6 +46,49 @@ export function readConversationSnapshot(sessionID: string) {
 
 export function writeConversationSnapshot(sessionID: string, snapshot: UIMessage[]) {
   queryClient.setQueryData(conversationSnapshotKey(sessionID), compactConversationSnapshot(snapshot) ?? [])
+}
+
+/**
+ * Memo table for {@link cachedConversationBytes}, keyed on the snapshot array
+ * itself. Not module state in the sense the architecture ratchet guards: it
+ * carries no authority and nothing reads it for truth — every entry is a pure
+ * function of its own key, so it cannot drift, and a dropped transcript takes
+ * its entry with it rather than needing a cleanup path.
+ */
+const conversationBytesMemo = new WeakMap<object, { at: number; bytes: number }>()
+
+/**
+ * Estimated payload bytes of a session's cached transcript, for the memory
+ * ceiling that bounds total retained conversation size.
+ *
+ * `estimateConversationMemory` is a deep walk over every message, part and
+ * string — proportional to the very bytes it is counting. The ceiling runs on
+ * every session hydration and must consider every cached session, so walking
+ * each one every time would make switching sessions cost O(all retained bytes).
+ *
+ * Validated on BOTH the array's identity and the query's `dataUpdatedAt`,
+ * because neither alone is sufficient: `compactConversationSnapshot` returns the
+ * caller's array untouched when there is nothing to dedupe, so a transcript can
+ * grow behind a stable reference, while a rewrite with identical content bumps
+ * the timestamp without changing anything. Either signal moving re-walks; only
+ * a genuinely untouched transcript is served from the memo.
+ *
+ * `allowStale` serves the last measurement for a session the caller has already
+ * decided it cannot evict. A streaming transcript changes on every delta, so it
+ * would otherwise miss the memo on every single pass — putting a full re-walk
+ * (~2 ms per MB) on the session-switch path in exchange for refining a number
+ * that cannot change the outcome. A never-measured session is still walked.
+ */
+export function cachedConversationBytes(sessionID: string, options?: { allowStale?: boolean }) {
+  const query = queryClient.getQueryCache().find({ queryKey: conversationSnapshotKey(sessionID) })
+  const messages = query?.state.data as UIMessage[] | undefined
+  if (!messages) return 0
+  const at = query?.state.dataUpdatedAt ?? 0
+  const memo = conversationBytesMemo.get(messages)
+  if (memo && (options?.allowStale || memo.at === at)) return memo.bytes
+  const bytes = estimateConversationMemory(messages).totalBytes
+  conversationBytesMemo.set(messages, { at, bytes })
+  return bytes
 }
 
 // Lazy boundary for the ai-client runtime (ChatClient body + SSE→parts stream
