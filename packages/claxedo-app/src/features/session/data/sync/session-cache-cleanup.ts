@@ -63,6 +63,74 @@ export function cleanupSessionCaches(sessionId: string) {
   clearPromptSessionStatus(sessionId)
 }
 
+/**
+ * Session ids that currently hold shell caches, coldest first.
+ *
+ * Derived from the query cache rather than tracked in a module-level set: the
+ * cache already knows both WHICH sessions it holds and WHEN each was last
+ * written (`dataUpdatedAt`), so reading it is strictly more truthful than
+ * parallel bookkeeping that can drift out of sync with the thing it describes
+ * — and it keeps this module free of mutable module state.
+ */
+function liveSessionsColdestFirst(): string[] {
+  const newest = new Map<string, number>()
+  for (const query of queryClient.getQueryCache().getAll()) {
+    const key = query.queryKey
+    if (!Array.isArray(key) || key[0] !== "shell" || key[1] !== "session") continue
+    const sessionId = key[2]
+    if (typeof sessionId !== "string" || !sessionId) continue
+    const at = query.state.dataUpdatedAt ?? 0
+    newest.set(sessionId, Math.max(newest.get(sessionId) ?? 0, at))
+  }
+  return [...newest.entries()].sort((a, b) => a[1] - b[1]).map(([id]) => id)
+}
+
+/**
+ * Enforce the count-based ceiling on per-session shell caches
+ * (status/requests/todo/diff), keeping `sessionId` and dropping the coldest
+ * beyond `SESSION_CACHE_LIMIT`.
+ *
+ * This is the ONLY count-based bound on that growth. `cleanupDroppedSessionCaches`
+ * fires when the SERVER drops a session from its list, and `gcTime` is a
+ * 30-minute wall clock that every refetch resets — neither reacts to how many
+ * sessions the client has accumulated. `SESSION_CACHE_LIMIT` and
+ * `pickSessionCacheEvictions` shipped in 2531335 with ZERO callers anywhere in
+ * the tree and no tests: a written-down memory policy that never ran. Wiring it
+ * is what makes the ceiling real, and it matters most under mixed load — many
+ * sessions across several harnesses and workspaces, where the two structures
+ * that ARE capped (10 workbench tabs, 32 conversation clients) both spill their
+ * data into this uncapped one by design.
+ *
+ * Two exemptions, both load-bearing:
+ *  - OPEN sessions — a mounted tab must never lose the caches it renders from.
+ *  - BUSY sessions — dropping status/requests mid-turn would strand a streaming
+ *    session's UI, and a background turn is exactly the case a recency-ranked
+ *    eviction would otherwise hit first.
+ */
+export function enforceSessionCacheCeiling(sessionId: string) {
+  if (!sessionId || sessionId === "new") return []
+  const seen = new Set(liveSessionsColdestFirst())
+  const preserve: string[] = []
+  for (const id of seen) {
+    if (hasOpenSession(id)) preserve.push(id)
+    else {
+      const status = shellSessionStatus(id)
+      if (status && status.type !== "idle") preserve.push(id)
+    }
+  }
+  const evicted = pickSessionCacheEvictions({
+    seen,
+    keep: sessionId,
+    limit: SESSION_CACHE_LIMIT,
+    preserve,
+  })
+  for (const id of evicted) {
+    removeSessionShellQueries(id)
+    clearPromptSessionStatus(id)
+  }
+  return evicted
+}
+
 export function pickSessionCacheEvictions(input: {
   seen: Set<string>
   keep: string
