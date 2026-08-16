@@ -72,9 +72,28 @@
 }
 
 /* Reserve the gutter inside the timeline's scroll viewport so chat content
-   squeezes left while the scrollbar remains on the pane edge. Keyed off the
-   card actually being mounted (`:has`) so visibility has one source of truth;
-   the collapsed rail only needs a sliver. The composer dock gets the SAME
+   squeezes left while the scrollbar remains on the pane edge. Keyed off
+   `data-session-envcard`, which the card reports to the shell from the same
+   `painted()` / `collapsed()` state that decides whether it renders — so
+   visibility still has one source of truth, and the collapsed value ("collapsed"
+   vs the plain present-and-expanded attribute) picks the width.
+
+   This was `:has(.session-envcard)` / `:has(.session-envcard.is-collapsed)`.
+   `:has()` here made this shell — which wraps the ENTIRE session pane — a Blink
+   `:has()` invalidation anchor. Blink re-checks an anchor on essentially any
+   mutation below it and then schedules the document's AGGREGATED `:has`
+   descendant invalidation set (the union of every `:has()` rule's descendant
+   features, which in this UI kit means `data-slot` and `data-component`, i.e.
+   almost every element) across the anchor's whole subtree. On the session-switch
+   perf flow that anchor plus the timeline root's own one produced 3426 of 3756
+   style invalidations and ~21% of RecalcStyleDuration; replacing both with
+   explicit state took recalcStyleMs from ~375 to ~294 and single_switch_ms from
+   ~304 to ~265. Do not reintroduce a `:has()` anchored above the transcript.
+
+   Ordering note: the two rules below are now equal specificity (0,2,0), so the
+   collapsed one wins on source order — keep it second.
+
+   The collapsed rail only needs a sliver. The composer dock gets the SAME
    inset so it stays centered on the squeezed chat column — never on the full
    pane. So does the loading placeholder that stands in for the timeline before
    messages land (`[data-session-timeline-loading]`, session-timeline-skeleton.tsx):
@@ -82,15 +101,15 @@
    own rule it centres on the full pane and the column visibly jumps left the
    moment the real messages arrive. */
 @media (min-width: 769px) {
-  .session-envcard-shell:has(.session-envcard) [data-session-timeline-root] .scroll-view__viewport,
-  .session-envcard-shell:has(.session-envcard) [data-session-timeline-loading],
-  .session-envcard-shell:has(.session-envcard) [data-component="session-prompt-dock"] {
+  .session-envcard-shell[data-session-envcard] [data-session-timeline-root] .scroll-view__viewport,
+  .session-envcard-shell[data-session-envcard] [data-session-timeline-loading],
+  .session-envcard-shell[data-session-envcard] [data-component="session-prompt-dock"] {
     padding-right: 16.4rem;
   }
 
-  .session-envcard-shell:has(.session-envcard.is-collapsed) [data-session-timeline-root] .scroll-view__viewport,
-  .session-envcard-shell:has(.session-envcard.is-collapsed) [data-session-timeline-loading],
-  .session-envcard-shell:has(.session-envcard.is-collapsed) [data-component="session-prompt-dock"] {
+  .session-envcard-shell[data-session-envcard="collapsed"] [data-session-timeline-root] .scroll-view__viewport,
+  .session-envcard-shell[data-session-envcard="collapsed"] [data-session-timeline-loading],
+  .session-envcard-shell[data-session-envcard="collapsed"] [data-component="session-prompt-dock"] {
     padding-right: 3rem;
   }
 }
@@ -106,22 +125,23 @@
    does not come back on focus, on hover, or on any other state: this block is
    width-only, and nothing else in this file re-shows the card.
 
-   The gutter reservation has to go with it. `:has()` still matches a
-   `display: none` element, and the reservation lives under `@media (min-width:
-   769px)` — so in a narrow pane inside a wide window the card would be
-   invisible while the timeline still paid 3.6rem for it. Same selectors,
-   later in the file, so these win on source order at equal specificity. */
+   The gutter reservation has to go with it. A `display: none` card is still a
+   painted card as far as `data-session-envcard` is concerned, and the
+   reservation lives under `@media (min-width: 769px)` — so in a narrow pane
+   inside a wide window the card would be invisible while the timeline still
+   paid 3.6rem for it. Same selectors, later in the file, so these win on source
+   order at equal specificity. */
 @container session-envcard-shell (max-width: 768px) {
   .session-envcard {
     display: none;
   }
 
-  .session-envcard-shell:has(.session-envcard) [data-session-timeline-root] .scroll-view__viewport,
-  .session-envcard-shell:has(.session-envcard) [data-session-timeline-loading],
-  .session-envcard-shell:has(.session-envcard) [data-component="session-prompt-dock"],
-  .session-envcard-shell:has(.session-envcard.is-collapsed) [data-session-timeline-root] .scroll-view__viewport,
-  .session-envcard-shell:has(.session-envcard.is-collapsed) [data-session-timeline-loading],
-  .session-envcard-shell:has(.session-envcard.is-collapsed) [data-component="session-prompt-dock"] {
+  .session-envcard-shell[data-session-envcard] [data-session-timeline-root] .scroll-view__viewport,
+  .session-envcard-shell[data-session-envcard] [data-session-timeline-loading],
+  .session-envcard-shell[data-session-envcard] [data-component="session-prompt-dock"],
+  .session-envcard-shell[data-session-envcard="collapsed"] [data-session-timeline-root] .scroll-view__viewport,
+  .session-envcard-shell[data-session-envcard="collapsed"] [data-session-timeline-loading],
+  .session-envcard-shell[data-session-envcard="collapsed"] [data-component="session-prompt-dock"] {
     padding-right: 0;
   }
 }

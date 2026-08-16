@@ -6,6 +6,8 @@ import { SessionPaneScope } from "../components/session-pane-scope"
 import SessionPage from "@/features/session/ui/session-screen"
 import { hasBacking, isDirectorylessPiSession, localSessionRefForDirectory, retargetSessionRef } from "@/platform/identity/session-ref"
 import { SessionLoadingSurface } from "./session-loading-surface"
+// Type-only, so the card's lazy chunk stays lazy.
+import type { SessionEnvironmentCardOccupancy } from "./session-environment-card"
 // The `.session-envcard-shell` / `.session-envcard-primary` layout rules must
 // arrive with THIS component: the shell markup below renders unconditionally,
 // while the card component that also imports this stylesheet is a lazy chunk
@@ -46,6 +48,18 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
    * "new"` open-coded twice invites the two from drifting apart.
    */
   const draftSession = () => !sessionId() || sessionId() === "new"
+  /**
+   * How much of the pane's right gutter the environment card is occupying, as
+   * reported by the card itself (it owns that policy — see its mount doc).
+   * Stamped on the shell as `data-session-envcard` so the reservation rules in
+   * session-environment-card.css are plain descendant selectors.
+   *
+   * Deliberately not `:has(.session-envcard)`: this shell wraps the entire
+   * session pane, and a `:has()` here makes it a Blink invalidation anchor whose
+   * every re-check sweeps the whole transcript with the document's aggregated
+   * `:has` invalidation set. See that stylesheet for the measurement.
+   */
+  const [envcardGutter, setEnvcardGutter] = createSignal<SessionEnvironmentCardOccupancy>()
   const requiresSessionRef = () => !draftSession()
   const missingSessionRef = () => requiresSessionRef() && !effectiveSessionRef() && !directory()
   const sessionVisible = () => typeof props.ctx.isVisible === "function" ? props.ctx.isVisible() : !!props.ctx.isVisible
@@ -186,6 +200,7 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
               >
                 <div
                   class="size-full session-envcard-shell"
+                  data-session-envcard={envcardGutter()}
                   data-testid="session-content"
                   data-content-id={meta().id}
                   data-session-id={sessionId() ?? ""}
@@ -207,15 +222,15 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
                       collapse state) — and it is strictly cheaper: an unmounted
                       card never creates its file-status, vcs or processes queries
                       at all, where an internal flag would leave them mounted and
-                      merely disabled. It is also what the CSS expects: the
-                      reserved gutter is keyed off `:has(.session-envcard)`, so an
-                      unmounted card reclaims the width with no extra rule. */}
+                      merely disabled. It is also what the CSS expects: an
+                      unmounted card reports no occupancy, so the shell drops
+                      `data-session-envcard` and reclaims the width. */}
                   <Show when={!draftSession()}>
                     {/* The card's lazy chunk must not blank the conversation
                         behind the pane-level loading fallback — contain its
                         suspension to the card's own (empty) region. */}
                     <Suspense fallback={null}>
-                      <SessionEnvironmentCardMount />
+                      <SessionEnvironmentCardMount onOccupancy={setEnvcardGutter} />
                     </Suspense>
                   </Show>
                 </div>
