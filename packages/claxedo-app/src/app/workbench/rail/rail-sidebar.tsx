@@ -2,6 +2,7 @@ import {
   SIDEBAR_SESSION_STATUS_FRESH_MS,
   relativeTime,
   sameRequestIds,
+  pruneSidebarSessionStatusBatches,
   sidebarRequestDebug,
   sidebarSessionStatusBatches,
   sidebarStatusTargetFresh,
@@ -912,6 +913,10 @@ export function RailSidebar(props: RailSidebarProps) {
       })))
       const run = () => {
         if (fastSessionSwitchAnyQuietDelay() > 0) return
+        // Every membership change mints a new batch key and strands the old
+        // one; this is the poll that observes those changes, so it is where
+        // the inert entries get collected.
+        pruneSidebarSessionStatusBatches()
         for (const group of groups) {
           const batchKey = `${group.directory}\0${group.targets.map((target) => target.sessionID).join("\0")}`
           const cached = sidebarSessionStatusBatches.get(batchKey)
