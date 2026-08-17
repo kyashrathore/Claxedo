@@ -30,6 +30,31 @@ export function sidebarRequestDebug(...args: unknown[]) {
 
 export const sidebarSessionStatusBatches = new Map<string, { updatedAt: number; inFlight?: Promise<void> }>()
 
+/**
+ * Drop batch entries that can no longer affect a decision.
+ *
+ * The key is the directory plus EVERY session id in the group, so it changes
+ * whenever the group's membership does — opening, closing or filtering a
+ * session mints a brand new key and strands the old one. That makes this a map
+ * of every session-set permutation the rail has ever shown, not one entry per
+ * session, and each key is itself O(sessions) of concatenated ids. Nothing
+ * removed from it, so it grew for the lifetime of the tab.
+ *
+ * An entry carries exactly two facts: `updatedAt`, read only as
+ * `now - updatedAt < SIDEBAR_SESSION_STATUS_FRESH_MS`, and `inFlight`, a
+ * de-dupe guard. Once an entry is past the freshness window and has no request
+ * in flight, that comparison can only ever be false — the entry is inert, and
+ * dropping it cannot change what the poll does. A permutation that reappears
+ * simply refetches, which is what the stale entry would have caused anyway.
+ */
+export function pruneSidebarSessionStatusBatches(now = Date.now()) {
+  for (const [key, entry] of sidebarSessionStatusBatches) {
+    if (entry.inFlight) continue
+    if (now - entry.updatedAt < SIDEBAR_SESSION_STATUS_FRESH_MS) continue
+    sidebarSessionStatusBatches.delete(key)
+  }
+}
+
 export function sameRequestIds(previous: { id: string }[] | undefined, next: { id: string }[]) {
   if (!previous || previous.length !== next.length) return false
   return previous.every((item, index) => item.id === next[index]?.id)
