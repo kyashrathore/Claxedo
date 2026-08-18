@@ -18,6 +18,8 @@ import { applyBudget, jsonReport, markdownReport } from "./report"
 import { seedForScenario } from "./seed"
 import { applyCpuProfile, applyNetworkProfile, environmentProfile, type EnvironmentProfile } from "./environment-profile"
 import { installWebVitals, mergeWebVitals, readWebVitals, type WebVitals } from "./web-vitals"
+import { browserRecords } from "./browser-records"
+import { compareToBaseline, currentCommit, readBaselineFor, writeBaselineFor } from "./baseline-store"
 import { summarize } from "./stats"
 import { appendTrend, appRoot, ensureBudget, harnessRoot, reportsRoot, writeBaseline, writeJson } from "./storage"
 import { app } from "./targets"
@@ -125,6 +127,16 @@ export async function runBrowser(options: RunOptions) {
               failures: [...budgeted.failures, ...validationFailures],
             }
         results.push(result)
+        // Project onto the portable contract and compare against the tracked
+        // baseline for THIS (profile, stack). Done here rather than in the
+        // report so a run always leaves comparable evidence behind, whether or
+        // not anyone reads the markdown.
+        const records = browserRecords(result, options.stack)
+        const baseline = await readBaselineFor({
+          profile: records[0]!.profile, stack: options.stack, lane: "browser", flow: scenario,
+        })
+        result.comparison = compareToBaseline(records, baseline)
+        if (options.accept_baseline) await writeBaselineFor(records, currentCommit())
         console.log(`[perf] ${scenario}: ${result.status}`)
         if (options.update_baseline) await writeBaseline(result)
         if (options.append_trend) await appendTrend(result)
