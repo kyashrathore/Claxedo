@@ -1,7 +1,7 @@
 import { chromium } from "playwright-core"
 import { startApp, stopApp } from "./browser-runner"
 import { environmentProfile } from "./environment-profile"
-import { memoryRecords, runMemorySweep } from "./memory-runner"
+import { detachedNodes, memoryRecords, runMemorySweep } from "./memory-runner"
 import { compareToBaseline, currentCommit, readBaselineFor, writeBaselineFor } from "./baseline-store"
 import { stackLabel } from "./stacks"
 import path from "node:path"
@@ -58,7 +58,12 @@ export async function runMemoryLane(options: {
     })
 
     const rows = sweep.samples.map((item) =>
-      `| ${item.step} | ${(item.heapBytes / MB).toFixed(1)} | ${item.domNodes} | ${item.queries} | ${item.cachedSessions} |`)
+      `| ${item.step} | ${(item.heapBytes / MB).toFixed(1)} | ${item.domNodes} | ${detachedNodes(item)} | ` +
+      `${item.listeners} | ${item.queries} | ${item.cachedSessions} |`)
+    const firstSample = sweep.samples[0]!
+    const lastSample = sweep.samples.at(-1)!
+    const detachedGrowth = detachedNodes(lastSample) - detachedNodes(firstSample)
+    const listenerGrowth = lastSample.listeners - firstSample.listeners
     // Did the sweep actually exercise the app? The false pass this lane exists
     // to avoid looks like every counter frozen at its boot value.
     //
@@ -82,8 +87,14 @@ export async function runMemoryLane(options: {
         ? ""
         : "> Caveat: `cachedSessions` never rose, so this sweep did not accumulate per-session state. Read the slope as unproven, not as a plateau.",
       "",
-      "| visit | heap (MB) | DOM nodes | queries | cachedSessions |",
-      "| ---: | ---: | ---: | ---: | ---: |",
+      detachedGrowth > sweep.samples.length
+        ? `**Detached DOM +${detachedGrowth} nodes, listeners +${listenerGrowth}** — nodes removed from the ` +
+          "document but still referenced, so never collected. This is invisible to anything the page can " +
+          "measure about itself; naming the retainer needs a heap snapshot."
+        : "",
+      "",
+      "| visit | heap (MB) | attached | detached | listeners | queries | cachedSessions |",
+      "| ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
       ...rows,
       "",
       "Query-cache entries by key family, first sample vs last — growth here names the structure:",
