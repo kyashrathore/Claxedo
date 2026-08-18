@@ -937,12 +937,18 @@ export function MessageTimeline(props: {
 
   let head: HTMLDivElement | undefined
 
-  const updateTitleMetrics = () => {
-    if (!head || head.clientWidth <= 0) return
-    setBar("ms", pace(head.clientWidth))
+  // Width comes from the observer's `contentRect`: re-reading `head.clientWidth`
+  // forced a layout from inside the callback. Took this stack from 123 layout
+  // invalidations to 0, but the flow's total held at ~522 -- insertion bound.
+  const updateTitleMetrics = (width?: number) => {
+    const measured = width ?? head?.clientWidth ?? 0
+    if (measured <= 0) return
+    const next = pace(measured)
+    if (next === bar.ms) return
+    setBar("ms", next)
   }
 
-  createResizeObserver(() => head, updateTitleMetrics)
+  createResizeObserver(() => head, ({ width }) => updateTitleMetrics(width))
 
   const bindListRoot = (root: HTMLDivElement) => {
     if (root === listRoot()) return
