@@ -1,5 +1,6 @@
 import path from "node:path"
 import { flag as optionFlag, option as optionValue, scenarioIds } from "./cli-options"
+import { DEFAULT_PROFILE_ID } from "./environment-profile"
 import { FLOWS } from "./flows"
 import { markdownReport } from "./report"
 import { run } from "./runner"
@@ -34,6 +35,7 @@ if (command === "report") {
 if (command === "run") {
   const results = await run({
     scenarios: scenarioIds(args),
+    profile: option("profile", DEFAULT_PROFILE_ID)!,
     iterations: Number(option("iterations", "1")),
     output: option("output", "run.json")!,
     update_baseline: flag("update-baseline"),

@@ -16,6 +16,8 @@ import {
 } from "./frame-sampler"
 import { applyBudget, jsonReport, markdownReport } from "./report"
 import { seedForScenario } from "./seed"
+import { applyCpuProfile, applyNetworkProfile, environmentProfile, type EnvironmentProfile } from "./environment-profile"
+import { installWebVitals, mergeWebVitals, readWebVitals, type WebVitals } from "./web-vitals"
 import { summarize } from "./stats"
 import { appendTrend, appRoot, ensureBudget, harnessRoot, reportsRoot, writeBaseline, writeJson } from "./storage"
 import { app } from "./targets"
@@ -207,6 +209,7 @@ async function executeBrowserScenarioMode(
             target,
             scenario,
             diagnosticsEnabled ? options.iterations + index : index,
+            environmentProfile(options.profile),
           ))
         }
         const run = mergeBrowserRuns(rawRuns)
@@ -230,7 +233,7 @@ async function executeBrowserScenarioMode(
           reject(new Error(
             `Timed out running ${scenario} with diagnostics ${diagnosticsEnabled ? "enabled" : "disabled"}`,
           ))
-        }, 120_000)
+        }, 120_000 * environmentProfile(options.profile).timeoutScale)
       }),
     ])
   } finally {
@@ -420,6 +423,7 @@ async function executeBrowserScenario(
   app: BrowserTarget,
   scenario: ScenarioId,
   iteration: number,
+  profile: EnvironmentProfile,
 ): Promise<BrowserRun> {
   const seed = seedForScenario(scenario)
   const fixture = fixtureFor(scenario, seed)
@@ -431,14 +435,31 @@ async function executeBrowserScenario(
       ? { recordVideo: { dir: path.join(reportsRoot, "videos", "raw"), size: viewport } }
       : {}),
   })
+  // A throttled profile makes every wait legitimately longer; without this a
+  // fixed readiness timeout fails because emulation worked, which surfaces as
+  // "browser scenario crashed" rather than as a slow number.
+  if (profile.timeoutScale > 1) {
+    context.setDefaultTimeout(5_000 * profile.timeoutScale)
+    context.setDefaultNavigationTimeout(30_000 * profile.timeoutScale)
+  }
   const page = await context.newPage()
+  // Before any app script: an init script is the only place all four vital
+  // types can be observed from zero (see installWebVitals).
+  await installWebVitals(page)
+  // CPU and network emulation belong to the page, not the flow — applied here
+  // so navigation itself, and therefore the load vitals, are throttled too.
+  const profileCdp = await context.newCDPSession(page)
+  await applyCpuProfile(profileCdp, profile)
+  await applyNetworkProfile(profileCdp, profile)
   const monitor = monitorPage(page)
   const started = performance.now()
-  await installMockApi(page, app, fixture, monitor)
+  await installMockApi(page, app, fixture, monitor, profile)
   await installSeedState(page, app, fixture)
 
   try {
     const flow = await runFlow(scenario, page, app, fixture)
+    // After the flow, so INP reflects the interactions the flow actually drove.
+    const vitals = await readWebVitals(page)
     const validation_failures = await validationFailures(page, monitor, scenario, fixture)
     if (process.env.PERF_DEBUG_ERRORS) {
       const body = await page.locator("body").innerText({ timeout: 500 }).catch(() => "")
@@ -479,6 +500,8 @@ async function executeBrowserScenario(
       duration_ms: performance.now() - started,
       seed,
       headline: flow.headline,
+      vitals,
+      environment: { profile: profile.id, label: profile.label },
       metrics: flow.debug.map(summarize),
       validation_failures,
       artifacts: videoPath ? { video: path.relative(harnessRoot, videoPath) } : undefined,
@@ -555,6 +578,9 @@ function mergeBrowserRuns(rawRuns: BrowserRun[]): BrowserRun {
         samples: rawRuns.flatMap((result) => result.metrics[index]?.samples ?? []),
       }),
     ),
+    // Not inherited from rawRuns[0] via the spread: that would report the first
+    // iteration's vitals as if they described the whole merge.
+    vitals: mergeWebVitals(rawRuns.map((result) => result.vitals).filter((item): item is WebVitals => !!item)),
     validation_failures: rawRuns.flatMap((result) => result.validation_failures ?? []),
     artifacts: rawRuns.at(-1)?.artifacts,
   }
@@ -1007,6 +1033,7 @@ async function installMockApi(
   app: BrowserTarget,
   fixture: ReturnType<typeof fixtureFor>,
   monitor: ReturnType<typeof monitorPage>,
+  profile: EnvironmentProfile,
 ) {
   const sseConnects = new Map<string, number>()
   const bootSeq = ++requestLogBootSeq
@@ -1055,6 +1082,16 @@ async function installMockApi(
       console.error(`[PERF_ROUTE] ${route.request().method()} ${url.toString()} mock=${String(shouldMock(url, app))}`)
     }
     if (!shouldMock(url, app)) return route.fallback()
+    // CDP network emulation cannot slow a route we fulfil in-process, so the
+    // profile's round trip is added here instead. Without it a "throttled" run
+    // still answers every API call in microseconds, which would make the
+    // data-dependent flows look faster under emulation than the asset-bound
+    // ones — the opposite of the truth. SSE streams are exempt: they are held
+    // open deliberately, and delaying the open would just shift the stream
+    // start, not model latency on its events.
+    if (profile.mockLatencyMs > 0 && !sseStreamPath(url.pathname)) {
+      await Bun.sleep(profile.mockLatencyMs)
+    }
     if (route.request().method() === "OPTIONS") {
       return route.fulfill({
         status: 204,
