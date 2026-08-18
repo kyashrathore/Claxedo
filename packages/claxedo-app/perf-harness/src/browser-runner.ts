@@ -33,7 +33,7 @@ import type {
   SeedManifest,
 } from "./types"
 
-type BrowserTarget = {
+export type BrowserTarget = {
   target: AppTarget
   baseUrl: string
   mockPort: number
@@ -887,7 +887,7 @@ async function waitForSessionComposer(page: Page) {
   await page.waitForSelector("[data-component='session-prompt-dock']", { timeout: 10_000 })
 }
 
-async function installSeedState(page: Page, app: Pick<BrowserTarget, "target" | "mockPort">, fixture: ReturnType<typeof fixtureFor>) {
+export async function installSeedState(page: Page, app: Pick<BrowserTarget, "target" | "mockPort">, fixture: ReturnType<typeof fixtureFor>) {
   const target = app.target
   await page.addInitScript(({ target, directory, project, sessions, claxedoState, serverUrl }) => {
     localStorage.setItem(
@@ -1040,7 +1040,7 @@ function sseStreamPath(pathName: string) {
   return pathName.endsWith("/api/wr/events") || pathName.endsWith("/api/wr/runtime-events")
 }
 
-async function installMockApi(
+export async function installMockApi(
   page: Page,
   app: BrowserTarget,
   fixture: ReturnType<typeof fixtureFor>,
@@ -1889,11 +1889,11 @@ function harnessOptions(fixture: ReturnType<typeof fixtureFor>) {
   }
 }
 
-function sessionPath(fixture: { directory: string }, sessionId: string) {
+export function sessionPath(fixture: { directory: string }, sessionId: string) {
   return `/s/${sessionId}`
 }
 
-function workspacePath(directory: string) {
+export function workspacePath(directory: string) {
   return `/${base64Encode(directory)}`
 }
 
@@ -1901,7 +1901,7 @@ function base64Encode(value: string) {
   return Buffer.from(value).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
 }
 
-async function startApp(): Promise<BrowserTarget> {
+export async function startApp(): Promise<BrowserTarget> {
   const basePort = await freePort()
   const mockPort = Number(process.env.CLAXEDO_PERF_MOCK_PORT) || await freePort()
   const baseUrl = `http://127.0.0.1:${basePort}`
@@ -1955,7 +1955,7 @@ async function buildProductionApp(mockPort: number) {
   throw new Error("Claxedo production build failed before performance measurement")
 }
 
-async function stopApp(app: BrowserTarget) {
+export async function stopApp(app: BrowserTarget) {
   if (!app.process) return
   app.process.kill()
   const exited = await Promise.race([
