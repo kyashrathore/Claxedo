@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { tailSlope, type MemorySample } from "../src/memory-runner"
+import { detachedNodes, tailSlope, type MemorySample } from "../src/memory-runner"
 
 const sweep = (heaps: number[]): MemorySample[] =>
   heaps.map((heapBytes, index) => ({
-    step: index * 10, heapBytes, domNodes: 0, queries: 0, cachedSessions: 0, families: {},
+    step: index * 10, heapBytes, domNodes: 0, queries: 0, cachedSessions: 0, families: {}, documents: 0, nodes: 0, listeners: 0,
   }))
 
 const MB = 1024 * 1024
@@ -38,5 +38,22 @@ describe("tail slope", () => {
   test("a sweep too short to have a tail reports no slope rather than a guess", () => {
     expect(tailSlope(sweep([20 * MB]))).toBe(0)
     expect(tailSlope([])).toBe(0)
+  })
+})
+
+describe("detached nodes", () => {
+  const counts = (nodes: number, domNodes: number) => ({ nodes, domNodes })
+
+  test("is the gap between live nodes and attached ones", () => {
+    // The whole point: the page can only count what is still in the document,
+    // so a sweep reading `domNodes` alone sees 3821 -> 5530 and calls it fine
+    // while the browser is holding 16986 live nodes.
+    expect(detachedNodes(counts(16986, 5530))).toBe(11456)
+  })
+
+  test("never reports negative when attached exceeds the sampled total", () => {
+    // The two counts come from different sources sampled moments apart, so
+    // they can cross; a negative "detached" would read as the leak reversing.
+    expect(detachedNodes(counts(100, 140))).toBe(0)
   })
 })
