@@ -40,6 +40,16 @@ export type MemorySample = {
   cachedSessions: number
   /** Query-cache entries per key family, so growth attributes to a structure. */
   families: Record<string, number>
+  /**
+   * Browser-side counters. The query cache gained ~2 entries per visit while
+   * the heap gained ~200kB, so the growth is not cache entries — it is either
+   * DOM the page never released, or listeners bound to it. `documents` rising
+   * is the signature of detached documents; `jsEventListeners` rising without
+   * `nodes` is a listener leak.
+   */
+  documents: number
+  nodes: number
+  listeners: number
 }
 
 /** A sweep's shape, which is what "does it plateau" is actually asking. */
@@ -92,6 +102,20 @@ const PROBE = `(() => {
  * start it genuinely is. What the ceiling promises is about steady state, so
  * the slope is measured over the last two thirds.
  */
+/**
+ * Nodes the browser still holds that the document no longer contains.
+ *
+ * `Memory.getDOMCounters` counts every live node; the page's own
+ * `getElementsByTagName("*")` counts only attached ones. The gap is DOM that
+ * was removed but is still referenced — by a listener, a closure, an
+ * undisposed reactive root — and so is never collected. It is invisible to
+ * every counter the page can read about itself, which is why a sweep that
+ * watched only the query cache concluded the app was fine.
+ */
+export function detachedNodes(sample: Pick<MemorySample, "nodes" | "domNodes">) {
+  return Math.max(0, sample.nodes - sample.domNodes)
+}
+
 export function tailSlope(samples: readonly MemorySample[]) {
   const tail = samples.slice(Math.floor(samples.length / 3))
   if (tail.length < 2) return 0
@@ -104,9 +128,21 @@ export function tailSlope(samples: readonly MemorySample[]) {
 async function sample(page: Page, cdp: CDPSession, step: number): Promise<MemorySample> {
   await cdp.send("HeapProfiler.collectGarbage")
   await page.waitForTimeout(150)
-  const probe = await page.evaluate(PROBE) as Omit<MemorySample, "step" | "heapBytes">
+  // Narrow to what the PAGE can know. Typing this as the whole sample minus
+  // heap made the spread below silently shadow the CDP counters with fields
+  // the page never returns.
+  const probe = await page.evaluate(PROBE) as Pick<
+    MemorySample, "domNodes" | "queries" | "cachedSessions" | "families"
+  >
   const usage = await cdp.send("Runtime.getHeapUsage") as { usedSize: number }
-  return { step, heapBytes: usage.usedSize, ...probe }
+  const counters = await cdp.send("Memory.getDOMCounters") as {
+    documents: number; nodes: number; jsEventListeners: number
+  }
+  return {
+    step, heapBytes: usage.usedSize,
+    documents: counters.documents, nodes: counters.nodes, listeners: counters.jsEventListeners,
+    ...probe,
+  }
 }
 
 /**
