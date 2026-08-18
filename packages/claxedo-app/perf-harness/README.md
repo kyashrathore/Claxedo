@@ -252,3 +252,47 @@ Three limits worth knowing before reading the numbers:
 - **API latency is simulated, not real.** Every API/SSE response is fulfilled
   in-process from fixtures, which CDP emulation cannot slow, so the profile's
   `mockLatencyMs` is added by hand. Asset delivery is genuinely throttled.
+
+## Running an experiment (Solid 2, a native port, any rewrite)
+
+The harness is built so a rewrite is measurable rather than merely describable.
+An experiment holds the **flow** and the **profile** fixed and varies the
+**stack**:
+
+```
+bun src/cli.ts run --all --profile laptop-broadband --stack solid-1 --accept-baseline
+bun src/cli.ts run --all --profile laptop-broadband --stack solid-2
+```
+
+The second command prints an "Against baseline" table comparing like with like.
+Baselines live at `data/baselines/<profile>/<stack>/<lane>/<flow>.json`, are
+tracked in git, and carry the commit they describe.
+
+### What a new stack has to supply
+
+Not new benchmarks — the existing ones. Three things:
+
+1. **Drive the same `FLOWS`.** The ids in `flows.ts` name user tasks ("switch
+   between two sessions"), never code paths, so they survive a rewrite intact.
+   A stack that needs a new flow id to look good is not being compared.
+2. **Emit `PerfRecord`s** using the vocabulary in `perf-record.ts`. Each metric
+   is defined by what the user experiences, with a per-stack source: the web
+   sources `largest_content_ms` from LCP, a native stack from the frame at
+   which its primary surface stops growing. Mirror `browser-records.ts`.
+3. **Report absent metrics as absent.** A native stack has no Cumulative Layout
+   Shift. Reporting `visual_stability` as 0 there would show the port winning a
+   metric it never measured; the comparison refuses to score `absent`, which is
+   the behaviour you want when the whole question is "did this actually get
+   better".
+
+### Reading a result honestly
+
+- **Tolerance is derived from the baseline's own samples**, two standard
+  deviations, floored at 5%. A move inside it prints as `unchanged`, not as a
+  win — this machine's spread is wide enough to manufacture one.
+- **A baseline accepted from a single run has n=1** and falls back to a flat
+  15% band. Accept over several `--iterations` before trusting a close call.
+- **`retained_heap_bytes` is absent on the browser lane** unless causal
+  diagnostics ran, and there is no memory lane yet — memory ceilings are
+  currently proven by unit tests, not measured end to end.
+- **TTFB and API latency are simulated**, per the caveats above.
