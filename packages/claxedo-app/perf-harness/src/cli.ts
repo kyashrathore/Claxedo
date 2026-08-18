@@ -33,6 +33,19 @@ if (command === "report") {
   process.exit(0)
 }
 
+if (command === "memory") {
+  const { runMemoryLane } = await import("./memory-lane")
+  const summary = await runMemoryLane({
+    profile: option("profile", DEFAULT_PROFILE_ID)!,
+    stack: option("stack", DEFAULT_STACK_ID)!,
+    sessions: Number(option("sessions", "60")),
+    accept_baseline: flag("accept-baseline"),
+    headless: !flag("headed"),
+  })
+  console.log(summary)
+  process.exit(0)
+}
+
 if (command === "run") {
   const results = await run({
     scenarios: scenarioIds(args),
