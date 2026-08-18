@@ -218,3 +218,37 @@ No engine, report, or budget changes are needed.
 - `data/budgets/<flow>.json` — regression budget on the worst frame.
 - `data/baselines/<flow>.json`, `data/trends/<flow>.jsonl` — with
   `--update-baseline` / trend appends.
+
+## Core Web Vitals and the reference machine
+
+`--profile <id>` selects the hardware and network the flows are measured ON.
+Every timing here is a property of the machine as much as of the code, so the
+profile travels with the result (`environment` in the JSON, and the header of
+the Core Web Vitals table).
+
+| profile | CPU | network | notes |
+| --- | --- | --- | --- |
+| `unthrottled` (default) | host | host | What the stored worst-frame budgets were captured on. Keeps existing baselines comparable. |
+| `laptop-broadband` | 4x slowdown | 10/3 Mbps, 40ms | The reference profile: a mid-range developer laptop on ordinary broadband. |
+| `lighthouse-mobile` | 4x slowdown | 1.6/0.75 Mbps, 150ms | Comparable to public Lighthouse/CWV numbers. Models a phone this app never runs on — compare against the industry with it, do not gate on it. |
+
+Alongside the renderer-scheduling proxy, runs now collect **Core Web Vitals**:
+LCP, INP, CLS, FCP and TTFB, using the platform's own definitions (LCP from the
+last `largest-contentful-paint` entry, CLS as the heaviest session window, INP
+as the p98-style worst interaction). Across iterations they merge at p75, which
+is how CWV is scored in the field.
+
+Three limits worth knowing before reading the numbers:
+
+- **INP needs trusted input.** Flows that click through Playwright
+  (`locator.click`, `page.mouse.click`) produce interactions; flows that click
+  synthetically inside `page.evaluate` do not, because a synthetic event carries
+  no `interactionId`. Those flows report `n/a` and an interaction count of 0
+  rather than a misleadingly good INP.
+- **TTFB is a local-server artifact.** Throughput emulation demonstrably
+  applies (see `environment-profile.ts` for the measured evidence), but the
+  `latency` term never landed on the loopback document: TTFB stayed at 4-13ms
+  under every profile. Read it as noise, not as a vital.
+- **API latency is simulated, not real.** Every API/SSE response is fulfilled
+  in-process from fixtures, which CDP emulation cannot slow, so the profile's
+  `mockLatencyMs` is added by hand. Asset delivery is genuinely throttled.

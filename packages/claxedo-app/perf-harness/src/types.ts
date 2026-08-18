@@ -1,4 +1,5 @@
 import type { FrameMetric } from "./frame-sampler"
+import type { WebVitals } from "./web-vitals"
 
 export type { FrameMetric, FrameVerdict } from "./frame-sampler"
 
@@ -60,6 +61,9 @@ export type ScenarioResult = {
   duration_ms: number
   seed: SeedManifest
   headline: FrameMetric
+  /** Core Web Vitals for this run, and the reference machine that produced them. */
+  vitals?: WebVitals
+  environment?: { profile: string; label: string }
   metrics: MetricSummary[]
   budget: Budget
   status: RunStatus
@@ -134,6 +138,8 @@ export type RunAttribution = {
 
 export type RunOptions = {
   scenarios: ScenarioId[]
+  /** Reference hardware/network the flows are measured on (see environment-profile.ts). */
+  profile: string
   iterations: number
   output: string
   update_baseline: boolean

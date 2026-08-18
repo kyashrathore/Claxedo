@@ -1,3 +1,12 @@
+import { webVitalRating } from "./web-vitals"
+
+/** Google's good / needs-improvement / poor bands, as a glanceable badge. */
+function ratingBadge(rating: ReturnType<typeof webVitalRating>) {
+  if (rating === "good") return "🟢"
+  if (rating === "needs-improvement") return "🟡"
+  if (rating === "poor") return "🔴"
+  return ""
+}
 import { FRAME_120HZ_MS, FRAME_60HZ_MS, FRAMES_OVER_60HZ_ALLOWANCE, verdictLabel, type FrameMetric } from "./frame-sampler"
 import { formatNumber } from "./stats"
 import type { Budget, DiagnosticsOverheadEvidence, RunStatus, ScenarioResult } from "./types"
@@ -133,6 +142,31 @@ export function markdownReport(results: ScenarioResult[], options: { debug?: boo
     "| --- | --- | ---: | ---: | ---: | ---: | --- | --- |",
     ...headlineRows,
   ]
+
+  const vitalsRows = results
+    .filter((result) => result.vitals)
+    .map((result) => {
+      const v = result.vitals!
+      const cell = (metric: Parameters<typeof webVitalRating>[0], value: number | undefined, digits = 0) =>
+        value === undefined ? "n/a" : `${value.toFixed(digits)} ${ratingBadge(webVitalRating(metric, value))}`
+      return `| ${result.name} | ${cell("lcpMs", v.lcpMs)} | ${cell("inpMs", v.inpMs)} | ${cell("cls", v.cls, 3)} | ` +
+        `${cell("fcpMs", v.fcpMs)} | ${cell("ttfbMs", v.ttfbMs)} | ${v.interactionCount} |`
+    })
+
+  if (vitalsRows.length) {
+    const env = results.find((result) => result.environment)?.environment
+    lines.push(
+      "",
+      "## Core Web Vitals",
+      "",
+      `Reference machine: ${env ? env.label : "unknown"}. These are what a user perceives — when content appeared, whether it moved, how fast the UI answered input — as opposed to the renderer-scheduling proxy above.`,
+      "Caveat: API and SSE responses are fulfilled in-process from fixtures, so their latency is the profile's simulated round trip rather than a real server. Asset delivery IS really throttled, so the load metrics (LCP/FCP/TTFB) carry the bundle's true cost at this bandwidth.",
+      "",
+      "| Flow | LCP (ms) | INP (ms) | CLS | FCP (ms) | TTFB (ms) | interactions |",
+      "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+      ...vitalsRows,
+    )
+  }
 
   if (failureRows.length) {
     lines.push(
