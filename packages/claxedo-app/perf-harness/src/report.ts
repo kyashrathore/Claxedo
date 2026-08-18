@@ -168,6 +168,36 @@ export function markdownReport(results: ScenarioResult[], options: { debug?: boo
     )
   }
 
+  const comparisonRows = results.flatMap((result) =>
+    (result.comparison ?? [])
+      .filter((item) => item.verdict !== "new" || item.current !== undefined)
+      .map((item) => {
+        const mark = item.verdict === "improved" ? "🟢 improved"
+          : item.verdict === "regressed" ? "🔴 regressed"
+          : item.verdict === "absent" ? "⚪ absent"
+          : item.verdict === "new" ? "🆕 new"
+          : "· unchanged"
+        const delta = item.deltaPct === undefined ? "—" : `${item.deltaPct > 0 ? "+" : ""}${item.deltaPct.toFixed(1)}%`
+        const shown = (value: number | undefined) => value === undefined ? "absent" : value.toFixed(value < 10 ? 3 : 0)
+        return `| ${result.name} | ${item.metric} | ${shown(item.baseline)} | ${shown(item.current)} | ${delta} | ±${item.tolerancePct.toFixed(0)}% | ${mark} |`
+      }),
+  )
+
+  if (comparisonRows.length) {
+    const env = results.find((result) => result.environment)?.environment
+    lines.push(
+      "",
+      "## Against baseline",
+      "",
+      `Comparing this run to the tracked baseline for the same profile and stack (${env?.label ?? "unknown machine"}). ` +
+      "Tolerance is two standard deviations of the baseline's own samples, floored at 5% — a move inside it is reported as unchanged rather than as a win, because this machine's run-to-run spread is wide enough to manufacture one.",
+      "",
+      "| Flow | Metric | Baseline | Current | Delta | Tolerance | Verdict |",
+      "| --- | --- | ---: | ---: | ---: | ---: | --- |",
+      ...comparisonRows,
+    )
+  }
+
   if (failureRows.length) {
     lines.push(
       "",

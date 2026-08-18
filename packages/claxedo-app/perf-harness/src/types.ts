@@ -1,5 +1,6 @@
 import type { FrameMetric } from "./frame-sampler"
 import type { WebVitals } from "./web-vitals"
+import type { MetricComparison } from "./baseline-store"
 
 export type { FrameMetric, FrameVerdict } from "./frame-sampler"
 
@@ -69,6 +70,8 @@ export type ScenarioResult = {
   status: RunStatus
   failures: string[]
   warnings: string[]
+  /** Per-metric movement against the tracked baseline for this profile+stack. */
+  comparison?: MetricComparison[]
   diagnostics?: DiagnosticsOverheadEvidence
   attribution?: RunAttribution
   artifacts?: {
@@ -140,6 +143,14 @@ export type RunOptions = {
   scenarios: ScenarioId[]
   /** Reference hardware/network the flows are measured on (see environment-profile.ts). */
   profile: string
+  /**
+   * Which implementation produced the run. The axis an experiment varies:
+   * hold flow and profile fixed, change this, compare. Defaults to the shipping
+   * renderer so today's numbers are attributable rather than anonymous.
+   */
+  stack: string
+  /** Write the run's records as the tracked baseline for (profile, stack). */
+  accept_baseline: boolean
   iterations: number
   output: string
   update_baseline: boolean

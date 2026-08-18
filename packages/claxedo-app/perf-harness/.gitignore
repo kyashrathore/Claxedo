@@ -1,11 +1,19 @@
 dist/
 node_modules/
 reports/
-# Auto-calibrated budgets/baselines/trends are regenerated per run and depend on
-# dev-server noise today. Track them again once we gate against a stable
-# (production-build) target.
+# Budgets and trends stay untracked: they are auto-calibrated from whichever
+# machine ran first, so they describe a container rather than the app.
+#
+# `data/baselines/` is the exception and is TRACKED. The precondition written
+# here originally — "track them again once we gate against a stable
+# (production-build) target" — has since been met: CI builds the app and the
+# harness measures the production bundle. A baseline nobody else can read is
+# not a baseline, and an experiment (Solid 2, a native port) has nothing to
+# compare against unless the reference numbers travel with the repo.
 data/
 !data/
 data/*
 !data/diagnostics/
 !data/diagnostics/*.json
+!data/baselines/
+!data/baselines/**
