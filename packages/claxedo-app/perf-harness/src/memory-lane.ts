@@ -4,6 +4,8 @@ import { environmentProfile } from "./environment-profile"
 import { memoryRecords, runMemorySweep } from "./memory-runner"
 import { compareToBaseline, currentCommit, readBaselineFor, writeBaselineFor } from "./baseline-store"
 import { stackLabel } from "./stacks"
+import path from "node:path"
+import { reportsRoot, writeJson } from "./storage"
 
 const MB = 1024 * 1024
 
@@ -46,6 +48,14 @@ export async function runMemoryLane(options: {
     })
     const comparison = compareToBaseline(records, baseline)
     if (options.accept_baseline) await writeBaselineFor(records, currentCommit())
+    // Persist the sweep. The family table is the actionable part and it is the
+    // last thing printed, so it is exactly what gets lost to a truncated
+    // terminal — and re-running to see it costs another full sweep.
+    await writeJson(path.join(reportsRoot, "memory-sweep.json"), {
+      flow: sweep.flow, stack: options.stack, profile: profile.id,
+      sessions: options.sessions, slopeBytesPerStep: sweep.slopeBytesPerStep,
+      plateauBytes: sweep.plateauBytes, samples: sweep.samples,
+    })
 
     const rows = sweep.samples.map((item) =>
       `| ${item.step} | ${(item.heapBytes / MB).toFixed(1)} | ${item.domNodes} | ${item.queries} | ${item.cachedSessions} |`)
