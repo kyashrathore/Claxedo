@@ -296,3 +296,20 @@ Not new benchmarks — the existing ones. Three things:
   diagnostics ran, and there is no memory lane yet — memory ceilings are
   currently proven by unit tests, not measured end to end.
 - **TTFB and API latency are simulated**, per the caveats above.
+
+### Naming a memory leak
+
+`memory --snapshot` captures a V8 heap snapshot after the sweep settles and
+groups detached DOM by what still points at it. Counters can say a leak exists;
+only the object graph says who holds it.
+
+Detachedness is read from the heap's own per-node flag (0 unknown, 1 attached,
+2 detached) rather than inferred by diffing counts, and native DOM internals
+are excluded as retainers — a `CSSStyleDeclaration` pointing at its own
+detached element is part of the corpse, not the reference keeping it alive.
+
+**The results are only as legible as the build.** Against the minified
+production bundle the chain resolves to generic containers (`Array`, `Object`)
+and mangled closure names (`s`, `ref`, `get role`), which identify the
+mechanism but not the source line. To pin a leak to a component, run the sweep
+against an unminified build so constructor and closure names survive.

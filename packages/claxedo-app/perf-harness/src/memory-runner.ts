@@ -9,6 +9,7 @@ import {
 } from "./browser-runner"
 import { applyCpuProfile, applyNetworkProfile, type EnvironmentProfile } from "./environment-profile"
 import { METRICS, type PerfRecord } from "./perf-record"
+import { captureHeapSnapshot } from "./heap-snapshot"
 
 /**
  * The memory lane.
@@ -158,6 +159,8 @@ export async function runMemorySweep(input: {
   profile: EnvironmentProfile
   sessions: number
   sampleEvery: number
+  /** Capture a heap snapshot at the end of the sweep, for retainer analysis. */
+  snapshotPath?: string
 }): Promise<MemorySweep> {
   const fixture = fixtureFor("workspace-switch", {
     repos: 1, projects: 5, sessions: input.sessions, messages: 400,
@@ -199,6 +202,9 @@ export async function runMemorySweep(input: {
   // and anything that does not is genuinely retained.
   await page.waitForTimeout(4_000)
   samples.push(await sample(page, cdp, fixture.sessions.length))
+  // Taken AFTER the settle and the final collection, so anything in it is
+  // genuinely retained rather than merely uncollected.
+  if (input.snapshotPath) await captureHeapSnapshot(cdp, input.snapshotPath)
   await context.close()
 
   const plateau = samples[samples.length - 1]!
