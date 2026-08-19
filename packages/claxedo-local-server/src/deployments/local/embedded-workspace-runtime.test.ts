@@ -511,3 +511,51 @@ describe("embedded workspace runtime", () => {
     }
   })
 })
+
+describe("compat hub -> globalBus bridge", () => {
+  // The regression this pins: an ACP harness turn's message/error compat
+  // events published on the embedded runtime's hub never reached globalBus,
+  // and the central `/global/event` + `/api/wr/events` stream — a LOCAL
+  // workspace's only live channel into claxedo-app — carried lifecycle and
+  // process frames only. A live turn's reply (and its error card) rendered in
+  // an already-open timeline only after a manual refresh.
+  test("publishes hub envelopes to globalBus in the engine bridge's wire shape", async () => {
+    const { globalBus } = await import("@claxedo/server-core/platform/runtime/lib/bus")
+    const { bridgeCompatEventToGlobalBus } = await import("./embedded-workspace-runtime")
+    const seen: unknown[] = []
+    const unsubscribe = globalBus.subscribe((event) => seen.push(event))
+    try {
+      bridgeCompatEventToGlobalBus({
+        directory: "/repo/main",
+        payload: {
+          type: "message.part.delta",
+          // A part's deltas all carry ONE stable payload id — it must be
+          // stripped before the wire so it can never become the SSE frame id.
+          id: "message.part.delta:msg_1:part_1",
+          properties: { sessionID: "ses_1", messageID: "msg_1", partID: "part_1", field: "text", delta: "API Error: 503" },
+        } as { type: string; properties?: unknown },
+      })
+      bridgeCompatEventToGlobalBus({
+        payload: { type: "session.error", properties: { sessionID: "ses_1", error: "auth_unavailable" } },
+      })
+    } finally {
+      unsubscribe()
+    }
+
+    expect(seen).toEqual([
+      {
+        directory: "/repo/main",
+        payload: {
+          type: "message.part.delta",
+          properties: { sessionID: "ses_1", messageID: "msg_1", partID: "part_1", field: "text", delta: "API Error: 503" },
+        },
+      },
+      // Directory defaults to "global" like the engine bridge, never undefined:
+      // the central handler keys frames by directory for the app's router.
+      {
+        directory: "global",
+        payload: { type: "session.error", properties: { sessionID: "ses_1", error: "auth_unavailable" } },
+      },
+    ])
+  })
+})

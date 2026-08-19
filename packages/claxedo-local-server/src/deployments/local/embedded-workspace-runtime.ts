@@ -15,6 +15,7 @@ import { agentExtensionStateRoot } from "@claxedo/agent-extensions"
 import { opencodeRequest as defaultOpencodeRequest, type OpenCodeRequestFn } from "@claxedo/server-core/opencode/engine"
 import type { WorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
+import { globalBus } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { configureLocalWorkspaceRuntime } from "@claxedo/server-core/workspace/local-runtime-port"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { WorkspaceAgentExtensionRecord } from "@claxedo/server-core/hosts/agent-extensions/workspace"
@@ -121,6 +122,46 @@ function extensionStateRoot(ws: Workspace) {
 
 const embeddedRuntimeGuard = () => true
 
+/**
+ * Bridge one embedded runtime's compat-hub envelope onto `globalBus` — the bus
+ * behind the central `/global/event` + `/api/wr/events` stream, which is a
+ * LOCAL workspace's ONLY live channel into claxedo-app (the app opens
+ * workspace-scoped streams only for cloud/user-hosted kinds; see
+ * `compat-routes/events.ts`).
+ *
+ * The engine's own stream is already bridged (`upstreamEvents.on` in each
+ * deployment), but that carries ONLY engine-native sessions: an ACP harness
+ * turn (claude/codex) publishes its `message.part.delta` / `message.updated` /
+ * `session.error` compat events exclusively through this hub. Before this
+ * bridge those events reached only the per-directory dispatched stream that
+ * nothing subscribes to, so a live ACP turn rendered in an open timeline only
+ * after a manual refresh — the send-POST's own response stream was the
+ * timeline's ONLY live input.
+ *
+ * No double-apply with the engine bridge: for a native-engine workspace the
+ * runtime's `/global/event` route PROXIES the engine's stream precisely
+ * because native traffic is NOT on this hub (see the "Observe the hub itself"
+ * note in `workspace-runtime/src/workspace/runtime.ts`), so the two producers
+ * cover disjoint session populations.
+ *
+ * The payload is stripped to `{type, properties}` to match the engine bridge's
+ * proven wire shape — `normalizeGlobalEvent` mints per-frame ids downstream,
+ * and compat payload ids must not reach the wire (a part's deltas share one
+ * payload id, which would defeat SSE resume ordering if used as the frame id).
+ */
+export function bridgeCompatEventToGlobalBus(event: {
+  directory?: string
+  payload: { type: string; properties?: unknown }
+}) {
+  globalBus.publish({
+    directory: event.directory ?? "global",
+    payload: {
+      type: event.payload.type,
+      properties: (event.payload.properties ?? {}) as Record<string, unknown>,
+    },
+  })
+}
+
 function options(
   ws: Workspace,
   opencodeRequest: OpenCodeRequestFn,
@@ -137,7 +178,10 @@ function options(
     ...(configuredRouteContributions.length ? { routeContributions: configuredRouteContributions } : {}),
     ...(configuredProcessObserver ? { processObserver: configuredProcessObserver } : {}),
     ...(configuredOnTurnOutcome ? { onTurnOutcome: configuredOnTurnOutcome } : {}),
-    ...(configuredOnSessionMetaEvent ? { onCompatEvent: configuredOnSessionMetaEvent } : {}),
+    onCompatEvent: (event) => {
+      bridgeCompatEventToGlobalBus(event)
+      configuredOnSessionMetaEvent?.(event as never)
+    },
     exposure: createClaxedoRuntimeExposure({ kind: "embedded", guard: embeddedRuntimeGuard }),
     target: resolveClaxedoWorkspaceRuntimeTarget(ws),
     storeRoot: storeRoot(ws),
