@@ -100,20 +100,13 @@ export function WorkbenchShellHeader(props: {
       class="relative flex h-9 shrink-0 items-center gap-1 overflow-hidden border-b border-border-weaker-base bg-background-base"
       classList={{
         // The right padding reserves room for the absolutely-positioned
-        // floating panel-chrome. That chrome is hidden while the workspace
-        // panel is open, so drop the reserve then and let the scope buttons sit
-        // flush against the panel divider instead of leaving a gap.
-        //
-        // 8rem now over-reserves: with the Files/Changes/Processes trio gone
-        // the chrome measures 28px, so this holds ~6rem of dead space open.
-        // Tightening it to pr-10 REGRESSES core-timeline-rendering-scroll
-        // ":1126 revealing cached turns above the second visible turn preserves
-        // the current turn" — reproduced twice against 12/12 green with this
-        // value, with the trio removal held constant, so the padding is the
-        // variable. No mechanism found linking header padding to timeline
-        // scroll anchoring; until there is one, the dead space stays rather
-        // than trading a green suite for a cosmetic gain nobody asked for.
-        "pr-32": !props.workspacePanelVisualOpen(),
+        // floating panel-chrome, which while the panel is closed is just the
+        // panel toggle: right-1 + pl-1 + a size-6 button = 28px measured in the
+        // running app. It was 8rem when the Files/Changes/Processes trio still
+        // sat here; that would now hold ~6rem of dead space open. The chrome is
+        // hidden while the panel is open, so drop the reserve then and let the
+        // scope buttons sit flush against the panel divider instead.
+        "pr-10": !props.workspacePanelVisualOpen(),
         "pr-1": props.workspacePanelVisualOpen(),
       }}
       style={{ "padding-left": props.trafficLightPad() && !props.sidebarPinned() ? "78px" : undefined }}
