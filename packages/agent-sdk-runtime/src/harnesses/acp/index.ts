@@ -47,7 +47,6 @@ import {
   type CompatEvent,
 } from "../../compat-events"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
-import type { AcpHarnessId } from "../../harness-types"
 import type {
   AgentAgentRow,
   AgentCommandRow,
@@ -121,7 +120,7 @@ export type AcpRuntimeStore = AgentRuntimeStoreWithRecovery
 
 export type AcpHarnessAdapterOptions = AgentHarnessAdapterProcessOptions & {
   binary: string
-  harness?: AcpHarnessId
+  harness?: string
   args?: string[]
   env?: ACPTransportEnv
   storeRoot?: string
@@ -175,14 +174,14 @@ type ActiveAcpTurn = {
   drain(message: string): void
 }
 
-const activePromptCounts = new Map<AcpHarnessId, number>()
-const activePromptWaiters = new Map<AcpHarnessId, Set<() => void>>()
+const activePromptCounts = new Map<string, number>()
+const activePromptWaiters = new Map<string, Set<() => void>>()
 
-function activePromptCount(harness: AcpHarnessId) {
+function activePromptCount(harness: string) {
   return activePromptCounts.get(harness) ?? 0
 }
 
-function enterActivePrompt(harness: AcpHarnessId) {
+function enterActivePrompt(harness: string) {
   activePromptCounts.set(harness, activePromptCount(harness) + 1)
   return () => {
     const next = activePromptCount(harness) - 1
@@ -196,7 +195,7 @@ function enterActivePrompt(harness: AcpHarnessId) {
   }
 }
 
-function waitForNoActivePrompts(harness: AcpHarnessId) {
+function waitForNoActivePrompts(harness: string) {
   if (activePromptCount(harness) === 0) return Promise.resolve()
   return new Promise<void>((resolve) => {
     const waiters = activePromptWaiters.get(harness) ?? new Set<() => void>()
@@ -231,7 +230,7 @@ function executableBasename(input: string) {
   return input.split(/[\\/]/).at(-1) || "agent"
 }
 
-function unrestorable(harness: AcpHarnessId, err: unknown) {
+function unrestorable(harness: string, err: unknown) {
   if (missing(err)) return true
   // Codex ACP reports a generic internal error when a session created by a
   // disposed process cannot be resumed. This happens safely before prompt
@@ -267,7 +266,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     this.currentEnv = options.env ?? {}
   }
 
-  private harnessId(): AcpHarnessId {
+  private harnessId(): string {
     return this.options?.harness ?? "claude"
   }
 

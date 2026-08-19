@@ -1,8 +1,8 @@
-import type { AgentHarnessId } from "./harness-types"
+import type { SessionHarnessId } from "./harness-types"
 import type { OpenCodeRequestFn } from "./harnesses/opencode"
 import type { ActivityLease } from "./harnesses/shared/process-lifecycle"
 
-export type HarnessCapabilityTarget = AgentHarnessId
+export type HarnessCapabilityTarget = SessionHarnessId
 export type AdapterCapability = "http-proxy" | "runtime-config"
 
 export type HarnessCapabilities = {

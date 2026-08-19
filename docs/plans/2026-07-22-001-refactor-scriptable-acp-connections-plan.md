@@ -348,7 +348,28 @@ The design becomes worse if Claxedo starts adding per-agent compatibility classe
 
 ## Implementation Units
 
-- [ ] **Unit 1: Open ACP identity without opening native adapter dispatch**
+> **Progress note (2026-08-19):** Units 1–3 landed (see the just-another-
+> harness index, `2026-08-19-000`). The plan predates the server
+> reorganization, so the landed work maps onto the moved owners:
+> `claxedo-server/src/agent-config.ts` → `claxedo-server-core/src/agent-config/index.ts`
+> (`UserAcpConnection`, `normalizeAcpConnections`, `acpConnectionHarnesses`,
+> `acpConnectionRows`, registry-resolved snapshot),
+> `config-fanout.ts` → `claxedo-local-server/src/agent-config/fanout.ts`
+> (unchanged — the snapshot itself now carries the registry), and the
+> mutation/discovery API lives at
+> `claxedo-local-server/src/agent-config/routes/acp-connection-routes.ts`
+> (`GET/PUT/DELETE /api/claxedo/agent-config/harness/acp-connections[/:id]`).
+> The runtime holds the applied registry in `workspace/runtime.ts`
+> (`appliedAcpConnections`, `WorkspaceHarnessUnavailableError`) and the open
+> identity is `SessionHarnessId` + `isAcpConnectionId` in
+> `agent-sdk-runtime/harness-types.ts` (canonical key `acp:<id>`).
+> Deliberate deviations: remote-transport ACP descriptors stay deferred
+> (stdio only, as planned); `params.supportsMcpServers` is accepted and
+> stored but not yet consumed by the adapter's MCP injection path; the
+> "visible but unavailable" diagnostic state for a missing executable is not
+> yet surfaced (a missing binary fails at spawn with the process error).
+
+- [x] **Unit 1: Open ACP identity without opening native adapter dispatch** *(landed 2026-08-19)*
 
 **Goal:** Represent an arbitrary configured ACP identity while keeping built-in native harness factories finite.
 
@@ -392,7 +413,7 @@ The design becomes worse if Claxedo starts adding per-agent compatibility classe
 - Adding a new ACP ID requires no edit to a TypeScript union or adapter factory table.
 - An arbitrary string still cannot select a native adapter.
 
-- [ ] **Unit 2: Make trusted config the atomic ACP registry**
+- [x] **Unit 2: Make trusted config the atomic ACP registry** *(landed 2026-08-19)*
 
 **Goal:** Add, update, disable, remove, and discover ACP definitions through one trusted configuration path.
 
@@ -442,7 +463,7 @@ The design becomes worse if Claxedo starts adding per-agent compatibility classe
 - A script can add or disable an ACP agent through one request and observe the normalized accepted state.
 - Configuration acceptance, app discovery, and runtime authorization all derive from the same parsed entries.
 
-- [ ] **Unit 3: Retain and enforce the full ACP registry in workspace runtimes**
+- [x] **Unit 3: Retain and enforce the full ACP registry in workspace runtimes** *(landed 2026-08-19)*
 
 **Goal:** Make every workspace runtime capable of resolving any allowed ACP ID and rejecting everything else.
 

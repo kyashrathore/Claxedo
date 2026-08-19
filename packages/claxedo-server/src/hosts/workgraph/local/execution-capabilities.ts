@@ -2,7 +2,7 @@ import { execFile } from "node:child_process"
 import { stat } from "node:fs/promises"
 import path from "node:path"
 import { promisify } from "node:util"
-import { normalizeHarnessIdentity, sdkModelOptions } from "@claxedo/agent-sdk-runtime"
+import { isAgentHarnessId, normalizeHarnessIdentity, sdkModelOptions } from "@claxedo/agent-sdk-runtime"
 import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
 import type { ConnectionsService } from "@claxedo/connections"
 import { WorkGraphConnectionToolNames, type WorkGraphContext } from "@claxedo/workgraph/contracts"
@@ -189,7 +189,10 @@ function defaultAgent(harness: string) {
 
 async function sdkProviders(harness: string, harnessConfigOptions?: (harness: string) => Promise<unknown>) {
   const identity = normalizeHarnessIdentity(harness)
-  if (!identity || identity.id === "opencode" || identity.id === "pi") {
+  // This catalog path serves the FIXED composer list only — built-in SDK/ACP
+  // harnesses with static model catalogs. Open ACP connections carry live
+  // catalogs of their own and never route here.
+  if (!identity || !isAgentHarnessId(identity.id) || identity.id === "opencode" || identity.id === "pi") {
     throw new Error(`Unsupported SDK Session harness ${harness}`)
   }
   const live = identity.access === "native" || (identity.id === "codex" && identity.access === "acp")

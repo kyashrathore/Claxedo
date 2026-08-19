@@ -1,7 +1,7 @@
 import {
   AGENT_HARNESS_DEFINITIONS,
   type AgentHarnessAccess,
-  type AgentHarnessId,
+  type SessionHarnessId,
   type AgentHarnessKey,
   type AgentHarnessTransport,
 } from "./harness-types"
@@ -18,7 +18,7 @@ export type AgentProcessCapabilities = {
 export type AgentProcessDescriptor = {
   ownerId: string
   launchId: string
-  harnessId: AgentHarnessId
+  harnessId: SessionHarnessId
   access: AgentHarnessAccess
   role: AgentProcessRole
   label: string

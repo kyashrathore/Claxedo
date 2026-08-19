@@ -22,6 +22,8 @@ import { isSandboxDriverID, type SandboxDriverConfig } from "@claxedo/sandbox-co
 import {
   bundledAcpBinary,
   harnessKey,
+  isAcpConnectionId,
+  isAcpHarnessId,
   normalizeAgentHarnessTransport,
   normalizeHarnessIdentity,
   type AcpHarnessId,
@@ -81,6 +83,24 @@ export interface UserMcpServer {
   disabled?: boolean
 }
 
+/**
+ * One operator-configured ACP connection: a stdio ACP-compatible agent the
+ * operator installed themselves, described as data in the trusted config.
+ * The map of these IS the extension catalog, execution allowlist, and source
+ * of runtime descriptors — there is no second registry.
+ */
+export interface UserAcpConnection {
+  label: string
+  /** `command[0]` is the executable; remaining values are arguments. */
+  command: string[]
+  /** Extra process environment applied over the runtime environment. */
+  env?: Record<string, string>
+  /** Narrow generic-ACP compatibility switches (only proven-necessary ones). */
+  params?: { supportsMcpServers?: boolean }
+  /** Defaults to true. `false` is an explicit, reversible disable. */
+  enabled?: boolean
+}
+
 export interface UserAgentConfig {
   mcp: Record<string, UserMcpServer>
   harness?: SessionHarness
@@ -88,6 +108,8 @@ export interface UserAgentConfig {
   runner?: unknown
   auth?: Record<string, string>  // providerID → API key, e.g. "claude-acp" → "sk-ant-..."
   sandbox_driver?: SandboxDriverConfig
+  /** Operator-configured ACP connections, keyed by stable lowercase slug. */
+  acp?: Record<string, UserAcpConnection>
 }
 
 class UserAgentConfigLoadError extends Error {
@@ -186,6 +208,126 @@ function record(input: unknown) {
     : undefined
 }
 
+// ── Operator ACP connections ───────────────────────────────────────────────
+
+export type AcpConnectionProblem = { id: string; problem: string }
+
+/**
+ * Validates a proposed ACP connection map in full. Mutation paths reject when
+ * any problem is reported (one malformed entry rejects the whole mutation);
+ * the load path keeps only `accepted` and logs what it dropped, so a hand
+ * -edited file with one typo cannot take the server down.
+ */
+export function normalizeAcpConnections(input: unknown): {
+  accepted: Record<string, UserAcpConnection>
+  problems: AcpConnectionProblem[]
+} {
+  const accepted: Record<string, UserAcpConnection> = {}
+  const problems: AcpConnectionProblem[] = []
+  const rows = record(input)
+  if (input !== undefined && !rows) {
+    return { accepted, problems: [{ id: "", problem: "acp must be an object map of connection definitions" }] }
+  }
+  for (const [id, value] of Object.entries(rows ?? {})) {
+    if (!isAcpConnectionId(id)) {
+      problems.push({ id, problem: "connection id must be a lowercase slug (a-z, 0-9, dashes; max 64 chars)" })
+      continue
+    }
+    const row = record(value)
+    if (!row) {
+      problems.push({ id, problem: "connection definition must be an object" })
+      continue
+    }
+    const label = typeof row.label === "string" ? row.label.trim() : ""
+    if (!label) {
+      problems.push({ id, problem: "label is required" })
+      continue
+    }
+    const command = Array.isArray(row.command) && row.command.length > 0
+      && row.command.every((item) => typeof item === "string" && item.trim())
+      ? (row.command as string[]).map((item) => item.trim())
+      : undefined
+    if (!command) {
+      problems.push({ id, problem: "command must be a non-empty array of strings (command[0] is the executable)" })
+      continue
+    }
+    const env = row.env === undefined ? undefined : stringRecord(row.env)
+    if (row.env !== undefined && !env) {
+      problems.push({ id, problem: "env must be a string map" })
+      continue
+    }
+    const params = record(row.params)
+    if (row.params !== undefined && !params) {
+      problems.push({ id, problem: "params must be an object" })
+      continue
+    }
+    if (params && params.supportsMcpServers !== undefined && typeof params.supportsMcpServers !== "boolean") {
+      problems.push({ id, problem: "params.supportsMcpServers must be a boolean" })
+      continue
+    }
+    if (row.enabled !== undefined && typeof row.enabled !== "boolean") {
+      problems.push({ id, problem: "enabled must be a boolean" })
+      continue
+    }
+    accepted[id] = {
+      label,
+      command,
+      ...(env && Object.keys(env).length ? { env } : {}),
+      ...(params && typeof params.supportsMcpServers === "boolean"
+        ? { params: { supportsMcpServers: params.supportsMcpServers } }
+        : {}),
+      ...(row.enabled === false ? { enabled: false } : {}),
+    }
+  }
+  return { accepted, problems }
+}
+
+function acpConnectionEnabled(connection: UserAcpConnection) {
+  return connection.enabled !== false
+}
+
+/** The trusted runtime descriptor for one accepted ACP connection. */
+export function acpConnectionHarness(id: string, connection: UserAcpConnection): SessionHarness {
+  const [binary, ...args] = connection.command
+  return {
+    id,
+    access: "acp",
+    connection: {
+      kind: "process",
+      binary: binary!,
+      ...(args.length ? { args } : {}),
+      ...(connection.env ? { env: connection.env } : {}),
+    },
+  }
+}
+
+/** Enabled connections projected as trusted runtime harness descriptors. */
+export function acpConnectionHarnesses(config: Pick<UserAgentConfig, "acp">): SessionHarness[] {
+  return Object.entries(config.acp ?? {})
+    .filter(([, connection]) => acpConnectionEnabled(connection))
+    .map(([id, connection]) => acpConnectionHarness(id, connection))
+}
+
+/**
+ * The sanitized discovery projection: what the app may see. Identity, label,
+ * access, and enabled state only — never the command or environment.
+ */
+export function acpConnectionRows(config: Pick<UserAgentConfig, "acp">): Array<{
+  key: string
+  id: string
+  label: string
+  access: "acp"
+  enabled: boolean
+}> {
+  return Object.entries(config.acp ?? {}).map(([id, connection]) => ({
+    key: `acp:${id}`,
+    id,
+    label: connection.label,
+    access: "acp" as const,
+    enabled: acpConnectionEnabled(connection),
+  }))
+}
+
 function normalizeHarness(input: unknown, options: AgentConfigOptions = agentConfigOptions): SessionHarness | undefined {
   const identity = normalizeHarnessIdentity(input)
   if (!identity) return
@@ -202,8 +344,11 @@ function normalizeHarness(input: unknown, options: AgentConfigOptions = agentCon
   }
   const binary = typeof row.binary === "string"
     ? row.binary
-    : identity.access === "acp"
-    ? acpBinary(identity.id as AcpHarnessId, options)
+    // Built-in ACP ids infer their bundled binary. An OPERATOR-configured ACP
+    // connection has no inference: its process descriptor comes only from the
+    // accepted `acp` registry (attached at snapshot time), never guessed here.
+    : identity.access === "acp" && isAcpHarnessId(identity.id)
+    ? acpBinary(identity.id, options)
     : undefined
   const transport = normalizeAgentHarnessTransport(row.transport)
   const url = typeof row.url === "string" ? row.url : undefined
@@ -252,12 +397,17 @@ export async function loadUserConfig(): Promise<UserAgentConfig> {
   try {
     const data = JSON.parse(raw) as Partial<UserAgentConfig>
     const legacy = legacyHarness(data.runner)
+    const acp = normalizeAcpConnections(data.acp)
+    for (const problem of acp.problems) {
+      log.warn("Ignoring invalid ACP connection in user agent config", problem)
+    }
     return {
       mcp: data.mcp ?? {},
       harness: data.harness ?? legacy?.harness,
       model: typeof data.model === "string" ? data.model : legacy?.model,
       auth: data.auth ?? {},
       sandbox_driver: sandboxDriverConfig(data),
+      ...(Object.keys(acp.accepted).length ? { acp: acp.accepted } : {}),
     }
   } catch {
     throw new UserAgentConfigLoadError(
@@ -506,7 +656,17 @@ export async function getRuntimeConfigSnapshot(
   } = {},
 ): Promise<RuntimeConfigSnapshot> {
   const config = await loadUserConfig()
-  const harness = current ?? defaultHarness(config)
+  const selected = current ?? defaultHarness(config)
+  // An operator-configured ACP identity resolves its process descriptor from
+  // the accepted registry at snapshot time — the session record and config
+  // carry only the logical identity, so a command/env change applies to the
+  // next process start without rewriting either.
+  const selectedRegistryEntry = selected.access === "acp" && !isAcpHarnessId(selected.id as string)
+    ? config.acp?.[selected.id]
+    : undefined
+  const harness = selectedRegistryEntry && acpConnectionEnabled(selectedRegistryEntry)
+    ? acpConnectionHarness(selected.id, selectedRegistryEntry)
+    : selected
   const scope = options.secretScope ?? "local"
   const mcp = await runtimeMcp(config, harness, scope)
   // Merge legacy config auth with credential registry secrets (registry takes precedence)
@@ -545,7 +705,15 @@ export async function getRuntimeConfigSnapshot(
   return {
     version: 2,
     mcp,
-    harnesses: [harness],
+    // The selected/default harness leads (receivers still treat the first row
+    // as the active one); every other ENABLED operator ACP connection rides
+    // along so workspace runtimes hold the full accepted registry.
+    harnesses: [
+      harness,
+      ...acpConnectionHarnesses(config).filter(
+        (row) => !(row.id === harness.id && row.access === harness.access),
+      ),
+    ],
     auth,
     ...(options.workspaceDir ? { agent_extensions: await getRuntimeAgentExtensionsSnapshot({
       projectDir: options.workspaceDir,
