@@ -20,6 +20,7 @@ import { applyCpuProfile, applyNetworkProfile, environmentProfile, type Environm
 import { installWebVitals, mergeWebVitals, readWebVitals, type WebVitals } from "./web-vitals"
 import { browserRecords } from "./browser-records"
 import { compareToBaseline, currentCommit, readBaselineFor, writeBaselineFor } from "./baseline-store"
+import { appendRunLog, runLogEntry } from "./run-log"
 import { summarize } from "./stats"
 import { appendTrend, appRoot, ensureBudget, harnessRoot, reportsRoot, writeBaseline, writeJson } from "./storage"
 import { app } from "./targets"
@@ -137,6 +138,16 @@ export async function runBrowser(options: RunOptions) {
         })
         result.comparison = compareToBaseline(records, baseline)
         if (options.accept_baseline) await writeBaselineFor(records, currentCommit())
+        const entry = runLogEntry({
+          records, comparison: result.comparison, commit: currentCommit(),
+          at: result.started_at,
+          evidence: {
+            worstFrameMs: result.headline.worstFrameMs,
+            framesOver1667: result.headline.framesOver1667,
+            interactionCount: result.vitals?.interactionCount ?? 0,
+          },
+        })
+        if (entry) await appendRunLog(entry)
         console.log(`[perf] ${scenario}: ${result.status}`)
         if (options.update_baseline) await writeBaseline(result)
         if (options.append_trend) await appendTrend(result)

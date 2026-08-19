@@ -3,6 +3,7 @@ import { startApp, stopApp } from "./browser-runner"
 import { environmentProfile } from "./environment-profile"
 import { detachedNodes, memoryRecords, runMemorySweep } from "./memory-runner"
 import { analyzeDetachedRetainers, countDetached, type RetainerGroup } from "./heap-snapshot"
+import { appendRunLog, runLogEntry } from "./run-log"
 import { compareToBaseline, currentCommit, readBaselineFor, writeBaselineFor } from "./baseline-store"
 import { stackLabel } from "./stacks"
 import path from "node:path"
@@ -78,6 +79,29 @@ export async function runMemoryLane(options: {
       sessions: options.sessions, slopeBytesPerStep: sweep.slopeBytesPerStep,
       plateauBytes: sweep.plateauBytes, samples: sweep.samples,
     })
+
+    const firstFamilies = sweep.samples[0]?.families ?? {}
+    const lastFamilies = sweep.samples.at(-1)?.families ?? {}
+    const entry = runLogEntry({
+      records, comparison, commit: currentCommit(), at: new Date().toISOString(),
+      // The snapshot and the full sample series are far too large to track;
+      // these three lines are the finding they produced.
+      evidence: {
+        sessions: options.sessions,
+        slopeBytesPerStep: Math.round(sweep.slopeBytesPerStep),
+        detachedNodesGrowth: detachedNodes(sweep.samples.at(-1)!) - detachedNodes(sweep.samples[0]!),
+        listenerGrowth: sweep.samples.at(-1)!.listeners - sweep.samples[0]!.listeners,
+        familyGrowth: Object.fromEntries(
+          Object.keys({ ...firstFamilies, ...lastFamilies })
+            .map((family) => [family, (lastFamilies[family] ?? 0) - (firstFamilies[family] ?? 0)])
+            .filter(([, delta]) => (delta as number) !== 0)
+            .sort((a, b) => (b[1] as number) - (a[1] as number))
+            .slice(0, 8),
+        ),
+        ...(retainers.length ? { topRetainers: retainers.slice(0, 5) } : {}),
+      },
+    })
+    if (entry) await appendRunLog(entry)
 
     const rows = sweep.samples.map((item) =>
       `| ${item.step} | ${(item.heapBytes / MB).toFixed(1)} | ${item.domNodes} | ${detachedNodes(item)} | ` +
