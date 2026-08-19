@@ -2,12 +2,31 @@ import { chromium } from "playwright-core"
 import { startApp, stopApp } from "./browser-runner"
 import { environmentProfile } from "./environment-profile"
 import { detachedNodes, memoryRecords, runMemorySweep } from "./memory-runner"
+import { analyzeDetachedRetainers, countDetached, type RetainerGroup } from "./heap-snapshot"
 import { compareToBaseline, currentCommit, readBaselineFor, writeBaselineFor } from "./baseline-store"
 import { stackLabel } from "./stacks"
 import path from "node:path"
 import { reportsRoot, writeJson } from "./storage"
 
 const MB = 1024 * 1024
+
+/**
+ * Parse the snapshot off the main path and tolerate failure.
+ *
+ * A snapshot of this app runs to hundreds of MB; parsing can exhaust memory on
+ * a small container. The sweep's own numbers are the deliverable, so a failed
+ * analysis degrades to "no retainer table" rather than losing the run.
+ */
+async function readRetainers(file: string): Promise<RetainerGroup[]> {
+  try {
+    const raw = await Bun.file(file).json()
+    console.log(`[perf] heap snapshot: ${countDetached(raw)} detached nodes`)
+    return analyzeDetachedRetainers(raw)
+  } catch (error) {
+    console.warn(`[perf] heap snapshot analysis skipped: ${error instanceof Error ? error.message : String(error)}`)
+    return []
+  }
+}
 
 /** First vs last entry count per query-key family, worst growth first. */
 function familyRows(sweep: { samples: Array<{ families: Record<string, number> }> }) {
@@ -34,14 +53,17 @@ export async function runMemoryLane(options: {
   sessions: number
   accept_baseline: boolean
   headless: boolean
+  snapshot: boolean
 }) {
   const profile = environmentProfile(options.profile)
   const app = await startApp()
   const browser = await chromium.launch({ headless: options.headless, timeout: 30_000, args: ["--js-flags=--expose-gc"] })
   try {
+    const snapshotPath = options.snapshot ? path.join(reportsRoot, "heap.heapsnapshot") : undefined
     const sweep = await runMemorySweep({
-      browser, app, profile, sessions: options.sessions, sampleEvery: 10,
+      browser, app, profile, sessions: options.sessions, sampleEvery: 10, snapshotPath,
     })
+    const retainers = snapshotPath ? await readRetainers(snapshotPath) : []
     const records = memoryRecords(sweep, options.stack, profile.id)
     const baseline = await readBaselineFor({
       profile: profile.id, stack: options.stack, lane: "memory", flow: sweep.flow,
@@ -102,6 +124,18 @@ export async function runMemoryLane(options: {
       "| family | first | last | delta |",
       "| --- | ---: | ---: | ---: |",
       ...familyRows(sweep),
+      "",
+      ...(retainers.length
+        ? [
+          "",
+          "What still points at the detached DOM (attached retainer, by edge):",
+          "",
+          "| retainer | edge | detached nodes | bytes |",
+          "| --- | --- | ---: | ---: |",
+          ...retainers.map((item) =>
+            `| ${item.retainer} | ${item.edge} | ${item.detachedNodes} | ${(item.bytes / 1024).toFixed(0)} kB |`),
+        ]
+        : []),
       "",
       "| Metric | Baseline | Current | Verdict |",
       "| --- | ---: | ---: | --- |",

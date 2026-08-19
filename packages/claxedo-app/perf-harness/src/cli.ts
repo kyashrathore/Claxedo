@@ -41,6 +41,7 @@ if (command === "memory") {
     sessions: Number(option("sessions", "60")),
     accept_baseline: flag("accept-baseline"),
     headless: !flag("headed"),
+    snapshot: flag("snapshot"),
   })
   console.log(summary)
   process.exit(0)
