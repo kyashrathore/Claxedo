@@ -2,14 +2,14 @@ import { isFilesystemDirectory, isLocalSessionDirectory } from "./legacy-resolve
 
 export type SessionHost = "central" | "workspace"
 
-// Canonical harness-id list — the SINGLE source of truth for the set of harness
-// kinds across the app. `HarnessId` here, `HarnessKind` in
+// Canonical BUILT-IN harness-id list — the SINGLE source of truth for the set
+// of built-in harness kinds across the app. `HarnessId` here, `HarnessKind` in
 // `../harnesses/profile.ts`, and `HARNESS_IDS` in
 // `session/harness/profile.ts` all derive from this one array so the
 // three definitions can never drift apart again (they had drifted: profile.ts's
 // list was missing `cursor-sdk` and `pi`, silently mis-classifying persisted
 // profiles of those kinds — see `durability/projections.ts`).
-export const HARNESS_IDS = [
+export const BUILTIN_HARNESS_IDS = [
   "claude-acp",
   "codex-acp",
   "cursor-acp",
@@ -19,12 +19,32 @@ export const HARNESS_IDS = [
   "opencode",
   "pi",
 ] as const
-export type HarnessId = (typeof HARNESS_IDS)[number]
+export const HARNESS_IDS = BUILTIN_HARNESS_IDS
+export type BuiltinHarnessId = (typeof BUILTIN_HARNESS_IDS)[number]
+
+/**
+ * An operator-configured ACP connection, addressed by its canonical
+ * access-qualified key `acp:<slug>`. These are open by design — the server's
+ * trusted config is their registry — so the app treats the key as an opaque
+ * validated identity: it renders the server-provided label and never decodes
+ * commands or environment from it.
+ */
+export type AcpConnectionHarnessId = `acp:${string}`
+export type HarnessId = BuiltinHarnessId | AcpConnectionHarnessId
+
+// Mirrors the server's ACP_CONNECTION_ID_PATTERN (agent-sdk-runtime
+// harness-types.ts): stable lowercase slugs only.
+const ACP_CONNECTION_KEY_PATTERN = /^acp:[a-z][a-z0-9-]{0,63}$/
+
+export function isAcpConnectionHarnessId(value: unknown): value is AcpConnectionHarnessId {
+  return typeof value === "string" && ACP_CONNECTION_KEY_PATTERN.test(value)
+}
 
 // Validating parse for arbitrary stored strings (persisted projections, wire
 // payloads). Prefer this over an unchecked `as HarnessId`/`as HarnessKind` cast.
 export function isHarnessId(value: unknown): value is HarnessId {
-  return typeof value === "string" && (HARNESS_IDS as readonly string[]).includes(value)
+  return (typeof value === "string" && (BUILTIN_HARNESS_IDS as readonly string[]).includes(value))
+    || isAcpConnectionHarnessId(value)
 }
 
 export type HarnessRef = { readonly id: HarnessId; readonly binary?: string }

@@ -1,4 +1,5 @@
-import { type HarnessId } from "@/platform/identity/session-ref"
+import { isAcpConnectionHarnessId, type BuiltinHarnessId, type HarnessId } from "@/platform/identity/session-ref"
+import { harnessDisplayLabel } from "@/ui/harness-display"
 
 /**
  * How each harness is told about permissions.
@@ -149,7 +150,7 @@ export type PermissionMechanism =
    */
   | { kind: "sandboxed-no-policy" }
 
-export const PERMISSION_MECHANISMS: Record<HarnessId, PermissionMechanism> = {
+export const PERMISSION_MECHANISMS: Record<BuiltinHarnessId, PermissionMechanism> = {
   opencode: { kind: "opencode-session-ruleset" },
   "claude-sdk": { kind: "claude-sdk-permission-mode" },
   "claude-acp": { kind: "acp-session-mode" },
@@ -212,7 +213,7 @@ export type CursorLocalPermissionOptions = {
   autoReview: boolean
 }
 
-export const HARNESS_LABELS: Record<HarnessId, string> = {
+export const HARNESS_LABELS: Record<BuiltinHarnessId, string> = {
   opencode: "opencode",
   "claude-acp": "Claude (ACP)",
   "claude-sdk": "Claude (SDK)",
@@ -221,4 +222,24 @@ export const HARNESS_LABELS: Record<HarnessId, string> = {
   "cursor-acp": "Cursor (ACP)",
   "cursor-sdk": "Cursor (SDK)",
   pi: "Pi",
+}
+
+/**
+ * Mechanism lookup for ANY harness identity. Operator-configured ACP
+ * connections speak the generic ACP session-mode surface — the same mechanism
+ * the built-in ACP rows use — because the generic adapter negotiates modes
+ * live from the agent; there is no per-vendor mechanism to know.
+ */
+export function permissionMechanism(harness: HarnessId): PermissionMechanism {
+  const hit = (PERMISSION_MECHANISMS as Partial<Record<string, PermissionMechanism>>)[harness]
+  if (hit) return hit
+  if (isAcpConnectionHarnessId(harness)) return { kind: "acp-session-mode" }
+  // Unknown non-ACP identities have no policy surface to describe; fail toward
+  // the harness-owns-it mechanism rather than inventing one.
+  return { kind: "acp-session-mode" }
+}
+
+/** Prose label for ANY harness identity ("Claude (SDK)", or the connection's slug label). */
+export function harnessPermissionLabel(harness: HarnessId): string {
+  return (HARNESS_LABELS as Partial<Record<string, string>>)[harness] ?? harnessDisplayLabel(harness)
 }

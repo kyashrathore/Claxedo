@@ -511,7 +511,23 @@ The design becomes worse if Claxedo starts adding per-agent compatibility classe
 - Local and cloud workspace runtimes enforce the same normalized ACP registry.
 - No runtime path can construct an arbitrary ACP process from caller-provided connection details.
 
-- [ ] **Unit 4: Drive the ACP app group from discovery data**
+- [x] **Unit 4: Drive the ACP app group from discovery data**
+
+> **Landed 2026-08-19.** `HarnessId` widened to `BuiltinHarnessId | acp:<slug>` in
+> `session-ref.ts`; `pickHarness` recognizes operator identities before binary
+> sniffing; the picker's ACP group is exactly the enabled rows from
+> `GET /harness/acp-connections` (new `acp-connections.ts` catalog owned by
+> `harness-config-store`, exposed through the selection controller), with the
+> first-party ACP trio removed from the built-in options. Draft defaults flow
+> through `supportedHarnesses` fed from the same dynamic option list, so a
+> custom saved default restores only while its connection is enabled.
+> Deviations from the file list: `harness-hydrator.ts`/`harness-store.ts`/
+> `store-state.ts` needed no changes (they are harness-key-opaque);
+> permission-mechanism tables were re-keyed to `BuiltinHarnessId` with
+> function-level fallbacks instead. The "unavailable state with diagnostic
+> action" for an enabled-but-unresolved connection is not a distinct UI state:
+> the runtime's `workspace_harness_not_configured` error surfaces through the
+> existing harness config-error path.
 
 **Goal:** Replace fixed vendor ACP choices with enabled custom rows from the server.
 

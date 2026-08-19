@@ -1,5 +1,6 @@
 import { createMemo, type Accessor } from "solid-js"
-import type { HarnessId } from "@/platform/identity/session-ref"
+import type { BuiltinHarnessId, HarnessId } from "@/platform/identity/session-ref"
+import { harnessDisplayLabel } from "@/ui/harness-display"
 import {
   CLAXEDO_ALLOW_SAFE_ID,
   defaultPermissionSelection,
@@ -184,7 +185,7 @@ export function createComposerPermissionMode(input: {
 }
 
 function harnessGroupLabel(harness: HarnessId) {
-  return HARNESS_GROUP_LABELS[harness]
+  return (HARNESS_GROUP_LABELS as Partial<Record<string, string>>)[harness] ?? harnessDisplayLabel(harness)
 }
 
 /**
@@ -192,7 +193,7 @@ function harnessGroupLabel(harness: HarnessId) {
  * table names the harness for prose ("Claude (SDK)") while this one heads a list of
  * that harness's own modes.
  */
-const HARNESS_GROUP_LABELS: Record<HarnessId, string> = {
+const HARNESS_GROUP_LABELS: Record<BuiltinHarnessId, string> = {
   opencode: "opencode",
   "claude-acp": "Claude",
   "claude-sdk": "Claude",

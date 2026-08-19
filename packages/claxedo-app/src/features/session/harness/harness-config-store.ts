@@ -9,6 +9,7 @@ import { createHarnessHydrator } from "./harness-hydrator"
 import { createHarnessSwitcher } from "./harness-switcher"
 import { createHarnessModelWriter } from "./harness-model-writer"
 import { createHarnessStore } from "./harness-store"
+import { createAcpConnectionsCatalog } from "./acp-connections"
 import {
   clearHarnessOptionsTries,
   createHarnessHydratorQueryCache,
@@ -67,6 +68,9 @@ export function createHarnessConfigStore() {
     projects: () => projectsQuery.data ?? [],
   })
   const harnessStore = createHarnessStore(localStorage)
+  // Operator-configured ACP connections: the sanitized discovery rows the
+  // picker's ACP group renders. One catalog per store (per app shell).
+  const acpConnections = createAcpConnectionsCatalog({ base, request })
   const runtimeSessionActions = createHarnessRuntimeSessionActions<ClaimInput>({
     base,
     runtime: harnessRuntime,
@@ -275,6 +279,10 @@ export function createHarnessConfigStore() {
   return {
     hydrate: hydrator.hydrate,
     reprobe: hydrator.reprobe,
+    acpConnections: acpConnections.rows,
+    enabledAcpConnections: acpConnections.enabled,
+    acpConnectionLabel: acpConnections.label,
+    refreshAcpConnections: acpConnections.refresh,
     probeHealth: probeHarnessHealth,
     // Give up on a harness that never left "polling": surface the terminal
     // "error" readiness so the selector shows the "Unavailable" affordance and
