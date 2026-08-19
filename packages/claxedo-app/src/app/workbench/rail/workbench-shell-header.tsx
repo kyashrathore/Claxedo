@@ -100,12 +100,13 @@ export function WorkbenchShellHeader(props: {
       class="relative flex h-9 shrink-0 items-center gap-1 overflow-hidden border-b border-border-weaker-base bg-background-base"
       classList={{
         // The right padding reserves room for the absolutely-positioned
-        // floating panel-chrome (now the Files/Changes/Processes trio plus the
-        // panel toggle while the panel is closed). That chrome is hidden while
-        // the workspace panel is open, so drop the reserve then and let the
-        // scope buttons sit flush against the panel divider instead of
-        // leaving a gap.
-        "pr-32": !props.workspacePanelVisualOpen(),
+        // floating panel-chrome, which while the panel is closed is just the
+        // panel toggle: right-1 + pl-1 + a size-6 button ≈ 2rem. It was 8rem
+        // when the Files/Changes/Processes trio still sat here; leaving that
+        // reserve behind would hold ~6rem of dead space open. The chrome is
+        // hidden while the panel is open, so drop the reserve then and let the
+        // scope buttons sit flush against the panel divider instead.
+        "pr-10": !props.workspacePanelVisualOpen(),
         "pr-1": props.workspacePanelVisualOpen(),
       }}
       style={{ "padding-left": props.trafficLightPad() && !props.sidebarPinned() ? "78px" : undefined }}
@@ -168,21 +169,12 @@ export function WorkbenchShellHeader(props: {
           }}
         >
           <Show when={!props.workspacePanelVisualOpen() || props.workspacePanelBridgeChromeVisible()}>
-            {/* With the panel closed, this floating chrome is the ONLY place
-                the Files/Changes/Processes trio can live: the panel column's
-                L2 strip (its other render site) sits inside the display:none
-                panel shell. Clicking any of the three opens the panel on that
-                navigator (`toggleFocusedWorkspaceNavigator` →
-                `openFocusedWorkspacePanel`). */}
-            <Show when={!props.workspacePanelVisualOpen()}>
-              <WorkspacePanelToolTrio
-                focusedPanelTarget={props.focusedPanelTarget}
-                hasWorkspacePanelTarget={props.hasWorkspacePanelTarget}
-                workspacePanelForFocusedTarget={props.workspacePanelForFocusedTarget}
-                workspacePanelNavigator={props.workspacePanelNavigator}
-                toggleFocusedWorkspaceNavigator={props.toggleFocusedWorkspaceNavigator}
-              />
-            </Show>
+            {/* The Files/Changes/Processes trio deliberately does NOT appear
+                here. It has two homes already: the panel column's own L2 strip
+                (below), and the session environment card's vertical rail, which
+                stays visible while the panel is closed. A third copy in the
+                floating chrome duplicated the same three targets a few pixels
+                from the panel toggle that reaches them. */}
             <WorkspacePanelChrome
               workspacePanelOpen={props.workspacePanelVisualOpen}
               workspacePanelFullWidth={props.workspacePanelFullWidth}
