@@ -1,4 +1,5 @@
 import { appendFile, mkdir } from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 import { dataRoot } from "./storage"
 import type { PerfRecord } from "./perf-record"
@@ -13,9 +14,14 @@ import type { MetricComparison } from "./baseline-store"
  * gets repeated by someone with no way to know it was already done.
  *
  * Append-only JSONL, one line per run, TRACKED IN GIT. Every line carries the
- * commit, the reference machine and the stack, because a number without those
- * cannot be compared to anything later — the same flow on the same code reads
- * 3x differently on a cold container.
+ * commit, the emulation profile, the HOST it ran on and the stack, because a
+ * number without those cannot be compared to anything later — the same flow on
+ * the same code reads 3x differently on a cold container.
+ *
+ * `profile` and `host` are not the same fact and neither substitutes for the
+ * other. The profile is emulation — a 4x CPU multiplier applied to whatever
+ * silicon is underneath — so two machines running one profile label themselves
+ * identically while producing numbers that differ several-fold.
  *
  * What is deliberately NOT stored here: heap snapshots, CPU profiles and
  * invalidation traces. Those run to hundreds of megabytes and version control
@@ -24,12 +30,40 @@ import type { MetricComparison } from "./baseline-store"
  * reads, and it is a few hundred bytes.
  */
 
+/** The physical machine. What `profile` emulates ON, and cannot identify. */
+export type HostFingerprint = {
+  platform: string
+  cpu: string
+  cores: number
+  memoryGb: number
+}
+
+/**
+ * Identify the machine well enough to notice when two runs are not from one.
+ *
+ * Deliberately coarse: exact clock speeds and load averages vary run to run and
+ * would make every line look unique. Model, core count and memory are stable
+ * for a given machine and different between machines, which is the only
+ * question this field has to answer.
+ */
+export function hostFingerprint(): HostFingerprint {
+  const cpus = os.cpus()
+  return {
+    platform: `${process.platform}-${process.arch}`,
+    cpu: cpus[0]?.model ?? "unknown",
+    cores: cpus.length,
+    memoryGb: Math.round(os.totalmem() / 1024 ** 3),
+  }
+}
+
 export type RunLogEntry = {
   at: string
   commit?: string
   lane: string
   flow: string
   profile: string
+  /** Absent on lines written before the host was recorded — unknown, not equal. */
+  host?: HostFingerprint
   stack: string
   /** Headline values, one per metric in the portable vocabulary. */
   metrics: Record<string, number | null>
@@ -84,6 +118,7 @@ export function runLogEntry(input: {
     lane: first.lane,
     flow: first.flow,
     profile: first.profile,
+    host: hostFingerprint(),
     stack: first.stack,
     // `null` rather than omitted: a metric the stack could not supply is a
     // fact about the run, and dropping it makes an absent metric look like one

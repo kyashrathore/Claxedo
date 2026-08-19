@@ -67,3 +67,18 @@ describe("run log entry", () => {
     expect(runLogEntry({ records: [], at: "2026-08-18T00:00:00.000Z" })).toBeUndefined()
   })
 })
+
+test("records the host, because the profile is emulation and not a machine", () => {
+  // Two machines running one profile label themselves identically while
+  // producing numbers that differ several-fold. Without this field a log line
+  // from a laptop and one from a cloud container are indistinguishable, and
+  // the 3x gap between them reads as a regression or a win.
+  const entry = runLogEntry({
+    records: [record("retained_heap_bytes", 85_000_000)],
+    at: "2026-08-19T00:00:00.000Z",
+  })!
+  expect(entry.host).toBeDefined()
+  expect(entry.host!.cores).toBeGreaterThan(0)
+  expect(entry.host!.platform).toContain(process.platform)
+  expect(entry.host!.cpu.length).toBeGreaterThan(0)
+})
