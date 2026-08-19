@@ -166,6 +166,67 @@ export function markdownReport(results: ScenarioResult[], options: { debug?: boo
       "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
       ...vitalsRows,
     )
+
+    // LCP is only comparable to its 2500/4000 thresholds if it means what the
+    // platform means: the largest paint BEFORE the user first interacted. The
+    // platform freezes it at the first trusted input, and synthetic in-page
+    // clicks are not trusted — so a synthetically driven flow keeps revising
+    // LCP until the flow ends and reports flow duration under a load metric's
+    // name. These columns make that visible instead of leaving the number to
+    // be read as if it were a load measurement.
+    const attributionRows = results
+      .filter((result) => result.vitals?.lcpCandidateCount)
+      .map((result) => {
+        const v = result.vitals!
+        const ms = (value: number | undefined) => value === undefined ? "n/a" : value.toFixed(0)
+        const frozen = v.lcpAtFirstTrustedInputMs === undefined
+          ? (v.firstTrustedInputMs === undefined ? "never froze (no trusted input)" : "n/a")
+          : ms(v.lcpAtFirstTrustedInputMs)
+        return `| ${result.name} | ${v.lcpCandidateCount} | ${frozen} | ${ms(v.firstTrustedInputMs)} | ` +
+          `${ms(v.firstUntrustedInputMs)} | \`${v.lcpElement ?? "n/a"}\` |`
+      })
+
+    if (attributionRows.length) {
+      lines.push(
+        "",
+        "### LCP attribution",
+        "",
+        "`LCP frozen` is what the platform would actually report: the largest paint before the first TRUSTED input. Where it reads \"never froze\", the flow delivered only synthetic input, LCP kept being revised for the flow's whole duration, and the LCP column above is a flow-duration proxy — not a load metric, and not comparable to the 2500/4000 ms bands.",
+        "",
+        "| Flow | LCP revisions | LCP frozen (ms) | first trusted input (ms) | first synthetic input (ms) | last LCP element |",
+        "| --- | ---: | ---: | ---: | ---: | --- |",
+        ...attributionRows,
+      )
+    }
+
+    // The same trust boundary, one metric over. Chromium excuses a shift from
+    // CLS when trusted input landed in the previous 500ms; synthetic clicks
+    // never qualify, so a harness-driven flow is charged for content that moved
+    // because the flow asked it to.
+    const shiftRows = results
+      .filter((result) => result.vitals?.shiftCount)
+      .map((result) => {
+        const v = result.vitals!
+        const excused = v.clsExcludingSyntheticInput
+        const share = v.cls && excused !== undefined && v.cls > 0
+          ? `${(100 * (1 - excused / v.cls)).toFixed(0)}%`
+          : "—"
+        return `| ${result.name} | ${v.cls?.toFixed(3) ?? "n/a"} | ${excused?.toFixed(3) ?? "n/a"} | ${share} | ` +
+          `${v.shiftCount}${v.shiftsTruncated ? " ⚠️ truncated" : ""} |`
+      })
+
+    if (shiftRows.length) {
+      lines.push(
+        "",
+        "### Layout-shift attribution",
+        "",
+        "`CLS under real input` rescores the same shifts with the platform's own rule applied to the flow's synthetic clicks: a shift within 500ms after an input is the user's doing, not instability. The gap between the two columns is shift the flow charged itself for and a real user would not have seen as instability.",
+        "",
+        "| Flow | CLS observed | CLS under real input | excused | shifts |",
+        "| --- | ---: | ---: | ---: | ---: |",
+        ...shiftRows,
+      )
+    }
   }
 
   const comparisonRows = results.flatMap((result) =>
