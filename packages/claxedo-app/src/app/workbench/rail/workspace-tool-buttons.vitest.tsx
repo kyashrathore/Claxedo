@@ -41,11 +41,15 @@ describe("WorkspaceToolButtons", () => {
     const changes = screen.getByRole("button", { name: "Close Changes" })
     const processes = screen.getByRole("button", { name: "Open Processes" })
 
-    expect(files.querySelector("use")?.getAttribute("href")).toMatch(/#codex-20-057$/)
+    // The `codex-icon-sprite-` prefix is the lazy inline sprite's namespace
+    // (48f98d84a): symbol ids are prefixed with the sprite id when the sheet is
+    // inlined, so hrefs resolve against the inlined copy rather than the fetch
+    // URL. Anchored on the full id so a prefix regression cannot slip past.
+    expect(files.querySelector("use")?.getAttribute("href")).toMatch(/#codex-icon-sprite-codex-20-057$/)
     // The boxed ±, shared with `review` — see the note on the `changes` entry in
     // `@/ui/icons/codex`. It was codex-20-120 until 5197e0704 re-pointed it.
-    expect(changes.querySelector("use")?.getAttribute("href")).toMatch(/#codex-20-071$/)
-    expect(processes.querySelector("use")?.getAttribute("href")).toMatch(/#codex-20-050$/)
+    expect(changes.querySelector("use")?.getAttribute("href")).toMatch(/#codex-icon-sprite-codex-20-071$/)
+    expect(processes.querySelector("use")?.getAttribute("href")).toMatch(/#codex-icon-sprite-codex-20-050$/)
     expect(files.className).toContain("!size-3.5")
     expect(files).toHaveAttribute("data-icon-interaction", "binary")
     expect(files).toHaveAttribute("aria-pressed", "false")

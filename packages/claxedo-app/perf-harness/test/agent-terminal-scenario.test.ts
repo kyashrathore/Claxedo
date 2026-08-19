@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { existsSync } from "node:fs"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -38,13 +39,22 @@ describe("Claxedo terminal workload", () => {
   })
 
 
-  test("production contract pins the canonical ten-second wire stream", async () => {
+  // The canonical corpus is a GENERATED 5.6MB artifact under the gitignored
+  // `.artifacts/` — it exists only on machines that materialised it (see
+  // agent-corpus-materializer). Skipping when absent follows the lane's own
+  // gating convention (`requireBinary`'s GATING pattern): the pin can only be
+  // checked against the thing it pins, and a fresh checkout does not have it.
+  // The skip is visible in the reporter, never a silent pass.
+  const CANONICAL_CORPUS = path.resolve(
+    import.meta.dir,
+    "../../../../.artifacts/agent-app-benchmark/corpus-agent-app-core-v1-8c8ac43d5f3a.json",
+  )
+
+  test.skipIf(!existsSync(CANONICAL_CORPUS))(
+    "production contract pins the canonical ten-second wire stream", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "claxedo-terminal-sustained-"))
     try {
-      const corpusPath = path.resolve(
-        import.meta.dir,
-        "../../../../.artifacts/agent-app-benchmark/corpus-agent-app-core-v1-8c8ac43d5f3a.json",
-      )
+      const corpusPath = CANONICAL_CORPUS
       const corpus = await Bun.file(corpusPath).json()
       const stream = corpus.sessions[0].terminalStreams[0]
       const result = await createTerminalWorkload(root, stream)
