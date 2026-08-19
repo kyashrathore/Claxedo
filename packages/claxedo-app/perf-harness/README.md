@@ -313,3 +313,38 @@ production bundle the chain resolves to generic containers (`Array`, `Object`)
 and mangled closure names (`s`, `ref`, `get role`), which identify the
 mechanism but not the source line. To pin a leak to a component, run the sweep
 against an unminified build so constructor and closure names survive.
+
+## The experiment log
+
+Every `run` and `memory` invocation appends one line to
+`data/runs/<lane>.jsonl`, tracked in git. A baseline says what the numbers
+ARE; this says what was RUN — and without it the only record of a measurement
+is a commit message, which is how a result gets re-measured by someone who had
+no way to know it was already done.
+
+Each line carries the commit, the reference machine and the stack, because a
+number without those cannot be compared to anything later: the same flow on
+the same code reads ~3x differently on a cold container.
+
+Heavy artifacts stay out. Heap snapshots, CPU profiles and invalidation traces
+run to hundreds of megabytes and version control is the wrong home for them,
+so `reports/` remains ignored. What the log keeps is the FINDING those
+artifacts produced — top heap retainers, query-family growth, detached-node
+and listener deltas — which is the part anyone reads and costs a few hundred
+bytes:
+
+```
+{"at":"...","commit":"b4d58cf","lane":"memory","flow":"session-accumulation",
+ "profile":"laptop-broadband","stack":"solid-1",
+ "metrics":{"retained_heap_bytes":83011312},
+ "evidence":{"slopeBytesPerStep":1014726,"detachedNodesGrowth":7938,
+             "listenerGrowth":4879,"topRetainers":[...]}}
+```
+
+An absent metric is recorded as `null`, never omitted: dropping it would make
+a metric the stack could not supply indistinguishable from one that was never
+in the vocabulary, which is exactly the confusion a Solid 2 or native-port
+comparison has to avoid.
+
+The log starts from the commit that introduced it. Runs made before that live
+in `docs/perf/2026-08-13-web-and-app-optimization-session.md`, Addendum 13.

@@ -17,3 +17,7 @@ data/*
 !data/diagnostics/*.json
 !data/baselines/
 !data/baselines/**
+# The experiment log: what was RUN, not just what the numbers are. Small,
+# append-only, and the only durable record that a measurement happened at all.
+!data/runs/
+!data/runs/**
