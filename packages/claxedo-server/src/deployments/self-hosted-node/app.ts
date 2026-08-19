@@ -1292,12 +1292,13 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   } else {
     configureOpenCodeEngine({ embedded: true })
     // Stored AI credentials live in Claxedo's registry; the engine resolves
-    // auth from its own store. Reconcile at boot so an already-stored key powers
-    // the first turn — mutations after this keep the two in step (see
-    // credentials/engine-bridge.ts). Deferred and non-blocking: it boots the
-    // engine lazily and must not gate server startup.
-    void import("@claxedo/server-core/credentials/engine-bridge")
-      .then((bridge) => bridge.syncCredentialsToEngine())
+    // auth from its own store. Arm the bridge's boot hook so every embedded
+    // engine boot reconciles the registry into the engine — an already-stored
+    // key powers the first embedded turn — WITHOUT booting the engine at
+    // server start just to deliver auth (see opencode/engine-auth-bridge.ts).
+    // Mutations after this keep the two in step through the same gate.
+    void import("@claxedo/server-core/opencode/engine-auth-bridge")
+      .then((bridge) => bridge.armEngineAuthSyncOnBoot())
       .catch(() => {})
   }
   configureOpenCodeApplicationTools(undefined)

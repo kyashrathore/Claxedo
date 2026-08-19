@@ -126,6 +126,43 @@ let embeddedHostPromise: Promise<EmbeddedHost> | undefined
 let loadedHost: EmbeddedHost | undefined
 let loggedFailure = false
 
+// --- Boot observation -------------------------------------------------------
+
+const bootHooks = new Set<() => void>()
+
+/**
+ * True when an engine can serve requests without paying a boot: the embedded
+ * host is loaded, or an external engine URL is configured (a remote engine is
+ * running by definition). Consumers that must never CAUSE an engine boot —
+ * e.g. the credential auth bridge — gate on this instead of calling
+ * `opencodeRequest` unconditionally.
+ */
+export function opencodeEngineLoaded(): boolean {
+  return config.mode === "external-url" || loadedHost !== undefined
+}
+
+/**
+ * Registers a hook fired after every successful embedded-engine boot,
+ * including a re-boot after `drainOpenCodeEngine`. Hook errors are isolated
+ * from the boot and from each other. Returns the unsubscribe.
+ */
+export function onOpenCodeEngineBoot(hook: () => void): () => void {
+  bootHooks.add(hook)
+  return () => {
+    bootHooks.delete(hook)
+  }
+}
+
+function fireBootHooks(): void {
+  for (const hook of [...bootHooks]) {
+    try {
+      hook()
+    } catch (err) {
+      console.error("[opencode-engine] WARN  boot hook failed:", err)
+    }
+  }
+}
+
 async function embeddedHost(): Promise<EmbeddedHost> {
   embeddedHostPromise ??= (async () => {
     // The engine reads OPENCODE_DB (its own wire format) at import time via
@@ -143,6 +180,7 @@ async function embeddedHost(): Promise<EmbeddedHost> {
         ...(applicationTools ? { applicationTools } : {}),
       })
       loadedHost = host
+      fireBootHooks()
       return host
     } catch (cause) {
       if (!loggedFailure) {

@@ -48,7 +48,7 @@
 
 import fs from "node:fs"
 import path from "node:path"
-import { OPENCODE_INTERNAL_BASE, opencodeRequest } from "../opencode/engine"
+import { OPENCODE_INTERNAL_BASE, onOpenCodeEngineBoot, opencodeEngineLoaded, opencodeRequest } from "./engine"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { listCredentials, resolveSecret, SINGLE_TENANT_ORG, type CredentialOrgScope } from "@claxedo/server-core/credentials/registry"
@@ -293,15 +293,66 @@ export async function syncCredentialsToEngine(
   return result
 }
 
+// --- Boot-gated scheduling --------------------------------------------------
+//
+// Auth delivery must never be the reason the embedded engine boots: the engine
+// is an OpenCode-harness implementation detail, and a user who stores an
+// Anthropic key without ever selecting OpenCode should pay no engine cost.
+// Mutations against a cold embedded engine are therefore recorded and applied
+// by a boot hook when (if) the engine actually starts; a running engine — or a
+// configured external one — syncs immediately, as before.
+
+/** Orgs whose credential mutations still await a running engine. */
+const pendingOrgs = new Set<CredentialOrgScope>()
+let disarmBootSync: (() => void) | undefined
+
+function runSync(org: CredentialOrgScope): void {
+  void syncCredentialsToEngine(org).catch((error) => {
+    log.warn("engine auth sync failed", { error: String(error) })
+  })
+}
+
+function flushOnBoot(): void {
+  // Always include the default org: the boot flush doubles as the boot-time
+  // reconcile (a key stored — or deleted — while the engine was down must be
+  // reflected in the first embedded turn).
+  const orgs = new Set<CredentialOrgScope>([SINGLE_TENANT_ORG, ...pendingOrgs])
+  pendingOrgs.clear()
+  for (const org of orgs) runSync(org)
+}
+
+/**
+ * Arms the boot-time reconcile: every embedded-engine boot (including a
+ * re-boot after drain) reconciles registry credentials into the engine's auth
+ * store. Composition roots in embedded mode call this INSTEAD of an eager
+ * `syncCredentialsToEngine()`, which would boot the engine at server start.
+ */
+export function armEngineAuthSyncOnBoot(): void {
+  disarmBootSync ??= onOpenCodeEngineBoot(flushOnBoot)
+}
+
 /**
  * Fire-and-forget sync for credential mutation paths. A bridge failure must
  * never fail the store/delete the user asked for — the credential is safely
  * persisted either way, and the next mutation (or engine boot) reconciles.
+ *
+ * Write-only-when-running: a cold embedded engine is never booted for an auth
+ * write — the mutation is recorded and the armed boot hook reconciles it.
  */
 export function scheduleEngineAuthSync(org: CredentialOrgScope = SINGLE_TENANT_ORG): void {
-  void syncCredentialsToEngine(org).catch((error) => {
-    log.warn("engine auth sync failed", { error: String(error) })
-  })
+  if (!opencodeEngineLoaded()) {
+    pendingOrgs.add(org)
+    armEngineAuthSyncOnBoot()
+    return
+  }
+  runSync(org)
+}
+
+/** TEST-ONLY: clear boot-hook arming and pending orgs between module loads. */
+export function __resetEngineAuthSchedulingForTests() {
+  pendingOrgs.clear()
+  disarmBootSync?.()
+  disarmBootSync = undefined
 }
 
 /** TEST-ONLY: reset the once-per-process env-shadow warning. */
