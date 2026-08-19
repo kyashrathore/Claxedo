@@ -3297,6 +3297,18 @@ describe("workspace host harness registry seam (Unit 3)", () => {
     }
   })
 
+  test("an unknown runner finds no default registry entry instead of falling through to OpenCode", () => {
+    const registry = defaultWorkspaceHarnessRegistry()
+    // No entry claims an unrecognized harness id: dispatch surfaces the typed
+    // createAdapter error rather than silently running the OpenCode engine.
+    expect(registry.find((entry) => entry.match({ id: "waku", access: "native" } as never))).toBeUndefined()
+    const opencodeEntry = registry.find((entry) => entry.match({ id: "opencode", access: "native" } as never))
+    if (!opencodeEntry) throw new Error("Expected the OpenCode registry entry")
+    const adapter = opencodeEntry.create({ runner: { id: "opencode", access: "native" } as never, options: {} })
+    expect(adapter).toBeInstanceOf(OpenCodeHarnessAdapter)
+    adapter.dispose()
+  })
+
   test("keeps the implicit native Codex binary out of persisted harness identity", async () => {
     const runner = { id: "codex", access: "native" } as const
     const entry = defaultWorkspaceHarnessRegistry().find((candidate) => candidate.match(runner))

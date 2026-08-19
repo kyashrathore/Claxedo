@@ -630,7 +630,12 @@ function runtimeSessionId(binding: WorkGraphSessionBinding) {
   return binding.runtimeSessionId ?? binding.sessionId
 }
 
-/** Session V2 transport used by the local embedded WorkGraph execution adapter. */
+/** Session V2 transport used by the local embedded WorkGraph execution adapter.
+ *
+ * OpenCode-surface code: this gateway drives the embedded OpenCode ENGINE's
+ * Session V2 API over the injected engine transport and is reached only for
+ * the `opencode` harness (see `createHarnessWorkGraphGateway.admit`). Every
+ * other harness rides the workspace-runtime session rail above. */
 export function createSessionV2WorkGraphGateway(
   opencodeRequest: OpenCodeRequestFn,
   options: SessionV2WorkGraphGatewayOptions = {},

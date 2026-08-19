@@ -738,13 +738,14 @@ export type WorkspaceHarnessRegistryEntry = {
 export type WorkspaceHarnessRegistry = WorkspaceHarnessRegistryEntry[]
 
 /**
- * The built-in adapter catalog. Selection semantics are byte-identical to the
- * previous closed switch: ACP (any `access: "acp"` runner) → native
- * claude/codex/cursor SDK adapters → Pi → OpenCode. The final OpenCode entry
- * matches everything, so it is both the `opencode` runner's adapter AND the
- * fallthrough for any unknown runner — preserving today's "unknown → OpenCode"
- * behavior. The ACP binary fallback (`defaultAcpBinary`) is applied through the
- * shared `binary()`/`acpArgs()` helpers.
+ * The built-in adapter catalog. Selection order: ACP (any `access: "acp"`
+ * runner) → native claude/codex/cursor SDK adapters → Pi → OpenCode. The
+ * OpenCode entry matches the `opencode` runner ONLY — an unknown runner
+ * surfaces `createAdapter`'s typed error instead of silently becoming an
+ * OpenCode engine session, so a mistyped or unregistered harness id fails
+ * loudly at dispatch rather than running a different product. The ACP binary
+ * fallback (`defaultAcpBinary`) is applied through the shared
+ * `binary()`/`acpArgs()` helpers.
  */
 export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
   return [
@@ -800,7 +801,7 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
       }),
     },
     {
-      match: () => true,
+      match: (runner) => runner.id === "opencode",
       create: ({ options }) => new OpenCodeHarnessAdapter(options.opencodeUrl, {
         ...(options.opencodeHeaders ? { headers: options.opencodeHeaders } : {}),
         ...(options.opencodeRequest ? { request: options.opencodeRequest } : {}),
@@ -859,8 +860,9 @@ function createAdapter(
 ): AgentHarnessAdapter {
   const entry = registry.find((item) => item.match(harness))
   if (!entry) {
-    // The default registry ends with a catch-all, so this only happens when a
-    // host supplies a registry with no matching entry for the runner.
+    // Reached for any runner no registry entry claims — including an unknown
+    // harness id against the default registry. Deliberate: an unrecognized
+    // runner must fail loudly here, never silently fall through to OpenCode.
     throw new Error(`No workspace harness adapter registered for runner "${harness.id}:${harness.access}"`)
   }
   return entry.create({ runner: harness, options })

@@ -7,7 +7,7 @@ import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
 import type { ConnectionsService } from "@claxedo/connections"
 import { WorkGraphConnectionToolNames, type WorkGraphContext } from "@claxedo/workgraph/contracts"
 import { ExecutionCapabilitiesUnavailableError } from "@claxedo/workgraph/ports"
-import { OPENCODE_INTERNAL_BASE } from "@claxedo/server-core/opencode/engine"
+import { OPENCODE_INTERNAL_BASE, opencodeEngineLoaded } from "@claxedo/server-core/opencode/engine"
 import { piProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-catalog"
 import { createExecutionCapabilitiesPort } from "../execution-capabilities"
 
@@ -22,6 +22,12 @@ const SESSION_COMPOSER_HARNESSES = [
 
 export function createLocalExecutionCapabilities(input: Readonly<{
   opencodeRequest: OpenCodeRequestFn
+  /**
+   * Whether an OpenCode engine is already running (or externally configured).
+   * Injected beside `opencodeRequest` so tests stubbing the transport can
+   * model engine state; defaults to the real engine's own predicate.
+   */
+  engineLoaded?: () => boolean
   harness(): Promise<string>
   connections?: ConnectionsService
   resolveTeamOwner?: (context: WorkGraphContext) => string | undefined
@@ -58,6 +64,12 @@ export function createLocalExecutionCapabilities(input: Readonly<{
         input.harness(),
         directory.then(async (selectedDirectory) => {
           if (!selectedDirectory) return [[], { connected: [], all: [] }, ["terminal"]] as const
+          // Cold-engine read: browsing the composer catalog must never be the
+          // reason the embedded engine boots. Until an OpenCode surface starts
+          // the engine, the opencode entry serves the same static shape the
+          // unscoped read serves; a refresh after first OpenCode use restores
+          // the live agents/models/tools.
+          if (!(input.engineLoaded ?? opencodeEngineLoaded)()) return [[], { connected: [], all: [] }, ["terminal"]] as const
           return Promise.all([
             runtimeJson(input, selectedDirectory, "/agent"),
             runtimeJson(input, selectedDirectory, "/api/model"),
