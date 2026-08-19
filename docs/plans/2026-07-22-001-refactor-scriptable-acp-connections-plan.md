@@ -581,7 +581,42 @@ The design becomes worse if Claxedo starts adding per-agent compatibility classe
 - Adding another ACP entry changes the picker without changing app source.
 - The browser never receives command, argument, or environment data.
 
-- [ ] **Unit 5: Prove independent interoperability and document extension**
+- [ ] **Unit 5: Prove independent interoperability and document extension** *(partially landed 2026-08-19 — see note)*
+
+> **Progress note (2026-08-19).** The executable-without-owner-input parts
+> landed:
+> - **Operator-connection contract coverage**: a new "operator ACP connection
+>   lifecycle" suite in
+>   `packages/claxedo-server/src/tests/integration/agent-lifecycle.integration.test.ts`
+>   proves config mutation → sanitized discovery → session turn through the
+>   configured process (the scripted `test-support/fake-acp.ts` driven through
+>   the OPEN registry path, not a built-in id), atomic whole-map rejection
+>   with the accepted registry still executing, and disable failing new
+>   execution closed with re-enable restoring the same logical identity and
+>   its history. Registry fail-closed resolution is covered in
+>   `packages/workspace-runtime/src/workspace/runtime.test.ts`.
+> - **Documentation**: new operator guide `public-docs/acp-connections.md`
+>   (config schema, live mutation API, offline provisioning,
+>   enable/disable/remove, id rebinding, diagnostics, process ownership,
+>   historical-session behavior), plus pointers in `public-docs/README.md`,
+>   `public-docs/supported-surfaces.md`, `public-docs/agent-sdk-runtime.md`,
+>   `public-docs/workspace-runtime.md`, and a runtime-semantics section in
+>   `packages/workspace-runtime/README.md`. (The pre-reorg file list above
+>   predates `src/tests/integration/`; `claxedo-server/README.md` needed no
+>   change.)
+>
+> **Deviations / remaining:**
+> - The three vendor ACP lifecycle matrices were NOT collapsed into one
+>   parameterized suite: the first-party trio remains shipped until Unit 6,
+>   and those suites still guard its dialect quirks. Fold them when Unit 6
+>   removes the trio.
+> - `params.supportsMcpServers` is stored and validated but not yet consumed
+>   by the runtime (documented as reserved), so the capability-variance
+>   scenario cannot be exercised through the real registry yet.
+> - **Blocked on owner input**: the required version-pinned smoke against an
+>   independent non-Claude/Codex/Cursor ACP implementation needs the owner to
+>   choose/pin that implementation and provide test credentials; cloud-parity
+>   e2e (playwright specs) needs the hosted sandbox path.
 
 **Goal:** Demonstrate that “any ACP” is a real external contract rather than only a fake matching Claxedo's assumptions.
 

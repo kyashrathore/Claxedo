@@ -616,6 +616,144 @@ describe("agent lifecycle integration", () => {
     })
   })
 
+  // ── operator-configured ACP connection ─────────────────────────────────────
+
+  describe("operator ACP connection lifecycle", () => {
+    const connectionsUrl = () => `${base()}/api/claxedo/agent-config/harness/acp-connections`
+    const putConnection = (id: string, body: unknown) =>
+      fetch(`${connectionsUrl()}/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+    // Selection stores only the LOGICAL identity; the process descriptor is
+    // resolved from the accepted registry at snapshot time, so command/env
+    // changes apply on the next process start without rewriting the selection.
+    // saveUserConfig replaces the whole file, so carry the accepted registry.
+    const selectConnection = async (id: string) => {
+      const config = await agent.loadUserConfig()
+      await agent.saveUserConfig({ ...config, harness: { id, access: "acp" } })
+    }
+
+    it("config mutation → sanitized discovery → session turn through the configured process", async () => {
+      // The command points at the same fake ACP process the first-party suites
+      // use, but through the OPEN registry path: no built-in id, and no
+      // bundled-binary fallback may fire anywhere on this route.
+      const added = await putConnection("gemini", { label: "Gemini", command: [fakeBinaryPath] })
+      expect(added.status).toBe(200)
+
+      const listed = await fetch(connectionsUrl())
+      expect(listed.status).toBe(200)
+      const rows = await listed.json() as { connections: Array<Record<string, unknown>> }
+      expect(rows.connections).toEqual([
+        { key: "acp:gemini", id: "gemini", label: "Gemini", access: "acp", enabled: true },
+      ])
+      // Discovery never exposes the configured command.
+      expect(JSON.stringify(rows)).not.toContain(fakeBinaryPath)
+
+      await selectConnection("gemini")
+      const ws = await workspace("operator-acp")
+
+      const createRes = await fetch(`${base()}/session?${q(ws)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Operator ACP Test" }),
+      })
+      expect(createRes.status).toBe(201)
+      const session = await createRes.json() as { id: string }
+      expect(typeof session.id).toBe("string")
+
+      const msgRes = await fetch(`${base()}/session/${encodeURIComponent(session.id)}/message?${q(ws)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parts: [{ type: "text", text: "Hello" }] }),
+      })
+      expect(msgRes.status).toBe(200)
+      const msg = await msgRes.json() as { info: { role: string }; parts: Array<{ type: string; text?: string }> }
+      expect(msg.info.role).toBe("assistant")
+      expect(msg.parts.some((p) => p.type === "text" && p.text?.includes("Hello from fake-acp"))).toBe(true)
+
+      const delRes = await fetch(`${base()}/session/${encodeURIComponent(session.id)}?${q(ws)}`, { method: "DELETE" })
+      expect(delRes.status).toBe(200)
+    })
+
+    it("a malformed mutation rejects whole while the accepted connection keeps executing", async () => {
+      await putConnection("gemini", { label: "Gemini", command: [fakeBinaryPath] })
+      await selectConnection("gemini")
+      const ws = await workspace("operator-acp-atomic")
+
+      const rejected = await putConnection("broken", { label: "", command: [] })
+      expect(rejected.status).toBe(400)
+
+      // The previous registry still serves: a session boots and completes a
+      // turn through the configured process after the failed mutation.
+      const createRes = await fetch(`${base()}/session?${q(ws)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Post-rejection" }),
+      })
+      expect(createRes.status).toBe(201)
+      const session = await createRes.json() as { id: string }
+      const msgRes = await fetch(`${base()}/session/${encodeURIComponent(session.id)}/message?${q(ws)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parts: [{ type: "text", text: "Hello" }] }),
+      })
+      expect(msgRes.status).toBe(200)
+    })
+
+    it("disable fails new execution closed; re-enable restores the same logical identity and its history", async () => {
+      await putConnection("gemini", { label: "Gemini", command: [fakeBinaryPath] })
+      await selectConnection("gemini")
+      const ws = await workspace("operator-acp-disable")
+
+      const createRes = await fetch(`${base()}/session?${q(ws)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Before disable" }),
+      })
+      expect(createRes.status).toBe(201)
+      const session = await createRes.json() as { id: string }
+      const firstTurn = await fetch(`${base()}/session/${encodeURIComponent(session.id)}/message?${q(ws)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parts: [{ type: "text", text: "Hello" }] }),
+      })
+      expect(firstTurn.status).toBe(200)
+
+      const disabled = await putConnection("gemini", { label: "Gemini", command: [fakeBinaryPath], enabled: false })
+      expect(disabled.status).toBe(200)
+      // Force the next request onto a fresh runtime snapshot rather than
+      // depending on fan-out timing.
+      embedded.shutdownEmbeddedWorkspaceRuntimes()
+      await supervisor.shutdownWorkspaceSupervisor()
+
+      // New execution is rejected — and never falls back to a bundled binary.
+      const rejectedCreate = await fetch(`${base()}/session?${q(ws)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "While disabled" }),
+      })
+      expect(rejectedCreate.ok).toBe(false)
+
+      const reEnabled = await putConnection("gemini", { label: "Gemini", command: [fakeBinaryPath], enabled: true })
+      expect(reEnabled.status).toBe(200)
+      embedded.shutdownEmbeddedWorkspaceRuntimes()
+      await supervisor.shutdownWorkspaceSupervisor()
+
+      // The stored session resolves through the SAME logical identity on a
+      // fresh runtime, and its history is intact.
+      const listRes = await fetch(`${base()}/session?${q(ws)}`)
+      expect(listRes.status).toBe(200)
+      const sessions = await listRes.json() as Array<{ id: string }>
+      expect(sessions.some((s) => s.id === session.id)).toBe(true)
+      const history = await fetch(`${base()}/session/${encodeURIComponent(session.id)}/message?${q(ws)}`)
+      expect(history.status).toBe(200)
+      const messages = await history.json() as Array<{ parts?: Array<{ type: string; text?: string }> }>
+      expect(JSON.stringify(messages)).toContain("Hello from fake-acp")
+    })
+  })
+
   describe.each([
     { label: "opencode native", runner: undefined },
     { label: "claude ACP", runner: "claude-acp" as const },
