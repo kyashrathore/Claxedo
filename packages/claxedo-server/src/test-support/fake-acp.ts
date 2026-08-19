@@ -61,6 +61,17 @@ function handle(msg: JsonRpcMessage) {
     }
 
     case "session/new": {
+      // FAKE_ACP_REJECT_MCP=1 emulates an ACP implementation that rejects
+      // requests offering MCP servers — used by the capability-variance
+      // integration test (operator connections carry the env that arms this).
+      if (
+        process.env.FAKE_ACP_REJECT_MCP === "1"
+        && Array.isArray(params?.mcpServers)
+        && (params.mcpServers as unknown[]).length > 0
+      ) {
+        send({ jsonrpc: "2.0", id, error: { code: -32602, message: "mcpServers not supported" } })
+        break
+      }
       const sessionId = randomUUID()
       const cwd = (params?.cwd as string) ?? ""
       sessions.set(sessionId, { cwd })

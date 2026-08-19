@@ -779,6 +779,30 @@ describe("operator ACP connections", () => {
     expect(normalized?.harnesses?.map((row) => row.id)).toEqual(["opencode", "gemini"])
   })
 
+  test("params.supportsMcpServers rides the trusted descriptor and survives runtime normalization", async () => {
+    await fs.mkdir(root, { recursive: true })
+    await fs.writeFile(cfgFile(), JSON.stringify({
+      mcp: {},
+      acp: {
+        gemini: { label: "Gemini", command: ["gemini", "--acp"], params: { supportsMcpServers: false } },
+      },
+    }))
+    const snapshot = await mod.getRuntimeConfigSnapshot()
+    expect(snapshot.harnesses.slice(1)).toEqual([{
+      id: "gemini",
+      access: "acp",
+      connection: {
+        kind: "process",
+        binary: "gemini",
+        args: ["--acp"],
+        supportsMcpServers: false,
+      },
+    }])
+    const normalized = normalizeRuntimeSnapshot(snapshot)
+    const row = normalized?.harnesses?.find((item) => item.id === "gemini")
+    expect(row?.connection).toMatchObject({ kind: "process", supportsMcpServers: false })
+  })
+
   test("a selected operator connection resolves its descriptor from the registry", async () => {
     await fs.mkdir(root, { recursive: true })
     await fs.writeFile(cfgFile(), JSON.stringify({

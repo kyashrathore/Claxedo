@@ -35,6 +35,7 @@ import {
   harnessAgent,
   mcpControl,
   resolveEffectiveMcp,
+  resolveUserMcp,
   toOpencodeConfig,
   type ResolvedMcpServer,
 } from "@claxedo/workspace-runtime/config"
@@ -297,6 +298,9 @@ export function acpConnectionHarness(id: string, connection: UserAcpConnection):
       binary: binary!,
       ...(args.length ? { args } : {}),
       ...(connection.env ? { env: connection.env } : {}),
+      ...(connection.params?.supportsMcpServers !== undefined
+        ? { supportsMcpServers: connection.params.supportsMcpServers }
+        : {}),
     },
   }
 }
@@ -515,6 +519,15 @@ async function runtimeMcp(
   harness: NonNullable<UserAgentConfig["harness"]>,
   scope: RuntimeConfigSecretScope,
 ) {
+  const userMcp = scope === "shared" ? {} : config.mcp
+  // An operator-configured ACP connection is not one of the managed-MCP
+  // capable built-in agents, but the ACP protocol carries MCP servers
+  // natively: it receives the user's configured servers (managed servers stay
+  // a built-in-agent concern). The connection's `params.supportsMcpServers:
+  // false` withholds the offer at the adapter for agents that reject it.
+  if (harness.access === "acp" && !isAcpHarnessId(harness.id as string)) {
+    return resolveUserMcp(userMcp)
+  }
   const agent = harnessAgent(harnessKey(harness) ?? harness.id)
   if (!agent) return {}
   const state = await loadManagedMcpState()
@@ -522,7 +535,7 @@ async function runtimeMcp(
     state,
     agent,
     control: harness.id === "opencode" ? mcpControl("opencode", { externalOpencode: true }) : "managed",
-    userMcp: scope === "shared" ? {} : config.mcp,
+    userMcp,
     strict: true,
   }).mcp
 }

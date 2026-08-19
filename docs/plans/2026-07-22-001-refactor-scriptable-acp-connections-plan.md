@@ -610,9 +610,16 @@ The design becomes worse if Claxedo starts adding per-agent compatibility classe
 >   parameterized suite: the first-party trio remains shipped until Unit 6,
 >   and those suites still guard its dialect quirks. Fold them when Unit 6
 >   removes the trio.
-> - `params.supportsMcpServers` is stored and validated but not yet consumed
->   by the runtime (documented as reserved), so the capability-variance
->   scenario cannot be exercised through the real registry yet.
+> - ~~`params.supportsMcpServers` is stored and validated but not yet
+>   consumed~~ **Closed later on 2026-08-19**: operator connections now
+>   receive the user's MCP servers through the snapshot (`runtimeMcp` resolves
+>   user servers for open ACP identities; managed servers stay a
+>   built-in-agent concern), the flag rides the trusted descriptor
+>   (`ProcessHarnessConnection.supportsMcpServers`) into the applied registry
+>   and adapter, and `applyConfig` gates the offer. Capability variance is
+>   exercised through the real registry in the integration suite (the fake
+>   agent rejects `session/new` carrying `mcpServers` when its
+>   connection-provided env arms `FAKE_ACP_REJECT_MCP`).
 > - **Blocked on owner input**: the required version-pinned smoke against an
 >   independent non-Claude/Codex/Cursor ACP implementation needs the owner to
 >   choose/pin that implementation and provide test credentials; cloud-parity

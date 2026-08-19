@@ -123,6 +123,12 @@ export type AcpHarnessAdapterOptions = AgentHarnessAdapterProcessOptions & {
   harness?: string
   args?: string[]
   env?: ACPTransportEnv
+  /**
+   * `false` keeps MCP servers out of everything offered to this agent —
+   * session requests, process fingerprints, and process observation. See
+   * `ProcessHarnessConnection.supportsMcpServers`.
+   */
+  supportsMcpServers?: boolean
   storeRoot?: string
   store?: AcpRuntimeStore
   createStore?: (storeRoot?: string) => AcpRuntimeStore
@@ -1702,7 +1708,10 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
 
   async applyConfig(config: Record<string, unknown>): Promise<void> {
     const mcp = config.mcp as Record<string, ResolvedMcpServer> | undefined
-    const nextMcp = toAcpMcpServers(mcp ?? {})
+    // Gating here keeps `currentMcp` empty for the whole adapter lifetime:
+    // session requests, process fingerprints, restart decisions, and process
+    // observation all read it, so nothing downstream needs its own check.
+    const nextMcp = this.options.supportsMcpServers === false ? [] : toAcpMcpServers(mcp ?? {})
     const nextEnv = mergeAcpEnv(this.currentEnv, envFromConfig(config))
     const unchanged = sameAcpMcp(this.currentMcp, nextMcp) && sameAcpEnv(this.currentEnv, nextEnv)
     if (unchanged && !this.configRestartPending) {

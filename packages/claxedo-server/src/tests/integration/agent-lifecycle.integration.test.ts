@@ -702,6 +702,56 @@ describe("agent lifecycle integration", () => {
       expect(msgRes.status).toBe(200)
     })
 
+    it("capability variance: an agent that rejects MCP servers succeeds once its connection disables MCP injection", async () => {
+      // The connection's own env arms the fake agent to refuse session/new
+      // requests that offer MCP servers — which also proves operator env
+      // reaches the spawned process through the trusted path.
+      const rejecting = {
+        label: "Strict",
+        command: [fakeBinaryPath],
+        env: { FAKE_ACP_REJECT_MCP: "1" },
+      }
+      expect((await putConnection("strict", rejecting)).status).toBe(200)
+      const config = await agent.loadUserConfig()
+      await agent.saveUserConfig({
+        ...config,
+        mcp: { docs: { type: "stdio", command: "docs-mcp" } },
+        harness: { id: "strict", access: "acp" },
+      })
+      const ws = await workspace("operator-acp-mcp")
+
+      // With MCP injection on (the default), the strict agent refuses.
+      const refused = await fetch(`${base()}/session?${q(ws)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "MCP offered" }),
+      })
+      expect(refused.ok).toBe(false)
+
+      // params.supportsMcpServers: false gates injection through the SAME
+      // registry row; the identical agent now boots and completes a turn.
+      expect((await putConnection("strict", {
+        ...rejecting,
+        params: { supportsMcpServers: false },
+      })).status).toBe(200)
+      embedded.shutdownEmbeddedWorkspaceRuntimes()
+      await supervisor.shutdownWorkspaceSupervisor()
+
+      const createRes = await fetch(`${base()}/session?${q(ws)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "MCP withheld" }),
+      })
+      expect(createRes.status).toBe(201)
+      const session = await createRes.json() as { id: string }
+      const msgRes = await fetch(`${base()}/session/${encodeURIComponent(session.id)}/message?${q(ws)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parts: [{ type: "text", text: "Hello" }] }),
+      })
+      expect(msgRes.status).toBe(200)
+    })
+
     it("disable fails new execution closed; re-enable restores the same logical identity and its history", async () => {
       await putConnection("gemini", { label: "Gemini", command: [fakeBinaryPath] })
       await selectConnection("gemini")

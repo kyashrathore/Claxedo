@@ -780,12 +780,16 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
       match: (runner) => acp(runner),
       create: ({ runner, options }) => {
         const createTransport = acpTransportFactory(runner)
-        const env = processConnection(runner)?.env
+        const process = processConnection(runner)
+        const env = process?.env
         return new AcpHarnessAdapter({
           binary: binary(runner),
           harness: runner.id === "opencode" || runner.id === "pi" ? "claude" : runner.id,
           args: acpArgs(runner),
           ...(env ? { env } : {}),
+          ...(typeof process?.supportsMcpServers === "boolean"
+            ? { supportsMcpServers: process.supportsMcpServers }
+            : {}),
           ...(createTransport ? { createTransport } : {}),
           createStore: adapterCreateStore(resolveStoreFactory(options)),
           ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
@@ -1223,11 +1227,15 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       ? ""
       : process?.binary ?? ""
     const env = process?.env && Object.keys(process.env).length ? JSON.stringify(process.env) : ""
-    return `${next.id}\n${next.access}\n${binary}\n${process?.args?.join("\0") ?? ""}\n${remote?.transport ?? ""}\n${remote?.url ?? ""}\n${JSON.stringify(remote?.headers ?? {})}\n${env}`
+    // Ninth part: MCP-offering compatibility. Toggling it must produce a new
+    // adapter (the gate is an adapter-construction option). Older stored
+    // eight-part keys parse with the part absent, meaning "servers offered".
+    const mcpCompat = process?.supportsMcpServers === undefined ? "" : String(process.supportsMcpServers)
+    return `${next.id}\n${next.access}\n${binary}\n${process?.args?.join("\0") ?? ""}\n${remote?.transport ?? ""}\n${remote?.url ?? ""}\n${JSON.stringify(remote?.headers ?? {})}\n${env}\n${mcpCompat}`
   }
 
   function runnerFromAdapterKey(key: string) {
-    const [id, access, binary, args, transport, url, headers, env] = key.split("\n")
+    const [id, access, binary, args, transport, url, headers, env, mcpCompat] = key.split("\n")
     const identity = normalizeHarnessIdentity({ id, access })
     const connection = url || headers || transport
       ? {
@@ -1236,12 +1244,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           ...(url ? { url } : {}),
           ...(headers ? { headers: JSON.parse(headers) as Record<string, string> } : {}),
         }
-      : binary || args || env
+      : binary || args || env || mcpCompat
         ? {
             kind: "process" as const,
             ...(binary ? { binary } : {}),
             ...(args ? { args: args.split("\0").filter(Boolean) } : {}),
             ...(env ? { env: JSON.parse(env) as Record<string, string> } : {}),
+            ...(mcpCompat ? { supportsMcpServers: mcpCompat === "true" } : {}),
           }
         : undefined
     return {

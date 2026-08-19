@@ -44,8 +44,9 @@ Connections live in the trusted user config file
       "command": ["/usr/local/bin/gemini-cli", "--experimental-acp"],
       // Extra process environment applied over the runtime environment.
       "env": { "GEMINI_API_KEY": "..." },
-      // Narrow generic-ACP compatibility switches. Reserved: stored and
-      // validated today, not yet consumed by the runtime.
+      // Narrow generic-ACP compatibility switches. `supportsMcpServers:
+      // false` keeps configured MCP servers out of everything offered to
+      // this agent — for implementations that reject requests carrying them.
       "params": { "supportsMcpServers": false },
       // Defaults to true. false is an explicit, reversible disable.
       "enabled": true
@@ -109,6 +110,12 @@ string form `"acp:gemini"` or the object form `{ "id": "gemini", "access":
   operator config → runtime snapshot → process spawn path. Session callers can
   never supply process environment, and discovery/status surfaces never echo
   it back.
+- **MCP servers.** The user's configured MCP servers are offered to the agent
+  through the ACP protocol's native `mcpServers` field (Claxedo-managed MCP
+  servers remain a built-in-agent concern). `params.supportsMcpServers: false`
+  withholds the offer entirely — session requests, process fingerprints, and
+  process observation all see an empty server list — for agents that reject
+  requests carrying MCP servers.
 - **Enable / disable / remove.** `enabled: false` (or deletion) stops *new*
   execution immediately on the next applied snapshot; running turns finish.
   Stored sessions remain listed and their history stays readable; re-enabling

@@ -117,6 +117,9 @@ function processConnection(input: Record<string, unknown>): HarnessConnection | 
           ? { args: input.connection.args }
           : {}),
         ...(stringRecord(input.connection.env) ? { env: input.connection.env as Record<string, string> } : {}),
+        ...(typeof input.connection.supportsMcpServers === "boolean"
+          ? { supportsMcpServers: input.connection.supportsMcpServers }
+          : {}),
       }
     }
     if (input.connection.kind === "remote") {

@@ -143,6 +143,13 @@ export type ProcessHarnessConnection = {
    * auth); never accepted from session callers.
    */
   env?: Record<string, string>
+  /**
+   * Generic-ACP compatibility: `false` stops the host from offering MCP
+   * servers to this agent (some ACP implementations reject requests that
+   * include them). Absent/`true` means servers are offered as usual. Carried
+   * only through the trusted config-apply path, like `env`.
+   */
+  supportsMcpServers?: boolean
 }
 
 export type RemoteHarnessConnection = {
