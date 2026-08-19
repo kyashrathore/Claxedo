@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "kind": "non-gating-context",
+  "application": "T3",
+  "executionAllowedInUnits": [
+    "U11"
+  ],
+  "gating": false,
+  "semanticValidity": "invalid",
+  "invalidReason": "The corrected smoke corpus contained reasoning parts that the current T3 materializer dropped; production materialization was not semantically equivalent.",
+  "environment": {
+    "cpu": "Apple M4 Pro",
+    "memoryGiB": 24,
+    "os": "macOS 26.2",
+    "power": "AC",
+    "thermal": "nominal",
+    "displayHz": 120,
+    "scale": 2,
+    "window": [
+      1440,
+      900
+    ]
+  },
+  "corpusSha256": "8c8ac43d5f3a06403784b660095d55849d46b149a85e6373c4e5b65098ed428a",
+  "smokeMedians": {
+    "app.cold_ready_ms": 3904.7,
+    "work_item.cold_open_ms": 126.7,
+    "work_item.warm_switch_p95_ms": 46.3,
+    "resource.peak_process_family_rss_mib": 1402.75,
+    "resource.quiescent_cpu_p95_pct": 12.05
+  },
+  "source": "docs/plans/2026-08-09-001-five-times-faster-than-t3-plan.md#problem-frame"
+}
