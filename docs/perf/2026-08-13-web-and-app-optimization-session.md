@@ -1019,12 +1019,53 @@ had been stable and reproducible across machines for weeks; reproducibility was
 never the problem. A metric can be perfectly repeatable and still measure the
 instrument.
 
-### Pre-existing, found in passing
+### Pre-existing, found in passing: the agent-app lane was never committed
 
-Eight modules the perf-harness imports were never committed on any branch:
-`agent-metrics`, `agent-samples`, `agent-prior-evidence`, `agent-cdp-page`,
-`agent-display-contract`, `agent-benchmark-targets`, `agent-browser-observer`,
-`idle-process-family`. They are not gitignored, simply absent. Three source
-files and one test cannot load, `bun run typecheck` reports 23 errors in the
-harness, and `bun test` reports 2 failures — all pre-existing, none reachable
-from `cli.ts`. The agent-benchmark lane is dead code that cannot run.
+**Sixteen** modules the perf-harness imports were never committed on any
+branch. They are not gitignored, simply absent, so `bun run typecheck` reported
+23 errors and `bun test` 2 failures, both pre-existing.
+
+I first wrote this up as dead code and recommended deleting it. **That was
+wrong**, and the correction is the more useful finding.
+
+`e8fc016c3` (2026-08-13) committed four source files and three tests of the
+lane and none of the modules they import. Its own message discusses
+`idle-process-family.ts` as "byte-identical" — which is what a partial
+`git add` looks like from the inside: the author was describing a file that
+existed only in their working tree. The lane's entry points
+(`benchmark:agent-app`, `agent-driver`, `check:agent-experiment`) were missing
+from `package.json` too, which is the only reason it looked unreachable from
+`cli.ts`.
+
+It is load-bearing. HANDOFF.md counts 452 run directories under
+`artifacts/agent-app-benchmark/`; u11-qualification-status.md cites
+`agent-app-benchmark.ts` by line number in five places; claxedo-desktop's
+`startup-clock-probe.ts` names it as the consumer contract. This is the macOS
+gate suite that HANDOFF §12.4 says the Linux container cannot run — which is
+exactly how it came to be developed on a Mac and only half committed.
+
+Recovered from untracked files in the sibling worktree for
+`integrate/claxedo-memory-buckets`; four also survived in `stash@{1}^3`.
+**Nothing was in this repository's object store, reachable or not.** A
+`git clean` in that worktree would have destroyed roughly 4,700 lines of source
+and tests permanently.
+
+  bun run typecheck   23 errors -> 0
+  bun test            63 pass / 2 fail -> 121 pass / 1 fail
+
+Two decisions are left for the owner. `agent-terminal-scenario` pins exact byte
+counts and SHA-256 digests against a 5.6 MB generated corpus under the
+gitignored `.artifacts/`, so it can only pass where that corpus was
+materialised. And `perf-harness` sits below the `packages/*` workspace glob, so
+it resolves neither `catalog:` nor `workspace:*`; `@opencode-ai/core` is left
+undeclared and resolves by walking up to the root `node_modules`, which works
+in-repo and would not survive a standalone checkout.
+
+#### Method note
+
+The claim that killed the first, wrong conclusion was cheap and I skipped it:
+grep the whole repository for the thing before calling it unused. `cli.ts` and
+`runner.ts` were the only files I checked. One `grep -rn agent-app-benchmark`
+across the tree returns HANDOFF.md's 452 run directories on the first page.
+"Not reachable from the entry point I looked at" is not "dead" — and the cost
+of the difference here was a recommendation to delete unrecoverable work.
