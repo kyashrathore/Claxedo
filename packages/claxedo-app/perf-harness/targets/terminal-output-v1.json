@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "terminal-output-v1",
+  "hashAlgorithm": "sha256-chunk-tree-v1",
+  "sourceCorpusSha256": "8c8ac43d5f3a06403784b660095d55849d46b149a85e6373c4e5b65098ed428a",
+  "sourceStream": {
+    "id": "terminal-00",
+    "expectedBytes": 131072,
+    "expectedSha256": "91df3ba163720f811b92c3c046ed195b66ce2c0810de9be39d0dfdf384f5a46a",
+    "inputSentinels": [
+      "INPUT-00-A",
+      "INPUT-0-B"
+    ],
+    "columns": 120,
+    "rows": 36
+  },
+  "repetitions": 1680,
+  "activeDurationMs": 10000,
+  "offeredMiBS": 21,
+  "ticks": 160,
+  "geometry": {
+    "columns": 145,
+    "rows": 52,
+    "scrollback": 5000
+  },
+  "expectedWireBytes": 220201166,
+  "expectedWireSha256": "f43e5bf0baeade571dec6540f3e7e827077ba171836bef63b1b0bf3ea77f518b",
+  "expectedModelSha256": "8d7e396ae2659a881ed49361466059d43ea3b1dba210b9499e610b0be12aa330"
+}
