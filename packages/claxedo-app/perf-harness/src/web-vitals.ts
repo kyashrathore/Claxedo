@@ -64,6 +64,14 @@ export type WebVitals = {
   shiftCount?: number
   /** True if the shift buffer filled, so the recomputed values under-report. */
   shiftsTruncated?: boolean
+  /**
+   * The raw shifts and synthetic input times the two CLS numbers were scored
+   * from. Kept because a derived number nobody can audit is how the earlier
+   * rounds of this effort produced results that turned out to be instrument
+   * defects — the excusal rule is checkable only against the timestamps.
+   */
+  shiftSamples?: LayoutShiftSample[]
+  syntheticInputTimes?: number[]
 }
 
 /**
@@ -292,6 +300,8 @@ export async function readWebVitals(page: Page): Promise<WebVitals> {
     ),
     shiftCount: raw.shifts.length,
     shiftsTruncated: raw.shiftsTruncated || undefined,
+    shiftSamples: raw.shifts,
+    syntheticInputTimes: raw.untrustedInputTimes,
     inpMs: durations.length ? durations[index] : undefined,
     interactionCount: durations.length,
     worstInteractionMs: durations[0],
@@ -355,6 +365,8 @@ export function mergeWebVitals(runs: readonly WebVitals[]): WebVitals {
     cls: p75((item) => item.cls),
     clsExcludingSyntheticInput: p75((item) => item.clsExcludingSyntheticInput),
     shiftCount: lcpRun.shiftCount,
+    shiftSamples: lcpRun.shiftSamples,
+    syntheticInputTimes: lcpRun.syntheticInputTimes,
     // Any truncated run taints the merged CLS, so this is an OR across runs
     // rather than one run's flag: a capped buffer under-reports, and a silent
     // under-report reads as stability the flow does not have.

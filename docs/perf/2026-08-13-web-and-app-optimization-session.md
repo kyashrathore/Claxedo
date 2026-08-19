@@ -863,3 +863,168 @@ and snapshots do not survive a container reset, and several results above
 existed only in conversation until now. Tracked baselines carry the headline
 numbers; the supporting traces do not survive. Worth deciding whether the
 sweep JSON should join the baselines under version control.
+
+---
+
+## Addendum 14 — LCP and CLS were measuring the harness (2026-08-19)
+
+Addendum 13 opened with LCP "poor everywhere" and workspace-switch's CLS at
+0.377, ~4x the poor threshold, as the two highest-value open items. Both are
+substantially instrument defects, and they are the SAME defect one metric
+apart — the one Addendum 13 already identified for INP and did not carry
+across.
+
+### The mechanism
+
+The platform stops revising LCP at the first **trusted** input, and excuses a
+layout shift from CLS when trusted input landed in the previous 500ms. Neither
+rule fires for synthetic in-page `element.click()`, because untrusted events
+carry no `interactionId` and do not count as user input.
+
+`browser-records.ts` already said so, about INP:
+
+> INP needs a trusted interaction. A flow driven by synthetic in-page clicks
+> produces none, and reporting 0 there would read as instant.
+
+The same sentence is true of LCP and of CLS, and neither was guarded. So:
+
+- **LCP never finalised** on a synthetically driven flow. It kept accepting
+  candidates until the flow ended, and settled on whatever the flow itself had
+  painted — routinely a chat transcript message — reported under a metric
+  whose 2500/4000 ms bands mean "when the page finished loading".
+- **CLS charged each flow** for the rearrangement its own click asked for. A
+  real user clicking "switch workspace" gets those 500ms excused; the harness
+  did not.
+
+### Evidence
+
+`bun src/cli.ts run --all --profile laptop-broadband --no-trend`, two full
+passes, on darwin-arm64 (Apple M4 Pro, 12 cores, 24 GB), macOS 26.2. **These
+absolute timings are NOT comparable to Addenda 10-13**, which ran on the Linux
+container; that is the point of the host field added below. What IS comparable
+across machines is the categorical result — whether LCP froze, and how much of
+CLS survives the excusal rule.
+
+| flow | trusted input | LCP revisions | LCP froze | last LCP element |
+| --- | --- | ---: | --- | --- |
+| launch-project | none | 4 | never | `user-message-text "user message 1998…"` |
+| session-switch | none | 5 | never | `p "sample output sample output…"` |
+| live-terminal-switch | 2009ms | 1 | 1364ms | `session-navigation-title "…session 1"` |
+| large-diff-toggle | 2296ms | 4 | 1892ms | `user-message-text "user message 498…"` |
+| workspace-switch | none | 4 | never | `user-message-text "user message 998…"` |
+
+The one flow that delivers real input early has **one** LCP candidate and
+freezes on a navigation title — a genuine load measurement. The three flows
+with no trusted input accumulate four or five candidates and land on transcript
+content that only exists because the flow scrolled a session into view. Run 2
+reproduced the froze/never-froze split and every element identity exactly.
+
+CLS, same runs, rescored with the platform's 500ms rule applied to each flow's
+synthetic clicks:
+
+| flow | CLS observed | CLS under real input | excused | shifts |
+| --- | ---: | ---: | ---: | ---: |
+| launch-project | 0.017 / 0.020 | 0.017 / 0.020 | 0% / 0% | 4 / 5 |
+| session-switch | 0.012 / 0.030 | 0.010 / 0.010 | 21% / 67% | 3 / 5 |
+| live-terminal-switch | 0.000 / 0.000 | 0.000 / 0.000 | 0% / 0% | 1 / 1 |
+| large-diff-toggle | 0.188 / 0.195 | 0.010 / 0.010 | **95% / 95%** | 16 / 17 |
+| workspace-switch | 0.319 / 0.315 | 0.013 / 0.014 | **96% / 96%** | 34 / 30 |
+
+Both passes shown (run 1 / run 2). The two large excusals reproduce to the
+percentage point. `session-switch` swings 21% -> 67% on a CLS of 0.012-0.030,
+which is three to five shifts of a few thousandths each — too small to read as
+anything, and recorded rather than smoothed.
+
+### Auditing the excusal, rather than trusting it
+
+A 96% correction is exactly the size of claim that should not be believed
+because a function returned it. The raw shifts and synthetic input times are
+now kept in the run's vitals so the rule can be checked by hand. A third
+workspace-switch pass, CLS 0.3255 observed against 0.0125 under real input,
+23 shifts, synthetic clicks at 2101 ms and 2532 ms:
+
+| shift (ms) | value | after synthetic click |
+| ---: | ---: | --- |
+| 2020 | 0.0049 | — (before any input) — kept |
+| 2052 | 0.0025 | — (before any input) — kept |
+| 2542 | 0.0410 | 10 ms — excused |
+| 2600 | 0.0887 | 69 ms — excused |
+| 2602 | 0.0878 | 70 ms — excused |
+| 2613 | 0.0826 | 82 ms — excused |
+| …17 more | ≤0.0006 each | 84-348 ms — excused |
+
+Four shifts inside 82 ms of one click carry 0.300 of the 0.3255. That is the
+workspace repainting in direct response to the click that asked for it — the
+textbook case the `hadRecentInput` rule exists to exclude — and the only shift
+that survives the rule is 0.0074 spread over the two that preceded any input at
+all.
+
+workspace-switch reproduced at 0.319 here against 0.377 on the container, so
+the observed score is machine-robust and the excusal is a property of how the
+flow drives input, not of the hardware. **Item 2 of the open list — "that flow
+visibly reflows" — does not survive.** Under real input it scores 0.013, well
+inside "good". The content does move, but it moves because the user asked it
+to, which is the exact case the metric is defined to exclude.
+
+### What this does and does not retire
+
+Retired: the "LCP poor on every flow" finding for launch-project,
+session-switch and workspace-switch, and the workspace-switch CLS breach.
+Those numbers were not measuring the app.
+
+**Not retired**: `large-diff-toggle` read 5640 ms on the container and DOES
+freeze its LCP properly, so that one is a real load measurement and a real
+"poor". It is now the only LCP result on the board worth chasing. Whether the
+container's other numbers hide a genuine problem underneath the artifact can
+only be answered by re-running there with this instrument.
+
+### Changes
+
+- `largest_content_ms` records the FROZEN LCP, and is absent with a reason
+  where LCP never finalised — the same treatment `interaction_latency_ms`
+  already had. Absent is a state the comparison refuses to score, which is
+  correct: there is no load measurement to report, and inventing one is what
+  produced the original finding.
+- `visual_stability` records the excused CLS. The contract defines the metric
+  as movement "without them causing it", and a synthetic click stands in for a
+  real one everywhere else in the flow.
+- Vitals scoring moved out of `page.evaluate` into pure exported functions, so
+  the CLS session-window rule has ONE implementation and a test can call it.
+  Positive control for the refactor: the recomputed observed CLS reproduces the
+  previous inline accumulator's value (0.319 both ways on workspace-switch).
+- The shift buffer is capped at 2000 and truncation is recorded, never silent.
+  An under-reported CLS reads as stability the flow does not have.
+
+### The run log could not tell two machines apart
+
+`run-log.ts` promised in its own doc comment that every line carries "the
+reference machine", and `run-log.test.ts` asserted it under the name
+`machine` — but the field it recorded was `profile`, which is EMULATION: a 4x
+CPU multiplier applied to whatever silicon is underneath. Eleven runs from this
+laptop landed in the tracked log labelled `laptop-broadband`, indistinguishable
+from the container's, reporting "improved" on every metric purely because an
+M4 Pro is faster than the container. Those lines were removed rather than
+committed. The log now records a coarse host fingerprint (platform, CPU model,
+core count, memory) alongside the profile.
+
+This is the failure mode Addendum 13 warned about — "never gate on one run on a
+freshly booted container" — with the machine varying instead of the warmth, and
+the log had no field that could have caught it.
+
+### Method note
+
+Both defects were found by asking what the metric's DEFINITION requires and
+comparing it to what the code collects, not by measuring harder. The numbers
+had been stable and reproducible across machines for weeks; reproducibility was
+never the problem. A metric can be perfectly repeatable and still measure the
+instrument.
+
+### Pre-existing, found in passing
+
+Eight modules the perf-harness imports were never committed on any branch:
+`agent-metrics`, `agent-samples`, `agent-prior-evidence`, `agent-cdp-page`,
+`agent-display-contract`, `agent-benchmark-targets`, `agent-browser-observer`,
+`idle-process-family`. They are not gitignored, simply absent. Three source
+files and one test cannot load, `bun run typecheck` reports 23 errors in the
+harness, and `bun test` reports 2 failures — all pre-existing, none reachable
+from `cli.ts`. The agent-benchmark lane is dead code that cannot run.
