@@ -692,3 +692,174 @@ memory growth source: `workspaceQueryOptions` and `shellDataKeys.workspaceForSes
 have zero callers in the tree, so that key family stores nothing. It is dead
 code, not an unbounded cache. Gaps 2 (terminal scrollback) and 3 (pane-mounted
 surfaces) stand.
+
+---
+
+## Addendum 13 — instrument build-out, and the experiments behind it (2026-08-17/18)
+
+Addenda 1-12 recorded findings. This one also records EXPERIMENTS THAT WERE
+ONLY EVER REPORTED IN CONVERSATION, which is how a measurement gets repeated
+six months later by someone who has no way to know it was already run.
+
+### The baseline comparison, and why the first run was thrown out
+
+All five flows against their stored budgets (captured 2026-08-13, so a genuine
+before/after). The first run said 4 of 5 breached. It was discarded:
+
+  launch-project control 293.66ms  vs diagnostics-ENABLED 77.87ms
+
+Enabled carries profiler overhead and is the slower side by construction, so a
+4x inversion is not a property of the code. The container had just restarted;
+re-running warm gave 80.52ms for the same control — a 3.6x swing on identical
+code. The harness independently flagged 49 host-level rAF scheduling gaps it
+excluded from the app gate.
+
+Warm, only two flows breach:
+
+| flow | budget | control worst, warm | verdict |
+| --- | ---: | --- | --- |
+| launch-project | 96ms | 80.5 | within |
+| session-switch | 56ms | 56.1 / 56.7 / 54.4 | on the line |
+| live-terminal-switch | 62ms | passes | within |
+| large-diff-toggle | 138ms | 21.2 / 34.5 | well within |
+| workspace-switch | 50ms | 62.7 / 72.4 / 79.3 / 69.6 | over, ~1.4x |
+
+**A single cold run would have reported a four-flow regression that does not
+exist.** Never gate on one run on a freshly booted container.
+
+### workspace-switch: the breach predates the memory work
+
+A/B against `dd43725` (the commit before the byte budget, deferral, terminal
+and rail fixes) to test whether that work caused it:
+
+  dd43725   control worst 67.03 / 70.06 ms
+  HEAD      control worst 62.66 / 72.36 / 79.27 / 69.57 ms
+
+Fully overlapping. The breach came from somewhere earlier in the effort and is
+still unattributed.
+
+### workspace-switch attribution — NULL result
+
+The invalidation trace showed layout, not style, dominating (523 layout
+invalidations vs 101 style; this is not another `:has()` case). Top sources by
+sourcemap: `getMaxScrollOffset` in @tanstack/virtual-core 174,
+`message-timeline.tsx:941` 123, `scroll-view.tsx:175` 77.
+
+`updateTitleMetrics` re-read `head.clientWidth` inside a ResizeObserver
+callback — forcing layout when the entry already carries `contentRect` — then
+wrote a store value consumed only as an inline `animation` duration. Fixed.
+That stack went 123 -> 0 invalidations, and **the flow total held at 523 -> 522
+with worst frame unchanged**: 437 of those have reason "Added to layout", node
+insertions that happen regardless, so the attribution simply moved to the next
+frame on the stack (scroll-view's `scrollTop` read went 77 -> 199). The flow is
+insertion bound, not read bound. The fix was kept as strictly less work, not
+as a speedup.
+
+### Core Web Vitals on a reference machine
+
+The harness measured renderer scheduling only, on whatever hardware the
+container happened to be. Added LCP/INP/CLS/FCP/TTFB using the platform's own
+definitions, and `--profile` naming the machine. Reference: `laptop-broadband`
+(4x CPU, 10/3 Mbps, 40ms) — an Electron workbench never runs on a phone, so
+Lighthouse's mobile preset would model a user who does not exist.
+
+First baseline:
+
+| flow | LCP | INP | CLS | FCP |
+| --- | ---: | ---: | ---: | ---: |
+| launch-project | 6752 | n/a | 0.038 | 1320 |
+| session-switch | 6188 | n/a | 0.031 | 1384 |
+| live-terminal-switch | 2848 | 176 | 0.000 | 924 |
+| large-diff-toggle | 5416 | 240 | 0.119 | 1260 |
+| workspace-switch | 5824 | n/a | **0.377** | 1276 |
+
+FCP is good everywhere and LCP poor everywhere: the shell paints in ~1.3s and
+the largest content lands 4-5s later. workspace-switch's CLS of 0.377 is ~4x
+the "poor" threshold — that flow visibly reflows under the user, and no
+worst-frame number would ever have shown it.
+
+Verified rather than assumed, since each could have made the feature fiction:
+Playwright's `route.fulfill` does NOT defeat network emulation (FCP 296ms
+unthrottled, 700 at 10Mbps, 3380 at 1.6Mbps, 3392 at 1.6Mbps with interception
+active); the `latency` term never reaches the loopback document (TTFB 4-13ms
+under every profile, so that column is an artifact); mocked API responses
+cannot be throttled by CDP at all and get the profile's RTT added by hand.
+INP reports `n/a` on flows driven by synthetic in-page clicks, which carry no
+`interactionId` — reporting 0 there would read as instant.
+
+### Memory lane: three instrument defects, two wrong theories
+
+Built the missing lane. Everything it first reported was wrong, in instructive
+ways:
+
+1. `page.goto` between visits reloads the document and discards the heap.
+   Retention read flat at 22MB with one mounted tab and no rendered session —
+   a perfect plateau measuring nothing. Sweeps navigate via pushState.
+2. `performance.memory` is quantised and cached by Chrome for privacy. A sweep
+   whose DOM doubled and whose query cache went 125 -> 428 reported an
+   identical 31.6MB at all eight samples. Heap now comes from CDP
+   `Runtime.getHeapUsage`.
+3. The "did this sweep accumulate" caveat compared `cachedSessions` first vs
+   last — a deliberately BOUNDED counter that a working ceiling drives back
+   down — and fired on a run that had grown 173 -> 388 queries. It judges peak
+   query count now.
+
+Wrong theory one: "1.1MB per visit, no plateau." Measured over 60 visits.
+Over 200 the slope falls to ~200-237 kB/visit — sub-linear and decelerating,
+so the caps do engage.
+
+Wrong theory two: a synchronous count-only trim when the cache drifts past
+twice its ceiling. Two sweeps each side:
+
+  without   slope 201 / 237 kB per visit   plateau 94.8 / 97.8 MB
+  with      slope 396 / 403 kB per visit   plateau 121.9 / 118.7 MB
+
+Consistently worse AND peak cached sessions stayed at 200, so it did not even
+reduce the overshoot it targeted. Reverted.
+
+### The actual leak: detached DOM
+
+Query families gained ~2 entries per visit while the heap gained ~200kB, which
+never added up. Sampling what the page cannot see about itself:
+
+  live nodes (CDP)   6431 -> 16986   +10555
+  attached (page)    3821 ->  5530   +1709
+  listeners           409 ->  4214   +3805
+
+~8800 nodes removed from the document and still referenced. Invisible to
+`document.getElementsByTagName`, which sees 3821 -> 5530 and calls it healthy.
+
+This retires the structure the preceding work assumed. Every module cache
+suspected is correctly bounded: `timelineCache` and `turnFoldCache` at 16, the
+prompt-handoff index at 40, `SESSION_CACHE_LIMIT` at 40. The session-cache
+ceiling work was not wrong; it was aimed at a structure that was not the
+problem.
+
+Heap-snapshot retainer analysis (`memory --snapshot`) attributes detached DOM
+to bound functions and Solid reactive getters holding it in arrays and maps.
+It does NOT name a source line: against the minified production bundle the
+chain resolves to generic containers and mangled names (`s`, `ref`,
+`get role`). Pinning it to a component needs a sweep against an unminified
+build. Two bugs were found building it — `to_node` is an offset into the flat
+nodes array, not an ordinal; and node index 0 is a real node, so a plain
+retainer index made "retained by node 0" indistinguishable from "no retainer"
+and broke every climb at its first step.
+
+### Standardisation
+
+Measurements now share one contract (`perf-record.ts`) so a REWRITE is
+comparable: an experiment holds flow and profile fixed and varies `stack`
+(`solid-1`, `solid-2`, `gpui`). Metrics are named for what the user
+experiences, not the API reporting them — `largest_content_ms`, not `lcp_ms` —
+because a native stack has no LCP. Absent is a first-class state that the
+comparison refuses to score, so a port cannot win a metric it never measured.
+Baselines are tracked in git at
+`data/baselines/<profile>/<stack>/<lane>/<flow>.json`.
+
+### Recording gap this addendum closes
+
+Raw evidence in `perf-harness/reports/` is gitignored — sweeps, style dumps
+and snapshots do not survive a container reset, and several results above
+existed only in conversation until now. Tracked baselines carry the headline
+numbers; the supporting traces do not survive. Worth deciding whether the
+sweep JSON should join the baselines under version control.
