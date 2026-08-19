@@ -65,6 +65,10 @@ export function createLocalExecutionCapabilities(input: Readonly<{
           ])
         }),
       ])
+      // Connection tools are advertised for every harness: Connection-bound
+      // Runs execute through the harness-neutral runtime contribution
+      // (`workGraphRuntimeRouteContributions`) on non-OpenCode harnesses and
+      // through the engine's Session V2 bridge on OpenCode.
       const harnesses = [
         ...(await Promise.all(SESSION_COMPOSER_HARNESSES.map(async (harness) => ({
           harness: { harness },
@@ -76,14 +80,12 @@ export function createLocalExecutionCapabilities(input: Readonly<{
               : undefined,
           ),
           tools: [],
-          connectionTools: false,
         })))),
         {
           harness: { harness: "pi" },
           agents: defaultAgent("pi"),
           providers: withDefaultEffort(piProviderCatalog()),
           tools: [],
-          connectionTools: false,
         },
         { harness: { harness: "opencode" }, agents: runtime[0], providers: runtime[1], tools: runtime[2] },
       ]
@@ -246,6 +248,12 @@ function withDefaultEffort(catalog: ReturnType<typeof piProviderCatalog>) {
   }
 }
 
+/**
+ * OpenCode-surface read: describes the OpenCode harness's OWN catalog entry
+ * (agents, models, tool ids) over the engine transport. Re-homing this behind
+ * the OpenCode adapter — so a cold engine serves a static entry instead of
+ * booting — is owned by plan 2026-08-19-003 (U4); do not "fix" it here.
+ */
 async function runtimeJson(
   input: Readonly<{ opencodeRequest: OpenCodeRequestFn }>,
   directory: string,

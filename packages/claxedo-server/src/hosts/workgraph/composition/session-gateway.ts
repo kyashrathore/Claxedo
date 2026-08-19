@@ -8,6 +8,7 @@ import {
   WorkGraphRunIdentitySchema,
   WorkGraphRunToolNames,
   type CommandResult,
+  type WorkGraphConnectionOperationRequest,
   type WorkGraphConnectionOperationResponse,
   type WorkGraphRunOperationRequest,
   type WorkGraphContext,
@@ -193,6 +194,171 @@ export function createFileWorkGraphSessionBindingStore(file: string): WorkGraphS
   }
 }
 
+/** A Connection-bound Run's server-authored binding: the owner context and the
+ * exact Connections and tools the Run was admitted with. The broker resolves
+ * operations against this record and nothing agent-supplied. */
+export type WorkGraphConnectionRunBinding = Readonly<{
+  context: WorkGraphContext
+  ownerPartition: string
+  runId: string
+  streamId?: string
+  sessionId: string
+  workspaceId: string
+  connectionIds: readonly string[]
+  tools: readonly string[]
+}>
+
+/** The admission preconditions shared by both gateways: Connection-bound Runs
+ * need the Connections service, the owner context, an organization-owned
+ * Connection scope, and explicitly requested Connection tools. */
+function resolveConnectionRunAdmission(
+  options: SessionV2WorkGraphGatewayOptions,
+  input: Readonly<{ context?: WorkGraphContext; profile: Readonly<{ tools: readonly string[] }> }>,
+) {
+  if (!options.connections) throw new Error("Connection-bound Runs require the Connections service")
+  const context = input.context
+  if (!context) throw new Error("Connection-bound Runs require the WorkGraph owner context")
+  const ownerPartition = options.resolveTeamOwner(context)
+  if (!ownerPartition) throw new Error("Connection-bound Runs require an organization-owned Connection scope")
+  const connectionTools = input.profile.tools.filter((tool) =>
+    tool === "connection_work_source_list" || tool === "connection_work_source_comment" || tool === "connection_work_source_update" ||
+    tool === "connection_code_host_open_pr")
+  if (!connectionTools.length) throw new Error("Connection-bound Runs require explicit Connection tools")
+  return {
+    context,
+    ownerPartition,
+    connectionTools,
+    // Returned narrowed: the options union only carries `resolveTeamOwner`
+    // alongside a present `connections`, and this helper is where that
+    // narrowing lives.
+    connections: options.connections,
+    resolveTeamOwner: options.resolveTeamOwner,
+  }
+}
+
+/**
+ * The one Connection-operation broker both local rails share.
+ *
+ * The Session V2 (OpenCode engine) bridge resolves a per-session binding; the
+ * harness rail resolves from the host's Connection-binding registry. Everything
+ * else — provider-verified public-PR confirmation, the durable effect ledger,
+ * and receipt persistence — is identical by construction, which is the point:
+ * the fail-closed PR pipeline must not fork per harness.
+ */
+export function createLocalWorkGraphConnectionBroker(options: Readonly<{
+  connections: ConnectionsService
+  resolveTeamOwner(context: WorkGraphContext): string | undefined
+  connectors?: Readonly<Record<string, SourceIssueConnector>>
+  codeHostConnectors?: Readonly<Record<string, CodeHostConnector>>
+  authorizePullRequest?: SessionV2WorkGraphGatewayOptions["authorizePullRequest"]
+  pullRequestEffects?: SessionV2WorkGraphGatewayOptions["pullRequestEffects"]
+  recordPullRequest?: SessionV2WorkGraphGatewayOptions["recordPullRequest"]
+  resolveBinding(sessionId: string): Promise<WorkGraphConnectionRunBinding | undefined>
+}>) {
+  const operationBroker = createConnectionOperationBroker({
+    bindings: {
+      resolve: async (identity) => {
+        const binding = await options.resolveBinding(identity.sessionId)
+        if (!binding) return undefined
+        return {
+          context: binding.context,
+          ownerPartition: binding.ownerPartition,
+          runId: binding.runId,
+          sessionId: binding.sessionId,
+          workspaceId: binding.workspaceId,
+          connectionIds: binding.connectionIds as never,
+          tools: binding.tools,
+        }
+      },
+    },
+    connections: createWorkGraphConnectionsPort({ service: options.connections, resolveTeamOwner: options.resolveTeamOwner }),
+    ...(options.connectors ? { connectors: options.connectors } : {}),
+    ...(options.codeHostConnectors ? { codeHostConnectors: options.codeHostConnectors } : {}),
+  })
+  return async (operation: WorkGraphConnectionOperationRequest): Promise<WorkGraphConnectionOperationResponse> => {
+    const binding = await options.resolveBinding(operation.identity.sessionId)
+    if (!binding || binding.runId !== operation.identity.runId || binding.workspaceId !== operation.identity.workspaceId) {
+      throw new ConnectionOperationDeniedError("Connection operation is not bound to this Run")
+    }
+    const context = binding.context
+    const ownerPartition = binding.ownerPartition
+    const pullRequest = operation.operation.type === "open_pull_request" ? operation.operation : undefined
+    let verifiedPublicRepository = false
+    if (pullRequest) {
+      // Fail closed: a PR may only be opened when the full receipt
+      // pipeline is present. Missing streamId or deps must never
+      // silently skip the confirmation gate or the effect ledger.
+      if (!binding.streamId || !options.authorizePullRequest || !options.pullRequestEffects || !options.recordPullRequest) {
+        throw new ConnectionOperationDeniedError("Pull request delivery requires a Stream-bound receipt pipeline")
+      }
+      // The confirmation gate keys on provider-verified visibility,
+      // never the agent-supplied flag. Drafts skip the lookup (the
+      // gate only guards non-draft PRs); lookup failure reads as
+      // public, which forces confirmation.
+      verifiedPublicRepository = pullRequest.draft
+        ? false
+        : await operationBroker
+            .repositoryVisibility(operation.identity as never, pullRequest.repository, {
+              ownerUserId: context.ownerUserId,
+              ownerPartition,
+            })
+            .then((visibility) => visibility === "public")
+            .catch(() => true)
+      const authorized = await options.authorizePullRequest(context, {
+        streamId: binding.streamId,
+        repository: pullRequest.repository,
+        title: pullRequest.title,
+        draft: pullRequest.draft,
+        publicRepository: verifiedPublicRepository,
+      })
+      if (!authorized) throw new ConnectionOperationDeniedError("The first non-draft public pull request requires owner confirmation")
+    }
+    const effect = pullRequest && binding.streamId && options.pullRequestEffects
+      ? await options.pullRequestEffects.claim(context, {
+          streamId: binding.streamId,
+          runId: binding.runId,
+          idempotencyKey: pullRequest.idempotencyKey,
+          repository: pullRequest.repository,
+          head: pullRequest.head,
+          base: pullRequest.base,
+          title: pullRequest.title,
+          ...(pullRequest.body === undefined ? {} : { body: pullRequest.body }),
+          draft: pullRequest.draft,
+          publicRepository: verifiedPublicRepository,
+        })
+      : undefined
+    if (effect?.state === "completed") return effect.result
+    if (effect?.state === "busy") throw new Error("Pull request delivery is already in progress")
+    if (effect?.state === "failed") throw new Error("Pull request delivery halted after repeated provider failure")
+    const result = await operationBroker.execute(operation.identity as never, operation.operation, {
+      ownerUserId: context.ownerUserId,
+      ownerPartition,
+    }).catch(async (error) => {
+      if (effect?.state === "claimed" && options.pullRequestEffects) {
+        await options.pullRequestEffects.fail(context, effect)
+      }
+      throw error
+    })
+    if (result.type !== "open_pull_request") return result
+    if (!binding.streamId || !options.recordPullRequest || !pullRequest) {
+      throw new Error("Pull request receipt persistence is unavailable")
+    }
+    const recorded = {
+      ...result,
+      ...await options.recordPullRequest(context, {
+        streamId: binding.streamId,
+        runId: binding.runId,
+        idempotencyKey: pullRequest.idempotencyKey,
+        pullRequestId: result.pullRequestId,
+        url: result.url,
+        draft: result.draft,
+      }),
+    }
+    if (effect?.state !== "claimed" || !options.pullRequestEffects) return recorded
+    return options.pullRequestEffects.complete(context, { ...effect, result: recorded })
+  }
+}
+
 /** Routes OpenCode through durable Session V2 and every other Session composer
  * harness through the shared harness-aware Session runtime. */
 export function createHarnessWorkGraphGateway(
@@ -201,6 +367,18 @@ export function createHarnessWorkGraphGateway(
     sessionRequest(directory: string, request: Request): Promise<Response>
     releaseSessionRuntime?(directory: string): Promise<void>
     bindings?: WorkGraphSessionBindingStore
+    /**
+     * Host registry for Connection-bound Runs on harness Sessions. `bind`
+     * records the server-authored binding the shared Connection broker resolves
+     * operations against (keyed by the RUNTIME Session id — the id the
+     * workspace runtime registered tools for); `release` clears it. Absent
+     * means the host composed no Connection broker, and Connection-bound Runs
+     * on non-OpenCode harnesses are refused.
+     */
+    connectionBindings?: Readonly<{
+      bind(binding: WorkGraphConnectionRunBinding): Promise<void>
+      release(sessionId: string): Promise<void>
+    }>
   }>,
 ): WorkGraphSessionGateway {
   const v2 = createSessionV2WorkGraphGateway(opencodeRequest, options)
@@ -234,10 +412,22 @@ export function createHarnessWorkGraphGateway(
   }
   const cleanupRunBinding = async (binding: WorkGraphSessionBinding) => {
     unregisterWorkGraphSessionAttribution(binding.sessionId)
-    if (!options.runContexts) return
+    if (!options.runContexts && !options.connectionBindings) return
     const cleanup = await Promise.allSettled([
-      request(binding, `/api/workgraph/run-binding/${encodeURIComponent(binding.sessionId)}`, { method: "DELETE" }),
-      options.runContexts.release(binding.sessionId),
+      ...(options.runContexts
+        ? [
+            request(binding, `/api/workgraph/run-binding/${encodeURIComponent(binding.sessionId)}`, { method: "DELETE" }),
+            options.runContexts.release(binding.sessionId),
+          ]
+        : []),
+      // DELETE on a Session that never bound Connections answers {unbound:false};
+      // unconditional cleanup keeps this path free of per-run bookkeeping.
+      ...(options.connectionBindings
+        ? [
+            request(binding, `/api/workgraph/connection-binding/${encodeURIComponent(runtimeSessionId(binding))}`, { method: "DELETE" }),
+            options.connectionBindings.release(runtimeSessionId(binding)),
+          ]
+        : []),
     ])
     const failure = cleanup.find((result): result is PromiseRejectedResult => result.status === "rejected")
     if (failure) throw failure.reason
@@ -248,9 +438,16 @@ export function createHarnessWorkGraphGateway(
       error instanceof HarnessSessionRequestError ? classifySessionRequest(error.status) : v2.classifyAdmissionError?.(error) ?? "indeterminate",
     admit: async (input) => {
       if (input.profile.harness === "opencode") return v2.admit(input)
-      if (input.profile.connectionIds.length > 0) {
-        throw new Error("Connection-bound Runs currently require the OpenCode harness")
-      }
+      // Validate Connection-bound admission BEFORE creating a Session so a
+      // misconfigured Run never leaves an orphan harness Session behind.
+      const connectionAdmission = input.profile.connectionIds.length > 0
+        ? (() => {
+            if (!options.connectionBindings) {
+              throw new Error("Connection-bound Runs require a Connection binding registry")
+            }
+            return resolveConnectionRunAdmission(options, input)
+          })()
+        : undefined
       if (input.generation !== undefined && options.executeRun) {
         if (!input.context) throw new Error("WorkGraph Run tools require the owner context")
         if (!options.runContexts) throw new Error("WorkGraph Run tools require a trusted local context registry")
@@ -317,6 +514,42 @@ export function createHarnessWorkGraphGateway(
               brokerUrl: "http://127.0.0.1",
             }),
           })
+        }
+        if (connectionAdmission) {
+          // The runtime registers Connection tools for its OWN Session id, and
+          // the shared broker resolves operations by that same id — so the
+          // registry binding and the runtime binding both key on
+          // runtimeSessionId, while receipts keep the WorkGraph streamId/runId.
+          const connectionBinding: WorkGraphConnectionRunBinding = {
+            context: connectionAdmission.context,
+            ownerPartition: connectionAdmission.ownerPartition,
+            runId: input.runId,
+            ...(input.streamId ? { streamId: input.streamId } : {}),
+            sessionId: runtimeSessionId(binding),
+            workspaceId: input.workspaceId ?? input.directory,
+            connectionIds: input.profile.connectionIds,
+            tools: connectionAdmission.connectionTools,
+          }
+          await options.connectionBindings!.bind(connectionBinding)
+          try {
+            await request(binding, "/api/workgraph/connection-binding", {
+              method: "POST",
+              body: JSON.stringify({
+                version: 1,
+                identity: {
+                  runId: input.runId,
+                  sessionId: runtimeSessionId(binding),
+                  workspaceId: connectionBinding.workspaceId,
+                },
+                connectionIds: input.profile.connectionIds,
+                tools: connectionAdmission.connectionTools,
+                brokerUrl: "http://127.0.0.1",
+              }),
+            })
+          } catch (error) {
+            await options.connectionBindings!.release(runtimeSessionId(binding)).catch(() => {})
+            throw error
+          }
         }
         await request(binding, `/session/${encodeURIComponent(runtimeSessionId(binding))}/prompt_async`, {
           method: "POST",
@@ -538,108 +771,31 @@ export function createSessionV2WorkGraphGateway(
         runBridges.set(adoptedId, bridge)
       }
       if (input.profile.connectionIds.length > 0) {
-        if (!options.connections) throw new Error("Connection-bound Runs require the Connections service")
-        const context = input.context
-        if (!context) throw new Error("Connection-bound Runs require the WorkGraph owner context")
-        const ownerPartition = options.resolveTeamOwner(context)
-        if (!ownerPartition) throw new Error("Connection-bound Runs require an organization-owned Connection scope")
-        const connectionTools = input.profile.tools.filter((tool) =>
-          tool === "connection_work_source_list" || tool === "connection_work_source_comment" || tool === "connection_work_source_update" ||
-          tool === "connection_code_host_open_pr")
-        if (!connectionTools.length) throw new Error("Connection-bound Runs require explicit Connection tools")
-        const binding = {
-          context,
-          ownerPartition,
+        const admission = resolveConnectionRunAdmission(options, input)
+        const binding: WorkGraphConnectionRunBinding = {
+          context: admission.context,
+          ownerPartition: admission.ownerPartition,
           runId: input.runId,
+          ...(input.streamId ? { streamId: input.streamId } : {}),
           sessionId: adoptedId,
           workspaceId,
           connectionIds: input.profile.connectionIds,
-          tools: connectionTools,
+          tools: admission.connectionTools,
         }
-        const operationBroker = createConnectionOperationBroker({
-          bindings: { resolve: async () => binding },
-          connections: createWorkGraphConnectionsPort({ service: options.connections, resolveTeamOwner: options.resolveTeamOwner }),
+        const broker = createLocalWorkGraphConnectionBroker({
+          connections: admission.connections,
+          resolveTeamOwner: admission.resolveTeamOwner,
           ...(options.connectors ? { connectors: options.connectors } : {}),
           ...(options.codeHostConnectors ? { codeHostConnectors: options.codeHostConnectors } : {}),
+          ...(options.authorizePullRequest ? { authorizePullRequest: options.authorizePullRequest } : {}),
+          ...(options.pullRequestEffects ? { pullRequestEffects: options.pullRequestEffects } : {}),
+          ...(options.recordPullRequest ? { recordPullRequest: options.recordPullRequest } : {}),
+          resolveBinding: async (sessionId) => (sessionId === adoptedId ? binding : undefined),
         })
+        const connectionTools = admission.connectionTools
         const bridge = WorkGraphConnectionToolRoutes({
           workspaceId,
-          broker: async (operation) => {
-            const pullRequest = operation.operation.type === "open_pull_request" ? operation.operation : undefined
-            let verifiedPublicRepository = false
-            if (pullRequest) {
-              // Fail closed: a PR may only be opened when the full receipt
-              // pipeline is present. Missing streamId or deps must never
-              // silently skip the confirmation gate or the effect ledger.
-              if (!input.streamId || !options.authorizePullRequest || !options.pullRequestEffects || !options.recordPullRequest) {
-                throw new ConnectionOperationDeniedError("Pull request delivery requires a Stream-bound receipt pipeline")
-              }
-              // The confirmation gate keys on provider-verified visibility,
-              // never the agent-supplied flag. Drafts skip the lookup (the
-              // gate only guards non-draft PRs); lookup failure reads as
-              // public, which forces confirmation.
-              verifiedPublicRepository = pullRequest.draft
-                ? false
-                : await operationBroker
-                    .repositoryVisibility(operation.identity as never, pullRequest.repository, {
-                      ownerUserId: context.ownerUserId,
-                      ownerPartition,
-                    })
-                    .then((visibility) => visibility === "public")
-                    .catch(() => true)
-              const authorized = await options.authorizePullRequest(context, {
-                streamId: input.streamId,
-                repository: pullRequest.repository,
-                title: pullRequest.title,
-                draft: pullRequest.draft,
-                publicRepository: verifiedPublicRepository,
-              })
-              if (!authorized) throw new ConnectionOperationDeniedError("The first non-draft public pull request requires owner confirmation")
-            }
-            const effect = pullRequest && input.streamId && options.pullRequestEffects
-              ? await options.pullRequestEffects.claim(context, {
-                  streamId: input.streamId,
-                  runId: input.runId,
-                  idempotencyKey: pullRequest.idempotencyKey,
-                  repository: pullRequest.repository,
-                  head: pullRequest.head,
-                  base: pullRequest.base,
-                  title: pullRequest.title,
-                  ...(pullRequest.body === undefined ? {} : { body: pullRequest.body }),
-                  draft: pullRequest.draft,
-                  publicRepository: verifiedPublicRepository,
-                })
-              : undefined
-            if (effect?.state === "completed") return effect.result
-            if (effect?.state === "busy") throw new Error("Pull request delivery is already in progress")
-            if (effect?.state === "failed") throw new Error("Pull request delivery halted after repeated provider failure")
-            const result = await operationBroker.execute(operation.identity as never, operation.operation, {
-              ownerUserId: context.ownerUserId,
-              ownerPartition,
-            }).catch(async (error) => {
-              if (effect?.state === "claimed" && options.pullRequestEffects) {
-                await options.pullRequestEffects.fail(context, effect)
-              }
-              throw error
-            })
-            if (result.type !== "open_pull_request") return result
-            if (!input.streamId || !options.recordPullRequest || !pullRequest) {
-              throw new Error("Pull request receipt persistence is unavailable")
-            }
-            const recorded = {
-              ...result,
-              ...await options.recordPullRequest(context, {
-                streamId: input.streamId,
-                runId: input.runId,
-                idempotencyKey: pullRequest.idempotencyKey,
-                pullRequestId: result.pullRequestId,
-                url: result.url,
-                draft: result.draft,
-              }),
-            }
-            if (effect?.state !== "claimed" || !options.pullRequestEffects) return recorded
-            return options.pullRequestEffects.complete(context, { ...effect, result: recorded })
-          },
+          broker,
           registerSessionTools: registerToolGroup("connections", input.directory),
           unregisterSessionTools: unregisterToolGroup("connections", input.directory),
         })

@@ -12,6 +12,9 @@ describe("self-hosted capabilities", () => {
       workGraphRunBroker: async () => {
         throw new Error("unused")
       },
+      workGraphConnectionBroker: async () => {
+        throw new Error("unused")
+      },
     })
 
     expect(capabilities.runtimeRouteContributions.map((contribution) => contribution.id)).toEqual([
@@ -31,6 +34,9 @@ describe("self-hosted capabilities", () => {
     const groups: string[] = []
     const capabilities = selfHostedCapabilities({
       workGraphRunBroker: async () => {
+        throw new Error("unused")
+      },
+      workGraphConnectionBroker: async () => {
         throw new Error("unused")
       },
     })

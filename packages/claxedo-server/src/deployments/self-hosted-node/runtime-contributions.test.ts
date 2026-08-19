@@ -61,6 +61,9 @@ describe("self-hosted runtime contributions", () => {
           workGraphRunBroker: async () => {
             throw new Error("not invoked while binding")
           },
+          workGraphConnectionBroker: async () => {
+            throw new Error("not invoked while binding")
+          },
         }).runtimeRouteContributions,
       })
       const ws = workspace("ws_run_broker", project)

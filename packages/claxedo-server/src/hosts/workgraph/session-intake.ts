@@ -23,9 +23,15 @@ export class SessionIntakeDirectoryRequiredError extends Error {
   }
 }
 
+/** Reads one idle Session's projection from whichever surface hosts it. */
+export type IdleSessionReader = (
+  sessionId: string,
+  directory: string,
+) => Promise<Awaited<ReturnType<typeof readIdleSession>>>
+
 export function subscribeSessionIntake(input: Readonly<{
   events: EventSource
-  opencodeRequest: OpenCodeRequestFn
+  readSession: IdleSessionReader
   port: SessionIntakePort
   /** Retained for source compatibility; each event's exact directory is authoritative. */
   directory?: string
@@ -44,10 +50,41 @@ export function subscribeSessionIntake(input: Readonly<{
       input.onError?.(new SessionIntakeDirectoryRequiredError())
       return
     }
-    void readIdleSession(input.opencodeRequest, sessionId, directory).then((session) =>
+    void input.readSession(sessionId, directory).then((session) =>
       intake.onIdle(context, session),
     ).catch((error) => input.onError?.(error))
   })
+}
+
+/** The engine-paired reader: projects an idle OpenCode ENGINE Session over the
+ * injected engine transport. Pair it with the engine's own event bus. */
+export function engineIdleSessionReader(request: OpenCodeRequestFn): IdleSessionReader {
+  return (sessionId, directory) => readIdleSession(request, sessionId, directory)
+}
+
+/**
+ * The harness-paired reader: projects an idle Session hosted by an embedded
+ * workspace runtime — whatever its harness — through the same two compat reads
+ * the engine reader issues, addressed to the runtime app for the Session's
+ * directory. Pair it with the embedded-runtime compat event tap.
+ */
+export function runtimeIdleSessionReader(
+  sessionRequest: (directory: string, request: Request) => Promise<Response>,
+): IdleSessionReader {
+  return async (sessionId, directory) => {
+    const exactDirectory = directory.trim()
+    if (!exactDirectory) throw new SessionIntakeDirectoryRequiredError()
+    const read = (pathname: string) => {
+      const url = new URL(pathname, "http://workgraph-session-intake.local")
+      url.searchParams.set("directory", exactDirectory)
+      return sessionRequest(exactDirectory, new Request(url))
+    }
+    const [sessionResponse, messagesResponse] = await Promise.all([
+      read(`/session/${encodeURIComponent(sessionId)}`),
+      read(`/session/${encodeURIComponent(sessionId)}/message?limit=100`),
+    ])
+    return projectIdleSession(sessionId, exactDirectory, sessionResponse, messagesResponse)
+  }
 }
 
 export async function readIdleSession(
@@ -62,6 +99,15 @@ export async function readIdleSession(
     request(new Request(`${OPENCODE_INTERNAL_BASE}/session/${encodeURIComponent(sessionId)}`, { headers })),
     request(new Request(`${OPENCODE_INTERNAL_BASE}/session/${encodeURIComponent(sessionId)}/message?limit=100`, { headers })),
   ])
+  return projectIdleSession(sessionId, exactDirectory, sessionResponse, messagesResponse)
+}
+
+async function projectIdleSession(
+  sessionId: string,
+  exactDirectory: string,
+  sessionResponse: Response,
+  messagesResponse: Response,
+) {
   if (!sessionResponse.ok || !messagesResponse.ok) throw new Error(`Unable to project idle Session ${sessionId}`)
   const session = await sessionResponse.json() as Record<string, unknown>
   const messages = await messagesResponse.json() as unknown

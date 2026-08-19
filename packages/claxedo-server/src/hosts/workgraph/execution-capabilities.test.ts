@@ -378,6 +378,23 @@ describe("WorkGraph execution capability composition", () => {
         grantedCapabilities: ["work-source"],
       },
     ])
+    // Connection tools are harness-neutral: every catalog entry advertises the
+    // granted tools, not just OpenCode — non-OpenCode Runs execute them via the
+    // workspace-runtime contribution.
+    const connectionToolHarnesses = result.tools
+      .filter((tool) => tool.id === "connection_work_source_list")
+      .map((tool) => tool.harnessId)
+      .sort()
+    expect(connectionToolHarnesses).toEqual([
+      "claude-acp",
+      "claude-sdk",
+      "codex-acp",
+      "codex-app-server",
+      "cursor-acp",
+      "cursor-sdk",
+      "opencode",
+      "pi",
+    ])
   })
 
   test("reads an existing managed catalog without provisioning on GET and provisions only on explicit refresh", async () => {
