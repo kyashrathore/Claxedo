@@ -2132,6 +2132,14 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(r, localHarnessOptionsResponse(harnessConfigOptions(harness, harnessModel())))
   })
 
+  // Operator-configured ACP connection discovery — the picker's ACP group is
+  // exactly these rows. The mock deployment configures none, so the group is
+  // absent and only the built-in options render.
+  await contractRoute(page, "**/api/claxedo/agent-config/harness/acp-connections**", (r) => {
+    if (!api(r)) return r.continue()
+    return json(r, { connections: [] })
+  })
+
   await contractRoute(page, "**/api/claxedo/agent-config/harness**", async (r) => {
     if (!api(r)) return r.continue()
     if (new URL(r.request().url()).pathname !== "/api/claxedo/agent-config/harness") return r.fallback()

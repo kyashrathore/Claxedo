@@ -658,7 +658,9 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     await control.click()
     const picker = page.locator('[data-component="harness-model-picker"]')
     await picker.locator('[data-slot="harness-picker-section"]').first().click()
-    const nativeClaude = picker.getByRole("button", { name: /^Claude$/ }).nth(1)
+    // "Claude" is unique now: the first-party ACP rows left the picker when
+    // operator-configured ACP connections became the ACP group.
+    const nativeClaude = picker.getByRole("button", { name: /^Claude$/ }).first()
     await nativeClaude.click()
     // Harness switching is asynchronous. A stale OpenCode model can remain in
     // the trigger briefly and used to satisfy the model-ready assertion below,

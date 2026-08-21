@@ -60,7 +60,9 @@ test("packaged Windows app completes a real Codex-authenticated session @live @s
     await control.click()
     const picker = packaged.page.locator('[data-component="harness-model-picker"]')
     await picker.locator('[data-slot="harness-picker-section"]').first().click()
-    const nativeCodex = picker.getByRole("button", { name: /^Codex$/ }).nth(1)
+    // "Codex" is unique now: the first-party ACP rows left the picker when
+    // operator-configured ACP connections became the ACP group.
+    const nativeCodex = picker.getByRole("button", { name: /^Codex$/ }).first()
     await nativeCodex.click()
     await picker.locator('[data-slot="harness-picker-section"]').first().click()
     await expect(nativeCodex, "native Codex harness did not become selected").toHaveAttribute(

@@ -82,7 +82,11 @@ export const appLocal: Policy = {
   // Usage adds the chart, breakdown, quota view, and shared provider-brand
   // module to the local UI; all other dependencies were already in the
   // renderer closure.
-  ceilings: { modules: 813, packages: 41 },
+  // 2026-08-21: 813 → 815 for two deliberate additions that landed without
+  // this bump — usage's `features/usage/ui/usage-brand.tsx` (2703656) and the
+  // operator-ACP discovery catalog `features/session/harness/acp-connections.ts`
+  // (PR #30). Still exact: the shared seam itself must only shrink.
+  ceilings: { modules: 815, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

@@ -67,8 +67,9 @@ rather than assumed:
 
 1. Created a session for the user through the Backend API.
 2. Minted a session JWT from it.
-3. Compared the token's `iss` to `CLERK_JWT_ISSUER` in
-   `packages/claxedo-server/.env.local` — **match**.
+3. Compared the token's `iss` to `CLERK_JWT_ISSUER` in the server package's
+   local env file (gitignored; see `packages/claxedo-server/.env.example` for
+   the variable names) — **match**.
 4. Verified the token's signature against `CLERK_JWKS_URL` with `jose`, the
    same primitive the control plane uses — **verified**.
 

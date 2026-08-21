@@ -1,0 +1,4 @@
+# bun's dependency patches must apply byte-exact. A CRLF-converting checkout
+# (Windows runners with core.autocrlf) corrupts hunk content and fails install
+# with "corrupt patch at …" before any test runs — pin patches to LF.
+*.patch text eol=lf

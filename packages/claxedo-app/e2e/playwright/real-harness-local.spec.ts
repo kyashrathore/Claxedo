@@ -731,16 +731,33 @@ function sessionUrlPattern() {
  * is still pending, which used to let this setup return on the wrong harness.
  */
 function harnessPickerTarget(harnessKey: string) {
-  const native = harnessKey === "claude-sdk" || harnessKey === "codex-app-server" || harnessKey === "cursor-sdk"
-  if (harnessKey.startsWith("claude")) return { label: /^Claude$/, index: native ? 1 : 0 }
-  if (harnessKey.startsWith("codex")) return { label: /^Codex$/, index: native ? 1 : 0 }
-  if (harnessKey.startsWith("cursor")) return { label: /^Cursor$/, index: native ? 1 : 0 }
+  // The picker's built-in rows are the NATIVE harnesses only — first-party ACP
+  // options left it when operator-configured ACP connections became the ACP
+  // group (agent-harness-selector BUILTIN_HARNESS_OPTIONS). A first-party ACP
+  // harnessKey therefore has NO picker row: those scenarios ride the seeded
+  // server default (`makeWorkspace` → `seedDefaultHarness`), which the draft
+  // hydrates on mount.
+  if (harnessKey === "claude-acp" || harnessKey === "codex-acp" || harnessKey === "cursor-acp") return null
+  if (harnessKey.startsWith("claude")) return { label: /^Claude$/, index: 0 }
+  if (harnessKey.startsWith("codex")) return { label: /^Codex$/, index: 0 }
+  if (harnessKey.startsWith("cursor")) return { label: /^Cursor$/, index: 0 }
   return { label: new RegExp(`^${harnessKey}$`, "i"), index: 0 }
 }
 
 async function switchDraftHarness(page: Page, harnessKey: string) {
   const trigger = page.locator('[data-action="prompt-harness-model"]').last()
   const target = harnessPickerTarget(harnessKey)
+  if (!target) {
+    // No picker row (first-party ACP): the seeded default is the selection
+    // mechanism. Pin that the draft actually hydrated onto it before the
+    // journey proceeds — same determinism as the aria-current wait below.
+    await expect(trigger, `draft did not hydrate seeded harness "${harnessKey}"`).toHaveAttribute(
+      "data-harness",
+      harnessKey,
+      { timeout: 45_000 },
+    )
+    return
+  }
   await expect(trigger).toBeEnabled({ timeout: 30_000 })
   await trigger.click()
   const picker = page.locator('[data-component="harness-model-picker"]')
