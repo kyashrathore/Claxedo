@@ -306,3 +306,13 @@ Findings this round:
   on corpus v2 (new failure, T3-side). T3 terminal: the parked raw-log gap.
 - Claxedo terminal stalls at "sustained progress INPUT-00-A" even unoccluded
   — first genuinely reproducible terminal-scenario failure to debug.
+
+**Claxedo terminal stall diagnosed** (static, to be confirmed live): the
+workload offers 210 MiB at 21 MiB/s for 10 s; Claxedo's terminal runtime
+queue drains at xterm-parse speed and the benchmark's "accepted" boundary
+fires at DRAIN time (backend.write), so when parse sustains less than the
+offered rate the pending backlog crosses MAX_PENDING/STREAM_BYTES (128 MiB)
+and the overload guard closes the socket by design — before INPUT-00-A's
+ready marker ever drains. Not a harness bug: beating
+`terminal.output_mib_s` requires raising Claxedo's terminal drain/parse
+throughput past ~21 MiB/s sustained (or revisiting the guard's economics).
