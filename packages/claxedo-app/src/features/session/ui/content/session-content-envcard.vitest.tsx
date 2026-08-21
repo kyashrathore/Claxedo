@@ -74,8 +74,10 @@ describe("SessionContent — environment card mounting", () => {
 
   // The other half of the contract. Without this, deleting the mount entirely
   // would still pass the two tests above.
-  test("mounts the card once the session is real", () => {
+  test("mounts the card once the session is real", async () => {
     renderContent("ses_real")
-    expect(screen.getByTestId("envcard-mounted")).toBeTruthy()
+    // The card is a lazy chunk inside its own Suspense boundary, so the mount
+    // lands a tick after render; await it rather than racing it.
+    expect(await screen.findByTestId("envcard-mounted")).toBeTruthy()
   })
 })
