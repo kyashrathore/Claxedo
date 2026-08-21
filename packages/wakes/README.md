@@ -9,13 +9,11 @@ database's job and durable timers are the platform's job; this package is the
 thin, tested logic connecting them: claims, leases, lanes, and sinks.
 
 ```ts
-import { createWakes, createScheduler, createNodeWakeDriver } from "@claxedo/wakes"
+import { createWakes, createScheduler } from "@claxedo/wakes"
 import { SqliteWakeStore } from "@claxedo/wakes/sqlite" // node-only subpath
 
-const driver = createNodeWakeDriver()
 const wakes = createWakes({
   store: new SqliteWakeStore({ path: "wakes.db" }),
-  driver,                                             // push (optional)
   spawnTurn: async (sessionId, result) => host.resumeSession(sessionId, result),
   sinks: {                                            // other firing behaviors
     my_job: async (wake, result) => host.runJob(JSON.parse(wake.intentJson)),
@@ -23,7 +21,6 @@ const wakes = createWakes({
   authorize: async (actor, workspaceId) => host.canApprove(actor, workspaceId),
   computeNextRun: (cron, after) => parseCron(cron, after), // only if you use cron
 })
-driver.bind(wakes)
 
 // three trigger types — durations are compile-checked `ms` strings
 await wakes.schedule({ workspaceId, sessionId, in: "3d", intent })          // or at: Date | epoch-ms
@@ -32,7 +29,6 @@ const { token } = await wakes.requestApproval({ workspaceId, sessionId, prompt, 
 
 // fire sources
 createScheduler(wakes).start()                 // the polling backstop (guarantee)
-// + the driver fires due-now wakes instantly  // the push path (speed)
 await wakes.deliverEvent("ci:pass:x", payload) // 'on_event' — host webhook ingress
 await wakes.resolve(token, answer, actor)      // 'on_approval' — inbound handler
 
@@ -70,12 +66,13 @@ at-most-once where it matters.
                     │                │                   │
              STORE (port)      SINKS (by kind)     DRIVER (push, optional)
              where rows live   what firing does    who notices due wakes fast
-             ├ SqliteWakeStore ├ session_turn      ├ Node: per-lane promise chains
-             └ ConvexWakeStore └ anything you      └ Cloudflare: WakeLane
-               (claxedo-server)  register            Durable Object (alarms)
+             ├ SqliteWakeStore ├ session_turn      └ Cloudflare: WakeLane
+             └ ConvexWakeStore └ anything you        Durable Object (alarms);
+               (claxedo-server)  register            Node relies on the 1s poll
         + SCHEDULER: the polling backstop (setInterval here; platform cron hosted)
-        + TOOLS: agent-facing defs + dispatcher (schedule_followup, watch,
-          request_approval, cancel_wake) — host wires them onto its tool surface
+        + TOOLS: agent-facing defs + dispatcher (schedule_followup, cancel_wake) —
+          host wires them onto its tool surface; event/approval tools return with
+          the delivery wiring for deliverEvent/resolve
 ```
 
 **Store** (`WakeStore`, all-async): owns the two hard operations — the CAS and
@@ -98,10 +95,10 @@ lapsed lease frees its lane; other lanes are never blocked.
 
 **Driver** (`WakeDriver`): `nudge({serialKey, fireAt})` — a lossy hint, never
 load-bearing. The engine nudges on every time-triggered create (including
-sink-scheduled retries). Node driver: in-memory lane chains that drain each
-lane until empty; future hints are dropped (the sweep owns them). Cloudflare
-driver: the `WakeLane` DO arms a *durable platform alarm* at `fireAt` — it
-survives deploys, evictions, and machine loss, and the platform retries it.
+sink-scheduled retries). Cloudflare driver: the `WakeLane` DO arms a *durable
+platform alarm* at `fireAt` — it survives deploys, evictions, and machine
+loss, and the platform retries it. Node runs no driver: the 1s scheduler poll
+is both push and backstop there.
 
 **Scheduler**: the guarantee. `createScheduler` = recover-on-boot + a
 non-overlapping `runDue()` interval on Node; a Cloudflare Cron Trigger plays
@@ -183,7 +180,7 @@ settle wake already holds the lane — `createLaneWakeIfIdle` in
 | | Local / self-host Node | Hosted Cloudflare Worker |
 | --- | --- | --- |
 | Store | `@claxedo/wakes/sqlite` | `ConvexWakeStore` (claxedo-server) |
-| Push | `createNodeWakeDriver` | `WakeLane` Durable Object |
+| Push | — (the 1s tick is prompt enough) | `WakeLane` Durable Object |
 | Backstop | `createScheduler` (1s tick) | Cron Trigger (15 min) |
 | Sinks | `session_turn` (agent tools) | `workgraph_settle` |
 | Down = | fires on next boot (recover + catch-up) | platform alarms/cron; no process of ours needs to be alive |

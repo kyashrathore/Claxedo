@@ -253,7 +253,7 @@ export function centralModelBackend(): { modelBackend: PiModelBackendResolver } 
 
 // --- Wakes (out-of-band session resumption) --------------------------------
 // Opt-in via CLAXEDO_WAKES=1. The wake tool logic lives in @claxedo/wakes; here
-// we only render a fired wake into an injected message and expose the four
+// we only render a fired wake into an injected message and expose the
 // session-scoped agent tools.
 
 const WAKE_TOOL_DESCRIPTIONS: Record<string, string> = Object.fromEntries(
@@ -275,12 +275,13 @@ function buildWakeTools(wakes: Wakes, sessionId: string, workspaceId: string): P
       label: name,
       description: WAKE_TOOL_DESCRIPTIONS[name] ?? name,
       parameters,
-      execute: async (_toolCallId: string, params: unknown) => {
+      execute: async (toolCallId: string, params: unknown) => {
         try {
           const r = await handleWakeToolCall(name, (params ?? {}) as Record<string, unknown>, {
             wakes,
             sessionId,
             workspaceId,
+            toolCallId,
             now: Date.now,
           })
           return { content: [{ type: "text", text: r.text }], details: r }
@@ -294,15 +295,6 @@ function buildWakeTools(wakes: Wakes, sessionId: string, workspaceId: string): P
     }) as unknown as PiAgentTool
   return [
     mk("schedule_followup", Type.Object({ when: Type.String(), intent: Type.Optional(Type.Unknown()) })),
-    mk(
-      "watch",
-      Type.Object({
-        event_key: Type.String(),
-        intent: Type.Optional(Type.Unknown()),
-        expires_in: Type.Optional(Type.String()),
-      }),
-    ),
-    mk("request_approval", Type.Object({ prompt: Type.String(), expires_in: Type.Optional(Type.String()) })),
     mk("cancel_wake", Type.Object({ wake_id: Type.String() })),
   ]
 }
@@ -978,8 +970,9 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
 
   // Wakes: durable out-of-band session resumption. Opt-in; a fired wake spawns a
   // fresh turn on its session by posting an injected message through the same
-  // message route the in-process subagent tool uses. The scheduler drives time wakes;
-  // deliverEvent/resolve are exposed on the return for the channels/webhook layer.
+  // message route the in-process subagent tool uses. The scheduler drives time
+  // wakes; only the `at` trigger is exposed until a delivery path for
+  // deliverEvent/resolve exists.
   if (process.env.CLAXEDO_WAKES === "1") {
     const store = new SqliteWakeStore({ path: process.env.CLAXEDO_WAKES_DB || ":memory:" })
     wakes = createWakes({
@@ -1266,7 +1259,5 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     },
     turnCredentials,
     runTurn,
-    /** Present when CLAXEDO_WAKES=1. The channels/webhook layer calls deliverEvent/resolve. */
-    wakes,
   }
 }

@@ -11,10 +11,9 @@ code wins and this doc has rotted — fix it.
 | `src/types.ts` | ~114 | every public type: `Wake`, states, triggers, `WakeSink`, `WakeDriver`, `Budgets` |
 | `src/store.ts` | ~58 | the `WakeStore` port — the only surface adapters implement |
 | `src/wakes.ts` | ~398 | the engine: create paths, the guarded firing path, `runDue`, recovery, receipts |
+| `src/scheduler.ts` | ~49 | the polling backstop for long-lived processes |
 | `src/sqlite-store.ts` | ~278 | better-sqlite3 adapter (schema, claim SQL, additive upgrades) |
 | `src/sqlite.ts` | 5 | the node-only subpath entry (`@claxedo/wakes/sqlite`) |
-| `src/node-driver.ts` | ~85 | in-process push driver (per-lane promise chains) |
-| `src/scheduler.ts` | ~49 | the polling backstop for long-lived processes |
 | `src/tools.ts` | ~166 | agent-facing tool definitions + dispatcher |
 | `src/budgets.ts` | ~47 | per-workspace creation limits |
 | `src/token.ts` | 13 | 128-bit Web-Crypto approval tokens |
@@ -22,7 +21,8 @@ code wins and this doc has rotted — fix it.
 
 Tests: `test/wakes.test.ts` (core lifecycle, durability, budgets, durations),
 `test/sinks.test.ts` (kind registry), `test/lanes.test.ts` (serialization),
-`test/driver.test.ts` (push path), `test/tools.test.ts` (agent surface).
+`test/reclaim-race.test.ts` (concurrent reclaim), `test/tools.test.ts`
+(agent surface).
 
 ## The wake row (`types.ts` — `Wake`, line ~37)
 
@@ -57,7 +57,7 @@ One durable record: *when trigger T fires, run sink K with this payload.*
              ▼
           firing ──── driveFiring: sinkFor(wake) runs, then CAS firing→fired
              │
-   crash?    │  lease lapses → findReclaimable → driveFiring re-drives
+   crash?    │  lease lapses → reclaimFiring → driveFiring re-drives
              ▼
            fired  (+ recurring: next occurrence inserted, see below)
 ```
@@ -94,8 +94,8 @@ Absolute `at`/`expiresAt` take precedence. Rows always store epoch-ms.
 
 1. *(unscoped runs only)* expiry pass: `findExpirable` → CAS
    `pending→expired` → fire the sink with `{..., expired: true}`.
-2. reclaim pass: `findReclaimable(now, serialKey)` → re-drive lapsed
-   `firing` rows.
+2. reclaim pass: `reclaimFiring(now, leaseMs, serialKey)` — an atomic
+   re-stamp-and-return, so two runners never re-drive the same lapsed row.
 3. claim pass: `claimDue(now, leaseMs, batchLimit, serialKey)` → drive each.
 
 A scoped run (`serialKey` given — string for one lane, `null` for the
@@ -165,22 +165,14 @@ Convex transaction, plus two extras the port doesn't have: `createWakeInTx`
 already holds the lane"). The thin client is
 `packages/claxedo-server/src/hosts/wakes/convex-wake-store.ts`.
 
-## Drivers — the push path (`types.ts` `WakeDriver`, `node-driver.ts`)
+## Drivers — the push path (`types.ts` `WakeDriver`)
 
 Contract: `nudge({serialKey, fireAt})` is a **lossy hint** — may be dropped,
 duplicated, late; must never throw into the caller (the engine additionally
 wraps it). The sweep is the delivery guarantee; the driver is only speed.
 `fireAt` may be in the future so timer-capable drivers (DO alarms) can arm
-precisely; the Node driver drops future hints.
-
-`createNodeWakeDriver`: a `Map<lane, Promise>` of per-lane chains. An accepted
-hint appends a **drain** — `runDue(lane)` in a loop until it fires nothing
-(coalescing without draining would strand later same-lane wakes; this was a
-real bug, caught by `driver.test.ts`'s burst test). One queued run per lane
-max (`queued` set); errors go to `onError` and the row stays reclaimable.
-`bind(wakes)` late-binds the engine (buffering pre-bind hints) because the
-engine needs the driver at construction; `idle()` awaits quiescence for tests
-and shutdown.
+precisely. Node runs no driver — the 1s scheduler poll is prompt enough
+there, so the only driver implementation is hosted.
 
 The Cloudflare driver lives in
 `packages/claxedo-server/src/deployments/hosted-workerd/wake-lane.cf.ts`: one `WakeLane` Durable
@@ -201,15 +193,15 @@ the same logic. Neither needs to be precise — only inevitable.
 
 ## Agent tools (`tools.ts`)
 
-Four definitions (`schedule_followup`, `watch`, `request_approval`,
-`cancel_wake`) plus `handleWakeToolCall`, a pure dispatcher. Security
+Two definitions (`schedule_followup`, `cancel_wake`) plus
+`handleWakeToolCall`, a pure dispatcher. Event/approval tools are deliberately
+absent until a host wires delivery paths for `deliverEvent`/`resolve` — a tool
+that promises a resumption no host can deliver is worse than no tool. Security
 properties enforced by construction: sessionId/workspaceId come from the
 host-supplied `WakeToolContext`, never from the agent (a tool can only touch
 its own session's wakes — `cancel_wake` checks `listForSession` ownership);
-the approval token goes to `onApprovalRequested` (the host routes it to a
-human surface) and never appears in the agent-visible text; `toolCallId`
-becomes the idempotency key so a retried tool call can't double-book;
-`depth+1` flows into the budget recursion bound. Its `parseWhen` accepts
+`toolCallId` becomes the idempotency key so a retried tool call can't
+double-book; `depth+1` flows into the budget recursion bound. Its `parseWhen` accepts
 `"+3d"`-style strings and ISO dates (predates the `ms` sugar; intentionally
 unchanged).
 
