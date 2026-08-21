@@ -272,3 +272,37 @@ stalling on a paint-gated stage while hidden. One REAL defect surfaced: the
 stream arm's prompt never reached the fake engine's `prompt_async`
 (`cert-010801-conversation-rich-v1`) — the app-side prompt path is the open
 bug. T3 arms all refused on the corpus manifest mismatch above (now fixed).
+
+## 2026-08-22 ~01:45 — first corpus-v2 certified comparison (cert-014344 / T3 19-53, 19-55)
+
+Merged build (both optimization lines + cap-24 + idle governor) vs T3 on the
+regenerated corpus. Claxedo workspace/resource/conversation valid; T3
+workspace/resource valid.
+
+| metric | T3 | Claxedo | verdict |
+|---|---|---|---|
+| cold_ready_ms | 3287 | 2189 | WIN |
+| cold_open_ms | 169.5 | 94.9 | WIN |
+| warm_switch_p95_ms | 54.9 | 119.4 | BEHIND (T3 improved on v2: collapsed tool cards) |
+| peak RSS MiB | 1619.8 | 1699.6 | BEHIND ~80 MiB (cap-24 cost suspect) |
+| idle CPU p95 % | 16.85 | 19.96 | BEHIND — preloader regression, fix landed 0d508aa30 |
+| stream.interaction_p95_ms | arm broken | 24 | Claxedo-only (FIRST valid stream attempt) |
+| stream.blocked_frame_ratio_pct | arm broken | 0 (passes budget) | Claxedo-only |
+| terminal (both metrics) | raw-log gap | sustained-progress stall at INPUT-00-A | both broken |
+
+Findings this round:
+- Stream arm end-to-end WORKS after routing the fake-engine URL through
+  CLAXEDO_CHILD_OPENCODE_URL (9afe0c26d) — the desktop child only reads its
+  own startup names, bare OPENCODE_URL is forwarded but never consumed.
+- resource `complete-process-ownership` (expected 0, actual 7) = a SIBLING
+  Claxedo Dev instance from another worktree in the family scan; the same
+  instance also polluted a 3046ms cold_ready (2189 clean). Any second
+  Claxedo instance invalidates the resource arm — the guard's Claxedo-Dev
+  exemption cannot distinguish ours from a stray.
+- Idle CPU regression was the per-surface preload loops (forced 100ms ticks
+  x 20 sessions); serialized into one deadline-aware queue (0d508aa30) —
+  burst when idle, one part per forced tick under load. Unmeasured yet.
+- T3 conversation arm: times out waiting for its own replay warmup session
+  on corpus v2 (new failure, T3-side). T3 terminal: the parked raw-log gap.
+- Claxedo terminal stalls at "sustained progress INPUT-00-A" even unoccluded
+  — first genuinely reproducible terminal-scenario failure to debug.
