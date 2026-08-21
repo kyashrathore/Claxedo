@@ -67,7 +67,10 @@ const ENTRIES = [
   { name: "hosted-node", entry: "src/deployments/hosted-node/index.ts", modules: 140, packages: 28 },
   // The usage authority and dev's host-enrollment extraction add one runtime
   // module each relative to their common base; neither adds a Worker package.
-  { name: "hosted-workerd", entry: "src/deployments/hosted-workerd/worker.ts", modules: 109, packages: 13 },
+  // +1 module (109 -> 110): `hosts/workgraph/settlement-rearm.ts`, the single
+  // rearm predicate that replaced the two diverged copies in the Settler DO
+  // and the wakes sinks. Dependency-free, no new package.
+  { name: "hosted-workerd", entry: "src/deployments/hosted-workerd/worker.ts", modules: 110, packages: 13 },
   // +1 module (139 -> 140) on 2026-08-08: `deployments/route-ownership.ts`,
   // the composition guard the self-hosted app now installs alongside the
   // hosted core. One dependency-free module, no new package.

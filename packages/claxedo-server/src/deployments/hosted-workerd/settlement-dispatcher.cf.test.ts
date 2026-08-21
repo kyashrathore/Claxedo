@@ -127,6 +127,24 @@ describe("Cloudflare WorkGraph settlement dispatcher", () => {
     expect(storage.values.get("tenant")).toEqual(tenant)
   })
 
+  test("goes idle on a parked-only result instead of re-arming", async () => {
+    // parked only clears via an owner restart, so re-settling cannot advance
+    // it; the DO must not spend its settlement window spinning on it.
+    const storage = new MemoryStorage()
+    const settler = new WorkGraphSettler(
+      { storage },
+      {},
+      { now: () => 1_000, settle: async () => ({ results: [{ state: "parked" }] }) },
+    )
+    await nudge(settler)
+    storage.alarms.length = 0
+
+    await runAlarm(settler, storage)
+
+    expect(storage.alarms).toEqual([])
+    expect(storage.values.has("settlementStartedAt")).toBe(false)
+  })
+
   test("keeps an already-due alarm and pulls a future alarm forward", async () => {
     const due = new MemoryStorage()
     due.alarm = 999

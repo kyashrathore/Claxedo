@@ -110,6 +110,10 @@ describe("settleRetryDelayMs", () => {
     expect(settleRetryDelayMs({ retryAfterMs: 120_000 })).toBe(30_000) // capped
     expect(settleRetryDelayMs({ launched: [{ settled: true, state: "running" }] })).toBe(1_000)
   })
+
+  it("treats a bare parked result as retryable on the durable-wake path", () => {
+    expect(settleRetryDelayMs({ results: [{ state: "parked" }] })).toBe(1_000)
+  })
 })
 
 describe("composeHostedWakes", () => {
