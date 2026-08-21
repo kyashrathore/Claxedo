@@ -1522,9 +1522,12 @@ function callbackResponse(
 }
 
 async function waitFor(condition: () => boolean | Promise<boolean>) {
-  for (let attempt = 0; attempt < 100; attempt++) {
+  // ~100ms was not enough on a loaded CI runner (run 363: the parked-draft
+  // condition arrived just past it). The loop exits on the first true, so a
+  // generous ceiling costs passing tests nothing.
+  for (let attempt = 0; attempt < 1000; attempt++) {
     if (await condition()) return
-    await Bun.sleep(1)
+    await Bun.sleep(5)
   }
   throw new Error("Timed out waiting for condition")
 }

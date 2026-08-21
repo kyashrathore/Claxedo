@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from "vitest"
+import { realpathSync } from "node:fs"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -21,7 +22,14 @@ const home = path.join(root, "home")
 const prevDataDir = process.env.CLAXEDO_DATA_DIR
 
 function normalizeProjectPaths(input: unknown, projectDir: string) {
-  return JSON.parse(JSON.stringify(input).replaceAll(projectDir, "<project>"))
+  // The serialized JSON escapes Windows backslashes, so the raw directory
+  // string never matches it — replace the JSON-ESCAPED form instead, both as
+  // given and 8.3-expanded (the product records realpathed locations, so on
+  // CI the ledger says runneradmin while os.tmpdir() says RUNNER~1).
+  const forms = new Set([projectDir, realpathSync.native(projectDir)])
+  let text = JSON.stringify(input)
+  for (const form of forms) text = text.replaceAll(JSON.stringify(form).slice(1, -1), "<project>")
+  return JSON.parse(text)
 }
 
 describe("Agent Extensions runtime config projection", () => {

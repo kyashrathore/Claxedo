@@ -183,7 +183,9 @@ describe("local composition — workspace registration", () => {
     const directory = path.join(dataDir, "project")
     mkdirSync(directory)
     execFileSync("git", ["init", directory])
-    const canonicalDirectory = realpathSync(directory)
+    // .native expands Windows 8.3 short names (RUNNER~1 -> runneradmin) the
+    // way the product's resolution does; the JS realpath does not.
+    const canonicalDirectory = realpathSync.native(directory)
     const response = await app().request(
       `http://localhost/api/claxedo/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`,
     )

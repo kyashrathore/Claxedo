@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process"
 import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { withWorkerd } from "./workerd-fixture/boot"
 
 /**
@@ -59,10 +60,14 @@ beforeAll(async () => {
   const outfile = join(workDir, "worker.mjs")
   // Bundle the fixture so the REAL `socketFrame`/`socketPayload` from
   // cloudflare.ts run inside workerd — not a copy, not a re-implementation.
+  // Run esbuild's JS entry under the current runtime with real filesystem
+  // paths: URL.pathname renders /D:/... on Windows, and .bin/esbuild is a
+  // POSIX launcher (Windows ships .cmd shims execFileSync cannot run).
   execFileSync(
-    new URL("../node_modules/.bin/esbuild", import.meta.url).pathname,
+    process.execPath,
     [
-      new URL("./workerd-fixture/binary-frame-worker.ts", import.meta.url).pathname,
+      fileURLToPath(import.meta.resolve("esbuild/bin/esbuild")),
+      fileURLToPath(new URL("./workerd-fixture/binary-frame-worker.ts", import.meta.url)),
       "--bundle",
       "--format=esm",
       "--platform=neutral",

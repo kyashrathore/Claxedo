@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { fileURLToPath } from "node:url"
 import { evaluateGates, markdownRow, shapeLabel, type RowMetrics } from "./stats"
 
 /**
@@ -137,7 +138,8 @@ describe("bench gate env overrides (W7.2 CI wiring)", () => {
         'import("./bench/lib/stats.ts").then((m) => console.log(JSON.stringify({'
         + " http: m.HTTP_P99_OVERHEAD_GATE_MS, ws: m.WS_P99_OVERHEAD_GATE_MS })))",
       ],
-      cwd: new URL("../..", import.meta.url).pathname,
+      // fileURLToPath, not URL.pathname — the latter renders /D:/... on Windows.
+      cwd: fileURLToPath(new URL("../..", import.meta.url)),
       env: { ...process.env, ...env },
       stdout: "pipe",
       stderr: "pipe",
