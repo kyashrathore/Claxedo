@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createSignal, For, Show } from "solid-js"
 import type { BoxRenderable, ScrollBoxRenderable } from "@opentui/core"
-import { testRender, type JSX } from "@opentui/solid"
+import { type JSX } from "@opentui/solid"
+import { testRender } from "../../render"
 import {
   formatCompletedSubagentDetail,
   formatSubagentRetry,

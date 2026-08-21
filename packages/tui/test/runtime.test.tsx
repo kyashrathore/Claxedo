@@ -1,6 +1,6 @@
 import path from "path"
 import { expect, test } from "bun:test"
-import { testRender } from "@opentui/solid"
+import { testRender } from "./render"
 import { abbreviateHome } from "../src/runtime"
 import { TuiPathsProvider, useTuiPaths } from "../src/context/runtime"
 

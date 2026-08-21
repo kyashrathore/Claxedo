@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { describe, expect, test } from "bun:test"
 import { RGBA } from "@opentui/core"
-import { testRender } from "@opentui/solid"
+import { testRender } from "../../render"
 import type { JSX } from "solid-js"
 import { createTuiResolvedConfig } from "../../fixture/tui-runtime"
 import { KVProvider } from "../../../src/context/kv"

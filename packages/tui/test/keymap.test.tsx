@@ -1,7 +1,8 @@
 /** @jsxImportSource @opentui/solid */
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
 import { createBindingLookup } from "@opentui/keymap/extras"
-import { testRender, useRenderer } from "@opentui/solid"
+import { useRenderer } from "@opentui/solid"
+import { testRender } from "./render"
 import { expect, test } from "bun:test"
 import { onCleanup } from "solid-js"
 import { TuiKeybind } from "../src/config/keybind"
