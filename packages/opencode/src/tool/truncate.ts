@@ -2,11 +2,11 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { NodePath } from "@effect/platform-node"
 import { Cause, Duration, Effect, Layer, Option, Schedule, Context } from "effect"
 import path from "path"
+import NFS from "node:fs/promises"
 import type { Agent } from "../agent/agent"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { evaluate } from "@/permission/evaluate"
 import { Config } from "@/config/config"
-import { Identifier } from "../id/id"
 import { ToolID } from "./schema"
 import { TRUNCATION_DIR } from "./truncation-dir"
 
@@ -52,16 +52,23 @@ const layer = Layer.effect(
     const fs = yield* FSUtil.Service
 
     const cleanup = Effect.fn("Truncate.cleanup")(function* () {
-      const cutoff = Identifier.timestamp(
-        Identifier.create("tool", "ascending", Date.now() - Duration.toMillis(RETENTION)),
-      )
+      // Age by mtime, NOT by decoding the entry's id: the id packs
+      // timestamp*4096 into 48 bits, which wraps every ~2.2 years, and for
+      // RETENTION after each wrap every pre-wrap file decodes above the
+      // cutoff — cleanup silently keeps them forever. (The last wrap was
+      // 2026-08-14, which is how this was found.)
+      const cutoff = Date.now() - Duration.toMillis(RETENTION)
       const entries = yield* fs.readDirectory(TRUNCATION_DIR).pipe(
         Effect.map((all) => all.filter((name) => name.startsWith("tool_"))),
         Effect.catch(() => Effect.succeed([])),
       )
       for (const entry of entries) {
-        if (Identifier.timestamp(entry) >= cutoff) continue
-        yield* fs.remove(path.join(TRUNCATION_DIR, entry)).pipe(Effect.catch(() => Effect.void))
+        const file = path.join(TRUNCATION_DIR, entry)
+        const modifiedAt = yield* Effect.tryPromise(() => NFS.stat(file).then((info) => info.mtimeMs)).pipe(
+          Effect.catch(() => Effect.succeed(undefined)),
+        )
+        if (modifiedAt === undefined || modifiedAt >= cutoff) continue
+        yield* fs.remove(file).pipe(Effect.catch(() => Effect.void))
       }
     })
 
