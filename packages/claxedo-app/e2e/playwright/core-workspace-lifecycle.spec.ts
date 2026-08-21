@@ -200,6 +200,7 @@
  *   owns the full view-options surface); the directory-search fuzzy-matching algorithm
  *   itself (only its `validWorktree` boundary is pinned here).
  */
+import { workspaceResolveRoute } from "../helpers/contracts/workspace-resolve"
 import { sessionListRoute } from "../helpers/contracts/session-list"
 import { expect, test, type Page } from "@playwright/test"
 
@@ -362,7 +363,7 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
   await page.route("**/command**", (r) => (api(r.request()) && new URL(r.request().url()).pathname === "/command" ? json(r, []) : r.continue()))
   await page.route("**/permission**", (r) => (api(r.request()) && new URL(r.request().url()).pathname === "/permission" ? json(r, []) : r.continue()))
   await page.route("**/question**", (r) => (api(r.request()) && new URL(r.request().url()).pathname === "/question" ? json(r, []) : r.continue()))
-  await page.route("**/api/workspace/resolve**", (r) =>
+  await page.route(workspaceResolveRoute, (r) =>
     api(r.request()) ? json(r, { workspaceId: `local-${proj.id}`, directory: DIR, kind: "local", status: "ready" }) : r.continue(),
   )
   await page.route("**/api/claxedo/agent-config/**", (r) => (api(r.request()) ? json(r, { source: "runner", stale: false, options: [] }) : r.continue()))
