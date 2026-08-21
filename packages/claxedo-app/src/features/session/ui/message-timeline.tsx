@@ -738,7 +738,7 @@ export function MessageTimeline(props: {
   const messageRowIndex = createMemo(() => {
     const result = new Map<string, number>()
     timelineRows().forEach((row, index) => {
-      if (!(row._tag === "CommentStrip" || (row._tag === "UserMessage" && row.anchor))) return
+      if (!TimelineRow.anchorsMessage(row)) return
       result.set(row.userMessageID, index)
     })
     return result
@@ -774,12 +774,7 @@ export function MessageTimeline(props: {
       const root = listRoot()
       const index = messageRowIndex().get(id)
       if (!root || index === undefined) return false
-      // getOffsetForIndex reads measurementsCache WITHOUT refreshing the lazy
-      // memo behind it. After a burst of row re-measures with no render in
-      // between, that stale cache can report the target at the CURRENT scroll
-      // position while the fresh measurements place it viewports away — the
-      // resulting zero-distance scroll ends a long jump short of its target.
-      // getTotalSize() runs getMeasurements(), which refreshes the cache.
+      // getOffsetForIndex reads a lazily-refreshed cache; refresh it first.
       virtualizer.getTotalSize()
       const offset = virtualizer.getOffsetForIndex(index, "start")
       if (!offset) return false
@@ -1383,53 +1378,17 @@ export function MessageTimeline(props: {
   }
 
   function TimelineRowFrame(input: { row: Accessor<FramedTimelineRow>; children: JSX.Element }) {
-    const anchor = () => {
-      const row = input.row()
-      return row._tag === "CommentStrip" || (row._tag === "UserMessage" && row.anchor)
-    }
+    const anchor = () => TimelineRow.anchorsMessage(input.row())
     const previousAssistantPart = () => {
       const row = input.row()
       return row._tag === "AssistantPart" && row.previousAssistantPart
-    }
-
-    // The row's OWN message id, distinct from the turn key: a UserMessage row
-    // is its user message; an AssistantPart row belongs to the assistant
-    // message its parts came from. `data-message-id` above is the TURN key
-    // (userMessageID for every row of the turn) — external observers that need
-    // per-message identity (the agent-app benchmark's semantic readiness, and
-    // any tooling verifying "this exact message painted") read
-    // `data-content-message-id`. The timeline rework that introduced turn-level
-    // keys dropped this attribute silently and the benchmark could no longer
-    // find any row to verify.
-    const contentMessageID = () => {
-      const row = input.row()
-      switch (row._tag) {
-        case "UserMessage":
-          return row.userMessageID
-        case "AssistantPart":
-          return "ref" in row.group ? row.group.ref.messageID : row.group.refs[0]?.messageID
-        default:
-          return undefined
-      }
-    }
-    // Part-level identity beside the message-level one: an assistant message
-    // renders one row PER PART GROUP, so `data-content-message-id` alone is
-    // ambiguous — every group of the message carries it. Verification that
-    // wants to hash a specific part's rendered text (the benchmark's semantic
-    // readiness) needs to know WHICH part a row shows; a message five
-    // viewports tall never has its first text part on screen at the
-    // bottom-anchored open, so message-granular content checks cannot work.
-    const contentPartID = () => {
-      const row = input.row()
-      if (row._tag !== "AssistantPart") return undefined
-      return "ref" in row.group ? row.group.ref.partID : row.group.refs[0]?.partID
     }
     return (
       <div
         id={anchor() ? props.anchor(input.row().userMessageID) : undefined}
         data-message-id={input.row().userMessageID}
-        data-content-message-id={contentMessageID()}
-        data-content-part-id={contentPartID()}
+        data-content-message-id={TimelineRow.contentMessageID(input.row())}
+        data-content-part-id={TimelineRow.contentPartID(input.row())}
         data-timeline-row={input.row()._tag}
         classList={{
           "min-w-0 w-full max-w-full": true,

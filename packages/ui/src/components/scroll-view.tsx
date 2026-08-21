@@ -170,6 +170,23 @@ export function ScrollView(props: ScrollViewProps) {
     if (scrollIdleTimer !== undefined) clearTimeout(scrollIdleTimer)
   })
 
+  // Coalesce thumb geometry to one computation per frame. The raw handler ran
+  // on EVERY scroll event and EVERY content resize — during a session switch
+  // the virtualized timeline resizes its content dozens of times a frame while
+  // scrolling programmatically, and each call forces synchronous layout reads
+  // (scrollHeight/clientHeight) interleaved with the virtualizer's writes.
+  let thumbFrame: number | undefined
+  const scheduleThumbUpdate = () => {
+    if (thumbFrame !== undefined) return
+    thumbFrame = requestAnimationFrame(() => {
+      thumbFrame = undefined
+      updateThumb()
+    })
+  }
+  onCleanup(() => {
+    if (thumbFrame !== undefined) cancelAnimationFrame(thumbFrame)
+  })
+
   const updateThumb = () => {
     if (!viewportRef) return
     const { scrollTop, scrollHeight, clientHeight } = viewportRef
@@ -208,7 +225,7 @@ export function ScrollView(props: ScrollViewProps) {
 
     createResizeObserver(
       () => [viewportRef, viewportRef.firstElementChild, thumbMount()].filter(Boolean) as HTMLElement[],
-      updateThumb,
+      scheduleThumbUpdate,
     )
 
     updateThumb()
@@ -350,7 +367,7 @@ export function ScrollView(props: ScrollViewProps) {
         class="scroll-view__viewport"
         data-scrollable
         onScroll={(e) => {
-          updateThumb()
+          scheduleThumbUpdate()
           markScrolling()
           if (typeof events.onScroll === "function") events.onScroll(e as any)
         }}

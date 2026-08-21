@@ -195,8 +195,12 @@ export function clearConversationChatRegistryForTest() {
 }
 
 function sameConversationMessages(left: UIMessage[], right: UIMessage[]) {
+  if (left === right) return true
   if (left.length !== right.length) return false
   return left.every((message, index) => {
+    // Merge preserves references for unchanged messages; stringify is the
+    // fallback for genuinely rebuilt ones only.
+    if (message === right[index]) return true
     try {
       return JSON.stringify(message) === JSON.stringify(right[index])
     } catch {

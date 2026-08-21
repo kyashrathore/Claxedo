@@ -24,6 +24,8 @@ export interface BenchmarkPage {
   }
   addInitScript(fn: () => void): Promise<void>
   evaluate<R, A = undefined>(fn: ((arg: A) => R | Promise<R>) | (() => R | Promise<R>), arg?: A): Promise<R>
+  /** Raw CDP escape hatch for diagnostics (profiling, tracing). */
+  rawCommand<R>(method: string, params?: Record<string, unknown>): Promise<R>
   waitForFunction<A = undefined>(
     fn: ((arg: A) => unknown) | (() => unknown),
     arg?: A,
@@ -203,6 +205,7 @@ async function createCdpPage(url: string, timeoutMs: number): Promise<BenchmarkP
       await command("Page.addScriptToEvaluateOnNewDocument", { source: `(${fn.toString()})()` })
     },
     evaluate,
+    rawCommand: (method, params = {}) => command(method, params),
     async waitForFunction(fn, arg, options) {
       await waitFor(async () => !!await evaluate(fn as (value: typeof arg) => unknown, arg), options?.timeout ?? timeoutMs, options?.polling === "raf" ? 16 : 50)
     },

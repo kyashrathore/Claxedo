@@ -62,19 +62,81 @@ export function opencodeConversationProjection(messages: UIMessage[]) {
 
 export function mergeConversationSnapshot(current: UIMessage[], snapshot: UIMessage[]) {
   const merged = [...current]
+  // Index once: the per-message `assistantTurnIndex` linear scan made a full
+  // hydrate O(n²) over the conversation (a 400-turn session pays ~640k
+  // comparisons per refetch). The map serves the same two id lookups; the
+  // rare announced-envelope candidate scan keeps its original semantics.
+  const indexById = new Map<string, number>()
+  merged.forEach((item, index) => indexById.set(item.id, index))
+  let changed = false
   for (const message of snapshot) {
     // Same turn-aware match the event path uses: a reply can arrive under the
     // announced `${parentID}_r` id or under the id the engine chose, and filing
     // those as two messages renders the turn twice (and splits its parts
     // between the halves). See `assistantTurnIndex`.
-    const index = assistantTurnIndex(merged, storedMessage(message) ?? ({ id: message.id, role: message.role } as Message))
+    const index = assistantTurnIndex(
+      merged,
+      storedMessage(message) ?? ({ id: message.id, role: message.role } as Message),
+      indexById,
+    )
     if (index === -1) {
+      indexById.set(message.id, merged.length)
       merged.push(message)
+      changed = true
       continue
     }
-    merged[index] = mergeChatMessage(merged[index]!, message)
+    const existing = merged[index]!
+    // Snapshot refetches mostly re-deliver identical settled content. A cheap
+    // scalar comparison (ids, times, part ids/kinds/lengths) preserves the
+    // EXISTING object so downstream same-ness checks stay reference-based
+    // instead of stringifying the whole conversation.
+    if (unchangedSnapshotMessage(existing, message)) continue
+    if (existing.id !== message.id) {
+      indexById.delete(existing.id)
+      indexById.set(message.id, index)
+    }
+    merged[index] = mergeChatMessage(existing, message)
+    changed = true
   }
+  if (!changed) return current
   return sortMessages(merged)
+}
+
+/**
+ * True when the fetched snapshot message cannot differ from what is already
+ * merged: same id, same stored timestamps (settled assistants must have equal
+ * `time.completed`), and pairwise-equal part identity, kind, tool state, and
+ * text length. Conservative — any mismatch falls through to the full merge.
+ */
+function unchangedSnapshotMessage(existing: UIMessage, snapshot: UIMessage): boolean {
+  if (existing.id !== snapshot.id) return false
+  const storedExisting = storedMessage(existing)
+  const storedSnapshot = storedMessage(snapshot)
+  if (!storedExisting || !storedSnapshot) return false
+  if (storedExisting.role !== storedSnapshot.role) return false
+  const timeExisting = storedExisting.time as { created?: number; completed?: number } | undefined
+  const timeSnapshot = storedSnapshot.time as { created?: number; completed?: number } | undefined
+  if (timeExisting?.created !== timeSnapshot?.created) return false
+  if (storedSnapshot.role === "assistant") {
+    if (typeof timeSnapshot?.completed !== "number") return false
+    if (timeExisting?.completed !== timeSnapshot.completed) return false
+  }
+  if ((storedExisting as { error?: unknown }).error !== undefined || (storedSnapshot as { error?: unknown }).error !== undefined)
+    return false
+  if (existing.parts.length !== snapshot.parts.length) return false
+  for (let index = 0; index < snapshot.parts.length; index++) {
+    const left = existing.parts[index]!
+    const right = snapshot.parts[index]!
+    if (left.type !== right.type) return false
+    if (opencodePartId(left) !== opencodePartId(right)) return false
+    if (left.type === "tool-call" && right.type === "tool-call") {
+      if (toolCallStateRank(left.state) !== toolCallStateRank(right.state)) return false
+      continue
+    }
+    if ((left.type === "text" || left.type === "thinking") && textContent(left).length !== textContent(right).length)
+      return false
+  }
+  return true
 }
 
 export function applyOpencodeConversationEvent(chat: ConversationChatHandle, event: Event) {
@@ -281,8 +343,8 @@ function upsertMessage(chat: ConversationChatHandle, message: Message | undefine
  * would silently lose a real message. The `_r` convention is what makes "these
  * two are the same reply" a fact rather than a guess.
  */
-function assistantTurnIndex(current: UIMessage[], message: Message) {
-  const byId = current.findIndex((item) => item.id === message.id)
+function assistantTurnIndex(current: UIMessage[], message: Message, indexById?: Map<string, number>) {
+  const byId = indexById ? (indexById.get(message.id) ?? -1) : current.findIndex((item) => item.id === message.id)
   if (byId !== -1) return byId
   if (message.role !== "assistant") return -1
   const parentID = (message as { parentID?: unknown }).parentID
@@ -299,7 +361,7 @@ function assistantTurnIndex(current: UIMessage[], message: Message) {
     })
     return candidates.length === 1 ? candidates[0]! : -1
   }
-  return current.findIndex((item) => item.id === announced)
+  return indexById ? (indexById.get(announced) ?? -1) : current.findIndex((item) => item.id === announced)
 }
 
 function removeMessage(chat: ConversationChatHandle, messageID: string | undefined) {

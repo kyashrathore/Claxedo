@@ -516,14 +516,27 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
               }
               const rect = displayRects().get(pid)
               if (!rect) return { display: "none" }
+              // Hidden pane tabs keep their subtree's RENDERING STATE:
+              // `display: none` discarded layout, so every tab re-show
+              // re-laid-out its whole timeline (a ~80ms drift-and-settle on
+              // heavy sessions). `content-visibility: hidden` skips rendering
+              // work entirely while PRESERVING the cached layout state for the
+              // subtree — re-show restores it instead of recomputing it.
+              // aria-hidden/inert on the slot cover semantics + interaction.
               return {
                 position: "absolute",
                 left: `${rect.left * 100}%`,
                 top: `${rect.top * 100}%`,
 	                width: `${rect.width * 100}%`,
 	                height: `${rect.height * 100}%`,
-	                display: visible() ? "block" : "none",
+	                display: "block",
 	                overflow: "hidden",
+	                ...(visible()
+	                  ? {}
+	                  : {
+	                      "content-visibility": "hidden" as const,
+	                      "pointer-events": "none" as const,
+	                    }),
 	              }
             }
             const paneCtx: PaneCtx = {
@@ -551,7 +564,11 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                 aria-hidden={!visible()}
                 inert={!visible()}
                 style={slotStyle()}
-                class="transition-[opacity,filter] duration-100"
+                // No transition on the slot itself: animating opacity/filter
+                // across EVERY tab/session switch forced a 100ms style+paint
+                // storm inside exactly the window where switch latency is
+                // measured (and felt). The inactive dimming still applies —
+                // it just snaps, which reads as faster, not worse.
                 classList={{
                   "opacity-55 saturate-[0.7]": inactive(),
                   "opacity-100 saturate-100": !inactive(),

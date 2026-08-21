@@ -45,7 +45,10 @@ export function MessageNav(
 
   const compactItem = (message: UserMessage, index: () => number) => {
     const open = () => activePreview() === message.id
-    const preview = () => local.getPreview?.(message)
+    // Preview text joins every part of the turn — compute it only for the one
+    // OPEN hover card, never eagerly for all ticks (a 400-turn session would
+    // otherwise walk every part of every turn just to render the rail).
+    const preview = () => (open() ? local.getPreview?.(message) : undefined)
     const user = () => preview()?.user ?? fallbackLabel(message)
     const active = () => message.id === local.current?.id
 
@@ -74,7 +77,7 @@ export function MessageNav(
           data-active={active() || undefined}
           data-distance={Math.min(Math.abs(index() - focusIndex()), 4)}
           aria-current={active() ? "step" : undefined}
-          aria-label={`${index() + 1}. ${user()}`}
+          aria-label={`${index() + 1}. ${fallbackLabel(message)}`}
           onClick={() => {
             setActivePreview(undefined)
             selectMessage(message)

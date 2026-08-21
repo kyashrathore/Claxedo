@@ -207,6 +207,39 @@ export namespace TimelineRow {
     }
   }
 
+  /**
+   * The row's OWN message id, distinct from the turn key: a UserMessage row
+   * is its user message; an AssistantPart row belongs to the assistant
+   * message its parts came from (`data-message-id` carries the TURN key).
+   * External observers verifying "this exact message painted" read the
+   * `data-content-message-id` attribute stamped from this.
+   */
+  /** Rows that anchor a user-message position (scroll targets, row index). */
+  export function anchorsMessage(row: TimelineRow) {
+    return row._tag === "CommentStrip" || (row._tag === "UserMessage" && row.anchor)
+  }
+
+  export function contentMessageID(row: TimelineRow) {
+    switch (row._tag) {
+      case "UserMessage":
+        return row.userMessageID
+      case "AssistantPart":
+        return "ref" in row.group ? row.group.ref.messageID : row.group.refs[0]?.messageID
+      default:
+        return undefined
+    }
+  }
+
+  /**
+   * Part-level identity beside the message-level one: assistant messages
+   * render one row PER PART GROUP (all sharing the message id), so content
+   * verification needs to know WHICH part a row shows.
+   */
+  export function contentPartID(row: TimelineRow) {
+    if (row._tag !== "AssistantPart") return undefined
+    return "ref" in row.group ? row.group.ref.partID : row.group.refs[0]?.partID
+  }
+
   export function reuse(previous: TimelineRow[] | undefined, rows: TimelineRow[]) {
     const currentRows = rows.filter(is)
     if (!previous?.length) return currentRows

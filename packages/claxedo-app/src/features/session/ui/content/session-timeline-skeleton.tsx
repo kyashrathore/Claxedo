@@ -1,4 +1,4 @@
-import { Index } from "solid-js"
+import { Index, Show, createSignal, onCleanup, onMount } from "solid-js"
 
 import { useLanguage } from "@/platform/i18n/provider"
 
@@ -45,8 +45,18 @@ const TURNS: SkeletonTurn[] = (() => {
 export function SessionTimelineSkeleton(props: { centered?: boolean }) {
   const language = useLanguage()
   const centered = () => props.centered !== false
+  // Most session opens resolve well under 100ms; painting (and then tearing
+  // down) a placeholder inside that window is pure churn the user perceives
+  // as flicker. Render NOTHING for the first 100ms — only a genuinely slow
+  // load earns a loading surface.
+  const [pastGrace, setPastGrace] = createSignal(false)
+  onMount(() => {
+    const timer = setTimeout(() => setPastGrace(true), 100)
+    onCleanup(() => clearTimeout(timer))
+  })
 
   return (
+    <Show when={pastGrace()}>
     <div
       role="status"
       aria-busy="true"
@@ -92,6 +102,7 @@ export function SessionTimelineSkeleton(props: { centered?: boolean }) {
         </Index>
       </div>
     </div>
+    </Show>
   )
 }
 
