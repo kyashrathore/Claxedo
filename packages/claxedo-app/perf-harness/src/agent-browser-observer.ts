@@ -27,6 +27,14 @@ type TimelineCoverage = {
 export type PaintedMessage = {
   messageId: string;
   kind: "UserMessage" | "AssistantPart";
+  /**
+   * The part-group identity of the painted row. An assistant message renders
+   * one row PER PART GROUP, all stamped with the same message id, so the
+   * message id alone cannot say which content the row shows — and a message
+   * taller than the viewport never has its first text part on screen at the
+   * bottom-anchored open, so content verification must be part-granular.
+   */
+  partId: string | undefined;
   textLength: number;
   contentSha256: string;
   composerVisibleAndEnabled: boolean;
@@ -37,6 +45,10 @@ export type PaintedMessage = {
 type SemanticTimelineTarget = {
   expectedMessageIds: readonly string[];
   expectedContentSha256: Readonly<Record<string, string>>;
+  /** sha256(trimmed raw text) per latest-turn TEXT part id. */
+  expectedTextPartSha256: Readonly<Record<string, string>>;
+  /** Every latest-turn part id, text or not. */
+  expectedPartIds: readonly string[];
 };
 
 export type SessionReadinessTarget = SemanticTimelineTarget & {
@@ -176,13 +188,53 @@ export function completeFirstFold(coverage: TimelineCoverage) {
   );
 }
 
+/**
+ * Content verification for the painted row, part-granular where possible:
+ * - a row showing a TEXT part must hash-match that part's raw text;
+ * - a row showing a transformed part (tool call, diff — rendered as a
+ *   summary, so raw payload text can never hash-match the rendered text
+ *   without duplicating the renderer) must be a real latest-turn part and
+ *   have painted non-empty text;
+ * - a row with no part identity (user rows, pre-part-id markup) falls back
+ *   to the message-level sha.
+ */
+export function paintedContentVerification(
+  message: PaintedMessage,
+  target: SemanticTimelineTarget,
+):
+  | { mode: "text-part-sha256"; expectedSha256: string; passed: boolean }
+  | { mode: "part-identity"; passed: boolean }
+  | { mode: "message-sha256"; expectedSha256: string | undefined; passed: boolean } {
+  if (message.kind === "AssistantPart" && message.partId !== undefined) {
+    const expectedSha256 = target.expectedTextPartSha256[message.partId];
+    if (expectedSha256 !== undefined)
+      return {
+        mode: "text-part-sha256",
+        expectedSha256,
+        passed: expectedSha256 === message.contentSha256,
+      };
+    return {
+      mode: "part-identity",
+      passed:
+        target.expectedPartIds.includes(message.partId) &&
+        message.textLength > 0,
+    };
+  }
+  const expectedSha256 = target.expectedContentSha256[message.messageId];
+  return {
+    mode: "message-sha256",
+    expectedSha256,
+    passed: expectedSha256 === message.contentSha256,
+  };
+}
+
 export function semanticTimelinePaintReady(
   message: PaintedMessage,
   target: SemanticTimelineTarget,
 ) {
   return (
     target.expectedMessageIds.includes(message.messageId) &&
-    target.expectedContentSha256[message.messageId] === message.contentSha256 &&
+    paintedContentVerification(message, target).passed &&
     message.textLength > 0 &&
     message.composerVisibleAndEnabled &&
     message.surfaceFocused &&
@@ -336,6 +388,7 @@ export async function measureSessionActivation(
             const text = row?.innerText.trim() ?? "";
             const kind = row?.dataset.timelineRow;
             const messageId = row?.dataset.contentMessageId;
+            const partId = row?.dataset.contentPartId;
             const completeFirstFold =
               timelineCoverage.overflowPx <= 100 ||
               (timelineCoverage.visibleRowCount > 0 &&
@@ -352,6 +405,7 @@ export async function measureSessionActivation(
             const paintedMessage: Omit<PaintedMessage, "contentSha256"> = {
               messageId,
               kind,
+              partId,
               textLength: text.length,
               composerVisibleAndEnabled,
               surfaceFocused,
@@ -359,6 +413,7 @@ export async function measureSessionActivation(
             };
             const signature = JSON.stringify({
               messageId,
+              partId,
               textLength: text.length,
               textHash: hashText(text),
               scrollTop: Math.round(viewport.scrollTop * 10) / 10,

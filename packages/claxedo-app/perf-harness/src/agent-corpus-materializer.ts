@@ -126,6 +126,8 @@ export async function materializeClaxedoCorpus(input: {
     title: string;
     expectedMessageIds: string[];
     expectedContentSha256: Record<string, string>;
+    expectedTextPartSha256: Record<string, string>;
+    expectedPartIds: string[];
   }> = [];
   try {
     const baseTime = Date.parse("2020-01-01T00:00:00.000Z");
@@ -150,6 +152,8 @@ export async function materializeClaxedoCorpus(input: {
       materializedSessions.set(session.id, sessionId);
       let latestTurnMessageIds: string[] = [];
       let latestTurnContentSha256: Record<string, string> = {};
+      let latestTurnTextPartSha256: Record<string, string> = {};
+      let latestTurnPartIds: string[] = [];
       database
         .prepare(
           "INSERT INTO session (id, project_id, slug, directory, title, version, cost, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write, time_created, time_updated) VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, ?, ?)",
@@ -167,6 +171,8 @@ export async function materializeClaxedoCorpus(input: {
       for (const turn of session.turns.toSorted((a, b) => a.index - b.index)) {
         let parentId: string | undefined;
         const turnMessageIds: string[] = [];
+        const turnPartIds: string[] = [];
+        const turnTextPartSha256: Record<string, string> = {};
         const turnContentSha256: Record<string, string> = {};
         for (const message of turn.messages.toSorted(
           (a, b) => a.order - b.order,
@@ -223,10 +229,31 @@ export async function materializeClaxedoCorpus(input: {
               typeof payload.text === "string" &&
               payload.text.trim()
             ) {
-              const canonicalText = payload.text.trim();
               turnMessageIds.push(messageId);
-              turnContentSha256[messageId] = createHash("sha256")
-                .update(canonicalText)
+              // A message-level content sha only when the payload is an
+              // ORIGINAL plain-text corpus part — converted markdown/code/
+              // table/diff parts render transformed, so their raw text can
+              // never hash-match painted text. The anchor itself does not
+              // need the sha: rows carry part identity for verification.
+              if (part.type === "text") {
+                turnContentSha256[messageId] = createHash("sha256")
+                  .update(payload.text.trim())
+                  .digest("hex");
+              }
+            }
+            turnPartIds.push(partId);
+            // Only ORIGINAL plain-text corpus parts get an exact-content sha:
+            // markdown/code/table/diff corpus parts are converted into "text"
+            // payloads whose markdown SOURCE the renderer transforms, so their
+            // rendered innerText can never hash-match the raw payload. Those
+            // verify by part identity + painted text, like tool parts.
+            if (
+              part.type === "text" &&
+              payload.type === "text" &&
+              typeof payload.text === "string"
+            ) {
+              turnTextPartSha256[partId] = createHash("sha256")
+                .update(payload.text.trim())
                 .digest("hex");
             }
             const encodedPart = JSON.stringify(payload);
@@ -255,6 +282,8 @@ export async function materializeClaxedoCorpus(input: {
         }
         latestTurnMessageIds = turnMessageIds;
         latestTurnContentSha256 = turnContentSha256;
+        latestTurnTextPartSha256 = turnTextPartSha256;
+        latestTurnPartIds = turnPartIds;
       }
       if (latestTurnMessageIds.length === 0) {
         throw new Error(
@@ -262,6 +291,8 @@ export async function materializeClaxedoCorpus(input: {
         );
       }
       readinessTargets.push({
+        expectedTextPartSha256: latestTurnTextPartSha256,
+        expectedPartIds: latestTurnPartIds,
         sessionId,
         title: session.title,
         expectedMessageIds: latestTurnMessageIds,

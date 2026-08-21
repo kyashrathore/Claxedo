@@ -8,6 +8,9 @@ import {
   measureHistoryNavigation,
   measureSessionActivation,
   measureWarmSwitches,
+  paintedContentVerification,
+  type PaintedMessage,
+  type SessionReadinessTarget,
 } from "./agent-browser-observer";
 import {
   launchPackagedClaxedo,
@@ -126,6 +129,28 @@ export async function createClaxedoAgentDriver(input?: {
   });
 }
 
+
+function canonicalContentCheck(
+  target: SessionReadinessTarget | undefined,
+  semantic: PaintedMessage,
+) {
+  if (!target)
+    return {
+      check: "canonical-content-sha256",
+      actualSha256: semantic.contentSha256,
+      passed: false,
+    };
+  const verification = paintedContentVerification(semantic, target);
+  return {
+    check: "canonical-content-sha256",
+    mode: verification.mode,
+    expectedSha256:
+      "expectedSha256" in verification ? verification.expectedSha256 : undefined,
+    actualSha256: semantic.contentSha256,
+    passed: verification.passed,
+  };
+}
+
 async function runScenarioSafely(
   prepared: Prepared,
   launch: ClaxedoLaunch,
@@ -199,12 +224,7 @@ async function runScenario(
             actualCount: readiness.trustedInputAccepted ? 1 : 0,
             passed: readiness.trustedInputAccepted,
           },
-          {
-            check: "canonical-content-sha256",
-            expectedSha256: prepared.readinessTargets[0]?.expectedContentSha256[readiness.semantic.messageId],
-            actualSha256: readiness.semantic.contentSha256,
-            passed: prepared.readinessTargets[0]?.expectedContentSha256[readiness.semantic.messageId] === readiness.semantic.contentSha256,
-          },
+          canonicalContentCheck(prepared.readinessTargets[0], readiness.semantic),
           {
             check: "visible-enabled-composer",
             expectedCount: 1,

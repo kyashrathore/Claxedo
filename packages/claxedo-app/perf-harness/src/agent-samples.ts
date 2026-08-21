@@ -14,6 +14,8 @@ export type ClockEvidence = {
 
 export type ValidityCheckEvidence = {
   check: string
+  /** Which verification the check applied (e.g. text-part-sha256 vs part-identity). */
+  mode?: string
   expectedSha256?: string
   actualSha256?: string
   expectedCount?: number

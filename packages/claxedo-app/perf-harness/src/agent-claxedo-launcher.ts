@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import net from "node:net";
-import { installAgentBrowserObserver, measureSessionActivation, type SessionReadinessTarget } from "./agent-browser-observer";
+import { installAgentBrowserObserver, measureSessionActivation, type PaintedMessage, type SessionReadinessTarget } from "./agent-browser-observer";
 import { processFamily, readProcessTable, sameProcessIdentity, type ProcessSnapshot } from "./agent-process-family";
 import { connectCdpPage, type BenchmarkPage } from "./agent-cdp-page";
 import { AGENT_APP_WINDOW, agentAppViewport } from "./agent-display-contract";
@@ -26,7 +26,7 @@ export type ClaxedoLaunch = {
     trustedInputAccepted: boolean;
     reloadCount: number;
     crashCount: number;
-    semantic: { messageId: string; contentSha256: string; composerVisibleAndEnabled: boolean; surfaceFocused: boolean };
+    semantic: PaintedMessage;
   };
   inspect(): Promise<{
     surface: { visibilityState: string; focused: boolean; hidden: boolean; viewport: { width: number; height: number } };
@@ -452,12 +452,7 @@ export async function launchPackagedClaxedo(input: {
         trustedInputAccepted: true,
         reloadCount,
         crashCount,
-        semantic: {
-          messageId: semanticReadiness.paintedMessage.messageId,
-          contentSha256: semanticReadiness.paintedMessage.contentSha256,
-          composerVisibleAndEnabled: semanticReadiness.paintedMessage.composerVisibleAndEnabled,
-          surfaceFocused: semanticReadiness.paintedMessage.surfaceFocused,
-        },
+        semantic: semanticReadiness.paintedMessage,
       },
       async inspect() {
         const [surface, processes] = await Promise.all([

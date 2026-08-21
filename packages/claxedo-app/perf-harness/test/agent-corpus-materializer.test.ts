@@ -132,6 +132,8 @@ describe("Claxedo agent-app corpus materializer", () => {
             expect.stringMatching(/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/),
           ],
           expectedContentSha256: expect.any(Object),
+          expectedTextPartSha256: expect.any(Object),
+          expectedPartIds: expect.any(Array),
         },
       ]);
       const chronologicalMessageIds = database
