@@ -316,3 +316,17 @@ and the overload guard closes the socket by design — before INPUT-00-A's
 ready marker ever drains. Not a harness bug: beating
 `terminal.output_mib_s` requires raising Claxedo's terminal drain/parse
 throughput past ~21 MiB/s sustained (or revisiting the guard's economics).
+
+**Idle-CPU regression closed** (cert-021615: quiescent p95 **7.998%** vs T3
+16.85 — WIN reclaimed; peak RSS 1659.8, now ~40 MiB behind T3). Attribution
+probe proved the app family idles at 4.1% avg — the ~20-21% p95 was the
+POST-SWEEP PRELOAD DRAIN (20 queued sessions ≈ 4000 parts ≈ 15-20s) landing
+inside the quiescent window, not a steady burn. Three commits: serialize
+into one deadline-aware queue (0d508aa30), pace by USER INPUT rather than
+page idleness after it cost warm-switch 119→146 (input-recency eager
+window), and cap the backlog at the three most recent sessions (visible
+folds already parse during their own visits). Warm-switch recovered to
+124.6* alongside. Open: one switch failed paint-stability with the backlog
+cap in place (possible revisit-wobble tradeoff — verifying), and the
+harness inspect/monitor race "process-family root absent from first sample"
+is a recurring infrastructure flake.
