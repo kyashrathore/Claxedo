@@ -681,10 +681,23 @@ async function driveOneTurn(page: Page, promptText: string) {
 
   const submit = page.locator('[data-action="prompt-submit"]').last()
   await submit.click()
-  // Turn START gets the same budget as turn completion below: on loaded CI
-  // runners the accepted prompt sat disabled+"send" past a 5s wait twice
-  // (runs 354 and 361) before the session went busy.
-  await expect(submit).toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
+  // Turn START gets the same budget as turn completion below. Three CI runs
+  // (354, 361, 365 — the last with a 15s budget) saw the same stall: the
+  // click clears the composer and then NO turn ever starts, the button
+  // sitting disabled+"send" with the empty-composer label the whole window.
+  // That is a dropped send, not a slow one, so re-submit once — the first
+  // click provably started no turn, so a second cannot double-send. A turn
+  // that DID start (icon "stop") is never retried.
+  try {
+    await expect(submit).toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
+  } catch (error) {
+    if ((await submit.getAttribute("data-icon")) !== "send") throw error
+    await input.click()
+    await input.fill(promptText)
+    await expect(input).toContainText(promptText, { timeout: 5_000 })
+    await submit.click()
+    await expect(submit).toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
+  }
   await expect(submit).not.toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
 }
 

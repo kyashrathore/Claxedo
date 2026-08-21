@@ -3,7 +3,13 @@ import os from "node:os"
 import path from "node:path"
 import { Hono } from "hono"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
-import { createEmbeddedAuth, embeddedAuthEnabled, EMBEDDED_AUTH_ISSUER, type EmbeddedAuth } from "./embedded-auth"
+import {
+  createEmbeddedAuth,
+  embeddedAuthEnabled,
+  EMBEDDED_AUTH_ISSUER,
+  resetEmbeddedAuthForTests,
+  type EmbeddedAuth,
+} from "./embedded-auth"
 import { betterAuthAdapter, controlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 
 // Self-host/hosted parity: embedded Better Auth gives a self-host box
@@ -38,6 +44,11 @@ afterAll(async () => {
     "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
   )
   closeAuthorityDatabases()
+  // createDefaultLocalControlPlaneServices in embedded mode binds the
+  // process-wide getEmbeddedAuth() singleton to ITS OWN embedded-auth.sqlite
+  // under this temp data dir — a third handle none of the closes above touch
+  // (run 365: EPERM survived them). Reset it too.
+  resetEmbeddedAuthForTests()
   // Windows keeps the auth sqlite file briefly locked after close; the
   // retries absorb that lag so the temp dir can be deleted.
   fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })

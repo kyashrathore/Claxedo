@@ -550,7 +550,13 @@ describe("control plane integration", () => {
 
     const stream = sse(
       `${base()}/api/claxedo/events`,
-      (event) => event.type === "worktree.ready" && event.directory?.includes("/worktree/"),
+      // Normalize like the created.directory assertion below: the event
+      // carries a native path, and on Windows a backslashed directory would
+      // never match — the event arrives and the predicate rejects it forever
+      // (runs 364/365: the abort fired at 5s and then at 30s all the same).
+      (event) =>
+        event.type === "worktree.ready" &&
+        String(event.directory ?? "").replaceAll("\\", "/").includes("/worktree/"),
     )
     await stream.ready
 
