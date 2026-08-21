@@ -37,6 +37,13 @@ export function createSessionHistoryWindow(input: Input) {
   const [state, setState] = createStore({
     turnID: undefined as string | undefined,
     turnStart: 0,
+    // Target-anchored upper bound. Undefined = the window runs to the session
+    // end (the normal bottom-anchored transcript). A deep jump to an OLD turn
+    // cannot simply lower turnStart — slice(start) would render every turn
+    // between it and the newest, tens of thousands of parts. Anchoring caps
+    // the upper edge near the target instead, trading live-follow (which the
+    // user just left) for a bounded render.
+    turnEnd: undefined as number | undefined,
     prefetchUntil: 0,
     prefetchNoGrowth: 0,
   })
@@ -63,18 +70,34 @@ export function createSessionHistoryWindow(input: Input) {
     setState({ turnID: id, turnStart: next })
   }
 
+  const turnEnd = createMemo(() => {
+    const len = input.visibleUserMessages().length
+    const end = state.turnEnd
+    if (end === undefined || end >= len) return len
+    return Math.max(end, 1)
+  })
+
   const renderedUserMessages = createMemo(
     () => {
       const msgs = input.visibleUserMessages()
       const start = turnStart()
-      if (start <= 0) return msgs
-      return msgs.slice(start)
+      const end = turnEnd()
+      if (start <= 0 && end >= msgs.length) return msgs
+      return msgs.slice(start, end)
     },
     emptyUserMessages,
     {
       equals: same,
     },
   )
+
+  /** True while the window is capped short of the newest turn (anchored jump). */
+  const anchoredToTurn = () => state.turnEnd !== undefined
+
+  /** Drops the upper cap — back to the normal bottom-anchored window. */
+  const resetAnchor = () => {
+    if (state.turnEnd !== undefined) setState("turnEnd", undefined)
+  }
 
   const preserveScroll = (fn: () => void) => {
     if (input.onBeforeReveal && input.onAfterReveal) {
@@ -196,14 +219,27 @@ export function createSessionHistoryWindow(input: Input) {
 
   const revealTurn = (id: string) => {
     const index = input.visibleUserMessages().findIndex((message) => message.id === id)
-    if (index >= 0 && index < turnStart()) setTurnStart(index)
+    if (index < 0) return
+    const start = turnStart()
+    const end = turnEnd()
+    // Already inside the rendered window — nothing to reveal.
+    if (index >= start && index < end) return
+    // Target-anchored reveal: bound BOTH edges around the destination instead
+    // of rendering every newer turn behind it (slice(start) would mount tens
+    // of thousands of parts for an old turn and stall the jump).
+    const len = input.visibleUserMessages().length
+    const context = 24
+    setState({
+      turnStart: Math.max(0, index - 4),
+      turnEnd: Math.min(len, index + 1 + context),
+    })
   }
 
   createEffect(
     on(
       input.sessionID,
       () => {
-        setState({ prefetchUntil: 0, prefetchNoGrowth: 0 })
+        setState({ prefetchUntil: 0, prefetchNoGrowth: 0, turnEnd: undefined })
       },
       { defer: true },
     ),
@@ -246,5 +282,7 @@ export function createSessionHistoryWindow(input: Input) {
     revealTurn,
     loadAndReveal,
     onScrollerScroll,
+    anchoredToTurn,
+    resetAnchor,
   }
 }
