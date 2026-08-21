@@ -350,7 +350,12 @@ describe("CodexHarnessAdapter", () => {
     adapter.dispose()
 
     await expect(creation).rejects.toThrow()
-    await waitForLog(fake.log, (row) => row.event === "sigterm")
+    // The sigterm log row comes from the fake's POSIX signal handler. Windows
+    // dispose is TerminateProcess on the whole tree — no handler ever runs, so
+    // the observable contract there is only that the real process is gone.
+    if (process.platform !== "win32") {
+      await waitForLog(fake.log, (row) => row.event === "sigterm")
+    }
     await waitForProcessExit(pid)
   })
 
