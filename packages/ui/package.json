@@ -58,7 +58,7 @@
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "typecheck": "tsgo --noEmit",
-    "test": "mkdir -p .artifacts/unit && bun test src --only-failures --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
+    "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test src --only-failures --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "dev": "vite",
     "generate:tailwind": "bun run script/tailwind.ts",
     "generate:v2-oc2": "bun run script/build-oc2-v2-overrides.ts"

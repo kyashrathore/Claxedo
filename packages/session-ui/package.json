@@ -27,7 +27,7 @@
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
-    "test": "mkdir -p .artifacts/unit && bun test src --only-failures --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
+    "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test src --only-failures --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "verify:mermaid": "bun run verify:mermaid-sanitizer && bun run verify:mermaid-wiring",
     "verify:mermaid-sanitizer": "bun run script/verify-mermaid-svg-sanitizer.mjs",
     "verify:mermaid-wiring": "bun run script/verify-mermaid-wiring.mjs"

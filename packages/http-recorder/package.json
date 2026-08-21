@@ -27,7 +27,7 @@
     "access": "public"
   },
   "scripts": {
-    "test": "mkdir -p .artifacts/unit && bun test --timeout 30000 --only-failures --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
+    "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test --timeout 30000 --only-failures --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "typecheck": "tsgo --noEmit",
     "build": "bun ./script/build.ts",
     "verify:package": "bun ./script/verify-package.ts"

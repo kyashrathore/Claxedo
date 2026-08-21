@@ -44,7 +44,7 @@
     "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "typecheck:bench": "tsc --noEmit -p bench/tsconfig.json",
-    "test": "mkdir -p .artifacts/unit && bun test src bench --path-ignore-patterns='**/relay-workerd-*' --path-ignore-patterns='**/bun.test.ts' --timeout 30000 --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml && bun test src/bun.test.ts --timeout 120000 --reporter=junit --reporter-outfile=.artifacts/unit/junit-bun-adapter.xml && bun test src/relay-workerd-backpressure.test.ts src/relay-workerd-binary.test.ts --timeout 240000 --reporter=junit --reporter-outfile=.artifacts/unit/junit-workerd.xml",
+    "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test src bench --path-ignore-patterns='**/relay-workerd-*' --path-ignore-patterns='**/bun.test.ts' --timeout 30000 --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml && node ../../scripts/test-deadline.mjs bun test src/bun.test.ts --timeout 120000 --reporter=junit --reporter-outfile=.artifacts/unit/junit-bun-adapter.xml && node ../../scripts/test-deadline.mjs bun test src/relay-workerd-backpressure.test.ts src/relay-workerd-binary.test.ts --timeout 240000 --reporter=junit --reporter-outfile=.artifacts/unit/junit-workerd.xml",
     "bench:gate": "bun bench/local-dry-run.ts",
     "bench:gate:cf": "bun bench/cf-dev-smoke.ts"
   },
