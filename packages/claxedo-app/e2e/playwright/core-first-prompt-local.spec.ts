@@ -85,6 +85,7 @@
  *   (`core-model-effort-agent-controls`); busy/abort/error escalation
  *   (`core-busy-abort-errors`).
  */
+import { sessionListRoute } from "../helpers/contracts/session-list"
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, expectTurnCounts, expectNoDuplicateRows, SELECTORS } from "../helpers/turn-oracle"
@@ -137,7 +138,7 @@ async function seedNoProjects(page: Page) {
 }
 
 async function installPlaceholderSessionList(page: Page) {
-  await page.route("**/api/control/session-list**", (route) => route.fulfill({
+  await page.route(sessionListRoute, (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
     body: JSON.stringify({

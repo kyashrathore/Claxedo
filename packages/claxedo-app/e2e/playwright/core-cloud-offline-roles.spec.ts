@@ -171,6 +171,8 @@
  *   (flagged in the 25-spec plan under spec 25 — this spec pins the CURRENT UI-only
  *   contract, not a verdict on it).
  */
+import { isWorkspaceResolvePath } from "../helpers/contracts/workspace-resolve"
+import { isSessionListPath } from "../helpers/contracts/session-list"
 import { expect, test, type Page, type Route } from "@playwright/test"
 
 const RELAY_ORIGIN = "https://relay.core13.e2e.test"
@@ -428,7 +430,7 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
       state.refreshHits.push(UH_WORKSPACE_ID)
       return json(route, mintBody(UH_WORKSPACE_ID, "user-hosted", state.uhMint))
     }
-    if (url.pathname === "/api/workspace/resolve") {
+    if (isWorkspaceResolvePath(url.pathname)) {
       const workspaceId = url.searchParams.get("workspaceId")
       const directory = url.searchParams.get("directory")
       const uh = workspaceId === UH_WORKSPACE_ID || directory === UH_DIR
@@ -440,7 +442,12 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
       })
     }
     if (url.pathname === "/api/control/sessions") return json(route, [])
-    if (url.pathname === "/api/control/session-list") return json(route, { sessions: [], nextCursor: null })
+    if (isSessionListPath(url.pathname)) return json(route, { sessions: [], nextCursor: null })
+    // The usage outbox beacon fires on every boot (installUsageOutboxWakeups);
+    // an empty outbox syncs to zeros. Same contract mock-runtime serves.
+    if (url.pathname === "/api/claxedo/usage/sync") {
+      return json(route, { attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
+    }
 
     // ---- Same-origin: boot-time control-plane surface ----
     // With the query persister installed eagerly (no longer deferred to idle),

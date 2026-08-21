@@ -121,7 +121,14 @@ export async function startSignedFixture(input: {
   let log = ""
   const fixture = spawn(
     "node",
-    ["--import", "./src/text-imports.mjs", "--import", "tsx", "src/signed-browser-relay-fixture.mjs"],
+    // --conditions=development: the fixture's import chain reaches
+    // `@claxedo/local-server/self-hosted-execution`, whose plain `import`
+    // condition resolves to `dist/` — a BUILT artifact no e2e lane builds
+    // (the desktop job's fresh runner died on exactly that
+    // ERR_MODULE_NOT_FOUND). The `development` condition selects the TS
+    // source, which the tsx loader executes; bun-run paths already do the
+    // same via the export map's `bun` condition.
+    ["--conditions=development", "--import", "./src/text-imports.mjs", "--import", "tsx", "src/signed-browser-relay-fixture.mjs"],
     {
       cwd: SERVER_DIR,
       env: {

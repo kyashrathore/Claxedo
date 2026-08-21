@@ -1781,7 +1781,11 @@ describe("workspace runtime route audit", () => {
     expect(desktopRenderer).not.toMatch(/name:\s*"claxedo-override-resolver"/)
     expect(desktopRenderer).not.toMatch(/firstPartyOwners/)
     expect(desktopRenderer).not.toMatch(/\.\.\/app\/src/)
-    expect(desktopRenderer).toMatch(/plugins:\s*\[solidPlugin\(\), tailwindcss\(\)\]/)
+    // Still an exact pin (an override-resolver revival cannot hide in it);
+    // afec1f5 added the boundary-manifest plugin as a deliberate third entry.
+    expect(desktopRenderer).toMatch(
+      /plugins:\s*\[solidPlugin\(\), tailwindcss\(\), desktopRendererBoundaryManifestPlugin\(desktopDir\)\]/,
+    )
     expect(desktopRenderer).toMatch(/find:\s*"@\/"/)
     expect(desktopRenderer).toMatch(
       /const upstreamRoot = normalize\(fileURLToPath\(new URL\("\.\.\/claxedo-app\/src\/", import\.meta\.url\)\)\)/,

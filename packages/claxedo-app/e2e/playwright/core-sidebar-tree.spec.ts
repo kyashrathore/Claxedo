@@ -247,6 +247,8 @@
  *   idle→working→done cycle it shares a code path with IS covered). The mobile
  *   drawer is IN scope and covered by BEHAVIORS #14.
  */
+import { workspaceResolveRoute } from "../helpers/contracts/workspace-resolve"
+import { sessionListRoute } from "../helpers/contracts/session-list"
 import { expect, test, type Page } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
 
@@ -365,7 +367,7 @@ async function installSessionTreeFixtures(page: Page, opts: { dir: string; proje
     attachments: [],
   })
 
-  await page.route("**/api/control/session-list**", async (route) => {
+  await page.route(sessionListRoute, async (route) => {
     const url = new URL(route.request().url())
     sessionListRequests.push(url.search)
     if (sessionListDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, sessionListDelayMs))
@@ -423,7 +425,7 @@ async function installSessionTreeFixtures(page: Page, opts: { dir: string; proje
     })
   })
 
-  await page.route("**/api/workspace/resolve**", async (route) => {
+  await page.route(workspaceResolveRoute, async (route) => {
     const url = new URL(route.request().url())
     const directory = url.searchParams.get("directory") ?? opts.dir
     return route.fulfill({

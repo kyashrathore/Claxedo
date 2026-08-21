@@ -15,3 +15,19 @@ export function workspaceResolveResponse(workspace: Workspace): WorkspaceRespons
   if (!response) throw new Error(`workspace resolve contract produced no response for ${workspace.id}`)
   return response
 }
+
+/**
+ * Workspace resolve has TWO spellings of one route: `workspaceResolveUrl`
+ * (src/platform/runtime/agent/workspace-control-routes.ts) rewrites to
+ * `/api/claxedo/workspace/resolve` on loopback transports — which every e2e
+ * page is — while other transports keep `/api/workspace/resolve`. Fixtures
+ * must serve both; use these instead of a single-spelling glob or `===`.
+ */
+export function isWorkspaceResolvePath(pathname: string) {
+  return pathname === "/api/workspace/resolve" || pathname === "/api/claxedo/workspace/resolve"
+}
+
+/** `page.route` URL predicate covering both workspace-resolve spellings. */
+export function workspaceResolveRoute(url: URL) {
+  return isWorkspaceResolvePath(url.pathname)
+}

@@ -43,7 +43,7 @@ export default function LoginPage(props: LoginPageProps = {}) {
 
   const continueToClerk = async () => {
     setRedirecting(true);
-    await account.signIn().finally(() => setRedirecting(false));
+    await account.signIn({ redirectUrl: redirectUrl() }).finally(() => setRedirecting(false));
   };
 
   return (

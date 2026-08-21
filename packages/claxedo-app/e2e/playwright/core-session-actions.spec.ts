@@ -226,6 +226,7 @@
  *     See this file's returned findings.
  */
 import { expect, test, type Page, type Route } from "@playwright/test"
+import { sessionInventoryRoute } from "../helpers/contracts/session-list"
 import { installMockRuntime, type MockRuntimeHandles } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible } from "../helpers/turn-oracle"
 
@@ -1003,18 +1004,19 @@ test.describe("core session actions: subagent (child session) @core", () => {
       projectName: PROJECT_NAME,
       harness: "codex-acp",
     })
-    // `/api/control/sessions` (the session inventory bootstrap endpoint,
-    // `fetchLocalControlSessions` in `src/features/session/data/sync/inventory-source.ts`)
-    // IS mocked by the shared helper now — it defaults to the real route's own empty
-    // answer. This override supplies the one seeded row this behavior needs, and must
-    // be registered AFTER `installMockRuntime` to win: Playwright resolves routes
+    // The session inventory bootstrap endpoint (`fetchLocalControlSessions` in
+    // `src/features/session/data/sync/inventory-source.ts`, now GET
+    // /api/claxedo/session on the local control plane) IS mocked by the shared
+    // helper — it defaults to the real route's own empty answer. This override
+    // supplies the one seeded row this behavior needs, and must be registered
+    // AFTER `installMockRuntime` to win: Playwright resolves routes
     // last-registered-first.
     //
     // It used to sit BEFORE the install call while its own comment claimed the
     // opposite. That was harmless only while the shared mock had no route here at all;
     // the moment one landed, this override was shadowed and the seeded row vanished.
     // The comment was right and the code was wrong — fixed by moving the code.
-    await page.route("**/api/control/sessions**", async (route) => {
+    await page.route(sessionInventoryRoute, async (route) => {
       return route.fulfill({
         status: 200,
         contentType: "application/json",

@@ -9,7 +9,7 @@ import type { Page } from "@playwright/test"
  */
 export function contractRoute(
   page: Page,
-  url: string,
+  url: Parameters<Page["route"]>[0],
   handler: Parameters<Page["route"]>[1],
 ) {
   return page.route(url, handler)

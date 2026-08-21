@@ -884,6 +884,10 @@ export function createSelfHostedApp(
           stateDir: path.join(dataDir(), "usage-scanner"),
           since,
           until,
+          // The embedded engine's sqlite (OPENCODE_DB, engine.ts) lives under
+          // the data dir, not $HOME — without this, its turns never reach the
+          // Total-local view on a machine with no standalone opencode CLI.
+          opencodeRoots: [path.join(dataDir(), "opencode-engine")],
           classificationKey,
           refresh,
           classify: createUsageProvenanceClassifier(entries, { completeSources }),

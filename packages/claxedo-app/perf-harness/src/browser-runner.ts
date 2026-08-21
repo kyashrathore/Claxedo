@@ -1041,6 +1041,23 @@ function responseFor(url: URL, fixture: ReturnType<typeof fixtureFor>, method = 
   if (pathName === "/api/workspace") return { workspaces: controlWorkspaces(fixture) }
   if (pathName === "/api/workspace/resolve") return resolvedWorkspace(url, fixture)
   if (pathName === "/api/control/sessions") return { sessions: controlSessions(fixture, url.searchParams.get("workspaceId")) }
+  // Loopback transports rewrite the control-plane routes to /api/claxedo/*
+  // spellings (workspace-control-routes.ts). Both spellings are real served
+  // routes, so the mock answers both.
+  if (pathName === "/api/claxedo/session-list") return sessionNavigationPage(url, fixture)
+  if (pathName === "/api/claxedo/workspace/resolve") return resolvedWorkspace(url, fixture)
+  // Local control inventory (inventory-source.ts fetchLocalControlSessions):
+  // control-meta rows under `sessions`, filtered by ?directory.
+  if (pathName === "/api/claxedo/session") {
+    return { sessions: controlSessionRows(fixture, url.searchParams.get("directory")) }
+  }
+  // Boot-time usage outbox flush (usage-api.ts installUsageOutboxWakeups) —
+  // the contract's empty-outbox report.
+  if (pathName === "/api/claxedo/usage/sync") return { attempted: 0, delivered: 0, conflicts: 0, pending: 0 }
+  // Saved ACP connection registry (config-driven harness picker).
+  if (pathName === "/api/claxedo/agent-config/harness/acp-connections") return { connections: [] }
+  // Subagent hydration (directory-scope.tsx ensureSubagents) — HostSubagentRow[].
+  if (/^\/session\/[^/]+\/subagents$/.test(pathName)) return []
   if (pathName === "/api/claxedo/diff/vcs" || pathName === "/api/wr/diff/vcs") {
     return changedFilesForVcs(url, fixture)
   }
@@ -1324,6 +1341,10 @@ function controlWorkspaces(fixture: ReturnType<typeof fixtureFor>) {
 function controlSessions(fixture: ReturnType<typeof fixtureFor>, workspaceId?: string | null) {
   const index = workspaceId ? Number(workspaceId.replace(/^workspace_/, "")) : NaN
   const directory = Number.isFinite(index) ? fixture.workspaceDirectories[index] : undefined
+  return controlSessionRows(fixture, directory)
+}
+
+function controlSessionRows(fixture: ReturnType<typeof fixtureFor>, directory?: string | null) {
   return sessionsForDirectory(fixture, directory).map((session) => ({
     id: session.id,
     sessionID: session.id,

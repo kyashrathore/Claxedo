@@ -1,3 +1,5 @@
+import { isSessionListPath } from "./contracts/session-list"
+import { isWorkspaceResolvePath } from "./contracts/workspace-resolve"
 import fs from "node:fs"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import { createRequire } from "node:module"
@@ -1823,7 +1825,7 @@ async function respond(
       sendJson(outgoing, { worktree: repository })
       return
     }
-    if (incoming.method === "GET" && pathname === "/api/workspace/resolve") {
+    if (incoming.method === "GET" && isWorkspaceResolvePath(pathname)) {
       const target = url.searchParams.get("directory")
       if (!target || !path.isAbsolute(target)) {
         outgoing.statusCode = 400
@@ -1839,7 +1841,7 @@ async function respond(
       })
       return
     }
-    if (incoming.method === "GET" && pathname === "/api/control/session-list") {
+    if (incoming.method === "GET" && isSessionListPath(pathname)) {
       const query = parseSessionListQuery(url)
       sendJson(outgoing, buildSessionListResponse({
         query,

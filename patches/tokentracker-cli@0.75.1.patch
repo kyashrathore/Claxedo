@@ -1,5 +1,5 @@
 diff --git a/src/lib/rollout.js b/src/lib/rollout.js
-index f4a67887ad924e936fe9d5df8a999ea2b9a7b868..c863467f8e7ff95c85e8794917c9ba91ea322127 100644
+index f4a6788..5ba203f 100644
 --- a/src/lib/rollout.js
 +++ b/src/lib/rollout.js
 @@ -2,6 +2,7 @@ const fs = require("node:fs/promises");
@@ -7,13 +7,13 @@ index f4a67887ad924e936fe9d5df8a999ea2b9a7b868..c863467f8e7ff95c85e8794917c9ba91
  const path = require("node:path");
  const readline = require("node:readline");
 +const zlib = require("node:zlib");
-
+ 
  const crypto = require("node:crypto");
  const { ensureDir } = require("./fs");
-@@ -10796,6 +10797,461 @@ function isCjkCodePoint(code) {
+@@ -10796,6 +10797,470 @@ function isCjkCodePoint(code) {
    );
  }
-
+ 
 +// Side-effect-free embedding surface for hosts that need local usage without
 +// TokenTracker Cloud. It reads provider-owned history only and deliberately
 +// has no command, queue, telemetry, device-id, credential, or upload imports.
@@ -268,27 +268,34 @@ index f4a67887ad924e936fe9d5df8a999ea2b9a7b868..c863467f8e7ff95c85e8794917c9ba91
 +  catch { return { rows: [], malformed: 1 }; }
 +}
 +
-+function embeddedScanOpencode(sourceHome, since, until) {
-+  const root = path.join(sourceHome, ".local", "share", "opencode");
-+  if (!fssync.existsSync(root)) return { events: [], status: "unavailable", error: null };
++function embeddedScanOpencode(sourceHome, since, until, extraRoots = []) {
++  // The home root covers a standalone `opencode` CLI; extraRoots cover engines
++  // whose sqlite lives elsewhere (Claxedo's embedded engine keeps OPENCODE_DB
++  // under its own data dir, never under $HOME).
++  const roots = [path.join(sourceHome, ".local", "share", "opencode"), ...extraRoots]
++    .filter((root, index, all) => all.indexOf(root) === index)
++    .filter((root) => fssync.existsSync(root));
++  if (roots.length === 0) return { events: [], status: "unavailable", error: null };
 +  const events = [];
 +  let malformed = 0;
-+  const legacyRoot = path.join(root, "storage", "message");
-+  for (const filePath of embeddedWalk(legacyRoot, (_file, name) => name.startsWith("msg_") && name.endsWith(".json"))) {
-+    const result = embeddedJsonFile(filePath);
-+    malformed += result.malformed;
-+    if (!result.row) continue;
-+    const event = embeddedEvent("opencode", filePath, result.row, fssync.statSync(filePath).mtimeMs);
-+    if (event && event.observed_at >= since && event.observed_at <= until) events.push(event);
-+  }
-+  for (const dbPath of embeddedWalk(root, (_file, name) => /^opencode(?:[-._].*)?\.db$/.test(name), 1)) {
-+    const result = embeddedSqliteRows(dbPath, "SELECT id, session_id, time_updated, data FROM message WHERE json_extract(data, '$.role') = 'assistant' ORDER BY time_created ASC");
-+    malformed += result.malformed;
-+    for (const row of result.rows) {
-+      let data;
-+      try { data = JSON.parse(row.data); } catch { malformed += 1; continue; }
-+      const event = embeddedEvent("opencode", dbPath, { id: row.id, session_id: row.session_id, timeUpdated: row.time_updated, data }, fssync.statSync(dbPath).mtimeMs);
++  for (const root of roots) {
++    const legacyRoot = path.join(root, "storage", "message");
++    for (const filePath of embeddedWalk(legacyRoot, (_file, name) => name.startsWith("msg_") && name.endsWith(".json"))) {
++      const result = embeddedJsonFile(filePath);
++      malformed += result.malformed;
++      if (!result.row) continue;
++      const event = embeddedEvent("opencode", filePath, result.row, fssync.statSync(filePath).mtimeMs);
 +      if (event && event.observed_at >= since && event.observed_at <= until) events.push(event);
++    }
++    for (const dbPath of embeddedWalk(root, (_file, name) => /^opencode(?:[-._].*)?\.db$/.test(name), 1)) {
++      const result = embeddedSqliteRows(dbPath, "SELECT id, session_id, time_updated, data FROM message WHERE json_extract(data, '$.role') = 'assistant' ORDER BY time_created ASC");
++      malformed += result.malformed;
++      for (const row of result.rows) {
++        let data;
++        try { data = JSON.parse(row.data); } catch { malformed += 1; continue; }
++        const event = embeddedEvent("opencode", dbPath, { id: row.id, session_id: row.session_id, timeUpdated: row.time_updated, data }, fssync.statSync(dbPath).mtimeMs);
++        if (event && event.observed_at >= since && event.observed_at <= until) events.push(event);
++      }
 +    }
 +  }
 +  return embeddedResult(events, malformed);
@@ -434,6 +441,8 @@ index f4a67887ad924e936fe9d5df8a999ea2b9a7b868..c863467f8e7ff95c85e8794917c9ba91
 +  const until = Number(options.until);
 +  if (!Number.isFinite(since) || !Number.isFinite(until) || until < since) throw new Error("embedded history range is invalid");
 +  const sources = [...new Set(options.sources || [...EMBEDDED_SOURCES])];
++  const opencodeRoots = [...new Set(options.opencodeRoots || [])];
++  for (const root of opencodeRoots) if (!path.isAbsolute(root)) throw new Error("embedded history requires absolute opencodeRoots");
 +  const cursorState = embeddedReadHistoryCursors(options.stateDir);
 +  const buckets = new Map();
 +  const totalBuckets = new Map();
@@ -446,7 +455,7 @@ index f4a67887ad924e936fe9d5df8a999ea2b9a7b868..c863467f8e7ff95c85e8794917c9ba91
 +      continue;
 +    }
 +    const scan = source === "opencode"
-+      ? embeddedScanOpencode(options.sourceHome, since, until)
++      ? embeddedScanOpencode(options.sourceHome, since, until, opencodeRoots)
 +      : source === "cursor"
 +        ? embeddedScanCursor(options.sourceHome, since, until)
 +        : await embeddedScanJson(options.sourceHome, source, since, until, cursorState);
@@ -472,7 +481,7 @@ index f4a67887ad924e936fe9d5df8a999ea2b9a7b868..c863467f8e7ff95c85e8794917c9ba91
  module.exports = {
    listRolloutFiles,
    listRolloutFilesDeep,
-@@ -10926,4 +11382,5 @@ module.exports = {
+@@ -10926,4 +11391,5 @@ module.exports = {
    parseAntigravityIncremental,
    estimateAntigravityTokens,
    isCjkCodePoint,
