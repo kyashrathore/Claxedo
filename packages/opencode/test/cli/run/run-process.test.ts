@@ -98,7 +98,11 @@ describe("opencode run (non-interactive subprocess)", () => {
           }),
         )
         yield* llm.fail("upstream provider exploded mid-stream")
-        const result = yield* opencode.run("trigger midstream error", { timeoutMs: 30_000 })
+        // 55s matches the harness default (cli-process.ts): a cold CLI
+        // transpile crossed the old explicit 30s pin on a loaded 2-core
+        // runner (run 371: 30.7s). The 60s case budget below still bounds a
+        // genuine hang, and this test asserts OUTCOME, not speed.
+        const result = yield* opencode.run("trigger midstream error", { timeoutMs: 55_000 })
         expect(result.exitCode).toBe(0)
         expect(result.stdout).toBe("partial response\n")
         expect(result.stderr).not.toContain("upstream provider exploded mid-stream")
