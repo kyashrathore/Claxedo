@@ -774,6 +774,13 @@ export function MessageTimeline(props: {
       const root = listRoot()
       const index = messageRowIndex().get(id)
       if (!root || index === undefined) return false
+      // getOffsetForIndex reads measurementsCache WITHOUT refreshing the lazy
+      // memo behind it. After a burst of row re-measures with no render in
+      // between, that stale cache can report the target at the CURRENT scroll
+      // position while the fresh measurements place it viewports away — the
+      // resulting zero-distance scroll ends a long jump short of its target.
+      // getTotalSize() runs getMeasurements(), which refreshes the cache.
+      virtualizer.getTotalSize()
       const offset = virtualizer.getOffsetForIndex(index, "start")
       if (!offset) return false
       const box = root.getBoundingClientRect()
@@ -1405,11 +1412,24 @@ export function MessageTimeline(props: {
           return undefined
       }
     }
+    // Part-level identity beside the message-level one: an assistant message
+    // renders one row PER PART GROUP, so `data-content-message-id` alone is
+    // ambiguous — every group of the message carries it. Verification that
+    // wants to hash a specific part's rendered text (the benchmark's semantic
+    // readiness) needs to know WHICH part a row shows; a message five
+    // viewports tall never has its first text part on screen at the
+    // bottom-anchored open, so message-granular content checks cannot work.
+    const contentPartID = () => {
+      const row = input.row()
+      if (row._tag !== "AssistantPart") return undefined
+      return "ref" in row.group ? row.group.ref.partID : row.group.refs[0]?.partID
+    }
     return (
       <div
         id={anchor() ? props.anchor(input.row().userMessageID) : undefined}
         data-message-id={input.row().userMessageID}
         data-content-message-id={contentMessageID()}
+        data-content-part-id={contentPartID()}
         data-timeline-row={input.row()._tag}
         classList={{
           "min-w-0 w-full max-w-full": true,

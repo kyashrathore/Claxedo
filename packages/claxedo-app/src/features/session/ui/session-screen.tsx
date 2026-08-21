@@ -981,6 +981,9 @@ export default function SessionPage() {
       autoScroll.userScrolled,
       (scrolled) => {
         if (scrolled) return
+        // A converging programmatic jump transiently reads as "at bottom";
+        // clearing here would cancel it mid-flight and strand the scroll.
+        if (seeking()) return
         setStore("messageId", undefined)
         clearMessageHash()
       },
@@ -1131,7 +1134,7 @@ export default function SessionPage() {
     errorMessage,
   })
 
-  const { clearMessageHash, scrollToMessage } = useSessionHashScroll({
+  const { clearMessageHash, scrollToMessage, seeking } = useSessionHashScroll({
     sessionKey,
     sessionID: () => sessionID(),
     messagesReady,
