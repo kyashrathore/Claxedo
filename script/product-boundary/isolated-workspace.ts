@@ -255,7 +255,11 @@ export function verifyIsolatedWorkspace(policy: Policy, runner: IsolatedRunner =
       },
       ...(policy.isolation.native ?? []).map((native): IsolatedCommand => {
         if (native === "node-pty") {
-          return { cwd: temporary, command: ["bun", "packages/core/script/fix-node-pty.ts"] }
+          // The isolated install runs --ignore-scripts, and node-pty ships no
+          // Linux prebuild — the binary exists only as the HOST repo's
+          // node-gyp output. Hand the host root over so fix-node-pty can copy
+          // that build in; without it the native probe below can never load.
+          return { cwd: temporary, command: ["bun", "packages/core/script/fix-node-pty.ts", "--native-source", root] }
         }
         return {
           cwd: temporary,
