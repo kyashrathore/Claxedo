@@ -127,7 +127,7 @@ function walk() {
         const resolved = resolveRelative(file, ref.spec)
         if (resolved && !visited.has(resolved)) queue.push(resolved)
       } else {
-        bareImports.push({ from: path.relative(SRC, file), spec: ref.spec })
+        bareImports.push({ from: path.relative(SRC, file).split(path.sep).join("/"), spec: ref.spec })
       }
     }
   }
@@ -230,7 +230,7 @@ describe("worker import-graph", () => {
           /\bKVNamespace\b/.test(text)
         )
       })
-      .map((file) => path.relative(SRC, file))
+      .map((file) => path.relative(SRC, file).split(path.sep).join("/"))
       .filter((rel) => !rel.endsWith(".cf.ts"))
       .sort()
 
@@ -244,7 +244,7 @@ describe("worker import-graph", () => {
     // Every .cf.ts file on disk...
     const marked = walkAll(SRC)
       .filter((file) => file.endsWith(".cf.ts"))
-      .map((file) => path.relative(SRC, file))
+      .map((file) => path.relative(SRC, file).split(path.sep).join("/"))
       .sort()
     expect(marked.length, "expected at least one .cf.ts module").toBeGreaterThan(0)
 
@@ -254,14 +254,17 @@ describe("worker import-graph", () => {
     const workerGraph = new Set(visitedRel)
     const offenders: string[] = []
     for (const file of walkAll(SRC).filter((f) => f.endsWith(".ts"))) {
-      const rel = path.relative(SRC, file)
+      // Forward slashes throughout: workerGraph holds normalized entries, and
+      // a backslash rel on Windows would flag every Worker module as an
+      // offender.
+      const rel = path.relative(SRC, file).split(path.sep).join("/")
       if (rel.endsWith(".test.ts") || rel.endsWith(".cf.ts") || workerGraph.has(rel)) continue
       for (const ref of parseImports(fs.readFileSync(file, "utf8"))) {
         if (ref.typeOnly) continue
         if (!ref.spec.startsWith(".")) continue
         const resolved = resolveRelative(file, ref.spec)
         if (resolved?.endsWith(".cf.ts")) {
-          offenders.push(`${rel} -> ${path.relative(SRC, resolved)}`)
+          offenders.push(`${rel} -> ${path.relative(SRC, resolved).split(path.sep).join("/")}`)
         }
       }
     }

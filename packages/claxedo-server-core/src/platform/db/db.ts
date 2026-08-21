@@ -198,37 +198,52 @@ export namespace ClaxedoDB {
     const { sqlite, db } = openDatabase(Path())
     state.sqlite = sqlite
 
-    pragma(sqlite, "journal_mode = WAL")
-    pragma(sqlite, "synchronous = NORMAL")
-    pragma(sqlite, "busy_timeout = 5000")
-    pragma(sqlite, "cache_size = -64000")
-    pragma(sqlite, "foreign_keys = ON")
-    sqlite.exec("PRAGMA wal_checkpoint(PASSIVE)")
+    try {
+      pragma(sqlite, "journal_mode = WAL")
+      pragma(sqlite, "synchronous = NORMAL")
+      pragma(sqlite, "busy_timeout = 5000")
+      pragma(sqlite, "cache_size = -64000")
+      pragma(sqlite, "foreign_keys = ON")
+      sqlite.exec("PRAGMA wal_checkpoint(PASSIVE)")
 
-    const entries = resolveMigrations()
-    if (entries.length > 0) {
-      log.info("applying claxedo migrations", {
-        count: entries.length,
-        mode: typeof CLAXEDO_MIGRATIONS !== "undefined" ? "bundled" : "dev",
-      })
-      applyMigrations(sqlite, entries)
-    }
-
-    const fixed = (() => {
-      try {
-        return repair(sqlite)
-      } catch (error) {
-        log.error("failed to repair claxedo schema", { error: String(error) })
-        throw error
+      const entries = resolveMigrations()
+      if (entries.length > 0) {
+        log.info("applying claxedo migrations", {
+          count: entries.length,
+          mode: typeof CLAXEDO_MIGRATIONS !== "undefined" ? "bundled" : "dev",
+        })
+        applyMigrations(sqlite, entries)
       }
-    })()
-    if (fixed.length > 0) {
-      log.warn("repaired claxedo schema", {
-        fixed,
-      })
-    }
 
-    return db
+      const fixed = (() => {
+        try {
+          return repair(sqlite)
+        } catch (error) {
+          log.error("failed to repair claxedo schema", { error: String(error) })
+          throw error
+        }
+      })()
+      if (fixed.length > 0) {
+        log.warn("repaired claxedo schema", {
+          fixed,
+        })
+      }
+
+      return db
+    } catch (error) {
+      // A refused open fails CLOSED all the way: without this, the handle
+      // opened above outlives the throw, and on Windows that leaked handle
+      // pins claxedo.db — and therefore the whole data directory — against
+      // deletion, with no way for the caller to reach this instance's close().
+      try {
+        sqlite.close()
+      } catch {
+        // Closing a handle that never fully opened can itself throw; the
+        // original error is the one worth surfacing.
+      }
+      state.sqlite = undefined
+      throw error
+    }
   })
 
   export function close() {

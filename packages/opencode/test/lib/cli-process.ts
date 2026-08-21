@@ -206,7 +206,14 @@ export function withCliFixture<A, E>(
 
     const spawn = Effect.fn("opencode.spawn")(function* (args: string[], opts?: SpawnOpts) {
       const start = Date.now()
-      const timeoutMs = opts?.timeoutMs ?? 30_000
+      // 55s, not 30s: each spawn cold-transpiles the whole engine with bun,
+      // and on a loaded 2-core CI runner six concurrent run-process tests all
+      // crossed 30s (run 356: every one failed at exactly the old default).
+      // Stays under the tests' 60s bun-test budgets so a genuine hang still
+      // fails as a timeout here, with the kill finalizer, not as a
+      // signal-killed test. Tests that assert timeout behavior pass their
+      // own explicit timeoutMs.
+      const timeoutMs = opts?.timeoutMs ?? 55_000
       // stdin: "ignore" so the child doesn't see a piped stdin and block
       // on `Bun.stdin.text()` (see src/cli/cmd/run.ts — non-TTY stdin is
       // consumed as the prompt). The old Process.run wrapper defaulted to

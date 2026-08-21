@@ -25,8 +25,13 @@ beforeAll(() => {
   app.all("/api/auth/*", (c) => embedded.handler(c.req.raw))
 })
 
-afterAll(() => {
+afterAll(async () => {
   embedded.close()
+  // The auth context helpers can open claxedo.db under the temp data dir;
+  // an open handle makes the rm below EPERM on Windows however long it
+  // retries.
+  const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
+  ClaxedoDB.close()
   // Windows keeps the auth sqlite file briefly locked after close; the
   // retries absorb that lag so the temp dir can be deleted.
   fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })

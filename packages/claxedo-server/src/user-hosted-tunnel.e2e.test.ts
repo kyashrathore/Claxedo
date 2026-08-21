@@ -335,7 +335,10 @@ describe("server-owned user-hosted Workspace Relay tunnel E2E", () => {
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          command: "/bin/cat",
+          // Any long-lived quiet process the PTY can host: the test only
+          // waits for the first cursor frame. /bin/cat does not exist on
+          // Windows; an interactive cmd.exe idles the same way.
+          command: process.platform === "win32" ? "cmd.exe" : "/bin/cat",
           args: [],
           cwd: ".",
         }),

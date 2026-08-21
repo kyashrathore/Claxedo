@@ -558,7 +558,7 @@ describe("control plane integration", () => {
     })
     expect(create.status).toBe(200)
     const created = await create.json() as { name: string; branch: string; directory: string }
-    expect(created.directory).toContain("/worktree/")
+    expect(created.directory.split(path.sep).join("/")).toContain("/worktree/")
     expect(created.branch.startsWith("opencode/")).toBe(true)
 
     const event = await stream.event

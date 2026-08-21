@@ -4,6 +4,8 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { SelfHostedCompositionError, assertSelfHostedPosture } from "./posture"
 import { selfHostedPosture, staticAppPosture } from "./start"
+import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
+import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 
 /**
  * The self-hosted entry's posture reading, and the wiring that makes it run.
@@ -108,7 +110,12 @@ describe("the reported authority is the one the composition builds", () => {
       else process.env[key] = value
       delete saved[key]
     }
-    while (dataDirs.length > 0) rmSync(dataDirs.pop()!, { recursive: true, force: true })
+    // Close the sqlite handles each composition opened under its data dir:
+    // Windows refuses to delete a directory holding an open database file,
+    // and keeps a brief lock even after close (the retries absorb it).
+    ClaxedoDB.close()
+    closeAuthorityDatabases()
+    while (dataDirs.length > 0) rmSync(dataDirs.pop()!, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   })
 
   async function compose(authorityUrl: string | undefined) {

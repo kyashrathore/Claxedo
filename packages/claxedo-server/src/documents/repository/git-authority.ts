@@ -556,7 +556,17 @@ async function replaceSnapshotFile(target: string, content: string | Uint8Array,
     } finally {
       await file.close()
     }
-    await fs.rename(temporary, target)
+    try {
+      await fs.rename(temporary, target)
+    } catch (error) {
+      // Snapshots are stored read-only (0o400), and on Windows the target's
+      // read-only ATTRIBUTE blocks a replacing rename with EPERM — POSIX only
+      // consults the directory. Clear the bit on the existing target and
+      // retry once; anything else, or a second failure, is a real error.
+      if ((error as NodeJS.ErrnoException).code !== "EPERM") throw error
+      await fs.chmod(target, 0o600).catch(() => undefined)
+      await fs.rename(temporary, target)
+    }
     await syncDirectory(path.dirname(target))
   } catch (error) {
     await fs.rm(temporary, { force: true }).catch(() => undefined)

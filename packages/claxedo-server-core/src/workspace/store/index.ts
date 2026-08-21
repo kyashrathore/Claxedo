@@ -575,8 +575,11 @@ export async function listProjects() {
         if (row.kind === "cloud") return true
         // Git worktrees have a different repo_root — keep them
         if (row.repo_root && row.repo_root !== repoRoot) return true
-        // Subdirectories of the repo root are not real workspaces
-        if (row.directory.startsWith(repoRoot + "/")) return false
+        // Subdirectories of the repo root are not real workspaces. Both
+        // separators: rows hold native paths (backslash on Windows), and a
+        // hardcoded "/" would promote every Windows subdirectory session to a
+        // phantom sandbox.
+        if (row.directory.startsWith(repoRoot + path.sep) || row.directory.startsWith(repoRoot + "/")) return false
         return true
       })
       const sandboxes = others.map(workspaceKey)
