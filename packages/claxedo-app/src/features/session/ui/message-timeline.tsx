@@ -1385,10 +1385,31 @@ export function MessageTimeline(props: {
       return row._tag === "AssistantPart" && row.previousAssistantPart
     }
 
+    // The row's OWN message id, distinct from the turn key: a UserMessage row
+    // is its user message; an AssistantPart row belongs to the assistant
+    // message its parts came from. `data-message-id` above is the TURN key
+    // (userMessageID for every row of the turn) — external observers that need
+    // per-message identity (the agent-app benchmark's semantic readiness, and
+    // any tooling verifying "this exact message painted") read
+    // `data-content-message-id`. The timeline rework that introduced turn-level
+    // keys dropped this attribute silently and the benchmark could no longer
+    // find any row to verify.
+    const contentMessageID = () => {
+      const row = input.row()
+      switch (row._tag) {
+        case "UserMessage":
+          return row.userMessageID
+        case "AssistantPart":
+          return "ref" in row.group ? row.group.ref.messageID : row.group.refs[0]?.messageID
+        default:
+          return undefined
+      }
+    }
     return (
       <div
         id={anchor() ? props.anchor(input.row().userMessageID) : undefined}
         data-message-id={input.row().userMessageID}
+        data-content-message-id={contentMessageID()}
         data-timeline-row={input.row()._tag}
         classList={{
           "min-w-0 w-full max-w-full": true,
