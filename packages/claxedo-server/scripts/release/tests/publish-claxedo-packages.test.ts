@@ -129,7 +129,9 @@ describe("publish-claxedo-packages", () => {
         fs.mkdirSync(stage, { recursive: true })
         fs.copyFileSync(path.join(cwd!, "package.json"), path.join(stage, "package.json"))
         const filename = "fixture.tgz"
-        defaultCommandRunner("tar", ["-czf", path.join(dest, filename), "-C", path.join(dest, "stage"), "package"], dest)
+        // Relative -f for the same reason the script extracts with one: an
+        // absolute Windows path there is GNU tar remote syntax.
+        defaultCommandRunner("tar", ["-czf", filename, "-C", path.join(dest, "stage"), "package"], dest)
         return JSON.stringify([{ filename, files: [{ path: "package.json" }, { path: "README.md" }, { path: "LICENSE" }] }])
       }
       return ""

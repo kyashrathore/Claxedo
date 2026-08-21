@@ -160,7 +160,10 @@ export async function walkAll(root: string, limit = 200_000): Promise<string[]> 
     }
     for (const row of rows) {
       if (ALL_IGNORE.has(row.name)) continue
-      const next = rel ? path.join(rel, row.name) : row.name
+      // Forward slashes, matching gitListAll: both feed the same wire contract,
+      // and path.join would hand Windows clients `src\todo.ts` from this branch
+      // while the git branch serves `src/todo.ts`.
+      const next = rel ? `${rel}/${row.name}` : row.name
       if (row.isDirectory()) {
         queue.push(next)
       } else if (row.isFile()) {

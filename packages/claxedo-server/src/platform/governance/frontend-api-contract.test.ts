@@ -239,7 +239,12 @@ describe("frontend API contract", () => {
     else process.env.CLAXEDO_DATA_DIR = previous.CLAXEDO_DATA_DIR
     if (previous.CLAXEDO_STATE_DIR === undefined) delete process.env.CLAXEDO_STATE_DIR
     else process.env.CLAXEDO_STATE_DIR = previous.CLAXEDO_STATE_DIR
-    await fs.rm(root, { recursive: true, force: true })
+    // Close every sqlite handle before deleting the data dir: Windows answers an unlink of an open file with EBUSY, and keeps a brief lock even after close (the retries absorb it).
+    const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
+    const { closeAuthorityDatabases } = await import("@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store")
+    ClaxedoDB.close()
+    closeAuthorityDatabases()
+    await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   })
 
   test("serves the full frontend boot and prompt-selector API set for a cloud workspace id", async () => {

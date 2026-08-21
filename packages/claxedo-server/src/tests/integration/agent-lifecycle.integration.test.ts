@@ -380,7 +380,14 @@ describe("agent lifecycle integration", () => {
       if (v !== undefined) (process.env as any)[k] = v
       else delete (process.env as any)[k]
     }
-    await fs.rm(root, { recursive: true, force: true })
+    // Close every sqlite handle the composition opened before deleting its
+    // data dir: Windows answers an unlink of an open file with EBUSY, and
+    // keeps a brief lock even after close (the retries absorb it).
+    const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
+    const { closeAuthorityDatabases } = await import("@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store")
+    ClaxedoDB.close()
+    closeAuthorityDatabases()
+    await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   })
 
   // ── opencode runner ────────────────────────────────────────────────────────

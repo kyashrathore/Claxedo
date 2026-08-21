@@ -52,6 +52,9 @@ describe("local WorkGraph workspace execution", () => {
     await run("git", ["-C", repository, "init"])
     await run("git", ["-C", repository, "config", "user.email", "test@example.com"])
     await run("git", ["-C", repository, "config", "user.name", "Test"])
+    // Repo-local so the worktrees inherit it: the runner's global autocrlf
+    // (Windows CI) would otherwise check exact-byte fixture files out as CRLF.
+    await run("git", ["-C", repository, "config", "core.autocrlf", "false"])
     await fs.writeFile(`${repository}/README.md`, "seed")
     await run("git", ["-C", repository, "add", "README.md"])
     await run("git", ["-C", repository, "commit", "-m", "seed"])
@@ -526,6 +529,9 @@ async function repositoryFixture(name: string) {
   await run("git", ["-C", repository, "init"])
   await run("git", ["-C", repository, "config", "user.email", "test@example.com"])
   await run("git", ["-C", repository, "config", "user.name", "Test"])
+  // Repo-local so the worktrees inherit it: the runner's global autocrlf
+  // (Windows CI) would otherwise check exact-byte fixture files out as CRLF.
+  await run("git", ["-C", repository, "config", "core.autocrlf", "false"])
   await fs.writeFile(`${repository}/README.md`, "seed")
   await run("git", ["-C", repository, "add", "README.md"])
   await run("git", ["-C", repository, "commit", "-m", "seed"])

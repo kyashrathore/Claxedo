@@ -16,8 +16,8 @@ import {
   normalizeRepositoryRelativePath,
   readRepositoryFile,
   serializeRepositoryOperation,
-  syncDirectory,
 } from "./file-authority"
+import { syncDirectory } from "../fs-durability"
 import { mapBounded } from "../map-bounded"
 import {
   boundedSnapshotPins,
@@ -557,12 +557,7 @@ async function replaceSnapshotFile(target: string, content: string | Uint8Array,
       await file.close()
     }
     await fs.rename(temporary, target)
-    const directory = await fs.open(path.dirname(target), "r")
-    try {
-      await directory.sync()
-    } finally {
-      await directory.close()
-    }
+    await syncDirectory(path.dirname(target))
   } catch (error) {
     await fs.rm(temporary, { force: true }).catch(() => undefined)
     throw error

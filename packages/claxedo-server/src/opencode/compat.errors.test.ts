@@ -28,7 +28,12 @@ afterEach(async () => {
 })
 
 afterAll(async () => {
-  await fs.rm(root, { recursive: true, force: true })
+  // Close the suite's sqlite handle before deleting its data dir: Windows
+  // refuses to unlink an open claxedo.db (EBUSY), and lags briefly even after
+  // close — the retries absorb that lag.
+  const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
+  ClaxedoDB.close()
+  await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   if (prev.ANTHROPIC_API_KEY === undefined) delete process.env.ANTHROPIC_API_KEY
   else process.env.ANTHROPIC_API_KEY = prev.ANTHROPIC_API_KEY
   if (prev.CLAXEDO_DATA_DIR === undefined) delete process.env.CLAXEDO_DATA_DIR

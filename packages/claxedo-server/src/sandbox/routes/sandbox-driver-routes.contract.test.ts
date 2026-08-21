@@ -56,10 +56,15 @@ beforeAll(() => {
   process.env.CLAXEDO_DATA_DIR = tempDataDir
 })
 
-afterAll(() => {
+afterAll(async () => {
   if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previousDataDir
-  fs.rmSync(tempDataDir, { recursive: true, force: true })
+  // Close the sqlite handles the routes opened under the temp data dir:
+  // Windows refuses to delete a directory holding an open database file, and
+  // keeps a brief lock even after close (the retries absorb it).
+  const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
+  ClaxedoDB.close()
+  fs.rmSync(tempDataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
 function mountedSandboxDriverApp() {

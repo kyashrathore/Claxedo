@@ -17,6 +17,7 @@ import {
   documentErrorFromCause,
   nodeErrorCode,
 } from "../../errors"
+import { syncDirectory } from "../../fs-durability"
 import { createDocumentHistory } from "../../history"
 import { BoundedFileTooLargeError, readBoundedFile } from "../../bounded-file-read"
 import type {
@@ -987,17 +988,6 @@ async function releaseOwnedLock(lock: string, handle: FileHandle, token: string,
     if (nodeErrorCode(error) !== "EEXIST") throw documentErrorFromCause(error, `restoring lock during release for ${documentId}`)
   })
   if (await exists(lock).then(async (present) => present && await sameFile(lock, release))) await removeIfPresent(release)
-}
-
-async function syncDirectory(directory: string) {
-  const handle = await fs.open(directory, "r")
-  try {
-    await handle.sync()
-  } catch (error) {
-    if (!["EINVAL", "ENOTSUP", "EBADF", "EISDIR"].includes(nodeErrorCode(error) ?? "")) throw error
-  } finally {
-    await handle.close()
-  }
 }
 
 async function exists(file: string) {

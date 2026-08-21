@@ -9,6 +9,7 @@ import {
   documentErrorFromCause,
   nodeErrorCode,
 } from "./errors"
+import { syncDirectory } from "./fs-durability"
 import { mapBounded } from "./map-bounded"
 import { boundedSnapshotPins, expiredSnapshotLease, requireBoundedSnapshotMetadata } from "./snapshot-pins"
 import type { DocumentActor, SnapshotID, SnapshotRef } from "./port"
@@ -292,21 +293,6 @@ async function atomicWrite(file: string, content: string, mode: number) {
     await removeIfPresent(temporary)
     throw error
   }
-}
-
-async function syncDirectory(directory: string) {
-  const handle = await fs.open(directory, "r")
-  try {
-    await handle.sync()
-  } catch (error) {
-    if (!directorySyncUnsupported(error)) throw error
-  } finally {
-    await handle.close()
-  }
-}
-
-function directorySyncUnsupported(error: unknown) {
-  return ["EINVAL", "ENOTSUP", "EBADF", "EISDIR"].includes(nodeErrorCode(error) ?? "")
 }
 
 async function removeIfPresent(file: string) {

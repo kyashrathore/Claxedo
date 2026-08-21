@@ -252,7 +252,8 @@ describe("build-sandbox-image", () => {
     const order = workspacePackageBuildOrder()
     expect(new Set(order).size).toBe(order.length)
 
-    const index = (name: string) => order.findIndex((dir) => dir.endsWith(`/${name}`))
+    // Separator-normalized: on Windows the build order carries backslash paths.
+    const index = (name: string) => order.findIndex((dir) => dir.split(path.sep).join("/").endsWith(`/${name}`))
 
     // Both host-bundle roots are present. WorkGraph joined the closure when its
     // runtime adapter moved out of workspace-runtime; without it the sandbox

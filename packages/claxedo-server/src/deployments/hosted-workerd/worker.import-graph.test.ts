@@ -136,7 +136,8 @@ function walk() {
 
 describe("worker import-graph", () => {
   const { visited, bareImports } = walk()
-  const visitedRel = [...visited].map((f) => path.relative(SRC, f))
+  // Forward slashes so the literals below hold on Windows too.
+  const visitedRel = [...visited].map((f) => path.relative(SRC, f).split(path.sep).join("/"))
 
   test("Worker deployment keeps native SDK compatibility and public Worker-to-Worker fetch enabled", () => {
     // The Daytona SDK now enters the Worker bundle through the extracted
