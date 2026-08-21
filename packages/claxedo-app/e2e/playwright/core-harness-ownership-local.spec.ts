@@ -1110,7 +1110,10 @@ test.describe("core harness ownership (local) @core", () => {
       const mock = await installMockRuntime(page, {
         dir: DIR,
         sessionId: "ses_core_harness_switch_status",
-        harnessModels: { "claude-acp": [{ id: "claude-sonnet-4-6", name: "Claude Sonnet" }] },
+        // "Claude" in the picker is the NATIVE claude-sdk row: first-party ACP
+        // options left the picker when operator-configured ACP connections
+        // became the ACP group (see agent-harness-selector BUILTIN_HARNESS_OPTIONS).
+        harnessModels: { "claude-sdk": [{ id: "claude-sonnet-4-6", name: "Claude Sonnet" }] },
       })
 
       await seedOneProject(page, DIR)

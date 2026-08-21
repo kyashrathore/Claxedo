@@ -435,6 +435,27 @@ type HarnessCase = {
   id: string
   option?: RegExp
   optionIndex?: number
+  /** First-party ACP harnesses have no picker row any more (operator-configured
+   *  ACP connections own the picker's ACP group) — they are selected by seeding
+   *  the server default (`seedDefaultHarness`) and letting the draft hydrate. */
+  seededHarness?: string
+}
+
+/**
+ * Sets the server's harness default for this directory — the selection
+ * mechanism for harnesses the picker no longer lists. Mirrors Tier R's
+ * `seedDefaultHarness` in `real-harness-local.spec.ts`.
+ */
+async function seedDefaultHarness(dir: string, harnessKey: string) {
+  const url = `${BACKEND_URL}/api/claxedo/agent-config/harness?directory=${encodeURIComponent(dir)}`
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type: harnessKey, directory: dir }),
+  })
+  if (!res.ok) {
+    throw new Error(`failed to seed the server harness default to "${harnessKey}" via ${url} (${res.status})`)
+  }
 }
 
 // `expectLiveUserRowCount` / `expectLiveTurnsSettledAfterReload` moved to
@@ -452,6 +473,12 @@ async function runLiveHarnessSmoke(page: Page, dir: string, harness: HarnessCase
 
   if (harness.option) {
     await switchDraftHarness(page, harness.option, harness.optionIndex ?? 0)
+    await waitForHarnessReady(page)
+  } else if (harness.seededHarness) {
+    await expect(
+      page.locator('[data-action="prompt-harness-model"]').last(),
+      `draft did not hydrate seeded harness "${harness.seededHarness}"`,
+    ).toHaveAttribute("data-harness", harness.seededHarness, { timeout: 45_000 })
     await waitForHarnessReady(page)
   }
 
@@ -534,8 +561,9 @@ test.describe("live real-harness smoke @live", () => {
         "this live smoke run.",
     )
     const dir = await makeWorkspace("claude-acp")
+    await seedDefaultHarness(dir, "claude-acp")
     await seedOneProject(page, dir)
-    await runLiveHarnessSmoke(page, dir, { id: "claude-acp", option: /^Claude$/, optionIndex: 0 })
+    await runLiveHarnessSmoke(page, dir, { id: "claude-acp", seededHarness: "claude-acp" })
   })
 
   test("claude native SDK harness completes 3 real turns and survives reload — behaviors 3,6,7", async ({ page }) => {
@@ -548,7 +576,7 @@ test.describe("live real-harness smoke @live", () => {
     )
     const dir = await makeWorkspace("claude-sdk")
     await seedOneProject(page, dir)
-    await runLiveHarnessSmoke(page, dir, { id: "claude-sdk", option: /^Claude$/, optionIndex: 1 })
+    await runLiveHarnessSmoke(page, dir, { id: "claude-sdk", option: /^Claude$/, optionIndex: 0 })
   })
 
   test("codex ACP harness (real codex-acp subprocess) completes 3 real turns and survives reload — behaviors 4,6,7", async ({
@@ -562,8 +590,9 @@ test.describe("live real-harness smoke @live", () => {
         "this live smoke run.",
     )
     const dir = await makeWorkspace("codex-acp")
+    await seedDefaultHarness(dir, "codex-acp")
     await seedOneProject(page, dir)
-    await runLiveHarnessSmoke(page, dir, { id: "codex-acp", option: /^Codex$/, optionIndex: 0 })
+    await runLiveHarnessSmoke(page, dir, { id: "codex-acp", seededHarness: "codex-acp" })
   })
 
   test("codex native SDK harness completes 3 real turns and survives reload — behavior 5", async ({
@@ -583,7 +612,7 @@ test.describe("live real-harness smoke @live", () => {
     // output with no `thread not found`, from BOTH the source driver and the published
     // `@claxedo/agent-sdk-runtime@0.5.3` bundle. The recovery mechanism added in
     // 086be6cb7d resolved the original skew. Now a first-class live-smoke harness like
-    // its siblings (native SDK == the second `Codex` option, index 1).
+    // its siblings (native SDK == the picker's single `Codex` option).
     const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
     test.skip(
       !binary,
@@ -594,6 +623,6 @@ test.describe("live real-harness smoke @live", () => {
     )
     const dir = await makeWorkspace("codex-sdk")
     await seedOneProject(page, dir)
-    await runLiveHarnessSmoke(page, dir, { id: "codex-sdk", option: /^Codex$/, optionIndex: 1 })
+    await runLiveHarnessSmoke(page, dir, { id: "codex-sdk", option: /^Codex$/, optionIndex: 0 })
   })
 })
