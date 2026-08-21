@@ -18,8 +18,11 @@ function makeExecutable(dir: string, name: string): string {
 describe("resolveClaudeExecutable", () => {
   test("finds `claude` on PATH", () => {
     const dir = path.join(root, "onpath")
-    const bin = makeExecutable(dir, "claude")
-    expect(resolveClaudeExecutable({ PATH: dir }, "darwin", root)).toBe(bin)
+    makeExecutable(dir, "claude")
+    // The resolver joins with the SIMULATED platform's separator (posix for
+    // darwin), so on a Windows host the candidate is `<win-dir>/claude`, not
+    // the host path.join. Build the expectation the same way.
+    expect(resolveClaudeExecutable({ PATH: dir }, "darwin", root)).toBe(path.posix.join(dir, "claude"))
   })
 
   test("falls back to the native-installer location when PATH misses it", () => {

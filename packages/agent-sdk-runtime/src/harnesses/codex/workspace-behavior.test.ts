@@ -59,6 +59,25 @@ function fakeCodexStore(): AgentRuntimeStoreWithRecovery {
   })
 }
 
+/**
+ * Windows cannot execute a shebang script, so there the fake is a .cmd shim
+ * delegating to node — the same launcher shape a real npm install of codex
+ * puts on PATH, which the driver routes through the shell.
+ */
+async function installFakeBinary(dir: string, script: string): Promise<string> {
+  if (process.platform !== "win32") {
+    const binary = path.join(dir, "codex")
+    await fs.promises.writeFile(binary, `#!/usr/bin/env node\n${script}`, "utf8")
+    await fs.promises.chmod(binary, 0o755)
+    return binary
+  }
+  const implementation = path.join(dir, "codex-impl.cjs")
+  await fs.promises.writeFile(implementation, script, "utf8")
+  const binary = path.join(dir, "codex.cmd")
+  await fs.promises.writeFile(binary, `@echo off\r\nnode "%~dp0codex-impl.cjs" %*\r\n`, "utf8")
+  return binary
+}
+
 async function makeFakeCodex(options: {
   requestRefresh?: boolean
   auth401?: boolean
@@ -70,9 +89,8 @@ async function makeFakeCodex(options: {
 } = {}) {
   const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "codex-app-server-"))
   tempDirs.push(dir)
-  const binary = path.join(dir, "codex")
   const log = path.join(dir, "requests.ndjson")
-  await fs.promises.writeFile(binary, `#!/usr/bin/env node
+  const binary = await installFakeBinary(dir, `
 const fs = require("fs")
 const logPath = ${JSON.stringify(log)}
 const requestRefresh = ${JSON.stringify(options.requestRefresh === true)}
@@ -156,8 +174,7 @@ process.stdin.on("data", (chunk) => {
     }
   }
 })
-`, "utf8")
-  await fs.promises.chmod(binary, 0o755)
+`)
   return { dir, binary, log }
 }
 

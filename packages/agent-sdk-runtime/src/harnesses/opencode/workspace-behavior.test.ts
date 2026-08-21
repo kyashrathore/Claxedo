@@ -33,15 +33,15 @@ describe("opencode adapter", () => {
 
   test("keeps explicitly provided opencode environment paths", () => {
     expect(spawnEnv({
-      OPENCODE_CONFIG_DIR: "/tmp/opencode-config",
-      XDG_CONFIG_HOME: "/tmp/xdg-config",
-      XDG_DATA_HOME: "/tmp/xdg-data",
-      XDG_CACHE_HOME: "/tmp/xdg-cache",
+      OPENCODE_CONFIG_DIR: path.resolve("/tmp/opencode-config"),
+      XDG_CONFIG_HOME: path.resolve("/tmp/xdg-config"),
+      XDG_DATA_HOME: path.resolve("/tmp/xdg-data"),
+      XDG_CACHE_HOME: path.resolve("/tmp/xdg-cache"),
     })).toMatchObject({
-      OPENCODE_CONFIG_DIR: "/tmp/opencode-config",
-      XDG_CONFIG_HOME: "/tmp/xdg-config",
-      XDG_DATA_HOME: "/tmp/xdg-data",
-      XDG_CACHE_HOME: "/tmp/xdg-cache",
+      OPENCODE_CONFIG_DIR: path.resolve("/tmp/opencode-config"),
+      XDG_CONFIG_HOME: path.resolve("/tmp/xdg-config"),
+      XDG_DATA_HOME: path.resolve("/tmp/xdg-data"),
+      XDG_CACHE_HOME: path.resolve("/tmp/xdg-cache"),
     })
   })
 
@@ -131,7 +131,7 @@ describe("opencode adapter", () => {
     const handle = observeOpenCodeServerProcess({
       observer,
       pid: 654,
-      directory: "/safe/workspace",
+      directory: path.resolve("/safe/workspace"),
       config: {
         local: {
           name: "local",
@@ -246,7 +246,7 @@ describe("opencode adapter", () => {
     }) as typeof fetch
 
     try {
-      await expect(adapter.listAgents("/tmp/ws")).rejects.toThrow("opencode does not expose live agent options")
+      await expect(adapter.listAgents(path.resolve("/tmp/ws"))).rejects.toThrow("opencode does not expose live agent options")
       expect(calls).toEqual([])
     } finally {
       globalThis.fetch = prev
@@ -273,7 +273,7 @@ describe("opencode adapter", () => {
     }) as typeof fetch
 
     try {
-      await expect(adapter.createSession("/tmp/ws")).resolves.toEqual({ id: "session-1" })
+      await expect(adapter.createSession(path.resolve("/tmp/ws"))).resolves.toEqual({ id: "session-1" })
       expect(auth).toBe("Basic test-token")
     } finally {
       globalThis.fetch = prev
@@ -299,14 +299,14 @@ describe("opencode adapter", () => {
     }) as typeof fetch
 
     try {
-      const res = await adapter.getStatusSnapshot("/tmp/ws", {
+      const res = await adapter.getStatusSnapshot(path.resolve("/tmp/ws"), {
         headers: { "x-workspace-id": "workspace-1" },
       })
       expect(res.status).toBe(200)
       expect(await res.json()).toEqual({ idle: true, sessions: [] })
       expect(calls).toEqual([{
         url: "http://127.0.0.1:4096/session/status",
-        directory: "/tmp/ws",
+        directory: path.resolve("/tmp/ws"),
         workspace: "workspace-1",
       }])
     } finally {
@@ -348,12 +348,12 @@ describe("opencode adapter", () => {
     }) as typeof fetch
 
     try {
-      await expect(adapter.createSession("/tmp/ws", "Triage")).resolves.toEqual({ id: "session-1" })
+      await expect(adapter.createSession(path.resolve("/tmp/ws"), "Triage")).resolves.toEqual({ id: "session-1" })
       expect(calls).toEqual([
         {
           url: "http://127.0.0.1:4096/mcp",
           method: "POST",
-          directory: "/tmp/ws",
+          directory: path.resolve("/tmp/ws"),
           body: {
             name: "docs",
             config: {
@@ -366,7 +366,7 @@ describe("opencode adapter", () => {
         {
           url: "http://127.0.0.1:4096/session",
           method: "POST",
-          directory: "/tmp/ws",
+          directory: path.resolve("/tmp/ws"),
           body: { title: "Triage" },
         },
       ])
@@ -421,7 +421,7 @@ describe("opencode adapter", () => {
           providerID: "anthropic",
           modelID: "claude-sonnet-4-6",
         },
-      }, "/tmp/ws")[Symbol.asyncIterator]()
+      }, path.resolve("/tmp/ws"))[Symbol.asyncIterator]()
 
       expect((await iter.next()).value?.type).toBe("message.updated")
       expect((await iter.next()).value?.type).toBe("message.part.updated")
@@ -521,7 +521,7 @@ describe("opencode adapter", () => {
           providerID: "opencode",
           modelID: "big-pickle",
         },
-      }, "/tmp/ws")) {
+      }, path.resolve("/tmp/ws"))) {
         compat.push(event.type)
       }
 
@@ -538,7 +538,7 @@ describe("opencode adapter", () => {
         { type: "text-delta", delta: "hello" },
         { type: "finish", sessionId: "ses_test" },
       ])
-      expect(runtime.every((event) => event.directory === "/tmp/ws" && event.sessionId === "ses_test")).toBe(true)
+      expect(runtime.every((event) => event.directory === path.resolve("/tmp/ws") && event.sessionId === "ses_test")).toBe(true)
     } finally {
       unsubscribe()
       globalThis.fetch = prev
@@ -581,7 +581,7 @@ describe("opencode adapter", () => {
                 providerID: "opencode",
                 mode: "build",
                 agent: "build",
-                path: { cwd: "/tmp/ws", root: "/tmp/ws" },
+                path: { cwd: path.resolve("/tmp/ws"), root: path.resolve("/tmp/ws") },
                 cost: 0,
                 tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
                 finish: "stop",
@@ -606,7 +606,7 @@ describe("opencode adapter", () => {
           providerID: "opencode",
           modelID: "big-pickle",
         },
-      }, "/tmp/ws")) {
+      }, path.resolve("/tmp/ws"))) {
         events.push(event.type)
       }
 

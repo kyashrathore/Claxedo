@@ -204,8 +204,14 @@ test.describe("real desktop signed cloud @core @tier-real @surface-desktop", () 
     expect((await stats()).refreshes, first.appLog.join("\n")).toBe(before.refreshes)
     // Worst case the relaunch was instant and the skew boundary is still a
     // full bootBudgetSeconds away; the poll has to be allowed to outlive it.
+    // A transiently failed operation must not abort the wait: macOS runners
+    // occasionally drop the main-process connection to the fixture for one
+    // call ("TypeError: fetch failed"), and the account service itself treats
+    // a failed refresh as transient — the credential stays put and the next
+    // call renews normally. The poll's subject is the refresh counter, so a
+    // dropped iteration just polls again.
     await expect.poll(async () => {
-      await listCloudWorkspaces()
+      await listCloudWorkspaces().catch(() => undefined)
       return (await stats()).refreshes
     }, { timeout: (bootBudgetSeconds + 20) * 1000 }).toBe(before.refreshes + 1)
 

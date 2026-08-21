@@ -1019,10 +1019,16 @@ class CodexAppServerProcess {
     processObserver?: AgentProcessObserver,
     mcp: Record<string, ResolvedMcpServer> = {},
   ) {
-    this.proc = spawn(binary, ["app-server", "--listen", "stdio://"], {
+    // Windows cannot spawn a .cmd/.bat launcher directly (ENOENT/EINVAL from
+    // CreateProcess) — and that is exactly what an npm install of codex puts
+    // on PATH there. Route shims through the shell; the quoting keeps a
+    // binary path with spaces intact through cmd.exe's tokenization.
+    const windowsShim = process.platform === "win32" && /\.(cmd|bat)$/i.test(binary)
+    this.proc = spawn(windowsShim ? `"${binary}"` : binary, ["app-server", "--listen", "stdio://"], {
       cwd: directory,
       env,
       stdio: ["pipe", "pipe", "pipe"],
+      ...(windowsShim ? { shell: true } : {}),
     })
     this.observation = observeCodexAppServerProcess({
       observer: processObserver,
