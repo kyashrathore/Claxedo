@@ -18,6 +18,7 @@ export type MountOpts = {
   mountPolicy?: "always" | "active-only" | "visible-once"
   maxMountedContents?: number
   mountCapCandidate?: (contentId: string) => boolean
+  retainedHiddenLimit?: () => number
   keyMap?: Partial<KeyMap>
 }
 
@@ -50,6 +51,7 @@ export function mountWorkbench(opts: MountOpts = {}) {
         mountPolicy={opts.mountPolicy}
         maxMountedContents={opts.maxMountedContents}
         mountCapCandidate={opts.mountCapCandidate}
+        retainedHiddenLimit={opts.retainedHiddenLimit}
         keyMap={opts.keyMap}
         onFocusChange={(p, c) => focusEvents.push({ paneId: p, contentId: c })}
         onPaneResize={(p, r) => resizeEvents.push({ paneId: p, rect: r })}

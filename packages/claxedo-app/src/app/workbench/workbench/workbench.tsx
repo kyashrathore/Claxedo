@@ -24,6 +24,10 @@ export type WorkbenchProps = {
   mountPolicy?: "always" | "active-only" | "visible-once"
   maxMountedContents?: number
   mountCapCandidate?: (contentId: string) => boolean
+  /** Reactive ceiling on retained HIDDEN cap-candidates, below
+   * `maxMountedContents`. Callers use it to unload hidden surfaces on user
+   * idle (see mount-idle-governor); visible panes are unaffected. */
+  retainedHiddenLimit?: () => number
   onFocusChange?: (paneId: string | null, contentId: string | null) => void
   onPaneResize?: (paneId: string, rect: PaneRect) => void
   onContentOpen?: (contentId: string, paneId: string) => void
@@ -286,7 +290,12 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
       const eligibleIds = mountPolicy() === "visible-once"
         ? ids.filter((id) => visibleContentSet().has(id) || activatedContentIds().has(id))
         : ids
-      if (!props.maxMountedContents || eligibleIds.length <= props.maxMountedContents) return eligibleIds
+      const hiddenLimit = props.retainedHiddenLimit?.() ?? Number.MAX_SAFE_INTEGER
+      const withinCap = !props.maxMountedContents || eligibleIds.length <= props.maxMountedContents
+      // The mount cap only binds on overflow, but the idle governor's hidden
+      // limit applies at ANY count — memory reclaim must not depend on how
+      // many tabs happen to be open.
+      if (withinCap && hiddenLimit === Number.MAX_SAFE_INTEGER) return eligibleIds
       const visibleIds = eligibleIds.filter((id) => visibleContentSet().has(id))
       const alwaysMountedSet = props.mountCapCandidate
         ? new Set(eligibleIds.filter((id) => !props.mountCapCandidate?.(id)))
@@ -299,7 +308,10 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
           !visibleContentSet().has(id) &&
           (!props.mountCapCandidate || props.mountCapCandidate(id))
         )
-        .slice(0, Math.max(0, props.maxMountedContents - visibleCandidateIds.length))
+        .slice(0, Math.max(0, Math.min(
+          (props.maxMountedContents ?? Number.MAX_SAFE_INTEGER) - visibleCandidateIds.length,
+          hiddenLimit,
+        )))
       const selected = new Set([...visibleIds, ...alwaysMountedSet, ...retainedCandidateIds])
       // Keep surviving slots in their canonical content order. Recency chooses
       // which slots survive the cap; it must not reorder their live DOM nodes,

@@ -12,7 +12,7 @@
   "isWorkspaceIdRef": 2,
   "legacyDirectoryRouteKeyRefs": 2,
   "moduleScopeMutableState": 58,
-  "productionTimerAllowlistTimers": 5,
+  "productionTimerAllowlistTimers": 8,
   "propsDestructuring": 1,
   "queryMirrorEffects": 5,
   "runtimeGatewayOutsideTransport": 0,

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest"
+import { createSignal } from "solid-js"
 import { mountWorkbench } from "./dom-helpers"
 
 describe("F. mount retention", () => {
@@ -101,5 +102,46 @@ describe("F. mount retention", () => {
 
     expect(h.utils.queryByTestId("content-route-session")).not.toBeNull()
     expect(h.utils.queryByTestId("content-route-session")?.getAttribute("data-visible")).toBe("1")
+  })
+
+  test("retainedHiddenLimit=0 unloads hidden content even under the mount cap, keeping the visible pane", () => {
+    const [limit, setLimit] = createSignal(Number.MAX_SAFE_INTEGER)
+    const h = mountWorkbench({ maxMountedContents: 12, retainedHiddenLimit: limit })
+    h.api().contents.add("a")
+    h.api().contents.add("b")
+    h.api().contents.add("c")
+    h.api().navigation.show("a")
+    h.api().navigation.show("b")
+    h.api().navigation.show("c")
+    expect(h.utils.queryByTestId("content-a")).not.toBeNull()
+    expect(h.utils.queryByTestId("content-b")).not.toBeNull()
+
+    setLimit(0)
+    expect(h.utils.queryByTestId("content-c")).not.toBeNull()
+    expect(h.utils.queryByTestId("content-c")?.getAttribute("data-visible")).toBe("1")
+    expect(h.utils.queryByTestId("content-a")).toBeNull()
+    expect(h.utils.queryByTestId("content-b")).toBeNull()
+
+    // Refill restores the most-recent hidden content first.
+    setLimit(1)
+    expect(h.utils.queryByTestId("content-b")).not.toBeNull()
+    expect(h.utils.queryByTestId("content-a")).toBeNull()
+    setLimit(2)
+    expect(h.utils.queryByTestId("content-a")).not.toBeNull()
+  })
+
+  test("retainedHiddenLimit never unloads exempt (non-cap-candidate) content", () => {
+    const h = mountWorkbench({
+      maxMountedContents: 12,
+      mountCapCandidate: (id) => id.startsWith("session-"),
+      retainedHiddenLimit: () => 0,
+    })
+    h.api().contents.add("terminal-a")
+    h.api().contents.add("session-a")
+    h.api().navigation.show("terminal-a")
+    h.api().navigation.show("session-a")
+
+    expect(h.utils.queryByTestId("content-session-a")).not.toBeNull()
+    expect(h.utils.queryByTestId("content-terminal-a")).not.toBeNull()
   })
 })
