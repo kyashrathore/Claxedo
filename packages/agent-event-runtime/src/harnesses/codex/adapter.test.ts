@@ -444,6 +444,63 @@ describe("codexAppServerAdapter", () => {
     ])
   })
 
+  test("accumulates usage across every request of a turn and resets on turn boundaries", () => {
+    const agent = runtime()
+    const tokenUsageEvent = (total: Record<string, number>, last: Record<string, number>) =>
+      agent.ingest({
+        source: "codex.app-server",
+        method: "thread/tokenUsage/updated",
+        payload: { tokenUsage: { total, last, modelContextWindow: 258400 } },
+      })
+
+    // Request 1 of the turn: no prior totals, so the per-request `last` seeds
+    // the turn accumulator.
+    expect(tokenUsageEvent(
+      { totalTokens: 11839, inputTokens: 10000, cachedInputTokens: 7000, outputTokens: 1200, reasoningOutputTokens: 639 },
+      { totalTokens: 126, inputTokens: 100, cachedInputTokens: 60, outputTokens: 20, reasoningOutputTokens: 6 },
+    ).events).toMatchObject([{
+      type: "usage",
+      observation: { kind: "cumulative", tokens: { input: 40, output: 14, reasoning: 6, cache: { read: 60, write: null } } },
+    }])
+
+    // Request 2: the totals moved by 500/400/100/21 while `last` claims only
+    // 200/150/40/8 (a missed emission). The totals difference is authoritative
+    // and the observation is the TURN total, not the last request.
+    expect(tokenUsageEvent(
+      { totalTokens: 12460, inputTokens: 10500, cachedInputTokens: 7400, outputTokens: 1300, reasoningOutputTokens: 660 },
+      { totalTokens: 398, inputTokens: 200, cachedInputTokens: 150, outputTokens: 40, reasoningOutputTokens: 8 },
+    ).events).toMatchObject([{
+      type: "usage",
+      // accumulated raw: input 600, cached 460, output 120, reasoning 27
+      observation: { kind: "cumulative", tokens: { input: 140, output: 93, reasoning: 27, cache: { read: 460, write: null } } },
+    }])
+
+    // A re-emission with unchanged totals is the same request again: it still
+    // refreshes the context meter but must not carry a metering observation.
+    const duplicate = tokenUsageEvent(
+      { totalTokens: 12460, inputTokens: 10500, cachedInputTokens: 7400, outputTokens: 1300, reasoningOutputTokens: 660 },
+      { totalTokens: 398, inputTokens: 200, cachedInputTokens: 150, outputTokens: 40, reasoningOutputTokens: 8 },
+    ).events
+    expect(duplicate).toMatchObject([{ type: "usage", contextUsed: 398 }])
+    expect((duplicate[0] as { observation?: unknown }).observation).toBeUndefined()
+
+    agent.ingest({
+      source: "codex.app-server",
+      method: "turn/completed",
+      payload: { sessionId: "session-1", turn: { status: "completed" } },
+    })
+
+    // First request of the NEXT turn: the accumulator restarted, and the
+    // cross-turn totals difference must not leak in — `last` seeds again.
+    expect(tokenUsageEvent(
+      { totalTokens: 12720, inputTokens: 10700, cachedInputTokens: 7600, outputTokens: 1400, reasoningOutputTokens: 670 },
+      { totalTokens: 160, inputTokens: 100, cachedInputTokens: 100, outputTokens: 50, reasoningOutputTokens: 10 },
+    ).events).toMatchObject([{
+      type: "usage",
+      observation: { kind: "cumulative", tokens: { input: 0, output: 40, reasoning: 10, cache: { read: 100, write: null } } },
+    }])
+  })
+
   test("prunes turn-scoped resume state on terminal turn events", () => {
     const agent = runtime()
 
