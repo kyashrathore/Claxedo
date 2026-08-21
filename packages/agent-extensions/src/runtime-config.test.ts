@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test"
+import { realpathSync } from "node:fs"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -21,7 +22,15 @@ const home = path.join(root, "home")
 const data = path.join(root, "data")
 
 function normalizeProjectPaths(input: unknown, projectDir: string) {
-  return JSON.parse(JSON.stringify(input).replaceAll(projectDir, "<project>"))
+  // The serialized JSON escapes Windows backslashes, so the raw directory
+  // string never matches it — replace the JSON-ESCAPED form instead, both as
+  // given and 8.3-expanded (the ledger records realpathed locations, so on
+  // CI it says runneradmin while os.tmpdir() says RUNNER~1). Same fix as the
+  // claxedo-local-server twin of this helper.
+  const forms = new Set([projectDir, realpathSync.native(projectDir)])
+  let text = JSON.stringify(input)
+  for (const form of forms) text = text.replaceAll(JSON.stringify(form).slice(1, -1), "<project>")
+  return JSON.parse(text)
 }
 
 describe("Agent Extensions runtime config projection", () => {

@@ -171,7 +171,17 @@ function managedClaxedoMcpConfig(input: {
 async function removeTreeOrLink(target: string) {
   const stat = await fs.lstat(target).catch(() => undefined)
   if (!stat) return
-  await fs.rm(target, { recursive: stat.isDirectory() && !stat.isSymbolicLink(), force: true })
+  if (stat.isSymbolicLink()) {
+    // Remove the LINK, never the tree behind it. A directory symlink needs
+    // rmdir on Windows (unlink refuses it) and unlink on POSIX (rmdir
+    // refuses it); bun's fs.rm EFAULTs outright on the Windows case, so
+    // pick the primitive instead of delegating.
+    await fs.unlink(target).catch(async () => {
+      await fs.rmdir(target)
+    })
+    return
+  }
+  await fs.rm(target, { recursive: stat.isDirectory(), force: true })
 }
 
 async function removeMaterializedComponent(component: MaterializedComponent) {
