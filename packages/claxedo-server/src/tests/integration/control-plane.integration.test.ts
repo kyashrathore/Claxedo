@@ -39,7 +39,10 @@ async function wait<T>(fn: () => T | Promise<T>, ms = 10_000, step = 100): Promi
   throw err instanceof Error ? err : new Error("timed out")
 }
 
-function sse(url: string, match: (event: any) => boolean, ms = 5_000) {
+// The default wait must cover a full in-process worktree operation on a
+// loaded Windows runner, where sibling tests in this file run 10s+ (run 364:
+// the 5s abort fired before the expected event arrived).
+function sse(url: string, match: (event: any) => boolean, ms = 30_000) {
   const ctrl = new AbortController()
   const timeout = setTimeout(() => ctrl.abort(), ms)
   const readiness = Promise.withResolvers<void>()

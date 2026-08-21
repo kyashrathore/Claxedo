@@ -32,6 +32,12 @@ afterAll(async () => {
   // retries.
   const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
   ClaxedoDB.close()
+  // ...and the signed-mode context can open authority.db there too (run 364:
+  // EPERM survived the retries below because this handle was never closed).
+  const { closeAuthorityDatabases } = await import(
+    "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
+  )
+  closeAuthorityDatabases()
   // Windows keeps the auth sqlite file briefly locked after close; the
   // retries absorb that lag so the temp dir can be deleted.
   fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })

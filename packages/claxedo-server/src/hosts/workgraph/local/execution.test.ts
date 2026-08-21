@@ -57,6 +57,10 @@ describe("local WorkGraph workspace execution", () => {
     // Repo-local so the worktrees inherit it: the runner's global autocrlf
     // (Windows CI) would otherwise check exact-byte fixture files out as CRLF.
     await run("git", ["-C", repository, "config", "core.autocrlf", "false"])
+    // Also inherited by worktrees: a rebase's rev-or-path stat of the
+    // "<sha>...<sha>" range crossed MAX_PATH under the deep envelope
+    // worktree path on Windows CI (run 364: "Filename too long").
+    await run("git", ["-C", repository, "config", "core.longpaths", "true"])
     await fs.writeFile(`${repository}/README.md`, "seed")
     await run("git", ["-C", repository, "add", "README.md"])
     await run("git", ["-C", repository, "commit", "-m", "seed"])
@@ -539,6 +543,9 @@ async function repositoryFixture(name: string) {
   // Repo-local so the worktrees inherit it: the runner's global autocrlf
   // (Windows CI) would otherwise check exact-byte fixture files out as CRLF.
   await run("git", ["-C", repository, "config", "core.autocrlf", "false"])
+  // See the pin above: worktree git operations need long-path support on
+  // Windows CI, where the envelope worktree path sits right at MAX_PATH.
+  await run("git", ["-C", repository, "config", "core.longpaths", "true"])
   await fs.writeFile(`${repository}/README.md`, "seed")
   await run("git", ["-C", repository, "add", "README.md"])
   await run("git", ["-C", repository, "commit", "-m", "seed"])
