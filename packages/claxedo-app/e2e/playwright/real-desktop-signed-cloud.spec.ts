@@ -166,13 +166,24 @@ test.describe("real desktop signed cloud @core @tier-real @surface-desktop", () 
     fixtureClose = undefined
   })
 
-  test.setTimeout(180_000)
+  // Three packaged boots plus a boundary wait that can approach the refresh
+  // test's full boot budget — 180s left no room once the budget became honest.
+  test.setTimeout(300_000)
 
   test("main-process credential refreshes mid-session and its rotation restores after restart", async () => {
-    // The refresh skew is 60s. Start just outside it so the first operation
-    // uses the held access token, then let this already-open session cross the
-    // boundary and prove the next operation renews in place.
-    const userDataDir = await seedCredential(65)
+    // The refresh skew is 60s. Start outside it so the first operation uses
+    // the held access token, then let this already-open session cross the
+    // boundary and prove the next operation renews in place. The margin above
+    // the skew is the whole budget for closing the seed app and cold-booting
+    // the packaged relaunch below — expiry is stamped inside the SEED app, so
+    // every second of relaunch spends it. 65s (a 5s budget) failed on every
+    // CI runner and on a local Linux box alike: a packaged boot takes ~30s,
+    // the first operation then sat inside the skew, and the refresh it
+    // triggered failed the no-refresh assertion. The price of the honest
+    // budget is paid in the boundary poll, which must be prepared to wait
+    // out whatever the relaunch did not consume.
+    const bootBudgetSeconds = 90
+    const userDataDir = await seedCredential(60 + bootBudgetSeconds)
     const before = await stats()
     const first = await relaunch(userDataDir, true)
     expect(await first.page.evaluate(() => window.location.protocol)).toBe("file:")
@@ -190,11 +201,13 @@ test.describe("real desktop signed cloud @core @tier-real @surface-desktop", () 
     })
     const workspaces = await listCloudWorkspaces()
     expect(workspaces).toMatchObject({ workspaces: expect.any(Array) })
-    expect((await stats()).refreshes).toBe(before.refreshes)
+    expect((await stats()).refreshes, first.appLog.join("\n")).toBe(before.refreshes)
+    // Worst case the relaunch was instant and the skew boundary is still a
+    // full bootBudgetSeconds away; the poll has to be allowed to outlive it.
     await expect.poll(async () => {
       await listCloudWorkspaces()
       return (await stats()).refreshes
-    }, { timeout: 15_000 }).toBe(before.refreshes + 1)
+    }, { timeout: (bootBudgetSeconds + 20) * 1000 }).toBe(before.refreshes + 1)
 
     const persisted = await fs.readFile(path.join(userDataDir, "account-credential.json"), "utf8")
     expect(persisted).not.toContain(info.controlPlaneToken)
