@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from "fs"
+import { removeTestTempDir } from "./harnesses/shared/test-temp-dir"
 import { tmpdir } from "os"
 import path from "path"
 import { describe, expect, test } from "bun:test"
@@ -669,9 +670,7 @@ describe("createAgentRuntime", () => {
       }])
       second.dispose()
     } finally {
-      // Retried for Windows: the just-disposed sqlite store's file stays
-      // briefly locked after close, and rm answers EBUSY until it releases.
-      rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+      removeTestTempDir(root)
     }
   })
 
@@ -709,9 +708,7 @@ describe("createAgentRuntime", () => {
       })
       second.dispose()
     } finally {
-      // Retried for Windows: the just-disposed sqlite store's file stays
-      // briefly locked after close, and rm answers EBUSY until it releases.
-      rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+      removeTestTempDir(root)
     }
   })
 
@@ -755,9 +752,7 @@ describe("createAgentRuntime", () => {
       expect(reopened.getSession("ses_1")).toMatchObject({ title: "Streamed 99" })
       reopened.close()
     } finally {
-      // Retried for Windows: the just-disposed sqlite store's file stays
-      // briefly locked after close, and rm answers EBUSY until it releases.
-      rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+      removeTestTempDir(root)
     }
   })
 

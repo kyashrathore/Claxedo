@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "child_process"
+import { isWindowsShimBinary, killHarnessProcess } from "../shared/windows-process"
 import { ndJsonStream, type Stream } from "@agentclientprotocol/sdk"
 import {
   createHttpStream,
@@ -54,12 +55,9 @@ export type ACPWebSocketTransportFactoryOptions = {
 }
 
 export function createStdioACPTransport(input: ACPTransportFactoryInput): ACPTransport {
-  // Windows cannot spawn a .cmd/.bat launcher directly (ENOENT/EINVAL from
-  // CreateProcess) — and that is what an npm install of an ACP CLI puts on
-  // PATH there. Route shims through the shell; the quoting keeps a binary
-  // path with spaces intact through cmd.exe's tokenization. Same handling as
-  // the codex app-server driver.
-  const windowsShim = process.platform === "win32" && /\.(cmd|bat)$/i.test(input.binary)
+  // Shims must go through the shell (see isWindowsShimBinary); the quoting
+  // keeps a binary path with spaces intact through cmd.exe's tokenization.
+  const windowsShim = isWindowsShimBinary(input.binary)
   const proc = spawn(windowsShim ? `"${input.binary}"` : input.binary, input.args, {
     cwd: input.directory,
     stdio: ["pipe", "pipe", "pipe"],
@@ -94,9 +92,7 @@ export function createStdioACPTransport(input: ACPTransportFactoryInput): ACPTra
       return proc.exitCode === null && !proc.killed
     },
     dispose() {
-      try {
-        proc.kill("SIGTERM")
-      } catch {}
+      killHarnessProcess(proc, "SIGTERM")
     },
   }
 }

@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
+import { removeTestTempDir } from "../shared/test-temp-dir"
 import fs from "fs"
 import os from "os"
 import path from "path"
@@ -29,7 +30,7 @@ afterAll(async () => {
 })
 
 afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map((dir) => fs.promises.rm(dir, { recursive: true, force: true })))
+  for (const dir of tempDirs.splice(0)) removeTestTempDir(dir)
 })
 
 /**
