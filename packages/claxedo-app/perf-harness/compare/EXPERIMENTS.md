@@ -238,3 +238,37 @@ re-show.
   user observed in real use) is unmodeled in both drivers.
 - Claxedo deep-history jump is honest but seconds-slow; the designed fix is
   a target-anchored jump + content-aware height estimates (deferred by user).
+
+## 2026-08-22 — parallel optimization lines merged; corpus v2 (graded-v1 regenerated)
+
+**Merged** `optimize/claxedo-beat-t3-graded` (six commits from the parallel
+perf-beat-t3 session, reviewed) onto the campaign branch: row-level
+`content-visibility:auto` with virtualizer-sized intrinsic boxes; nav-gutter
+and env-card gutters reserved before first paint (their paired A/B: pooled
+p95 161 -> 137 on their baseline); single-step settled turns fold (T3
+presentation parity); env card defaults collapsed; the 150ms gutter
+transition removed; and the warm-switch/LoAF probe tooling committed under
+`perf-harness/probes/`. Zero new test failures (the 9 bun + 131 vitest
+failures reproduce exactly at the pre-merge commit; the vitest breakage is a
+pre-existing `localStorage.clear` environment fault). The two lines'
+mechanisms are disjoint (their render-cost cuts vs this session's
+cache/preload/cap/idle-governor work), so gains are expected to stack.
+
+**Corpus v2**: t3code `480e77cf0` moved diffs out of inline markdown prose
+into completed `apply_patch` tool calls (real transcripts never paint diffs
+as assistant markdown), but landed without re-embedding the expected
+manifest — every T3 arm refused with a manifest mismatch. Regenerated:
+graded-v1 sha is now `6a020d15cf40e2497aadbfb699be0e9c7ef8940d4e41d5d441195f0a3da077df`
+(diffParts 0, toolParts 8038, reasoningParts 471 unchanged); manifest
+re-embedded in the t3code corpus config; every sha pin updated (targets,
+runbook, probes) on both sides. ALL graded numbers earlier in this ledger
+are non-comparable with corpus-v2 runs.
+
+**First full 8-arm certification attempt** (cert-010801, user at keyboard by
+request): all four Claxedo arms invalid environmentally (occluded-window CDP
+stalls / lost foreground) — but the terminal arm passed PTY connection,
+output observation, and workload start for the first time ever before
+stalling on a paint-gated stage while hidden. One REAL defect surfaced: the
+stream arm's prompt never reached the fake engine's `prompt_async`
+(`cert-010801-conversation-rich-v1`) — the app-side prompt path is the open
+bug. T3 arms all refused on the corpus manifest mismatch above (now fixed).

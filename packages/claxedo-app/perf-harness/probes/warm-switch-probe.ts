@@ -38,7 +38,7 @@ const harnessRoot = path.resolve(import.meta.dir, "..");
 const repoRoot = path.resolve(harnessRoot, "../../..");
 const fallbackCorpus = path.join(
   repoRoot,
-  ".artifacts/agent-app-benchmark/corpus-agent-app-graded-v1-0357c2497a28.json",
+  ".artifacts/agent-app-benchmark/corpus-agent-app-graded-v1-6a020d15cf40.json",
 );
 const corpusPath = argValue("--corpus") ?? fallbackCorpus;
 const appPath =

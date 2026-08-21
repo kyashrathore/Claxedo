@@ -7,7 +7,7 @@ corpus on the same quiet host.
 
 ## The contract (state as of 2026-08-21)
 
-- **Corpus**: `graded-v1`, sha256 `0357c2497a28228f3cf5bbbaadaa6b78b09b885f12c7f396fb3ed95d6438a9a2`.
+- **Corpus**: `graded-v1`, sha256 `6a020d15cf40e2497aadbfb699be0e9c7ef8940d4e41d5d441195f0a3da077df`.
   ONE corpus, 20 sessions, turn counts ramp geometrically 12 → 400 (part
   weight 1 → 3), sessions assigned round-robin across THREE workspaces —
   per-session samples read as a trend over session weight, and warm switching

@@ -5,7 +5,7 @@ set -u
 CLX=${CLX_ROOT:-/Users/yashvardhansingh/test/opencode/.worktrees/perf-lcp}
 H=$CLX/packages/claxedo-app/perf-harness
 APP="${CLX_APP:-$CLX/packages/claxedo-desktop/dist/mac-arm64/Claxedo Dev.app}"
-CORPUS=${CORPUS:-$CLX/.artifacts/agent-app-benchmark/corpus-agent-app-graded-v1-0357c2497a28.json}
+CORPUS=${CORPUS:-$CLX/.artifacts/agent-app-benchmark/corpus-agent-app-graded-v1-6a020d15cf40.json}
 
 wait_quiet() { until [ "$(sysctl -n vm.loadavg | awk '{print ($2 < 3.5) ? "ok" : "no"}')" = "ok" ]; do echo "waiting for quiet host"; sleep 15; done; }
 wait_ac_power() { until pmset -g batt | head -1 | grep -q "AC Power"; do echo "waiting for AC power"; sleep 30; done; }

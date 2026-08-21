@@ -8,8 +8,8 @@
     "note": "T3 context is non-gating until U11."
   },
   "corpus": {
-    "path": ".artifacts/agent-app-benchmark/corpus-agent-app-graded-v1-0357c2497a28.json",
-    "sha256": "0357c2497a28228f3cf5bbbaadaa6b78b09b885f12c7f396fb3ed95d6438a9a2"
+    "path": ".artifacts/agent-app-benchmark/corpus-agent-app-graded-v1-6a020d15cf40.json",
+    "sha256": "6a020d15cf40e2497aadbfb699be0e9c7ef8940d4e41d5d441195f0a3da077df"
   },
   "terminalWorkload": {
     "path": "terminal-output-v1.json",

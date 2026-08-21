@@ -10,7 +10,7 @@ import { measureSessionActivation, warmSwitchPlan } from "../src/agent-browser-o
 
 const TURNS = [12, 14, 17, 21, 25, 30, 36, 44, 53, 63, 76, 91, 110, 132, 159, 191, 230, 277, 333, 400];
 const corpusPath = process.argv[2] ??
-  "/Users/yashvardhansingh/test/opencode/.worktrees/perf-lcp/.artifacts/agent-app-benchmark/corpus-agent-app-graded-v1-0357c2497a28.json";
+  "/Users/yashvardhansingh/test/opencode/.worktrees/perf-lcp/.artifacts/agent-app-benchmark/corpus-agent-app-graded-v1-6a020d15cf40.json";
 const appPath = process.argv[3] ??
   "/Users/yashvardhansingh/test/opencode/.worktrees/perf-lcp/packages/claxedo-desktop/dist/mac-arm64/Claxedo Dev.app";
 
