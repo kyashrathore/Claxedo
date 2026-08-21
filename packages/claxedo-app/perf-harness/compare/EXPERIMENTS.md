@@ -123,6 +123,45 @@ Artifacts: Claxedo `graded-185715-workspace-core-v1` /
 (workspace) / `attempt-2026-08-21T13-31-31-696Z-42fd63fe` (resource).
 T3 fixture verified: 3 projects, 7/7/6 threads.
 
+## 2026-08-21 night — warm-switch optimization campaign (goal: beat T3 on every metric)
+
+Profile-guided loop against the graded corpus (CDP CPU profiles resolved
+through sourcemaps, Performance.getMetrics deltas, per-frame signature logs,
+40-switch leak-ramp and mounted-surface probes). Mechanism findings:
+
+- Switch cost is BIMODAL: a session still inside the 10-surface workbench MRU
+  re-shows in ~46-54ms; an evicted one remounts in ~100-160ms. The benchmark
+  plan crosses 20 sessions, so ~half are remounts (session weight was a
+  secondary factor; plan position/mounted-state dominates).
+- No per-activation leak: 40 alternating switches are flat at ~46ms.
+- Folds are small (~1.7k DOM nodes; the unfolded diff code block is 396 of
+  them); wall time is script (~39ms/switch) + style recalcs (~52/switch,
+  ~17ms) + waiting out stability-breaking wobbles, not raw mount CPU.
+- Re-show drift: display:none discarded hidden tabs' layout, so re-shows
+  re-measured and drifted (+403/-30/-19px) until ~80ms.
+
+Landed (commit 0b5babd6b, probe p95 for the exact plan 175 -> ~126ms):
+merge indexing + reference-preserving no-op hydrates; lazy nav previews;
+scroll-thumb rAF coalescing; content-visibility:hidden pane tabs; slot
+transition removal; 100ms-grace static skeleton (user directive: no shimmer,
+nothing under 100ms); row-model extraction of content-id/anchor predicates.
+
+Measured but NOT landed: MAX_OPEN_SURFACES 10 -> 24 (another ~30ms p95;
+guarded product contract in surface-budget tests — needs a product decision).
+Diagnostic-only: global animation kill (p95 -> ~119) — the targeted slot fix
+took part of it; rail-neutralization diagnostic broke the click machinery.
+
+Same-day standings after the campaign (T3 from attempts 16-10/16-12; Claxedo
+official workspace runs kept invalidating on postflight host load — probe
+figures marked *): cold_ready 1986 vs 3205-3325 WIN; cold_open 115.7 vs
+95-170 mixed; warm_switch ~119-126* vs 79.8 BEHIND; peak RSS 1619-1629 vs
+1552-1727 comparable-to-better; idle CPU p95 8.0 vs 12.1-15.4 WIN.
+
+Remaining for the goal: ~40ms more off remount p95 (next leads: the ~39ms
+per-switch script — screen chrome mount deferral; re-show measurement-drift
+suppression; rail row cost), quiet-host certification runs, and the four
+stream/terminal metrics (T3 driver live-validation) still unmeasured.
+
 ## Open items
 
 - T3's stream + terminal driver scenarios: implemented, never live-validated
