@@ -681,7 +681,10 @@ async function driveOneTurn(page: Page, promptText: string) {
 
   const submit = page.locator('[data-action="prompt-submit"]').last()
   await submit.click()
-  await expect(submit).toHaveAttribute("data-icon", "stop", { timeout: 5_000 })
+  // Turn START gets the same budget as turn completion below: on loaded CI
+  // runners the accepted prompt sat disabled+"send" past a 5s wait twice
+  // (runs 354 and 361) before the session went busy.
+  await expect(submit).toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
   await expect(submit).not.toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
 }
 
