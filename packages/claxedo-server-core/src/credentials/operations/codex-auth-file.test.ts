@@ -144,7 +144,10 @@ describe("mirrorCodexTokens", () => {
 
     mirrorCodexTokens({ accountId: "acct_mine", access: "a2", refresh: "r2" }, root)
 
-    expect(statSync(file).mode & 0o777).toBe(0o600)
+    // Windows has no POSIX permission bits: chmod maps everything to the
+    // read-only flag, and stat reports 0o666 for any writable file — the
+    // owner-only contract is only assertable where the OS can express it.
+    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600)
     expect(readdirSync(path.join(root, ".codex")).filter((entry) => entry.includes("tmp"))).toEqual([])
   })
 

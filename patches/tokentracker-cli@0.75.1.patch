@@ -1,5 +1,5 @@
 diff --git a/src/lib/rollout.js b/src/lib/rollout.js
-index f4a6788..5ba203f 100644
+index f4a6788..3958e6a 100644
 --- a/src/lib/rollout.js
 +++ b/src/lib/rollout.js
 @@ -2,6 +2,7 @@ const fs = require("node:fs/promises");
@@ -10,7 +10,7 @@ index f4a6788..5ba203f 100644
  
  const crypto = require("node:crypto");
  const { ensureDir } = require("./fs");
-@@ -10796,6 +10797,470 @@ function isCjkCodePoint(code) {
+@@ -10796,6 +10797,480 @@ function isCjkCodePoint(code) {
    );
  }
  
@@ -353,9 +353,19 @@ index f4a6788..5ba203f 100644
 +}
 +
 +async function embeddedScanJson(sourceHome, source, since, until, historyCursor) {
++  // Honor the same relocation env vars the harness CLIs themselves honor
++  // (matching KIMI_HOME/KIRO_HOME handling elsewhere in this file): a user —
++  // or a hermetic server — running claude with CLAUDE_CONFIG_DIR or codex
++  // with CODEX_HOME writes transcripts THERE, and a home-only scan would
++  // silently report their usage as absent.
++  const env = process.env;
 +  const roots = {
-+    claude: path.join(sourceHome, ".claude", "projects"),
-+    codex: path.join(sourceHome, ".codex", "sessions"),
++    claude: env.CLAUDE_CONFIG_DIR
++      ? path.join(env.CLAUDE_CONFIG_DIR, "projects")
++      : path.join(sourceHome, ".claude", "projects"),
++    codex: env.CODEX_HOME
++      ? path.join(env.CODEX_HOME, "sessions")
++      : path.join(sourceHome, ".codex", "sessions"),
 +    pi: path.join(sourceHome, ".pi", "agent", "sessions"),
 +  };
 +  const root = roots[source];
@@ -481,7 +491,7 @@ index f4a6788..5ba203f 100644
  module.exports = {
    listRolloutFiles,
    listRolloutFilesDeep,
-@@ -10926,4 +11391,5 @@ module.exports = {
+@@ -10926,4 +11401,5 @@ module.exports = {
    parseAntigravityIncremental,
    estimateAntigravityTokens,
    isCjkCodePoint,
