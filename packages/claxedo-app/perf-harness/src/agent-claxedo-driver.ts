@@ -355,7 +355,7 @@ async function runScenario(
     const result = await runControlledStreamScenario({
       page: launch.page,
       serverUrl: launch.serverUrl,
-      workspaceDirectory: prepared.workspaceDirectory,
+      workspaces: prepared.workspaces,
       corpus: prepared.corpus,
       materializedSessions: prepared.materializedSessions,
       materializedParts: prepared.materializedParts,

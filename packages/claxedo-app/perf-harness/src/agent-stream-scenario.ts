@@ -25,7 +25,11 @@ type LifecycleEvent = {
 export async function runControlledStreamScenario(input: {
   page: Page
   serverUrl: string
-  workspaceDirectory: string
+  // Keyed by corpus workspaceId ("" = the root workspace); the replay PATCH
+  // must carry the STREAM SESSION's own workspace directory — a
+  // multi-workspace corpus 404s if the root directory is sent for a session
+  // homed elsewhere.
+  workspaces: Map<string, { directory: string }>
   corpus: AgentAppCorpus
   materializedSessions: Map<string, string>
   materializedParts: Map<string, MaterializedCorpusPart>
@@ -33,6 +37,8 @@ export async function runControlledStreamScenario(input: {
 }) {
   const session = input.corpus.sessions.toSorted((a, b) => a.order - b.order)[0]
   if (!session) throw new Error("controlled stream requires a corpus session")
+  const home = input.workspaces.get(session.workspaceId ?? "")
+  if (!home) throw new Error(`controlled stream session workspace is unknown: ${session.workspaceId ?? "(root)"}`)
   const events = validateEvents(session.events as LifecycleEvent[])
   if (events.length === 0) throw new Error("controlled stream requires lifecycle events")
   const targetParts = new Map<string, CorpusPart>()
@@ -64,7 +70,7 @@ export async function runControlledStreamScenario(input: {
     if ("event" in item) {
       await publishLifecycleEvent({
         serverUrl: input.serverUrl,
-        workspaceDirectory: input.workspaceDirectory,
+        workspaceDirectory: home.directory,
         event: item.event,
         targetParts,
         materializedParts: input.materializedParts,

@@ -16,6 +16,16 @@ export interface TerminalBackendOptions {
     colEnd?: number,
   ) => void
   onUrlClick?: (event: MouseEvent, url: string) => void
+  /** Observation-only boundary at terminal-client write acceptance. */
+  onWriteAccepted?: (write: { data: string; acceptedAtMs: number }) => void
+  /** Observation-only receipt emitted after xterm parses writes. Must not
+   * schedule, defer, or reorder terminal work. */
+  onWriteParsed?: (write: {
+    data: string
+    serialize: () => string
+    dimensions: () => { cols: number; rows: number }
+    parsedAtMs: number
+  }) => void
 }
 
 export type TerminalColors = {
