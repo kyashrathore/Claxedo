@@ -5,15 +5,14 @@
 
 .ui-context-card {
   padding: 0.35rem 0.1rem;
-  /* One persistent root across collapse/expand (see the shell component):
-     animating width/padding here is what makes the surrounding content
-     squeeze smoothly instead of jumping. */
+  /* One persistent root across collapse/expand (see the shell component).
+     Only the SURFACE fades: width/padding/min-height used to animate too,
+     which dragged unconstrained content through partial-width partial-height
+     intermediate states with half-faded chrome — an "unstyled, really long"
+     flash before the card settled. Geometry snaps; chrome fades in place. */
   transition:
-    width 220ms cubic-bezier(0.2, 0, 0, 1),
-    min-height 220ms cubic-bezier(0.2, 0, 0, 1),
-    padding 220ms cubic-bezier(0.2, 0, 0, 1),
-    background 220ms ease,
-    box-shadow 220ms ease;
+    background 150ms ease,
+    box-shadow 150ms ease;
 }
 
 @media (prefers-reduced-motion: reduce) {
