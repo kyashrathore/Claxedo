@@ -26,8 +26,6 @@ import {
 import { launchPackagedClaxedo } from "../src/agent-claxedo-launcher";
 import { measureSessionActivation, warmSwitchPlan } from "../src/agent-browser-observer";
 
-const TURNS = [12, 14, 17, 21, 25, 30, 36, 44, 53, 63, 76, 91, 110, 132, 159, 191, 230, 277, 333, 400];
-
 function argValue(flag: string) {
   const index = process.argv.indexOf(flag);
   return index >= 0 ? process.argv[index + 1] : undefined;
@@ -48,8 +46,17 @@ const appPath =
   path.join(repoRoot, "packages/claxedo-desktop/dist/mac-arm64/Claxedo Dev.app");
 const seed = argValue("--seed") ?? "1";
 const wantLoaf = argFlag("--loaf");
+const passes = Number(argValue("--passes") ?? 1);
 
 const digest = await readCanonicalCorpusDigest(corpusPath);
+// Turn counts come from the corpus itself so any corpus works (the graded
+// table is just its own ramp); materialization emits targets in session order.
+const corpusJson = JSON.parse(await Bun.file(corpusPath).text()) as {
+  sessions: Array<{ order: number; turns: Array<unknown> }>;
+};
+const TURNS_BY_ORDER = corpusJson.sessions
+  .toSorted((left, right) => left.order - right.order)
+  .map((session) => session.turns.length);
 const scratch = await mkdtemp(path.join("/tmp", "claxedo-warm-switch-probe-"));
 const dataDirectory = path.join(scratch, "data");
 const workspaceDirectory = path.join(scratch, "workspaces");
@@ -79,63 +86,71 @@ try {
       const warmed = await measureSessionActivation(launch.page, target);
       if (warmed.state !== "exact") throw new Error(`warmup failed: ${"reason" in warmed ? warmed.reason : "?"}`);
     }
-    console.log("warmup complete (20 activations)");
-    const rows: Array<{ turns: number; ms: number }> = [];
+    console.log(`warmup complete (20 activations); passes ${passes}`);
+    const rows: Array<{ pass: number; turns: number; ms: number }> = [];
     const loafByTurn = new Map<number, Array<{ duration: number; source: string }>>();
-    for (let index = 0; index < plan.measured.length; index++) {
-      const target = plan.measured[index]!;
-      const turns = TURNS[targets.indexOf(target)] ?? -1;
-      if (wantLoaf) {
-        await launch.page.evaluate(() => {
-          const host = window as unknown as {
-            __loafObserver?: PerformanceObserver;
-            __loaf: Array<PerformanceEntry & { scripts?: Array<{ name?: string; duration: number; invoker?: string }> }>;
-          };
-          host.__loaf = [];
-          host.__loafObserver?.disconnect();
-          const observer = new PerformanceObserver((list) => {
-            for (const entry of list.getEntries()) host.__loaf.push(entry);
+    for (let pass = 0; pass < passes; pass++) {
+      for (let index = 0; index < plan.measured.length; index++) {
+        const target = plan.measured[index]!;
+        const turns = TURNS_BY_ORDER[targets.indexOf(target)] ?? -1;
+        if (wantLoaf) {
+          await launch.page.evaluate(() => {
+            const host = window as unknown as {
+              __loafObserver?: PerformanceObserver;
+              __loaf: Array<PerformanceEntry & { scripts?: Array<{ name?: string; duration: number; invoker?: string }> }>;
+            };
+            host.__loaf = [];
+            host.__loafObserver?.disconnect();
+            const observer = new PerformanceObserver((list) => {
+              for (const entry of list.getEntries()) host.__loaf.push(entry);
+            });
+            observer.observe({ type: "long-animation-frame", buffered: false });
+            host.__loafObserver = observer;
           });
-          observer.observe({ type: "long-animation-frame", buffered: false });
-          host.__loafObserver = observer;
-        });
+        }
+        const result = await measureSessionActivation(launch.page, target);
+        if (result.state !== "exact") throw new Error(`switch pass ${pass} #${index} failed: ${result.reason}`);
+        rows.push({ pass, turns, ms: result.durationMs });
+        if (wantLoaf) {
+          const entries = await launch.page.evaluate(async () => {
+            // LoAF entries are delivered on the frame after the long task; give
+            // the queue a beat, then drain whatever the observer holds.
+            await new Promise((resolve) => setTimeout(resolve, 120));
+            const host = window as unknown as {
+              __loafObserver?: PerformanceObserver;
+              __loaf: Array<PerformanceEntry & { scripts?: Array<{ name?: string; duration: number; invoker?: string }> }>;
+            };
+            for (const entry of host.__loafObserver?.takeRecords() ?? []) {
+              host.__loaf.push(entry as PerformanceEntry & { scripts?: Array<{ name?: string; duration: number; invoker?: string }> });
+            }
+            return host.__loaf.map((entry) => ({
+              duration: entry.duration,
+              source: entry.scripts
+                ?.map((script) => script.invoker ?? script.name ?? "?")
+                .filter(Boolean)
+                .join("|")
+                .slice(0, 160),
+            }));
+          });
+          loafByTurn.set(turns, entries.flatMap((item) => (item.source ? [{ duration: item.duration, source: item.source }] : [])));
+        }
+        console.log(`p${pass} ${String(turns).padStart(4)} turns  ${result.durationMs.toFixed(1)} ms`);
       }
-      const result = await measureSessionActivation(launch.page, target);
-      if (result.state !== "exact") throw new Error(`switch ${index} failed: ${result.reason}`);
-      rows.push({ turns, ms: result.durationMs });
-      if (wantLoaf) {
-        const entries = await launch.page.evaluate(async () => {
-          // LoAF entries are delivered on the frame after the long task; give
-          // the queue a beat, then drain whatever the observer holds.
-          await new Promise((resolve) => setTimeout(resolve, 120));
-          const host = window as unknown as {
-            __loafObserver?: PerformanceObserver;
-            __loaf: Array<PerformanceEntry & { scripts?: Array<{ name?: string; duration: number; invoker?: string }> }>;
-          };
-          for (const entry of host.__loafObserver?.takeRecords() ?? []) {
-            host.__loaf.push(entry as PerformanceEntry & { scripts?: Array<{ name?: string; duration: number; invoker?: string }> });
-          }
-          return host.__loaf.map((entry) => ({
-            duration: entry.duration,
-            source: entry.scripts
-              ?.map((script) => script.invoker ?? script.name ?? "?")
-              .filter(Boolean)
-              .join("|")
-              .slice(0, 160),
-          }));
-        });
-        loafByTurn.set(turns, entries.flatMap((item) => (item.source ? [{ duration: item.duration, source: item.source }] : [])));
-      }
-      console.log(`${String(turns).padStart(4)} turns  ${result.durationMs.toFixed(1)} ms`);
     }
-    const bucket = (ms: number[]) => (ms.length ? (ms.reduce((a, b) => a + b, 0) / ms.length).toFixed(1) : "-");
-    const light = rows.filter((row) => row.turns <= 40).map((row) => row.ms);
-    const mid = rows.filter((row) => row.turns > 40 && row.turns <= 160).map((row) => row.ms);
-    const heavy = rows.filter((row) => row.turns > 160).map((row) => row.ms);
-    const ordered = [...rows].sort((a, b) => a.ms - b.ms);
-    const p95 = ordered[Math.min(ordered.length - 1, Math.ceil(ordered.length * 0.95) - 1)]!;
-    console.log(`buckets light/mid/heavy avg: ${bucket(light)}/${bucket(mid)}/${bucket(heavy)}`);
-    console.log(`p95: ${p95.ms.toFixed(1)} ms`);
+    const median = (ms: number[]) => {
+      if (!ms.length) return NaN;
+      const ordered = [...ms].sort((a, b) => a - b);
+      return ordered[Math.floor(ordered.length / 2)]!;
+    };
+    const bucketMedian = (predicate: (turns: number) => boolean) =>
+      median(rows.filter((row) => predicate(row.turns)).map((row) => row.ms)).toFixed(1);
+    const perTurnPooled = rows.map((row) => row.ms);
+    const orderedAll = [...perTurnPooled].sort((a, b) => a - b);
+    const p95 = orderedAll[Math.min(orderedAll.length - 1, Math.ceil(orderedAll.length * 0.95) - 1)]!;
+    console.log(
+      `buckets light/mid/heavy MEDIAN over ${passes} passes: ${bucketMedian((t) => t <= 40)}/${bucketMedian((t) => t > 40 && t <= 160)}/${bucketMedian((t) => t > 160)}`,
+    );
+    console.log(`p95 pooled (${rows.length} switches): ${p95.toFixed(1)} ms`);
     if (wantLoaf) {
       const totals = new Map<string, { count: number; ms: number }>();
       for (const entries of loafByTurn.values()) {
