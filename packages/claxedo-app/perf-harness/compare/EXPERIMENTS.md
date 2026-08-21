@@ -162,6 +162,73 @@ per-switch script — screen chrome mount deferral; re-show measurement-drift
 suppression; rail row cost), quiet-host certification runs, and the four
 stream/terminal metrics (T3 driver live-validation) still unmeasured.
 
+## 2026-08-22 early hours — drift class solved (markdown re-parse) + T3 stream gate
+
+**T3 conversation profile unblocked honestly** (t3code `3643c8506`): T3
+persists NOTHING for non-tool item events (`ProviderRuntimeIngestion`
+returns `[]`), so reasoning never reaches settled-thread history by product
+design — while the stream replay renders reasoning live via the provider
+adapter (`reasoning_text`), and the generated corpora stream only text
+revisions + tool lifecycles anyway. The materializer now computes the
+conversation profile's coverage from the shapes the replay actually plays
+(`streamedUnsupportedShapes`); the history drops stay declared on the
+workspace/resource entries. Unit tests pin both directions; the stale units
+literal and committed JSON-schema artifacts from the graded redesign were
+also finished. The four stream/terminal metrics now need only a live run
+(blocked while the user's own T3 Nightly is open — dual-instance trap).
+
+**Warm-switch drift class root-caused and fixed** (perf branch `d86dc72ec`).
+Instrumentation: an in-page per-frame wobble recorder (scrollTop/scrollHeight
+deltas with per-row culprit heights, then full-row HTML first-difference,
+then per-row [t, htmlLen, contentHeight, wrapperHeight] series) plus
+cache-miss reason tracing behind `__claxedoPerfTrace`. Findings:
+
+- Every post-paint shrink (-19/-30/-231/-327px) was a row whose markdown
+  had never been parsed at that mount: raw-text fallback paints taller,
+  gets measured, the persisted snapshot carries the stale height, and every
+  later visit re-corrects after the async parse lands (~40-160ms wall).
+- The misses were structural: markdown HTML cache 200 entries, code
+  highlight cache 256/2MB, timeline measurement-snapshot cache 16 sessions
+  — all far below a 20-session sweep's working set (~25 blocks per visit).
+  Raising alone did NOT fix boundary rows (visit 2's restored-measurement
+  overscan mounts rows visit 1 never parsed) — the durable fix is the
+  previously-dead `preloadMarkdown` API, now wired as bounded newest-first
+  idle preloading per session (rIC with timeout; runs to completion).
+- `virtual-core.measure()` wipes restored snapshots wholesale; the mount
+  effect already guards against that (initialized to the mount key).
+- RO measurements are DROPPED (not deferred) during smooth scrolls
+  (`shouldMeasureDuringScroll`) — explains rare 124ms adoption lags.
+
+Probe trend (same graded plan, diagnostic host): p95 175 (pre-campaign) ->
+~145-154 (first landed slice) -> **137, max 137** (this slice). T3 target:
+79.8. Remaining per-switch cost is activation infrastructure
+(openSession.metaUpsert ~13ms + addContent ~12ms + showContent ~15ms per
+remount) and the user-blocked MAX_OPEN_SURFACES 10->24 decision — with
+re-shows now ~50ms, a 24-surface MRU would make nearly every plan switch a
+re-show.
+
+**Claxedo stream + terminal arms — first-ever deep exercise** (perf branch
+`285461189`):
+
+- Stream (`controlled-stream-v1`): fixed the replay PATCH to carry the
+  stream session's own workspace directory (multi-workspace corpora 404 on
+  the root), but the scenario is structurally unusable against the packaged
+  app: it PATCHes the engine's `updatePart` HTTP surface, and the embedded
+  composition uses an in-process transport — no engine HTTP exists, and the
+  claxedo server surface exposes only `/session` list/create + message
+  prompt. DESIGNED NEXT STEP: a harness-hosted deterministic model provider
+  (the same seam T3's replay server fakes for its architecture), so the
+  scenario sends a real prompt and the full engine -> events -> renderer
+  pipeline streams the corpus turn.
+- Terminal (`terminal-core-v1`): the app half of the benchmark contract
+  (data-terminal-connected, data-terminal-benchmark-instance-id,
+  terminalWriteAccepted/Parsed receipts) had been LOST in the same
+  partial-commit incident b7d5b8bf7 recovered the harness from; recovered
+  from `stash@{1}^3`, extended with instanceId, wired, tested (994/994
+  terminal core tests). Live validation pending a user-idle window — runs
+  invalidate on "application lost foreground" while the user works, which
+  is the guard behaving correctly.
+
 ## Open items
 
 - T3's stream + terminal driver scenarios: implemented, never live-validated
