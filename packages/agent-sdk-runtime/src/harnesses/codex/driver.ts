@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "child_process"
+import { isWindowsShimBinary, killHarnessProcess } from "../shared/windows-process"
 import { createIdleReaper } from "../shared/process-lifecycle"
 import { randomUUID } from "crypto"
 import fs from "fs"
@@ -1019,11 +1020,9 @@ class CodexAppServerProcess {
     processObserver?: AgentProcessObserver,
     mcp: Record<string, ResolvedMcpServer> = {},
   ) {
-    // Windows cannot spawn a .cmd/.bat launcher directly (ENOENT/EINVAL from
-    // CreateProcess) — and that is exactly what an npm install of codex puts
-    // on PATH there. Route shims through the shell; the quoting keeps a
-    // binary path with spaces intact through cmd.exe's tokenization.
-    const windowsShim = process.platform === "win32" && /\.(cmd|bat)$/i.test(binary)
+    // Shims must go through the shell (see isWindowsShimBinary); the quoting
+    // keeps a binary path with spaces intact through cmd.exe's tokenization.
+    const windowsShim = isWindowsShimBinary(binary)
     this.proc = spawn(windowsShim ? `"${binary}"` : binary, ["app-server", "--listen", "stdio://"], {
       cwd: directory,
       env,
@@ -1144,14 +1143,10 @@ class CodexAppServerProcess {
     for (const item of this.pending.values()) item.reject(err)
     this.pending.clear()
     if (this.proc.exitCode !== null || this.proc.signalCode !== null) return
-    try {
-      this.proc.kill("SIGTERM")
-    } catch {}
+    killHarnessProcess(this.proc, "SIGTERM")
     this.killTimer = setTimeout(() => {
       if (this.proc.exitCode !== null || this.proc.signalCode !== null) return
-      try {
-        this.proc.kill("SIGKILL")
-      } catch {}
+      killHarnessProcess(this.proc, "SIGKILL")
     }, 1_000)
     this.killTimer.unref()
   }
