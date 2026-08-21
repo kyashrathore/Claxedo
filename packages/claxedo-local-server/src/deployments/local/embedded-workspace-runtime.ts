@@ -29,16 +29,6 @@ import type { AgentTurnOutcome } from "@claxedo/agent-sdk-runtime"
 
 type EmbeddedRuntime = ReturnType<typeof createWorkspaceRuntimeApp> & {
   workspace: Workspace
-  /**
-   * Tap on this runtime's own `/global/event` SSE stream, forwarding
-   * `session.created`/`session.updated` events to the host-configured
-   * `onSessionMetaEvent` callback. The route serves the ENGINE's stream when
-   * the opencode transport is live and the runtime hub otherwise, so this tap
-   * is what carries engine-side events (e.g. async title generation) that
-   * never pass through the hub — the split to this package replaced it with a
-   * hub-only `onCompatEvent` subscription and silently lost those.
-   */
-  sessionEvents?: OpencodeEventsHandle
   applying?: Promise<void>
   reconcilingSessionMetadata?: Promise<void>
   diagnosticsOwner?: ProcessOwnerHandle
@@ -82,6 +72,30 @@ let configuredProcessObserver: ProcessObserver | undefined
 // server restart (the control plane's `services.projectionStore` never
 // learns the new title).
 let configuredOnSessionMetaEvent: ((event: OpencodeEvent) => void) | undefined
+/**
+ * Process-global tap on the ENGINE's own `/global/event` SSE stream (via the
+ * configured opencode transport, one engine per process), forwarding every
+ * frame to `configuredOnSessionMetaEvent`. Two disjoint producers feed that
+ * sink:
+ *
+ *  - THIS tap: engine-side events — classic opencode sessions' turn events
+ *    and the engine's async title generation — which never enter the runtime
+ *    hub, and
+ *  - each workspace host's `onCompatEvent` hub subscription (see `options()`):
+ *    ACP/native-adapter turns run through the harness-neutral session service,
+ *    which publishes ONLY into the hub.
+ *
+ * The pre-split bridge tapped the runtime's `/global/event` route instead —
+ * a multiplexer that serves the engine stream while the opencode transport is
+ * live and the hub otherwise. With the embedded engine that transport is live
+ * from boot, so the multiplexed tap latched onto the engine stream even for a
+ * workspace whose default harness later flipped to an ACP adapter, and every
+ * ACP turn's `session.usage` bypassed the control plane's turn meter (the
+ * tier-real claude-acp scenario: three visible turns, zero usage facts).
+ * Tapping the engine directly and subscribing to the hub separately covers
+ * both without double delivery.
+ */
+let engineSessionEvents: OpencodeEventsHandle | undefined
 let configuredOnSessionMetaCreated: ((workspace: Workspace, session: unknown) => Promise<void> | void) | undefined
 let configuredOnSessionMetaSnapshot: ((workspace: Workspace, sessions: unknown[]) => void | Promise<void>) | undefined
 let configuredOnTurnOutcome: ((input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void) | undefined
@@ -147,6 +161,15 @@ function options(
     ...(configuredRouteContributions.length ? { routeContributions: configuredRouteContributions } : {}),
     ...(configuredProcessObserver ? { processObserver: configuredProcessObserver } : {}),
     ...(configuredOnTurnOutcome ? { onTurnOutcome: configuredOnTurnOutcome } : {}),
+    // Hub-side compat events: ACP/native-adapter turns publish their
+    // `session.usage`/`message.updated`/lifecycle events ONLY into this
+    // host's event hub (the harness-neutral session service), never on the
+    // engine's stream — forward them to the same host sink the engine tap
+    // feeds so the control plane's turn meter and session-meta projection see
+    // both producers. See `engineSessionEvents` for the pairing.
+    ...(configuredOnSessionMetaEvent
+      ? { onCompatEvent: (event: OpencodeEvent) => configuredOnSessionMetaEvent?.(event) }
+      : {}),
     exposure: createClaxedoRuntimeExposure({ kind: "embedded", guard: embeddedRuntimeGuard }),
     target: resolveClaxedoWorkspaceRuntimeTarget(ws),
     storeRoot: storeRoot(ws),
@@ -213,7 +236,6 @@ function reconcileSessionMetadata(runtime: EmbeddedRuntime) {
 }
 
 function disposeRuntime(runtime: EmbeddedRuntime) {
-  runtime.sessionEvents?.close()
   runtime.diagnosticsOwner?.exit({ reason: "disposed" })
   runtime.host.dispose()
 }
@@ -280,16 +302,19 @@ export async function ensureEmbeddedWorkspaceRuntime(
   }
   activeHost = runtime.host
   hosts.set(ws.id, runtime)
-  if (configuredOnSessionMetaEvent) {
+  if (configuredOnSessionMetaEvent && configuredOpencodeCompat && !engineSessionEvents) {
     // Ride the same battle-tested SSE client used for the legacy
     // non-embedded `/global/event` bridge (`createOpencodeEvents`,
     // claxedo-server's app composition) instead of duplicating
-    // SSE-parsing/reconnect logic — just pointed at THIS runtime's own
-    // in-process app (an ordinary in-memory `fetch`, never a real socket)
-    // instead of a real network URL.
-    const sessionEvents = createOpencodeEvents(async (req) => await runtime.app.fetch(req))
-    sessionEvents.on(configuredOnSessionMetaEvent)
-    runtime.sessionEvents = sessionEvents
+    // SSE-parsing/reconnect logic — pointed DIRECTLY at the engine transport
+    // (an ordinary in-memory `fetch` in embedded mode). One tap per process,
+    // matching the engine's own lifetime; see `engineSessionEvents` for why
+    // it must not go through the runtime's multiplexing `/global/event`
+    // route. The handler reads the configured sink at dispatch so a later
+    // `configureEmbeddedWorkspaceRuntime` call takes effect without rewiring.
+    const sessionEvents = createOpencodeEvents(configuredOpencodeRequest)
+    sessionEvents.on((event) => configuredOnSessionMetaEvent?.(event))
+    engineSessionEvents = sessionEvents
   }
   if (config === "sync") await configure(runtime)
   runtime.diagnosticsOwner?.update({ lifecycle: "ready" })
