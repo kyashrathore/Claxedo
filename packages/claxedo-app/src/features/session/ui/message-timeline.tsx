@@ -1660,7 +1660,17 @@ export function MessageTimeline(props: {
             element = value
           }}
           data-index={item().index}
-          style={{ "min-height": ready() ? undefined : `${initialItem.size}px` }}
+          style={{
+            "min-height": ready() ? undefined : `${initialItem.size}px`,
+            // Rows outside the viewport skip style/layout/paint entirely; the
+            // box keeps the virtualizer's size so scroll math is unchanged,
+            // and `auto` retains the last RENDERED height so re-measures after
+            // a scroll approach stay exact. Cuts the single dominant
+            // style/layout frame a heavy-session switch pays for its overscan
+            // band.
+            "content-visibility": "auto",
+            "contain-intrinsic-size": `auto ${item().size}px`,
+          }}
         >
           <TimelineRowView
             row={row()}
