@@ -1289,8 +1289,17 @@ test.describe("core harness rendering matrix @core", () => {
     // collapsed "Thought" accordion — expanding it reveals the delta-accumulated text.
     const reasoning = content.locator('[data-component="reasoning-part"]')
     await expect(reasoning).toBeVisible({ timeout: 45_000 })
-    await reasoning.locator('[data-component="tool-trigger"], [data-slot="basic-tool-tool-title"]').first().click()
-    await expect(content.getByText("Let me check the grep results.")).toBeVisible({ timeout: 45_000 })
+    // Expand until the detail is actually revealed: a single click can land
+    // mid-mount while the delta text is still streaming and get swallowed by
+    // a re-render, leaving the accordion collapsed for the whole wait
+    // (run 369). Visible text short-circuits, so an open accordion is never
+    // toggled shut.
+    await expect(async () => {
+      const detail = content.getByText("Let me check the grep results.")
+      if (await detail.isVisible()) return
+      await reasoning.locator('[data-component="tool-trigger"], [data-slot="basic-tool-tool-title"]').first().click()
+      await expect(detail).toBeVisible({ timeout: 3_000 })
+    }).toPass({ timeout: 45_000 })
 
     // behavior 17: the trailing runtime.diagnostic envelope (a claude_sdk.unmapped_event
     // diagnostic, not a Part) adds no timeline row of its own — the assistant turn's
