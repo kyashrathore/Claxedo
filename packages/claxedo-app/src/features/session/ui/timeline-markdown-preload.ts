@@ -28,13 +28,28 @@ type PreloadJob = {
 const queue: PreloadJob[] = []
 let draining = false
 
+// Recency of USER INPUT, not page idleness: warm parses pay off exactly while
+// the user is actively switching sessions (the CPU is busy anyway and the
+// next switch needs the cache), and a machine left alone should go quiet —
+// that is also precisely what "quiescent" means to anyone measuring us.
+let lastInputAt = 0
+const recentlyActive = () => performance.now() - lastInputAt < 5_000
+if (typeof window !== "undefined") {
+  const markInput = () => {
+    lastInputAt = performance.now()
+  }
+  for (const name of ["pointerdown", "pointermove", "keydown", "wheel", "touchstart"]) {
+    window.addEventListener(name, markInput, { passive: true })
+  }
+}
+
 const idle: (task: (deadline?: { timeRemaining(): number }) => void) => void =
   typeof requestIdleCallback === "function"
-    ? // The long timeout is a liveness backstop, not a pace-setter: when the
-      // page idles, callbacks fire every frame and the backlog drains in a
-      // few seconds; when the user is active, forced ticks land rarely and
-      // each does minimal work (see the deadline check below).
-      (task) => requestIdleCallback(task, { timeout: 1_000 })
+    ? // The timeout is a liveness backstop, not a pace-setter — but it IS the
+      // tick ceiling under sustained load, so it follows the same activity
+      // split as the slice budget: tight while the user works (warmth for
+      // the next switch), long on a quiet page (near-zero quiescent cost).
+      (task) => requestIdleCallback(task, { timeout: recentlyActive() ? 150 : 1_000 })
     : (task) => setTimeout(() => task(), 250)
 
 const drain = async (deadline?: { timeRemaining(): number }) => {
@@ -45,9 +60,11 @@ const drain = async (deadline?: { timeRemaining(): number }) => {
   }
   job.list ??= job.collect()
   if (job.list) {
-    // A forced (deadline-exhausted) tick parses one part to stay alive; a
-    // genuinely idle tick takes a full slice.
-    const budget = deadline && deadline.timeRemaining() < 4 ? 1 : preloadSliceSize
+    // Full slices while the user is actively working (recent input — the
+    // next switch needs the cache warm) or while the tick is genuinely idle;
+    // a forced tick on a quiet page parses one part to stay alive.
+    const forced = deadline !== undefined && deadline.timeRemaining() < 4
+    const budget = forced && !recentlyActive() ? 1 : preloadSliceSize
     const slice = job.list.slice(job.index, job.index + budget)
     job.index += budget
     for (const part of slice) await preloadMarkdown(part.text, part.id, job.parser)
