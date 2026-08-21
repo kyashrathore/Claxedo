@@ -55,21 +55,12 @@
   overflow-y: visible;
 }
 
-/* The squeeze animates: the gutter padding transitions on the elements that
-   carry it, so chat and composer slide smoothly instead of jumping. */
-.session-envcard-shell [data-session-timeline-root] .scroll-view__viewport,
-.session-envcard-shell [data-session-timeline-loading],
-.session-envcard-shell [data-component="session-prompt-dock"] {
-  transition: padding-right 220ms cubic-bezier(0.2, 0, 0, 1);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .session-envcard-shell [data-session-timeline-root] .scroll-view__viewport,
-  .session-envcard-shell [data-session-timeline-loading],
-  .session-envcard-shell [data-component="session-prompt-dock"] {
-    transition: none;
-  }
-}
+/* The gutter inset applies INSTANTLY. It used to transition 220ms here, but
+   occupancy flips every time the workspace panel toggles (the card hides while
+   the panel is open), so quick toggles chained animated relayouts of the
+   scroll viewport and composer dock — dragging the whole transcript through
+   continuous padding animations. Layout properties never animate well at this
+   scale; snap instead. */
 
 /* Reserve the gutter inside the timeline's scroll viewport so chat content
    squeezes left while the scrollbar remains on the pane edge. Keyed off
