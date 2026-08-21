@@ -268,6 +268,9 @@ export async function launchPackagedClaxedo(input: {
   dataDirectory: string;
   readinessTargets: readonly SessionReadinessTarget[];
   timeoutMs?: number;
+  /** Composition overrides for special arms (e.g. OPENCODE_URL for the
+   * fake-engine stream profile). Applied last, so they win. */
+  extraEnv?: Record<string, string>;
 }): Promise<ClaxedoLaunch> {
   const timeoutMs = input.timeoutMs ?? 60_000;
   await Promise.all([
@@ -296,6 +299,7 @@ export async function launchPackagedClaxedo(input: {
       CLAXEDO_SERVER_PORT: String(serverPort),
       CLAXEDO_DEVTOOLS: "0",
       GOMAXPROCS: process.env.GOMAXPROCS ?? "2",
+      ...(input.extraEnv ?? {}),
     },
     stdout: "pipe",
     stderr: "pipe",

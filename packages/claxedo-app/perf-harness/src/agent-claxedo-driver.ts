@@ -21,6 +21,7 @@ import {
 } from "./agent-corpus-materializer";
 import { driverHello, type AgentDriverRequest } from "./agent-driver-contract";
 import { createAgentDriverRuntime } from "./agent-driver-runtime";
+import { startFakeEngine } from "./agent-fake-engine";
 import { runControlledStreamScenario } from "./agent-stream-scenario";
 import { runTerminalScenario } from "./agent-terminal-scenario";
 import {
@@ -36,6 +37,8 @@ type Prepared = Awaited<ReturnType<typeof materializeClaxedoCorpus>> & {
   runDirectory: string;
   dataDirectory: string;
   workspaceDirectory: string;
+  /** Present only for the conversation (stream) profile's fake-engine composition. */
+  fakeEngine?: Awaited<ReturnType<typeof startFakeEngine>>;
   /** Shared in-flight promise: terminal input/output scenarios are dispatched
    * concurrently, so caching only the settled value launches the workload twice. */
   terminalResult?: ReturnType<typeof runTerminalScenario>;
@@ -53,6 +56,7 @@ export async function createClaxedoAgentDriver(input?: {
       .digest("hex");
   let prepared: Prepared | undefined;
   let launch: ClaxedoLaunch | undefined;
+  let fakeEngine: Awaited<ReturnType<typeof startFakeEngine>> | undefined;
 
   const requirePrepared = () => {
     if (!prepared) throw new Error("Claxedo benchmark driver is not prepared");
@@ -89,6 +93,24 @@ export async function createClaxedoAgentDriver(input?: {
         runDirectory: params.runDirectory,
         dataDirectory,
       };
+      if (params.profiles.includes("conversation-rich-v1")) {
+        // The stream arm swaps the ENGINE COMPOSITION (OPENCODE_URL -> the
+        // harness's fake engine), which changes what every other profile
+        // would measure. Refuse mixed runs instead of silently measuring the
+        // wrong composition.
+        if (params.profiles.length !== 1) {
+          throw new Error(
+            "conversation-rich-v1 runs under the fake-engine composition and must be the only profile in the run",
+          );
+        }
+        fakeEngine = await startFakeEngine({
+          dbPath: prepared.dbPath,
+          corpus: prepared.corpus,
+          materializedSessions: prepared.materializedSessions,
+          materializedParts: prepared.materializedParts,
+        });
+        prepared.fakeEngine = fakeEngine;
+      }
       return { coverage: prepared.coverage };
     },
     launch: async ({ isolatedProfilePath }) => {
@@ -100,6 +122,7 @@ export async function createClaxedoAgentDriver(input?: {
         isolatedProfilePath,
         dataDirectory: state.dataDirectory,
         readinessTargets: state.readinessTargets,
+        ...(fakeEngine ? { extraEnv: { OPENCODE_URL: fakeEngine.url } } : {}),
       });
       return {
         processes: [launch.process],
@@ -123,6 +146,8 @@ export async function createClaxedoAgentDriver(input?: {
         : { terminated: [], survivors: [], forced: [] };
       launch = undefined;
       prepared = undefined;
+      fakeEngine?.close();
+      fakeEngine = undefined;
       return result;
     },
   });
@@ -352,14 +377,17 @@ async function runScenario(
     ];
   }
   if (params.scenario === "controlled-stream-v1") {
+    if (!prepared.fakeEngine) {
+      throw new Error("controlled-stream-v1 requires the fake-engine composition (conversation-rich-v1 profile)");
+    }
     const result = await runControlledStreamScenario({
       page: launch.page,
       serverUrl: launch.serverUrl,
       workspaces: prepared.workspaces,
       corpus: prepared.corpus,
       materializedSessions: prepared.materializedSessions,
-      materializedParts: prepared.materializedParts,
       readinessTargets: prepared.readinessTargets,
+      fakeEngine: prepared.fakeEngine,
     });
     const evidence = result.evidence
       ? [
