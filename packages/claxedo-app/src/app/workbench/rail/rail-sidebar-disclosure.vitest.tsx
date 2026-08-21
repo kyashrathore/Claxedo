@@ -1,3 +1,5 @@
+import type { AccountPort } from "@/platform/account/account-port"
+import { AccountPortProvider } from "@/platform/account/account-provider"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
 import { MemoryRouter, Route } from "@solidjs/router"
@@ -75,12 +77,25 @@ const project = {
 // `RailSidebar` renders `GlobalNavigation`, which reads `useLocation()` to mark
 // the active surface. That is a Route-scoped primitive, so the sidebar only
 // mounts inside a router — as it does in the app shell.
+// The sidebar's account menu reads `useAccountPort()`, which throws without a
+// provider — in the app shell `AccountPortProvider` sits above the rail
+// (src/app/entry/app.tsx). A signed-out stub is all these disclosure tests
+// need; the account surface itself is covered in account-section.vitest.tsx.
+const stubAccountPort: AccountPort = {
+  state: () => ({ status: "unsigned" }),
+  signIn: async () => {},
+  signOut: async () => {},
+  run: async () => undefined as never,
+}
+
 function renderInRouter(component: () => JSX.Element) {
   return render(() => (
     <QueryClientProvider client={new QueryClient()}>
-      <MemoryRouter>
-        <Route path="*" component={component} />
-      </MemoryRouter>
+      <AccountPortProvider port={stubAccountPort}>
+        <MemoryRouter>
+          <Route path="*" component={component} />
+        </MemoryRouter>
+      </AccountPortProvider>
     </QueryClientProvider>
   ))
 }

@@ -198,7 +198,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       directory: "ws_1",
       sessionID: "session-1",
     })
-    expect(fetchCalls.map((item) => new URL(item.url).pathname)).toContain("/api/workspace/resolve")
+    expect(fetchCalls.map((item) => new URL(item.url).pathname)).toContain("/api/claxedo/workspace/resolve")
     expect(fetchCalls.map((item) => new URL(item.url).pathname)).toContain("/api/workspace/ws_1/connection")
     expect(startup.some((item) => item.status === "acquiring_sandbox" && item.id === "ws_1")).toBe(true)
     expect(startup.some((item) => item.status === "ready")).toBe(true)

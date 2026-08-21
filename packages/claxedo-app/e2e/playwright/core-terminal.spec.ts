@@ -163,6 +163,7 @@
  *   boot-only needs are a small, terminal-agnostic subset of that helper's full chat/session
  *   streaming surface.
  */
+import { workspaceResolveRoute } from "../helpers/contracts/workspace-resolve"
 import { expect, test, type Page, type Route } from "@playwright/test"
 import sharp from "sharp"
 
@@ -356,7 +357,7 @@ async function installAppBootMock(page: Page, dir: string, projectId = "proj_cor
     if (!["/session", "/experimental/session"].includes(pathname)) return r.fallback()
     return json(r, [])
   })
-  await page.route("**/api/workspace/resolve**", (r) =>
+  await page.route(workspaceResolveRoute, (r) =>
     api(r) ? json(r, { workspaceId: undefined, directory: dir, kind: "local", status: "ready" }) : r.continue(),
   )
   await page.route("**/api/wr/diff/**", (r) => {

@@ -9,9 +9,33 @@ const root = path.resolve(import.meta.dirname, "..")
 const manifest = (await Bun.file(path.join(root, "package.json")).json()) as Manifest
 const patches = manifest.claxedoDependencyPatches ?? {}
 
+async function gitToplevel(directory: string) {
+  const process = Bun.spawn(["git", "-C", directory, "rev-parse", "--show-toplevel"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  const [exitCode, stdout] = await Promise.all([process.exited, new Response(process.stdout).text()])
+  if (exitCode !== 0) return null
+  const toplevel = stdout.trim()
+  return toplevel ? await realpath(toplevel) : null
+}
+
 async function runGitApply(directory: string, patch: string, args: string[]) {
-  const process = Bun.spawn(["git", "apply", "--whitespace=nowarn", ...args, patch], {
-    cwd: directory,
+  // `git apply` run from inside a work tree resolves the patch's paths against
+  // the repo TOP LEVEL — and from a subdirectory it silently SKIPS every
+  // out-of-scope file while still exiting 0. Since node_modules always sits
+  // inside this repository's work tree, the old cwd-based invocation reported
+  // "patched" without changing a byte (verified: the applier ran green while
+  // the tokentracker and virtual-core dists carried none of their patch
+  // content). Anchor at the enclosing repo root and address the package with
+  // --directory so paths resolve to the real files; outside any repository
+  // (a bare CI workdir) plain cwd application already behaves correctly.
+  const toplevel = await gitToplevel(directory)
+  const directoryArgs = toplevel && toplevel !== directory
+    ? [`--directory=${path.relative(toplevel, directory).replaceAll(path.sep, "/")}`]
+    : []
+  const process = Bun.spawn(["git", "apply", "--whitespace=nowarn", ...directoryArgs, ...args, patch], {
+    cwd: toplevel ?? directory,
     stdout: "pipe",
     stderr: "pipe",
   })

@@ -1,3 +1,4 @@
+import { isSessionListPath } from "./contracts/session-list"
 import fs from "node:fs"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import { createRequire } from "node:module"
@@ -1839,7 +1840,7 @@ async function respond(
       })
       return
     }
-    if (incoming.method === "GET" && pathname === "/api/control/session-list") {
+    if (incoming.method === "GET" && isSessionListPath(pathname)) {
       const query = parseSessionListQuery(url)
       sendJson(outgoing, buildSessionListResponse({
         query,

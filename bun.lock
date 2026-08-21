@@ -68,7 +68,7 @@
     },
     "packages/agent-runtime-stats": {
       "name": "@claxedo/agent-runtime-stats",
-      "version": "0.1.0",
+      "version": "0.1.4",
       "bin": {
         "agent-runtime-stats": "./bin/agent-runtime-stats.js",
       },

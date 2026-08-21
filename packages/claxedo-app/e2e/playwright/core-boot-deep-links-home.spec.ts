@@ -167,6 +167,7 @@
  *   web platform (`src/index.tsx` `getDefaultConfig()`) — see the finding in this
  *   spec's PR/task notes.
  */
+import { sessionListRoute } from "../helpers/contracts/session-list"
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
@@ -279,7 +280,7 @@ async function openDraftPrompt(page: Page, dir: string): Promise<Locator> {
  * load sessions." and no row ever renders. `mock-runtime.ts` should grow a default
  * handler for this route. */
 async function installSessionListMock(page: Page) {
-  await page.route("**/api/control/session-list**", (route) => {
+  await page.route(sessionListRoute, (route) => {
     const type = route.request().resourceType()
     if (type !== "fetch" && type !== "xhr") return route.continue()
     return route.fulfill({
@@ -777,7 +778,7 @@ test.describe("core boot, deep links, and home @core", () => {
     // the row unconditionally) so this fresh boot's OWN list fetch reflects "gone" too
     // — a full page.goto tears down the JS/react-query state, so client-side pruning
     // from a prior boot does not carry over; the list response itself must be empty.
-    await page.route("**/api/control/session-list**", (route) => {
+    await page.route(sessionListRoute, (route) => {
       if (!isApiCall(route)) return route.fallback()
       return route.fulfill({
         status: 200,

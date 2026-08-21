@@ -1686,10 +1686,18 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // calling installMockRuntime, which wins per Playwright's last-registered-first
   // matching — see core-boot-deep-links-home.spec.ts's installSessionListMock,
   // the pattern this default is modeled on).
-  await contractRoute(page, "**/api/control/session-list**", (route) => {
+  // Registered on BOTH spellings: `sessionNavigationListUrl`
+  // (src/platform/runtime/agent/workspace-control-routes.ts) rewrites the path
+  // to `/api/claxedo/session-list` whenever the server transport is loopback —
+  // which every e2e page (127.0.0.1 base) is — while non-loopback transports
+  // keep `/api/control/session-list`. Specs that override this default must
+  // cover both spellings the same way.
+  const sessionListDefault = (route: Route) => {
     if (!api(route)) return route.continue()
     return json(route, emptySessionNavigationListResponse(route.request().url()))
-  })
+  }
+  await contractRoute(page, "**/api/control/session-list**", sessionListDefault)
+  await contractRoute(page, "**/api/claxedo/session-list**", sessionListDefault)
 
   // GET /api/control/sessions — the FLAT session inventory on the control plane
   // (`controlSessionListUrl`, src/platform/runtime/agent/workspace-control-routes.ts:76-85),
@@ -2140,6 +2148,17 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(r, { connections: [] })
   })
 
+  // POST /api/claxedo/usage/sync — the usage outbox beacon
+  // (`installUsageOutboxWakeups`, src/features/usage/data/usage-api.ts) fires
+  // once on every app boot and again on `online` events, so it reaches every
+  // spec's page. CONTRACT: `syncUsageOutbox` reads back
+  // `{ attempted, delivered, conflicts, pending }`; an empty outbox syncs to
+  // all zeros.
+  await contractRoute(page, "**/api/claxedo/usage/sync**", (r) => {
+    if (!api(r)) return r.continue()
+    return json(r, { attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
+  })
+
   await contractRoute(page, "**/api/claxedo/agent-config/harness**", async (r) => {
     if (!api(r)) return r.continue()
     if (new URL(r.request().url()).pathname !== "/api/claxedo/agent-config/harness") return r.fallback()
@@ -2565,7 +2584,13 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // with cloud info, breaking any spec exercising both lanes in one page (e.g. the
     // same-pane local -> cloud draft navigation in core-harness-ownership-cloud
     // behavior 5).
-    await contractRoute(page, `**/api/workspace/resolve**`, (r) => {
+    // BOTH spellings, like the generic default above: `workspaceResolveUrl`
+    // requests `/api/claxedo/workspace/resolve` on loopback transports (every
+    // e2e page) and `/api/workspace/resolve` elsewhere. Covering only the
+    // unprefixed one let the cloud workspace's resolve fall through to the
+    // LOCAL-shaped default, so the draft submit never entered the cloud lane
+    // and `cloudPromptCount` stayed 0 for every cloud spec.
+    const cloudWorkspaceResolve = (r: Route) => {
       if (!api(r)) return r.continue()
       const url = new URL(r.request().url())
       const q = url.searchParams.get("workspaceId") ?? url.searchParams.get("directory") ?? ""
@@ -2581,7 +2606,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         created_at: Date.now(),
         updated_at: Date.now(),
       }))
-    })
+    }
+    await contractRoute(page, `**/api/workspace/resolve**`, cloudWorkspaceResolve)
+    await contractRoute(page, `**/api/claxedo/workspace/resolve**`, cloudWorkspaceResolve)
 
     await page.route(`${base}/vcs**`, (r) => json(r, {}))
     await page.route(`${base}/mcp**`, (r) => json(r, {}))

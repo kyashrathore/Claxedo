@@ -347,6 +347,7 @@
  *   CONFIGURATION itself (`core-docks` owns how a permission becomes auto-responded
  *   — this spec only asserts the switcher dot reacts to a still-pending one).
  */
+import { workspaceResolveRoute } from "../helpers/contracts/workspace-resolve"
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
@@ -1085,7 +1086,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     // surface then resolves `local` and never joins the shared connection. In
     // production the resolve endpoint returns the SAME cloud id the inventory
     // carries; mirror that fidelity so the route key agrees with the inventory.
-    await page.route("**/api/workspace/resolve**", async (route) => {
+    await page.route(workspaceResolveRoute, async (route) => {
       const type = route.request().resourceType()
       if (type !== "fetch" && type !== "xhr") return route.continue()
       await route.fulfill({

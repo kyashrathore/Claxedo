@@ -129,6 +129,8 @@
  *   (`core-cloud-offline-roles`, spec 13); user-hosted's 3-step connect pipeline
  *   (`core-user-hosted-workspace`, spec 14).
  */
+import { isWorkspaceResolvePath } from "../helpers/contracts/workspace-resolve"
+import { isSessionListPath } from "../helpers/contracts/session-list"
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test"
 import { expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"
 import { installMockRuntime, providerCatalogIndex } from "../helpers/mock-runtime"
@@ -434,7 +436,7 @@ async function installCloudRuntimeMock(
     if (url.pathname === "/command") return json(route, [{ name: "build", description: "Build command" }])
     if (url.pathname === "/permission") return json(route, [])
     if (url.pathname === "/question") return json(route, [])
-    if (url.pathname === "/api/workspace/resolve" && url.searchParams.get("workspaceId") !== WORKSPACE_ID) {
+    if (isWorkspaceResolvePath(url.pathname) && url.searchParams.get("workspaceId") !== WORKSPACE_ID) {
       return json(route, { workspaceId: `local:${PROJECT_ID}`, directory: DIR, kind: "local", status: "ready" })
     }
     if (url.pathname === "/global/event" || url.pathname === "/event") {
@@ -444,7 +446,7 @@ async function installCloudRuntimeMock(
     // ---- Control-plane session catalog (sidebar list; separate from the
     // /workspaces/:id/session CRUD lane above — a signed-control-plane cloud
     // workspace's sidebar reads THIS, not the runtime's own /session list) ----
-    if (url.pathname === "/api/control/session-list") {
+    if (isSessionListPath(url.pathname)) {
       const rows = sessionCreated
         ? [{
             type: "session",
@@ -502,7 +504,7 @@ async function installCloudRuntimeMock(
     }
 
     // ---- Workspace resolve (provisioning progress, polled repeatedly) ----
-    if (url.pathname === "/api/workspace/resolve" && url.searchParams.get("workspaceId") === WORKSPACE_ID) {
+    if (isWorkspaceResolvePath(url.pathname) && url.searchParams.get("workspaceId") === WORKSPACE_ID) {
       startAutoAdvance()
       return json(route, {
         workspaceId: WORKSPACE_ID,
@@ -634,6 +636,11 @@ async function installCloudRuntimeMock(
       return json(route, { error: "unhandled cloud runtime path", path: runtimePath }, 599)
     }
 
+    // The usage outbox beacon fires on every boot (installUsageOutboxWakeups);
+    // an empty outbox syncs to zeros. Same contract mock-runtime serves.
+    if (url.pathname === "/api/claxedo/usage/sync") {
+      return json(route, { attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
+    }
     return json(route, { error: "unhandled request in core-cloud-provisioning mock", path: url.pathname }, 598)
   })
 

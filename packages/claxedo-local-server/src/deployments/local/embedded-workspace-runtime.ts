@@ -23,12 +23,22 @@ import { createClaxedoRuntimeExposure } from "../../hosts/workspace-runtime/expo
 import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
 import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
 import { resolveClaxedoWorkspaceRuntimeTarget } from "../../hosts/workspace-runtime/target"
-import type { OpencodeEvent } from "../../opencode/events"
+import { createOpencodeEvents, type OpencodeEvent, type OpencodeEventsHandle } from "../../opencode/events"
 import type { PiModelBackendResolver } from "@claxedo/agent-sdk-runtime/adapters"
 import type { AgentTurnOutcome } from "@claxedo/agent-sdk-runtime"
 
 type EmbeddedRuntime = ReturnType<typeof createWorkspaceRuntimeApp> & {
   workspace: Workspace
+  /**
+   * Tap on this runtime's own `/global/event` SSE stream, forwarding
+   * `session.created`/`session.updated` events to the host-configured
+   * `onSessionMetaEvent` callback. The route serves the ENGINE's stream when
+   * the opencode transport is live and the runtime hub otherwise, so this tap
+   * is what carries engine-side events (e.g. async title generation) that
+   * never pass through the hub — the split to this package replaced it with a
+   * hub-only `onCompatEvent` subscription and silently lost those.
+   */
+  sessionEvents?: OpencodeEventsHandle
   applying?: Promise<void>
   reconcilingSessionMetadata?: Promise<void>
   diagnosticsOwner?: ProcessOwnerHandle
@@ -137,7 +147,6 @@ function options(
     ...(configuredRouteContributions.length ? { routeContributions: configuredRouteContributions } : {}),
     ...(configuredProcessObserver ? { processObserver: configuredProcessObserver } : {}),
     ...(configuredOnTurnOutcome ? { onTurnOutcome: configuredOnTurnOutcome } : {}),
-    ...(configuredOnSessionMetaEvent ? { onCompatEvent: configuredOnSessionMetaEvent } : {}),
     exposure: createClaxedoRuntimeExposure({ kind: "embedded", guard: embeddedRuntimeGuard }),
     target: resolveClaxedoWorkspaceRuntimeTarget(ws),
     storeRoot: storeRoot(ws),
@@ -204,6 +213,7 @@ function reconcileSessionMetadata(runtime: EmbeddedRuntime) {
 }
 
 function disposeRuntime(runtime: EmbeddedRuntime) {
+  runtime.sessionEvents?.close()
   runtime.diagnosticsOwner?.exit({ reason: "disposed" })
   runtime.host.dispose()
 }
@@ -270,6 +280,17 @@ export async function ensureEmbeddedWorkspaceRuntime(
   }
   activeHost = runtime.host
   hosts.set(ws.id, runtime)
+  if (configuredOnSessionMetaEvent) {
+    // Ride the same battle-tested SSE client used for the legacy
+    // non-embedded `/global/event` bridge (`createOpencodeEvents`,
+    // claxedo-server's app composition) instead of duplicating
+    // SSE-parsing/reconnect logic — just pointed at THIS runtime's own
+    // in-process app (an ordinary in-memory `fetch`, never a real socket)
+    // instead of a real network URL.
+    const sessionEvents = createOpencodeEvents(async (req) => await runtime.app.fetch(req))
+    sessionEvents.on(configuredOnSessionMetaEvent)
+    runtime.sessionEvents = sessionEvents
+  }
   if (config === "sync") await configure(runtime)
   runtime.diagnosticsOwner?.update({ lifecycle: "ready" })
   await reconcileSessionMetadata(runtime)

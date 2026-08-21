@@ -50,6 +50,7 @@
  * only `agentLifecycleTitle` does, and only from a delivered `agent.lifecycle`.
  */
 
+import { sessionListRoute } from "../helpers/contracts/session-list"
 import { expect, test, type Page } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
 
@@ -90,7 +91,7 @@ async function installSessionListFixture(
     attachments: [],
   })
 
-  await page.route("**/api/control/session-list**", async (route) => {
+  await page.route(sessionListRoute, async (route) => {
     const url = new URL(route.request().url())
     const limit = Number(url.searchParams.get("limit") ?? "5") || 5
     const items = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, limit)
