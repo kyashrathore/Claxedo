@@ -94,6 +94,12 @@ export function installTimelineMarkdownPreload(input: {
   conversation: () => PreloadableConversation | undefined
 }) {
   const parser = useMarked()
+  // Bound the BACKLOG, not just the pace: a rapid sweep across many sessions
+  // otherwise queues thousands of parts whose drain runs well past the last
+  // input — the visible fold of every visited session already parsed during
+  // its own visit, so only the most recent few sessions' off-screen rows are
+  // worth finishing. Oldest pending jobs drop first.
+  while (queue.length >= 3) queue.shift()
   queue.push({
     collect: () => {
       const conversation = input.conversation()
