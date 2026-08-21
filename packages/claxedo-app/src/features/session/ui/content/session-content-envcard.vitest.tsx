@@ -15,6 +15,7 @@ vi.mock("@/features/session/app-ports", () => ({
   useClaxedoState: () => ({
     meta: { ids: () => [], get: () => undefined },
     layout: { openSession: vi.fn() },
+    workspacePanel: { state: () => ({ open: false }) },
   }),
   useGlobalSync: () => ({ data: { project: [] } }),
   useQueryOptions: () => ({

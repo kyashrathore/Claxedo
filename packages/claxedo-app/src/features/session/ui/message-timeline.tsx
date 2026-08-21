@@ -102,6 +102,7 @@ import {
   estimateLongMarkdownHeight,
   filterVirtualIndexes,
   scheduleConnectedMeasure,
+  timelineRowFrameStyle,
 } from "./timeline-virtualization"
 import { createTurnFoldStore } from "./turn-fold-store"
 import { formatDuration } from "@/ui/session-kit"
@@ -793,12 +794,14 @@ export function MessageTimeline(props: {
   let progressiveFrame: number | undefined
   const scheduleProgressiveRows = () => {
     if (progressiveReady() || progressiveFrame !== undefined) return
-    // One mount pass, not one row per frame. The timeline stays
-    // `visibility: hidden` for the whole pre-reveal window, so per-frame
-    // staging never showed a row earlier — it only spent one blank frame per
-    // row (~16ms each at 60hz) before anything became visible. Mounting the
-    // whole initial fold in a single frame keeps the identical pre-reveal
-    // bound and then releases the cap exactly as before.
+    // Warm switch: persisted measurements pin the geometry — reveal now; each deferred frame is measured switch latency.
+    if (initialMeasurements?.length) {
+      setRenderRangeLimit(Number.MAX_SAFE_INTEGER)
+      setProgressiveReady(true)
+      setInitialRevealReady(true)
+      return
+    }
+    // One mount pass, not one row per frame; release the cap after mounting.
     const step = () => {
       progressiveFrame = undefined
       const targetCount = Math.min(8, timelineRows().length)
@@ -807,9 +810,6 @@ export function MessageTimeline(props: {
         progressiveFrame = undefined
         setProgressiveReady(true)
         setInitialRevealReady(true)
-        // The staged limit only bounds pre-reveal mount work. Once revealed,
-        // the viewport range is the bound; a retained cap would slice every
-        // later-appended row out of the bottom-anchored range forever.
         setRenderRangeLimit(Number.MAX_SAFE_INTEGER)
       })
     }
@@ -1659,7 +1659,7 @@ export function MessageTimeline(props: {
             element = value
           }}
           data-index={item().index}
-          style={{ "min-height": ready() ? undefined : `${initialItem.size}px` }}
+          style={timelineRowFrameStyle({ size: item().size, minHeight: ready() ? undefined : initialItem.size })}
         >
           <TimelineRowView
             row={row()}

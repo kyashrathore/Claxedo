@@ -451,9 +451,12 @@ export type SessionEnvironmentCardOccupancy = "expanded" | "collapsed"
 
 /** Route-restorable collapse preference, shared by the mount and its tests. */
 export function createSessionEnvironmentCardState(): SessionEnvironmentCardState {
+  // Default COLLAPSED: a fresh session surface must not resize the transcript
+  // for a card the user never asked to open. The persisted value wins once it
+  // resolves, so users who previously expanded keep their choice.
   const [ui, setUi, , ready] = persisted(
     Persist.global("session.environment-card-collapsed.v1"),
-    createStore<{ collapsed: boolean }>({ collapsed: false }),
+    createStore<{ collapsed: boolean }>({ collapsed: true }),
   )
   return {
     collapsed: () => ui.collapsed,

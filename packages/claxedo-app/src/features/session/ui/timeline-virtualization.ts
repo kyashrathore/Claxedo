@@ -94,3 +94,22 @@ export function createTimelineResizeAnchor() {
     },
   }
 }
+
+/**
+ * Per-row frame styles for a virtualized timeline row. Offscreen rows carry
+ * `content-visibility: auto` so the browser skips their style/layout/paint
+ * entirely while the box keeps the virtualizer's size — scroll math is
+ * unchanged, and `auto` intrinsic sizing retains each row's last RENDERED
+ * height so re-measures after a scroll approach stay exact. On-screen rows are
+ * unaffected.
+ */
+export function timelineRowFrameStyle(input: {
+  size: number
+  minHeight: number | undefined
+}): Record<string, string | undefined> {
+  return {
+    "min-height": input.minHeight === undefined ? undefined : `${input.minHeight}px`,
+    "content-visibility": "auto",
+    "contain-intrinsic-size": `auto ${input.size}px`,
+  }
+}

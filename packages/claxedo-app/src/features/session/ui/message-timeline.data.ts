@@ -145,7 +145,10 @@ export namespace Timeline {
         ? Math.max(0, Math.max(...endTimes) - createdTime)
         : undefined
     const running = isActive && status === "busy" && !settled && !error
-    const canFoldSettled = settled && !interrupted && !error && foldableCount >= 2
+    // T3-parity: a settled turn folds behind its summary when it produced ANY
+    // foldable work, not only two-plus steps — single-step turns collapse like
+    // every other turn, and an explicit user toggle still wins.
+    const canFoldSettled = settled && !interrupted && !error && foldableCount >= 1
     // T7: while a turn is still running, fold its *completed* phases (≥3 groups) behind the
     // summary but keep the latest live group visible so active work never disappears.
     const canFoldRunning = running && foldWhileRunning && foldableCount >= 3

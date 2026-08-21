@@ -18,11 +18,4 @@
  */
 [data-session-timeline-root][data-session-timeline-nav-gutter] .scroll-view__viewport {
   padding-left: 60px;
-  transition: padding-left 150ms ease;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  [data-session-timeline-root][data-session-timeline-nav-gutter] .scroll-view__viewport {
-    transition: none;
-  }
 }
