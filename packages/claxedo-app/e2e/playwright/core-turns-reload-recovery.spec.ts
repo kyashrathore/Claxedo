@@ -761,6 +761,13 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     await scroller.hover()
     for (let attempt = 0; attempt < 30; attempt++) {
       await page.mouse.wheel(0, -400)
+      // Let THIS wheel fully apply (scroll + possible reveal) before deciding
+      // whether to wheel again. Without the wait, the attribute check races
+      // the wheel's processing and the loop queues one extra wheel; that
+      // trailing -400px lands AFTER preserveScroll's compensation and parks
+      // the viewport back in the trigger zone (locally reproduced under
+      // load: compensated 448 -> 48, the exact CI signature).
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
       const revealed = await root.getAttribute("data-session-rendered-user-count")
       if (revealed === String(turnCount)) break
     }
@@ -827,7 +834,7 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     ).toBeGreaterThan(100)
     expect(
       settled.top,
-      "preserveScroll must compensate scrollTop by the prepended height (a no-op or jump-to-top leaves it in the <200px trigger zone)",
+      `preserveScroll must compensate scrollTop by the prepended height (a no-op or jump-to-top leaves it in the <200px trigger zone) samples=${JSON.stringify(samples)} settled=${JSON.stringify(settled)}`,
     ).toBeGreaterThan(100)
     expect(
       settled.top,

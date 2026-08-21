@@ -83,11 +83,23 @@ export function createSessionHistoryWindow(input: Input) {
     const beforeTop = el.scrollTop
     const beforeHeight = el.scrollHeight
     fn()
-    requestAnimationFrame(() => {
+    // The prepended rows may not have mounted (and grown scrollHeight) by the
+    // first frame on a slow machine; a single-frame sample then reads delta 0
+    // and silently never compensates, leaving the viewport at the top the
+    // wheel left behind. Watch a short frame budget and compensate on the
+    // first observed growth — one write, same as before, just not tied to
+    // frame one.
+    let frames = 0
+    const compensate = () => {
       const delta = el.scrollHeight - beforeHeight
-      if (!delta) return
-      el.scrollTop = beforeTop + delta
-    })
+      if (delta) {
+        el.scrollTop = beforeTop + delta
+        return
+      }
+      frames += 1
+      if (frames < 30) requestAnimationFrame(compensate)
+    }
+    requestAnimationFrame(compensate)
   }
 
   const backfillTurns = () => {
