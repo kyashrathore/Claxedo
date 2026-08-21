@@ -1722,6 +1722,17 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     if (new URL(r.request().url()).pathname !== "/api/control/sessions") return r.fallback()
     return json(r, emptySessionInventoryResponse())
   })
+  // The route split renamed the local spelling to `GET /api/claxedo/session`
+  // (claxedo-local-server/src/session/routes/meta-routes.ts) — same contract,
+  // same empty answer. The glob necessarily also matches
+  // `/api/claxedo/session-list` (and any `/api/claxedo/session/...` subpath);
+  // the exact-pathname check hands those back to the earlier registrations
+  // (recorded in ALLOWED_SHADOWS).
+  await contractRoute(page, "**/api/claxedo/session**", (r) => {
+    if (!api(r)) return r.continue()
+    if (new URL(r.request().url()).pathname !== "/api/claxedo/session") return r.fallback()
+    return json(r, emptySessionInventoryResponse())
+  })
 
   await page.route("**/path**", (r) => {
     if (!api(r)) return r.continue()

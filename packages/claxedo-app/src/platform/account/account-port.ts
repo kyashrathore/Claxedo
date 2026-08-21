@@ -91,8 +91,15 @@ export type HostedOperationName =
 export type AccountPort = {
   /** Current account state. Reactive in the renderer; a snapshot here. */
   state: () => AccountState
-  /** Begins sign-in. Resolves when the attempt settles, not when it succeeds. */
-  signIn: () => Promise<void>
+  /**
+   * Begins sign-in. Resolves when the attempt settles, not when it succeeds.
+   *
+   * `redirectUrl` is where the browser flow lands AFTER the identity provider
+   * finishes (e.g. /login passes "/", /cli-login passes its own callback URL so
+   * the handshake query survives the round trip). Implementations that own
+   * their whole flow (Electron main's system-browser OAuth) may ignore it.
+   */
+  signIn: (options?: { redirectUrl?: string }) => Promise<void>
   signOut: () => Promise<void>
   /**
    * Runs one named hosted operation and returns its decoded result.

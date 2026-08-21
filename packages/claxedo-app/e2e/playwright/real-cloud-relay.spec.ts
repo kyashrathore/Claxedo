@@ -229,7 +229,7 @@ async function startFixture(): Promise<FixtureInfo> {
 
   fixture = spawn(
     "node",
-    ["--import", "./src/text-imports.mjs", "--import", "tsx", "src/signed-browser-relay-fixture.mjs"],
+    ["--conditions=development", "--import", "./src/text-imports.mjs", "--import", "tsx", "src/signed-browser-relay-fixture.mjs"],
     {
       cwd: SERVER_DIR,
       env: {

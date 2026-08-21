@@ -167,7 +167,7 @@
  *   session send and its supporting calls, not their rendered UI.
  */
 import { isWorkspaceResolvePath } from "../helpers/contracts/workspace-resolve"
-import { isSessionListPath } from "../helpers/contracts/session-list"
+import { isSessionInventoryPath, isSessionListPath } from "../helpers/contracts/session-list"
 import { expect, test, type Page, type Route } from "@playwright/test"
 import { expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"
 import {
@@ -419,7 +419,16 @@ async function installUserHostedRuntimeMock(
     if (isSessionListPath(url.pathname)) {
       return json(route, { view: { scope: "global", groupBy: "none", sort: "updated_desc", limit: 50 }, items: [], groups: [] })
     }
-    if (url.pathname === "/api/control/sessions") return json(route, { sessions: [] })
+    // Flat control-plane inventory, both spellings (`fetchLocalControlSessions`
+    // now reads GET /api/claxedo/session) — control-plane discovery like the
+    // session-list above, not the per-workspace runtime lane.
+    if (isSessionInventoryPath(url.pathname)) return json(route, { sessions: [] })
+    // Saved ACP connection registry (config-driven harness picker) — polled on
+    // composer mounts against the control plane regardless of any workspace's
+    // readiness; same category as `/provider` below.
+    if (url.pathname === "/api/claxedo/agent-config/harness/acp-connections") {
+      return json(route, { connections: [] })
+    }
     if (url.pathname === "/api/workspace") return json(route, { workspaces: [] })
     if (url.pathname === "/api/wr/events") {
       return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": heartbeat\n\n" }).catch(() => {})

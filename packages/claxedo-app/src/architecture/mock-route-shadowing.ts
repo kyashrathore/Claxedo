@@ -119,6 +119,15 @@ export const ALLOWED_SHADOWS: AllowedShadow[] = [
       "ACP connection discovery route, and the same exact-pathname guard hands it back.",
   },
   {
+    shadowed: "**/api/claxedo/session-list**",
+    shadower: "**/api/claxedo/session**",
+    handsBack: `if (new URL(r.request().url()).pathname !== "/api/claxedo/session") return r.fallback()`,
+    reason:
+      "The flat local inventory route (GET /api/claxedo/session, fetchLocalControlSessions) is a " +
+      "prefix of the rail sidebar's session-list spelling, so its glob necessarily matches both; " +
+      "the exact-pathname guard hands `/api/claxedo/session-list` back to the registration above.",
+  },
+  {
     shadowed: "**/session/status**",
     shadower: "**/session/*",
     handsBack: `if (pathname.endsWith("/session/status")) return r.fallback()`,
