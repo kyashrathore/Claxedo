@@ -106,6 +106,7 @@ import {
 import { createTurnFoldStore } from "./turn-fold-store"
 import { formatDuration } from "@/ui/session-kit"
 import { installTimelineMermaid } from "./mermaid-timeline"
+import { installTimelineMarkdownPreload } from "./timeline-markdown-preload"
 import { installTimelineTables } from "./table-timeline"
 import { sessionMessageScrollInset } from "./session-message-scroll-position"
 import {
@@ -395,6 +396,7 @@ export function MessageTimeline(props: {
     if (!id) return
     return registeredConversationSnapshot(id)
   })
+  installTimelineMarkdownPreload({ conversation: sessionConversation })
   const sessionMessages = createMemo(() => sessionConversation()?.messages ?? emptyMessages)
   const messageByID = createMemo(() => new Map(sessionMessages().map((message) => [message.id, message] as const)))
   const assistantMessagesByParent = createMemo(() => {
@@ -905,10 +907,7 @@ export function MessageTimeline(props: {
   createEffect(() => {
     const key = sessionKey()
     timelineRows().length
-    if (measuredSessionKey !== key) {
-      measuredSessionKey = key
-      virtualizer.measure()
-    }
+    if (measuredSessionKey !== key) (measuredSessionKey = key), virtualizer.measure()
     maybeAnchorBottom()
   })
 
@@ -916,7 +915,7 @@ export function MessageTimeline(props: {
     timelineCache.delete(ownerSessionKey)
     timelineCache.set(ownerSessionKey, { measurements: virtualizer.takeSnapshot(), toolOpen: { ...toolOpen } })
     turnFold.persist()
-    while (timelineCache.size > 16) timelineCache.delete(timelineCache.keys().next().value!)
+    while (timelineCache.size > 64) timelineCache.delete(timelineCache.keys().next().value!) // remounting without a snapshot re-estimates heights and visibly shifts; 16 thrashed
     if (bottomAnchorFrame !== undefined) cancelAnimationFrame(bottomAnchorFrame)
     if (progressiveFrame !== undefined) cancelAnimationFrame(progressiveFrame)
     resizeAnchor.dispose()

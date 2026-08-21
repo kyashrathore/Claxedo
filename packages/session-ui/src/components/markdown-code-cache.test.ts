@@ -114,7 +114,9 @@ describe("cache bounds", () => {
   })
 
   test("byte cap evicts before the budget is exceeded", () => {
-    const chunk = "x".repeat(600_000)
+    // Each entry counts src + token content, so ~2 chunks of bytes; four
+    // entries then total ~2x the budget regardless of the configured limit.
+    const chunk = "x".repeat(Math.ceil(codeHighlightCacheLimits.bytes / 4))
     for (let i = 0; i < 4; i++) {
       const src = `${i}:${chunk}`
       cacheCodeHighlight(src, "text", "OpenCode", { language: "text", generation: 1, stable: [], unstable: [[src, ""]] })

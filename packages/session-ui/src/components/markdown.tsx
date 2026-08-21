@@ -707,6 +707,9 @@ export function Markdown(
 
           if (block.mode === "code") {
             const started = rendererClock()
+            if (!block.complete) traceRenderer(`markdown.highlightmiss.incomplete.chars-${block.src.length}`)
+            else if (!getCachedCodeHighlight(block.src, codeLanguageName(block.language), OpenCodeTheme.name))
+              traceRenderer(`markdown.highlightmiss.no-entry.chars-${block.src.length}`)
             // Completed blocks read through the module-scope highlight cache
             // inside `code()`, so a remount resolves without a worker round trip.
             const result = await code(block.src, block.language, blockKey, block.complete)
@@ -727,6 +730,9 @@ export function Markdown(
               touchCachedMarkdown(key, cached)
               return { key: blockKey, mode: block.mode, ...cached }
             }
+            traceRenderer(`markdown.parsemiss.${cached ? "raw-mismatch" : "no-entry"}.chars-${block.src.length}`)
+          } else {
+            traceRenderer(`markdown.parsemiss.no-key.chars-${block.src.length}`)
           }
 
           const hash = checksum(block.raw)

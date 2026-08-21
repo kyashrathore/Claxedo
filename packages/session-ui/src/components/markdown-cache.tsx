@@ -8,8 +8,25 @@ export type MarkdownCacheEntry = {
   html: string
 }
 
-const max = 200
+// Sized to the workbench's visible working set, not to one component: with up
+// to MAX_OPEN_SURFACES (10) mounted surfaces × ~15 virtualized rows × a few
+// blocks each, ~200 entries thrashed on every multi-session sweep — a remount
+// then repaints the raw-text fallback and swaps to parsed HTML a frame later,
+// shifting layout. Entry- AND byte-capped so worst-case residency stays
+// bounded (~8 MB of UTF-16 html+raw, so roughly twice that resident).
+export const markdownCacheLimits = {
+  // Entries sized so the byte budget is the binding cap: typical parsed
+  // blocks run 1-3 KB, so ~4096 entries saturate ~8 MB. A tighter entry cap
+  // silently reintroduced thrash at ~25 blocks per session visit.
+  entries: 4096,
+  bytes: 8_000_000,
+}
 const cache = new Map<string, MarkdownCacheEntry>()
+let totalBytes = 0
+
+function entryBytes(value: MarkdownCacheEntry) {
+  return value.raw.length + value.html.length
+}
 const config = {
   USE_PROFILES: { html: true, mathMl: true },
   SANITIZE_NAMED_PROPS: true,
@@ -166,14 +183,28 @@ export function getCachedMarkdown(key: string) {
 }
 
 export function touchCachedMarkdown(key: string, value: MarkdownCacheEntry) {
-  cache.delete(key)
+  const bytes = entryBytes(value)
+  // An entry larger than the whole budget would evict everything and still
+  // overflow; skip it instead of thrashing the cache.
+  if (bytes > markdownCacheLimits.bytes) return
+  const existing = cache.get(key)
+  if (existing) {
+    totalBytes -= entryBytes(existing)
+    cache.delete(key)
+  }
   cache.set(key, value)
+  totalBytes += bytes
 
-  if (cache.size <= max) return
+  while (cache.size > markdownCacheLimits.entries || totalBytes > markdownCacheLimits.bytes) {
+    const oldest = cache.entries().next().value
+    if (!oldest) break
+    totalBytes -= entryBytes(oldest[1])
+    cache.delete(oldest[0])
+  }
+}
 
-  const first = cache.keys().next().value
-  if (!first) return
-  cache.delete(first)
+export function markdownCacheStats() {
+  return { entries: cache.size, bytes: totalBytes }
 }
 
 export async function preloadMarkdown(

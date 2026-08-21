@@ -39,10 +39,16 @@ type CodeHighlightEntry = {
 }
 
 export const codeHighlightCacheLimits = {
-  entries: 256,
+  // Sized to the workbench's visible working set: up to MAX_OPEN_SURFACES (10)
+  // mounted surfaces × ~15 virtualized rows can hold several hundred completed
+  // code blocks, and heavy blocks weigh ~15 KB of tokens each — 256 entries /
+  // 2 MB thrashed on every multi-session sweep, so remounts re-paid the worker
+  // and reflowed row heights after first paint.
+  entries: 4096,
   // UTF-16 code units of cached text (source + token content + token styles),
-  // so resident memory is roughly twice this. ~2 MB of highlighted output.
-  bytes: 2_000_000,
+  // so resident memory is roughly twice this. ~8 MB of highlighted output is
+  // the binding cap; the entry cap is a backstop against tiny-entry floods.
+  bytes: 8_000_000,
 }
 
 const cache = new Map<string, CodeHighlightEntry>()
