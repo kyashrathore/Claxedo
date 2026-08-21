@@ -85,7 +85,14 @@ export async function runDocumentsSessionRoundtripSmoke() {
     releaseEmbeddedWorkspaceRuntime(workspace.id)
     if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
     if (previousDataDir !== undefined) process.env.CLAXEDO_DATA_DIR = previousDataDir
-    await fs.rm(root, { recursive: true, force: true })
+    // Close every sqlite handle opened under root before deleting it: Windows
+    // answers an unlink of an open authority.db/claxedo.db with EBUSY, and
+    // keeps a brief lock even after close (the retries absorb it).
+    const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
+    const { closeAuthorityDatabases } = await import("@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store")
+    ClaxedoDB.close()
+    closeAuthorityDatabases()
+    await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 }
 

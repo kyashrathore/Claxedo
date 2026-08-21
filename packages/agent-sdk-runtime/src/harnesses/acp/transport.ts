@@ -54,9 +54,16 @@ export type ACPWebSocketTransportFactoryOptions = {
 }
 
 export function createStdioACPTransport(input: ACPTransportFactoryInput): ACPTransport {
-  const proc = spawn(input.binary, input.args, {
+  // Windows cannot spawn a .cmd/.bat launcher directly (ENOENT/EINVAL from
+  // CreateProcess) — and that is what an npm install of an ACP CLI puts on
+  // PATH there. Route shims through the shell; the quoting keeps a binary
+  // path with spaces intact through cmd.exe's tokenization. Same handling as
+  // the codex app-server driver.
+  const windowsShim = process.platform === "win32" && /\.(cmd|bat)$/i.test(input.binary)
+  const proc = spawn(windowsShim ? `"${input.binary}"` : input.binary, input.args, {
     cwd: input.directory,
     stdio: ["pipe", "pipe", "pipe"],
+    ...(windowsShim ? { shell: true } : {}),
     env: acpSpawnEnv({
       ...process.env,
       ...definedEnv(input.env),

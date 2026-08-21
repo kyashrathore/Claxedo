@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest"
 import fs from "node:fs/promises"
+import os from "node:os"
+import { realpathSync } from "node:fs"
 import path from "node:path"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
@@ -507,7 +509,12 @@ function encoded(value: string) {
   return Buffer.from(value).toString("base64url")
 }
 async function temp(name: string) {
-  const directory = `${process.env.TMPDIR ?? "/tmp"}/${name}-${crypto.randomUUID()}`
+  // A native, realpath'd temp root: "/tmp" is drive-relative on Windows (the
+  // code under test resolves it to D:\tmp while the expectations keep the
+  // bare form), and .native expands 8.3 short names (RUNNER~1) to what the
+  // resolved worktree paths report.
+  const base = realpathSync.native(os.tmpdir())
+  const directory = path.join(base, `${name}-${crypto.randomUUID()}`)
   cleanup.push(directory)
   await fs.mkdir(directory, { recursive: true })
   return directory
