@@ -15,6 +15,25 @@ function real(dir: string) {
   }
 }
 
+/**
+ * A port that is actually free RIGHT NOW on this machine. The lease tests
+ * used hardcoded 198xx ports, which shared CI runners occasionally occupy —
+ * and then "uses preferred port when the port is free" fails because it
+ * was not free. Lease semantics only need SOME port, so each test takes its
+ * own from the OS.
+ */
+async function freePort(): Promise<number> {
+  const net = await import("node:net")
+  return await new Promise((resolve, reject) => {
+    const server = net.createServer()
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address() as { port: number }
+      server.close(() => resolve(port))
+    })
+    server.once("error", reject)
+  })
+}
+
 describe("process config file", () => {
   let tmpDir: string
 
@@ -363,20 +382,21 @@ describe("resolvePort via start()", () => {
     const dir = path.join(tmpDir, "proj-a")
     await fs.mkdir(dir, { recursive: true })
 
+    const preferred = await freePort()
     await setupConfig(dir, {
       id: "proc_a",
       name: "dev-server",
       command: "echo hi",
-      port: { name: "http", preferred: 19876, inject: "PORT" },
+      port: { name: "http", preferred, inject: "PORT" },
     })
 
-    // No lease written — start should try preferred port (19876)
+    // No lease written — start should try the preferred port
     const { start, dispose } = await import("./manager")
     try {
       const result = await start(dir, "proc_a")
       expect(result.kind).toBe("started")
       if (result.kind === "started") {
-        expect(result.process.assignedPort).toBe(19876)
+        expect(result.process.assignedPort).toBe(preferred)
       }
 
       // Verify lease was written
@@ -386,8 +406,8 @@ describe("resolvePort via start()", () => {
         process_id: "proc_a",
       })
       expect(lease).toBeDefined()
-      expect(lease!.port).toBe(19876)
-      expect(lease!.preferred).toBe(19876)
+      expect(lease!.port).toBe(preferred)
+      expect(lease!.preferred).toBe(preferred)
       expect(lease!.port_name).toBe("http")
     } finally {
       await dispose(dir)
@@ -398,21 +418,23 @@ describe("resolvePort via start()", () => {
     const dir = path.join(tmpDir, "proj-b")
     await fs.mkdir(dir, { recursive: true })
 
-    // Pre-write a lease saying port 19877 was previously assigned
+    // Pre-write a lease remembering a different previously-assigned port
+    const preferred = await freePort()
+    const leased = await freePort()
     await PortLease.write({
       project_id: real(dir),
       workspace: real(dir),
       process_id: "proc_b",
       port_name: "http",
-      preferred: 19876,
-      port: 19877,
+      preferred,
+      port: leased,
     })
 
     await setupConfig(dir, {
       id: "proc_b",
       name: "dev-server",
       command: "echo hi",
-      port: { name: "http", preferred: 19876, inject: "PORT" },
+      port: { name: "http", preferred, inject: "PORT" },
     })
 
     const { start, dispose } = await import("./manager")
@@ -420,8 +442,8 @@ describe("resolvePort via start()", () => {
       const result = await start(dir, "proc_b")
       expect(result.kind).toBe("started")
       if (result.kind === "started") {
-        // Should use the LEASED port (19877), not preferred (19876)
-        expect(result.process.assignedPort).toBe(19877)
+        // Should use the LEASED port, not preferred
+        expect(result.process.assignedPort).toBe(leased)
       }
 
       // PortLease should be updated (same port)
@@ -430,7 +452,7 @@ describe("resolvePort via start()", () => {
         workspace: real(dir),
         process_id: "proc_b",
       })
-      expect(lease!.port).toBe(19877)
+      expect(lease!.port).toBe(leased)
     } finally {
       await dispose(dir)
     }
@@ -441,20 +463,22 @@ describe("resolvePort via start()", () => {
     await fs.mkdir(dir, { recursive: true })
 
     // PortLease has port_name "ws" but config port_name is "http" → mismatch
+    const preferred = await freePort()
+    const leased = await freePort()
     await PortLease.write({
       project_id: real(dir),
       workspace: real(dir),
       process_id: "proc_c",
       port_name: "ws",
-      preferred: 19876,
-      port: 19877,
+      preferred,
+      port: leased,
     })
 
     await setupConfig(dir, {
       id: "proc_c",
       name: "dev-server",
       command: "echo hi",
-      port: { name: "http", preferred: 19876, inject: "PORT" },
+      port: { name: "http", preferred, inject: "PORT" },
     })
 
     const { start, dispose } = await import("./manager")
@@ -462,8 +486,8 @@ describe("resolvePort via start()", () => {
       const result = await start(dir, "proc_c")
       expect(result.kind).toBe("started")
       if (result.kind === "started") {
-        // Should fall back to preferred (19876) since port_name doesn't match
-        expect(result.process.assignedPort).toBe(19876)
+        // Should fall back to preferred since port_name doesn't match
+        expect(result.process.assignedPort).toBe(preferred)
       }
     } finally {
       await dispose(dir)
@@ -474,21 +498,23 @@ describe("resolvePort via start()", () => {
     const dir = path.join(tmpDir, "proj-d")
     await fs.mkdir(dir, { recursive: true })
 
-    // PortLease has preferred 3000 but config preferred is 19876 → mismatch
+    // PortLease remembers a different preferred than the config → mismatch
+    const preferred = await freePort()
+    const leased = await freePort()
     await PortLease.write({
       project_id: real(dir),
       workspace: real(dir),
       process_id: "proc_d",
       port_name: "http",
       preferred: 3000,
-      port: 19877,
+      port: leased,
     })
 
     await setupConfig(dir, {
       id: "proc_d",
       name: "dev-server",
       command: "echo hi",
-      port: { name: "http", preferred: 19876, inject: "PORT" },
+      port: { name: "http", preferred, inject: "PORT" },
     })
 
     const { start, dispose } = await import("./manager")
@@ -496,8 +522,8 @@ describe("resolvePort via start()", () => {
       const result = await start(dir, "proc_d")
       expect(result.kind).toBe("started")
       if (result.kind === "started") {
-        // Should fall back to preferred (19876) since lease.preferred doesn't match
-        expect(result.process.assignedPort).toBe(19876)
+        // Should fall back to preferred since lease.preferred doesn't match
+        expect(result.process.assignedPort).toBe(preferred)
       }
     } finally {
       await dispose(dir)
@@ -508,11 +534,12 @@ describe("resolvePort via start()", () => {
     const dir = path.join(tmpDir, "proj-e")
     await fs.mkdir(dir, { recursive: true })
 
+    const preferred = await freePort()
     await setupConfig(dir, {
       id: "proc_e",
       name: "dev-server",
       command: "echo hi",
-      port: { name: "http", preferred: 19876, inject: "PORT" },
+      port: { name: "http", preferred, inject: "PORT" },
     })
 
     const { start, dispose } = await import("./manager")
@@ -526,8 +553,8 @@ describe("resolvePort via start()", () => {
         process_id: "proc_e",
       })
       expect(lease).toBeDefined()
-      expect(lease!.port).toBe(19876)
-      expect(lease!.preferred).toBe(19876)
+      expect(lease!.port).toBe(preferred)
+      expect(lease!.preferred).toBe(preferred)
       expect(lease!.port_name).toBe("http")
       expect(lease!.updated_at).toBeGreaterThan(0)
     } finally {

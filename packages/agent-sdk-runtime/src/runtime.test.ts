@@ -669,7 +669,9 @@ describe("createAgentRuntime", () => {
       }])
       second.dispose()
     } finally {
-      rmSync(root, { recursive: true, force: true })
+      // Retried for Windows: the just-disposed sqlite store's file stays
+      // briefly locked after close, and rm answers EBUSY until it releases.
+      rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     }
   })
 
@@ -707,7 +709,9 @@ describe("createAgentRuntime", () => {
       })
       second.dispose()
     } finally {
-      rmSync(root, { recursive: true, force: true })
+      // Retried for Windows: the just-disposed sqlite store's file stays
+      // briefly locked after close, and rm answers EBUSY until it releases.
+      rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     }
   })
 
@@ -751,7 +755,9 @@ describe("createAgentRuntime", () => {
       expect(reopened.getSession("ses_1")).toMatchObject({ title: "Streamed 99" })
       reopened.close()
     } finally {
-      rmSync(root, { recursive: true, force: true })
+      // Retried for Windows: the just-disposed sqlite store's file stays
+      // briefly locked after close, and rm answers EBUSY until it releases.
+      rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     }
   })
 

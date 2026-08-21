@@ -8,7 +8,9 @@ import { SqliteRuntimeStore } from "./sqlite"
 const roots: string[] = []
 
 afterEach(() => {
-  for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
+  // Retried for Windows: a just-closed sqlite snapshot file stays briefly
+  // locked, and rm answers EBUSY until it releases.
+  for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
 function admit(store: MemoryRuntimeStore) {

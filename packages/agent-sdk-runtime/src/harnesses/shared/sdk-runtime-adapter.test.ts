@@ -1,3 +1,4 @@
+import path from "node:path"
 import { describe, expect, test } from "bun:test"
 import type { WithInternals } from "../../test-utils/class-internals"
 import { SdkRuntimeAdapter, type SdkRuntimeDriver } from "./sdk-runtime-adapter"
@@ -45,7 +46,7 @@ describe("SdkRuntimeAdapter", () => {
         },
       }),
     })
-    const session = await adapter.createSession("/repo")
+    const session = await adapter.createSession(path.resolve("/repo"))
 
     for await (const _event of adapter.sendMessage(session.id, {
       parts: [{ type: "text", text: "go" }],
@@ -53,7 +54,7 @@ describe("SdkRuntimeAdapter", () => {
       agent: "general",
       model: { providerID: "codex", modelID: "test" },
       permissionMode: "full-access",
-    }, "/repo")) {}
+    }, path.resolve("/repo"))) {}
 
     expect(order).toEqual(["mode:full-access", "turn"])
     adapter.dispose()
@@ -111,14 +112,14 @@ describe("SdkRuntimeAdapter", () => {
         },
       }),
     })
-    const session = await adapter.createSession("/repo")
+    const session = await adapter.createSession(path.resolve("/repo"))
     for await (const _event of adapter.sendMessage(session.id, {
       parts: [{ type: "text", text: "delegate" }],
       userMessageId: "parent-user",
       assistantMessageId: "parent-assistant",
       agent: "general",
       model: { providerID: "codex", modelID: "test" },
-    }, "/repo")) {}
+    }, path.resolve("/repo"))) {}
 
     const lifecycle = runtime.filter((event) => event.payload.type === "subagent-updated")
     expect(lifecycle.map((event) => event.payload.type === "subagent-updated" ? event.payload.revision : 0)).toEqual([1, 2])
@@ -127,7 +128,7 @@ describe("SdkRuntimeAdapter", () => {
       expect.any(String),
       expect.any(String),
     ])
-    const child = (store.listSessions("/repo") as Array<{ id: string; parentID?: string; agent_session_id?: string }>)
+    const child = (store.listSessions(path.resolve("/repo")) as Array<{ id: string; parentID?: string; agent_session_id?: string }>)
       .find((item) => item.parentID === session.id)!
     expect(child.id).not.toBe("provider-child")
     expect(child.agent_session_id).toBe("provider-child")
@@ -173,10 +174,10 @@ describe("SdkRuntimeAdapter", () => {
         },
       }),
     })
-    const session = await adapter.createSession("/repo")
+    const session = await adapter.createSession(path.resolve("/repo"))
     store.bindSession({
       sessionId: "child-session",
-      directory: "/repo",
+      directory: path.resolve("/repo"),
       agentSessionId: "provider-child-thread",
     })
     const yielded: AgentRuntimeStreamEvent[] = []
@@ -187,7 +188,7 @@ describe("SdkRuntimeAdapter", () => {
       assistantMessageId: "parent-assistant",
       agent: "general",
       model: { providerID: "codex", modelID: "test" },
-    }, "/repo")) yielded.push(event)
+    }, path.resolve("/repo"))) yielded.push(event)
 
     expect(JSON.stringify(yielded)).not.toContain("child-only text")
     expect(JSON.stringify(store.getMessages(session.id))).not.toContain("child-only text")
@@ -210,9 +211,9 @@ describe("SdkRuntimeAdapter", () => {
       }),
     })
 
-    await expect(adapter.createSession("/repo", "Stable", "ses_wgrun_run_1"))
+    await expect(adapter.createSession(path.resolve("/repo"), "Stable", "ses_wgrun_run_1"))
       .resolves.toEqual({ id: "ses_wgrun_run_1" })
-    await expect(adapter.createSession("/repo", "Stable retry", "ses_wgrun_run_1"))
+    await expect(adapter.createSession(path.resolve("/repo"), "Stable retry", "ses_wgrun_run_1"))
       .resolves.toEqual({ id: "ses_wgrun_run_1" })
     expect(created).toBe(1)
     adapter.dispose()
@@ -237,7 +238,7 @@ describe("SdkRuntimeAdapter", () => {
         },
       }),
     })
-    const session = await adapter.createSession("/repo")
+    const session = await adapter.createSession(path.resolve("/repo"))
     const events = []
 
     for await (const event of adapter.sendMessage(session.id, {
@@ -245,7 +246,7 @@ describe("SdkRuntimeAdapter", () => {
       assistantMessageId: "assistant-1",
       agent: "build",
       model: { providerID: `${type}-native`, modelID: "test" },
-    }, "/repo")) events.push(event)
+    }, path.resolve("/repo"))) events.push(event)
 
     expect(store.getSession(session.id)).toMatchObject({ title: `fix ${type} native title` })
     expect(events).toContainEqual(expect.objectContaining({
@@ -301,7 +302,7 @@ describe("SdkRuntimeAdapter", () => {
     expect(host.pendingPermissions.size).toBe(0)
     expect(host.pendingQuestions.size).toBe(0)
     expect(driver.activeThreads.size).toBe(0)
-    expect(driver.readRuntimeHealth("/work")).toEqual({
+    expect(driver.readRuntimeHealth(path.resolve("/work"))).toEqual({
       status: "degraded",
       reason: "harness_process_lost",
       message: "process exited",
@@ -330,7 +331,7 @@ describe("SdkRuntimeAdapter", () => {
         },
       }),
     })
-    const session = await adapter.createSession("/repo")
+    const session = await adapter.createSession(path.resolve("/repo"))
     const events: AgentRuntimeStreamEvent[] = []
     const turn = (async () => {
       for await (const event of adapter.sendMessage(session.id, {
@@ -339,11 +340,11 @@ describe("SdkRuntimeAdapter", () => {
         assistantMessageId: "assistant-1",
         agent: "build",
         model: { providerID: "codex-app-server", modelID: "gpt-test" },
-      }, "/repo")) events.push(event)
+      }, path.resolve("/repo"))) events.push(event)
     })()
 
     await running
-    await expect(adapter.abort(session.id, "/repo")).resolves.toEqual({ ok: true, status: "cancelled" })
+    await expect(adapter.abort(session.id, path.resolve("/repo"))).resolves.toEqual({ ok: true, status: "cancelled" })
     await turn
 
     expect(events.map((event) => event.type)).not.toContain("session.error")
@@ -415,10 +416,10 @@ describe("SdkRuntimeAdapter", () => {
     await item.updateSessionConfig("s1", {
       harness: { id: "codex", access: "native" },
       model: { providerID: "codex", modelID: "session-model" },
-    }, "/work")
+    }, path.resolve("/work"))
 
     expect(item.currentModel).toBe("")
-    expect(await item.getSessionConfig("s2", "/work")).toEqual({
+    expect(await item.getSessionConfig("s2", path.resolve("/work"))).toEqual({
       harness: { id: "codex", access: "native" },
       variant: null,
       agent: null,
@@ -461,7 +462,7 @@ describe("SdkRuntimeAdapter busy lock", () => {
     const lifecycle = (adapter as unknown as { lifecycle: () => ReturnType<typeof createSessionTurnLifecycle> }).lifecycle()
 
     const seen: boolean[] = []
-    for await (const _ of adapter.sendMessage("s1", prompt as never, "/repo")) {
+    for await (const _ of adapter.sendMessage("s1", prompt as never, path.resolve("/repo"))) {
       // Busy state as observed by a would-be second prompt at each yield.
       seen.push(lifecycle.busySessions.has("s1"))
     }
@@ -474,7 +475,7 @@ describe("SdkRuntimeAdapter busy lock", () => {
     const adapter = lockProbeAdapter([{ type: "session.idle", properties: { sessionID: "s1" } }])
     const lifecycle = (adapter as unknown as { lifecycle: () => ReturnType<typeof createSessionTurnLifecycle> }).lifecycle()
 
-    for await (const _ of adapter.sendMessage("s1", prompt as never, "/repo")) {
+    for await (const _ of adapter.sendMessage("s1", prompt as never, path.resolve("/repo"))) {
       // The window that used to refuse: mid-drain, after the terminal event.
       expect(lifecycle.enter("s1")).not.toBeNull()
       lifecycle.busySessions.delete("s1")
@@ -488,7 +489,7 @@ describe("SdkRuntimeAdapter busy lock", () => {
     const adapter = lockProbeAdapter([{ type: "session.idle", properties: { sessionID: "s1" } }])
     const lifecycle = (adapter as unknown as { lifecycle: () => ReturnType<typeof createSessionTurnLifecycle> }).lifecycle()
 
-    for await (const _ of adapter.sendMessage("s1", prompt as never, "/repo")) { /* drain */ }
+    for await (const _ of adapter.sendMessage("s1", prompt as never, path.resolve("/repo"))) { /* drain */ }
     expect(lifecycle.busySessions.has("s1")).toBe(false)
     expect(lifecycle.enter("s1")).not.toBeNull()
   })
