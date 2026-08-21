@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { createHash } from "node:crypto";
-import { access, mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { access, appendFile, mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createClaxedoAgentDriver } from "./agent-claxedo-driver";
 import { readCanonicalCorpusDigest } from "./agent-corpus-materializer";
@@ -165,6 +165,16 @@ export async function runAgentAppBenchmark(options: Options) {
         };
         const healthTimer = setInterval(() => void inspectForeground(), 1_000);
         const measured = await runWithProcessSampling(rootPid, settleMs, memoryHelperPath, async () => await call<{ samples: RawMetricSample[] }>("run-scenario", { attemptId, profile, scenario, seed: options.seed })).finally(() => clearInterval(healthTimer));
+        // Raw family ticks, persisted. The derived peak/p95 land in the sample
+        // records, but the tick series itself was consumed in-process and
+        // discarded — which made the cross-app resource matrix (peak/avg/p95
+        // CPU+RSS over active vs idle windows) computable from the T3 arm's
+        // artifacts and not from this one. One line per tick, family-summed,
+        // same semantics as the T3 monitor's family series.
+        await appendFile(
+          path.join(options.output, `resource-ticks-${scenario}.ndjson`),
+          measured.observations.map((item) => JSON.stringify({ scenario, atMs: item.atMs, rssBytes: item.rssBytes, ...(item.cpuPercent === undefined ? {} : { cpuPercent: item.cpuPercent }) })).join("\n") + "\n",
+        );
         await inspectForeground();
         measured.failures.push(...foregroundFailures);
         const after = await call<InspectResult>("inspect", {});
