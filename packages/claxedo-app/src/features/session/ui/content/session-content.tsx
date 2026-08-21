@@ -66,12 +66,13 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
    * `data-session-envcard` while the card is going to appear flips the
    * transcript's padding-right afterwards — a full relayout and a restarted
    * paint-stability wait, per switch. Both facts that gate APPEARANCE (a real
-   * session, workspace panel closed) are synchronous here, so reserve expanded
-   * width optimistically; the mount stays the authority and refines or
+   * session, workspace panel closed) are synchronous here, so reserve the
+   * card's DEFAULT occupancy (collapsed rail — see createSessionEnvironment-
+   * CardState) optimistically; the mount stays the authority and refines or
    * corrects this the moment it reports.
    */
   const optimisticEnvcardOccupancy = (): SessionEnvironmentCardOccupancy | undefined =>
-    !draftSession() && !state.workspacePanel.state().open ? "expanded" : undefined
+    !draftSession() && !state.workspacePanel.state().open ? "collapsed" : undefined
   const requiresSessionRef = () => !draftSession()
   const missingSessionRef = () => requiresSessionRef() && !effectiveSessionRef() && !directory()
   const sessionVisible = () => typeof props.ctx.isVisible === "function" ? props.ctx.isVisible() : !!props.ctx.isVisible
