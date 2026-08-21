@@ -13,8 +13,13 @@
 
   &[data-size="compact"] {
     width: 36px;
-    max-height: min(560px, calc(100vh - 12rem));
-    overflow-y: auto;
+    /* Fixed total height: every turn stays represented in one glance. The
+       wrapper carries the bounded height; ticks divide the column evenly
+       (see item rules below) instead of scrolling — a long session compresses
+       spacing rather than overflowing. */
+    height: 100%;
+    justify-content: center;
+    overflow-y: hidden;
     overflow-x: hidden;
     scrollbar-width: none;
 
@@ -22,6 +27,23 @@
       display: none;
     }
   }
+}
+
+[data-component="message-nav-hovercard"] {
+  height: 100%;
+}
+
+/* Compact items divide the fixed column equally: small sessions spread with
+   generous gaps capped at 12px, huge sessions compress spacing down to
+   hairlines so the whole map always fits. */
+[data-component="message-nav"][data-size="compact"] [data-slot="message-nav-item"] {
+  flex: 1 1 0%;
+  min-height: 1px;
+  max-height: 12px;
+}
+
+[data-component="message-nav"][data-size="compact"] [data-slot="message-nav-tick-button"] {
+  height: 100%;
 }
 
 [data-slot="message-nav-item"] {

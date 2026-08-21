@@ -1705,7 +1705,7 @@ export function MessageTimeline(props: {
       <Show when={messageNavGutterVisible()}>
         <div data-slot="message-nav-gutter" class="pointer-events-none absolute inset-0 z-[45]">
           <MessageNav
-            class="pointer-events-auto absolute left-2 md:left-3 top-1/2 -translate-y-1/2"
+            class="pointer-events-auto absolute left-2 md:left-3 top-1/2 -translate-y-1/2 h-[min(560px,calc(100dvh-16rem))]"
             messages={props.navMessages ?? props.userMessages}
             current={currentNavMessage()}
             size="compact"

@@ -970,6 +970,9 @@ export default function SessionPage() {
     autoScroll.resume()
     scrollToEnd()
     clearMessageHash()
+    // Leaving any target-anchored jump restores the full bottom-anchored
+    // transcript (the capped window has no rows past its upper edge).
+    historyWindow.resetAnchor()
 
     const el = scroller
     if (el) scheduleScrollState(el)
@@ -1294,7 +1297,16 @@ export default function SessionPage() {
                         currentMessage={activeMessage()}
                         onMessageSelect={(message) => {
                           autoScroll.pause()
-                          scrollToMessage(message)
+                          if (visibleUserMessages().some((item) => item.id === message.id)) {
+                            scrollToMessage(message)
+                            return
+                          }
+                          // Turn outside the loaded window (far minimap tick):
+                          // revealTurn cannot reveal what the server has not
+                          // sent yet. Route through pendingMessage — the hash-
+                          // scroll effects page older history in until the
+                          // turn exists, then run the normal seek flow.
+                          setUi("pendingMessage", message.id)
                         }}
                         status={sessionController.status}
                         anchor={anchor}
