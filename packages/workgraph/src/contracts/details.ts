@@ -109,15 +109,6 @@ export const WorkItemRunPageSchema = z.strictObject({
 })
 export type WorkItemRunPage = z.infer<typeof WorkItemRunPageSchema>
 
-export const WorkGraphDetailSchemas = {
-  proposal: AdmissionProposalDtoSchema,
-  workItem: WorkItemDtoSchema,
-  run: RunDetailDtoSchema,
-  decision: DecisionDtoSchema,
-  candidate: IntakeCandidateDtoSchema,
-  runs: WorkItemRunPageSchema,
-  replacementReview: ReplacementReviewSchema,
-} as const
 
 export type WorkItemRunPageCursorErrorReason = "invalid" | "owner_mismatch" | "work_item_mismatch"
 

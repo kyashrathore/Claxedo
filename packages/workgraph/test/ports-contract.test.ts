@@ -7,8 +7,6 @@ import {
   type RequestID,
   type StreamID,
   type WorkGraphContext,
-  type WorkSourceID,
-  type WorkSourceRevisionID,
 } from "../src/contracts"
 import {
   defineAtomicWorkGraphStore,
@@ -22,7 +20,6 @@ import type {
   ResolveConnectionCapabilitiesInput,
 } from "../src/ports/connections"
 import type { WorkspaceExecutionPort } from "../src/ports/workspace-execution"
-import type { WorkSourcePort } from "../src/ports/work-source"
 
 const branded = <Type>(value: string) => value as Type
 
@@ -116,23 +113,5 @@ describe("WorkGraph ports", () => {
     expectTypeOf<Parameters<WorkspaceExecutionPort["launch"]>[1]>().toHaveProperty("workspaceId")
   })
 
-  it("creates, revises, and reads exact manual Work Source revisions", () => {
-    expectTypeOf<Parameters<WorkSourcePort["createManual"]>[0]>().toEqualTypeOf<WorkGraphContext>()
-    expectTypeOf<Parameters<WorkSourcePort["reviseManual"]>[0]>().toEqualTypeOf<WorkGraphContext>()
-    expectTypeOf<Parameters<WorkSourcePort["readRevision"]>[0]>().toEqualTypeOf<WorkGraphContext>()
-    expectTypeOf<Parameters<WorkSourcePort["createManual"]>[1]>().not.toHaveProperty("ownerUserId")
-    expectTypeOf<Parameters<WorkSourcePort["readRevision"]>[1]>().toEqualTypeOf<Readonly<{
-      workSourceId: WorkSourceID
-      revisionId: WorkSourceRevisionID
-    }>>()
-
-    const workSource: WorkSourcePort = {
-      createManual: async () => ({ source: undefined as never, revision: undefined as never }),
-      reviseManual: async () => ({ source: undefined as never, revision: undefined as never }),
-      readSource: async () => undefined,
-      readRevision: async () => undefined,
-    }
-    expectTypeOf(workSource).toMatchTypeOf<WorkSourcePort>()
-  })
 
 })

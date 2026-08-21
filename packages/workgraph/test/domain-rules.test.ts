@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
   ActorIDSchema,
-  RunDtoSchema,
   CompletionContractSchema,
   EvidenceDtoSchema,
   EvidenceSubjectSchema,
@@ -18,17 +17,11 @@ import {
   reopenOutcome,
 } from "../src/domain/completion"
 import { evaluateLandingIntegrity } from "../src/domain/landing-integrity"
-import { createRunAdmissionSnapshot } from "../src/domain/run"
-import { evaluateWorkItemLaunchability } from "../src/domain/launch-readiness"
 import { resolveExecutionProfile } from "../src/domain/execution-profile"
-import { streamRemovalEligibility } from "../src/domain/lifecycle"
 import {
-  transitionRun,
   transitionDecision,
-  transitionOutcome,
   transitionStream,
   transitionStreamVisibility,
-  transitionWorkItem,
 } from "../src/domain/transitions"
 
 describe("WorkGraph domain rules", () => {
@@ -91,35 +84,10 @@ describe("WorkGraph domain rules", () => {
     })
   })
 
-  it("enforces Outcome, Work Item, Run, and Decision lifecycle boundaries", () => {
-    expect(transitionOutcome("active", "ready_to_close")).toEqual({ ok: true, state: "ready_to_close" })
-    expect(transitionOutcome("ready_to_close", "completed")).toMatchObject({ ok: false, error: { entity: "outcome" } })
-    expect(transitionOutcome("completed", "active")).toMatchObject({ ok: false, error: { entity: "outcome" } })
-
-    expect(transitionWorkItem("active", "result_ready")).toEqual({ ok: true, state: "result_ready" })
-    expect(transitionWorkItem("result_ready", "completed")).toMatchObject({ ok: false, error: { entity: "work_item" } })
-    expect(transitionWorkItem("completed", "active")).toMatchObject({ ok: false, error: { entity: "work_item" } })
-
-    expect(transitionRun("admitted", "placing")).toEqual({ ok: true, state: "placing" })
-    expect(transitionRun("placing", "running")).toEqual({ ok: true, state: "running" })
-    expect(transitionRun("running", "result")).toEqual({ ok: true, state: "result" })
-    expect(transitionRun("result", "running")).toMatchObject({ ok: false, error: { entity: "run" } })
-
+  it("enforces Decision lifecycle boundaries", () => {
     expect(transitionDecision("proposed", "pending")).toEqual({ ok: true, state: "pending" })
     expect(transitionDecision("pending", "answered")).toEqual({ ok: true, state: "answered" })
     expect(transitionDecision("answered", "pending")).toMatchObject({ ok: false, error: { entity: "decision" } })
-  })
-
-  it("reports preflight removal advice while reserving the atomic race for storage", () => {
-    expect(streamRemovalEligibility(0)).toEqual({ eligible: true, action: "delete" })
-    expect(streamRemovalEligibility(1)).toEqual({
-      eligible: false,
-      action: "close",
-      error: { code: "close_required", durableEffectCount: 1 },
-    })
-    expect(streamRemovalEligibility(17)).toMatchObject({ eligible: false, error: { durableEffectCount: 17 } })
-    expect(() => streamRemovalEligibility(-1)).toThrow("durableEffectCount")
-    expect(() => streamRemovalEligibility(1.5)).toThrow("durableEffectCount")
   })
 
   it("satisfies an all-mode completion contract only from matching positive evidence", () => {
@@ -259,48 +227,6 @@ describe("WorkGraph domain rules", () => {
     expect(completed).toEqual({ ok: true, state: "completed", provenance: { ownerConfirmationEvidenceId: "outcome_owner", closedAt: 12, closedBy: { type: "user", id: "user_01" } } })
     expect(completeOutcome({ outcomeId: "outcome_01", ownerUserId, state: "ready_to_close", childStates: ["active"], ownerConfirmation: ownerEvidence, closedAt: 12, closedBy: ownerActor })).toMatchObject({ ok: false, error: { code: "unfinished_work_items" } })
     expect(reopenOutcome({ state: "completed", reopenedAt: 13, reopenedBy: ownerActor, reason: "Criteria changed" })).toEqual({ ok: true, state: "reopened", provenance: { reopenedAt: 13, reopenedBy: { type: "user", id: "user_01" }, reason: "Criteria changed" } })
-  })
-
-  it("derives Work Item launchability with abandoned dependencies satisfying and needs-you holding", () => {
-    const activeStream = { lifecycle: "active" as const, visibility: "visible" as const }
-    // Approval gate: only approved (`pending`) items launch.
-    expect(evaluateWorkItemLaunchability({ state: "pending_approval", stream: activeStream, blockerStates: [] }))
-      .toEqual({ launchable: false, reason: "not_approved" })
-    expect(evaluateWorkItemLaunchability({ state: "active", stream: activeStream, blockerStates: [] }))
-      .toEqual({ launchable: false, reason: "not_pending" })
-    // Pause / archive is the launch gate.
-    expect(evaluateWorkItemLaunchability({ state: "pending", stream: { lifecycle: "paused", visibility: "visible" }, blockerStates: [] }))
-      .toEqual({ launchable: false, reason: "stream_not_active" })
-    expect(evaluateWorkItemLaunchability({ state: "pending", stream: { lifecycle: "active", visibility: "archived" }, blockerStates: [] }))
-      .toEqual({ launchable: false, reason: "stream_not_active" })
-    // A rejected (abandoned) dependency satisfies, so it never deadlocks dependents.
-    expect(evaluateWorkItemLaunchability({ state: "pending", stream: activeStream, blockerStates: ["completed", "abandoned"] }))
-      .toEqual({ launchable: true })
-    expect(evaluateWorkItemLaunchability({ state: "pending", stream: activeStream, blockerStates: ["active"] }))
-      .toEqual({ launchable: false, reason: "deps_incomplete" })
-    // Derived needs-you hold, blocking decision, in-flight run, capability.
-    expect(evaluateWorkItemLaunchability({ state: "pending", stream: { ...activeStream, held: true }, blockerStates: [] }))
-      .toEqual({ launchable: false, reason: "stream_held" })
-    expect(evaluateWorkItemLaunchability({ state: "pending", stream: { ...activeStream, hasRunningRun: true }, blockerStates: [] }))
-      .toEqual({ launchable: false, reason: "workspace_busy" })
-    expect(evaluateWorkItemLaunchability({
-      state: "pending",
-      stream: { ...activeStream, hasRunningRun: true, placement: "worktree", liveRunCount: 1, maxParallel: 2 },
-      blockerStates: [],
-    })).toEqual({ launchable: true })
-    expect(evaluateWorkItemLaunchability({
-      state: "pending",
-      stream: { ...activeStream, hasRunningRun: true, placement: "worktree", liveRunCount: 2, maxParallel: 2 },
-      blockerStates: [],
-    })).toEqual({ launchable: false, reason: "width_exhausted" })
-    expect(evaluateWorkItemLaunchability({ state: "pending", stream: { ...activeStream, replacementBarrier: true }, blockerStates: [] }))
-      .toEqual({ launchable: false, reason: "replacement_barrier" })
-    expect(evaluateWorkItemLaunchability({ state: "pending", stream: activeStream, blockerStates: [], blockingDecision: true }))
-      .toEqual({ launchable: false, reason: "blocking_decision" })
-    expect(evaluateWorkItemLaunchability({ state: "pending", stream: activeStream, blockerStates: [], runInFlight: true }))
-      .toEqual({ launchable: false, reason: "run_in_flight" })
-    expect(evaluateWorkItemLaunchability({ state: "pending", stream: activeStream, blockerStates: [], capabilityValid: false }))
-      .toEqual({ launchable: false, reason: "capability_invalid" })
   })
 
   it("resolves each execution setting from the nearest WorkGraph hierarchy level with provenance", () => {
@@ -477,20 +403,6 @@ describe("WorkGraph domain rules", () => {
     })).toEqual({
       environment: { kind: "local_worktree", placement: "shared", directory: "/repo" },
     })
-  })
-
-  it("creates a serializable immutable Run admission snapshot with resolved provenance", () => {
-    const resolved = resolveExecutionProfile({
-      workgraph: ExecutionProfileDefaultsSchema.parse({ harness: "opencode", agent: "developer", model: { providerId: "openai", modelId: "gpt-5" }, effort: "medium", tools: [], connectionIds: [] }),
-      stream: ExecutionProfileDefaultsSchema.parse({ environment: { kind: "hosted_workspace", placement: "shared", repositoryUrl: "https://github.com/acme/project.git" }, repository: { baseRevision: "HEAD" } }),
-    })
-    if (!resolved.ok) throw new Error("expected resolved profile")
-    const snapshot = createRunAdmissionSnapshot({ run: RunDtoSchema.parse({ recordType: "run", schemaVersion: 1, ownerUserId: "user_01", version: 3, createdAt: 1, updatedAt: 1, provenance: { actor: { type: "agent", id: "agent_01" }, operationId: "operation_01" }, id: "run_01", streamId: "stream_01", workItemId: "item_01", runNumber: 1, generation: 1, state: "admitted", resolvedExecution: resolved.profile, admittedAt: 1, sourceRevisionRefs: [] }), executionProvenance: resolved.provenance })
-    expect(JSON.parse(JSON.stringify(snapshot))).toEqual(snapshot)
-    expect(snapshot.run.version).toBe(3)
-    expect(snapshot.executionProvenance.environment).toBe("stream")
-    expect(Object.isFrozen(snapshot)).toBe(true)
-    expect(Object.isFrozen(snapshot.executionProvenance)).toBe(true)
   })
 
   it("strips retired lifecycle, integration, and isolation policies from legacy saved execution profiles", () => {

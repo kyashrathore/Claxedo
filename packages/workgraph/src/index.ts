@@ -11,7 +11,6 @@ export {
   createSqliteWorkGraphService,
   createSqliteWorkGraphStore,
   createSqliteRunRuntime,
-  createSqliteRunResultStore,
   listSqliteReconcilableRuns,
   recordSqliteWorkGraphLlmUsage,
   renewSqliteRunLease,
@@ -38,4 +37,3 @@ export { createSqliteAttentionAcknowledgementStore } from "./adapters/sqlite/att
 export { createSqliteSessionIntakePort } from "./adapters/sqlite/session-intake";
 export { createSqliteSourcePlanningRuntime } from "./adapters/sqlite/source-planning-runtime";
 export { SqliteWorkGraphSessionDirectoryRequiredError } from "./adapters/sqlite/session-directory";
-export { applyLegacyWorkGraphMigration, exportLegacyWorkGraphMigration } from "./adapters/sqlite/legacy-migration";

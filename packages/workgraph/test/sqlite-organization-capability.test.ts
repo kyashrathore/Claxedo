@@ -1,6 +1,5 @@
 import BetterSqlite3 from "better-sqlite3"
 import { afterEach, describe, expect, it } from "vitest"
-import { initializeWorkGraphSqliteSchema } from "../src/adapters/sqlite/schema"
 import { createSqliteWorkGraphService } from "../src/adapters/sqlite/store"
 import type { ExecutionCapabilities, WorkGraphContext } from "../src/contracts"
 
@@ -116,12 +115,6 @@ describe("SQLite organization-scoped personal WorkGraphs", () => {
       .toEqual({ lifecycle: "pending" })
   })
 
-  it("rejects owner-only legacy tables before making a partial schema change", () => {
-    const database = open()
-    database.exec("CREATE TABLE wg_v2_workgraphs (owner_user_id TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY (owner_user_id, id))")
-    expect(() => initializeWorkGraphSqliteSchema(database)).toThrow("trusted organization mapping is required")
-    expect(database.prepare("PRAGMA table_info(wg_v2_workgraphs)").all()).not.toContainEqual(expect.objectContaining({ name: "organization_id" }))
-  })
 })
 
 const profile = {

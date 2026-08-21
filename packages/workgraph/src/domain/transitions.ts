@@ -1,13 +1,8 @@
-import type {
-  RunState,
-  DecisionState,
-  OutcomeState,
-  StreamLifecycleState,
-  StreamVisibility,
-  WorkItemState,
-} from "../contracts/lifecycle"
+import type { DecisionState, StreamLifecycleState, StreamVisibility } from "../contracts/lifecycle"
 
-export type LifecycleEntity = "stream" | "stream_visibility" | "outcome" | "work_item" | "run" | "decision"
+// Only the machines the stores actually consult live here; Run/WorkItem/Outcome
+// motion is enforced by the stores' own guarded writes and the completion gate.
+export type LifecycleEntity = "stream" | "stream_visibility" | "decision"
 
 export type TransitionResult<State extends string> =
   | { readonly ok: true; readonly state: State }
@@ -28,47 +23,8 @@ const streamTransitions = {
   reopened: ["active"],
 } as const satisfies Record<StreamLifecycleState, readonly StreamLifecycleState[]>
 
-const outcomeTransitions = {
-  pending: ["active", "blocked"],
-  active: ["ready_to_close", "blocked"],
-  ready_to_close: ["blocked"],
-  completed: [],
-  blocked: ["active"],
-  reopened: ["active"],
-} as const satisfies Record<OutcomeState, readonly OutcomeState[]>
 
-const workItemTransitions = {
-  draft: ["pending", "pending_approval", "abandoned"],
-  pending_approval: ["pending", "abandoned"],
-  pending: ["pending_approval", "active", "blocked", "abandoned"],
-  active: [
-    "result_ready",
-    "review_needed",
-    "integration_needed",
-    "blocked",
-    "verification_failed",
-    "failed",
-    "abandoned",
-  ],
-  result_ready: ["review_needed", "integration_needed", "verification_failed", "active", "abandoned"],
-  review_needed: ["result_ready", "integration_needed", "verification_failed", "active", "abandoned"],
-  integration_needed: ["result_ready", "verification_failed", "active", "abandoned"],
-  blocked: ["active", "abandoned"],
-  verification_failed: ["active", "abandoned"],
-  completed: [],
-  failed: ["pending", "abandoned"],
-  abandoned: [],
-} as const satisfies Record<WorkItemState, readonly WorkItemState[]>
 
-const runTransitions = {
-  admitted: ["placing", "cancelled"],
-  placing: ["running", "failed", "cancelled"],
-  running: ["result", "parked", "failed", "cancelled"],
-  result: [],
-  parked: ["running", "result", "failed", "cancelled"],
-  failed: [],
-  cancelled: [],
-} as const satisfies Record<RunState, readonly RunState[]>
 
 const decisionTransitions = {
   proposed: ["pending"],
@@ -90,17 +46,8 @@ export function transitionStreamVisibility(from: StreamVisibility, to: StreamVis
   return transition("stream_visibility", streamVisibilityTransitions, from, to)
 }
 
-export function transitionOutcome(from: OutcomeState, to: OutcomeState) {
-  return transition("outcome", outcomeTransitions, from, to)
-}
 
-export function transitionWorkItem(from: WorkItemState, to: WorkItemState) {
-  return transition("work_item", workItemTransitions, from, to)
-}
 
-export function transitionRun(from: RunState, to: RunState) {
-  return transition("run", runTransitions, from, to)
-}
 
 export function transitionDecision(from: DecisionState, to: DecisionState) {
   return transition("decision", decisionTransitions, from, to)
