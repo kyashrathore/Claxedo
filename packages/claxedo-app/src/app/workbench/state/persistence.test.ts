@@ -350,11 +350,11 @@ describe("state/persistence", () => {
 
       expect(result.dirty).toBe(true)
       expect(result.state.workbench.contentIds).toHaveLength(MAX_OPEN_SURFACES)
-      // The 10 most recent survive; everything older is gone.
+      // The cap's worth of most-recent surfaces survive; everything older is gone.
       expect(result.state.workbench.contentIds).toEqual(
         Array.from({ length: MAX_OPEN_SURFACES }, (_, i) => `content_${i + 1}`),
       )
-      expect(result.state.workbench.contentIds).not.toContain("content_11")
+      expect(result.state.workbench.contentIds).not.toContain(`content_${MAX_OPEN_SURFACES + 1}`)
       expect(result.state.workbench.contentRecency).toHaveLength(MAX_OPEN_SURFACES)
     })
 
@@ -362,7 +362,7 @@ describe("state/persistence", () => {
       const result = validate(stateWithSessions(151))
 
       expect(Object.keys(result.state.meta)).toHaveLength(MAX_OPEN_SURFACES)
-      expect(result.state.meta.content_11).toBeUndefined()
+      expect(result.state.meta[`content_${MAX_OPEN_SURFACES + 1}`]).toBeUndefined()
       expect(result.state.meta.content_151).toBeUndefined()
       expect(result.state.meta.content_1?.sessionId).toBe("ses_1")
     })
