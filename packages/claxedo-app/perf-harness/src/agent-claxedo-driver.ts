@@ -122,7 +122,14 @@ export async function createClaxedoAgentDriver(input?: {
         isolatedProfilePath,
         dataDirectory: state.dataDirectory,
         readinessTargets: state.readinessTargets,
-        ...(fakeEngine ? { extraEnv: { OPENCODE_URL: fakeEngine.url } } : {}),
+        // The desktop's server child reads CLAXEDO_CHILD_OPENCODE_URL (its
+        // startup contract) — the main process forwards the whole parent env
+        // but never maps bare OPENCODE_URL into it. Set both: the child var
+        // is what the packaged app actually consumes; the bare var covers a
+        // future composition that reads it directly.
+        ...(fakeEngine
+          ? { extraEnv: { OPENCODE_URL: fakeEngine.url, CLAXEDO_CHILD_OPENCODE_URL: fakeEngine.url } }
+          : {}),
       });
       return {
         processes: [launch.process],
