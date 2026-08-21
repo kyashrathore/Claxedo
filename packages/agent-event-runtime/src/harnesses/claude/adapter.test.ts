@@ -656,6 +656,55 @@ describe("claudeSdkAdapter", () => {
     ])
   })
 
+  test("meters provisional per-request usage so a turn that never reaches result still counts", () => {
+    const agent = runtime()
+    const assistant = (id: string, usage: Record<string, number>, extra: Record<string, unknown> = {}) =>
+      agent.ingest({
+        source: "claude.sdk.message",
+        payload: { type: "assistant", uuid: `uuid-${id}`, message: { id, content: [], usage }, ...extra },
+      })
+
+    // Request 1 seeds the turn accumulator.
+    expect(assistant("req-1", { input_tokens: 100, cache_read_input_tokens: 500, output_tokens: 20 }).events).toMatchObject([{
+      type: "usage",
+      observation: { kind: "cumulative", tokens: { input: 100, output: 20, reasoning: null, cache: { read: 500, write: null } } },
+    }])
+
+    // A re-emission of the SAME request replaces its snapshot — never adds.
+    expect(assistant("req-1", { input_tokens: 100, cache_read_input_tokens: 500, output_tokens: 45 }).events).toMatchObject([{
+      type: "usage",
+      observation: { kind: "cumulative", tokens: { input: 100, output: 45, reasoning: null, cache: { read: 500, write: null } } },
+    }])
+
+    // Request 2 adds to the turn total.
+    expect(assistant("req-2", { input_tokens: 30, cache_read_input_tokens: 600, output_tokens: 10 }).events).toMatchObject([{
+      type: "usage",
+      observation: { kind: "cumulative", tokens: { input: 130, output: 55, reasoning: null, cache: { read: 1100, write: null } } },
+    }])
+
+    // Child (subagent) messages never feed the parent turn accumulator.
+    expect(
+      assistant("req-child", { input_tokens: 999, output_tokens: 999 }, { parent_tool_use_id: "tool-1" }).events,
+    ).not.toContainEqual(expect.objectContaining({ type: "usage" }))
+
+    // The result's usage stays authoritative, and the accumulator resets for
+    // the next turn: its first request seeds from zero again.
+    agent.ingest({
+      source: "claude.sdk.message",
+      payload: {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        session_id: "sdk-session-1",
+        usage: { input_tokens: 130, cache_read_input_tokens: 1100, output_tokens: 55 },
+      },
+    })
+    expect(assistant("req-3", { input_tokens: 7, cache_read_input_tokens: 40, output_tokens: 3 }).events).toMatchObject([{
+      type: "usage",
+      observation: { kind: "cumulative", tokens: { input: 7, output: 3, reasoning: null, cache: { read: 40, write: null } } },
+    }])
+  })
+
   test("treats user-aborted results as idle without a runtime error", () => {
     const agent = runtime()
 

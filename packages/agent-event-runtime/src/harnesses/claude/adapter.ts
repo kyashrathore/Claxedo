@@ -20,11 +20,26 @@ type ClaudeBlockState = {
   partialInputJson?: string
 }
 
+export type ClaudeRequestUsage = {
+  input: number | null
+  output: number | null
+  reasoning: number | null
+  cacheRead: number | null
+  cacheWrite: number | null
+}
+
 export type ClaudeSdkAdapterState = {
   blocksByIndex: Record<string, ClaudeBlockState>
   toolsById: Record<string, ClaudeBlockState>
   emittedAssistantText: string
   lastKnownContextWindow?: number
+  /**
+   * Per-request usage snapshots for the current turn, keyed by API message id.
+   * The turn's `result` usage is authoritative, but a turn that dies before
+   * `result` (crash, kill, steer) would otherwise meter nothing — these
+   * snapshots keep a provisional turn-cumulative observation flowing.
+   */
+  turnUsageByRequestId?: Record<string, ClaudeRequestUsage>
 }
 
 export type ClaudeSubagentObservation = {
@@ -416,6 +431,44 @@ function slashCommandEvents(message: Record<string, unknown>) {
     : []
 }
 
+function requestUsage(message: Record<string, unknown>): { requestId: string; tokens: ClaudeRequestUsage; requestTotal: number } | undefined {
+  const row = object(message.message)
+  if (!row) return
+  const requestId = text(row.id)
+  const usage = object(row.usage)
+  if (!requestId || !usage) return
+  const tokens: ClaudeRequestUsage = {
+    input: number(usage.input_tokens) ?? null,
+    output: number(usage.output_tokens) ?? null,
+    reasoning: number(usage.thinking_tokens) ?? null,
+    cacheRead: number(usage.cache_read_input_tokens) ?? null,
+    cacheWrite: number(usage.cache_creation_input_tokens) ?? null,
+  }
+  if (![tokens.input, tokens.output, tokens.reasoning, tokens.cacheRead, tokens.cacheWrite].some((value) => value !== null && value > 0)) return
+  return {
+    requestId,
+    tokens,
+    requestTotal: (tokens.input ?? 0) + (tokens.output ?? 0) + (tokens.cacheRead ?? 0) + (tokens.cacheWrite ?? 0),
+  }
+}
+
+function addNullable(previous: number | null, value: number | null) {
+  if (value === null) return previous
+  return (previous ?? 0) + value
+}
+
+function sumRequestUsage(requests: Record<string, ClaudeRequestUsage>): ClaudeRequestUsage {
+  const sum: ClaudeRequestUsage = { input: null, output: null, reasoning: null, cacheRead: null, cacheWrite: null }
+  for (const tokens of Object.values(requests)) {
+    sum.input = addNullable(sum.input, tokens.input)
+    sum.output = addNullable(sum.output, tokens.output)
+    sum.reasoning = addNullable(sum.reasoning, tokens.reasoning)
+    sum.cacheRead = addNullable(sum.cacheRead, tokens.cacheRead)
+    sum.cacheWrite = addNullable(sum.cacheWrite, tokens.cacheWrite)
+  }
+  return sum
+}
+
 function usageSnapshot(message: Record<string, unknown>, lastKnownContextWindow?: number) {
   const usage = object(message.usage)
   if (!usage) return undefined
@@ -783,15 +836,41 @@ export function claudeSdkAdapter(): HarnessEventAdapter<ClaudeSdkAdapterState> {
               : state.emittedAssistantText.endsWith(snapshot)
                 ? ""
                 : snapshot
+          // Every assistant message carries its API request's usage. The turn's
+          // `result` usage stays authoritative (it replaces this observation),
+          // but accumulating per request means a turn that dies before `result`
+          // still meters what it consumed. Child (subagent) messages are
+          // skipped: their attribution belongs to the parent turn's result.
+          const request = childOwned ? undefined : requestUsage(rawMessage)
+          const turnUsageByRequestId = request
+            ? { ...state.turnUsageByRequestId, [request.requestId]: request.tokens }
+            : state.turnUsageByRequestId
+          const provisionalUsage = request
+            ? [{
+                type: "usage" as const,
+                contextSize: state.lastKnownContextWindow ?? request.requestTotal,
+                contextUsed: Math.min(request.requestTotal, state.lastKnownContextWindow ?? request.requestTotal),
+                observation: {
+                  kind: "cumulative" as const,
+                  ...(text(rawMessage.session_id) ? { nativeSessionId: text(rawMessage.session_id) } : {}),
+                  tokens: (({ input, output, reasoning, cacheRead, cacheWrite }) => ({
+                    input, output, reasoning,
+                    cache: { read: cacheRead, write: cacheWrite },
+                  }))(sumRequestUsage(turnUsageByRequestId ?? {})),
+                },
+              } satisfies AgentRuntimeEvent]
+            : []
           return {
             state: {
               ...state,
               toolsById: { ...state.toolsById, ...toolsById },
               ...(snapshot && !childOwned ? { emittedAssistantText: snapshot } : {}),
+              ...(turnUsageByRequestId ? { turnUsageByRequestId } : {}),
             },
             events: [
               ...completeToolEvents,
               ...(deltaText ? [{ type: "text-delta", delta: deltaText } satisfies AgentRuntimeEvent] : []),
+              ...provisionalUsage,
             ],
           }
         }
@@ -805,6 +884,7 @@ export function claudeSdkAdapter(): HarnessEventAdapter<ClaudeSdkAdapterState> {
               blocksByIndex: {},
               toolsById: {},
               emittedAssistantText: "",
+              turnUsageByRequestId: {},
               ...(nextContextWindow ? { lastKnownContextWindow: nextContextWindow } : {}),
             },
             events: resultEvents(rawMessage, context, state.lastKnownContextWindow),
