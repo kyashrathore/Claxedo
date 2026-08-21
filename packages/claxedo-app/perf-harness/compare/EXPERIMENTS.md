@@ -1,0 +1,134 @@
+# T3 vs Claxedo benchmark — experiment log
+
+Chronological record of every comparison experiment, what it found, and where
+its raw artifacts live. Companion to [README.md](./README.md) (the rerun
+runbook). All runs: same M-series mac, quiet-host + AC-power + app-singleton
+gates, seed 1, one launch per run.
+
+Artifact roots:
+- Claxedo: `.artifacts/agent-app-benchmark/` in the perf worktree
+- T3: `artifacts/agent-app-benchmark/` in the t3code repo
+
+## 2026-08-21 morning — first valid light-corpus comparison (`core-v1`)
+
+After making T3's settled threads render transcripts (`settledOverride:
+"active"` in its materializer — auto-settled threads render an un-settle
+placeholder, so open/switch was measuring a placeholder), and diagnosing a
+dual-instance trap (a running T3 Nightly made the benchmark instance's
+backend unreachable; single-variable isolation proved it).
+
+| metric | T3 | Claxedo |
+|---|---|---|
+| cold_ready_ms | 3227 | 1963 |
+| cold_open_ms | 170 | 258 |
+| warm_switch_p95_ms | 38.3 | 118.6 |
+| peak RSS MiB | 1271 | 1266 |
+| idle CPU p95 % | 11.7 | 19.0 |
+
+Artifacts: `compare-20260821T1144-*` (Claxedo), T3 attempts 04:50–06:14.
+history/stream/terminal not comparable (T3 driver scenarios written but never
+live-validated). Claxedo light resource ticks never backfilled.
+
+## 2026-08-21 midday — heavy corpus (`heavy-v1`, 4×400-turn sessions, weight 3)
+
+Purpose: user suspicion that virtualization/lazy-hydration regimes were
+untested. Corpus sha `ddea801…`. Two honesty audits ran alongside:
+
+- **Gate integrity**: T3's readiness gate probed honest on both corpora —
+  zero placeholder rows at gate-pass and through 10×PageUp + Home. Its deep
+  history WINDOWS (~turn 250 reachable on Home in an 800-message session).
+- **Model/harness loading**: T3 does NOT skip model loading — the app wrote
+  claudeAgent.json (145KB) / codex.json mid-run; the "No provider" screen was
+  an archived dead-replay home. Claxedo boots embedded engine + server +
+  provider catalog and still cold-starts faster.
+
+| metric | T3 | Claxedo |
+|---|---|---|
+| cold_ready_ms | 2105–2172 | 1721–1982 |
+| cold_open_ms | 94–103 | ~109 |
+| warm_switch_p95_ms | ~88 | INITIALLY INVALID → 145–221 after harness fix |
+| history_navigate_p95_ms | not measured | never-valid → 3.2–6.6 s after app fixes |
+| peak RSS MiB | 1517–1542 | 1135 |
+| idle CPU p95 % | 11.2–13.3 | 6.0 |
+
+Resource matrix (family sums): T3 active 206/135 % cpu peak/avg,
+1545/1354 MiB rss; T3 idle p95 13.6 %. Claxedo active 223/172 % (only ~3
+ticks — weak), 1135/1082 MiB; idle p95 6.0 %.
+
+**Defects found and fixed by this experiment** (commits `f95403c30` app,
+`331e4ff5f` harness on the perf branch):
+
+1. Warm-switch structurally invalid on heavy: the observer hashed the whole
+   innerText of the first visible row against a sha of the FIRST text part —
+   a one-row-per-message assumption. Fixed with part-granular verification
+   (`data-content-part-id`, per-part shas for plain-text corpus parts,
+   identity+painted for transformed parts).
+2. `history.navigate_p95_ms` had NEVER produced a valid sample in any run —
+   nav buttons lacked `data-message-id`.
+3. Four real app bugs in message-nav jumps in huge sessions
+   (`use-session-hash-scroll.ts` / `message-timeline.tsx`): 4-attempt seek
+   budget too small for drifting virtualizer estimates → progress-based
+   convergence + stall nudge + scrollend timeout; empty-hash effect
+   force-scrolled to bottom on spurious re-runs; hidden workbench surfaces
+   wrote/reacted to the global location hash; `getOffsetForIndex` reads a
+   stale measurementsCache (fixed via `getTotalSize()` refresh).
+
+   After fixes: 7/7 consecutive fully-valid heavy workspace runs
+   (`heavy-1518` … `heavy-153606`). History honest-but-slow (3.2–6.6 s —
+   architecture: converge-by-scrolling over estimated row heights).
+
+## 2026-08-21 evening — graded multi-workspace corpus (`graded-v1`) — CURRENT CONTRACT
+
+Redesign per user direction: ONE corpus replaces light/heavy (20 sessions,
+turns 12→400 geometric, part weight 1→3), sessions round-robin across THREE
+workspaces (cross-workspace switching measured), `history.navigate_p95_ms`
+REMOVED from the contract (9 metrics), memory reported as whole-app /
+app-excluding-harness / harness-owned rows. Corpus sha `0357c2497a28…`.
+
+**Defects found and fixed while landing it:**
+
+- A Claxedo workspace registered but never opened lists NO sessions on a
+  virgin boot: the rail's project-scoped query reads `claxedo_session_meta`
+  filtered by `project_id`, imports only happen when a workspace's runtime
+  first starts, and there is no live doorbell when they land. The
+  materializer now finishes the import itself via the server's
+  `putSessionMeta` (the `ws.project_id` argument is load-bearing — without
+  it groups render "No sessions match the current filter").
+- Closed rail project groups do not mount their session-list queries at all;
+  `revealSessionRows` now opens them via their headers, then round-robin
+  load-more (clicking only `last()` starves other groups' pages).
+
+**Results (both arms fully valid):**
+
+| metric | T3 | Claxedo |
+|---|---|---|
+| cold_ready_ms | 3210–3250 | 1942 |
+| cold_open_ms | 102–170 | 109 |
+| warm_switch_p95_ms (cross-workspace) | 79.9 | 145.4 |
+| switch avg light/mid/heavy turns | 64/61/56 (flat) | 102/107/127 (climbs; 400t = 171) |
+| RSS whole peak/avg active MiB | 1742/1480 | 1744/1345 |
+| RSS whole peak/avg idle MiB | 1761/1423 | 1614/1360 |
+| CPU peak/avg active % | 195/143 | 274–282/245 |
+| idle CPU p95 % | 16–21 | 7.0 |
+| harness-owned RSS | ~0 | ~0–8 |
+
+Key readings: T3's switch cost is flat in session size (frame-quantized
+38/63/80 ms samples); Claxedo's climbs ~25 % light→heavy — the optimization
+target. Memory is now a near-tie (Claxedo's heavy-corpus 400 MiB advantage
+did not survive the 3-workspace layout). Harness-owned ≈ 0 because replayed
+corpora run no live agents.
+
+Artifacts: Claxedo `graded-185715-workspace-core-v1` /
+`graded-185715-resource-core-v1`; T3 `attempt-2026-08-21T13-29-04-815Z-82cbc9f0`
+(workspace) / `attempt-2026-08-21T13-31-31-696Z-42fd63fe` (resource).
+T3 fixture verified: 3 projects, 7/7/6 threads.
+
+## Open items
+
+- T3's stream + terminal driver scenarios: implemented, never live-validated
+  → the four `stream.*` / `terminal.*` metrics have no comparison yet.
+- Single run per configuration; add repetitions before calling close races.
+- Remote-hydration-latency scenario class (the "loading message" regime the
+  user observed in real use) is unmodeled in both drivers.
+- Claxedo deep-history jump is honest but seconds-slow; the designed fix is
+  a target-anchored jump + content-aware height estimates (deferred by user).
