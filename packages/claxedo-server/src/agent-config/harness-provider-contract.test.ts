@@ -88,7 +88,11 @@ afterEach(() => {
 })
 
 afterAll(async () => {
-  await fs.rm(root, { recursive: true, force: true })
+  // Close-then-retry for Windows: an open claxedo.db makes the rm EBUSY, and
+  // the file stays briefly locked even after close.
+  const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
+  ClaxedoDB.close()
+  await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   for (const [key, value] of Object.entries(previous)) {
     if (value === undefined) delete process.env[key]
     else process.env[key] = value

@@ -10,7 +10,7 @@ beforeAll(async () => {
   const bundled = await build({
     stdin: {
       contents: `
-        import { LiveSyncRoom, connectLiveSyncRoom, nudgeLiveSyncRoom } from ${JSON.stringify(new URL("./live-sync-room.cf.ts", import.meta.url).pathname)}
+        import { LiveSyncRoom, connectLiveSyncRoom, nudgeLiveSyncRoom } from "./live-sync-room.cf.ts"
         export { LiveSyncRoom }
         // Subjects are parameterised, the org is the room key. Two subjects in
         // ONE org share a room and therefore ONE retention ring — the

@@ -16,17 +16,20 @@ const { getRuntimeConfigSnapshot, saveUserConfig } = await import("@claxedo/serv
 
 describe("runtime config secret scoping", () => {
   beforeEach(async () => {
-    await fs.rm(root, { recursive: true, force: true })
+    // Close BEFORE the rm: the previous test's claxedo.db handle is still
+    // open here, and Windows answers an unlink of an open file with EBUSY.
+    // The retries absorb the brief lock Windows keeps even after close.
+    ClaxedoDB.close()
+    await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     await fs.mkdir(root, { recursive: true })
     setBackendOverride(createTestBackend())
-    ClaxedoDB.close()
     ClaxedoDB.Drizzle()
   })
 
   afterAll(async () => {
     setBackendOverride(undefined)
     ClaxedoDB.close()
-    await fs.rm(root, { recursive: true, force: true })
+    await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     process.env.CLAXEDO_DATA_DIR = prev
   })
 

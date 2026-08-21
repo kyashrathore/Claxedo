@@ -20,7 +20,8 @@ afterAll(async () => {
   ClaxedoDB.close()
   if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previousDataDir
-  await fs.rm(root, { recursive: true, force: true })
+  // Retried for Windows: the just-closed database file stays briefly locked.
+  await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
 describe("local documents server composition", () => {

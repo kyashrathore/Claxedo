@@ -162,7 +162,13 @@ describe("sandbox provisioning pushes workspace agent-extensions into the sandbo
       if (value === undefined) delete process.env[key]
       else process.env[key] = value
     }
-    await fs.promises.rm(dataRoot, { recursive: true, force: true })
+    // Close-then-retry for Windows: an open authority.db under the data root
+    // makes this rm EBUSY, and the file stays briefly locked after close.
+    const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
+    const { closeAuthorityDatabases } = await import("@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store")
+    ClaxedoDB.close()
+    closeAuthorityDatabases()
+    await fs.promises.rm(dataRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   })
 
   const trackedWorkspaceIds: string[] = []

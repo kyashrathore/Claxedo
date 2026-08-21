@@ -27,7 +27,9 @@ beforeAll(() => {
 
 afterAll(() => {
   embedded.close()
-  fs.rmSync(tmpDir, { recursive: true, force: true })
+  // Windows keeps the auth sqlite file briefly locked after close; the
+  // retries absorb that lag so the temp dir can be deleted.
+  fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
 async function signUp(email: string) {

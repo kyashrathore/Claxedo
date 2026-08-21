@@ -13,6 +13,7 @@ import {
   nodeErrorCode,
 } from "../errors"
 import type { DocumentRead, DocumentVersion } from "../port"
+import { syncDirectory } from "../fs-durability"
 import { contentHash, documentVersionsMatch, localDocumentVersion } from "../version"
 import { BoundedFileTooLargeError, readBoundedFile } from "../bounded-file-read"
 
@@ -410,14 +411,6 @@ async function removeIfPresent(target: string) {
   await fs.rm(target, { force: true })
 }
 
-export async function syncDirectory(directory: string) {
-  const handle = await fs.open(directory, "r")
-  try {
-    await handle.sync()
-  } finally {
-    await handle.close()
-  }
-}
 
 export function normalizeRepositoryRelativePath(input: string) {
   const value = input.trim()

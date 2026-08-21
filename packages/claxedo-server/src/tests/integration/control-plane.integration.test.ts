@@ -341,7 +341,14 @@ describe("control plane integration", () => {
     process.env.CLAXEDO_DATA_DIR = prev.CLAXEDO_DATA_DIR
     process.env.CLAXEDO_STATE_DIR = prev.CLAXEDO_STATE_DIR
     process.env.POSTHOG_KEY = prev.POSTHOG_KEY
-    await fs.rm(root, { recursive: true, force: true })
+    // Close every sqlite handle the composition opened before deleting its
+    // data dir: Windows answers an unlink of an open file with EBUSY, and
+    // keeps a brief lock even after close (the retries absorb it).
+    const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
+    const { closeAuthorityDatabases } = await import("@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store")
+    ClaxedoDB.close()
+    closeAuthorityDatabases()
+    await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   })
 
   test("serves startup routes without requiring workspace context", async () => {

@@ -251,20 +251,55 @@ CREATE TABLE IF NOT EXISTS channel_identities (
 `
 
 export function openAuthorityDb(options: SqliteWorkspaceAuthorityOptions = {}) {
-  return lazy(() => {
-    const file = options.path ?? path.join(dataDir(), "authority.db")
-    if (file !== ":memory:") fs.mkdirSync(path.dirname(file), { recursive: true })
-    const db = new Database(file)
-    db.pragma("journal_mode = WAL")
-    db.pragma("synchronous = NORMAL")
-    db.pragma("busy_timeout = 5000")
-    db.exec(SCHEMA)
-    const localHostColumns = db.prepare("PRAGMA table_info(local_host_links)").all() as Array<{ name: string }>
-    if (!localHostColumns.some((column) => column.name === "second_device_open_at")) {
-      db.exec("ALTER TABLE local_host_links ADD COLUMN second_device_open_at INTEGER")
+  const entry: TrackedAuthorityDb = {
+    handle: lazy(() => {
+      const file = options.path ?? path.join(dataDir(), "authority.db")
+      if (file !== ":memory:") fs.mkdirSync(path.dirname(file), { recursive: true })
+      const db = new Database(file)
+      db.pragma("journal_mode = WAL")
+      db.pragma("synchronous = NORMAL")
+      db.pragma("busy_timeout = 5000")
+      db.exec(SCHEMA)
+      const localHostColumns = db.prepare("PRAGMA table_info(local_host_links)").all() as Array<{ name: string }>
+      if (!localHostColumns.some((column) => column.name === "second_device_open_at")) {
+        db.exec("ALTER TABLE local_host_links ADD COLUMN second_device_open_at INTEGER")
+      }
+      entry.db = db
+      tracked.add(entry)
+      return db
+    }),
+  }
+  return entry.handle
+}
+
+type TrackedAuthorityDb = {
+  handle: (() => SqliteAuthorityDb) & { reset(): void }
+  db?: SqliteAuthorityDb
+}
+
+const tracked = new Set<TrackedAuthorityDb>()
+
+/**
+ * Close every authority database this process has opened.
+ *
+ * The compositions hold their `openAuthorityDb` handle privately, so without
+ * this there is no way to release the underlying file — which Windows requires
+ * before the containing directory can be deleted (POSIX unlinks an open file;
+ * NT refuses with EBUSY). The same registry-close shape as `ClaxedoDB.close()`:
+ * handles are reset, not invalidated, so the next use reopens cleanly.
+ */
+export function closeAuthorityDatabases() {
+  for (const entry of tracked) {
+    try {
+      entry.db?.close()
+    } catch {
+      // A handle that is already closed or mid-teardown is exactly what this
+      // sweep exists to tolerate.
     }
-    return db
-  })
+    entry.db = undefined
+    entry.handle.reset()
+  }
+  tracked.clear()
 }
 
 // --- identity + role model (mirror of convex/model.ts) ---------------------

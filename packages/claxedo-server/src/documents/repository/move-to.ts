@@ -1,6 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { z } from "zod"
+import { syncDirectory } from "../fs-durability"
 import { contentHash } from "../version"
 
 const MoveRequestSchema = z
@@ -241,21 +242,7 @@ async function writeJournal(file: string, journal: Journal) {
     await handle.close()
   }
   await fs.rename(temporary, file)
-  const directory = await fs.open(path.dirname(file), "r")
-  try {
-    await directory.sync()
-  } catch (error) {
-    if (
-      !(
-        error instanceof Error &&
-        "code" in error &&
-        ["EINVAL", "ENOTSUP", "EBADF", "EISDIR"].includes(String(error.code))
-      )
-    )
-      throw error
-  } finally {
-    await directory.close()
-  }
+  await syncDirectory(path.dirname(file))
 }
 
 async function createInitialJournal(file: string, journal: Journal) {
@@ -278,21 +265,7 @@ async function createInitialJournal(file: string, journal: Journal) {
       },
     )
     .finally(() => fs.unlink(temporary))
-  const directory = await fs.open(path.dirname(file), "r")
-  try {
-    await directory.sync()
-  } catch (error) {
-    if (
-      !(
-        error instanceof Error &&
-        "code" in error &&
-        ["EINVAL", "ENOTSUP", "EBADF", "EISDIR"].includes(String(error.code))
-      )
-    )
-      throw error
-  } finally {
-    await directory.close()
-  }
+  await syncDirectory(path.dirname(file))
   return created
 }
 
@@ -300,19 +273,5 @@ async function removeJournal(file: string) {
   await fs.unlink(file).catch((error: NodeJS.ErrnoException) => {
     if (error.code !== "ENOENT") throw error
   })
-  const directory = await fs.open(path.dirname(file), "r")
-  try {
-    await directory.sync()
-  } catch (error) {
-    if (
-      !(
-        error instanceof Error &&
-        "code" in error &&
-        ["EINVAL", "ENOTSUP", "EBADF", "EISDIR"].includes(String(error.code))
-      )
-    )
-      throw error
-  } finally {
-    await directory.close()
-  }
+  await syncDirectory(path.dirname(file))
 }

@@ -312,7 +312,10 @@ export async function publishClaxedoPackages(options: PublishOptions): Promise<P
 
       const extractDir = path.join(packDir, "extract")
       fs.mkdirSync(extractDir, { recursive: true })
-      run("tar", ["-xzf", path.join(packDir, packed.filename), "-C", extractDir, "package/package.json"], root)
+      // The archive name stays relative to the cwd: an absolute Windows path in
+      // tar's -f argument reads as host:file (GNU tar's remote syntax) and dies
+      // with "Cannot connect". -C is not parsed that way and may stay absolute.
+      run("tar", ["-xzf", packed.filename, "-C", extractDir, "package/package.json"], packDir)
       const packedPkg = readPackageJson(path.join(extractDir, "package", "package.json"))
 
       const specifiers = protocolSpecifiers(packedPkg)

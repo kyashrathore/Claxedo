@@ -1,4 +1,12 @@
-# bun's dependency patches must apply byte-exact. A CRLF-converting checkout
-# (Windows runners with core.autocrlf) corrupts hunk content and fails install
-# with "corrupt patch at …" before any test runs — pin patches to LF.
+# Every text file checks out with LF on every platform. A CRLF-converting
+# checkout (Windows runners with core.autocrlf=true) breaks two whole classes
+# of test: governance/contract tests that scan repository sources with
+# \n-anchored regexes and indexOf probes, and bun's dependency patches, which
+# must apply byte-exact and fail install with "corrupt patch at …" before any
+# test runs. text=auto leaves binary detection to git's heuristic.
+* text=auto eol=lf
+
+# Kept although subsumed by the rule above: patches are the one place where a
+# stray CRLF is fatal to EVERY lane, not just a scanning test, and this line
+# should survive if the blanket rule is ever narrowed.
 *.patch text eol=lf
