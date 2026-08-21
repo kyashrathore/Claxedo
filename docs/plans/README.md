@@ -1,12 +1,27 @@
 # Claxedo Plans
 
 Status: retained plans index
-Last updated: 2026-08-09
+Last updated: 2026-08-19
 
 This directory keeps active plans and concise dated references that still help
 explain a maintained package or cross-package delivery contract.
 
 ## Retained Plans
+
+- [OpenCode is just another harness — workstream index](./2026-08-19-000-opencode-just-another-harness-index.md)
+  - Strategic index for demoting the vendored OpenCode engine from privileged
+    control-plane default to one harness among peers, so any agent (including
+    operator-configured ACP agents) attaches through the same registry. Four
+    workstreams: the pre-existing scriptable-ACP plan (2026-07-22-001, with a
+    drift note), WorkGraph harness-neutral local execution
+    (2026-08-19-001: connection tools, session intake, and the composer
+    catalog stop requiring the engine), the credentials engine-auth bridge
+    scoped to the opencode domain so a credential write never boots the engine
+    (2026-08-19-002), and the capstone making the embedded engine an
+    opencode-adapter implementation detail with unknown runners becoming typed
+    errors instead of silent OpenCode sessions (2026-08-19-003). Records what
+    is deliberately kept: the OpenCode-compat HTTP surface, the vendored fork
+    packages, and the product default harness.
 
 - [Unified usage dashboard implementation and runbook](../usage-dashboard.md)
   - Completed delivery reference for revisioned provider-exact turn metering,

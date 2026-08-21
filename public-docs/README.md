@@ -88,6 +88,8 @@ materializer helpers live only in `@claxedo/agent-extensions`;
   facade, first-party stores, and supported harness factories.
 - [Agent Event Runtime](./agent-event-runtime.md): event normalization and
   projections.
+- [Operator-Configured ACP Connections](./acp-connections.md): plug any
+  stdio ACP agent into a Claxedo server as a first-class harness.
 - [Agent Extensions](./agent-extensions.md): discover, install, activate, sync,
   and materialize extension packages across harness targets.
 - [Relay And Deployment](./relay-and-deployment.md): local, private VM,

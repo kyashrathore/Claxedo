@@ -34,6 +34,7 @@ export {
   harnessAgent,
   mcpControl,
   resolveEffectiveMcp,
+  resolveUserMcp,
   toOpencodeConfig,
   type ResolvedMcpServer,
 } from "./mcp-resolver"

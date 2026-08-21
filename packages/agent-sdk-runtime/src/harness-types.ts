@@ -74,9 +74,29 @@ export type AgentHarnessAccess = (typeof AGENT_HARNESS_ACCESSES)[number]
 export type AgentHarnessKey = (typeof AGENT_HARNESS_KEYS)[number]
 export type AcpHarnessId = Extract<AgentHarnessId, "claude" | "codex" | "cursor">
 export type NativeHarnessId = AgentHarnessId
+/**
+ * A harness identity's id field: one of the finite built-in ids, or a
+ * VALIDATED open ACP connection slug (`isAcpConnectionId`) for
+ * `access: "acp"` identities. Native dispatch stays closed — an open slug is
+ * only ever accepted alongside `access: "acp"` and only through the accepted
+ * registry a host applies; it can never select a native adapter factory.
+ * The `string & {}` half keeps literal narrowing on the built-in ids intact.
+ */
+export type SessionHarnessId = AgentHarnessId | (string & {})
 export type AgentHarnessDefinition = (typeof AGENT_HARNESS_DEFINITIONS)[number]
 export type AgentHarnessTransport = "stdio" | "streamable-http" | "websocket"
 export type AgentHarnessTransportInput = AgentHarnessTransport | "http"
+
+/**
+ * Open ACP connection ids are stable lowercase slugs: they become the logical
+ * harness identity (`acp:<id>`), directory-safe store keys, and query values.
+ * The finite built-in ids all match this shape too, which keeps one grammar.
+ */
+export const ACP_CONNECTION_ID_PATTERN = /^[a-z][a-z0-9-]{0,63}$/
+
+export function isAcpConnectionId(id: string): boolean {
+  return ACP_CONNECTION_ID_PATTERN.test(id)
+}
 
 export function harnessDefinition(input: { id: string; access: string } | string): AgentHarnessDefinition | undefined {
   if (typeof input === "string") return AGENT_HARNESS_DEFINITIONS.find((item) => item.key === input)
@@ -101,22 +121,42 @@ export function normalizeAgentHarnessTransport(input: unknown): AgentHarnessTran
   if (input === "stdio" || input === "websocket") return input
 }
 
-export function harnessKey(input: { id: AgentHarnessId; access: AgentHarnessAccess }) {
-  return harnessDefinition(input)?.key
+export function harnessKey(input: { id: SessionHarnessId; access: AgentHarnessAccess }) {
+  const definition = harnessDefinition(input)
+  if (definition) return definition.key
+  // Open ACP connections have no definition row; their canonical
+  // access-qualified presentation is `acp:<id>`.
+  if (input.access === "acp" && isAcpConnectionId(input.id)) return `acp:${input.id}`
+  return undefined
 }
 
-export function normalizeHarnessIdentity(input: unknown): { id: AgentHarnessId; access: AgentHarnessAccess } | undefined {
+export function normalizeHarnessIdentity(input: unknown): { id: SessionHarnessId; access: AgentHarnessAccess } | undefined {
   if (typeof input === "string") {
     const legacy = legacyHarnessIdentity(input)
     if (legacy) return legacy
-    return isAgentHarnessId(input) ? { id: input, access: "native" } : undefined
+    if (isAgentHarnessId(input)) return { id: input, access: "native" }
+    // Canonical open-ACP presentation: `acp:<slug>`. The bare-slug string form
+    // stays native-only so an unqualified custom string can never be read as a
+    // harness — ACP qualification must be explicit.
+    if (input.startsWith("acp:")) {
+      const slug = input.slice("acp:".length)
+      if (isAcpConnectionId(slug)) return { id: slug, access: "acp" }
+    }
+    return undefined
   }
   if (!input || typeof input !== "object" || Array.isArray(input)) return
   const row = input as Record<string, unknown>
   const idInput = typeof row.id === "string" ? row.id : typeof row.type === "string" ? row.type : undefined
   const legacy = idInput ? legacyHarnessIdentity(idInput) : undefined
-  const id = legacy?.id ?? (idInput && isAgentHarnessId(idInput) ? idInput : undefined)
   const accessInput = typeof row.access === "string" ? row.access : undefined
+  const id = legacy?.id
+    ?? (idInput && isAgentHarnessId(idInput)
+      ? idInput
+      // A structured identity may carry an open ACP slug, but ONLY with an
+      // explicit `access: "acp"` — an unknown id never defaults to native.
+      : idInput && accessInput === "acp" && isAcpConnectionId(idInput)
+        ? idInput
+        : undefined)
   const access = legacy?.access ?? (accessInput && isAgentHarnessAccess(accessInput) ? accessInput : id ? "native" : undefined)
   if (!id || !access) return
   return { id, access }

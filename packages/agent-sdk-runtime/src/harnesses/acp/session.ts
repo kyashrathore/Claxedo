@@ -12,7 +12,6 @@ import type {
 import { methods } from "@agentclientprotocol/sdk"
 import type { PromptInput } from "../../index"
 import type { AgentPermissionMode, AgentPermissionModeState, AutoLevel } from "../../adapter-contract"
-import type { AcpHarnessId } from "../../harness-types"
 
 type Caps = InitializeResponse["agentCapabilities"] | null | undefined
 type Meta = {
@@ -242,7 +241,7 @@ const withLevel = (mode: { id: string; name: string; description?: string }): Ag
  * only until that user's own agent has answered once, after which their real
  * list is what a draft shows.
  */
-export const ACP_KNOWN_MODE_VERSIONS: Partial<Record<AcpHarnessId, { package: string; version: string }>> = {
+export const ACP_KNOWN_MODE_VERSIONS: Partial<Record<string, { package: string; version: string }>> = {
   claude: { package: "@agentclientprotocol/claude-agent-acp", version: "0.63.0" },
   codex: { package: "@agentclientprotocol/codex-acp", version: "1.1.7" },
 }
@@ -282,7 +281,7 @@ export const ACP_KNOWN_MODE_VERSIONS: Partial<Record<AcpHarnessId, { package: st
  * plausible guess — inventing a table would recreate exactly the fiction this
  * replaced.
  */
-export const ACP_KNOWN_MODES: Partial<Record<AcpHarnessId, readonly AgentPermissionMode[]>> = {
+export const ACP_KNOWN_MODES: Partial<Record<string, readonly AgentPermissionMode[]>> = {
   claude: [
     { id: "auto", name: "Auto", description: "Use a model classifier to approve/deny permission prompts" },
     { id: "default", name: "Manual", description: "Standard behavior, prompts for dangerous operations" },
@@ -334,7 +333,7 @@ export const ACP_KNOWN_MODES: Partial<Record<AcpHarnessId, readonly AgentPermiss
  * it. A wrong entry surviving a restart would also be worse than no entry —
  * this way the memory can never outlive the process that observed it.
  */
-const liveModesSeen = new Map<AcpHarnessId, readonly AgentPermissionMode[]>()
+const liveModesSeen = new Map<string, readonly AgentPermissionMode[]>()
 
 /**
  * Record what a live session reported, so later drafts stop guessing.
@@ -343,7 +342,7 @@ const liveModesSeen = new Map<AcpHarnessId, readonly AgentPermissionMode[]>()
  * populated it yet reports `[]`, and treating that as "this agent has no modes"
  * would erase a good seed on a transient state.
  */
-export function rememberLiveModes(harness: AcpHarnessId, state: AgentPermissionModeState) {
+export function rememberLiveModes(harness: string, state: AgentPermissionModeState) {
   if (state.modes.length === 0) return
   liveModesSeen.set(harness, state.modes)
 }
@@ -362,7 +361,7 @@ export function forgetLiveModes() {
  * It named the mode of some OTHER session, and a draft claiming it as current
  * would be the same species of lie this file exists to remove.
  */
-export function draftPermissionModes(harness: AcpHarnessId): AgentPermissionModeState {
+export function draftPermissionModes(harness: string): AgentPermissionModeState {
   const modes = liveModesSeen.get(harness) ?? ACP_KNOWN_MODES[harness]
   if (!modes) return { modes: [], appliesFrom: "next-turn" }
   return { modes: [...modes], appliesFrom: "next-turn" }

@@ -47,7 +47,6 @@ import {
   type CompatEvent,
 } from "../../compat-events"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
-import type { AcpHarnessId } from "../../harness-types"
 import type {
   AgentAgentRow,
   AgentCommandRow,
@@ -121,9 +120,15 @@ export type AcpRuntimeStore = AgentRuntimeStoreWithRecovery
 
 export type AcpHarnessAdapterOptions = AgentHarnessAdapterProcessOptions & {
   binary: string
-  harness?: AcpHarnessId
+  harness?: string
   args?: string[]
   env?: ACPTransportEnv
+  /**
+   * `false` keeps MCP servers out of everything offered to this agent —
+   * session requests, process fingerprints, and process observation. See
+   * `ProcessHarnessConnection.supportsMcpServers`.
+   */
+  supportsMcpServers?: boolean
   storeRoot?: string
   store?: AcpRuntimeStore
   createStore?: (storeRoot?: string) => AcpRuntimeStore
@@ -175,14 +180,14 @@ type ActiveAcpTurn = {
   drain(message: string): void
 }
 
-const activePromptCounts = new Map<AcpHarnessId, number>()
-const activePromptWaiters = new Map<AcpHarnessId, Set<() => void>>()
+const activePromptCounts = new Map<string, number>()
+const activePromptWaiters = new Map<string, Set<() => void>>()
 
-function activePromptCount(harness: AcpHarnessId) {
+function activePromptCount(harness: string) {
   return activePromptCounts.get(harness) ?? 0
 }
 
-function enterActivePrompt(harness: AcpHarnessId) {
+function enterActivePrompt(harness: string) {
   activePromptCounts.set(harness, activePromptCount(harness) + 1)
   return () => {
     const next = activePromptCount(harness) - 1
@@ -196,7 +201,7 @@ function enterActivePrompt(harness: AcpHarnessId) {
   }
 }
 
-function waitForNoActivePrompts(harness: AcpHarnessId) {
+function waitForNoActivePrompts(harness: string) {
   if (activePromptCount(harness) === 0) return Promise.resolve()
   return new Promise<void>((resolve) => {
     const waiters = activePromptWaiters.get(harness) ?? new Set<() => void>()
@@ -231,7 +236,7 @@ function executableBasename(input: string) {
   return input.split(/[\\/]/).at(-1) || "agent"
 }
 
-function unrestorable(harness: AcpHarnessId, err: unknown) {
+function unrestorable(harness: string, err: unknown) {
   if (missing(err)) return true
   // Codex ACP reports a generic internal error when a session created by a
   // disposed process cannot be resumed. This happens safely before prompt
@@ -267,7 +272,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     this.currentEnv = options.env ?? {}
   }
 
-  private harnessId(): AcpHarnessId {
+  private harnessId(): string {
     return this.options?.harness ?? "claude"
   }
 
@@ -1703,7 +1708,10 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
 
   async applyConfig(config: Record<string, unknown>): Promise<void> {
     const mcp = config.mcp as Record<string, ResolvedMcpServer> | undefined
-    const nextMcp = toAcpMcpServers(mcp ?? {})
+    // Gating here keeps `currentMcp` empty for the whole adapter lifetime:
+    // session requests, process fingerprints, restart decisions, and process
+    // observation all read it, so nothing downstream needs its own check.
+    const nextMcp = this.options.supportsMcpServers === false ? [] : toAcpMcpServers(mcp ?? {})
     const nextEnv = mergeAcpEnv(this.currentEnv, envFromConfig(config))
     const unchanged = sameAcpMcp(this.currentMcp, nextMcp) && sameAcpEnv(this.currentEnv, nextEnv)
     if (unchanged && !this.configRestartPending) {

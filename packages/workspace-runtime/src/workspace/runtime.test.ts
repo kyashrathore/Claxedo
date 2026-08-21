@@ -3297,6 +3297,18 @@ describe("workspace host harness registry seam (Unit 3)", () => {
     }
   })
 
+  test("an unknown runner finds no default registry entry instead of falling through to OpenCode", () => {
+    const registry = defaultWorkspaceHarnessRegistry()
+    // No entry claims an unrecognized harness id: dispatch surfaces the typed
+    // createAdapter error rather than silently running the OpenCode engine.
+    expect(registry.find((entry) => entry.match({ id: "waku", access: "native" } as never))).toBeUndefined()
+    const opencodeEntry = registry.find((entry) => entry.match({ id: "opencode", access: "native" } as never))
+    if (!opencodeEntry) throw new Error("Expected the OpenCode registry entry")
+    const adapter = opencodeEntry.create({ runner: { id: "opencode", access: "native" } as never, options: {} })
+    expect(adapter).toBeInstanceOf(OpenCodeHarnessAdapter)
+    adapter.dispose()
+  })
+
   test("keeps the implicit native Codex binary out of persisted harness identity", async () => {
     const runner = { id: "codex", access: "native" } as const
     const entry = defaultWorkspaceHarnessRegistry().find((candidate) => candidate.match(runner))
@@ -3952,5 +3964,82 @@ describe("session config acceptance (Unit 4)", () => {
     expect(await storedModel()).toBe("first")
 
     host.dispose()
+  })
+})
+
+describe("operator ACP connections", () => {
+  test("an applied v2 registry resolves an operator connection by identity; unknown or removed ones fail closed", async () => {
+    // Use the host's pinned directory: this test is about harness identity
+    // resolution, not directory routing.
+    const dir = process.cwd()
+    const app = new Hono()
+    const host = mountTestHost(app, { harness: { id: "codex", access: "native" } })
+    const select = () =>
+      app.request(`http://localhost/session?harness=${encodeURIComponent("acp:gemini")}&directory=${encodeURIComponent(dir)}`)
+    try {
+      // Identity-only selection with no applied descriptor fails closed —
+      // and must never fall back to a bundled first-party ACP binary.
+      const before = await select()
+      expect(before.ok).toBe(false)
+
+      const accepted = await pushRuntimeConfig(app, {
+        version: 2,
+        mcp: {},
+        auth: {},
+        harnesses: [
+          { id: "codex", access: "native" },
+          {
+            id: "gemini",
+            access: "acp",
+            connection: {
+              kind: "process",
+              binary: "/usr/bin/gemini-acp",
+              args: ["--acp"],
+              env: { GEMINI_API_KEY: "g-key" },
+            },
+          },
+        ],
+      })
+      expect(accepted.status).toBe(200)
+
+      // The registry row resolves: the generic ACP adapter serves the
+      // store-backed listing for the configured identity (no process spawn).
+      const listed = await select()
+      expect(listed.status).toBe(200)
+      expect(await listed.json()).toEqual([])
+
+      // Removing the connection from the applied registry stops NEW
+      // resolution immediately.
+      const removed = await pushRuntimeConfig(app, {
+        version: 2,
+        mcp: {},
+        auth: {},
+        harnesses: [{ id: "codex", access: "native" }],
+      })
+      expect(removed.status).toBe(200)
+      const after = await select()
+      expect(after.ok).toBe(false)
+    } finally {
+      host.dispose()
+    }
+  })
+
+  test("a v2 snapshot carrying an unknown native id is rejected whole", async () => {
+    const app = new Hono()
+    const host = mountTestHost(app, { harness: { id: "codex", access: "native" } })
+    try {
+      const rejected = await pushRuntimeConfig(app, {
+        version: 2,
+        mcp: {},
+        auth: {},
+        harnesses: [
+          { id: "codex", access: "native" },
+          { id: "waku", access: "native" },
+        ],
+      })
+      expect(rejected.ok).toBe(false)
+    } finally {
+      host.dispose()
+    }
   })
 })

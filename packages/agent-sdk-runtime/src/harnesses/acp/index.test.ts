@@ -1180,6 +1180,43 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     expect(item.turnLifecycle.activeTurns.size).toBe(1)
   })
 
+  test("supportsMcpServers: false keeps configured MCP servers out of the adapter entirely", async () => {
+    const makeItem = (supportsMcpServers?: boolean) => {
+      const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+        currentEnv: Record<string, string>
+        currentMcp: unknown[]
+        options: { binary: string; supportsMcpServers?: boolean }
+        turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
+        restart: () => void
+        forgetSessionProcessBindings: () => void
+      }>
+      item.currentEnv = {}
+      item.currentMcp = []
+      item.options = { binary: "fake-acp", ...(supportsMcpServers !== undefined ? { supportsMcpServers } : {}) }
+      item.turnLifecycle = createSessionTurnLifecycle()
+      const calls: string[] = []
+      item.restart = () => calls.push("restart")
+      item.forgetSessionProcessBindings = () => calls.push("forget")
+      return { item, calls }
+    }
+    const mcp = {
+      docs: { name: "docs", transport: "stdio" as const, command: "docs-mcp", args: [], env: {} },
+    }
+
+    // Flag off: the MCP config never reaches adapter state, and since the
+    // effective config is unchanged the agent process is not restarted.
+    const disabled = makeItem(false)
+    await disabled.item.applyConfig({ mcp, auth: {} })
+    expect(disabled.item.currentMcp).toEqual([])
+    expect(disabled.calls).toEqual([])
+
+    // Flag absent: the same config produces an offered server as usual.
+    const offered = makeItem()
+    await offered.item.applyConfig({ mcp, auth: {} })
+    expect(offered.item.currentMcp).toHaveLength(1)
+    expect(offered.calls).toEqual(["restart", "forget"])
+  })
+
   test("claude oauth config applies as Claude Code oauth env", async () => {
     const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       currentEnv: Record<string, string>

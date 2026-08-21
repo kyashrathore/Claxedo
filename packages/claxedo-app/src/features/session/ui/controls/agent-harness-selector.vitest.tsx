@@ -51,6 +51,8 @@ let piDefaults: Record<string, string> = {}
 let draftDefaultState: "ready" | "choose-model" | "saved-model-unavailable" | "unsupported-placement" | undefined = "ready"
 let draftDefaultLabels: { provider?: string; model?: string } | undefined
 let harnessMode = true
+let acpConnections: Array<{ key: `acp:${string}`; id: string; label: string; enabled: boolean }> = []
+let acpRefreshCalls = 0
 
 vi.mock("@/features/session/app-ports", () => ({
   useProviders: () => ({
@@ -146,7 +148,7 @@ vi.mock("@/features/session/composer/ui/harness-model-picker", () => ({
 // way so the "groups harness choices by ACP / native SDK / direct" test still
 // describes what a user sees.
 function harnessGroupForTest(input: string) {
-  if (input === "claude-acp" || input === "codex-acp" || input === "cursor-acp") return "ACP"
+  if (input.startsWith("acp:")) return "ACP"
   if (input === "claude-sdk" || input === "codex-app-server" || input === "cursor-sdk") return "Native SDK"
   return "Direct"
 }
@@ -204,6 +206,12 @@ function harnessController(): HarnessSelectionController {
     },
     reprobe: () => undefined,
     markUnavailable: () => undefined,
+    enabledAcpConnections: () => acpConnections.filter((row) => row.enabled),
+    acpConnectionLabel: (key: string) => acpConnections.find((row) => row.key === key)?.label,
+    refreshAcpConnections: () => {
+      acpRefreshCalls += 1
+      return Promise.resolve()
+    },
   }
 }
 
@@ -251,6 +259,8 @@ beforeEach(() => {
   piDefaults = {}
   draftDefaultState = "ready"
   draftDefaultLabels = undefined
+  acpConnections = []
+  acpRefreshCalls = 0
   dialogState.connectProps = undefined
   dialogState.show.mockClear()
 })
@@ -321,17 +331,18 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
 
   test("clicking an option calls setHarness when unlocked", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
-    const option = container.querySelector("[data-testid='select-option-codex-acp']") as HTMLButtonElement
+    const option = container.querySelector("[data-testid='select-option-codex-app-server']") as HTMLButtonElement
     expect(option).not.toBeNull()
 
     fireEvent.click(option)
     expect(setHarnessCalls).toHaveLength(1)
-    expect(setHarnessCalls[0].type).toBe("codex-acp")
+    expect(setHarnessCalls[0].type).toBe("codex-app-server")
   })
 
   test("clicking the current harness does not call setHarness", () => {
+    harnessType = "claude-sdk"
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
-    const option = container.querySelector("[data-testid='select-option-claude-acp']") as HTMLButtonElement
+    const option = container.querySelector("[data-testid='select-option-claude-sdk']") as HTMLButtonElement
     expect(option).not.toBeNull()
 
     fireEvent.click(option)
@@ -340,13 +351,13 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
 
   test("clicking an option captures harness_selected with an id-only property allowlist", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
-    const option = container.querySelector("[data-testid='select-option-codex-acp']") as HTMLButtonElement
+    const option = container.querySelector("[data-testid='select-option-codex-app-server']") as HTMLButtonElement
 
     fireEvent.click(option)
 
     const event = captured.find((entry) => entry.event === "harness_selected")
     expect(event).toBeDefined()
-    expect(event?.properties.harness).toBe("codex-acp")
+    expect(event?.properties.harness).toBe("codex-app-server")
     // The guard against future PII creep: this enumerates the exact allowed
     // keys. Tripwire — add a forbidden property (e.g. `title`) at the call site
     // in agent-harness-selector.tsx, watch this fail, then remove it.
@@ -356,10 +367,11 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
   })
 
   test("does not capture harness_selected when the click is a no-op (the current harness)", () => {
+    harnessType = "claude-sdk"
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
 
-    // claude-acp is already current — re-picking it must not emit telemetry.
-    fireEvent.click(container.querySelector("[data-testid='select-option-claude-acp']") as HTMLButtonElement)
+    // claude-sdk is already current — re-picking it must not emit telemetry.
+    fireEvent.click(container.querySelector("[data-testid='select-option-claude-sdk']") as HTMLButtonElement)
 
     expect(captured.filter((entry) => entry.event === "harness_selected")).toEqual([])
   })
@@ -376,17 +388,18 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
 
   test("clicking an option does NOT call setHarness when locked", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={true} />)
-    const option = container.querySelector("[data-testid='select-option-codex-acp']") as HTMLButtonElement
+    const option = container.querySelector("[data-testid='select-option-codex-app-server']") as HTMLButtonElement
     expect(option).not.toBeNull()
 
     fireEvent.click(option)
     expect(setHarnessCalls).toHaveLength(0)
   })
 
-  test("switching from opencode to claude-acp is blocked when locked", () => {
+  test("every harness switch — built-in or operator ACP — is blocked when locked", () => {
+    acpConnections = [{ key: "acp:gemini", id: "gemini", label: "Gemini", enabled: true }]
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={true} />)
 
-    for (const runner of ["claude-acp", "codex-acp", "cursor-acp", "claude-sdk", "codex-app-server", "cursor-sdk", "pi", "opencode"]) {
+    for (const runner of ["claude-sdk", "codex-app-server", "cursor-sdk", "pi", "opencode", "acp:gemini"]) {
       const opt = container.querySelector(`[data-testid='select-option-${runner}']`) as HTMLButtonElement
       fireEvent.click(opt)
     }
@@ -396,24 +409,46 @@ describe("AgentHarnessSelector — sessionLocked guard", () => {
   test("only starts one runner switch while a switch is in flight", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
 
-    for (const runner of ["claude-acp", "codex-acp", "cursor-acp", "claude-sdk", "codex-app-server", "cursor-sdk", "pi", "opencode"]) {
+    for (const runner of ["claude-sdk", "codex-app-server", "cursor-sdk", "pi", "opencode"]) {
       const opt = container.querySelector(`[data-testid='select-option-${runner}']`) as HTMLButtonElement
       fireEvent.click(opt)
     }
-    expect(setHarnessCalls).toEqual([{ scope: "test-scope", type: "codex-acp" }])
+    expect(setHarnessCalls).toEqual([{ scope: "test-scope", type: "claude-sdk" }])
   })
 
-  test("groups harness choices by ACP, native SDK, and direct runners", () => {
+  test("groups harness choices: static Native SDK and Direct, discovery-driven ACP", () => {
+    acpConnections = [
+      { key: "acp:gemini", id: "gemini", label: "Gemini", enabled: true },
+      { key: "acp:hermes", id: "hermes", label: "Hermes", enabled: false },
+    ]
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
 
-    expect(container.querySelector("[data-testid='select-group-ACP']")?.textContent).toContain("Claude")
-    expect(container.querySelector("[data-testid='select-group-ACP']")?.textContent).toContain("Codex")
-    expect(container.querySelector("[data-testid='select-group-ACP']")?.textContent).toContain("Cursor")
     expect(container.querySelector("[data-testid='select-group-Native SDK']")?.textContent).toContain("Claude")
     expect(container.querySelector("[data-testid='select-group-Native SDK']")?.textContent).toContain("Codex")
     expect(container.querySelector("[data-testid='select-group-Native SDK']")?.textContent).toContain("Cursor")
     expect(container.querySelector("[data-testid='select-group-Direct']")?.textContent).toContain("Pi")
     expect(container.querySelector("[data-testid='select-group-Direct']")?.textContent).toContain("OpenCode")
+    // The ACP group is exactly the ENABLED operator connections, with the
+    // server-provided labels; disabled rows are absent.
+    expect(container.querySelector("[data-testid='select-group-ACP']")?.textContent).toContain("Gemini")
+    expect(container.querySelector("[data-testid='select-group-ACP']")?.textContent).not.toContain("Hermes")
+    // The first-party ACP trio is no longer a built-in picker choice.
+    expect(container.querySelector("[data-testid='select-option-claude-acp']")).toBeNull()
+    expect(container.querySelector("[data-testid='select-option-codex-acp']")).toBeNull()
+    expect(container.querySelector("[data-testid='select-option-cursor-acp']")).toBeNull()
+  })
+
+  test("with no enabled operator connections the ACP group is absent", () => {
+    const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
+    expect(container.querySelector("[data-testid='select-group-ACP']")).toBeNull()
+  })
+
+  test("selecting an operator connection sends only its canonical key", () => {
+    acpConnections = [{ key: "acp:gemini", id: "gemini", label: "Gemini", enabled: true }]
+    const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
+
+    fireEvent.click(container.querySelector("[data-testid='select-option-acp:gemini']") as HTMLButtonElement)
+    expect(setHarnessCalls).toEqual([{ scope: "test-scope", type: "acp:gemini" }])
   })
 
   test("renders the selected model when ACP model options are available", () => {

@@ -400,6 +400,28 @@ no `if (runner.type === "claude-acp")` branches in the call paths.
 The four model-fallback sites (`bootstrap.ts`, `opencode-compat.ts`)
 are *model defaulting* decisions, not adapter-selection branches.
 
+### Operator-configured ACP connections
+
+Beyond the built-in runner ids, a v2 runtime snapshot's `harnesses` list may
+carry operator-configured ACP rows — `{ id: "<slug>", access: "acp",
+connection: { kind: "process", binary, args?, env? } }` where `<slug>` matches
+`^[a-z][a-z0-9-]{0,63}$` and is none of the built-in ids. `host.apply`
+normalizes and retains these as the **applied registry**; session requests may
+then select the identity alone (`acp:<slug>` or `{ id, access: "acp" }`) and
+the host resolves the process descriptor from that registry at adapter
+creation.
+
+Resolution is fail-closed: an identity with no applied descriptor raises
+`WorkspaceHarnessUnavailableError` (`workspace_harness_not_configured`) — it
+never falls back to a bundled first-party ACP binary or to OpenCode. The
+configured `binary` is spawned verbatim (stdio transport only), and `env` is
+applied over the process environment. Because the descriptor — including
+`env` — only enters through the trusted config-apply path (`POST
+/api/wr/config` / `host.apply`), session callers can never supply process
+environment. Operator-facing semantics (config schema, mutation API,
+enable/disable, id rebinding) live in
+[`public-docs/acp-connections.md`](../../public-docs/acp-connections.md).
+
 ### Error semantics
 
 - `sendMessage` yields a `CompatEvent` async iterable. Adapter-level

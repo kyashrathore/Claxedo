@@ -1,6 +1,6 @@
 import { workGraphRuntimeRouteContributions } from "@claxedo/workgraph/runtime-adapter"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
-import type { WorkGraphRunOperationBroker } from "@claxedo/workgraph/runtime-adapter"
+import type { WorkGraphConnectionOperationBroker, WorkGraphRunOperationBroker } from "@claxedo/workgraph/runtime-adapter"
 
 /**
  * The hosted capabilities the SELF-HOSTED single binary contributes to its
@@ -38,10 +38,18 @@ export function selfHostedCapabilities(input: {
    * broken product rather than an unconfigured one.
    */
   workGraphRunBroker: WorkGraphRunOperationBroker
+  /**
+   * Executes a bound WorkGraph Connection operation against the local
+   * Connection binding registry. Required for the same reason as the Run
+   * broker: the Connection tool routes must never mount without the broker
+   * that makes their calls succeed.
+   */
+  workGraphConnectionBroker: WorkGraphConnectionOperationBroker
 }): SelfHostedCapabilities {
   return {
     runtimeRouteContributions: workGraphRuntimeRouteContributions({
       run: { broker: input.workGraphRunBroker },
+      connection: { broker: input.workGraphConnectionBroker },
     }),
   }
 }

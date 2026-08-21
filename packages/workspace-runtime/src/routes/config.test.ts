@@ -173,6 +173,24 @@ describe("runtime config route", () => {
           binary: "/tmp/codex",
         },
       },
+      // v2 retains EVERY validated row so the runtime holds the full accepted
+      // registry (operator ACP connections resolve from it); the first row
+      // stays the active harness.
+      harnesses: [{
+        id: "codex",
+        access: "native",
+        connection: {
+          kind: "process",
+          binary: "/tmp/codex",
+        },
+      }, {
+        id: "claude",
+        access: "acp",
+        connection: {
+          kind: "process",
+          binary: "/tmp/claude-agent-acp",
+        },
+      }],
       auth: {
         "codex-app-server": "codex-auth",
       },

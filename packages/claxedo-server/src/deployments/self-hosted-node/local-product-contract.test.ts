@@ -106,6 +106,8 @@ describe("desktop-local product contract", () => {
       "/api/claxedo/agent-config/extensions/machine-scan",
       "/api/claxedo/agent-config/extensions/scan",
       "/api/claxedo/agent-config/harness",
+      "/api/claxedo/agent-config/harness/acp-connections",
+      "/api/claxedo/agent-config/harness/acp-connections/:id",
       "/api/claxedo/agent-config/harness/model",
       "/api/claxedo/agent-config/harness/options",
       "/api/claxedo/agent-config/mcp",

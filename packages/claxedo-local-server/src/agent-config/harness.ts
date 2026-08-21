@@ -2,6 +2,7 @@ import {
   normalizeAgentHarnessTransport,
   normalizeHarnessIdentity,
   type AgentHarnessId,
+  type SessionHarnessId,
   type SessionHarness,
 } from "@claxedo/agent-sdk-runtime"
 import { normalize } from "@claxedo/server-core/session/harness/index"
@@ -35,7 +36,7 @@ export function liveHarnessOptionsResponse(options: HarnessConfigOption[]): Opti
 
 type NativeSdkHarnessId = Extract<AgentHarnessId, "claude" | "codex" | "cursor">
 
-export function isNativeSdkHarnessId(id: AgentHarnessId): id is NativeSdkHarnessId {
+export function isNativeSdkHarnessId(id: SessionHarnessId): id is NativeSdkHarnessId {
   return id === "claude" || id === "codex" || id === "cursor"
 }
 

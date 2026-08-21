@@ -11,6 +11,7 @@ import {
   normalizeAgentHarnessTransport,
   normalizeHarnessIdentity,
   harnessDefinition,
+  isAgentHarnessId,
   type AgentHarnessId,
   type AgentSessionRow,
   type AgentSession,
@@ -277,7 +278,7 @@ const HARNESS_BINARY_FALLBACKS: Partial<Record<string, () => string>> = {
  * id that decides it, so every caller that spawns the adapter gets it including
  * ones that never pass through this file.
  */
-const ACP_ARGS: Partial<Record<AgentHarnessId, string[]>> = {
+const ACP_ARGS: Partial<Record<string, string[]>> = {
   codex: ["-c", "service_tier=\"fast\""],
 }
 
@@ -389,13 +390,39 @@ function remoteConnection(harness: LegacyRuntimeRunner) {
   }
 }
 
+/**
+ * A harness identity that is not runnable here: an operator-configured ACP
+ * connection this runtime has no applied descriptor for (unknown, disabled,
+ * or removed). Thrown BEFORE any adapter creation or process spawn.
+ */
+export class WorkspaceHarnessUnavailableError extends Error {
+  readonly code = "workspace_harness_not_configured"
+  constructor(readonly harness: { id: string; access: string }) {
+    super(`ACP connection "${harness.id}" is not configured on this runtime`)
+    this.name = "WorkspaceHarnessUnavailableError"
+  }
+}
+
+function openAcpRunner(harness: RuntimeRunner) {
+  return harness.access === "acp" && !isAgentHarnessId(harness.id)
+}
+
 function fallback(harness: RuntimeRunner) {
-  return HARNESS_BINARY_FALLBACKS[harnessKey(harness)]?.() ?? defaultAcpBinary("claude-agent-acp")
+  // Binary inference exists for the BUILT-IN harnesses only. An operator
+  // -configured ACP connection with no applied process descriptor must fail
+  // closed — silently spawning a bundled first-party binary in its place
+  // would run a different agent than the one the operator configured.
+  if (openAcpRunner(harness)) throw new WorkspaceHarnessUnavailableError(harness)
+  return HARNESS_BINARY_FALLBACKS[harnessKey(harness) ?? ""]?.() ?? defaultAcpBinary("claude-agent-acp")
 }
 
 function binary(harness: RuntimeRunner) {
   const raw = processConnection(harness)?.binary
   if (!raw) return fallback(harness)
+  // An operator-configured ACP command runs exactly as configured: a missing
+  // executable surfaces as that process's spawn diagnostic, never as a
+  // silently substituted bundled binary.
+  if (openAcpRunner(harness)) return raw
   if (!raw.includes(path.sep)) return raw
   if (fs.existsSync(raw)) return raw
   return fallback(harness)
@@ -738,13 +765,14 @@ export type WorkspaceHarnessRegistryEntry = {
 export type WorkspaceHarnessRegistry = WorkspaceHarnessRegistryEntry[]
 
 /**
- * The built-in adapter catalog. Selection semantics are byte-identical to the
- * previous closed switch: ACP (any `access: "acp"` runner) → native
- * claude/codex/cursor SDK adapters → Pi → OpenCode. The final OpenCode entry
- * matches everything, so it is both the `opencode` runner's adapter AND the
- * fallthrough for any unknown runner — preserving today's "unknown → OpenCode"
- * behavior. The ACP binary fallback (`defaultAcpBinary`) is applied through the
- * shared `binary()`/`acpArgs()` helpers.
+ * The built-in adapter catalog. Selection order: ACP (any `access: "acp"`
+ * runner) → native claude/codex/cursor SDK adapters → Pi → OpenCode. The
+ * OpenCode entry matches the `opencode` runner ONLY — an unknown runner
+ * surfaces `createAdapter`'s typed error instead of silently becoming an
+ * OpenCode engine session, so a mistyped or unregistered harness id fails
+ * loudly at dispatch rather than running a different product. The ACP binary
+ * fallback (`defaultAcpBinary`) is applied through the shared
+ * `binary()`/`acpArgs()` helpers.
  */
 export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
   return [
@@ -752,10 +780,16 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
       match: (runner) => acp(runner),
       create: ({ runner, options }) => {
         const createTransport = acpTransportFactory(runner)
+        const process = processConnection(runner)
+        const env = process?.env
         return new AcpHarnessAdapter({
           binary: binary(runner),
           harness: runner.id === "opencode" || runner.id === "pi" ? "claude" : runner.id,
           args: acpArgs(runner),
+          ...(env ? { env } : {}),
+          ...(typeof process?.supportsMcpServers === "boolean"
+            ? { supportsMcpServers: process.supportsMcpServers }
+            : {}),
           ...(createTransport ? { createTransport } : {}),
           createStore: adapterCreateStore(resolveStoreFactory(options)),
           ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
@@ -800,7 +834,7 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
       }),
     },
     {
-      match: () => true,
+      match: (runner) => runner.id === "opencode",
       create: ({ options }) => new OpenCodeHarnessAdapter(options.opencodeUrl, {
         ...(options.opencodeHeaders ? { headers: options.opencodeHeaders } : {}),
         ...(options.opencodeRequest ? { request: options.opencodeRequest } : {}),
@@ -859,8 +893,9 @@ function createAdapter(
 ): AgentHarnessAdapter {
   const entry = registry.find((item) => item.match(harness))
   if (!entry) {
-    // The default registry ends with a catch-all, so this only happens when a
-    // host supplies a registry with no matching entry for the runner.
+    // Reached for any runner no registry entry claims — including an unknown
+    // harness id against the default registry. Deliberate: an unrecognized
+    // runner must fail loudly here, never silently fall through to OpenCode.
     throw new Error(`No workspace harness adapter registered for runner "${harness.id}:${harness.access}"`)
   }
   return entry.create({ runner: harness, options })
@@ -1191,11 +1226,16 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     const binary = next.id === "codex" && next.access === "native" && process?.binary === "codex"
       ? ""
       : process?.binary ?? ""
-    return `${next.id}\n${next.access}\n${binary}\n${process?.args?.join("\0") ?? ""}\n${remote?.transport ?? ""}\n${remote?.url ?? ""}\n${JSON.stringify(remote?.headers ?? {})}`
+    const env = process?.env && Object.keys(process.env).length ? JSON.stringify(process.env) : ""
+    // Ninth part: MCP-offering compatibility. Toggling it must produce a new
+    // adapter (the gate is an adapter-construction option). Older stored
+    // eight-part keys parse with the part absent, meaning "servers offered".
+    const mcpCompat = process?.supportsMcpServers === undefined ? "" : String(process.supportsMcpServers)
+    return `${next.id}\n${next.access}\n${binary}\n${process?.args?.join("\0") ?? ""}\n${remote?.transport ?? ""}\n${remote?.url ?? ""}\n${JSON.stringify(remote?.headers ?? {})}\n${env}\n${mcpCompat}`
   }
 
   function runnerFromAdapterKey(key: string) {
-    const [id, access, binary, args, transport, url, headers] = key.split("\n")
+    const [id, access, binary, args, transport, url, headers, env, mcpCompat] = key.split("\n")
     const identity = normalizeHarnessIdentity({ id, access })
     const connection = url || headers || transport
       ? {
@@ -1204,11 +1244,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           ...(url ? { url } : {}),
           ...(headers ? { headers: JSON.parse(headers) as Record<string, string> } : {}),
         }
-      : binary || args
+      : binary || args || env || mcpCompat
         ? {
             kind: "process" as const,
             ...(binary ? { binary } : {}),
             ...(args ? { args: args.split("\0").filter(Boolean) } : {}),
+            ...(env ? { env: JSON.parse(env) as Record<string, string> } : {}),
+            ...(mcpCompat ? { supportsMcpServers: mcpCompat === "true" } : {}),
           }
         : undefined
     return {
@@ -1255,6 +1297,24 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     adapterConfigStamps.set(next, stamp)
   }
 
+  // Applied operator-ACP registry: descriptor rows from the last accepted
+  // config snapshot, keyed by connection id. Session requests select an open
+  // ACP identity by id only — the process command/env always resolves from
+  // here, and an identity with no applied row fails closed before any adapter
+  // is created.
+  let appliedAcpConnections = new Map<string, RuntimeRunner>()
+
+  function resolveAppliedRunner(next: RuntimeRunner): RuntimeRunner {
+    if (!openAcpRunner(next)) return next
+    // Trusted rows (the applied runner itself, stored session config from the
+    // apply path) already carry their descriptor; identity-only requests
+    // resolve the CURRENT applied descriptor.
+    if (processConnection(next)?.binary) return next
+    const applied = appliedAcpConnections.get(next.id)
+    if (!applied) throw new WorkspaceHarnessUnavailableError(next)
+    return applied
+  }
+
   function ensure() {
     if (adapter) return adapter
     adapter = createAdapter(runner, hostOptions, harnessRegistry)
@@ -1262,7 +1322,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     return adapter
   }
 
-  async function ensureSessionAdapter(nextRunner: RuntimeRunner) {
+  async function ensureSessionAdapter(requestedRunner: RuntimeRunner) {
+    const nextRunner = resolveAppliedRunner(requestedRunner)
     if (adapterKey(nextRunner) === adapterKey(runner)) {
       const next = ensure()
       await configureAdapter(next, nextRunner)
@@ -1656,6 +1717,15 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
 
     state = "applying"
     enabled = next.workspaceHarnessEnabled ?? enabled
+    // The accepted snapshot is the ONLY source of operator-ACP descriptors:
+    // rebuild the applied registry wholesale so removed or disabled
+    // connections stop resolving immediately while running adapters finish
+    // their current turn undisturbed.
+    appliedAcpConnections = new Map(
+      (next.harnesses ?? [next.harness])
+        .filter(openAcpRunner)
+        .map((row) => [row.id, row] as const),
+    )
     const directory = options.target?.directory ?? workspaceDir()
     const receiptDir = options.configApplyReceiptDir
     let revision = configApplyRevision

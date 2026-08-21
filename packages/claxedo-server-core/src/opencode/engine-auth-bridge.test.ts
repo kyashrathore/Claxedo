@@ -77,16 +77,37 @@ afterEach(() => {
 
 /**
  * Load the bridge with the engine transport stubbed. `opencode-engine` is
- * mocked rather than driven in URL mode so no socket is involved.
+ * mocked rather than driven in URL mode so no socket is involved. The stub
+ * models a RUNNING engine by default (`loaded: true`) so direct-sync behavior
+ * is exercised; gating tests flip `loaded` and fire the captured boot hooks.
  */
+const engineState = {
+  loaded: true,
+  bootHooks: new Set<() => void>(),
+}
+
 async function loadBridge() {
-  vi.doMock("../opencode/engine", () => ({
+  engineState.loaded = true
+  engineState.bootHooks.clear()
+  vi.doMock("./engine", () => ({
     OPENCODE_INTERNAL_BASE: "http://opencode.internal",
     opencodeRequest: (request: Request) => stubEngineFetch(request),
+    opencodeEngineLoaded: () => engineState.loaded,
+    onOpenCodeEngineBoot: (hook: () => void) => {
+      engineState.bootHooks.add(hook)
+      return () => {
+        engineState.bootHooks.delete(hook)
+      }
+    },
   }))
   const registry = await import("@claxedo/server-core/credentials/registry")
-  const bridge = await import("./engine-bridge")
+  const bridge = await import("./engine-auth-bridge")
   return { registry, bridge }
+}
+
+function fireEngineBoot() {
+  engineState.loaded = true
+  for (const hook of [...engineState.bootHooks]) hook()
 }
 
 describe("credential → engine auth bridge", () => {
@@ -274,4 +295,115 @@ describe("credential → engine auth bridge", () => {
 
     expect(result.shadowed).toBe(true)
   })
+
+  test("a credential write against a cold embedded engine issues no engine request", async () => {
+    const { registry, bridge } = await loadBridge()
+    engineState.loaded = false
+    await registry.putCredential({
+      provider_id: "anthropic",
+      kind: "api_key",
+      source: "managed",
+      secret: "sk-ant-cold",
+    })
+
+    bridge.scheduleEngineAuthSync()
+    await drainScheduledSyncs()
+
+    // The whole point: delivering auth must never be what boots the engine.
+    expect(engine.requests).toEqual([])
+    // The mutation armed the boot hook instead.
+    expect(engineState.bootHooks.size).toBe(1)
+  })
+
+  test("a pending cold-engine write is delivered by the boot hook", async () => {
+    const { registry, bridge } = await loadBridge()
+    engineState.loaded = false
+    await registry.putCredential({
+      provider_id: "anthropic",
+      kind: "api_key",
+      source: "managed",
+      secret: "sk-ant-pending",
+    })
+    bridge.scheduleEngineAuthSync()
+    await drainScheduledSyncs()
+    expect(engine.auth.has("anthropic")).toBe(false)
+
+    fireEngineBoot()
+    await drainScheduledSyncs()
+
+    expect(engine.auth.get("anthropic")).toEqual({ type: "api", key: "sk-ant-pending" })
+  })
+
+  test("an armed boot hook reconciles on every boot, including re-boots after drain", async () => {
+    const { registry, bridge } = await loadBridge()
+    engineState.loaded = false
+    bridge.armEngineAuthSyncOnBoot()
+    await registry.putCredential({
+      provider_id: "anthropic",
+      kind: "api_key",
+      source: "managed",
+      secret: "sk-ant-boot",
+    })
+
+    fireEngineBoot()
+    await drainScheduledSyncs()
+    expect(engine.auth.get("anthropic")).toEqual({ type: "api", key: "sk-ant-boot" })
+
+    // Engine drained and re-booted: the key changed meanwhile.
+    engine.auth.clear()
+    await registry.putCredential({
+      provider_id: "anthropic",
+      kind: "api_key",
+      source: "managed",
+      secret: "sk-ant-reboot",
+    })
+    fireEngineBoot()
+    await drainScheduledSyncs()
+    expect(engine.auth.get("anthropic")).toEqual({ type: "api", key: "sk-ant-reboot" })
+  })
+
+  test("the boot reconcile removes a bridged entry whose credential was deleted while down", async () => {
+    const { registry, bridge } = await loadBridge()
+    const cred = await registry.putCredential({
+      provider_id: "anthropic",
+      kind: "api_key",
+      source: "managed",
+      secret: "sk-ant-doomed",
+    })
+    await bridge.syncCredentialsToEngine()
+    expect(engine.auth.has("anthropic")).toBe(true)
+
+    // Engine goes down; the credential is deleted while it is cold. No engine
+    // request may happen for the delete.
+    engineState.loaded = false
+    const requestsBeforeDelete = engine.requests.length
+    await registry.deleteCredential(cred.id)
+    bridge.scheduleEngineAuthSync()
+    await drainScheduledSyncs()
+    expect(engine.requests.length).toBe(requestsBeforeDelete)
+
+    fireEngineBoot()
+    await drainScheduledSyncs()
+    expect(engine.auth.has("anthropic")).toBe(false)
+  })
+
+  test("a running engine still syncs mutations immediately", async () => {
+    const { registry, bridge } = await loadBridge()
+    await registry.putCredential({
+      provider_id: "anthropic",
+      kind: "api_key",
+      source: "managed",
+      secret: "sk-ant-live",
+    })
+
+    bridge.scheduleEngineAuthSync()
+    await drainScheduledSyncs()
+
+    expect(engine.auth.get("anthropic")).toEqual({ type: "api", key: "sk-ant-live" })
+  })
 })
+
+/** scheduleEngineAuthSync is fire-and-forget; let its promises settle. */
+async function drainScheduledSyncs() {
+  for (let i = 0; i < 20; i++) await new Promise((resolve) => setTimeout(resolve, 2))
+}

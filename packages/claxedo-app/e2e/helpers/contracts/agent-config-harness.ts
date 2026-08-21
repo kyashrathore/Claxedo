@@ -63,7 +63,7 @@
 // `harness-types.ts` has ZERO imports of its own, so reaching it directly by relative
 // path pulls in no graph. Same convention as the claxedo-server reach below.
 import { harnessKey, normalizeHarnessIdentity } from "../../../../agent-sdk-runtime/src/harness-types"
-import type { AgentHarnessAccess, AgentHarnessId } from "../../../../agent-sdk-runtime/src/harness-types"
+import type { AgentHarnessAccess, SessionHarnessId } from "../../../../agent-sdk-runtime/src/harness-types"
 // Type-only, so the bare specifier is safe here — it erases before run time.
 import type { SessionHarness } from "@claxedo/agent-sdk-runtime"
 // Type-only reach into claxedo-server source. `e2e/` already imports that package by
@@ -267,7 +267,7 @@ export class HarnessConfigContractError extends Error {
 /** What the server resolves a POST body down to, plus the routing fields it reads alongside. */
 export type ParsedHarnessConfigRequest = {
   /** Resolved via the REAL `normalizeHarnessIdentity`, so this can never drift from the server. */
-  identity: { id: AgentHarnessId; access: AgentHarnessAccess }
+  identity: { id: SessionHarnessId; access: AgentHarnessAccess }
   /**
    * The canonical, access-qualified key the server echoes as `activeType` on the next
    * GET (`harnessKey(saved) ?? …`, agent-config-harness-routes.ts:117). This is NOT
