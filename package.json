@@ -156,6 +156,6 @@
     "@ai-sdk/google@3.0.73": "patches/@ai-sdk%2Fgoogle@3.0.73.patch",
     "@modelcontextprotocol/sdk@1.29.0": "patches/@modelcontextprotocol%2Fsdk@1.29.0.patch",
     "@tanstack/virtual-core@3.17.3": "patches/@tanstack%2Fvirtual-core@3.17.3.patch",
-    "tokentracker-cli@0.75.1": "patches/tokentracker-cli@0.75.1.patch"
+    "tokentracker-cli@0.91.0": "patches/tokentracker-cli@0.91.0.patch"
   }
 }

@@ -4,7 +4,10 @@
  * Copilot, ...), read through tokentracker-cli's library surface.
  *
  * Security constraints on the tokentracker-cli dependency (audited 2026-07-10
- * at 0.75.1; bunfig.toml exempts it from the release-age gate on that basis):
+ * at 0.75.1; bumped to 0.91.0 on 2026-08-21 with a tarball diff review — new
+ * vendor-limit fetchers only talk to their own vendors' endpoints, no install
+ * scripts, no new telemetry in the library path; bunfig.toml exempts it from
+ * the release-age gate on that basis):
  * - Library-only. NEVER invoke its CLI (`sync`/`serve`): those paths contain an
  *   `npx --yes` self-update and a localhost dashboard we must not ship.
  * - `getUsageLimits()` may rewrite provider credential files when it refreshes

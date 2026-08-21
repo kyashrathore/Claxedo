@@ -46,6 +46,6 @@
     "hono": "4.10.7",
     "jose": "6.2.4",
     "opencode": "workspace:*",
-    "tokentracker-cli": "0.75.1"
+    "tokentracker-cli": "0.91.0"
   }
 }

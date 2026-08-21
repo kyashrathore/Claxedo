@@ -119,7 +119,7 @@
     "opencode": "workspace:*",
     "posthog-node": "4.18.0",
     "svix": "1.99.1",
-    "tokentracker-cli": "0.75.1",
+    "tokentracker-cli": "0.91.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
