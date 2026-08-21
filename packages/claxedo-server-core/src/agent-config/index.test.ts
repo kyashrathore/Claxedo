@@ -16,6 +16,7 @@ process.env.CLAXEDO_DATA_DIR = root
 
 const mod = await import("./index")
 const { ControlPlaneAuthError } = await import("@claxedo/server-core/platform/auth/auth")
+const { ClaxedoDB } = await import("../platform/db/db")
 
 function unavailableWorkspaceAuthority() {
   return {
@@ -42,12 +43,18 @@ function processBinary(input: { connection?: { kind: string; binary?: string } }
 
 describe("agent config", () => {
   beforeEach(async () => {
+    // Windows cannot unlink `claxedo.db` while the module-scoped sqlite
+    // handle is open (EBUSY killed 26 of these tests on the Windows lane);
+    // close it so the wipe releases the file. The lazy reopens on next use,
+    // preserving the fresh-database-per-test semantics on every OS.
+    ClaxedoDB.close()
     await fs.rm(root, { recursive: true, force: true })
     mod.configureAgentConfig({})
     delete process.env.CLAXEDO_ACP_DIR
   })
 
   afterAll(async () => {
+    ClaxedoDB.close()
     await fs.rm(root, { recursive: true, force: true })
     process.env.CLAXEDO_DATA_DIR = prev
     if (prevAcpDir === undefined) delete process.env.CLAXEDO_ACP_DIR
@@ -707,11 +714,15 @@ describe("operator ACP connections", () => {
     // The first describe's afterAll restores CLAXEDO_DATA_DIR; pin it back to
     // this file's temp root for every test here.
     process.env.CLAXEDO_DATA_DIR = root
+    // See the first describe's beforeEach: Windows needs the sqlite handle
+    // closed before the wipe can unlink claxedo.db.
+    ClaxedoDB.close()
     await fs.rm(root, { recursive: true, force: true })
     mod.configureAgentConfig({})
   })
 
   afterAll(async () => {
+    ClaxedoDB.close()
     await fs.rm(root, { recursive: true, force: true })
     if (prev === undefined) delete process.env.CLAXEDO_DATA_DIR
     else process.env.CLAXEDO_DATA_DIR = prev

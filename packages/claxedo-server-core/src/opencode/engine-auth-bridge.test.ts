@@ -69,10 +69,18 @@ beforeEach(async () => {
   vi.resetModules()
 })
 
-afterEach(() => {
+afterEach(async () => {
   delete process.env.CLAXEDO_DATA_DIR
   delete process.env.OPENCODE_AUTH_CONTENT
-  fs.rmSync(dataDir, { recursive: true, force: true })
+  // Windows refuses to delete a tree while a sqlite handle inside it is open
+  // (EPERM killed every teardown on the Windows lane). The registry this
+  // test's dynamic imports populated is still current — the next test's
+  // vi.resetModules() has not run yet — so this import reaches the SAME db
+  // module instance the test used, and close() releases the file. maxRetries
+  // additionally rides out transient AV/indexer locks on the runner.
+  const { ClaxedoDB } = await import("../platform/db/db")
+  ClaxedoDB.close()
+  fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 })
 
 /**

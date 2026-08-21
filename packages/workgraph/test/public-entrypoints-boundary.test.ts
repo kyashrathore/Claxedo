@@ -12,6 +12,10 @@ const publishedEntries = [
   "src/matching.ts",
   "src/ports/index.ts",
   "src/conformance/index.ts",
+  // `./runtime-adapter` in the export map: the workspace-runtime route
+  // contributions and operation brokers claxedo-server's compositions mount
+  // (session-gateway.ts, runtime-boot.ts, self-hosted capabilities.ts).
+  "src/runtime-adapter/index.ts",
 ].map((file) => path.join(root, file))
 const retainedInternalRoots = [
   "src/db/schema.ts",

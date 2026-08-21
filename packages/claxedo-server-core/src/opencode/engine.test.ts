@@ -216,7 +216,15 @@ describe("opencode-engine embedded mode", () => {
   test("loads the embedded engine from a configured artifact path instead of bare-specifier resolution", async () => {
     // The desktop-bundled server cannot resolve the bare "opencode" specifier;
     // the composition root hands over an absolute artifact path.
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-embed-"))
+    //
+    // Repo-local scratch rather than os.tmpdir(): on the Windows runner the
+    // temp path is the 8.3 short name C:\Users\RUNNER~1\..., and vitest's
+    // vite-node percent-encodes the `~` in the file URL the dynamic import
+    // resolves through — "Failed to load url C:/Users/RUNNER%7E1/…". A path
+    // under the checkout has no `~` on any platform.
+    const scratch = path.join(import.meta.dirname, "..", "..", ".artifacts", "engine-embed-test")
+    fs.mkdirSync(scratch, { recursive: true })
+    const dir = fs.mkdtempSync(path.join(scratch, "claxedo-embed-"))
     const artifact = path.join(dir, "fake-engine.mjs")
     fs.writeFileSync(
       artifact,
