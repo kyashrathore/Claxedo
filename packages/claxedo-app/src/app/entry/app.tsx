@@ -469,7 +469,13 @@ export function AppInterface(props: {
         path="/login"
         component={() => (
           <Suspense fallback={<Loading />}>
-            <LoginPage />
+            {/* /login mounts OUTSIDE AuthenticatedProviders (it is the page an
+                unauthenticated principal is sent TO), but LoginPage reads the
+                account port — without its own provider here, useAccountPort()
+                throws before Continue ever renders. */}
+            <AccountPortProvider>
+              <LoginPage />
+            </AccountPortProvider>
           </Suspense>
         )}
       />

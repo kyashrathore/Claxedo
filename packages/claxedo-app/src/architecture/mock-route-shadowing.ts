@@ -94,12 +94,29 @@ export const ALLOWED_SHADOWS: AllowedShadow[] = [
       "`if (options.cloud)`, which pattern analysis cannot see, so the pair always reads as a shadow.",
   },
   {
+    shadowed: "**/api/claxedo/workspace/resolve**",
+    shadower: "**/api/claxedo/workspace/resolve**",
+    handsBack: `if (q !== workspaceId && !q.includes(workspaceId)) return r.fallback()`,
+    reason:
+      "Loopback-spelling twin of the `/api/workspace/resolve` pair above: `workspaceResolveUrl` " +
+      "rewrites the path on loopback transports, so both the generic default and the cloud block " +
+      "register both spellings, with the same workspace-id hand-back.",
+  },
+  {
     shadowed: "**/api/claxedo/agent-config/harness/options**",
     shadower: "**/api/claxedo/agent-config/harness**",
     handsBack: `if (new URL(r.request().url()).pathname !== "/api/claxedo/agent-config/harness") return r.fallback()`,
     reason:
       "`/harness`'s trailing `**` also matches `/harness/options`. The exact-pathname guard hands " +
       "the options request back, which is what keeps `requests.harnessOptionsCount` a live signal.",
+  },
+  {
+    shadowed: "**/api/claxedo/agent-config/harness/acp-connections**",
+    shadower: "**/api/claxedo/agent-config/harness**",
+    handsBack: `if (new URL(r.request().url()).pathname !== "/api/claxedo/agent-config/harness") return r.fallback()`,
+    reason:
+      "Same shape as `/harness/options` above: `/harness`'s trailing `**` also matches the operator " +
+      "ACP connection discovery route, and the same exact-pathname guard hands it back.",
   },
   {
     shadowed: "**/session/status**",

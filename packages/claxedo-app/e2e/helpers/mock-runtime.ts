@@ -2590,25 +2590,33 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // unprefixed one let the cloud workspace's resolve fall through to the
     // LOCAL-shaped default, so the draft submit never entered the cloud lane
     // and `cloudPromptCount` stayed 0 for every cloud spec.
-    const cloudWorkspaceResolve = (r: Route) => {
+    const cloudWorkspaceResolveResponse = () => workspaceResolveResponse({
+      id: workspaceId,
+      project_id: CLOUD_PROJECT_ID,
+      directory: workspaceId,
+      remote_directory: workspaceId,
+      kind: "cloud",
+      driver: "daytona",
+      status: "ready",
+      created_at: Date.now(),
+      updated_at: Date.now(),
+    })
+    // The workspace-id hand-back lives INSIDE each registration (not a shared
+    // helper) so the route-shadowing guard can see it verbatim.
+    await contractRoute(page, `**/api/workspace/resolve**`, (r) => {
       if (!api(r)) return r.continue()
       const url = new URL(r.request().url())
       const q = url.searchParams.get("workspaceId") ?? url.searchParams.get("directory") ?? ""
       if (q !== workspaceId && !q.includes(workspaceId)) return r.fallback()
-      return json(r, workspaceResolveResponse({
-        id: workspaceId,
-        project_id: CLOUD_PROJECT_ID,
-        directory: workspaceId,
-        remote_directory: workspaceId,
-        kind: "cloud",
-        driver: "daytona",
-        status: "ready",
-        created_at: Date.now(),
-        updated_at: Date.now(),
-      }))
-    }
-    await contractRoute(page, `**/api/workspace/resolve**`, cloudWorkspaceResolve)
-    await contractRoute(page, `**/api/claxedo/workspace/resolve**`, cloudWorkspaceResolve)
+      return json(r, cloudWorkspaceResolveResponse())
+    })
+    await contractRoute(page, `**/api/claxedo/workspace/resolve**`, (r) => {
+      if (!api(r)) return r.continue()
+      const url = new URL(r.request().url())
+      const q = url.searchParams.get("workspaceId") ?? url.searchParams.get("directory") ?? ""
+      if (q !== workspaceId && !q.includes(workspaceId)) return r.fallback()
+      return json(r, cloudWorkspaceResolveResponse())
+    })
 
     await page.route(`${base}/vcs**`, (r) => json(r, {}))
     await page.route(`${base}/mcp**`, (r) => json(r, {}))
