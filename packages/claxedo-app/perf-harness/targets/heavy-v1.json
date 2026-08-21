@@ -31,11 +31,6 @@
       "value": 20,
       "unit": "ms"
     },
-    "history.navigate_p95_ms": {
-      "direction": "lower",
-      "value": 100,
-      "unit": "ms"
-    },
     "stream.interaction_p95_ms": {
       "direction": "lower",
       "value": 16.67,

@@ -161,8 +161,8 @@ describe("Claxedo agent-app corpus materializer", () => {
         version: 4,
         workspaces: [
           {
-            id: result.projectId,
-            project_id: result.projectId,
+            id: result.workspaces.get("")!.projectId,
+            project_id: result.workspaces.get("")!.projectId,
             workspace_name: "main",
             directory: await realpath(path.join(root, "workspace")),
             kind: "local",

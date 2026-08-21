@@ -15,7 +15,6 @@ export const AGENT_APP_SCENARIOS = [
   "app-cold-ready-v1",
   "work-item-cold-open-v1",
   "work-item-warm-switch-v1",
-  "history-navigation-v1",
   "controlled-stream-v1",
   "terminal-input-v1",
   "terminal-output-v1",

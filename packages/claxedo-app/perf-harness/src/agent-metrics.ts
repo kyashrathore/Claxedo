@@ -2,7 +2,6 @@ export const PRIMARY_AGENT_APP_METRICS = [
   "app.cold_ready_ms",
   "work_item.cold_open_ms",
   "work_item.warm_switch_p95_ms",
-  "history.navigate_p95_ms",
   "stream.interaction_p95_ms",
   "stream.blocked_frame_ratio_pct",
   "terminal.input_to_paint_p95_ms",

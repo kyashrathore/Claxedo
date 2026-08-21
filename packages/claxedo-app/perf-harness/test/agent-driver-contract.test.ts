@@ -13,8 +13,8 @@ describe("agent-app driver contract", () => {
         profiles: ["workspace-core-v1", "conversation-rich-v1", "terminal-core-v1", "resource-core-v1"],
       },
     })
-    expect(hello.capabilities.metrics).toHaveLength(10)
-    expect(new Set(hello.capabilities.metrics).size).toBe(10)
+    expect(hello.capabilities.metrics).toHaveLength(9)
+    expect(new Set(hello.capabilities.metrics).size).toBe(9)
   })
 
   test("decodes T3 lifecycle requests without accepting ambient launch configuration", () => {

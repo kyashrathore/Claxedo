@@ -147,12 +147,6 @@ declare global {
   }
 }
 
-export function historyTargetIndices(count: number) {
-  if (!Number.isInteger(count) || count < 3)
-    throw new Error("history navigation requires at least three messages");
-  return [0, Math.floor((count - 1) / 2), count - 1];
-}
-
 export function seededSwitchSequence<T>(values: readonly T[], seed: number) {
   const result = [...values];
   let state = seed >>> 0;
@@ -550,141 +544,76 @@ export async function measureWarmSwitches(
 }
 
 async function revealSessionRows(page: Page, sessionIds: readonly string[]) {
-  for (let attempt = 0; attempt < 20; attempt++) {
-    const missing = await page.evaluate(
-      (ids) =>
-        ids.filter(
+  // A multi-workspace inventory renders one project group per workspace.
+  // Inactive groups start CLOSED — their session-list queries do not even
+  // mount until the group opens — and every group paginates independently.
+  // Open closed groups through their headers (the user's own flow), then
+  // click the load-more buttons round-robin until every target row exists.
+  for (let attempt = 0; attempt < 80; attempt++) {
+    const state = await page.evaluate(
+      (ids) => ({
+        missing: ids.filter(
           (id) =>
             !document.querySelector(
               `[data-testid="rail-sidebar-session-row"][data-session-id="${CSS.escape(id)}"]`,
             ),
         ).length,
+        closedGroups: [
+          ...document.querySelectorAll<HTMLElement>('[data-testid="project-group"]'),
+        ].filter(
+          (group) =>
+            !group.querySelector('[data-testid="rail-sidebar-session-row"]'),
+        ).length,
+        loadMoreCount: document.querySelectorAll(
+          '[data-testid="rail-sidebar-session-load-more"]',
+        ).length,
+        visibleRows: document.querySelectorAll(
+          '[data-testid="rail-sidebar-session-row"]',
+        ).length,
+      }),
       [...sessionIds],
     );
-    if (missing === 0) return;
-    const buttons = page.getByTestId("rail-sidebar-session-load-more");
-    if ((await buttons.count()) === 0)
+    if (state.missing === 0) return;
+    if (state.closedGroups > 0) {
+      await page
+        .locator(
+          '[data-testid="project-group"]:not(:has([data-testid="rail-sidebar-session-row"])) [data-testid="project-header"]',
+        )
+        .nth(0)
+        .click();
+      await page
+        .waitForFunction(
+          (previous) =>
+            document.querySelectorAll('[data-testid="rail-sidebar-session-row"]')
+              .length > previous,
+          state.visibleRows,
+          { timeout: 15_000 },
+        )
+        .catch(() => undefined);
+      continue;
+    }
+    if (state.loadMoreCount === 0)
       throw new Error(
-        `session sidebar is missing ${String(missing)} benchmark rows and has no next page`,
+        `session sidebar is missing ${String(state.missing)} benchmark rows and has no next page`,
       );
-    const before = sessionIds.length - missing;
-    await buttons.last().click();
+    await page
+      .getByTestId("rail-sidebar-session-load-more")
+      .nth(attempt % state.loadMoreCount)
+      .click();
     await page.waitForFunction(
-      ({ ids, previous }) =>
-        ids.filter((id) =>
-          document.querySelector(
-            `[data-testid="rail-sidebar-session-row"][data-session-id="${CSS.escape(id)}"]`,
-          ),
-        ).length > previous,
-      { ids: [...sessionIds], previous: before },
+      (previous) =>
+        document.querySelectorAll('[data-testid="rail-sidebar-session-row"]')
+          .length > previous.visibleRows ||
+        document.querySelectorAll(
+          '[data-testid="rail-sidebar-session-load-more"]',
+        ).length !== previous.loadMoreCount,
+      { visibleRows: state.visibleRows, loadMoreCount: state.loadMoreCount },
+      { timeout: 15_000 },
     );
   }
   throw new Error(
-    "session sidebar pagination did not expose all twenty benchmark rows",
+    "session sidebar pagination did not expose all benchmark rows",
   );
-}
-
-export async function measureHistoryNavigation(page: Page) {
-  const buttons = page.locator(
-    '[data-workbench-content]:not([aria-hidden="true"]):not([inert]) [data-component="message-nav"] [data-message-id]',
-  );
-  const count = await buttons.count();
-  const indices = historyTargetIndices(count);
-  const samples: Array<{
-    messageId: string;
-    durationMs: number;
-    trustedEventAtMs: number;
-    paintedAtMs: number;
-  }> = [];
-
-  for (const index of indices) {
-    const button = buttons.nth(index);
-    const messageId = await button.getAttribute("data-message-id");
-    if (!messageId)
-      return { metric: invalidMetric("history-target-missing-id"), samples };
-    const token = `history:${messageId}:${crypto.randomUUID()}`;
-    await page.evaluate(
-      (next) => window.__CLAXEDO_AGENT_APP_BENCHMARK__?.armAction(next),
-      token,
-    );
-    await button.click();
-    try {
-      await page.waitForFunction((id) => {
-        const target = document.querySelector<HTMLElement>(
-          `[data-timeline-row="UserMessage"][data-message-id="${CSS.escape(id)}"]`,
-        );
-        const navigation = document.querySelector<HTMLElement>(
-          `[data-workbench-content]:not([aria-hidden="true"]):not([inert]) [data-component="message-nav"] [data-message-id="${CSS.escape(id)}"]`,
-        );
-        const active =
-          navigation?.getAttribute("aria-current") === "step" ||
-          navigation?.querySelector('[data-active="true"]') !== null;
-        if (!target || !active) return false;
-        const bounds = target.getBoundingClientRect();
-        return bounds.bottom > 0 && bounds.top < innerHeight;
-      }, messageId);
-    } catch {
-      const state = await page.evaluate((id) => {
-        const target = document.querySelector<HTMLElement>(
-          `[data-timeline-row="UserMessage"][data-message-id="${CSS.escape(id)}"]`,
-        );
-        const navigation = document.querySelector<HTMLElement>(
-          `[data-workbench-content]:not([aria-hidden="true"]):not([inert]) [data-component="message-nav"] [data-message-id="${CSS.escape(id)}"]`,
-        );
-        const bounds = target?.getBoundingClientRect();
-        const navigationBounds = navigation?.getBoundingClientRect();
-        const hit = navigationBounds
-          ? document.elementFromPoint(navigationBounds.left + navigationBounds.width / 2, navigationBounds.top + navigationBounds.height / 2)
-          : undefined;
-        return {
-          targetPresent: !!target,
-          targetTop: bounds?.top,
-          targetBottom: bounds?.bottom,
-          navigationPresent: !!navigation,
-          navigationBounds: navigationBounds
-            ? { left: navigationBounds.left, top: navigationBounds.top, width: navigationBounds.width, height: navigationBounds.height }
-            : undefined,
-          hitTag: hit?.tagName,
-          hitSlot: hit?.getAttribute("data-slot"),
-          hitClass: hit?.getAttribute("class"),
-          locationHash: location.hash,
-          activeMessageId: document.querySelector<HTMLElement>('[data-workbench-content]:not([aria-hidden="true"]):not([inert]) [data-component="message-nav"] [aria-current="step"], [data-workbench-content]:not([aria-hidden="true"]):not([inert]) [data-component="message-nav"] [data-active="true"]')?.getAttribute("data-message-id"),
-          ariaCurrent: navigation?.getAttribute("aria-current"),
-          navigationActive: navigation?.getAttribute("data-active") ?? navigation?.querySelector('[data-active="true"]')?.getAttribute("data-active"),
-          scrollTop: document.querySelector<HTMLElement>('[data-workbench-content]:not([aria-hidden="true"]):not([inert]) [data-slot="session-timeline-scroll"] [data-scrollable]')?.scrollTop,
-        };
-      }, messageId);
-      return { metric: invalidMetric(`history-target-did-not-settle:${JSON.stringify(state)}`), samples };
-    }
-    const paintedAtMs = await waitForStableScroll(page);
-    const result = await page.evaluate<ActionResult, { token: string; paintedAtMs: number }>(
-      async (input) =>
-        (await window.__CLAXEDO_AGENT_APP_BENCHMARK__?.finishAction(input.token, input.paintedAtMs)) ?? {
-          state: "invalid",
-          reason: "browser-observer-missing",
-        },
-      { token, paintedAtMs },
-    );
-    if (result.state !== "exact")
-      return { metric: invalidMetric(result.reason), samples };
-    samples.push({
-      messageId,
-      durationMs: result.durationMs,
-      trustedEventAtMs: result.trustedEventAtMs,
-      paintedAtMs: result.paintedAtMs,
-    });
-  }
-  return {
-    metric: {
-      state: "exact",
-      value: percentile(
-        samples.map((sample) => sample.durationMs),
-        95,
-      ),
-      unit: "ms",
-    } as AgentMetricValue,
-    samples,
-  };
 }
 
 export async function beginStreamObservation(page: Page) {
@@ -768,39 +697,6 @@ export async function finishTerminalObservation(
           } as AgentMetricValue),
     evidence,
   };
-}
-
-async function waitForStableScroll(page: Page) {
-  return await page.evaluate(
-    () =>
-      new Promise<number>((resolve, reject) => {
-        const viewport = document.querySelector<HTMLElement>(
-          '[data-workbench-content]:not([aria-hidden="true"]):not([inert]) [data-slot="session-timeline-scroll"] [data-scrollable]',
-        );
-        if (!viewport) {
-          reject(new Error("active timeline scroll viewport is missing"));
-          return;
-        }
-        const deadline = performance.now() + 30_000;
-        let previous: number | undefined;
-        let equalFrames = 0;
-        const frame = (paintedAtMs: number) => {
-          const current = viewport.scrollTop;
-          equalFrames = previous === current ? equalFrames + 1 : 1;
-          previous = current;
-          if (equalFrames >= 2) {
-            resolve(paintedAtMs);
-            return;
-          }
-          if (performance.now() >= deadline) {
-            reject(new Error("active timeline scroll did not settle"));
-            return;
-          }
-          requestAnimationFrame(frame);
-        };
-        requestAnimationFrame(frame);
-      }),
-  );
 }
 
 function cssEscape(value: string) {

@@ -21,7 +21,7 @@ export async function loadAgentBenchmarkTargets(path: string): Promise<AgentBenc
   const terminalWorkloadBytes = await readFile(resolve(dirname(path), raw.terminalWorkload.path));
   if (createHash("sha256").update(terminalWorkloadBytes).digest("hex") !== raw.terminalWorkload.sha256) throw new Error("target manifest terminal workload hash does not match");
   const keys = Object.keys(raw.absoluteBudgets ?? {});
-  if (keys.length !== PRIMARY_AGENT_APP_METRICS.length || PRIMARY_AGENT_APP_METRICS.some((metric) => !keys.includes(metric))) throw new Error("target manifest must declare exactly all ten metrics");
+  if (keys.length !== PRIMARY_AGENT_APP_METRICS.length || PRIMARY_AGENT_APP_METRICS.some((metric) => !keys.includes(metric))) throw new Error("target manifest must declare exactly the primary metric set");
   for (const metric of PRIMARY_AGENT_APP_METRICS) {
     const target = raw.absoluteBudgets[metric];
     if (!target || !["lower", "higher"].includes(target.direction) || !Number.isFinite(target.value) || target.value <= 0 || !target.unit) throw new Error(`invalid absolute target for ${metric}`);

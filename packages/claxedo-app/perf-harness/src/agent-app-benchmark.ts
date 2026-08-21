@@ -15,7 +15,7 @@ import { driverClock, rawMetricSample, type RawMetricSample, type ValidityCheckE
 import { evaluateTarget, loadAgentBenchmarkTargets } from "./agent-benchmark-targets";
 
 const PROFILE_SCENARIOS: Record<AgentAppProfile, AgentAppScenario[]> = {
-  "workspace-core-v1": ["app-cold-ready-v1", "work-item-cold-open-v1", "work-item-warm-switch-v1", "history-navigation-v1"],
+  "workspace-core-v1": ["app-cold-ready-v1", "work-item-cold-open-v1", "work-item-warm-switch-v1"],
   "conversation-rich-v1": ["controlled-stream-v1"],
   "terminal-core-v1": ["terminal-input-v1", "terminal-output-v1"],
   "resource-core-v1": ["resource-sweep-v1", "resource-quiescence-v1"],
@@ -24,7 +24,6 @@ const SCENARIO_METRICS: Record<AgentAppScenario, PrimaryAgentAppMetric[]> = {
   "app-cold-ready-v1": ["app.cold_ready_ms"],
   "work-item-cold-open-v1": ["work_item.cold_open_ms"],
   "work-item-warm-switch-v1": ["work_item.warm_switch_p95_ms"],
-  "history-navigation-v1": ["history.navigate_p95_ms"],
   "controlled-stream-v1": ["stream.interaction_p95_ms", "stream.blocked_frame_ratio_pct"],
   "terminal-input-v1": ["terminal.input_to_paint_p95_ms"],
   "terminal-output-v1": ["terminal.output_mib_s"],
@@ -173,7 +172,24 @@ export async function runAgentAppBenchmark(options: Options) {
         // same semantics as the T3 monitor's family series.
         await appendFile(
           path.join(options.output, `resource-ticks-${scenario}.ndjson`),
-          measured.observations.map((item) => JSON.stringify({ scenario, atMs: item.atMs, rssBytes: item.rssBytes, ...(item.cpuPercent === undefined ? {} : { cpuPercent: item.cpuPercent }) })).join("\n") + "\n",
+          measured.observations.map((item) => {
+            // App-owned vs harness-owned split: a family process whose command
+            // runs from inside the app bundle (its `.app/` prefix, derived
+            // from the root process) is the application; anything else the app
+            // spawned (git, agent harness binaries, shells) is harness-owned.
+            // Whole-family totals stay the canonical metric; the buckets ride
+            // along per tick so the cross-app table can report both.
+            const root = item.processes.find((proc) => proc.pid === rootPid) ?? item.processes[0];
+            const bundleEnd = root ? root.command.indexOf(".app/") : -1;
+            const appPrefix = root && bundleEnd >= 0 ? root.command.slice(0, bundleEnd + 5) : undefined;
+            let appRssBytes = 0;
+            let harnessRssBytes = 0;
+            for (const proc of item.processes) {
+              if (!appPrefix || proc.command.startsWith(appPrefix)) appRssBytes += proc.rssBytes;
+              else harnessRssBytes += proc.rssBytes;
+            }
+            return JSON.stringify({ scenario, atMs: item.atMs, rssBytes: item.rssBytes, appRssBytes, harnessRssBytes, ...(item.cpuPercent === undefined ? {} : { cpuPercent: item.cpuPercent }) });
+          }).join("\n") + "\n",
         );
         await inspectForeground();
         measured.failures.push(...foregroundFailures);

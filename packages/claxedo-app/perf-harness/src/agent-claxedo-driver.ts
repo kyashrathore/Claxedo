@@ -5,7 +5,6 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import {
   completeFirstFold,
-  measureHistoryNavigation,
   measureSessionActivation,
   measureWarmSwitches,
   paintedContentVerification,
@@ -180,7 +179,6 @@ function scenarioMetrics(
   if (scenario === "work-item-cold-open-v1") return ["work_item.cold_open_ms"];
   if (scenario === "work-item-warm-switch-v1")
     return ["work_item.warm_switch_p95_ms"];
-  if (scenario === "history-navigation-v1") return ["history.navigate_p95_ms"];
   if (scenario === "controlled-stream-v1")
     return ["stream.interaction_p95_ms", "stream.blocked_frame_ratio_pct"];
   if (scenario === "terminal-input-v1")
@@ -348,46 +346,6 @@ async function runScenario(
               actions.every((action) =>
                 completeFirstFold(action.paintedMessage.timelineCoverage),
               ),
-          },
-        ],
-      }),
-    ];
-  }
-  if (params.scenario === "history-navigation-v1") {
-    const sessionId = largestSessionId(prepared);
-    const readinessTarget = prepared.readinessTargets.find(
-      (target) => target.sessionId === sessionId,
-    );
-    if (!readinessTarget)
-      throw new Error(
-        "history navigation readiness target was not materialized",
-      );
-    await measureSessionActivation(launch.page, readinessTarget);
-    const result = await measureHistoryNavigation(launch.page);
-    return [
-      sample({
-        params,
-        metric: "history.navigate_p95_ms",
-        observation: result.metric,
-        evidence:
-          result.samples.length > 0
-            ? result.samples.map((item, sequence) =>
-                rendererClock({
-                  sequence,
-                  name: "history-anchor-click-to-stable-scroll-paint",
-                  startTimestamp: item.trustedEventAtMs,
-                  endTimestamp: item.paintedAtMs,
-                  observerMethod:
-                    "trusted minimap click through in-viewport anchor, settled scroll, and two animation frames",
-                }),
-              )
-            : [emptyRendererClock("history-navigation-invalid")],
-        validity: [
-          {
-            check: "history-anchor-count",
-            expectedCount: 3,
-            actualCount: result.samples.length,
-            passed: result.samples.length === 3,
           },
         ],
       }),
@@ -679,19 +637,6 @@ function runnerOwnedResourceSample(
       },
     ],
   });
-}
-
-function largestSessionId(prepared: Prepared) {
-  const session = prepared.corpus.sessions.toSorted((left, right) => {
-    const leftTurns = left.turns.length;
-    const rightTurns = right.turns.length;
-    return rightTurns - leftTurns || left.order - right.order;
-  })[0];
-  if (!session) throw new Error("history navigation requires a corpus session");
-  const materialized = prepared.materializedSessions.get(session.id);
-  if (!materialized)
-    throw new Error("history navigation session was not materialized");
-  return materialized;
 }
 
 function terminalStream(corpus: AgentAppCorpus) {

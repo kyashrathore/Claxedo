@@ -20,7 +20,7 @@ describe("authoritative Claxedo agent-app benchmark infrastructure", () => {
     expect(agentAppViewport("linux")).toEqual({ width: 1440, height: 900 });
   });
 
-  test("expands --profiles all into the exact four-profile ten-metric contract", () => {
+  test("expands --profiles all into the exact four-profile nine-metric contract", () => {
     const options = parseAgentBenchmarkOptions([
       "--app", "/tmp/Claxedo Dev.app", "--profiles", "all", "--run-profile", "iteration",
       "--seed", "1729", "--targets", targetsPath, "--output", "/tmp/evidence",
@@ -32,9 +32,9 @@ describe("authoritative Claxedo agent-app benchmark infrastructure", () => {
     ], "/")).toThrow("belongs to U11");
   });
 
-  test("loads ten independent absolute budgets and no T3 target", async () => {
+  test("loads nine independent absolute budgets and no T3 target", async () => {
     const targets = await loadAgentBenchmarkTargets(targetsPath);
-    expect(Object.keys(targets.absoluteBudgets)).toHaveLength(10);
+    expect(Object.keys(targets.absoluteBudgets)).toHaveLength(9);
     expect(targets.application).toBe("Claxedo");
     expect(JSON.stringify(targets)).not.toContain("smokeMedians");
   });
@@ -76,7 +76,7 @@ describe("authoritative Claxedo agent-app benchmark infrastructure", () => {
     expect(validateHostTransition(before, { ...after, displays: { ...after.displays, sha256: "b".repeat(64) } })).toContain("display-configuration-changed");
   });
 
-  test("retains a complete typed-invalid ten-metric attempt when preflight cannot launch the app", async () => {
+  test("retains a complete typed-invalid nine-metric attempt when preflight cannot launch the app", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "claxedo-agent-orchestrator-"));
     const output = path.join(root, "attempt");
     try {
@@ -86,11 +86,11 @@ describe("authoritative Claxedo agent-app benchmark infrastructure", () => {
       ]));
       expect(result.exitCode).toBe(1);
       expect(result.manifest.validity).toBe("invalid");
-      expect(result.manifest.samples).toHaveLength(10);
+      expect(result.manifest.samples).toHaveLength(9);
       expect(result.manifest.samples.every((sample) => sample.validity.status === "invalid")).toBe(true);
       expect(result.manifest.summary.every((metric) => metric.validSamples === 0 && metric.excludedInvalidSamples === 1)).toBe(true);
       const persisted = JSON.parse(await readFile(path.join(output, "attempt.json"), "utf8"));
-      expect(persisted.samples).toHaveLength(10);
+      expect(persisted.samples).toHaveLength(9);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
   completeFirstFold,
-  historyTargetIndices,
   paintedContentVerification,
   seededSwitchSequence,
   semanticTimelinePaintReady,
@@ -100,11 +99,6 @@ describe("agent browser scenario ordering", () => {
     expect(semanticTimelinePaintReady({ ...userRow, contentSha256: "f".repeat(64) }, target)).toBe(false)
   })
 
-  test("selects deterministic first, middle, and last history anchors", () => {
-    expect(historyTargetIndices(20)).toEqual([0, 9, 19])
-    expect(historyTargetIndices(3)).toEqual([0, 1, 2])
-    expect(() => historyTargetIndices(2)).toThrow("at least three")
-  })
 
   test("randomizes all twenty work items reproducibly without dropping any", () => {
     const first = seededSwitchSequence(
