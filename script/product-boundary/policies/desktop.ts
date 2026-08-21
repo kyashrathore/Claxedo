@@ -175,7 +175,9 @@ export const desktopRendererUnsigned: Policy = {
     requiredPackages: ["solid-js", "@claxedo/workgraph"],
   },
 
-  ceilings: { modules: 900, packages: 62 },
+  // 901: /login wraps LoginPage in AccountPortProvider (app/entry/app.tsx),
+  // pulling the provider module into the unsigned renderer closure.
+  ceilings: { modules: 901, packages: 62 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

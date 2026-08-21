@@ -329,7 +329,6 @@
  *   against directly.
  */
 import { expect, test, type Page } from "@playwright/test"
-import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION } from "@claxedo/agent-event-runtime"
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -776,8 +775,11 @@ function completeSubagent(
   sessionId: string,
   subagentKey: string,
 ) {
-  mock.emitFlat({
-    contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
+  // `subagent-updated` is consumed ONLY by the app's `/api/wr/runtime-events`
+  // loop (provider.tsx → applySubagentRuntimeEventEnvelope). Since the mock
+  // split its fanouts, emitFlat() feeds the compat streams alone — a runtime
+  // envelope must go through emitRuntime() to reach that route.
+  mock.emitRuntime({
     directory,
     sessionId,
     payload: {
@@ -786,7 +788,7 @@ function completeSubagent(
       revision: 2,
       status: "completed",
     },
-  } as never)
+  })
 }
 
 const assistantContent = () => SELECTORS.assistantContentVisible
