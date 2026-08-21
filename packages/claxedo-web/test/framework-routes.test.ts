@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test"
+import { sep } from "node:path"
+import { fileURLToPath } from "node:url"
 
 const root = new URL("../", import.meta.url)
-const mdxFiles = (directory: URL) => Array.fromAsync(new Bun.Glob("**/*.mdx").scan({ cwd: directory.pathname }))
+// fileURLToPath, not URL.pathname (renders as /D:/... on Windows), and the
+// scan emits host separators while the assertions below pin URL-style slugs.
+const mdxFiles = async (directory: URL) =>
+  (await Array.fromAsync(new Bun.Glob("**/*.mdx").scan({ cwd: fileURLToPath(directory) }))).map((file) => file.split(sep).join("/"))
 
 describe("framework routes", () => {
   test("preserves every Mintlify suffix beneath /framework", async () => {

@@ -405,16 +405,27 @@ describe("workspace relay composed runtime path", () => {
       expect(first.value).toEqual(large.slice(0, first.value!.byteLength))
       expect(await readAll(rawReader, first.value)).toEqual(large)
 
-      const pty = await relayFetch("/api/wr/pty", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          command: "/bin/sh",
-          cwd: ".",
-        }),
-      })
+      // A relay 503 here is `upstream_unavailable`: its proxied fetch to the
+      // runtime child threw at that instant (a reused keep-alive socket the
+      // child had already dropped) — transient by construction, since the
+      // raw-file stream above just round-tripped through the same runtime.
+      // Retry that one case briefly instead of failing the suite on it.
+      const createPty = () =>
+        relayFetch("/api/wr/pty", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            command: "/bin/sh",
+            cwd: ".",
+          }),
+        })
+      let pty = await createPty()
+      for (let attempt = 0; pty.status === 503 && attempt < 20; attempt++) {
+        await Bun.sleep(100)
+        pty = await createPty()
+      }
       expect(pty.status).toBe(200)
       const info = await pty.json() as { id: string }
       // Bun WS clients send no Origin header by default, but
@@ -524,16 +535,27 @@ describe("workspace relay composed runtime path", () => {
       expect(first.value).toEqual(large.slice(0, first.value!.byteLength))
       expect(await readAll(rawReader, first.value)).toEqual(large)
 
-      const pty = await relayFetch("/api/wr/pty", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          command: "/bin/sh",
-          cwd: ".",
-        }),
-      })
+      // A relay 503 here is `upstream_unavailable`: its proxied fetch to the
+      // runtime child threw at that instant (a reused keep-alive socket the
+      // child had already dropped) — transient by construction, since the
+      // raw-file stream above just round-tripped through the same runtime.
+      // Retry that one case briefly instead of failing the suite on it.
+      const createPty = () =>
+        relayFetch("/api/wr/pty", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            command: "/bin/sh",
+            cwd: ".",
+          }),
+        })
+      let pty = await createPty()
+      for (let attempt = 0; pty.status === 503 && attempt < 20; attempt++) {
+        await Bun.sleep(100)
+        pty = await createPty()
+      }
       expect(pty.status).toBe(200)
       const info = await pty.json() as { id: string }
 

@@ -7,7 +7,10 @@ const check = process.argv.includes("--check")
 
 const redirects = (await readdir(source, { recursive: true, withFileTypes: true }))
   .filter((entry) => entry.isFile() && entry.name.endsWith(".mdx"))
-  .map((entry) => path.relative(source, path.join(entry.parentPath, entry.name)).replace(/\.mdx$/, ""))
+  // Slugs are URL path segments, so normalize the host separators Windows'
+  // path.relative emits — otherwise --check regenerates a manifest that can
+  // never match the committed forward-slash one.
+  .map((entry) => path.relative(source, path.join(entry.parentPath, entry.name)).split(path.sep).join("/").replace(/\.mdx$/, ""))
   .map((slug) => slug === "index" ? "" : slug.replace(/\/index$/, ""))
   .sort()
   .map((slug) => ({
