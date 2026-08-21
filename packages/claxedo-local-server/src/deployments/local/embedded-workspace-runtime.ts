@@ -74,26 +74,26 @@ let configuredProcessObserver: ProcessObserver | undefined
 let configuredOnSessionMetaEvent: ((event: OpencodeEvent) => void) | undefined
 /**
  * Process-global tap on the ENGINE's own `/global/event` SSE stream (via the
- * configured opencode transport, one engine per process), forwarding every
- * frame to `configuredOnSessionMetaEvent`. Two disjoint producers feed that
- * sink:
+ * configured opencode transport, one engine per process), forwarding ONLY the
+ * engine's async session-meta events (`session.created`/`session.updated` —
+ * e.g. its LLM-driven rename) to `configuredOnSessionMetaEvent`. Everything
+ * else the sink needs arrives through each workspace host's `onCompatEvent`
+ * hub subscription (see `options()`): the harness-neutral session service
+ * publishes ACP/native-adapter turn events ONLY into the hub, and the
+ * opencode compat adapter REPUBLISHES engine turn events into the hub once
+ * real work starts — so the hub alone is the complete, exactly-once turn
+ * stream for the control plane's turn meter. The engine's async rename is
+ * the one event class that never reaches the hub, which is all this tap
+ * carries.
  *
- *  - THIS tap: engine-side events — classic opencode sessions' turn events
- *    and the engine's async title generation — which never enter the runtime
- *    hub, and
- *  - each workspace host's `onCompatEvent` hub subscription (see `options()`):
- *    ACP/native-adapter turns run through the harness-neutral session service,
- *    which publishes ONLY into the hub.
- *
- * The pre-split bridge tapped the runtime's `/global/event` route instead —
- * a multiplexer that serves the engine stream while the opencode transport is
- * live and the hub otherwise. With the embedded engine that transport is live
- * from boot, so the multiplexed tap latched onto the engine stream even for a
- * workspace whose default harness later flipped to an ACP adapter, and every
- * ACP turn's `session.usage` bypassed the control plane's turn meter (the
- * tier-real claude-acp scenario: three visible turns, zero usage facts).
- * Tapping the engine directly and subscribing to the hub separately covers
- * both without double delivery.
+ * MEASURED, both failure modes: the pre-split bridge tapped the runtime's
+ * multiplexing `/global/event` route, which with the always-live embedded
+ * engine latched onto the engine stream even for an ACP-default workspace —
+ * ACP turns then bypassed the meter entirely (tier-real claude-acp: three
+ * visible turns, ZERO usage facts). Forwarding the engine tap unfiltered
+ * alongside the hub double-counts opencode turns instead (tier-real
+ * opencode: three turns, SIX facts — raw engine ids plus hub-republished
+ * aliased ids).
  */
 let engineSessionEvents: OpencodeEventsHandle | undefined
 let configuredOnSessionMetaCreated: ((workspace: Workspace, session: unknown) => Promise<void> | void) | undefined
@@ -161,12 +161,12 @@ function options(
     ...(configuredRouteContributions.length ? { routeContributions: configuredRouteContributions } : {}),
     ...(configuredProcessObserver ? { processObserver: configuredProcessObserver } : {}),
     ...(configuredOnTurnOutcome ? { onTurnOutcome: configuredOnTurnOutcome } : {}),
-    // Hub-side compat events: ACP/native-adapter turns publish their
-    // `session.usage`/`message.updated`/lifecycle events ONLY into this
-    // host's event hub (the harness-neutral session service), never on the
-    // engine's stream — forward them to the same host sink the engine tap
-    // feeds so the control plane's turn meter and session-meta projection see
-    // both producers. See `engineSessionEvents` for the pairing.
+    // Hub-side compat events: the complete, exactly-once turn stream — the
+    // harness-neutral session service publishes ACP/native-adapter turns
+    // here, and the opencode compat adapter republishes engine turns here
+    // once real work starts. Forwarded to the same host sink the (session-
+    // meta-only) engine tap feeds; see `engineSessionEvents` for why the
+    // split is exactly this way.
     ...(configuredOnSessionMetaEvent
       ? { onCompatEvent: (event: OpencodeEvent) => configuredOnSessionMetaEvent?.(event) }
       : {}),
@@ -313,7 +313,14 @@ export async function ensureEmbeddedWorkspaceRuntime(
     // route. The handler reads the configured sink at dispatch so a later
     // `configureEmbeddedWorkspaceRuntime` call takes effect without rewiring.
     const sessionEvents = createOpencodeEvents(configuredOpencodeRequest)
-    sessionEvents.on((event) => configuredOnSessionMetaEvent?.(event))
+    sessionEvents.on((event) => {
+      // Session meta only — turn events reach the sink exactly once via the
+      // hub (see `engineSessionEvents`); an unfiltered forward double-counts
+      // opencode turns in the usage meter.
+      const type = event.payload.type
+      if (type !== "session.created" && type !== "session.updated") return
+      configuredOnSessionMetaEvent?.(event)
+    })
     engineSessionEvents = sessionEvents
   }
   if (config === "sync") await configure(runtime)
