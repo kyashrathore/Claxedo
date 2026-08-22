@@ -8,6 +8,7 @@
     "run:debug": "bun src/cli.ts run --all --debug",
     "run:headed": "bun src/cli.ts run --all --headed",
     "agent-driver": "bun src/agent-claxedo-driver.ts",
+    "public-agent-driver": "bun src/public-agent-app-driver.ts",
     "report": "bun src/cli.ts report",
     "list": "bun src/cli.ts list",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -20,5 +21,8 @@
     "effect": "4.0.0-beta.83",
     "playwright": "1.61.1",
     "typescript": "5.8.2"
+  },
+  "dependencies": {
+    "agent-app-benchmark": "github:kyashrathore/agent-app-benchmark#78aa27c"
   }
 }
