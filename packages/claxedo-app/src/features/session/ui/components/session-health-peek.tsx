@@ -56,14 +56,30 @@ export function SessionHealthPeek(props: {
   // fresh rather than waiting a full interval. `probeHealth` hits the harness
   // route directly (not `reprobe`, which short-circuits an existing session on
   // its stored config and never sees live degradation).
+  //
+  // A hidden window skips the tick — polling a window nobody can see spends
+  // network and server CPU for a peek that cannot be read. The visibilitychange
+  // probe below re-checks the moment the window returns, so T4's "within one
+  // poll interval" holds for any visible window.
   createEffect(() => {
     if (!selection) return
     // Track the scope so a session/directory change restarts the poll.
     scope()
     props.directory()
     probe()
-    const id = setInterval(probe, props.intervalMs ?? HARNESS_HEALTH_POLL_INTERVAL_MS)
-    onCleanup(() => clearInterval(id))
+    const tick = () => {
+      if (document.visibilityState !== "visible") return
+      probe()
+    }
+    const id = setInterval(tick, props.intervalMs ?? HARNESS_HEALTH_POLL_INTERVAL_MS)
+    const onVisible = () => {
+      if (document.visibilityState === "visible") probe()
+    }
+    document.addEventListener("visibilitychange", onVisible)
+    onCleanup(() => {
+      clearInterval(id)
+      document.removeEventListener("visibilitychange", onVisible)
+    })
   })
 
   return (

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { QueryClient } from "@tanstack/solid-query"
 import type { WorkspaceGroup } from "@/features/session/data/sync/global-sync-types"
 import {
   controlPlaneSessionToItem,
@@ -600,6 +601,7 @@ describe("global sync inventory source helpers", () => {
   test("inventory page source uses local control sessions for loopback global pages", async () => {
     const requests: string[] = []
     const source = createInventoryPageSource({
+      queryClient: immediateQueryClient(),
       baseUrl: () => "http://127.0.0.1:4096",
       pageSize: 2,
       platformFetch: () => async (resource) => {
@@ -627,6 +629,7 @@ describe("global sync inventory source helpers", () => {
   test("inventory page source dedupes concurrent workspace group requests", async () => {
     let calls = 0
     const source = createInventoryPageSource({
+      queryClient: immediateQueryClient(),
       baseUrl: () => "https://app.test",
       pageSize: 2,
       platformFetch: () => undefined,
@@ -664,6 +667,7 @@ describe("global sync inventory source helpers", () => {
       { sessionID: `ses_${index}_b`, directory, createdAt: 1, updatedAt: index * 2 + 1 },
     ])
     const source = createInventoryPageSource({
+      queryClient: immediateQueryClient(),
       baseUrl: () => "http://127.0.0.1:4096",
       pageSize: 1,
       platformFetch: () => async (url) => {
@@ -684,6 +688,64 @@ describe("global sync inventory source helpers", () => {
       expect(group.total).toBe(2)
       expect(group.hasMore).toBe(true)
     }
+  })
+
+  // Falsifier for the boot request graph's 4x GET /api/claxedo/session: the
+  // snapshot's flat + grouped fetches run concurrently, and the sidebar fires
+  // back-to-back workspace reloads right after. With a real query client the
+  // local control list carries the same CONTROL_SESSIONS_DEDUPE_MS contract
+  // as the signed control-plane lists, so all of them read ONE request.
+  test("local control-session list is fetched once across the snapshot pair and immediate reloads", async () => {
+    const requested: string[] = []
+    const source = createInventoryPageSource({
+      queryClient: new QueryClient(),
+      baseUrl: () => "http://127.0.0.1:4096",
+      pageSize: 2,
+      platformFetch: () => async (url) => {
+        requested.push(String(url))
+        await Promise.resolve()
+        return jsonResponse({
+          sessions: [{ sessionID: "ses_1", directory: "/repo/a", createdAt: 1, updatedAt: 1 }],
+        })
+      },
+      hasSignedAccess: () => false,
+      signedWorkspaceProjects: () => [],
+      signedInventorySource: emptySignedInventorySource(),
+    })
+
+    // The boot snapshot: flat list and grouped list, concurrently.
+    const [flat, grouped] = await Promise.all([
+      source.fetchGlobalList({ limit: 100 }),
+      source.fetchWorkspaceGrouped({ perGroup: 2 }),
+    ])
+    // The sidebar's sequential reload right after the snapshot settled.
+    const reloaded = await source.fetchWorkspaceGrouped({ perGroup: 2 })
+
+    expect(requested).toHaveLength(1)
+    expect(flat.data.map((item) => item.id)).toEqual(["ses_1"])
+    expect(grouped[0]?.sessions.map((item) => item.id)).toEqual(["ses_1"])
+    expect(reloaded).toEqual(grouped)
+  })
+
+  test("local control-session dedupe is scoped per directory", async () => {
+    const requested: string[] = []
+    const source = createInventoryPageSource({
+      queryClient: new QueryClient(),
+      baseUrl: () => "http://127.0.0.1:4096",
+      pageSize: 2,
+      platformFetch: () => async (url) => {
+        requested.push(String(url))
+        return jsonResponse({ sessions: [] })
+      },
+      hasSignedAccess: () => false,
+      signedWorkspaceProjects: () => [],
+      signedInventorySource: emptySignedInventorySource(),
+    })
+
+    await source.fetchGlobalList({ limit: 2, directory: "/repo/a" })
+    await source.fetchGlobalList({ limit: 2, directory: "/repo/b" })
+
+    expect(requested.map((item) => new URL(item).searchParams.get("directory"))).toEqual(["/repo/a", "/repo/b"])
   })
 })
 

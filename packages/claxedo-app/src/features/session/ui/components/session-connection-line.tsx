@@ -48,15 +48,26 @@ export function SessionConnectionLine(props: { workspaceId: Accessor<string | un
 
   const visible = createMemo(() => shouldShowConnectionLine(streamSyncLifecycleSnapshot(streamId())))
 
+  // STABLE ROOT, VISIBILITY BY CSS — deliberately not a `<Show>`. This line
+  // flaps with stream health (live ↔ reconnect-scheduled), and it renders in
+  // the composer's `beforeInput` slot as a SIBLING of the prompt input. A
+  // `<Show>` mount/unmount changes that slot's rendered shape, and the
+  // resulting insertExpression reconcile rebuilds the dock's children — the
+  // focused contenteditable is removed and re-inserted, dropping focus to
+  // <body> and closing any open composer popover mid-typing (observed: every
+  // pill unmount blurred the composer and killed the slash popover). Keeping
+  // one stable node and toggling `display` gives the same zero-chrome result
+  // with no sibling DOM churn.
   return (
-    <Show when={visible()}>
-      <div
-        role="status"
-        aria-live="polite"
-        class="flex items-center justify-center gap-2 px-4 py-1 text-13-regular text-text-weak"
-      >
+    <div
+      role="status"
+      aria-live="polite"
+      class="flex items-center justify-center gap-2 px-4 py-1 text-13-regular text-text-weak"
+      style={{ display: visible() ? undefined : "none" }}
+    >
+      <Show when={visible()}>
         <Spinner class="size-4" /> Reconnecting…
-      </div>
-    </Show>
+      </Show>
+    </div>
   )
 }

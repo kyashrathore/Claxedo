@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { Timeline, TimelineRow } from "./message-timeline.data"
+import { Timeline } from "./message-timeline.data"
+import { TimelineRow } from "./timeline-row-model"
 import type { AssistantMessage, Part, UserMessage } from "@opencode-ai/sdk/v2"
 
 /**

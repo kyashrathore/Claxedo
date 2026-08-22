@@ -1,13 +1,14 @@
 import { createSignal, type Accessor } from "solid-js"
-import { ChatClient } from "@tanstack/ai-client"
+import type { ChatClient } from "@tanstack/ai-client"
 import type { ConnectConnectionAdapter } from "@tanstack/ai-solid"
-import { EventType, type StreamChunk } from "@tanstack/ai/client"
+import type { EventType, StreamChunk } from "@tanstack/ai/client"
 import type { UIMessage } from "@tanstack/ai"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import type { ConversationChatHandle } from "./opencode-conversation"
 import { conversationPersistence } from "./conversation-persistence"
 import { compactConversationSnapshot } from "./conversation-snapshot"
+import { estimateConversationMemory } from "./conversation-memory"
 
 /**
  * One canonical conversation store per session: a registry-owned TanStack
@@ -15,10 +16,16 @@ import { compactConversationSnapshot } from "./conversation-snapshot"
  * query cache is its durable backing (rehydrate on construct via
  * `initialMessages`, persist on every change via `onMessagesChange`), so the
  * conversation survives unmount/remount and stays readable synchronously.
+ *
+ * The `@tanstack/ai-client` runtime is deliberately NOT on the eager boot
+ * chunk (see scripts/forbidden-eager-deps.config.ts). Each entry starts on a
+ * synchronous query-cache-backed buffer and swaps to the real `ChatClient`
+ * once the lazily-imported module resolves; `entry.ready` settles at the swap.
  */
 export type ConversationChatEntry = {
   sessionID: string
-  client: ChatClient
+  /** Resolves once the lazily-loaded `ChatClient` backs this entry. */
+  ready: Promise<void>
   /** Per-session reactivity. Bumps whenever this session's messages change. */
   version: Accessor<number>
   /** `{messages,setMessages}` adapter so `opencode-conversation.ts` is unchanged. */
@@ -41,13 +48,79 @@ export function writeConversationSnapshot(sessionID: string, snapshot: UIMessage
   queryClient.setQueryData(conversationSnapshotKey(sessionID), compactConversationSnapshot(snapshot) ?? [])
 }
 
+/**
+ * Memo table for {@link cachedConversationBytes}, keyed on the snapshot array
+ * itself. Not module state in the sense the architecture ratchet guards: it
+ * carries no authority and nothing reads it for truth — every entry is a pure
+ * function of its own key, so it cannot drift, and a dropped transcript takes
+ * its entry with it rather than needing a cleanup path.
+ */
+const conversationBytesMemo = new WeakMap<object, { at: number; bytes: number }>()
+
+/**
+ * Estimated payload bytes of a session's cached transcript, for the memory
+ * ceiling that bounds total retained conversation size.
+ *
+ * `estimateConversationMemory` is a deep walk over every message, part and
+ * string — proportional to the very bytes it is counting. The ceiling runs on
+ * every session hydration and must consider every cached session, so walking
+ * each one every time would make switching sessions cost O(all retained bytes).
+ *
+ * Validated on BOTH the array's identity and the query's `dataUpdatedAt`,
+ * because neither alone is sufficient: `compactConversationSnapshot` returns the
+ * caller's array untouched when there is nothing to dedupe, so a transcript can
+ * grow behind a stable reference, while a rewrite with identical content bumps
+ * the timestamp without changing anything. Either signal moving re-walks; only
+ * a genuinely untouched transcript is served from the memo.
+ *
+ * `allowStale` serves the last measurement for a session the caller has already
+ * decided it cannot evict. A streaming transcript changes on every delta, so it
+ * would otherwise miss the memo on every single pass — putting a full re-walk
+ * (~2 ms per MB) on the session-switch path in exchange for refining a number
+ * that cannot change the outcome. A never-measured session is still walked.
+ */
+export function cachedConversationBytes(sessionID: string, options?: { allowStale?: boolean }) {
+  const query = queryClient.getQueryCache().find({ queryKey: conversationSnapshotKey(sessionID) })
+  const messages = query?.state.data as UIMessage[] | undefined
+  if (!messages) return 0
+  const at = query?.state.dataUpdatedAt ?? 0
+  const memo = conversationBytesMemo.get(messages)
+  if (memo && (options?.allowStale || memo.at === at)) return memo.bytes
+  const bytes = estimateConversationMemory(messages).totalBytes
+  conversationBytesMemo.set(messages, { at, bytes })
+  return bytes
+}
+
+// Lazy boundary for the ai-client runtime (ChatClient body + SSE→parts stream
+// processor, ~22-28 KB gz). Kicked off on first entry construction; memoized so
+// every session shares one in-flight load.
+type ChatClientRuntime = {
+  ChatClient: typeof ChatClient
+  EventType: typeof EventType
+}
+
+let chatClientRuntime: Promise<ChatClientRuntime> | undefined
+
+function loadChatClientRuntime() {
+  chatClientRuntime ??= Promise.all([
+    import("@tanstack/ai-client"),
+    import("@tanstack/ai/client"),
+  ]).then(([clientModule, aiClientModule]) => ({
+    ChatClient: clientModule.ChatClient,
+    EventType: aiClientModule.EventType,
+  }))
+  return chatClientRuntime
+}
+
 // Placeholder transport until the subscribe-mode claxedo adapter lands (W1-P3).
 // The live event path still flows through `applyRegisteredConversationEvent`,
-// so this connection is never the source of streamed messages today.
+// so this connection is never the source of streamed messages today. Only a
+// constructed ChatClient can invoke it, so the runtime await below is settled.
 const noopConnection: ConnectConnectionAdapter = {
   async *connect(_messages, _data, _abortSignal, runContext) {
+    const runtime = await loadChatClientRuntime()
     yield {
-      type: EventType.RUN_FINISHED,
+      type: runtime.EventType.RUN_FINISHED,
       threadId: runContext?.threadId ?? "claxedo",
       runId: runContext?.runId ?? "noop",
       finishReason: "stop",
@@ -57,25 +130,38 @@ const noopConnection: ConnectConnectionAdapter = {
 
 export function createConversationChatClient(sessionID: string): ConversationChatEntry {
   const [version, setVersion] = createSignal(0)
-  const client = new ChatClient({
-    id: sessionID,
-    // Sync seed from the query cache (instant within a tab session). The IDB
-    // persistence adapter additionally async-hydrates on construct so the
-    // conversation survives a full reload (it is race-guarded against newer
-    // messages by ChatClient).
-    initialMessages: readConversationSnapshot(sessionID) ?? [],
-    connection: noopConnection,
-    persistence: conversationPersistence,
-    onMessagesChange: (messages) => {
-      // Keep the sync working copy (query-cache reads + reactivity); IDB
-      // durability is handled by the persistence adapter above.
-      writeConversationSnapshot(sessionID, messages)
-      setVersion((value) => value + 1)
-    },
+  const onMessagesChange = (messages: UIMessage[]) => {
+    // Keep the sync working copy (query-cache reads + reactivity); IDB
+    // durability is handled by the persistence adapter (real client only).
+    writeConversationSnapshot(sessionID, messages)
+    setVersion((value) => value + 1)
+  }
+  // Sync seed from the query cache (instant within a tab session). This buffer
+  // backs the entry only until the lazily-imported ChatClient constructs; the
+  // IDB persistence adapter then async-hydrates so the conversation survives a
+  // full reload (race-guarded against newer messages by ChatClient).
+  let buffered = readConversationSnapshot(sessionID) ?? []
+  let client: ChatClient | undefined
+  const ready = loadChatClientRuntime().then((runtime) => {
+    client = new runtime.ChatClient({
+      id: sessionID,
+      initialMessages: buffered,
+      connection: noopConnection,
+      persistence: conversationPersistence,
+      onMessagesChange,
+    })
   })
   const handle: ConversationChatHandle = {
-    messages: () => client.getMessages(),
-    setMessages: (messages) => client.setMessagesManually(compactConversationSnapshot(messages) ?? []),
+    messages: () => (client ? client.getMessages() : buffered),
+    setMessages: (messages) => {
+      const compacted = compactConversationSnapshot(messages) ?? []
+      if (client) {
+        client.setMessagesManually(compacted)
+        return
+      }
+      buffered = compacted
+      onMessagesChange(compacted)
+    },
   }
-  return { sessionID, client, version, handle, refs: 0 }
+  return { sessionID, ready, version, handle, refs: 0 }
 }

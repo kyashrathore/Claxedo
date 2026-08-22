@@ -1,9 +1,11 @@
-import { type VirtualFileMetrics, Virtualizer } from "@pierre/diffs"
+import { type VirtualFileMetrics, Virtualizer, type VirtualizerConfig } from "@pierre/diffs"
 
 type Target = {
-  key: Document | HTMLElement
+  owner: Document | HTMLElement
+  variant: "default" | "inline-diff"
   root: Document | HTMLElement
   content: HTMLElement | undefined
+  config?: Partial<VirtualizerConfig>
 }
 
 type Entry = {
@@ -11,7 +13,7 @@ type Entry = {
   refs: number
 }
 
-const cache = new WeakMap<Document | HTMLElement, Entry>()
+const cache = new WeakMap<Document | HTMLElement, Map<Target["variant"], Entry>>()
 
 export const virtualMetrics: Partial<VirtualFileMetrics> = {
   lineHeight: 24,
@@ -40,7 +42,8 @@ function target(container: HTMLElement): Target | undefined {
     const root = scrollRoot(container) ?? review
     const content = review.querySelector("[data-slot='session-review-container']")
     return {
-      key: review,
+      owner: review,
+      variant: "default",
       root,
       content: content instanceof HTMLElement ? content : undefined,
     }
@@ -49,15 +52,24 @@ function target(container: HTMLElement): Target | undefined {
   const root = scrollRoot(container)
   if (root) {
     const content = root.querySelector("[role='log']")
+    const inlineDiff = !!container.closest("[data-component='edit-content'], [data-component='apply-patch-file-diff']")
     return {
-      key: root,
+      owner: root,
+      variant: inlineDiff ? "inline-diff" : "default",
       root,
       content: content instanceof HTMLElement ? content : undefined,
+      // Inline tool diffs have their own small viewport. Pierre's 1000px
+      // default buffer renders substantially more token DOM than that viewport
+      // can show, so retain ten lines around the visible range instead.
+      config: inlineDiff
+        ? { overscrollSize: (virtualMetrics.lineHeight ?? 24) * 10 }
+        : undefined,
     }
   }
 
   return {
-    key: document,
+    owner: document,
+    variant: "default",
     root: document,
     content: undefined,
   }
@@ -67,15 +79,20 @@ export function acquireVirtualizer(container: HTMLElement) {
   const resolved = target(container)
   if (!resolved) return
 
-  let entry = cache.get(resolved.key)
+  let entries = cache.get(resolved.owner)
+  if (!entries) {
+    entries = new Map()
+    cache.set(resolved.owner, entries)
+  }
+  let entry = entries.get(resolved.variant)
   if (!entry) {
-    const virtualizer = new Virtualizer()
+    const virtualizer = new Virtualizer(resolved.config)
     virtualizer.setup(resolved.root, resolved.content)
     entry = {
       virtualizer,
       refs: 0,
     }
-    cache.set(resolved.key, entry)
+    entries.set(resolved.variant, entry)
   }
 
   entry.refs += 1
@@ -87,14 +104,16 @@ export function acquireVirtualizer(container: HTMLElement) {
       if (done) return
       done = true
 
-      const current = cache.get(resolved.key)
+      const ownerEntries = cache.get(resolved.owner)
+      const current = ownerEntries?.get(resolved.variant)
       if (!current) return
 
       current.refs -= 1
       if (current.refs > 0) return
 
       current.virtualizer.cleanUp()
-      cache.delete(resolved.key)
+      ownerEntries!.delete(resolved.variant)
+      if (ownerEntries!.size === 0) cache.delete(resolved.owner)
     },
   }
 }

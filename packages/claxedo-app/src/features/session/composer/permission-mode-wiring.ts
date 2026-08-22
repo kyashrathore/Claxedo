@@ -66,9 +66,19 @@ export function createComposerPermissionModeWiring(input: {
     // picker can show the harness's real modes before the first message rather
     // than a placeholder. That is the whole point — the opening turn is when the
     // choice matters most, and it was previously the one turn nobody could set.
-    () => ({ sessionID: input.sessionId() ?? "", directory: input.directory(), harness: input.harness() }),
-    async (source) =>
-      (
+    //
+    // The source is a serialized STRING, not an object literal, deliberately:
+    // createResource compares sources with `===`, so a fresh object refetched
+    // on every upstream signal wobble even when the resolved values were
+    // identical — the boot request graph showed the same permission-mode GET
+    // three times. Value equality keeps the intended contract (refetch when the
+    // session/directory/harness actually changes, and on explicit `refetch()`)
+    // while dropping the byte-identical repeats. The request itself stays
+    // `no-store` — nothing here caches a response.
+    () => JSON.stringify({ sessionID: input.sessionId() ?? "", directory: input.directory(), harness: input.harness() ?? null }),
+    async (sourceKey) => {
+      const source = JSON.parse(sourceKey) as { sessionID: string; directory: AgentRuntimeDirectory; harness: string | null }
+      return (
         await fetchSessionPermissionModesByTransport({
           client: input.client,
           directory: source.directory,
@@ -80,7 +90,8 @@ export function createComposerPermissionModeWiring(input: {
           // harness's name over another harness's modes.
           ...(source.harness ? { harness: source.harness } : {}),
         })
-      ).data,
+      ).data
+    },
   )
 
   const answered = (unsupported: string): HarnessModeReport => ({

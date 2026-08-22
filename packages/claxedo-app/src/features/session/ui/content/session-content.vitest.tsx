@@ -13,6 +13,7 @@ vi.mock("@/features/session/app-ports", () => ({
   useClaxedoState: () => ({
     meta: { ids: () => [], get: () => undefined },
     layout: { openSession: calls.openSession },
+    workspacePanel: { state: () => ({ open: false }) },
   }),
   useGlobalSync: () => ({
     data: { project: [] },

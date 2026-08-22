@@ -16,6 +16,8 @@ type Input = {
   scroller: () => HTMLDivElement | undefined
   onBeforeLoad?: () => void
   onAfterLoad?: () => void
+  onBeforeReveal?: () => void
+  onAfterReveal?: () => void
 }
 
 /**
@@ -75,6 +77,12 @@ export function createSessionHistoryWindow(input: Input) {
   )
 
   const preserveScroll = (fn: () => void) => {
+    if (input.onBeforeReveal && input.onAfterReveal) {
+      input.onBeforeReveal()
+      fn()
+      input.onAfterReveal()
+      return
+    }
     const el = input.scroller()
     if (!el) {
       fn()

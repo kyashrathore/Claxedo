@@ -1,10 +1,10 @@
 import { parseCommentNote, readCommentMetadata } from "@/features/session/data/comment-note"
 import { AssistantMessage, Part, SessionStatus, SnapshotFileDiff, UserMessage } from "@opencode-ai/sdk/v2"
 import type { PartGroup, WorkGroupTool } from "@/ui/session-kit"
-import { Data, Equal } from "effect"
-import { sessionRecoveryClass, sessionRecoveryDescription, type SessionErrorClass } from "../onboarding/first-turn-recovery"
+import { sessionRecoveryClass, sessionRecoveryDescription } from "../onboarding/first-turn-recovery"
 import { stripRelayPrefix } from "../onboarding/provider-error-detail"
 import type { SessionTurnOutcome } from "../data/session-types"
+import { TimelineRow } from "./timeline-row-model"
 
 export type SummaryDiff = SnapshotFileDiff & { file: string }
 
@@ -25,177 +25,6 @@ export function uniqueSummaryDiffs(diffs: SnapshotFileDiff[] | undefined) {
 
 function isSummaryDiff(value: SnapshotFileDiff): value is SummaryDiff {
   return typeof value.file === "string"
-}
-
-export type TimelineRowMap = {
-  TurnGap: { userMessageID: string }
-  CommentStrip: {
-    userMessageID: string
-  }
-  UserMessage: {
-    userMessageID: string
-    anchor: boolean
-  }
-  TurnDivider: {
-    userMessageID: string
-    label: "compaction" | "interrupted"
-    durationMs?: number
-  }
-  AssistantPart: {
-    userMessageID: string
-    group: PartGroup
-    previousAssistantPart: boolean
-    lastAssistantPart: boolean
-  }
-  Thinking: { userMessageID: string; reasoningHeading?: string }
-  Retry: { userMessageID: string }
-  TurnFold: {
-    userMessageID: string
-    durationMs?: number
-    foldCount: number
-    folded: boolean
-    running?: boolean
-    tokens?: number
-    cost?: number
-  }
-  DiffSummary: { userMessageID: string; diffs: SummaryDiff[] }
-  Error: {
-    userMessageID: string
-    text: string
-    /**
-     * The human sentence for the row's PRIMARY line, composed here alongside
-     * the raw text so the first paint is already readable. `text` is the raw
-     * provider bytes and belongs only in the collapsed disclosure.
-     */
-    summary?: string
-    recoveryClass?: SessionErrorClass
-    error?: unknown
-    providerID?: string
-    modelID?: string
-  }
-}
-
-export namespace TimelineRow {
-  export class TurnGap extends Data.TaggedClass("TurnGap")<{
-    userMessageID: string
-  }> {}
-  export class CommentStrip extends Data.TaggedClass("CommentStrip")<{
-    userMessageID: string
-  }> {}
-  export class UserMessage extends Data.TaggedClass("UserMessage")<{
-    userMessageID: string
-    anchor: boolean
-  }> {}
-  export class TurnDivider extends Data.TaggedClass("TurnDivider")<{
-    userMessageID: string
-    label: "compaction" | "interrupted"
-    durationMs?: number
-  }> {}
-  export class AssistantPart extends Data.TaggedClass("AssistantPart")<{
-    userMessageID: string
-    group: PartGroup
-    previousAssistantPart: boolean
-    lastAssistantPart: boolean
-  }> {}
-  export class Thinking extends Data.TaggedClass("Thinking")<{
-    userMessageID: string
-    reasoningHeading?: string
-  }> {}
-  export class DiffSummary extends Data.TaggedClass("DiffSummary")<{
-    userMessageID: string
-    diffs: SummaryDiff[]
-  }> {}
-  export class Error extends Data.TaggedClass("Error")<{
-    userMessageID: string
-    text: string
-    summary?: string
-    recoveryClass?: SessionErrorClass
-    error?: unknown
-    providerID?: string
-    modelID?: string
-  }> {}
-  export class Retry extends Data.TaggedClass("Retry")<{
-    userMessageID: string
-  }> {}
-  export class TurnFold extends Data.TaggedClass("TurnFold")<{
-    userMessageID: string
-    durationMs?: number
-    foldCount: number
-    folded: boolean
-    running?: boolean
-    tokens?: number
-    cost?: number
-  }> {}
-
-  export type TimelineRow =
-    | TurnGap
-    | CommentStrip
-    | UserMessage
-    | TurnDivider
-    | AssistantPart
-    | Thinking
-    | DiffSummary
-    | Error
-    | Retry
-    | TurnFold
-
-  export const key = (row: TimelineRow) => {
-    switch (row._tag) {
-      case "TurnGap":
-        return `turn-gap:${row.userMessageID}`
-      case "CommentStrip":
-        return `comment-strip:${row.userMessageID}`
-      case "UserMessage":
-        return `user-message:${row.userMessageID}`
-      case "TurnDivider":
-        return `turn-divider:${row.userMessageID}:${row.label}`
-      case "AssistantPart":
-        return `assistant-part:${row.userMessageID}:${row.group.key}`
-      case "Thinking":
-        return `thinking:${row.userMessageID}`
-      case "DiffSummary":
-        return `diff-summary:${row.userMessageID}`
-      case "Error":
-        return `error:${row.userMessageID}`
-      case "Retry":
-        return `retry:${row.userMessageID}`
-      case "TurnFold":
-        return `turn-fold:${row.userMessageID}`
-    }
-  }
-
-  export function is(value: unknown): value is TimelineRow {
-    if (!value || typeof value !== "object" || !("_tag" in value)) return false
-    switch ((value as { _tag?: unknown })._tag) {
-      case "TurnGap":
-      case "CommentStrip":
-      case "UserMessage":
-      case "TurnDivider":
-      case "AssistantPart":
-      case "Thinking":
-      case "DiffSummary":
-      case "Error":
-      case "Retry":
-      case "TurnFold":
-        return true
-    }
-    return false
-  }
-
-  export function equals(a: TimelineRow, b: TimelineRow) {
-    return Equal.equals(a, b)
-  }
-
-  export function reuse(previous: TimelineRow[] | undefined, rows: TimelineRow[]) {
-    const currentRows = rows.filter(is)
-    if (!previous?.length) return currentRows
-    const byKey = new Map(previous.filter(is).map((row) => [key(row), row] as const))
-    return currentRows.map((row) => {
-      const existing = byKey.get(key(row))
-      if (!existing) return row
-      return equals(existing, row) ? existing : row
-    })
-  }
 }
 
 export namespace Timeline {
@@ -316,7 +145,10 @@ export namespace Timeline {
         ? Math.max(0, Math.max(...endTimes) - createdTime)
         : undefined
     const running = isActive && status === "busy" && !settled && !error
-    const canFoldSettled = settled && !interrupted && !error && foldableCount >= 2
+    // T3-parity: a settled turn folds behind its summary when it produced ANY
+    // foldable work, not only two-plus steps — single-step turns collapse like
+    // every other turn, and an explicit user toggle still wins.
+    const canFoldSettled = settled && !interrupted && !error && foldableCount >= 1
     // T7: while a turn is still running, fold its *completed* phases (≥3 groups) behind the
     // summary but keep the latest live group visible so active work never disappears.
     const canFoldRunning = running && foldWhileRunning && foldableCount >= 3

@@ -1,10 +1,8 @@
-import { marked, type MarkedExtension, type Tokens } from "marked"
-import markedShiki from "marked-shiki"
-import katex from "katex"
-import { addClassToHast, bundledLanguages, type BundledLanguage, type ShikiTransformer } from "shiki"
+import type { MarkedExtension, Tokens } from "marked"
+import type { BundledLanguage } from "shiki"
 import { createSimpleContext } from "./helper"
 import { markedCodeSpanBoundary } from "./marked-code-span"
-import { getSharedHighlighter, registerCustomTheme, ThemeRegistrationResolved } from "@pierre/diffs"
+import type { ThemeRegistrationResolved } from "@pierre/diffs"
 
 export const OpenCodeTheme = {
   name: "OpenCode",
@@ -377,103 +375,10 @@ export const OpenCodeTheme = {
   },
 } as unknown as ThemeRegistrationResolved
 
-registerCustomTheme("OpenCode", () => Promise.resolve(OpenCodeTheme))
-
-function renderMathInText(text: string): string {
-  let result = text
-
-  // Display math: $$...$$
-  const displayMathRegex = /\$\$([\s\S]*?)\$\$/g
-  result = result.replace(displayMathRegex, (_, math) => {
-    try {
-      return katex.renderToString(math, {
-        displayMode: true,
-        throwOnError: false,
-      })
-    } catch {
-      return `$$${math}$$`
-    }
-  })
-
-  // Inline math: \(...\)
-  const inlineMathRegex = /\\\(((?:\\.|[^\\\n])*?)\\\)/g
-  result = result.replace(inlineMathRegex, (_, math) => {
-    try {
-      return katex.renderToString(math, {
-        displayMode: false,
-        throwOnError: false,
-      })
-    } catch {
-      return `\\(${math}\\)`
-    }
-  })
-
-  return result
-}
-
-const inlineMathRegex = /^\\\(((?:\\.|[^\\\n])*?)\\\)/
-const blockMathRegex = /^\$\$\n([\s\S]+?)\n\$\$(?:\n|$)/
-
-const katexExtension: MarkedExtension = {
-  extensions: [
-    {
-      name: "inlineKatex",
-      level: "inline",
-      start(src) {
-        const index = src.indexOf("\\(")
-        if (index === -1) return
-        return index
-      },
-      tokenizer(src) {
-        const match = src.match(inlineMathRegex)
-        if (!match) return
-        return {
-          type: "inlineKatex",
-          raw: match[0],
-          text: match[1].trim(),
-          displayMode: false,
-        }
-      },
-      renderer: renderKatexToken,
-    },
-    {
-      name: "blockKatex",
-      level: "block",
-      tokenizer(src) {
-        const match = src.match(blockMathRegex)
-        if (!match) return
-        return {
-          type: "blockKatex",
-          raw: match[0],
-          text: match[1].trim(),
-          displayMode: true,
-        }
-      },
-      renderer: renderKatexToken,
-    },
-  ],
-}
-
-function renderKatexToken(token: Tokens.Generic) {
-  return katex.renderToString(typeof token.text === "string" ? token.text : "", {
-    displayMode: token.displayMode === true,
-    throwOnError: false,
-  })
-}
-
-function renderMathExpressions(html: string): string {
-  // Split on code/pre/kbd tags to avoid processing their contents
-  const codeBlockPattern = /(<(?:pre|code|kbd)[^>]*>[\s\S]*?<\/(?:pre|code|kbd)>)/gi
-  const parts = html.split(codeBlockPattern)
-
-  return parts
-    .map((part, i) => {
-      // Odd indices are the captured code blocks - leave them alone
-      if (i % 2 === 1) return part
-      // Process math only in non-code parts
-      return renderMathInText(part)
-    })
-    .join("")
+async function renderMathExpressions(html: string) {
+  if (!html.includes("$$") && !html.includes("\\(")) return html
+  const math = await import("./marked-math")
+  return math.renderMathExpressions(html)
 }
 
 /**
@@ -487,20 +392,15 @@ function renderMathExpressions(html: string): string {
  * been folded to `text`), which matches what session-ui stamps on the code
  * blocks it builds itself.
  */
-function languageClass(language: string): ShikiTransformer {
-  return {
-    name: "opencode:language-class",
-    code(node) {
-      addClassToHast(node, `language-${language}`)
-    },
-  }
-}
-
 async function highlightCodeBlocks(html: string): Promise<string> {
   const codeBlockRegex = /<pre><code(?:\s+class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g
   const matches = [...html.matchAll(codeBlockRegex)]
   if (matches.length === 0) return html
 
+  const [{ bundledLanguages, addClassToHast }, { getSharedHighlighter }] = await Promise.all([
+    import("shiki"),
+    ensureOpenCodeTheme(),
+  ])
   const highlighter = await getSharedHighlighter({
     themes: ["OpenCode"],
     langs: [],
@@ -529,7 +429,12 @@ async function highlightCodeBlocks(html: string): Promise<string> {
       lang: language,
       theme: "OpenCode",
       tabindex: false,
-      transformers: [languageClass(language)],
+      transformers: [{
+        name: "opencode:language-class",
+        code(node) {
+          addClassToHast(node, `language-${language}`)
+        },
+      }],
     })
     result = result.replace(fullMatch, () => highlighted)
   }
@@ -559,10 +464,46 @@ export const rawMarkdownHtmlDisabled: MarkedExtension = {
   },
 }
 
-export const { use: useMarked, provider: MarkedProvider } = createSimpleContext({
-  name: "Marked",
-  init: (props: { nativeParser?: NativeMarkdownParser }) => {
-    const jsParser = marked.use(
+let openCodeThemeRegistration: Promise<typeof import("@pierre/diffs")> | undefined
+
+export function ensureOpenCodeTheme() {
+  openCodeThemeRegistration ??= import("@pierre/diffs").then((pierre) => {
+    pierre.registerCustomTheme("OpenCode", () => Promise.resolve(OpenCodeTheme))
+    return pierre
+  })
+  return openCodeThemeRegistration
+}
+
+let jsParser: Promise<{ parse(markdown: string): string | Promise<string> }> | undefined
+
+function createNativeParseScheduler(maxConcurrent: number) {
+  let active = 0
+  const queued: Array<() => void> = []
+
+  return function schedule<T>(run: () => Promise<T>) {
+    return new Promise<T>((resolve, reject) => {
+      const start = () => {
+        active += 1
+        Promise.resolve()
+          .then(run)
+          .then(resolve, reject)
+          .finally(() => {
+            active -= 1
+            queued.shift()?.()
+          })
+      }
+      if (active < maxConcurrent) {
+        start()
+        return
+      }
+      queued.push(start)
+    })
+  }
+}
+
+function loadJsParser() {
+  jsParser ??= import("marked").then(({ Marked }) => {
+    const parser = new Marked(
       markedCodeSpanBoundary,
       {
         renderer: {
@@ -573,41 +514,44 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
           },
         },
       },
-      katexExtension,
-      markedShiki({
-        async highlight(code, lang) {
-          const highlighter = await getSharedHighlighter({
-            themes: ["OpenCode"],
-            langs: [],
-            preferredHighlighter: "shiki-wasm",
-          })
-          if (!(lang in bundledLanguages)) {
-            lang = "text"
-          }
-          if (!highlighter.getLoadedLanguages().includes(lang)) {
-            await highlighter.loadLanguage(lang as BundledLanguage)
-          }
-          return highlighter.codeToHtml(code, {
-            lang: lang || "text",
-            theme: "OpenCode",
-            tabindex: false,
-            transformers: [languageClass(lang || "text")],
-          })
-        },
-      }),
     )
-
-    if (props.nativeParser) {
-      const nativeParser = props.nativeParser
-      return {
-        async parse(markdown: string): Promise<string> {
-          const html = await nativeParser(markdown)
-          const withMath = renderMathExpressions(html)
-          return highlightCodeBlocks(withMath)
-        },
-      }
+    return {
+      async parse(markdown: string) {
+        const html = await parser.parse(markdown)
+        const withMath = await renderMathExpressions(html)
+        return highlightCodeBlocks(withMath)
+      },
     }
+  })
+  return jsParser
+}
 
-    return jsParser
+export function createMarkdownParser(nativeParser?: NativeMarkdownParser) {
+  if (nativeParser) {
+    const scheduleNativeParse = createNativeParseScheduler(2)
+    return {
+      async parse(markdown: string): Promise<string> {
+        try {
+          const html = await scheduleNativeParse(() => nativeParser(markdown))
+          const withMath = await renderMathExpressions(html)
+          return highlightCodeBlocks(withMath)
+        } catch {
+          return (await loadJsParser()).parse(markdown)
+        }
+      },
+    }
+  }
+
+  return {
+    async parse(markdown: string) {
+      return (await loadJsParser()).parse(markdown)
+    },
+  }
+}
+
+export const { use: useMarked, provider: MarkedProvider } = createSimpleContext({
+  name: "Marked",
+  init: (props: { nativeParser?: NativeMarkdownParser }) => {
+    return createMarkdownParser(props.nativeParser)
   },
 })
