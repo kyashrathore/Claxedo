@@ -96,6 +96,22 @@ export function projectListQuery(input: {
   }
 }
 
+/**
+ * The harness a provider cache entry BELONGS TO, which is not always the
+ * harness the REQUEST must name.
+ *
+ * `/provider` resolves an absent `?harness=` to the configured default harness
+ * (`resolveHarnessId` -> `defaultHarness`, which falls back to `opencode`), so
+ * an unqualified request and an `opencode`-qualified one return the SAME
+ * catalog. `useProviders()` asks unqualified; the directory bootstrap asks with
+ * an explicit `?harness=opencode` because the route cannot otherwise identify
+ * the OpenCode harness. Keying on the wire qualifier made those two different
+ * cache entries.
+ */
+export function providerCacheHarness(harnessType: string | undefined) {
+  return !harnessType || harnessType === "opencode" ? undefined : harnessType
+}
+
 export function providerListQuery(input: {
   baseUrl?: string
   client: ProviderClient
@@ -107,7 +123,11 @@ export function providerListQuery(input: {
     client: input.client,
   })
   return {
-    queryKey: queryKeys.controlPlane.providers(input.baseUrl, input.directory ?? undefined, input.harnessType),
+    queryKey: queryKeys.controlPlane.providers(
+      input.baseUrl,
+      input.directory ?? undefined,
+      providerCacheHarness(input.harnessType),
+    ),
     staleTime: 5 * 60 * 1000,
     structuralSharing: (previous: unknown, index: unknown) => mergeProviderIndexWithDetails(
       previous as Parameters<typeof mergeProviderIndexWithDetails>[0],

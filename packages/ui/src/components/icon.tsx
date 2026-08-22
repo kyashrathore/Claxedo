@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show, splitProps, type ComponentProps } from "solid-js"
+import { createEffect, createSignal, onMount, Show, splitProps, type ComponentProps } from "solid-js"
 // ⚠️ Licence risk — see the note in ./codex-icons.tsx. `Icon` below renders
 // artwork extracted from the proprietary ChatGPT desktop app. Known, accepted
 // for now. `OpenCodeIcon` is the original upstream set and carries no such risk,
@@ -263,7 +263,11 @@ export function Icon(props: IconProps) {
   // is always complete, so it is a total fallback.
   const resolved = () => (iconLibrary() === "codex" ? codexGlyphFor(local.name) : undefined)
 
-  onMount(ensureSprite)
+  createEffect(() => {
+    ensureSprite()
+    const codex = resolved()
+    if (codex && !codex.custom) codexIconSprite.ensure(codex.glyph)
+  })
 
   return (
     <Show when={resolved()} fallback={<OpenCodeIcon {...props} />}>
@@ -281,7 +285,7 @@ export function Icon(props: IconProps) {
             {...others}
           >
             <use
-              href={codex().custom ? `#${symbol(codex().custom!)}` : `${codexIconSprite}#${codex().glyph}`}
+              href={codex().custom ? `#${symbol(codex().custom!)}` : codexIconSprite.href(codex().glyph)}
               transform={codexTransform(local.name)}
             />
           </svg>
