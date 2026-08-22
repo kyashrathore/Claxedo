@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events"
-import { spawn } from "node:child_process"
+import { fork, spawn } from "node:child_process"
 import { existsSync, renameSync, writeFileSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -58,9 +58,16 @@ import { setupBrowserTab } from "./browser/setup"
 import { CHANNEL, IS_PACKAGED, UPDATER_ENABLED } from "./constants"
 import { findFreePort, resolveBaseServerPort } from "./server-port"
 import { runRestart } from "../shared/restart-policy"
+import {
+  CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME,
+  OPENCODE_COMPILE_CACHE_DIR_NAME,
+} from "../shared/opencode-compile-cache"
 import type { DiagnosticsWebContents } from "./diagnostics/ipc"
 import { createElectronSource } from "./diagnostics/electron-source"
 import { createProcessMetricsSource } from "./diagnostics/process-metrics-source"
+import { claxedoServerForkOptions } from "./server-child-process"
+import { embeddedServerReadiness } from "./server-readiness"
+import { recordStartupClock } from "../shared/startup-clock-probe"
 import { createProfiler } from "./diagnostics/profiler"
 import { createSessionMemoryScanner } from "./diagnostics/session-memory-worker"
 import { createOwnerOperationBridge } from "./diagnostics/owner-operation-bridge"
@@ -75,6 +82,9 @@ import { registerHostConnectorIpc } from "./host-connector/ipc"
 import { publishHostConnectorStatus } from "./host-connector/status-channel"
 import { initLogging } from "./logging"
 import { createMenu } from "./menu"
+import { createNativeMarkdownRenderer } from "./native-markdown"
+import { createNativeMermaidRenderer } from "./native-mermaid"
+import { resolveRichContentRendererPath } from "./rich-content-renderer-path"
 import {
   checkHealth,
   checkHealthOrAskRetry,
@@ -96,6 +106,7 @@ import {
   matchesDiagnosticsBinding,
   parseDiagnosticsTransportMessage,
 } from "../shared/diagnostics-transport"
+import { parseClaxedoServerReadyMessage } from "../shared/claxedo-server-lifecycle"
 
 type ServerConnection =
   | { variant: "existing"; url: string }
@@ -117,6 +128,13 @@ const pendingDeepLinks: string[] = []
 
 const serverReady = defer<ServerReadyData>()
 const logger = initLogging()
+const richContentRendererPath = resolveRichContentRendererPath({
+  packaged: IS_PACKAGED,
+  resourcesPath: process.resourcesPath,
+  appPath: app.getAppPath(),
+  override: process.env.CLAXEDO_RICH_CONTENT_RENDERER_PATH,
+})
+if (richContentRendererPath) process.env.CLAXEDO_RICH_CONTENT_RENDERER_PATH = richContentRendererPath
 const startAtLogin = createStartAtLogin(app)
 const electronDiagnosticsSource = createElectronSource({
   process,
@@ -126,6 +144,7 @@ const electronDiagnosticsSource = createElectronSource({
 })
 const diagnosticsSource = createProcessMetricsSource({
   electron: electronDiagnosticsSource,
+  hostCollection: "on-demand",
   workerPath: join(import.meta.dirname, "process-metrics-worker.js"),
   ...(process.platform === "darwin"
     ? {
@@ -263,11 +282,49 @@ function getOpenCodeEmbedPath(): string {
     : join(MAIN_DIR, "../../../opencode/dist/node/node.js")
 }
 
+// The prebuilt V8 compile cache for that artifact, generated at build time by
+// scripts/build-opencode-compile-cache.ts and shipped as an extraResources
+// sibling of the engine. The utility process seeds it into the running user's
+// own cache directory before the first engine import; see
+// src/shared/opencode-compile-cache.ts for why it cannot simply be copied.
+// Absent (a build that skipped generation) is not an error: the engine compiles
+// as it always did.
+function getOpenCodeCompileCachePath(): string {
+  return IS_PACKAGED
+    ? join(process.resourcesPath, OPENCODE_COMPILE_CACHE_DIR_NAME)
+    : join(MAIN_DIR, "../../resources", OPENCODE_COMPILE_CACHE_DIR_NAME)
+}
+
+// The same, for the server bundle's OWN 9.11 MB static closure. It is a second
+// shipped set rather than more entries in the engine's, because the two are
+// generated from different artifacts and their manifests are relative to
+// different roots — the engine's directory and the server bundle's directory.
+function getClaxedoServerCompileCachePath(): string {
+  return IS_PACKAGED
+    ? join(process.resourcesPath, CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME)
+    : join(MAIN_DIR, "../../resources", CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME)
+}
+
 async function startClaxedoServer(): Promise<{ url: string }> {
   const claxedoPort = await findFreePort(resolveBaseServerPort())
   const serverPath = getClaxedoServerPath()
   const openCodeEmbedPath = getOpenCodeEmbedPath()
-  logger.log("starting claxedo-server with embedded OpenCode", { serverPath, claxedoPort, openCodeEmbedPath })
+  const openCodeCompileCachePath = getOpenCodeCompileCachePath()
+  const claxedoServerCompileCachePath = getClaxedoServerCompileCachePath()
+  // No worker path: the desktop runs the engine IN-PROCESS in the server child,
+  // deliberately. Splitting it into a forked worker was implemented and
+  // measured — six runs against a v5 control — and it regressed three gates:
+  // cold ready 1,875 -> 2,004 ms, peak family RSS ~1,930 -> 2,060 MiB, and
+  // quiescent CPU failed its 5% budget in two of six runs. The engine did move
+  // as designed (server child 374.6 -> ~190 MiB) but the worker costs 310 MiB,
+  // so one process became two for +125 MiB net. And the idle-exit that was
+  // supposed to repay it never fires: the worker was alive in all 18 process
+  // snapshots of a run, including the quiescent window. `peak_process_family_
+  // rss_mib` is a PEAK, so a process that exits later cannot reduce it even in
+  // principle. The worker transport itself is correct and stays — self-hosted
+  // uses it (`deployments/self-hosted-node/app.ts` calls
+  // `configureOpenCodeWorkerPath`). This product opts out.
+  logger.log("starting claxedo-server with in-process OpenCode", { serverPath, claxedoPort, openCodeEmbedPath })
 
   if (!existsSync(serverPath)) {
     throw new Error(`Claxedo server bundle was not found at ${serverPath}. Rebuild the desktop app and try again.`)
@@ -316,11 +373,10 @@ async function startClaxedoServer(): Promise<{ url: string }> {
   try {
     const serverLaunchId = `claxedo-server-${crypto.randomUUID()}`
     const serverGeneration = `server-generation-${crypto.randomUUID()}`
-    const child = utilityProcess.fork(serverPath, [], {
-      execArgv: ["--expose-gc"],
-      stdio: "inherit",
-      serviceName: "Claxedo Server",
-      env: {
+    const child = fork(
+      serverPath,
+      [],
+      claxedoServerForkOptions({
         ...Object.fromEntries(
           Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
         ),
@@ -328,10 +384,17 @@ async function startClaxedoServer(): Promise<{ url: string }> {
         CLAXEDO_DATA_DIR: serverDataDir,
         CLAXEDO_DESKTOP_PARENT_PID: String(process.pid),
         CLAXEDO_CHILD_OPENCODE_EMBED_PATH: openCodeEmbedPath,
+        ...(existsSync(openCodeCompileCachePath)
+          ? { CLAXEDO_CHILD_OPENCODE_COMPILE_CACHE_DIR: openCodeCompileCachePath }
+          : {}),
+        ...(existsSync(claxedoServerCompileCachePath)
+          ? { CLAXEDO_CHILD_SERVER_COMPILE_CACHE_DIR: claxedoServerCompileCachePath }
+          : {}),
         CLAXEDO_DIAGNOSTICS_LAUNCH_ID: serverLaunchId,
         CLAXEDO_DIAGNOSTICS_GENERATION: serverGeneration,
-      },
-    })
+      }),
+    )
+    const listening = defer<void>()
     let ownerBridge: ReturnType<typeof createOwnerOperationBridge> | undefined
     const connectOwnerBridge = () => {
       if (!child.pid || ownerBridge) return
@@ -342,13 +405,26 @@ async function startClaxedoServer(): Promise<{ url: string }> {
             generation: serverGeneration,
           },
           send: (message) => {
-            child.postMessage(message)
-            return true
+            if (!child.connected) return false
+            return child.send(message)
           },
         })
     }
     child.on("spawn", connectOwnerBridge)
+    recordStartupClock("main-server-forked", { pid: child.pid ?? 0 })
     child.on("message", (input) => {
+      const ready = parseClaxedoServerReadyMessage(input)
+      if (ready) {
+        recordStartupClock("main-server-ready-message", { port: ready.port })
+        if (ready.port === claxedoPort) listening.resolve()
+        else {
+          logger.warn("claxedo-server reported an unexpected port", {
+            expected: claxedoPort,
+            actual: ready.port,
+          })
+        }
+        return
+      }
       connectOwnerBridge()
       if (!child.pid || !ownerBridge) return
       const binding = {
@@ -379,7 +455,7 @@ async function startClaxedoServer(): Promise<{ url: string }> {
       role: "server",
       label: "Claxedo server",
     })
-    const exited = defer<number>()
+    const exited = defer<number | null>()
     const handle = {
       close: async () => {
         if (!child.pid) return
@@ -394,32 +470,47 @@ async function startClaxedoServer(): Promise<{ url: string }> {
       },
     }
     claxedoServerHandle = handle
+    child.on("error", (error) => {
+      listening.reject(error)
+      logger.error("claxedo-server child process failed", { error: String(error) })
+    })
     child.once("exit", (code) => {
       ownerBridge?.dispose()
       exited.resolve(code)
+      listening.reject(new Error(`claxedo-server exited before listening (code ${String(code)})`))
       if (claxedoServerHandle === handle) claxedoServerHandle = null
-      if (!quitting && code !== 0) logger.error("claxedo-server utility process exited", { code })
+      if (!quitting && code !== 0) logger.error("claxedo-server child process exited", { code })
     })
 
     const claxedoUrl = `http://127.0.0.1:${claxedoPort}`
-    for (let i = 0; i < 50; i++) {
-      await new Promise((r) => setTimeout(r, 100))
-      try {
-        const res = await fetch(`${claxedoUrl}/api/claxedo/health`, { signal: AbortSignal.timeout(1000) })
-        if (res.ok) {
-          logger.log("claxedo-server healthy", { url: claxedoUrl })
-          diagnosticsProfiler.recordLifecycle({
-            event: "server-ready",
-            ownerId: "owner-claxedo-server",
-          })
-          return { url: claxedoUrl }
-        }
-      } catch {}
+    const readiness = embeddedServerReadiness({ healthUrl: `${claxedoUrl}/api/claxedo/health` })
+    try {
+      // Paid HERE, while this process has nothing to do but wait for the child.
+      // The same request costs ~11 ms more the first time any fetch is made,
+      // and left to `verify()` that cost lands after the child reports
+      // listening and before the renderer is unblocked. See
+      // `server-readiness.ts`. Inside the try so that even an impossible
+      // failure takes the same close-the-child path as every other one.
+      readiness.prepare()
+      await Promise.race([
+        listening.promise,
+        delay(30_000).then(() => {
+          throw new Error("The embedded Claxedo server did not report that it was listening in time.")
+        }),
+      ])
+      await readiness.verify()
+      recordStartupClock("main-server-health-verified")
+      logger.log("claxedo-server healthy", { url: claxedoUrl })
+      diagnosticsProfiler.recordLifecycle({
+        event: "server-ready",
+        ownerId: "owner-claxedo-server",
+      })
+      return { url: claxedoUrl }
+    } catch (error) {
+      logger.warn("embedded server readiness check failed", { error: String(error) })
+      await handle.close()
+      throw error
     }
-
-    logger.warn("embedded server readiness check failed")
-    await handle.close()
-    throw new Error("The embedded Claxedo server did not become healthy in time.")
   } catch (err) {
     logger.error("claxedo-server failed to start", { error: String(err) })
     throw err
@@ -484,6 +575,10 @@ async function initialize() {
 
       logger.log("server connection started")
       serverReady.resolve({ url: serverConnection.url, password: null })
+      // Stamped after the publish, never before it: this is the instant the
+      // renderer's pending `awaitInitialization` can learn the server URL, and
+      // therefore the earliest instant any renderer request can exist.
+      recordStartupClock("main-server-ready-published")
 
       logger.log("loading task finished")
     } catch (cause) {
@@ -501,15 +596,17 @@ async function initialize() {
     ...(process.env.CLAXEDO_PERF_STAGE ? { startupIsolationStage: process.env.CLAXEDO_PERF_STAGE } : {}),
   }
 
-  // Keep renderer compilation out of the embedded-server startup window.
-  // A deferred, native-backed window stays responsive without booting another
-  // renderer; migrations retain the progress UI because they can take longer.
+  // The renderer's initialization IPC already waits for `serverReady`, so its
+  // module graph can load alongside the sidecar without opening a socket early.
+  // Keeping those independent cold paths serial added the whole renderer load
+  // after server readiness. A first-run migration retains the progress window
+  // because it owns a separate, potentially long-lived user-visible flow.
   const startupWindow = needsMigration ? createLoadingWindow(globals) : undefined
   if (startupWindow) {
     await delay(1000)
   } else {
-    logger.log("showing deferred main window")
-    mainWindow = createMainWindow(globals, { deferLoad: true })
+    logger.log("loading main window alongside embedded server")
+    mainWindow = createMainWindow(globals)
     registerDiagnosticsWindow(mainWindow)
     wireFullscreenEvents(mainWindow)
     wireMenu()
@@ -520,16 +617,19 @@ async function initialize() {
   } catch (error) {
     logger.error("embedded server initialization failed", { error: String(error) })
     setInitStep({ phase: "done" })
-    showMainWindow(globals)
-    startupWindow?.close()
+    if (startupWindow) {
+      showMainWindow(globals)
+      startupWindow.close()
+    }
     return
   }
   setInitStep({ phase: "done" })
 
-  if (startupWindow) await loadingComplete.promise
-
-  showMainWindow(globals)
-  startupWindow?.close()
+  if (startupWindow) {
+    await loadingComplete.promise
+    showMainWindow(globals)
+    startupWindow.close()
+  }
 }
 
 function showMainWindow(globals: Parameters<typeof createMainWindow>[0]) {
@@ -691,6 +791,8 @@ const diagnosticsIpc = registerIpcHandlers({
   installUpdate: async () => installUpdate(),
   getStartAtLogin: () => startAtLogin.get(),
   setStartAtLogin: (enabled) => startAtLogin.set(enabled),
+  parseMarkdown: createNativeMarkdownRenderer(process.env.CLAXEDO_MARKDOWN_RENDERER_PATH ?? richContentRendererPath),
+  renderMermaid: createNativeMermaidRenderer(process.env.CLAXEDO_MERMAID_RENDERER_PATH ?? richContentRendererPath),
   browser: browserRegistry,
   processDiagnostics: {
     profiler: diagnosticsProfiler,

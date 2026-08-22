@@ -12,6 +12,7 @@
   "scripts": {
     "test:contract": "bun test ./scripts/contract.test.ts",
     "test:diagnostics-release": "bun test ./src/main/diagnostics ./src/shared/diagnostics-transport.test.ts ./scripts/performance-diagnostics-smoke.test.ts ./scripts/verify-diagnostics-dependencies.test.ts ./scripts/verify-diagnostics-privacy.test.ts",
+    "test:native-rich-content": "cargo test --manifest-path ./native/rich-content-renderer/Cargo.toml --locked",
     "verify:diagnostics-dependencies": "bun ./scripts/verify-diagnostics-dependencies.ts",
     "verify:diagnostics-privacy": "bun ./scripts/verify-diagnostics-privacy.ts",
     "smoke:diagnostics": "bun ./scripts/performance-diagnostics-smoke.ts",
@@ -23,6 +24,7 @@
     "predev": "bun ./scripts/predev.ts",
     "dev": "GOMAXPROCS=2 electron-vite dev",
     "prebuild": "bun ./scripts/prebuild.ts",
+    "build:rich-content": "bun ./scripts/build-rich-content-renderer.ts",
     "build": "bun ./scripts/build.ts",
     "build:inner": "electron-vite build",
     "preview": "electron-vite preview",
@@ -59,7 +61,6 @@
     "electron-updater": "6.8.9",
     "electron-window-state": "5.0.3",
     "jsonc-parser": "3.3.1",
-    "node-pty": "1.1.0",
     "pidtree": "1.0.0",
     "pidusage": "4.0.1",
     "posthog-node": "4.18.0",

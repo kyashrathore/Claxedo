@@ -38,7 +38,7 @@ import {
   resolveDeploymentMode,
   setDeploymentMode,
 } from "@/platform/telemetry/analytics"
-import { ConfigProvider } from "@/app/providers"
+import { ConfigProvider } from "@/app/providers/config"
 import { getDefaultConfig, initClaxedo } from "@claxedo/app"
 import { configureApiRuntime } from "@/platform/api/api"
 import type { LinuxDisplayBackend, ServerReadyData } from "../preload/types"
@@ -376,6 +376,13 @@ function bootstrapDesktop(options: DesktopRendererOptions, root: HTMLElement) {
 
       getStartAtLogin: () => desktopApi().getStartAtLogin(),
       setStartAtLogin: (enabled) => desktopApi().setStartAtLogin(enabled),
+
+      ...(desktopApi().optionalFeatures.nativeMarkdown
+        ? { parseMarkdown: (source: string) => desktopApi().parseMarkdown(source) }
+        : {}),
+      ...(desktopApi().optionalFeatures.nativeMermaid
+        ? { renderMermaid: (source: string, theme?: Record<string, string>) => desktopApi().renderMermaid(source, theme) }
+        : {}),
 
       notify: async (title, description, href) => {
         const focused = await desktopApi()

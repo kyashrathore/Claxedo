@@ -76,23 +76,27 @@ export default defineConfig(({ mode }) => {
           name: "copy-claxedo-server",
           closeBundle() {
             if (mode === "development") return
-            const src = path.join(desktopDir, "resources/claxedo-server")
-            const dest = path.join(desktopDir, "out/main/claxedo-server")
-            if (existsSync(src)) {
+            for (const name of ["claxedo-server", "claxedo-engine-worker"]) {
+              const src = path.join(desktopDir, "resources", name)
+              const dest = path.join(desktopDir, "out/main", name)
+              if (!existsSync(src)) continue
               rmSync(dest, { recursive: true, force: true })
-              rmSync(path.join(desktopDir, "out/main/claxedo-server.js"), { force: true })
+              rmSync(path.join(desktopDir, `out/main/${name}.js`), { force: true })
               cpSync(src, dest, { recursive: true })
-              console.log("[vite] Copied split claxedo-server bundle to out/main/")
+              console.log(`[vite] Copied ${name} bundle to out/main/`)
             }
           },
         },
       ],
       build: {
+        // electron-vite's presets default to minify:false; esbuild-minify the
+        // main bundle to cut shipped bytes. No sourcemap settings change.
+        minify: "esbuild",
         // Bundle every dependency into the main process. Only native modules
         // stay external — they ship as the app's sole node_modules content.
         externalizeDeps: false,
         rollupOptions: {
-          external: ["better-sqlite3", "node-pty", "@lydell/node-pty", "@vscode/windows-process-tree"],
+          external: ["better-sqlite3", "@lydell/node-pty", "@vscode/windows-process-tree"],
           input: {
             index: "src/main/index.ts",
             "process-metrics-worker": "src/main/diagnostics/process-metrics-worker-entry.ts",
@@ -160,6 +164,8 @@ export default defineConfig(({ mode }) => {
         },
       ],
       build: {
+        // Same as main: electron-vite defaults minify off; esbuild-minify.
+        minify: "esbuild",
         // Fully self-contained preload: inline every dependency; only
         // electron and node builtins stay external (see external fn below).
         externalizeDeps: false,

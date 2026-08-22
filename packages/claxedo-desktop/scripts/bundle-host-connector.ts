@@ -37,7 +37,9 @@ export async function bundleHostConnector(input: { entry?: string; outputDir?: s
     format: "esm",
     splitting: false,
     sourcemap: "none",
-    minify: false,
+    // Safe to flip: the sha256 manifest below is computed from the emitted
+    // file, so it self-heals, and no test pins a literal digest.
+    minify: true,
   })
   if (!built.success) {
     throw new AggregateError(built.logs, "Host Connector child bundle failed")

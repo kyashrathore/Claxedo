@@ -31,6 +31,7 @@ export type DiagnosticsSource = {
   accuracy: LocalDiagnostics.SourceStatus["accuracy"]
   capabilities: LocalDiagnostics.SourceCapabilities
   collect(at: number): DiagnosticsObservation[] | Promise<DiagnosticsObservation[]>
+  setDemanded?(demanded: boolean): void
   statuses?(): LocalDiagnostics.SourceStatus[]
   getStats?(): Record<string, number>
   registerRoot?(root: ElectronRoot): () => void
@@ -520,6 +521,7 @@ export function createProfiler(options: {
         listener(snapshot)
       } catch {
         listeners.delete(listener)
+        if (listeners.size === 0) options.source.setDemanded?.(false)
       }
     })
   }
@@ -560,8 +562,16 @@ export function createProfiler(options: {
     },
     subscribe(listener: (snapshot: LocalDiagnostics.RetainedSnapshot) => void) {
       if (disposed) return () => {}
+      const activate = listeners.size === 0
       listeners.add(listener)
-      return () => listeners.delete(listener)
+      if (activate && options.source.setDemanded) {
+        options.source.setDemanded(true)
+        runCollection("manual")
+      }
+      return () => {
+        if (!listeners.delete(listener) || listeners.size > 0) return
+        options.source.setDemanded?.(false)
+      }
     },
     requestSample(reason: SampleReason = "manual") {
       if (reason === "lifecycle") {
