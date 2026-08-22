@@ -350,18 +350,29 @@ export async function ensureWorkspace(input: {
     ? trim(input.remote_directory) || trim(input.directory) || "/workspace"
     : directoryKey(input.directory)
   if (kind !== "cloud" && isRejectedDir(directory)) return undefined
-  const info = kind === "cloud" ? {} as Awaited<ReturnType<typeof git>> : await git(directory)
-  // For cloud workspaces with no local git, derive repo_name from repo_url
-  if (!info.repo_name && input.repo_url) {
-    info.repo_name = trim(path.basename(input.repo_url.replace(/\/+$/, "")).replace(/\.git$/, ""))
-    info.git_remote = trim(input.repo_url)
-  }
-  const now = Date.now()
   const hit = requestedId && byId.has(requestedId)
     ? requestedId
     : kind === "cloud"
       ? undefined
       : byDir.get(directory)
+  // Reading git identity costs four `git` subprocesses (`git()` below), and the
+  // store is asked to ensure the same directory on every request that carries
+  // `?directory=`. A local row already mapped to this exact directory carries
+  // that identity already, so the read only tells us what is stored. It is
+  // still required when the store has never mapped this directory: a new
+  // workspace, or an existing id being rebound to a different directory, where
+  // repo_key/repo_root/repo_name must come from the new directory's repo.
+  const stored = hit ? byId.get(hit) : undefined
+  const knownDirectory = kind !== "cloud" && stored?.directory === directory
+  const info = kind === "cloud" || knownDirectory
+    ? {} as Awaited<ReturnType<typeof git>>
+    : await git(directory)
+  // For cloud workspaces with no local git, derive repo_name from repo_url
+  if (!knownDirectory && !info.repo_name && input.repo_url) {
+    info.repo_name = trim(path.basename(input.repo_url.replace(/\/+$/, "")).replace(/\.git$/, ""))
+    info.git_remote = trim(input.repo_url)
+  }
+  const now = Date.now()
   if (hit) {
     const ws = byId.get(hit)!
     const org_id = trim(input.org_id) || ws.org_id

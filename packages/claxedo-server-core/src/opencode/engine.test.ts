@@ -6,6 +6,7 @@ import {
   __setOpenCodeEmbedLoaderForTests,
   configureOpenCodeApplicationTools,
   configureOpenCodeEmbedPath,
+  configureOpenCodeWorkerPath,
   configureOpenCodeEngine,
   drainOpenCodeEngine,
   opencodeEngineMode,
@@ -20,6 +21,7 @@ const originalFetch = globalThis.fetch
 afterEach(() => {
   globalThis.fetch = originalFetch
   configureOpenCodeEmbedPath(undefined)
+  configureOpenCodeWorkerPath(undefined)
   __setOpenCodeEmbedLoaderForTests(undefined)
   configureOpenCodeApplicationTools(undefined)
   configureOpenCodeEngine({ embedded: true })

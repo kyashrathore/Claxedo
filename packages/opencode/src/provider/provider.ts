@@ -1157,6 +1157,45 @@ export function toPublicInfo(provider: Info): Info {
   )
 }
 
+/**
+ * Lazy clone-on-first-use view over the transformed catalog, used while
+ * assembling connected providers. Eagerly cloning every catalog provider
+ * through `toPublicInfo` pays for the full models.dev catalogue up front, but
+ * only providers that are actually touched (custom loaders, config entries,
+ * env/api/plugin connections) ever need a private clone; the rest is garbage
+ * the moment the initializer returns. Entries are cloned once on first `get`
+ * and shared thereafter, so in-place mutations (plugin model hooks, custom
+ * loaders) stay visible to later reads exactly as with an eager clone pass.
+ */
+export function makeLazyDatabase(catalog: Record<string, Info>, clone: (provider: Info) => Info = toPublicInfo) {
+  const materialized = new Map<string, Info>()
+  return {
+    /** Private mutable copy of a provider, cloned from the catalog on first use. */
+    get(providerID: string): Info | undefined {
+      const existing = materialized.get(providerID)
+      if (existing) return existing
+      const match = catalog[providerID]
+      if (!match) return undefined
+      const copy = clone(match)
+      materialized.set(providerID, copy)
+      return copy
+    },
+    set(providerID: string, provider: Info) {
+      materialized.set(providerID, provider)
+    },
+    /** Catalog ids in catalog order, then ids only ever `set` in insertion order — the eager record's key order. */
+    ids(): string[] {
+      const all = new Set<string>(Object.keys(catalog))
+      for (const id of materialized.keys()) all.add(id)
+      return [...all]
+    },
+    /** Read-only lookup that never clones. May alias the catalog entry — callers must not mutate the result. */
+    peek(providerID: string): Info | undefined {
+      return materialized.get(providerID) ?? catalog[providerID]
+    },
+  }
+}
+
 export function defaultModelIDs<T extends { models: Record<string, { id: string }> }>(providers: Record<string, T>) {
   return mapValues(providers, (item) => sort(Object.values(item.models))[0].id)
 }
@@ -1217,6 +1256,7 @@ export type Error = ModelNotFoundError | InitError | NoProvidersError | NoModels
 
 export interface Interface {
   readonly list: () => Effect.Effect<Record<ProviderV2.ID, Info>>
+  readonly catalog: () => Effect.Effect<Record<ProviderV2.ID, Info>>
   readonly getProvider: (providerID: ProviderV2.ID) => Effect.Effect<Info>
   readonly getModel: (providerID: ProviderV2.ID, modelID: ModelV2.ID) => Effect.Effect<Model, ModelNotFoundError>
   readonly getLanguage: (model: Model) => Effect.Effect<LanguageModelV3, ModelNotFoundError>
@@ -1405,7 +1445,7 @@ const layer = Layer.effect(
         const cfg = yield* config.get()
         const modelsDev = yield* modelsDevSvc.get()
         const catalog = mapValues(modelsDev, fromModelsDevProvider)
-        const database = mapValues(catalog, toPublicInfo)
+        const database = makeLazyDatabase(catalog)
 
         const providers: Record<ProviderV2.ID, Info> = {} as Record<ProviderV2.ID, Info>
         const languages = new Map<string, LanguageModelV3>()
@@ -1433,7 +1473,7 @@ const layer = Layer.effect(
             providers[providerID] = mergeDeep(existing, provider)
             return
           }
-          const match = database[providerID]
+          const match = database.get(providerID)
           if (!match) return
           // @ts-expect-error
           providers[providerID] = mergeDeep(match, provider)
@@ -1461,7 +1501,7 @@ const layer = Layer.effect(
           const providerID = ProviderV2.ID.make(p.id)
           if (disabled.has(providerID)) continue
 
-          const provider = database[providerID]
+          const provider = database.get(providerID)
           if (!provider) continue
           const pluginAuth = yield* auth.get(providerID).pipe(Effect.orDie)
 
@@ -1482,7 +1522,7 @@ const layer = Layer.effect(
 
         // extend database from config
         for (const [providerID, provider] of configProviders) {
-          const existing = database[providerID]
+          const existing = database.get(providerID)
           const parsed: Info = {
             id: ProviderV2.ID.make(providerID),
             name: provider.name ?? existing?.name ?? providerID,
@@ -1571,14 +1611,15 @@ const layer = Layer.effect(
             )
             parsed.models[modelID] = parsedModel
           }
-          database[providerID] = parsed
+          database.set(providerID, parsed)
         }
 
         // load env
         const envs = yield* env.all()
-        for (const [id, provider] of Object.entries(database)) {
+        for (const id of database.ids()) {
           const providerID = ProviderV2.ID.make(id)
           if (disabled.has(providerID)) continue
+          const provider = database.peek(id)!
           const apiKey = provider.env.map((item) => envs[item]).find(Boolean)
           if (!apiKey) continue
           mergeProvider(providerID, {
@@ -1613,7 +1654,7 @@ const layer = Layer.effect(
           const options = yield* Effect.promise(() =>
             plugin.auth!.loader!(
               () => bridge.promise(auth.get(providerID).pipe(Effect.orDie)) as any,
-              toPublicInfo(database[plugin.auth!.provider]),
+              toPublicInfo(database.get(plugin.auth!.provider)!),
             ),
           )
           const opts = options ?? {}
@@ -1624,7 +1665,7 @@ const layer = Layer.effect(
         for (const [id, fn] of Object.entries(custom(dep))) {
           const providerID = ProviderV2.ID.make(id)
           if (disabled.has(providerID)) continue
-          const data = database[providerID]
+          const data = database.get(providerID)
           if (!data) {
             continue
           }
@@ -1724,6 +1765,11 @@ const layer = Layer.effect(
     )
 
     const list = Effect.fn("Provider.list")(() => InstanceState.use(state, (s) => s.providers))
+
+    // The immutable models.dev-derived catalog computed once at instance init.
+    // Callers must treat the returned records as read-only; entries are served
+    // directly (no clone) on hot paths like GET /provider.
+    const catalog = Effect.fn("Provider.catalog")(() => InstanceState.use(state, (s) => s.catalog))
 
     async function resolveSDK(model: Model, s: State, envs: Record<string, string | undefined>) {
       try {
@@ -2042,7 +2088,7 @@ const layer = Layer.effect(
       }
     })
 
-    return Service.of({ list, getProvider, getModel, getLanguage, closest, getSmallModel, defaultModel })
+    return Service.of({ list, catalog, getProvider, getModel, getLanguage, closest, getSmallModel, defaultModel })
   }),
 )
 
