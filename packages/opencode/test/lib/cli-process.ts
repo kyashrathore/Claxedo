@@ -206,7 +206,10 @@ export function withCliFixture<A, E>(
 
     const spawn = Effect.fn("opencode.spawn")(function* (args: string[], opts?: SpawnOpts) {
       const start = Date.now()
-      const timeoutMs = opts?.timeoutMs ?? 30_000
+      // Each spawn cold-transpiles the whole engine with bun. Keep the
+      // default below the tests' 60s budgets while allowing loaded runners
+      // enough headroom; timeout-behavior tests pass an explicit budget.
+      const timeoutMs = opts?.timeoutMs ?? 55_000
       // stdin: "ignore" so the child doesn't see a piped stdin and block
       // on `Bun.stdin.text()` (see src/cli/cmd/run.ts — non-TTY stdin is
       // consumed as the prompt). The old Process.run wrapper defaulted to
