@@ -121,7 +121,12 @@ function fakeAsar(target: string, files: string[]) {
 
 function withAsar(
   files: string[],
-  options: { includeBoundary?: boolean; includeHostConnector?: boolean; corruptHostConnector?: boolean } = {},
+  options: {
+    includeBoundary?: boolean
+    includeHostConnector?: boolean
+    corruptHostConnector?: boolean
+    includeRichContent?: boolean
+  } = {},
 ) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-asar-"))
   const packaged = options.includeBoundary === false ? files : [...files, ...requiredPackagedBoundaryEntries(files)]
@@ -138,8 +143,17 @@ function withAsar(
       sha256: options.corruptHostConnector ? "0".repeat(64) : createHash("sha256").update(contents).digest("hex"),
     }))
   }
+  if (options.includeRichContent !== false) {
+    const richContent = path.join(resources, "rich-content")
+    fs.mkdirSync(richContent, { recursive: true })
+    fs.writeFileSync(path.join(richContent, "claxedo-rich-content-renderer.exe"), "synthetic fixture")
+  }
   try {
-    return verifyPackageContents(root).failures
+    // This fixture proves package structure, not native execution. Declare a
+    // different target so the verifier checks presence without trying to run
+    // the synthetic cross-platform helper.
+    const platform = process.platform === "win32" ? "linux" : "win32"
+    return verifyPackageContents(root, { platform, arch: process.arch }).failures
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
   }
@@ -165,6 +179,11 @@ test("a packaged app must carry the verified Host Connector sidecar", () => {
 
   const corrupt = withAsar(["package.json", "out/main/index.js"], { corruptHostConnector: true })
   expect(corrupt).toContainEqual(expect.stringContaining("Host Connector child fingerprint mismatch"))
+})
+
+test("a packaged app must carry exactly one native rich-content renderer", () => {
+  const missing = withAsar(["package.json", "out/main/index.js"], { includeRichContent: false })
+  expect(missing).toContainEqual(expect.stringContaining("expected one packaged rich-content renderer"))
 })
 
 test("an undeclared structural directory fails, reported once by root", () => {

@@ -318,7 +318,8 @@ describe("the local base document reaches main and the renderer build", () => {
     // load and the navigation guard's trusted-URL comparison.
     expect(main.match(/["'`][\w.]*\.html["'`]/g) ?? []).toEqual(["\"loading.html\""])
     expect(main).toContain("loadWindow(win, RENDERER_DOCUMENT)")
-    expect(main).toContain("new URL(RENDERER_DOCUMENT, process.env.ELECTRON_RENDERER_URL)")
-    expect(main).toContain("../renderer/${RENDERER_DOCUMENT}")
+    expect(main).toContain("isTrustedRendererDocumentUrl(input, {")
+    expect(main).toContain("devServerUrl: process.env.ELECTRON_RENDERER_URL")
+    expect(main).toContain("packagedIndexUrl: pathToFileURL(join(root, `../renderer/${RENDERER_DOCUMENT}`)).href")
   })
 })
