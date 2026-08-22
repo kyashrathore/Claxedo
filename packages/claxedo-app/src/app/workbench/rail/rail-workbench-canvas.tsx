@@ -2,6 +2,7 @@ import { Show, Suspense, createMemo, lazy, type Accessor } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 
 import { Workbench } from "../workbench/index"
+import { createMountIdleGovernor } from "../workbench/mount-idle-governor"
 import { ContentRenderer } from "../content/index"
 import type { ContentMeta } from "../state/index"
 import { emitTerminalFit } from "../../../features/terminal/workbench/terminal-fit"
@@ -46,14 +47,21 @@ export function RailWorkbenchCanvas(props: {
     if (content?.type === "session" && content.sessionId === "new") return projectDirectory
   })
 
+  // After a few minutes without input, unload every hidden session surface
+  // (visible panes and terminals stay); refill one slot at a time on return
+  // so the first interaction back never pays a remount burst.
+  const retainedHiddenLimit = createMountIdleGovernor({ baseLimit: 24, idleAfterMs: 180_000 })
+
   return (
     <div class="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
       <Workbench
         renderContent={(id, ctx) => (
           <ContentRenderer id={id} ctx={ctx} fallbackDirectory={props.emptyDraftDirectory} />
         )}
-        maxMountedContents={12}
+        maxMountedContents={24}
+        mountPolicy="visible-once"
         mountCapCandidate={(id) => props.state.meta.get(id)?.type === "session"}
+        retainedHiddenLimit={retainedHiddenLimit}
         renderEmpty={() => (
           <Show
             when={props.emptyDraftDirectory()}

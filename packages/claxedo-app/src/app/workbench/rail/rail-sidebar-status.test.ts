@@ -1,4 +1,9 @@
-import { describe, expect, test } from "bun:test"
+import { beforeEach, describe, expect, test } from "bun:test"
+import {
+  SIDEBAR_SESSION_STATUS_FRESH_MS,
+  pruneSidebarSessionStatusBatches,
+  sidebarSessionStatusBatches,
+} from "./rail-sidebar-status"
 import {
   activateDisclosureFromKeyboard,
   isDisclosureToggleKey,
@@ -189,5 +194,54 @@ describe("isDisclosureToggleKey", () => {
     }, () => calls.push("toggle-arrow"))
 
     expect(calls).toEqual(["prevent", "stop", "toggle"])
+  })
+})
+
+describe("sidebar session status batch pruning", () => {
+  const fresh = SIDEBAR_SESSION_STATUS_FRESH_MS
+
+  beforeEach(() => {
+    sidebarSessionStatusBatches.clear()
+  })
+
+  test("drops entries that are past the freshness window", () => {
+    const now = 1_000_000
+    sidebarSessionStatusBatches.set("dir\0a\0b", { updatedAt: now - fresh - 1 })
+    sidebarSessionStatusBatches.set("dir\0a\0b\0c", { updatedAt: now - 1 })
+
+    pruneSidebarSessionStatusBatches(now)
+
+    // The stale one could only ever answer "not fresh", so it can no longer
+    // change what the poll does — while the recent one still suppresses a refetch.
+    expect(sidebarSessionStatusBatches.has("dir\0a\0b")).toBe(false)
+    expect(sidebarSessionStatusBatches.has("dir\0a\0b\0c")).toBe(true)
+  })
+
+  test("never drops an entry with a request in flight", () => {
+    const now = 1_000_000
+    // `updatedAt` starts at 0 while a request is in flight, so an in-flight
+    // entry is always "stale" by time — dropping it would lose the de-dupe
+    // guard and let the poll fire a duplicate batch request every tick.
+    sidebarSessionStatusBatches.set("dir\0a", { updatedAt: 0, inFlight: Promise.resolve() })
+
+    pruneSidebarSessionStatusBatches(now)
+
+    expect(sidebarSessionStatusBatches.has("dir\0a")).toBe(true)
+  })
+
+  test("collects the permutations left behind by membership churn", () => {
+    // The key carries every session id in the group, so each open/close mints
+    // a new one and strands its predecessor. Nothing removed them before.
+    const now = 1_000_000
+    for (let i = 0; i < 200; i++) {
+      const ids = Array.from({ length: 20 }, (_, n) => `ses_${i}_${n}`).join("\0")
+      sidebarSessionStatusBatches.set(`dir\0${ids}`, { updatedAt: now - fresh - i })
+    }
+    sidebarSessionStatusBatches.set("dir\0current", { updatedAt: now })
+
+    pruneSidebarSessionStatusBatches(now)
+
+    expect(sidebarSessionStatusBatches.size).toBe(1)
+    expect(sidebarSessionStatusBatches.has("dir\0current")).toBe(true)
   })
 })

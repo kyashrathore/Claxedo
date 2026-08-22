@@ -60,6 +60,8 @@ export function WorkbenchShellHeader(props: {
   activeGlobal: () => boolean
   canUseDocuments?: boolean
   canCreateTerminal: () => boolean
+  focusedPanelTarget: () => { workspaceDir: string; targetPaneId: string } | undefined
+  hasWorkspacePanelTarget: () => boolean
   onCloseSurface: (contentId: string) => void
   onNewPage: () => void
   onNewSession: () => void
@@ -73,10 +75,13 @@ export function WorkbenchShellHeader(props: {
   onToggleWorkspacePanelFullWidth: () => void
   sidebarPinned: () => boolean
   switcherItems: () => SwitcherItem[]
+  toggleFocusedWorkspaceNavigator: (navigator: "files" | "changes" | "processes") => void
   topBarRight?: () => JSX.Element
   trafficLightPad: () => boolean
   workspacePanelBridgeChromeVisible: () => boolean
+  workspacePanelForFocusedTarget: () => boolean
   workspacePanelFullWidth: () => boolean
+  workspacePanelNavigator: () => "files" | "changes" | "processes" | null | undefined
   workspacePanelVisualOpen: () => boolean
   onFloatingChromeRef: (element: HTMLElement | undefined) => void
 }) {
@@ -95,9 +100,12 @@ export function WorkbenchShellHeader(props: {
       class="relative flex h-9 shrink-0 items-center gap-1 overflow-hidden border-b border-border-weaker-base bg-background-base"
       classList={{
         // The right padding reserves room for the absolutely-positioned
-        // floating panel-chrome. That chrome is hidden while the workspace
-        // panel is open, so drop the reserve then and let the scope buttons
-        // sit flush against the panel divider instead of leaving a 40px gap.
+        // floating panel-chrome, which while the panel is closed is just the
+        // panel toggle: right-1 + pl-1 + a size-6 button = 28px measured in the
+        // running app. It was 8rem when the Files/Changes/Processes trio still
+        // sat here; that would now hold ~6rem of dead space open. The chrome is
+        // hidden while the panel is open, so drop the reserve then and let the
+        // scope buttons sit flush against the panel divider instead.
         "pr-10": !props.workspacePanelVisualOpen(),
         "pr-1": props.workspacePanelVisualOpen(),
       }}
@@ -161,6 +169,12 @@ export function WorkbenchShellHeader(props: {
           }}
         >
           <Show when={!props.workspacePanelVisualOpen() || props.workspacePanelBridgeChromeVisible()}>
+            {/* The Files/Changes/Processes trio deliberately does NOT appear
+                here. It has two homes already: the panel column's own L2 strip
+                (below), and the session environment card's vertical rail, which
+                stays visible while the panel is closed. A third copy in the
+                floating chrome duplicated the same three targets a few pixels
+                from the panel toggle that reaches them. */}
             <WorkspacePanelChrome
               workspacePanelOpen={props.workspacePanelVisualOpen}
               workspacePanelFullWidth={props.workspacePanelFullWidth}
@@ -172,6 +186,42 @@ export function WorkbenchShellHeader(props: {
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * The Files / Changes / Processes navigator trio, wired to the focused panel
+ * target. One owner for the wiring: the panel column's L2 strip renders it
+ * while the workspace panel is open, and `WorkbenchShellHeader`'s floating
+ * chrome renders the SAME component while the panel is closed — without the
+ * closed-panel copy the trio (and the Processes crash-attention dot) lived
+ * only inside the `display:none` panel shell, so a user whose panel was
+ * closed (e.g. restored closed after a reload) had no affordance at all to
+ * reach Files/Changes/Processes.
+ */
+function WorkspacePanelToolTrio(props: {
+  focusedPanelTarget: () => { workspaceDir: string; targetPaneId: string } | undefined
+  hasWorkspacePanelTarget: () => boolean
+  workspacePanelForFocusedTarget: () => boolean
+  workspacePanelNavigator: () => "files" | "changes" | "processes" | null | undefined
+  toggleFocusedWorkspaceNavigator: (navigator: "files" | "changes" | "processes") => void
+}) {
+  const claxedoState = useClaxedoState()
+  return (
+    <WorkspaceToolButtons
+      available={props.hasWorkspacePanelTarget()}
+      filesActive={props.workspacePanelForFocusedTarget() && props.workspacePanelNavigator() === "files"}
+      changesActive={props.workspacePanelForFocusedTarget() && props.workspacePanelNavigator() === "changes"}
+      processesActive={props.workspacePanelForFocusedTarget() && props.workspacePanelNavigator() === "processes"}
+      processesAttention={
+        claxedoState.processPane.crashedWhileClosed() ||
+        (!!props.focusedPanelTarget() &&
+          claxedoState.processPane.crashed(props.focusedPanelTarget()?.workspaceDir))
+      }
+      showChanges
+      showProcesses
+      onToggle={props.toggleFocusedWorkspaceNavigator}
+    />
   )
 }
 
@@ -200,21 +250,13 @@ function L2HeaderStrip(props: {
     return tab?.kind === "file" ? tab : undefined
   }
   const reviewContextActive = () => workspaceTab()?.kind === "review" && props.workspacePanelMode() === "review"
-  const workspacePanelTargetAvailable = () => props.hasWorkspacePanelTarget()
   const WorkspaceTools = () => (
-    <WorkspaceToolButtons
-      available={workspacePanelTargetAvailable()}
-      filesActive={props.workspacePanelForFocusedTarget() && props.workspacePanelNavigator() === "files"}
-      changesActive={props.workspacePanelForFocusedTarget() && props.workspacePanelNavigator() === "changes"}
-      processesActive={props.workspacePanelForFocusedTarget() && props.workspacePanelNavigator() === "processes"}
-      processesAttention={
-        claxedoState.processPane.crashedWhileClosed() ||
-        (!!props.focusedPanelTarget() &&
-          claxedoState.processPane.crashed(props.focusedPanelTarget()?.workspaceDir))
-      }
-      showChanges
-      showProcesses
-      onToggle={props.toggleFocusedWorkspaceNavigator}
+    <WorkspacePanelToolTrio
+      focusedPanelTarget={props.focusedPanelTarget}
+      hasWorkspacePanelTarget={props.hasWorkspacePanelTarget}
+      workspacePanelForFocusedTarget={props.workspacePanelForFocusedTarget}
+      workspacePanelNavigator={props.workspacePanelNavigator}
+      toggleFocusedWorkspaceNavigator={props.toggleFocusedWorkspaceNavigator}
     />
   )
   return (

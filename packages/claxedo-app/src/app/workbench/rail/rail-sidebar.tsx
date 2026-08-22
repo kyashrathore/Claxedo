@@ -1,3 +1,25 @@
+import {
+  SIDEBAR_SESSION_STATUS_FRESH_MS,
+  relativeTime,
+  sameRequestIds,
+  pruneSidebarSessionStatusBatches,
+  sidebarRequestDebug,
+  sidebarSessionStatusBatches,
+  sidebarStatusTargetFresh,
+} from "./rail-sidebar-status"
+import { measureRendererPhase } from "@/platform/performance/renderer-trace"
+
+// RETAINED INSTRUMENTATION — do not delete individual marks. Consumer:
+// `perf-harness/src/agent-claxedo-launcher.ts` reads marks WHOLESALE; see the
+// full note in `app/entry/app.tsx`.
+function perfDiag(name: string, detail?: unknown) {
+  try {
+    performance.mark(name, detail === undefined ? undefined : { detail })
+  } catch {}
+}
+let railBodyMarked = false
+let workspaceBlockMarked = false
+let groupsMarked = false
 /**
  * Rail Sidebar Component
  *
@@ -12,7 +34,7 @@
  * - Can be pinned open via toggle button
  */
 
-import { For, Show, Switch, Match, createMemo, createSignal, onCleanup, onMount, createEffect, on, type JSX } from "solid-js"
+import { For, Show, Switch, Match, createMemo, createSelector, createSignal, onCleanup, onMount, createEffect, on, type JSX } from "solid-js"
 import { GlobalNavigation } from "./global-navigation"
 import { useQueries, useQuery } from "@tanstack/solid-query"
 import { useClaxedoState, type ContentMeta } from "../state/index"
@@ -22,7 +44,8 @@ import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-butt
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { showToast } from "@opencode-ai/ui/toast"
-import { useLanguage, useServer } from "@claxedo/app"
+import { useLanguage } from "@/platform/i18n/provider"
+import { useServer } from "@/app/connection/server"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { usePermission } from "@/features/session/providers/permission"
@@ -99,7 +122,6 @@ export type { ProjectItem, RuntimeKind, SessionItem, WorkspaceInfo, WorkspaceIte
 const VIEW_KEY = "claxedo.session-view.v1"
 const GLOBAL_TAG = "global"
 const GLOBAL_SHOW_TAG = "global:default"
-const SIDEBAR_SESSION_STATUS_FRESH_MS = 10_000
 const SESSION_GROUP_PAGE_SIZE = 5
 
 type SessionListNoticeVariant = "loading" | "error" | "empty" | "done"
@@ -383,44 +405,6 @@ function git(input: Pick<SessionItem, "git"> | Pick<SessionInventoryRow, "git">)
   return uniq(all)
 }
 
-function relativeTime(ts: number) {
-  const diff = Date.now() - ts
-  const sec = Math.floor(diff / 1000)
-  if (sec < 10) return "now"
-  if (sec < 60) return `${sec}s`
-  const min = Math.floor(sec / 60)
-  if (min < 60) return `${min}m`
-  const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr}h`
-  const day = Math.floor(hr / 24)
-  if (day < 30) return `${day}d`
-  const mo = Math.floor(day / 30)
-  if (mo < 12) return `${mo}mo`
-  return `${Math.floor(mo / 12)}y`
-}
-
-function sidebarRequestDebug(...args: unknown[]) {
-  if (typeof localStorage === "undefined") return
-  if (localStorage.getItem("claxedo.debug.sidebar-requests") !== "1") return
-  console.debug("[claxedo:sidebar-requests]", ...args)
-}
-
-const sidebarSessionStatusBatches = new Map<string, { updatedAt: number; inFlight?: Promise<void> }>()
-
-function sameRequestIds(previous: { id: string }[] | undefined, next: { id: string }[]) {
-  if (!previous || previous.length !== next.length) return false
-  return previous.every((item, index) => item.id === next[index]?.id)
-}
-
-function sidebarStatusTargetFresh(sessionID: string, now = Date.now()) {
-  const status = queryClient.getQueryState(shellDataKeys.sessionId(sessionID, "status"))
-  const requests = queryClient.getQueryState(shellDataKeys.sessionId(sessionID, "requests"))
-  return status?.data !== undefined &&
-    requests?.data !== undefined &&
-    now - status.dataUpdatedAt < SIDEBAR_SESSION_STATUS_FRESH_MS &&
-    now - requests.dataUpdatedAt < SIDEBAR_SESSION_STATUS_FRESH_MS
-}
-
 function replaceSessionUrl(session: Row) {
   if (typeof window === "undefined") return
   // Desktop routes with MemoryRouter over a file:// document: writing the route
@@ -435,6 +419,10 @@ function replaceSessionUrl(session: Row) {
   window.history.replaceState(window.history.state, "", route)
 }
 export function RailSidebar(props: RailSidebarProps) {
+  if (!railBodyMarked) {
+    railBodyMarked = true
+    perfDiag("diag.rail.sidebarBody", { projects: props.projects.length })
+  }
   const claxedoState = useClaxedoState()
   const language = useLanguage()
   const workbenchSessionTitles = createMemo(() => new Map(
@@ -774,6 +762,10 @@ export function RailSidebar(props: RailSidebarProps) {
 
   const groups = createMemo<Cluster[]>(() => {
     const wsStore = sessionInventory().byWorkspace
+    if (!groupsMarked && props.projects.length > 0) {
+      groupsMarked = true
+      perfDiag("diag.rail.groupsFirstNonEmpty", { projects: props.projects.length })
+    }
     return props.projects.map((project) => ({
       id: project.id,
       label: projectLabel(project),
@@ -921,6 +913,10 @@ export function RailSidebar(props: RailSidebarProps) {
       })))
       const run = () => {
         if (fastSessionSwitchAnyQuietDelay() > 0) return
+        // Every membership change mints a new batch key and strands the old
+        // one; this is the poll that observes those changes, so it is where
+        // the inert entries get collected.
+        pruneSidebarSessionStatusBatches()
         for (const group of groups) {
           const batchKey = `${group.directory}\0${group.targets.map((target) => target.sessionID).join("\0")}`
           const cached = sidebarSessionStatusBatches.get(batchKey)
@@ -1110,14 +1106,22 @@ export function RailSidebar(props: RailSidebarProps) {
     })
   }
 
-  const sessionActiveInWorkbench = (session: Row, directory: string) => {
+  // Both "is this row the active one?" sources are broadcast signals (the
+  // focused workbench surface, the route's active session). `createSelector`
+  // gives each row a per-key subscription, so a session switch re-runs the
+  // bindings of the TWO affected rows instead of every row in every section.
+  const workbenchActiveSessionKey = createMemo(() => {
     const focusedId = claxedoState.wb.selectors.focusedContent()
     const focused = focusedId ? claxedoState.meta.get(focusedId) : undefined
-    return !!focused &&
-      (focused.type === "session" || focused.type === "context") &&
-      focused.directory === directory &&
-      focused.sessionId === session.id
-  }
+    if (!focused || (focused.type !== "session" && focused.type !== "context")) return undefined
+    return `${focused.directory}\0${focused.sessionId}`
+  })
+  const isWorkbenchActiveSession = createSelector<string | undefined, string>(workbenchActiveSessionKey)
+  const sessionActiveInWorkbench = (session: Row, directory: string) =>
+    isWorkbenchActiveSession(`${directory}\0${session.id}`)
+  const isRouteActiveSession = createSelector<string | undefined, string>(
+    () => (props.activeSessionId ? `${props.activeDirectory}\0${props.activeSessionId}` : undefined),
+  )
 
   const sessionDirectory = (session: Row) => session.directory ?? session.project.worktree
   const sessionWorkbenchRef = (session: Row) => {
@@ -1194,20 +1198,46 @@ export function RailSidebar(props: RailSidebarProps) {
   const sessionDisplayRow = (session: Row, input?: {
     nested?: boolean
     showMetadata?: boolean
-    active?: boolean
+    /** Lazy for the same reason as `timeLabel` below — see `get active()`. */
+    active?: () => boolean
   }): SessionNavigationDisplayRow => {
-    clock()
     const metadata = sessionMetadata(session, input?.showMetadata)
+    const time = session.time
+    const inputActive = input?.active
     return {
       source: sessionSourceRow(session),
       title: sessionRowTitle(session.title),
       directory: sessionDirectory(session),
-      active: !!input?.active ||
-        !!session.active ||
-        (props.activeDirectory === sessionDirectory(session) && props.activeSessionId === session.id),
+      // `active` is read HERE, lazily, for the same reason as `timeLabel`:
+      // the activation sources (route active session, focused workbench
+      // surface) change on EVERY session switch, and reading them while
+      // BUILDING the row invalidated the whole rows array — every row object
+      // in every section was rebuilt so that TWO rows could change. As an
+      // accessor over `createSelector` keys, a switch re-runs only the
+      // active-reading bindings of the outgoing and incoming rows.
+      // Must stay an accessor: spreading this object would evaluate it
+      // eagerly and restore the whole-list invalidation.
+      get active() {
+        return (inputActive ? inputActive() : false) ||
+          !!session.active ||
+          isRouteActiveSession(`${sessionDirectory(session)}\0${session.id}`)
+      },
       ...(input?.nested ? { nested: true } : {}),
       status: sessionStatus(session),
-      ...(session.time ? { timeLabel: relativeTime(session.time) } : {}),
+      // `clock()` is read HERE, lazily, instead of at the top of this builder.
+      // The rail's 10 s clock exists only to refresh this one label, but reading
+      // it while BUILDING the row made every tick invalidate all six derived
+      // fields for every session — and for anything older than a day the label
+      // does not even change. As an accessor the subscription belongs to
+      // whichever binding renders the label, so a tick re-runs that binding
+      // alone and leaves the row object itself referentially stable.
+      // Must stay an accessor: spreading this object would evaluate it eagerly
+      // and restore the old whole-row invalidation.
+      get timeLabel() {
+        if (!time) return undefined
+        clock()
+        return relativeTime(time)
+      },
       ...(metadata ? { metadata } : {}),
     }
   }
@@ -1237,54 +1267,59 @@ export function RailSidebar(props: RailSidebarProps) {
     setTimeout(task, fastSessionSwitchAnyQuietDelay({ baseDelay: 80 }) + 100)
   }
   const activateSession = (session: Row) => {
+    const measure = measureRendererPhase
     // Notify the shell that a session was picked. `activateSession` itself owns
     // the full navigation (prefetch/fast-switch/workspace-panel restore), so the
     // shell only uses this to close the mobile drawer — it must NOT re-run the
     // parent's navigation here or the two paths would double-open.
-    props.onSessionSelect?.(sessionDirectory(session), session.id)
-    const existingId = existingSessionContentId(session)
+    measure("sessionActivate.onSessionSelect", () => props.onSessionSelect?.(sessionDirectory(session), session.id))
+    const existingId = measure("sessionActivate.findContent", () => existingSessionContentId(session))
     if (existingId) {
       const directory = sessionDirectory(session)
       const serial = ++sessionActivationSerial
-      markFastSessionSwitch(session.id, Date.now(), {
+      measure("sessionActivate.markFastSwitch", () => markFastSessionSwitch(session.id, Date.now(), {
         networkQuiet: hasFreshMessagePrefetch(session.id),
-      })
-      setTimeout(() => {
+      }))
+      // Selection and visible content belong to the trusted action. Deferring
+      // them to a zero-delay timer guaranteed an extra task boundary and let
+      // unrelated main-thread work delay the first useful frame.
+      const previousWorkspacePanelSessionId = currentWorkspacePanelSessionId()
+      measure("sessionActivate.showContent", () => showSessionContent(existingId))
+      measure("sessionActivate.replaceUrl", () => replaceSessionUrl(session))
+      afterVisibleActivation(() => {
         if (serial !== sessionActivationSerial) return
-        const previousWorkspacePanelSessionId = currentWorkspacePanelSessionId()
-        showSessionContent(existingId)
-        replaceSessionUrl(session)
-        afterVisibleActivation(() => {
-          if (serial !== sessionActivationSerial) return
-          claxedoState.workspacePanel.rememberSession(previousWorkspacePanelSessionId)
-          scheduleSidebarStatusPrime(directory)
-          restoreWorkspacePanelSession(session, existingId, directory)
-          const meta = claxedoState.meta.get(existingId)
-          if (meta) props.onTabSelect?.(meta)
-        })
-      }, 0)
+        claxedoState.workspacePanel.rememberSession(previousWorkspacePanelSessionId)
+        scheduleSidebarStatusPrime(directory)
+        restoreWorkspacePanelSession(session, existingId, directory)
+        const meta = claxedoState.meta.get(existingId)
+        if (meta) props.onTabSelect?.(meta)
+      })
       return
     }
 
-    const previousWorkspacePanelSessionId = currentWorkspacePanelSessionId()
-    const directory = sessionDirectory(session)
+    const previousWorkspacePanelSessionId = measure(
+      "sessionActivate.currentWorkspacePanel",
+      currentWorkspacePanelSessionId,
+    )
+    const directory = measure("sessionActivate.directory", () => sessionDirectory(session))
     const serial = ++sessionActivationSerial
-    markFastSessionSwitch(session.id, Date.now(), {
+    measure("sessionActivate.markFastSwitch", () => markFastSessionSwitch(session.id, Date.now(), {
       networkQuiet: hasFreshMessagePrefetch(session.id),
-    })
-    const contentId = claxedoState.layout.openSession(directory, session.id, sessionRowTitle(session.title), {
+    }))
+    const contentId = measure("sessionActivate.openSession", () => claxedoState.layout.openSession(directory, session.id, sessionRowTitle(session.title), {
+      focus: false,
       sessionRef: sessionWorkbenchRef(session),
-    })
-    showSessionContent(contentId)
-    replaceSessionUrl(session)
-    afterVisibleActivation(() => {
+    }))
+    measure("sessionActivate.showContent", () => showSessionContent(contentId))
+    measure("sessionActivate.replaceUrl", () => replaceSessionUrl(session))
+    measure("sessionActivate.afterVisible", () => afterVisibleActivation(() => {
       if (serial !== sessionActivationSerial) return
       claxedoState.workspacePanel.rememberSession(previousWorkspacePanelSessionId)
       scheduleSidebarStatusPrime(directory)
       restoreWorkspacePanelSession(session, contentId, directory)
       const meta = claxedoState.meta.get(contentId)
       if (meta) props.onTabSelect?.(meta)
-    })
+    }))
   }
   const prepareSessionDrag = (session: Row) => {
     const sessionRef = () => sessionWorkbenchRef(session)
@@ -1847,6 +1882,7 @@ export function RailSidebar(props: RailSidebarProps) {
             </Show>
             <Show when={more()}>
               <button
+                data-testid="rail-sidebar-session-load-more"
                 type="button"
                 class="text-sm text-text-weaker hover:text-text-weak pl-9 pr-2.5 py-1 text-left transition-colors duration-100"
                 disabled={sessionListLoadingMore()}
@@ -1884,6 +1920,10 @@ export function RailSidebar(props: RailSidebarProps) {
   }
 
   const WorkspaceBlock = (section: Section) => {
+    if (!workspaceBlockMarked) {
+      workspaceBlockMarked = true
+      perfDiag("diag.rail.workspaceBlockFirstMount", { workspaceDir: section.workspaceDir })
+    }
     const active = createMemo(() => props.activeDirectory === section.workspaceDir)
     const runtime = createMemo(() => workspaceRuntimeKind(section.project, section.workspaceDir, sectionCloud(section.project, section.workspaceDir)))
     const workspaceItem = createMemo(() => workspace(section.project, section.workspaceDir))
@@ -2132,7 +2172,9 @@ export function RailSidebar(props: RailSidebarProps) {
             <SessionNavigation
               rows={sectionRows().map((session) => sessionDisplayRow(session, {
                 nested: true,
-                active: sessionActiveInWorkbench(session, section.workspaceDir),
+                // Thunk, not a value: evaluating the workbench-focus read here
+                // would subscribe this whole rows map to every focus change.
+                active: () => sessionActiveInWorkbench(session, section.workspaceDir),
               }))}
               onActivate={(item) => activateSessionFromRows(sectionRows(), item)}
               onArchive={(item) => archiveSessionFromRows(sectionRows(), item, reconcileArchivedSessionListRow)}
@@ -2155,6 +2197,7 @@ export function RailSidebar(props: RailSidebarProps) {
             </Show>
             <Show when={more()}>
               <button
+                data-testid="rail-sidebar-session-load-more"
                 type="button"
                 class="text-sm text-text-weaker hover:text-text-weak pl-9 pr-2.5 py-1 text-left transition-colors duration-100"
                 disabled={sessionListLoadingMore()}
@@ -2419,6 +2462,7 @@ export function RailSidebar(props: RailSidebarProps) {
             </Show>
             <Show when={more()}>
               <button
+                data-testid="rail-sidebar-session-load-more"
                 type="button"
                 class="text-sm text-text-weaker hover:text-text-weak pl-9 pr-2.5 py-1 text-left transition-colors duration-100"
                 disabled={sessionListLoadingMore()}
