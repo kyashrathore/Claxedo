@@ -1,6 +1,6 @@
 import type { TerminalBackend } from "@/features/terminal/core/backend/types"
 import { retry } from "@/features/terminal/core/retry"
-import { ComponentProps, createEffect, createMemo, createSignal, onCleanup, onMount, splitProps } from "solid-js"
+import { ComponentProps, createEffect, createMemo, createSignal, createUniqueId, onCleanup, onMount, splitProps } from "solid-js"
 import { TerminalAccessoryRow } from "./accessory-row"
 import { useSDK } from "@/features/terminal/app-ports"
 import { monoFontFamily, useSettings } from "@/platform/settings/provider"
@@ -35,6 +35,7 @@ import { buildRestoreWrite, shouldTrimRestoredTail, trimTrailingLines } from "./
 import { classifyTerminalClose } from "./close"
 import { MIN_CONTAINER_PX, TERMINAL_OPTIONS } from "../core/config"
 import { scheduleFontSettleRefit } from "../core/font-settle"
+import { terminalBenchmarkBackendObservers } from "../core/benchmark-observer"
 
 import { resolveTerminalColors, type TerminalColors } from "./terminal-colors"
 import { createPtySnapshot } from "./terminal-pty-snapshot"
@@ -118,6 +119,7 @@ export const Terminal = (props: TerminalProps) => {
 
   let container!: HTMLDivElement
   const [local, others] = splitProps(props, ["pty", "autoFocus", "class", "classList", "onConnect", "onConnectError"])
+  const benchmarkInstanceId = createUniqueId() // stamps this instance's benchmark receipts; inert without a benchmark page
   // A detached pane can throw on `local.pty` access, so every read goes through
   // the guard and the snapshot it maintains — see `createPtySnapshot`.
   const { safePty, snapshot: ptySnapshotOf } = createPtySnapshot(() => local)
@@ -227,6 +229,7 @@ export const Terminal = (props: TerminalProps) => {
       const b = await createBackend(container, {
         theme: terminalColors(),
         fontFamily: monoFontFamily(settings.appearance.font()),
+        ...terminalBenchmarkBackendObservers(local.pty.id, benchmarkInstanceId),
         image:
           /\b(?:claude|codex)\b/i.test(local.pty.initialCommand ?? "") || /\b(?:claude|codex)\b/i.test(local.pty.title)
             ? "paste"
@@ -1173,7 +1176,7 @@ export const Terminal = (props: TerminalProps) => {
       <div
         ref={container}
         data-component="terminal"
-        data-prevent-autofocus
+        data-terminal-benchmark-instance-id={benchmarkInstanceId} data-prevent-autofocus
         tabIndex={-1}
         style={{ "background-color": terminalColors().background }}
         classList={{
