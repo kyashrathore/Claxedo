@@ -1156,37 +1156,42 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await scroller.hover()
     let beforeAnchor: { key: string; offset: number } | undefined
     for (let attempt = 0; attempt < 80; attempt++) {
-      if ((await root.getAttribute("data-session-rendered-user-count")) === "4") {
-        beforeAnchor = await scroller.evaluate((viewport) => {
+      if ((await root.getAttribute("data-session-rendered-user-count")) === "12") break
+      await scroller.evaluate((viewport) => {
+        const state = window as unknown as { __cachedTurnAnchor?: { key: string; offset: number } }
+        state.__cachedTurnAnchor = undefined
+        viewport.addEventListener("scroll", () => {
           const view = viewport.getBoundingClientRect()
           const anchor = [...viewport.querySelectorAll<HTMLElement>("[data-timeline-key]")]
             .map((element) => ({ element, rect: element.getBoundingClientRect() }))
             .filter((item) => item.rect.bottom > view.top && item.rect.top < view.bottom)
             .sort((a, b) => a.rect.top - b.rect.top)[0]
           const key = anchor?.element.dataset.timelineKey
-          return key ? { key, offset: anchor.rect.top - view.top } : undefined
-        })
-      }
+          if (key) state.__cachedTurnAnchor = { key, offset: anchor.rect.top - view.top }
+        }, { capture: true, once: true })
+      })
       await page.mouse.wheel(0, -500)
-      if ((await root.getAttribute("data-session-rendered-user-count")) === "12") break
+      // A wheel may also trigger row measurement and the cached reveal. Wait
+      // for that transaction to settle before deciding whether another user
+      // gesture is needed; a second gesture would intentionally cancel it.
+      await page.waitForTimeout(250)
+      if ((await root.getAttribute("data-session-rendered-user-count")) !== "12") continue
+      beforeAnchor = await page.evaluate(() =>
+        (window as unknown as { __cachedTurnAnchor?: { key: string; offset: number } }).__cachedTurnAnchor,
+      )
+      break
     }
     await expect(root).toHaveAttribute("data-session-rendered-user-count", "12", { timeout: 20_000 })
     expect(beforeAnchor).toBeDefined()
 
-    const position = await scroller.evaluate((viewport, anchor) => {
+    await expect.poll(() => scroller.evaluate((viewport, anchor) => {
       const view = viewport.getBoundingClientRect()
       const retained = [...viewport.querySelectorAll<HTMLElement>("[data-timeline-key]")]
         .find((element) => element.dataset.timelineKey === anchor.key)
-      if (!retained) return undefined
+      if (!retained) return false
       const retainedRect = retained.getBoundingClientRect()
-      return {
-        offset: retainedRect.top - view.top,
-        retainedVisible: retainedRect.bottom > view.top && retainedRect.top < view.bottom,
-      }
-    }, beforeAnchor!)
-
-    expect(position).toBeDefined()
-    expect(position?.retainedVisible).toBe(true)
+      return retainedRect.bottom > view.top && retainedRect.top < view.bottom
+    }, beforeAnchor!), { timeout: 5_000 }).toBe(true)
   })
 
   test("a mounted user message never changes from a plain preview to the canonical renderer", async ({ page }) => {

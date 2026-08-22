@@ -1779,6 +1779,16 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await contractRoute(page, "**/api/wr/events**", wrEventsHandler)
   await contractRoute(page, "**/api/wr/runtime-events**", wrRuntimeEventsHandler)
 
+  // ProcessPane reconciles once when a workspace shell mounts. The shared
+  // runtime has no process fixtures, so its canonical answer is an empty list;
+  // specs that exercise process CRUD register a later, stateful override.
+  await contractRoute(page, "**/api/wr/process**", (route) => {
+    if (!api(route)) return route.continue()
+    const url = new URL(route.request().url())
+    if (url.pathname !== "/api/wr/process" || route.request().method() !== "GET") return route.fallback()
+    return json(route, { configs: [], processes: [] })
+  })
+
   // GET /api/control/session-list (`src/utils/workspace-control-routes.ts`
   // `controlSessionNavigationListUrl`) backs the rail sidebar's session list
   // (`rail-sidebar.tsx`'s `globalSessionList` query) — a claxedo-server-native

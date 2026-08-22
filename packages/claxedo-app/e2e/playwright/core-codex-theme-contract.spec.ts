@@ -27,7 +27,7 @@ test.describe("Codex theme contract @core", () => {
         }
 
         const overlay = add({ "data-surface": "overlay", "data-overlay-shell": "menu" })
-        const card = add({}, "ui-context-card is-floating")
+        const card = add({ "data-slot": "switcher-metadata-card" })
         const root = getComputedStyle(document.documentElement)
         const stroke = "0 0 0 0.5px color-mix(in oklab, var(--text-strong) 12%, transparent)"
         const prominent = `${stroke}, 0 3px 7.5px #0000000a, 0 0 20px #0000000d`
@@ -107,7 +107,7 @@ test.describe("Codex theme contract @core", () => {
       dialog.append(container)
       overlayNodes.push(content)
 
-      const card = add({}, "ui-context-card is-floating")
+      const card = add({ "data-slot": "switcher-metadata-card" })
       const composer = add({ "data-surface": "composer", "data-dock-border-underlay": "v2" })
       const sidebar = add({ "data-surface": "sidebar" })
       const root = getComputedStyle(document.documentElement)
