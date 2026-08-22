@@ -1,3 +1,4 @@
+import { appendFileSync } from "node:fs"
 import { mkdir, mkdtemp, rename, rm } from "node:fs/promises"
 import net from "node:net"
 import { tmpdir } from "node:os"
@@ -5,9 +6,21 @@ import path from "node:path"
 import { chromium, type Browser, type BrowserContext, type Page, type Route } from "playwright-core"
 import { runAttribution } from "./attribution"
 import { flowName, type FlowResult } from "./flows"
-import { frameSamplingLaunchArgs, measureInteraction, mergeFrameMetrics, type FrameMetric } from "./frame-sampler"
+import {
+  frameSamplingLaunchArgs,
+  installPageLoadRecorder,
+  measureInteraction,
+  mergeFrameMetrics,
+  stopPageLoadRecorder,
+  type FrameMetric,
+} from "./frame-sampler"
 import { applyBudget, jsonReport, markdownReport } from "./report"
 import { seedForScenario } from "./seed"
+import { applyCpuProfile, applyNetworkProfile, environmentProfile, type EnvironmentProfile } from "./environment-profile"
+import { installWebVitals, mergeWebVitals, readWebVitals, type WebVitals } from "./web-vitals"
+import { browserRecords } from "./browser-records"
+import { compareToBaseline, currentCommit, readBaselineFor, writeBaselineFor } from "./baseline-store"
+import { appendRunLog, runLogEntry } from "./run-log"
 import { summarize } from "./stats"
 import { appendTrend, appRoot, ensureBudget, harnessRoot, reportsRoot, writeBaseline, writeJson } from "./storage"
 import { app } from "./targets"
@@ -21,7 +34,7 @@ import type {
   SeedManifest,
 } from "./types"
 
-type BrowserTarget = {
+export type BrowserTarget = {
   target: AppTarget
   baseUrl: string
   mockPort: number
@@ -32,6 +45,8 @@ type BrowserTarget = {
 type BrowserRun = Omit<ScenarioResult, "budget" | "status" | "failures" | "warnings"> & {
   validation_failures?: string[]
 }
+
+type SessionRenderer = "plain" | "markdown" | "code" | "mermaid" | "diff"
 
 class BrowserScenarioError extends Error {
   constructor(message: string, readonly videoPath?: string) {
@@ -113,6 +128,26 @@ export async function runBrowser(options: RunOptions) {
               failures: [...budgeted.failures, ...validationFailures],
             }
         results.push(result)
+        // Project onto the portable contract and compare against the tracked
+        // baseline for THIS (profile, stack). Done here rather than in the
+        // report so a run always leaves comparable evidence behind, whether or
+        // not anyone reads the markdown.
+        const records = browserRecords(result, options.stack)
+        const baseline = await readBaselineFor({
+          profile: records[0]!.profile, stack: options.stack, lane: "browser", flow: scenario,
+        })
+        result.comparison = compareToBaseline(records, baseline)
+        if (options.accept_baseline) await writeBaselineFor(records, currentCommit())
+        const entry = runLogEntry({
+          records, comparison: result.comparison, commit: currentCommit(),
+          at: result.started_at,
+          evidence: {
+            worstFrameMs: result.headline.worstFrameMs,
+            framesOver1667: result.headline.framesOver1667,
+            interactionCount: result.vitals?.interactionCount ?? 0,
+          },
+        })
+        if (entry) await appendRunLog(entry)
         console.log(`[perf] ${scenario}: ${result.status}`)
         if (options.update_baseline) await writeBaseline(result)
         if (options.append_trend) await appendTrend(result)
@@ -197,6 +232,7 @@ async function executeBrowserScenarioMode(
             target,
             scenario,
             diagnosticsEnabled ? options.iterations + index : index,
+            environmentProfile(options.profile),
           ))
         }
         const run = mergeBrowserRuns(rawRuns)
@@ -220,7 +256,7 @@ async function executeBrowserScenarioMode(
           reject(new Error(
             `Timed out running ${scenario} with diagnostics ${diagnosticsEnabled ? "enabled" : "disabled"}`,
           ))
-        }, 120_000)
+        }, 120_000 * environmentProfile(options.profile).timeoutScale)
       }),
     ])
   } finally {
@@ -410,6 +446,7 @@ async function executeBrowserScenario(
   app: BrowserTarget,
   scenario: ScenarioId,
   iteration: number,
+  profile: EnvironmentProfile,
 ): Promise<BrowserRun> {
   const seed = seedForScenario(scenario)
   const fixture = fixtureFor(scenario, seed)
@@ -421,14 +458,31 @@ async function executeBrowserScenario(
       ? { recordVideo: { dir: path.join(reportsRoot, "videos", "raw"), size: viewport } }
       : {}),
   })
+  // A throttled profile makes every wait legitimately longer; without this a
+  // fixed readiness timeout fails because emulation worked, which surfaces as
+  // "browser scenario crashed" rather than as a slow number.
+  if (profile.timeoutScale > 1) {
+    context.setDefaultTimeout(5_000 * profile.timeoutScale)
+    context.setDefaultNavigationTimeout(30_000 * profile.timeoutScale)
+  }
   const page = await context.newPage()
+  // Before any app script: an init script is the only place all four vital
+  // types can be observed from zero (see installWebVitals).
+  await installWebVitals(page)
+  // CPU and network emulation belong to the page, not the flow — applied here
+  // so navigation itself, and therefore the load vitals, are throttled too.
+  const profileCdp = await context.newCDPSession(page)
+  await applyCpuProfile(profileCdp, profile)
+  await applyNetworkProfile(profileCdp, profile)
   const monitor = monitorPage(page)
   const started = performance.now()
-  await installMockApi(page, app, fixture, monitor)
-  await installSeedState(page, app.target, fixture)
+  await installMockApi(page, app, fixture, monitor, profile)
+  await installSeedState(page, app, fixture)
 
   try {
     const flow = await runFlow(scenario, page, app, fixture)
+    // After the flow, so INP reflects the interactions the flow actually drove.
+    const vitals = await readWebVitals(page)
     const validation_failures = await validationFailures(page, monitor, scenario, fixture)
     if (process.env.PERF_DEBUG_ERRORS) {
       const body = await page.locator("body").innerText({ timeout: 500 }).catch(() => "")
@@ -469,6 +523,8 @@ async function executeBrowserScenario(
       duration_ms: performance.now() - started,
       seed,
       headline: flow.headline,
+      vitals,
+      environment: { profile: profile.id, label: profile.label },
       metrics: flow.debug.map(summarize),
       validation_failures,
       artifacts: videoPath ? { video: path.relative(harnessRoot, videoPath) } : undefined,
@@ -482,11 +538,29 @@ async function executeBrowserScenario(
 
 async function browserFailureDiagnostics(page: Page, monitor: ReturnType<typeof monitorPage>, error: unknown) {
   const base = error instanceof Error ? error.message : String(error)
-  const [url, title, body, boundaryError] = await Promise.all([
+  const [url, title, body, boundaryError, perfState] = await Promise.all([
     page.url(),
     page.title().catch(() => ""),
     page.locator("body").innerText({ timeout: 500 }).catch(() => ""),
     readBoundaryError(page),
+    page.evaluate(() => {
+      const state = JSON.parse(localStorage.getItem("claxedo.state.v5") ?? "{}") as {
+        workspacePanel?: unknown
+        workbench?: { focusedPaneId?: unknown; panes?: unknown }
+      }
+      return {
+        workspacePanel: state.workspacePanel,
+        focusedPaneId: state.workbench?.focusedPaneId,
+        panes: state.workbench?.panes,
+        shell: document.querySelector("[data-testid='workspace-panel-shell']")?.getAttribute("data-open"),
+        pending: !!document.querySelector("[data-testid='workspace-review-pending']"),
+        review: document.querySelectorAll("[data-review-diff-style]").length,
+        renderedHunks: Array.from(document.querySelectorAll<HTMLElement>("[data-review-rendered-hunks]"))
+          .map((node) => node.dataset.reviewRenderedHunks),
+        reviewRoot: document.querySelectorAll("[data-testid='review-pane-root']").length,
+        lines: document.querySelectorAll("#review-panel [data-line]").length,
+      }
+    }).catch(() => undefined),
   ])
   const details = [
     base,
@@ -494,6 +568,7 @@ async function browserFailureDiagnostics(page: Page, monitor: ReturnType<typeof 
     title ? `title=${title}` : undefined,
     body.trim() ? `body=${body.replace(/\s+/g, " ").trim().slice(0, 240)}` : "body=<empty>",
     boundaryError ? `boundaryError=${boundaryError.replace(/\s+/g, " ").trim().slice(0, 600)}` : undefined,
+    perfState ? `perfState=${JSON.stringify(perfState)}` : undefined,
     monitor.pageErrors.length ? `pageErrors=${monitor.pageErrors.slice(-3).join(" | ")}` : undefined,
     monitor.consoleErrors.length ? `consoleErrors=${monitor.consoleErrors.slice(-3).join(" | ")}` : undefined,
     monitor.failedResponses.length ? `failedResponses=${monitor.failedResponses.slice(-5).join(" | ")}` : undefined,
@@ -526,6 +601,9 @@ function mergeBrowserRuns(rawRuns: BrowserRun[]): BrowserRun {
         samples: rawRuns.flatMap((result) => result.metrics[index]?.samples ?? []),
       }),
     ),
+    // Not inherited from rawRuns[0] via the spread: that would report the first
+    // iteration's vitals as if they described the whole merge.
+    vitals: mergeWebVitals(rawRuns.map((result) => result.vitals).filter((item): item is WebVitals => !!item)),
     validation_failures: rawRuns.flatMap((result) => result.validation_failures ?? []),
     artifacts: rawRuns.at(-1)?.artifacts,
   }
@@ -560,25 +638,22 @@ async function runFlow(scenario: ScenarioId, page: Page, app: BrowserTarget, fix
   return flowDrivers[scenario](page, app, fixture)
 }
 
-// Launch flows: the headline samples the post-load settle (first-frame smoothness)
-// while completionMs carries the user-visible time-to-ready. Frame sampling cannot
-// span the full navigation because page.goto replaces the document (and our recorder).
 async function launchProject(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
-  const launch = await launchTo(page, app, workspacePath(fixture.directory))
-  await showSessionInventory(page, fixture, fixture.sessions.length)
+  await installPageLoadRecorder(page)
+  const started = performance.now()
   const session = fixture.sessions[0]!
-  const transcriptMs = await measureInPageSessionFirstFoldSwitch(page, session)
+  const launch = await launchTo(page, app, sessionPath(session, session.id))
   await waitForTranscript(page, fixture, session.id, session.title)
-  const headline = await measureInteraction(page, "launch-project", async () => {
-    await settleForVideo(page)
-  })
-  headline.completionMs = Math.round(launch.ready * 100) / 100
+  await waitForSessionComposer(page)
+  const transcriptReady = performance.now() - started
+  await showSessionInventory(page, fixture, fixture.sessions.length, { settle: "frame" })
+  const headline = await stopPageLoadRecorder(page, "launch-project", performance.now() - started)
   return {
     headline,
     debug: [
       lower("launch_first_window_ms", launch.domContentLoaded),
       lower("launch_workspace_ready_ms", launch.ready),
-      lower("transcript_render_ms", transcriptMs),
+      lower("transcript_render_ms", transcriptReady),
     ],
   }
 }
@@ -586,24 +661,35 @@ async function launchProject(page: Page, app: BrowserTarget, fixture: ReturnType
 async function sessionSwitch(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
   const first = fixture.sessions[0]!
   const second = fixture.sessions[1] ?? first
+  const renderer = fixture.sessionRenderer
+  const renderMermaid = process.env.CLAXEDO_PERF_MERMAID_EXPLICIT !== "0"
   await launchTo(page, app, sessionPath(first, first.id))
   await waitForTranscript(page, fixture, first.id, first.title)
   await showSessionInventory(page, fixture, Math.min(2, fixture.sessions.length))
+  const prefetchSettleMs = Number(process.env.CLAXEDO_PERF_SESSION_PREFETCH_SETTLE_MS ?? "0")
+  if (prefetchSettleMs > 0) await page.waitForTimeout(prefetchSettleMs)
+  if (process.env.CLAXEDO_PERF_WARM_SESSION_SWITCH === "1") {
+    await measureInPageSessionFirstFoldSwitch(page, second, { renderer, renderMermaid })
+    await waitForTranscript(page, fixture, second.id, second.title)
+    await measureInPageSessionFirstFoldSwitch(page, first, { renderer, renderMermaid })
+    await waitForTranscript(page, fixture, first.id, first.title)
+  }
 
   let singleSwitchMs = 0
-  // Headline: rapid back-and-forth switching between two 10k-message sessions.
+  // Headline: rapid back-and-forth switching between two sessions whose backing
+  // histories contain 10k messages. Transcript readiness requires the loaded
+  // first fold; the UI intentionally does not mount all 10k rows.
   // The frame recorder spans the whole stress loop; monitorPage simultaneously
   // catches any call-stack overflow / error-boundary as a validation failure.
   const headline = await measureInteraction(page, "session-switch", async () => {
-    for (let round = 0; round < 3; round++) {
-      const started = performance.now()
-      await clickVisibleSession(page, fixture, second, { settle: "frame" })
-      await page.getByText(second.title, { exact: false }).first().waitFor({ timeout: 10_000 })
-      if (round === 0) singleSwitchMs = performance.now() - started
-      await clickVisibleSession(page, fixture, first, { settle: "frame" })
-      await page.getByText(first.title, { exact: false }).first().waitFor({ timeout: 10_000 })
+    const rounds = Math.max(1, Number(process.env.CLAXEDO_PERF_SESSION_SWITCH_ROUNDS ?? "3"))
+    for (let round = 0; round < rounds; round++) {
+      const elapsed = await measureInPageSessionFirstFoldSwitch(page, second, { renderer, renderMermaid })
+      if (round === 0) singleSwitchMs = elapsed
+      await measureInPageSessionFirstFoldSwitch(page, first, { renderer, renderMermaid })
     }
   })
+  await waitForTranscript(page, fixture, first.id, first.title)
   await settleForVideo(page)
   return {
     headline,
@@ -620,11 +706,13 @@ async function liveTerminalSwitch(page: Page, app: BrowserTarget, fixture: Retur
   await openTerminalSurface(page, fixture, fixture.terminals[0])
   await openTerminalSurface(page, fixture, fixture.terminals[1])
   let switchMs = 0
-  // Headline: switching between live terminals with active output.
+  // Headline: switching among already-open terminal surfaces. The fixture
+  // proves websocket attachment with one seeded line; continuous output stress
+  // belongs in a separate flow.
   const headline = await measureInteraction(page, "live-terminal-switch", async () => {
     switchMs = await measureInPageTerminalSwitch(page, fixture.terminals[0]!.id)
-    await openTerminalSurface(page, fixture, fixture.terminals[1])
-    await openTerminalSurface(page, fixture, fixture.terminals[0])
+    await measureInPageTerminalSwitch(page, fixture.terminals[1]!.id)
+    await measureInPageTerminalSwitch(page, fixture.terminals[0]!.id)
   })
   if (switchMs >= 4_900) recordVisualFailure(fixture, "terminal switch did not settle before timeout")
   await settleForVideo(page)
@@ -689,8 +777,6 @@ async function measureInPageTerminalSwitch(page: Page, terminalId: string): Prom
       `[data-testid="rail-sidebar-terminal-row"][data-terminal-id="${CSS.escape(id)}"]`,
     )
     if (!target) return 5000
-    const fits = (r: DOMRect) => r.width > 100 && r.height > 40
-
     const start = performance.now()
     // Same NavigationRow shape as the session rows: the activate handler is
     // on the absolute child button, not the row container.
@@ -698,13 +784,18 @@ async function measureInPageTerminalSwitch(page: Page, terminalId: string): Prom
 
     return await new Promise<number>((resolve) => {
       const limit = 5000
-      let stableVisibleFrames = 0
+      let stableReadyFrames = 0
       const tick = () => {
         const elapsed = performance.now() - start
-        const els = Array.from(document.querySelectorAll("[data-component='terminal'], #terminal-panel"))
-        const hasVisible = els.some((el) => fits(el.getBoundingClientRect()))
-        stableVisibleFrames = hasVisible ? stableVisibleFrames + 1 : 0
-        if (stableVisibleFrames >= 2) return resolve(elapsed)
+        const current = document.querySelector<HTMLElement>(
+          `[data-testid="rail-sidebar-terminal-row"][data-terminal-id="${CSS.escape(id)}"]`,
+        )
+        const pane = document.querySelector<HTMLElement>(
+          `[data-testid="terminal-pane"][data-terminal-id="${CSS.escape(id)}"]`,
+        )
+        const ready = current?.dataset.active === "true" && !!pane && !pane.closest("[aria-hidden='true']")
+        stableReadyFrames = ready ? stableReadyFrames + 1 : 0
+        if (stableReadyFrames >= 2) return resolve(elapsed)
         if (elapsed > limit) return resolve(elapsed)
         requestAnimationFrame(tick)
       }
@@ -719,29 +810,42 @@ async function largeDiffToggle(page: Page, app: BrowserTarget, fixture: ReturnTy
   const reviewPanelOpenMs = await measureWorkspacePanelOpen(page, fixture)
   const vcsLoadMs = await measureReviewChangedFileReady(page, fixture)
   await waitForReviewChangedFiles(page, fixture, { timeout: 2_000 })
-  await moveMouseToReviewPanel(page)
-  const hunkRenderMs = await measureInPageReviewScroll(page, 1600)
+  const firstHunkReadyMs = await openFirstReviewDiff(page)
   await waitForReviewStable(page)
-  // Headline: toggling split/unified on a 500-file diff — the canonical diff jank.
+  // Headline: toggling split/unified with a 500-file model. The review mounts
+  // its first progressive header batch and the opened diff body before timing.
+  // Readiness waits are semantic and do not scan every diff line or force layout.
   const headline = await measureInteraction(page, "large-diff-toggle", async () => {
-    await toggleDiffStyle(page, { settle: "video" })
-    await waitForReviewStable(page)
-    await toggleDiffStyle(page, { settle: "video" })
-    await waitForReviewStable(page)
+    await toggleDiffStyle(page, { settle: "frame" })
+    await toggleDiffStyle(page, { settle: "frame" })
   })
-  const lineCommentMs = await measureInPageReviewLineClick(page)
-  await showChangesNavigator(page, fixture)
-  const changedFileNavMs = await measureChangedFileNavigation(page, fixture.changedFiles[1]?.file ?? fixture.changedFiles[0]!.file)
   return {
     headline,
     debug: [
       lower("review_panel_open_ms", reviewPanelOpenMs),
       lower("vcs_load_ms", vcsLoadMs),
-      lower("hunk_render_ms", hunkRenderMs),
-      lower("line_comment_ms", lineCommentMs),
-      lower("changed_file_navigation_ms", changedFileNavMs),
+      lower("first_hunk_ready_ms", firstHunkReadyMs),
     ],
   }
+}
+
+async function openFirstReviewDiff(page: Page) {
+  const item = page.locator("#review-panel [data-review-file]").first()
+  await item.waitFor({ state: "visible", timeout: 2_000 })
+  const trigger = item.locator('[data-testid$="-trigger"]').first()
+  const renderedBefore = await page.evaluate(() => Number(
+    Array.from(document.querySelectorAll<HTMLElement>("[data-review-rendered-hunks]"))
+      .find((node) => !node.closest("[aria-hidden='true']"))
+      ?.dataset.reviewRenderedHunks ?? "0",
+  ))
+  const started = performance.now()
+  if (await trigger.getAttribute("aria-expanded") !== "true") await trigger.click({ timeout: 2_000 })
+  await page.waitForFunction((before) =>
+    Array.from(document.querySelectorAll<HTMLElement>("[data-review-rendered-hunks]"))
+      .some((node) => !node.closest("[aria-hidden='true']") && Number(node.dataset.reviewRenderedHunks ?? "0") > before),
+  renderedBefore, { timeout: 2_000 })
+  await waitForAnimationFrame(page, 2)
+  return Math.round((performance.now() - started) * 100) / 100
 }
 
 async function workspaceSwitch(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
@@ -751,9 +855,10 @@ async function workspaceSwitch(page: Page, app: BrowserTarget, fixture: ReturnTy
   await showSessionInventory(page, fixture, Math.min(5, fixture.sessions.length), { settle: "frame" })
   // Headline: selecting a session whose route is owned by another workspace.
   const headline = await measureInteraction(page, "workspace-switch", async () => {
-    await clickVisibleSession(page, fixture, target, { settle: "frame" })
-    await waitForTranscript(page, fixture, target.id, target.title)
+    const elapsed = await measureInPageSessionFirstFoldSwitch(page, target)
+    if (elapsed >= 10_000) recordVisualFailure(fixture, "workspace target session did not render its first fold")
   })
+  await waitForTranscript(page, fixture, target.id, target.title)
   const files = await measureWorkspaceFiles(page, fixture, { settle: "frame" })
   await settleForVideo(page)
   return { headline, debug: files }
@@ -785,8 +890,17 @@ async function waitForLaunchStable(page: Page) {
   )
 }
 
-async function installSeedState(page: Page, target: AppTarget, fixture: ReturnType<typeof fixtureFor>) {
-  await page.addInitScript(({ target, directory, project, sessions, claxedoState }) => {
+async function waitForSessionComposer(page: Page) {
+  // The route fixture does not synthesize provider readiness, so PromptInput
+  // may legitimately show its loading body. The dock still proves that the
+  // lazy composer module evaluated, mounted, and established its interaction
+  // region before the launch recorder stops.
+  await page.waitForSelector("[data-component='session-prompt-dock']", { timeout: 10_000 })
+}
+
+export async function installSeedState(page: Page, app: Pick<BrowserTarget, "target" | "mockPort">, fixture: ReturnType<typeof fixtureFor>) {
+  const target = app.target
+  await page.addInitScript(({ target, directory, project, sessions, claxedoState, serverUrl }) => {
     localStorage.setItem(
       "settings.v3",
       JSON.stringify({ general: { showFileTree: true, showSessionProgressBar: true, editToolPartsExpanded: true } }),
@@ -817,12 +931,21 @@ async function installSeedState(page: Page, target: AppTarget, fixture: ReturnTy
       const win = window as typeof window & {
         __CLAXEDO_TEST_AUTH_TOKEN__?: string
         __CLAXEDO_TEST_AUTH_USER__?: unknown
+        __CLAXEDO_E2E_SERVER_URL__?: string
       }
       win.__CLAXEDO_TEST_AUTH_TOKEN__ = "perf-browser-token"
       win.__CLAXEDO_TEST_AUTH_USER__ = { id: "perf-browser-user" }
+      win.__CLAXEDO_E2E_SERVER_URL__ = serverUrl
     }
     sessionStorage.setItem("claxedo.perf.fixture", JSON.stringify({ project, sessions }))
-  }, { target, directory: fixture.directory, project: fixture.project, sessions: fixture.sessions, claxedoState: claxedoStateSeed(fixture) })
+  }, {
+    target,
+    directory: fixture.directory,
+    project: fixture.project,
+    sessions: fixture.sessions,
+    claxedoState: claxedoStateSeed(fixture),
+    serverUrl: `http://127.0.0.1:${app.mockPort}`,
+  })
 }
 
 export function claxedoStateSeed(
@@ -873,10 +996,8 @@ export function claxedoStateSeed(
     },
     workspacePanel: {
       open: false,
-      mode: "navigator",
+      mode: "review",
       workspaceDir: fixture.directory,
-      targetPaneId: null,
-      navigator: { search: "", selectedId: null },
     },
     terminal: {
       owner: Object.fromEntries(fixture.terminals.map((terminal, index) => [terminal.id, `terminal_perf_${index}`])),
@@ -894,6 +1015,17 @@ export function claxedoStateSeed(
 // blanking the app with well-formed nonsense.
 const UNMATCHED_MOCK_PATH = Symbol("perf.unmatched-mock-path")
 const warnedUnmatchedPaths = new Set<string>()
+
+// Request-timeline lane: CLAXEDO_PERF_REQUEST_LOG=<path> appends one JSONL row
+// per mocked API request (wall-clock ms, method, path+query, status) plus a
+// `boot` marker per page, so serial waterfalls / duplicate fetches / 404
+// storms can be diffed across runs. Off (and zero-cost) unless the env is set.
+const requestLogPath = process.env.CLAXEDO_PERF_REQUEST_LOG
+let requestLogBootSeq = 0
+function logMockRequest(row: Record<string, unknown>) {
+  if (!requestLogPath) return
+  appendFileSync(requestLogPath, `${JSON.stringify(row)}\n`)
+}
 
 // Long-poll SSE, mirroring e2e/helpers/mock-runtime.ts's drain pattern
 // (route.fulfill cannot stream, so a "live" stream is a request HELD open for
@@ -919,18 +1051,53 @@ function sseStreamPath(pathName: string) {
   return pathName.endsWith("/api/wr/events") || pathName.endsWith("/api/wr/runtime-events")
 }
 
-async function installMockApi(
+export async function installMockApi(
   page: Page,
   app: BrowserTarget,
   fixture: ReturnType<typeof fixtureFor>,
   monitor: ReturnType<typeof monitorPage>,
+  profile: EnvironmentProfile,
 ) {
   const sseConnects = new Map<string, number>()
+  const bootSeq = ++requestLogBootSeq
+  const bootStarted = Date.now()
+  logMockRequest({ boot: bootSeq, at: bootStarted })
+  // CLAXEDO_PERF_FETCH_STACKS=1 (needs CLAXEDO_PERF_REQUEST_LOG too): wrap
+  // window.fetch in the page and append the JS initiator stack of each API
+  // request to the request log, so duplicate fetches can be attributed to
+  // their call sites (minified frames still identify distinct callers).
+  if (requestLogPath && process.env.CLAXEDO_PERF_FETCH_STACKS === "1") {
+    page.on("console", (message) => {
+      if (!message.text().startsWith("[FETCH_STACK]")) return
+      logMockRequest({ boot: bootSeq, t: Date.now() - bootStarted, stack: message.text().slice("[FETCH_STACK]".length) })
+    })
+    await page.addInitScript(() => {
+      const original = globalThis.fetch
+      const wrapped = function (this: unknown, input: RequestInfo | URL, init?: RequestInit) {
+        try {
+          const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+          if (/workspace\/resolve|\/provider|\/api\/claxedo\/session|\/vcs|permission-mode|\/meta(?:\?|$)|\/session\/[^/]+\/config/.test(url)) {
+            console.debug(`[FETCH_STACK]${url} :: ${new Error("stack").stack?.split("\n").slice(2, 8).join(" | ")}`)
+          }
+        } catch {}
+        return original.call(this, input, init)
+      }
+      globalThis.fetch = wrapped as typeof globalThis.fetch
+    })
+  }
   await page.routeWebSocket(/\/api\/wr\/pty\/[^/]+\/connect(?:\?|$)/, (socket) => {
     socket.send("perf terminal ready\r\n")
   })
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url())
+    const logRow = (status: number, note?: string) => logMockRequest({
+      boot: bootSeq,
+      t: Date.now() - bootStarted,
+      method: route.request().method(),
+      path: `${url.pathname}${url.search}`,
+      status,
+      ...(note ? { note } : {}),
+    })
     if (
       process.env.PERF_DEBUG_ERRORS &&
       (url.pathname.includes("session") || url.pathname.includes("workspace"))
@@ -938,6 +1105,16 @@ async function installMockApi(
       console.error(`[PERF_ROUTE] ${route.request().method()} ${url.toString()} mock=${String(shouldMock(url, app))}`)
     }
     if (!shouldMock(url, app)) return route.fallback()
+    // CDP network emulation cannot slow a route we fulfil in-process, so the
+    // profile's round trip is added here instead. Without it a "throttled" run
+    // still answers every API call in microseconds, which would make the
+    // data-dependent flows look faster under emulation than the asset-bound
+    // ones — the opposite of the truth. SSE streams are exempt: they are held
+    // open deliberately, and delaying the open would just shift the stream
+    // start, not model latency on its events.
+    if (profile.mockLatencyMs > 0 && !sseStreamPath(url.pathname)) {
+      await Bun.sleep(profile.mockLatencyMs)
+    }
     if (route.request().method() === "OPTIONS") {
       return route.fulfill({
         status: 204,
@@ -951,7 +1128,8 @@ async function installMockApi(
       // hold — and only genuine RE-connects are held for the idle window.
       const connects = (sseConnects.get(url.pathname) ?? 0) + 1
       sseConnects.set(url.pathname, connects)
-      if (connects > 3) await Bun.sleep(SSE_IDLE_HOLD_MS)
+      logRow(200, `sse connect#${connects}`)
+      if (connects > Number(process.env.CLAXEDO_PERF_SSE_FREE_CONNECTS ?? "3")) await Bun.sleep(SSE_IDLE_HOLD_MS)
       return route.fulfill({
         status: 200,
         contentType: "text/event-stream",
@@ -960,8 +1138,12 @@ async function installMockApi(
       }).catch(() => undefined)
     }
     const body = responseFor(url, fixture, route.request().method())
-    if (body === undefined) return route.fallback()
+    if (body === undefined) {
+      logRow(0, "fallback")
+      return route.fallback()
+    }
     if (body === UNMATCHED_MOCK_PATH) {
+      logRow(404, "unmatched")
       const key = `${route.request().method()} ${url.pathname}`
       if (!monitor.unmatchedMockPaths.includes(key)) monitor.unmatchedMockPaths.push(key)
       if (process.env.PERF_DEBUG_ERRORS || !warnedUnmatchedPaths.has(key)) {
@@ -975,6 +1157,7 @@ async function installMockApi(
         body: JSON.stringify({ error: "perf-harness mock: unmatched path", path: url.pathname }),
       })
     }
+    logRow(200)
     return route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -995,11 +1178,11 @@ function mockCorsHeaders(route: Route) {
 
 function shouldMock(url: URL, app: BrowserTarget) {
   if (url.port === String(app.mockPort)) return true
-  if (url.origin === app.baseUrl && apiPath(url.pathname)) return true
+  if (url.origin === app.baseUrl && (apiPath(url.pathname) || sseStreamPath(url.pathname))) return true
   if (
     ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname) &&
     url.origin !== app.baseUrl &&
-    apiPath(url.pathname)
+    (apiPath(url.pathname) || sseStreamPath(url.pathname))
   ) return true
   return false
 }
@@ -1038,9 +1221,31 @@ function responseFor(url: URL, fixture: ReturnType<typeof fixtureFor>, method = 
   if (pathName === "/global/health") return { healthy: true, version: "perf-browser" }
   if (pathName === "/experimental/session") return experimentalSessions(url, fixture)
   if (pathName === "/api/control/session-list") return sessionNavigationPage(url, fixture)
+  // Loopback rewrite of the SAME navigation contract: on a loopback server
+  // `sessionNavigationListUrl` (workspace-control-routes.ts:145-153) rewrites
+  // `/api/control/session-list` to `/api/claxedo/session-list`, served by the
+  // desktop-local product (claxedo-local-server meta-routes.ts:153) from the
+  // shared `buildSessionListResponse` producer — one fixture builder for both.
+  if (pathName === "/api/claxedo/session-list") return sessionNavigationPage(url, fixture)
   if (pathName === "/api/workspace") return { workspaces: controlWorkspaces(fixture) }
   if (pathName === "/api/workspace/resolve") return resolvedWorkspace(url, fixture)
+  // Loopback rewrite of workspace resolve (`workspaceResolveUrl`,
+  // workspace-control-routes.ts:39-42) — identical response shape.
+  if (pathName === "/api/claxedo/workspace/resolve") return resolvedWorkspace(url, fixture)
   if (pathName === "/api/control/sessions") return { sessions: controlSessions(fixture, url.searchParams.get("workspaceId")) }
+  // The desktop-local flat session inventory (claxedo-local-server
+  // meta-routes.ts:140-152, `GET /api/claxedo/session` → `{ sessions:
+  // SessionMeta[] }`), read by `fetchLocalControlSessions`
+  // (features/session/data/sync/inventory-source.ts:527-535) on loopback
+  // transport and mapped through `controlMetaToGlobalSession`.
+  if (pathName === "/api/claxedo/session") {
+    return { sessions: localSessionMetas(fixture, url.searchParams.get("directory")) }
+  }
+  // Usage outbox sync (features/usage/data/usage-api.ts `syncUsageOutbox`),
+  // fired on boot by `installUsageOutboxWakeups`. Contract: the four counters.
+  if (pathName === "/api/claxedo/usage/sync") {
+    return { attempted: 0, delivered: 0, conflicts: 0, pending: 0 }
+  }
   if (pathName === "/api/claxedo/diff/vcs" || pathName === "/api/wr/diff/vcs") {
     return changedFilesForVcs(url, fixture)
   }
@@ -1140,6 +1345,7 @@ function responseFor(url: URL, fixture: ReturnType<typeof fixtureFor>, method = 
   if (sessionConfig) return configForSession(sessionConfig[1]!, fixture)
   if (/^\/session\/[^/]+\/diff$/.test(pathName)) return fixture.changedFiles
   if (/^\/session\/[^/]+\/(children|todo)$/.test(pathName)) return []
+  if (/^\/session\/[^/]+\/subagents$/.test(pathName)) return []
   if (/^\/session\/[^/]+\/capabilities$/.test(pathName)) return capabilities()
 
   const messages = pathName.match(/^\/session\/([^/]+)\/message$/)
@@ -1321,6 +1527,25 @@ function controlWorkspaces(fixture: ReturnType<typeof fixtureFor>) {
   }))
 }
 
+// SessionMeta rows for the desktop-local `GET /api/claxedo/session` inventory
+// (claxedo-server-core session/meta/types.ts `SessionMeta`): camelCase times,
+// `sessionID`, and required `tags`/`attachments`, filtered by `?directory=`
+// exactly like the real handler's `listSessionMetas({ directory })`.
+function localSessionMetas(fixture: ReturnType<typeof fixtureFor>, directory?: string | null) {
+  return sessionsForDirectory(fixture, directory).map((session) => ({
+    sessionRef: `local:${session.directory}:session:${session.id}`,
+    sessionID: session.id,
+    host: "central",
+    title: session.title,
+    directory: session.directory,
+    projectID: session.projectID,
+    createdAt: session.time.created,
+    updatedAt: session.time.updated,
+    tags: [],
+    attachments: [],
+  }))
+}
+
 function controlSessions(fixture: ReturnType<typeof fixtureFor>, workspaceId?: string | null) {
   const index = workspaceId ? Number(workspaceId.replace(/^workspace_/, "")) : NaN
   const directory = Number.isFinite(index) ? fixture.workspaceDirectories[index] : undefined
@@ -1378,7 +1603,7 @@ function configForSession(sessionID: string, fixture: ReturnType<typeof fixtureF
   }
 }
 
-function fixtureFor(scenario: ScenarioId, seed: SeedManifest) {
+export function fixtureFor(scenario: ScenarioId, seed: SeedManifest) {
   const directory = `/tmp/claxedo-perf/${scenario}`
   const workspaceDirectories = Array.from({ length: Math.max(1, seed.projects) }, (_, index) =>
     index === 0 ? directory : `${directory}/workspace-${index + 1}`,
@@ -1459,7 +1684,8 @@ function fixtureFor(scenario: ScenarioId, seed: SeedManifest) {
       id: `pty_perf_${scenario.replace(/-/g, "_")}_${index}`,
       title: `Terminal ${index + 1}`,
     })),
-    totalMessages: Math.max(12, seed.messages || 12),
+    totalMessages: seed.messages,
+    sessionRenderer: sessionRenderer(scenario),
     requestCounts: {
       messages: 0,
       messagesBySession: {} as Record<string, number>,
@@ -1475,12 +1701,18 @@ function pageMessages(sessionID: string, limit: number, before: string | undefin
   const start = Math.max(0, end - limit)
   const sessionTitle = fixture.sessions.find((session) => session.id === sessionID)?.title
   const items = Array.from({ length: end - start }, (_, offset) =>
-    message(sessionID, start + offset, fixture.directory, sessionTitle)
+    message(sessionID, start + offset, fixture.directory, sessionTitle, fixture.sessionRenderer)
   )
   return items
 }
 
-function message(sessionID: string, index: number, directory: string, sessionTitle?: string) {
+function message(
+  sessionID: string,
+  index: number,
+  directory: string,
+  sessionTitle: string | undefined,
+  renderer: ReturnType<typeof sessionRenderer>,
+) {
   const id = `msg_perf_${index}`
   const role = index % 2 === 0 ? "user" : "assistant"
   const model = { providerID: "opencode", modelID: "claude-opus-4-6" }
@@ -1512,16 +1744,111 @@ function message(sessionID: string, index: number, directory: string, sessionTit
             tokens,
           }),
     },
-    parts: [
-      {
-        id: `part_perf_${index}`,
-        sessionID,
-        messageID: id,
-        type: "text",
-        text: `${role} message ${index}${sessionTitle ? ` for ${sessionTitle}` : ""}\n\n${"sample output ".repeat(40 + (index % 20))}`,
-      },
-    ],
+    parts: messageParts({ sessionID, messageID: id, index, role, sessionTitle, renderer }),
   }
+}
+
+function messageParts(input: {
+  sessionID: string
+  messageID: string
+  index: number
+  role: "user" | "assistant"
+  sessionTitle?: string
+  renderer: ReturnType<typeof sessionRenderer>
+}) {
+  const rich = input.role === "assistant" && input.index % 8 === 7
+  const text = {
+    id: `part_perf_${input.index}`,
+    sessionID: input.sessionID,
+    messageID: input.messageID,
+    type: "text" as const,
+    text: rich ? rendererText(input.renderer, input.index, input.sessionTitle ?? input.sessionID) :
+      `${input.role} message ${input.index}${input.sessionTitle ? ` for ${input.sessionTitle}` : ""}\n\n${"sample output ".repeat(40 + (input.index % 20))}`,
+  }
+  if (input.renderer !== "diff" || !rich) return [text]
+
+  const before = Array.from({ length: 240 }, (_, line) => `export const value${line} = ${line}`).join("\n")
+  const after = Array.from({ length: 240 }, (_, line) => `export const value${line} = ${line + 1}`).join("\n")
+  return [
+    {
+      id: `part_perf_tool_${input.index}`,
+      sessionID: input.sessionID,
+      messageID: input.messageID,
+      type: "tool" as const,
+      callID: `call_perf_tool_${input.index}`,
+      tool: "edit",
+      state: {
+        status: "completed" as const,
+        input: {
+          filePath: `src/generated/session-${input.index}.ts`,
+          oldString: before,
+          newString: after,
+        },
+        output: "File edited successfully",
+        title: `Edit src/generated/session-${input.index}.ts`,
+        metadata: {
+          filediff: {
+            file: `src/generated/session-${input.index}.ts`,
+            before,
+            after,
+            additions: 240,
+            deletions: 240,
+          },
+        },
+        time: { start: 1_700_000_000_000 + input.index * 1000, end: 1_700_000_000_500 + input.index * 1000 },
+      },
+    },
+    text,
+  ]
+}
+
+function sessionRenderer(scenario: ScenarioId): SessionRenderer {
+  if (scenario !== "session-switch") return "plain"
+  const value = process.env.CLAXEDO_PERF_SESSION_RENDERER
+  if (value === "plain" || value === "markdown" || value === "code" || value === "mermaid" || value === "diff") {
+    return value
+  }
+  return "diff"
+}
+
+function rendererText(renderer: ReturnType<typeof sessionRenderer>, index: number, sessionLabel: string) {
+  if (renderer === "markdown") {
+    return [
+      `# Renderer profile ${sessionLabel} ${index}`,
+      "",
+      "This fixture exercises **strong text**, _emphasis_, `inline code`, and [a link](https://example.com).",
+      "",
+      ...Array.from(
+        { length: 40 },
+        (_, row) => `- ${sessionLabel} item ${row}: ${"rendered markdown content ".repeat(4)}`,
+      ),
+      "",
+      "| Name | State | Detail |",
+      "| --- | --- | --- |",
+      ...Array.from(
+        { length: 40 },
+        (_, row) => `| ${sessionLabel}-row-${row} | ready | ${"table value ".repeat(4)} |`,
+      ),
+    ].join("\n")
+  }
+  if (renderer === "code") {
+    return [
+      "```typescript",
+      `export const session = ${JSON.stringify(sessionLabel)}`,
+      ...Array.from({ length: 240 }, (_, row) => `export const value${row} = (input: number) => input + ${row}`),
+      "```",
+    ].join("\n")
+  }
+  if (renderer === "mermaid") {
+    return [
+      "```mermaid",
+      "flowchart LR",
+      `  session[${sessionLabel.replace(/[^a-zA-Z0-9 ]/g, " ")}] --> node0[Step 0]`,
+      ...Array.from({ length: 60 }, (_, row) => `  node${row}[Step ${row}] --> node${row + 1}[Step ${row + 1}]`),
+      "```",
+    ].join("\n")
+  }
+  return `assistant message ${index}\n\n${"sample output ".repeat(60)}`
 }
 
 function commands() {
@@ -1573,11 +1900,11 @@ function harnessOptions(fixture: ReturnType<typeof fixtureFor>) {
   }
 }
 
-function sessionPath(fixture: { directory: string }, sessionId: string) {
+export function sessionPath(fixture: { directory: string }, sessionId: string) {
   return `/s/${sessionId}`
 }
 
-function workspacePath(directory: string) {
+export function workspacePath(directory: string) {
   return `/${base64Encode(directory)}`
 }
 
@@ -1585,11 +1912,12 @@ function base64Encode(value: string) {
   return Buffer.from(value).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
 }
 
-async function startApp(): Promise<BrowserTarget> {
+export async function startApp(): Promise<BrowserTarget> {
   const basePort = await freePort()
   const mockPort = Number(process.env.CLAXEDO_PERF_MOCK_PORT) || await freePort()
   const baseUrl = `http://127.0.0.1:${basePort}`
-  const script = process.env.CLAXEDO_PERF_APP_SCRIPT ?? "dev"
+  const script = process.env.CLAXEDO_PERF_APP_SCRIPT ?? "serve"
+  if (script === "serve" && process.env.CLAXEDO_PERF_SKIP_BUILD !== "1") await buildProductionApp(mockPort)
   const cmd = script === "serve"
     ? ["node", "./node_modules/vite/bin/vite.js", "preview", "--config", "vite.cloud.config.ts", "--host", "127.0.0.1", "--port", String(basePort)]
     : ["bun", "run", script, "--", "--host", "127.0.0.1", "--port", String(basePort)]
@@ -1607,6 +1935,7 @@ async function startApp(): Promise<BrowserTarget> {
       VITE_OPENCODE_SERVER_PORT: String(mockPort),
       VITE_OPENCODE_BACKEND_URL: `http://127.0.0.1:${mockPort}`,
       VITE_CLAXEDO_SERVER_URL: `http://127.0.0.1:${mockPort}`,
+      VITE_CLAXEDO_E2E: "1",
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -1617,7 +1946,27 @@ async function startApp(): Promise<BrowserTarget> {
   return { target: app.id, baseUrl, mockPort, command, process: proc }
 }
 
-async function stopApp(app: BrowserTarget) {
+async function buildProductionApp(mockPort: number) {
+  const proc = Bun.spawn({
+    cmd: ["bun", "run", "build"],
+    cwd: appRoot,
+    env: {
+      ...process.env,
+      PLAYWRIGHT_SERVER_HOST: "127.0.0.1",
+      PLAYWRIGHT_SERVER_PORT: String(mockPort),
+      VITE_OPENCODE_SERVER_HOST: "127.0.0.1",
+      VITE_OPENCODE_SERVER_PORT: String(mockPort),
+      VITE_OPENCODE_BACKEND_URL: `http://127.0.0.1:${mockPort}`,
+      VITE_CLAXEDO_SERVER_URL: `http://127.0.0.1:${mockPort}`,
+    },
+    stdout: "inherit",
+    stderr: "inherit",
+  })
+  if (await proc.exited === 0) return
+  throw new Error("Claxedo production build failed before performance measurement")
+}
+
+export async function stopApp(app: BrowserTarget) {
   if (!app.process) return
   app.process.kill()
   const exited = await Promise.race([
@@ -1814,12 +2163,39 @@ async function waitForUsefulScreen(page: Page) {
 async function waitForTranscript(page: Page, fixture: ReturnType<typeof fixtureFor>, sessionID: string, text: string) {
   fixture.requestCounts.expectedTranscripts[sessionID] = text
   const visible = await page.waitForFunction(({ id, expected }) =>
-    Array.from(document.querySelectorAll<HTMLElement>("[data-testid='session-page-root'], [data-testid='session-content']"))
+    Array.from(document.querySelectorAll<HTMLElement>("[data-testid='session-page-root']"))
       .some((node) => {
         if (node.dataset.sessionId !== id) return false
         const rect = node.getBoundingClientRect()
         if (rect.width <= 0 || rect.height <= 0) return false
-        return (node.textContent ?? "").includes(expected)
+        if (node.dataset.sessionFirstFoldReady !== "true") return false
+        if (node.dataset.sessionMessagesReady !== "true") return false
+        const messageCount = Number(node.dataset.sessionMessageCount ?? node.dataset.sessionConversationCount ?? "0")
+        if (Number.isFinite(messageCount) && messageCount <= 0) return false
+        const timeline = node.querySelector<HTMLElement>("[data-session-timeline-root]")
+        if (!timeline || timeline.dataset.sessionTimelineRevealReady !== "true") return false
+        if (timeline.dataset.sessionTimelineProgressiveReady !== "true") return false
+        if (getComputedStyle(timeline).visibility === "hidden") return false
+        if (Number(timeline.dataset.sessionTimelineKeyCount ?? "0") <= 0) return false
+        // "Some mounted row has rendered content" — NOT "the first row in DOM
+        // order has content". `TurnGap` (message-timeline.tsx:1398) is a real
+        // timeline row that is `aria-hidden` and deliberately EMPTY, and on a
+        // cold mount with overscan 1 it is routinely the first row above the
+        // fold. Sampling only `querySelector` therefore made readiness depend
+        // on which arbitrary row happened to lead the list: with a spacer
+        // leading, this clause stayed false for ~1.25 s after the transcript
+        // was fully rendered and visible, and only flipped when an unrelated
+        // event (the 2 s SSE reconnect advisory disappearing, growing the
+        // scroller by 28 px) mounted two more rows. That pinned
+        // `transcript_render_ms` to RECONNECT_DELAY_MS + first-connect ~= 2.28 s
+        // and made it insensitive to transcript work — a wall-clock timer
+        // wearing a render metric's name (its relative stddev was 0.002 on a
+        // host where real work scatters 7-19%).
+        // The content proof is unchanged and still independent: the expected
+        // text assertion below has to pass either way.
+        const rows = Array.from(timeline.querySelectorAll<HTMLElement>("[data-timeline-key]"))
+        if (!rows.some((row) => (row.textContent ?? "").trim())) return false
+        return (timeline.textContent ?? "").includes(expected)
       }),
     { id: sessionID, expected: text },
     { timeout: 10_000 },
@@ -1828,23 +2204,7 @@ async function waitForTranscript(page: Page, fixture: ReturnType<typeof fixtureF
     fixture.requestCounts.visibleTranscripts[sessionID] = true
     return
   }
-  const ready = await page.waitForFunction((id) =>
-    Array.from(document.querySelectorAll<HTMLElement>("[data-testid='session-page-root'], [data-testid='session-content']"))
-      .some((node) => {
-        if (node.dataset.sessionId !== id) return false
-        const rect = node.getBoundingClientRect()
-        if (rect.width <= 0 || rect.height <= 0) return false
-        if (node.dataset.sessionMessagesReady === "false") return false
-        const messageCount = Number(node.dataset.sessionMessageCount ?? node.dataset.sessionConversationCount ?? "0")
-        return !Number.isFinite(messageCount) || messageCount > 0
-      }),
-    sessionID,
-    { timeout: 10_000 },
-  ).then(() => true).catch(() => false)
-  if (ready) {
-    fixture.requestCounts.visibleTranscripts[sessionID] = true
-    return
-  }
+  recordVisualFailure(fixture, `seeded transcript text did not render for ${sessionID}: ${text}`)
 }
 
 async function waitForSessionSurface(page: Page, sessionID: string, title: string) {
@@ -1919,25 +2279,16 @@ async function clickVisibleSession(
   if (!visibleOutcome) recordVisualFailure(fixture, `session row was not clickable in the visible UI: ${session.title}`)
 }
 
-async function measureInPageSessionFirstFoldSwitch(page: Page, session: ReturnType<typeof fixtureFor>["sessions"][number]) {
-  const result = await page.evaluate(async ({ id, title, debug }) => {
-    const visible = (el: Element) => {
-      if (el.closest("[aria-hidden='true']")) return false
-      const rect = el.getBoundingClientRect()
-      const style = getComputedStyle(el)
-      return rect.width > 0 &&
-        rect.height > 0 &&
-        rect.bottom > 0 &&
-        rect.right > 0 &&
-        rect.top < innerHeight &&
-        rect.left < innerWidth &&
-        style.display !== "none" &&
-        style.visibility !== "hidden"
-    }
+async function measureInPageSessionFirstFoldSwitch(
+  page: Page,
+  session: ReturnType<typeof fixtureFor>["sessions"][number],
+  options: { renderer?: ReturnType<typeof sessionRenderer>; renderMermaid?: boolean } = {},
+) {
+  const result = await page.evaluate(async ({ id, title, debug, renderer, renderMermaid }) => {
     const row = document.querySelector<HTMLElement>(
       `[data-testid="rail-sidebar-session-row"][data-session-id="${CSS.escape(id)}"]`,
     ) ?? Array.from(document.querySelectorAll<HTMLElement>("[role='button'], button, a"))
-      .find((node) => visible(node) && (node.textContent ?? "").includes(title))
+      .find((node) => !node.closest("[aria-hidden='true']") && (node.textContent ?? "").includes(title))
     if (!row) return { ms: 10_000, debug: undefined }
     const beforeRoot = document.querySelector<HTMLElement>(`[data-testid="session-page-root"][data-session-id="${CSS.escape(id)}"]`)
     const beforeContent = document.querySelector<HTMLElement>(`[data-testid="session-content"][data-session-id="${CSS.escape(id)}"]`)
@@ -1946,17 +2297,63 @@ async function measureInPageSessionFirstFoldSwitch(page: Page, session: ReturnTy
     // NavigationRow's click handler lives on an absolutely-positioned CHILD
     // (`button[data-slot="navigation-row-activate"]`) — a synthetic click on
     // the row container never reaches it, so target the activate control.
+    const clickStarted = performance.now()
     ;(row.querySelector<HTMLElement>('[data-slot="navigation-row-activate"]') ?? row).click()
+    const traceWindow = window as unknown as {
+      __claxedoPerfTrace?: boolean
+      __claxedoPerfRendererPhases?: Array<{ name: string; durationMs: number }>
+    }
+    if (traceWindow.__claxedoPerfTrace) {
+      traceWindow.__claxedoPerfRendererPhases?.push({
+        name: "sessionSwitch.click",
+        durationMs: performance.now() - clickStarted,
+      })
+    }
     const ms = await new Promise<number>((resolve) => {
       const tick = () => {
         const elapsed = performance.now() - started
-        const content = document.querySelector<HTMLElement>(
-          `[data-testid="session-content"][data-session-id="${CSS.escape(id)}"], [data-testid="session-page-root"][data-session-id="${CSS.escape(id)}"]`,
-        )
         const targetRoot = document.querySelector<HTMLElement>(`[data-testid="session-page-root"][data-session-id="${CSS.escape(id)}"]`)
-        const readyMessages = targetRoot?.dataset.sessionMessagesReady !== "false" &&
+        const readyMessages = targetRoot?.dataset.sessionFirstFoldReady === "true" &&
+          targetRoot.dataset.sessionMessagesReady === "true" &&
           Number(targetRoot?.dataset.sessionMessageCount ?? targetRoot?.dataset.sessionConversationCount ?? "0") > 0
-        if (content && visible(content) && readyMessages) {
+        const timeline = targetRoot?.querySelector<HTMLElement>("[data-session-timeline-root]")
+        const baseTimelineReady = timeline?.dataset.sessionTimelineRevealReady === "true" &&
+          timeline.dataset.sessionTimelineProgressiveReady === "true" &&
+          getComputedStyle(timeline).visibility !== "hidden" &&
+          Number(timeline.dataset.sessionTimelineKeyCount ?? "0") > 0 &&
+          // Same defect as `waitForTranscript` (fixed in 9d16de0): sampling
+          // only the FIRST `[data-timeline-key]` in DOM order makes readiness
+          // depend on whether a `TurnGap` — an aria-hidden, deliberately empty
+          // spacer row that routinely leads a cold mount — happens to lead the
+          // list. Require SOME mounted row to carry content instead.
+          Array.from(timeline.querySelectorAll<HTMLElement>("[data-timeline-key]")).some(
+            (row) => (row.textContent ?? "").trim(),
+          )
+        const inlineDiffReady = !!timeline?.querySelector(
+          "[data-timeline-row-rich-ready='true'] [data-component='edit-content']",
+        )
+        if (baseTimelineReady && renderer === "diff" && !inlineDiffReady) {
+          const trigger = timeline?.querySelector<HTMLElement>(
+            "[data-component='edit-tool'] [data-slot='collapsible-trigger']",
+          )
+          if (trigger && trigger.getAttribute("aria-expanded") !== "true" && trigger.dataset.perfOpened !== "true") {
+            trigger.dataset.perfOpened = "true"
+            trigger.click()
+          }
+        }
+        const rendererReady = renderer === "diff" ? inlineDiffReady
+          : renderer === "markdown" ? !!timeline?.querySelector("[data-component='markdown'] table") &&
+            !timeline?.querySelector("[data-markdown-progressive='pending']")
+          : renderer === "code" ? !!timeline?.querySelector("[data-markdown-complete='true'] [data-component='markdown-code']")
+          : renderer === "mermaid" && renderMermaid === false
+            ? !!timeline?.querySelector("[data-mermaid-state='deferred'] [data-slot='mermaid-render-button']")
+          : renderer === "mermaid" ? !!timeline?.querySelector("[data-mermaid-state='rendered'] [data-slot='mermaid-diagram'] svg")
+          : true
+        if (baseTimelineReady && renderer === "mermaid" && renderMermaid !== false && !rendererReady) {
+          timeline?.querySelector<HTMLElement>("[data-slot='mermaid-render-button']")?.click()
+        }
+        const readyTimeline = baseTimelineReady && rendererReady
+        if (targetRoot && !targetRoot.closest("[aria-hidden='true']") && readyMessages && readyTimeline) {
           resolve(performance.now() - started)
           return
         }
@@ -1969,6 +2366,7 @@ async function measureInPageSessionFirstFoldSwitch(page: Page, session: ReturnTy
       requestAnimationFrame(tick)
     })
     const afterRoot = document.querySelector<HTMLElement>(`[data-testid="session-page-root"][data-session-id="${CSS.escape(id)}"]`)
+    const afterTimeline = afterRoot?.querySelector<HTMLElement>("[data-session-timeline-root]")
     return {
       ms,
       debug: debug
@@ -1979,10 +2377,37 @@ async function measureInPageSessionFirstFoldSwitch(page: Page, session: ReturnTy
             beforeCount: beforeRoot?.dataset.sessionMessageCount,
             afterReady: afterRoot?.dataset.sessionMessagesReady,
             afterCount: afterRoot?.dataset.sessionMessageCount,
+            timelineRows: afterTimeline?.dataset.sessionTimelineRowCount,
+            virtualRows: afterTimeline?.dataset.sessionTimelineKeyCount,
+            progressiveReady: afterTimeline?.dataset.sessionTimelineProgressiveReady,
+            mountedRows: afterTimeline?.querySelectorAll("[data-timeline-key]").length,
+            rowTypes: Array.from(afterTimeline?.querySelectorAll<HTMLElement>("[data-timeline-row]") ?? [])
+              .map((node) => node.dataset.timelineRow),
+            messageBodies: afterTimeline?.querySelectorAll("[data-slot='session-turn-message-content']").length,
+            editTools: afterTimeline?.querySelectorAll("[data-component='edit-tool']").length,
+            editContents: afterTimeline?.querySelectorAll("[data-component='edit-content']").length,
+            readyEditContents: afterTimeline?.querySelectorAll(
+              "[data-timeline-row-rich-ready='true'] [data-component='edit-content']",
+            ).length,
+            markdownTables: afterTimeline?.querySelectorAll("[data-component='markdown'] table").length,
+            progressiveMarkdown: Array.from(
+              afterTimeline?.querySelectorAll<HTMLElement>("[data-markdown-progressive]") ?? [],
+            ).map((node) => node.dataset.markdownProgressive),
+            markdownRowHeights: Array.from(
+              afterTimeline?.querySelectorAll<HTMLElement>("[data-markdown-progressive]") ?? [],
+            ).map((node) => node.closest<HTMLElement>("[data-index]")?.offsetHeight),
+            highlightedCode: afterTimeline?.querySelectorAll("[data-markdown-complete='true'] [data-component='markdown-code']").length,
+            renderedMermaid: afterTimeline?.querySelectorAll("[data-mermaid-state='rendered'] [data-slot='mermaid-diagram'] svg").length,
           }
         : undefined,
     }
-  }, { id: session.id, title: session.title, debug: Bun.env.CLAXEDO_PERF_DEBUG_SESSION_SWITCH === "1" })
+  }, {
+    id: session.id,
+    title: session.title,
+    debug: Bun.env.CLAXEDO_PERF_DEBUG_SESSION_SWITCH === "1",
+    renderer: options.renderer ?? "plain",
+    renderMermaid: options.renderMermaid,
+  })
   if (result.debug) console.log("first-fold-switch-debug", JSON.stringify(result.debug))
   if (result.ms >= 10_000) {
     await page.goto(`${new URL(page.url()).origin}${sessionPath(session, session.id)}`, {
@@ -2363,11 +2788,6 @@ async function clickVisibleReviewControl(page: Page, pattern: RegExp) {
   return true
 }
 
-async function waitForReviewSurface(page: Page, fixture: ReturnType<typeof fixtureFor>) {
-  await waitForReviewPanel(page, fixture)
-  await waitForReviewChangedFiles(page, fixture)
-}
-
 async function waitForReviewPanel(page: Page, fixture: ReturnType<typeof fixtureFor>) {
   const visible = await reviewPanelVisible(page, 10_000)
   if (!visible) recordVisualFailure(fixture, "diff/review surface did not visibly open")
@@ -2482,299 +2902,33 @@ async function measureReviewChangedFileReady(page: Page, fixture: ReturnType<typ
   })
 }
 
-async function scrollReview(page: Page, deltaY: number) {
-  await moveMouseToReviewPanel(page)
-  await wheelReview(page, deltaY)
-}
-
-async function moveMouseToReviewPanel(page: Page) {
-  const box = await page.evaluate(() => {
-    const panel = document.querySelector("#review-panel")
-    const rect = panel?.getBoundingClientRect()
-    return rect ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : undefined
-  })
-  if (box) await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-}
-
-async function wheelReview(page: Page, deltaY: number) {
-  await page.mouse.wheel(0, deltaY)
-  await waitForAnimationFrame(page, 2)
-}
-
-async function measureInPageReviewScroll(page: Page, deltaY: number) {
-  return await page.evaluate(async (delta) => {
-    const viewport = document.querySelector<HTMLElement>(
-      "#review-panel [data-slot='session-review-scroll'] .scroll-view__viewport",
-    )
-    if (!viewport) return 5000
-    const startTop = viewport.scrollTop
-    const targetTop = Math.min(viewport.scrollHeight - viewport.clientHeight, startTop + delta)
-    if (targetTop <= startTop) return 0
-    const started = performance.now()
-    viewport.scrollTop = targetTop
-    return await new Promise<number>((resolve) => {
-      const limit = 1000
-      const tick = () => {
-        const elapsed = performance.now() - started
-        if (viewport.scrollTop !== startTop) {
-          requestAnimationFrame(() => resolve(performance.now() - started))
-          return
-        }
-        if (elapsed > limit) {
-          resolve(elapsed)
-          return
-        }
-        requestAnimationFrame(tick)
-      }
-      requestAnimationFrame(tick)
-    })
-  }, deltaY)
-}
-
 async function toggleDiffStyle(page: Page, options: { settle?: "video" | "frame" } = {}) {
+  const previous = await page.evaluate(() =>
+    Array.from(document.querySelectorAll<HTMLElement>("[data-review-diff-style]"))
+      .find((node) => !node.closest("[aria-hidden='true']"))
+      ?.dataset.reviewDiffStyle)
+  if (previous !== "split" && previous !== "unified") throw new Error("Visible review diff style was not ready")
+  const expected = previous === "split" ? "unified" : "split"
   const settle = async () => {
     if ((options.settle ?? "video") === "video") await settleForVideo(page)
     else await waitForAnimationFrame(page, 2)
   }
-  const clicked = await page.evaluate(() => {
-    const visible = (el: Element) => {
-      const rect = el.getBoundingClientRect()
-      const style = getComputedStyle(el)
-      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
-    }
-    for (const el of Array.from(document.querySelectorAll<HTMLElement>("button, [role='button']"))) {
-      if (!visible(el)) continue
-      if (!/(unified|split)/i.test(el.textContent ?? "")) continue
-      el.click()
-      return true
-    }
-    return false
-  })
-  if (!clicked) await page.keyboard.press("d")
+  await page.locator(
+    `[data-testid="review-diff-style-toggle"][data-review-next-diff-style="${expected}"]`,
+  ).last().click({ timeout: 2_000 })
+  await page.waitForFunction((style) =>
+    Array.from(document.querySelectorAll<HTMLElement>("[data-review-diff-style]"))
+      .some((node) => !node.closest("[aria-hidden='true']") && node.dataset.reviewDiffStyle === style),
+  expected, { timeout: 2_000 })
   await settle()
 }
 
-async function measureInPageReviewLineClick(page: Page) {
-  return await page.evaluate(async () => {
-    const panel = document.querySelector("#review-panel")
-    const panelRect = panel?.getBoundingClientRect()
-    const lines = Array.from(document.querySelectorAll<HTMLElement>(
-      "#review-panel [data-component='session-review'] [data-line]",
-    ))
-    let target: { x: number; y: number } | undefined
-    for (const line of lines) {
-      const rect = line.getBoundingClientRect()
-      if (rect.width <= 0 || rect.height <= 0) continue
-      if (rect.bottom <= 0 || rect.right <= 0 || rect.top >= innerHeight || rect.left >= innerWidth) continue
-      const x = Math.max(rect.left + 8, (panelRect?.left ?? rect.left) + 28)
-      target = { x, y: rect.top + rect.height / 2 }
-      break
-    }
-    if (!target && panelRect) {
-      target = {
-        x: panelRect.x + Math.min(96, panelRect.width / 4),
-        y: panelRect.y + Math.min(220, panelRect.height / 2),
-      }
-    }
-    if (!target) return 5000
-
-    const element = document.elementFromPoint(target.x, target.y)
-    const start = performance.now()
-    element?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, clientX: target.x, clientY: target.y }))
-    element?.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, button: 0, clientX: target.x, clientY: target.y }))
-    element?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, clientX: target.x, clientY: target.y }))
-    await new Promise<void>((resolve) => {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => resolve())
-      })
-    })
-    return performance.now() - start
-  })
-}
-
 async function waitForReviewStable(page: Page) {
-  await page.evaluate(
-    ({ frames, timeout }) =>
-      new Promise<void>((resolve) => {
-        const start = performance.now()
-        let previous = ""
-        let stable = 0
-        const signature = () => {
-          const panel = document.querySelector<HTMLElement>("#review-panel")
-          if (!panel) return "missing"
-          const rect = panel.getBoundingClientRect()
-          const lines = Array.from(panel.querySelectorAll<HTMLElement>("[data-line]"))
-          const visibleLines = lines
-            .filter((line) => {
-              const lineRect = line.getBoundingClientRect()
-              return lineRect.width > 0 &&
-                lineRect.height > 0 &&
-                lineRect.bottom > 0 &&
-                lineRect.right > 0 &&
-                lineRect.top < innerHeight &&
-                lineRect.left < innerWidth
-            })
-            .slice(0, 5)
-            .map((line) => {
-              const lineRect = line.getBoundingClientRect()
-              return `${Math.round(lineRect.top)}:${Math.round(lineRect.height)}`
-            })
-          return [
-            Math.round(rect.width),
-            Math.round(rect.height),
-            Math.round(panel.scrollTop),
-            panel.querySelector("[data-review-diff-style]")?.getAttribute("data-review-diff-style") ?? "",
-            lines.length,
-            panel.querySelectorAll("[data-line-annotation]").length,
-            visibleLines.join("|"),
-          ].join(":")
-        }
-        const tick = () => {
-          const next = signature()
-          stable = next === previous ? stable + 1 : 0
-          previous = next
-          if (stable >= frames || performance.now() - start > timeout) {
-            resolve()
-            return
-          }
-          requestAnimationFrame(tick)
-        }
-        requestAnimationFrame(tick)
-      }),
-    { frames: 16, timeout: 2_000 },
-  )
-}
-
-async function clickChangedFile(page: Page, file: string, options: { settle?: "video" | "frame" } = {}) {
-  const clicked = await page.evaluate((targetFile) => {
-    const escape = globalThis.CSS?.escape ?? ((value: string) => value.replaceAll('"', '\\"'))
-    const visible = (el: Element) => {
-      if (el.closest("[aria-hidden='true']")) return false
-      const rect = el.getBoundingClientRect()
-      const style = getComputedStyle(el)
-      return rect.width > 0 &&
-        rect.height > 0 &&
-        rect.bottom > 0 &&
-        rect.right > 0 &&
-        rect.top < innerHeight &&
-        rect.left < innerWidth &&
-        style.display !== "none" &&
-        style.visibility !== "hidden" &&
-        style.contentVisibility !== "hidden"
-    }
-    const navigator = Array.from(document.querySelectorAll<HTMLElement>(
-      '[data-testid="workspace-files-navigator"][data-mode="changes"]',
-    )).find(visible)
-    const target = navigator?.querySelector<HTMLElement>(`[data-file-tree-path="${escape(targetFile)}"]`)
-    if (target && !visible(target)) target.scrollIntoView({ block: "nearest" })
-    if (target && !visible(target)) return false
-    target?.click()
-    return !!target
-  }, file)
-  if (!clicked) {
-    await page.keyboard.press("j")
-  }
-  if ((options.settle ?? "video") === "video") await settleForVideo(page)
-  else await waitForAnimationFrame(page, 1)
-}
-
-async function showChangesNavigator(page: Page, fixture: ReturnType<typeof fixtureFor>) {
-  const ok = await page.evaluate(async () => {
-    const visible = (el: Element) => {
-      if (el.closest("[aria-hidden='true']")) return false
-      const rect = el.getBoundingClientRect()
-      const style = getComputedStyle(el)
-      return rect.width > 0 &&
-        rect.height > 0 &&
-        rect.bottom > 0 &&
-        rect.right > 0 &&
-        rect.top < innerHeight &&
-        rect.left < innerWidth &&
-        style.display !== "none" &&
-        style.visibility !== "hidden" &&
-        style.pointerEvents !== "none" &&
-        style.contentVisibility !== "hidden"
-    }
-    const changesVisible = () =>
-      Array.from(document.querySelectorAll<HTMLElement>(
-        '[data-testid="workspace-files-navigator"][data-mode="changes"]',
-      )).some(visible)
-    if (changesVisible()) return true
-    for (const button of Array.from(document.querySelectorAll<HTMLElement>(
-      "button[aria-label='Open Changes'], [role='button'][aria-label='Open Changes']",
-    ))) {
-      if (!visible(button)) continue
-      button.click()
-      break
-    }
-    return await new Promise<boolean>((resolve) => {
-      const started = performance.now()
-      const tick = () => {
-        if (changesVisible()) {
-          resolve(true)
-          return
-        }
-        if (performance.now() - started > 2_000) {
-          resolve(false)
-          return
-        }
-        requestAnimationFrame(tick)
-      }
-      requestAnimationFrame(tick)
-    })
-  })
-  if (!ok) recordVisualFailure(fixture, "workspace changes navigator did not visibly render")
-  await waitForAnimationFrame(page, 1)
-}
-
-async function measureChangedFileNavigation(page: Page, file: string) {
-  return await page.evaluate(async (targetFile) => {
-    const escape = globalThis.CSS?.escape ?? ((value: string) => value.replaceAll('"', '\\"'))
-    const visible = (el: Element) => {
-      if (el.closest("[aria-hidden='true']")) return false
-      const rect = el.getBoundingClientRect()
-      const style = getComputedStyle(el)
-      return rect.width > 0 &&
-        rect.height > 0 &&
-        rect.bottom > 0 &&
-        rect.right > 0 &&
-        rect.top < innerHeight &&
-        rect.left < innerWidth &&
-        style.display !== "none" &&
-        style.visibility !== "hidden" &&
-        style.contentVisibility !== "hidden"
-    }
-    const navigator = Array.from(document.querySelectorAll<HTMLElement>(
-      '[data-testid="workspace-files-navigator"][data-mode="changes"]',
-    )).find(visible)
-    const target = navigator?.querySelector<HTMLElement>(`[data-file-tree-path="${escape(targetFile)}"]`)
-    if (target && !visible(target)) target.scrollIntoView({ block: "nearest" })
-    if (!target || !visible(target)) return 5000
-
-    const selected = () => {
-      if (target.classList.contains("bg-surface-base-active")) return true
-      const reviewNode = document.querySelector<HTMLElement>(
-        `[data-component="session-review"] [data-file="${escape(targetFile)}"][data-selected]`,
-      )
-      return !!reviewNode && visible(reviewNode)
-    }
-    const started = performance.now()
-    target.click()
-    if (selected()) return performance.now() - started
-
-    return await new Promise<number>((resolve) => {
-      const limit = 1000
-      const tick = () => {
-        const elapsed = performance.now() - started
-        if (selected() || elapsed > limit) {
-          resolve(elapsed)
-          return
-        }
-        requestAnimationFrame(tick)
-      }
-      requestAnimationFrame(tick)
-    })
-  }, file)
+  await page.waitForFunction(() => {
+    const review = document.querySelector("#review-panel [data-review-diff-style]")
+    return !!review?.getAttribute("data-review-diff-style") && Number(review.getAttribute("data-review-rendered-hunks") ?? "0") > 0
+  }, undefined, { timeout: 2_000 })
+  await waitForAnimationFrame(page, 2)
 }
 
 async function waitForText(page: Page, text: string, timeout: number) {

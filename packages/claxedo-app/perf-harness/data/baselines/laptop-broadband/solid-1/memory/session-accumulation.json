@@ -1,0 +1,23 @@
+{
+  "profile": "laptop-broadband",
+  "stack": "solid-1",
+  "lane": "memory",
+  "flow": "session-accumulation",
+  "accepted_at": "2026-08-18T14:26:10.627Z",
+  "commit": "a5ceb04",
+  "metrics": {
+    "retained_heap_bytes": {
+      "value": 89457780,
+      "samples": [
+        25473900,
+        34460512,
+        44121400,
+        51249420,
+        59866216,
+        68982424,
+        72923940,
+        89457780
+      ]
+    }
+  }
+}

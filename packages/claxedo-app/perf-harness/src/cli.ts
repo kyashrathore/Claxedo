@@ -1,5 +1,7 @@
 import path from "node:path"
 import { flag as optionFlag, option as optionValue, scenarioIds } from "./cli-options"
+import { DEFAULT_PROFILE_ID } from "./environment-profile"
+import { DEFAULT_STACK_ID } from "./stacks"
 import { FLOWS } from "./flows"
 import { markdownReport } from "./report"
 import { run } from "./runner"
@@ -31,9 +33,26 @@ if (command === "report") {
   process.exit(0)
 }
 
+if (command === "memory") {
+  const { runMemoryLane } = await import("./memory-lane")
+  const summary = await runMemoryLane({
+    profile: option("profile", DEFAULT_PROFILE_ID)!,
+    stack: option("stack", DEFAULT_STACK_ID)!,
+    sessions: Number(option("sessions", "60")),
+    accept_baseline: flag("accept-baseline"),
+    headless: !flag("headed"),
+    snapshot: flag("snapshot"),
+  })
+  console.log(summary)
+  process.exit(0)
+}
+
 if (command === "run") {
   const results = await run({
     scenarios: scenarioIds(args),
+    profile: option("profile", DEFAULT_PROFILE_ID)!,
+    stack: option("stack", DEFAULT_STACK_ID)!,
+    accept_baseline: flag("accept-baseline"),
     iterations: Number(option("iterations", "1")),
     output: option("output", "run.json")!,
     update_baseline: flag("update-baseline"),
