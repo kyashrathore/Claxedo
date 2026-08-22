@@ -23,7 +23,7 @@ import { randomUUID } from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { release } from "node:os"
 import { join } from "node:path"
-import type { PostHog } from "posthog-node"
+import type { TelemetryClientHandle } from "./telemetry"
 
 /** Versioned so a future change to what an "install" means can re-fire once
  *  deliberately, rather than being blocked by a marker from the old scheme. */
@@ -93,18 +93,21 @@ export function buildInstallProperties(input: {
  * new.
  */
 export async function reportInstall(
-  client: PostHog | undefined,
+  client: TelemetryClientHandle,
   input: { userDataDir: string; appVersion: string; channel: string },
   flushTimeoutMs = DEFAULT_FLUSH_TIMEOUT_MS,
 ): Promise<void> {
   try {
     const { installId, firstRun } = resolveInstallId(input.userDataDir)
-    if (!firstRun || !client) return
+    // The marker is written above BEFORE the client is awaited, so a client
+    // whose construction never settles still consumes the first run.
+    const resolved = await client
+    if (!firstRun || !resolved) return
     const properties = buildInstallProperties({ ...input, installId })
     // distinct_id is the install id: no user is signed in this early, and the
     // renderer identifies separately against its own client.
-    client.capture({ distinctId: installId, event: "app_installed", properties })
-    await Promise.race([client.flush(), delay(flushTimeoutMs)])
+    resolved.capture({ distinctId: installId, event: "app_installed", properties })
+    await Promise.race([resolved.flush(), delay(flushTimeoutMs)])
   } catch {
     // Best-effort only — see the doc comment above.
   }

@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
-import { PostHog } from "posthog-node"
+// Type-only: the real SDK is imported dynamically inside the two tests that
+// construct a client, so the un-opted-in majority of this suite runs without
+// posthog-node (and axios) ever loading — the same property telemetry.ts
+// itself now guarantees.
+import type { PostHog } from "posthog-node"
 import {
   captureFatal,
   createTelemetryClient,
@@ -70,7 +74,7 @@ describe("CLAXEDO_TELEMETRY_MODE", () => {
 
   test("mode off + a real-looking key → no client constructed and zero network, fatals included", async () => {
     const spy = watchFetch()
-    const client = createTelemetryClient({ CLAXEDO_TELEMETRY_MODE: "off", CLAXEDO_POSTHOG_KEY: REAL_KEY })
+    const client = await createTelemetryClient({ CLAXEDO_TELEMETRY_MODE: "off", CLAXEDO_POSTHOG_KEY: REAL_KEY })
     expect(client).toBeUndefined()
     // The fatal path is the only thing that would ever send; run it anyway.
     await captureFatal(client, resolveBaseProperties({}), new Error("silenced by the switch"))
@@ -79,7 +83,7 @@ describe("CLAXEDO_TELEMETRY_MODE", () => {
 
   test("mode unset + a real-looking key → no client constructed and zero network", async () => {
     const spy = watchFetch()
-    const client = createTelemetryClient({ CLAXEDO_POSTHOG_KEY: REAL_KEY })
+    const client = await createTelemetryClient({ CLAXEDO_POSTHOG_KEY: REAL_KEY })
     expect(client).toBeUndefined()
     await captureFatal(client, resolveBaseProperties({}), new Error("silenced by the absent opt-in"))
     expect(spy).not.toHaveBeenCalled()
@@ -87,14 +91,15 @@ describe("CLAXEDO_TELEMETRY_MODE", () => {
 
   test("mode on + no key → clean no-op; saying `on` cannot start sending by itself", async () => {
     const spy = watchFetch()
-    const client = createTelemetryClient({ ...ON })
+    const client = await createTelemetryClient({ ...ON })
     expect(client).toBeUndefined()
     await captureFatal(client, resolveBaseProperties({}), new Error("no key to send with"))
     expect(spy).not.toHaveBeenCalled()
   })
 
-  test("mode on + key → the one combination that constructs a client", () => {
-    expect(createTelemetryClient({ ...ON, CLAXEDO_POSTHOG_KEY: REAL_KEY })).toBeInstanceOf(PostHog)
+  test("mode on + key → the one combination that constructs a client", async () => {
+    const { PostHog } = await import("posthog-node")
+    expect(await createTelemetryClient({ ...ON, CLAXEDO_POSTHOG_KEY: REAL_KEY })).toBeInstanceOf(PostHog)
   })
 })
 
@@ -130,22 +135,23 @@ describe("resolveBaseProperties", () => {
 })
 
 describe("createTelemetryClient", () => {
-  test("opted in but no key -> undefined: no client constructed, no network (the load-bearing gate)", () => {
-    expect(createTelemetryClient({ ...ON })).toBeUndefined()
+  test("opted in but no key -> undefined: no client constructed, no network (the load-bearing gate)", async () => {
+    expect(await createTelemetryClient({ ...ON })).toBeUndefined()
   })
 
-  test("blank key -> undefined", () => {
-    expect(createTelemetryClient({ ...ON, CLAXEDO_POSTHOG_KEY: "   " })).toBeUndefined()
+  test("blank key -> undefined", async () => {
+    expect(await createTelemetryClient({ ...ON, CLAXEDO_POSTHOG_KEY: "   " })).toBeUndefined()
   })
 
-  test("both opt-ins -> a client is constructed with the resolved host", () => {
-    const client = createTelemetryClient({ ...ON, CLAXEDO_POSTHOG_KEY: "phc_test_key" })
+  test("both opt-ins -> a client is constructed with the resolved host", async () => {
+    const { PostHog } = await import("posthog-node")
+    const client = await createTelemetryClient({ ...ON, CLAXEDO_POSTHOG_KEY: "phc_test_key" })
     expect(client).toBeInstanceOf(PostHog)
     expect(client?.options.host).toBe("https://us.i.posthog.com")
   })
 
-  test("both opt-ins -> honors a custom host", () => {
-    const client = createTelemetryClient({
+  test("both opt-ins -> honors a custom host", async () => {
+    const client = await createTelemetryClient({
       ...ON,
       CLAXEDO_POSTHOG_KEY: "phc_test_key",
       CLAXEDO_POSTHOG_HOST: "https://eu.i.posthog.com",

@@ -1,4 +1,3 @@
-import { ModalClient, Probe } from "modal"
 import type {
   SandboxDriver,
   SandboxDriverEnsureInput,
@@ -95,10 +94,22 @@ function transientDriverError(err: unknown) {
 }
 
 export function createModalSandboxDriver(options: ModalSandboxDriverOptions): SandboxDriver {
-  const client: ModalClientLike = (options.client ?? new ModalClient({
-    tokenId: options.tokenId,
-    tokenSecret: options.tokenSecret,
-  })) as unknown as ModalClientLike
+  // The vendor SDK is loaded only on the first call that actually needs the
+  // default client: importing `modal` pulls grpc-js (node:http2) and cbor-x's
+  // native cbor-extract addon at module scope, so an embedder (or test) that
+  // injects `client` must not pay that load — it wedged bun's module-load
+  // phase on Windows CI when it sat in this file's static import graph.
+  let defaultClient: Promise<ModalClientLike> | undefined
+  function resolveClient(): ModalClientLike | Promise<ModalClientLike> {
+    if (options.client) return options.client
+    defaultClient ??= import("modal").then((sdk) =>
+      new sdk.ModalClient({
+        tokenId: options.tokenId,
+        tokenSecret: options.tokenSecret,
+      }) as unknown as ModalClientLike,
+    )
+    return defaultClient
+  }
   const appName = options.appName ?? DEFAULT_APP_NAME
   const runtimePort = options.runtimePort ?? DEFAULT_WORKSPACE_RUNTIME_PORT
   const runtimeCommand = options.runtimeCommand ?? DEFAULT_RUNTIME_COMMAND
@@ -106,7 +117,14 @@ export function createModalSandboxDriver(options: ModalSandboxDriverOptions): Sa
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const tunnelTimeoutMs = options.tunnelTimeoutMs ?? DEFAULT_TUNNEL_TIMEOUT_MS
   const operationTimeoutMs = options.operationTimeoutMs ?? DEFAULT_OPERATION_TIMEOUT_MS
-  const readinessProbe = options.readinessProbe ?? ((port: number) => Probe.withTcp(port, { intervalMs: 1_000 }))
+  // Same lazy rule as `resolveClient`: the default TCP probe is the only
+  // other value the SDK provides here, and it is only ever needed alongside a
+  // real sandbox create.
+  async function readinessProbeFor(port: number): Promise<unknown> {
+    if (options.readinessProbe) return options.readinessProbe(port)
+    const { Probe } = await import("modal")
+    return Probe.withTcp(port, { intervalMs: 1_000 })
+  }
 
   function workspaceDirectory(input: SandboxDriverEnsureInput) {
     return input.workspaceRoot ?? workspaceDir
@@ -131,7 +149,7 @@ export function createModalSandboxDriver(options: ModalSandboxDriverOptions): Sa
     return env
   }
 
-  async function image(input: SandboxDriverEnsureInput) {
+  async function image(client: ModalClientLike, input: SandboxDriverEnsureInput) {
     if (input.bootSource?.kind === "driver-snapshot") return client.images.fromId(input.bootSource.snapshotId)
     if (input.bootSource?.kind === "image") return client.images.fromId(input.bootSource.image)
     if (input.snapshot) return client.images.fromId(input.snapshot)
@@ -172,9 +190,10 @@ export function createModalSandboxDriver(options: ModalSandboxDriverOptions): Sa
       ...bootEnv(input, hostId),
       ...await options.env?.(input, { id: hostId }),
     }
+    const client = await resolveClient()
     const sandbox = await client.sandboxes.create(
       await client.apps.fromName(appName, { createIfMissing: true }),
-      await image(input),
+      await image(client, input),
       {
         name: nameFor(input.workspaceId),
         command: ["bash", "-lc", `mkdir -p ${shell(directory)}; cd ${shell(directory)}; exec ${runtimeCommand}`],
@@ -184,7 +203,7 @@ export function createModalSandboxDriver(options: ModalSandboxDriverOptions): Sa
         timeoutMs,
         ...(options.idleTimeoutMs !== undefined ? { idleTimeoutMs: options.idleTimeoutMs } : {}),
         tags: { ...input.labels, "claxedo.workspaceId": input.workspaceId },
-        readinessProbe: readinessProbe(runtimePort),
+        readinessProbe: await readinessProbeFor(runtimePort),
         ...network(input),
       },
     ).catch((err) => {
@@ -196,7 +215,7 @@ export function createModalSandboxDriver(options: ModalSandboxDriverOptions): Sa
   }
 
   async function sandboxById(target: SandboxTarget) {
-    return client.sandboxes.fromId(target.sandboxId)
+    return (await resolveClient()).sandboxes.fromId(target.sandboxId)
   }
 
   return {

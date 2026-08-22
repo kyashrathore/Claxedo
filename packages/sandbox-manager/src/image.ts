@@ -1,4 +1,9 @@
-import { Daytona, Image, DaytonaNotFoundError } from "@daytona/sdk"
+// Types only at module scope: this file is in the static import graph of every
+// driver (they read SANDBOX_IMAGE), so a value import here would load the whole
+// Daytona SDK — axios included — into every embedder and test process. The SDK
+// values below are imported lazily, inside the snapshot-build paths that are
+// the only places that need them.
+import type { Daytona, Image } from "@daytona/sdk"
 export { RUNTIME_DIR, WORKSPACE_RUNTIME_PORT, WORKSPACE_DIR } from "./defaults"
 export {
   SNAPSHOT_SCHEMA_VERSION,
@@ -37,7 +42,8 @@ export const SANDBOX_IMAGE = process.env.CLAXEDO_SANDBOX_IMAGE || defaultSandbox
 export const SNAPSHOT_NAME = process.env.CLAXEDO_SNAPSHOT_NAME
   || defaultSnapshotName()
 
-export function buildSandboxImage(): Image {
+export async function buildSandboxImage(): Promise<Image> {
+  const { Image } = await import("@daytona/sdk")
   return Image.base(SANDBOX_IMAGE)
 }
 
@@ -48,7 +54,7 @@ function snapshotUsable(state: unknown) {
 async function createSnapshot(daytona: Daytona, log: SandboxImageLogSink): Promise<string> {
   log("Creating sandbox snapshot (this may take a few minutes)...", { name: SNAPSHOT_NAME })
   await daytona.snapshot.create(
-    { name: SNAPSHOT_NAME, image: buildSandboxImage() },
+    { name: SNAPSHOT_NAME, image: await buildSandboxImage() },
     {
       timeout: 120,
       onLogs: (chunk) => log("[snapshot]", { text: chunk }),
@@ -85,6 +91,7 @@ export async function ensureSnapshot(daytona: Daytona, options: SandboxImageOpti
     }
     return SNAPSHOT_NAME
   } catch (err) {
+    const { DaytonaNotFoundError } = await import("@daytona/sdk")
     if (!(err instanceof DaytonaNotFoundError)) throw err
   }
   return createSnapshot(daytona, log)

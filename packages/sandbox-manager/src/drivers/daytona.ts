@@ -1,4 +1,3 @@
-import { Daytona } from "@daytona/sdk"
 import type { CreateSandboxFromImageParams, CreateSandboxFromSnapshotParams } from "@daytona/sdk"
 import type {
   SandboxDriver,
@@ -165,7 +164,12 @@ function transientDriverError(err: unknown) {
   return text.includes("timeout") || text.includes("pending") || text.includes("starting")
 }
 
-function createDefaultClient(options: DaytonaSandboxDriverOptions): DaytonaClientLike {
+// Async so the vendor SDK loads only when the default client is actually
+// needed: `@daytona/sdk` drags axios and friends in at module scope, and an
+// embedder (or test) that injects `client` must not pay that load — it sat in
+// the Windows bun-test module-load phase that wedged the unit lane.
+async function createDefaultClient(options: DaytonaSandboxDriverOptions): Promise<DaytonaClientLike> {
+  const { Daytona } = await import("@daytona/sdk")
   const sdk = new Daytona({
     apiKey: options.apiKey,
     ...(options.apiUrl ? { apiUrl: options.apiUrl } : {}),
@@ -201,7 +205,12 @@ function createDefaultClient(options: DaytonaSandboxDriverOptions): DaytonaClien
 export function createDaytonaSandboxDriver(
   options: DaytonaSandboxDriverOptions,
 ): SandboxDriver {
-  const client = options.client ?? createDefaultClient(options)
+  let defaultClient: Promise<DaytonaClientLike> | undefined
+  function resolveClient(): DaytonaClientLike | Promise<DaytonaClientLike> {
+    if (options.client) return options.client
+    defaultClient ??= createDefaultClient(options)
+    return defaultClient
+  }
   const runtimePort = options.runtimePort ?? DEFAULT_WORKSPACE_RUNTIME_PORT
   const runtimeCommand = options.runtimeCommand ?? DEFAULT_RUNTIME_COMMAND
   const workspaceDir = options.workspaceDir ?? DEFAULT_WORKSPACE_DIR
@@ -238,6 +247,7 @@ export function createDaytonaSandboxDriver(
   }
 
   async function findExisting(workspaceId: string) {
+    const client = await resolveClient()
     const labels = { "claxedo.workspaceId": workspaceId }
     if (client.findByLabels) return client.findByLabels(labels).catch(() => undefined)
     // The `1, 1` here is "first page, one per page" — a hint, NOT a cap (see
@@ -250,7 +260,7 @@ export function createDaytonaSandboxDriver(
   }
 
   async function sandboxById(sandboxId: string) {
-    return client.get(sandboxId)
+    return (await resolveClient()).get(sandboxId)
   }
 
   async function previewUrl(sandbox: DaytonaSandboxLike) {
@@ -302,6 +312,7 @@ export function createDaytonaSandboxDriver(
   // envVars, labels, or logs here.
   async function brokeredSecretReferences(input: SandboxDriverEnsureInput): Promise<Record<string, string>> {
     if (!input.secrets?.length) return {}
+    const client = await resolveClient()
     if (!client.upsertSecret) {
       throw new Error("daytona sandbox client does not support secret brokering")
     }
@@ -385,7 +396,7 @@ export function createDaytonaSandboxDriver(
     const net = network(input)
     const secrets = await brokeredSecretReferences(input)
     const existing = await findExisting(input.workspaceId)
-    const sandbox = existing ?? await client.create({
+    const sandbox = existing ?? await (await resolveClient()).create({
       name: labelName(input.workspaceId),
       ...bootSource,
       envVars: staticBootEnv(input, hostId, workspaceDirectory(input)),
@@ -451,6 +462,7 @@ export function createDaytonaSandboxDriver(
     // round-trip and GC only needs identity, so a sweep over N orphans would
     // cost N extra API calls to fill a field it then discards.
     async list() {
+      const client = await resolveClient()
       if (!client.list) {
         throw new Error("daytona sandbox client does not support listing")
       }

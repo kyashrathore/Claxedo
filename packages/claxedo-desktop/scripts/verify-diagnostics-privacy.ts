@@ -1,5 +1,15 @@
 import { resolve } from "node:path"
-import ts from "typescript-legacy"
+// Type-only at module scope: typescript-legacy is an 8.7MB single-file module,
+// and this script sits in the desktop unit lane's test graph — loading it at
+// import time taxes every test run for a compiler only the scan below uses.
+import type TS from "typescript-legacy"
+
+type TsModule = typeof TS
+let tsModule: Promise<TsModule> | undefined
+function loadTs(): Promise<TsModule> {
+  tsModule ??= import("typescript-legacy").then((mod) => mod.default)
+  return tsModule
+}
 
 const diagnosticsBoundaryFiles = [
   {
@@ -50,7 +60,7 @@ const forbiddenFields = new Set([
 export async function verifyDiagnosticsPrivacy(root = resolve(import.meta.dirname, "../../..")) {
   const findings = (
     await Promise.all(diagnosticsBoundaryFiles.map(async (boundary) =>
-      findForbiddenDiagnosticsFields(
+      await findForbiddenDiagnosticsFields(
         await Bun.file(resolve(root, boundary.file)).text(),
         boundary.file,
         boundary.scopes,
@@ -73,16 +83,17 @@ export async function verifyDiagnosticsPrivacy(root = resolve(import.meta.dirnam
   }
 }
 
-export function findForbiddenDiagnosticsFields(
+export async function findForbiddenDiagnosticsFields(
   source: string,
   file = "fixture.ts",
   scopes?: readonly string[],
 ) {
+  const ts = await loadTs()
   const syntax = file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS
   const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, syntax)
   const findings: Array<{ file: string; field: string }> = []
 
-  const inspect = (node: ts.Node) => {
+  const inspect = (node: TS.Node) => {
     if (
       ts.isPropertySignature(node) ||
       ts.isPropertyDeclaration(node) ||
@@ -90,7 +101,7 @@ export function findForbiddenDiagnosticsFields(
       ts.isMethodSignature(node) ||
       ts.isMethodDeclaration(node)
     ) {
-      const field = propertyName(node.name)
+      const field = propertyName(ts, node.name)
       if (field && forbiddenFields.has(field.toLowerCase())) findings.push({ file, field })
     }
     ts.forEachChild(node, inspect)
@@ -100,8 +111,8 @@ export function findForbiddenDiagnosticsFields(
     inspect(parsed)
     return findings
   }
-  const visitScopes = (node: ts.Node) => {
-    if (declarationName(node) && scopes.includes(declarationName(node)!)) {
+  const visitScopes = (node: TS.Node) => {
+    if (declarationName(ts, node) && scopes.includes(declarationName(ts, node)!)) {
       inspect(node)
       return
     }
@@ -111,18 +122,18 @@ export function findForbiddenDiagnosticsFields(
   return findings
 }
 
-function declarationName(node: ts.Node) {
+function declarationName(ts: TsModule, node: TS.Node) {
   if (
     ts.isVariableDeclaration(node) ||
     ts.isTypeAliasDeclaration(node) ||
     ts.isInterfaceDeclaration(node) ||
     ts.isModuleDeclaration(node)
   ) {
-    return propertyName(node.name)
+    return propertyName(ts, node.name)
   }
 }
 
-function propertyName(name: ts.PropertyName | ts.BindingName | ts.ModuleName | undefined) {
+function propertyName(ts: TsModule, name: TS.PropertyName | TS.BindingName | TS.ModuleName | undefined) {
   if (!name) return
   if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNoSubstitutionTemplateLiteral(name)) {
     return name.text
