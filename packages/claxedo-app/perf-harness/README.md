@@ -12,6 +12,20 @@ comes from a real browser driving the real app. Set `CLAXEDO_PERF_RECORD_VIDEO=1
 for non-gating visual recordings; release measurements leave capture off so video
 encoding cannot distort frame evidence.
 
+## Public multi-harness GUI comparison
+
+Claxedo also implements an app-owned driver for the public
+[Agent App Benchmark](https://github.com/kyashrathore/agent-app-benchmark). Public V1 measures
+application start, four session-switch lanes, and process-family CPU/RSS while loading completed
+1–32 MiB historical transcripts. It does not measure Web Vitals, streaming, live agent runs, or
+terminal coding agents.
+
+`src/public-corpus-materializer.ts` streams the pinned OpenCode event corpus through Claxedo's
+production OpenCode database, workspace inventory, and session metadata path.
+`src/public-agent-app-driver.ts` owns packaged Electron automation and returns raw readiness and
+duration evidence; the public framework owns ordering, repetitions, resources, aggregation, and the
+comparison website.
+
 ## Quick start
 
 ```sh
