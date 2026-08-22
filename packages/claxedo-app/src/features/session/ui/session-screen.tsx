@@ -1,5 +1,5 @@
 // Claxedo sessions can render inside independent Workbench panes, so this override uses pane-scoped params, cloud runtime gates, and the inline new-session composer.
-import { onCleanup, onMount, Show, Match, Switch, createMemo, createEffect, createComputed, on } from "solid-js"
+import { onCleanup, onMount, Show, Match, Switch, Suspense, createMemo, createEffect, createComputed, lazy, on } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useQuery } from "@tanstack/solid-query"
@@ -14,24 +14,19 @@ import { useLocation, useNavigate } from "@solidjs/router"
 import { UserMessage, type SnapshotFileDiff } from "@opencode-ai/sdk/v2"
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { usePrompt } from "@/features/session/providers/prompt"
-import { setCursorPosition } from "@/features/session/composer/ui/editor-dom"
-import { promptLength } from "@/features/session/composer/ui/history"
 import { useComments } from "@/platform/comments/provider"
 import { showToast } from "@opencode-ai/ui/toast"
 import { NewSessionDesignView, SessionHeader, type NewSessionWorkspaceKind } from "@/features/session/ui/components"
 import { createNewSessionWorkspaceState, type ProjectWorkspace } from "@/features/session/ui/components/session-new-workspace-options"
-import { PromptInput } from "@/features/session/composer/composer"
 import { same } from "@/lib/same"
-import { extractPromptFromParts } from "@/features/session/data/prompt"
 import { createSessionHistoryWindow, emptyUserMessages } from "@/features/session/ui/history-window"
 import { createHistoryFill } from "@/features/session/ui/history-fill"
 import { groupNavigateUrlSync } from "@/features/session/ui/group-navigate-route"
 import { setSessionHandoff, setTerminalHandoff } from "@/features/session/ui/prompt-preview-handoff"
 import { terminalTabLabel } from "@/features/session/ui/terminal-label"
-import { MessageTimeline } from "@/features/session/ui/message-timeline"
 import { SessionTimelineSkeleton } from "@/features/session/ui/content/session-timeline-skeleton"
 import { useSessionCommands } from "@/features/session/ui/use-session-commands"
-import { SessionComposerRegion, createSessionComposerState } from "@/features/session/ui/composer/index"
+import { createSessionComposerState } from "@/features/session/ui/composer/session-composer-state"
 import { useSessionHashScroll } from "@/features/session/ui/use-session-hash-scroll"
 import { useSessionParams } from "@/features/session/providers/session-params"
 import { CloudStartupView, isForbiddenConnectionError, type CloudLog } from "@/features/session/ui/components/cloud-startup-view"
@@ -64,7 +59,7 @@ import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace
 import { retargetSessionRef } from "@/platform/identity/session-ref"
 import { SessionConversationOwner } from "@/features/session/conversation/session-conversation-owner"
 import { registeredConversationSnapshot } from "@/features/session/conversation/conversation-registry"
-import { reconcileUnrevertedDirectorySession, removeDirectorySession, updateDirectorySession, useDirectorySessionCacheActions } from "@/features/session/data/sync/directory-session-cache"
+import { removeDirectorySession, updateDirectorySession, useDirectorySessionCacheActions } from "@/features/session/data/sync/directory-session-cache"
 import { directorySessionCacheQueryOptions, emptySessionInventory, sessionInventoryQueryOptions } from "@/features/session/data/sync/queries"
 import { queryClient } from "@/platform/query/query-client"
 import { indexSessionTitleInventory, selectSessionTitleInventoryRow, stableSessionTitle } from "@/features/session/lib/session-title-sync"
@@ -81,10 +76,27 @@ import { previewPromptText } from "@/features/session/ui/prompt-preview"
 import { buildDiffKindTree } from "@/features/session/ui/diff-kind-tree"
 import { computeScrollState, pickAnchorMessageId } from "@/features/session/ui/scroll-anchor"
 import { createPromptDockResizeHandler } from "@/features/session/ui/resize-observer-scroll"
-import { classifySessionKeydown, isEditableTagName } from "@/features/session/ui/session-keydown"
+import { createSessionScreenKeydownHandler } from "@/features/session/ui/session-screen-keydown"
+import { createSessionMessageActions } from "@/features/session/ui/session-message-actions"
 import { createFirstTurnOnboarding } from "@/features/session/onboarding/first-turn-onboarding"
 import { SessionHealthPeek } from "@/features/session/ui/components/session-health-peek"
 import { SessionConnectionLine } from "@/features/session/ui/components/session-connection-line"
+
+const SessionComposerRegion = lazy(() =>
+  import("@/features/session/ui/composer/session-composer-region").then((module) => ({
+    default: module.SessionComposerRegion,
+  })),
+)
+const MessageTimeline = lazy(() =>
+  import("@/features/session/ui/message-timeline").then((module) => ({
+    default: module.MessageTimeline,
+  })),
+)
+const PromptInput = lazy(() =>
+  import("@/features/session/composer/composer").then((module) => ({
+    default: module.PromptInput,
+  })),
+)
 export default function SessionPage() {
   const sessionParams = useSessionParams()
   const claxedoState = useClaxedoState()
@@ -876,58 +888,13 @@ export default function SessionPage() {
     ),
   )
 
-  const isEditableTarget = (target: EventTarget | null | undefined) => {
-    if (!(target instanceof HTMLElement)) return false
-    return isEditableTagName(target.tagName) || target.isContentEditable
-  }
-
-  const deepActiveElement = () => {
-    let current: Element | null = document.activeElement
-    while (current instanceof HTMLElement && current.shadowRoot?.activeElement) {
-      current = current.shadowRoot.activeElement
-    }
-    return current instanceof HTMLElement ? current : undefined
-  }
-
-  const handleKeyDown = (event: KeyboardEvent) => {
-    const path = event.composedPath()
-    const target = path.find((item): item is HTMLElement => item instanceof HTMLElement)
-    const activeElement = deepActiveElement()
-
-    const protectedTarget = path.some(
-      (item) => item instanceof HTMLElement && item.closest("[data-prevent-autofocus]") !== null,
-    )
-    if (protectedTarget || isEditableTarget(target)) return
-
-    if (activeElement) {
-      const isProtected = activeElement.closest("[data-prevent-autofocus]")
-      const isInput = isEditableTarget(activeElement)
-      if (isProtected || isInput) return
-    }
-    if (dialog.active) return
-
-    if (activeElement === inputRef) {
-      if (event.key === "Escape") inputRef?.blur()
-      return
-    }
-
-    // Only treat explicit scroll keys as potential "user scroll" gestures.
-    const action = classifySessionKeydown(event)
-    if (action === "scroll-gesture") {
-      markScrollGesture()
-      return
-    }
-
-    if (action === "focus-input") {
-      if (composerState.blocked()) return
-      const input = inputRef
-      if (!input) return
-      input.focus()
-      // Blur may have destroyed the DOM selection (editor re-renders) — restore
-      // the caret the composer persisted into the prompt store.
-      setCursorPosition(input, prompt.cursor() ?? promptLength(prompt.current()))
-    }
-  }
+  const handleKeyDown = createSessionScreenKeydownHandler({
+    dialogActive: () => dialog.active,
+    inputEl: () => inputRef,
+    composerBlocked: () => composerState.blocked(),
+    prompt,
+    markScrollGesture: () => markScrollGesture(),
+  })
 
   const fileTreeTab = () => layout.fileTree.tab()
   const setFileTreeTab = (value: "changes" | "all") => layout.fileTree.setTab(value)
@@ -1014,6 +981,9 @@ export default function SessionPage() {
       autoScroll.userScrolled,
       (scrolled) => {
         if (scrolled) return
+        // A converging programmatic jump transiently reads as "at bottom";
+        // clearing here would cancel it mid-flight and strand the scroll.
+        if (seeking()) return
         setStore("messageId", undefined)
         clearMessageHash()
       },
@@ -1075,6 +1045,8 @@ export default function SessionPage() {
     scroller: () => scroller,
     onBeforeLoad: () => captureHistoryAnchor(),
     onAfterLoad: () => restoreHistoryAnchor(),
+    onBeforeReveal: () => captureHistoryAnchor(),
+    onAfterReveal: () => restoreHistoryAnchor(),
   })
 
   // See `createHistoryFill` for why the decision is confirmed across two frames.
@@ -1145,119 +1117,24 @@ export default function SessionPage() {
   })
   createResizeObserver(() => promptDock, ({ height }) => promptDockResize.resize(height))
 
-  const draft = (id: string) =>
-    extractPromptFromParts(conversation().parts[id] ?? [], {
-      directory: sdk.directory,
-      attachmentName: language.t("common.attachment"),
-    })
-
-  const line = (id: string) => {
-    const text = draft(id)
-      .map((part) => (part.type === "image" ? `[image:${part.filename}]` : part.content))
-      .join("")
-      .replace(/\s+/g, " ")
-      .trim()
-    if (text) return text
-    return `[${language.t("common.attachment")}]`
-  }
-
-  const fail = (err: unknown) => {
-    showToast({
-      variant: "error",
-      title: language.t("common.requestFailed"),
-      description: errorMessage(err),
-    })
-  }
-
-  const busy = () => sessionController.activeTurn()
-
-  const supports = (name: keyof ReturnType<typeof sessionController.capabilities>) =>
-    sessionController.capabilities()[name] !== false
-
-  const halt = (sessionID: string) =>
-    busy() && supports("abort") ? sdk.client.session.abort({ sessionID }).catch(() => {}) : Promise.resolve()
-
-  const fork = (input: { sessionID: string; messageID: string }) => {
-    if (!supports("fork")) return Promise.resolve()
-    const value = draft(input.messageID)
-    return sdk.client.session
-      .fork(input)
-      .then((result) => {
-        const next = result.data
-        if (!next) {
-          showToast({
-            variant: "error",
-            title: language.t("common.requestFailed"),
-          })
-          return
-        }
-        navigateSession(next.id)
-        requestAnimationFrame(() => {
-          prompt.set(value)
-        })
-      })
-      .catch(fail)
-  }
-
-  const revert = (input: { sessionID: string; messageID: string }) => {
-    if (!supports("revert")) return Promise.resolve()
-    const value = draft(input.messageID)
-    return halt(input.sessionID)
-      .then(() => sdk.client.session.revert(input))
-      .then(() => {
-        prompt.set(value)
-      })
-      .catch(fail)
-  }
-
-  const restore = (id: string) => {
-    const currentSessionID = sessionID()
-    if (!currentSessionID || ui.restoring) return
-
-    const next = userMessages().find((item) => item.id > id)
-    setUi("restoring", id)
-
-    const task = !next
-      ? !supports("unrevert")
-        ? Promise.resolve()
-        : halt(currentSessionID)
-            .then(() => sdk.client.session.unrevert({ sessionID: currentSessionID }))
-            .then((result) => {
-              if (result.data) reconcileUnrevertedDirectorySession({ directory: dir(), canonical: result.data })
-              prompt.reset()
-            })
-      : !supports("revert")
-        ? Promise.resolve()
-        : halt(currentSessionID)
-            .then(() =>
-              sdk.client.session.revert({
-                sessionID: currentSessionID,
-                messageID: next.id,
-              }),
-            )
-            .then(() => {
-              prompt.set(draft(next.id))
-            })
-
-    return task.catch(fail).finally(() => {
-      setUi("restoring", (value) => (value === id ? undefined : value))
-    })
-  }
-
-  const rolled = createMemo(() => {
-    const id = revertMessageID()
-    if (!id) return []
-    return userMessages()
-      .filter((item) => item.id >= id)
-      .map((item) => ({ id: item.id, text: line(item.id) }))
+  const { draft, supports, restore, rolled, actions } = createSessionMessageActions({
+    sessionID: () => sessionID(),
+    directory: dir,
+    sdk,
+    language,
+    prompt,
+    sessionController,
+    conversation,
+    userMessages,
+    revertMessageID,
+    restoring: () => ui.restoring,
+    setRestoring: (id) => setUi("restoring", id),
+    clearRestoring: (id) => setUi("restoring", (value) => (value === id ? undefined : value)),
+    navigateSession,
+    errorMessage,
   })
 
-  const actions = createMemo(() => ({
-    ...(supports("fork") ? { fork } : {}),
-    ...(supports("revert") ? { revert } : {}),
-  }))
-
-  const { clearMessageHash, scrollToMessage } = useSessionHashScroll({
+  const { clearMessageHash, scrollToMessage, seeking } = useSessionHashScroll({
     sessionKey,
     sessionID: () => sessionID(),
     messagesReady,
@@ -1500,7 +1377,8 @@ export default function SessionPage() {
           </div>
 
           <Show when={!gate.open && !newSession()}>
-            <SessionComposerRegion
+            <Suspense fallback={<div aria-hidden="true" class="h-44 shrink-0" data-component="session-prompt-dock-loading" />}>
+              <SessionComposerRegion
               state={composerState}
               ready={!store.deferRender && messagesReady()}
               centered={centered()}
@@ -1547,7 +1425,8 @@ export default function SessionPage() {
                   : undefined
               }
               setPromptDockRef={(el) => (promptDock = el)}
-            />
+              />
+            </Suspense>
           </Show>
         </div>
       </div>

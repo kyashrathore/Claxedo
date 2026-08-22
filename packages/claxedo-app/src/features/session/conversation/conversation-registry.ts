@@ -177,7 +177,7 @@ export function conversationEntryIdsForTest() {
 
 export function warmConversationMemorySnapshot() {
   return [...entries.values()].toReversed().map((entry, recency) => {
-    const messages = entry.client.getMessages()
+    const messages = entry.handle.messages()
     return {
       sessionId: entry.sessionID,
       mounted: entry.refs > 0,
@@ -195,8 +195,12 @@ export function clearConversationChatRegistryForTest() {
 }
 
 function sameConversationMessages(left: UIMessage[], right: UIMessage[]) {
+  if (left === right) return true
   if (left.length !== right.length) return false
   return left.every((message, index) => {
+    // Merge preserves references for unchanged messages; stringify is the
+    // fallback for genuinely rebuilt ones only.
+    if (message === right[index]) return true
     try {
       return JSON.stringify(message) === JSON.stringify(right[index])
     } catch {
@@ -216,7 +220,7 @@ function conversationMessages(sessionID: string | undefined): UIMessage[] {
   const entry = entries.get(sessionID)
   if (!entry) return readConversationSnapshot(sessionID) ?? []
   entry.version()
-  return entry.client.getMessages()
+  return entry.handle.messages()
 }
 
 function sessionIdFromEvent(event: Event) {

@@ -128,6 +128,13 @@
       "import": "./dist/image.mjs",
       "default": "./dist/image.mjs"
     },
+    "./image-name": {
+      "types": "./dist/image-name.d.ts",
+      "bun": "./dist/image-name.mjs",
+      "development": "./dist/image-name.mjs",
+      "import": "./dist/image-name.mjs",
+      "default": "./dist/image-name.mjs"
+    },
     "./lease-policy": {
       "types": "./dist/lease-policy.d.ts",
       "bun": "./dist/lease-policy.mjs",

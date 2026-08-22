@@ -9,27 +9,29 @@ const root = path.resolve(import.meta.dirname, "..")
 const manifest = (await Bun.file(path.join(root, "package.json")).json()) as Manifest
 const patches = manifest.claxedoDependencyPatches ?? {}
 
-// Inside a repository, `git apply` resolves patch paths against the repo
-// TOPLEVEL and silently *skips* (exit 0) entries that don't match the cwd
-// prefix — so applying from a package directory under node_modules is a
-// reported-success no-op. Pass the cwd's repo-relative prefix via
-// `--directory` so the patch lands on the actual files; outside any
-// repository the prefix is empty and paths stay cwd-relative. The prefix is a
-// pure function of the directory, so it is computed once per directory.
-async function repoPrefix(directory: string) {
-  const process = Bun.spawn(["git", "rev-parse", "--show-prefix"], {
-    cwd: directory,
+async function gitToplevel(directory: string) {
+  const process = Bun.spawn(["git", "-C", directory, "rev-parse", "--show-toplevel"], {
     stdout: "pipe",
-    stderr: "ignore",
+    stderr: "pipe",
   })
   const [exitCode, stdout] = await Promise.all([process.exited, new Response(process.stdout).text()])
-  return exitCode === 0 ? stdout.trim() : ""
+  if (exitCode !== 0) return null
+  const toplevel = stdout.trim()
+  return toplevel ? await realpath(toplevel) : null
 }
 
-async function runGitApply(directory: string, prefix: string, patch: string, args: string[]) {
-  const directoryArgs = prefix ? [`--directory=${prefix}`] : []
+async function runGitApply(directory: string, patch: string, args: string[]) {
+  // `git apply` run from inside a work tree resolves the patch's paths against
+  // the repo TOP LEVEL — and from a subdirectory it silently SKIPS every
+  // out-of-scope file while still exiting 0. Anchor at the enclosing repo root
+  // and address the package with --directory so paths resolve to the real
+  // files; outside any repository, cwd-relative application is correct.
+  const toplevel = await gitToplevel(directory)
+  const directoryArgs = toplevel && toplevel !== directory
+    ? [`--directory=${path.relative(toplevel, directory).replaceAll(path.sep, "/")}`]
+    : []
   const process = Bun.spawn(["git", "apply", "--whitespace=nowarn", ...directoryArgs, ...args, patch], {
-    cwd: directory,
+    cwd: toplevel ?? directory,
     stdout: "pipe",
     stderr: "pipe",
   })
@@ -75,15 +77,14 @@ for (const [specifier, patchFile] of Object.entries(patches)) {
   }
 
   for (const directory of directories) {
-    const prefix = await repoPrefix(directory)
-    const applicable = await runGitApply(directory, prefix, patch, ["--check"])
+    const applicable = await runGitApply(directory, patch, ["--check"])
     if (applicable.exitCode === 0) {
-      const applied = await runGitApply(directory, prefix, patch, [])
+      const applied = await runGitApply(directory, patch, [])
       if (applied.exitCode !== 0) {
         throw new Error(`Failed to apply ${specifier} in ${directory}:\n${applied.output}`)
       }
     } else {
-      const alreadyApplied = await runGitApply(directory, prefix, patch, ["--reverse", "--check"])
+      const alreadyApplied = await runGitApply(directory, patch, ["--reverse", "--check"])
       if (alreadyApplied.exitCode !== 0) {
         throw new Error(`Dependency patch ${specifier} does not apply cleanly in ${directory}:\n${applicable.output}`)
       }
@@ -94,7 +95,7 @@ for (const [specifier, patchFile] of Object.entries(patches)) {
     // return 0 without writing (that is the bug the --directory flag fixes).
     // Only the patch being provably present — its reverse applying cleanly —
     // counts as success.
-    const present = await runGitApply(directory, prefix, patch, ["--reverse", "--check"])
+    const present = await runGitApply(directory, patch, ["--reverse", "--check"])
     if (present.exitCode !== 0) {
       throw new Error(
         `git apply reported success for ${specifier} in ${directory} but the patch is not present afterwards:\n${present.output}`,

@@ -279,7 +279,7 @@ async function openDraftPrompt(page: Page, dir: string): Promise<Locator> {
  * load sessions." and no row ever renders. `mock-runtime.ts` should grow a default
  * handler for this route. */
 async function installSessionListMock(page: Page) {
-  await page.route("**/api/control/session-list**", (route) => {
+  const handler = (route: Route) => {
     const type = route.request().resourceType()
     if (type !== "fetch" && type !== "xhr") return route.continue()
     return route.fulfill({
@@ -303,7 +303,11 @@ async function installSessionListMock(page: Page) {
         totalKnown: 1,
       }),
     })
-  })
+  }
+  await page.route("**/api/control/session-list**", handler)
+  // Loopback transports rewrite the path to `/api/claxedo/session-list`
+  // (workspace-control-routes.ts:150) — same handler serves both.
+  await page.route("**/api/claxedo/session-list**", handler)
 }
 
 /** Drives a full first-send flow (same shape as core-first-prompt-local) and returns
@@ -777,14 +781,18 @@ test.describe("core boot, deep links, and home @core", () => {
     // the row unconditionally) so this fresh boot's OWN list fetch reflects "gone" too
     // — a full page.goto tears down the JS/react-query state, so client-side pruning
     // from a prior boot does not carry over; the list response itself must be empty.
-    await page.route("**/api/control/session-list**", (route) => {
+    const emptySessionList = (route: Route) => {
       if (!isApiCall(route)) return route.fallback()
       return route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({ view: { scope: "global", groupBy: "none", sort: "updated_desc", limit: 50 }, items: [], totalKnown: 0 }),
       })
-    })
+    }
+    await page.route("**/api/control/session-list**", emptySessionList)
+    // Loopback transports rewrite the path to `/api/claxedo/session-list`
+    // (workspace-control-routes.ts:150) — override that spelling too.
+    await page.route("**/api/claxedo/session-list**", emptySessionList)
 
     // A fresh boot (full page load) at the session's own deep link — the server no
     // longer has it, so the whole discovery chain (list + detail) reflects "gone".

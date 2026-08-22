@@ -37,6 +37,12 @@ export const ProviderApi = HttpApi.make("provider")
       .add(
         HttpApiEndpoint.get("list", root, {
           query: WorkspaceRoutingQuery,
+          // Documented contract only: the handler is registered via
+          // `handleRaw` and serves memoized wire bytes, so the framework does
+          // not run this success schema per response. The identical encode
+          // runs once per distinct input set in
+          // `handlers/provider-list-cache.ts`; cached responses replay those
+          // already-validated bytes without schema-level re-validation.
           success: described(Provider.ListResult, "List of providers"),
         }).annotateMerge(
           OpenApi.annotations({

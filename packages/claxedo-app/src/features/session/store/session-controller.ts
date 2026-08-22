@@ -15,6 +15,7 @@ import {
   fetchSessionByTransport,
   fetchSessionMessagesByTransport,
   fetchSessionTodoByTransport,
+  PENDING_SCOPED_TRANSPORT_CAPABILITIES,
   type SessionTransportCapabilities,
   usesClaxedoSessionTransport,
 } from "./session-transport"
@@ -28,11 +29,12 @@ import {
   sessionTodoQueryOptions,
 } from "../data/sync/queries"
 import { removeSessionInventoryQueryData, useSessionInventoryActions } from "../data/sync/session-inventory"
+import { scheduleSessionCacheCeiling } from "../data/sync/session-cache-cleanup"
 import { getSessionPrefetch, getSessionPrefetchPromise, SESSION_PREFETCH_TTL, type SessionPrefetchMeta } from "@/platform/sync/session-prefetch"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { queryClient } from "@/platform/query/query-client"
-import { isWorkspaceReady } from "@/features/session/app-ports"
-import { useWorkspaceQuery } from "@/features/session/app-ports"
+import { settledQueryData as settledData } from "@/platform/query/settled-query-data"
+import { isWorkspaceReady, useWorkspaceQuery } from "@/features/session/app-ports"
 import { scheduleSessionProjectionPull } from "@/platform/runtime/agent/session-projection"
 import { removeDirectorySession, upsertDirectorySession } from "../data/sync/directory-session-cache"
 import { FAST_SESSION_SWITCH_NETWORK_QUIET_MS, FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS, FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS, fastSessionSwitchQuietDelay, fastSessionSwitchNetworkQuiet, suppressedByFastSessionSwitch } from "@/platform/runtime/session-switch"
@@ -171,18 +173,6 @@ const HYDRATE_FRESH_MS = 15_000
 export const ACTIVE_SESSION_STATUS_POLL_DELAY_MS = 60_000
 export const ACTIVE_SESSION_STATUS_POLL_INTERVAL_MS = 5_000
 const ACCEPTED_PROMPT_REFRESH_ATTEMPT_DELAYS_MS = [0, 600, 1_200, 2_400, 4_000, 8_000, 12_000] as const
-const PENDING_SCOPED_TRANSPORT_CAPABILITIES: SessionTransportCapabilities = {
-  ...DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES,
-  abort: false,
-  permissions: false,
-  questions: false,
-  commands: false,
-  fork: false,
-  revert: false,
-  unrevert: false,
-  configOptions: false,
-}
-
 type ActiveSessionStatusPollStartedKeys = Pick<Set<string>, "has" | "add">
 
 export async function waitForFirstActiveSessionStatusPoll(input: {
@@ -585,20 +575,26 @@ export function createSessionController(input: {
   const todos = createMemo(() => {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return []
-    return todoQuery.data ?? []
+    return settledData(todoQuery) ?? []
   })
 
   const diffs = createMemo(() => {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return []
-    return list(diffQuery.data)
+    return list(settledData(diffQuery))
   })
   const diffsReady = createMemo(() => {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return true
-    return diffQuery.data !== undefined
+    return settledData(diffQuery) !== undefined
   })
 
+  // status/request are LIVE mirrors: on the draft->session handoff their
+  // fresh observers sit in "pending" for the first fetch while the turn is
+  // already busy, so a settled-only read reports idle exactly when the stop
+  // control must show. Plain .data is safe here — the vendored solid-query
+  // patch removed client-side query suspension globally, which is what the
+  // settled gate existed to avoid.
   const status = createMemo(() => {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return idleSessionStatus
@@ -622,7 +618,7 @@ export function createSessionController(input: {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES
     if (!usesClaxedoSessionTransport(sessionID, input.directory())) return DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES
-    return capabilitiesQuery.data ?? PENDING_SCOPED_TRANSPORT_CAPABILITIES
+    return settledData(capabilitiesQuery) ?? PENDING_SCOPED_TRANSPORT_CAPABILITIES
   })
   const activeTurn = createMemo(() => {
     const sessionID = input.sessionID()
@@ -1019,6 +1015,10 @@ export function createSessionController(input: {
           // scope workspaceId so the runtime stream relays for relay-backed
           // workspaces whose `directory` is a non-ref filesystem path.
           markLiveSession(globalSDK.event, id, directory, signedControlPlane ? input.workspaceId?.() : undefined, input.sessionRef?.()?.host)
+          // Hydration is the moment this session's shell caches come alive, so
+          // it is what triggers the ceiling — but the pass itself runs once the
+          // renderer is idle, never in front of the pane the user just opened.
+          scheduleSessionCacheCeiling(id)
           void syncSessionCapabilities(id)
           void syncSessionHistory(id, { bypassQuiet: true }).then((synced) =>
             sessionHydrationDebug("sync-session-complete", { directory, sessionID: id, synced }))

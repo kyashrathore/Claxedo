@@ -44,12 +44,29 @@ vi.mock("@/features/processes/ui", () => ({
   WorkspaceProcessesNavigator: () => <div data-testid="workspace-processes-navigator" />,
 }))
 
-vi.mock("@claxedo/app", () => ({
-  getAvatarColors: () => ({ background: "#000", color: "#fff" }),
-  useCommand: () => ({ register: vi.fn() }),
-  usePlatform: () => ({ fetch }),
-  useServer: () => ({ isLocal: () => true }),
-}))
+// These hooks used to be re-exported (and mocked) via the "@claxedo/app"
+// barrel; 48f98d84a re-pointed app-shell-layout at the concrete provider
+// modules, so the mocks must target those or the real hooks run and throw
+// "context must be used within a context provider". Each mock spreads the
+// actual module: they export more than the hook (CommandProvider, the
+// server-health helpers, PlatformProvider), and wiping those would break
+// unrelated imports elsewhere in the render tree.
+vi.mock("@/app/providers/command", async () => {
+  const actual = await vi.importActual<typeof import("../../providers/command")>("@/app/providers/command")
+  return { ...actual, useCommand: () => ({ register: vi.fn() }) }
+})
+
+vi.mock("@/app/connection/server", async () => {
+  const actual = await vi.importActual<typeof import("../../connection/server")>("@/app/connection/server")
+  return { ...actual, useServer: () => ({ isLocal: () => true }) }
+})
+
+vi.mock("@/platform/runtime/platform-provider", async () => {
+  const actual = await vi.importActual<typeof import("../../../platform/runtime/platform-provider")>(
+    "@/platform/runtime/platform-provider",
+  )
+  return { ...actual, usePlatform: () => ({ fetch }) }
+})
 
 vi.mock("@/app/providers/global-sdk/provider", () => ({
   useGlobalSDK: () => ({
@@ -159,7 +176,8 @@ describe("RailLayout workspace tool gates", () => {
     // replaced them with one button that opens the creator, because the header's
     // directory is an inferred fallback chain rather than a choice. The surface
     // gate this file is about is the Files/Changes/Processes trio below.
-    expect(screen.getByRole("button", { name: "New Terminal" })).toBeTruthy()
+    // The workbench shell is lazy() since 48f98d84a — await its arrival.
+    expect(await screen.findByRole("button", { name: "New Terminal" }, { timeout: 10_000 })).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
 
@@ -191,7 +209,8 @@ describe("RailLayout workspace tool gates", () => {
       },
     })
 
-    expect(screen.getByRole("button", { name: "New Terminal" })).toBeTruthy()
+    // The workbench shell is lazy() since 48f98d84a — await its arrival.
+    expect(await screen.findByRole("button", { name: "New Terminal" }, { timeout: 10_000 })).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
 
@@ -223,7 +242,8 @@ describe("RailLayout workspace tool gates", () => {
       },
     })
 
-    expect(screen.getByRole("button", { name: "New Terminal" })).toBeTruthy()
+    // The workbench shell is lazy() since 48f98d84a — await its arrival.
+    expect(await screen.findByRole("button", { name: "New Terminal" }, { timeout: 10_000 })).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
 
@@ -255,7 +275,8 @@ describe("RailLayout workspace tool gates", () => {
       },
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
+    // The workbench shell is lazy() since 48f98d84a — await its arrival.
+    fireEvent.click(await screen.findByRole("button", { name: "Open workspace panel" }, { timeout: 10_000 }))
 
     const tabs = [
       { kind: "review", label: "Review" },

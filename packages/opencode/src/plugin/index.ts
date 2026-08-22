@@ -107,18 +107,59 @@ function getLegacyPlugins(mod: Record<string, unknown>) {
   return result
 }
 
-async function applyPlugin(load: PluginLoader.Loaded, input: PluginInput, hooks: Hooks[]) {
+// Returns the hooks a plugin registers instead of mutating shared state, so the caller decides
+// whether a result is registered now or, when it misses the init budget, later.
+async function applyPlugin(load: PluginLoader.Loaded, input: PluginInput): Promise<Hooks[]> {
   const plugin = readV1Plugin(load.mod, load.spec, "server", "detect")
   if (plugin) {
     await resolvePluginId(load.source, load.spec, load.target, readPluginId(plugin.id, load.spec), load.pkg)
-    hooks.push(await (plugin as PluginModule).server(input, load.options))
-    return
+    return [await (plugin as PluginModule).server(input, load.options)]
   }
 
+  const hooks: Hooks[] = []
   for (const server of getLegacyPlugins(load.mod)) {
     hooks.push(await server(input, load.options))
   }
+  return hooks
 }
+
+/**
+ * Wall-clock budget for the whole external plugin construction phase.
+ *
+ * External plugin constructors are arbitrary third-party code and run before the first request
+ * is served (`InstanceBootstrap.run` -> `plugin.init()`), sequentially. `opencode-antigravity-auth@1.6.0`
+ * awaits an uncached `fetch` with a 5s timeout whose fallback is a second `fetch` to another host,
+ * so one installed plugin can hold instance boot behind >5s of network, and N plugins add up.
+ *
+ * The budget caps what boot pays. Plugins that miss it are deferred, never dropped: their hooks
+ * register against the live hook list as soon as the constructor settles (see `registerLate`).
+ * Override with `OPENCODE_PLUGIN_INIT_TIMEOUT_MS`.
+ */
+const PLUGIN_INIT_BUDGET_MS = 1_000
+
+const PENDING = Symbol("plugin.init.pending")
+type Pending = typeof PENDING
+
+/**
+ * Awaits every promise, but gives up waiting after `ms` and reports the unfinished ones as
+ * `PENDING`. The promises keep running; the caller decides what to do with the stragglers.
+ */
+async function settleWithin<T>(promises: readonly Promise<T>[], ms: number): Promise<(T | Pending)[]> {
+  if (promises.length === 0) return []
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<Pending>((resolve) => {
+    timer = setTimeout(() => resolve(PENDING), ms)
+    // Do not hold the process open purely to observe our own deadline.
+    ;(timer as { unref?: () => void }).unref?.()
+  })
+  try {
+    return await Promise.all(promises.map((promise) => Promise.race([promise, deadline])))
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+type PluginOutcome = { readonly ok: true; readonly hooks: Hooks[] } | { readonly ok: false; readonly error: string }
 
 const layer = Layer.effect(
   Service,
@@ -212,41 +253,101 @@ const layer = Layer.effect(
             },
           }),
         )
-        for (const load of loaded) {
-          if (!load) continue
-
-          // Keep plugin execution sequential so hook registration and execution
-          // order remains deterministic across plugin runs.
-          yield* Effect.tryPromise({
-            try: () => applyPlugin(load, input, hooks),
-            catch: (err) => {
-              const message = errorMessage(err)
-              return message
-            },
-          }).pipe(
-            Effect.tapError((error) => Effect.logError("failed to load plugin", { path: load.spec, error })),
-            Effect.catch(() => {
-              // TODO: make proper events for this
-              // events.publish(Session.Event.Error, {
-              //   error: new NamedError.Unknown({
-              //     message: `Failed to load plugin ${load.spec}: ${message}`,
-              //   }).toObject(),
-              // })
-              return Effect.void
-            }),
-          )
-        }
-
-        // Notify plugins of current config
-        for (const hook of hooks) {
-          yield* Effect.tryPromise({
+        // Notify a plugin of current config. Runs for on-time and late plugins alike.
+        const notifyConfig = (hook: Hooks) =>
+          Effect.tryPromise({
             try: () => Promise.resolve((hook as any).config?.(cfg)),
             catch: errorMessage,
           }).pipe(
             Effect.tapError((error) => Effect.logError("plugin config hook failed", { error })),
             Effect.ignore,
           )
+
+        const disposeHook = (hook: Hooks) =>
+          Effect.tryPromise({
+            try: () => Promise.resolve(hook.dispose?.()),
+            catch: errorMessage,
+          }).pipe(
+            Effect.tapError((error) => Effect.logError("plugin dispose hook failed", { error })),
+            Effect.ignore,
+          )
+
+        // Set when the instance is disposed. Hooks that arrive after that are disposed
+        // immediately instead of being registered against a dead instance.
+        let closed = false
+
+        // Plugin construction stays sequential: `plugin.loader.shared > initializes server plugins
+        // in config order` pins that a constructor's side effects never interleave with the next
+        // one's. Chaining rather than looping gives every plugin its own promise, so the phase can
+        // be observed against a shared deadline without changing execution order.
+        let chain: Promise<unknown> = Promise.resolve()
+        const entries = loaded
+          .filter((load): load is PluginLoader.Loaded => Boolean(load))
+          .map((load) => {
+            const promise: Promise<PluginOutcome> = chain.then(() =>
+              applyPlugin(load, input).then(
+                (hooks): PluginOutcome => ({ ok: true, hooks }),
+                (err): PluginOutcome => ({ ok: false, error: errorMessage(err) }),
+              ),
+            )
+            chain = promise
+            return { load, promise }
+          })
+
+        const registerLate = (spec: string, next: Hooks[]) =>
+          Effect.gen(function* () {
+            if (closed) {
+              // Instance already disposed: run the plugin's own teardown and drop it.
+              yield* Effect.forEach(next, disposeHook, { discard: true })
+              return
+            }
+            // `hooks` is the same array the materialized state exposes, so `trigger`/`list`
+            // observe late arrivals without any re-materialization.
+            for (const hook of next) hooks.push(hook)
+            for (const hook of next) yield* notifyConfig(hook)
+            yield* Effect.logWarning("plugin registered after init budget", { path: spec })
+          })
+
+        const budget = flags.pluginInitTimeoutMs ?? PLUGIN_INIT_BUDGET_MS
+        const settled = yield* Effect.promise(() =>
+          settleWithin(
+            entries.map((entry) => entry.promise),
+            budget,
+          ),
+        )
+
+        for (let i = 0; i < entries.length; i++) {
+          const entry = entries[i]!
+          const outcome = settled[i]!
+          if (outcome === PENDING) {
+            // Boot proceeds without this plugin, and without the ones queued behind it. None of
+            // them are dropped: each registers against the live array when its turn settles.
+            yield* Effect.logWarning("plugin exceeded init budget, continuing boot", {
+              path: entry.load.spec,
+              budget,
+            })
+            bridge.fork(
+              Effect.promise(() => entry.promise).pipe(
+                Effect.flatMap((result) =>
+                  result.ok
+                    ? registerLate(entry.load.spec, result.hooks)
+                    : Effect.logError("failed to load plugin", { path: entry.load.spec, error: result.error }),
+                ),
+              ),
+            )
+            continue
+          }
+          if (!outcome.ok) {
+            // TODO: make proper events for this
+            yield* Effect.logError("failed to load plugin", { path: entry.load.spec, error: outcome.error })
+            continue
+          }
+          // On-time plugins register in load order, preserving hook execution order.
+          for (const hook of outcome.hooks) hooks.push(hook)
         }
+
+        // Notify plugins of current config
+        for (const hook of hooks) yield* notifyConfig(hook)
 
         const unsubscribe = yield* events.listen((event) => {
           if (event.location?.directory !== ctx.directory) return Effect.void
@@ -259,18 +360,10 @@ const layer = Layer.effect(
         yield* Effect.addFinalizer(() => unsubscribe)
 
         yield* Effect.addFinalizer(() =>
-          Effect.forEach(
-            hooks,
-            (hook) =>
-              Effect.tryPromise({
-                try: () => Promise.resolve(hook.dispose?.()),
-                catch: errorMessage,
-              }).pipe(
-                Effect.tapError((error) => Effect.logError("plugin dispose hook failed", { error })),
-                Effect.ignore,
-              ),
-            { discard: true },
-          ),
+          Effect.suspend(() => {
+            closed = true
+            return Effect.forEach(hooks, disposeHook, { discard: true })
+          }),
         )
 
         return { hooks }

@@ -1,4 +1,4 @@
-import { Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { Show, Suspense, createEffect, createMemo, createSignal, lazy, onCleanup } from "solid-js"
 import type { ContentMeta } from "@/features/session/app-ports"
 import { useClaxedoState } from "@/features/session/app-ports"
 import type { PaneCtx } from "@/features/session/app-ports"
@@ -6,7 +6,21 @@ import { SessionPaneScope } from "../components/session-pane-scope"
 import SessionPage from "@/features/session/ui/session-screen"
 import { hasBacking, isDirectorylessPiSession, localSessionRefForDirectory, retargetSessionRef } from "@/platform/identity/session-ref"
 import { SessionLoadingSurface } from "./session-loading-surface"
-import { SessionEnvironmentCardMount } from "./session-environment-card"
+// Type-only, so the card's lazy chunk stays lazy.
+import type { SessionEnvironmentCardOccupancy } from "./session-environment-card"
+// The `.session-envcard-shell` / `.session-envcard-primary` layout rules must
+// arrive with THIS component: the shell markup below renders unconditionally,
+// while the card component that also imports this stylesheet is a lazy chunk
+// that may never load (local sessions mount no card). Without the eager import
+// the shell has no flex layout and the whole session page collapses to zero
+// height — present in the DOM, painted nowhere, clickable never.
+import "./session-environment-card.css"
+
+const SessionEnvironmentCardMount = lazy(() =>
+  import("./session-environment-card").then((module) => ({
+    default: module.SessionEnvironmentCardMount,
+  })),
+)
 
 export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbackDirectory?: () => string | undefined }) {
   const state = useClaxedoState()
@@ -34,6 +48,31 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
    * "new"` open-coded twice invites the two from drifting apart.
    */
   const draftSession = () => !sessionId() || sessionId() === "new"
+  /**
+   * How much of the pane's right gutter the environment card is occupying, as
+   * reported by the card itself (it owns that policy — see its mount doc).
+   * Stamped on the shell as `data-session-envcard` so the reservation rules in
+   * session-environment-card.css are plain descendant selectors.
+   *
+   * Deliberately not `:has(.session-envcard)`: this shell wraps the entire
+   * session pane, and a `:has()` here makes it a Blink invalidation anchor whose
+   * every re-check sweeps the whole transcript with the document's aggregated
+   * `:has` invalidation set. See that stylesheet for the measurement.
+   */
+  const [envcardGutter, setEnvcardGutter] = createSignal<SessionEnvironmentCardOccupancy>()
+  /**
+   * Reservation before the card can report. The lazy chunk plus its persisted-
+   * collapse read land after first paint; every painted frame without
+   * `data-session-envcard` while the card is going to appear flips the
+   * transcript's padding-right afterwards — a full relayout and a restarted
+   * paint-stability wait, per switch. Both facts that gate APPEARANCE (a real
+   * session, workspace panel closed) are synchronous here, so reserve the
+   * card's DEFAULT occupancy (collapsed rail — see createSessionEnvironment-
+   * CardState) optimistically; the mount stays the authority and refines or
+   * corrects this the moment it reports.
+   */
+  const optimisticEnvcardOccupancy = (): SessionEnvironmentCardOccupancy | undefined =>
+    !draftSession() && !state.workspacePanel.state().open ? "collapsed" : undefined
   const requiresSessionRef = () => !draftSession()
   const missingSessionRef = () => requiresSessionRef() && !effectiveSessionRef() && !directory()
   const sessionVisible = () => typeof props.ctx.isVisible === "function" ? props.ctx.isVisible() : !!props.ctx.isVisible
@@ -130,6 +169,14 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
     </Show>
   )
   return (
+    // Pane-local suspense boundary. Session surfaces create session-scoped
+    // queries/lazy chunks on first activation; without this boundary the
+    // nearest Suspense is the app-shell bootstrap one, so a session switch
+    // suspends the ENTIRE shell — Solid detaches the whole app DOM, every
+    // scroll position resets, and the timeline re-renders its range twice
+    // (top, then re-anchor to bottom) inside long main-thread tasks. Keeping
+    // the boundary here confines the loading state to this pane.
+    <Suspense fallback={realSessionLoading()}>
     <Show when={shouldRenderSession()} fallback={stashedSession()}>
         <Show
           when={!missingSessionRef()}
@@ -166,6 +213,7 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
               >
                 <div
                   class="size-full session-envcard-shell"
+                  data-session-envcard={envcardGutter() ?? optimisticEnvcardOccupancy()}
                   data-testid="session-content"
                   data-content-id={meta().id}
                   data-session-id={sessionId() ?? ""}
@@ -187,11 +235,16 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
                       collapse state) — and it is strictly cheaper: an unmounted
                       card never creates its file-status, vcs or processes queries
                       at all, where an internal flag would leave them mounted and
-                      merely disabled. It is also what the CSS expects: the
-                      reserved gutter is keyed off `:has(.session-envcard)`, so an
-                      unmounted card reclaims the width with no extra rule. */}
+                      merely disabled. It is also what the CSS expects: an
+                      unmounted card reports no occupancy, so the shell drops
+                      `data-session-envcard` and reclaims the width. */}
                   <Show when={!draftSession()}>
-                    <SessionEnvironmentCardMount />
+                    {/* The card's lazy chunk must not blank the conversation
+                        behind the pane-level loading fallback — contain its
+                        suspension to the card's own (empty) region. */}
+                    <Suspense fallback={null}>
+                      <SessionEnvironmentCardMount onOccupancy={setEnvcardGutter} />
+                    </Suspense>
                   </Show>
                 </div>
               </SessionPaneScope>
@@ -199,5 +252,6 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
           </Show>
         </Show>
     </Show>
+    </Suspense>
   )
 }

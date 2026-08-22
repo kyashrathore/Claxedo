@@ -3,7 +3,7 @@
 // shape callers wire up to.
 
 import { onCleanup, type Accessor, type JSX } from "solid-js"
-import { createStore, type SetStoreFunction } from "solid-js/store"
+import { createStore, reconcile, type SetStoreFunction } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import {
   WorkbenchProvider,
@@ -307,7 +307,18 @@ export function ClaxedoStateProvider(props: ClaxedoStateProviderProps): JSX.Elem
   const wbState = (): WorkbenchState => state.workbench
   const wbOnChange = (next: WorkbenchState) => {
     if (sameWorkbenchState(state.workbench, next)) return
-    setPersistentState("workbench", next)
+    // `reconcile`, not a plain merge: every reducer returns brand-new
+    // `panes`/`split`/`contentIds`/`contentRecency` references, so a plain
+    // `setState("workbench", next)` replaces those store nodes wholesale on
+    // EVERY mutation — each `navigation.show` invalidates every subscriber
+    // under them (the workbench pane <For>s are keyed by pane object
+    // reference and tear down/recreate their DOM; every `focusedContent()`
+    // reader across the rail/route-bridge re-runs). Reconcile diffs into the
+    // existing nodes (panes keyed by `id`), so only signals whose values
+    // actually changed fire. The workbench test harness
+    // (workbench/tests/dom-helpers.tsx) already drives the same reducers
+    // through `reconcile` — this keeps production on the same contract.
+    setPersistentState("workbench", reconcile(next, { key: "id" }))
   }
   const ready = props.ready ?? (() => true)
 

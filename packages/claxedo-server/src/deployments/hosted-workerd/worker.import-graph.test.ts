@@ -31,7 +31,7 @@ const FORBIDDEN_BARE = [
   "@claxedo/channels",
   "@claxedo/workspace-runtime",
   "better-sqlite3",
-  "node-pty",
+  "@lydell/node-pty",
   "node:child_process",
   "node:crypto",
   "node:fs",

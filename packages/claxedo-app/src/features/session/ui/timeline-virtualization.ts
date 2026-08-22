@@ -1,5 +1,25 @@
 import type { Virtualizer } from "@tanstack/solid-virtual"
 
+export function estimateLongMarkdownHeight(text: string) {
+  let lineCount = 1
+  for (let newline = text.indexOf("\n"); newline !== -1; newline = text.indexOf("\n", newline + 1)) lineCount += 1
+  // Neither supported estimate can match fewer than 20 structural rows. Avoid
+  // allocating a line array and running a regex for the overwhelmingly common
+  // one-line response while the virtualizer estimates the complete history.
+  if (lineCount < 20) return
+
+  const lines = text.split("\n")
+  if (/^\s*(?:```|~~~)/.test(lines[0] ?? "") && lines.length > 80) {
+    return Math.min(6_000, (lines.length - 2) * 24 + 36)
+  }
+  let structuralRows = 0
+  for (const line of lines) {
+    if (!/^\s*(?:[-*+]\s+|\|)/.test(line)) continue
+    structuralRows += 1
+    if (structuralRows >= 20) return Math.min(6_000, lines.length * 50)
+  }
+}
+
 export function filterVirtualIndexes(indexes: number[], count: number) {
   return indexes.filter((index) => index >= 0 && index < count)
 }
@@ -44,7 +64,12 @@ export function createTimelineResizeAnchor() {
         const item = input.virtualizer.measurementsCache[index]
         const previous = item ? (input.virtualizer.itemSizeCache.get(item.key) ?? item.size) : undefined
         const root = input.root()
-        if (root && previous !== undefined && Math.abs(size - previous) > root.clientHeight) {
+        // Pinning exists to keep the rows a mid-history reader is looking at
+        // mounted while a huge resize shifts the range. While bottom-anchored
+        // the anchor re-scroll wins immediately, so the pin scan — a forced
+        // layout (getBoundingClientRect per rendered row) inside the resize
+        // flush — buys nothing and is skipped.
+        if (root && previous !== undefined && !input.shouldAnchorBottom() && Math.abs(size - previous) > root.clientHeight) {
           const view = root.getBoundingClientRect()
           pinnedIndexes = [...root.querySelectorAll<HTMLElement>("[data-index]")]
             .filter((element) => {
@@ -67,5 +92,24 @@ export function createTimelineResizeAnchor() {
     dispose() {
       if (pinFrame !== undefined) cancelAnimationFrame(pinFrame)
     },
+  }
+}
+
+/**
+ * Per-row frame styles for a virtualized timeline row. Offscreen rows carry
+ * `content-visibility: auto` so the browser skips their style/layout/paint
+ * entirely while the box keeps the virtualizer's size — scroll math is
+ * unchanged, and `auto` intrinsic sizing retains each row's last RENDERED
+ * height so re-measures after a scroll approach stay exact. On-screen rows are
+ * unaffected.
+ */
+export function timelineRowFrameStyle(input: {
+  size: number
+  minHeight: number | undefined
+}): Record<string, string | undefined> {
+  return {
+    "min-height": input.minHeight === undefined ? undefined : `${input.minHeight}px`,
+    "content-visibility": "auto",
+    "contain-intrinsic-size": `auto ${input.size}px`,
   }
 }

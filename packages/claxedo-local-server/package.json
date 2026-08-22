@@ -44,7 +44,6 @@
     "better-sqlite3": "13.0.1",
     "drizzle-orm": "catalog:",
     "hono": "4.10.7",
-    "node-pty": "1.1.0",
     "tokentracker-cli": "0.91.0",
     "zod": "4.4.3"
   },

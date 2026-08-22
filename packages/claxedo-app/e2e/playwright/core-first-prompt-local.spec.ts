@@ -85,7 +85,7 @@
  *   (`core-model-effort-agent-controls`); busy/abort/error escalation
  *   (`core-busy-abort-errors`).
  */
-import { expect, test, type Locator, type Page } from "@playwright/test"
+import { expect, test, type Locator, type Page, type Route } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, expectTurnCounts, expectNoDuplicateRows, SELECTORS } from "../helpers/turn-oracle"
 
@@ -137,7 +137,7 @@ async function seedNoProjects(page: Page) {
 }
 
 async function installPlaceholderSessionList(page: Page) {
-  await page.route("**/api/control/session-list**", (route) => route.fulfill({
+  const handler = (route: Route) => route.fulfill({
     status: 200,
     contentType: "application/json",
     body: JSON.stringify({
@@ -155,7 +155,11 @@ async function installPlaceholderSessionList(page: Page) {
       }],
       totalKnown: 1,
     }),
-  }))
+  })
+  await page.route("**/api/control/session-list**", handler)
+  // Loopback transports rewrite the path to `/api/claxedo/session-list`
+  // (workspace-control-routes.ts:150) — same handler serves both.
+  await page.route("**/api/claxedo/session-list**", handler)
 }
 
 async function openDraftPrompt(page: Page, dir: string): Promise<Locator> {

@@ -148,10 +148,19 @@ async function openWorkbench(page: Page, dir: string) {
   // (`route-intent.ts` narrow guard), so the full-screen-panel-over-composer
   // workaround this spec used to need (`closeWorkspacePanelIfOpen`) is gone. The
   // panel must be closed on a bare narrow boot — asserted in behavior 2b.
-  if (!(await page.getByRole("textbox", { name: /Ask anything/i }).isVisible().catch(() => false))) {
-    await page.getByRole("button", { name: "New Session" }).first().click()
-    await expect(page.getByRole("textbox", { name: /Ask anything/i })).toBeVisible({ timeout: 10_000 })
-  }
+  //
+  // WAIT for the composer instead of probing it with a zero-wait `isVisible()`:
+  // the app DOES render the composer for `/{slug}/session` at 390px (verified
+  // with a standalone probe against the prebuilt preview: invisible at
+  // `[data-claxedo]`-paint time, visible well within 15s — the session surface
+  // is a lazy chunk), so the instant probe was racy-by-construction. Worse, its
+  // fallback — `getByRole("button", { name: "New Session" }).first()` — is a
+  // SUBSTRING role match that resolves to the sidebar row's "New session in
+  // main" hover action, which lives inside the closed drawer OUTSIDE the 390px
+  // viewport; Playwright then retries "element is outside of the viewport"
+  // until the 60s test timeout. That fallback click was the entire failure
+  // mode of behaviors 2 and 3, not any app regression.
+  await expect(page.getByRole("textbox", { name: /Ask anything/i })).toBeVisible({ timeout: 15_000 })
 }
 
 /** Open the workspace side panel via the header `workspace-panel-toggle` button —

@@ -896,6 +896,22 @@ describe("global sdk event fetch", () => {
     ])
   })
 
+  test("signed-out local directory events stay on the canonical loopback stream", async () => {
+    const calls: string[] = []
+
+    await createControlPlaneEventFetch({
+      signedControlPlane: () => false,
+      liveSession: () => ({ sessionID: "session-local", directory: "/repo/local" }),
+      setLiveSession: () => {},
+      fetch: recordingFetch(calls),
+    })("http://localhost:3001/global/event?sessionID=session-local")
+
+    expect(calls).toEqual([
+      "http://localhost:3001/global/event?sessionID=session-local",
+    ])
+    expect(calls.some((url) => url.includes("/api/workspace/resolve"))).toBe(false)
+  })
+
   test("workspace runtime event rewrites preserve Last-Event-ID", async () => {
     const calls: Array<{ url: string; lastEventId: string | null }> = []
 

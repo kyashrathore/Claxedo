@@ -5,26 +5,15 @@ import { createContext, useContext, onCleanup, onMount, createSignal, type Paren
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useLanguage } from "@/platform/i18n/provider"
 import { createRefreshQueue } from "@/platform/sync/global-sync/queue"
-
-function sanitizeProject(project: Project) {
-  if (!project.icon?.url && !project.icon?.override) return project
-  return {
-    ...project,
-    icon: {
-      ...project.icon,
-      url: undefined,
-      override: undefined,
-    },
-  }
-}
+import { scheduleMarkdownPrewarm } from "@/ui/session-kit-loaders"
+import { scheduleUserExtensionLoad } from "@/platform/extensions/user-extensions"
+import { sanitizeProject } from "./project-sanitize"
 
 function workspaceDirectoryRef(directory: string) {
   return !!workspaceRuntimeRef(directory)
 }
 
-function workspaceRuntimeRef(directory: string) {
-  return sessionWorkspaceRuntimeRef({ directory })
-}
+const workspaceRuntimeRef = (directory: string) => sessionWorkspaceRuntimeRef({ directory })
 
 import { createDirectoryCacheManager } from "@/platform/sync/directory-cache-manager"
 import { wasRolledBackDraft } from "../../../features/session/submit/rolled-back-drafts"
@@ -74,6 +63,7 @@ import { setDirectorySessionCache } from "../../../features/session/data/sync/di
 import { useClaxedoEventsOptional } from "../../integrations/claxedo-events"
 import { bootstrapRequestPrefix, createBootstrapOrchestrator, globalBootstrapFreshKey, sessionLoadMetaKey, sessionLoadRequestKey, type QueryOptionsApi } from "../../boot/data/bootstrap-orchestrator"
 import { createGlobalSyncEventIngress } from "../../integrations/session-events/event-ingress"
+import { bootstrapInitialShell } from "./shell-bootstrap"
 import {
   createInventoryPageSource,
   createSignedInventorySource,
@@ -234,6 +224,7 @@ function createGlobalSync() {
     pageSize: PAGE,
     platformFetch: () => platform.fetch,
     authFetch,
+    queryClient,
     hasSignedAccess,
     signedWorkspaceProjects,
     signedInventorySource,
@@ -731,7 +722,14 @@ function createGlobalSync() {
     queueMicrotask(() => {
       void globalSDK.event.start()
     })
-    void bootstrap()
+    const loopback = centralTransportForServer(globalSDK.url) === "loopback"
+    void (loopback
+      ? bootstrapInitialShell({ baseUrl: globalSDK.url, request: globalThis.fetch, setGlobalState, fallback: bootstrap })
+      : bootstrap())
+    onCleanup(scheduleMarkdownPrewarm())
+    // Local product only — hosted deployments refuse the extension routes.
+    // Idle-scheduled like the markdown prewarm, off the boot critical path.
+    if (loopback) onCleanup(scheduleUserExtensionLoad(globalSDK.url))
   })
 
   function projectMeta(directory: string, patch: ProjectMeta) {

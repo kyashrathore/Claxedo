@@ -16,8 +16,9 @@ import { lazy } from "@claxedo/server-core/platform/runtime/lib/lazy"
 import path from "path"
 import { readFileSync, readdirSync, existsSync, mkdirSync } from "fs"
 import { createRequire } from "module"
+import { createHash } from "crypto"
 
-import { repair } from "./repair"
+import { repair, REPAIR_VERSION } from "./repair"
 
 declare const CLAXEDO_MIGRATIONS: { sql: string; timestamp: number; name: string }[] | undefined
 
@@ -93,17 +94,32 @@ function pragma(sqlite: CompatibleSqlite, sql: string) {
   sqlite.exec(`PRAGMA ${sql}`)
 }
 
-/** Run pending SQL migrations on the raw sqlite instance using a simple tracking table. */
-function applyMigrations(sqlite: CompatibleSqlite, entries: { sql: string; timestamp: number; name: string }[]) {
+/**
+ * One migration in journal order. `sql` is a thunk so the journal can be
+ * enumerated (names + order) without materializing every migration's SQL: on a
+ * warm boot every entry is already applied and no SQL is ever needed, so the
+ * dev/disk journal skips 37 file reads and the bundled journal costs nothing
+ * either way.
+ */
+type MigrationEntry = { sql: () => string; timestamp: number; name: string }
+
+/**
+ * Run pending SQL migrations on the raw sqlite instance using a simple
+ * tracking table. Consults the journal first and loads an entry's SQL only
+ * when it is not yet applied. Returns the names it applied, in order.
+ */
+function applyMigrations(sqlite: CompatibleSqlite, entries: MigrationEntry[]) {
   sqlite.exec(`CREATE TABLE IF NOT EXISTS __claxedo_migrations (name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`)
   const applied = new Set(
     (sqlite.prepare(`SELECT name FROM __claxedo_migrations`).all() as { name: string }[]).map((r) => r.name),
   )
+  const ran: string[] = []
   for (const entry of entries) {
     if (applied.has(entry.name)) continue
+    const sql = entry.sql()
     sqlite.transaction(() => {
       try {
-        sqlite.exec(entry.sql)
+        sqlite.exec(sql)
       } catch (error) {
         const repairedModelColumns = entry.name === "20260712000100_session_meta_model"
           && (sqlite.prepare("PRAGMA table_info(claxedo_session_meta)").all() as { name?: unknown }[])
@@ -114,7 +130,67 @@ function applyMigrations(sqlite: CompatibleSqlite, entries: { sql: string; times
       }
       sqlite.prepare(`INSERT INTO __claxedo_migrations (name, applied_at) VALUES (?, ?)`).run(entry.name, Date.now())
     })()
+    ran.push(entry.name)
   }
+  return ran
+}
+
+/**
+ * Boot-time gate for `repair`: a hash of the live schema (every
+ * `sqlite_master` row) plus the repair routine's own version. When the stored
+ * fingerprint from the last completed repair still matches, the schema has not
+ * drifted and repair's ~70 statements (including two full-table UPDATE
+ * backfills) are skipped. Any failure to compute returns undefined, which the
+ * caller treats as "run repair" — the gate fails open because repair exists
+ * precisely for databases in unexpected states.
+ */
+function schemaFingerprint(sqlite: CompatibleSqlite): string | undefined {
+  try {
+    const rows = sqlite.prepare(`SELECT name, sql FROM sqlite_master ORDER BY name`).all() as {
+      name: string
+      sql: string | null
+    }[]
+    const hash = createHash("sha256")
+    hash.update(`repair-version:${REPAIR_VERSION}`)
+    for (const row of rows) hash.update(`\n${row.name}\n${row.sql ?? ""}`)
+    return hash.digest("hex")
+  } catch (error) {
+    log.warn("failed to fingerprint claxedo schema", { error: String(error) })
+    return undefined
+  }
+}
+
+const REPAIR_FINGERPRINT_KEY = "repair_fingerprint"
+
+function ensureMetaTable(sqlite: CompatibleSqlite) {
+  sqlite.exec(`CREATE TABLE IF NOT EXISTS __claxedo_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
+}
+
+/** Fingerprint persisted by the last completed repair; undefined (→ repair runs) when absent or unreadable. */
+function storedRepairFingerprint(sqlite: CompatibleSqlite): string | undefined {
+  try {
+    ensureMetaTable(sqlite)
+    const row = sqlite.prepare(`SELECT value FROM __claxedo_meta WHERE key = ?`).get(REPAIR_FINGERPRINT_KEY) as
+      | { value?: unknown }
+      | undefined
+    return typeof row?.value === "string" ? row.value : undefined
+  } catch (error) {
+    log.warn("failed to read claxedo repair fingerprint", { error: String(error) })
+    return undefined
+  }
+}
+
+function storeRepairFingerprint(sqlite: CompatibleSqlite, fingerprint: string | undefined) {
+  ensureMetaTable(sqlite)
+  if (fingerprint === undefined) {
+    // Could not fingerprint the repaired schema: leave no stale record so the
+    // next boot fails open into another repair pass.
+    sqlite.prepare(`DELETE FROM __claxedo_meta WHERE key = ?`).run(REPAIR_FINGERPRINT_KEY)
+    return
+  }
+  sqlite
+    .prepare(`INSERT INTO __claxedo_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+    .run(REPAIR_FINGERPRINT_KEY, fingerprint)
 }
 
 export namespace ClaxedoDB {
@@ -133,8 +209,6 @@ export namespace ClaxedoDB {
   // migration generator's input; this module knows nothing about them.
   export type Client = BetterSQLite3Database<Record<string, never>>
 
-  type Journal = { sql: string; timestamp: number; name: string }[]
-
   const state = {
     sqlite: undefined as CompatibleSqlite | undefined,
   }
@@ -152,25 +226,22 @@ export namespace ClaxedoDB {
     )
   }
 
-  function migrations(dir: string): Journal {
+  function migrations(dir: string): MigrationEntry[] {
     if (!existsSync(dir)) return []
-    const dirs = readdirSync(dir, { withFileTypes: true })
+    return readdirSync(dir, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
-
-    const sql = dirs
-      .map((name) => {
-        const file = path.join(dir, name, "migration.sql")
-        if (!existsSync(file)) return
-        return {
-          sql: readFileSync(file, "utf-8"),
-          timestamp: time(name),
-          name,
-        }
-      })
-      .filter(Boolean) as Journal
-
-    return sql.sort((a, b) => a.timestamp - b.timestamp)
+      .filter((name) => existsSync(path.join(dir, name, "migration.sql")))
+      .map((name) => ({
+        name,
+        timestamp: time(name),
+        // Read on demand: applyMigrations only pulls the SQL for entries the
+        // journal has not applied yet, so a warm boot lists the directory and
+        // reads zero migration files. A file that vanishes between listing and
+        // a pending apply still fails loudly here.
+        sql: () => readFileSync(path.join(dir, name, "migration.sql"), "utf-8"),
+      }))
+      .sort((a, b) => a.timestamp - b.timestamp)
   }
 
   /**
@@ -178,8 +249,13 @@ export namespace ClaxedoDB {
    * its directory, and that directory must actually hold migrations. Returning
    * an empty list here would open an empty database and report success.
    */
-  function resolveMigrations(): Journal {
-    if (typeof CLAXEDO_MIGRATIONS !== "undefined") return CLAXEDO_MIGRATIONS
+  function resolveMigrations(): MigrationEntry[] {
+    if (typeof CLAXEDO_MIGRATIONS !== "undefined")
+      return CLAXEDO_MIGRATIONS.map((entry) => ({
+        name: entry.name,
+        timestamp: entry.timestamp,
+        sql: () => entry.sql,
+      }))
     if (!migrationsDir) {
       throw new Error(
         "claxedo database opened before its migration journal was configured; call configureClaxedoMigrations(dir) from the composition that owns the schema",
@@ -201,31 +277,43 @@ export namespace ClaxedoDB {
     pragma(sqlite, "journal_mode = WAL")
     pragma(sqlite, "synchronous = NORMAL")
     pragma(sqlite, "busy_timeout = 5000")
-    pragma(sqlite, "cache_size = -64000")
+    pragma(sqlite, "cache_size = -8000")
     pragma(sqlite, "foreign_keys = ON")
     sqlite.exec("PRAGMA wal_checkpoint(PASSIVE)")
 
     const entries = resolveMigrations()
-    if (entries.length > 0) {
-      log.info("applying claxedo migrations", {
-        count: entries.length,
+    const applied = applyMigrations(sqlite, entries)
+    if (applied.length > 0) {
+      log.info("applied claxedo migrations", {
+        count: applied.length,
         mode: typeof CLAXEDO_MIGRATIONS !== "undefined" ? "bundled" : "dev",
       })
-      applyMigrations(sqlite, entries)
     }
 
-    const fixed = (() => {
-      try {
-        return repair(sqlite)
-      } catch (error) {
-        log.error("failed to repair claxedo schema", { error: String(error) })
-        throw error
+    // Repair heals drifted schemas, but on a healthy warm boot its ~70
+    // statements (DDL probes plus two full-table UPDATE backfills) are pure
+    // overhead. Skip it only when the persisted fingerprint from the last
+    // completed repair matches the live schema AND no migration just ran;
+    // every uncertain state (absent fingerprint, unreadable meta table,
+    // fingerprint mismatch) fails open into a full repair pass.
+    const stored = storedRepairFingerprint(sqlite)
+    const current = schemaFingerprint(sqlite)
+    if (applied.length > 0 || stored === undefined || current === undefined || stored !== current) {
+      const fixed = (() => {
+        try {
+          return repair(sqlite)
+        } catch (error) {
+          log.error("failed to repair claxedo schema", { error: String(error) })
+          throw error
+        }
+      })()
+      if (fixed.length > 0) {
+        log.warn("repaired claxedo schema", {
+          fixed,
+        })
       }
-    })()
-    if (fixed.length > 0) {
-      log.warn("repaired claxedo schema", {
-        fixed,
-      })
+      // Repair itself may have altered the schema; persist what it left behind.
+      storeRepairFingerprint(sqlite, schemaFingerprint(sqlite))
     }
 
     return db

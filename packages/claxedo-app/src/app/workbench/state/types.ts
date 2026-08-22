@@ -27,6 +27,7 @@ export const CONTENT_TYPES = [
   "workgraph",
   "workspace-workgraph",
   "task-composer",
+  "extension-view",
 ] as const
 
 export type ContentType = typeof CONTENT_TYPES[number]
@@ -97,6 +98,13 @@ export type TaskComposerContentPayload = BaseContentPayload & {
   directory?: WorkspaceDirectoryRef
 }
 
+/** A view contributed by a user extension, hosted by the extension-view surface. */
+export type ExtensionViewContentPayload = BaseContentPayload & {
+  type: "extension-view"
+  viewId: string
+  directory?: string
+}
+
 export type DraftSessionContentPayload = BaseContentPayload & {
   type: "draft-session"
   draftId: string
@@ -111,7 +119,7 @@ export type SessionContentPayload = BaseContentPayload & {
 }
 
 export type ScopedContentPayload = BaseContentPayload & {
-  type: Exclude<ContentType, "session" | "draft-session" | "page" | "pages-index" | "marketplace" | "workgraph" | "workspace-workgraph" | "task-composer">
+  type: Exclude<ContentType, "session" | "draft-session" | "page" | "pages-index" | "marketplace" | "workgraph" | "workspace-workgraph" | "task-composer" | "extension-view">
   directory: string
 }
 
@@ -122,6 +130,7 @@ export type ContentPayload =
   | WorkGraphContentPayload
   | WorkspaceWorkGraphContentPayload
   | TaskComposerContentPayload
+  | ExtensionViewContentPayload
   | DraftSessionContentPayload
   | SessionContentPayload
   | ScopedContentPayload
@@ -141,6 +150,8 @@ export type ContentMeta = {
   terminalId?: string
   filePath?: string
   pageId?: string
+  /** For `extension-view` content: the fully qualified user-extension view id. */
+  viewId?: string
   returnFocus?: { parentSessionId: string; subagentKey?: string; originId?: string }
   /** Live runtime content payload (title, intent, command, etc.). */
   content?: ContentPayload

@@ -396,7 +396,7 @@ describe("embedded workspace runtime", () => {
   //    `onSessionMetaEvent` callback claxedo-server wires to
   //    `projectLocalSessionMetaFromEvent` (see `session-meta-bridge.test.ts`
   //    for that write path proven against the real SQLite projection store).
-  test("propagates a harness's SSE-only session.updated title event to onSessionMetaEvent", async () => {
+  test("starts the metadata tap on the first engine mutation and propagates SSE-only title events", async () => {
     const { root, project } = await makeWorkspaceRoot("claxedo-embedded-title-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
     process.env.CLAXEDO_AGENT_TYPE = "opencode"
@@ -416,7 +416,7 @@ describe("embedded workspace runtime", () => {
       // subprocess's own SSE stream.
       const fakeOpencodeRequest: OpenCodeRequestFn = async (req) => {
         const url = new URL(req.url)
-        if (url.pathname !== "/global/event") return new Response(null, { status: 404 })
+        if (url.pathname !== "/global/event") return Response.json({ id: "s_mutation", directory: project })
         const body = new ReadableStream<Uint8Array>({
           start(controller) {
             const envelope = {
@@ -447,7 +447,12 @@ describe("embedded workspace runtime", () => {
         },
       })
 
-      await ensureEmbeddedWorkspaceRuntime(workspace("ws_title", project), { config: "skip" })
+      const runtime = await ensureEmbeddedWorkspaceRuntime(workspace("ws_title", project), { config: "skip" })
+      await runtime.app.request(`http://localhost/session?directory=${encodeURIComponent(project)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      })
       await seen
 
       expect(events).toHaveLength(1)

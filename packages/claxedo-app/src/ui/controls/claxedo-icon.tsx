@@ -1,4 +1,4 @@
-import { onMount, Show, splitProps, type ComponentProps } from "solid-js"
+import { createEffect, Show, splitProps, type ComponentProps } from "solid-js"
 // ⚠️ Licence risk — see the note in
 // `packages/ui/src/components/codex-icons.tsx`. The Codex branch of this
 // component renders artwork extracted from the proprietary ChatGPT desktop app.
@@ -165,9 +165,12 @@ const customGlyphs = {
 
 function CodexGlyph(props: ClaxedoIconProps & { bare?: boolean }) {
   const [local, others] = splitProps(props, ["name", "size", "class", "classList", "bare"])
-  onMount(ensureSprite)
   const glyph = () => codexIconLibrary.resolve(local.name)
   const custom = () => customGlyph(glyph())
+  createEffect(() => {
+    ensureSprite()
+    if (!custom()) codexIconSprite.ensure(glyph())
+  })
   const size = () => {
     if (local.size === "small") return 14
     if (local.size === "large") return 20
@@ -191,7 +194,7 @@ function CodexGlyph(props: ClaxedoIconProps & { bare?: boolean }) {
       {...others}
     >
       <use
-        href={custom() ? `#${symbol(custom()!)}` : `${codexIconSprite}#${glyph()}`}
+        href={custom() ? `#${symbol(custom()!)}` : codexIconSprite.href(glyph())}
         transform={codexTransform(local.name)}
       />
     </svg>

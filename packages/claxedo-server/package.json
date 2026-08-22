@@ -115,7 +115,6 @@
     "jose": "6.2.4",
     "jsonc-parser": "3.3.1",
     "modal": "0.9.0",
-    "node-pty": "1.1.0",
     "opencode": "workspace:*",
     "posthog-node": "4.18.0",
     "svix": "1.99.1",

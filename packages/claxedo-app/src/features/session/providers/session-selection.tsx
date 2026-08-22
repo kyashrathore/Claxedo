@@ -2,6 +2,7 @@ import { createSimpleContext } from "@opencode-ai/ui/context"
 import { batch, createEffect, createMemo, createSignal, onCleanup, startTransition, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
+import { settledQueryData } from "@/platform/query/settled-query-data"
 import { useModels } from "@/features/session/providers/models"
 import { useProviders } from "@/features/session/app-ports"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -36,6 +37,7 @@ import {
   firstConnectedModel,
   getConfiguredAgentVariant,
   resolveModelVariant,
+  selectionProviderDetailNeeded,
   type ModelKey,
 } from "@/features/session/composer/model-strategy"
 
@@ -141,7 +143,7 @@ const localContextInput = {
       }
     })
 
-    const currentSessionHarnessId = createMemo(() => decodeSessionConfig(sessionConfigRawQuery.data).harness?.type)
+    const currentSessionHarnessId = createMemo(() => decodeSessionConfig(settledQueryData(sessionConfigRawQuery)).harness?.type)
     const harnessType = () => {
       const type = currentSessionHarnessId()
       return type === "opencode" ? undefined : type
@@ -161,7 +163,7 @@ const localContextInput = {
       }),
       workspaceId: sdk.workspace(sdk.directory)?.workspaceId,
     }))
-    const list = createMemo(() => (directoryAgentsQuery.data ?? []).filter((item) => item.mode !== "subagent" && !item.hidden))
+    const list = createMemo(() => (settledQueryData(directoryAgentsQuery) ?? []).filter((item) => item.mode !== "subagent" && !item.hidden))
     const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
 
     const [saved, setSaved] = persisted(
@@ -320,14 +322,14 @@ const localContextInput = {
 
     const scope = createMemo<State | undefined>(() => {
       const session = id()
-      const sessionConfigSelection = sessionConfigSelectionQuery.data ?? undefined
-      if (!session) return store.draft ?? selectionHandoffQuery.data
+      const sessionConfigSelection = settledQueryData(sessionConfigSelectionQuery) ?? undefined
+      if (!session) return store.draft ?? settledQueryData(selectionHandoffQuery)
       if (saved.dirty[session] && saved.session[session]) return saved.session[session]
       if (store.last === undefined) {
-        if (sessionConfigSelectionQuery.data !== undefined) return sessionConfigSelection
+        if (settledQueryData(sessionConfigSelectionQuery) !== undefined) return sessionConfigSelection
         if (sessionConfigSelectionLoading()) return
       }
-      return saved.session[session] ?? selectionHandoffQuery.data ?? sessionConfigSelection
+      return saved.session[session] ?? settledQueryData(selectionHandoffQuery) ?? sessionConfigSelection
     })
 
     const restorePending = () => {
@@ -335,8 +337,8 @@ const localContextInput = {
       if (!session) return false
       if (saved.dirty[session] && saved.session[session]) return false
       if (store.last !== undefined && saved.session[session] !== undefined) return false
-      if (selectionHandoffQuery.data) return false
-      if (sessionConfigSelectionQuery.data) return false
+      if (settledQueryData(selectionHandoffQuery)) return false
+      if (settledQueryData(sessionConfigSelectionQuery)) return false
       return sessionConfigSelectionLoading()
     }
 
@@ -344,7 +346,7 @@ const localContextInput = {
       const session = id()
       if (!session) return
 
-      const next = selectionHandoffQuery.data
+      const next = settledQueryData(selectionHandoffQuery)
       if (!next) return
       if (saved.session[session] !== undefined) {
         clearLocalSelectionHandoff(session)
@@ -356,7 +358,7 @@ const localContextInput = {
     })
 
     const configuredModel = () => {
-      const configured = directoryConfigQuery.data?.model
+      const configured = settledQueryData(directoryConfigQuery)?.model
       if (!configured) return
       const [providerID, modelID] = configured.split("/")
       const model = { providerID, modelID }
@@ -381,6 +383,23 @@ const localContextInput = {
     })
 
     const fallback = createMemo<ModelKey | undefined>(() => savedModel() ?? recentModel() ?? configuredModel() ?? defaultModel())
+
+    // Heal an index-shaped catalog under a saved selection. Boot fetches the
+    // provider INDEX (one default model per connected provider), so a restored
+    // NON-default selection fails `validModel` — and without this the composer
+    // silently fell back to the provider default until the user happened to
+    // open Manage models. Loading the one provider's detail is idempotent
+    // (`providers.load` single-flights and caches per provider), so this
+    // settles after at most one small request per selected provider.
+    createEffect(() => {
+      const providerId = selectionProviderDetailNeeded({
+        model: scope()?.model,
+        connected: connected(),
+        provider: providers.all().get(scope()?.model?.providerID ?? ""),
+      })
+      if (!providerId) return
+      void providers.load(providerId).catch(() => undefined)
+    })
 
     const agent = {
       list,
@@ -506,6 +525,7 @@ const localContextInput = {
       current,
       recent,
       list: models.list,
+      hydrate: models.hydrate,
       cycle(direction: 1 | -1) {
         const items = recent()
         const item = current()

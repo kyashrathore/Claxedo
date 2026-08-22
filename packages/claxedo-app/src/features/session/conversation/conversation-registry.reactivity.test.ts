@@ -4,6 +4,7 @@ import type { Event, Message } from "@opencode-ai/sdk/v2/client"
 import {
   applyRegisteredConversationEvent,
   clearConversationChatRegistryForTest,
+  hydrateRegisteredConversationSnapshot,
   registeredConversationSnapshot,
   registerSessionConversationChat,
 } from "./conversation-registry"
@@ -71,4 +72,39 @@ describe("conversation registry reactivity", () => {
       dispose()
     })
   })
+
+  // The timeline's per-message row memos (message-timeline.tsx) gate on the
+  // OBJECT IDENTITY of each message's projected Message and Part[] — that is
+  // what keeps a streaming part event from re-running constructMessageRows for
+  // every turn. This pins the contract that identity holds: a part update to
+  // one message must not mint new Message/Part[] objects for other messages.
+  test("a part update keeps the untouched messages' Message and Part[] identities", () => {
+    registerSessionConversationChat("ses_1")
+    hydrateRegisteredConversationSnapshot({
+      sessionID: "ses_1",
+      messages: [message("msg_a", "ses_1"), message("msg_b", "ses_1")],
+      parts: {
+        msg_a: [textPart("part_a1", "ses_1", "msg_a", "settled turn")],
+        msg_b: [textPart("part_b1", "ses_1", "msg_b", "streaming turn")],
+      },
+    })
+
+    const before = registeredConversationSnapshot("ses_1")
+    applyRegisteredConversationEvent(event("message.part.updated", {
+      part: { id: "part_b1", sessionID: "ses_1", messageID: "msg_b", type: "text", text: "streaming turn grows" },
+    }))
+    const after = registeredConversationSnapshot("ses_1")
+
+    // The streamed message re-projects…
+    expect(after.parts.msg_b?.[0]).toMatchObject({ text: "streaming turn grows" })
+    // …while the untouched message keeps both its Message and Part[] identity.
+    const beforeA = before.messages.find((item) => item.id === "msg_a")
+    const afterA = after.messages.find((item) => item.id === "msg_a")
+    expect(afterA).toBe(beforeA as never)
+    expect(after.parts.msg_a).toBe(before.parts.msg_a as never)
+  })
 })
+
+function textPart(id: string, sessionID: string, messageID: string, text: string) {
+  return { id, sessionID, messageID, type: "text", text } as never
+}

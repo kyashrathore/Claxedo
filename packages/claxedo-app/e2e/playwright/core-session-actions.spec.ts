@@ -665,7 +665,15 @@ test.describe("core session actions: fork @core", () => {
     })
     await page.locator('[data-slot="list-item"]').first().click()
 
-    await expect(page).toHaveURL(new RegExp(`/${slug(DIR)}/session/${forkedSessionId}$`), { timeout: 15_000 })
+    // Any session-route shape for the forked id. The pane scope may have been
+    // upgraded to the RESOLVED workspace id by the time the fork navigates
+    // (`/api/claxedo/workspace/resolve` — the shared mock answers
+    // `local-${sessionId}`), so the URL's directory segment is that scope's
+    // slug, not necessarily `slug(DIR)` — same multi-shape convention as
+    // `sessionUrlPattern` in core-harness-rendering-matrix.spec.ts. The
+    // behavior under test is navigation onto the forked session plus the
+    // restored draft below, not the slug encoding.
+    await expect(page).toHaveURL(new RegExp(`/session/${forkedSessionId}$`), { timeout: 15_000 })
     // The forked message's original text is restored into the new session's draft.
     const forkedInput = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await expect(forkedInput).toContainText(forkedText, { timeout: 10_000 })
@@ -1003,18 +1011,20 @@ test.describe("core session actions: subagent (child session) @core", () => {
       projectName: PROJECT_NAME,
       harness: "codex-acp",
     })
-    // `/api/control/sessions` (the session inventory bootstrap endpoint,
-    // `fetchLocalControlSessions` in `src/features/session/data/sync/inventory-source.ts`)
-    // IS mocked by the shared helper now — it defaults to the real route's own empty
-    // answer. This override supplies the one seeded row this behavior needs, and must
-    // be registered AFTER `installMockRuntime` to win: Playwright resolves routes
-    // last-registered-first.
-    //
-    // It used to sit BEFORE the install call while its own comment claimed the
-    // opposite. That was harmless only while the shared mock had no route here at all;
-    // the moment one landed, this override was shadowed and the seeded row vanished.
-    // The comment was right and the code was wrong — fixed by moving the code.
-    await page.route("**/api/control/sessions**", async (route) => {
+    // The session inventory bootstrap endpoint on the LOOPBACK transport is
+    // `/api/claxedo/session` (`fetchLocalControlSessions` in
+    // `src/features/session/data/sync/inventory-source.ts` builds it directly;
+    // the local server serves it in
+    // claxedo-local-server/src/session/routes/meta-routes.ts, whose comment
+    // notes `/api/control/sessions` "belongs to the hosted control plane and is
+    // intentionally absent from this product"). This override supplies the one
+    // seeded row this behavior needs, and must be registered AFTER
+    // `installMockRuntime` to win: Playwright resolves routes
+    // last-registered-first (the shared mock's `**/session` opencode handler
+    // would otherwise answer this path with an ARRAY body the inventory
+    // reader's `{sessions}` parse discards).
+    await page.route("**/api/claxedo/session**", async (route) => {
+      if (new URL(route.request().url()).pathname !== "/api/claxedo/session") return route.fallback()
       return route.fulfill({
         status: 200,
         contentType: "application/json",

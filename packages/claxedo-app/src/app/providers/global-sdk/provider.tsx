@@ -1,10 +1,10 @@
+import { isAbortError } from "@/lib/abort-error"
 import type { Event as OpenCodeEvent, Project } from "@opencode-ai/sdk/v2/client"
 import { createOpencodeCompatProjection, runtimeOwnsOpencodeCompatProjection, type CompatEvent, type OpencodeCompatProjection } from "@claxedo/agent-event-runtime/opencode-compat"
 import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION, type AgentRuntimeEvent } from "@claxedo/agent-event-runtime/contracts"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { batch, onCleanup, onMount } from "solid-js"
-import z from "zod"
 import { createSdkForServer } from "@/app/connection/server-client"
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -42,9 +42,6 @@ function runtimeWorkspaceKind(input: unknown) {
   if (input === "local" || input === "cloud" || input === USER_HOSTED_WORKSPACE_KIND) return input
 }
 
-const abortError = z.object({
-  name: z.literal("AbortError"),
-})
 
 export function nextLiveSession(
   current: LiveSession | undefined,
@@ -132,10 +129,6 @@ function shouldUseSignedEventAccess(input: {
   if (!directory) return true
   return !!(directory && sessionWorkspaceRuntimeRef({ directory })) ||
     isUserHostedWorkspaceDirectory(directory)
-}
-
-function authEnabledRuntime() {
-  return import.meta.env.VITE_AUTH_ENABLED === "true"
 }
 
 export type RuntimeEventEnvelope = {
@@ -355,7 +348,10 @@ const globalSDKContextInput = {
       return { sessionID: "route", directory, workspaceId: ref.workspaceId, workspaceKind: ref.kind }
     }
     const signedEventAccess = () => shouldUseSignedEventAccess({
-      hasSignedAccess: principalHasSignedAccess(principal()) || authEnabledRuntime() || platform.platform === "web",
+      // Enabling sign-in does not make a signed-out desktop principal a cloud
+      // authority. Browser deployments own their cookie/token transport;
+      // desktop crosses the signed boundary only after principal hydration.
+      hasSignedAccess: principalHasSignedAccess(principal()) || platform.platform === "web",
       serverUrl: server.current?.http.url,
       liveSession,
     })
@@ -427,7 +423,7 @@ const globalSDKContextInput = {
 
     let streamErrorLogged = false
     const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
-    const aborted = (error: unknown) => abortError.safeParse(error).success
+    const aborted = isAbortError
     const transientStreamError = (error: unknown) =>
       error instanceof TypeError && error.message.toLowerCase() === "network error"
     const runtimeCoveredSessions: RuntimeCoveredSessions = new Set()
@@ -683,11 +679,13 @@ const globalSDKContextInput = {
           } catch (error) {
             if (!aborted(error) && !transientStreamError(error) && !streamErrorLogged) {
               streamErrorLogged = true
-              console.error("[global-sdk] event stream failed", {
+              console.error("[global-sdk] event stream failed", JSON.stringify({
                 url: currentServer.http.url,
                 fetch: rawEventFetch ? "platform" : "webview",
-                error,
-              })
+                error: error instanceof Error
+                  ? { name: error.name, message: error.message, stack: error.stack }
+                  : error,
+              }))
             }
           } finally {
             abort.signal.removeEventListener("abort", onAbort)

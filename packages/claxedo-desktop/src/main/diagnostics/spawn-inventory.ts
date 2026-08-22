@@ -62,7 +62,7 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     kill: "supported",
     source: {
       file: "packages/claxedo-desktop/src/main/index.ts",
-      callee: "utilityProcessFork",
+      callee: "fork",
       calls: 1,
     },
   }),
@@ -75,6 +75,16 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     stop: "unsupported",
     kill: "unsupported",
     source: { file: "packages/claxedo-desktop/src/main/ipc.ts", callee: "execFile", calls: 1 },
+  }),
+  product({
+    id: "desktop-rich-content-renderer",
+    family: "One-shot native rich-content renderer",
+    owner: "desktop",
+    linkage: "session",
+    observation: "host-tree",
+    stop: "owner-dependent",
+    kill: "owner-dependent",
+    source: { file: "packages/claxedo-desktop/src/main/native-renderer.ts", callee: "spawn", calls: 1 },
   }),
   product({
     id: "desktop-app-probes",

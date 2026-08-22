@@ -66,6 +66,9 @@ export const createBackend: CreateBackendFn = async (
   let dataListeners: Array<(data: string) => void> = []
   let keyListeners: Array<(e: { key: string }) => void> = []
   let resizeListeners: Array<(size: { cols: number; rows: number }) => void> = []
+  // Benchmark-only receipt buffer: undefined (and therefore zero-cost) unless
+  // an observation-only onWriteParsed consumer was installed.
+  const parsedWriteData: string[] | undefined = options.onWriteParsed ? [] : undefined
 
   // Setup keyboard handler with a write function that goes through onData listeners
   const handleWrite = (data: string) => {
@@ -212,7 +215,18 @@ export const createBackend: CreateBackendFn = async (
   })
   cleanups.push(() => xtermOnKey.dispose())
 
-  const xtermOnWriteParsed = xterm.onWriteParsed(updateScrollbarState)
+  const xtermOnWriteParsed = xterm.onWriteParsed(() => {
+    updateScrollbarState()
+    if (!parsedWriteData || parsedWriteData.length === 0) return
+    const data = parsedWriteData.join("")
+    parsedWriteData.length = 0
+    options.onWriteParsed?.({
+      data,
+      serialize: () => serializeAddon.serialize(),
+      dimensions: () => ({ cols: xterm.cols, rows: xterm.rows }),
+      parsedAtMs: performance.now(),
+    })
+  })
   const xtermOnScroll = xterm.onScroll(updateScrollbarState)
   const xtermOnResize = xterm.onResize(updateScrollbarState)
   cleanups.push(() => {
@@ -240,12 +254,18 @@ export const createBackend: CreateBackendFn = async (
     },
 
     write(data: string, callback?: () => void) {
+      const acceptedAtMs = performance.now()
       const filtered = suppress.scan(data)
       mode.scan(filtered)
 
       if (!filtered) {
         callback?.()
         return
+      }
+      if (options.onWriteAccepted || parsedWriteData) {
+        const text = typeof filtered === "string" ? filtered : new TextDecoder().decode(filtered)
+        options.onWriteAccepted?.({ data: text, acceptedAtMs })
+        parsedWriteData?.push(text)
       }
       if (callback) {
         originalWrite(filtered, callback)

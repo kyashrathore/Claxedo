@@ -94,6 +94,16 @@ export const ALLOWED_SHADOWS: AllowedShadow[] = [
       "`if (options.cloud)`, which pattern analysis cannot see, so the pair always reads as a shadow.",
   },
   {
+    shadowed: "**/api/claxedo/workspace/resolve**",
+    shadower: "**/api/claxedo/workspace/resolve**",
+    handsBack: `if (q !== workspaceId && !q.includes(workspaceId)) return r.fallback()`,
+    reason:
+      "Loopback-spelling twin of the `/api/workspace/resolve` pair above: loopback central URLs " +
+      "rewrite the resolve path to `/api/claxedo/workspace/resolve` (workspace-control-routes.ts:40-42), " +
+      "so the cloud block re-registers this spelling too and hands non-cloud ids back to the local " +
+      "handler the same way.",
+  },
+  {
     shadowed: "**/api/claxedo/agent-config/harness/options**",
     shadower: "**/api/claxedo/agent-config/harness**",
     handsBack: `if (new URL(r.request().url()).pathname !== "/api/claxedo/agent-config/harness") return r.fallback()`,

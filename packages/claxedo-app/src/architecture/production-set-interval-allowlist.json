@@ -22,5 +22,11 @@
     "count": 1,
     "owner": "WorkGraph live sync",
     "reason": "Visible live-Stream fallback poll bounds staleness after a missed central doorbell."
+  },
+  {
+    "file": "app/workbench/workbench/mount-idle-governor.ts",
+    "count": 3,
+    "owner": "workbench mount idle governor",
+    "reason": "Idle detection is inherently time-based: one poll observes input silence (absence of events has no event), one paces the post-idle remount backfill, one is the injectable default clock. No data source is polled."
   }
 ]

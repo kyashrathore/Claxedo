@@ -1,0 +1,1658 @@
+{
+  "schemaVersion": 1,
+  "kind": "claxedo-prior-evidence-ledger",
+  "sourcePlan": {
+    "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+    "commit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7",
+    "sha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869"
+  },
+  "requiredIds": [
+    "F1",
+    "F2",
+    "F3",
+    "F4",
+    "F5",
+    "F6",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "V1",
+    "V2",
+    "V3",
+    "V4",
+    "V5",
+    "V6",
+    "V7",
+    "V8",
+    "V9",
+    "V10",
+    "V11",
+    "V12",
+    "V13",
+    "V14",
+    "V15",
+    "V16",
+    "V17",
+    "V18",
+    "V19",
+    "V20",
+    "V21",
+    "V22"
+  ],
+  "policy": {
+    "completeProvenanceFields": [
+      "sourceCommit",
+      "artifactDigestSha256",
+      "originalCommand",
+      "currentOwningFiles",
+      "cohortContract",
+      "verification.command",
+      "verification.outcome"
+    ],
+    "duplicateRule": "A proposal matching an action or causal boundary is rejected unless it declares a genuinely new metric or the current-tree boundary that invalidates the old evidence.",
+    "unresolvedRule": "Missing provenance stays explicit and cannot be treated as inherited evidence."
+  },
+  "entries": [
+    {
+      "id": "F1",
+      "action": "Bound persisted queries, use asynchronous IndexedDB persistence, compact provider persistence, and expire inactive queries (`2d13c86af`)",
+      "reportedResult": "Included in the 865 MiB controlled baseline",
+      "reportedIncrementalEffect": "No isolated native-footprint pair",
+      "reportedContribution": "Retained idle-state foundation.",
+      "classification": "accepted-foundation",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": "2d13c86af",
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-desktop/src"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| F1 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "F2",
+      "action": "Disable Chromium HTTP caching for local dynamic API and SSE responses (`5295ed7a8`)",
+      "reportedResult": "Included in the 865 MiB controlled baseline",
+      "reportedIncrementalEffect": "No isolated native-footprint pair",
+      "reportedContribution": "Retained transport foundation.",
+      "classification": "accepted-foundation",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": "5295ed7a8",
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-desktop/src"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| F2 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "F3",
+      "action": "Load a compact provider index and fetch provider detail on demand (`c9d0a8051`)",
+      "reportedResult": "Included in the 865 MiB controlled baseline",
+      "reportedIncrementalEffect": "No isolated native-footprint pair",
+      "reportedContribution": "Retained provider foundation.",
+      "classification": "accepted-foundation",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": "c9d0a8051",
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-desktop/src"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| F3 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "F4",
+      "action": "Cap the workbench at ten retained surfaces with LRU state (`d95427181`)",
+      "reportedResult": "Included in the 865 MiB controlled baseline",
+      "reportedIncrementalEffect": "No isolated native-footprint pair",
+      "reportedContribution": "Retained renderer foundation.",
+      "classification": "accepted-foundation",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": "d95427181",
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-desktop/src"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| F4 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "F5",
+      "action": "Run session-memory diagnostics on demand (`7668d5ce1`)",
+      "reportedResult": "Included in the 865 MiB controlled baseline",
+      "reportedIncrementalEffect": "No isolated native-footprint pair",
+      "reportedContribution": "Retained diagnostics foundation.",
+      "classification": "accepted-foundation",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": "7668d5ce1",
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-desktop/src"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| F5 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "F6",
+      "action": "Give raw session transport queries zero retention after projection",
+      "reportedResult": "Included in the 865 MiB controlled baseline",
+      "reportedIncrementalEffect": "No isolated native-footprint pair",
+      "reportedContribution": "Retained query-lifecycle foundation.",
+      "classification": "accepted-foundation",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-desktop/src"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| F6 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "1",
+      "action": "Reproduce the ten-surface workload",
+      "reportedResult": "996 MiB median summed RSS; 865 MiB native footprint",
+      "reportedIncrementalEffect": "Baseline",
+      "reportedContribution": "Controlled benchmark baseline.",
+      "classification": "accepted-foundation",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-desktop",
+          "packages/claxedo-local-server",
+          "packages/workspace-runtime",
+          "packages/claxedo-app/src"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| 1 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "2",
+      "action": "Mount only the visible non-terminal surface (`74d38028c`)",
+      "reportedResult": "About 827 MiB native footprint",
+      "reportedIncrementalEffect": "About -38 MiB",
+      "reportedContribution": "Renderer ownership reduction; hidden terminals retain their live attachment.",
+      "classification": "accepted-causal-result",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": "74d38028c",
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-desktop",
+          "packages/claxedo-local-server",
+          "packages/workspace-runtime",
+          "packages/claxedo-app/src"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| 2 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "3",
+      "action": "Defer provider/config bootstrap until a provider journey (`c38e7e46d`)",
+      "reportedResult": "About 829 MiB native footprint; RSS 975.7 \u2192 830.3 MiB",
+      "reportedIncrementalEffect": "No attributable native saving; -145.4 MiB RSS",
+      "reportedContribution": "Reduces startup work and retained transport data.",
+      "classification": "accepted-foundation",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": "c38e7e46d",
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-desktop",
+          "packages/claxedo-local-server",
+          "packages/workspace-runtime",
+          "packages/claxedo-app/src"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| 3 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "4",
+      "action": "Run the process-metrics helper only while Diagnostics has subscribers (`221a0a9ed`)",
+      "reportedResult": "829 \u2192 805 MiB median native footprint",
+      "reportedIncrementalEffect": "-24 MiB",
+      "reportedContribution": "Removes an idle helper process.",
+      "classification": "accepted-causal-result",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": "221a0a9ed",
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-desktop",
+          "packages/claxedo-local-server",
+          "packages/workspace-runtime",
+          "packages/claxedo-app/src"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| 4 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "5",
+      "action": "Apply the measured Electron server V8 policy before isolate creation (`474521749`)",
+      "reportedResult": "805 \u2192 651 MiB median native footprint",
+      "reportedIncrementalEffect": "-154 MiB",
+      "reportedContribution": "Reduces the long-lived local-server heap; server about 415 \u2192 262 MiB.",
+      "classification": "accepted-causal-result",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": "474521749",
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-desktop",
+          "packages/claxedo-local-server",
+          "packages/workspace-runtime",
+          "packages/claxedo-app/src"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| 5 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "6",
+      "action": "Host the bundled server in Electron Node mode with explicit IPC ownership (`c1b281970`)",
+      "reportedResult": "651 \u2192 640 MiB median native footprint",
+      "reportedIncrementalEffect": "-11 MiB",
+      "reportedContribution": "Reduces sidecar host overhead.",
+      "classification": "accepted-causal-result",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": "c1b281970",
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-desktop",
+          "packages/claxedo-local-server",
+          "packages/workspace-runtime",
+          "packages/claxedo-app/src"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| 6 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "7",
+      "action": "Make WorkGraph and Documents default-off, lazy, and absent from unsigned composition (`9774813b0`)",
+      "reportedResult": "643 \u2192 465 MiB restored-state median; 440 MiB clean profile",
+      "reportedIncrementalEffect": "-178 MiB",
+      "reportedContribution": "Removes cloud feature UI, routes, tools, databases, timers, and subscriptions. Feature-on proof measured 592 MiB.",
+      "classification": "accepted-causal-result",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": "9774813b0",
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-desktop",
+          "packages/claxedo-local-server",
+          "packages/workspace-runtime",
+          "packages/claxedo-app/src"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| 7 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "8",
+      "action": "Apply the 60-second settle period and require core-route plus terminal gates",
+      "reportedResult": "425 / 443 / 428 MiB; median 428 MiB",
+      "reportedIncrementalEffect": "-37 MiB versus the phase result",
+      "reportedContribution": "Defines the strict, correctness-gated checkpoint; not a code saving.",
+      "classification": "accepted-foundation",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-desktop",
+          "packages/claxedo-local-server",
+          "packages/workspace-runtime",
+          "packages/claxedo-app/src"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| 8 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "9",
+      "action": "Lazy-load remote sandbox drivers (`ec1703311`)",
+      "reportedResult": "383 / 424 / 406 MiB; median 406 MiB",
+      "reportedIncrementalEffect": "-22 MiB",
+      "reportedContribution": "Supports the package boundary that keeps remote sandbox code in hosted products.",
+      "classification": "accepted-causal-result",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": "ec1703311",
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-desktop",
+          "packages/claxedo-local-server",
+          "packages/workspace-runtime",
+          "packages/claxedo-app/src"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| 9 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "10",
+      "action": "Lazy-load broader shared-server imports",
+      "reportedResult": "431 MiB median",
+      "reportedIncrementalEffect": "+25 MiB",
+      "reportedContribution": "Provides bundle-shape evidence; no memory credit.",
+      "classification": "reverted-or-failed",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-desktop",
+          "packages/claxedo-local-server",
+          "packages/workspace-runtime",
+          "packages/claxedo-app/src"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| 10 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "11",
+      "action": "Dispose OpenCode state inside the long-lived server",
+      "reportedResult": "Nominal 391 MiB",
+      "reportedIncrementalEffect": "No attributable saving",
+      "reportedContribution": "Establishes process exit as the reliable unloading boundary for a harness module graph.",
+      "classification": "reverted-or-failed",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-desktop",
+          "packages/claxedo-local-server",
+          "packages/workspace-runtime",
+          "packages/claxedo-app/src"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| 11 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "12",
+      "action": "Run OpenCode in a disposable child process (`1ae63e856`)",
+      "reportedResult": "315 / 290 / 292 MiB; median 292 MiB",
+      "reportedIncrementalEffect": "-114 MiB versus 406 MiB",
+      "reportedContribution": "Demonstrates that an absent harness process can meet the cold-idle target.",
+      "classification": "accepted-causal-result",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": "1ae63e856",
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-desktop",
+          "packages/claxedo-local-server",
+          "packages/workspace-runtime",
+          "packages/claxedo-app/src"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| 12 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "13",
+      "action": "Compare custom OpenCode child ownership with Workspace Runtime spawning native `opencode serve`",
+      "reportedResult": "Post-idle medians 278 vs 277 MiB",
+      "reportedIncrementalEffect": "-1 MiB for Workspace Runtime ownership",
+      "reportedContribution": "Establishes that ownership placement has no material settled-idle effect once the harness exits. Workspace Runtime is selected for its multi-harness contract.",
+      "classification": "accepted-causal-result",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-desktop",
+          "packages/claxedo-local-server",
+          "packages/workspace-runtime",
+          "packages/claxedo-app/src"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| 13 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "14",
+      "action": "Split the desktop-local server from hosted server deployments and add the local renderer composition",
+      "reportedResult": "Landed on `dev`: Electron boots `@claxedo/local-server`; `@claxedo/server` retains hosted and self-hosted deployments; `app/entry/local.tsx` has a clean Clerk/Convex value-import closure; hosted content surfaces activate through a contribution seam",
+      "reportedIncrementalEffect": "No fresh native-footprint pair on the rebased candidate",
+      "reportedContribution": "Establishes product-owned server closures and a measurable local renderer entry. The remaining renderer closure and packaged-resource gates are recorded below.",
+      "classification": "accepted-foundation",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-desktop",
+          "packages/claxedo-local-server",
+          "packages/workspace-runtime",
+          "packages/claxedo-app/src"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| 14 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "V1",
+      "action": "Revalidate default-off WorkGraph and Documents against clean `dev` with three fresh paired runs",
+      "reportedResult": "Post-idle median 556 \u2192 469 MiB; empty-shell median 743 \u2192 712 MiB",
+      "reportedIncrementalEffect": "-87 MiB post-idle; -31 MiB empty-shell",
+      "reportedContribution": "Confirms the feature boundary on the current tree. Every candidate post-idle sample (447\u2013507 MiB) is below every baseline sample (553\u2013614 MiB).",
+      "classification": "accepted-causal-result",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-app/perf-harness",
+          "packages/claxedo-desktop"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| V1 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "V2",
+      "action": "Build the default-off and feature-on renderer compositions",
+      "reportedResult": "Eager main chunk 3,737.28 \u2192 3,411.87 kB raw and 1,097.30 \u2192 989.92 kB gzip",
+      "reportedIncrementalEffect": "-325.41 kB raw; -107.38 kB gzip",
+      "reportedContribution": "Places Documents (152.65 kB) and WorkGraph (262.46 kB) in demand-loaded chunks while retaining a feature-on build proof.",
+      "classification": "accepted-causal-result",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-app/perf-harness",
+          "packages/claxedo-desktop"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| V2 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "V3",
+      "action": "Establish the five-flow production-renderer evidence contract",
+      "reportedResult": "Launch, session, terminal, and workspace flows require further deadline work; the progressively rendered 500-file review passes at 15.7 ms worst with 0/723 misses",
+      "reportedIncrementalEffect": "Defines the performance qualification rather than a memory delta",
+      "reportedContribution": "The browser lane measures semantic readiness, retains raw intervals, includes the first interaction interval, pools p95 from the interval population, matches Long Animation Frames to rAF gaps by timestamp, and states its synthetic-data and compositor boundaries.",
+      "classification": "accepted-foundation",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-app/perf-harness",
+          "packages/claxedo-desktop"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| V3 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "V4",
+      "action": "Measure cold session switching through progressive transcript completion",
+      "reportedResult": "Full timeline: 34.5 ms pooled p95, 57.7 ms worst, 11/135 misses, 108.1 ms completion; staged rich rows: 7.7 ms pooled p95, 17.1 ms worst, 6/259 strict deadline intervals, 83.7 ms completion",
+      "reportedIncrementalEffect": "Diagnostic performance evidence; no accepted memory or performance credit",
+      "reportedContribution": "Separates the material 30\u201358 ms rich-row stalls from the 16\u201317 ms cold SessionPage, first-fold projection, and shell lifecycle. The packaged test shows that changing visible rows from text previews to canonical Markdown is not an acceptable progressive boundary.",
+      "classification": "unresolved-and-unmeasured",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-app/perf-harness",
+          "packages/claxedo-desktop"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| V4 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "V5",
+      "action": "Profile rich session renderers independently and bound their DOM",
+      "reportedResult": "A 240-line highlighted block retained 11,399 DOM nodes across two sessions and completed in 162.3 ms; the large-block text-node path retains 1,321 nodes and completes in 90.6 ms",
+      "reportedIncrementalEffect": "-10,078 retained DOM nodes in the two-session fixture; native-footprint delta pending",
+      "reportedContribution": "Keeps complete copyable source while reserving token-span highlighting for bounded code blocks. Large Mermaid diagrams expose an explicit render action; the measured action still waits for the sanitized SVG.",
+      "classification": "unresolved-and-unmeasured",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-app/perf-harness",
+          "packages/claxedo-desktop"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| V5 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "V6",
+      "action": "Bound the nested renderer inside expanded session edit tools",
+      "reportedResult": "Pierre's 1,000 px buffer and syntax-token path produced a 48,704-node action delta; a 240 px buffer plus the large-inline-diff token limit produces 29,176\u201329,794 nodes in two fresh cohorts",
+      "reportedIncrementalEffect": "At least -18,910 Chromium nodes; completion 151.7 \u2192 123.0\u2013133.9 ms; native-footprint delta pending",
+      "reportedContribution": "Keeps the visible diff semantic endpoint while reducing shadow-DOM construction, style, layout, and heap allocation inside a virtualized timeline row.",
+      "classification": "unresolved-and-unmeasured",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-app/perf-harness",
+          "packages/claxedo-desktop"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| V6 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "V7",
+      "action": "Profile Markdown parse, DOM admission, row sizing, syntax highlighting, and Mermaid rendering as separate phases",
+      "reportedResult": "A warm 9.6 KiB list/table block parses in about 2 ms; cold JavaScript parser initialization records 47\u201348 ms parse continuations for 24\u2013839 character blocks. Progressive list/table admission plus structural row-height estimation records a 16.09 ms worst renderer task with zero 60 Hz misses in a three-iteration run. Explicit Mermaid generation records 80\u2013165 ms of browser work and about 36.8 MB of action heap growth.",
+      "reportedIncrementalEffect": "No idle-memory credit; renderer deadline evidence",
+      "reportedContribution": "Separates cold parser initialization, steady parsing, browser layout, virtual-row reconciliation, and diagram generation.",
+      "classification": "unresolved-and-unmeasured",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-app/perf-harness",
+          "packages/claxedo-desktop"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| V7 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "V8",
+      "action": "Build and benchmark `mmdr` 0.3.1 through the Electron renderer, preload, IPC, and one-shot child path",
+      "reportedResult": "5.1 MiB SVG-only binary; about 7.4\u20137.5 MiB warm one-shot peak RSS; 11.3 ms end-to-end for a small flowchart and 94.6 ms for Claxedo's 61-edge linear fixture, returning a valid 46,364-byte SVG",
+      "reportedIncrementalEffect": "No idle-footprint delta with one-shot execution; about +5.1 MiB packaged disk; transient child memory only",
+      "reportedContribution": "Establishes a desktop capability path that moves diagram parsing and layout outside Chromium. Mermaid.js remains the web and fidelity fallback.",
+      "classification": "unresolved-and-unmeasured",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-app/perf-harness",
+          "packages/claxedo-desktop"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| V8 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "V9",
+      "action": "Build and benchmark a Comrak 0.54 native Markdown capability through the Electron renderer, preload, IPC, and one-shot child path",
+      "reportedResult": "1.2 MiB audit binary; 2.6 ms end-to-end for a small GFM document and 6.0 ms for a 7.6 KiB list/table fixture; both returned the expected semantic HTML",
+      "reportedIncrementalEffect": "No idle-footprint delta with one-shot execution; about +1.2 MiB packaged disk in the audit build; transient child memory only",
+      "reportedContribution": "Establishes the same desktop capability selection for Markdown while retaining Marked as the web, extension-fidelity, and failure fallback.",
+      "classification": "unresolved-and-unmeasured",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-app/perf-harness",
+          "packages/claxedo-desktop"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| V9 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "V10",
+      "action": "Run all five release renderer flows on the current candidate",
+      "reportedResult": "Terminal switch: 8.77 ms worst, pass; 500-file diff toggle: 10.08 ms worst, pass; launch: 36.98 ms worst, fail; session switch: 24.51 ms worst, fail; workspace switch: 41.19 ms worst, fail",
+      "reportedIncrementalEffect": "Qualification evidence rather than an idle-memory delta",
+      "reportedContribution": "Narrows the remaining renderer work to cold module/Markdown initialization and session virtualizer measurement. Disabled controls fail the same three base-app gates, so diagnostics overhead is not the cause.",
+      "classification": "reverted-or-failed",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-app/perf-harness",
+          "packages/claxedo-desktop"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| V10 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "V11",
+      "action": "Package one pinned Rust rich-content renderer and select it through desktop capabilities",
+      "reportedResult": "2.4 MiB arm64 binary; packaged Markdown and themed Mermaid IPC smoke passed; five repeated packaged Mermaid renders completed in 115.8\u2013118.2 ms with four warm runs at 8.5\u201310.1 ms worst rAF and zero deadline misses",
+      "reportedIncrementalEffect": "514.9 MiB before rendering and 513.2 MiB after; zero retained renderer children; current cohort remains 13\u201315 MiB above the `<500 MiB` checkpoint",
+      "reportedContribution": "Moves Markdown parsing and Mermaid graph generation out of Chromium for desktop without adding a resident process. Web and native-failure paths retain lazy Marked and Mermaid.js.",
+      "classification": "accepted-causal-result",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-app/perf-harness",
+          "packages/claxedo-desktop"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| V11 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "V12",
+      "action": "Re-run the registered local-workspace fixture at the latest 60-second checkpoint",
+      "reportedResult": "358 MiB native physical footprint; 726.3 MiB summed RSS; 23.8 MiB renderer JavaScript heap; five owned processes",
+      "reportedIncrementalEffect": "70 MiB below the documented 428 MiB checkpoint, but not a fresh paired delta; RSS remains supporting evidence",
+      "reportedContribution": "Establishes the latest valid interim memory checkpoint: ten restored entries, one mounted active draft, WorkGraph and Documents off, and no idle harness child. It does not qualify the restored interactive-profile cohort represented by the manual screenshot.",
+      "classification": "accepted-foundation",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-app/perf-harness",
+          "packages/claxedo-desktop"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| V12 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "V13",
+      "action": "Add trace-only module-boundary markers and profile the two-message launch fixture",
+      "reportedResult": "Two repeatable 20\u201323 ms `v8.evaluateModule` tasks: feature-port wiring and main app entry; layout inside each is below 1 ms; Markdown phases are about 6\u20139 ms",
+      "reportedIncrementalEffect": "Causal attribution; no memory credit",
+      "reportedContribution": "Moves the launch work away from timeline, Mermaid, and app-shell hypotheses and toward startup graph boundaries.",
+      "classification": "unresolved-and-unmeasured",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-app/perf-harness",
+          "packages/claxedo-desktop"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| V13 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "V14",
+      "action": "Move the unused OpenCode fallback icon catalog out of the default startup graph",
+      "reportedResult": "Main chunk 535.01 \u2192 490.97 KiB; 23.55 ms worst; 12/39,365 tasks above 16.67 ms; 422.96 ms completion",
+      "reportedIncrementalEffect": "+0.79 ms worst versus the 22.76 ms launch baseline; reverted",
+      "reportedContribution": "Shows that bundle-byte reduction alone does not identify the long evaluation task.",
+      "classification": "reverted-or-failed",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-app/perf-harness",
+          "packages/claxedo-desktop"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| V14 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "V15",
+      "action": "Keep a canonical local principal and lazy-load signed auth/cloud UI providers",
+      "reportedResult": "Main chunk about 535.1 \u2192 530.66 KiB; 23.27 ms worst; 12/40,114 misses; 421.31 ms completion",
+      "reportedIncrementalEffect": "+0.51 ms worst; reverted",
+      "reportedContribution": "Shows that auth UI is above the actual shared local/remote event and workspace transport boundary. The deeper transport split must precede an effective auth split.",
+      "classification": "reverted-or-failed",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-app/perf-harness",
+          "packages/claxedo-desktop"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| V15 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "V16",
+      "action": "Split core and secondary feature-port wiring into separate progressive module graphs",
+      "reportedResult": "Feature-port chunk 32.50 \u2192 24.16 KiB; 23.09 ms worst; misses 12 \u2192 6; completion 422.33 \u2192 496.32 ms",
+      "reportedIncrementalEffect": "Removes one of the two repeatable miss classes; +73.99 ms completion in the serial-fetch variant",
+      "reportedContribution": "Demonstrates useful scheduling separation but does not yet pass launch. A concurrent-fetch refinement exists in the worktree and remains unmeasured.",
+      "classification": "unresolved-and-unmeasured",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-app/perf-harness",
+          "packages/claxedo-desktop"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| V16 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "V17",
+      "action": "Package the first progressive transcript candidate",
+      "reportedResult": "Packaged `app.asar` built 2026-08-08 11:27:36; manual Electron use shows transcript blinking and an apparent halfway-to-top transition",
+      "reportedIncrementalEffect": "No accepted performance or memory credit",
+      "reportedContribution": "This package combines viewport-dependent plain-text previews, staged rich rows, a 8 \u2192 50 interaction range expansion, and a custom offset observer that writes virtualizer offset state. It is retained only as regression evidence.",
+      "classification": "reverted-or-failed",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-app/perf-harness",
+          "packages/claxedo-desktop"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| V17 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "V18",
+      "action": "Package the refined progressive transcript candidate",
+      "reportedResult": "Packaged `app.asar` built 2026-08-08 14:49:14; focused unit tests and the headless mid-scroll test pass, while manual Electron use still shows the message representation changing",
+      "reportedIncrementalEffect": "No accepted performance or memory credit",
+      "reportedContribution": "The package uses the canonical offset observer, rect notification deduplication, a 1 \u2192 8 staged range, and an unbounded range after interaction. Its failure establishes that the browser tests do not qualify the packaged transcript experience.",
+      "classification": "reverted-or-failed",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-app/perf-harness",
+          "packages/claxedo-desktop"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| V18 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "V19",
+      "action": "Remove viewport-dependent message presentation and package the canonical-row candidate",
+      "reportedResult": "Packaged `app.asar` built 2026-08-08 15:07:04; 27 focused unit tests, two focused browser regressions, application types, E2E types, and packaging pass; manual Electron result pending",
+      "reportedIncrementalEffect": "No accepted performance or memory credit until packaged use passes",
+      "reportedContribution": "A mounted virtual row now always renders `TimelineRowView` and the canonical `Message` component. Progressive state controls row admission only; the production bundle contains no `data-session-message-preview` branch.",
+      "classification": "unresolved-and-unmeasured",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-app/perf-harness",
+          "packages/claxedo-desktop"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| V19 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "V20",
+      "action": "Preserve the visible row while revealing older cached turns",
+      "reportedResult": "The exact 12-turn, uneven-Markdown browser fixture fails before the change and passes after it; 32 focused unit tests, three focused browser regressions, application types, E2E types, and packaging pass. Packaged `app.asar` built 2026-08-08 15:34:55; manual Electron use confirms the >10-turn boundary no longer jumps to the first message.",
+      "reportedIncrementalEffect": "No performance or memory credit; transcript correctness accepted",
+      "reportedContribution": "Cached history backfill now uses the timeline's stable row-key anchor across late virtual-row and Markdown measurements instead of a one-animation-frame `scrollHeight` delta.",
+      "classification": "correctness-evidence",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-app/perf-harness",
+          "packages/claxedo-desktop"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| V20 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "V21",
+      "action": "Rebase the memory/performance candidate onto the integrated local/hosted extraction on `dev`",
+      "reportedResult": "Thirteen optimization commits rebased onto `dev` at `9e8b37a5f`; the older optional-surface flag commit was superseded by the contribution and package boundaries now in `dev`. Frozen install, 17 app-boundary tests, three local-server closure tests, 15 server deployment/product tests, 32 transcript unit tests, application types, and the exact cached-history browser regression pass. The inherited Workspace Runtime type lane remains red on `transportLive` and `acquireRequestFn`, matching the current `dev` 31/32 typecheck baseline.",
+      "reportedIncrementalEffect": "No memory or performance credit until a fresh post-rebase cohort runs",
+      "reportedContribution": "Uses `@claxedo/local-server`, deployment closure guards, the local renderer entry, tokenless account ports, hosted contribution activation, and the Host Connector boundary as the new benchmark base.",
+      "classification": "accepted-foundation",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": "9e8b37a5f",
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-app/perf-harness",
+          "packages/claxedo-desktop"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| V21 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    },
+    {
+      "id": "V22",
+      "action": "Qualify the bucketed candidate's worker, native-renderer, progressive-rendering, and packaging boundaries",
+      "reportedResult": "The disposable engine worker uses a per-boot capability, never replays an ambiguous request, and consults canonical session status before idle exit. Markdown detach recovery, reactive sprites, review header completion, Mermaid viewer behavior, virtualizer variants, native-helper selection, and cross-target package verification have focused regression coverage. The exact 12-turn transcript test passes. In the latest 500-file review run, the diagnostics-enabled candidate records 15.08 ms worst and 0/3,027 tasks over 16.67 ms; the disabled control records one 17.96 ms outlier, so the combined lane remains red.",
+      "reportedIncrementalEffect": "No memory credit; renderer admission improves from 5/5,001 over-budget tasks at 17.90 ms to 0/3,027 at 15.08 ms for the candidate",
+      "reportedContribution": "Defines the safety and correctness constraints that travel with the independently cherry-pickable desktop and renderer buckets. The paired lane is not called passing until both control and candidate satisfy the absolute gate.",
+      "classification": "correctness-evidence",
+      "source": {
+        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "section": "Memory Action Table",
+        "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
+        "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
+      },
+      "provenance": {
+        "sourceCommit": null,
+        "artifactDigestSha256": null,
+        "originalCommand": null,
+        "currentOwningFiles": [
+          "packages/claxedo-app/src",
+          "packages/claxedo-app/perf-harness",
+          "packages/claxedo-desktop"
+        ],
+        "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
+        "verification": {
+          "command": "python3 -c 'from pathlib import Path; assert \\\"| V22 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "outcome": "source-record-present-on-this-branch"
+        }
+      },
+      "inheritance": {
+        "status": "unresolved",
+        "missing": [
+          "sourceCommit",
+          "artifactDigestSha256",
+          "originalCommand"
+        ],
+        "rule": "An entry missing any required provenance field is not inherited and must not be cited as a current measured result."
+      }
+    }
+  ]
+}

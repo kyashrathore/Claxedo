@@ -82,6 +82,8 @@ packages/claxedo-desktop/resources/acp/
 packages/claxedo-desktop/resources/claxedo-server/
 packages/claxedo-desktop/resources/host-connector/
 packages/claxedo-desktop/resources/claxedo-server.js
+packages/claxedo-desktop/resources/claxedo-engine-worker/
+packages/claxedo-desktop/resources/opencode-compile-cache/
 packages/claxedo-desktop/resources/opencode-cli
 
 # Build artifacts

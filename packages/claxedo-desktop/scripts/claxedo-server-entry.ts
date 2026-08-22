@@ -7,27 +7,41 @@ import { startLocalServer } from "@claxedo/local-server/self-hosted-execution"
 import type { DiagnosticsBinding } from "../src/shared/diagnostics-transport"
 import { claxedoServerStartup, watchDesktopParent } from "./claxedo-server-startup"
 import { createDiagnosticsChildTransport } from "./diagnostics-child-transport"
+import { claxedoServerReadyMessage } from "../src/shared/claxedo-server-lifecycle"
+import { recordStartupClock } from "../src/shared/startup-clock-probe"
 
+// The V8 compile cache is already enabled and already seeded by the time this
+// module is COMPILED, let alone evaluated: `claxedo-server-boot.ts` is the
+// bundle's entry and reaches this file through a dynamic import. It cannot be
+// done from here — a graph is compiled before its own bodies run, so a cache
+// switched on in this body would arrive 9.11 MB too late.
 const startup = claxedoServerStartup(process.env)
+
 const terminate = () => process.kill(process.pid, "SIGTERM")
 watchDesktopParent({
   pid: startup.desktopParentPid,
   onOrphaned: terminate,
 })
-const binding = diagnosticsBinding(process.env)
-const transport = binding && process.parentPort
-  ? createDiagnosticsChildTransport({ binding, send: (message) => process.parentPort.postMessage(message) })
+const parent = diagnosticsParent()
+const binding = diagnosticsBinding(process.env, Boolean(parent))
+const transport = binding && parent
+  ? createDiagnosticsChildTransport({ binding, send: parent.send })
   : undefined
-process.parentPort?.on("message", (event) => {
-  void transport?.onMessage(event.data)
-})
+parent?.listen((message) => void transport?.onMessage(message))
 
-startLocalServer({
+const server = startLocalServer({
   port: startup.port,
   ...(startup.opencodeUrl ? { opencodeUrl: startup.opencodeUrl } : {}),
   opencodePassword: startup.opencodePassword,
   ...(startup.opencodeEmbedPath ? { opencodeEmbedPath: startup.opencodeEmbedPath } : {}),
   ...(transport ? { processObserver: transport.observer } : {}),
+})
+void server.ready.then(() => {
+  // The IPC send goes FIRST and unconditionally: the probe below is a
+  // diagnostic, and a diagnostic that can delay the message main waits on to
+  // publish the server URL would be measuring a cost it created.
+  parent?.send(claxedoServerReadyMessage(startup.port))
+  recordStartupClock("server-listening", { port: startup.port })
 })
 
 // Bundle evaluation creates a large temporary object graph. The long-lived
@@ -38,9 +52,23 @@ setTimeout(() => {
   ;(globalThis as typeof globalThis & { gc?: () => void }).gc?.()
 }, 1_000).unref()
 
-function diagnosticsBinding(env: NodeJS.ProcessEnv): DiagnosticsBinding | undefined {
+function diagnosticsParent() {
+  if (typeof process.send === "function") {
+    return {
+      send: (message: Parameters<NonNullable<typeof process.send>>[0]) => process.send?.(message),
+      listen: (listener: (message: unknown) => void) => process.on("message", listener),
+    }
+  }
+  if (!process.parentPort) return
+  return {
+    send: (message: Parameters<typeof process.parentPort.postMessage>[0]) => process.parentPort.postMessage(message),
+    listen: (listener: (message: unknown) => void) => process.parentPort.on("message", (event) => listener(event.data)),
+  }
+}
+
+function diagnosticsBinding(env: NodeJS.ProcessEnv, connected: boolean): DiagnosticsBinding | undefined {
   const launchId = env.CLAXEDO_DIAGNOSTICS_LAUNCH_ID?.trim()
   const generation = env.CLAXEDO_DIAGNOSTICS_GENERATION?.trim()
-  if (!process.parentPort || !launchId || !generation) return
+  if (!connected || !launchId || !generation) return
   return { pid: process.pid, launchId, generation }
 }

@@ -361,9 +361,50 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
   await page.route("**/command**", (r) => (api(r.request()) && new URL(r.request().url()).pathname === "/command" ? json(r, []) : r.continue()))
   await page.route("**/permission**", (r) => (api(r.request()) && new URL(r.request().url()).pathname === "/permission" ? json(r, []) : r.continue()))
   await page.route("**/question**", (r) => (api(r.request()) && new URL(r.request().url()).pathname === "/question" ? json(r, []) : r.continue()))
-  await page.route("**/api/workspace/resolve**", (r) =>
-    api(r.request()) ? json(r, { workspaceId: `local-${proj.id}`, directory: DIR, kind: "local", status: "ready" }) : r.continue(),
-  )
+  // Workspace resolve — BOTH twins. `workspaceResolveUrl`
+  // (src/platform/runtime/agent/workspace-control-routes.ts:33-50) rewrites the
+  // path to `/api/claxedo/workspace/resolve` whenever the server base URL is a
+  // loopback transport — which the default `http://127.0.0.1:3001` control-plane
+  // origin always is under this Playwright tier. Without the claxedo twin every
+  // resolve (workspace-connection's `prepareWorkspaceRuntime` drive loop,
+  // http-backend's vcs/mcp/lsp warmups) escapes onto the dead real network, so a
+  // cloud-backed workspace never reaches "ready", never mints its connection, and
+  // role-gated UI (the "Delete workspace" kebab item behind `canMutateWorkspace`,
+  // rail-sidebar.tsx:1558) never renders — the exact behavior-5 failure. The
+  // response mirrors the server's canonical projection (`workspaceResponse`,
+  // packages/claxedo-server-core/src/workspace/store/response.ts): workspaceId/
+  // projectId/directory/workspaceName/access/backing/kind/driver/status/git —
+  // derived from THIS fixture's seeded `workspaces` map so a project seeded with a
+  // cloud main workspace resolves as cloud (same twin-stub pattern as
+  // e2e/helpers/mock-runtime.ts:2014-2015, added in 9410092).
+  const resolveHandler = (r: import("@playwright/test").Route) => {
+    if (!api(r.request())) return r.continue()
+    const url = new URL(r.request().url())
+    const wantedId = url.searchParams.get("workspaceId") ?? undefined
+    const wantedDir = url.searchParams.get("directory") ?? undefined
+    const hit = Object.entries(proj.workspaces as NonNullable<SeedProject["workspaces"]>).find(([key, ws]) =>
+      (wantedId && (ws.workspaceId === wantedId || ws.id === wantedId || key === wantedId)) ||
+      (wantedDir && ((ws.directory ?? key) === wantedDir)),
+    )
+    const record = hit?.[1]
+    const directory = record?.directory ?? hit?.[0] ?? wantedDir ?? DIR
+    const kind = record?.kind ?? "local"
+    const backing = kind === "cloud" ? { kind: "cloud-vm" } : kind === "user-hosted" ? { kind: "user-hosted" } : { kind: "local-worktree" }
+    return json(r, {
+      workspaceId: record?.workspaceId ?? record?.id ?? `local-${proj.id}`,
+      projectId: proj.id,
+      directory,
+      workspaceName: record?.workspace_name ?? null,
+      access: kind === "cloud" ? "cloud" : kind === "user-hosted" ? "user-hosted" : "local",
+      backing,
+      kind,
+      driver: null,
+      status: "ready",
+      git: { repo: null, branch: null, remote: null },
+    })
+  }
+  await page.route("**/api/workspace/resolve**", resolveHandler)
+  await page.route("**/api/claxedo/workspace/resolve**", resolveHandler)
   await page.route("**/api/claxedo/agent-config/**", (r) => (api(r.request()) ? json(r, { source: "runner", stale: false, options: [] }) : r.continue()))
 
   const eventStreamHandler = async (route: import("@playwright/test").Route) => {
@@ -398,11 +439,14 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
   // always hits `/api/control/session-list`, signed or not; something else
   // separately hits the plural `/api/control/sessions` — both confirmed live via
   // the same standalone probe referenced above).
-  await page.route("**/api/control/session-list**", (r) =>
+  const handleControlSessionList = (r: import("@playwright/test").Route) =>
     api(r.request())
       ? json(r, { view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 50 }, items: [], totalKnown: 0 })
-      : r.continue(),
-  )
+      : r.continue()
+  await page.route("**/api/control/session-list**", handleControlSessionList)
+  // Loopback transports rewrite the path to `/api/claxedo/session-list`
+  // (workspace-control-routes.ts:150) — same handler serves both.
+  await page.route("**/api/claxedo/session-list**", handleControlSessionList)
   await page.route("**/api/control/sessions**", (r) => (api(r.request()) ? json(r, []) : r.continue()))
 }
 
@@ -433,8 +477,24 @@ async function groupByWorkspace(page: Page) {
   await page.getByTestId("rail-account-trigger").click()
   await page.getByRole("menuitem", { name: "View options" }).hover()
   await page.getByRole("menuitemradio", { name: "Workspace" }).click()
-  await page.keyboard.press("Escape")
-  await page.keyboard.press("Escape")
+  // Close the account menu DETERMINISTICALLY, then prove it closed. The radio
+  // item has `closeOnSelect={false}` (rail-sidebar.tsx FilterMenu), so the menu
+  // stays open by design — but a bare fire-and-forget double-Escape here loses a
+  // race 100% of the time on the prebuilt bundle: Kobalte's selectable-collection
+  // keydown handler (createSelectableCollection, `case "Escape": preventDefault()
+  // + clearSelection()`) consumes Escapes that land in the immediate post-click
+  // window, and the dismissable layer's own document listener skips dismissal for
+  // any already-`defaultPrevented` Escape — so BOTH menus stay open, Kobalte's
+  // hide-outside keeps the entire app `aria-hidden`, and every later
+  // `getByRole(...)` in the test resolves nothing while bare CSS locators still
+  // match (reproduced live: menu count stayed 2 after both Escapes; two LATER
+  // Escapes closed submenu then menu). Press-and-verify with a poll instead.
+  await expect
+    .poll(async () => {
+      await page.keyboard.press("Escape")
+      return page.getByRole("menu").count()
+    }, { timeout: 10_000 })
+    .toBe(0)
   // Wait for the workspace-grouped view to actually render first —
   // `[data-testid="workspace-project-header"]` always renders once
   // grouped-by-workspace (only its `workspace-header` CHILDREN are

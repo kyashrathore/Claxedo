@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { AssistantMessage, Part, UserMessage } from "@opencode-ai/sdk/v2"
-import { Timeline, TimelineRow } from "./message-timeline.data"
+import { Timeline } from "./message-timeline.data"
+import { TimelineRow } from "./timeline-row-model"
 
 describe("timeline row reuse", () => {
   test("token updates replace only changed row references in a large timeline", () => {

@@ -1,7 +1,18 @@
-import { normalizeUrl } from "@/platform/api/api"
+import { getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
 
 function normalized(url: string | undefined) {
   return normalizeUrl(url) ?? "default"
+}
+
+// Runtime records are fetched against a concrete server either way (the
+// backend falls back to `getDefaultBaseUrl()` when no baseUrl is given), so
+// the KEY resolves the fallback too. Leaving it as the "default" placeholder
+// split one resource into two cache entries — a caller passing the server URL
+// and a caller passing nothing each fetched `/api/claxedo/workspace/resolve`
+// for the same directory (measured on the launch-project perf lane), because
+// their keys never matched.
+function runtimeServer(url: string | undefined) {
+  return normalizeUrl(url) ?? normalizeUrl(getDefaultBaseUrl()) ?? "default"
 }
 
 export const queryKeys = {
@@ -48,14 +59,14 @@ export const queryKeys = {
     workspace: (input: { baseUrl?: string; directory?: string; workspaceId?: string; create?: boolean }) =>
       [
         "runtime",
-        normalized(input.baseUrl),
+        runtimeServer(input.baseUrl),
         "workspace",
         input.workspaceId ?? "",
         input.directory ?? "",
         input.create === true ? "create" : "read",
       ] as const,
     vcs: (baseUrl: string | undefined, directory: string, workspaceId?: string) =>
-      ["runtime", normalized(baseUrl), "vcs", workspaceId ?? "", directory] as const,
+      ["runtime", runtimeServer(baseUrl), "vcs", workspaceId ?? "", directory] as const,
   },
   session: {
     row: (baseUrl: string | undefined, directory: string, sessionID: string) =>

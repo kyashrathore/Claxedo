@@ -28,6 +28,10 @@ out/
 resources/opencode-cli*
 resources/claxedo-mcp*
 resources/claxedo-server.js
+resources/claxedo-server/
+resources/claxedo-server-compile-cache/
+resources/opencode-compile-cache/
 resources/acp/
 resources/diagnostics/macos-memory-impact
+resources/rich-content/
 resources/icons
