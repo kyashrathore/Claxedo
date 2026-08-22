@@ -5,6 +5,35 @@ bundle in headless Chromium, supplies deterministic synthetic API responses,
 drives user-observable flows, and measures renderer main-thread scheduling plus
 semantic readiness.
 
+## Public multi-harness GUI comparison
+
+Claxedo also implements an app-owned driver for the public
+[Agent App Benchmark](https://github.com/kyashrathore/agent-app-benchmark). That public V1 is narrower
+than this internal diagnostic harness: it measures application start, four session-switch lanes, and
+process-family CPU/RSS while loading completed 1–32 MiB historical transcripts. It does not measure
+Web Vitals, streaming, live agent runs, or terminal coding agents.
+
+`src/public-corpus-materializer.ts` streams the pinned OpenCode event corpus into Claxedo's production
+native OpenCode database, workspace inventory, and session metadata path, then reads the database back
+before timing. `src/public-agent-app-driver.ts` owns packaged Electron automation and reports one raw
+duration per action; the public framework owns ordering, repetitions, resources, aggregation, and the
+comparison website.
+
+After building and packaging Claxedo, run the public framework with:
+
+```sh
+node /absolute/path/to/agent-app-benchmark/bin/agent-app-benchmark.mjs run \
+  --driver /absolute/path/to/Claxedo/packages/claxedo-app/perf-harness/src/public-agent-app-driver.ts \
+  --app claxedo \
+  --scenario session-switch-v1 \
+  --run-profile smoke \
+  --resource-monitor /absolute/path/to/agent-app-resource-monitor \
+  --output /absolute/path/to/run-output
+```
+
+The public driver uses only disposable state below the framework-provided run directory. Publish a
+result or propose another metric by opening a pull request against the public benchmark repository.
+
 - Target: **120hz-capable** — pooled p95 renderer interval ≤ 8.33ms.
 - Floor: **60hz-capable** — zero observed renderer intervals > 16.67ms.
 
