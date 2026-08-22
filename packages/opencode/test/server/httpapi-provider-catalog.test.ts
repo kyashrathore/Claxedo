@@ -14,10 +14,6 @@ import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffectShared } from "../lib/effect"
 import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
-// Connected-provider coverage: make anthropic resolve as a connected provider
-// so the response mixes catalog-sourced and connected-sourced entries.
-process.env.ANTHROPIC_API_KEY = "test-api-key"
-
 // Built through the shared memoMap (`testEffectShared`) so `Provider.Service`
 // resolved in the test body is the SAME instance the in-process HTTP server
 // uses — required to observe that the handler serves `Provider.State.catalog`.
@@ -35,7 +31,16 @@ const providerNodes = LayerNode.compile(
 )
 
 const it = testEffectShared(Layer.mergeAll(httpApiLayer, providerNodes))
-const projectOptions = { config: { formatter: false, lsp: false } }
+const projectOptions = {
+  config: {
+    formatter: false,
+    lsp: false,
+    // Keep connected-provider coverage local to this test layer. A process-wide
+    // ANTHROPIC_API_KEY races unrelated files and can accidentally enable
+    // credential-gated live integration tests with a fixture key.
+    provider: { anthropic: { options: { apiKey: "test-api-key" } } },
+  },
+}
 
 afterEach(async () => {
   await disposeAllInstances()
