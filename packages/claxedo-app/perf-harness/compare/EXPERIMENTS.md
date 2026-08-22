@@ -330,3 +330,36 @@ folds already parse during their own visits). Warm-switch recovered to
 cap in place (possible revisit-wobble tradeoff — verifying), and the
 harness inspect/monitor race "process-family root absent from first sample"
 is a recurring infrastructure flake.
+
+## 2026-08-22 10:48 — ALL FIVE measured performance metrics beat T3 (cert-104842)
+
+Both arms valid on the first attempt, quiet host (load 2.45-2.51), corpus v2,
+merged build (both optimization lines + preloader queue + mount cap 24).
+
+| metric | T3 | Claxedo | margin |
+|---|---|---|---|
+| app.cold_ready_ms | 3287.1 | **1923.1** | -41 % |
+| work_item.cold_open_ms | 169.5 | **93.5** | -45 % |
+| work_item.warm_switch_p95_ms | 54.9 | **53.7** (repeat: 46.9) | -2…-15 % |
+| resource.peak_process_family_rss_mib | 1619.8 | **1401.2** | -218 MiB |
+| resource.quiescent_cpu_p95_pct | 16.85 | **6.99** | -59 % |
+
+**The warm-switch fix was a knob confusion, found by LoAF attribution.**
+Every long frame across a 20-switch sweep carried ZERO script-attributed
+time — the cost was style/layout/paint of a FRESH MOUNT, and it tracked
+mount state rather than session weight (132-turn switch 38 ms with no long
+frame; 53-turn switch 154 ms with a 118 ms frame). `MAX_OPEN_SURFACES` (24)
+caps TABS; `maxMountedContents` (12) caps LIVE DOM — so a 20-session working
+set forced 8 remounts per sweep no matter what the tab cap said. At 24 the
+probe sweep runs 35.9-49.6 ms with 19 of 20 switches producing no long frame
+at all (p95 47.7 vs ~126), and the benchmark agrees.
+
+Peak RSS IMPROVED 258 MiB alongside (1659.8 -> 1401.2): keeping surfaces
+mounted avoids the allocate/parse/discard churn of repeated remounts, and
+the idle governor still unloads hidden surfaces after 3 minutes away.
+
+Remaining for the goal: stream (Claxedo 24 ms / 0 % measured; T3's arm times
+out waiting for its own replay session — the T3 app never reaches
+`prompt_async` within 30 s, so its composer send is not reaching the replay
+provider) and terminal (Claxedo needs >21 MiB/s sustained drain; T3 writes
+no terminal log for raw-output validation).
