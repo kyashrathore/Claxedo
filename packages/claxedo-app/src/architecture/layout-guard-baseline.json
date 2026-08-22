@@ -1,9 +1,9 @@
 {
   "entrypointHosts": [
-    "app/entry/app.tsx:ClaxedoAppShellHost"
+    "app/entry/runtime-providers.tsx:@/app/app-shell-bootstrap"
   ],
   "layoutLazyImports": [
-    "app/entry/app.tsx:@/app/app-shell"
+    "app/app-shell-bootstrap.tsx:./app-shell"
   ],
   "pagesLayoutImports": [],
   "claxedoLayoutContextImports": [],

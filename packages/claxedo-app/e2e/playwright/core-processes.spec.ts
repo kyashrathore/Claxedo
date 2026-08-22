@@ -563,6 +563,20 @@ function processesToggle(page: Page) {
   return page.locator('button[aria-label="Open Processes"], button[aria-label="Close Processes"]').first()
 }
 
+/**
+ * Open the workspace panel column if it is closed.
+ *
+ * Every navigator button (Files/Changes/Processes) is rendered inside that
+ * column. With the panel closed the column is a `display:none` shell, so those
+ * buttons are in the DOM and unclickable — a distinction `toBeVisible` reports
+ * as a bare "hidden" timeout that reads like the button was never built.
+ */
+async function ensureWorkspacePanelOpen(page: Page) {
+  const panelToggle = page.locator('[data-testid="workspace-panel-toggle"]').first()
+  await expect(panelToggle).toBeVisible({ timeout: 10_000 })
+  if ((await panelToggle.getAttribute("aria-label")) === "Open workspace panel") await panelToggle.click()
+}
+
 async function openProcessesNavigator(page: Page): Promise<Locator> {
   const overlay = page.locator('[data-testid="workspace-navigator-overlay"][data-navigator="processes"]')
   // `.getAttribute()` auto-waits for the locator to attach (up to the default
@@ -572,6 +586,13 @@ async function openProcessesNavigator(page: Page): Promise<Locator> {
   // before ever reaching the toggle click. `.count()` resolves immediately.
   const alreadyOpen = (await overlay.count()) > 0 && (await overlay.getAttribute("data-open")) === "true"
   if (!alreadyOpen) {
+    // The Files/Changes/Processes trio lives ONLY inside the workspace panel
+    // column now; the header's floating chrome used to carry a second copy and
+    // no longer does. While the panel is closed that column is a display:none
+    // shell, so the Processes button is attached but hidden — `toBeVisible`
+    // below would resolve the element and then time out on "hidden". Open the
+    // panel first, which is the path a user takes.
+    await ensureWorkspacePanelOpen(page)
     const toggle = processesToggle(page)
     await expect(toggle).toBeVisible({ timeout: 10_000 })
     if ((await toggle.getAttribute("aria-label")) !== "Close Processes") await toggle.click()

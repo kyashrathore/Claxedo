@@ -28,8 +28,27 @@ const appRoot = path.resolve(here, "..")
 const repoRoot = path.resolve(appRoot, "../..")
 const appSrc = path.join(appRoot, "src")
 const uiSrc = path.resolve(appRoot, "../ui/src")
+const sessionUiSrc = path.resolve(appRoot, "../session-ui/src")
 
 const ENTRY = path.join(appSrc, "app/entry/main.tsx")
+
+/**
+ * Boot-closure roots for deps with `scope: "boot-closure"`. These are the chunks
+ * the authenticated app awaits BEFORE first paint — app/entry/app.tsx's
+ * preloadClaxedoAppShell() dynamic-imports runtime-providers, whose
+ * preloadRuntimeProviders() then awaits feature-ports + secondary-feature-ports
+ * and finally app-shell-bootstrap. They are separate chunks (so the main.tsx
+ * walk stops at them), but they all evaluate at boot, so a heavy dep inside any
+ * of them still delays first paint. Keep in sync with preloadRuntimeProviders()
+ * in src/app/entry/runtime-providers.tsx.
+ */
+const BOOT_CLOSURE_ROOTS = [
+  ENTRY,
+  path.join(appSrc, "app/entry/runtime-providers.tsx"),
+  path.join(appSrc, "app/integrations/feature-ports.ts"),
+  path.join(appSrc, "app/integrations/secondary-feature-ports.ts"),
+  path.join(appSrc, "app/app-shell-bootstrap.tsx"),
+]
 
 const RESOLVE_EXTS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json"]
 const INDEX_FILES = RESOLVE_EXTS.map((e) => `index${e}`)
@@ -66,7 +85,40 @@ function resolveUiSubpath(spec: string): string | null {
   return path.join(uiSrc, "components", sub)
 }
 
+// @opencode-ai/session-ui subpath exports -> packages/session-ui/src. Mirrors
+// ../session-ui/package.json "exports" (exact entries first, then the "./*"
+// components wildcard). Without this the walker treated session-ui as a bare
+// node_modules leaf, so an eager chain like session-kit.ts -> session-ui/file
+// -> @pierre/diffs was invisible to the guard (found 2026-08: the session-kit
+// barrel rode the eager chunk through the composer + session-context-tab).
+function resolveSessionUiSubpath(spec: string): string | null {
+  const rest = spec.slice("@opencode-ai/session-ui".length).replace(/^\//, "")
+  if (!rest) return null
+  const exact: Record<string, string> = {
+    "session-diff": "components/session-diff.ts",
+    "message-file": "components/message-file.ts",
+    "message-part-text": "components/message-part-text.ts",
+    "format-duration": "components/format-duration.ts",
+    "markdown-stream": "components/markdown-stream.ts",
+    "markdown-cache": "components/markdown-cache.tsx",
+    "line-comment-styles": "components/line-comment-styles.ts",
+    pierre: "pierre/index.ts",
+    context: "context/index.ts",
+    "v2/prompt-input": "v2/components/prompt-input/index.tsx",
+    "v2/prompt-input/interaction": "v2/components/prompt-input/interaction.ts",
+    "v2/prompt-input/store": "v2/components/prompt-input/store.ts",
+    "v2/prompt-input/types": "v2/components/prompt-input/types.ts",
+  }
+  if (exact[rest]) return path.join(sessionUiSrc, exact[rest])
+  if (rest === "styles") return null // CSS entry — not a JS edge
+  if (rest.startsWith("pierre/")) return path.join(sessionUiSrc, "pierre", rest.slice("pierre/".length))
+  if (rest.startsWith("context/")) return path.join(sessionUiSrc, "context", rest.slice("context/".length))
+  if (rest.startsWith("v2/")) return path.join(sessionUiSrc, "v2/components", rest.slice("v2/".length))
+  return path.join(sessionUiSrc, "components", rest)
+}
+
 const UI_PKG_PREFIXES = ["@opencode-ai/ui/", "@opencode-ai/ui"]
+const SESSION_UI_PKG = "@opencode-ai/session-ui"
 const CLAXEDO_APP_PKG = "@claxedo/app"
 
 // ---------------------------------------------------------------------------
@@ -105,7 +157,12 @@ function applyAlias(spec: string): string | null {
  * is a bare/3rd-party module (a graph leaf we do NOT recurse into — we only care
  * whether the *specifier itself* is forbidden).
  */
-function resolveToFile(spec: string, fromFile: string): string | null {
+function resolveToFile(rawSpec: string, fromFile: string): string | null {
+  // Strip vite resource queries (e.g. "./x.worker.ts?worker&url") so the module
+  // body behind the query is still walked. NOTE: this is only reached when the
+  // specifier itself is not forbidden — a forbidden bare spec with a query
+  // (e.g. "@pierre/diffs/worker/worker.js?worker&url") is matched before this.
+  const spec = rawSpec.split("?")[0]
   // relative
   if (spec.startsWith("./") || spec.startsWith("../")) {
     return tryFile(path.resolve(path.dirname(fromFile), spec))
@@ -118,6 +175,12 @@ function resolveToFile(spec: string, fromFile: string): string | null {
   // @opencode-ai/ui — resolve into packages/ui/src so we can keep walking
   if (UI_PKG_PREFIXES.some((p) => spec === p.replace(/\/$/, "") || spec.startsWith(p))) {
     const target = resolveUiSubpath(spec)
+    return target ? tryFile(target) : null
+  }
+  // @opencode-ai/session-ui — resolve into packages/session-ui/src so chains like
+  // session-kit.ts -> session-ui/file -> @pierre/diffs stay visible to the walk
+  if (spec === SESSION_UI_PKG || spec.startsWith(SESSION_UI_PKG + "/")) {
+    const target = resolveSessionUiSubpath(spec)
     return target ? tryFile(target) : null
   }
   // aliased (@/, @claxedo/, #terminal-backend, ...)
@@ -198,8 +261,8 @@ function isTypeOnlyClause(keyword: string, clause: string): boolean {
 
 type Hit = { dep: ForbiddenDep; specifier: string; chain: string[] }
 
-function matchForbidden(spec: string): ForbiddenDep | null {
-  for (const dep of FORBIDDEN_DEPS) {
+function matchForbidden(spec: string, deps: readonly ForbiddenDep[]): ForbiddenDep | null {
+  for (const dep of deps) {
     for (const s of dep.specifiers) {
       if (s.endsWith("/")) {
         if (spec === s.slice(0, -1) || spec.startsWith(s)) return dep
@@ -215,12 +278,12 @@ function rel(p: string): string {
   return path.relative(repoRoot, p)
 }
 
-function walk(): Hit[] {
+function walk(roots: readonly string[], deps: readonly ForbiddenDep[]): Hit[] {
   const hits: Hit[] = []
   const seenHit = new Set<string>() // dedupe by dep label
   const visited = new Set<string>()
   // BFS so the reported chain is the SHORTEST path from the entry.
-  const queue: Array<{ file: string; chain: string[] }> = [{ file: ENTRY, chain: [rel(ENTRY)] }]
+  const queue: Array<{ file: string; chain: string[] }> = roots.map((root) => ({ file: root, chain: [rel(root)] }))
 
   while (queue.length) {
     const { file, chain } = queue.shift()!
@@ -236,7 +299,7 @@ function walk(): Hit[] {
 
     for (const spec of staticImports(src)) {
       // 1) forbidden specifier reached via a static edge?
-      const dep = matchForbidden(spec)
+      const dep = matchForbidden(spec, deps)
       if (dep && !seenHit.has(dep.label)) {
         seenHit.add(dep.label)
         hits.push({ dep, specifier: spec, chain: [...chain, spec] })
@@ -258,15 +321,28 @@ function walk(): Hit[] {
 // ---------------------------------------------------------------------------
 
 function main() {
-  if (!existsSync(ENTRY)) {
-    console.error(`[forbidden-eager-deps] entry not found: ${ENTRY}`)
-    process.exit(2)
+  for (const root of BOOT_CLOSURE_ROOTS) {
+    if (!existsSync(root)) {
+      // A missing root means a boot module was moved/renamed; failing loudly keeps
+      // the guard from silently walking nothing (and shrinks to just ENTRY checks).
+      console.error(`[forbidden-eager-deps] boot root not found: ${root} — update BOOT_CLOSURE_ROOTS`)
+      process.exit(2)
+    }
   }
 
-  const hits = walk()
+  const entryDeps = FORBIDDEN_DEPS.filter((dep) => (dep.scope ?? "entry-chunk") === "entry-chunk")
+  const bootDeps = FORBIDDEN_DEPS.filter((dep) => dep.scope === "boot-closure")
+  const hits = [
+    ...walk([ENTRY], entryDeps),
+    // Boot-closure roots include ENTRY, so boot-scoped deps are checked on the
+    // entry chunk graph too.
+    ...walk(BOOT_CLOSURE_ROOTS, bootDeps),
+  ]
 
   if (hits.length === 0) {
-    console.log("[forbidden-eager-deps] static check passed — no forbidden heavy dep is statically reachable from main.tsx.")
+    console.log(
+      "[forbidden-eager-deps] static check passed — no forbidden heavy dep is statically reachable from main.tsx (or, for boot-closure-scoped deps, from the pre-first-paint boot chunks).",
+    )
     return
   }
 

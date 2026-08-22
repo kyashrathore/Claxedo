@@ -356,9 +356,22 @@ async function installAppBootMock(page: Page, dir: string, projectId = "proj_cor
     if (!["/session", "/experimental/session"].includes(pathname)) return r.fallback()
     return json(r, [])
   })
-  await page.route("**/api/workspace/resolve**", (r) =>
-    api(r) ? json(r, { workspaceId: undefined, directory: dir, kind: "local", status: "ready" }) : r.continue(),
-  )
+  // BOTH resolve twins. `workspaceResolveUrl`
+  // (src/platform/runtime/agent/workspace-control-routes.ts:33-50) rewrites the
+  // path to `/api/claxedo/workspace/resolve` whenever the server base URL is a
+  // loopback transport — always true for the default `http://127.0.0.1:3001`
+  // control-plane origin here. The consumer that made this twin load-bearing for
+  // THIS spec is `reconcileAgentStatuses` (src/app/workbench/state/
+  // agent-status-listener.ts:397-451): it re-runs on every event-stream
+  // reconnect edge, resolves the workspace first, and on ANY fetch failure its
+  // catch calls `clearAllAgentIndicators` — wiping every tracked agent status,
+  // which is exactly how the behaviors-8 status dot vanished mid-test while the
+  // Busy/Idle events themselves were delivered fine (same twin-stub pattern as
+  // e2e/helpers/mock-runtime.ts:2014-2015, added in 9410092).
+  const workspaceResolveHandler = (r: Route) =>
+    api(r) ? json(r, { workspaceId: undefined, directory: dir, kind: "local", status: "ready" }) : r.continue()
+  await page.route("**/api/workspace/resolve**", workspaceResolveHandler)
+  await page.route("**/api/claxedo/workspace/resolve**", workspaceResolveHandler)
   await page.route("**/api/wr/diff/**", (r) => {
     if (!api(r)) return r.continue()
     const pathname = new URL(r.request().url()).pathname

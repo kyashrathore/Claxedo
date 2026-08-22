@@ -329,7 +329,6 @@
  *   against directly.
  */
 import { expect, test, type Page } from "@playwright/test"
-import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION } from "@claxedo/agent-event-runtime"
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -776,8 +775,14 @@ function completeSubagent(
   sessionId: string,
   subagentKey: string,
 ) {
-  mock.emitFlat({
-    contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
+  // `subagent-updated` is a contract-v4 RuntimeEventEnvelope. The real producers
+  // (agent-sdk-runtime's subagent-admission `publish` → RuntimeEventHub) put it on
+  // `/api/wr/runtime-events` ONLY, and the app consumes it only there
+  // (global-sdk provider's runtime loop → applySubagentRuntimeEventEnvelope).
+  // `emitRuntime` is the mock's canonical publisher for that family — `emitFlat`
+  // would land the frame on the compat channels the real runtime never carries
+  // it on, where nothing applies it.
+  mock.emitRuntime({
     directory,
     sessionId,
     payload: {
@@ -786,7 +791,7 @@ function completeSubagent(
       revision: 2,
       status: "completed",
     },
-  } as never)
+  })
 }
 
 const assistantContent = () => SELECTORS.assistantContentVisible
@@ -854,6 +859,14 @@ async function revealTurn(page: Page) {
   await expect
     .poll(
       async () => {
+        await foldOpen()
+        if (!(await toolDom.isVisible().catch(() => false))) return false
+        // Stability re-check: the fold can MOUNT (closed) a beat after the
+        // tools first render — returning on the first visible sample let the
+        // fold collapse the tools right after this helper resolved (the exact
+        // race the header documents). Hold the condition across a short gap,
+        // re-opening a just-mounted fold before the final verdict.
+        await page.waitForTimeout(350)
         await foldOpen()
         return toolDom.isVisible().catch(() => false)
       },
@@ -1139,7 +1152,20 @@ test.describe("core harness rendering matrix @core", () => {
     // Claude's raw "Terminal" title upstream — the raw string is NOT in the fixture, see
     // FIXTURE PRE-BAKING) dispatches to the bash renderer. A LONE work tool (between the
     // text and the read), so it stays a standalone row whose command subtitle is visible.
-    await expect(content.getByText("printf hi")).toBeVisible()
+    // Converged, not asserted once — same rationale and pattern as the cursor-acp
+    // test's lone-row poll below: a late re-render can re-collapse the fold AFTER
+    // revealTurn returns, hiding this row until re-revealed.
+    await expect
+      .poll(
+        async () => {
+          const visible = await content.getByText("printf hi").isVisible().catch(() => false)
+          if (visible) return true
+          await revealTurn(page)
+          return content.getByText("printf hi").isVisible().catch(() => false)
+        },
+        { timeout: 30_000 },
+      )
+      .toBe(true)
 
     // behavior 3: the fixture's `part.tool: "read"` (raw "Read File" already normalized
     // upstream) hits the dedicated read renderer. Even a SINGLE context-group tool renders inside

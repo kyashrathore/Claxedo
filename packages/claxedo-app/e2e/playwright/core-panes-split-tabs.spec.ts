@@ -347,7 +347,7 @@
  *   CONFIGURATION itself (`core-docks` owns how a permission becomes auto-responded
  *   — this spec only asserts the switcher dot reacts to a still-pending one).
  */
-import { expect, test, type Locator, type Page } from "@playwright/test"
+import { expect, test, type Locator, type Page, type Route } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 
@@ -1085,7 +1085,11 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
     // surface then resolves `local` and never joins the shared connection. In
     // production the resolve endpoint returns the SAME cloud id the inventory
     // carries; mirror that fidelity so the route key agrees with the inventory.
-    await page.route("**/api/workspace/resolve**", async (route) => {
+    // Both spellings: loopback central URLs rewrite the path to
+    // `/api/claxedo/workspace/resolve` (workspace-control-routes.ts:40-42), and
+    // the real local server mounts the same routes at both prefixes
+    // (claxedo-local-server/src/app/local-app.ts).
+    const cloudResolve = async (route: Route) => {
       const type = route.request().resourceType()
       if (type !== "fetch" && type !== "xhr") return route.continue()
       await route.fulfill({
@@ -1093,7 +1097,9 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
         contentType: "application/json",
         body: JSON.stringify({ workspaceId: WORKSPACE_ID, directory: CLOUD_DIR, kind: "cloud", status: "ready" }),
       })
-    })
+    }
+    await page.route("**/api/workspace/resolve**", cloudResolve)
+    await page.route("**/api/claxedo/workspace/resolve**", cloudResolve)
     await page.route(`**/api/workspace/${WORKSPACE_ID}/connection**`, async (route) => {
       await route.fulfill({
         status: 200,

@@ -414,7 +414,10 @@ async function installUserHostedRuntimeMock(
     // `src/context/global-sync/inventory-source.ts` and
     // `src/providers/claxedo-events.tsx`). Not part of Behavior 3's runtime
     // lane, so never counted in `bareHitsDuringReady`.
-    if (url.pathname === "/api/control/session-list") {
+    // The bare origin here is loopback, so the app rewrites the list path to
+    // `/api/claxedo/session-list` (workspace-control-routes.ts:150); a signed
+    // host would still use `/api/control/...` — answer both.
+    if (url.pathname === "/api/control/session-list" || url.pathname === "/api/claxedo/session-list") {
       return json(route, { view: { scope: "global", groupBy: "none", sort: "updated_desc", limit: 50 }, items: [], groups: [] })
     }
     if (url.pathname === "/api/control/sessions") return json(route, { sessions: [] })
@@ -430,7 +433,12 @@ async function installUserHostedRuntimeMock(
     // A `ws_...`-shaped workspaceId with no inventory entry defaults to
     // "user-hosted" (session-workspace-key.ts), but OTHER resolve calls for
     // unrelated ids (there shouldn't be any in this spec) should not 599.
-    if (url.pathname === "/api/workspace/resolve") {
+    // Loopback central URLs rewrite the path to `/api/claxedo/workspace/resolve`
+    // (workspace-control-routes.ts:40-42); the real local server mounts the same
+    // routes at both prefixes (claxedo-local-server/src/app/local-app.ts) —
+    // answer both spellings so the loopback form never lands in the catch-all
+    // (and, post-ready, in `bareHitsDuringReady`).
+    if (url.pathname === "/api/workspace/resolve" || url.pathname === "/api/claxedo/workspace/resolve") {
       return json(route, { workspaceId: WORKSPACE_ID, directory: WORKSPACE_ID, kind: "user-hosted", status: "ready" })
     }
 
@@ -901,7 +909,7 @@ test.describe("core user-hosted workspace @core", () => {
       if (url.pathname === "/question") return json(route, [])
       if (url.pathname === "/session/status") return json(route, {})
       if (url.pathname === "/session" || url.pathname === "/experimental/session") return json(route, [])
-      if (url.pathname === "/api/workspace/resolve") {
+      if (url.pathname === "/api/workspace/resolve" || url.pathname === "/api/claxedo/workspace/resolve") {
         return json(route, { workspaceId: `local-${PROJECT_ID}`, directory: DIR, kind: "local", status: "ready" })
       }
 
