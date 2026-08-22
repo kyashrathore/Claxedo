@@ -125,8 +125,34 @@ export function MessageNav(
     )
   }
 
+  // Edge rows double as the paging window movers: the top slot pages to earlier
+  // turns, the bottom slot to later ones, each drawn with a continuation mark
+  // while more turns exist beyond that edge.
+  const goPage = (delta: number) => setPage(Math.min(pageCount() - 1, Math.max(0, clampedPage() + delta)))
+  const pagedMode = () => local.messages.length > MESSAGE_NAV_PAGE
+  const pageMover = (dir: "prev" | "next") => {
+    const disabled = dir === "prev" ? clampedPage() === 0 : clampedPage() >= pageCount() - 1
+    return (
+      <li data-slot="message-nav-item">
+        <button
+          type="button"
+          data-slot={`message-nav-page-${dir}`}
+          disabled={disabled}
+          aria-label={dir === "prev" ? "Earlier turns" : "Later turns"}
+          onClick={() => goPage(dir === "prev" ? -1 : 1)}
+        >
+          <span data-slot="message-nav-tick-line" />
+          <span data-slot="message-nav-page-dots" aria-hidden="true">
+            {"···"}
+          </span>
+        </button>
+      </li>
+    )
+  }
+
   const content = (className?: string, items: readonly UserMessage[] = local.messages) => (
     <ul role="list" data-component="message-nav" data-size={local.size} class={className} {...others}>
+      {local.size === "compact" && pagedMode() ? pageMover("prev") : null}
       <For each={items}>
         {(message, index) => {
           const handleClick = () => selectMessage(message)
@@ -169,67 +195,16 @@ export function MessageNav(
           )
         }}
       </For>
+      {local.size === "compact" && pagedMode() ? pageMover("next") : null}
     </ul>
   )
-
-  const pager = () => {
-    const pageCountValue = pageCount()
-    if (local.messages.length <= MESSAGE_NAV_PAGE) return null
-    const rangeStart = clampedPage() * MESSAGE_NAV_PAGE + 1
-    const rangeEnd = Math.min(local.messages.length, rangeStart + MESSAGE_NAV_PAGE - 1)
-    const go = (delta: number) => setPage(Math.min(pageCountValue - 1, Math.max(0, clampedPage() + delta)))
-    return (
-      <div data-component="message-nav-pager" data-page={clampedPage()}>
-        <button
-          type="button"
-          aria-label={`Turns 1–${MESSAGE_NAV_PAGE}`}
-          disabled={clampedPage() === 0}
-          onClick={() => setPage(0)}
-        >
-          {"\u00AB"}
-        </button>
-        <button
-          type="button"
-          aria-label={`Turns ${Math.max(1, rangeStart - MESSAGE_NAV_PAGE)}–${rangeStart - 1}`}
-          disabled={clampedPage() === 0}
-          onClick={() => go(-1)}
-        >
-          {"\u2039"}
-        </button>
-        <span data-slot="message-nav-pager-range">
-          {rangeStart}–{rangeEnd}
-        </span>
-        <button
-          type="button"
-          aria-label={`Turns ${rangeEnd + 1}–${Math.min(local.messages.length, rangeEnd + MESSAGE_NAV_PAGE)}`}
-          disabled={clampedPage() >= pageCountValue - 1}
-          onClick={() => go(1)}
-        >
-          {"\u203A"}
-        </button>
-        <button
-          type="button"
-          aria-label={`Turns ${Math.max(1, local.messages.length - MESSAGE_NAV_PAGE + 1)}–${local.messages.length}`}
-          disabled={clampedPage() >= pageCountValue - 1}
-          onClick={() => setPage(pageCountValue - 1)}
-        >
-          {"\u00BB"}
-        </button>
-      </div>
-    )
-  }
 
   return (
     <Show when={local.size === "normal" || local.messages.length > 10}>
       <Switch>
         <Match when={local.size === "compact"}>
-          <div
-            data-component="message-nav-hovercard"
-            class={local.class}
-            style={{ display: "flex", "flex-direction": "column" }}
-          >
+          <div data-component="message-nav-hovercard" class={local.class}>
             {content(undefined, pagedMessages())}
-            {pager()}
           </div>
         </Match>
         <Match when={local.size === "normal"}>{content(local.class)}</Match>

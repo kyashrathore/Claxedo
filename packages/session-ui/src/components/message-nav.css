@@ -34,44 +34,21 @@
   height: 100%;
 }
 
-/* Pager for paged minimaps: « prev-page ‹ prev [range] next › next-page » */
-[data-component="message-nav-pager"] {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 2px 0 0;
+/* Edge rows double as paging movers: a tick dash plus continuation dots.
+   Disabled at the first/last page; hover/focus brightens like active ticks. */
+[data-component="message-nav"][data-size="compact"] [data-slot="message-nav-page-prev"],
+[data-component="message-nav"][data-size="compact"] [data-slot="message-nav-page-next"] {
+  gap: 2px;
 
-  button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 7px;
-    height: 14px;
-    padding: 0;
-    border: none;
-    background: none;
-    cursor: pointer;
-    color: var(--icon-weak-base);
-    font-size: var(--font-size-compact);
-
-    &:hover:not(:disabled),
-    &:focus-visible {
-      color: var(--icon-base);
-    }
-
-    &:disabled {
-      opacity: 0.3;
-      cursor: default;
-    }
+  &:disabled {
+    opacity: 0.3;
+    cursor: default;
   }
 }
 
-[data-slot="message-nav-pager-range"] {
-  color: var(--text-weak);
+[data-slot="message-nav-page-dots"] {
+  color: inherit;
   font-size: var(--font-size-mini);
-  white-space: nowrap;
 }
 
 /* Compact items divide the fixed column equally: small sessions spread with

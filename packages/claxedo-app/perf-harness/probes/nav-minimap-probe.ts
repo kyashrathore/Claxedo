@@ -60,10 +60,11 @@ try {
     console.log(`rail: ${rail.present ? "present" : "MISSING"} size=${rail.size} ticks=${rail.ticks.length} height=${rail.height}px`);
     if (!rail.present || rail.ticks.length === 0) throw new Error("minimap not rendered");
 
-    // Paged minimap: with >30 turns the rail shows one 30-turn page plus a
-    // « ‹ range › » pager. Exercise the pager before the jump loop so the
-    // final loop runs against the LAST page (oldest half, worst case).
-    const pagerState = () =>
+    // Paged minimap: >30 turns render top/bottom EDGE MOVERS (··· rows) that
+    // slide the 30-turn window. Auto-follow opens on the last page; walk the
+    // prev mover back to the FIRST page so the jump loop covers the oldest
+    // half — the previously-impossible region.
+    const readRailPage = () =>
       launch.page.evaluate((id) => {
         const roots = [
           ...document.querySelectorAll<HTMLElement>(
@@ -73,50 +74,46 @@ try {
         const root =
           roots.find((candidate) => candidate.closest("[data-workbench-content]")?.getAttribute("aria-hidden") !== "true") ??
           roots[0];
-        const pager = root?.querySelector<HTMLElement>("[data-component='message-nav-pager']");
         const nav = root?.querySelector<HTMLElement>('[data-component="message-nav"]');
         return {
-          present: !!pager,
-          range: pager?.querySelector("[data-slot='message-nav-pager-range']")?.textContent ?? "",
-          buttons: pager ? [...pager.querySelectorAll("button")] : [],
+          height: Math.round(nav?.getBoundingClientRect().height ?? 0),
           firstTick: nav?.querySelector<HTMLElement>("[data-slot='message-nav-tick-button']")?.dataset.messageId ?? "",
+          hasPrev: !!nav?.querySelector("[data-slot='message-nav-page-prev']:not([disabled])"),
+          hasNext: !!nav?.querySelector("[data-slot='message-nav-page-next']:not([disabled])"),
         };
       }, heavy.sessionId);
-    let pager = await pagerState();
-    console.log(`pager: present=${pager.present} range=${JSON.stringify(pager.range)} firstTick=…${pager.firstTick.slice(-6)}`);
-    if (!pager.present) throw new Error("minimap pager missing for >30-turn session");
-    await launch.page.evaluate((id) => {
+    let page = await readRailPage();
+    console.log(`rail: height=${page.height}px firstTick=…${page.firstTick.slice(-6)} prev=${page.hasPrev} next=${page.hasNext}`);
+    if (!page.height) throw new Error("minimap not rendered");
+    if (!page.hasPrev) throw new Error("expected a prev mover on the auto-followed last page");
+    let walks = 0;
+    while (page.hasPrev && walks < 80) {
+      await launch.page.evaluate((id) => {
+        const roots = [
+          ...document.querySelectorAll<HTMLElement>(`[data-testid="session-page-root"][data-session-id="${CSS.escape(id)}"]`),
+        ];
+        const root =
+          roots.find((candidate) => candidate.closest("[data-workbench-content]")?.getAttribute("aria-hidden") !== "true") ??
+          roots[0];
+        (root?.querySelector<HTMLElement>("[data-slot='message-nav-page-prev']") as HTMLElement | null)?.click();
+      }, heavy.sessionId);
+      await Bun.sleep(120);
+      page = await readRailPage();
+      walks += 1;
+    }
+    rail.ticks = await launch.page.evaluate((id) => {
       const roots = [
         ...document.querySelectorAll<HTMLElement>(`[data-testid="session-page-root"][data-session-id="${CSS.escape(id)}"]`),
       ];
       const root =
         roots.find((candidate) => candidate.closest("[data-workbench-content]")?.getAttribute("aria-hidden") !== "true") ??
         roots[0];
-      const buttons = root ? [...root.querySelectorAll<HTMLButtonElement>("[data-component='message-nav-pager'] button")] : [];
-      buttons[0]?.click();
+      return [...(root?.querySelectorAll('[data-slot="message-nav-tick-button"]') ?? [])]
+        .map((el) => (el as HTMLElement).dataset.messageId)
+        .filter((value): value is string => !!value);
     }, heavy.sessionId);
-    await Bun.sleep(300);
-    const paged = await pagerState();
-    const railAfterPage = await launch.page.evaluate((id) => {
-      const roots = [
-        ...document.querySelectorAll<HTMLElement>(`[data-testid="session-page-root"][data-session-id="${CSS.escape(id)}"]`),
-      ];
-      const root =
-        roots.find((candidate) => candidate.closest("[data-workbench-content]")?.getAttribute("aria-hidden") !== "true") ??
-        roots[0];
-      const nav = root?.querySelector<HTMLElement>('[data-component="message-nav"]');
-      return {
-        height: Math.round(nav?.getBoundingClientRect().height ?? 0),
-        ticks: [...(nav?.querySelectorAll('[data-slot="message-nav-tick-button"]') ?? [])]
-          .map((el) => (el as HTMLElement).dataset.messageId)
-          .filter((value): value is string => !!value),
-      };
-    }, heavy.sessionId);
-    rail.ticks = railAfterPage.ticks;
-    console.log(
-      `pager « : range=${JSON.stringify(paged.range)} firstTick=…${paged.firstTick.slice(-6)} (was …${pager.firstTick.slice(-6)}) height=${railAfterPage.height}px`,
-    );
-    if (paged.firstTick === pager.firstTick || rail.ticks.length === 0) throw new Error("pager did not switch pages");
+    console.log(`walked ${walks} pages back → firstTick=…${page.firstTick.slice(-6)} ticks=${rail.ticks.length} prev=${page.hasPrev} next=${page.hasNext}`);
+    if (page.hasPrev) throw new Error("prev walk did not reach the first page");
 
     const positions = [1, 0.2, 0.45, 0.7, 0.9, 0]
       .map((fraction) => Math.round(fraction * (rail.ticks.length - 1)))
