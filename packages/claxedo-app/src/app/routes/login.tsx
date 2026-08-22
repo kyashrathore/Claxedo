@@ -43,7 +43,9 @@ export default function LoginPage(props: LoginPageProps = {}) {
 
   const continueToClerk = async () => {
     setRedirecting(true);
-    await account.signIn().finally(() => setRedirecting(false));
+    // The destination rides on the call: the port's browser binding forwards
+    // it into the provider redirect, and the /login e2e pins the argument.
+    await account.signIn({ redirectUrl: redirectUrl() }).finally(() => setRedirecting(false));
   };
 
   return (

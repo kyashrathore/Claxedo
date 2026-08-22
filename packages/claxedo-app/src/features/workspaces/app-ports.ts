@@ -4,7 +4,8 @@ import type * as Layout from "@/app/providers/layout"
 import type * as Events from "@/app/integrations/claxedo-events"
 import type * as Config from "@/app/providers/config"
 import type * as TerminalFit from "@/features/terminal/workbench/terminal-fit"
-import type * as Dialogs from "@/app/dialogs"
+import type * as DialogRecoverWorkspaceModule from "@/features/workspaces/ui/dialogs/recover-workspace-dialog"
+import type * as DialogDeleteWorkspaceModule from "@/features/workspaces/ui/dialogs/delete-workspace-dialog"
 import type * as DialogSettingsModule from "@/app/dialogs/settings"
 import type * as DialogSelectDirectoryModule from "@/app/dialogs/select-directory"
 import type * as DialogConnectIntegrationModule from "@/app/dialogs/connect-integration"
@@ -22,8 +23,8 @@ export type WorkspacesAppPorts = {
   useClaxedoEvents: typeof Events.useClaxedoEvents
   useConfigOptional: typeof Config.useConfigOptional
   emitTerminalFit: typeof TerminalFit.emitTerminalFit
-  DialogRecoverWorkspace: typeof Dialogs.DialogRecoverWorkspace
-  DialogDeleteWorkspace: typeof Dialogs.DialogDeleteWorkspace
+  DialogRecoverWorkspace: typeof DialogRecoverWorkspaceModule.DialogRecoverWorkspace
+  DialogDeleteWorkspace: typeof DialogDeleteWorkspaceModule.DialogDeleteWorkspace
   DialogSettings: typeof DialogSettingsModule.DialogSettings
   DialogSelectDirectory: typeof DialogSelectDirectoryModule.DialogSelectDirectory
   // The create-cloud-project dialog offers "Connect GitHub" when the user has

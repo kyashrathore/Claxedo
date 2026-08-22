@@ -6,6 +6,7 @@ import { useCommand } from "@/app/providers/command"
 import { ADD_PROJECT_COMMAND_ID } from "@/features/session/ui/components/session-add-project-action"
 import { useLanguage } from "@/platform/i18n/provider"
 import { marketplaceRoute, workGraphRoute } from "@/platform/identity/route"
+import { userExtensionViews } from "@/platform/extensions/user-extension-views"
 import type { AppShellState } from "./app-shell-state"
 
 export function useAppShellActions(input: {
@@ -76,6 +77,21 @@ export function useAppShellActions(input: {
       onSelect: () => actions.handleNewProject(),
     },
   ])
+
+  // One palette entry per user-extension view. `register` wraps the callback
+  // in a memo and `userExtensionViews()` tracks the view registry's revision,
+  // so entries appear as extensions finish their idle-time activation and
+  // disappear if a failed activation rolls its views back.
+  command.register("claxedo-user-extensions", () =>
+    userExtensionViews().map((view) => ({
+      id: `extension-view.open.${view.id}`,
+      title: view.title,
+      category: "Extensions",
+      onSelect: () => {
+        input.shell.state.layout.openExtensionView(view.id, view.title)
+      },
+    })),
+  )
 
   return {
     ...actions,

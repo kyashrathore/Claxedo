@@ -117,7 +117,6 @@
  */
 .session-skeleton-bar {
   background: color-mix(in oklab, var(--text-weak) 16%, transparent);
-  animation: session-skeleton-breathe 1.8s ease-in-out infinite;
 }
 
 @keyframes session-skeleton-breathe {
