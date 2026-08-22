@@ -13,11 +13,12 @@
 
   &[data-size="compact"] {
     width: 36px;
-    /* Fixed total height: every turn stays represented in one glance. The
-       wrapper carries the bounded height; ticks divide the column evenly
-       (see item rules below) instead of scrolling — a long session compresses
-       spacing rather than overflowing. */
-    height: 100%;
+    /* Fixed total height: every turn of the CURRENT PAGE stays represented.
+       The wrapper carries the bounded height; ticks divide the remaining
+       column evenly instead of scrolling or densifying into a block. */
+    height: auto;
+    flex: 1 1 0%;
+    min-height: 0;
     justify-content: center;
     overflow-y: hidden;
     overflow-x: hidden;
@@ -31,6 +32,46 @@
 
 [data-component="message-nav-hovercard"] {
   height: 100%;
+}
+
+/* Pager for paged minimaps: « prev-page ‹ prev [range] next › next-page » */
+[data-component="message-nav-pager"] {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 2px 0 0;
+
+  button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 7px;
+    height: 14px;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--icon-weak-base);
+    font-size: var(--font-size-compact);
+
+    &:hover:not(:disabled),
+    &:focus-visible {
+      color: var(--icon-base);
+    }
+
+    &:disabled {
+      opacity: 0.3;
+      cursor: default;
+    }
+  }
+}
+
+[data-slot="message-nav-pager-range"] {
+  color: var(--text-weak);
+  font-size: var(--font-size-mini);
+  white-space: nowrap;
 }
 
 /* Compact items divide the fixed column equally: small sessions spread with

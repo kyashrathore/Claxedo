@@ -1,6 +1,6 @@
 import { UserMessage } from "@opencode-ai/sdk/v2"
 import { HoverCard } from "@kobalte/core/hover-card"
-import { ComponentProps, For, Match, Show, createSignal, splitProps, Switch } from "solid-js"
+import { ComponentProps, For, Match, Show, createEffect, createMemo, createSignal, splitProps, Switch } from "solid-js"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
 
@@ -8,6 +8,9 @@ export type MessageNavPreview = {
   user?: string
   assistant?: string
 }
+
+/** Turns represented per minimap page; larger sessions page instead of densifying into a block. */
+const MESSAGE_NAV_PAGE = 30
 
 export function MessageNav(
   props: ComponentProps<"ul"> & {
@@ -30,6 +33,22 @@ export function MessageNav(
     "class",
   ])
   const [activePreview, setActivePreview] = createSignal<string>()
+
+  // Paged minimap: show MESSAGE_NAV_PAGE turns at a time so a huge session
+  // never densifies into an unreadable block. The page follows the current
+  // turn; the pager re-scopes the map without jumping the transcript.
+  const pageCount = () => Math.max(1, Math.ceil(local.messages.length / MESSAGE_NAV_PAGE))
+  const [page, setPage] = createSignal(0)
+  const clampedPage = () => Math.min(page(), pageCount() - 1)
+  const pagedMessages = createMemo(() => {
+    const start = clampedPage() * MESSAGE_NAV_PAGE
+    return local.messages.slice(start, start + MESSAGE_NAV_PAGE)
+  })
+  createEffect(() => {
+    if (local.messages.length <= MESSAGE_NAV_PAGE) return
+    const index = local.messages.findIndex((message) => message.id === local.current?.id)
+    if (index >= 0) setPage(Math.floor(index / MESSAGE_NAV_PAGE))
+  })
   const focusIndex = () => {
     const id = activePreview() ?? local.current?.id
     const index = local.messages.findIndex((message) => message.id === id)
@@ -106,9 +125,9 @@ export function MessageNav(
     )
   }
 
-  const content = (className?: string) => (
+  const content = (className?: string, items: readonly UserMessage[] = local.messages) => (
     <ul role="list" data-component="message-nav" data-size={local.size} class={className} {...others}>
-      <For each={local.messages}>
+      <For each={items}>
         {(message, index) => {
           const handleClick = () => selectMessage(message)
 
@@ -153,12 +172,64 @@ export function MessageNav(
     </ul>
   )
 
+  const pager = () => {
+    const pageCountValue = pageCount()
+    if (local.messages.length <= MESSAGE_NAV_PAGE) return null
+    const rangeStart = clampedPage() * MESSAGE_NAV_PAGE + 1
+    const rangeEnd = Math.min(local.messages.length, rangeStart + MESSAGE_NAV_PAGE - 1)
+    const go = (delta: number) => setPage(Math.min(pageCountValue - 1, Math.max(0, clampedPage() + delta)))
+    return (
+      <div data-component="message-nav-pager" data-page={clampedPage()}>
+        <button
+          type="button"
+          aria-label={`Turns 1–${MESSAGE_NAV_PAGE}`}
+          disabled={clampedPage() === 0}
+          onClick={() => setPage(0)}
+        >
+          {"\u00AB"}
+        </button>
+        <button
+          type="button"
+          aria-label={`Turns ${Math.max(1, rangeStart - MESSAGE_NAV_PAGE)}–${rangeStart - 1}`}
+          disabled={clampedPage() === 0}
+          onClick={() => go(-1)}
+        >
+          {"\u2039"}
+        </button>
+        <span data-slot="message-nav-pager-range">
+          {rangeStart}–{rangeEnd}
+        </span>
+        <button
+          type="button"
+          aria-label={`Turns ${rangeEnd + 1}–${Math.min(local.messages.length, rangeEnd + MESSAGE_NAV_PAGE)}`}
+          disabled={clampedPage() >= pageCountValue - 1}
+          onClick={() => go(1)}
+        >
+          {"\u203A"}
+        </button>
+        <button
+          type="button"
+          aria-label={`Turns ${Math.max(1, local.messages.length - MESSAGE_NAV_PAGE + 1)}–${local.messages.length}`}
+          disabled={clampedPage() >= pageCountValue - 1}
+          onClick={() => setPage(pageCountValue - 1)}
+        >
+          {"\u00BB"}
+        </button>
+      </div>
+    )
+  }
+
   return (
     <Show when={local.size === "normal" || local.messages.length > 10}>
       <Switch>
         <Match when={local.size === "compact"}>
-          <div data-component="message-nav-hovercard" class={local.class}>
-            {content()}
+          <div
+            data-component="message-nav-hovercard"
+            class={local.class}
+            style={{ display: "flex", "flex-direction": "column" }}
+          >
+            {content(undefined, pagedMessages())}
+            {pager()}
           </div>
         </Match>
         <Match when={local.size === "normal"}>{content(local.class)}</Match>
