@@ -920,7 +920,10 @@ export default function SessionPage() {
   })
 
   const autoScroll = createAutoScroll({
-    working: () => true,
+    // Not "working" while the transcript is target-anchored: the capped
+    // window's end is not the session's bottom, and the resize pin would yank
+    // every anchored jump straight to that cap and lock out further jumps.
+    working: () => !historyWindow.anchoredToTurn(),
     overflowAnchor: "none",
   })
   createEffect(
