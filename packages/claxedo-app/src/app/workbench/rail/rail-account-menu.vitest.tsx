@@ -44,8 +44,11 @@ vi.mock("@/app/providers/config", () => ({
   }),
 }))
 
-vi.mock("@claxedo/app", () => ({
+vi.mock("@/platform/runtime/platform-provider", () => ({
   usePlatform: () => ({ platform: state.platform }),
+}))
+
+vi.mock("@/platform/i18n/provider", () => ({
   useLanguage: () => ({
     t: (key: string) => ({
       "sidebar.settings": "Settings",

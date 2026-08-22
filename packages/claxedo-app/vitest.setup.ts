@@ -1,5 +1,44 @@
 import "@testing-library/jest-dom/vitest"
 
+// Node 25 exposes experimental `localStorage`/`sessionStorage` globals even
+// when no --localstorage-file is configured. Those objects are incomplete
+// (no clear/setItem), and Vitest preserves an existing Node global instead of
+// installing jsdom's Storage object. Keep the component-test environment
+// deterministic across Node versions by replacing only incomplete globals.
+function memoryStorage(): Storage {
+  const entries = new Map<string, string>()
+  return {
+    get length() {
+      return entries.size
+    },
+    clear() {
+      entries.clear()
+    },
+    getItem(key) {
+      return entries.get(String(key)) ?? null
+    },
+    key(index) {
+      return [...entries.keys()][index] ?? null
+    },
+    removeItem(key) {
+      entries.delete(String(key))
+    },
+    setItem(key, value) {
+      entries.set(String(key), String(value))
+    },
+  }
+}
+
+for (const name of ["localStorage", "sessionStorage"] as const) {
+  const storage = globalThis[name]
+  if (typeof storage?.clear === "function" && typeof storage?.setItem === "function") continue
+  Object.defineProperty(globalThis, name, {
+    configurable: true,
+    enumerable: true,
+    value: memoryStorage(),
+  })
+}
+
 // jsdom ships no `Element.prototype.scrollTo` at all, and its `window.scrollTo`
 // throws "Not implemented" into the virtual console. Components that keep the
 // keyboard-active row in view — `@opencode-ai/ui/list`, which backs every

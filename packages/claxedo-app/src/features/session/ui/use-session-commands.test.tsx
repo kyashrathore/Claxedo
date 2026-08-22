@@ -313,6 +313,25 @@ function registeredCommands() {
   return registered.flatMap((factory) => factory())
 }
 
+async function renderLatestDialog(until: () => boolean) {
+  const factory = dialogFactories.at(-1)
+  if (!factory) throw new Error("Expected a dialog factory")
+  let dispose = () => undefined
+  createRoot((rootDispose) => {
+    dispose = rootDispose
+    factory()
+  })
+  try {
+    const deadline = Date.now() + 1_000
+    while (!until() && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+    if (!until()) throw new Error("Lazy dialog did not resolve")
+  } finally {
+    dispose()
+  }
+}
+
 describe("upstream contract", async () => {
   const { useSessionCommands } = await import("@/features/session/ui/use-session-commands")
 
@@ -391,23 +410,23 @@ describe("upstream contract", async () => {
     expect(ids).toContain("message.next")
   })
 
-  test("scopes Open File to files while the command palette keeps the combined mode", () => {
+  test("scopes Open File to files while the command palette keeps the combined mode", async () => {
     const fileOpen = collectCommands().find((command) => command.id === "file.open")
 
     fileOpen?.onSelect("keybind")
-    dialogFactories.at(-1)?.()
+    await renderLatestDialog(() => fileDialogProps.length === 1)
     expect(fileDialogProps.at(-1)).toMatchObject({ mode: "files", directory: "/repo", sessionId: "session-1" })
 
     fileOpen?.onSelect("palette")
-    dialogFactories.at(-1)?.()
+    await renderLatestDialog(() => fileDialogProps.length === 2)
     expect(fileDialogProps.at(-1)).toMatchObject({ mode: "all", directory: "/repo", sessionId: "session-1" })
   })
 
-  test("model picker command injects the local model controller", () => {
+  test("model picker command injects the local model controller", async () => {
     const byId = new Map(collectCommands().map((command) => [command.id, command]))
 
     byId.get("model.choose")?.onSelect()
-    dialogFactories.at(-1)?.()
+    await renderLatestDialog(() => modelDialogProps.length === 1)
 
     expect(modelDialogProps.at(-1)?.model).toBeDefined()
     expect(modelDialogProps.at(-1)?.model).not.toBe(localModel)

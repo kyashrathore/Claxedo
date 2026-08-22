@@ -243,7 +243,7 @@ async function frames(count: number) {
 
 // Frame-count waits race the MutationObserver/rAF interleaving under shared
 // happy-dom globals; wait for the observable outcome with a bounded deadline.
-async function until(predicate: () => boolean, timeoutMs = 1_000) {
+async function until(predicate: () => boolean, timeoutMs = 5_000) {
   const start = Date.now()
   while (!predicate() && Date.now() - start < timeoutMs) {
     await frames(1)

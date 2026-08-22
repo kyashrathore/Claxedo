@@ -1,13 +1,20 @@
 import { afterEach, describe, expect, test } from "vitest"
 import { cleanup, render } from "@solidjs/testing-library"
-import { createResource, createMemo, type Accessor, type Resource } from "solid-js"
-import { SessionComposerLoadBoundary } from "@/features/session/ui/session-progressive-surfaces"
+import { createResource, createMemo, Suspense, type Accessor, type ParentProps, type Resource } from "solid-js"
 import { readWithoutSuspending } from "./suspense-safe-resource"
 
 afterEach(() => cleanup())
 
 const FALLBACK = '[data-component="session-prompt-dock-loading"]'
 const never = () => new Promise<string[]>(() => {})
+
+function ComposerLoadBoundary(props: ParentProps) {
+  return (
+    <Suspense fallback={<div data-component="session-prompt-dock-loading" />}>
+      {props.children}
+    </Suspense>
+  )
+}
 
 /**
  * Mirrors the real readers: the accessor is read inside a TRACKED MEMO
@@ -25,14 +32,14 @@ function mount(read: (resource: Resource<string[]>) => () => string[] | undefine
     const [r] = createResource(fetcher)
     resource = r
     return (
-      <SessionComposerLoadBoundary>
+      <ComposerLoadBoundary>
         <SlashCommandMemo read={read(resource)} />
-      </SessionComposerLoadBoundary>
+      </ComposerLoadBoundary>
     )
   })
 }
 
-describe("readWithoutSuspending under SessionComposerLoadBoundary", () => {
+describe("readWithoutSuspending under the composer Suspense boundary", () => {
   test("THE DEFECT: an unguarded read of a pending resource re-suspends the boundary", () => {
     const view = mount((resource) => () => resource())
     expect(view.container.querySelector(FALLBACK)).not.toBeNull()
