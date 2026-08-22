@@ -24,7 +24,7 @@ import { createClaxedoRuntimeExposure } from "../../hosts/workspace-runtime/expo
 import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
 import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
 import { resolveClaxedoWorkspaceRuntimeTarget } from "../../hosts/workspace-runtime/target"
-import type { OpencodeEvent } from "../../opencode/events"
+import { createOpencodeEvents, type OpencodeEvent, type OpencodeEventsHandle } from "../../opencode/events"
 import type { PiModelBackendResolver } from "@claxedo/agent-sdk-runtime/adapters"
 import type { AgentTurnOutcome } from "@claxedo/agent-sdk-runtime"
 
@@ -73,6 +73,14 @@ let configuredProcessObserver: ProcessObserver | undefined
 // server restart (the control plane's `services.projectionStore` never
 // learns the new title).
 let configuredOnSessionMetaEvent: ((event: OpencodeEvent) => void) | undefined
+/**
+ * Process-level tap for engine-native async session metadata. Runtime-hub
+ * events remain the exactly-once stream for harness turns; this tap forwards
+ * only the engine's `session.created`/`session.updated` events, which never
+ * pass through that hub. It starts lazily before the first engine mutation so
+ * read-only shell hydration does not boot or pin the engine.
+ */
+let engineSessionEvents: OpencodeEventsHandle | undefined
 let configuredOnSessionMetaCreated: ((workspace: Workspace, session: unknown) => Promise<void> | void) | undefined
 let configuredOnSessionMetaSnapshot: ((workspace: Workspace, sessions: unknown[]) => void | Promise<void>) | undefined
 let configuredOnTurnOutcome: ((input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void) | undefined
@@ -88,6 +96,10 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   onSessionMetaSnapshot?: (workspace: Workspace, sessions: unknown[]) => void | Promise<void>
   onTurnOutcome?: (input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void
 }) {
+  if (configuredOpencodeRequest !== input.opencodeRequest) {
+    engineSessionEvents?.close()
+    engineSessionEvents = undefined
+  }
   configuredOpencodeRequest = input.opencodeRequest
   configuredOpencodeCompat = input.opencodeCompat ?? true
   configuredPiModelBackend = input.piModelBackend
@@ -97,6 +109,23 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   configuredOnSessionMetaCreated = input.onSessionMetaCreated
   configuredOnSessionMetaSnapshot = input.onSessionMetaSnapshot
   configuredOnTurnOutcome = input.onTurnOutcome
+}
+
+function startEngineSessionEvents() {
+  if (engineSessionEvents || !configuredOpencodeCompat || !configuredOnSessionMetaEvent) return
+  const events = createOpencodeEvents(configuredOpencodeRequest, { autoStart: false })
+  events.on((event) => {
+    const type = event.payload.type
+    if (type !== "session.created" && type !== "session.updated") return
+    configuredOnSessionMetaEvent?.(event)
+  })
+  engineSessionEvents = events
+  events.start()
+}
+
+const runtimeOpencodeRequest: OpenCodeRequestFn = (request) => {
+  if (request.method !== "GET" && request.method !== "HEAD") startEngineSessionEvents()
+  return configuredOpencodeRequest(request)
 }
 
 function storeRoot(ws: Workspace) {
@@ -289,7 +318,7 @@ export async function ensureEmbeddedWorkspaceRuntime(
   }
 
   let activeHost: EmbeddedRuntime["host"] | undefined
-  const created = createWorkspaceRuntimeApp(options(ws, configuredOpencodeRequest, {
+  const created = createWorkspaceRuntimeApp(options(ws, runtimeOpencodeRequest, {
     exists: (sessionId) => activeHost?.hasSession(sessionId) ?? false,
     parentSessionIdFor: (sessionId) => activeHost?.parentSessionIdFor(sessionId),
   }))

@@ -404,6 +404,7 @@ describe("embedded workspace runtime", () => {
 
     try {
       const events: OpencodeEvent[] = []
+      const requests: string[] = []
       let resolveSeen: (() => void) | undefined
       const seen = new Promise<void>((resolve) => {
         resolveSeen = resolve
@@ -416,6 +417,7 @@ describe("embedded workspace runtime", () => {
       // subprocess's own SSE stream.
       const fakeOpencodeRequest: OpenCodeRequestFn = async (req) => {
         const url = new URL(req.url)
+        requests.push(`${req.method} ${url.pathname}`)
         if (url.pathname !== "/global/event") return Response.json({ id: "s_mutation", directory: project })
         const body = new ReadableStream<Uint8Array>({
           start(controller) {
@@ -448,12 +450,15 @@ describe("embedded workspace runtime", () => {
       })
 
       const runtime = await ensureEmbeddedWorkspaceRuntime(workspace("ws_title", project), { config: "skip" })
+      expect(requests).not.toContain("GET /global/event")
       await runtime.app.request(`http://localhost/session?directory=${encodeURIComponent(project)}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: "{}",
       })
       await seen
+
+      expect(requests.indexOf("GET /global/event")).toBeLessThan(requests.indexOf("POST /session"))
 
       expect(events).toHaveLength(1)
       const [event] = events
