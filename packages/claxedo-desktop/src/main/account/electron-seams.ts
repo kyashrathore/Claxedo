@@ -130,7 +130,13 @@ async function postToTokenEndpoint(
       controller.abort(error)
       reject(error)
     }, timeoutMs)
-    handle.unref?.()
+    // Deliberately ref'd, unlike nodeTimer(): this timer is the race's only
+    // wake-up when the transport holds no live handle, and bun on win32 never
+    // fires an unref'd timer once the loop has no ref'd handles left — which
+    // turned this bounded timeout into a permanent hang (CI unit lane, run
+    // 374). It cannot outlive the request it bounds: at most timeoutMs, and
+    // cleared in the finally below the moment the race settles. A pending
+    // real fetch refs the loop on its own, so quit behavior is unchanged.
   })
 
   try {
