@@ -16,8 +16,16 @@
 // Usage (from a package.json script): node ../../scripts/test-deadline.mjs bun test src
 // Override the budget with CLAXEDO_TEST_DEADLINE_MS.
 import { spawn } from "node:child_process"
+import { fileURLToPath } from "node:url"
 
 const cmd = process.argv.slice(2)
+// Every wrapped bun-test run gets the win32 event-loop keepalive (a no-op on
+// POSIX — see test-keepalive.mjs). CLI --preload MERGES with any bunfig
+// [test].preload, verified on 1.3.14, so packages with their own preloads
+// keep them.
+if (cmd[0] === "bun" && cmd[1] === "test") {
+  cmd.splice(2, 0, "--preload", fileURLToPath(new URL("./test-keepalive.mjs", import.meta.url)))
+}
 const deadlineMs = Number(process.env.CLAXEDO_TEST_DEADLINE_MS ?? 10 * 60 * 1000)
 
 function runOnce(attempt) {
