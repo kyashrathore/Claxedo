@@ -487,6 +487,7 @@
         "@types/bun": "catalog:",
         "@types/node": "catalog:",
         "@typescript/native-preview": "catalog:",
+        "esbuild": "0.25.12",
       },
     },
     "packages/codemode": {
