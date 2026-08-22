@@ -379,10 +379,20 @@ export async function measureSessionActivation(
                 expected.has(item.dataset.contentMessageId) &&
                 visible(item),
             );
-            const text = row?.innerText.trim() ?? "";
             const kind = row?.dataset.timelineRow;
             const messageId = row?.dataset.contentMessageId;
             const partId = row?.dataset.contentPartId;
+            const content =
+              kind === "AssistantPart" && partId
+                ? row?.querySelector<HTMLElement>(
+                    `[data-component="text-part"][data-timeline-part-id="${CSS.escape(partId)}"] [data-slot="text-part-body"]`,
+                  )
+                : kind === "UserMessage"
+                  ? row?.querySelector<HTMLElement>(
+                      '[data-slot="user-message-text"]',
+                    )
+                  : undefined;
+            const text = (content ?? row)?.innerText.trim() ?? "";
             const completeFirstFold =
               timelineCoverage.overflowPx <= 100 ||
               (timelineCoverage.visibleRowCount > 0 &&
