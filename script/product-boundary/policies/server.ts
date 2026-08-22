@@ -131,7 +131,9 @@ export const serverWorkerd: Policy = {
   control: cloudControl(`${SRC}/deployments/hosted-workerd/worker.ts`),
   // The shared central usage route adds one source module; its Worker path
   // remains free of Node-only and desktop packages.
-  ceilings: { modules: 109, packages: 13 },
+  // The shared user-extension route gate adds one Worker-safe source module;
+  // record the reviewed closure without package growth or extra headroom.
+  ceilings: { modules: 110, packages: 13 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

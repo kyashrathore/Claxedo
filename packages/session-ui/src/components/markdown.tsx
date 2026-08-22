@@ -319,7 +319,10 @@ function renderMermaidBlocks(root: HTMLElement) {
     const code = wrapper.querySelector("code")
     const language = code?.className.match(/(?:^|\s)language-([^\s]+)/)?.[1]
     if (language !== "mermaid" || !code) continue
-    const source = code.textContent ?? ""
+    // Marked/Shiki preserve the fence-closing line break for nested blocks,
+    // while the streaming code projection omits it for top-level fences.
+    // Mermaid should receive the same canonical fence body from both paths.
+    const source = (code.textContent ?? "").trimEnd()
     if (!source.trim()) continue
     if (largeMermaid(source) && wrapper.dataset.mermaidRenderRequested !== source) {
       traceMermaid("defer", source)

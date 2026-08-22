@@ -53,6 +53,10 @@ export const appLocal: Policy = {
     `${SRC}/app/integrations/hosted-content-surfaces.tsx`,
   ],
   permittedOutsideRoots: MANIFEST_READS,
+  // User extensions are served from a validated loopback URL at runtime; the
+  // source walker cannot resolve that URL to repository code. Keep the one
+  // intentional opaque edge exact so any second opaque import still fails.
+  permittedOpaqueImports: [`${SRC}/platform/extensions/user-extensions.ts -> import(url)`],
 
   control: {
     // The local entry is the whole shared app shell; a walk that read only the
@@ -82,7 +86,9 @@ export const appLocal: Policy = {
   // Usage adds the chart, breakdown, quota view, and shared provider-brand
   // module to the local UI; all other dependencies were already in the
   // renderer closure.
-  ceilings: { modules: 813, packages: 41 },
+  // The idle user-extension view host is local-only and adds no Clerk/Convex
+  // edge; record its reviewed source closure with no additional headroom.
+  ceilings: { modules: 831, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

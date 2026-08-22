@@ -47,7 +47,9 @@ export const desktopMainComposition: Policy = {
     ],
     requiredPackages: ["electron"],
   },
-  ceilings: { modules: 65, packages: 23 },
+  // Renderer trust/readiness and native-rich-content supervision add nine
+  // reviewed main-process modules; keep the ceiling exact.
+  ceilings: { modules: 74, packages: 23 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -158,6 +160,7 @@ export const desktopRendererUnsigned: Policy = {
     `${DESKTOP}/renderer/index.tsx`,
   ],
   permittedOutsideRoots: MANIFEST_READS,
+  permittedOpaqueImports: [`${APP}/platform/extensions/user-extensions.ts -> import(url)`],
 
   control: {
     minModules: 700,
@@ -175,7 +178,9 @@ export const desktopRendererUnsigned: Policy = {
     requiredPackages: ["solid-js", "@claxedo/workgraph"],
   },
 
-  ceilings: { modules: 900, packages: 62 },
+  // The local user-extension view surface is intentionally reachable from the
+  // unsigned renderer and remains free of hosted identity dependencies.
+  ceilings: { modules: 916, packages: 62 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
@@ -212,6 +217,7 @@ export const desktopHostedContribution: Policy = {
     `${DESKTOP}/main`,
   ],
   permittedOutsideRoots: MANIFEST_READS,
+  permittedOpaqueImports: [`${APP}/platform/extensions/user-extensions.ts -> import(url)`],
   control: {
     minModules: 250,
     requiredModules: [
