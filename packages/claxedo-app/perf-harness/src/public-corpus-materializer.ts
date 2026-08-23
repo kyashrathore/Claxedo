@@ -7,6 +7,7 @@ import { Database as SQLiteDatabase } from "bun:sqlite"
 import { Database as CoreDatabase } from "@opencode-ai/core/database/database"
 import { Effect } from "effect"
 import type { SessionReadinessTarget } from "./agent-browser-observer"
+import { withClaxedoDataDirectory } from "./with-claxedo-data-directory"
 
 type ManifestSession = {
   logicalSessionId: string
@@ -351,7 +352,7 @@ async function registerWorkspace(input: {
       directory: string
     }): Promise<{ id: string } | undefined>
   }
-  await withDataDirectory(input.dataDirectory, async () => {
+  await withClaxedoDataDirectory(input.dataDirectory, async () => {
     const workspace = await ensureWorkspace({
       workspaceId: input.projectId,
       project_id: input.projectId,
@@ -433,7 +434,7 @@ async function seedSessionMeta(input: {
       },
     ): Promise<unknown>
   }
-  await withDataDirectory(input.dataDirectory, async () => {
+  await withClaxedoDataDirectory(input.dataDirectory, async () => {
     for (const session of input.sessions) {
       const workspace = input.workspaces.get(session.workspaceId)
       if (!workspace) throw new Error(`Claxedo session meta is missing ${session.logicalSessionId}`)
@@ -446,17 +447,6 @@ async function seedSessionMeta(input: {
       })
     }
   })
-}
-
-async function withDataDirectory<T>(dataDirectory: string, operation: () => Promise<T>) {
-  const previous = process.env.CLAXEDO_DATA_DIR
-  process.env.CLAXEDO_DATA_DIR = dataDirectory
-  try {
-    return await operation()
-  } finally {
-    if (previous === undefined) delete process.env.CLAXEDO_DATA_DIR
-    else process.env.CLAXEDO_DATA_DIR = previous
-  }
 }
 
 function canonicalJson(value: unknown): string {
