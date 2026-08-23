@@ -1,3 +1,9 @@
+param(
+  [Parameter(Mandatory = $true)]
+  [ValidatePattern("^[0-9a-f]{40}$")]
+  [string]$SourceCommit
+)
+
 $ErrorActionPreference = "Stop"
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -27,9 +33,10 @@ Set-Location $root
 $env:CI = "true"
 $env:CLAXEDO_CHANNEL = "prod"
 # The acceptance workspace may be transferred without .git metadata. Release
-# builds also provide an explicit OpenCode channel, so exercise that same
-# authoritative input instead of asking the embedded-engine build to infer it.
+# builds provide both inputs explicitly, so exercise those same authoritative
+# inputs instead of asking either build to infer them from absent metadata.
 $env:OPENCODE_CHANNEL = "windows-e2e"
+$env:CLAXEDO_BUILD_SOURCE_COMMIT = $SourceCommit
 $env:RUST_TARGET = "x86_64-pc-windows-msvc"
 $env:CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH = "x64"
 $env:CLAXEDO_DIAGNOSTICS_DEBUG = "1"

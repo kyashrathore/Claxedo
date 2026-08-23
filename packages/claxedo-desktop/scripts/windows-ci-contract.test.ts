@@ -45,6 +45,8 @@ describe("Windows CI contract", () => {
     expect(prepare).toContain("Get-ChildItem $workspaceParent -Directory")
     expect(prepare).toContain('Join-Path $workspaceRoot "node_modules"')
     expect(acceptance).toContain('$env:OPENCODE_CHANNEL = "windows-e2e"')
+    expect(acceptance).toContain('[ValidatePattern("^[0-9a-f]{40}$")]')
+    expect(acceptance).toContain("$env:CLAXEDO_BUILD_SOURCE_COMMIT = $SourceCommit")
     expect(prepare).toContain('throw "bun install exited $LASTEXITCODE"')
     expect(prepare).toContain('throw "Windows process-tree native dependency was not installed"')
   })
