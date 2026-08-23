@@ -6,6 +6,7 @@ import { Database as CoreDatabase } from "@opencode-ai/core/database/database";
 import { Identifier } from "@opencode-ai/core/id/id";
 import { Effect } from "effect";
 import type { AgentAppProfile } from "./agent-driver-contract";
+import { withClaxedoDataDirectory } from "./with-claxedo-data-directory";
 
 export type CorpusPart = {
   id: string;
@@ -475,9 +476,7 @@ async function registerWorkspace(input: {
       directory: string;
     }): Promise<{ id: string } | undefined>;
   };
-  const previous = process.env.CLAXEDO_DATA_DIR;
-  process.env.CLAXEDO_DATA_DIR = input.dataDirectory;
-  try {
+  await withClaxedoDataDirectory(input.dataDirectory, async () => {
     const workspace = await ensureWorkspace({
       workspaceId: input.projectId,
       project_id: input.projectId,
@@ -489,10 +488,7 @@ async function registerWorkspace(input: {
       throw new Error(
         "production workspace store rejected the benchmark workspace",
       );
-  } finally {
-    if (previous === undefined) delete process.env.CLAXEDO_DATA_DIR;
-    else process.env.CLAXEDO_DATA_DIR = previous;
-  }
+  });
 }
 
 async function seedSessionMeta(input: {
@@ -514,9 +510,7 @@ async function seedSessionMeta(input: {
       },
     ): Promise<unknown>;
   };
-  const previous = process.env.CLAXEDO_DATA_DIR;
-  process.env.CLAXEDO_DATA_DIR = input.dataDirectory;
-  try {
+  await withClaxedoDataDirectory(input.dataDirectory, async () => {
     for (const session of input.sessions.toSorted(
       (left, right) => left.order - right.order,
     )) {
@@ -538,10 +532,7 @@ async function seedSessionMeta(input: {
         title: session.title,
       });
     }
-  } finally {
-    if (previous === undefined) delete process.env.CLAXEDO_DATA_DIR;
-    else process.env.CLAXEDO_DATA_DIR = previous;
-  }
+  });
 }
 
 async function registerSessionInventory(input: {
