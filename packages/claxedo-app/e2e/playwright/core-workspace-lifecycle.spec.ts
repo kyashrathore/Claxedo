@@ -448,6 +448,8 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
   // (workspace-control-routes.ts:150) — same handler serves both.
   await page.route("**/api/claxedo/session-list**", handleControlSessionList)
   await page.route("**/api/control/sessions**", (r) => (api(r.request()) ? json(r, []) : r.continue()))
+
+  return { project: proj }
 }
 
 async function openApp(page: Page, dir: string = DIR) {
@@ -624,7 +626,7 @@ test.describe("core workspace lifecycle @core", () => {
 
   test("kebab Delete workspace on a non-main worktree: dirty check, cancel, disabled states, confirm — behavior 4", async ({ page }) => {
     const SECOND_DIR = "/tmp/e2e-core-lifecycle-second"
-    await installLifecycleMock(page, {
+    const lifecycle = await installLifecycleMock(page, {
       sandboxes: [SECOND_DIR],
       workspaces: { [SECOND_DIR]: { kind: "local", available: true, directory: SECOND_DIR } },
     })
@@ -648,6 +650,14 @@ test.describe("core workspace lifecycle @core", () => {
       if (r.request().method() !== "DELETE") return r.fallback()
       removeBody = r.request().postDataJSON()
       await removeGate
+      // The real DELETE commits the Project row through `project.removeSandbox`
+      // before returning 200, so every later `/project` read and the emitted
+      // `project.updated` event agree that this workspace no longer exists.
+      // Keep this fixture's authoritative producer in the same state instead of
+      // allowing a late catalog read to resurrect the immutable seed under load.
+      lifecycle.project.sandboxes = lifecycle.project.sandboxes.filter((directory) => directory !== SECOND_DIR)
+      delete lifecycle.project.workspaces[SECOND_DIR]
+      lifecycle.project.time.updated = Date.now()
       return json(r, { ok: true })
     })
 
@@ -685,6 +695,12 @@ test.describe("core workspace lifecycle @core", () => {
     await expect(page.locator('[data-slot="dialog-title"]')).toHaveCount(0, { timeout: 10_000 })
     expect(statusCalls).toBeGreaterThanOrEqual(1)
     expect(removeBody).toMatchObject({ directory: SECOND_DIR })
+    const projectList = await page.evaluate(async () => (await fetch("/project")).json()) as Array<{
+      sandboxes?: string[]
+      workspaces?: Record<string, unknown>
+    }>
+    expect(projectList[0]?.sandboxes).not.toContain(SECOND_DIR)
+    expect(projectList[0]?.workspaces).not.toHaveProperty(SECOND_DIR)
     await expect(row).toHaveCount(0, { timeout: 10_000 })
   })
 
