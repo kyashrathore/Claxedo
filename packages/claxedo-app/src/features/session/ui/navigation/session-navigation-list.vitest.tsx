@@ -75,11 +75,13 @@ afterEach(() => {
 
 describe("SessionNavigation", () => {
   test("emits activation and archive commands from row controls", () => {
+    const onPrepareActivate = vi.fn()
     const onActivate = vi.fn()
     const onArchive = vi.fn()
     const view = render(() => (
       <SessionNavigation
         rows={[row()]}
+        onPrepareActivate={onPrepareActivate}
         onActivate={onActivate}
         onArchive={onArchive}
         onPrepareDrag={() => undefined}
@@ -90,9 +92,15 @@ describe("SessionNavigation", () => {
     // title) and the archive control is a sibling button — both inside the row
     // container. Enter/Space activation is the platform's job now, so this drives
     // the click path rather than a synthesized keydown jsdom won't turn into one.
-    fireEvent.click(view.getByRole("button", { name: "Build sidebar" }))
+    const activateButton = view.getByRole("button", { name: "Build sidebar" })
+    fireEvent.pointerDown(activateButton)
+    fireEvent.click(activateButton)
     fireEvent.click(view.getByRole("button", { name: "Archive Build sidebar" }))
 
+    expect(onPrepareActivate).toHaveBeenCalledTimes(1)
+    expect(onPrepareActivate).toHaveBeenCalledWith(expect.objectContaining({
+      source: expect.objectContaining({ sessionId: "ses_1" }),
+    }))
     expect(onActivate).toHaveBeenCalledTimes(1)
     expect(onArchive).toHaveBeenCalledTimes(1)
     expect(onArchive).toHaveBeenCalledWith(expect.objectContaining({

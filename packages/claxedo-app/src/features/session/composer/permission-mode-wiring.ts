@@ -1,4 +1,4 @@
-import { createResource, createSignal } from "solid-js"
+import { createResource, createSignal, onCleanup } from "solid-js"
 import { showToast } from "@opencode-ai/ui/toast"
 import {
   fetchSessionPermissionModesByTransport,
@@ -14,6 +14,7 @@ import {
 } from "@/features/session/permission/modes"
 import type { SessionPermissionWriter } from "@/features/session/permission/apply"
 import type { SessionRef, WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+import { fastSessionSwitchQuietDelay } from "@/platform/runtime/session-switch"
 
 /**
  * The I/O half of the composer's permission-mode picker: fetching what the
@@ -77,8 +78,39 @@ export function createComposerPermissionModeWiring(input: {
    * session must re-fetch, because the harness can only report its live state
    * once there is a session.
    */
+  const resourceKey = () => JSON.stringify({
+    sessionID: input.sessionId() ?? "",
+    directory: input.directory(),
+    harness: input.harness() ?? null,
+  })
+  const answered = (unsupported: string): HarnessModeReport => ({
+    modes: [],
+    unsupported,
+    appliesFrom: "next-turn",
+  })
+  let cancelQuietWait: (() => void) | undefined
+  const waitForQuietWindow = (delay: number) => {
+    cancelQuietWait?.()
+    if (delay <= 0) return Promise.resolve(true)
+    return new Promise<boolean>((resolve) => {
+      let settled = false
+      const finish = (ready: boolean) => {
+        if (settled) return
+        settled = true
+        if (cancelQuietWait === cancel) cancelQuietWait = undefined
+        resolve(ready)
+      }
+      const timer = setTimeout(() => finish(true), delay)
+      const cancel = () => {
+        clearTimeout(timer)
+        finish(false)
+      }
+      cancelQuietWait = cancel
+    })
+  }
+  onCleanup(() => cancelQuietWait?.())
   const [resource, { refetch }] = createResource(
-    // Never disabled: a DRAFT still fetches, with an empty session id, so the
+    // A DRAFT still fetches, with an empty session id, so the
     // picker can show the harness's real modes before the first message rather
     // than a placeholder. That is the whole point — the opening turn is when the
     // choice matters most, and it was previously the one turn nobody could set.
@@ -91,9 +123,13 @@ export function createComposerPermissionModeWiring(input: {
     // session/directory/harness actually changes, and on explicit `refetch()`)
     // while dropping the byte-identical repeats. The request itself stays
     // `no-store` — nothing here caches a response.
-    () => JSON.stringify({ sessionID: input.sessionId() ?? "", directory: input.directory(), harness: input.harness() ?? null }),
+    resourceKey,
     async (sourceKey) => {
       const source = JSON.parse(sourceKey) as { sessionID: string; directory: AgentRuntimeDirectory; harness: string | null }
+      // Every new source/refetch cancels the previous wait. Owner cleanup also
+      // resolves it false, so disposed surfaces never escape into transport I/O.
+      const delay = fastSessionSwitchQuietDelay({ sessionId: source.sessionID })
+      if (!await waitForQuietWindow(delay)) return
       return (
         await fetchSessionPermissionModesByTransport({
           ...transportScope(),
@@ -110,12 +146,6 @@ export function createComposerPermissionModeWiring(input: {
       ).data
     },
   )
-
-  const answered = (unsupported: string): HarnessModeReport => ({
-    modes: [],
-    unsupported,
-    appliesFrom: "next-turn",
-  })
 
   /**
    * FOUR states, not two, and the two extra ones are the whole point.

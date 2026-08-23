@@ -22,6 +22,7 @@ export type SessionNavigationDisplayRow = {
 
 export type SessionNavigationProps = {
   rows: readonly SessionNavigationDisplayRow[]
+  onPrepareActivate?: (row: SessionNavigationDisplayRow) => void
   onActivate: (row: SessionNavigationDisplayRow) => void
   onArchive?: (row: SessionNavigationDisplayRow) => void | Promise<void>
   onPrepareDrag: (row: SessionNavigationDisplayRow) => string | undefined
@@ -36,6 +37,7 @@ export function SessionNavigation(props: SessionNavigationProps) {
       {(sessionRef) => (
         <SessionNavigationItem
           row={rowsByRef().get(sessionRef)!}
+          onPrepareActivate={props.onPrepareActivate}
           onActivate={props.onActivate}
           onArchive={props.onArchive}
           onPrepareDrag={props.onPrepareDrag}
@@ -48,6 +50,7 @@ export function SessionNavigation(props: SessionNavigationProps) {
 
 function SessionNavigationItem(props: {
   row: SessionNavigationDisplayRow
+  onPrepareActivate?: (row: SessionNavigationDisplayRow) => void
   onActivate: (row: SessionNavigationDisplayRow) => void
   onArchive?: (row: SessionNavigationDisplayRow) => void | Promise<void>
   onPrepareDrag: (row: SessionNavigationDisplayRow) => string | undefined
@@ -75,6 +78,7 @@ function SessionNavigationItem(props: {
         }}
         label={props.row.title}
         active={props.row.active}
+        onPrepareActivate={() => props.onPrepareActivate?.(props.row)}
         onActivate={activate}
         dragRow={props.row.source}
         prepareContentId={() => props.onPrepareDrag(props.row)}

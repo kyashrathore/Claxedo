@@ -120,6 +120,7 @@ import {
 } from "./timeline-file-paths"
 import { createMessageNavRoom } from "./message-nav-layout"
 import { messageNavCurrentID, messageNavPreview, messageNavVisible } from "./message-nav-preview"
+import { createMessageNavDeferredMount } from "./message-nav-deferred-mount"
 import { BP_MD } from "@/ui/controls/breakpoints"
 import { retargetSessionRef, type SessionRef } from "@/platform/identity/session-ref"
 import "./message-nav-gutter.css"
@@ -627,13 +628,13 @@ export function MessageTimeline(props: {
     }
     prependAnchorFrame = requestAnimationFrame(apply)
   }
-
   const [toolOpen, setToolOpen] = createStore<Record<string, boolean | undefined>>(cached?.toolOpen ?? {})
   const initialMeasurements = cached?.measurements
   const [renderOverscan, setRenderOverscan] = createSignal(initialMeasurements?.length ? 6 : 1)
   const [renderRangeLimit, setRenderRangeLimit] = createSignal(1)
   const [initialRevealReady, setInitialRevealReady] = createSignal(false)
   const [progressiveReady, setProgressiveReady] = createSignal(timelineRows().length === 0)
+  const messageNavMountReady = createMessageNavDeferredMount(initialRevealReady, messageNavGutterVisible)
   let initialRowsScheduled = timelineRows().length > 0
   const prepareScrollOverscan = () => {
     if (renderOverscan() < 6) setRenderOverscan(6)
@@ -1701,7 +1702,7 @@ export function MessageTimeline(props: {
           />
         )}
       </Show>
-      <Show when={messageNavGutterVisible()}>
+      <Show when={messageNavMountReady() && messageNavGutterVisible()}>
         <div data-slot="message-nav-gutter" class="pointer-events-none absolute inset-0 z-[45]">
           <MessageNav
             class="pointer-events-auto absolute left-2 md:left-3 top-1/2 -translate-y-1/2"

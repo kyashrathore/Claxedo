@@ -193,6 +193,90 @@ describe("session cache ceiling", () => {
     expect(cached(`ses_${total - 1}`)).toBe(true)
   })
 
+  test("gives transcript presentation three frames before scheduling the cache sweep", () => {
+    const scope = globalThis as typeof globalThis & {
+      requestAnimationFrame?: (callback: FrameRequestCallback) => number
+      requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number
+    }
+    const originalFrame = scope.requestAnimationFrame
+    const originalIdle = scope.requestIdleCallback
+    const frames: FrameRequestCallback[] = []
+    const idleCallbacks: IdleRequestCallback[] = []
+    scope.requestAnimationFrame = (callback) => {
+      frames.push(callback)
+      return frames.length
+    }
+    scope.requestIdleCallback = (callback) => {
+      idleCallbacks.push(callback)
+      return idleCallbacks.length
+    }
+
+    try {
+      const total = SESSION_CACHE_LIMIT + 10
+      for (let i = 0; i < total; i++) seed(`ses_frame_${i}`)
+      scheduleSessionCacheCeiling(`ses_frame_${total - 1}`)
+
+      expect(idleCallbacks).toHaveLength(0)
+      frames.shift()?.(0)
+      expect(idleCallbacks).toHaveLength(0)
+      frames.shift()?.(16)
+      expect(idleCallbacks).toHaveLength(0)
+      frames.shift()?.(32)
+      expect(idleCallbacks).toHaveLength(1)
+
+      idleCallbacks[0]!({ didTimeout: false, timeRemaining: () => 10 })
+      expect(cached("ses_frame_0")).toBe(false)
+      expect(cached(`ses_frame_${total - 1}`)).toBe(true)
+    } finally {
+      if (originalFrame) scope.requestAnimationFrame = originalFrame
+      else delete scope.requestAnimationFrame
+      if (originalIdle) scope.requestIdleCallback = originalIdle
+      else delete scope.requestIdleCallback
+    }
+  })
+
+  test("falls back after 250ms and ignores late animation frames", async () => {
+    const scope = globalThis as typeof globalThis & {
+      requestAnimationFrame?: (callback: FrameRequestCallback) => number
+      requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number
+    }
+    const originalFrame = scope.requestAnimationFrame
+    const originalIdle = scope.requestIdleCallback
+    const frames: FrameRequestCallback[] = []
+    const idleCallbacks: IdleRequestCallback[] = []
+    scope.requestAnimationFrame = (callback) => {
+      frames.push(callback)
+      return frames.length
+    }
+    scope.requestIdleCallback = (callback) => {
+      idleCallbacks.push(callback)
+      return idleCallbacks.length
+    }
+
+    try {
+      const total = SESSION_CACHE_LIMIT + 10
+      for (let i = 0; i < total; i++) seed(`ses_timeout_${i}`)
+      scheduleSessionCacheCeiling(`ses_timeout_${total - 1}`)
+
+      await new Promise((resolve) => setTimeout(resolve, 270))
+      expect(idleCallbacks).toHaveLength(1)
+
+      frames.shift()?.(0)
+      frames.shift()?.(16)
+      frames.shift()?.(32)
+      expect(idleCallbacks).toHaveLength(1)
+
+      idleCallbacks[0]!({ didTimeout: true, timeRemaining: () => 0 })
+      expect(cached("ses_timeout_0")).toBe(false)
+      expect(cached(`ses_timeout_${total - 1}`)).toBe(true)
+    } finally {
+      if (originalFrame) scope.requestAnimationFrame = originalFrame
+      else delete scope.requestAnimationFrame
+      if (originalIdle) scope.requestIdleCallback = originalIdle
+      else delete scope.requestIdleCallback
+    }
+  })
+
   test("a growing BUSY session does not drag others out of the cache", () => {
     // A streaming session is pinned, so its exact weight changes no decision —
     // and it is sized from its last measurement precisely so the switch path

@@ -1,6 +1,7 @@
 import { createRoot, createSignal } from "solid-js"
-import { describe, expect, test, vi } from "vitest"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import { createComposerPermissionModeWiring } from "./permission-mode-wiring"
+import { markFastSessionSwitch } from "@/platform/runtime/session-switch"
 
 // Falsifier for the boot request graph's 3x GET /permission-mode: the
 // wiring's resource source used to be a fresh object literal, so ANY upstream
@@ -21,6 +22,7 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 function wiringHarness(input: { signed?: boolean } = {}) {
   const [wobble, setWobble] = createSignal(0)
+  const [sessionId, setSessionId] = createSignal("ses_1")
   const [harness, setHarness] = createSignal<string | undefined>("opencode")
   const dispose: VoidFunction[] = []
   const wiring = createRoot((d) => {
@@ -28,7 +30,7 @@ function wiringHarness(input: { signed?: boolean } = {}) {
     return createComposerPermissionModeWiring({
       sessionId: () => {
         wobble()
-        return "ses_1"
+        return sessionId()
       },
       directory: () => "/repo",
       harness,
@@ -42,10 +44,49 @@ function wiringHarness(input: { signed?: boolean } = {}) {
       requestFailedTitle: () => "failed",
     })
   })
-  return { wiring, setWobble, setHarness, dispose: () => dispose.forEach((d) => d()) }
+  return { wiring, setWobble, setSessionId, setHarness, dispose: () => dispose.forEach((d) => d()) }
 }
 
+afterEach(() => {
+  vi.useRealTimers()
+  delete (globalThis as typeof globalThis & { __claxedoFastSessionSwitch?: unknown }).__claxedoFastSessionSwitch
+  delete (globalThis as typeof globalThis & { window?: { __claxedoFastSessionSwitch?: unknown } }).window
+    ?.__claxedoFastSessionSwitch
+})
+
 describe("permission-mode wiring resource key", () => {
+  test("cancels the quiet-window read when its owner is disposed", async () => {
+    vi.useFakeTimers()
+    fetchModes.mockClear()
+    markFastSessionSwitch("ses_1", Date.now())
+    const { dispose } = wiringHarness()
+    await Promise.resolve()
+
+    expect(fetchModes).not.toHaveBeenCalled()
+    dispose()
+    await vi.advanceTimersByTimeAsync(2_100)
+    expect(fetchModes).not.toHaveBeenCalled()
+  })
+
+  test("publishes only the newest key after the quiet window", async () => {
+    vi.useFakeTimers()
+    fetchModes.mockClear()
+    markFastSessionSwitch("ses_1", Date.now())
+    const { setHarness, dispose } = wiringHarness()
+    await Promise.resolve()
+
+    setHarness("codex-acp")
+    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(1_999)
+    expect(fetchModes).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(1)
+    await Promise.resolve()
+    expect(fetchModes).toHaveBeenCalledTimes(1)
+    expect(fetchModes.mock.calls[0]?.[0]).toMatchObject({ harness: "codex-acp" })
+    dispose()
+  })
+
   test("upstream signal wobbles with identical values do not refetch", async () => {
     fetchModes.mockClear()
     const { setWobble, dispose } = wiringHarness()

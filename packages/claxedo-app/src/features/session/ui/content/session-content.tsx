@@ -1,4 +1,4 @@
-import { Show, Suspense, createEffect, createMemo, createSignal, lazy, onCleanup } from "solid-js"
+import { Show, Suspense, createEffect, createMemo, createSignal, lazy, onCleanup, onMount } from "solid-js"
 import type { ContentMeta } from "@/features/session/app-ports"
 import { useClaxedoState } from "@/features/session/app-ports"
 import type { PaneCtx } from "@/features/session/app-ports"
@@ -239,12 +239,7 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
                       unmounted card reports no occupancy, so the shell drops
                       `data-session-envcard` and reclaims the width. */}
                   <Show when={!draftSession()}>
-                    {/* The card's lazy chunk must not blank the conversation
-                        behind the pane-level loading fallback — contain its
-                        suspension to the card's own (empty) region. */}
-                    <Suspense fallback={null}>
-                      <SessionEnvironmentCardMount onOccupancy={setEnvcardGutter} />
-                    </Suspense>
+                    <DeferredEnvironmentCard onOccupancy={setEnvcardGutter} />
                   </Show>
                 </div>
               </SessionPaneScope>
@@ -253,5 +248,24 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
         </Show>
     </Show>
     </Suspense>
+  )
+}
+
+function DeferredEnvironmentCard(props: {
+  onOccupancy: (occupancy: SessionEnvironmentCardOccupancy | undefined) => void
+}) {
+  const [ready, setReady] = createSignal(false)
+  onMount(() => {
+    // The gutter is already reserved, so secondary workspace chrome can wait
+    // until the transcript and composer have owned the first paint window.
+    const timer = setTimeout(() => setReady(true), 250)
+    onCleanup(() => clearTimeout(timer))
+  })
+  return (
+    <Show when={ready()}>
+      <Suspense fallback={null}>
+        <SessionEnvironmentCardMount onOccupancy={props.onOccupancy} />
+      </Suspense>
+    </Show>
   )
 }

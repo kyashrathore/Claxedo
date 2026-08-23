@@ -40,6 +40,7 @@ import {
   selectionProviderDetailNeeded,
   type ModelKey,
 } from "@/features/session/composer/model-strategy"
+import { fastSessionSwitchQuietDelay } from "@/platform/runtime/session-switch"
 
 type State = LocalSelectionState
 type ModelSource = "selected" | "agent" | "fallback"
@@ -95,7 +96,7 @@ const localContextInput = {
         () => {
           setHydrationSession(session)
         },
-        50,
+        fastSessionSwitchQuietDelay({ sessionId: session, baseDelay: 50 }),
       )
       onCleanup(() => clearTimeout(timer))
     })

@@ -166,10 +166,35 @@ export function scheduleSessionCacheCeiling(sessionId: string) {
   const idle = typeof globalThis.requestIdleCallback === "function"
     ? globalThis.requestIdleCallback
     : undefined
-  // Fall back rather than skip: an environment without `requestIdleCallback`
-  // (Safari, test DOMs) still has to honour the memory ceiling.
-  if (idle) idle(run, { timeout: 2_000 })
-  else setTimeout(run, 0)
+  const scheduleIdle = () => {
+    // Fall back rather than skip: an environment without
+    // `requestIdleCallback` (Safari, test DOMs) still has to honour the memory
+    // ceiling.
+    if (idle) idle(run, { timeout: 2_000 })
+    else setTimeout(run, 0)
+  }
+  const frame = typeof globalThis.requestAnimationFrame === "function"
+    ? globalThis.requestAnimationFrame
+    : undefined
+  if (!frame) {
+    scheduleIdle()
+    return
+  }
+
+  // An idle callback may run in the gap immediately after transcript
+  // hydration, before the two presentations that make the new pane visually
+  // stable. Give those frames ownership of the renderer first. The timeout is
+  // a hidden/background-window fallback, where animation frames can be
+  // throttled indefinitely but the memory ceiling must still run.
+  let released = false
+  const release = () => {
+    if (released) return
+    released = true
+    clearTimeout(fallback)
+    scheduleIdle()
+  }
+  const fallback = setTimeout(release, 250)
+  frame(() => frame(() => frame(release)))
 }
 
 export function enforceSessionCacheCeiling(sessionId: string) {

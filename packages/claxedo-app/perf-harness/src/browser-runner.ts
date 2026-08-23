@@ -11,6 +11,9 @@ import {
   installPageLoadRecorder,
   measureInteraction,
   mergeFrameMetrics,
+  performanceMetricDelta,
+  readDomMutationSnapshot,
+  readPerformanceMetrics,
   stopPageLoadRecorder,
   type FrameMetric,
 } from "./frame-sampler"
@@ -147,7 +150,11 @@ export async function runBrowser(options: RunOptions) {
             interactionCount: result.vitals?.interactionCount ?? 0,
           },
         })
-        if (entry) await appendRunLog(entry)
+        // The JSONL file is the web trend's data source. Attribution and CPU
+        // profiling runs deliberately pass --no-trend because instrumentation
+        // perturbs their timings, and failed readiness validation is not a
+        // measurement at all. Neither belongs on the chart.
+        if (entry && options.append_trend && validationFailures.length === 0) await appendRunLog(entry)
         console.log(`[perf] ${scenario}: ${result.status}`)
         if (options.update_baseline) await writeBaseline(result)
         if (options.append_trend) await appendTrend(result)
@@ -676,6 +683,45 @@ async function sessionSwitch(page: Page, app: BrowserTarget, fixture: ReturnType
   }
 
   let singleSwitchMs = 0
+  const perSwitchMetrics: Measurement[] = []
+  const perSwitchCdp = process.env.CLAXEDO_PERF_PER_SWITCH === "1"
+    ? await page.context().newCDPSession(page)
+    : undefined
+  await perSwitchCdp?.send("Performance.enable")
+
+  const measuredSwitch = async (
+    index: number,
+    target: typeof first,
+  ) => {
+    const state = perSwitchCdp
+      ? await page.locator(
+          `[data-testid="session-page-root"][data-session-id="${target.id}"]`,
+        ).count().then((count) => count > 0 ? "warm" : "cold")
+      : undefined
+    const before = perSwitchCdp ? await readPerSwitchSnapshot(page, perSwitchCdp) : undefined
+    const elapsed = await measureInPageSessionFirstFoldSwitch(page, target, { renderer, renderMermaid })
+    const after = perSwitchCdp ? await readPerSwitchSnapshot(page, perSwitchCdp) : undefined
+    if (before && after && state) {
+      const performance = performanceMetricDelta(before.performance, after.performance)
+      const prefix = `switch_${String(index).padStart(2, "0")}_${state}`
+      const dom = before.dom && after.dom
+        ? [
+            lower(`${prefix}_attribute_mutations`, after.dom.attributesChanged - before.dom.attributesChanged, "count"),
+            lower(`${prefix}_nodes_added`, after.dom.nodesAdded - before.dom.nodesAdded, "count"),
+            lower(`${prefix}_nodes_removed`, after.dom.nodesRemoved - before.dom.nodesRemoved, "count"),
+          ]
+        : []
+      perSwitchMetrics.push(
+        lower(`${prefix}_completion_ms`, elapsed),
+        lower(`${prefix}_script_ms`, performance.scriptMs),
+        lower(`${prefix}_style_ms`, performance.recalcStyleMs),
+        lower(`${prefix}_layout_ms`, performance.layoutMs),
+        lower(`${prefix}_task_ms`, performance.taskMs),
+        ...dom,
+      )
+    }
+    return elapsed
+  }
   // Headline: rapid back-and-forth switching between two sessions whose backing
   // histories contain 10k messages. Transcript readiness requires the loaded
   // first fold; the UI intentionally does not mount all 10k rows.
@@ -684,17 +730,25 @@ async function sessionSwitch(page: Page, app: BrowserTarget, fixture: ReturnType
   const headline = await measureInteraction(page, "session-switch", async () => {
     const rounds = Math.max(1, Number(process.env.CLAXEDO_PERF_SESSION_SWITCH_ROUNDS ?? "3"))
     for (let round = 0; round < rounds; round++) {
-      const elapsed = await measureInPageSessionFirstFoldSwitch(page, second, { renderer, renderMermaid })
+      const elapsed = await measuredSwitch(round * 2 + 1, second)
       if (round === 0) singleSwitchMs = elapsed
-      await measureInPageSessionFirstFoldSwitch(page, first, { renderer, renderMermaid })
+      await measuredSwitch(round * 2 + 2, first)
     }
-  })
+  }).finally(() => perSwitchCdp?.detach())
   await waitForTranscript(page, fixture, first.id, first.title)
   await settleForVideo(page)
   return {
     headline,
-    debug: [lower("single_switch_ms", Math.round(singleSwitchMs * 100) / 100)],
+    debug: [lower("single_switch_ms", Math.round(singleSwitchMs * 100) / 100), ...perSwitchMetrics],
   }
+}
+
+async function readPerSwitchSnapshot(page: Page, cdp: Awaited<ReturnType<BrowserContext["newCDPSession"]>>) {
+  const [performance, dom] = await Promise.all([
+    readPerformanceMetrics(cdp),
+    readDomMutationSnapshot(page),
+  ])
+  return { performance, dom }
 }
 
 async function liveTerminalSwitch(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
@@ -2298,7 +2352,29 @@ async function measureInPageSessionFirstFoldSwitch(
     // (`button[data-slot="navigation-row-activate"]`) — a synthetic click on
     // the row container never reaches it, so target the activate control.
     const clickStarted = performance.now()
-    ;(row.querySelector<HTMLElement>('[data-slot="navigation-row-activate"]') ?? row).click()
+    const activate = row.querySelector<HTMLElement>('[data-slot="navigation-row-activate"]') ?? row
+    // HTMLElement.click() skips pointer events and therefore skipped the real
+    // cold-session preparation boundary. Dispatch the same mouse sequence the
+    // production control receives before its click handler runs.
+    activate.dispatchEvent(new PointerEvent("pointerdown", {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      pointerType: "mouse",
+      isPrimary: true,
+      button: 0,
+      buttons: 1,
+    }))
+    activate.dispatchEvent(new PointerEvent("pointerup", {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      pointerType: "mouse",
+      isPrimary: true,
+      button: 0,
+      buttons: 0,
+    }))
+    activate.click()
     const traceWindow = window as unknown as {
       __claxedoPerfTrace?: boolean
       __claxedoPerfRendererPhases?: Array<{ name: string; durationMs: number }>

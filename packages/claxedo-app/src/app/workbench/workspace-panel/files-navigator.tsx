@@ -125,7 +125,10 @@ export function WorkspaceFilesNavigator(props: {
   createEffect(() => {
     if (refresh() !== undefined) return
     if (!props.active) return
-    const stop = afterVisibleWork(() => setRefresh(1), fastSessionSwitchAnyQuietDelay())
+    // Change counts are decorative workspace-panel data. Do not let their
+    // comparatively expensive file-status request race a session transcript
+    // when the user navigates immediately after the panel becomes visible.
+    const stop = afterVisibleWork(() => setRefresh(1), Math.max(250, fastSessionSwitchAnyQuietDelay()))
     onCleanup(stop)
   })
 

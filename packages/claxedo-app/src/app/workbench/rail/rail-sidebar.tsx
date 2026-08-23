@@ -1264,15 +1264,11 @@ export function RailSidebar(props: RailSidebarProps) {
       targetPaneId: paneIdForContent(contentId) ?? claxedoState.wb.state.focusedPaneId ?? undefined,
     })
   }
-  const afterVisibleActivation = (task: () => void) => {
-    setTimeout(task, fastSessionSwitchAnyQuietDelay({ baseDelay: 80 }) + 100)
-  }
+  const afterVisibleActivation = (task: () => void) => setTimeout(task, fastSessionSwitchAnyQuietDelay({ baseDelay: 80 }) + 100)
   const activateSession = (session: Row) => {
     const measure = measureRendererPhase
-    // Notify the shell that a session was picked. `activateSession` itself owns
-    // the full navigation (prefetch/fast-switch/workspace-panel restore), so the
-    // shell only uses this to close the mobile drawer — it must NOT re-run the
-    // parent's navigation here or the two paths would double-open.
+    // `activateSession` owns navigation; this notification only closes the
+    // mobile drawer and must not open the session again.
     measure("sessionActivate.onSessionSelect", () => props.onSessionSelect?.(sessionDirectory(session), session.id))
     const existingId = measure("sessionActivate.findContent", () => existingSessionContentId(session))
     if (existingId) {
@@ -1281,9 +1277,8 @@ export function RailSidebar(props: RailSidebarProps) {
       measure("sessionActivate.markFastSwitch", () => markFastSessionSwitch(session.id, Date.now(), {
         networkQuiet: hasFreshMessagePrefetch(session.id),
       }))
-      // Selection and visible content belong to the trusted action. Deferring
-      // them to a zero-delay timer guaranteed an extra task boundary and let
-      // unrelated main-thread work delay the first useful frame.
+      // Keep selection in the trusted action; a timer adds a task boundary
+      // where unrelated work can delay the first useful frame.
       const previousWorkspacePanelSessionId = currentWorkspacePanelSessionId()
       measure("sessionActivate.showContent", () => showSessionContent(existingId))
       measure("sessionActivate.replaceUrl", () => replaceSessionUrl(session))
@@ -1297,11 +1292,7 @@ export function RailSidebar(props: RailSidebarProps) {
       })
       return
     }
-
-    const previousWorkspacePanelSessionId = measure(
-      "sessionActivate.currentWorkspacePanel",
-      currentWorkspacePanelSessionId,
-    )
+    const previousWorkspacePanelSessionId = measure("sessionActivate.currentWorkspacePanel", currentWorkspacePanelSessionId)
     const directory = measure("sessionActivate.directory", () => sessionDirectory(session))
     const backing = workspaceSessionBacking(session, directory)
     markFastSessionSwitch(session.id, Date.now(), { networkQuiet: false })
@@ -1311,10 +1302,8 @@ export function RailSidebar(props: RailSidebarProps) {
       networkQuiet: firstFoldReadyOrLoading,
     }))
     const contentId = measure("sessionActivate.openSession", () => claxedoState.layout.openSession(directory, session.id, sessionRowTitle(session.title), {
-      focus: false,
       sessionRef: sessionWorkbenchRef(session),
     }))
-    measure("sessionActivate.showContent", () => showSessionContent(contentId))
     measure("sessionActivate.replaceUrl", () => replaceSessionUrl(session))
     measure("sessionActivate.afterVisible", () => afterVisibleActivation(() => {
       if (serial !== sessionActivationSerial) return
@@ -1338,6 +1327,15 @@ export function RailSidebar(props: RailSidebarProps) {
     const session = rowForNavigation(rows, item)
     if (session) activateSession(session)
   }
+  const prepareSessionActivationFromRows = (rows: readonly Row[], item: SessionNavigationDisplayRow) => {
+    const session = rowForNavigation(rows, item)
+    if (!session || existingSessionContentId(session)) return
+    const directory = sessionDirectory(session)
+    const backing = workspaceSessionBacking(session, directory)
+    prefetchSidebarSessionMessages(directory, session.id, { bypassQuiet: true, sessionRef: sessionWorkbenchRef(session),
+      ...(backing ? { workspaceKind: backing.kind, workspaceId: backing.workspaceId } : {}),
+    })
+  }
   const archiveSessionFromRows = async (
     rows: readonly Row[],
     item: SessionNavigationDisplayRow,
@@ -1353,7 +1351,6 @@ export function RailSidebar(props: RailSidebarProps) {
     const session = rowForNavigation(rows, item)
     return session ? prepareSessionDrag(session) : undefined
   }
-
   const activateTerminal = (item: { contentId: string }) => {
     const meta = claxedoState.meta.get(item.contentId)
     if (meta) {
@@ -1865,6 +1862,7 @@ export function RailSidebar(props: RailSidebarProps) {
           <div class="flex flex-col gap-0.5 pb-1">
             <SessionNavigation
               rows={sectionRows().map((session) => sessionDisplayRow(session))}
+              onPrepareActivate={(item) => prepareSessionActivationFromRows(sectionRows(), item)}
               onActivate={(item) => activateSessionFromRows(sectionRows(), item)}
               onArchive={(item) => archiveSessionFromRows(sectionRows(), item, reconcileArchivedSessionListRow)}
               onPrepareDrag={(item) => prepareSessionDragFromRows(sectionRows(), item)}
@@ -2180,6 +2178,7 @@ export function RailSidebar(props: RailSidebarProps) {
                 // would subscribe this whole rows map to every focus change.
                 active: () => sessionActiveInWorkbench(session, section.workspaceDir),
               }))}
+              onPrepareActivate={(item) => prepareSessionActivationFromRows(sectionRows(), item)}
               onActivate={(item) => activateSessionFromRows(sectionRows(), item)}
               onArchive={(item) => archiveSessionFromRows(sectionRows(), item, reconcileArchivedSessionListRow)}
               onPrepareDrag={(item) => prepareSessionDragFromRows(sectionRows(), item)}
@@ -2445,6 +2444,7 @@ export function RailSidebar(props: RailSidebarProps) {
                 nested: true,
                 showMetadata: true,
               }))}
+              onPrepareActivate={(item) => prepareSessionActivationFromRows(sectionRows(), item)}
               onActivate={(item) => activateSessionFromRows(sectionRows(), item)}
               onArchive={(item) => archiveSessionFromRows(sectionRows(), item, reconcileArchivedSessionListRow)}
               onPrepareDrag={(item) => prepareSessionDragFromRows(sectionRows(), item)}

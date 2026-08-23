@@ -66,6 +66,11 @@ export type FrameCausalMetric = {
   rendererPhases?: Array<{ name: string; durationMs: number }>
 }
 
+export type DomMutationSnapshot = Pick<
+  FrameCausalMetric["dom"],
+  "attributesChanged" | "nodesAdded" | "nodesRemoved"
+>
+
 type TimedDuration = {
   startTime: number
   duration: number
@@ -300,12 +305,30 @@ async function startRecorder(page: Page) {
       },
     }
   }, {
-    captureCausal: process.env.CLAXEDO_PERF_CAUSAL === "1",
+    // Per-switch mode publishes DOM deltas for each click, so it owns the
+    // causal recorder even when the broader diagnostic report is disabled.
+    captureCausal:
+      process.env.CLAXEDO_PERF_CAUSAL === "1" || process.env.CLAXEDO_PERF_PER_SWITCH === "1",
     // Headless Chromium can emit 17.8ms rAF intervals on about:blank even when
     // the main thread is continuously available. Keep the low-overhead heartbeat
     // active in every run so scheduler cadence is never blamed on application JS.
     captureHeartbeat: true,
     captureTrace: process.env.CLAXEDO_PERF_TRACE === "1",
+  })
+}
+
+export async function readDomMutationSnapshot(page: Page): Promise<DomMutationSnapshot | undefined> {
+  return await page.evaluate(() => {
+    const recorder = (window as unknown as Record<string, unknown>).__perfFrames as {
+      causal?: { dom?: DomMutationSnapshot }
+    } | undefined
+    const dom = recorder?.causal?.dom
+    if (!dom) return
+    return {
+      attributesChanged: dom.attributesChanged,
+      nodesAdded: dom.nodesAdded,
+      nodesRemoved: dom.nodesRemoved,
+    }
   })
 }
 
@@ -529,14 +552,14 @@ function traceDetail(event: TraceEvent) {
   return `${source}:${line}${column === undefined ? "" : `:${column}`}`
 }
 
-async function readPerformanceMetrics(cdp: CDPSession) {
+export async function readPerformanceMetrics(cdp: CDPSession) {
   const result = await cdp.send("Performance.getMetrics") as {
     metrics: Array<{ name: string; value: number }>
   }
   return Object.fromEntries(result.metrics.map((metric) => [metric.name, metric.value]))
 }
 
-function performanceMetricDelta(before: Record<string, number>, after: Record<string, number>) {
+export function performanceMetricDelta(before: Record<string, number>, after: Record<string, number>) {
   const metrics = {
     scriptMs: ["ScriptDuration", 1_000],
     v8CompileMs: ["V8CompileDuration", 1_000],

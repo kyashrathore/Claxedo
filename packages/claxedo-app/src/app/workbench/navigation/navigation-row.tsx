@@ -40,6 +40,8 @@ export type NavigationRowProps = {
   label?: string
   /** Marks the row as the current selection — exposes `aria-current="page"`. */
   active?: boolean
+  /** Begin read-only activation preparation at the trusted pointer boundary. */
+  onPrepareActivate?: () => void
   onActivate: () => void
   /** The domain row used to build the typed drag payload. */
   dragRow: SessionNavigationRow | TerminalSurfaceRow
@@ -101,6 +103,7 @@ export function NavigationRow(props: NavigationRowProps) {
         aria-label={props.label ?? props.dragRow.title}
         aria-current={props.active ? "page" : undefined}
         class="absolute inset-0 rounded-md outline-none touch-pan-y focus-visible:ring-2 focus-visible:ring-border-interactive-base"
+        onPointerDown={() => props.onPrepareActivate?.()}
         onClick={activate}
       />
       {props.children}

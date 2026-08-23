@@ -1564,6 +1564,11 @@ test.describe("real harness journeys @core @tier-real", () => {
     const ticks = picker.locator('[data-slot="message-nav-tick-button"]')
     await expect(picker).toBeVisible()
     await expect(ticks).toHaveCount(TURN_PICKER_TURNS)
+    expect(
+      await ticks.evaluateAll((items) =>
+        items.map((item) => ({ tagName: item.tagName, role: item.getAttribute("role") })),
+      ),
+    ).toEqual(Array.from({ length: TURN_PICKER_TURNS }, () => ({ tagName: "BUTTON", role: null })))
     await expect(picker.locator('[data-slot="message-nav-tick-button"][aria-current="step"]')).toHaveCount(1)
     await expect(picker.locator('[data-slot="message-nav-tick-button"][data-distance="0"]')).toHaveCount(1)
     await demoBeat(page)
@@ -1577,7 +1582,17 @@ test.describe("real harness journeys @core @tier-real", () => {
       return preview
     }
 
-    await assertPreview(1)
+    await ticks.nth(1).focus()
+    const focusedPreview = page.locator('[data-slot="message-nav-turn-preview"]:visible')
+    await expect(focusedPreview.locator('[data-slot="message-nav-preview-user"]')).toContainText(turns[1]!.prompt)
+    await page.keyboard.press("Escape")
+    await expect(focusedPreview).toHaveCount(0)
+    await expect(ticks.nth(1)).toBeFocused()
+    await ticks.nth(1).evaluate((element) => element.blur())
+
+    const firstPreview = await assertPreview(1)
+    await firstPreview.hover()
+    await expect(firstPreview).toBeVisible()
     await demoBeat(page)
     await assertPreview(4)
     await expect
