@@ -178,9 +178,9 @@ export const desktopRendererUnsigned: Policy = {
     requiredPackages: ["solid-js", "@claxedo/workgraph"],
   },
 
-  // The local user-extension view surface is intentionally reachable from the
-  // unsigned renderer and remains free of hosted identity dependencies.
-  ceilings: { modules: 916, packages: 62 },
+  // Runtime-placement owners plus cold first-fold and deferred-nav helpers are
+  // intentionally reachable without growing the unsigned renderer's packages.
+  ceilings: { modules: 921, packages: 62 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
