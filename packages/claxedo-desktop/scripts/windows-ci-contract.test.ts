@@ -24,9 +24,16 @@ describe("Windows CI contract", () => {
     expect(workflow).toContain("- name: windows\n            host: windows-latest")
     expect(workflow).not.toContain("continue-on-error: ${{ matrix.settings.host == 'windows-latest' }}")
     expect(acceptance).toContain("bun run test")
-    expect(desktopManifest.scripts.test).toBe("bun run test:broad && bun run test:compile-cache")
+    expect(desktopManifest.scripts.test).toBe(
+      "bun run test:broad && bun run test:bundle-single && bun run test:server-boot && bun run test:compile-cache",
+    )
+    expect(desktopManifest.scripts["test:broad"]).toContain("--path-ignore-patterns='**/bundle-single-instance.test.ts'")
+    expect(desktopManifest.scripts["test:broad"]).toContain("--path-ignore-patterns='**/claxedo-server-boot.test.ts'")
     expect(desktopManifest.scripts["test:broad"]).toContain("--path-ignore-patterns='**/opencode-compile-cache-boot.test.ts'")
+    expect(desktopManifest.scripts["test:bundle-single"]).toContain("bun test ./scripts/bundle-single-instance.test.ts")
+    expect(desktopManifest.scripts["test:server-boot"]).toContain("bun test ./scripts/claxedo-server-boot.test.ts")
     expect(desktopManifest.scripts["test:compile-cache"]).toContain("bun test ./scripts/opencode-compile-cache-boot.test.ts")
+    expect(acceptance.indexOf("\nbun run build\n")).toBeLessThan(acceptance.indexOf("\nbun run test\n"))
   })
 
   test("applies dependency patches after Bun resolves peer variants", () => {

@@ -57,17 +57,17 @@ bun turbo build `
 Assert-LastExitCode "workspace build"
 
 Set-Location $desktop
-# The package's canonical suite isolates the real Bun.build compile-cache
-# acceptance in a fresh process on every platform. Windows invokes that same
-# contract rather than maintaining a second list of test files here.
-bun run test
-Assert-LastExitCode "desktop tests"
-
 bun run typecheck
 Assert-LastExitCode "desktop typecheck"
 
 bun run build
 Assert-LastExitCode "desktop build"
+
+# Build-fixture tests now see artifacts from this exact source commit. The
+# package's canonical suite gives every Bun.build fixture a fresh process on
+# every platform, rather than reading stale generated output or resolver state.
+bun run test
+Assert-LastExitCode "desktop tests"
 
 New-Item -ItemType Directory -Force -Path ".artifacts" | Out-Null
 $env:CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT = ".artifacts\diagnostics-source-x86_64-pc-windows-msvc.json"
