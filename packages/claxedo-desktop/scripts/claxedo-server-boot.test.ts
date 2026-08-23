@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { fork, type ChildProcess } from "node:child_process"
+import { execFileSync, fork, type ChildProcess } from "node:child_process"
 import { createRequire } from "node:module"
 import * as fs from "node:fs"
 import * as net from "node:net"
@@ -100,6 +100,15 @@ test("bundled claxedo-server boots the embedded engine and serves engine-backed 
   }
 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-boot-test-"))
+  const workspaceDirectory = path.join(root, "workspace")
+  fs.mkdirSync(workspaceDirectory)
+  // Workspace registration intentionally accepts only real Git workspaces.
+  // Build agents copy source without checkout metadata, so depending on this
+  // package's parent `.git` made the real runtime assertion platform-specific:
+  // `/project/current` returned its display fallback, then `/session` correctly
+  // fell through because no workspace had been registered. Own the fixture and
+  // exercise the same authoritative registration path on every machine.
+  execFileSync("git", ["init", workspaceDirectory], { stdio: "ignore" })
   const port = await freePort()
   const launchId = "server-boot-test"
   const generation = "server-boot-generation"
@@ -137,7 +146,7 @@ test("bundled claxedo-server boots the embedded engine and serves engine-backed 
 
     // Mirror the app's open-workspace flow: registering the workspace first is
     // what makes engine-backed session routes answer for that directory.
-    const directory = encodeURIComponent(PACKAGE_DIR)
+    const directory = encodeURIComponent(workspaceDirectory)
     const project = await fetch(`${base}/project/current?directory=${directory}`)
     expect(project.status).toBe(200)
 
@@ -145,8 +154,11 @@ test("bundled claxedo-server boots the embedded engine and serves engine-backed 
     // it is the offline-safe discriminator: a dead embedded engine surfaces a
     // 500 here while claxedo-local routes keep answering 200.
     const sessions = await fetch(`${base}/session?directory=${directory}&roots=true`)
-    expect(sessions.status).toBe(200)
-    expect(await sessions.json()).toBeArray()
+    const sessionsBody = await sessions.text()
+    if (sessions.status !== 200) {
+      throw new Error(`engine-backed /session returned ${sessions.status}: ${sessionsBody}`)
+    }
+    expect(JSON.parse(sessionsBody)).toBeArray()
 
     expect((await fetch(`${base}/global/config`)).status).toBe(200)
     expect((await fetch(`${base}/provider?view=index`)).status).toBe(200)
