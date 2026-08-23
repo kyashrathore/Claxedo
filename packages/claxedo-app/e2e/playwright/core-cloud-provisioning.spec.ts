@@ -1000,6 +1000,32 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
       const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID })
       const integrations = await installIntegrationsMock(page)
 
+      // This is a hosted account before its first project exists. Do not leave
+      // installMockRuntime's default local-worktree row in the signed hosted
+      // inventory: a local row has no cloud/user-hosted workspace kind and the
+      // real signed runtime contract correctly rejects it. Empty inventory is
+      // the authoritative pre-create state this flow starts from.
+      await page.route("**/api/claxedo/bootstrap**", (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            healthy: true,
+            version: "1.0.0-test",
+            path: { state: "", config: "", worktree: "", directory: "", home: "/tmp" },
+            project: [],
+            provider: { all: [], default: {}, connected: [] },
+            provider_auth: {},
+            config: {},
+          }),
+        }),
+      )
+      await page.route("**/project**", (route) => {
+        const type = route.request().resourceType()
+        if (type !== "fetch" && type !== "xhr") return route.continue()
+        return route.fulfill({ status: 200, contentType: "application/json", body: "[]" })
+      })
+
       // The hosted control plane has no drivers route. This 404 is the exact
       // production condition that used to disable submit forever.
       await page.route("**/api/workspace/drivers**", (route) =>
