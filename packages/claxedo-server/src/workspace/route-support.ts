@@ -14,6 +14,7 @@ import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority
 import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
 import { regionValue, type ClaxedoRegion, type ClaxedoRegionMap } from "@claxedo/server-core/platform/runtime/region/index"
+import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 
 export type WorkspaceRouteOptions = {
   authConfig?: ControlPlaneAuthConfig
@@ -56,6 +57,24 @@ export type WorkspaceRouteOptions = {
 export function relayRole(input?: string): RelayRole {
   if (input === "owner" || input === "admin" || input === "editor" || input === "viewer") return input
   return "viewer"
+}
+
+// Signed deployments have NO global request guard: the unsigned-local gate
+// passes signed traffic straight through and per-route bearer verification is
+// supposed to be the gate. Verbs that mutate state or disclose local
+// inventory must therefore demand a verified bearer from NON-loopback callers,
+// while tokenless loopback clients (the local app managing its own machine)
+// keep working bit-for-bit. The loopback test fails closed through forwarding
+// headers, so a reverse proxy cannot launder a remote caller into loopback —
+// but a same-host proxy that connects over 127.0.0.1 without forwarding
+// headers still appears loopback (known limitation, audit finding M4).
+export function signedAccessOptions(request: Request, options: WorkspaceRouteOptions) {
+  return {
+    ...options,
+    ...(options.authConfig?.enabled && !isLoopbackLocalRequest(request)
+      ? { requireSigned: true as const }
+      : {}),
+  }
 }
 
 export function rec(input: unknown) {

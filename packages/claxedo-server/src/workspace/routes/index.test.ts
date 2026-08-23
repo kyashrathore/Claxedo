@@ -448,6 +448,144 @@ describe("workspace routes signed control plane authority", () => {
     })
   })
 
+  test("signed mode refuses anonymous inventory list from a remote caller (H1)", async () => {
+    const app = WorkspaceRoutes(services(), { authConfig, verifier })
+
+    const res = await app.request("http://remote.attacker.example/")
+
+    expect(res.status).toBe(401)
+    expect(mocks.listProjects).not.toHaveBeenCalled()
+  })
+
+  test("tokenless loopback keeps the local inventory in signed mode", async () => {
+    const app = WorkspaceRoutes(services(), { authConfig, verifier })
+
+    const res = await app.request("http://localhost/")
+
+    expect(res.status).toBe(200)
+    expect(mocks.listProjects).toHaveBeenCalled()
+  })
+
+  test("signed mode refuses anonymous inventory list even with hosted access param from a remote caller", async () => {
+    const app = WorkspaceRoutes(services(), { authConfig, verifier })
+
+    const res = await app.request("http://remote.attacker.example/?access=Cloud")
+
+    expect(res.status).toBe(401)
+    expect(mocks.listProjects).not.toHaveBeenCalled()
+  })
+
+  test("signed mode refuses anonymous delete of a local workspace from a remote caller (H2)", async () => {
+    mocks.workspaceRows.set("ws_local", {
+      id: "ws_local",
+      directory: "/tmp/local-checkout",
+      kind: "local",
+      status: "ready",
+      created_at: 1,
+      updated_at: 1,
+    })
+    const app = WorkspaceRoutes(services(), { authConfig, verifier })
+
+    const res = await app.request("http://remote.attacker.example/ws_local", { method: "DELETE" })
+
+    expect(res.status).toBe(401)
+    expect(mocks.deleteWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("tokenless loopback can still delete a local workspace in signed mode", async () => {
+    mocks.resolveWorkspace.mockResolvedValueOnce({
+      id: "ws_loop",
+      directory: "/tmp/loop-checkout",
+      kind: "local",
+      status: "ready",
+      created_at: 1,
+      updated_at: 1,
+    })
+    const svc = services()
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://localhost/ws_loop", { method: "DELETE" })
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({ ok: true })
+    expect(svc.authority?.usersMe).not.toHaveBeenCalled()
+    expect(mocks.deleteWorkspace).toHaveBeenCalledWith("ws_loop")
+  })
+
+  test("signed mode refuses anonymous provisioning create from a remote caller (H3)", async () => {
+    const sandbox = readySandboxManager()
+    const svc = services()
+    svc.sandbox.sandboxManager = sandbox.manager
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://remote.attacker.example/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repoUrl: "https://github.com/acme/demo.git" }),
+    })
+
+    expect(res.status).toBe(401)
+    expect(sandbox.ensure).not.toHaveBeenCalled()
+    // Egress allowlist widening is part of the same unauthenticated surface.
+    expect(mocks.ensureHostForRepo).not.toHaveBeenCalled()
+  })
+
+  test("signed mode refuses anonymous resolve of a workspace from a remote caller", async () => {
+    mocks.resolveWorkspace.mockResolvedValueOnce({
+      id: "ws_victim",
+      directory: "/Users/me/top-secret",
+      kind: "local",
+      status: "ready",
+      created_at: 1,
+      updated_at: 1,
+    })
+    const app = WorkspaceRoutes(services(), { authConfig, verifier })
+
+    const res = await app.request("http://remote.attacker.example/resolve?workspaceId=ws_victim")
+
+    expect(res.status).toBe(401)
+    // The row must not be materialized by an unauthenticated caller either
+    // (create=true side effect).
+    expect(mocks.ensureWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("signed mode refuses a remote caller whose bearer fails verification", async () => {
+    const strictVerifier: ClerkVerifier = async (token) => {
+      if (token !== "user_1") throw new ControlPlaneAuthError(401, "invalid_bearer_token", "invalid")
+      return { mode: "signed" as const, user: { subject: token, tokenIdentifier: token, issuer: authConfig.issuer } }
+    }
+    const app = WorkspaceRoutes(services(), { authConfig, verifier: strictVerifier })
+
+    const res = await app.request("http://remote.attacker.example/", {
+      headers: { Authorization: "Bearer forged" },
+    })
+
+    expect(res.status).toBe(401)
+    expect(mocks.listProjects).not.toHaveBeenCalled()
+  })
+
+  test("tokenless loopback create passes the gate and reaches driver validation", async () => {
+    const sandbox = readySandboxManager()
+    const svc = services()
+    svc.sandbox.sandboxManager = sandbox.manager
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://localhost/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repoUrl: "https://github.com/acme/demo.git" }),
+    })
+
+    // Not 401: the tokenless loopback contract is preserved end-to-end. With
+    // the composed mocks the create fully succeeds — provisioning included.
+    expect(res.status).toBe(200)
+    expect(sandbox.ensure).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ source: { kind: "git", repoUrl: "https://github.com/acme/demo.git" } }),
+    )
+    expect(mocks.ensureHostForRepo).toHaveBeenCalledWith("https://github.com/acme/demo.git")
+  })
+
   test("connection-backed cloud create keeps the token ephemeral and persists only the clean repository URL", async () => {
     const svc = services()
     const sandbox = readySandboxManager()
