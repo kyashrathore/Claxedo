@@ -291,6 +291,7 @@ export async function launchPackagedClaxedo(input: {
       input.executable,
       `--remote-debugging-port=${String(debugPort)}`,
       `--claxedo-window-size=${String(AGENT_APP_WINDOW.width)},${String(AGENT_APP_WINDOW.height)}`,
+      ...(process.platform === "darwin" ? ["--use-mock-keychain"] : []),
       ...(process.platform === "linux" ? ["--no-sandbox"] : []),
     ],
     env: {
