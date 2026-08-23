@@ -19,7 +19,7 @@
     "smoke:diagnostics:packaged": "bun ./scripts/performance-diagnostics-smoke.ts --packaged",
     "perf:startup": "bun ./scripts/startup-perf.ts",
     "test": "bun run test:broad && bun run test:compile-cache",
-    "test:broad": "mkdir -p .artifacts/unit && bun test ./src ./scripts --max-concurrency=1 --path-ignore-patterns=**/opencode-compile-cache-boot.test.ts --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
+    "test:broad": "mkdir -p .artifacts/unit && bun test ./src ./scripts --max-concurrency=1 --path-ignore-patterns='**/opencode-compile-cache-boot.test.ts' --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "test:compile-cache": "mkdir -p .artifacts/unit && bun test ./scripts/opencode-compile-cache-boot.test.ts --max-concurrency=1 --reporter=junit --reporter-outfile=.artifacts/unit/compile-cache-junit.xml",
     "typecheck": "tsgo -b",
     "verify:desktop-parity": "bun ./scripts/capture-default-screenshot.ts",

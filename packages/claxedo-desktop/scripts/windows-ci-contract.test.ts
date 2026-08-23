@@ -25,7 +25,7 @@ describe("Windows CI contract", () => {
     expect(workflow).not.toContain("continue-on-error: ${{ matrix.settings.host == 'windows-latest' }}")
     expect(acceptance).toContain("bun run test")
     expect(desktopManifest.scripts.test).toBe("bun run test:broad && bun run test:compile-cache")
-    expect(desktopManifest.scripts["test:broad"]).toContain("--path-ignore-patterns=**/opencode-compile-cache-boot.test.ts")
+    expect(desktopManifest.scripts["test:broad"]).toContain("--path-ignore-patterns='**/opencode-compile-cache-boot.test.ts'")
     expect(desktopManifest.scripts["test:compile-cache"]).toContain("bun test ./scripts/opencode-compile-cache-boot.test.ts")
   })
 
