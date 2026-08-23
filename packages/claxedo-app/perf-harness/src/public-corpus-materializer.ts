@@ -44,12 +44,13 @@ type MessageInfo = {
   [key: string]: unknown
 }
 
-type TextPart = {
+type CanonicalPart = {
   id: string
   sessionID: string
   messageID: string
-  type: "text"
-  text: string
+  type: "text" | "reasoning" | "tool" | "patch" | "step-start" | "step-finish"
+  text?: string
+  state?: { input?: unknown; output?: string }
   [key: string]: unknown
 }
 
@@ -163,8 +164,8 @@ export async function materializeClaxedoPublicCorpus(input: {
   )
   let transcriptBytes = 0
   for (const row of database.prepare("SELECT data FROM part").iterate() as Iterable<{ data: string }>) {
-    const part = JSON.parse(row.data) as { type?: unknown; text?: unknown }
-    if (part.type === "text" && typeof part.text === "string") transcriptBytes += Buffer.byteLength(part.text, "utf8")
+    const part = JSON.parse(row.data) as CanonicalPart
+    transcriptBytes += partPayloadBytes(part)
   }
   database.close()
   if (
@@ -247,9 +248,13 @@ async function materializeSession(input: {
       messageCount += 1
     } else if (event.type === "message.part.updated.1") {
       if (!sessionInfo || !currentMessage) throw new Error("Claxedo received a part before its message")
-      const part = event.data.part as TextPart
-      if (part.type !== "text" || part.sessionID !== sessionInfo.id || part.messageID !== currentMessage.id) {
-        throw new Error("Claxedo received an invalid completed text part")
+      const part = event.data.part as CanonicalPart
+      if (
+        !["text", "reasoning", "tool", "patch", "step-start", "step-finish"].includes(part.type) ||
+        part.sessionID !== sessionInfo.id ||
+        part.messageID !== currentMessage.id
+      ) {
+        throw new Error("Claxedo received an invalid completed part")
       }
       const { id, sessionID: _, messageID: __, ...data } = part
       const updatedAt =
@@ -261,12 +266,12 @@ async function materializeSession(input: {
           "INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)",
         )
         .run(id, currentMessage.id, sessionInfo.id, currentMessage.time.created, updatedAt, JSON.stringify(data))
-      transcriptBytes += Buffer.byteLength(part.text, "utf8")
-      if (currentMessage.role === "assistant") {
+      transcriptBytes += partPayloadBytes(part)
+      if (currentMessage.role === "assistant" && part.type === "text" && typeof part.text === "string") {
         latestAssistant = {
           messageId: currentMessage.id,
           partId: part.id,
-          textSha256: createHash("sha256").update(part.text.trim().replace(/\r\n/g, "\n")).digest("hex"),
+          textSha256: createHash("sha256").update(normalizeSemanticText(part.text)).digest("hex"),
         }
       }
     } else {
@@ -300,6 +305,21 @@ async function materializeSession(input: {
     messageCount,
     transcriptBytes,
   }
+}
+
+function partPayloadBytes(part: CanonicalPart): number {
+  if ((part.type === "text" || part.type === "reasoning") && typeof part.text === "string") {
+    return Buffer.byteLength(part.text, "utf8")
+  }
+  if (part.type === "tool") {
+    return Buffer.byteLength(JSON.stringify(part.state?.input ?? null), "utf8") +
+      Buffer.byteLength(part.state?.output ?? "", "utf8")
+  }
+  return 0
+}
+
+function normalizeSemanticText(value: string): string {
+  return value.trim().replace(/\s+/gu, " ")
 }
 
 async function initializeWorkspace(directory: string, workspaceId: string) {

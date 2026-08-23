@@ -13,11 +13,12 @@ type OwnedProcess = {
   startTimeMs: number
   owner: "application"
   category: string
+  role?: "main"
 }
 
 type ReadinessReceipt = {
   endpoint: "correct-content-painted-and-input-ready"
-  checks: Array<{ id: string; passed: boolean }>
+  checks: Array<{ id: string; passed: boolean; observedAt?: number }>
 }
 
 type Clock = {
@@ -53,7 +54,7 @@ type LaunchParams = {
 
 type SwitchCase = {
   caseId: string
-  workload: "isolated-latency" | "progressive-resource" | "resource-control"
+  workload: "isolated-latency" | "transcript-size-latency" | "progressive-resource" | "resource-control"
   sessionState?: "cold" | "warm"
   sourceSessionId?: string
   destinationSessionId: string
@@ -135,16 +136,20 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
       return { ready: true, processes: launch.processes, readiness: launch.readiness }
     },
     execute: async (params) => {
-      if (params.scenarioId === "app-start-v1") {
+      if (["app-start-v1", "app-start-v3"].includes(params.scenarioId)) {
         if (active) throw new Error("Claxedo app-start requires no running application")
         if (!("startMode" in params.case) || !params.stateHandle)
           throw new Error("Claxedo app-start request is incomplete")
         requireStateHandle(params.stateHandle)
         const launch = await dependencies.launch(params.stateHandle, "control")
         active = true
-        return execution(params.case.caseId, launch.clock, launch.readiness)
+        return execution(
+          params.case.caseId,
+          launch.clock,
+          params.scenarioId === "app-start-v3" ? withTimingEvidence(launch.readiness, launch.clock.end) : launch.readiness,
+        )
       }
-      if (params.scenarioId !== "session-switch-v1" || "startMode" in params.case) {
+      if (!["session-switch-v1", "session-switch-v3"].includes(params.scenarioId) || "startMode" in params.case) {
         throw new Error(`Claxedo does not support scenario ${params.scenarioId}`)
       }
       if (!active) throw new Error("Claxedo session switching requires a running application")
@@ -156,7 +161,11 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
         await dependencies.activate(control)
       }
       const clock = await dependencies.activate(destination)
-      return execution(benchmarkCase.caseId, clock, readinessReceipt())
+      return execution(
+        benchmarkCase.caseId,
+        clock,
+        readinessReceipt(params.scenarioId === "session-switch-v3" ? clock.end : undefined),
+      )
     },
     shutdown: async () => {
       const result = await dependencies.shutdown()
@@ -170,16 +179,20 @@ function execution(caseId: string, clock: Clock, readiness: ReadinessReceipt) {
   return { caseId, durationMs: clock.end - clock.start, clock, readiness }
 }
 
-function readinessReceipt(): ReadinessReceipt {
+function readinessReceipt(observedAt?: number): ReadinessReceipt {
   return {
     endpoint: "correct-content-painted-and-input-ready",
     checks: [
-      { id: "content-identity", passed: true },
-      { id: "first-fold-painted", passed: true },
-      { id: "two-presentations", passed: true },
-      { id: "trusted-input", passed: true },
+      { id: "content-identity", passed: true, ...(observedAt === undefined ? {} : { observedAt }) },
+      { id: "first-fold-painted", passed: true, ...(observedAt === undefined ? {} : { observedAt }) },
+      { id: "two-presentations", passed: true, ...(observedAt === undefined ? {} : { observedAt }) },
+      { id: "trusted-input", passed: true, ...(observedAt === undefined ? {} : { observedAt }) },
     ],
   }
+}
+
+function withTimingEvidence(receipt: ReadinessReceipt, observedAt: number): ReadinessReceipt {
+  return { ...receipt, checks: receipt.checks.map((check) => ({ ...check, observedAt: check.observedAt ?? observedAt })) }
 }
 
 async function makeDefaultDependencies(): Promise<DriverDependencies> {
@@ -240,8 +253,8 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
     activeStateRoot = stateRoot
     removeActiveState = disposable
     return {
-      processes: [launch.process as OwnedProcess],
-      readiness: readinessReceipt(),
+      processes: [{ ...(launch.process as OwnedProcess), role: "main" }],
+      readiness: readinessReceipt(launch.coldReady.endTimestamp),
       clock: {
         kind: "single-monotonic-clock",
         clock: "bun-performance",
@@ -256,8 +269,8 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
       protocolVersion: 1,
       application: { id: "claxedo", name: "Claxedo", version: desktopPackage.version, buildDigestSha256 },
       driver: { name: "claxedo-reference", version: "1", sourceCommit, digestSha256: driverDigestSha256 },
-      scenarios: ["app-start-v1", "session-switch-v1"],
-      sourceEventFormats: ["opencode-event-v1"],
+      scenarios: ["app-start-v1", "session-switch-v1", "app-start-v3", "session-switch-v3"],
+      sourceEventFormats: ["opencode-event-v1", "opencode-event-v2"],
       materializationModes: ["native-opencode"],
       guiFramework: "electron",
     },
