@@ -8,6 +8,7 @@ const prepare = readFileSync(path.join(root, "script/cbx-prepare-windows.ps1"), 
 const acceptance = readFileSync(path.join(root, "script/cbx-test-windows.ps1"), "utf8")
 const desktopManifest = JSON.parse(readFileSync(path.join(root, "packages/claxedo-desktop/package.json"), "utf8")) as {
   dependencies: Record<string, string>
+  scripts: Record<string, string>
 }
 const mcpManifest = JSON.parse(readFileSync(path.join(root, "packages/claxedo-mcp/package.json"), "utf8")) as {
   dependencies: Record<string, string>
@@ -22,9 +23,10 @@ describe("Windows CI contract", () => {
   test("runs the unit matrix on Windows as a blocking check", () => {
     expect(workflow).toContain("- name: windows\n            host: windows-latest")
     expect(workflow).not.toContain("continue-on-error: ${{ matrix.settings.host == 'windows-latest' }}")
-    expect(acceptance).toContain("--path-ignore-patterns=**/opencode-compile-cache-boot.test.ts")
-    expect(acceptance).toContain("bun test ./scripts/opencode-compile-cache-boot.test.ts --max-concurrency=1")
-    expect(acceptance).toContain('Assert-LastExitCode "desktop compile-cache boot tests"')
+    expect(acceptance).toContain("bun run test")
+    expect(desktopManifest.scripts.test).toBe("bun run test:broad && bun run test:compile-cache")
+    expect(desktopManifest.scripts["test:broad"]).toContain("--path-ignore-patterns=**/opencode-compile-cache-boot.test.ts")
+    expect(desktopManifest.scripts["test:compile-cache"]).toContain("bun test ./scripts/opencode-compile-cache-boot.test.ts")
   })
 
   test("applies dependency patches after Bun resolves peer variants", () => {
