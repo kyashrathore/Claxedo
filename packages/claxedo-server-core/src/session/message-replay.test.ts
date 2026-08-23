@@ -15,6 +15,8 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
+import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
+import { eq } from "drizzle-orm"
 
 const root = path.join(realpathSync(os.tmpdir()), `message-replay-test-${randomUUID().slice(0, 8)}`)
 const prev = {
@@ -26,7 +28,7 @@ process.env.CLAXEDO_DATA_DIR = root
 process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 
 const [
-  { persistMessageEvent, readSessionEventsAfter, readSessionMaxEventOrdinal, readSessionMessages, subscribeMessageReplay, terminalizeReplayMessages },
+  { persistMessageEvent, readSessionEventsAfter, readSessionMaxEventOrdinal, readSessionMessagePage, readSessionMessages, subscribeMessageReplay, terminalizeReplayMessages },
   { ClaxedoDB },
   { createBus },
   { ClaxedoCloudMessageTable, ClaxedoCloudSessionTable },
@@ -75,6 +77,78 @@ describe("message replay", () => {
     expect(messages[0].info.id).toBe("msg_1")
     expect(messages[0].info.role).toBe("user")
     expect(messages[0].parts).toEqual([])
+  })
+
+  test("reads bounded newest-first pages and returns each page chronologically", () => {
+    for (let index = 1; index <= 6; index += 1) {
+      persistMessageEvent("sess_page", {
+        type: "message.updated",
+        properties: {
+          info: {
+            id: `msg_${index}`,
+            sessionID: "sess_page",
+            role: index % 2 === 0 ? "assistant" : "user",
+            time: { created: index },
+          },
+        },
+      })
+    }
+
+    const first = readSessionMessagePage("sess_page", { limit: 2 })
+    expect(first.messages.map((message) => message.info.id)).toEqual(["msg_5", "msg_6"])
+    expect(first.nextCursor).toMatch(/^cspm1:/)
+
+    const second = readSessionMessagePage("sess_page", { limit: 2, before: first.nextCursor })
+    expect(second.messages.map((message) => message.info.id)).toEqual(["msg_3", "msg_4"])
+    expect(second.nextCursor).toMatch(/^cspm1:/)
+
+    const third = readSessionMessagePage("sess_page", { limit: 2, before: second.nextCursor })
+    expect(third.messages.map((message) => message.info.id)).toEqual(["msg_1", "msg_2"])
+    expect(third.nextCursor).toBeUndefined()
+  })
+
+  test("binds opaque page cursors to their session and rejects malformed inputs", () => {
+    for (const sessionID of ["sess_a", "sess_b"]) {
+      for (let index = 1; index <= 2; index += 1) {
+        persistMessageEvent(sessionID, {
+          type: "message.updated",
+          properties: {
+            info: { id: `${sessionID}_${index}`, sessionID, role: "user" },
+          },
+        })
+      }
+    }
+    const cursor = readSessionMessagePage("sess_a", { limit: 1 }).nextCursor
+    expect(cursor).toBeTruthy()
+
+    for (const read of [
+      () => readSessionMessagePage("sess_a", { limit: 1, before: "not-a-cursor" }),
+      () => readSessionMessagePage("sess_b", { limit: 1, before: cursor }),
+      () => readSessionMessagePage("sess_a", { limit: 0 }),
+      () => readSessionMessagePage("sess_a", { limit: 501 }),
+    ]) {
+      expect(read).toThrow(AgentMessagePageError)
+    }
+  })
+
+  test("does not parse messages outside the bounded selection", () => {
+    for (let index = 1; index <= 3; index += 1) {
+      persistMessageEvent("sess_bounded", {
+        type: "message.updated",
+        properties: {
+          info: { id: `bounded_${index}`, sessionID: "sess_bounded", role: "user" },
+        },
+      })
+    }
+    ClaxedoDB.use((db) => db
+      .update(ClaxedoCloudMessageTable)
+      .set({ data: "not-json" })
+      .where(eq(ClaxedoCloudMessageTable.message_id, "bounded_1"))
+      .run())
+
+    expect(readSessionMessagePage("sess_bounded", { limit: 1 }).messages.map((message) => message.info.id))
+      .toEqual(["bounded_3"])
+    expect(() => readSessionMessages("sess_bounded")).toThrow()
   })
 
   test("stores real workspace ids from session metadata when available", async () => {

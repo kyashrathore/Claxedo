@@ -51,6 +51,7 @@ export function createProjectionStore(sync: ProjectionStoreBackend): ProjectionS
     channel_thread_session: sync.channel_thread_session,
     clear_channel_thread_session: sync.clear_channel_thread_session,
     read_session_messages: sync.read_session_messages,
+    read_session_message_page: sync.read_session_message_page,
     read_session_max_event_ordinal: sync.read_session_max_event_ordinal,
   }
 }

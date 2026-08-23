@@ -447,7 +447,7 @@ describe("control-plane services", () => {
     // Prefix match: workspaceRouteOptions gained a connections argument in the
     // parallel connections work; the composition contract here is only that the
     // workspace routes are constructed from services + workspaceRouteOptions.
-    expect(text).toContain("WorkspaceRoutes(services, workspaceRouteOptions(services")
+    expect(text).toMatch(/WorkspaceRoutes\(\s*services,\s*workspaceRouteOptions\(services/)
     expect(text).toContain("app.route(\"/\", JwksRoutes(process.env))")
     expect(text).toContain("InternalRelayResolverRoutes({")
     expect(text).toContain("BootstrapRoutes({")

@@ -613,6 +613,15 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       const messages: unknown[] = services.projectionStore.read_session_messages(sessionId)
       return messages.filter(messageRow)
     },
+    getMessagePage: async (_c, _directory, sessionId, page) => {
+      const projected = services.projectionStore.read_session_message_page?.(sessionId, page)
+      if (!projected) return undefined
+      const messages: unknown[] = projected.messages
+      return {
+        messages: messages.filter(messageRow),
+        ...(projected.nextCursor ? { nextCursor: projected.nextCursor } : {}),
+      }
+    },
     getMessageSnapshot: async (_c, _directory, sessionId) => {
       const messages: unknown[] = services.projectionStore.read_session_messages(sessionId)
       return {

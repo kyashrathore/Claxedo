@@ -9,7 +9,12 @@ import type {
   SessionConfig,
   SessionConfigUpdate,
 } from "@claxedo/agent-sdk-runtime"
-import type { AgentHarnessAdapter, HttpProxyAdapter } from "@claxedo/agent-sdk-runtime/adapters"
+import type {
+  AgentHarnessAdapter,
+  AgentMessagePage,
+  AgentMessagePageInput,
+  HttpProxyAdapter,
+} from "@claxedo/agent-sdk-runtime/adapters"
 import {
   buildAssistantMessage,
   buildSession,
@@ -33,6 +38,11 @@ function adapter(input: {
   onPrompt?: (prompt: PromptInput, directory: RuntimeDirectory) => void
   sendMessage?: (id: string, prompt: PromptInput, directory: RuntimeDirectory) => AsyncIterable<AgentRuntimeStreamEvent>
   getMessages?: (id: string, directory: RuntimeDirectory) => Promise<AgentMessage[]> | AgentMessage[]
+  getMessagePage?: (
+    id: string,
+    page: AgentMessagePageInput,
+    directory: RuntimeDirectory,
+  ) => Promise<AgentMessagePage>
 }): AgentHarnessAdapter {
   return {
     listSessions: async () => [],
@@ -72,6 +82,7 @@ function adapter(input: {
       return input.sendMessage?.(id, prompt, directory) ?? (async function* () {})()
     },
     getMessages: async (id, directory) => input.getMessages?.(id, directory) ?? [],
+    ...(input.getMessagePage ? { getMessagePage: input.getMessagePage } : {}),
     abort: async () => ({ ok: true, status: "cancelled" }),
     revert: async () => {},
     unrevert: async () => {},
@@ -90,6 +101,44 @@ function adapter(input: {
     dispose: () => {},
   }
 }
+
+describe("SessionRoutes message paging bridge", () => {
+  it("passes a page request to the workspace authority before the adapter", async () => {
+    const directory = process.cwd()
+    const message = { info: { id: "message-1", role: "user" }, parts: [] } as AgentMessage
+    const calls: Array<{ directory: string; sessionId: string; page: AgentMessagePageInput }> = []
+    const fixture = adapter({
+      getMessagePage: async () => {
+        throw new Error("adapter page must not run")
+      },
+    })
+    let authorityAdapter: AgentHarnessAdapter | undefined
+    const app = SessionRoutes(
+      () => fixture,
+      {
+        getMessagePage(input) {
+          authorityAdapter = input.adapter
+          calls.push({ directory: input.directory, sessionId: input.sessionId, page: input.page })
+          return { messages: [message], nextCursor: "workspace-cursor" }
+        },
+      },
+    )
+
+    const response = await app.request(
+      `http://localhost/session/session-1/message?directory=${encodeURIComponent(directory)}&limit=25&before=opaque%3Acursor`,
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual([message])
+    expect(response.headers.get("x-next-cursor")).toBe("workspace-cursor")
+    expect(calls).toEqual([{
+      directory,
+      sessionId: "session-1",
+      page: { limit: 25, before: "opaque:cursor" },
+    }])
+    expect(authorityAdapter).toBe(fixture)
+  })
+})
 
 describe("session prompt route", () => {
   it("serves experimental session summaries", async () => {

@@ -1,4 +1,5 @@
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { isCliAccessAuth } from "@claxedo/server-core/platform/auth/cli-session-token"
 import { convexApi } from "./api"
 import { requireAllowed, requireExecutor } from "./executor"
@@ -9,6 +10,32 @@ type SessionVisibility = {
   title?: string
   createdAt?: number
   updatedAt?: number
+}
+
+const MESSAGE_PAGE_CURSOR_PREFIX = "cawmp1:"
+const MAX_MESSAGE_PAGE_LIMIT = 500
+
+function encodeMessagePageCursor(sessionId: string, ordinal: number) {
+  return `${MESSAGE_PAGE_CURSOR_PREFIX}${Buffer.from(JSON.stringify({ sessionId, ordinal })).toString("base64url")}`
+}
+
+function decodeMessagePageCursor(sessionId: string, input: string) {
+  try {
+    if (!input.startsWith(MESSAGE_PAGE_CURSOR_PREFIX)) throw new Error("unexpected cursor version")
+    const value = JSON.parse(Buffer.from(input.slice(MESSAGE_PAGE_CURSOR_PREFIX.length), "base64url").toString("utf8")) as {
+      sessionId?: unknown
+      ordinal?: unknown
+    }
+    if (
+      value.sessionId !== sessionId
+      || typeof value.ordinal !== "number"
+      || !Number.isSafeInteger(value.ordinal)
+      || value.ordinal < 0
+    ) throw new Error("invalid cursor payload")
+    return value.ordinal
+  } catch {
+    throw new AgentMessagePageError(400, "Invalid message page cursor")
+  }
 }
 
 export function sessionAuthority(input: ConvexAuthorityInput, serviceArgs: ServiceArgs) {
@@ -52,12 +79,35 @@ export function sessionAuthority(input: ConvexAuthorityInput, serviceArgs: Servi
       args: {
         sessionId: string
         workspaceId: string
+        limit?: number
+        before?: string
       },
     ) {
-      return requireExecutor(input, auth).query(convexApi.sessions.readMessages, {
+      if (args.before !== undefined && args.limit === undefined) {
+        throw new AgentMessagePageError(400, "Message page limit is required with a cursor")
+      }
+      if (args.limit !== undefined && (
+        !Number.isSafeInteger(args.limit)
+        || args.limit < 1
+        || args.limit > MAX_MESSAGE_PAGE_LIMIT
+      )) {
+        throw new AgentMessagePageError(400, `Message page limit must be between 1 and ${MAX_MESSAGE_PAGE_LIMIT}`)
+      }
+      const body = await requireExecutor(input, auth).query(convexApi.sessions.readMessages, {
         session_id: args.sessionId,
         workspace_id: args.workspaceId,
+        ...(args.limit === undefined ? {} : { limit: args.limit }),
+        ...(args.before === undefined ? {} : { before_ordinal: decodeMessagePageCursor(args.sessionId, args.before) }),
       })
+      if (!body || typeof body !== "object" || Array.isArray(body)) return body
+      const result = body as Record<string, unknown>
+      const nextOrdinal = result.next_ordinal
+      if (typeof nextOrdinal !== "number") return body
+      const { next_ordinal: _, ...rest } = result
+      return {
+        ...rest,
+        nextCursor: encodeMessagePageCursor(args.sessionId, nextOrdinal),
+      }
     },
     async syncSessionMessages(
       auth: SignedControlPlaneAuth,

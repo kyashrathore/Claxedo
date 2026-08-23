@@ -104,6 +104,13 @@
       "import": "./dist/adapters.mjs",
       "default": "./dist/adapters.mjs"
     },
+    "./message-page": {
+      "types": "./dist/message-page.d.ts",
+      "bun": "./dist/message-page.mjs",
+      "development": "./dist/message-page.mjs",
+      "import": "./dist/message-page.mjs",
+      "default": "./dist/message-page.mjs"
+    },
     "./stores/memory": {
       "types": "./dist/stores/memory.d.ts",
       "bun": "./dist/stores/memory.mjs",

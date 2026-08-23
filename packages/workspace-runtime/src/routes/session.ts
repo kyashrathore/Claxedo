@@ -13,6 +13,8 @@ import {
   type SessionConfigUpdate,
 } from "@claxedo/agent-sdk-runtime"
 import {
+  type AgentMessagePage,
+  type AgentMessagePageInput,
   hasAdapterCapability,
   type AgentHarnessAdapter,
   type HttpProxyAdapter,
@@ -128,6 +130,12 @@ export function SessionRoutes(
       directory: string
       sessionId: string
     }) => Promise<AgentMessageRow[] | undefined> | AgentMessageRow[] | undefined
+    getMessagePage?: (input: {
+      adapter: AgentHarnessAdapter
+      directory: string
+      sessionId: string
+      page: AgentMessagePageInput
+    }) => Promise<AgentMessagePage | undefined> | AgentMessagePage | undefined
     getMessageSnapshot?: (input: {
       directory: string
       sessionId: string
@@ -247,6 +255,14 @@ export function SessionRoutes(
       : undefined,
     getMessages: options?.getMessages
       ? (_c, directory, sessionId) => options.getMessages!({ directory: requiredDirectory(directory), sessionId })
+      : undefined,
+    getMessagePage: options?.getMessagePage
+      ? (_c, directory, sessionId, page, adapter) => options.getMessagePage!({
+          adapter,
+          directory: requiredDirectory(directory),
+          sessionId,
+          page,
+        })
       : undefined,
     getMessageSnapshot: options?.getMessageSnapshot
       ? (_c, directory, sessionId) => options.getMessageSnapshot!({ directory: requiredDirectory(directory), sessionId })

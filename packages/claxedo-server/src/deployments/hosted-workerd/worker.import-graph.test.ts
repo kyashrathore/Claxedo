@@ -28,6 +28,10 @@ const ENTRYPOINTS = ["deployments/hosted-workerd/worker.ts", "deployments/hosted
 const FORBIDDEN_BARE = [
   "@hono/node-server",
   "@hono/node-ws",
+  // This barrel bundles every harness adapter (including Node-only SDKs).
+  // Worker-safe shared contracts must use focused subpaths such as
+  // `@claxedo/agent-sdk-runtime/message-page` instead.
+  "@claxedo/agent-sdk-runtime/adapters",
   "@claxedo/channels",
   "@claxedo/workspace-runtime",
   "better-sqlite3",

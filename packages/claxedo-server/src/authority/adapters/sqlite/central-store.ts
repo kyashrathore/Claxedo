@@ -25,6 +25,7 @@ import {
 } from "@claxedo/server-core/session/meta/index"
 import {
   persistMessageEvent,
+  readSessionMessagePage,
   readSessionMessages,
   readSessionMaxEventOrdinal,
   subscribeMessageReplay,
@@ -76,6 +77,7 @@ function createBackend(input: SqliteCentralStoreOptions): SqliteCentralStoreBack
     clear_channel_thread_session: clearChannelThreadSession,
     persist_message_event: persistMessageEvent,
     read_session_messages: readSessionMessages,
+    read_session_message_page: readSessionMessagePage,
     read_session_max_event_ordinal: readSessionMaxEventOrdinal,
     subscribe_message_replay: subscribeMessageReplay,
   }

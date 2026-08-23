@@ -1,6 +1,8 @@
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
+import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { randomUUID } from "node:crypto"
 import type { SandboxRef } from "@claxedo/agent-sdk-runtime"
+import { AgentMessagePageError, type AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/message-page"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { SessionMeta } from "@claxedo/server-core/session/meta/index"
 import { resolveSessionGateway } from "../../authority/http"
@@ -20,6 +22,7 @@ import {
   sessionListStorePageFilter,
   sessionInventoryResponse,
 } from "../list"
+import { messagePageCursor, parseMessagePageInput } from "../message-page"
 
 type Options = {
   authConfig?: ControlPlaneAuthConfig
@@ -93,6 +96,34 @@ function authorityMessages(body: unknown) {
     : body && typeof body === "object" && Array.isArray((body as { messages?: unknown }).messages)
       ? (body as { messages: unknown[] }).messages
       : []
+}
+
+function messagePageJson(
+  c: Context,
+  body: unknown,
+  messages: unknown[],
+  maxEventOrdinal: number,
+) {
+  const cursor = messagePageCursor(body)
+  if (cursor) {
+    c.header("Access-Control-Expose-Headers", "X-Next-Cursor")
+    c.header("X-Next-Cursor", cursor)
+  }
+  return c.json({
+    ...(body && typeof body === "object" && !Array.isArray(body) ? body : {}),
+    messages,
+    maxEventOrdinal,
+  })
+}
+
+function projectedMessagePage(
+  services: ControlPlaneServices,
+  sessionId: string,
+  page: AgentMessagePageInput,
+) {
+  const read = services.projectionStore.read_session_message_page
+  if (!read) throw new AgentMessagePageError(501, "message paging is unavailable for the session projection")
+  return read(sessionId, page)
 }
 
 function isSignedHostedBrowserRequest(req: Request) {
@@ -421,10 +452,27 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
     .get("/sessions/:sessionId/messages", async (c) => {
       try {
         const sessionId = c.req.param("sessionId")
+        const page = parseMessagePageInput(c.req.query("limit"), c.req.query("before"))
+        const maxEventOrdinal = services.projectionStore.read_session_max_event_ordinal(sessionId)
         if (isLoopbackLocalRequest(c.req.raw) && !isSignedHostedBrowserRequest(c.req.raw)) {
-          const replayMessages = services.projectionStore.read_session_messages(sessionId)
-          const maxEventOrdinal = services.projectionStore.read_session_max_event_ordinal(sessionId)
           const workspaceId = c.req.query("workspaceId")
+          // A bearer-scoped workspace read belongs to the workspace authority
+          // for the entire cursor chain. An unsigned local read belongs to the
+          // local projection. Never switch producers after the first page.
+          if (page && workspaceId && hasBearerToken(c.req.raw)) {
+            const auth = await signedAuth(c.req.raw, options)
+            const body = await requireAuthority(services).readSessionMessages(auth, {
+              sessionId,
+              workspaceId,
+              ...page,
+            })
+            return messagePageJson(c, body, authorityMessages(body), maxEventOrdinal)
+          }
+          if (page) {
+            const projected = projectedMessagePage(services, sessionId, page)
+            return messagePageJson(c, projected, projected.messages, maxEventOrdinal)
+          }
+          const replayMessages = services.projectionStore.read_session_messages(sessionId)
           if (replayMessages.length === 0 && workspaceId && hasBearerToken(c.req.raw)) {
             const auth = await signedAuth(c.req.raw, options)
             const body = await requireAuthority(services).readSessionMessages(auth, { sessionId, workspaceId })
@@ -443,14 +491,20 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         const meta = await services.projectionStore.session_meta(sessionId)
         if (meta?.host === "central") {
           await authorizeCentralSessionRead(services, auth, sessionId, meta)
-          return c.json({
-            messages: services.projectionStore.read_session_messages(sessionId),
-            maxEventOrdinal: services.projectionStore.read_session_max_event_ordinal(sessionId),
-          })
+          if (page) {
+            const projected = projectedMessagePage(services, sessionId, page)
+            return messagePageJson(c, projected, projected.messages, maxEventOrdinal)
+          }
+          return c.json({ messages: services.projectionStore.read_session_messages(sessionId), maxEventOrdinal })
         }
         const workspaceId = requiredWorkspaceId(c.req.query("workspaceId"))
-        const body = await requireAuthority(services).readSessionMessages(auth, { sessionId, workspaceId })
+        const body = await requireAuthority(services).readSessionMessages(auth, {
+          sessionId,
+          workspaceId,
+          ...(page ?? {}),
+        })
         const messages = authorityMessages(body)
+        if (page) return messagePageJson(c, body, messages, maxEventOrdinal)
         const replayMessages = services.projectionStore.read_session_messages(sessionId)
         return c.json({
           ...(body && typeof body === "object" && !Array.isArray(body) ? body : {}),
@@ -459,6 +513,10 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         })
       } catch (err) {
         if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
+        if (err instanceof AgentMessagePageError) {
+          const status = err.status >= 400 && err.status <= 599 ? err.status : 500
+          return c.json({ error: { code: "message_page_error", message: err.message } }, status as ContentfulStatusCode)
+        }
         throw err
       }
     })

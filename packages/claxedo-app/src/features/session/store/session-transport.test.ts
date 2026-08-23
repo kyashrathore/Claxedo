@@ -84,6 +84,7 @@ mock.module("@/platform/api/api", () => ({
   },
   getClaxedoServerUrl: () => "http://test.local",
   getDefaultBaseUrl: () => "http://test.local",
+  apiBearerToken: async () => null,
   // Ensure all api.ts named exports are stubbed so other tests that
   // transitively import this module don't crash with
   // "Export named 'api' not found" — bun:test mock.module shims leak
