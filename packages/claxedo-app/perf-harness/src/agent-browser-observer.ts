@@ -241,9 +241,26 @@ export async function installAgentBrowserObserver(page: Page) {
   await page.evaluate(installBrowserBenchmark);
 }
 
+/**
+ * Windows a side observation to exactly the interval the duration covers.
+ *
+ * A CPU profile of a session switch is only readable if it starts at the
+ * trusted click and ends at the stable paint. Started any earlier it also
+ * contains sidebar pagination — fixture discovery the measured duration
+ * deliberately excludes — and every frame of that shows up as app cost that
+ * no user pays.
+ */
+export type ActivationHooks = {
+  /** After the action is armed, before the trusted click. */
+  onArmed?: () => Promise<void>
+  /** As soon as the stable painted frame is observed. */
+  onPainted?: () => Promise<void>
+}
+
 export async function measureSessionActivation(
   page: Page,
   target: SessionReadinessTarget,
+  hooks?: ActivationHooks,
 ): Promise<SessionActionResult> {
   // Pagination is fixture discovery, not session activation. Expose the target
   // through the same public sidebar path before arming the trusted-action clock.
@@ -253,6 +270,7 @@ export async function measureSessionActivation(
     (next) => window.__CLAXEDO_AGENT_APP_BENCHMARK__?.armAction(next),
     token,
   );
+  await hooks?.onArmed?.();
   await page
     .locator(
       `[data-testid="rail-sidebar-session-row"][data-session-id="${cssEscape(target.sessionId)}"] [data-slot="navigation-row-activate"]`,
@@ -548,6 +566,7 @@ export async function measureSessionActivation(
       expectedContentSha256: { ...target.expectedContentSha256 },
     },
   );
+  await hooks?.onPainted?.();
   const contentSha256 = stablePaint
     ? await sha256Text(stablePaint.contentText)
     : "";
