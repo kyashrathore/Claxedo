@@ -612,6 +612,31 @@ async function waitForComposerReady(page: Page, state: HarnessState) {
   await expect(composerEditor(page), debugSuffix(state)).toBeVisible({ timeout: RECONNECT_STATE_TIMEOUT })
 }
 
+async function expectWorkspaceRole(page: Page, workspaceId: string, role: RelayRole) {
+  await expect
+    .poll(
+      () =>
+        page.evaluate((id) => {
+          const seam = (window as typeof window & {
+            __claxedoConnections?: {
+              snapshot?: () => Record<string, {
+                status?: string
+                rolePlacement?: { state?: string; role?: string }
+                relayPlacement?: { role?: string }
+              }>
+            }
+          }).__claxedoConnections
+          return seam?.snapshot?.()[id]
+        }, workspaceId),
+      { timeout: RECONNECT_STATE_TIMEOUT },
+    )
+    .toMatchObject({
+      status: "ready",
+      rolePlacement: { state: "role-known", role },
+      relayPlacement: { role },
+    })
+}
+
 async function openWorkspaceNavigator(page: Page, navigator: "Files" | "Changes" | "Processes") {
   const openPanel = page.getByRole("button", { name: "Open workspace panel", exact: true }).first()
   if (await openPanel.isVisible({ timeout: 1_000 }).catch(() => false)) {
@@ -826,6 +851,7 @@ test.describe("core cloud offline & roles @core", () => {
 
     await gotoDraft(page, DIR)
     await waitForComposerReady(page, state)
+    await expectWorkspaceRole(page, WORKSPACE_ID, "viewer")
 
     const editor = composerEditor(page)
     await expect(editor).toHaveAttribute("aria-label", "Read-only workspace (viewer)")
@@ -918,6 +944,7 @@ test.describe("core cloud offline & roles @core", () => {
 
     await gotoDraft(page, DIR)
     await waitForComposerReady(page, state)
+    await expectWorkspaceRole(page, WORKSPACE_ID, "viewer")
 
     const editor = composerEditor(page)
     const submit = page.locator('[data-action="prompt-submit"]').last()

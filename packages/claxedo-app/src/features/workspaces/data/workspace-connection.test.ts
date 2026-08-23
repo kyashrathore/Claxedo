@@ -14,7 +14,10 @@ import {
   workspaceOffline,
   workspacePlacement,
 } from "./workspace-connection"
-import type { WorkspaceConnectionInfo } from "@/platform/runtime/agent/workspace-relay-connection"
+import {
+  openWorkspaceConnection,
+  type WorkspaceConnectionInfo,
+} from "@/platform/runtime/agent/workspace-relay-connection"
 
 beforeEach(() => configureAppPortsForTest())
 afterEach(() => internals.reset())
@@ -90,6 +93,43 @@ describe("workspace connection authority", () => {
       internals.applyWorkspaceConnectionInfo(relayInfo({ role: "editor" }))
       expect(connectionPlacement("ws_relay")).toEqual({ state: "role-known", workspaceId: "ws_relay", role: "editor" })
       expect(workspacePlacement("ws_relay")?.role).toBe("editor")
+      dispose()
+    })
+  })
+
+  test("replays a connection cached before the authority entry into role placement", async () => {
+    const workspaceId = "ws_cached_viewer"
+    const request = (async (input: string | URL | Request) => {
+      const url = new URL(input instanceof Request ? input.url : String(input))
+      if (url.pathname.includes("/workspace/resolve")) {
+        return Response.json({ workspaceId, directory: "workspace:ws_cached_viewer", kind: "cloud", status: "ready" })
+      }
+      if (url.pathname === `/api/workspace/${workspaceId}/connection`) {
+        return Response.json(relayInfo({ workspaceId }))
+      }
+      return Response.json({})
+    }) as typeof fetch
+
+    // A boot/runtime consumer wins the race and fills the shared query cache
+    // before the connection authority has an entry to receive its observer event.
+    await openWorkspaceConnection(workspaceId, { serverUrl: "http://server.cached-role.test", request })
+
+    await createRoot(async (dispose) => {
+      const handle = acquireWorkspaceConnection({
+        workspaceId,
+        kind: "cloud",
+        directory: "workspace:ws_cached_viewer",
+        baseUrl: "http://server.cached-role.test",
+        request,
+      })
+      for (let attempt = 0; attempt < 100 && !isWorkspaceReady(workspaceId); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 5))
+      }
+
+      expect(isWorkspaceReady(workspaceId)).toBe(true)
+      expect(connectionPlacement(workspaceId)).toEqual({ state: "role-known", workspaceId, role: "viewer" })
+      expect(workspacePlacement(workspaceId)?.role).toBe("viewer")
+      handle.release()
       dispose()
     })
   })
