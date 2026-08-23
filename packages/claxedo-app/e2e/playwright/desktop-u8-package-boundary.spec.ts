@@ -13,6 +13,7 @@ import {
   startScriptedModelServer,
 } from "../helpers/scripted-model-server"
 import { startForwardedForProxy, startSignedFixture } from "../helpers/desktop-signed-server"
+import { descendantCommands } from "../helpers/process-inventory"
 
 const BOOT_TIMEOUT = 90_000
 const HOSTED_CHUNK = "desktop-hosted-contributions-"
@@ -79,26 +80,6 @@ async function startOAuthFixture(accessToken: string): Promise<OAuthFixture> {
     tokenRequests,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   }
-}
-
-async function descendantCommands(app: PackagedApp) {
-  const rows = execFileSync("ps", ["-axo", "pid=,ppid=,command="], { encoding: "utf8" })
-    .split("\n")
-    .flatMap((line) => {
-      const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.+)$/)
-      return match ? [{ pid: Number(match[1]), ppid: Number(match[2]), command: match[3]!.trim() }] : []
-    })
-  const descendants = new Set([app.app.process().pid!])
-  let changed = true
-  while (changed) {
-    changed = false
-    for (const row of rows) {
-      if (!descendants.has(row.ppid) || descendants.has(row.pid)) continue
-      descendants.add(row.pid)
-      changed = true
-    }
-  }
-  return rows.filter((row) => descendants.has(row.pid)).map((row) => row.command)
 }
 
 async function openScratchWorkspace(app: PackagedApp) {
@@ -218,7 +199,7 @@ test.describe("U8 packaged product boundary @core @tier-real @surface-desktop", 
       status: "not-started",
       signedIn: false,
     })
-    expect((await descendantCommands(packaged)).filter((command) => command.includes("host-connector/index.js"))).toEqual([])
+    expect(descendantCommands(packaged.app.process().pid!).filter((command) => command.includes("host-connector/index.js"))).toEqual([])
   })
 
   test("fixture OAuth activates the fingerprinted hosted renderer once without starting Host Connector", async () => {
@@ -295,6 +276,6 @@ test.describe("U8 packaged product boundary @core @tier-real @surface-desktop", 
       status: "not-started",
       signedIn: true,
     })
-    expect((await descendantCommands(packaged)).filter((command) => command.includes("host-connector/index.js"))).toEqual([])
+    expect(descendantCommands(packaged.app.process().pid!).filter((command) => command.includes("host-connector/index.js"))).toEqual([])
   })
 })
