@@ -22,6 +22,9 @@ describe("Windows CI contract", () => {
   test("runs the unit matrix on Windows as a blocking check", () => {
     expect(workflow).toContain("- name: windows\n            host: windows-latest")
     expect(workflow).not.toContain("continue-on-error: ${{ matrix.settings.host == 'windows-latest' }}")
+    expect(acceptance).toContain("--path-ignore-patterns=opencode-compile-cache-boot.test.ts")
+    expect(acceptance).toContain("bun test ./scripts/opencode-compile-cache-boot.test.ts --max-concurrency=1")
+    expect(acceptance).toContain('Assert-LastExitCode "desktop compile-cache boot tests"')
   })
 
   test("applies dependency patches after Bun resolves peer variants", () => {

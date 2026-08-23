@@ -54,8 +54,15 @@ Set-Location $desktop
 # compile-cache fixtures through the same native dependency tree, intermittently
 # observing an existing JS file as EISDIR. Keep the Windows acceptance process
 # deterministic; Linux/macOS retain the repository's normal parallel test lane.
-bun test ./src ./scripts --max-concurrency=1
+# Bun's Windows resolver can retain an invalid EISDIR view of hardlinked
+# node_modules entries after the broad suite has loaded every desktop fixture.
+# The compile-cache boot test performs its own real Bun.build/native-resolution
+# cycle, so give it a fresh Bun process while keeping both lanes blocking.
+bun test ./src ./scripts --max-concurrency=1 --path-ignore-patterns=opencode-compile-cache-boot.test.ts
 Assert-LastExitCode "desktop tests"
+
+bun test ./scripts/opencode-compile-cache-boot.test.ts --max-concurrency=1
+Assert-LastExitCode "desktop compile-cache boot tests"
 
 bun run typecheck
 Assert-LastExitCode "desktop typecheck"
