@@ -546,6 +546,21 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
       if (runtimePath === "/session" || runtimePath === "/experimental/session") return json(route, [])
       if (runtimePath === "/session/status") return json(route, {})
       if (runtimePath === "/permission" || runtimePath === "/question") return json(route, [])
+      if (runtimePath === "/permission/modes") {
+        return json(route, {
+          modes: [],
+          unsupported: "opencode has no permission modes of its own",
+          appliesFrom: "next-turn",
+        })
+      }
+      if (runtimePath === "/global/event" || runtimePath === "/event") {
+        return route.fulfill({
+          status: 200,
+          contentType: "text/event-stream",
+          headers: corsHeaders(),
+          body: sseEvent({ directory: DIR, payload: { type: "server.connected", properties: {} } }),
+        })
+      }
       if (runtimePath === "/api/wr/events" || runtimePath === "/api/wr/runtime-events" || runtimePath === "/api/claxedo/runtime-events") {
         return route.fulfill({ status: 200, contentType: "text/event-stream", headers: corsHeaders(), body: sseEvent({ type: "heartbeat" }) })
       }

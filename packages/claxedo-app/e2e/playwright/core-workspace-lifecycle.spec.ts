@@ -781,7 +781,11 @@ test.describe("core workspace lifecycle @core", () => {
     await expect(projectHeader).toHaveCount(0, { timeout: 5_000 })
 
     await expect.poll(() => deleteCalls, { timeout: 10_000 }).toBe(1)
-    await expect(toastTitle(page)).toHaveText("Failed to remove project", { timeout: 10_000 })
+    // Background reconnect/reload failures may legitimately surface their own
+    // toast at the same time. Assert the removal contract by content instead
+    // of requiring this to be the only toast in the global stack.
+    await expect(toastTitle(page).filter({ hasText: "Failed to remove project" }))
+      .toHaveText("Failed to remove project", { timeout: 10_000 })
 
     // The already-removed row does not come back after the failure.
     await expect(projectHeader).toHaveCount(0)
