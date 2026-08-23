@@ -286,6 +286,88 @@ export async function measureSessionActivation(
             }
             return hash;
           };
+          const timeoutDiagnostic = () => {
+            const candidate = document.querySelector<HTMLElement>(
+              `[data-testid="session-page-root"][data-session-id="${CSS.escape(id)}"]`,
+            );
+            const surface = candidate?.closest<HTMLElement>("[data-workbench-content]");
+            const composer = candidate?.querySelector<HTMLElement>('[data-component="prompt-input"]');
+            const timeline = candidate?.querySelector<HTMLElement>("[data-session-timeline-root]");
+            const viewport = timeline?.querySelector<HTMLElement>(
+              '[data-slot="session-timeline-scroll"] [data-scrollable]',
+            );
+            const rect = (element: HTMLElement | null | undefined) => {
+              if (!element) return undefined;
+              const bounds = element.getBoundingClientRect();
+              const style = getComputedStyle(element);
+              return {
+                display: style.display,
+                visibility: style.visibility,
+                opacity: style.opacity,
+                x: Math.round(bounds.x * 10) / 10,
+                y: Math.round(bounds.y * 10) / 10,
+                width: Math.round(bounds.width * 10) / 10,
+                height: Math.round(bounds.height * 10) / 10,
+              };
+            };
+            const expectedRows = candidate
+              ? [...candidate.querySelectorAll<HTMLElement>("[data-content-message-id]")]
+                .filter((item) => expected.has(item.dataset.contentMessageId ?? ""))
+                .slice(0, 8)
+                .map((item) => ({
+                  messageId: item.dataset.contentMessageId,
+                  partId: item.dataset.contentPartId,
+                  timelineRow: item.dataset.timelineRow,
+                  textLength: item.innerText.trim().length,
+                  rect: rect(item),
+                }))
+              : [];
+            return {
+              root: rect(candidate),
+              sessionState: {
+                firstFoldReady: candidate?.dataset.sessionFirstFoldReady,
+                messagesReady: candidate?.dataset.sessionMessagesReady,
+                messageCount: candidate?.dataset.sessionMessageCount,
+                conversationCount: candidate?.dataset.sessionConversationCount,
+                visibleUserCount: candidate?.dataset.sessionVisibleUserCount,
+                renderedUserCount: candidate?.dataset.sessionRenderedUserCount,
+                timelineLoading: !!candidate?.querySelector("[data-session-timeline-loading]"),
+                unavailable: !!candidate?.querySelector('[data-testid="session-unavailable"]'),
+              },
+              surface: {
+                rect: rect(surface),
+                ariaHidden: surface?.getAttribute("aria-hidden"),
+                inert: surface?.hasAttribute("inert"),
+              },
+              composer: {
+                rect: rect(composer),
+                ariaDisabled: composer?.getAttribute("aria-disabled"),
+                contenteditable: composer?.getAttribute("contenteditable"),
+              },
+              timeline: {
+                rect: rect(timeline),
+                revealReady: timeline?.dataset.sessionTimelineRevealReady,
+                progressiveReady: timeline?.dataset.sessionTimelineProgressiveReady,
+                rowCount: timeline?.dataset.sessionTimelineRowCount,
+                virtualKeyCount: timeline?.dataset.sessionTimelineKeyCount,
+              },
+              viewport: viewport
+                ? {
+                    rect: rect(viewport),
+                    scrollTop: viewport.scrollTop,
+                    scrollHeight: viewport.scrollHeight,
+                    clientHeight: viewport.clientHeight,
+                    mountedKeys: [...viewport.querySelectorAll<HTMLElement>("[data-timeline-key]")]
+                      .slice(-8)
+                      .map((item) => item.dataset.timelineKey),
+                  }
+                : undefined,
+              expectedRows,
+              documentFocused: document.hasFocus(),
+              documentVisibility: document.visibilityState,
+              previousSignature,
+            };
+          };
           const sample = ():
             | { signature: string; paintedMessage: Omit<PaintedMessage, "contentSha256">; contentText: string }
             | undefined => {
@@ -450,7 +532,7 @@ export async function measureSessionActivation(
             if (performance.now() >= deadline) {
               reject(
                 new Error(
-                  "Claxedo timeline did not paint a stable canonical latest-turn message",
+                  `Claxedo timeline did not paint a stable canonical latest-turn message: ${JSON.stringify(timeoutDiagnostic())}`,
                 ),
               );
               return;

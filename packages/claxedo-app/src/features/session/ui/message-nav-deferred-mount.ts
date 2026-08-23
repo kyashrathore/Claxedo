@@ -38,5 +38,5 @@ export function createMessageNavDeferredMount(revealed: Accessor<boolean>, visib
     },
     { initialValue: false },
   )
-  return ready
+  return () => ready.latest
 }

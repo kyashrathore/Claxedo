@@ -10,7 +10,6 @@
 // and lives in `state.meta`.
 
 import { measureRendererPhase } from "@/platform/performance/renderer-trace"
-import { batch } from "solid-js"
 import type { ContentMeta, ContentPayload, ContentType } from "./types"
 import { PINNED_CONTENT_TYPES } from "./types"
 import { selectEvictableSurfaces } from "./surface-budget"
@@ -141,16 +140,13 @@ export function createLayoutOrchestration(input: {
     }
     const { meta: nextMeta, payload } = measureRendererPhase("openSession.build", build)
     if (payload) nextMeta.content = payload
-    // These writes describe one user-visible transition. Publishing them
-    // separately makes Solid reconcile impossible intermediate states (meta
-    // without content, then content without focus) before it can render the
-    // selected surface. A batch keeps every store authoritative and
-    // synchronous while running dependants once with the complete state.
-    batch(() => {
-      measureRendererPhase("openSession.metaUpsert", () => meta.upsert(nextMeta))
-      measureRendererPhase("openSession.addContent", () => addContent(nextMeta.id))
-      if (opts?.focus !== false) measureRendererPhase("openSession.navigationShow", () => wb.navigation.show(nextMeta.id))
-    })
+    // Keep these authoritative publications ordered and individually visible
+    // to Solid. Batching them can mount the newly focused SessionContent after
+    // its visibility transition has already been coalesced, leaving the active
+    // session controller permanently gated with messagesReady=false.
+    measureRendererPhase("openSession.metaUpsert", () => meta.upsert(nextMeta))
+    measureRendererPhase("openSession.addContent", () => addContent(nextMeta.id))
+    if (opts?.focus !== false) measureRendererPhase("openSession.navigationShow", () => wb.navigation.show(nextMeta.id))
     return nextMeta.id
   }
 
