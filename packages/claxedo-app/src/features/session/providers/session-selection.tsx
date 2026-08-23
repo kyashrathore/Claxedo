@@ -40,7 +40,6 @@ import {
   selectionProviderDetailNeeded,
   type ModelKey,
 } from "@/features/session/composer/model-strategy"
-import { fastSessionSwitchQuietDelay } from "@/platform/runtime/session-switch"
 
 type State = LocalSelectionState
 type ModelSource = "selected" | "agent" | "fallback"
@@ -96,7 +95,10 @@ const localContextInput = {
         () => {
           setHydrationSession(session)
         },
-        fastSessionSwitchQuietDelay({ sessionId: session, baseDelay: 50 }),
+        // Harness/model identity is part of the active composer's correctness,
+        // not secondary background work. It must hydrate during a fast switch
+        // instead of waiting out the network-quiet window.
+        50,
       )
       onCleanup(() => clearTimeout(timer))
     })
