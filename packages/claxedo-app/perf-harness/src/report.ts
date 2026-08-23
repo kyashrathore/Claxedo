@@ -161,7 +161,7 @@ export function markdownReport(results: ScenarioResult[], options: { debug?: boo
       : `Target: 120hz (frame <= ${formatNumber(FRAME_120HZ_MS)}ms). Floor: 60hz (frame <= ${formatNumber(FRAME_60HZ_MS)}ms).`,
     `Flows: ${results.length}  ·  pass: ${count(results, "pass")}  ·  warn: ${count(results, "warn")}  ·  fail: ${count(results, "fail")}`,
     "",
-    `| Flow | Renderer proxy | pooled p95 task (ms) | worst task (ms) | tasks >16.67ms | completion (ms) | ${results.some((result) => result.diagnostics) ? "Diagnostics status" : "Status"} | Video |`,
+    `| Flow | Renderer proxy | pooled p95 task (ms) | worst task (ms) | tasks >16.67ms | mean full-flow completion (ms) | ${results.some((result) => result.diagnostics) ? "Diagnostics status" : "Status"} | Video |`,
     "| --- | --- | ---: | ---: | ---: | ---: | --- | --- |",
     ...headlineRows,
   ]

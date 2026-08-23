@@ -126,6 +126,7 @@ test("default reports prominently publish raw click rows and label cumulative in
   const markdown = markdownReport([result])
   const json = jsonReport([result])
 
+  expect(markdown).toContain("mean full-flow completion (ms)")
   expect(markdown).toContain("## Raw per-click navigation deltas")
   expect(markdown).toContain("One row is one physical click sample")
   expect(markdown).toContain("cumulative source counters")
