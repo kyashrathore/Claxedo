@@ -26,6 +26,7 @@ import {
   syncSessionMeta,
   waitForFirstActiveSessionStatusPoll,
 } from "./session-controller"
+import { joinFirstFoldSessionPrefetch, shouldScheduleFirstFoldHistory } from "./first-fold-prefetch"
 import { readAcceptedPromptStatus } from "./accepted-prompt-refresh"
 import { backfillFailedCursor, createHistoryMetaState, historyHasMore } from "./history-pagination"
 import {
@@ -285,6 +286,52 @@ describe("session controller helpers", () => {
     expect(FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS).toBeGreaterThan(30)
     expect(FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS).toBeGreaterThanOrEqual(900)
     expect(FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS).toBeGreaterThan(FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS)
+  })
+
+  test("joined cold-session prefetch seeds its canonical page without a duplicate transport fetch", async () => {
+    let fallbacks = 0
+    let ceilings = 0
+    await expect(joinFirstFoldSessionPrefetch({
+      request: Promise.resolve(),
+      active: () => true,
+      seed: () => true,
+      onSeed: () => {
+        ceilings += 1
+      },
+      fallback: () => {
+        fallbacks += 1
+      },
+    })).resolves.toBe("seeded")
+    expect(fallbacks).toBe(0)
+    expect(ceilings).toBe(1)
+  })
+
+  test("failed or empty cold-session prefetch falls back immediately while stale activations do nothing", async () => {
+    let fallbacks = 0
+    await expect(joinFirstFoldSessionPrefetch({
+      request: Promise.reject(new Error("prefetch failed")),
+      active: () => true,
+      seed: () => false,
+      fallback: () => {
+        fallbacks += 1
+      },
+    })).resolves.toBe("fallback")
+    expect(fallbacks).toBe(1)
+
+    await expect(joinFirstFoldSessionPrefetch({
+      request: Promise.resolve(),
+      active: () => false,
+      seed: () => false,
+      fallback: () => {
+        fallbacks += 1
+      },
+    })).resolves.toBe("inactive")
+    expect(fallbacks).toBe(1)
+  })
+
+  test("the delayed metadata hydrate does not duplicate a joined first-fold history request", () => {
+    expect(shouldScheduleFirstFoldHistory({ request: Promise.resolve() })).toBe(false)
+    expect(shouldScheduleFirstFoldHistory({})).toBe(true)
   })
 
   test("fast session switches keep target background hydration outside the interaction window", () => {

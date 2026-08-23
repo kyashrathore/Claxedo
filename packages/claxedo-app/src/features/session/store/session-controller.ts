@@ -41,10 +41,10 @@ import { FAST_SESSION_SWITCH_NETWORK_QUIET_MS, FIRST_FOLD_SESSION_BACKGROUND_HYD
 import { assistantMessageIdForUserMessage } from "../data/session-types"
 import { backfillFailedCursor, createHistoryMetaState, historyHasMore, historyIsLoading } from "./history-pagination"
 import type { SessionRef } from "@/platform/identity/session-ref"
+import { joinFirstFoldSessionPrefetch, shouldScheduleFirstFoldHistory } from "./first-fold-prefetch"
 
 export { FAST_SESSION_SWITCH_NETWORK_QUIET_MS, FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS, FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS } from "@/platform/runtime/session-switch"
 export { resolveStoredMessages, resolveStoredParts }
-
 export function sessionHistoryKey(input: { sessionID: string; directory: string }) {
   return `${input.directory}\0${input.sessionID}`
 }
@@ -985,10 +985,21 @@ export function createSessionController(input: {
         if (!id) return
         const quiet = fastSessionSwitchNetworkQuiet({ sessionId: id })
         const prefetched = seedFirstFoldFromPrefetch(id)
-        if (!prefetched && !quiet) {
-          void getSessionPrefetchPromise(id)?.then(() => {
-            if (input.directory() !== directory || input.sessionID() !== id || input.active?.() === false) return
-            seedFirstFoldFromPrefetch(id)
+        markLiveSession(globalSDK.event, id, directory, signedControlPlane ? input.workspaceId?.() : undefined, input.sessionRef?.()?.host)
+        const syncFirstFoldHistory = async () => {
+          const synced = await syncSessionHistory(id, { bypassQuiet: true })
+          sessionHydrationDebug("sync-session-complete", { directory, sessionID: id, synced })
+          if (synced) scheduleSessionCacheCeiling(id)
+          return synced
+        }
+        const prefetchRequest = prefetched ? undefined : getSessionPrefetchPromise(id)
+        if (prefetchRequest) {
+          void joinFirstFoldSessionPrefetch({
+            request: prefetchRequest,
+            active: () => input.directory() === directory && input.sessionID() === id && input.active?.() !== false,
+            seed: () => seedFirstFoldFromPrefetch(id),
+            onSeed: () => scheduleSessionCacheCeiling(id),
+            fallback: syncFirstFoldHistory,
           })
         }
         const hydrateDelay = quiet
@@ -1010,18 +1021,8 @@ export function createSessionController(input: {
             prefetched,
           })
           seedFirstFoldFromPrefetch(id)
-          // See the note at the other setLiveSession call site: thread the
-          // scope workspaceId so the runtime stream relays for relay-backed
-          // workspaces whose `directory` is a non-ref filesystem path.
-          markLiveSession(globalSDK.event, id, directory, signedControlPlane ? input.workspaceId?.() : undefined, input.sessionRef?.()?.host)
           void syncSessionCapabilities(id)
-          void syncSessionHistory(id, { bypassQuiet: true }).then((synced) => {
-            sessionHydrationDebug("sync-session-complete", { directory, sessionID: id, synced })
-            // History hydration is what makes this session's cache eligible
-            // for the ceiling. Scheduling before the asynchronous write can
-            // leave an over-limit cache untouched until another navigation.
-            if (synced) scheduleSessionCacheCeiling(id)
-          })
+          if (shouldScheduleFirstFoldHistory({ request: prefetchRequest })) void syncFirstFoldHistory()
           void syncSessionTodo(id)
         }, hydrateDelay)
         const cancelMeta = scheduleDelayedTask(() => {

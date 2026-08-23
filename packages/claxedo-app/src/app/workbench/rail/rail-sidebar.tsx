@@ -87,8 +87,8 @@ import {
 import { localWorkspaceShareTarget, registerUserHostedWorkspace, workspaceShareUrl } from "@/features/workspaces/data/share-workspace"
 import { Can, can } from "@/platform/auth/role"
 import { isWorkspaceReady, workspacePlacement } from "../../../features/workspaces/data/workspace-connection"
-import { getSessionPrefetch, runSessionPrefetch, sameWorkspaceSessionPrefetchIds, SESSION_PREFETCH_TTL, setSessionPrefetch } from "@/platform/sync/session-prefetch"
-import { centralSessionRef, sessionRefForWorkspaceSession, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+import { getSessionPrefetch, getSessionPrefetchPromise, runSessionPrefetch, sameWorkspaceSessionPrefetchIds, SESSION_PREFETCH_TTL, setSessionPrefetch } from "@/platform/sync/session-prefetch"
+import { centralSessionRef, sessionRefForWorkspaceSession, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { USER_HOSTED_WORKSPACE_KIND } from "@/platform/runtime/agent/workspace-kind"
 import type { PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { fetchSessionMessagesByTransport } from "../../../features/session/store/session-transport"
@@ -128,7 +128,6 @@ const VIEW_KEY = "claxedo.session-view.v1"
 const GLOBAL_TAG = "global"
 const GLOBAL_SHOW_TAG = "global:default"
 const SESSION_GROUP_PAGE_SIZE = 5
-
 type SessionListNoticeVariant = "loading" | "error" | "empty" | "done"
 
 export function SessionListNotice(props: {
@@ -506,15 +505,15 @@ export function RailSidebar(props: RailSidebarProps) {
   const prefetchSidebarSessionMessages = (
     directory: string,
     sessionID: string,
-    opts: { bypassQuiet?: boolean; workspaceId?: string; workspaceKind?: "cloud" | "user-hosted" } = {},
+    opts: { bypassQuiet?: boolean; workspaceId?: string; workspaceKind?: "cloud" | "user-hosted"; sessionRef?: SessionRef } = {},
   ) => {
     const key = JSON.stringify([directory, sessionID])
-    if (messagePrefetchInFlight.has(key)) return
-    if (hasFreshMessagePrefetch(sessionID)) return
+    if (messagePrefetchInFlight.has(key)) return !!getSessionPrefetchPromise(sessionID)
+    if (hasFreshMessagePrefetch(sessionID)) return true
     messagePrefetchInFlight.add(key)
     if (!opts.bypassQuiet && fastSessionSwitchAnyQuietDelay() > 0) {
       messagePrefetchInFlight.delete(key)
-      return
+      return false
     }
     void runSessionPrefetch({
       directory,
@@ -525,15 +524,12 @@ export function RailSidebar(props: RailSidebarProps) {
         sessionID,
         claxedoServerUrl: globalSDK.url,
         limit: 80,
+        sessionRef: opts.sessionRef,
+        workspaceReachable: opts.workspaceId ? isWorkspaceReady(opts.workspaceId) : undefined,
         // A CONFIRMED workspace kind is what routes this read correctly:
-        // placement-table.ts `resolveSessionResourceRoute` sends signed cloud
-        // sessions to the control plane (branch E) but diverts to the relay for
+        // `resolveSessionResourceRoute` sends signed cloud to control plane but diverts to relay for
         // user-hosted AND for any workspace whose kind is unresolved (branch C).
-        // Leaving the kind unset made a cloud transcript ride a runtime that may
-        // be dead, even though the control plane holds the synced copy.
-        ...(opts.workspaceKind
-          ? { signedControlPlane: true, workspaceKind: opts.workspaceKind, ...(opts.workspaceId ? { workspaceId: opts.workspaceId } : {}) }
-          : {}),
+        ...(opts.workspaceKind ? { signedControlPlane: true, workspaceKind: opts.workspaceKind, ...(opts.workspaceId ? { workspaceId: opts.workspaceId } : {}) } : {}),
       })
       .then(async (messages) => {
         const normalized = normalizeMessageRows(messages.data)
@@ -567,6 +563,7 @@ export function RailSidebar(props: RailSidebarProps) {
       .finally(() => {
         messagePrefetchInFlight.delete(key)
       })
+    return true
   }
 
   const sectionCloud = (project: ProjectItem, workspaceDir?: string) =>
@@ -1306,9 +1303,12 @@ export function RailSidebar(props: RailSidebarProps) {
       currentWorkspacePanelSessionId,
     )
     const directory = measure("sessionActivate.directory", () => sessionDirectory(session))
+    const backing = workspaceSessionBacking(session, directory)
+    markFastSessionSwitch(session.id, Date.now(), { networkQuiet: false })
+    const firstFoldReadyOrLoading = measure("sessionActivate.prefetch", () => prefetchSidebarSessionMessages(directory, session.id, { bypassQuiet: true, sessionRef: sessionWorkbenchRef(session), ...(backing ? { workspaceKind: backing.kind, workspaceId: backing.workspaceId } : {}) }))
     const serial = ++sessionActivationSerial
     measure("sessionActivate.markFastSwitch", () => markFastSessionSwitch(session.id, Date.now(), {
-      networkQuiet: hasFreshMessagePrefetch(session.id),
+      networkQuiet: firstFoldReadyOrLoading,
     }))
     const contentId = measure("sessionActivate.openSession", () => claxedoState.layout.openSession(directory, session.id, sessionRowTitle(session.title), {
       focus: false,
