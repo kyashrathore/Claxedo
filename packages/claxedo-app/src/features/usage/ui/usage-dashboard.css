@@ -6,6 +6,15 @@
   --usage-neutral: var(--text-base);
 }
 
+/* The dashboard is a scrollable flex column. Its sections must keep their
+   natural height and overflow into scroll — the default flex-shrink would
+   instead compress the overview grid to its min-height floor whenever the
+   dialog is shorter than the content, and the chart rows then overflow the
+   squeezed box underneath the metric strip and attribution table. */
+.usage-dashboard > * {
+  flex-shrink: 0;
+}
+
 .usage-section-heading,
 .usage-quota-provider header,
 .usage-quota-window > div {
