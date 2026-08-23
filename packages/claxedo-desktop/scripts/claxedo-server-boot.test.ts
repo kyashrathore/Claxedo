@@ -149,6 +149,7 @@ test("bundled claxedo-server boots the embedded engine and serves engine-backed 
     const directory = encodeURIComponent(workspaceDirectory)
     const project = await fetch(`${base}/project/current?directory=${directory}`)
     expect(project.status).toBe(200)
+    expect(await project.json()).toMatchObject({ worktree: fs.realpathSync(workspaceDirectory) })
 
     // /session is engine-backed with no network dependency (pure DB read), so
     // it is the offline-safe discriminator: a dead embedded engine surfaces a
