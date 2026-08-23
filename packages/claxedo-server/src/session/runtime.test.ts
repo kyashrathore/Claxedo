@@ -613,6 +613,31 @@ describe("createCentralSessionRuntime", () => {
     }))
   })
 
+  test("serves bounded central transcript pages from the projection authority", async () => {
+    const svc = services()
+    svc.projectionStore.read_session_message_page = vi.fn(() => ({
+      messages: [{ info: { id: "message-2", role: "assistant" }, parts: [] }],
+      nextCursor: "central-projection-cursor",
+    }))
+    const runtime = createCentralSessionRuntime(svc)
+    const session = await runtime.createHybridSession({ title: "Paged" })
+
+    const response = await runtime.routes.request(
+      `http://127.0.0.1/session/${session.id}/message?limit=80&before=prior-cursor`,
+    )
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("x-next-cursor")).toBe("central-projection-cursor")
+    await expect(response.json()).resolves.toEqual([
+      { info: { id: "message-2", role: "assistant" }, parts: [] },
+    ])
+    expect(svc.projectionStore.read_session_message_page).toHaveBeenCalledWith(session.id, {
+      limit: 80,
+      before: "prior-cursor",
+    })
+    expect(svc.projectionStore.read_session_messages).not.toHaveBeenCalled()
+  })
+
   test("mints a subjectless turn credential for a loopback message route", async () => {
     const turns = createConnectionTurnCredentials({ random: () => "loopback-turn" })
     const control = createCentralControlApp(services(), { turnCredentials: turns })

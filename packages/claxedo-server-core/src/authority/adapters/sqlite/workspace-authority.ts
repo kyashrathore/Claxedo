@@ -1,4 +1,5 @@
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import type { HostEnrollment, OrgId, ProjectAction, ProjectRoleResult, WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
 import {
@@ -56,6 +57,31 @@ export function localControlPlaneAuth(): SignedControlPlaneAuth {
 const DEFAULT_TTL_MS = 60_000
 const MAX_TTL_MS = 5 * 60_000
 const CHALLENGE_TTL_MS = 60_000
+const MESSAGE_PAGE_CURSOR_PREFIX = "sawmp1:"
+const MAX_MESSAGE_PAGE_LIMIT = 500
+
+function encodeMessagePageCursor(sessionId: string, ordinal: number) {
+  return `${MESSAGE_PAGE_CURSOR_PREFIX}${Buffer.from(JSON.stringify({ sessionId, ordinal })).toString("base64url")}`
+}
+
+function decodeMessagePageCursor(sessionId: string, input: string) {
+  try {
+    if (!input.startsWith(MESSAGE_PAGE_CURSOR_PREFIX)) throw new Error("unexpected cursor version")
+    const value = JSON.parse(Buffer.from(input.slice(MESSAGE_PAGE_CURSOR_PREFIX.length), "base64url").toString("utf8")) as {
+      sessionId?: unknown
+      ordinal?: unknown
+    }
+    if (
+      value.sessionId !== sessionId
+      || typeof value.ordinal !== "number"
+      || !Number.isSafeInteger(value.ordinal)
+      || value.ordinal < 0
+    ) throw new Error("invalid cursor payload")
+    return value.ordinal
+  } catch {
+    throw new AgentMessagePageError(400, "Invalid message page cursor")
+  }
+}
 
 /**
  * Machine-enrollment retention policy — ONE canonical set of bounds, mirrored
@@ -1125,13 +1151,49 @@ export function createSqliteWorkspaceAuthority(
         ? authorizeWorkspaceForUser(db, workspace, who, "read")
         : undefined
       if (!role) return { allowed: false, messages: [] }
-      const rows = db.prepare(`
-        SELECT data FROM session_messages WHERE session_id = ? AND workspace_id = ? ORDER BY ordinal ASC
-      `).all(args.sessionId, args.workspaceId) as Array<{ data: string }>
+      if (args.before !== undefined && args.limit === undefined) {
+        throw new AgentMessagePageError(400, "Message page limit is required with a cursor")
+      }
+      if (args.limit !== undefined && (
+        !Number.isSafeInteger(args.limit)
+        || args.limit < 1
+        || args.limit > MAX_MESSAGE_PAGE_LIMIT
+      )) {
+        throw new AgentMessagePageError(400, `Message page limit must be between 1 and ${MAX_MESSAGE_PAGE_LIMIT}`)
+      }
+      if (args.limit === undefined) {
+        const rows = db.prepare(`
+          SELECT data FROM session_messages WHERE session_id = ? AND workspace_id = ? ORDER BY ordinal ASC
+        `).all(args.sessionId, args.workspaceId) as Array<{ data: string }>
+        return {
+          allowed: true,
+          role,
+          messages: rows.map((row) => JSON.parse(row.data) as unknown),
+        }
+      }
+      const beforeOrdinal = args.before === undefined
+        ? undefined
+        : decodeMessagePageCursor(args.sessionId, args.before)
+      const rows = (beforeOrdinal === undefined
+        ? db.prepare(`
+            SELECT ordinal, data FROM session_messages
+            WHERE session_id = ? AND workspace_id = ?
+            ORDER BY ordinal DESC LIMIT ?
+          `).all(args.sessionId, args.workspaceId, args.limit + 1)
+        : db.prepare(`
+            SELECT ordinal, data FROM session_messages
+            WHERE session_id = ? AND workspace_id = ? AND ordinal < ?
+            ORDER BY ordinal DESC LIMIT ?
+          `).all(args.sessionId, args.workspaceId, beforeOrdinal, args.limit + 1)) as Array<{ ordinal: number; data: string }>
+      const hasMore = rows.length > args.limit
+      const selected = rows.slice(0, args.limit).reverse()
       return {
         allowed: true,
         role,
-        messages: rows.map((row) => JSON.parse(row.data) as unknown),
+        messages: selected.map((row) => JSON.parse(row.data) as unknown),
+        ...(hasMore && selected[0]
+          ? { nextCursor: encodeMessagePageCursor(args.sessionId, selected[0].ordinal) }
+          : {}),
       }
     },
     async syncSessionMessages(auth: SignedControlPlaneAuth, args) {

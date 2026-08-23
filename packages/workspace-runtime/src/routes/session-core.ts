@@ -13,8 +13,12 @@ import type {
   SessionConfigUpdate,
   HarnessCapabilities,
 } from "@claxedo/agent-sdk-runtime"
-import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
-import { hasAdapterCapability } from "@claxedo/agent-sdk-runtime/adapters"
+import type {
+  AgentHarnessAdapter,
+  AgentMessagePage,
+  AgentMessagePageInput,
+} from "@claxedo/agent-sdk-runtime/adapters"
+import { AgentMessagePageError, hasAdapterCapability } from "@claxedo/agent-sdk-runtime/adapters"
 import {
   messageUpdated,
   permissionReplied,
@@ -86,6 +90,44 @@ function noStoreJson(c: Ctx, data: unknown, status?: ContentfulStatusCode) {
   })
 }
 
+const MAX_MESSAGE_PAGE_LIMIT = 500
+
+function messagePageInput(c: Ctx): AgentMessagePageInput | undefined {
+  const limit = c.req.query("limit")
+  const before = c.req.query("before")
+  if (limit === undefined && before === undefined) return undefined
+  if (limit === undefined || !/^[1-9]\d*$/.test(limit)) {
+    throw new HTTPException(400, { message: `limit must be an integer between 1 and ${MAX_MESSAGE_PAGE_LIMIT}` })
+  }
+  const parsedLimit = Number(limit)
+  if (!Number.isSafeInteger(parsedLimit) || parsedLimit > MAX_MESSAGE_PAGE_LIMIT) {
+    throw new HTTPException(400, { message: `limit must be an integer between 1 and ${MAX_MESSAGE_PAGE_LIMIT}` })
+  }
+  if (before !== undefined && before.length === 0) {
+    throw new HTTPException(400, { message: "before must be a non-empty cursor" })
+  }
+  return {
+    limit: parsedLimit,
+    ...(before !== undefined ? { before } : {}),
+  }
+}
+
+function messagePageResponse(c: Ctx, page: AgentMessagePage) {
+  if (page.nextCursor !== undefined) {
+    c.header("Access-Control-Expose-Headers", "X-Next-Cursor")
+    c.header("X-Next-Cursor", page.nextCursor)
+  }
+  return noStoreJson(c, page.messages)
+}
+
+function throwMessagePageError(error: unknown, fallbackStatus: 500 | 502): never {
+  if (!(error instanceof AgentMessagePageError)) throw error
+  const status = Number.isInteger(error.status) && error.status >= 400 && error.status <= 599
+    ? error.status as ContentfulStatusCode
+    : fallbackStatus
+  throw new HTTPException(status, { message: error.message, cause: error })
+}
+
 function publishInteractionEvents(
   publish: (event: CompatEnvelope) => void,
   directory: RuntimeDirectory,
@@ -139,6 +181,13 @@ type Opts = {
     adapter: AgentHarnessAdapter,
   ) => Promise<SessionConfig>
   getMessages?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<AgentMessageRow[] | undefined> | AgentMessageRow[] | undefined
+  getMessagePage?: (
+    c: Ctx,
+    directory: RuntimeDirectory,
+    sessionId: string,
+    page: AgentMessagePageInput,
+    adapter: AgentHarnessAdapter,
+  ) => Promise<AgentMessagePage | undefined> | AgentMessagePage | undefined
   getMessageSnapshot?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<MessageSnapshot | undefined> | MessageSnapshot | undefined
   afterUpdateSession?: (
     c: Ctx,
@@ -713,9 +762,28 @@ export function createSessionRoutes(opts: Opts) {
       const guarded = await sessionOperationGuard(opts, c, sessionId, "messages")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
-      if (c.req.query("snapshot") === "1") {
+      const snapshotRequested = c.req.query("snapshot") === "1"
+      if (snapshotRequested) {
         const snapshot = await opts.getMessageSnapshot?.(c, directory, sessionId)
         if (snapshot) return noStoreJson(c, snapshot)
+      }
+      const pageInput = snapshotRequested ? undefined : messagePageInput(c)
+      if (pageInput) {
+        const adapter = await opts.resolveAdapter(c, { sessionId, directory })
+        try {
+          const page = await opts.getMessagePage?.(c, directory, sessionId, pageInput, adapter)
+          if (page) return messagePageResponse(c, page)
+        } catch (error) {
+          throwMessagePageError(error, 500)
+        }
+        if (adapter.getMessagePage) {
+          try {
+            return messagePageResponse(c, await adapter.getMessagePage(sessionId, pageInput, directory))
+          } catch (error) {
+            throwMessagePageError(error, 502)
+          }
+        }
+        throw new HTTPException(501, { message: "message paging is not supported for this session" })
       }
       const replay = await opts.getMessages?.(c, directory, sessionId)
       if (replay) return noStoreJson(c, replay)

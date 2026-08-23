@@ -416,6 +416,54 @@ describe("sqlite workspace authority", () => {
     expect(await authority.listSessions(owner, { workspaceId: "ws_s" })).toEqual([])
   })
 
+  test("pages workspace-authority transcripts backward without changing the legacy full read", async () => {
+    const authority = memoryAuthority()
+    await authority.createCloudWorkspace(owner, { workspaceId: "ws_page", displayName: "Paged" })
+    await authority.upsertSessionVisibility(owner, {
+      workspaceId: "ws_page",
+      sessions: [{ sessionId: "ses_page" }, { sessionId: "ses_other" }],
+    })
+    const messages = Array.from({ length: 5 }, (_, index) => ({
+      info: { id: `msg_${index + 1}`, role: index % 2 === 0 ? "user" : "assistant" },
+      parts: [],
+    }))
+    await authority.syncSessionMessages(owner, {
+      sessionId: "ses_page",
+      workspaceId: "ws_page",
+      messages,
+      maxEventOrdinal: 10,
+    })
+
+    const first = await authority.readSessionMessages(owner, {
+      sessionId: "ses_page",
+      workspaceId: "ws_page",
+      limit: 2,
+    }) as { messages: typeof messages; nextCursor?: string }
+    expect(first.messages.map((message) => message.info.id)).toEqual(["msg_4", "msg_5"])
+    expect(first.nextCursor).toMatch(/^sawmp1:/)
+
+    const second = await authority.readSessionMessages(owner, {
+      sessionId: "ses_page",
+      workspaceId: "ws_page",
+      limit: 2,
+      before: first.nextCursor,
+    }) as { messages: typeof messages; nextCursor?: string }
+    expect(second.messages.map((message) => message.info.id)).toEqual(["msg_2", "msg_3"])
+    expect(second.nextCursor).toMatch(/^sawmp1:/)
+
+    await expect(authority.readSessionMessages(owner, {
+      sessionId: "ses_other",
+      workspaceId: "ws_page",
+      limit: 2,
+      before: first.nextCursor,
+    })).rejects.toMatchObject({ status: 400, message: "Invalid message page cursor" })
+
+    await expect(authority.readSessionMessages(owner, {
+      sessionId: "ses_page",
+      workspaceId: "ws_page",
+    })).resolves.toMatchObject({ messages })
+  })
+
   test("session message sync atomically rejects an older event ordinal", async () => {
     const authority = memoryAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_ordinal", displayName: "Ordinal" })

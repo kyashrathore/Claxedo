@@ -1253,6 +1253,153 @@ describe("workspace runtime auth helpers", () => {
     }
   })
 
+  test("serves bounded store pages for every journal-backed harness without reading the adapter", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-store-pages-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const storeRoot = path.join(dir, ".claxedo", "store")
+    const seed = new RuntimeStore(storeRoot)
+    const harnesses = [
+      { id: "claude", access: "native" },
+      { id: "codex", access: "native" },
+      { id: "cursor", access: "native" },
+      { id: "claude", access: "acp" },
+      { id: "pi", access: "native" },
+      { id: "opencode", access: "native" },
+    ] as const
+    for (const [index, harness] of harnesses.entries()) {
+      const sessionId = `s-page-${index}`
+      seed.bindSession({ sessionId, directory: dir, agentSessionId: `a-page-${index}`, createdAt: index + 1 })
+      seed.updateSessionConfig(sessionId, { harness }, { directory: dir })
+      for (let message = 1; message <= 2; message++) {
+        seed.appendEvent({
+          sessionId,
+          agentSessionId: `a-page-${index}`,
+          payload: {
+            type: "message.updated",
+            properties: {
+              info: {
+                id: `${sessionId}-m${message}`,
+                sessionID: sessionId,
+                role: "user",
+                time: { created: message },
+              },
+            },
+          } as CompatEvent,
+        })
+      }
+    }
+    seed.close()
+
+    const resolved: string[] = []
+    const app = new Hono()
+    const host = mountTestHost(app, {
+      harness: { id: "pi", access: "native" },
+      storeRoot,
+      harnesses: [{
+        match: () => true,
+        create: ({ runner }) => {
+          resolved.push(`${runner.id}:${runner.access}`)
+          return {
+            getMessagePage: async () => {
+              throw new Error("populated store projection must not read the adapter page")
+            },
+            dispose() {},
+          } as unknown as AgentHarnessAdapter
+        },
+      }],
+    })
+
+    for (const [index] of harnesses.entries()) {
+      const response = await app.request(
+        `http://localhost/session/s-page-${index}/message?limit=1&directory=${encodeURIComponent(dir)}`,
+      )
+      expect(response.status).toBe(200)
+      expect((await response.json() as Array<{ info: { id: string } }>).map((message) => message.info.id))
+        .toEqual([`s-page-${index}-m2`])
+      expect(response.headers.get("x-next-cursor")).toMatch(/^wrmp1:/)
+    }
+    expect(resolved).toEqual(harnesses.map((harness) => `${harness.id}:${harness.access}`))
+    host.dispose()
+  })
+
+  test("falls back to the adapter page when a bound session has no projected messages", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-empty-page-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const storeRoot = path.join(dir, ".claxedo", "store")
+    const seed = new RuntimeStore(storeRoot)
+    seed.bindSession({ sessionId: "s-empty-page", directory: dir, agentSessionId: "a-empty-page", createdAt: 1 })
+    seed.updateSessionConfig("s-empty-page", { harness: { id: "pi", access: "native" } }, { directory: dir })
+    seed.close()
+
+    const calls: unknown[] = []
+    const adapter = {
+      getMessagePage: async (sessionId: string, page: unknown, directory: string) => {
+        calls.push({ sessionId, page, directory })
+        return {
+          messages: [{ info: { id: "adapter-message", role: "assistant" }, parts: [] }],
+          nextCursor: "adapter-next",
+        }
+      },
+      getMessages: async () => {
+        throw new Error("legacy full-history fallback must not run")
+      },
+      dispose() {},
+    } as unknown as AgentHarnessAdapter
+    const app = new Hono()
+    const host = mountTestHost(app, {
+      harness: { id: "pi", access: "native" },
+      storeRoot,
+      harnesses: [{ match: (runner) => runner.id === "pi", create: () => adapter }],
+    })
+
+    const response = await app.request(
+      `http://localhost/session/s-empty-page/message?limit=2&before=adapter-before&directory=${encodeURIComponent(dir)}`,
+    )
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual([{ info: { id: "adapter-message", role: "assistant" }, parts: [] }])
+    expect(response.headers.get("x-next-cursor")).toBe("adapter-next")
+    expect(calls).toEqual([{
+      sessionId: "s-empty-page",
+      page: { limit: 2, before: "adapter-before" },
+      directory: dir,
+    }])
+    host.dispose()
+  })
+
+  test("keeps an empty journal-backed transcript authoritative when the adapter cannot page", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-empty-native-page-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const storeRoot = path.join(dir, ".claxedo", "store")
+    const seed = new RuntimeStore(storeRoot)
+    seed.bindSession({ sessionId: "s-empty-native", directory: dir, agentSessionId: "a-empty-native", createdAt: 1 })
+    seed.updateSessionConfig("s-empty-native", { harness: { id: "pi", access: "native" } }, { directory: dir })
+    seed.close()
+
+    const adapter = {
+      getMessages: async () => {
+        throw new Error("paged requests must never read unbounded history")
+      },
+      dispose() {},
+    } as unknown as AgentHarnessAdapter
+    const app = new Hono()
+    const host = mountTestHost(app, {
+      harness: { id: "pi", access: "native" },
+      storeRoot,
+      harnesses: [{ match: (runner) => runner.id === "pi", create: () => adapter }],
+    })
+
+    const response = await app.request(
+      `http://localhost/session/s-empty-native/message?limit=2&directory=${encodeURIComponent(dir)}`,
+    )
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual([])
+    expect(response.headers.get("x-next-cursor")).toBeNull()
+    host.dispose()
+  })
+
   test("persists OpenCode session config through mounted workspace host routes", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-opencode-config-"))
     tempDirs.push(dir)

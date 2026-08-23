@@ -501,21 +501,37 @@ export const readMessages = authedQuery({
   args: {
     session_id: v.string(),
     workspace_id: v.string(),
+    limit: v.optional(v.number()),
+    before_ordinal: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const result = await authorizeReadSession(ctx, args)
     if (!result.allowed) return { allowed: false, messages: [] }
-    const messages = await ctx.db
+    const query = ctx.db
       .query("session_messages")
-      .withIndex("by_session_ordinal", (q: any) => q.eq("session_id", args.session_id))
-      .collect()
+      .withIndex("by_session_ordinal", (q: any) => args.before_ordinal === undefined
+        ? q.eq("session_id", args.session_id)
+        : q.eq("session_id", args.session_id).lt("ordinal", args.before_ordinal))
+    if (args.limit === undefined) {
+      const messages = await query.collect()
+      return {
+        allowed: true,
+        role: result.role,
+        messages: messages
+          .filter((message: any) => message.workspace_id === result.workspace._id)
+          .sort((a: any, b: any) => a.ordinal - b.ordinal)
+          .map((message: any) => message.data),
+      }
+    }
+    const rows = (await query.order("desc").take(args.limit + 1))
+      .filter((message: any) => message.workspace_id === result.workspace._id)
+    const hasMore = rows.length > args.limit
+    const selected = rows.slice(0, args.limit).reverse()
     return {
       allowed: true,
       role: result.role,
-      messages: messages
-        .filter((message: any) => message.workspace_id === result.workspace._id)
-        .sort((a: any, b: any) => a.ordinal - b.ordinal)
-        .map((message: any) => message.data),
+      messages: selected.map((message: any) => message.data),
+      ...(hasMore && selected[0] ? { next_ordinal: selected[0].ordinal } : {}),
     }
   },
 })

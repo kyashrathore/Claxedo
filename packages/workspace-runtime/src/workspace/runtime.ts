@@ -36,6 +36,8 @@ import {
   hasAdapterCapability,
   type AgentHarnessAdapter,
   type AgentHarnessAdapterHealth,
+  type AgentMessagePage,
+  type AgentMessagePageInput,
   type AgentRuntimeStoreWithRecovery,
   type HttpProxyAdapter,
   type OpenCodeRequestFn,
@@ -76,7 +78,8 @@ import type { WorkspaceTranscriptRoutesOptions } from "./core"
  * It is the harness-adapter store contract (`AgentRuntimeStoreWithRecovery`,
  * what each adapter's `createStore` must return) narrowed on the read methods
  * the engine's own session-config store path relies on (`getSession`,
- * `getMessages`), plus `getSessionMaxSeq` (used by the message-snapshot route).
+ * `getMessages`, and optional bounded `getMessagePage`), plus
+ * `getSessionMaxSeq` (used by the message-snapshot route).
  * `recoverBusySessions` is optional: the engine calls it on the adapter-owned
  * store when present (R2), so a host-supplied factory need not implement it. A
  * host may back the runtime with any store that satisfies this shape — e.g. the
@@ -90,6 +93,7 @@ export type WorkspaceRuntimeStore =
   & {
     getSession(id: string): AgentSession | null
     getMessages(id: string): AgentMessage[]
+    getMessagePage?: (id: string, page: AgentMessagePageInput) => AgentMessagePage | undefined
     getSessionMaxSeq(sessionId: string): number
     listSubagents?: (parentSessionId: string) => unknown[]
     bindSession(input: {
@@ -2196,6 +2200,19 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           const messages = store().getMessages(sessionId)
           if (!messages.length) return undefined
           return messages
+        },
+        getMessagePage: async ({ adapter, sessionId, page }) => {
+          const runtimeStore = store()
+          if (!runtimeStore.getSession(sessionId)) return undefined
+          const getMessagePage = runtimeStore.getMessagePage
+          if (!getMessagePage) return undefined
+          const projection = getMessagePage.call(runtimeStore, sessionId, page)
+          if (projection) return projection
+          // Only an adapter with a bounded page contract can own an empty
+          // store projection. Native/ACP/Pi sessions are journal-backed, so an
+          // empty projection is an authoritative empty transcript rather than
+          // permission to read unbounded history from the harness.
+          return adapter.getMessagePage ? undefined : { messages: [] }
         },
         getMessageSnapshot: async ({ sessionId }) => {
           if (!store().getSession(sessionId)) return undefined

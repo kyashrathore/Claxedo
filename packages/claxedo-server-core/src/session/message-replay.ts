@@ -8,6 +8,8 @@
  * on GET /session/:id/message, not from the adapter.
  */
 
+import { AgentMessagePageError, type AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/message-page"
+import { lt } from "drizzle-orm"
 import { ClaxedoDB, and, desc, eq, gt } from "../platform/db"
 import { ClaxedoCloudMessageEventTable, ClaxedoCloudMessageTable, ClaxedoCloudSessionTable } from "./cloud.sql"
 import { ClaxedoSessionMetaTable } from "@claxedo/server-core/session/meta.sql"
@@ -22,6 +24,41 @@ function txt(input: unknown): string | undefined {
 
 function num(input: unknown): number | undefined {
   return typeof input === "number" ? input : undefined
+}
+
+export type ReplayMessage = {
+  info: Record<string, unknown>
+  parts: Array<Record<string, unknown>>
+}
+
+export type SessionMessagePage = {
+  messages: ReplayMessage[]
+  nextCursor?: string
+}
+
+const MESSAGE_PAGE_CURSOR_PREFIX = "cspm1:"
+const MAX_MESSAGE_PAGE_LIMIT = 500
+
+function encodeMessagePageCursor(sessionId: string, ordinal: number) {
+  return `${MESSAGE_PAGE_CURSOR_PREFIX}${Buffer.from(JSON.stringify({ sessionId, ordinal })).toString("base64url")}`
+}
+
+function decodeMessagePageCursor(sessionId: string, input: string) {
+  try {
+    if (!input.startsWith(MESSAGE_PAGE_CURSOR_PREFIX)) throw new Error("unexpected cursor version")
+    const encoded = input.slice(MESSAGE_PAGE_CURSOR_PREFIX.length)
+    if (!encoded) throw new Error("missing cursor payload")
+    const decoded = rec(JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")))
+    if (
+      decoded?.sessionId !== sessionId
+      || typeof decoded.ordinal !== "number"
+      || !Number.isSafeInteger(decoded.ordinal)
+      || decoded.ordinal < 0
+    ) throw new Error("invalid cursor payload")
+    return decoded.ordinal
+  } catch {
+    throw new AgentMessagePageError(400, "Invalid message page cursor")
+  }
 }
 
 function staleToolError(message?: string) {
@@ -50,7 +87,7 @@ function terminalizedPart(part: Record<string, unknown>, ts: number, message?: s
 }
 
 export function terminalizeReplayMessages(
-  messages: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }>,
+  messages: ReplayMessage[],
   options: { interrupted?: boolean; message?: string } = {},
 ) {
   return messages.map((message) => {
@@ -198,18 +235,60 @@ export function persistMessageEvent(sessionId: string, event: { type: string; pr
 /**
  * Read all messages for a session from claxedo DB, ordered by insertion order.
  */
-export function readSessionMessages(sessionId: string): Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }> {
-  return ClaxedoDB.use((db) =>
+export function readSessionMessages(sessionId: string): ReplayMessage[] {
+  const rows = ClaxedoDB.use((db) =>
     db
-      .select()
+      .select({ data: ClaxedoCloudMessageTable.data })
       .from(ClaxedoCloudMessageTable)
       .where(eq(ClaxedoCloudMessageTable.session_id, sessionId))
       .orderBy(ClaxedoCloudMessageTable.ordinal)
       .all(),
-  ).map((row) => {
-    const parsed = JSON.parse(row.data) as { info: Record<string, unknown>; parts: Array<Record<string, unknown>> }
-    return terminalizeReplayMessages([{ info: parsed.info, parts: parsed.parts ?? [] }])[0]
-  }).filter((message): message is { info: Record<string, unknown>; parts: Array<Record<string, unknown>> } => !!message)
+  )
+  return hydrateReplayMessages(rows)
+}
+
+/**
+ * Read one bounded page of the newest projected messages.
+ *
+ * Cursors are owned by this SQLite projection and bind the next read to both
+ * the session and its oldest returned ordinal. Rows are selected newest-first
+ * with one look-ahead, then returned chronologically for transcript rendering.
+ */
+export function readSessionMessagePage(
+  sessionId: string,
+  input: AgentMessagePageInput,
+): SessionMessagePage {
+  if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > MAX_MESSAGE_PAGE_LIMIT) {
+    throw new AgentMessagePageError(400, `Message page limit must be between 1 and ${MAX_MESSAGE_PAGE_LIMIT}`)
+  }
+  const beforeOrdinal = input.before === undefined
+    ? undefined
+    : decodeMessagePageCursor(sessionId, input.before)
+  const rows = ClaxedoDB.use((db) =>
+    db
+      .select({
+        ordinal: ClaxedoCloudMessageTable.ordinal,
+        data: ClaxedoCloudMessageTable.data,
+      })
+      .from(ClaxedoCloudMessageTable)
+      .where(beforeOrdinal === undefined
+        ? eq(ClaxedoCloudMessageTable.session_id, sessionId)
+        : and(
+            eq(ClaxedoCloudMessageTable.session_id, sessionId),
+            lt(ClaxedoCloudMessageTable.ordinal, beforeOrdinal),
+          ))
+      .orderBy(desc(ClaxedoCloudMessageTable.ordinal))
+      .limit(input.limit + 1)
+      .all(),
+  )
+  const hasMore = rows.length > input.limit
+  const selected = rows.slice(0, input.limit).reverse()
+  return {
+    messages: hydrateReplayMessages(selected),
+    ...(hasMore && selected[0]
+      ? { nextCursor: encodeMessagePageCursor(sessionId, selected[0].ordinal) }
+      : {}),
+  }
 }
 
 /**
@@ -274,6 +353,13 @@ export function subscribeMessageReplay(bus: {
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
+
+function hydrateReplayMessages(rows: Array<{ data: string }>): ReplayMessage[] {
+  return terminalizeReplayMessages(rows.map((row) => {
+    const parsed = JSON.parse(row.data) as { info: Record<string, unknown>; parts?: Array<Record<string, unknown>> }
+    return { info: parsed.info, parts: parsed.parts ?? [] }
+  }))
+}
 
 function loadMessage(messageId: string) {
   return ClaxedoDB.use((db) =>

@@ -2,7 +2,12 @@ import fs from "fs"
 import { createRequire } from "module"
 import path from "path"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
-import { ACP_RECOVER } from "@claxedo/agent-sdk-runtime/adapters"
+import {
+  ACP_RECOVER,
+  AgentMessagePageError,
+  type AgentMessagePage,
+  type AgentMessagePageInput,
+} from "@claxedo/agent-sdk-runtime/adapters"
 import { createMemorySubagentAdmissionStore, firstTurnErrorData, normalizeAgentHarnessTransport, normalizeHarnessIdentity }
   from "@claxedo/agent-sdk-runtime"
 import type {
@@ -293,6 +298,39 @@ type RuntimeJournalRow = {
   assistant_message_id: string | null
   payload_json: string
   source_json: string | null
+}
+
+type MessageProjectionRow = {
+  id: string
+  ord: number
+  info_json: string
+}
+
+const MESSAGE_PAGE_CURSOR_PREFIX = "wrmp1:"
+const MAX_MESSAGE_PAGE_LIMIT = 500
+const MESSAGE_HYDRATION_BATCH_SIZE = 500
+
+function encodeMessagePageCursor(sessionId: string, ord: number) {
+  return `${MESSAGE_PAGE_CURSOR_PREFIX}${Buffer.from(JSON.stringify({ sessionId, ord })).toString("base64url")}`
+}
+
+function decodeMessagePageCursor(sessionId: string, input: string) {
+  try {
+    if (!input.startsWith(MESSAGE_PAGE_CURSOR_PREFIX)) throw new Error("unexpected cursor version")
+    const encoded = input.slice(MESSAGE_PAGE_CURSOR_PREFIX.length)
+    if (!encoded) throw new Error("missing cursor payload")
+    const decoded = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as unknown
+    const value = rec(decoded)
+    if (
+      value?.sessionId !== sessionId
+      || typeof value.ord !== "number"
+      || !Number.isSafeInteger(value.ord)
+      || value.ord < 0
+    ) throw new Error("invalid cursor payload")
+    return value.ord
+  } catch {
+    throw new AgentMessagePageError(400, "Invalid message page cursor")
+  }
 }
 
 function rec(input: unknown): Record<string, unknown> | null {
@@ -727,6 +765,10 @@ export class RuntimeStore {
       )
     `)
     this.db.exec(`
+      CREATE INDEX IF NOT EXISTS message_session_ord_idx
+      ON message (session_id, ord DESC)
+    `)
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS part (
         id TEXT PRIMARY KEY,
         session_id TEXT NOT NULL,
@@ -735,6 +777,10 @@ export class RuntimeStore {
         data_json TEXT NOT NULL,
         updated_at INTEGER NOT NULL
       )
+    `)
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS part_session_message_ord_idx
+      ON part (session_id, message_id, ord)
     `)
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS todo (
@@ -2806,10 +2852,30 @@ export class RuntimeStore {
       .all(sessionId) as Array<{ content: string; status: string; priority: string }>
   }
 
-  getMessages(sessionId: string): AgentMessageRow[] {
-    const msgs = this.db
-      .prepare("SELECT id, info_json FROM message WHERE session_id = ? ORDER BY ord ASC")
-      .all(sessionId) as Array<{ id: string; info_json: string }>
+  private hydrateMessages(sessionId: string, msgs: MessageProjectionRow[]): AgentMessageRow[] {
+    if (msgs.length === 0) return []
+    const partsByMessage = new Map<string, Record<string, unknown>[]>()
+    for (let offset = 0; offset < msgs.length; offset += MESSAGE_HYDRATION_BATCH_SIZE) {
+      const batch = msgs.slice(offset, offset + MESSAGE_HYDRATION_BATCH_SIZE)
+      const placeholders = batch.map(() => "?").join(", ")
+      const parts = this.db
+        .prepare(`
+          SELECT message_id, data_json
+          FROM part
+          WHERE session_id = ? AND message_id IN (${placeholders})
+          ORDER BY message_id ASC, ord ASC
+        `)
+        .all(
+          sessionId,
+          ...batch.map((message) => message.id),
+        ) as Array<{ message_id: string; data_json: string }>
+      for (const part of parts) {
+        const current = partsByMessage.get(part.message_id) ?? []
+        current.push(JSON.parse(part.data_json) as Record<string, unknown>)
+        partsByMessage.set(part.message_id, current)
+      }
+    }
+
     return msgs.map((msg) => {
       const info = JSON.parse(msg.info_json) as AgentMessageRow["info"]
       const infoRecord = info as Record<string, unknown>
@@ -2820,14 +2886,60 @@ export class RuntimeStore {
       const message = str(data?.message) ?? str(err?.message)
       const terminal = info.role === "assistant" && (completed || !!infoRecord.error)
       const ts = num(time?.completed) ?? num(time?.created) ?? Date.now()
-      const parts = (this.db
-        .prepare("SELECT data_json FROM part WHERE message_id = ? ORDER BY ord ASC")
-        .all(msg.id) as Array<{ data_json: string }>).map((part) => {
-          const parsed = JSON.parse(part.data_json) as Record<string, unknown>
-          return terminal ? this.terminalizedPart(parsed, ts, message) : parsed
-        })
-      return { info, parts }
+      const messageParts = partsByMessage.get(msg.id) ?? []
+      return {
+        info,
+        parts: terminal
+          ? messageParts.map((part) => this.terminalizedPart(part, ts, message))
+          : messageParts,
+      }
     })
+  }
+
+  getMessages(sessionId: string): AgentMessageRow[] {
+    const msgs = this.db
+      .prepare("SELECT id, ord, info_json FROM message WHERE session_id = ? ORDER BY ord ASC")
+      .all(sessionId) as MessageProjectionRow[]
+    return this.hydrateMessages(sessionId, msgs)
+  }
+
+  getMessagePage(sessionId: string, page: AgentMessagePageInput): AgentMessagePage | undefined {
+    if (!this.getSession(sessionId)) {
+      throw new AgentMessagePageError(404, `Session not found: ${sessionId}`)
+    }
+    if (!Number.isSafeInteger(page.limit) || page.limit < 1 || page.limit > MAX_MESSAGE_PAGE_LIMIT) {
+      throw new AgentMessagePageError(400, `Message page limit must be between 1 and ${MAX_MESSAGE_PAGE_LIMIT}`)
+    }
+    const projection = this.db
+      .prepare("SELECT 1 AS present FROM message WHERE session_id = ? LIMIT 1")
+      .get(sessionId) as { present: number } | null
+    // Undefined distinguishes a missing projection from an exhausted page.
+    // The workspace host uses the owning adapter's paging capability to decide
+    // whether this means engine-owned history or an authoritative empty store.
+    if (!projection) return undefined
+    const beforeOrd = page.before === undefined
+      ? undefined
+      : decodeMessagePageCursor(sessionId, page.before)
+    const params: unknown[] = [sessionId]
+    if (beforeOrd !== undefined) params.push(beforeOrd)
+    params.push(page.limit + 1)
+    const rows = this.db
+      .prepare(`
+        SELECT id, ord, info_json
+        FROM message
+        WHERE session_id = ?${beforeOrd === undefined ? "" : " AND ord < ?"}
+        ORDER BY ord DESC
+        LIMIT ?
+      `)
+      .all(...params) as MessageProjectionRow[]
+    const hasMore = rows.length > page.limit
+    const selected = rows.slice(0, page.limit).reverse()
+    return {
+      messages: this.hydrateMessages(sessionId, selected),
+      ...(hasMore && selected[0]
+        ? { nextCursor: encodeMessagePageCursor(sessionId, selected[0].ord) }
+        : {}),
+    }
   }
 
   getSessionMaxSeq(sessionId: string) {

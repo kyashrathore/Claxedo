@@ -423,6 +423,60 @@ describe("convex authority", () => {
     })
   })
 
+  test("bridges opaque message cursors to Convex ordinals without leaking adapter internals", async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce({
+        allowed: true,
+        messages: [{ info: { id: "msg_4" } }, { info: { id: "msg_5" } }],
+        next_ordinal: 3,
+      })
+      .mockResolvedValueOnce({
+        allowed: true,
+        messages: [{ info: { id: "msg_2" } }, { info: { id: "msg_3" } }],
+      })
+    const authority = createConvexAuthority({
+      executor: { query, mutation: vi.fn() },
+    })
+
+    const first = await authority.readSessionMessages(auth, {
+      workspaceId: "ws_1",
+      sessionId: "session-1",
+      limit: 2,
+    }) as { messages: unknown[]; nextCursor?: string; next_ordinal?: number }
+    expect(first.messages).toEqual([{ info: { id: "msg_4" } }, { info: { id: "msg_5" } }])
+    expect(first.nextCursor).toMatch(/^cawmp1:/)
+    expect(first).not.toHaveProperty("next_ordinal")
+    expect(query).toHaveBeenNthCalledWith(1, expect.anything(), {
+      workspace_id: "ws_1",
+      session_id: "session-1",
+      limit: 2,
+    })
+
+    const second = await authority.readSessionMessages(auth, {
+      workspaceId: "ws_1",
+      sessionId: "session-1",
+      limit: 2,
+      before: first.nextCursor,
+    })
+    expect(second).toMatchObject({
+      messages: [{ info: { id: "msg_2" } }, { info: { id: "msg_3" } }],
+    })
+    expect(query).toHaveBeenNthCalledWith(2, expect.anything(), {
+      workspace_id: "ws_1",
+      session_id: "session-1",
+      limit: 2,
+      before_ordinal: 3,
+    })
+
+    await expect(authority.readSessionMessages(auth, {
+      workspaceId: "ws_1",
+      sessionId: "session-2",
+      limit: 2,
+      before: first.nextCursor,
+    })).rejects.toMatchObject({ status: 400, message: "Invalid message page cursor" })
+    expect(query).toHaveBeenCalledTimes(2)
+  })
+
   test("writes session history visibility through Convex mutations", async () => {
     const mutation = vi.fn(async () => ({ ok: true }))
     const authority = createConvexAuthority({

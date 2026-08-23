@@ -672,6 +672,54 @@ describe("hosted app", () => {
     )
   })
 
+  test("hosted shared session reads preserve the workspace-authority page contract", async () => {
+    const plane = fakePlane()
+    plane.services.authority!.readSessionMessages = vi.fn(async () => ({
+      allowed: true,
+      messages: [{ info: { id: "msg_page", role: "assistant" }, parts: [] }],
+      nextCursor: "hosted-authority-next",
+    }))
+    const app = createHostedApp(plane)
+
+    const response = await app.fetch(
+      new Request(
+        "http://cp.test/api/control/sessions/ses_1/messages?workspaceId=ws_1&limit=80&before=hosted-authority-before",
+        { headers: { authorization: "Bearer user_1" } },
+      ),
+    )
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("x-next-cursor")).toBe("hosted-authority-next")
+    expect(response.headers.get("access-control-expose-headers")).toContain("X-Next-Cursor")
+    await expect(response.json()).resolves.toEqual({
+      allowed: true,
+      messages: [{ info: { id: "msg_page", role: "assistant" }, parts: [] }],
+      nextCursor: "hosted-authority-next",
+      maxEventOrdinal: 0,
+    })
+    expect(plane.services.authority!.readSessionMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ token: "user_1" }),
+      {
+        sessionId: "ses_1",
+        workspaceId: "ws_1",
+        limit: 80,
+        before: "hosted-authority-before",
+      },
+    )
+
+    const malformed = await app.fetch(
+      new Request(
+        "http://cp.test/api/control/sessions/ses_1/messages?workspaceId=ws_1&limit=0",
+        { headers: { authorization: "Bearer user_1" } },
+      ),
+    )
+    expect(malformed.status).toBe(400)
+    await expect(malformed.json()).resolves.toMatchObject({
+      error: { code: "message_page_error" },
+    })
+    expect(plane.services.authority!.readSessionMessages).toHaveBeenCalledTimes(1)
+  })
+
   test("local execution routes are absent from the hosted app", async () => {
     const app = createHostedApp(fakePlane())
     const response = await app.fetch(new Request("http://cp.test/api/claxedo/pty/abc/connect"))

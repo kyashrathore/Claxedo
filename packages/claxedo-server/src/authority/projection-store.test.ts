@@ -17,6 +17,7 @@ function fakeSync() {
     tagged_session_metas: vi.fn(async () => []),
     persist_message_event: vi.fn(),
     read_session_messages: vi.fn(() => []),
+    read_session_message_page: vi.fn(() => ({ messages: [], nextCursor: "next" })),
     read_session_max_event_ordinal: vi.fn(() => 0),
     subscribe_message_replay: vi.fn(() => () => {}),
   } satisfies ProjectionStoreBackend & { mode: () => "central_canonical"; [key: string]: unknown }
@@ -37,6 +38,7 @@ describe("projection store", () => {
     })
     await store.sync_session_messages(undefined, "session-1", [{ info: { id: "msg-1", role: "user" }, parts: [] }])
     store.read_session_messages("session-1")
+    store.read_session_message_page?.("session-1", { limit: 80, before: "before" })
     store.read_session_max_event_ordinal("session-1")
 
     expect(sync.put_session_meta).toHaveBeenCalledWith("session-1", {
@@ -52,6 +54,7 @@ describe("projection store", () => {
       parts: [],
     }])
     expect(sync.read_session_messages).toHaveBeenCalledWith("session-1")
+    expect(sync.read_session_message_page).toHaveBeenCalledWith("session-1", { limit: 80, before: "before" })
     expect(sync.read_session_max_event_ordinal).toHaveBeenCalledWith("session-1")
   })
 })

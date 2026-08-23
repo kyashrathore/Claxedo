@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { AgentMessagePageError } from "../../message-page"
 import { fakeGlobalFetch, internalsOf } from "../../test-utils/class-internals"
 import { createProcessLifecycle } from "../shared/process-lifecycle"
 import { OpenCodeHarnessAdapter, spawnEnv, type OpenCodeRequestFn } from "./index"
@@ -263,6 +264,63 @@ describe("OpenCodeHarnessAdapter sendMessage", () => {
 })
 
 describe("OpenCodeHarnessAdapter injected-request transport", () => {
+  test("forwards message page parameters and preserves the upstream cursor", async () => {
+    const seen: Array<{ pathname: string; limit: string | null; before: string | null; directory: string | null }> = []
+    const cursor = "opaque+/cursor== with spaces"
+    const adapter = new OpenCodeHarnessAdapter(undefined, {
+      request: async (request) => {
+        const url = new URL(request.url)
+        seen.push({
+          pathname: url.pathname,
+          limit: url.searchParams.get("limit"),
+          before: url.searchParams.get("before"),
+          directory: request.headers.get("x-opencode-directory"),
+        })
+        return Response.json(
+          [{ info: { id: "msg-1", role: "user" }, parts: [] }],
+          { headers: { "X-Next-Cursor": cursor } },
+        )
+      },
+    })
+
+    await expect(adapter.getMessagePage("s1", { limit: 80, before: cursor }, "/work"))
+      .resolves.toEqual({
+        messages: [{ info: { id: "msg-1", role: "user" }, parts: [] }],
+        nextCursor: cursor,
+      })
+    expect(seen).toEqual([{
+      pathname: "/session/s1/message",
+      limit: "80",
+      before: cursor,
+      directory: "/work",
+    }])
+  })
+
+  test("omits terminal message page cursors and throws on upstream failures", async () => {
+    const requests: URL[] = []
+    let response = Response.json([])
+    const adapter = new OpenCodeHarnessAdapter(undefined, {
+      request: async (request) => {
+        requests.push(new URL(request.url))
+        return response
+      },
+    })
+
+    await expect(adapter.getMessagePage("s1", { limit: 2 }, "/work"))
+      .resolves.toEqual({ messages: [] })
+    expect(requests[0]?.searchParams.get("before")).toBeNull()
+
+    response = new Response("invalid cursor", { status: 400 })
+    const failure = await adapter.getMessagePage("s1", { limit: 2, before: "bad" }, "/work")
+      .catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(AgentMessagePageError)
+    expect(failure).toMatchObject({
+      name: "AgentMessagePageError",
+      message: "Failed to get message page: 400",
+      status: 400,
+    })
+  })
+
   test("routes session list/create/status through the injected handler — no spawn, no network", async () => {
     const seen: Array<{ method: string; path: string; directory: string | null; body: string }> = []
     const handler: OpenCodeRequestFn = async (req) => {

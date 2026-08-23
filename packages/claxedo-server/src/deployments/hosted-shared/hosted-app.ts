@@ -31,6 +31,7 @@
  */
 
 import { Hono, type Context } from "hono"
+import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { cors } from "hono/cors"
 import { allowedOriginPatterns } from "@claxedo/server-core/platform/http/cors-origins"
 import { securityHeaders } from "@claxedo/server-core/platform/http/security-headers"
@@ -87,6 +88,8 @@ import { captureProduct, productIdentity } from "../../platform/telemetry/produc
 import type { SettlementDispatcher } from "../../hosts/workgraph/settlement-dispatcher"
 import type { WorkGraphConvexExecutor } from "../../hosts/workgraph/convex/store"
 import { sessionInventoryResponse } from "../../session/list"
+import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
+import { messagePageCursor, parseMessagePageInput } from "../../session/message-page"
 
 export type HostedAppOverrides = {
   /** Hosted relay target lookup. Omitted → the plane's composed lookup is used. */
@@ -716,10 +719,34 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
       if (!authResult.auth) {
         return c.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, 401)
       }
-      const body = await services.authority.readSessionMessages(authResult.auth, {
-        sessionId: c.req.param("sessionId"),
-        workspaceId,
-      })
+      let page
+      try {
+        page = parseMessagePageInput(c.req.query("limit"), c.req.query("before"))
+      } catch (error) {
+        if (error instanceof AgentMessagePageError) {
+          return c.json({ error: { code: "message_page_error", message: error.message } }, 400)
+        }
+        throw error
+      }
+      let body
+      try {
+        body = await services.authority.readSessionMessages(authResult.auth, {
+          sessionId: c.req.param("sessionId"),
+          workspaceId,
+          ...(page ?? {}),
+        })
+      } catch (error) {
+        if (error instanceof AgentMessagePageError) {
+          const status = error.status >= 400 && error.status <= 599 ? error.status : 500
+          return c.json({ error: { code: "message_page_error", message: error.message } }, status as ContentfulStatusCode)
+        }
+        throw error
+      }
+      const cursor = messagePageCursor(body)
+      if (cursor) {
+        c.header("Access-Control-Expose-Headers", "X-Next-Cursor")
+        c.header("X-Next-Cursor", cursor)
+      }
       return c.json({
         ...(body && typeof body === "object" && !Array.isArray(body) ? body : {}),
         messages: hostedAuthorityMessages(body),

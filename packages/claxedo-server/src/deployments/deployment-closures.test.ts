@@ -73,7 +73,10 @@ const ENTRIES = [
   // +1 module (110 -> 111): `authority/runtime-target.ts`, the canonical
   // runtime transport target shared by hosted and Node authority pull paths.
   // Dependency-free, no new package.
-  { name: "hosted-workerd", entry: "src/deployments/hosted-workerd/worker.ts", modules: 111, packages: 13 },
+  // +1 module (111 -> 112): the 236-byte `agent-sdk-runtime/message-page`
+  // contract. It replaces runtime imports of the 6.7 MB all-adapters barrel,
+  // stays dependency-free in the emitted Worker graph, and adds no package.
+  { name: "hosted-workerd", entry: "src/deployments/hosted-workerd/worker.ts", modules: 112, packages: 13 },
   // +1 module (139 -> 140) on 2026-08-08: `deployments/route-ownership.ts`,
   // the composition guard the self-hosted app now installs alongside the
   // hosted core. One dependency-free module, no new package.

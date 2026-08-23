@@ -4,6 +4,7 @@ import fs from "fs"
 import os from "os"
 import path from "path"
 import { createSubagentAdmissionBoundary } from "@claxedo/agent-sdk-runtime"
+import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/adapters"
 import {
   messagePartUpdated,
   messageUpdated,
@@ -426,27 +427,14 @@ describe("RuntimeStore", () => {
       payload: todoUpdated("s1", [{ content: "Old", status: "pending", priority: "low" }]),
     })
 
-    const db = (store as unknown as {
-      db: {
-        prepare(sql: string): {
-          run(...params: unknown[]): unknown
-          get(...params: unknown[]): unknown
-          all(...params: unknown[]): unknown[]
-        }
-      }
-    }).db
-    const prepare = db.prepare.bind(db)
-    let failTodoInsert = true
-    db.prepare = (sql) => {
-      const stmt = prepare(sql)
-      if (!failTodoInsert || !sql.includes("INSERT INTO todo")) return stmt
-      return {
-        ...stmt,
-        run() {
-          throw new Error("todo insert failed")
-        },
-      }
-    }
+    db(store).exec(`
+      CREATE TRIGGER fail_todo_insert
+      BEFORE INSERT ON todo
+      WHEN NEW.content = 'New'
+      BEGIN
+        SELECT RAISE(FAIL, 'todo insert failed');
+      END
+    `)
 
     assert.throws(() => {
       store.appendEvent({
@@ -455,7 +443,7 @@ describe("RuntimeStore", () => {
         payload: todoUpdated("s1", [{ content: "New", status: "completed", priority: "high" }]),
       })
     }, /todo insert failed/)
-    failTodoInsert = false
+    db(store).exec("DROP TRIGGER fail_todo_insert")
 
     assert.deepEqual(store.getTodos("s1"), [{ content: "Old", status: "pending", priority: "low" }])
     store.close()
@@ -532,6 +520,114 @@ describe("RuntimeStore", () => {
       "message.updated",
     ])
     assert.deepEqual(store.getMessages("s1").map((message) => message.info.id), ["msg-user", "msg-user_r"])
+    store.close()
+  })
+
+  it("pages projected messages backward with an opaque cursor and bounded hydration", () => {
+    const store = new RuntimeStore(tmp())
+    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    for (let index = 1; index <= 6; index++) {
+      const messageId = `m${index}`
+      store.appendEvent({
+        sessionId: "s1",
+        agentSessionId: "a1",
+        payload: messageUpdated({
+          id: messageId,
+          sessionID: "s1",
+          role: "user",
+          time: { created: index },
+        } as any),
+      })
+      store.appendEvent({
+        sessionId: "s1",
+        agentSessionId: "a1",
+        payload: messagePartUpdated({
+          id: `${messageId}-text`,
+          sessionID: "s1",
+          messageID: messageId,
+          type: "text",
+          text: `message ${index}`,
+        }),
+      })
+    }
+
+    // A page must not parse parts for messages outside its bounded selection.
+    db(store).prepare("UPDATE part SET data_json = ? WHERE id = ?").run("not-json", "m1-text")
+
+    const first = store.getMessagePage("s1", { limit: 2 })
+    assert.ok(first)
+    assert.deepEqual(first.messages.map((message) => message.info.id), ["m5", "m6"])
+    assert.deepEqual(
+      first.messages.map((message) => (message.parts[0] as { text?: string } | undefined)?.text),
+      ["message 5", "message 6"],
+    )
+    assert.match(first.nextCursor ?? "", /^wrmp1:/)
+
+    const second = store.getMessagePage("s1", { limit: 2, before: first.nextCursor })
+    assert.ok(second)
+    assert.deepEqual(second.messages.map((message) => message.info.id), ["m3", "m4"])
+    assert.ok(second.nextCursor)
+
+    const indexes = db(store)
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name IN ('message', 'part')")
+      .all() as Array<{ name: string }>
+    assert(indexes.some((row) => row.name === "message_session_ord_idx"))
+    assert(indexes.some((row) => row.name === "part_session_message_ord_idx"))
+    store.close()
+  })
+
+  it("rejects invalid, cross-session, and missing-session message page cursors", () => {
+    const store = new RuntimeStore(tmp())
+    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    store.bindSession({ sessionId: "s2", directory: "/work", agentSessionId: "a2", createdAt: 2 })
+    store.appendEvent({
+      sessionId: "s1",
+      agentSessionId: "a1",
+      payload: messageUpdated({
+        id: "m1",
+        sessionID: "s1",
+        role: "user",
+        time: { created: 1 },
+      } as any),
+    })
+    store.appendEvent({
+      sessionId: "s1",
+      agentSessionId: "a1",
+      payload: messageUpdated({
+        id: "m2",
+        sessionID: "s1",
+        role: "user",
+        time: { created: 2 },
+      } as any),
+    })
+    store.appendEvent({
+      sessionId: "s2",
+      agentSessionId: "a2",
+      payload: messageUpdated({
+        id: "s2-m1",
+        sessionID: "s2",
+        role: "user",
+        time: { created: 1 },
+      } as any),
+    })
+    const result = store.getMessagePage("s1", { limit: 1 })
+    assert.ok(result)
+    const cursor = result.nextCursor
+    assert.ok(cursor)
+
+    for (const run of [
+      () => store.getMessagePage("s1", { limit: 1, before: "not-a-cursor" }),
+      () => store.getMessagePage("s2", { limit: 1, before: cursor }),
+    ]) {
+      assert.throws(run, (error: unknown) =>
+        error instanceof AgentMessagePageError
+        && error.status === 400
+        && error.message === "Invalid message page cursor")
+    }
+    assert.throws(
+      () => store.getMessagePage("missing", { limit: 1 }),
+      (error: unknown) => error instanceof AgentMessagePageError && error.status === 404,
+    )
     store.close()
   })
 
@@ -830,30 +926,16 @@ describe("RuntimeStore", () => {
       payload: todoUpdated("s1", [{ content: "Ship", status: "pending", priority: "high" }]),
     })
 
-    const db = (store as unknown as {
-      db: {
-        prepare(sql: string): {
-          run(...params: unknown[]): unknown
-          get(...params: unknown[]): unknown
-          all(...params: unknown[]): unknown[]
-        }
-      }
-    }).db
-    const prepare = db.prepare.bind(db)
-    let failMessageDelete = true
-    db.prepare = (sql) => {
-      const stmt = prepare(sql)
-      if (!failMessageDelete || !sql.includes("DELETE FROM message")) return stmt
-      return {
-        ...stmt,
-        run() {
-          throw new Error("message delete failed")
-        },
-      }
-    }
+    db(store).exec(`
+      CREATE TRIGGER fail_message_delete
+      BEFORE DELETE ON message
+      BEGIN
+        SELECT RAISE(FAIL, 'message delete failed');
+      END
+    `)
 
     assert.throws(() => store.deleteSession("s1"), /message delete failed/)
-    failMessageDelete = false
+    db(store).exec("DROP TRIGGER fail_message_delete")
 
     assert.equal((store.getSession("s1") as any)?.title, "Demo")
     assert.equal(store.getMessages("s1").length, 2)
