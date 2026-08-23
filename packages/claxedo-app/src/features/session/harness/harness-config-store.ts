@@ -20,7 +20,6 @@ import {
 import { createHarnessStatusActions } from "./harness-status-actions"
 import { useDirectorySessionCacheActions } from "../data/sync/directory-session-cache"
 import { useGlobalBootstrapActions } from "@/features/session/app-ports"
-import { fastSessionSwitchNetworkQuiet } from "@/platform/runtime/session-switch"
 import {
   harnessWorkspaceRuntimeRef,
   type HarnessScopeInput,
@@ -148,7 +147,6 @@ export function createHarnessConfigStore() {
       void fetchConfigOptions(scope, type, input)
     },
     refresh: statusActions.refresh,
-    fastSessionSwitchQuiet: (input) => fastSessionSwitchNetworkQuiet({ sessionId: input?.sessionId }),
     workspaceRuntime: (input) => !!harnessWorkspaceRuntimeRef(input),
     runtime: harnessRuntime,
     cache: createHarnessHydratorQueryCache(),

@@ -53,7 +53,6 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
   setReadyFallback(scope: string, type: HarnessType): void
   fetchConfigOptions(scope: string, type: HarnessType, params?: ScopeInput): void
   refresh(directory?: string, harnessType?: string, opts?: { draft?: boolean }): Promise<void>
-  fastSessionSwitchQuiet(params?: ScopeInput): boolean
   workspaceRuntime(params?: ScopeInput): boolean
   runtime: {
     useLocalHarnessConfig(params?: ScopeInput): boolean
@@ -77,7 +76,6 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
       !input.workspaceRuntime(params)
     ) return undefined
     if (!params?.directory) return undefined
-    if (input.fastSessionSwitchQuiet(params)) return undefined
     if (params.sessionId && params.sessionId !== "new") {
       const config = await input.cache.fetchSessionConfig(params as HydratedSessionInput<ScopeInput>, async () => {
         const res = await input.runtime.harnessSessionFetch(params)(
@@ -153,10 +151,6 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
         if (active()) input.cache.setSeen(scope, key)
         return
       }
-      if (input.fastSessionSwitchQuiet(params)) {
-        markReadyFallback(scope, key, params)
-        return
-      }
       const data = await status(params).catch(() => undefined)
       if (!active()) return
       if (!data) {
@@ -190,11 +184,6 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
     if (!active()) return
     await input.applyStatus(scope, data, params)
     if (active()) input.cache.setSeen(scope, key)
-  }
-
-  const markReadyFallback = (scope: string, key: string, params?: ScopeInput) => {
-    input.setReadyFallback(scope, params?.sessionRef?.harness?.id ?? input.state(scope)?.harness ?? "opencode")
-    input.cache.setSeen(scope, key)
   }
 
   // Re-run a single hydration probe for a scope that is still "polling". Hydrate

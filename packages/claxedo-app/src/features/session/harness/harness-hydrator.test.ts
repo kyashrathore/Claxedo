@@ -48,7 +48,6 @@ function createSubject(input?: {
   local?: boolean
   workspaceRuntime?: boolean
   workspaceKind?: "local" | "cloud" | "user-hosted" | null
-  quiet?: boolean
   sessionConfig?: unknown
   statusBody?: unknown
   statusOk?: boolean
@@ -66,7 +65,6 @@ function createSubject(input?: {
     setReadyFallback: (_scope, type) => calls.push(`fallback:${type}`),
     fetchConfigOptions: (_scope, type) => calls.push(`options:${type}`),
     refresh: async (directory, harness, opts) => calls.push(`refresh:${directory ?? ""}:${harness ?? ""}:${opts?.draft ? "draft" : ""}`),
-    fastSessionSwitchQuiet: () => input?.quiet ?? false,
     workspaceRuntime: () => input?.workspaceRuntime ?? false,
     runtime: {
       useLocalHarnessConfig: () => input?.local ?? true,
@@ -166,14 +164,14 @@ describe("harness hydrator", () => {
     ])
   })
 
-  test("uses ready fallback for quiet existing sessions", async () => {
-    const subject = createSubject({ quiet: true, state: harnessState({ harness: "cursor-acp" }) })
+  test("hydrates canonical config for existing sessions", async () => {
+    const subject = createSubject({ state: harnessState({ harness: "cursor-acp" }) })
 
     await subject.hydrator.hydrate("scope", { directory: "/repo", sessionId: "ses_1" })
 
     expect(subject.calls).toEqual([
       "seed:scope",
-      "fallback:cursor-acp",
+      "apply:codex-acp:gpt-5.5",
     ])
     expect(subject.cache.seen.get("scope")).toBe("session:ses_1")
   })
@@ -223,7 +221,6 @@ describe("harness hydrator", () => {
       setReadyFallback: () => {},
       fetchConfigOptions: () => {},
       refresh: async () => {},
-      fastSessionSwitchQuiet: () => false,
       workspaceRuntime: () => false,
       runtime: {
         useLocalHarnessConfig: () => true,
@@ -271,7 +268,6 @@ describe("harness hydrator", () => {
           releaseFirst = resolve
         })
       },
-      fastSessionSwitchQuiet: () => false,
       workspaceRuntime: () => false,
       runtime: {
         useLocalHarnessConfig: () => true,
@@ -304,7 +300,6 @@ describe("harness hydrator", () => {
       setReadyFallback: () => {},
       fetchConfigOptions: () => {},
       refresh: async () => {},
-      fastSessionSwitchQuiet: () => false,
       workspaceRuntime: () => false,
       runtime: {
         useLocalHarnessConfig: () => true,
@@ -345,7 +340,6 @@ describe("harness hydrator", () => {
       setReadyFallback: () => {},
       fetchConfigOptions: (_scope, type) => subject.calls.push(`options:${type}`),
       refresh: async () => {},
-      fastSessionSwitchQuiet: () => false,
       workspaceRuntime: () => false,
       runtime: {
         useLocalHarnessConfig: () => true,
@@ -377,7 +371,6 @@ describe("harness hydrator", () => {
       setReadyFallback: () => {},
       fetchConfigOptions: (_scope, type) => subject.calls.push(`options:${type}`),
       refresh: async (directory, harness, opts) => subject.calls.push(`refresh:${directory ?? ""}:${harness ?? ""}:${opts?.draft ? "draft" : ""}`),
-      fastSessionSwitchQuiet: () => false,
       workspaceRuntime: () => false,
       runtime: {
         useLocalHarnessConfig: () => true,
@@ -397,7 +390,7 @@ describe("harness hydrator", () => {
   })
 
   test("marks existing sessions server-owned before asynchronous hydration", async () => {
-    const subject = createSubject({ quiet: true })
+    const subject = createSubject()
     const marks: string[] = []
     const hydrator = createHarnessHydrator<ScopeInput>({
       base: "http://127.0.0.1:3001",
@@ -410,7 +403,6 @@ describe("harness hydrator", () => {
       setReadyFallback: () => {},
       fetchConfigOptions: () => {},
       refresh: async () => {},
-      fastSessionSwitchQuiet: () => true,
       workspaceRuntime: () => false,
       runtime: {
         useLocalHarnessConfig: () => true,
