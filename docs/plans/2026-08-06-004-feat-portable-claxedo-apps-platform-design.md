@@ -151,6 +151,7 @@ App kinds are presets over orthogonal policies rather than a growing enum.
 | `workspace` | deployment + workspace | One shared team/collaborative instance. |
 | `organization` | deployment + org | Organization-wide instance. |
 | `public` | deployment + publication | Anonymous/public runtime or published snapshot. |
+| `none` | no instance | Static/public-only apps without a runtime instance. |
 
 ### 5.2 Data authority
 

@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="en" data-scheme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WorkGraph — Think · forked ideation</title>
+<style>
+  /* Same grounding as workgraph-ui-vision.html:
+     packages/ui/src/theme/themes/codex.json + html[data-theme="codex"] */
+  :root{
+    --font-sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;
+    --font-mono:ui-monospace,"SF Mono",Menlo,monospace;
+    --background-base:#ffffff;
+    --sidebar:#f9f9f9;
+    --surface-raised:#ffffff;
+    --surface-hover:#0000000a;
+    --surface-inset:#eeeeee;
+    --control-surface:#ededed;
+    --border-weak:#d8d8d8;
+    --border-weaker:#e6e6e6;
+    --text-strong:#1a1c1f;
+    --text-base:#696a6c;
+    --text-weaker:#8c8d8f;
+    --accent:#2f92df;
+    --accent-hover:#147cc1;
+    --success:#168447;
+    --warning:#c65d19;
+    --error:#d43d37;
+    --inverted-bg:#1f1f1f;
+    --inverted-text:#f4f4f4;
+    --radius-card:10px;
+    --radius-composer:20px;
+    --shadow-card:0 0 0 0.5px rgba(26,28,31,.12),0 3px 7.5px rgba(0,0,0,.04),0 0 20px rgba(0,0,0,.05);
+  }
+  html[data-scheme="dark"]{
+    --background-base:#0d0d0d;
+    --sidebar:#181818;
+    --surface-raised:#212121;
+    --surface-hover:#282828;
+    --surface-inset:#1c1c1c;
+    --control-surface:#1c1c1c;
+    --border-weak:#414141;
+    --border-weaker:#282828;
+    --text-strong:#f2f2f2;
+    --text-base:#d6d6d6;
+    --text-weaker:#747474;
+    --accent:#369ce8;
+    --accent-hover:#58a6e7;
+    --success:#35bd70;
+    --warning:#f28b45;
+    --error:#ef5350;
+    --inverted-bg:#f2f2f2;
+    --inverted-text:#171717;
+    --shadow-card:0 0 0 0.5px rgba(242,242,242,.12),0 3px 7.5px rgba(0,0,0,.2);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--background-base);color:var(--text-strong);
+    font-family:var(--font-sans);font-size:14px;line-height:1.55;
+    letter-spacing:0;-webkit-font-smoothing:antialiased;
+  }
+  button{font-family:var(--font-sans);letter-spacing:0}
+
+  .frame{display:flex;height:100vh}
+
+  /* ── rail ── */
+  .rail{
+    width:224px;flex:none;background:var(--sidebar);box-shadow:var(--shadow-card);
+    display:flex;flex-direction:column;padding:20px 12px 16px;z-index:5;
+  }
+  .wordmark{display:flex;align-items:center;gap:8px;padding:2px 10px 18px}
+  .mark{width:8px;height:8px;border-radius:2px;background:var(--accent);transform:rotate(45deg)}
+  .wordmark b{font-size:15px;font-weight:600}
+  .nav-item{
+    display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+    padding:7px 10px;margin-bottom:1px;border:none;border-radius:8px;
+    background:none;color:var(--text-base);font-size:13.5px;cursor:pointer;
+    transition:all .12s ease;
+  }
+  .nav-item:hover{background:var(--surface-hover);color:var(--text-strong)}
+  .nav-item.active{background:var(--surface-inset);color:var(--text-strong);font-weight:500}
+  .nav-item svg{width:15px;height:15px;opacity:.75}
+  .recent-label{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-weaker);padding:14px 10px 5px}
+  .recent{padding:6px 10px;font-size:12.5px;color:var(--text-base);border-radius:8px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .recent:hover{background:var(--surface-hover)}
+  .recent.on{background:var(--surface-inset);color:var(--text-strong);font-weight:500}
+  .scheme-toggle{margin-left:auto;background:none;border:none;color:var(--text-weaker);cursor:pointer;font-size:13px;padding:4px;border-radius:6px}
+  .scheme-toggle:hover{background:var(--surface-hover)}
+
+  /* ── main column ── */
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .top{display:flex;align-items:center;gap:12px;padding:16px 28px 12px}
+  .top h1{font-size:17px;font-weight:600}
+  .ctx-chip{
+    display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--success);
+    background:color-mix(in srgb,var(--success) 10%,transparent);
+    padding:3px 10px;border-radius:99px;font-weight:500;
+  }
+  .ctx-chip i{width:6px;height:6px;border-radius:50%;background:var(--success);animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .top .sp{flex:1}
+
+  .thread{flex:1;overflow-y:auto;padding:8px 28px 20px;scroll-behavior:smooth}
+  .msg{max-width:66ch;margin-bottom:18px}
+  .msg.user{
+    margin-left:auto;max-width:52ch;background:color-mix(in srgb,var(--text-strong) 5%,transparent);
+    border-radius:16px;padding:10px 16px;font-size:14px;
+  }
+  .msg.ai{font-size:14px;color:var(--text-strong)}
+  .msg.ai p{margin-bottom:8px}
+  .msg.ai .dim{color:var(--text-base)}
+  .fork-row{
+    display:flex;align-items:center;gap:6px;margin-top:10px;flex-wrap:wrap;
+  }
+  .fork-row .lbl{font-size:11.5px;color:var(--text-weaker);margin-right:2px}
+  .fork-btn{
+    display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;
+    border:1px solid var(--border-weaker);background:var(--surface-raised);color:var(--text-base);
+    padding:4px 11px;border-radius:99px;cursor:pointer;transition:all .12s ease;
+  }
+  .fork-btn:hover{border-color:var(--accent);color:var(--accent-hover);background:color-mix(in srgb,var(--accent) 5%,transparent)}
+  .fork-btn svg{width:12px;height:12px}
+
+  /* composer */
+  .composer-wrap{padding:0 28px 22px}
+  .composer{
+    max-width:760px;background:var(--surface-raised);
+    border-radius:var(--radius-composer);box-shadow:var(--shadow-card);
+    padding:13px 16px 11px;
+  }
+  .composer input{
+    width:100%;border:none;background:none;font-size:15px;color:var(--text-strong);
+    font-family:var(--font-sans);
+  }
+  .composer input:focus{outline:none}
+  .composer input::placeholder{color:var(--text-weaker)}
+  .composer-row{display:flex;align-items:center;gap:8px;margin-top:8px}
+  .hint{font-size:11.5px;color:var(--text-weaker)}
+  .send{
+    margin-left:auto;background:var(--accent);color:#fff;border:none;border-radius:9px;
+    font-size:12.5px;font-weight:500;padding:6px 16px;cursor:pointer;
+  }
+  .send:hover{background:var(--accent-hover)}
+
+  /* ── side panel ── */
+  .side{
+    width:372px;flex:none;border-left:1px solid var(--border-weaker);
+    display:flex;flex-direction:column;background:var(--sidebar);
+  }
+  .side-head{padding:16px 18px 10px}
+  .side-head h2{font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .side-head .n{color:var(--text-weaker);font-weight:400}
+  .side-scroll{flex:1;overflow-y:auto;padding:0 14px 14px;display:flex;flex-direction:column;gap:10px}
+
+  .fork-card{
+    background:var(--surface-raised);border-radius:var(--radius-card);
+    box-shadow:var(--shadow-card);padding:12px 14px;animation:rise .25s ease both;
+  }
+  @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  .fork-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .kind{
+    font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.07em;
+    padding:2px 7px;border-radius:99px;font-weight:600;
+  }
+  .kind.diagram{background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent-hover)}
+  .kind.clarify{background:color-mix(in srgb,var(--warning) 14%,transparent);color:var(--warning)}
+  .kind.deep{background:color-mix(in srgb,var(--success) 12%,transparent);color:var(--success)}
+  .cache-chip{font-size:10.5px;color:var(--text-weaker);margin-left:auto}
+  .fork-q{font-size:12.5px;font-weight:500;margin-bottom:6px}
+  .fork-a{font-size:12.5px;color:var(--text-base)}
+  .typing i{
+    display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--text-weaker);
+    margin-right:3px;animation:tp 1s infinite;
+  }
+  .typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+  @keyframes tp{0%,100%{opacity:.25}50%{opacity:1}}
+  .artifact{
+    margin-top:8px;border:1px solid var(--border-weaker);border-radius:8px;
+    background:var(--sidebar);padding:10px 12px;
+    font-family:var(--font-mono);font-size:10.5px;line-height:1.65;color:var(--text-base);
+    white-space:pre;overflow-x:auto;
+  }
+  .fork-foot{display:flex;align-items:center;gap:8px;margin-top:9px}
+  .mini{
+    font-size:11.5px;font-weight:500;border:none;background:none;color:var(--accent-hover);
+    cursor:pointer;padding:2px 4px;border-radius:5px;
+  }
+  .mini:hover{background:var(--surface-hover)}
+  .mini.pinned{color:var(--success)}
+  .open-full{margin-left:auto;font-size:11.5px;color:var(--text-weaker);background:none;border:none;cursor:pointer}
+  .open-full:hover{color:var(--text-strong)}
+
+  /* brief */
+  .brief{
+    margin:0 14px 14px;background:var(--inverted-bg);color:var(--inverted-text);
+    border-radius:var(--radius-card);padding:14px 16px;
+  }
+  .brief h3{font-size:12px;font-weight:600;display:flex;align-items:center;gap:8px;text-transform:uppercase;letter-spacing:.06em;font-family:var(--font-mono);opacity:.85}
+  .brief ul{list-style:none;margin-top:9px;display:flex;flex-direction:column;gap:5px}
+  .brief li{font-size:12px;opacity:.85;display:flex;gap:7px;align-items:baseline}
+  .brief li::before{content:"·";font-weight:700}
+  .brief .turn{
+    margin-top:12px;width:100%;background:var(--accent);color:#fff;border:none;
+    border-radius:9px;padding:8px 0;font-size:12.5px;font-weight:600;cursor:pointer;
+  }
+  .brief .turn:hover{filter:brightness(1.08)}
+  .brief .sub{font-size:10.5px;opacity:.55;margin-top:7px;text-align:center}
+
+  .toast{
+    position:fixed;bottom:26px;left:50%;transform:translate(-50%,80px);z-index:200;
+    background:var(--inverted-bg);color:var(--inverted-text);font-size:13px;
+    padding:10px 18px;border-radius:12px;transition:transform .3s cubic-bezier(.2,.9,.3,1.15);
+    box-shadow:0 8px 24px rgba(0,0,0,.25);
+  }
+  html[data-scheme="dark"] .toast{outline:1px solid var(--border-weak)}
+  .toast.show{transform:translate(-50%,0)}
+  .toast b{font-weight:600}
+</style>
+</head>
+<body>
+
+<div class="frame">
+
+  <!-- ══════════ RAIL ══════════ -->
+  <aside class="rail">
+    <div class="wordmark"><span class="mark"></span><b>WorkGraph</b></div>
+
+    <button class="nav-item active">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 1.5c2 2.2 3 4.3 3 6.3A3 3 0 0 1 8 11a3 3 0 0 1-3-3.2c0-2 1-4.1 3-6.3zM8 11v3.5"/></svg>
+      Think
+    </button>
+    <button class="nav-item" onclick="toast('Opens the board prototype')">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 8.5 8 3l6 5.5V14H2z"/></svg>
+      Home
+    </button>
+
+    <div class="recent-label">Recent threads</div>
+    <div class="recent on">help me understand workgraph…</div>
+    <div class="recent">pricing FAQ rewrite ideas</div>
+    <div class="recent">onboarding drop-off — why?</div>
+
+    <div style="margin-top:auto;display:flex;align-items:center;gap:10px;padding:12px 10px 0;border-top:1px solid var(--border-weaker)">
+      <div style="width:26px;height:26px;border-radius:50%;background:var(--inverted-bg);color:var(--inverted-text);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600">Y</div>
+      <div><div style="font-size:13px;font-weight:500">Yash</div></div>
+      <button class="scheme-toggle" id="schemeToggle">◐</button>
+    </div>
+  </aside>
+
+  <!-- ══════════ MAIN THREAD ══════════ -->
+  <div class="main">
+    <div class="top">
+      <h1>help me understand workgraph code</h1>
+      <span class="ctx-chip"><i></i>shared context · 1 repo loaded</span>
+      <span class="sp"></span>
+    </div>
+
+    <div class="thread" id="thread">
+
+      <div class="msg user">help me understand workgraph code</div>
+
+      <div class="msg ai">
+        <p>WorkGraph is a work ledger: things that should get done become <b>streams</b> containing <b>goals</b> and <b>tasks</b>; agents execute tasks as numbered <b>runs</b>, and nothing agent-invented starts without your approval.</p>
+        <p class="dim">Core packages: <b>packages/workgraph/src</b> (contracts, domain, application, adapters) with mirrored SQLite + Convex stores. Entry: one command endpoint, 38 typed commands.</p>
+        <p class="dim">Want me to go sideways on anything? Fork a thread — each one answers against everything we’ve already read, so they’re fast and cheap.</p>
+        <div class="fork-row">
+          <span class="lbl">Fork:</span>
+          <button class="fork-btn" onclick="fork('diagram',this)">
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1" y="1" width="4" height="3" rx=".8"/><rect x="7" y="8" width="4" height="3" rx=".8"/><path d="M3 4v3h6V8"/></svg>
+            Diagram
+          </button>
+          <button class="fork-btn" onclick="fork('clarify',this)">
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="6" cy="6" r="5"/><path d="M4.5 4.5A1.5 1.5 0 1 1 6 6.5v1"/><circle cx="6" cy="9.6" r=".4" fill="currentColor"/></svg>
+            Quick clarify
+          </button>
+          <button class="fork-btn" onclick="fork('deep',this)">
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="5" cy="5" r="3.5"/><path d="m7.8 7.8 2.7 2.7"/></svg>
+            Deep dive
+          </button>
+          <button class="fork-btn" onclick="forkCustom(this)">+ your own</button>
+        </div>
+      </div>
+
+      <div class="msg ai" id="aiReply2" style="display:none">
+        <p id="aiReply2Text"></p>
+        <div class="fork-row">
+          <span class="lbl">Fork:</span>
+          <button class="fork-btn" onclick="fork('diagram',this)">Diagram</button>
+          <button class="fork-btn" onclick="fork('clarify',this)">Quick clarify</button>
+          <button class="fork-btn" onclick="fork('deep',this)">Deep dive</button>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="composer-wrap">
+      <div class="composer">
+        <input id="rootInput" placeholder="Reply, or steer the thinking…">
+        <div class="composer-row">
+          <span class="hint">↵ to send · forks on the right share this thread’s context</span>
+          <button class="send" onclick="sendRoot()">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ SIDE THREADS + BRIEF ══════════ -->
+  <aside class="side">
+    <div class="side-head">
+      <h2>Side threads <span class="n" id="forkCount">· 3</span></h2>
+    </div>
+
+    <div class="side-scroll" id="forkStack">
+
+      <div class="fork-card">
+        <div class="fork-head">
+          <span class="kind diagram">Diagram</span>
+          <span class="cache-chip">shares context · cached</span>
+        </div>
+        <div class="fork-q">How do streams, goals, tasks and runs relate?</div>
+        <div class="artifact">Stream ─┬─ Goal "Fix drop-off emails"
+        │    └─ Task ─ Run #n (one live)
+        └─ Goal "Reduce churn"
+             └─ Task ─ Run #7 ● running
+
+rules: 1 run/stream · evidence gates done
+       agent work born staged</div>
+        <div class="fork-foot">
+          <button class="mini" onclick="pin(this,'Data model: Stream → Goals → Tasks → Runs')">Pin to brief</button>
+          <button class="open-full" onclick="toast('Opens the full-size diagram')">Open full</button>
+        </div>
+      </div>
+
+      <div class="fork-card">
+        <div class="fork-head">
+          <span class="kind clarify">Clarify</span>
+          <span class="cache-chip">shares context · cached</span>
+        </div>
+        <div class="fork-q">Is an outcome just a group of tasks?</div>
+        <div class="fork-a">No — it’s a <b style="color:var(--text-strong)">measurable result</b>. Tasks finish; the goal closes only when every task is terminal <i>and</i> its “done when” checks pass with your sign-off.</div>
+        <div class="fork-foot">
+          <button class="mini" onclick="pin(this,'Goals are measurable results, not folders — closure is checked, not declared.')">Pin to brief</button>
+        </div>
+      </div>
+
+      <div class="fork-card">
+        <div class="fork-head">
+          <span class="kind deep">Deep dive</span>
+          <span class="cache-chip">shares context · cached</span>
+        </div>
+        <div class="fork-q">Trace how an issue becomes a running task</div>
+        <div class="fork-a" id="deepAnswer">
+          <span class="typing"><i></i><i></i><i></i></span> reading webhook intake, admission service, drain…
+        </div>
+        <div class="fork-foot" id="deepFoot" style="display:none">
+          <button class="mini" onclick="pin(this,'Pipeline: webhook → candidate → stage/freezes revision → plan proposal → confirm → drain launches run')">Pin to brief</button>
+          <button class="open-full" onclick="toast('Full trace with file:line references')">Open trace</button>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="brief">
+      <h3>Brief — from this thread</h3>
+      <ul id="briefList">
+        <li>WorkGraph = ledger of streams → goals → tasks → runs</li>
+        <li>One command door, 38 typed commands, dual stores</li>
+      </ul>
+      <button class="turn" onclick="turnIntoWork()">Turn into work →</button>
+      <div class="sub">freezes this brief · drafts a plan for your review</div>
+    </div>
+  </aside>
+</div>
+
+<div class="toast" id="toastEl"></div>
+
+<script>
+  const $=s=>document.querySelector(s);
+
+  let toastTimer;
+  function toast(html){
+    const t=$('#toastEl');t.innerHTML=html;t.classList.add('show');
+    clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2600);
+  }
+
+  /* root thread */
+  const canned=[
+    "The interesting part is the gate: agents can propose work freely, but every proposal lands in your queue as “waiting for approval” before it can run.",
+    "Stores are pluggable — SQLite locally, Convex hosted — behind one contract, so rules behave identically in both."
+  ];
+  let ci=0;
+  function sendRoot(){
+    const v=$('#rootInput').value.trim();if(!v)return;
+    $('#rootInput').value='';
+    const th=$('#thread');
+    th.insertAdjacentHTML('beforeend','<div class="msg user">'+esc(v)+'</div>');
+    const reply=canned[ci++%canned.length];
+    setTimeout(()=>{
+      $('#aiReply2').style.display='';
+      $('#aiReply2Text').textContent=reply;
+      th.insertAdjacentHTML('beforeend','');
+      th.scrollTop=th.scrollHeight;
+    },450);
+    th.scrollTop=th.scrollHeight;
+  }
+  $('#rootInput').addEventListener('keydown',e=>{if(e.key==='Enter')sendRoot()});
+  function esc(s){return s.replace(/</g,'&lt;')}
+
+  /* forks */
+  const FORKS={
+    diagram:{
+      kind:'diagram',label:'Diagram',
+      q:'Sketch that part',
+      a:'<div class="artifact">┌─────────┐   confirm   ┌──────┐
+│ Inbox   │──────────▶ │ Stream│
+│ (drafts)│  only door │ ▶runs │
+└─────────┘            └──────┘</div>',
+      pin:'Flow sketch pinned'
+    },
+    clarify:{
+      kind:'clarify',label:'Clarify',
+      q:'One thing that was fuzzy',
+      a:'Short answer: yes — and it’s enforced in the store layer, both backends, same line of code.',
+      pin:'Clarification pinned'
+    },
+    deep:{
+      kind:'deep',label:'Deep dive',
+      q:'Go deeper',
+      a:'Read 4 files end-to-end. Summary: intent freezes as a hashed revision, plans must echo that exact revision, confirmation materializes records.',
+      pin:'Deep-dive summary pinned'
+    }
+  };
+  function fork(type,btn){
+    const f=FORKS[type];
+    const el=document.createElement('div');el.className='fork-card';
+    el.innerHTML=
+      '<div class="fork-head"><span class="kind '+f.kind+'">'+f.label+'</span><span class="cache-chip">shares context · cached</span></div>'+
+      '<div class="fork-q">'+f.q+'</div>'+
+      '<div class="fork-a"><span class="typing"><i></i><i></i><i></i></span></div>';
+    $('#forkStack').prepend(el);
+    bumpCount();
+    btn&&btn.blur();
+    setTimeout(()=>{
+      el.querySelector('.fork-a').innerHTML=f.a;
+      el.insertAdjacentHTML('beforeend',
+        '<div class="fork-foot"><button class="mini" onclick="pin(this,\''+f.pin+' to brief\')">Pin to brief</button></div>');
+    },900);
+  }
+  function forkCustom(btn){
+    const v=prompt('Ask a side question:');
+    if(!v)return;
+    const el=document.createElement('div');el.className='fork-card';
+    el.innerHTML=
+      '<div class="fork-head"><span class="kind clarify">Side question</span><span class="cache-chip">shares context · cached</span></div>'+
+      '<div class="fork-q">'+esc(v)+'</div>'+
+      '<div class="fork-a"><span class="typing"><i></i><i></i><i></i></span></div>';
+    $('#forkStack').prepend(el);bumpCount();
+    setTimeout(()=>{
+      el.querySelector('.fork-a').textContent='Answered against everything read so far — no re-reading, no re-paying.';
+      el.insertAdjacentHTML('beforeend','<div class="fork-foot"><button class="mini" onclick="pin(this,\'Answer pinned to brief\')">Pin to brief</button></div>');
+    },900);
+  }
+  function bumpCount(){$('#forkCount').textContent='· '+document.querySelectorAll('.fork-card').length}
+
+  function pin(btn,text){
+    btn.textContent='✓ Pinned';btn.classList.add('pinned');btn.disabled=true;
+    $('#briefList').insertAdjacentHTML('beforeend','<li>'+text+'</li>');
+  }
+
+  function turnIntoWork(){
+    toast('Brief frozen as <b>revision 9f2c81…</b> — plan draft waiting in your Inbox');
+  }
+
+  /* deep dive finishes on its own */
+  setTimeout(()=>{
+    const a=$('#deepAnswer');
+    if(a){a.innerHTML='Webhook → deduped → candidate → <b style="color:var(--text-strong)">stage</b> freezes revision → planner drafts → <b style="color:var(--text-strong)">confirm</b> materializes → drain launches.';}
+    $('#deepFoot').style.display='';
+  },2600);
+
+  $('#schemeToggle').addEventListener('click',()=>{
+    const r=document.documentElement;
+    r.dataset.scheme=r.dataset.scheme==='light'?'dark':'light';
+  });
+</script>
+</body>
+</html>

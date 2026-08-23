@@ -1,0 +1,945 @@
+<!doctype html>
+<html lang="en" data-scheme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WorkGraph — UI Vision · Codex theme</title>
+<style>
+  /* ════════════════════════════════════════════════════════════
+     Grounded in packages/ui/src/theme/themes/codex.json
+     + html[data-theme="codex"] overrides (ui-overrides.css):
+     system sans · zero letter-spacing · 10px borderless cards ·
+     half-pixel-stroke elevation · quiet summary strips.
+     ════════════════════════════════════════════════════════════ */
+  :root{
+    --font-sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;
+    --font-mono:ui-monospace,"SF Mono",Menlo,monospace;
+
+    /* light palette (codex.json .light) */
+    --background-base:#ffffff;
+    --sidebar:#f9f9f9;
+    --surface-raised:#ffffff;
+    --surface-hover:#0000000a;
+    --surface-inset:#eeeeee;
+    --control-surface:#ededed;
+    --control-border:#d8d8d8;
+    --border-weak:#d8d8d8;
+    --border-weaker:#e6e6e6;
+    --text-strong:#1a1c1f;
+    --text-base:#696a6c;
+    --text-weaker:#8c8d8f;
+    --accent:#2f92df;
+    --accent-hover:#147cc1;
+    --success:#168447;
+    --warning:#c65d19;
+    --error:#d43d37;
+    --inverted-bg:#1f1f1f;
+    --inverted-text:#f4f4f4;
+    --inverted-muted:#b8b8b8;
+
+    --radius-card:10px;
+    --radius-composer:20px;
+    --shadow-card:0 0 0 0.5px rgba(26,28,31,.12),0 3px 7.5px rgba(0,0,0,.04),0 0 20px rgba(0,0,0,.05);
+    --shadow-sidebar:0 0 0 0.5px rgba(26,28,31,.12),0 3px 7.5px rgba(0,0,0,.03),0 0 16px rgba(0,0,0,.02);
+  }
+  html[data-scheme="dark"]{
+    --background-base:#0d0d0d;
+    --sidebar:#181818;
+    --surface-raised:#212121;
+    --surface-hover:#282828;
+    --surface-inset:#1c1c1c;
+    --control-surface:#1c1c1c;
+    --control-border:#414141;
+    --border-weak:#303030;
+    --border-weaker:#282828;
+    --text-strong:#f2f2f2;
+    --text-base:#d6d6d6;
+    --text-weaker:#747474;
+    --accent:#369ce8;
+    --accent-hover:#58a6e7;
+    --success:#35bd70;
+    --warning:#f28b45;
+    --error:#ef5350;
+    --inverted-bg:#f2f2f2;
+    --inverted-text:#171717;
+    --inverted-muted:#6f6f6f;
+    --shadow-card:0 0 0 0.5px rgba(242,242,242,.12),0 3px 7.5px rgba(0,0,0,.2),0 0 20px rgba(0,0,0,.25);
+    --shadow-sidebar:0 0 0 0.5px rgba(242,242,242,.12),0 3px 7.5px rgba(0,0,0,.15);
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--background-base);color:var(--text-strong);
+    font-family:var(--font-sans);font-size:14px;font-weight:400;
+    letter-spacing:0;line-height:1.5;
+    -webkit-font-smoothing:antialiased;text-rendering:geometricPrecision;
+  }
+  button{font-family:var(--font-sans);letter-spacing:0}
+  ::selection{background:color-mix(in srgb,var(--accent) 25%,transparent)}
+
+  .frame{display:flex;min-height:100vh}
+
+  /* ── sidebar (shell-surface-sidebar) ── */
+  .rail{
+    width:224px;flex:none;background:var(--sidebar);box-shadow:var(--shadow-sidebar);
+    display:flex;flex-direction:column;padding:20px 12px 16px;
+    position:sticky;top:0;height:100vh;z-index:5;
+  }
+  .wordmark{display:flex;align-items:center;gap:8px;padding:2px 10px 18px}
+  .mark{width:8px;height:8px;border-radius:2px;background:var(--accent);transform:rotate(45deg)}
+  .wordmark b{font-size:15px;font-weight:600}
+  .nav-item{
+    display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+    padding:7px 10px;margin-bottom:1px;border:none;border-radius:8px;
+    background:none;color:var(--text-base);font-size:13.5px;cursor:pointer;
+    transition:background .12s ease,color .12s ease;
+  }
+  .nav-item:hover{background:var(--surface-hover);color:var(--text-strong)}
+  .nav-item.active{background:var(--surface-inset);color:var(--text-strong);font-weight:500}
+  .nav-item svg{width:15px;height:15px;flex:none;opacity:.75}
+  .nav-badge{
+    margin-left:auto;background:var(--error);color:#fff;font-size:11px;font-weight:600;
+    min-width:18px;height:18px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px;
+  }
+  .rail-label{
+    font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;
+    color:var(--text-weaker);padding:14px 10px 5px;
+  }
+  .proj-item{
+    display:flex;align-items:center;gap:9px;width:100%;text-align:left;
+    padding:6px 10px;margin-bottom:1px;border:none;border-radius:8px;
+    background:none;color:var(--text-base);font-size:13px;cursor:pointer;
+    transition:background .12s ease,color .12s ease;
+  }
+  .proj-item:hover{background:var(--surface-hover);color:var(--text-strong)}
+  .proj-item.active{background:var(--surface-inset);color:var(--text-strong);font-weight:500}
+  .pdot{width:8px;height:8px;border-radius:3px;flex:none}
+  .proj-item .cnt{margin-left:auto;font-size:11px;color:var(--text-weaker)}
+  .rail-foot{margin-top:auto;padding:12px 10px 0;border-top:1px solid var(--border-weaker);display:flex;align-items:center;gap:10px}
+  .avatar{width:26px;height:26px;border-radius:50%;background:var(--inverted-bg);color:var(--inverted-text);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600}
+  .rail-foot .who{font-size:13px;font-weight:500}
+  .rail-foot .role{font-size:11px;color:var(--text-weaker)}
+  .scheme-toggle{margin-left:auto;background:none;border:none;color:var(--text-weaker);cursor:pointer;font-size:13px;padding:4px;border-radius:6px}
+  .scheme-toggle:hover{background:var(--surface-hover);color:var(--text-strong)}
+
+  main{flex:1;min-width:0;padding:24px 36px 90px;max-width:1060px}
+
+  /* ── header: greeting left, PRIMARY ACTIONS right ── */
+  .head{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:6px}
+  .head h1{font-size:21px;font-weight:600;letter-spacing:0}
+  .head h1 em{font-style:normal;color:var(--text-weaker);font-weight:400}
+  .head-actions{display:flex;gap:8px;flex:none}
+
+  .btn{
+    font-size:13px;font-weight:500;cursor:pointer;border-radius:8px;
+    padding:7px 14px;border:none;transition:all .12s ease;
+    display:inline-flex;align-items:center;gap:6px;
+  }
+  .btn.primary{background:var(--accent);color:#fff}
+  .btn.primary:hover{background:var(--accent-hover)}
+  .btn.secondary{background:var(--control-surface);color:var(--text-strong)}
+  .btn.secondary:hover{background:var(--surface-hover)}
+  .btn.ghost{background:none;color:var(--text-base);padding:7px 10px}
+  .btn.ghost:hover{background:var(--surface-hover);color:var(--text-strong)}
+  .btn.small{font-size:12px;padding:5px 11px}
+
+  /* quiet summary strip (mirrors .workgraph-summary) */
+  .summary{
+    display:flex;flex-wrap:wrap;gap:.35rem 1.4rem;
+    padding:.55rem 0 .8rem;font-size:13px;color:var(--text-base);
+    border-bottom:1px solid var(--border-weaker);margin-bottom:22px;
+  }
+  .summary b{color:var(--text-strong);font-weight:600;font-variant-numeric:tabular-nums}
+  .summary .hot b{color:var(--error)}
+  .summary .live b{color:var(--success)}
+
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:8px;
+    font-family:var(--font-mono);font-size:11px;text-transform:uppercase;
+    letter-spacing:.06em;color:var(--text-weaker);margin-bottom:10px;
+  }
+  .eyebrow::after{content:"";width:34px;border-top:1px solid var(--border-weaker)}
+  .eyebrow .n{color:var(--text-strong);font-weight:600}
+  section.block{margin-bottom:30px}
+
+  /* ── needs-you groups ── */
+  .group-head{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}
+  .group-head h3{font-size:14.5px;font-weight:600;cursor:pointer}
+  .group-head h3:hover{color:var(--accent-hover)}
+  .group-head .src{font-size:12px;color:var(--text-weaker)}
+  .group-head .sp{flex:1}
+  .linklike{background:none;border:none;color:var(--accent-hover);font-size:12.5px;cursor:pointer;padding:0;font-weight:500}
+  .linklike:hover{text-decoration:underline;text-underline-offset:2px}
+
+  .card{
+    background:var(--surface-raised);border-radius:var(--radius-card);
+    box-shadow:var(--shadow-card);padding:13px 16px;margin-bottom:8px;
+    display:flex;gap:12px;align-items:flex-start;transition:transform .15s ease;
+  }
+  .card:hover{transform:translateY(-1px)}
+  .dot{width:8px;height:8px;border-radius:50%;flex:none;margin-top:6px}
+  .dot.warn{background:var(--warning)}
+  .dot.err{background:var(--error)}
+  .dot.ask{background:var(--text-weaker)}
+  .need-body{flex:1;min-width:0}
+  .need-title{font-size:14px;font-weight:500;line-height:1.4}
+  .need-meta{font-size:12px;color:var(--text-weaker);margin-top:2px}
+  .need-meta b{color:var(--text-base);font-weight:500}
+  .need-actions{display:flex;gap:6px;flex:none;padding-top:1px}
+  .freeze{margin-top:7px;font-size:12px;color:var(--warning);padding-top:7px;border-top:1px solid var(--border-weaker)}
+
+  /* ── working now ── */
+  .working{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .run-card{
+    background:var(--surface-raised);border-radius:var(--radius-card);
+    box-shadow:var(--shadow-card);padding:13px 15px;
+  }
+  .run-id{font-family:var(--font-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-weaker)}
+  .run-title{font-size:13.5px;font-weight:500;margin:4px 0 3px}
+  .run-note{font-size:12px;color:var(--text-base)}
+  .bar{height:3px;border-radius:2px;background:var(--surface-inset);margin-top:11px;position:relative;overflow:hidden}
+  .bar i{position:absolute;inset:0 auto 0 0;background:var(--success);border-radius:2px;animation:grow 1s ease both}
+  @keyframes grow{from{width:0}}
+
+  /* ── streams grid ── */
+  .stream-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+  .stream-card{
+    background:var(--surface-raised);border-radius:var(--radius-card);
+    box-shadow:var(--shadow-card);padding:16px 18px;cursor:pointer;
+    transition:transform .15s ease;text-align:left;border:none;width:100%;font-family:var(--font-sans);
+  }
+  .stream-card:hover{transform:translateY(-2px)}
+  .stream-card h3{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .status-pill{font-size:11px;font-weight:500;padding:2px 8px;border-radius:99px}
+  .status-pill.on{background:color-mix(in srgb,var(--success) 12%,transparent);color:var(--success)}
+  .status-pill.paused{background:var(--surface-inset);color:var(--text-weaker)}
+  .stream-card .goal-line{font-size:12.5px;color:var(--text-base);margin:5px 0 10px}
+  .stream-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--text-weaker)}
+  .progress-dots{margin-left:auto}
+
+  /* ── intake / agents ── */
+  .candidate{align-items:center}
+  .candidate .origin{font-family:var(--font-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-weaker);width:88px;flex:none}
+  .candidate .t{font-size:13.5px;flex:1}
+  .agent-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+  .agent-card{background:var(--surface-raised);border-radius:var(--radius-card);box-shadow:var(--shadow-card);padding:16px 18px}
+  .agent-card h3{font-size:14.5px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .agent-card .brief{font-size:12.5px;color:var(--text-base);margin:5px 0 10px;line-height:1.55}
+  .tagrow{display:flex;gap:6px;flex-wrap:wrap}
+  .tag{font-size:11px;padding:2px 8px;border-radius:99px;background:var(--surface-inset);color:var(--text-base)}
+  .tag.role{background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent-hover)}
+  .agent-new{border:1px dashed var(--border-weak);box-shadow:none;background:none;display:flex;align-items:center;justify-content:center;min-height:110px;cursor:pointer;color:var(--text-weaker);font-size:13px;border-radius:var(--radius-card)}
+  .agent-new:hover{color:var(--text-strong);border-color:var(--text-weaker)}
+
+  /* ── stream detail ── */
+  .backlink{background:none;border:none;color:var(--text-weaker);font-size:12.5px;cursor:pointer;padding:0;margin-bottom:16px;display:inline-flex;align-items:center;gap:5px}
+  .backlink:hover{color:var(--text-strong)}
+  .stream-head h1{font-size:24px;font-weight:600}
+  .stream-head .charter{font-size:14px;color:var(--text-base);margin-top:4px}
+  .origin-line{margin-top:10px;font-size:12.5px;color:var(--text-weaker)}
+  .origin-line a{color:var(--accent-hover);text-decoration:none;font-weight:500;cursor:pointer}
+  .origin-line a:hover{text-decoration:underline;text-underline-offset:2px}
+
+  .detail-cols{display:grid;grid-template-columns:1fr 280px;gap:32px;align-items:start;margin-top:26px}
+  .goal{margin-bottom:28px}
+  .goal>h3{font-size:15.5px;font-weight:600;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .goal>.done-when{font-size:12.5px;color:var(--text-weaker);margin-top:2px;margin-bottom:10px}
+  .task-list{border-radius:var(--radius-card);box-shadow:var(--shadow-card);overflow:hidden;background:var(--surface-raised)}
+  .task-row{padding:11px 16px;cursor:pointer;transition:background .12s ease}
+  .task-row+.task-row{border-top:1px solid var(--border-weaker)}
+  .task-row:hover{background:var(--surface-hover)}
+  .task-line{display:flex;align-items:center;gap:10px}
+  .task-line .t{font-size:13.5px;font-weight:500;flex:1;min-width:0}
+  .state{font-size:12px;color:var(--text-weaker);white-space:nowrap}
+  .state.warn{color:var(--warning);font-weight:500}
+  .state.ok{color:var(--success)}
+  .state.run{color:var(--success);font-weight:500}
+  .state.run::before{content:"●";animation:pulse 1.6s ease-in-out infinite;display:inline-block;margin-right:4px}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .state.dep{color:var(--text-weaker)}
+  .state.frozen{color:var(--warning)}
+  .task-detail{max-height:0;overflow:hidden;transition:max-height .25s ease}
+  .task-row.open .task-detail{max-height:200px}
+  .task-detail-inner{margin-top:9px;padding-top:9px;border-top:1px solid var(--border-weaker);display:flex;flex-direction:column;gap:5px}
+  .fact{font-size:12.5px;color:var(--text-base)}
+  .fact b{color:var(--text-strong);font-weight:500}
+  .runlink{color:var(--accent-hover);font-weight:500;cursor:pointer}
+  .runlink:hover{text-decoration:underline;text-underline-offset:2px}
+
+  /* supervisor rail — minimal */
+  .supervisor{border-radius:var(--radius-card);box-shadow:var(--shadow-card);background:var(--surface-raised);position:sticky;top:20px;padding:16px}
+  .supervisor h3{font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .supervisor .since{font-size:12px;color:var(--text-weaker);font-weight:400;margin-left:auto}
+  .sup-did{font-size:13px;color:var(--text-base);margin:10px 0 14px;line-height:1.55}
+  .sup-did b{color:var(--text-strong);font-weight:500}
+  .msg-compose{display:flex;gap:6px}
+  .msg-compose input{
+    flex:1;border:1px solid var(--border-weak);border-radius:8px;background:var(--background-base);
+    padding:7px 10px;font-size:13px;font-family:var(--font-sans);color:var(--text-strong);min-width:0;
+  }
+  .msg-compose input:focus{outline:2px solid color-mix(in srgb,var(--accent) 40%,transparent);outline-offset:-1px}
+  .sup-foot{margin-top:12px;text-align:center}
+
+  /* ── overlays ── */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;display:none;align-items:center;justify-content:center;padding:24px}
+  .overlay.open{display:flex;animation:fade .15s ease}
+  @keyframes fade{from{opacity:0}}
+  .sheet{
+    background:var(--surface-raised);border-radius:var(--radius-composer);
+    box-shadow:var(--shadow-card),0 24px 60px rgba(0,0,0,.25);
+    width:100%;max-width:560px;animation:rise .22s ease both;overflow:hidden;
+  }
+  @keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+  .sheet-head{padding:14px 20px 0;display:flex;justify-content:space-between;align-items:center}
+  .x{background:none;border:none;font-size:15px;cursor:pointer;color:var(--text-weaker);border-radius:6px;padding:4px 8px}
+  .x:hover{background:var(--surface-hover);color:var(--text-strong)}
+  .sheet-body{padding:14px 20px 22px}
+
+  /* decision */
+  .question{font-size:16px;font-weight:500;line-height:1.5;margin-bottom:14px}
+  .opt{
+    display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+    border:1px solid var(--border-weak);background:var(--background-base);
+    padding:11px 14px;margin-bottom:6px;border-radius:10px;cursor:pointer;
+    font-size:13.5px;color:var(--text-strong);transition:all .12s ease;font-family:var(--font-sans);
+  }
+  .opt:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 5%,transparent)}
+  .opt.rec{border-color:var(--success)}
+  .opt .rec-tag{margin-left:auto;font-size:11px;color:var(--success);font-weight:500}
+  .freeform{
+    width:100%;border:1px dashed var(--border-weak);border-radius:10px;background:none;
+    padding:10px 12px;font-size:13.5px;font-family:var(--font-sans);color:var(--text-strong);
+    resize:none;height:56px;margin-top:4px;
+  }
+  .freeform:focus{outline:2px solid color-mix(in srgb,var(--accent) 40%,transparent);outline-offset:-1px}
+  .unblocks{margin-top:12px;font-size:12px;color:var(--text-weaker)}
+  .unblocks b{color:var(--warning);font-weight:500}
+
+  /* quick task — codex composer shape */
+  .qt-input{
+    width:100%;border:none;background:none;
+    font-size:17px;font-weight:400;padding:4px 0 10px;color:var(--text-strong);
+  }
+  .qt-input:focus{outline:none}
+  .qt-input::placeholder{color:var(--text-weaker)}
+  .qt-row{display:flex;gap:8px;margin-top:14px;align-items:center;flex-wrap:wrap}
+  .seg{display:flex;background:var(--surface-inset);border-radius:8px;padding:2px}
+  .seg button{font-size:12px;padding:5px 12px;background:none;border:none;border-radius:6px;cursor:pointer;color:var(--text-base)}
+  .seg button.on{background:var(--surface-raised);color:var(--text-strong);box-shadow:0 1px 2px rgba(0,0,0,.08);font-weight:500}
+  .qt-note{margin-top:14px;font-size:12px;color:var(--text-weaker);line-height:1.7}
+  .qt-note b{color:var(--text-base);font-weight:500}
+
+  /* dump notes */
+  .dump-area{
+    width:100%;min-height:120px;border:1px solid var(--border-weak);border-radius:10px;
+    background:var(--background-base);padding:12px 14px;font-size:14px;
+    font-family:var(--font-sans);color:var(--text-strong);resize:vertical;
+  }
+  .dump-area:focus{outline:2px solid color-mix(in srgb,var(--accent) 40%,transparent);outline-offset:-1px}
+
+  /* toast — codex inverted toast */
+  .toast{
+    position:fixed;bottom:26px;left:50%;transform:translate(-50%,80px);z-index:200;
+    background:var(--inverted-bg);color:var(--inverted-text);font-size:13px;
+    padding:10px 18px;border-radius:12px;transition:transform .3s cubic-bezier(.2,.9,.3,1.15);
+    box-shadow:0 8px 24px rgba(0,0,0,.25);
+  }
+  .toast.show{transform:translate(-50%,0)}
+  .toast b{font-weight:600}
+
+  .view{display:none}
+  .view.on{display:block;animation:rise .25s ease both}
+  .empty-hint{font-size:12.5px;color:var(--text-weaker);margin-top:12px}
+</style>
+</head>
+<body>
+
+<div class="frame">
+
+  <!-- ══════════ SIDEBAR ══════════ -->
+  <aside class="rail">
+    <div class="wordmark"><span class="mark"></span><b>WorkGraph</b></div>
+
+    <button class="nav-item active" data-nav="home">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 8.5 8 3l6 5.5V14H2z"/></svg>
+      <span>Home</span>
+      <span class="nav-badge" id="navBadge">6</span>
+    </button>
+    <button class="nav-item" data-nav="streams">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
+      <span>Streams</span>
+    </button>
+    <button class="nav-item" data-nav="inbox">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 9h3l1.5 2h3L11 9h3"/><path d="M3.5 3h9a1 1 0 0 1 1 .8L14.7 9v3.5a1 1 0 0 1-1 1H2.3a1 1 0 0 1-1-1V9l1.2-5.2a1 1 0 0 1 1-.8z"/></svg>
+      <span>Inbox</span>
+      <span style="margin-left:auto;font-size:11px;color:var(--text-weaker)">3</span>
+    </button>
+    <button class="nav-item" data-nav="agents">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="5.5" r="2.5"/><path d="M2.5 14c.8-2.6 3-4 5.5-4s4.7 1.4 5.5 4"/></svg>
+      <span>Agents</span>
+    </button>
+
+    <div class="rail-label">Projects</div>
+    <button class="proj-item active" data-proj="all"><span class="pdot" style="background:var(--text-weaker)"></span>All projects</button>
+    <button class="proj-item" data-proj="web"><span class="pdot" style="background:#2f92df"></span>acme / web<span class="cnt">3</span></button>
+    <button class="proj-item" data-proj="marketing"><span class="pdot" style="background:#c65d19"></span>Marketing<span class="cnt">1</span></button>
+    <button class="proj-item" data-proj="ops"><span class="pdot" style="background:#168447"></span>Ops<span class="cnt">1</span></button>
+
+    <div class="rail-foot">
+      <div class="avatar">Y</div>
+      <div>
+        <div class="who">Yash</div>
+        <div class="role">acme.co</div>
+      </div>
+      <button class="scheme-toggle" id="schemeToggle" title="Toggle light / dark">◐</button>
+    </div>
+  </aside>
+
+  <main>
+    <!-- ══════════ HEADER with primary actions top-right ══════════ -->
+    <header class="head">
+      <h1 id="viewTitle">Good morning <em>— three agents worked overnight.</em></h1>
+      <div class="head-actions">
+        <button class="btn secondary" onclick="openDump()">Dump notes</button>
+        <button class="btn primary" onclick="openQuick()">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 1v10M1 6h10"/></svg>
+          New task
+        </button>
+      </div>
+    </header>
+    <div class="summary">
+      <span class="live"><b id="statRunning">3</b> working now</span>
+      <span class="hot"><b id="statNeeds">6</b> need you</span>
+      <span><b>5</b> settled today</span>
+    </div>
+
+    <!-- ══════════ HOME (= needs you first; no separate view) ══════════ -->
+    <section class="view on" id="view-home">
+
+      <section class="block">
+        <div class="eyebrow">Waiting on you <span class="n" id="needsCount">· 6</span></div>
+
+        <!-- group -->
+        <div data-group>
+          <div class="group-head">
+            <h3 onclick="openStream()">Onboarding redesign</h3>
+            <span class="src">from your doc “Onboarding redesign brief”</span>
+            <span class="sp"></span>
+            <button class="linklike" onclick="approveAll(this)">Approve both suggestions</button>
+          </div>
+
+          <div class="card" data-need>
+            <span class="dot warn"></span>
+            <div class="need-body">
+              <div class="need-title">Instrument drop-off funnel events</div>
+              <div class="need-meta">An agent suggested this while working on <b class="runlink">Run #4</b> — it won’t start until you approve.</div>
+            </div>
+            <div class="need-actions">
+              <button class="btn primary small" onclick="approve(this)">Approve</button>
+              <button class="btn ghost small" onclick="reject(this)">Dismiss</button>
+            </div>
+          </div>
+
+          <div class="card" data-need>
+            <span class="dot warn"></span>
+            <div class="need-body">
+              <div class="need-title">Rewrite welcome email sequence</div>
+              <div class="need-meta">Drafted by <b>marketing-expert</b>, matching this stream’s goal.</div>
+            </div>
+            <div class="need-actions">
+              <button class="btn primary small" onclick="approve(this)">Approve</button>
+              <button class="btn ghost small" onclick="reject(this)">Dismiss</button>
+            </div>
+          </div>
+
+          <div class="card" data-need>
+            <span class="dot ask"></span>
+            <div class="need-body">
+              <div class="need-title">Ship the new checklist behind a flag — or to everyone?</div>
+              <div class="need-meta">Your agent is asking before going further.</div>
+              <div class="freeze">Two tasks are paused until you answer.</div>
+            </div>
+            <div class="need-actions">
+              <button class="btn secondary small" onclick="openDecision()">Answer</button>
+            </div>
+          </div>
+        </div>
+
+        <div data-group style="margin-top:20px">
+          <div class="group-head">
+            <h3>Bug triage · web</h3>
+            <span class="src">watches github/acme-web</span>
+          </div>
+
+          <div class="card" data-need>
+            <span class="dot warn"></span>
+            <div class="need-body">
+              <div class="need-title">Add repro test for #482 — checkout timeout on slow connections</div>
+              <div class="need-meta">Triaged as <b>urgent</b> · reproduced once on staging.</div>
+            </div>
+            <div class="need-actions">
+              <button class="btn primary small" onclick="approve(this)">Approve</button>
+              <button class="btn ghost small" onclick="reject(this)">Dismiss</button>
+            </div>
+          </div>
+
+          <div class="card" data-need>
+            <span class="dot err"></span>
+            <div class="need-body">
+              <div class="need-title">Three crashes share the same cause — stop retrying?</div>
+              <div class="need-meta">It tried 3 times and paused rather than keep failing.</div>
+            </div>
+            <div class="need-actions">
+              <button class="btn secondary small" onclick="settle(this.closest('[data-need]'),'Stopped — <b>parked for review</b>')">Stop trying</button>
+              <button class="btn ghost small" onclick="settle(this.closest('[data-need]'),'Retrying with fresh diagnostics')">Try again</button>
+            </div>
+          </div>
+        </div>
+
+        <div data-group style="margin-top:20px">
+          <div class="group-head">
+            <h3>Pricing feedback</h3>
+            <span class="src">marketing-expert replies to customers</span>
+          </div>
+
+          <div class="card" data-need>
+            <span class="dot err"></span>
+            <div class="need-body">
+              <div class="need-title">Publish the revised pricing FAQ?</div>
+              <div class="need-meta">The draft answers <b>8 open customer threads</b>. It stays private until you say go.</div>
+            </div>
+            <div class="need-actions">
+              <button class="btn primary small" onclick="approve(this)">Publish</button>
+              <button class="btn ghost small" onclick="reject(this)">Keep private</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- working now -->
+      <section class="block">
+        <div class="eyebrow">Working now</div>
+        <div class="working" id="workingGrid">
+          <div class="run-card">
+            <div class="run-id">Onboarding redesign</div>
+            <div class="run-title">Churn cohort dashboard</div>
+            <div class="run-note">“Cohort query lands — chart next.”</div>
+            <div class="bar"><i style="width:72%"></i></div>
+          </div>
+          <div class="run-card">
+            <div class="run-id">Bug triage · web</div>
+            <div class="run-title">Reproduce #479 on staging</div>
+            <div class="run-note">“Fails after 30s idle — narrowing it down.”</div>
+            <div class="bar"><i style="width:41%"></i></div>
+          </div>
+          <div class="run-card">
+            <div class="run-id">Pricing feedback</div>
+            <div class="run-title">Reply — “enterprise tier confusion”</div>
+            <div class="run-note">“Holding until you decide on the FAQ.”</div>
+            <div class="bar"><i style="width:58%"></i></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- streams preview -->
+      <section class="block">
+        <div class="eyebrow">Your streams</div>
+        <div class="stream-grid" id="homeStreams">
+          <button class="stream-card" data-project="web" onclick="openStream()">
+            <h3>Onboarding redesign <span class="status-pill on">In progress</span></h3>
+            <div class="goal-line">Every new user reaches first value within ten minutes.</div>
+            <div class="stream-meta"><span>2 of 6 tasks done</span><span class="progress-dots">·</span><span>from your brief</span></div>
+          </button>
+          <button class="stream-card" data-project="web" onclick="toast('Bug triage — 14 issues handled this week')">
+            <h3>Bug triage · web <span class="status-pill on">Watching</span></h3>
+            <div class="goal-line">New bugs triaged before humans wake up.</div>
+            <div class="stream-meta"><span>14 handled this week</span></div>
+          </button>
+          <button class="stream-card" data-project="marketing" onclick="toast('Pricing feedback — 8 of 12 answered')">
+            <h3>Pricing feedback <span class="status-pill on">In progress</span></h3>
+            <div class="goal-line">No piece of feedback waits more than two days.</div>
+            <div class="stream-meta"><span>8 of 12 answered</span></div>
+          </button>
+          <button class="stream-card" data-project="ops" onclick="toast('API rate limiting — paused')">
+            <h3>API rate limiting <span class="status-pill paused">Paused</span></h3>
+            <div class="goal-line">Fair-use limits before the enterprise pilot.</div>
+            <div class="stream-meta"><span>resumes when you say so</span></div>
+          </button>
+        </div>
+      </section>
+    </section>
+
+    <!-- ══════════ STREAMS (grouped by project) ══════════ -->
+    <section class="view" id="view-streams">
+      <section class="block" data-project-group="web">
+        <div class="eyebrow">acme / web <span class="n">· repo</span></div>
+        <div class="stream-grid">
+          <button class="stream-card" onclick="openStream()">
+            <h3>Onboarding redesign <span class="status-pill on">In progress</span></h3>
+            <div class="goal-line">Every new user reaches first value within ten minutes.</div>
+            <div class="stream-meta"><span>2 of 6 tasks done</span></div>
+          </button>
+          <button class="stream-card" onclick="toast('Bug triage stream')">
+            <h3>Bug triage · web <span class="status-pill on">Watching</span></h3>
+            <div class="goal-line">New bugs triaged before humans wake up.</div>
+            <div class="stream-meta"><span>14 handled this week</span></div>
+          </button>
+        </div>
+      </section>
+      <section class="block" data-project-group="marketing">
+        <div class="eyebrow">Marketing</div>
+        <div class="stream-grid">
+          <button class="stream-card" onclick="toast('Pricing feedback stream')">
+            <h3>Pricing feedback <span class="status-pill on">In progress</span></h3>
+            <div class="goal-line">No piece of feedback waits more than two days.</div>
+            <div class="stream-meta"><span>8 of 12 answered</span></div>
+          </button>
+        </div>
+      </section>
+      <section class="block" data-project-group="ops">
+        <div class="eyebrow">Ops</div>
+        <div class="stream-grid">
+          <button class="stream-card" onclick="toast('API rate limiting — paused')">
+            <h3>API rate limiting <span class="status-pill paused">Paused</span></h3>
+            <div class="goal-line">Fair-use limits before the enterprise pilot.</div>
+            <div class="stream-meta"><span>resumes when you say so</span></div>
+          </button>
+          <button class="stream-card" onclick="toast('Legacy import — archived, restorable anytime')">
+            <h3>Legacy import <span class="status-pill paused">Archived</span></h3>
+            <div class="goal-line">Migrate the old tracker. Finished in June.</div>
+            <div class="stream-meta"><span>restorable anytime</span></div>
+          </button>
+        </div>
+      </section>
+    </section>
+
+    <!-- ══════════ INBOX ══════════ -->
+    <section class="view" id="view-inbox">
+      <section class="block">
+        <div class="eyebrow">Fresh arrivals <span class="n">· nothing here is work yet</span></div>
+        <div class="card candidate">
+          <span class="origin">GitHub</span>
+          <span class="t">#512 — SSO / SAML for enterprise customers</span>
+          <button class="btn primary small" onclick="stage(this)">Make it work</button>
+          <button class="btn ghost small" onclick="dismiss(this)">Not now</button>
+        </div>
+        <div class="card candidate">
+          <span class="origin">Session</span>
+          <span class="t">Refactored auth middleware — finished earlier, unclaimed</span>
+          <button class="btn primary small" onclick="stage(this)">Make it work</button>
+          <button class="btn ghost small" onclick="dismiss(this)">Not now</button>
+        </div>
+        <div class="card candidate">
+          <span class="origin">Linear</span>
+          <span class="t">LIN-231 — Checklist skips step 3 for invited users</span>
+          <button class="btn primary small" onclick="stage(this)">Make it work</button>
+          <button class="btn ghost small" onclick="dismiss(this)">Not now</button>
+        </div>
+        <p class="empty-hint">When you make something work, its exact wording is kept forever — plans always trace back to what you saw.</p>
+      </section>
+    </section>
+
+    <!-- ══════════ AGENTS ══════════ -->
+    <section class="view" id="view-agents">
+      <section class="block">
+        <div class="eyebrow">Your agents <span class="n">· who does what</span></div>
+        <div class="agent-grid">
+          <div class="agent-card">
+            <h3>marketing-expert <span class="tag role">executes Pricing feedback</span></h3>
+            <div class="brief">Ten years of growth marketing. Writes like a human, never over-promises, ties every claim to a metric.</div>
+            <div class="tagrow"><span class="tag">remembers past work</span><span class="tag">drafts only — you publish</span></div>
+          </div>
+          <div class="agent-card">
+            <h3>planner <span class="tag role">plans new work</span></h3>
+            <div class="brief">Turns messy notes into reviewable plans. Optimizes for the smallest plan that could work.</div>
+            <div class="tagrow"><span class="tag">can’t touch code or external tools</span></div>
+          </div>
+          <div class="agent-card">
+            <h3>reviewer-hound <span class="tag role">reviews Bug triage</span></h3>
+            <div class="brief">Skeptical senior reviewer. Rejects sloppy diffs and anything shipping without tests.</div>
+            <div class="tagrow"><span class="tag">quality bar can go up, never down</span></div>
+          </div>
+          <button class="agent-new" onclick="toast('Profile editor — name, description, model, memory')">+ Define a new agent</button>
+        </div>
+      </section>
+    </section>
+
+    <!-- ══════════ STREAM DETAIL ══════════ -->
+    <section class="view" id="view-stream-detail">
+      <button class="backlink" onclick="showView('home')">← Home</button>
+
+      <div class="stream-head">
+        <h1>Onboarding redesign</h1>
+        <div class="charter">Every new user reaches first value within ten minutes.</div>
+        <div class="origin-line">
+          From your doc <a onclick="toast('Opens “Onboarding redesign brief” v3')">Onboarding redesign brief</a>
+          · planned Aug 19 · 2 goals · 6 tasks
+        </div>
+      </div>
+
+      <div class="detail-cols">
+        <div>
+          <div class="goal">
+            <h3>Fix drop-off emails</h3>
+            <div class="done-when">Done when: open rate ≥ 45% and click-through ≥ 12%.</div>
+            <div class="task-list">
+              <div class="task-row" onclick="toggleTask(this)">
+                <div class="task-line"><span class="t">Instrument drop-off funnel events</span><span class="state warn">Waiting for your approval</span></div>
+                <div class="task-detail"><div class="task-detail-inner">
+                  <div class="fact">Suggested by an agent during <span class="runlink">Run #4</span> — nothing runs until you approve.</div>
+                  <div class="fact">Counts as done when <b>the events show up in your dashboard</b>.</div>
+                </div></div>
+              </div>
+              <div class="task-row" onclick="toggleTask(this)">
+                <div class="task-line"><span class="t">Rewrite welcome email sequence</span><span class="state warn">Waiting for your approval</span></div>
+                <div class="task-detail"><div class="task-detail-inner">
+                  <div class="fact">Drafted by <b>marketing-expert</b> — 3 variants attached.</div>
+                  <div class="fact">Counts as done when <b>you pick a variant and it ships</b>.</div>
+                </div></div>
+              </div>
+              <div class="task-row" onclick="toggleTask(this)">
+                <div class="task-line"><span class="t">A/B test subject lines</span><span class="state dep">Starts after the rewrite</span></div>
+                <div class="task-detail"><div class="task-detail-inner">
+                  <div class="fact">Launches automatically once the rewrite finishes.</div>
+                </div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="goal">
+            <h3>Reduce week-2 churn</h3>
+            <div class="done-when">Done when: week-2 retention ≥ 60%.</div>
+            <div class="task-list">
+              <div class="task-row" onclick="toggleTask(this)">
+                <div class="task-line"><span class="t">Churn cohort dashboard</span><span class="state run">Running</span></div>
+                <div class="task-detail"><div class="task-detail-inner">
+                  <div class="fact"><span class="runlink">Run #7 · view activity</span> — “cohort query lands, chart next.”</div>
+                  <div class="fact">Counts as done when <b>tests pass and a screenshot is attached</b>.</div>
+                </div></div>
+              </div>
+              <div class="task-row" onclick="toggleTask(this)">
+                <div class="task-line"><span class="t">Exit survey analysis</span><span class="state ok">✓ Done — proof attached</span></div>
+                <div class="task-detail"><div class="task-detail-inner">
+                  <div class="fact">Found: <b>top exit reason is missing team invites (41%)</b>.</div>
+                  <div class="fact">Proof: analysis notebook + summary, checked against the goal automatically.</div>
+                </div></div>
+              </div>
+              <div class="task-row" onclick="toggleTask(this)">
+                <div class="task-line"><span class="t">Win-back email flow</span><span class="state frozen">Paused — waiting on your answer</span></div>
+                <div class="task-detail"><div class="task-detail-inner">
+                  <div class="fact">Resumes the moment you answer the checklist question.</div>
+                </div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- supervisor — minimal -->
+        <aside class="supervisor">
+          <h3>Supervisor <span class="since">active 12m ago</span></h3>
+          <div class="sup-did">
+            Just asked you whether to <b>ship the checklist behind a flag</b>. Before that, it wrapped up the exit-survey work.
+          </div>
+          <div class="msg-compose">
+            <input id="supMsg" placeholder="Message the supervisor…">
+            <button class="btn secondary small" onclick="sendSup()">Send</button>
+          </div>
+          <div class="sup-foot">
+            <button class="linklike" onclick="toast('Full turn-by-turn history — every action it took, with reasons')">See everything it’s done</button>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ══════════ DECISION ══════════ -->
+<div class="overlay" id="ov-decision">
+  <div class="sheet">
+    <div class="sheet-head">
+      <span class="eyebrow" style="margin:0">Quick question</span>
+      <button class="x" onclick="closeOv('ov-decision')">✕</button>
+    </div>
+    <div class="sheet-body">
+      <div class="question">The new checklist passes its tests locally. Ship it behind a feature flag, or roll it out to everyone?</div>
+      <button class="opt rec" onclick="answerDecision()">Behind a flag — 10% of users first <span class="rec-tag">recommended</span></button>
+      <button class="opt" onclick="answerDecision()">Full rollout to everyone</button>
+      <button class="opt" onclick="answerDecision()">Not yet — keep iterating</button>
+      <textarea class="freeform" placeholder="…or answer in your own words"></textarea>
+      <div class="unblocks">Answering resumes <b>2 paused tasks</b>.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ QUICK TASK ══════════ -->
+<div class="overlay" id="ov-quick">
+  <div class="sheet">
+    <div class="sheet-body" style="padding-top:20px">
+      <input class="qt-input" id="qtInput" placeholder="What needs doing?">
+      <div class="qt-row">
+        <span class="tag">repo · acme/web</span>
+        <div class="seg" id="qtMode">
+          <button class="on" onclick="segPick(this)">Draft PR</button>
+          <button onclick="segPick(this)">Local changes</button>
+        </div>
+        <span style="flex:1"></span>
+        <button class="btn primary" onclick="fireTask()">Fire&nbsp;&nbsp;↵</button>
+      </div>
+      <div class="qt-note">
+        Starts immediately — no planning step. You’ll get <b>a draft PR</b> (or local diff) with proof of what was done attached.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ DUMP NOTES ══════════ -->
+<div class="overlay" id="ov-dump">
+  <div class="sheet">
+    <div class="sheet-body" style="padding-top:20px">
+      <input class="qt-input" id="dumpInput" placeholder="What’s on your mind? Rough is fine.">
+      <textarea class="dump-area" id="dumpArea" placeholder="Paste thoughts, half-formed ideas, links…&#10;&#10;WorkGraph keeps them safe and turns them into organized work when you’re ready."></textarea>
+      <div class="qt-row">
+        <span style="flex:1"></span>
+        <button class="btn ghost" onclick="closeOv('ov-dump')">Cancel</button>
+        <button class="btn primary" onclick="saveDump()">Save to Intake</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toastEl"></div>
+
+<script>
+  const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+
+  function showView(name){
+    $$('.view').forEach(v=>v.classList.remove('on'));
+    $('#view-'+name).classList.add('on');
+    $$('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.nav===name));
+    const titles={
+      home:'Good morning <em>— three agents worked overnight.</em>',
+      streams:'Streams',
+      inbox:'Inbox <em>— arrivals, not yet work.</em>',
+      agents:'Agents'
+    };
+    if(titles[name])$('#viewTitle').innerHTML=titles[name];
+    window.scrollTo({top:0});
+  }
+  $$('.nav-item').forEach(n=>n.addEventListener('click',()=>showView(n.dataset.nav)));
+
+  /* project scope filter */
+  let activeProj='all';
+  function applyProjectFilter(){
+    $$('.proj-item').forEach(p=>p.classList.toggle('active',p.dataset.proj===activeProj));
+    const scope=activeProj==='all'?'':activeProj;
+    /* home preview cards */
+    $$('#homeStreams .stream-card').forEach(c=>{
+      c.style.display=!scope||c.dataset.project===scope?'':'none';
+    });
+    /* streams view groups */
+    $$('[data-project-group]').forEach(g=>{
+      g.style.display=!scope||g.dataset.projectGroup===scope?'':'none';
+    });
+  }
+  $$('.proj-item').forEach(p=>p.addEventListener('click',()=>{
+    activeProj=p.dataset.proj;applyProjectFilter();
+    if(activeProj!=='all')showView('streams');
+  }));
+  applyProjectFilter();
+  function openStream(){showView('home');setTimeout(openStreamDetail,0);}
+  function openStreamDetail(){
+    $$('.view').forEach(v=>v.classList.remove('on'));
+    $('#view-stream-detail').classList.add('on');
+    $('#viewTitle').innerHTML='Onboarding redesign';
+    window.scrollTo({top:0});
+  }
+  /* stream cards should go to detail directly */
+  $$('[data-group] h3').forEach(h=>h.addEventListener('click',openStreamDetail));
+
+  function needsLeft(){return $$('[data-need]').length}
+  function refreshCounts(){
+    const n=needsLeft();
+    $('#statNeeds').textContent=n;
+    $('#navBadge').textContent=n;
+    $('#navBadge').style.display=n?'':'none';
+    $('#needsCount').textContent='· '+n;
+  }
+  function settle(card,msg){
+    card.style.transition='all .28s ease';card.style.opacity='0';card.style.transform='translateX(20px)';
+    setTimeout(()=>{
+      card.remove();refreshCounts();toast(msg);
+      $$('[data-group]').forEach(g=>{if(!g.querySelector('[data-need]'))g.style.opacity='.45'});
+    },280);
+  }
+  function approve(btn){settle(btn.closest('[data-need]'),'Approved — <b>starts next</b>')}
+  function reject(btn){settle(btn.closest('[data-need]'),'Dismissed — the agent was told why')}
+  function approveAll(btn){
+    const group=btn.closest('[data-group]');
+    group.querySelectorAll('.need-card[data-need], .card[data-need]').forEach((c,i)=>
+      setTimeout(()=>settle(c,'Approved — <b>starts next</b>'),i*150));
+  }
+  function stage(btn){
+    const c=btn.closest('.candidate');
+    c.style.transition='all .28s ease';c.style.opacity='0';
+    setTimeout(()=>{c.remove();toast('Saved — <b>a plan will be drafted for your review</b>')},280);
+  }
+  function dismiss(btn){
+    const c=btn.closest('.candidate');
+    c.style.transition='all .28s ease';c.style.opacity='0';
+    setTimeout(()=>{c.remove();toast('Put aside')},280);
+  }
+
+  /* overlays */
+  function openOv(id){$('#'+id).classList.add('open')}
+  function closeOv(id){$('#'+id).classList.remove('open')}
+  function openDecision(){openOv('ov-decision')}
+  function openQuick(){openOv('ov-quick');setTimeout(()=>$('#qtInput').focus(),80)}
+  function openDump(){openOv('ov-dump');setTimeout(()=>$('#dumpInput').focus(),80)}
+  function segPick(b){$$('#qtMode button').forEach(x=>x.classList.remove('on'));b.classList.add('on')}
+  function answerDecision(){
+    closeOv('ov-decision');
+    const card=$$('.card[data-need]')[2];
+    if(card)settle(card,'Answered — <b>2 tasks resumed</b>');
+  }
+  function fireTask(){
+    const v=$('#qtInput').value.trim()||'Fix the flaky checkout test';
+    closeOv('ov-quick');$('#qtInput').value='';
+    const el=document.createElement('div');el.className='run-card';
+    el.innerHTML='<div class="run-id">Solo · web</div><div class="run-title">'+v.replace(/</g,'&lt;')+
+      '</div><div class="run-note">“Reading the repo…”</div><div class="bar"><i style="width:4%"></i></div>';
+    $('#workingGrid').prepend(el);
+    $('#statRunning').textContent=$$('.run-card').length;
+    toast('<b>Started</b> — you’ll get a draft PR when it’s done');
+  }
+  function saveDump(){
+    const v=$('#dumpInput').value.trim();
+    closeOv('ov-dump');$('#dumpInput').value='';$('#dumpArea').value='';
+    toast(v?'Saved to <b>Inbox</b> — organize it whenever':'Saved to <b>Inbox</b>');
+  }
+  function sendSup(){
+    const v=$('#supMsg').value.trim();if(!v)return;
+    $('#supMsg').value='';
+    toast('Sent — the supervisor reads messages between steps');
+  }
+  $('#qtInput').addEventListener('keydown',e=>{if(e.key==='Enter')fireTask()});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')$$('.overlay.open').forEach(o=>o.classList.remove('open'))});
+  $$('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open')}));
+
+  function toggleTask(row){row.classList.toggle('open')}
+
+  let toastTimer;
+  function toast(html){
+    const t=$('#toastEl');t.innerHTML=html;t.classList.add('show');
+    clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2600);
+  }
+
+  /* light/dark — both palettes straight from codex.json */
+  $('#schemeToggle').addEventListener('click',()=>{
+    const r=document.documentElement;
+    r.dataset.scheme=r.dataset.scheme==='light'?'dark':'light';
+  });
+
+  refreshCounts();
+</script>
+</body>
+</html>
