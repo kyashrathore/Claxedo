@@ -1323,6 +1323,51 @@ describe("workspace runtime auth helpers", () => {
     host.dispose()
   })
 
+  test("projects real Pi turns before serving bounded history", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-pi-store-page-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const app = new Hono()
+    const host = mountTestHost(app, {
+      harness: { id: "pi", access: "native" },
+      storeRoot: path.join(dir, ".claxedo", "store"),
+    })
+
+    const created = await app.request(`http://localhost/session?directory=${encodeURIComponent(dir)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "Pi page projection" }),
+    })
+    expect(created.status).toBe(201)
+    const session = await created.json() as { id: string }
+
+    const sent = await app.request(
+      `http://localhost/session/${session.id}/message?directory=${encodeURIComponent(dir)}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ parts: [{ type: "text", text: "project this turn" }] }),
+      },
+    )
+    expect(sent.status).toBe(200)
+
+    const originalGetMessages = PiHarnessAdapter.prototype.getMessages
+    PiHarnessAdapter.prototype.getMessages = async () => {
+      throw new Error("bounded Pi history must not read the adapter's full transcript")
+    }
+    try {
+      const page = await app.request(
+        `http://localhost/session/${session.id}/message?limit=1&directory=${encodeURIComponent(dir)}`,
+      )
+      expect(page.status).toBe(200)
+      expect((await page.json() as Array<{ info: { role: string } }>)).toHaveLength(1)
+      expect(page.headers.get("x-next-cursor")).toMatch(/^wrmp1:/)
+    } finally {
+      PiHarnessAdapter.prototype.getMessages = originalGetMessages
+    }
+    host.dispose()
+  })
+
   test("falls back to the adapter page when a bound session has no projected messages", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-empty-page-"))
     tempDirs.push(dir)
