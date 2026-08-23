@@ -13,6 +13,29 @@ import type { Budget, DiagnosticsOverheadEvidence, RunStatus, ScenarioResult } f
 
 const DIAGNOSTICS_RETAINED_BYTES_BUDGET = 20 * 1024 * 1024
 
+type PerClickMetricSuffix = "script_ms" | "style_ms" | "layout_ms" | "nodes_added" | "nodes_removed"
+
+export type PerClickNavigationRow = {
+  flow: ScenarioResult["id"]
+  sample: number
+  click: number
+  state: "cold" | "warm"
+  completion_ms: number
+  script_ms?: number
+  style_ms?: number
+  layout_ms?: number
+  nodes_added?: number
+  nodes_removed?: number
+}
+
+const perClickSourceCounters = {
+  script_ms: "CDP Performance.ScriptDuration cumulative source counter",
+  style_ms: "CDP Performance.RecalcStyleDuration cumulative source counter",
+  layout_ms: "CDP Performance.LayoutDuration cumulative source counter",
+  nodes_added: "in-page MutationObserver nodesAdded cumulative source counter",
+  nodes_removed: "in-page MutationObserver nodesRemoved cumulative source counter",
+} as const
+
 type Gateable = Omit<ScenarioResult, "budget" | "status" | "failures" | "warnings">
 
 // The browser gate applies 8.33/16.67ms to traced CrRendererMain task duration.
@@ -142,6 +165,23 @@ export function markdownReport(results: ScenarioResult[], options: { debug?: boo
     "| --- | --- | ---: | ---: | ---: | ---: | --- | --- |",
     ...headlineRows,
   ]
+
+  const perClickRows = perClickNavigationRows(results)
+  if (perClickRows.length) {
+    const value = (input: number | undefined) => input === undefined ? "n/a" : formatNumber(input)
+    lines.push(
+      "",
+      "## Raw per-click navigation deltas",
+      "",
+      "One row is one physical click sample; values are not percentiles or cumulative session totals. Script, style recalculation, and layout are after-minus-before deltas from CDP Performance cumulative source counters. DOM add/remove are after-minus-before deltas from the in-page MutationObserver cumulative source counters. The cumulative source-counter totals themselves are not reported.",
+      "",
+      "| Flow | Sample | Click | State before click | Completion (ms) | JS / script (ms) | Style recalculation (ms) | Layout (ms) | DOM added | DOM removed |",
+      "| --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+      ...perClickRows.map((row) =>
+        `| ${row.flow} | ${row.sample} | ${row.click} | ${row.state} | ${value(row.completion_ms)} | ${value(row.script_ms)} | ${value(row.style_ms)} | ${value(row.layout_ms)} | ${value(row.nodes_added)} | ${value(row.nodes_removed)} |`,
+      ),
+    )
+  }
 
   const vitalsRows = results
     .filter((result) => result.vitals)
@@ -320,8 +360,47 @@ export function jsonReport(results: ScenarioResult[]) {
     generated_at: new Date().toISOString(),
     status: overallStatus(results),
     targets: { rate_target_hz: 120, rate_floor_hz: 60 },
+    per_click_navigation: {
+      measurement: "raw after-minus-before delta per physical click",
+      source_counters_only: perClickSourceCounters,
+      rows: perClickNavigationRows(results),
+    },
     flows: results,
   }
+}
+
+export function perClickNavigationRows(results: ScenarioResult[]): PerClickNavigationRow[] {
+  return results.flatMap((result) => {
+    const metrics = new Map(result.metrics.map((metric) => [metric.metric, metric.samples]))
+    const clicks = result.metrics.flatMap((metric) => {
+      const match = /^switch_(\d+)_(cold|warm)_completion_ms$/.exec(metric.metric)
+      return match
+        ? [{ click: Number(match[1]), state: match[2] as PerClickNavigationRow["state"], samples: metric.samples }]
+        : []
+    }).toSorted((left, right) => left.click - right.click)
+    const sampleCount = Math.max(0, ...clicks.map((click) => click.samples.length))
+
+    return Array.from({ length: sampleCount }, (_, sampleIndex) =>
+      clicks.flatMap(({ click, state, samples }) => {
+        const completion = samples[sampleIndex]
+        if (completion === undefined) return []
+        const prefix = `switch_${String(click).padStart(2, "0")}_${state}_`
+        const sample = (suffix: PerClickMetricSuffix) => metrics.get(`${prefix}${suffix}`)?.[sampleIndex]
+        return [{
+          flow: result.id,
+          sample: sampleIndex + 1,
+          click,
+          state,
+          completion_ms: completion,
+          script_ms: sample("script_ms"),
+          style_ms: sample("style_ms"),
+          layout_ms: sample("layout_ms"),
+          nodes_added: sample("nodes_added"),
+          nodes_removed: sample("nodes_removed"),
+        }]
+      }),
+    ).flat()
+  })
 }
 
 export function overallStatus(results: ScenarioResult[]): RunStatus {
