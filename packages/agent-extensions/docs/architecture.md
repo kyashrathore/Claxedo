@@ -38,6 +38,19 @@ with `applyRuntimeAgentExtensions`. Everything after that point — which
 directories get written, how conflicts are detected, how failures are
 recorded — is internal to the package.
 
+Project-scope state is repo-controlled input: a clone ships its own
+`.agent-extensions/{installed.json,lock.json}` and `agent-extensions/`
+directory. Snapshots therefore include project-scope declarations only as far
+as the consent ledger in `src/trust.ts` vouches
+(`<dataRoot>/agent-extensions/project-trust.json`, resolved by hosts into
+`projectStateTrusted`). Grants are scoped and content-bound: a lifecycle
+command trusts only the install id it acted on, the first-party directory
+needs its own explicit grant whose fingerprint covers component paths AND
+contents, and row fingerprints serialize recursively so a retargeted
+`source`, changed lock, or `enabled` flip reverts that install to untrusted
+until someone re-grants. An unconsented checkout contributes nothing to a
+snapshot, and control-plane workspace installs are unaffected.
+
 ## Data Flow: install → lock → materialize → replay
 
 Every lifecycle command (`install`, `installCached`, `update`, `enable`,

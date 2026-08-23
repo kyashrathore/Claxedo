@@ -39,6 +39,7 @@ import {
 import { resolveSecretsForScope } from "@claxedo/server-core/credentials/registry"
 import {
   getRuntimeAgentExtensionsSnapshot,
+  resolveProjectExtensionTrust,
   type AgentExtensionPolicyOverride,
   type RuntimeAgentExtensionsSnapshot,
 } from "../hosts/agent-extensions/runtime-config"
@@ -545,6 +546,16 @@ export async function getRuntimeConfigSnapshot(
       projectDir: options.workspaceDir,
     }, {
       ...(workspaceAgentExtensions ?? {}),
+      // The checkout is repo-controlled input: its extension declarations
+      // apply only as far as this host's consent ledger currently vouches —
+      // per install id, plus an explicit first-party flag (see
+      // @claxedo/agent-extensions trust). Drifted or unconsented declarations
+      // contribute nothing; control-plane workspace installs above are
+      // unaffected.
+      projectStateTrusted: await resolveProjectExtensionTrust({
+        dataRoot: claxedoDir(),
+        projectDir: options.workspaceDir,
+      }),
     }) } : {}),
   }
 }

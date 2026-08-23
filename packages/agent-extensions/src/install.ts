@@ -9,7 +9,7 @@ import { discoverAgentExtensionPackage } from "./manifest"
 import { fetchGitHubPackageToCache } from "./fetch"
 import { materializeAgentExtensionSnapshot, type AgentExtensionMaterializationInstall } from "./materialize"
 import { materializedAgentExtensionFiles, type AgentExtensionFiles } from "./storage"
-import { parsePackageSource, sameSource, type PackageInstallSource } from "./source"
+import { parsePackageSource, safeRelativePath, sameSource, type PackageInstallSource } from "./source"
 import {
   adoptMaterializedOwner,
   readMaterializedRuntimeRecord,
@@ -24,6 +24,7 @@ import {
 import { readExtensionLock, writeExtensionLock, type ExtensionLock } from "./lock"
 import { verifyPackageIntegrity } from "./integrity"
 import { withAgentExtensionStateLock } from "./fs-safe"
+import { grantProjectExtensionTrust } from "./trust"
 
 export class AgentExtensionConflictError extends Error {
   constructor(
@@ -234,6 +235,9 @@ export async function installFetchedAgentExtension(input: InstallFetchedAgentExt
       now: input.now,
       packageRoots: { [id]: packageRoot },
       ...(input.replaceOwned !== undefined ? { replaceOwned: input.replaceOwned } : {}),
+      dataRoot: input.dataRoot,
+      scope: input.scope,
+      grantIds: [id],
     })
     const materialized = await readMaterializedRuntimeRecord(files.materialized)
     const nextPackage = materialized.packages[id]
@@ -282,18 +286,21 @@ export async function updateAgentExtension(input: AgentExtensionLifecycleInput) 
   if (!desiredInstall) return undefined
   if (desiredInstall.source.type === "project") {
     if (!input.projectDir) throw new Error("projectDir is required to update a project Agent Extension")
-    const packageRoot = path.join(input.projectDir, desiredInstall.source.package_path)
+    // package_path comes from persisted (possibly repo-shipped) state;
+    // validate it as a contained relative path before joining it.
+    const safePackagePath = safeRelativePath(desiredInstall.source.package_path, "Agent Extension package path")
+    const packageRoot = path.join(input.projectDir, safePackagePath)
     const checksum = await digestDirectory(packageRoot)
     const cache = await copyPackageToCache({
       sourceRoot: input.projectDir,
-      packagePath: desiredInstall.source.package_path,
+      packagePath: safePackagePath,
       resolvedSha: checksum,
       dataRoot: dataRootFor(input),
     })
     return installFetchedAgentExtension({
       source: desiredInstall.source,
       resolvedSha: checksum,
-      packagePath: desiredInstall.source.package_path,
+      packagePath: safePackagePath,
       scope: input.scope,
       projectDir: input.projectDir,
       dataRoot: dataRootFor(input),
@@ -403,6 +410,12 @@ async function applyProjection(input: {
   now?: number
   packageRoots?: Record<string, string>
   replaceOwned?: boolean
+  dataRoot: string
+  scope: MaterializedAgentExtensionScope
+  /** Install ids this operation consented to; other declared rows stay untrusted. */
+  grantIds: string[]
+  /** Install ids whose recorded grants are withdrawn (uninstall). */
+  ungrantIds?: string[]
 }) {
   await verifyPackageRoots({ state: input.state, lock: input.lock, packageRoots: input.packageRoots })
   await Promise.all([
@@ -418,6 +431,20 @@ async function applyProjection(input: {
     ...(input.now !== undefined ? { now: input.now } : {}),
     ...(input.replaceOwned !== undefined ? { replaceOwned: input.replaceOwned } : {}),
   })
+  // A successful explicit lifecycle write IS the user's consent — for the ids
+  // they named, never for the rest of the checkout's declaration. Granting
+  // only after the projection succeeded keeps a failed install from recording
+  // trust for state that was never applied; the grant is what later lets
+  // config-apply snapshots honor the repo-controlled rows (see ./trust).
+  if (input.scope === "project" && (input.grantIds.length > 0 || (input.ungrantIds?.length ?? 0) > 0)) {
+    await grantProjectExtensionTrust({
+      dataRoot: input.dataRoot,
+      projectDir: input.projectDir,
+      ...(input.grantIds.length > 0 ? { installIds: input.grantIds } : {}),
+      ...(input.ungrantIds?.length ? { removeIds: input.ungrantIds } : {}),
+      ...(input.now !== undefined ? { now: input.now } : {}),
+    })
+  }
 }
 
 function upsertInstallState(input: {
@@ -495,6 +522,9 @@ export async function disableAgentExtension(input: AgentExtensionLifecycleInput)
       projectDir: projectDirFor(input),
       homeDir: input.homeDir,
       now: input.now,
+      dataRoot: dataRootFor(input),
+      scope: input.scope,
+      grantIds: [id],
     })
     const materialized = (await readMaterializedRuntimeRecord(files.materialized)).packages[id]
     if (!materialized) throw new Error(`Agent Extension ${id} was not materialized`)
@@ -540,6 +570,9 @@ export async function enableAgentExtension(input: AgentExtensionLifecycleInput) 
       homeDir: input.homeDir,
       now: input.now,
       packageRoots: { [id]: packageRoot },
+      dataRoot: dataRootFor(input),
+      scope: input.scope,
+      grantIds: [id],
     })
     const materialized = (await readMaterializedRuntimeRecord(files.materialized)).packages[id]
     if (!materialized) throw new Error(`Agent Extension ${id} was not materialized`)
@@ -579,6 +612,14 @@ export async function uninstallAgentExtension(input: AgentExtensionLifecycleInpu
       projectDir: projectDirFor(input),
       homeDir: input.homeDir,
       now: input.now,
+      dataRoot: dataRootFor(input),
+      scope: input.scope,
+      // Removing a package consents to nothing — and WITHDRAWS the consent
+      // it had: a checkout that later restores the exact same bytes from git
+      // history must not resurrect the install on the strength of the old
+      // grant.
+      grantIds: [],
+      ungrantIds: [id],
     })
     return item ?? {
       package_name: desiredInstall?.package_name ?? id,

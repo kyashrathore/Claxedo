@@ -64,6 +64,7 @@ agent-extensions doctor
 - **Targets** — `["opencode", "claude", "codex", "cursor"]`.
 - **Package shape** — an extension bundles `SKILL.md`, `mcp.json`, and/or `.cursor-plugin/plugin.json`; conventional `skills/`, `mcp/`, `plugins/` directories are also supported.
 - **Snapshot & replay** — `extensions.snapshot({ policyOverrides })` then `applyRuntimeAgentExtensions(snapshot, dir)` from `/replay`.
+- **Project consent gate** — repo-shipped `.agent-extensions/` declarations apply only as far as the host-owned trust ledger vouches (scoped, content-bound grants resolved into `projectStateTrusted`); lifecycle commands record grants for the ids they act on.
 - **Safety model** — ownership records in `.agent-extensions/materialized.json`; refuses to overwrite unmanaged paths; GitHub packages locked by resolved SHA and verified against recorded digests.
 
 ## Full API

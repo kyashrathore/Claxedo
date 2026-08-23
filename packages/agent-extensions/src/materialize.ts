@@ -19,6 +19,7 @@ import {
 } from "./materialization"
 import { isHarnessTarget, type MaterializedAgentExtensionScope, type PackageSource, type HarnessTarget } from "./types"
 import { samePackageSourceIdentity, verifyPackageIntegrity, type PackageIntegrityLock } from "./integrity"
+import { assertSafePathSegment } from "./fs-safe"
 
 export type AgentExtensionMaterializationInstall = {
   desired: {
@@ -59,8 +60,15 @@ function targets(input: AgentExtensionMaterializationInstall): HarnessTarget[] {
   return (input.desired.targets ?? []).filter(isHarnessTarget)
 }
 
+// The package name builds every artifact path this package owns, and
+// `package_name`/`id` can arrive from repo-shipped desired state — a
+// traversal string here would place attacker-chosen directories under any
+// writable root.
 function packageName(input: AgentExtensionMaterializationInstall, packageRoot: string) {
-  return input.desired.package_name ?? input.desired.id ?? path.basename(packageRoot)
+  return assertSafePathSegment(
+    input.desired.package_name ?? input.desired.id ?? path.basename(packageRoot),
+    "Agent Extension package name",
+  )
 }
 
 function packageNameWithoutRoot(input: AgentExtensionMaterializationInstall) {
@@ -301,12 +309,35 @@ async function materializePackage(input: {
   materializedAt: number
   replaceOwned?: boolean
 }) {
-  const name = packageName(input.install, input.packageRoot)
   const ownerId = input.install.desired.id
+  // Name derivation and discovery read repo-controlled content and validate
+  // it (traversal names throw). Both must fail THIS package only: a hostile
+  // sibling must not abort the whole snapshot run and strand other packages'
+  // applied artifacts without an ownership record.
+  let name = ownerId
+  let discovered: DiscoveredAgentExtensionComponent[] = []
+  const failures: unknown[] = []
+  try {
+    name = packageName(input.install, input.packageRoot)
+    discovered = await discoverAgentExtensionComponents(input.packageRoot)
+  } catch (err) {
+    failures.push(err)
+    return {
+      package: {
+        package_name: name,
+        source: input.install.desired.source,
+        resolved_sha: input.install.lock?.resolved_sha ?? "",
+        enabled: true,
+        targets: targets(input.install),
+        components: withPreviousApplied([], input.previous.packages[ownerId]),
+        materialized_at: input.materializedAt,
+        status: "failed",
+      } satisfies MaterializedExtensionPackage,
+      failures,
+    }
+  }
   const targetScope = scope(input.install)
   const components: MaterializedComponent[] = []
-  const failures: unknown[] = []
-  const discovered = await discoverAgentExtensionComponents(input.packageRoot)
 
   for (const runner of targets(input.install)) {
     if (discovered.length > 0) {

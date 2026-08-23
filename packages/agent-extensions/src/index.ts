@@ -30,6 +30,7 @@ export {
   type RuntimeAgentExtensionsSnapshotInput,
   type RuntimeAgentExtensionsSnapshotOptions,
   type RuntimeAgentExtensionsSnapshot,
+  type RuntimeProjectStateTrust,
 } from "./runtime-config"
 export {
   mirrorWorkspaceAgentExtensionRecord,
@@ -102,6 +103,19 @@ export {
   discoverAgentExtensionComponents,
   type DiscoveredAgentExtensionComponent,
 } from "./discovery"
+
+export {
+  grantProjectExtensionTrust,
+  installFingerprint,
+  projectExtensionTrustPath,
+  readProjectExtensionTrust,
+  resolveProjectExtensionTrust,
+  revokeProjectExtensionTrust,
+  PROJECT_EXTENSION_TRUST_FILE,
+  type ProjectExtensionTrust,
+  type ProjectExtensionTrustEntry,
+  type ResolvedProjectExtensionTrust,
+} from "./trust"
 
 export {
   applyRuntimeAgentExtensions,

@@ -81,6 +81,29 @@ describe("standalone MCP materializer", () => {
     expect(remaining.otherSetting).toBe(true)
   })
 
+  test("keeps url server headers when spelling out the claude http transport", async () => {
+    const target = path.join(project, ".mcp.json")
+    const components = await materializeStandaloneMcp({
+      config: { servers: { remote: { url: "https://mcp.example/sse", headers: { Authorization: "Bearer tok" } } } },
+      runner: "claude",
+      scope: "project",
+      ownerId: "remote",
+      projectDir: project,
+    })
+    expect(components).toEqual([{
+      runner: "claude",
+      component: "remote",
+      type: "mcp",
+      status: "applied",
+      path: target,
+    }])
+    await expect(fs.readFile(target, "utf8").then(JSON.parse)).resolves.toMatchObject({
+      mcpServers: {
+        remote: { type: "http", url: "https://mcp.example/sse", headers: { Authorization: "Bearer tok" } },
+      },
+    })
+  })
+
   test("removes opencode entries with jsonc edits, preserving comments and formatting", async () => {
     const target = path.join(project, ".opencode", "opencode.jsonc")
     await fs.mkdir(path.dirname(target), { recursive: true })

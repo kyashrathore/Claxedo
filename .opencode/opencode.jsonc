@@ -2,7 +2,13 @@
   "$schema": "https://opencode.ai/config.json",
   "provider": {},
   "permission": {},
-  "mcp": {},
+  "mcp": {
+    "figma": {
+      "type": "remote",
+      "url": "https://mcp.figma.com/mcp",
+      "enabled": true
+    }
+  },
   "tools": {
     "github-triage": false,
     "github-pr-search": false,

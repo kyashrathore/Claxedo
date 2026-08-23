@@ -129,7 +129,18 @@ function mcpComponents(input: {
 
 function toRunnerMcpServers(runner: HarnessTarget, config: StandaloneMcpConfig) {
   return sortedObject(Object.fromEntries(Object.entries(config.servers).map(([name, cfg]) => {
-    if ("url" in cfg) return [name, cfg]
+    if ("url" in cfg) {
+      // Claude Code's .mcp.json skips remote entries without an explicit
+      // transport type ("Skipped — MCP server has a url but no type"), so
+      // spell out streamable HTTP while keeping the rest of the normalized
+      // entry — notably `headers`, which authenticated servers require.
+      // Cursor accepts the same field but its documented shape is a bare
+      // url, so it is left untouched.
+      // cfg last-wins on type would let a non-normalized entry override the
+      // transport we are deliberately spelling out; keep the explicit field
+      // authoritative.
+      return runner === "claude" ? [name, { ...cfg, type: "http" as const }] : [name, cfg]
+    }
     if (runner === "claude") return [name, {
       type: "stdio",
       command: cfg.command,
