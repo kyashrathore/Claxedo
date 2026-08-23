@@ -32,7 +32,12 @@ type SessionRow = {
   time: { created: number; updated: number; archived?: number }
   status?: string | null
   recoveryError?: string | null
-  activeTurn?: { assistantMessageId: string }
+  activeTurn?: {
+    assistantMessageId: string
+    seq?: number
+    createdAt?: number
+    agentSessionId?: string
+  }
   lastTurn?: AgentTurnOutcome
 }
 
@@ -181,8 +186,19 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     system?: string
     variant?: string
   }): AgentRuntimeTurnStartOutput {
-    const createdAt = Date.now()
     const session = this.sessions.get(input.sessionId)
+    const activeTurn = session?.activeTurn
+    if (session && activeTurn?.assistantMessageId === input.assistantMessageId) {
+      return {
+        sessionId: input.sessionId,
+        seq: activeTurn.seq ?? this.seq.get(input.sessionId) ?? 0,
+        createdAt: activeTurn.createdAt ?? session.time.updated,
+        ...(activeTurn.agentSessionId ? { agentSessionId: activeTurn.agentSessionId } : {}),
+        events: [],
+      }
+    }
+    const createdAt = Date.now()
+    const seq = this.next(input.sessionId)
     const events: CompatEvent[] = [
       sessionStatus(input.sessionId, { type: "busy" }),
       ...(input.userMessageId
@@ -217,13 +233,18 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     if (row) {
       this.sessions.set(input.sessionId, {
         ...row,
-        activeTurn: { assistantMessageId: input.assistantMessageId },
+        activeTurn: {
+          assistantMessageId: input.assistantMessageId,
+          seq,
+          createdAt,
+          ...(input.agentSessionId ? { agentSessionId: input.agentSessionId } : {}),
+        },
       })
     }
     this.afterChange()
     return {
       sessionId: input.sessionId,
-      seq: this.next(input.sessionId),
+      seq,
       createdAt,
       ...(input.agentSessionId ? { agentSessionId: input.agentSessionId } : {}),
       events,

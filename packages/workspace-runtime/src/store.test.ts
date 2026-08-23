@@ -519,6 +519,19 @@ describe("RuntimeStore", () => {
       "message.part.updated",
       "message.updated",
     ])
+    const replay = store.startTurn({
+      sessionId: "s1",
+      agentSessionId: "a1",
+      userMessageId: "msg-user",
+      assistantMessageId: "msg-user_r",
+      agent: "build",
+      model: { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
+      parts: [{ type: "text", text: "hello" }],
+    })
+    assert.equal(replay.seq, output.seq)
+    assert.equal(replay.createdAt, output.createdAt)
+    assert.deepEqual(replay.events, [])
+    assert.equal(journal(root, "s1").filter((row) => row.type === "turn.start").length, 1)
     assert.deepEqual(store.getMessages("s1").map((message) => message.info.id), ["msg-user", "msg-user_r"])
     store.close()
   })

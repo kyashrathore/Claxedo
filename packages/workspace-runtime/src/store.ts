@@ -2223,6 +2223,39 @@ export class RuntimeStore {
     system?: string
     variant?: string
   }) {
+    const active = this.db
+      .prepare(`
+        SELECT start.seq, start.created_at, start.provider_session_id
+        FROM runtime_journal start
+        WHERE start.session_id = ?
+          AND start.kind = 'control'
+          AND start.type = 'turn.start'
+          AND start.assistant_message_id = ?
+          AND NOT EXISTS (
+            SELECT 1
+            FROM runtime_journal finish
+            WHERE finish.session_id = start.session_id
+              AND finish.kind = 'control'
+              AND finish.type = 'turn.finish'
+              AND finish.assistant_message_id = start.assistant_message_id
+          )
+        ORDER BY start.seq DESC
+        LIMIT 1
+      `)
+      .get(input.sessionId, input.assistantMessageId) as {
+        seq: number
+        created_at: number
+        provider_session_id: string | null
+      } | null
+    if (active) {
+      return {
+        sessionId: input.sessionId,
+        seq: active.seq,
+        createdAt: active.created_at,
+        ...(active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}),
+        events: [],
+      } satisfies RuntimeStoreTurnStartOutput
+    }
     const row: TurnStartRow = {
       seq: this.next(input.sessionId),
       ts: Date.now(),
