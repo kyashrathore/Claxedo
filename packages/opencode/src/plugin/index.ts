@@ -149,8 +149,6 @@ async function settleWithin<T>(promises: readonly Promise<T>[], ms: number): Pro
   let timer: ReturnType<typeof setTimeout> | undefined
   const deadline = new Promise<Pending>((resolve) => {
     timer = setTimeout(() => resolve(PENDING), ms)
-    // Do not hold the process open purely to observe our own deadline.
-    ;(timer as { unref?: () => void }).unref?.()
   })
   try {
     return await Promise.all(promises.map((promise) => Promise.race([promise, deadline])))
@@ -276,22 +274,23 @@ const layer = Layer.effect(
         // immediately instead of being registered against a dead instance.
         let closed = false
 
-        // Plugin construction stays sequential: `plugin.loader.shared > initializes server plugins
-        // in config order` pins that a constructor's side effects never interleave with the next
-        // one's. Chaining rather than looping gives every plugin its own promise, so the phase can
-        // be observed against a shared deadline without changing execution order.
-        let chain: Promise<unknown> = Promise.resolve()
+        // Construction stays sequential while boot is paying for it: `plugin.loader.shared >
+        // initializes server plugins in config order` pins that an on-time constructor's side
+        // effects never interleave with the next one's. Once the shared deadline expires, every
+        // remaining constructor starts independently. Otherwise one constructor that never
+        // settles would permanently prevent all later plugins from becoming available.
         const entries = loaded
           .filter((load): load is PluginLoader.Loaded => Boolean(load))
           .map((load) => {
-            const promise: Promise<PluginOutcome> = chain.then(() =>
-              applyPlugin(load, input).then(
+            let promise: Promise<PluginOutcome> | undefined
+            const start = () => {
+              promise ??= applyPlugin(load, input).then(
                 (hooks): PluginOutcome => ({ ok: true, hooks }),
                 (err): PluginOutcome => ({ ok: false, error: errorMessage(err) }),
-              ),
-            )
-            chain = promise
-            return { load, promise }
+              )
+              return promise
+            }
+            return { load, start }
           })
 
         const registerLate = (spec: string, next: Hooks[]) =>
@@ -301,53 +300,73 @@ const layer = Layer.effect(
               yield* Effect.forEach(next, disposeHook, { discard: true })
               return
             }
-            // `hooks` is the same array the materialized state exposes, so `trigger`/`list`
-            // observe late arrivals without any re-materialization.
-            for (const hook of next) hooks.push(hook)
+            // Finish configuration before publishing the new generation. Consumers use the
+            // append-only hook count to detect late arrivals; publishing first would let one
+            // rebuild from cfg while this hook is still mutating it, then cache that stale build
+            // under the final count forever.
             for (const hook of next) yield* notifyConfig(hook)
+            if (closed) {
+              // The scope can close while an asynchronous config hook is running.
+              yield* Effect.forEach(next, disposeHook, { discard: true })
+              return
+            }
+            // `hooks` is the same array the materialized state exposes, so `trigger`/`list`
+            // observe the fully configured late arrival without re-materializing Plugin state.
+            for (const hook of next) hooks.push(hook)
             yield* Effect.logWarning("plugin registered after init budget", { path: spec })
           })
 
         const budget = flags.pluginInitTimeoutMs ?? PLUGIN_INIT_BUDGET_MS
-        const settled = yield* Effect.promise(() =>
-          settleWithin(
-            entries.map((entry) => entry.promise),
-            budget,
-          ),
-        )
-
+        const deadline = Date.now() + budget
+        let deferredFrom = entries.length
         for (let i = 0; i < entries.length; i++) {
           const entry = entries[i]!
-          const outcome = settled[i]!
+          const remaining = deadline - Date.now()
+          if (remaining <= 0) {
+            deferredFrom = i
+            break
+          }
+          const [outcome] = yield* Effect.promise(() => settleWithin([entry.start()], remaining))
           if (outcome === PENDING) {
-            // Boot proceeds without this plugin, and without the ones queued behind it. None of
-            // them are dropped: each registers against the live array when its turn settles.
-            yield* Effect.logWarning("plugin exceeded init budget, continuing boot", {
-              path: entry.load.spec,
-              budget,
-            })
-            bridge.fork(
-              Effect.promise(() => entry.promise).pipe(
-                Effect.flatMap((result) =>
-                  result.ok
-                    ? registerLate(entry.load.spec, result.hooks)
-                    : Effect.logError("failed to load plugin", { path: entry.load.spec, error: result.error }),
-                ),
-              ),
-            )
-            continue
+            deferredFrom = i
+            break
           }
           if (!outcome.ok) {
             // TODO: make proper events for this
             yield* Effect.logError("failed to load plugin", { path: entry.load.spec, error: outcome.error })
             continue
           }
-          // On-time plugins register in load order, preserving hook execution order.
+          // On-time plugins register in configured order.
           for (const hook of outcome.hooks) hooks.push(hook)
         }
 
+        // Freeze the on-time generation before deferred constructors can publish.
+        // `registerLate` configures its own hooks before appending them; iterating the
+        // live array here would otherwise reach a hook appended while an earlier,
+        // asynchronous config hook is still running and configure that late hook twice.
+        const initialHooks = hooks.slice()
+
+        for (let i = deferredFrom; i < entries.length; i++) {
+          const entry = entries[i]!
+          // Late plugins register in completion order. Waiting for configured order here would
+          // put every later plugin behind the same hung constructor the budget is meant to isolate.
+          yield* Effect.logWarning("plugin exceeded init budget, continuing boot", {
+            path: entry.load.spec,
+            budget,
+          })
+          bridge.fork(
+            Effect.promise(() => entry.start()).pipe(
+              Effect.flatMap((result) =>
+                result.ok
+                  ? registerLate(entry.load.spec, result.hooks)
+                  : Effect.logError("failed to load plugin", { path: entry.load.spec, error: result.error }),
+              ),
+            ),
+          )
+        }
+
         // Notify plugins of current config
-        for (const hook of hooks) yield* notifyConfig(hook)
+        for (const hook of initialHooks) yield* notifyConfig(hook)
 
         const unsubscribe = yield* events.listen((event) => {
           if (event.location?.directory !== ctx.directory) return Effect.void

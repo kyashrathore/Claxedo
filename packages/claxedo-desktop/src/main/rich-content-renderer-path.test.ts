@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { join } from "node:path"
 import { resolveRichContentRendererPath, richContentRendererBinaryName } from "./rich-content-renderer-path"
 
 describe("rich-content renderer path", () => {
@@ -12,7 +13,7 @@ describe("rich-content renderer path", () => {
         arch: "arm64",
         exists: () => true,
       }),
-    ).toBe("/app/resources/rich-content/darwin-arm64/claxedo-rich-content-renderer")
+    ).toBe(join("/app", "resources", "rich-content", "darwin-arm64", "claxedo-rich-content-renderer"))
   })
 
   test("resolves the flattened packaged artifact", () => {
@@ -25,7 +26,7 @@ describe("rich-content renderer path", () => {
         arch: "x64",
         exists: () => true,
       }),
-    ).toBe("/bundle/Resources/rich-content/claxedo-rich-content-renderer.exe")
+    ).toBe(join("/bundle/Resources", "rich-content", "claxedo-rich-content-renderer.exe"))
   })
 
   test("prefers an explicit override and returns undefined when no artifact exists", () => {

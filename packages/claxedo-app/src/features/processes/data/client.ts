@@ -4,6 +4,7 @@ import {
   centralTransportForServer,
   type WorkspaceRuntimeSnapshotLike,
 } from "@/platform/runtime/transport"
+import { memoizeSuccessfulLoad } from "@/lib/retry"
 
 type Fetch = typeof globalThis.fetch
 
@@ -11,14 +12,11 @@ type Fetch = typeof globalThis.fetch
  * Lazy boundary: ./process defines its wire schemas with zod, and this module is
  * on the boot path (feature-ports wires createProcessClient into the session app
  * ports at startup). Only the request methods need the schemas, so zod loads on
- * the first process API call instead of riding the boot chunk. Guarded by
+ * the first process API call instead of riding the boot chunk. Failed loads are
+ * cleared so the next process API call can retry. Guarded by
  * scripts/forbidden-eager-deps.config.ts (zod entry).
  */
-let processSchemasLoad: Promise<typeof Process> | undefined
-function loadProcessSchemas() {
-  processSchemasLoad ??= import("./process").then((module) => module.Process)
-  return processSchemasLoad
-}
+const loadProcessSchemas = memoizeSuccessfulLoad(() => import("./process").then((module) => module.Process))
 
 type Input = {
   baseUrl: string

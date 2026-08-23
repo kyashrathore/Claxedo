@@ -1002,15 +1002,20 @@ async function expectUsageDashboardWorks(page: Page) {
   await expect(dialog).toContainText("What these tokens would cost at API rates. Not what you were billed.")
 
   await dialog.getByRole("button", { name: "Total local usage" }).click()
-  await expect(dialog.getByRole("table", { name: "Usage grouped by provider" })).not.toContainText("Claxedo")
+  // Changing attribution starts a fresh usage query. Total-local legitimately
+  // has zero attributed rows on an isolated runner, in which case the
+  // canonical breakdown renders its empty state instead of a table.
+  const providerBreakdown = dialog.locator("section.usage-breakdown")
+  await expect(dialog.getByRole("heading", { name: "By provider" })).toBeVisible({ timeout: 30_000 })
+  await expect(providerBreakdown).not.toContainText("Claxedo")
   await dialog.getByRole("button", { name: "Model", exact: true }).click()
-  await expect(dialog.getByRole("table", { name: "Usage grouped by model" })).toBeVisible()
+  await expect(dialog.getByRole("heading", { name: "By model" })).toBeVisible()
 
   await dialog.getByRole("button", { name: "Usage limits" }).click()
   await expect(dialog.getByRole("heading", { name: "Quota windows" })).toBeVisible()
   await expect(dialog.getByRole("button", { name: "Usage through Claxedo" })).toBeVisible()
   await dialog.getByRole("button", { name: "Usage through Claxedo" }).click()
-  await expect(dialog.getByRole("table", { name: "Usage grouped by provider" })).toBeVisible()
+  await expect(dialog.getByRole("heading", { name: "By provider" })).toBeVisible()
 
   await page.keyboard.press("Escape")
   await expect(dialog).toHaveCount(0)
@@ -1184,9 +1189,8 @@ async function runRealSubagentJourney(page: Page, dir: string, harness: Subagent
     }
     const submit = page.locator(SELECTORS.submitControl).last()
     if (harness.id === "pi") {
-      await expect(page.locator('[data-action="prompt-harness-model"]').last()).toHaveAttribute("data-harness", "pi", {
-        timeout: 30_000,
-      })
+      const control = page.locator('[data-action="prompt-harness-model"]').last()
+      await expect(control).toHaveAttribute("data-harness", "pi", { timeout: 30_000 })
       await expect(page.getByText("This Pi model is no longer available", { exact: true })).toHaveCount(0)
     }
     await expect(submit, `${harness.id} composer never became submit-ready`).toHaveAttribute("aria-label", "Send", {
@@ -1368,7 +1372,17 @@ async function createPiSession(dir: string) {
   })
   if (!response.ok)
     throw new Error(`GATING: failed to create Pi session (${response.status}): ${await response.text()}`)
-  return { ...((await response.json()) as { session: { id: string } }), workspaceId: workspace.workspaceId }
+  const created = (await response.json()) as { session: { id: string } }
+  const metadataResponse = await fetch(
+    `${BACKEND_URL}/api/claxedo/session/${encodeURIComponent(created.session.id)}/meta`,
+  )
+  const metadata = await metadataResponse.json().catch(() => undefined) as { tags?: unknown } | undefined
+  if (!metadataResponse.ok || !Array.isArray(metadata?.tags) || !metadata.tags.includes("harness:pi")) {
+    throw new Error(
+      `GATING: Pi session metadata lost its canonical harness identity (${metadataResponse.status}): ${JSON.stringify(metadata)}`,
+    )
+  }
+  return { ...created, workspaceId: workspace.workspaceId }
 }
 
 async function openExistingPrompt(page: Page, dir: string, sessionID: string, workspaceID?: string, central = false) {

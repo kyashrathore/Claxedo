@@ -30,7 +30,13 @@ import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace
 import { fetchSessionMessagesByTransport } from "../../../features/session/store/session-transport"
 import { registeredConversationSnapshot } from "../../../features/session/conversation/conversation-registry"
 import { hydrateConversationPage } from "../../../features/session/conversation/conversation-hydrator"
-import { refreshDirectorySessionCache, type DirectorySessionCacheRefresh } from "../../../features/session/data/sync/directory-session-cache"
+import {
+  refreshDirectorySessionCache,
+  sessionLoadMetaKey,
+  sessionLoadMetaMatchesWorkspace,
+  type DirectorySessionCacheRefresh,
+  type DirectorySessionLoadMeta,
+} from "../../../features/session/data/sync/directory-session-cache"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
@@ -169,12 +175,10 @@ export function DirectoryScope(props: ParentProps<{
   const dataProviderHarnessType = () => passiveHarnessType() ?? (runtimeRef() ? "opencode" : undefined)
   const active = () => props.active?.() ?? true
   const runtimeRef = () => {
-    const ref = sessionWorkspaceRuntimeRef({ directory: props.directory, sessionRef: props.sessionRef?.() })
-    if (ref) return ref
     const workspaceId = props.workspaceId?.()
     const kind = props.workspaceKind?.()
-    if (!workspaceId || (kind !== "cloud" && kind !== "user-hosted")) return undefined
-    return { workspaceId, kind }
+    if (workspaceId && (kind === "cloud" || kind === "user-hosted")) return { workspaceId, kind }
+    return sessionWorkspaceRuntimeRef({ directory: props.directory, sessionRef: props.sessionRef?.() })
   }
   // The session cache is a `skipToken` slot (populated by refreshDirectorySessionCache,
   // not auto-fetched) — but route it through the authority anyway so it is
@@ -185,6 +189,11 @@ export function DirectoryScope(props: ParentProps<{
     ...directorySessionCacheQueryOptions({ directory: props.directory }),
     workspaceId: runtimeRef()?.workspaceId,
   }))
+  const cacheMatchesAuthority = () => sessionLoadMetaMatchesWorkspace(
+    queryClient.getQueryData<DirectorySessionLoadMeta>(sessionLoadMetaKey(props.directory)),
+    runtimeRef(),
+  )
+  const authoritativeCacheData = () => cacheMatchesAuthority() ? sessionCacheQuery.data : undefined
   const draftCacheData = createMemo<DirectorySessionCacheValue>(() => ({
     at: 0,
     limit: 0,
@@ -203,7 +212,7 @@ export function DirectoryScope(props: ParentProps<{
     return active() && !!sessionId && sessionId !== "new"
   }
   const data = () => props.workspaceReady()
-    ? sessionCacheQuery.data ?? (canUseDraftCacheFallback() || canUseRouteSessionFallback() ? draftCacheData() : undefined)
+    ? authoritativeCacheData() ?? (canUseDraftCacheFallback() || canUseRouteSessionFallback() ? draftCacheData() : undefined)
     : undefined
   const loading = () => !data()
 
@@ -214,22 +223,23 @@ export function DirectoryScope(props: ParentProps<{
   // pane cannot spin forever on a broken directory.
   const [bootstrapFailed, setBootstrapFailed] = createSignal(false)
   let warmSerial = 0
-  const warm = (dir: string) => {
+  const warm = (dir: string, workspace = runtimeRef()) => {
     const serial = ++warmSerial
     setBootstrapFailed(false)
     void refreshDirectorySessionCache({
       directory: dir,
       harnessType: untrack(passiveHarnessType),
       refresh: props.refreshDirectory,
+      ...(workspace ? { workspace } : {}),
     })
       .catch(() => undefined)
       .then(() => {
         if (serial !== warmSerial) return
-        if (!sessionCacheQuery.data) setBootstrapFailed(true)
+        if (!authoritativeCacheData()) setBootstrapFailed(true)
       })
   }
   const retryBootstrap = () => {
-    if (props.directory) warm(props.directory)
+    if (props.directory) warm(props.directory, runtimeRef())
   }
 
   // The connecting / provisioning / offline UI is owned by WorkspaceGate, which
@@ -267,8 +277,8 @@ export function DirectoryScope(props: ParentProps<{
     if (!dir) return
     if (!active()) return
     if (!props.workspaceReady()) return
-    if (sessionCacheQuery.data) return
-    warm(dir)
+    if (authoritativeCacheData()) return
+    warm(dir, runtimeRef())
   })
   return (
     <Show when={data() && !loading()} fallback={loadingFallback()}>

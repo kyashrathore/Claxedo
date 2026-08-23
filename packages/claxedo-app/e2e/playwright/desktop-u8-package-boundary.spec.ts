@@ -147,7 +147,14 @@ async function installFixtureOAuthEnvironment(app: PackagedApp) {
     ;(globalThis as typeof globalThis & { __claxedoU8OAuthUrls?: string[] }).__claxedoU8OAuthUrls = []
     Object.defineProperties(safeStorage, {
       isEncryptionAvailable: { configurable: true, value: () => true },
-      getSelectedStorageBackend: { configurable: true, value: () => "keychain" },
+      // Linux validates the reported backend against an encrypting-keyring
+      // allowlist. `keychain` is the macOS name and correctly fails closed on
+      // Linux, so the cross-platform fixture must report the native secure
+      // backend shape for the process it is exercising.
+      getSelectedStorageBackend: {
+        configurable: true,
+        value: () => process.platform === "linux" ? "gnome_libsecret" : "unknown",
+      },
       encryptString: {
         configurable: true,
         value: (plaintext: string) => Buffer.from(`claxedo-u8:${plaintext}`, "utf8"),

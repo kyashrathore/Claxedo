@@ -31,6 +31,7 @@ import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace
 import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
 import { createTransport } from "@/platform/runtime/transport"
 import { harnessQueryFetch } from "@/platform/runtime/harness-query-fetch"
+import type { DirectorySessionCacheRefreshOptions } from "@/features/session/data/sync/directory-session-cache"
 import { getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 
@@ -368,7 +369,7 @@ export async function bootstrapGlobal(input: {
 export async function bootstrapDirectory(input: {
   directory: BootstrapDirectory
   sdk: DirectoryBootstrapSdk
-  loadSessions: (directory: BootstrapDirectory, opts?: { quiet?: boolean }) => Promise<void> | void
+  loadSessions: (directory: BootstrapDirectory, opts?: DirectorySessionCacheRefreshOptions) => Promise<void> | void
   translate: (key: string, vars?: Record<string, string | number>) => string
   fetch?: typeof globalThis.fetch
   baseUrl?: string
@@ -538,6 +539,7 @@ export async function bootstrapDirectory(input: {
   try {
     await input.loadSessions(input.directory, {
       quiet: input.quiet,
+      workspace: input.workspace,
     })
   } catch (error) {
     if (!input.quiet) {

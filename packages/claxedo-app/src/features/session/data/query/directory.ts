@@ -4,7 +4,7 @@ import { workspaceResolveQuery as runtimeWorkspaceResolveQuery, type WorkspaceRu
 import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { queryClient } from "@/platform/query/query-client"
 import { normalizeUrl } from "@/platform/api/api"
-import { workspaceScopedResourceList, workspaceTransportForBaseUrl } from "@/platform/runtime/agent-config-routes"
+import { workspaceScopedResourceList } from "@/platform/runtime/agent-config-routes"
 
 type ProjectClient = {
   project: {
@@ -102,17 +102,17 @@ export function agentListQuery(input: {
       if (!harnessUsesAgentProfiles(input.harnessType)) return []
       if (input.request && input.baseUrl) {
         const baseUrl = normalizeUrl(input.baseUrl) ?? input.baseUrl
-        const workspace = input.workspace !== undefined
-          ? input.workspace
-          : (workspaceTransportForBaseUrl(baseUrl) !== "loopback"
-              ? signedWorkspaceFromProjects(
-                queryClient.getQueryData<Project[]>(queryKeys.controlPlane.projects(input.baseUrl)) ?? [],
-                input.directory,
-              )
-              : undefined) ??
+        const signedWorkspace = signedWorkspaceFromProjects(
+          queryClient.getQueryData<Project[]>(queryKeys.controlPlane.projects(input.baseUrl)) ?? [],
+          input.directory,
+        )
+        const workspace = input.workspace ?? signedWorkspace ?? (
+          input.workspace !== undefined
+            ? input.workspace
             // Through the query cache (shared runtime key), not `.queryFn()`
             // directly — a fresh boot-time resolve answers without refetching.
-            await queryClient.fetchQuery(workspaceResolveQuery({ baseUrl: input.baseUrl, request: input.request, directory: input.directory }))
+            : await queryClient.fetchQuery(workspaceResolveQuery({ baseUrl: input.baseUrl, request: input.request, directory: input.directory }))
+        )
         return workspaceScopedResourceList({
           baseUrl,
           directory: input.directory,

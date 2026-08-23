@@ -438,6 +438,12 @@ export async function runPackagedSmoke() {
     const client = await connectToPackagedApp(debugPort, application)
     try {
       await waitForMainWindow(client)
+      // Host metrics are deliberately on-demand in the packaged app. Opening
+      // the product surface establishes the diagnostics subscription that
+      // activates windows-cim/macos-ps/linux-proc. Waiting for source health
+      // before opening the dialog can therefore never complete: every host
+      // source correctly remains `warming-up` with no subscriber.
+      await openDiagnosticsDialog(client)
       const snapshot = await waitForSnapshot(client)
       const serialized = JSON.stringify(snapshot)
       if (serialized.includes(SECRET_SENTINEL)) throw new Error("Packaged snapshot leaked the secret sentinel")
@@ -461,10 +467,9 @@ export async function runPackagedSmoke() {
       )
       const contributorOwner = snapshot.owners.find((owner) => owner.id === contributor?.ownerId)
       if (!contributorOwner) throw new Error("Packaged startup did not produce a measured contributor")
-      await openDiagnosticsDialog(client)
       const text = await client.evaluate<string>(
         `[...document.querySelectorAll('[role="dialog"]')]
-          .find((candidate) => candidate.textContent?.includes("Local performance diagnostics"))
+          .find((candidate) => candidate.getAttribute("aria-label") === "Local performance diagnostics")
           ?.textContent ?? ""`,
       )
       const task = await renderedTaskEvidence(client)
@@ -611,7 +616,7 @@ function actionGrant(
 async function renderedTaskEvidence(client: CdpClient) {
   return await client.evaluate<NonNullable<DiagnosticsSmokeEvidence["renderedProduct"]>>(`(() => {
     const root = [...document.querySelectorAll('[role="dialog"]')]
-      .find((candidate) => candidate.textContent?.includes("Local performance diagnostics"))
+      .find((candidate) => candidate.getAttribute("aria-label") === "Local performance diagnostics")
     if (!root) return {}
     const contributors = [...root.querySelectorAll('[data-testid="diagnostics-contributor"]')]
     const kinds = new Set(contributors.map((item) => item.dataset.ownerKind))
@@ -703,7 +708,7 @@ async function openDiagnosticsDialog(client: CdpClient) {
   while (Date.now() < deadline) {
     const opened = await client.evaluate<boolean>(`(() => {
       const dialog = [...document.querySelectorAll('[role="dialog"]')]
-        .find((candidate) => candidate.textContent?.includes("Local performance diagnostics"))
+        .find((candidate) => candidate.getAttribute("aria-label") === "Local performance diagnostics")
       if (dialog) return true
       const emptyTrigger = document.querySelector('[data-testid="empty-diagnostics-trigger"]')
       if (emptyTrigger instanceof HTMLElement) {
@@ -723,8 +728,8 @@ async function openDiagnosticsDialog(client: CdpClient) {
       const ready = await client.evaluate<boolean>(
         `[...document.querySelectorAll('[role="dialog"]')]
           .some((candidate) =>
-            candidate.textContent?.includes("Local performance diagnostics") &&
-            candidate.textContent.includes("Ranked contributors"))`,
+            candidate.getAttribute("aria-label") === "Local performance diagnostics" &&
+            candidate.textContent.includes("Collector"))`,
       ).catch(() => false)
       if (ready) return
     }

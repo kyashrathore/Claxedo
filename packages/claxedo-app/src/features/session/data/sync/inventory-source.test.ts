@@ -6,6 +6,7 @@ import {
   controlMetaToGlobalSession,
   createInventoryPageSource,
   createSignedInventorySource,
+  listSignedWorkspaceRuntimeSessions,
   mergeWorkspaceGroups,
   shouldUseSignedControlPlaneInventory,
   signedWorkspaceHosting,
@@ -18,6 +19,52 @@ import {
 describe("global sync inventory source helpers", () => {
   test("inventory source does not depend on RuntimeGateway", async () => {
     expect(await Bun.file(new URL("./inventory-source.ts", import.meta.url)).text()).not.toContain("RuntimeGateway")
+  })
+
+  test("signed user-hosted runtime inventory relays filesystem session lists", async () => {
+    const calls: string[] = []
+    const request = async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : String(input))
+      calls.push(`${init?.method ?? (input instanceof Request ? input.method : "GET")} ${url}`)
+      if (url.pathname === "/api/workspace/ws_signed/connection") {
+        return jsonResponse({
+          access: "user-hosted",
+          backing: "local-worktree",
+          workspaceId: "ws_signed",
+          role: "owner",
+          relayUrl: "http://127.0.0.1:3001",
+          runtimeAccessToken: "runtime-token",
+          tokenExpiresAt: Date.now() + 300_000,
+        })
+      }
+      if (url.pathname === "/workspaces/ws_signed/session") return jsonResponse([])
+      return new Response("bare runtime path", { status: 500 })
+    }
+
+    await expect(listSignedWorkspaceRuntimeSessions({
+      serverUrl: "http://127.0.0.1:3001",
+      request,
+      workspaceId: "ws_signed",
+      directory: "/srv/remote-workspace",
+      kind: "user-hosted",
+      limit: 50,
+    })).resolves.toEqual([])
+
+    expect(calls.map((call) => new URL(call.slice(call.indexOf("http"))).pathname)).toEqual([
+      "/api/workspace/ws_signed/connection",
+      "/workspaces/ws_signed/session",
+    ])
+  })
+
+  test("signed runtime inventory propagates connection failures", async () => {
+    await expect(listSignedWorkspaceRuntimeSessions({
+      serverUrl: "http://127.0.0.1:3001",
+      request: async () => new Response("offline", { status: 503 }),
+      workspaceId: "ws_unavailable",
+      directory: "/srv/remote-workspace",
+      kind: "user-hosted",
+      limit: 50,
+    })).rejects.toThrow("Workspace connection failed: 503")
   })
 
   test("workspace group key prefers workspace identity over placeholder keys", () => {

@@ -76,6 +76,40 @@ describe("loadUserExtensions", () => {
     expect(userExtensionView("good.main")?.title).toBe("Good")
   })
 
+  test("revokes a timed-out activation and continues with later manifests", async () => {
+    let timedOutApi: UserExtensionApi | undefined
+    const result = await loadUserExtensions({
+      baseUrl: "http://localhost:1707",
+      activationTimeoutMs: 5,
+      fetcher: listing([manifest("stuck"), manifest("good")]),
+      importModule: async (url) => {
+        if (url.includes("/stuck/")) {
+          return {
+            activate: (api: UserExtensionApi) => {
+              timedOutApi = api
+              api.registerView({ id: "partial", title: "Partial", mount: () => {} })
+              return new Promise<void>(() => {})
+            },
+          }
+        }
+        return {
+          activate: (api: UserExtensionApi) => {
+            api.registerView({ id: "main", title: "Good", mount: () => {} })
+          },
+        }
+      },
+    })
+
+    expect(result.failed).toEqual([{ name: "stuck", error: 'Extension "stuck" activation timed out after 5ms' }])
+    expect(result.loaded).toEqual([{ name: "good", version: "1.0.0", views: 1 }])
+    expect(userExtensionView("stuck.partial")).toBeUndefined()
+    expect(userExtensionView("good.main")?.title).toBe("Good")
+    expect(() => timedOutApi?.registerView({ id: "late", title: "Late", mount: () => {} })).toThrow(
+      'Extension "stuck" activation is no longer active',
+    )
+    expect(userExtensionView("stuck.late")).toBeUndefined()
+  })
+
   test("fails an extension whose module exports no activate", async () => {
     const result = await loadUserExtensions({
       baseUrl: "http://localhost:1707",

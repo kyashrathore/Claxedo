@@ -5,6 +5,7 @@ import type { EventType, StreamChunk } from "@tanstack/ai/client"
 import type { UIMessage } from "@tanstack/ai"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
+import { memoizeSuccessfulLoad, retry } from "@/lib/retry"
 import type { ConversationChatHandle } from "./opencode-conversation"
 import { conversationPersistence } from "./conversation-persistence"
 import { compactConversationSnapshot } from "./conversation-snapshot"
@@ -93,24 +94,35 @@ export function cachedConversationBytes(sessionID: string, options?: { allowStal
 
 // Lazy boundary for the ai-client runtime (ChatClient body + SSE→parts stream
 // processor, ~22-28 KB gz). Kicked off on first entry construction; memoized so
-// every session shares one in-flight load.
-type ChatClientRuntime = {
+// every session shares one in-flight or successful load. A rejected chunk load
+// is cleared so constructing a later entry can recover without a page reload.
+export type ChatClientRuntime = {
   ChatClient: typeof ChatClient
   EventType: typeof EventType
 }
 
-let chatClientRuntime: Promise<ChatClientRuntime> | undefined
+export function recoveringChatClientRuntime(
+  load: () => Promise<ChatClientRuntime>,
+  options: { delay?: number; maxDelay?: number } = {},
+) {
+  return memoizeSuccessfulLoad(() => retry(load, {
+    attempts: Number.MAX_SAFE_INTEGER,
+    delay: options.delay ?? 250,
+    factor: 2,
+    maxDelay: options.maxDelay ?? 30_000,
+    retryIf: () => true,
+  }))
+}
 
-function loadChatClientRuntime() {
-  chatClientRuntime ??= Promise.all([
+const loadChatClientRuntime = recoveringChatClientRuntime(() =>
+  Promise.all([
     import("@tanstack/ai-client"),
     import("@tanstack/ai/client"),
   ]).then(([clientModule, aiClientModule]) => ({
     ChatClient: clientModule.ChatClient,
     EventType: aiClientModule.EventType,
-  }))
-  return chatClientRuntime
-}
+  })),
+)
 
 // Placeholder transport until the subscribe-mode claxedo adapter lands (W1-P3).
 // The live event path still flows through `applyRegisteredConversationEvent`,
@@ -128,7 +140,10 @@ const noopConnection: ConnectConnectionAdapter = {
   },
 }
 
-export function createConversationChatClient(sessionID: string): ConversationChatEntry {
+export function createConversationChatClient(
+  sessionID: string,
+  options: { loadRuntime?: () => Promise<ChatClientRuntime> } = {},
+): ConversationChatEntry {
   const [version, setVersion] = createSignal(0)
   const onMessagesChange = (messages: UIMessage[]) => {
     // Keep the sync working copy (query-cache reads + reactivity); IDB
@@ -142,7 +157,7 @@ export function createConversationChatClient(sessionID: string): ConversationCha
   // full reload (race-guarded against newer messages by ChatClient).
   let buffered = readConversationSnapshot(sessionID) ?? []
   let client: ChatClient | undefined
-  const ready = loadChatClientRuntime().then((runtime) => {
+  const ready = (options.loadRuntime ?? loadChatClientRuntime)().then((runtime) => {
     client = new runtime.ChatClient({
       id: sessionID,
       initialMessages: buffered,
@@ -151,6 +166,10 @@ export function createConversationChatClient(sessionID: string): ConversationCha
       onMessagesChange,
     })
   })
+  // Production keeps retrying until the shared lazy chunk becomes available;
+  // observe the promise as a final safeguard so a custom/test loader cannot
+  // create an unhandled rejection while the synchronous buffer remains live.
+  void ready.catch(() => undefined)
   const handle: ConversationChatHandle = {
     messages: () => (client ? client.getMessages() : buffered),
     setMessages: (messages) => {

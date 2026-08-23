@@ -3,6 +3,8 @@ import {
   resolveSessionDirectory,
   resolveSessionIdentity,
   resolveSignedSessionWorkspaceId,
+  sessionSignedTransportAuthority,
+  signedRouteSessionWorkspaceId,
 } from "./session-identity"
 
 describe("resolveSessionIdentity", () => {
@@ -84,5 +86,57 @@ describe("resolveSignedSessionWorkspaceId", () => {
       signedControlPlane: false,
       routeDirectory: "ws_route",
     })).toBeUndefined()
+  })
+})
+
+describe("signedRouteSessionWorkspaceId", () => {
+  test("accepts a canonical ws_-prefixed workspace route identity", () => {
+    expect(signedRouteSessionWorkspaceId("/w/ws_signed/session/ses_1")).toBe("ws_signed")
+  })
+
+  test("accepts an explicitly branded UUID workspace route identity", () => {
+    expect(signedRouteSessionWorkspaceId("/w/workspace%3A550e8400-e29b-41d4-a716-446655440000/session/ses_1"))
+      .toBe("550e8400-e29b-41d4-a716-446655440000")
+  })
+
+  test("rejects local raw UUID, POSIX, and Windows directory routes", () => {
+    expect(signedRouteSessionWorkspaceId("/w/550e8400-e29b-41d4-a716-446655440000/session/ses_1")).toBeUndefined()
+    expect(signedRouteSessionWorkspaceId("/w/%2Ftmp%2Fclaxedo-e2e/session/ses_1")).toBeUndefined()
+    expect(signedRouteSessionWorkspaceId("/w/C%3A%5Cclaxedo-e2e/session/ses_1")).toBeUndefined()
+  })
+})
+
+describe("sessionSignedTransportAuthority", () => {
+  test("keeps a signed test principal on a loopback filesystem workspace local", () => {
+    expect(sessionSignedTransportAuthority({
+      serverUrl: "http://127.0.0.1:3001",
+      principalHasSignedAccess: true,
+      sessionRef: {
+        sessionId: "ses_local",
+        host: "workspace",
+        cwd: "/tmp/local",
+        toolSandbox: { kind: "local", cwd: "/tmp/local" },
+      },
+    })).toBe(false)
+  })
+
+  test("accepts explicit route and signed project authority before principal hydration", () => {
+    expect(sessionSignedTransportAuthority({
+      serverUrl: "http://127.0.0.1:3001",
+      principalHasSignedAccess: false,
+      routeWorkspaceAuthorityId: "ws_signed",
+    })).toBe(true)
+    expect(sessionSignedTransportAuthority({
+      serverUrl: "http://127.0.0.1:3001",
+      principalHasSignedAccess: false,
+      workspaceKind: "user-hosted",
+    })).toBe(true)
+  })
+
+  test("accepts a signed principal on a hosted control plane", () => {
+    expect(sessionSignedTransportAuthority({
+      serverUrl: "https://control.example",
+      principalHasSignedAccess: true,
+    })).toBe(true)
   })
 })

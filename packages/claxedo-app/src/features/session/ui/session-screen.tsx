@@ -30,7 +30,7 @@ import { createSessionComposerState } from "@/features/session/ui/composer/sessi
 import { useSessionHashScroll } from "@/features/session/ui/use-session-hash-scroll"
 import { useSessionParams } from "@/features/session/providers/session-params"
 import { CloudStartupView, isForbiddenConnectionError, type CloudLog } from "@/features/session/ui/components/cloud-startup-view"
-import { resolveSessionDirectory, resolveSessionIdentity, resolveSignedSessionWorkspaceId, signedProjectWorkspaceId, type SessionIdentity } from "@/features/session/ui/session-identity"
+import { resolveSessionDirectory, resolveSessionIdentity, resolveSignedSessionWorkspaceId, sessionSignedTransportAuthority, signedProjectWorkspaceId, signedRouteSessionWorkspaceId, type SessionIdentity } from "@/features/session/ui/session-identity"
 import {
   shouldDispatchIdleAfterStaleBusyRefresh,
   shouldReconcileBusySessionToIdle,
@@ -59,7 +59,12 @@ import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace
 import { retargetSessionRef } from "@/platform/identity/session-ref"
 import { SessionConversationOwner } from "@/features/session/conversation/session-conversation-owner"
 import { registeredConversationSnapshot } from "@/features/session/conversation/conversation-registry"
-import { removeDirectorySession, updateDirectorySession, useDirectorySessionCacheActions } from "@/features/session/data/sync/directory-session-cache"
+import {
+  hydrateDirectorySession,
+  removeDirectorySession,
+  updateDirectorySession,
+  useDirectorySessionCacheActions,
+} from "@/features/session/data/sync/directory-session-cache"
 import { directorySessionCacheQueryOptions, emptySessionInventory, sessionInventoryQueryOptions } from "@/features/session/data/sync/queries"
 import { queryClient } from "@/platform/query/query-client"
 import { indexSessionTitleInventory, selectSessionTitleInventoryRow, stableSessionTitle } from "@/features/session/lib/session-title-sync"
@@ -118,6 +123,10 @@ export default function SessionPage() {
   const promptHarnessControllers = usePromptHarnessControllersOptional()
 
   const activeContentMeta = createMemo(() => {
+    // Metadata patches replace an entry without changing its id. Subscribe to
+    // the registry revision so an authoritative SessionRef upgrade (for
+    // example the route resolving `harness:pi`) reaches the mounted composer.
+    claxedoState.meta.ids()
     const surfaceId = sessionParams.surfaceId?.()
     if (!surfaceId) return
     return claxedoState.meta.get(surfaceId)
@@ -153,7 +162,7 @@ export default function SessionPage() {
   )
   const sessionID = createMemo(() => sessionIdentity().id)
   const routeDirectory = createMemo(() => sessionParams.directory())
-  const routeSessionDirectory = createMemo(() => { const route = parseShellRoute(location.pathname); return route.kind === "workspace-session" ? route.workspaceId : undefined })
+  const routeSessionWorkspaceId = createMemo(() => signedRouteSessionWorkspaceId(location.pathname))
   const terminalHandoffKey = createMemo(() => terminalScopeKey(routeDirectory()))
   const sessionInventoryQuery = useQuery(() =>
     sessionInventoryQueryOptions<SessionInventoryRow>({
@@ -222,15 +231,26 @@ export default function SessionPage() {
     },
   )
   const signedControlPlane = createMemo(() => {
+    const workspaceId = routeSessionWorkspaceId()
     const workspace = sdk.workspace(dir()) ?? ws()
     const kind = workspace?.kind
     const cwd = dir()
     const placement = placementFor({
-      ref: activeSessionRef(),
-      hasSignedAccess: principalHasSignedAccess(principal()),
+      // The typed ref can still be a provisional local ref while signed
+      // inventory hydrates. The explicit `/w/:workspaceId` route is the
+      // authority for this pane and must not be overridden by that stale ref.
+      ref: workspaceId ? undefined : activeSessionRef(),
+      hasSignedAccess: sessionSignedTransportAuthority({
+        serverUrl: getClaxedoServerUrl(),
+        principalHasSignedAccess: principalHasSignedAccess(principal()),
+        routeWorkspaceAuthorityId: workspaceId,
+        workspaceKind: kind,
+        sessionRef: activeSessionRef(),
+      }),
       serverUrl: getClaxedoServerUrl(),
       legacy: {
         directory: cwd,
+        workspaceId,
         workspaceKind: kind,
       },
     })
@@ -239,7 +259,7 @@ export default function SessionPage() {
   const signedWorkspaceId = createMemo(() =>
     resolveSignedSessionWorkspaceId({
       signedControlPlane: signedControlPlane(),
-      routeDirectory: routeSessionDirectory(),
+      routeDirectory: routeSessionWorkspaceId(),
       inventoryWorkspaceId: inventorySession()?.workspaceId,
       projectWorkspaceId: signedProjectWorkspaceId({
         signedWorkspace: signedWorkspaceFromProjects(projects(), dir()),
@@ -448,6 +468,16 @@ export default function SessionPage() {
     stableSessionInfo(prev, sessionKey(), sessionController.info()),
   )
   const info = createMemo(() => infoState()?.value)
+  createEffect(() => {
+    const sessionIDValue = sessionID()
+    const directory = dir()
+    if (!sessionIDValue || sessionIDValue === "new" || !directory || info()) return
+    void hydrateDirectorySession({
+      directory,
+      sessionID: sessionIDValue,
+      getSession: (parameters) => sdk.client.session.get(parameters).then((result) => result.data),
+    }).catch(() => undefined)
+  })
   const resolvedTitleState = createMemo((previous: ReturnType<typeof stableSessionTitle>) => stableSessionTitle(previous, {
     sessionKey: sessionKey(), directoryTitle: info()?.title, directoryUpdatedAt: info()?.time.updated,
     inventoryTitle: inventorySession()?.title, inventoryUpdatedAt: inventorySession()?.time.updated,

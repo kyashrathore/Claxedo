@@ -10,6 +10,9 @@ export function routeSessionHarness(input: unknown): HarnessRef | undefined {
   const configRunner = record(config?.runner)
   const connection = record(harness?.connection)
   const configConnection = record(configHarness?.connection)
+  const taggedHarness = Array.isArray(row?.tags)
+    ? row.tags.find((tag): tag is string => typeof tag === "string" && tag.startsWith("harness:"))?.slice("harness:".length)
+    : undefined
   const id = pickHarness(
     string(row?.harnessType) ??
       runtimeHarnessType(harness) ??
@@ -20,7 +23,8 @@ export function routeSessionHarness(input: unknown): HarnessRef | undefined {
       runtimeHarnessType(configHarness) ??
       string(configHarness?.type) ??
       string(configRunner?.id) ??
-      string(configRunner?.type),
+      string(configRunner?.type) ??
+      string(taggedHarness),
     string(harness?.binary) ??
       string(connection?.binary) ??
       string(runner?.binary) ??

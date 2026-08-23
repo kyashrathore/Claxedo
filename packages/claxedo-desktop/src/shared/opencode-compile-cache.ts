@@ -1,6 +1,17 @@
 import { enableCompileCache, getCompileCacheDir } from "node:module"
 import { crc32 } from "node:zlib"
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync } from "node:fs"
+import {
+  copyFileSync,
+  existsSync,
+  linkSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 
@@ -77,6 +88,9 @@ export const OPENCODE_COMPILE_CACHE_MANIFEST_NAME = "manifest.json"
 
 /** Subdirectory of the server data dir used as the writable compile cache base. */
 export const OPENCODE_COMPILE_CACHE_BASE_DIR_NAME = "opencode-compile-cache"
+
+/** Written only after every shipped entry has reached its final runtime key. */
+export const COMPILE_CACHE_SEED_COMPLETE_NAME = ".claxedo-seed-complete"
 
 /**
  * `CachedCodeType` from node `src/compile_cache.h`, whose numeric value is
@@ -167,7 +181,7 @@ export function parseCompileCacheManifest(raw: string): CompileCacheManifest {
 export type OpenCodeCompileCacheOutcome = {
   /**
    * `seeded` — the shipped entries were installed for this launch.
-   * `already-seeded` — the computed directory was already populated.
+   * `already-seeded` — every shipped entry was already installed.
    * `not-seeded` — nothing was installed, and why. Says nothing about whether
    *   the runtime cache itself is on; read `enabled` for that.
    * `failed` — something threw. The caller boots anyway.
@@ -187,13 +201,10 @@ export type OpenCodeCompileCacheOutcome = {
  * `computedCacheDir` must come from `module.getCompileCacheDir()` — never
  * constructed here — so the uid segment is the running user's by construction.
  *
- * THE GUARD BELOW IS PER-LAUNCH, NOT PER-MANIFEST, and that distinction is
- * load-bearing now that there is more than one manifest. The runtime has ONE
- * cache directory; both shipped sets land in it. Were the "already populated"
- * check applied once per source, the first source's own blobs would make the
- * directory look populated and every later source would be silently skipped —
- * a partial seed that still reports success. So it is evaluated exactly once,
- * here, before any source is touched.
+ * Completion is recorded for the whole shipped seed, not for one manifest.
+ * The runtime has ONE cache directory; both shipped sets land in it. Finals
+ * left by an interrupted launch are preserved, missing entries are installed,
+ * and only then is the single completion marker committed.
  */
 export function seedShippedCompileCaches(input: {
   sources: readonly ShippedCompileCache[]
@@ -201,30 +212,54 @@ export function seedShippedCompileCaches(input: {
 }): Omit<OpenCodeCompileCacheOutcome, "enabled"> {
   const { sources, computedCacheDir } = input
 
-  // Idempotence, decided ONCE for the whole launch: a populated cache directory
-  // is left completely alone, so the second launch does no copying and never
-  // overwrites what the runtime itself has since written.
-  const existing = readdirSync(computedCacheDir).filter((entry) => !entry.startsWith("."))
-  if (existing.length > 0) return { status: "already-seeded", entries: 0, directory: computedCacheDir }
+  const complete = join(computedCacheDir, COMPILE_CACHE_SEED_COMPLETE_NAME)
+  if (existsSync(complete)) return { status: "already-seeded", entries: 0, directory: computedCacheDir }
+
+  // A previous process may have stopped after writing some final blobs or in
+  // the middle of a temporary copy. Finals are preserved: they may already be
+  // valid runtime-written cache entries. Temporary files are never complete
+  // and are safe to rebuild from the shipped source.
+  for (const entry of readdirSync(computedCacheDir)) {
+    if (entry.endsWith(".pending")) rmSync(join(computedCacheDir, entry), { force: true })
+  }
 
   let seeded = 0
+  let expected = 0
   for (const { shippedDir, rootDir } of sources) {
     const manifest = parseCompileCacheManifest(
       readFileSync(join(shippedDir, OPENCODE_COMPILE_CACHE_MANIFEST_NAME), "utf8"),
     )
     for (const entry of manifest.entries) {
+      expected += 1
       const source = join(rootDir, entry.file)
       const name = compileCacheEntryName(compileCacheSourceName(source, entry.type), entry.type)
       // Copy through a temporary name so an interrupted launch cannot leave a
       // half-written blob behind a directory that now looks populated.
       const target = join(computedCacheDir, name)
+      if (existsSync(target)) continue
       const pending = `${target}.pending`
       copyFileSync(join(shippedDir, entry.blob), pending)
-      renameSync(pending, target)
-      seeded += 1
+      try {
+        // A hard-link promotion is atomic and fails rather than replacing a
+        // runtime entry that appeared after the existence check above.
+        linkSync(pending, target)
+        seeded += 1
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+      } finally {
+        rmSync(pending, { force: true })
+      }
     }
   }
-  if (seeded === 0) return { status: "not-seeded", entries: 0, reason: "manifest is empty", directory: computedCacheDir }
+  if (expected === 0) return { status: "not-seeded", entries: 0, reason: "manifest is empty", directory: computedCacheDir }
+
+  // The marker is the idempotence decision. Directory population is not: Node
+  // may have written valid cache entries before a crash, and an interrupted
+  // shipped seed may have installed only a prefix of its manifests.
+  const pendingComplete = `${complete}.pending`
+  writeFileSync(pendingComplete, "1\n")
+  renameSync(pendingComplete, complete)
+  if (seeded === 0) return { status: "already-seeded", entries: 0, directory: computedCacheDir }
   return { status: "seeded", entries: seeded, directory: computedCacheDir }
 }
 

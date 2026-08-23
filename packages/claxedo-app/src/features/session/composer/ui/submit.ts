@@ -53,7 +53,7 @@ import { dispatchNormalPromptSubmit } from "./submit-normal-prompt"
 import { promptHarnessDirectory } from "./harness-directory"
 import { promptViewScope, uniquePromptScopes } from "./submit-prompt-scope"
 import { parseExistingSessionConfig, sameExistingSessionConfig } from "./submit-session-config"
-import { createSubmitTransportAdapter, workspaceRuntimeRef } from "./submit-transport"
+import { createSubmitTransportAdapter, submitWorkspaceBacking, workspaceRuntimeRef } from "./submit-transport"
 import type { CommentItem, CreateWorkspaceResult, PromptSubmitInput } from "./submit-input"
 
 export type { FollowupDraft } from "./submit-input"
@@ -258,6 +258,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       projects: projectCatalog(),
       runtimeWorkspaceRef: workspaceRuntimeRef,
       workspaceForDirectory: (directory) => typeof sdk.workspace === "function" ? sdk.workspace(directory) : undefined,
+      baseUrl: getClaxedoServerUrl(),
       request: platform.fetch ?? authFetch,
       events,
       onCloudStartup: input.onCloudStartup,
@@ -527,6 +528,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       directorySessionCacheActions.refresh({
         directory: sessionDirectory,
         harnessType: persistedHarnessType,
+        workspace: submitWorkspaceBacking({
+          sessionRef: input.sessionRef?.(), workspaceId: input.workspaceId?.(), workspaceKind: input.workspaceKind?.(),
+        }),
       })
 
     const markBusy = () => {

@@ -86,10 +86,10 @@ export function mergeConversationSnapshot(current: UIMessage[], snapshot: UIMess
       continue
     }
     const existing = merged[index]!
-    // Snapshot refetches mostly re-deliver identical settled content. A cheap
-    // scalar comparison (ids, times, part ids/kinds/lengths) preserves the
-    // EXISTING object so downstream same-ness checks stay reference-based
-    // instead of stringifying the whole conversation.
+    // Snapshot refetches mostly re-deliver identical settled content. Compare
+    // one message at a time so unchanged rows preserve their object identity,
+    // while equal-length text changes and same-rank tool updates still reach
+    // the authoritative merge path.
     if (unchangedSnapshotMessage(existing, message)) continue
     if (existing.id !== message.id) {
       indexById.delete(existing.id)
@@ -104,39 +104,41 @@ export function mergeConversationSnapshot(current: UIMessage[], snapshot: UIMess
 
 /**
  * True when the fetched snapshot message cannot differ from what is already
- * merged: same id, same stored timestamps (settled assistants must have equal
- * `time.completed`), and pairwise-equal part identity, kind, tool state, and
- * text length. Conservative — any mismatch falls through to the full merge.
+ * merged: same canonical message and pairwise-equal canonical parts. A
+ * snapshot must also replace optimistic metadata even when its visible content
+ * is identical. Conservative — missing/cyclic canonical data falls through to
+ * the full merge.
  */
 function unchangedSnapshotMessage(existing: UIMessage, snapshot: UIMessage): boolean {
   if (existing.id !== snapshot.id) return false
+  if (optimisticConversationMessage(existing) || optimisticConversationMessage(snapshot)) return false
   const storedExisting = storedMessage(existing)
   const storedSnapshot = storedMessage(snapshot)
   if (!storedExisting || !storedSnapshot) return false
-  if (storedExisting.role !== storedSnapshot.role) return false
-  const timeExisting = storedExisting.time as { created?: number; completed?: number } | undefined
-  const timeSnapshot = storedSnapshot.time as { created?: number; completed?: number } | undefined
-  if (timeExisting?.created !== timeSnapshot?.created) return false
+  if (!sameSerializableValue(storedExisting, storedSnapshot)) return false
+  const timeSnapshot = storedSnapshot.time as { completed?: number } | undefined
   if (storedSnapshot.role === "assistant") {
     if (typeof timeSnapshot?.completed !== "number") return false
-    if (timeExisting?.completed !== timeSnapshot.completed) return false
   }
-  if ((storedExisting as { error?: unknown }).error !== undefined || (storedSnapshot as { error?: unknown }).error !== undefined)
-    return false
   if (existing.parts.length !== snapshot.parts.length) return false
   for (let index = 0; index < snapshot.parts.length; index++) {
     const left = existing.parts[index]!
     const right = snapshot.parts[index]!
-    if (left.type !== right.type) return false
-    if (opencodePartId(left) !== opencodePartId(right)) return false
-    if (left.type === "tool-call" && right.type === "tool-call") {
-      if (toolCallStateRank(left.state) !== toolCallStateRank(right.state)) return false
-      continue
-    }
-    if ((left.type === "text" || left.type === "thinking") && textContent(left).length !== textContent(right).length)
-      return false
+    if (!sameSerializableValue(left, right)) return false
   }
   return true
+}
+
+function optimisticConversationMessage(message: UIMessage) {
+  return (message as ConversationUIMessage & { metadata?: { optimistic?: boolean } }).metadata?.optimistic === true
+}
+
+function sameSerializableValue(left: unknown, right: unknown) {
+  try {
+    return JSON.stringify(left) === JSON.stringify(right)
+  } catch {
+    return false
+  }
 }
 
 export function applyOpencodeConversationEvent(chat: ConversationChatHandle, event: Event) {

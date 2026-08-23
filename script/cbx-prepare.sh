@@ -15,7 +15,19 @@ mkdir -p "$OUT"
 for box in "${BOXES[@]}"; do
   (
     ./script/cbx run --id "$box" --reclaim -- bash -c 'umask 022; set -e
-      # ---- 1. A REAL GIT REPOSITORY AT THE WORKDIR ----------------------------
+      # ---- 1. DEPENDENCIES ----------------------------------------------------
+      # Install before creating the synthetic repository below. Dependency
+      # patches target ignored node_modules trees; inside a shallow/synthetic
+      # repository, git apply may try to resolve their patch index object IDs
+      # from that repository and fail because those package blobs are not part
+      # of its object database. Outside a repository, the patch runner uses its
+      # intended cwd-relative mode and verifies the installed files directly.
+      bun install --frozen-lockfile
+      # The perf harness is a nested, independently locked package; the root
+      # `packages/*` workspace install does not own its dependencies.
+      (cd packages/claxedo-app/perf-harness && bun install --frozen-lockfile)
+
+      # ---- 2. A REAL GIT REPOSITORY AT THE WORKDIR ----------------------------
       # crabbox syncs FILES, not the repository: the box workdir has no `.git`
       # at all. CI never notices because actions/checkout leaves one. Two lanes
       # do notice, because they shell out to git against the repo root:
@@ -55,9 +67,6 @@ for box in "${BOXES[@]}"; do
       fi
       git rev-parse --show-toplevel
 
-      # ---- 2. DEPENDENCIES ----------------------------------------------------
-      bun install --frozen-lockfile
-
       # ---- 3. HARNESS CLIs ----------------------------------------------------
       # Tier R (@tier-real) spawns the real `claude` and `codex` binaries; the
       # workflow installs them in its own step. Absent, `requireBinary` throws
@@ -88,8 +97,21 @@ for box in "${BOXES[@]}"; do
         --filter=@claxedo/workspace-relay-protocol \
         --filter=@claxedo/workspace-relay \
         --filter=@claxedo/workspace-runtime
+      (cd packages/claxedo-local-server && bun run build)
 
-      # ---- 5. THE EMBEDDED OPENCODE ENGINE ------------------------------------
+      # ---- 5. OPENCODE CLI + EMBEDDED ENGINE ----------------------------------
+      # A separate Tier-R process-lifecycle spec launches the real
+      # `opencode serve` command through workspace-runtime. A workspace install
+      # does not expose this private package as a root node_modules/.bin entry,
+      # so build the current-platform CLI and install that exact repository
+      # binary on PATH. The build clears dist/, therefore build the node embed
+      # immediately afterwards.
+      (cd packages/opencode && \
+        OPENCODE_CHANNEL=selfhost OPENCODE_VERSION=0.0.0-selfhost \
+        bun run build --single --skip-install)
+      sudo -n install -m 0755 packages/opencode/dist/opencode-linux-x64/bin/opencode /usr/local/bin/opencode
+      opencode --version
+
       # `packages/opencode/dist/node/node.js` is a BUILT, gitignored artifact
       # that no `--filter` above produces (turbo.json deliberately keeps
       # `opencode#build` out of the generic graph). claxedo-server loads it via

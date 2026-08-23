@@ -39,7 +39,7 @@ const verifier: ClerkVerifier = async (token, config) => ({
   },
 })
 
-function services(): ControlPlaneServicesContract {
+function services(input: { workspaces?: unknown[] } = {}): ControlPlaneServicesContract {
   return {
     projectionStore: {} as never,
     durableSessionLog: {} as never,
@@ -53,6 +53,7 @@ function services(): ControlPlaneServicesContract {
     authority: {
       usersMe: vi.fn(async () => ({})),
       authorizeSessionRead: vi.fn(async () => {}),
+      listWorkspaces: vi.fn(async () => input.workspaces ?? []),
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "member",
@@ -183,6 +184,154 @@ describe("session metadata routes", () => {
     expect(await res.json()).toMatchObject({
       error: { code: "missing_bearer_token" },
     })
+  })
+
+  test("signed project-scoped session lists authorize ws-shaped project identities", async () => {
+    const directory = path.join(root, `signed-navigation-${randomUUID()}`)
+    await fs.mkdir(directory, { recursive: true })
+    await ensureWorkspace({
+      workspaceId: "ws_signed_navigation",
+      project_id: "ws_signed_navigation",
+      directory,
+      kind: "cloud",
+    })
+    await putSessionMeta("signed_navigation_1", {
+      ws: {
+        id: "ws_signed_navigation",
+        project_id: "ws_signed_navigation",
+        directory,
+        kind: "cloud",
+        created_at: 1,
+        updated_at: 1,
+      },
+      title: "Signed navigation row",
+    })
+    const svc = services({ workspaces: [{
+      workspace_id: "ws_signed_navigation",
+      project_id: "ws_signed_navigation",
+    }] })
+    const { app } = buildApp(svc)
+    const res = await app.request(
+      "http://localhost/api/claxedo/session-list?scope=project&projectId=ws_signed_navigation&limit=5",
+      {
+        headers: {
+          Authorization: "Bearer user_1",
+          "x-opencode-directory": "workspace:ws_signed_navigation",
+        },
+      },
+    )
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({
+      items: [expect.objectContaining({ sessionId: "signed_navigation_1", workspaceId: "ws_signed_navigation" })],
+    })
+    expect(svc.authority?.listWorkspaces).toHaveBeenCalledWith(expect.objectContaining({ token: "user_1" }))
+    expect(svc.authority?.openWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("signed project-scoped session lists resolve canonical project identities", async () => {
+    const directory = path.join(root, `signed-project-${randomUUID()}`)
+    await fs.mkdir(directory, { recursive: true })
+    await ensureWorkspace({
+      workspaceId: "ws_signed_project",
+      project_id: "proj_signed_project",
+      directory,
+      kind: "cloud",
+    })
+    await putSessionMeta("signed_project_1", {
+      ws: {
+        id: "ws_signed_project",
+        project_id: "proj_signed_project",
+        directory,
+        kind: "cloud",
+        created_at: 1,
+        updated_at: 1,
+      },
+      title: "Signed project row",
+    })
+    const svc = services({ workspaces: [{
+      workspace_id: "ws_signed_project",
+      project_id: "proj_signed_project",
+    }] })
+    const { app } = buildApp(svc)
+    const res = await app.request(
+      "http://localhost/api/claxedo/session-list?scope=project&projectId=proj_signed_project&limit=5",
+      { headers: { Authorization: "Bearer user_1" } },
+    )
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({
+      items: [expect.objectContaining({ sessionId: "signed_project_1", workspaceId: "ws_signed_project" })],
+    })
+    expect(svc.authority?.listWorkspaces).toHaveBeenCalledWith(expect.objectContaining({ token: "user_1" }))
+    expect(svc.authority?.openWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("signed project lists exclude sibling workspaces the principal cannot read", async () => {
+    const projectId = `proj_signed_siblings_${randomUUID()}`
+    const allowedWorkspaceId = `ws_allowed_${randomUUID()}`
+    const deniedWorkspaceId = `ws_denied_${randomUUID()}`
+    const allowedDirectory = path.join(root, allowedWorkspaceId)
+    const deniedDirectory = path.join(root, deniedWorkspaceId)
+    await Promise.all([
+      fs.mkdir(allowedDirectory, { recursive: true }),
+      fs.mkdir(deniedDirectory, { recursive: true }),
+    ])
+    await ensureWorkspace({ workspaceId: allowedWorkspaceId, project_id: projectId, directory: allowedDirectory, kind: "cloud" })
+    await ensureWorkspace({ workspaceId: deniedWorkspaceId, project_id: projectId, directory: deniedDirectory, kind: "cloud" })
+    await putSessionMeta(`ses_${allowedWorkspaceId}`, {
+      ws: { id: allowedWorkspaceId, project_id: projectId, directory: allowedDirectory, kind: "cloud", created_at: 1, updated_at: 1 },
+      title: "Allowed sibling",
+    })
+    await putSessionMeta(`ses_${deniedWorkspaceId}`, {
+      ws: { id: deniedWorkspaceId, project_id: projectId, directory: deniedDirectory, kind: "cloud", created_at: 1, updated_at: 1 },
+      title: "Denied sibling",
+    })
+    const svc = services({ workspaces: [{
+      workspace_id: allowedWorkspaceId,
+      project_id: projectId,
+    }] })
+
+    const res = await buildApp(svc).app.request(
+      `http://localhost/api/claxedo/session-list?scope=project&projectId=${encodeURIComponent(projectId)}&limit=10`,
+      { headers: { Authorization: "Bearer user_1" } },
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as { items: Array<{ sessionId: string; workspaceId?: string }> }
+    expect(body.items).toEqual([
+      expect.objectContaining({ sessionId: `ses_${allowedWorkspaceId}`, workspaceId: allowedWorkspaceId }),
+    ])
+    expect(JSON.stringify(body)).not.toContain(deniedWorkspaceId)
+  })
+
+  test("signed project lists include every sibling workspace the principal can read", async () => {
+    const projectId = `proj_signed_allowed_siblings_${randomUUID()}`
+    const workspaceIds = [`ws_first_${randomUUID()}`, `ws_second_${randomUUID()}`]
+    for (const [index, workspaceId] of workspaceIds.entries()) {
+      const directory = path.join(root, workspaceId)
+      await fs.mkdir(directory, { recursive: true })
+      await ensureWorkspace({ workspaceId, project_id: projectId, directory, kind: "cloud" })
+      await putSessionMeta(`ses_${workspaceId}`, {
+        ws: { id: workspaceId, project_id: projectId, directory, kind: "cloud", created_at: index + 1, updated_at: index + 1 },
+        title: `Allowed sibling ${index + 1}`,
+      })
+    }
+    const svc = services({ workspaces: workspaceIds.map((workspaceId) => ({
+      workspace_id: workspaceId,
+      project_id: projectId,
+    })) })
+
+    const res = await buildApp(svc).app.request(
+      `http://localhost/api/claxedo/session-list?scope=project&projectId=${encodeURIComponent(projectId)}&limit=10`,
+      { headers: { Authorization: "Bearer user_1" } },
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as { items: Array<{ sessionId: string }> }
+    expect(new Set(body.items.map((item) => item.sessionId))).toEqual(
+      new Set(workspaceIds.map((workspaceId) => `ses_${workspaceId}`)),
+    )
   })
 
   test("signed cloud mode honors environment auth config without injected options", async () => {

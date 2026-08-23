@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { configureApiRuntime, resetApiRuntime } from "@/platform/api/api"
 import { queryClient } from "@/platform/query/query-client"
 import {
   createWorkspaceRelayConnection,
@@ -14,6 +15,7 @@ import {
 
 afterEach(() => {
   queryClient.clear()
+  resetApiRuntime()
   setWorkspaceConnectionObserver(undefined)
 })
 
@@ -82,6 +84,49 @@ describe("workspace relay connection", () => {
     expect(first.workspaceId).toBe("ws_cached")
     expect(second.workspaceId).toBe("ws_cached")
     expect(calls).toEqual(["http://server.cached.test/api/workspace/ws_cached/connection"])
+  })
+
+  test("shares implicit and explicit bearer opens while partitioning changed bearers", async () => {
+    let bearer = "signed-token-one"
+    configureApiRuntime({ bearerToken: async () => bearer })
+    const authorizations: Array<string | null> = []
+    const request = (async (url, init) => {
+      authorizations.push(new Request(requestUrl(url), init).headers.get("authorization"))
+      return Response.json(connection({ workspaceId: "ws_bearer_cache" }))
+    }) as typeof fetch
+
+    const [implicit, explicit] = await Promise.all([
+      openWorkspaceConnection("ws_bearer_cache", {
+        serverUrl: "http://server.cached.test",
+        request,
+      }),
+      openWorkspaceConnection("ws_bearer_cache", {
+        serverUrl: "http://server.cached.test",
+        request,
+        headers: { Authorization: "Bearer signed-token-one" },
+      }),
+    ])
+
+    expect(implicit.workspaceId).toBe("ws_bearer_cache")
+    expect(explicit.workspaceId).toBe("ws_bearer_cache")
+    expect(authorizations).toEqual(["Bearer signed-token-one"])
+
+    bearer = "signed-token-two"
+    await openWorkspaceConnection("ws_bearer_cache", {
+      serverUrl: "http://server.cached.test",
+      request,
+    })
+    await openWorkspaceConnection("ws_bearer_cache", {
+      serverUrl: "http://server.cached.test",
+      request,
+      headers: { Authorization: "Bearer signed-token-three" },
+    })
+
+    expect(authorizations).toEqual([
+      "Bearer signed-token-one",
+      "Bearer signed-token-two",
+      "Bearer signed-token-three",
+    ])
   })
 
   test("forgets cached workspace connection failures so user retry can re-mint", async () => {

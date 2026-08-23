@@ -80,4 +80,42 @@ describe("embedded engine worker transport", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(forkWorker).toHaveBeenCalledTimes(1)
   })
+
+  test("propagates caller cancellation to the worker fetch", async () => {
+    const child = new FakeChild()
+    forkWorker.mockImplementation(() => {
+      queueMicrotask(() => child.emit("message", { type: "claxedo-engine-ready", port: 43125 }))
+      return child as never
+    })
+    let outgoingSignal: AbortSignal | undefined
+    const fetchMock = vi.fn(async (input: Request | string | URL) => {
+      const request = input instanceof Request ? input : new Request(input)
+      outgoingSignal = request.signal
+      return new Promise<Response>((_resolve, reject) => {
+        if (request.signal.aborted) {
+          reject(request.signal.reason)
+          return
+        }
+        request.signal.addEventListener("abort", () => reject(request.signal.reason), { once: true })
+      })
+    })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    configureOpenCodeEmbedPath("/tmp/opencode-node-embed.js")
+    configureOpenCodeWorkerPath("/tmp/claxedo-engine-worker.js")
+    __setOpenCodeWorkerForkForTests(forkWorker as never)
+
+    const controller = new AbortController()
+    const pending = opencodeRequest(
+      new Request(`${OPENCODE_INTERNAL_BASE}/session`, { signal: controller.signal }),
+    )
+    const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" })
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    controller.abort(new DOMException("request cancelled", "AbortError"))
+
+    await rejected
+    expect(outgoingSignal?.aborted).toBe(true)
+    expect(forkWorker).toHaveBeenCalledTimes(1)
+  })
 })

@@ -385,6 +385,13 @@ export namespace Pty {
     session.subscribers.clear()
     session.writeQueue = []
     session.queuedBytes = 0
+    // The native PTY owns the process even when the platform cannot expose a
+    // usable OS pid (the Windows ConPTY wrapper reports 0 in that case).
+    // Always close it through its native handle; the PID-based tree sweep is
+    // additional cleanup only when a real pid is available.
+    try {
+      session.process.kill()
+    } catch {}
     try {
       await killProcessTree(session.info.pid)
     } catch {}
@@ -576,6 +583,7 @@ export namespace Pty {
       status: "running",
       pid: ptyProcess.pid,
     } as const
+    const observedPid = Number.isInteger(info.pid) && info.pid > 0 ? info.pid : undefined
     const owner = observation?.observer.register(
       {
         ownerId: observation.ownerId,
@@ -584,14 +592,16 @@ export namespace Pty {
         kind: observation.kind,
         role: observation.kind,
         label: observation.label,
-        pid: info.pid,
+        ...(observedPid !== undefined ? { pid: observedPid } : {}),
         workspaceId: observation.workspaceId,
         directory: observation.directory,
         ...(observation.sessionId ? { sessionId: observation.sessionId } : {}),
       },
       observation.operations ?? {
         stopGracefully: async () => remove(info.id),
-        killOwnedTree: async () => killProcessTree(info.pid),
+        ...(observedPid !== undefined
+          ? { killOwnedTree: async () => killProcessTree(observedPid) }
+          : {}),
       },
     )
 

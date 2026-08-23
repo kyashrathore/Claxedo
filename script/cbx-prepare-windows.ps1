@@ -52,6 +52,35 @@ $bunPath = Join-Path $toolsRoot $bunDirectory
 Expand-ToolArchive "https://github.com/oven-sh/bun/releases/download/bun-v$bunVersion/$bunDirectory.zip" (Join-Path $downloads "bun-$bunVersion.zip") $bunPath
 Add-ToolPath $bunPath
 
+$rustupHome = Join-Path $toolsRoot "rustup"
+$cargoHome = Join-Path $toolsRoot "cargo"
+$cargoBin = Join-Path $cargoHome "bin"
+$cargoExe = Join-Path $cargoBin "cargo.exe"
+$env:RUSTUP_HOME = $rustupHome
+$env:CARGO_HOME = $cargoHome
+if (-not (Test-Path $cargoExe)) {
+  $rustupInstaller = Join-Path $downloads "rustup-init.exe"
+  $rustupUrl = "https://win.rustup.rs/x86_64"
+  Write-Output "Downloading $rustupUrl"
+  & curl.exe --fail --location --silent --show-error --output $rustupInstaller $rustupUrl
+  if ($LASTEXITCODE -ne 0) {
+    throw "Could not download rustup-init"
+  }
+  $installer = Start-Process -FilePath $rustupInstaller -ArgumentList @(
+    "-y",
+    "--profile", "minimal",
+    "--default-toolchain", "stable-x86_64-pc-windows-msvc"
+  ) -Wait -PassThru
+  if ($installer.ExitCode -ne 0) {
+    throw "rustup-init exited $($installer.ExitCode)"
+  }
+}
+Add-ToolPath $cargoBin
+& (Join-Path $cargoBin "rustup.exe") target add x86_64-pc-windows-msvc
+if ($LASTEXITCODE -ne 0) {
+  throw "rustup target add exited $LASTEXITCODE"
+}
+
 $pythonVersion = "3.12.10"
 $pythonPath = Join-Path $toolsRoot "python-$pythonVersion"
 if (-not (Test-Path (Join-Path $pythonPath "python.exe"))) {

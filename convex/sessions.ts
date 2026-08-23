@@ -306,8 +306,20 @@ async function syncMessageRows(
     session_id: string
     messages: unknown[]
     intakeReady: boolean
+    maxEventOrdinal?: number
   },
 ) {
+  const existingSession = await ctx.db
+    .query("session_history")
+    .withIndex("by_session_id", (query: any) => query.eq("session_id", input.session_id))
+    .unique()
+  if (existingSession && existingSession.workspace_id !== input.workspace._id) throw new Error("Session not found")
+  if (
+    input.maxEventOrdinal !== undefined
+    && input.maxEventOrdinal < (existingSession?.max_event_ordinal ?? 0)
+  ) {
+    return { applied: false, maxEventOrdinal: existingSession?.max_event_ordinal ?? 0 }
+  }
   await ensureSessionHistoryRow(ctx, {
     user: input.user,
     workspace: input.workspace,
@@ -322,43 +334,60 @@ async function syncMessageRows(
   const usedRows = new Set<string>()
   const incomingIds = new Set<string>()
   const now = Date.now()
-  for (let ordinal = 0; ordinal < input.messages.length; ordinal += 1) {
-    const message = input.messages[ordinal]
-    const id = messageId(message, input.session_id, ordinal)
-    const role = messageRole(message)
-    const data = jsonValue(message)
-    incomingIds.add(id)
-    const existing = existingRows.find((row: any) => row.message_id === id && !usedRows.has(row._id))
-    if (existing) {
-      usedRows.add(existing._id)
-      if (existing.ordinal !== ordinal || existing.role !== role || jsonText(existing.data) !== jsonText(data)) {
-        await ctx.db.patch(existing._id, {
-          role,
-          ordinal,
-          data,
-          updated_at: now,
-        })
-      }
-      continue
+  const preserveCanonicalRows =
+    input.maxEventOrdinal !== undefined
+    && input.maxEventOrdinal === (existingSession?.max_event_ordinal ?? 0)
+    && existingRows.length > 0
+    && input.messages.length <= existingRows.length
+  if (!preserveCanonicalRows) {
+    if (input.maxEventOrdinal !== undefined) {
+      const session = existingSession ?? await ctx.db
+        .query("session_history")
+        .withIndex("by_session_id", (query: any) => query.eq("session_id", input.session_id))
+        .unique()
+      if (session) await ctx.db.patch(session._id, { max_event_ordinal: input.maxEventOrdinal })
     }
-    await ctx.db.insert("session_messages", {
-      session_id: input.session_id,
-      workspace_id: input.workspace._id,
-      message_id: id,
-      role,
-      ordinal,
-      data,
-      created_at: now,
-      updated_at: now,
-    })
+    for (let ordinal = 0; ordinal < input.messages.length; ordinal += 1) {
+      const message = input.messages[ordinal]
+      const id = messageId(message, input.session_id, ordinal)
+      const role = messageRole(message)
+      const data = jsonValue(message)
+      incomingIds.add(id)
+      const existing = existingRows.find((row: any) => row.message_id === id && !usedRows.has(row._id))
+      if (existing) {
+        usedRows.add(existing._id)
+        if (existing.ordinal !== ordinal || existing.role !== role || jsonText(existing.data) !== jsonText(data)) {
+          await ctx.db.patch(existing._id, {
+            role,
+            ordinal,
+            data,
+            updated_at: now,
+          })
+        }
+        continue
+      }
+      await ctx.db.insert("session_messages", {
+        session_id: input.session_id,
+        workspace_id: input.workspace._id,
+        message_id: id,
+        role,
+        ordinal,
+        data,
+        created_at: now,
+        updated_at: now,
+      })
+    }
+    for (const row of existingRows.filter((row: any) => !incomingIds.has(row.message_id))) {
+      await ctx.db.delete(row._id)
+    }
   }
-  for (const row of existingRows.filter((row: any) => !incomingIds.has(row.message_id))) {
-    await ctx.db.delete(row._id)
-  }
-  const summary = [...input.messages].reverse().find((message) => messageRole(message) === "assistant")
+  const canonicalMessages = preserveCanonicalRows
+    ? [...existingRows].sort((a: any, b: any) => a.ordinal - b.ordinal).map((row: any) => row.data)
+    : input.messages
+  const summary = [...canonicalMessages].reverse().find((message) => messageRole(message) === "assistant")
   const summaryText = messageText(summary)
   const meaningful =
-    input.messages.some((message) => messageRole(message) === "user" && messageText(message)) && summaryText
+    canonicalMessages.some((message) => messageRole(message) === "user" && messageText(message)) && summaryText
   if (input.intakeReady && meaningful && typeof input.user._id === "string") {
     const session = await ctx.db
       .query("session_history")
@@ -395,6 +424,7 @@ async function syncMessageRows(
           : {}),
     })
   }
+  return { applied: !preserveCanonicalRows, maxEventOrdinal: input.maxEventOrdinal ?? existingSession?.max_event_ordinal ?? 0 }
 }
 
 function messageText(input: unknown) {
@@ -518,15 +548,17 @@ export const syncMessages = authedMutation({
     session_id: v.string(),
     messages: v.array(v.any()),
     intake_ready: v.optional(v.boolean()),
+    max_event_ordinal: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    await syncMessageRows(ctx, {
+    const result = await syncMessageRows(ctx, {
       ...(await writableWorkspace(ctx, args.workspace_id)),
       session_id: args.session_id,
       messages: args.messages,
       intakeReady: args.intake_ready ?? false,
+      maxEventOrdinal: args.max_event_ordinal,
     })
-    return { ok: true }
+    return args.max_event_ordinal === undefined ? { ok: true } : { ok: true, ...result }
   },
 })
 
@@ -537,15 +569,17 @@ export const syncMessagesForService = serviceMutation({
     session_id: v.string(),
     messages: v.array(v.any()),
     intake_ready: v.optional(v.boolean()),
+    max_event_ordinal: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    await syncMessageRows(ctx, {
+    const result = await syncMessageRows(ctx, {
       ...(await writableWorkspaceForUser(ctx, await upsertServiceUser(ctx, args.user), args.workspace_id)),
       session_id: args.session_id,
       messages: args.messages,
       intakeReady: args.intake_ready ?? false,
+      maxEventOrdinal: args.max_event_ordinal,
     })
-    return { ok: true }
+    return args.max_event_ordinal === undefined ? { ok: true } : { ok: true, ...result }
   },
 })
 

@@ -5,6 +5,7 @@ import * as path from "node:path"
 import { pathToFileURL } from "node:url"
 
 import {
+  COMPILE_CACHE_SEED_COMPLETE_NAME,
   OPENCODE_COMPILE_CACHE_BASE_DIR_NAME,
   OPENCODE_COMPILE_CACHE_MANIFEST_NAME,
   compileCacheEntryName,
@@ -125,6 +126,7 @@ describe("seeding", () => {
 
   const runtimeName = (source: { rootDir: string }, file: string) =>
     compileCacheEntryName(pathToFileURL(fs.realpathSync(path.join(source.rootDir, file))).href, "esm")
+  const cacheEntries = (computed: string) => fs.readdirSync(computed).filter((entry) => !entry.startsWith("."))
 
   test("files each blob under the name the runtime will look for on THIS machine", () => {
     const { root, computed, engine } = fixture()
@@ -133,7 +135,8 @@ describe("seeding", () => {
     expect(result).toMatchObject({ status: "seeded", entries: 1 })
     const expected = runtimeName(engine, "node.js")
     // Not the shipped name, and not a name derived from the build machine.
-    expect(fs.readdirSync(computed)).toEqual([expected])
+    expect(cacheEntries(computed)).toEqual([expected])
+    expect(fs.existsSync(path.join(computed, COMPILE_CACHE_SEED_COMPLETE_NAME))).toBe(true)
     expect(fs.readFileSync(path.join(computed, expected), "utf8")).toBe("BLOB:engine:node.js")
     fs.rmSync(root, { recursive: true, force: true })
   })
@@ -146,7 +149,7 @@ describe("seeding", () => {
     const result = seedShippedCompileCaches({ sources: [engine, server], computedCacheDir: computed })
 
     expect(result).toMatchObject({ status: "seeded", entries: 3 })
-    expect(fs.readdirSync(computed).sort()).toEqual(
+    expect(cacheEntries(computed).sort()).toEqual(
       [runtimeName(engine, "node.js"), runtimeName(server, "index.js"), runtimeName(server, "chunks/entry-abc.js")]
         .sort(),
     )
@@ -155,23 +158,56 @@ describe("seeding", () => {
     fs.rmSync(root, { recursive: true, force: true })
   })
 
-  test("the already-populated guard is decided ONCE for the launch, not once per set", () => {
+  test("preserves runtime-written entries while completing every missing shipped set", () => {
     const { root, computed, engine, server } = fixture()
     fs.writeFileSync(path.join(computed, "deadbeef"), "EXISTING")
 
     const result = seedShippedCompileCaches({ sources: [engine, server], computedCacheDir: computed })
 
-    // All-or-nothing: a launch that finds anything there copies nothing at all,
-    // so the runtime's own later writes are never overwritten and no set is
-    // ever half-installed.
-    expect(result).toMatchObject({ status: "already-seeded", entries: 0 })
-    expect(fs.readdirSync(computed)).toEqual(["deadbeef"])
+    expect(result).toMatchObject({ status: "seeded", entries: 3 })
+    expect(fs.readFileSync(path.join(computed, "deadbeef"), "utf8")).toBe("EXISTING")
+    expect(cacheEntries(computed).sort()).toEqual([
+      "deadbeef",
+      runtimeName(engine, "node.js"),
+      runtimeName(server, "index.js"),
+      runtimeName(server, "chunks/entry-abc.js"),
+    ].sort())
+    fs.rmSync(root, { recursive: true, force: true })
+  })
+
+  test("a restart repairs orphan pending and partial final entries without overwriting the final", () => {
+    const { root, computed, engine, server } = fixture()
+    const engineTarget = path.join(computed, runtimeName(engine, "node.js"))
+    const serverTarget = path.join(computed, runtimeName(server, "index.js"))
+    fs.writeFileSync(engineTarget, "RUNTIME-WRITTEN")
+    fs.writeFileSync(`${serverTarget}.pending`, "INTERRUPTED")
+
+    const result = seedShippedCompileCaches({ sources: [engine, server], computedCacheDir: computed })
+
+    expect(result).toMatchObject({ status: "seeded", entries: 2 })
+    expect(fs.readFileSync(engineTarget, "utf8")).toBe("RUNTIME-WRITTEN")
+    expect(fs.readFileSync(serverTarget, "utf8")).toBe("BLOB:server:index.js")
+    expect(fs.existsSync(`${serverTarget}.pending`)).toBe(false)
+    expect(fs.existsSync(path.join(computed, COMPILE_CACHE_SEED_COMPLETE_NAME))).toBe(true)
+    fs.rmSync(root, { recursive: true, force: true })
+  })
+
+  test("a completion marker makes later launches leave runtime cache files untouched", () => {
+    const { root, computed, engine } = fixture()
+    const first = seedShippedCompileCaches({ sources: [engine], computedCacheDir: computed })
+    const target = path.join(computed, runtimeName(engine, "node.js"))
+    fs.writeFileSync(target, "RUNTIME-REFRESHED")
+
+    const second = seedShippedCompileCaches({ sources: [engine], computedCacheDir: computed })
+
+    expect(first).toMatchObject({ status: "seeded", entries: 1 })
+    expect(second).toMatchObject({ status: "already-seeded", entries: 0 })
+    expect(fs.readFileSync(target, "utf8")).toBe("RUNTIME-REFRESHED")
     fs.rmSync(root, { recursive: true, force: true })
   })
 
   test("leaves no partial blob behind when the copy is interrupted", () => {
-    // The seeded file appears only under its final name, so a directory that
-    // looks populated always holds a complete blob.
+    // The completion marker appears only after every final entry exists.
     const { root, computed, engine } = fixture()
     fs.rmSync(path.join(engine.shippedDir, "node.js.esm.v8cache"))
 

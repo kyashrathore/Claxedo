@@ -35,7 +35,7 @@ import { shellDataKeys } from "@/platform/sync/keys"
 import { queryClient } from "@/platform/query/query-client"
 import { settledQueryData as settledData } from "@/platform/query/settled-query-data"
 import { isWorkspaceReady, useWorkspaceQuery } from "@/features/session/app-ports"
-import { scheduleSessionProjectionPull } from "@/platform/runtime/agent/session-projection"
+import { scheduleSessionProjectionPull, sessionProjectionWorkspaceBacking } from "@/platform/runtime/agent/session-projection"
 import { removeDirectorySession, upsertDirectorySession } from "../data/sync/directory-session-cache"
 import { FAST_SESSION_SWITCH_NETWORK_QUIET_MS, FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS, FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS, fastSessionSwitchQuietDelay, fastSessionSwitchNetworkQuiet, suppressedByFastSessionSwitch } from "@/platform/runtime/session-switch"
 import { assistantMessageIdForUserMessage } from "../data/session-types"
@@ -589,12 +589,11 @@ export function createSessionController(input: {
     return settledData(diffQuery) !== undefined
   })
 
-  // status/request are LIVE mirrors: on the draft->session handoff their
-  // fresh observers sit in "pending" for the first fetch while the turn is
+  // status/request are LIVE mirrors: on draft->session handoff their fresh
+  // observers sit in "pending" for the first fetch while the turn is
   // already busy, so a settled-only read reports idle exactly when the stop
   // control must show. Plain .data is safe here — the vendored solid-query
-  // patch removed client-side query suspension globally, which is what the
-  // settled gate existed to avoid.
+  // patch removed client-side query suspension globally, which the settled gate existed to avoid.
   const status = createMemo(() => {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return idleSessionStatus
@@ -1015,13 +1014,14 @@ export function createSessionController(input: {
           // scope workspaceId so the runtime stream relays for relay-backed
           // workspaces whose `directory` is a non-ref filesystem path.
           markLiveSession(globalSDK.event, id, directory, signedControlPlane ? input.workspaceId?.() : undefined, input.sessionRef?.()?.host)
-          // Hydration is the moment this session's shell caches come alive, so
-          // it is what triggers the ceiling — but the pass itself runs once the
-          // renderer is idle, never in front of the pane the user just opened.
-          scheduleSessionCacheCeiling(id)
           void syncSessionCapabilities(id)
-          void syncSessionHistory(id, { bypassQuiet: true }).then((synced) =>
-            sessionHydrationDebug("sync-session-complete", { directory, sessionID: id, synced }))
+          void syncSessionHistory(id, { bypassQuiet: true }).then((synced) => {
+            sessionHydrationDebug("sync-session-complete", { directory, sessionID: id, synced })
+            // History hydration is what makes this session's cache eligible
+            // for the ceiling. Scheduling before the asynchronous write can
+            // leave an over-limit cache untouched until another navigation.
+            if (synced) scheduleSessionCacheCeiling(id)
+          })
           void syncSessionTodo(id)
         }, hydrateDelay)
         const cancelMeta = scheduleDelayedTask(() => {
@@ -1062,9 +1062,8 @@ export function createSessionController(input: {
           })
           void syncSessionHistory(sessionID, { force: true })
           void syncSessionTodo(sessionID, { force: true })
-          void directorySessionCacheActions.refresh({
-            directory,
-          })
+          const workspace = sessionProjectionWorkspaceBacking({ signedControlPlane: input.signedControlPlane?.() ?? false, workspaceId: input.workspaceId?.(), workspaceKind: input.workspaceKind?.() })
+          void directorySessionCacheActions.refresh({ directory, ...(workspace ? { workspace } : {}) })
           if (input.signedControlPlane?.()) void sessionInventoryActions.reloadWorkspace()
         }
         const quietDelay = fastSessionSwitchQuietDelay({ sessionId: sessionID })

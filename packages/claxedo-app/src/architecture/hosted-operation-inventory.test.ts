@@ -68,11 +68,15 @@ function sourceFiles(root: string) {
       }
       if (!/\.tsx?$/.test(file)) continue
       if (/\.(test|vitest)\.tsx?$/.test(file)) continue
-      files.push(path.relative(srcRoot, file))
+      files.push(canonicalRelativePath(path.relative(srcRoot, file)))
     }
   }
   walk(dir)
   return files
+}
+
+function canonicalRelativePath(value: string) {
+  return value.replaceAll("\\", "/")
 }
 
 /**
@@ -166,5 +170,14 @@ describe("hosted operation inventory", () => {
       authenticatedMarkers(`import { api } from "@/platform/api/api"\nawait api.post("/x", {})`),
     ).toEqual(["api"])
     expect(authenticatedMarkers(`import { fetchLocal } from "@/platform/api/local"`)).toEqual([])
+  })
+
+  test("module inventory keys use one platform-independent path shape", () => {
+    expect(canonicalRelativePath("features\\workspaces\\data\\share-workspace.ts")).toBe(
+      "features/workspaces/data/share-workspace.ts",
+    )
+    expect(canonicalRelativePath("features/workspaces/data/share-workspace.ts")).toBe(
+      "features/workspaces/data/share-workspace.ts",
+    )
   })
 })

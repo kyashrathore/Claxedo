@@ -366,6 +366,7 @@ describe("control plane session routes", () => {
       host: "central",
       directory: null,
       title: "Instant chat",
+      tags: ["harness:pi"],
     })
   })
 

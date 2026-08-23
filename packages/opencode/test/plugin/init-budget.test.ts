@@ -77,6 +77,26 @@ function markerPlugin(marker: string, delayMs = 0) {
   ].join("\n")
 }
 
+/** A plugin that exposes how many times its config hook was called through its marker. */
+function configCountPlugin(marker: string, constructorDelayMs = 0, configDelayMs = 0) {
+  return [
+    "export default async () => {",
+    constructorDelayMs > 0 ? `  await new Promise((resolve) => setTimeout(resolve, ${constructorDelayMs}))` : "",
+    "  let configCalls = 0",
+    "  return {",
+    "    config: async () => {",
+    "      configCalls += 1",
+    configDelayMs > 0 ? `      await new Promise((resolve) => setTimeout(resolve, ${configDelayMs}))` : "",
+    "    },",
+    `    ${JSON.stringify(systemHook)}: (_input, output) => {`,
+    `      output.system.push(${JSON.stringify(marker)} + ":" + configCalls)`,
+    "    },",
+    "  }",
+    "}",
+    "",
+  ].join("\n")
+}
+
 /** A plugin whose constructor never settles. */
 const hungPlugin = ["export default async () => new Promise(() => {})", ""].join("\n")
 
@@ -129,6 +149,24 @@ describe("plugin init budget", () => {
   )
 
   bounded.instance(
+    "a hung plugin cannot prevent a later plugin from registering",
+    () =>
+      withPlugins(
+        [hungPlugin, markerPlugin("ready")],
+        Effect.gen(function* () {
+          const plugin = yield* Plugin.Service
+          const started = Date.now()
+          yield* plugin.init()
+          const elapsed = Date.now() - started
+
+          expect(elapsed).toBeLessThan(5_000)
+          expect(yield* waitForMarkers((value) => value.includes("ready"), 10_000)).toEqual(["ready"])
+        }),
+      ),
+    15_000,
+  )
+
+  bounded.instance(
     "a plugin that resolves after the budget still registers its hooks",
     () =>
       withPlugins(
@@ -142,6 +180,21 @@ describe("plugin init budget", () => {
 
           // Deferred, not dropped: the hooks register once the constructor settles.
           expect(yield* waitForMarkers((value) => value.length > 0, 10_000)).toEqual(["slow"])
+        }),
+      ),
+    20_000,
+  )
+
+  bounded.instance(
+    "a plugin arriving during an on-time config hook is configured exactly once",
+    () =>
+      withPlugins(
+        [configCountPlugin("on-time", 0, BUDGET_MS * 3), configCountPlugin("late", BUDGET_MS + 30)],
+        Effect.gen(function* () {
+          const plugin = yield* Plugin.Service
+          yield* plugin.init()
+
+          expect(yield* waitForMarkers((value) => value.length === 2, 10_000)).toEqual(["on-time:1", "late:1"])
         }),
       ),
     20_000,

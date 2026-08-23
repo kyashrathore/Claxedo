@@ -50,7 +50,11 @@ bun turbo build `
 Assert-LastExitCode "workspace build"
 
 Set-Location $desktop
-bun test ./src ./scripts
+# Bun's Windows workers can concurrently instantiate the server-bundle and
+# compile-cache fixtures through the same native dependency tree, intermittently
+# observing an existing JS file as EISDIR. Keep the Windows acceptance process
+# deterministic; Linux/macOS retain the repository's normal parallel test lane.
+bun test ./src ./scripts --max-concurrency=1
 Assert-LastExitCode "desktop tests"
 
 bun run typecheck

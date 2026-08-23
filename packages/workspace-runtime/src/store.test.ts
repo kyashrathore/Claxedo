@@ -16,9 +16,17 @@ import {
   sessionUpdated,
   todoUpdated,
 } from "./compat-events"
-import { RuntimeStore } from "./store"
+import { RuntimeStore as RuntimeStoreImpl } from "./store"
 
 const roots: string[] = []
+const stores: RuntimeStoreImpl[] = []
+
+class RuntimeStore extends RuntimeStoreImpl {
+  constructor(...args: ConstructorParameters<typeof RuntimeStoreImpl>) {
+    super(...args)
+    stores.push(this)
+  }
+}
 
 function tmp() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "wr-store-"))
@@ -71,6 +79,7 @@ function db(store: RuntimeStore) {
 }
 
 afterEach(() => {
+  for (const store of stores.splice(0)) store.close()
   while (roots.length > 0) {
     fs.rmSync(roots.pop()!, { recursive: true, force: true })
   }

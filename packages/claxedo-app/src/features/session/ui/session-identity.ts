@@ -1,4 +1,8 @@
 import type { SessionRef } from "@/platform/identity/session-ref"
+import { parseShellRoute } from "@/platform/identity/route"
+import { centralTransportForServer } from "@/platform/runtime/transport"
+import { USER_HOSTED_WORKSPACE_KIND } from "@/platform/runtime/agent/workspace-kind"
+import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 
 export type SessionIdentity = {
   id?: string
@@ -45,6 +49,42 @@ export function resolveSessionDirectory(input: {
   if (input.sessionRef?.cwd) return input.sessionRef.cwd
   if (input.inventoryDirectory) return input.inventoryDirectory
   return input.routeDirectory
+}
+
+/**
+ * Return route authority only for an actual workspace identity. Legacy local
+ * panes can still be represented as `/w/%2Ftmp%2F.../session`; treating that
+ * decoded filesystem path as a workspace id suppresses the local SessionRef
+ * and incorrectly sends the pane to `/workspaces/%2Ftmp...`.
+ */
+export function signedRouteSessionWorkspaceId(pathname: string) {
+  const route = parseShellRoute(pathname)
+  if (route.kind !== "workspace-session") return undefined
+  return sessionWorkspaceRuntimeRef({ directory: route.workspaceId })?.workspaceId
+}
+
+/**
+ * Decide whether this pane has canonical signed transport authority.
+ *
+ * Principal state alone is insufficient on loopback: mock/local browser tests
+ * can carry a synthetic signed principal while their filesystem workspace is
+ * still Local Personal Mode. Conversely, an explicit `/w/:workspaceId` route
+ * or signed project/session backing already identifies the relay target before
+ * principal hydration settles; the relay endpoint remains the authorization
+ * gate for the request itself.
+ */
+export function sessionSignedTransportAuthority(input: {
+  serverUrl?: string
+  principalHasSignedAccess: boolean
+  routeWorkspaceAuthorityId?: string
+  workspaceKind?: string
+  sessionRef?: SessionRef
+}) {
+  if (input.routeWorkspaceAuthorityId) return true
+  if (input.workspaceKind === "cloud" || input.workspaceKind === USER_HOSTED_WORKSPACE_KIND) return true
+  if (input.sessionRef?.host === "central") return true
+  if (input.sessionRef?.toolSandbox?.kind === "workspace") return true
+  return input.principalHasSignedAccess && centralTransportForServer(input.serverUrl) !== "loopback"
 }
 
 export function resolveSignedSessionWorkspaceId(input: {

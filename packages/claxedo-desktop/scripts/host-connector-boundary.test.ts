@@ -32,6 +32,7 @@ import { spec } from "./contract"
 const PACKAGE_DIR = path.resolve(import.meta.dir, "..")
 const REPO_PACKAGES = path.resolve(PACKAGE_DIR, "..")
 const CONNECTOR = "@claxedo/host-connector"
+const portablePath = (file: string) => file.replaceAll(path.sep, "/")
 
 /** Import and re-export specifiers, with comments removed first. */
 function specifiers(source: string): string[] {
@@ -123,7 +124,7 @@ test("the separately built child entry imports the connector while its main asse
 
   const mainAssembly = walk(path.join(PACKAGE_DIR, "src/main/host-connector/electron-child.ts"))
   expect([...mainAssembly.packages].filter((name) => name === CONNECTOR || name.startsWith(`${CONNECTOR}/`))).toEqual([])
-  expect([...mainAssembly.files].some((file) => file.endsWith("/host-connector/child-supervisor.ts"))).toBe(true)
+  expect([...mainAssembly.files].some((file) => portablePath(file).endsWith("/host-connector/child-supervisor.ts"))).toBe(true)
 })
 
 test("the bundled local-server's import closure never reaches Host Connector", () => {
@@ -132,7 +133,7 @@ test("the bundled local-server's import closure never reaches Host Connector", (
   // Positive controls first: the walk must have gone where the bundle goes.
   expect(closure.unresolved).toEqual([])
   expect(closure.files.has(resolveLocalServerEntry(PACKAGE_DIR))).toBe(true)
-  expect([...closure.files].some((file) => file.includes("/claxedo-server-core/src/"))).toBe(true)
+  expect([...closure.files].some((file) => portablePath(file).includes("/claxedo-server-core/src/"))).toBe(true)
   expect(closure.files.size).toBeGreaterThan(100)
 
   const reached = [...closure.packages].filter((s) => s === CONNECTOR || s.startsWith(`${CONNECTOR}/`))

@@ -31,6 +31,9 @@ export type { UserExtensionView, UserExtensionViewContext }
 /** `localStorage["claxedo.user-extensions"] = "off"` disables loading entirely. */
 export const USER_EXTENSIONS_KILL_SWITCH = "claxedo.user-extensions"
 
+/** An extension must finish importing and activating before the loader moves on. */
+export const USER_EXTENSION_ACTIVATION_TIMEOUT_MS = 10_000
+
 const NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/
 const VIEW_ID_PATTERN = /^[\w-]{1,64}$/
 
@@ -70,6 +73,7 @@ type LoadOptions = {
   baseUrl: string
   fetcher?: UserExtensionFetcher
   importModule?: (url: string) => Promise<UserExtensionModule>
+  activationTimeoutMs?: number
 }
 
 export function userExtensionsDisabled(): boolean {
@@ -97,11 +101,34 @@ function manifestFromListing(input: unknown): UserExtensionManifest | undefined 
   }
 }
 
-function extensionApi(manifest: UserExtensionManifest, baseUrl: string, registered: string[]): UserExtensionApi {
-  return Object.freeze({
+type ExtensionActivationAuthority = {
+  api: UserExtensionApi
+  assertActive(): void
+  revoke(): void
+}
+
+/**
+ * Owns every host capability granted to one activation.
+ *
+ * A timed-out promise cannot be cancelled in JavaScript. Revoking this
+ * authority is the stronger boundary: it rolls back views already registered
+ * and makes every later `registerView` call from the abandoned activation
+ * fail, so the promise may keep executing but can no longer mutate the host.
+ */
+function extensionActivationAuthority(
+  manifest: UserExtensionManifest,
+  baseUrl: string,
+  registered: string[],
+): ExtensionActivationAuthority {
+  let active = true
+  const assertActive = () => {
+    if (!active) throw new Error(`Extension "${manifest.name}" activation is no longer active`)
+  }
+  const api: UserExtensionApi = Object.freeze({
     apiVersion: 1 as const,
     extension: Object.freeze({ name: manifest.name, version: manifest.version, baseUrl }),
     registerView(view) {
+      assertActive()
       if (typeof view?.id !== "string" || !VIEW_ID_PATTERN.test(view.id)) {
         throw new Error(`registerView: id must match ${VIEW_ID_PATTERN}`)
       }
@@ -121,22 +148,77 @@ function extensionApi(manifest: UserExtensionManifest, baseUrl: string, register
       registered.push(id)
     },
   })
+  return {
+    api,
+    assertActive,
+    revoke() {
+      if (!active) return
+      active = false
+      removeUserExtensionViews(manifest.name)
+    },
+  }
+}
+
+function beforeDeadline<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  onTimeout: () => void,
+  description: string,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const timeout = setTimeout(() => {
+      if (settled) return
+      settled = true
+      // Revoke synchronously in the timer callback, before the loader's catch
+      // continuation can start the next manifest.
+      onTimeout()
+      reject(new Error(`${description} timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+
+    void operation.then(
+      (value) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeout)
+        resolve(value)
+      },
+      (error) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeout)
+        reject(error)
+      },
+    )
+  })
 }
 
 async function activateExtension(manifest: UserExtensionManifest, options: Required<LoadOptions>) {
   const registered: string[] = []
   const entryUrl = new URL(manifest.entryPath, options.baseUrl).href
+  const authority = extensionActivationAuthority(manifest, options.baseUrl, registered)
   try {
-    const module = await options.importModule(entryUrl)
-    if (typeof module?.activate !== "function") {
-      throw new Error("entry module does not export an activate(api) function")
-    }
-    await module.activate(extensionApi(manifest, options.baseUrl, registered))
-    return { name: manifest.name, version: manifest.version, views: registered.length }
+    const attempt = (async () => {
+      const module = await options.importModule(entryUrl)
+      // An import that completes after the deadline must not receive the API.
+      authority.assertActive()
+      if (typeof module?.activate !== "function") {
+        throw new Error("entry module does not export an activate(api) function")
+      }
+      await module.activate(authority.api)
+      authority.assertActive()
+      return { name: manifest.name, version: manifest.version, views: registered.length }
+    })()
+    return await beforeDeadline(
+      attempt,
+      options.activationTimeoutMs,
+      authority.revoke,
+      `Extension "${manifest.name}" activation`,
+    )
   } catch (error) {
     // Roll back whatever the failed activation managed to register — a
     // half-activated extension is harder to reason about than an absent one.
-    removeUserExtensionViews(manifest.name)
+    authority.revoke()
     throw error
   }
 }
@@ -146,6 +228,7 @@ export async function loadUserExtensions(options: LoadOptions): Promise<UserExte
     baseUrl: options.baseUrl,
     fetcher: options.fetcher ?? ((url) => globalThis.fetch(url)),
     importModule: options.importModule ?? ((url) => import(/* @vite-ignore */ url) as Promise<UserExtensionModule>),
+    activationTimeoutMs: options.activationTimeoutMs ?? USER_EXTENSION_ACTIVATION_TIMEOUT_MS,
   }
   const response = await resolved.fetcher(new URL("/api/claxedo/extensions", resolved.baseUrl).href)
   if (!response.ok) throw new Error(`extension listing failed with ${response.status}`)

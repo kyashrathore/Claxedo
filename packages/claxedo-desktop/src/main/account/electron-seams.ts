@@ -27,7 +27,13 @@ export function loopbackListener(): OAuthSeams["listen"] {
   return async (handler) => {
     const server = createServer((request, response) => {
       const disposition: CallbackDisposition = handler(request.url ?? "/")
-      response.writeHead(disposition.status, { "content-type": "text/plain; charset=utf-8" })
+      // OAuth redirects are one-shot. Explicitly close the client connection
+      // after the response so a browser (and Bun's Windows fetch pool) cannot
+      // leave an idle keep-alive socket owned by a completed sign-in attempt.
+      response.writeHead(disposition.status, {
+        "content-type": "text/plain; charset=utf-8",
+        connection: "close",
+      })
       response.end(disposition.body)
     })
 
@@ -47,10 +53,12 @@ export function loopbackListener(): OAuthSeams["listen"] {
       port,
       close: () =>
         new Promise<void>((resolve) => {
-          // `closeAllConnections` first: a browser keep-alive would otherwise
-          // hold the socket open long past the attempt that created it.
-          server.closeAllConnections?.()
+          // Stop accepting first, then evict both idle keep-alives and any
+          // remaining active socket. Closing connections before `close()`
+          // leaves a race in which a new connection can arrive between them.
           server.close(() => resolve())
+          server.closeIdleConnections?.()
+          server.closeAllConnections?.()
         }),
     }
   }
@@ -130,7 +138,9 @@ async function postToTokenEndpoint(
       controller.abort(error)
       reject(error)
     }, timeoutMs)
-    handle.unref?.()
+    // This timer is the request's only deterministic completion path when the
+    // transport never answers. Keep it referenced until the race settles:
+    // Bun on Windows may otherwise leave the promise pending indefinitely.
   })
 
   try {

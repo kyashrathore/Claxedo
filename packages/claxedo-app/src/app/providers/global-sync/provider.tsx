@@ -8,6 +8,7 @@ import { createRefreshQueue } from "@/platform/sync/global-sync/queue"
 import { scheduleMarkdownPrewarm } from "@/ui/session-kit-loaders"
 import { scheduleUserExtensionLoad } from "@/platform/extensions/user-extensions"
 import { sanitizeProject } from "./project-sanitize"
+import { projectForDirectory } from "./project-owner"
 
 function workspaceDirectoryRef(directory: string) {
   return !!workspaceRuntimeRef(directory)
@@ -59,14 +60,15 @@ import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { centralTransportForServer, unsignedLocalFetch } from "@/platform/runtime/transport"
-import { setDirectorySessionCache } from "../../../features/session/data/sync/directory-session-cache"
+import { sessionLoadMetaKey, setDirectorySessionCache, type DirectorySessionCacheRefreshOptions } from "../../../features/session/data/sync/directory-session-cache"
 import { useClaxedoEventsOptional } from "../../integrations/claxedo-events"
-import { bootstrapRequestPrefix, createBootstrapOrchestrator, globalBootstrapFreshKey, sessionLoadMetaKey, sessionLoadRequestKey, type QueryOptionsApi } from "../../boot/data/bootstrap-orchestrator"
+import { bootstrapRequestPrefix, createBootstrapOrchestrator, globalBootstrapFreshKey, sessionLoadRequestKey, type QueryOptionsApi } from "../../boot/data/bootstrap-orchestrator"
 import { createGlobalSyncEventIngress } from "../../integrations/session-events/event-ingress"
 import { bootstrapInitialShell } from "./shell-bootstrap"
 import {
   createInventoryPageSource,
   createSignedInventorySource,
+  listSignedWorkspaceRuntimeSessions,
   type InventoryGlobalSession,
   mergeWorkspaceGroups,
   shouldUseSignedControlPlaneInventory,
@@ -96,6 +98,9 @@ function createGlobalSync() {
   const platform = usePlatform()
   const language = useLanguage()
   const principal = usePrincipal()
+  // A browser surface alone is not signed authority: local/mock browser lanes
+  // are web too. Inventory predicates further narrow this principal capability
+  // to an explicit relay-backed project, route, or non-loopback control plane.
   const hasSignedAccess = () => principalHasSignedAccess(principal())
   const claxedoEvents = useClaxedoEventsOptional()
 
@@ -131,7 +136,7 @@ function createGlobalSync() {
   }
 
   function projectFor(directory: string) {
-    return projects().find((item) => item.worktree === directory || item.sandboxes?.includes(directory))
+    return projectForDirectory(projects(), directory)
   }
 
   function inventoryRow(session: InventoryGlobalSession) {
@@ -201,18 +206,15 @@ function createGlobalSync() {
     // whether probing that workspace's runtime can still help. Query-cached.
     workspaceStatus: async (scope) =>
       (await resolveWorkspaceRuntime({ baseUrl: globalSDK.url, request: platform.fetch, ...scope }))?.status,
-    runtimeSessions: async (input) => {
-      const client = createAgentRuntimeClient({
+    runtimeSessions: (input) => {
+      if (!input.kind) throw new Error(`Signed runtime session inventory requires a workspace kind for ${input.workspaceId}`)
+      return listSignedWorkspaceRuntimeSessions({
         serverUrl: globalSDK.url,
         request: authFetch,
-        workspaceId: input.workspaceId,
-        workspaceKind: input.kind,
-      })
-      return (await client.listSessions({
-        directory: input.directory,
-        roots: true,
+        ...input,
+        kind: input.kind,
         limit: SESSION_RECENT_LIMIT,
-      }).catch(() => ({ sessions: [] }))).sessions ?? []
+      })
     },
   })
   const {
@@ -576,12 +578,12 @@ function createGlobalSync() {
     return bootstrapOrchestrator.bootstrap(harnessType, opts)
   }
 
-  function bootstrapInstance(directory: string, harnessType?: string, opts: { quiet?: boolean } = {}) {
+  function bootstrapInstance(directory: string, harnessType?: string, opts: DirectorySessionCacheRefreshOptions = {}) {
     if (!bootstrapOrchestrator) return Promise.resolve()
     return bootstrapOrchestrator.bootstrapInstance(directory, harnessType, opts)
   }
 
-  function refreshDirectory(directory: Parameters<typeof bootstrapInstance>[0], harnessType?: string, opts?: { quiet?: boolean }) {
+  function refreshDirectory(directory: Parameters<typeof bootstrapInstance>[0], harnessType?: string, opts?: DirectorySessionCacheRefreshOptions) {
     if (!bootstrapOrchestrator) return Promise.resolve()
     return bootstrapOrchestrator.refreshDirectory(directory, harnessType, opts)
   }
@@ -623,7 +625,10 @@ function createGlobalSync() {
               placement: {
                 workspaceId,
                 hosting: "workspace",
-                transport: centralTransportForServer(globalSDK.url) === "loopback" ? "loopback" : "workspace-relay",
+                // `workspaceId` came only from signed inventory or a canonical
+                // workspace ref. Placement therefore targets the relay even
+                // while principal hydration is pending; the relay authorizes.
+                transport: "workspace-relay",
               },
               serverUrl: globalSDK.url,
               directory,

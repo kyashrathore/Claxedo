@@ -75,6 +75,11 @@ import {
 } from "../../../features/session/data/sync/queries"
 import { dispatchSessionRequestsEvent, dispatchSessionStatusEvent } from "../../../features/session/store/session-status-dispatcher"
 import { createSidebarStatusPoll } from "./rail-sidebar-status-poll"
+import {
+  groupRailSessionStatusTargets,
+  railSessionStatusBatchKey,
+  railSessionStatusTarget,
+} from "./rail-session-status-target"
 import { shellDataKeys } from "@/platform/sync/keys"
 import {
   useSessionInventoryActions,
@@ -816,23 +821,19 @@ export function RailSidebar(props: RailSidebarProps) {
       const key = sessionNavigationRefForRow(session)
       if (seen.has(key)) return []
       seen.add(key)
-      return [{ key, directory, sessionID: session.id }]
+      return [railSessionStatusTarget({
+        key,
+        directory,
+        sessionID: session.id,
+        sessionRef: key,
+        workspaceId: session.workspaceId ?? workspaceSessionBacking(session, directory)?.workspaceId,
+      })]
     })
   })
-  const sessionStatusTargetGroups = createMemo(() => {
-    const groups: Record<string, { directory: string; targets: ReturnType<typeof sessionStatusTargets> }> = {}
-    for (const target of sessionStatusTargets()) {
-      groups[target.directory] ??= { directory: target.directory, targets: [] }
-      groups[target.directory].targets.push(target)
-    }
-    return Object.values(groups).map((group) => ({
-      directory: group.directory,
-      targets: [...group.targets].sort((a, b) => a.sessionID.localeCompare(b.sessionID)),
-    })).sort((a, b) => a.directory.localeCompare(b.directory))
-  })
+  const sessionStatusTargetGroups = createMemo(() => groupRailSessionStatusTargets(sessionStatusTargets()))
   const sessionStatusTargetSignature = createMemo(() =>
     sessionStatusTargetGroups()
-      .map((group) => `${group.directory}:${group.targets.map((target) => target.sessionID).join(",")}`)
+      .map((group) => railSessionStatusBatchKey(group))
       .join("\n"),
   )
   const sidebarSessionStatusQueries = useQueries(() => ({
@@ -872,7 +873,7 @@ export function RailSidebar(props: RailSidebarProps) {
     for (const group of sessionStatusTargetGroups()) {
       if (group.directory !== directory) continue
       sidebarSessionStatusBatches.set(
-        `${group.directory}\0${group.targets.map((target) => target.sessionID).join("\0")}`,
+        railSessionStatusBatchKey(group),
         { updatedAt: now },
       )
       for (const target of group.targets) {
@@ -918,7 +919,7 @@ export function RailSidebar(props: RailSidebarProps) {
         // the inert entries get collected.
         pruneSidebarSessionStatusBatches()
         for (const group of groups) {
-          const batchKey = `${group.directory}\0${group.targets.map((target) => target.sessionID).join("\0")}`
+          const batchKey = railSessionStatusBatchKey(group)
           const cached = sidebarSessionStatusBatches.get(batchKey)
           const now = Date.now()
           if (cached?.inFlight) {
@@ -932,7 +933,10 @@ export function RailSidebar(props: RailSidebarProps) {
             sidebarRequestDebug("skip-fresh", group.directory, group.targets.length)
             continue
           }
-          const client = globalSDK.createClient({ directory: group.directory })
+          const client = globalSDK.createClient({
+            directory: group.directory,
+            ...(group.workspaceId ? { workspaceId: group.workspaceId } : {}),
+          })
           sidebarRequestDebug("fetch-group", group.directory, group.targets.length)
           const request = Promise
             .all([

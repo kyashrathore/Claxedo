@@ -17,7 +17,7 @@ import { Plugin } from "@/plugin/index"
 
 const it = testEffect(LayerNode.compile(LayerNode.group([CrossSpawnSpawner.node, FSUtil.node])))
 
-function providerAuthLayer(directory: string, plugins: string[]) {
+function providerAuthLayer(directory: string, plugins: string[], flags: Partial<RuntimeFlags.Info> = {}) {
   return LayerNode.compile(ProviderAuth.node, [
     [
       Config.node,
@@ -34,7 +34,7 @@ function providerAuthLayer(directory: string, plugins: string[]) {
         directories: () => Effect.succeed([directory]),
       }),
     ],
-    [RuntimeFlags.node, RuntimeFlags.layer()],
+    [RuntimeFlags.node, RuntimeFlags.layer(flags)],
   ])
 }
 
@@ -83,6 +83,52 @@ describe("plugin.auth-override", () => {
       }),
     { git: true },
     30000,
+  )
+
+  it.instance(
+    "auth methods from a late plugin become usable without reloading the instance",
+    () =>
+      Effect.gen(function* () {
+        const tmp = yield* TestInstance
+        const pluginFile = path.join(tmp.directory, "late-auth.ts")
+        yield* Effect.promise(() =>
+          Bun.write(
+            pluginFile,
+            [
+              "export default async () => {",
+              "  await new Promise((resolve) => setTimeout(resolve, 300))",
+              "  return { auth: {",
+              '    provider: "late-auth",',
+              '    methods: [{ type: "api", label: "Late Auth" }],',
+              "    loader: async () => ({})",
+              "  } }",
+              "}",
+              "",
+            ].join("\n"),
+          ),
+        )
+        const spec = pathToFileURL(pluginFile).href
+        const layer = providerAuthLayer(tmp.directory, [spec], {
+          disableDefaultPlugins: true,
+          pluginInitTimeoutMs: 50,
+        })
+
+        yield* Effect.gen(function* () {
+          const providerAuth = yield* ProviderAuth.Service
+          const first = yield* providerAuth.methods()
+          expect(first[ProviderV2.ID.make("late-auth")]).toBeUndefined()
+
+          const deadline = Date.now() + 5_000
+          let methods = first
+          while (!methods[ProviderV2.ID.make("late-auth")] && Date.now() < deadline) {
+            yield* Effect.promise(() => Bun.sleep(20))
+            methods = yield* providerAuth.methods()
+          }
+          expect(methods[ProviderV2.ID.make("late-auth")]).toEqual([{ type: "api", label: "Late Auth" }])
+        }).pipe(Effect.provide(layer))
+      }),
+    { git: true },
+    10_000,
   )
 })
 

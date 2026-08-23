@@ -10,15 +10,16 @@ import { createComposerPermissionModeWiring } from "./permission-mode-wiring"
 const fetchModes = vi.hoisted(() =>
   vi.fn(async () => ({ data: { modes: [], appliesFrom: "next-turn" as const } })),
 )
+const setMode = vi.hoisted(() => vi.fn(async () => ({ data: {} })))
 
 vi.mock("@/features/session/store/session-transport", () => ({
   fetchSessionPermissionModesByTransport: fetchModes,
-  setSessionPermissionModeByTransport: vi.fn(async () => ({ data: {} })),
+  setSessionPermissionModeByTransport: setMode,
 }))
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-function wiringHarness() {
+function wiringHarness(input: { signed?: boolean } = {}) {
   const [wobble, setWobble] = createSignal(0)
   const [harness, setHarness] = createSignal<string | undefined>("opencode")
   const dispose: VoidFunction[] = []
@@ -32,6 +33,12 @@ function wiringHarness() {
       directory: () => "/repo",
       harness,
       client: {} as never,
+      claxedoServerUrl: () => "http://127.0.0.1:3001",
+      signedControlPlane: () => input.signed !== false,
+      workspace: () => input.signed === false ? undefined : ({ workspaceId: "ws_signed", kind: "user-hosted" }),
+      sessionRef: () => input.signed === false
+        ? ({ sessionId: "ses_1", host: "workspace", cwd: "/repo", toolSandbox: { kind: "local", cwd: "/repo" } })
+        : ({ sessionId: "ses_1", host: "workspace", workspaceId: "ws_signed", toolSandbox: { kind: "workspace", workspaceId: "ws_signed", hosting: "user-hosted" } }),
       requestFailedTitle: () => "failed",
     })
   })
@@ -66,8 +73,23 @@ describe("permission-mode wiring resource key", () => {
     dispose()
   })
 
+  test("local permission mode reads omit signed transport scope", async () => {
+    fetchModes.mockClear()
+    setMode.mockClear()
+    const { wiring, dispose } = wiringHarness({ signed: false })
+    await flush()
+    await wiring.writer().setPermissionMode({ sessionID: "ses_1", modeId: "auto" })
+    for (const call of [fetchModes.mock.calls[0]?.[0], setMode.mock.calls[0]?.[0]]) {
+      expect(call).not.toHaveProperty("signedControlPlane")
+      expect(call).not.toHaveProperty("workspaceId")
+      expect(call).not.toHaveProperty("sessionRef")
+    }
+    dispose()
+  })
+
   test("an explicit refetch (mode write reconciliation) still asks the runtime again", async () => {
     fetchModes.mockClear()
+    setMode.mockClear()
     const { wiring, dispose } = wiringHarness()
     await flush()
     expect(fetchModes).toHaveBeenCalledTimes(1)
@@ -75,6 +97,28 @@ describe("permission-mode wiring resource key", () => {
     await wiring.writer().setPermissionMode({ sessionID: "ses_1", modeId: "auto" })
     await flush()
     expect(fetchModes).toHaveBeenCalledTimes(2)
+    const scope = {
+      claxedoServerUrl: "http://127.0.0.1:3001",
+      signedControlPlane: true,
+      workspaceId: "ws_signed",
+      workspaceKind: "user-hosted",
+    }
+    expect(fetchModes.mock.calls[0]?.[0]).toMatchObject(scope)
+    expect(setMode.mock.calls[0]?.[0]).toMatchObject(scope)
+    expect(fetchModes.mock.calls[0]?.[0]).toMatchObject({
+      sessionRef: {
+        sessionId: "ses_1",
+        workspaceId: "ws_signed",
+        toolSandbox: { kind: "workspace", hosting: "user-hosted" },
+      },
+    })
+    expect(setMode.mock.calls[0]?.[0]).toMatchObject({
+      sessionRef: {
+        sessionId: "ses_1",
+        workspaceId: "ws_signed",
+        toolSandbox: { kind: "workspace", hosting: "user-hosted" },
+      },
+    })
     dispose()
   })
 })

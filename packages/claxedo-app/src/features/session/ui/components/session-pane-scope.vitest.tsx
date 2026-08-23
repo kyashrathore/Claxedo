@@ -134,7 +134,9 @@ describe("SessionPaneScope", () => {
       "/repo/local",
       "opencode",
     )
-    expect(calls.refreshDirectory).toHaveBeenCalledWith("/repo/local", "opencode")
+    expect(calls.refreshDirectory).toHaveBeenCalledWith("/repo/local", "opencode", {
+      workspace: { workspaceId: "ws_backing", kind: "cloud" },
+    })
     expect(calls.scopeFor).toHaveBeenCalledWith("ws_backing")
   })
 
@@ -242,5 +244,6 @@ describe("SessionPaneScope", () => {
     )
 
     expect(calls.directoryRefresh).toHaveBeenCalledWith({ directory: "/repo/local", harnessType: "opencode" })
+    expect(calls.refreshDirectory).toHaveBeenCalledWith("/repo/local", "opencode", undefined)
   })
 })

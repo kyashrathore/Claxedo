@@ -191,6 +191,7 @@ function rewriteToConfiguredUrl(request: Request, url: string): Request {
   const init: RequestInit & { duplex?: "half" } = {
     method: request.method,
     headers,
+    signal: request.signal,
     ...(["GET", "HEAD"].includes(request.method) ? {} : { body: request.body, duplex: "half" }),
   }
   return new Request(target.toString(), init)

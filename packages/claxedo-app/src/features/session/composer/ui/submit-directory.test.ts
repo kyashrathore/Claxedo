@@ -65,7 +65,7 @@ describe("resolvePreparedSubmitDirectory", () => {
   })
 
   test("prepares user-hosted workspaces without provisioning cloud", async () => {
-    const prepared: string[] = []
+    const prepared: Array<{ workspaceId: string; baseUrl?: string }> = []
     const createdProjects: string[] = []
 
     const result = await resolveDirectory({
@@ -78,7 +78,7 @@ describe("resolvePreparedSubmitDirectory", () => {
         return { workspaceId: "ws_1" }
       },
       prepareUserHostedRuntime: async (input) => {
-        prepared.push(input.workspaceId)
+        prepared.push({ workspaceId: input.workspaceId, baseUrl: input.baseUrl })
         input.onLog?.({ step: "checking_health", message: "Checking runtime health", ts: 456 })
         return { ok: true, status: "ready" }
       },
@@ -86,7 +86,58 @@ describe("resolvePreparedSubmitDirectory", () => {
 
     expect(result).toEqual({ directory: "workspace:uh_1" })
     expect(createdProjects).toEqual([])
-    expect(prepared).toEqual(["uh_1"])
+    expect(prepared).toEqual([{ workspaceId: "uh_1", baseUrl: "http://127.0.0.1:3001" }])
+  })
+
+  test("resolves user-hosted filesystem directories through the SDK workspace inventory", async () => {
+    const prepared: string[] = []
+    const result = await resolveDirectory({
+      workspaceKind: "user-hosted",
+      draftId: "draft_1",
+      projectDirectory: "/repo/user-hosted",
+      runtimeWorkspaceRef: () => undefined,
+      workspaceForDirectory: (directory) => ({
+        workspaceId: "uh_filesystem",
+        kind: directory === "/repo/user-hosted" ? "user-hosted" : undefined,
+      }),
+      prepareUserHostedRuntime: async (input) => {
+        prepared.push(input.workspaceId)
+        return { ok: true, status: "ready" }
+      },
+    })
+
+    expect(result).toEqual({ directory: "/repo/user-hosted" })
+    expect(prepared).toEqual(["uh_filesystem"])
+  })
+
+  test("reuses cloud filesystem directories from the SDK workspace inventory instead of provisioning", async () => {
+    const prepared: string[] = []
+    const createdProjects: string[] = []
+    const result = await resolveDirectory({
+      workspaceKind: "cloud",
+      projectDirectory: "/repo/cloud-workspace",
+      runtimeWorkspaceRef: () => undefined,
+      workspaceForDirectory: (directory) => ({
+        workspaceId: "ws_cloud_filesystem",
+        kind: directory === "/repo/cloud-workspace" ? "cloud" : undefined,
+      }),
+      createCloudWorkspace: async (projectId) => {
+        createdProjects.push(projectId)
+        return { workspaceId: "ws_unexpected" }
+      },
+      prepareWorkspaceRuntime: async (input) => {
+        prepared.push(input.directory ?? "")
+        return {
+          ok: true,
+          startup: false,
+          workspace: { kind: "cloud", workspaceId: "ws_cloud_filesystem", status: "ready" },
+        }
+      },
+    })
+
+    expect(result).toEqual({ directory: "/repo/cloud-workspace" })
+    expect(prepared).toEqual(["/repo/cloud-workspace"])
+    expect(createdProjects).toEqual([])
   })
 
   test("prepare failure returns undefined and never publishes loading-models handoff", async () => {
@@ -193,6 +244,7 @@ function resolveDirectory(overrides: Partial<ResolveDirectoryInput>) {
     projects: [],
     runtimeWorkspaceRef: () => undefined,
     workspaceForDirectory: () => undefined,
+    baseUrl: "http://127.0.0.1:3001",
     request: fetch,
     events: undefined,
     onCloudStartup: undefined,

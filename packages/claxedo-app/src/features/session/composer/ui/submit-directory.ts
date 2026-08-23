@@ -4,6 +4,7 @@ import type { WorkspaceStartupPort } from "@/platform/runtime/workspace-startup-
 import type { SubmitDirectory } from "../../submit/index"
 import { resolveSubmitDirectory } from "../../submit/index"
 import {
+  knownWorkspaceKind,
   projectForDirectory,
   resolveWorkspaceSubmitPlan,
   type ProjectCatalogItem,
@@ -32,6 +33,7 @@ export type SubmitDirectoryProvisionInput = {
   readonly projects: readonly ProjectCatalogItem[]
   readonly runtimeWorkspaceRef: (directory: SubmitDirectory | undefined) => RuntimeWorkspaceRef | undefined
   readonly workspaceForDirectory: (directory: SubmitDirectory) => { readonly kind?: string; readonly workspaceId: string } | undefined
+  readonly baseUrl: string
   readonly request: typeof fetch
   readonly events: RuntimeEvents
   readonly onCloudStartup: ((state?: CloudStartupState) => void) | undefined
@@ -101,13 +103,21 @@ async function resolveCloudSessionDirectory(input: SubmitDirectoryProvisionInput
   readonly fallbackDirectory: SubmitDirectory | undefined
   readonly workspaceKind: string
 }) {
+  const runtimeWorkspaceRef = (directory: SubmitDirectory | undefined): RuntimeWorkspaceRef | undefined => {
+    const parsed = input.runtimeWorkspaceRef(directory)
+    if (parsed || !directory) return parsed
+    const workspace = input.workspaceForDirectory(directory)
+    const kind = knownWorkspaceKind(workspace?.kind)
+    if (!workspace || !kind || kind === "local") return
+    return { workspaceId: workspace.workspaceId, kind }
+  }
   const plan = resolveWorkspaceSubmitPlan({
     isNewSession: true,
     defaultDirectory: input.defaultDirectory,
     worktreeSelection: input.worktreeSelection,
     workspaceKind: input.workspaceKind,
     projects: input.projects,
-    runtimeWorkspaceRef: input.runtimeWorkspaceRef,
+    runtimeWorkspaceRef,
     ...(input.projectDirectory === undefined ? {} : { projectDirectory: input.projectDirectory }),
     ...(input.fallbackDirectory === undefined ? {} : { fallbackDirectory: input.fallbackDirectory }),
   })
@@ -212,6 +222,7 @@ async function prepareRemoteSubmitDirectory(input: SubmitDirectoryProvisionInput
     const result = await (input.prepareUserHostedRuntime ?? workspaceStartup().prepareUserHostedRuntime)({
       workspaceId: userHostedWorkspace.workspaceId,
       directory: input.directory,
+      baseUrl: input.baseUrl,
       request: input.request,
       onStatus: (status) => {
         publish({

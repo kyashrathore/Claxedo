@@ -3,7 +3,6 @@
   "features/processes/providers/process-pane.tsx": 842,
   "app/workbench/rail/rail-sidebar.tsx": 2689,
   "features/terminal/ui/terminal.tsx": 1195,
-  "app/providers/global-sdk/provider.tsx": 824,
   "app/providers/layout.tsx": 933,
   "app/demo/handlers.ts": 1002,
   "platform/i18n/ar.ts": 906,

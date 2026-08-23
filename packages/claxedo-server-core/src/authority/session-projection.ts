@@ -25,7 +25,7 @@ export type SessionProjectionStore = {
     sessionID: string,
     messages: unknown[],
     options?: { maxEventOrdinal?: number },
-  ) => Promise<void>
+  ) => Promise<boolean | void>
   put_session_meta: (
     sessionID: string,
     input: {

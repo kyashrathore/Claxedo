@@ -126,26 +126,9 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
         if (isGlobalDirectory(directory)) return c.json(workspaceResponse(globalWorkspace(directory!)))
         const explicitWorkspaceId = c.req.query("workspaceId") || c.req.query("workspace")
         const directoryWorkspaceId = explicitWorkspaceId ? undefined : workspaceIdFromDirectoryRef(directory)
-        const ws = await resolveWorkspace({
-          workspaceId: explicitWorkspaceId ?? directoryWorkspaceId,
-          directory: directoryWorkspaceId ? undefined : directory,
-          create: c.req.query("create") === "true",
-        })
-        if (authResult.auth && explicitWorkspaceId && !ws) {
-          try {
-            const opened = await openSignedWorkspaceJson({
-              services,
-              rateLimiter: controlPlaneRateLimiter,
-              auth: authResult.auth,
-              workspaceId: explicitWorkspaceId,
-            })
-            return c.json(opened.body, opened.status)
-          } catch (err) {
-            if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-            throw err
-          }
-        }
-        if (authResult.auth && !explicitWorkspaceId && !ws) {
+        const authorityWorkspaceId = explicitWorkspaceId ?? directoryWorkspaceId
+        const requestedCreate = c.req.query("create") === "true"
+        if (authResult.auth && !authorityWorkspaceId) {
           try {
             const opened = await openSignedWorkspaceByDirectory({
               services,
@@ -159,7 +142,26 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
             throw err
           }
         }
-        if (authResult.auth && !explicitWorkspaceId && ws?.kind === "local") {
+        const ws = await resolveWorkspace({
+          workspaceId: authorityWorkspaceId,
+          directory: directoryWorkspaceId ? undefined : directory,
+          create: requestedCreate && !authResult.auth,
+        })
+        if (authResult.auth && authorityWorkspaceId && !ws) {
+          try {
+            const opened = await openSignedWorkspaceJson({
+              services,
+              rateLimiter: controlPlaneRateLimiter,
+              auth: authResult.auth,
+              workspaceId: authorityWorkspaceId,
+            })
+            return c.json(opened.body, opened.status)
+          } catch (err) {
+            if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
+            throw err
+          }
+        }
+        if (authResult.auth && !authorityWorkspaceId && ws?.kind === "local") {
           try {
             const opened = await openSignedWorkspaceJson({
               services,

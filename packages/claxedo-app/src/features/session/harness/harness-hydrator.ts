@@ -68,7 +68,14 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
   let nextGeneration = 0
 
   const status = async (params?: ScopeInput): Promise<HarnessState | undefined> => {
-    if (!input.runtime.useLocalHarnessConfig(params) && !input.workspaceRuntime(params)) return undefined
+    // A central SessionRef is itself a runtime route. It deliberately has no
+    // local/workspace runtime classification, but harnessSessionFetch maps its
+    // session resource request through the central runtime API.
+    if (
+      params?.sessionRef?.host !== "central" &&
+      !input.runtime.useLocalHarnessConfig(params) &&
+      !input.workspaceRuntime(params)
+    ) return undefined
     if (!params?.directory) return undefined
     if (input.fastSessionSwitchQuiet(params)) return undefined
     if (params.sessionId && params.sessionId !== "new") {
@@ -147,13 +154,13 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
         return
       }
       if (input.fastSessionSwitchQuiet(params)) {
-        markReadyFallback(scope, key)
+        markReadyFallback(scope, key, params)
         return
       }
       const data = await status(params).catch(() => undefined)
       if (!active()) return
       if (!data) {
-        const fallback = input.state(scope)?.harness ?? "opencode"
+        const fallback = params.sessionRef?.harness?.id ?? input.state(scope)?.harness ?? "opencode"
         input.setReadyFallback(scope, fallback)
         if (shouldRefreshDirectoryAfterHarnessStatus(params)) {
           await input.refresh(params.directory, refreshHarnessTypeForScope({ directory: params.directory, harness: fallback }), { draft: true })
@@ -185,8 +192,8 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
     if (active()) input.cache.setSeen(scope, key)
   }
 
-  const markReadyFallback = (scope: string, key: string) => {
-    input.setReadyFallback(scope, input.state(scope)?.harness ?? "opencode")
+  const markReadyFallback = (scope: string, key: string, params?: ScopeInput) => {
+    input.setReadyFallback(scope, params?.sessionRef?.harness?.id ?? input.state(scope)?.harness ?? "opencode")
     input.cache.setSeen(scope, key)
   }
 
@@ -216,6 +223,23 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
 }
 
 function stamp(input?: HarnessScopeInput) {
-  if (input?.sessionId && input.sessionId !== "new") return `session:${input.sessionId}`
+  if (input?.sessionId && input.sessionId !== "new") {
+    const ref = input.sessionRef
+    if (!ref) return `session:${input.sessionId}`
+    const sandbox = ref.toolSandbox
+    const backing = sandbox?.kind === "workspace"
+      ? `${sandbox.workspaceId}:${sandbox.hosting}:${sandbox.hostId ?? ""}`
+      : sandbox?.kind === "local" ? sandbox.cwd : ""
+    return [
+      `session:${input.sessionId}`,
+      ref.host,
+      ref.workspaceId ?? "",
+      ref.cwd ?? "",
+      sandbox?.kind ?? "",
+      backing,
+      ref.harness?.id ?? "",
+      ref.harness?.binary ?? "",
+    ].join("\n")
+  }
   return `${input?.directory ?? ""}\nnew`
 }

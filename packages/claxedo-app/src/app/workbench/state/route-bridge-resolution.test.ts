@@ -8,6 +8,7 @@ import {
   routeKnownSessionDirectory,
   routeSessionMetaIsCentral,
   routeSessionDirectory,
+  routeSessionWorkspaceBacking,
 } from "./route-bridge-resolution"
 
 const SERVER = "http://localhost:3001"
@@ -35,6 +36,35 @@ describe("routeSessionMetaIsCentral", () => {
 
   test("does not reclassify workspace metadata", () => {
     expect(routeSessionMetaIsCentral({ host: "workspace", sessionRef: "workspace:ws_1:session:ses_1" })).toBe(false)
+  })
+})
+
+describe("routeSessionWorkspaceBacking", () => {
+  const projects = [{
+    worktree: "/repo",
+    workspaces: {
+      ws_signed: {
+        workspaceId: "ws_signed",
+        directory: "/tmp/signed-workspace",
+        kind: "user-hosted",
+      },
+    },
+  }]
+
+  test("returns typed backing for a canonical workspace route id", () => {
+    expect(routeSessionWorkspaceBacking({
+      projects,
+      directory: "/tmp/signed-workspace",
+      workspaceId: "ws_signed",
+    })).toEqual({ workspaceId: "ws_signed", kind: "user-hosted" })
+  })
+
+  test("does not authorize a legacy filesystem route from inventory alone", () => {
+    expect(routeSessionWorkspaceBacking({
+      projects,
+      directory: "/tmp/signed-workspace",
+      workspaceId: "/tmp/signed-workspace",
+    })).toBeUndefined()
   })
 })
 

@@ -204,8 +204,7 @@ function catalogDigest(catalog: Record<ProviderV2.ID, Provider.Info>): string | 
 
 function diskPaths(cacheDir: string) {
   return {
-    key: path.join(cacheDir, "provider-list.v1.key"),
-    body: path.join(cacheDir, "provider-list.v1.body.json"),
+    entry: path.join(cacheDir, "provider-list.v1.json"),
   }
 }
 
@@ -220,9 +219,9 @@ function diskKey(inputs: ProviderListInputs, version: string): string | undefine
 async function readDiskBody(cacheDir: string, key: string): Promise<string | undefined> {
   try {
     const paths = diskPaths(cacheDir)
-    const storedKey = await fs.readFile(paths.key, "utf8")
-    if (storedKey.trim() !== key) return undefined
-    const body = await fs.readFile(paths.body, "utf8")
+    const entry = JSON.parse(await fs.readFile(paths.entry, "utf8")) as { key?: unknown; body?: unknown }
+    if (entry.key !== key || typeof entry.body !== "string") return undefined
+    const body = entry.body
     if (!body.startsWith("{")) return undefined
     return body
   } catch {
@@ -231,19 +230,20 @@ async function readDiskBody(cacheDir: string, key: string): Promise<string | und
 }
 
 async function writeDiskBody(cacheDir: string, key: string, body: string): Promise<void> {
+  const paths = diskPaths(cacheDir)
+  const temporary = `${paths.entry}.${process.pid}.${crypto.randomUUID()}.tmp`
   try {
-    const paths = diskPaths(cacheDir)
-    const suffix = `.${process.pid}.${Date.now()}.tmp`
-    // Body first, key second: a torn write leaves a key that no longer
-    // matches its inputs, which reads as a miss and re-derives.
     await fs.mkdir(cacheDir, { recursive: true })
-    await fs.writeFile(paths.body + suffix, body, "utf8")
-    await fs.rename(paths.body + suffix, paths.body)
-    await fs.writeFile(paths.key + suffix, key, "utf8")
-    await fs.rename(paths.key + suffix, paths.key)
+    // Key and body are one atomic entry. Concurrent writers may replace one
+    // another, but readers can never observe a key from one derivation paired
+    // with the body from another.
+    await fs.writeFile(temporary, JSON.stringify({ key, body }), "utf8")
+    await fs.rename(temporary, paths.entry)
     ProviderListCacheInternals.diskWrites++
   } catch {
     // Best effort: a failed write only costs the next launch a re-derive.
+  } finally {
+    await fs.rm(temporary, { force: true }).catch(() => undefined)
   }
 }
 

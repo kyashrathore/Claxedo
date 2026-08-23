@@ -10,7 +10,7 @@ import {
   ACP_REMOTE_TRANSPORT_FLAG,
   acpRemoteTransportEnabled,
   acpTransportFactory,
-  createWorkspaceHost,
+  createWorkspaceHost as createWorkspaceHostImpl,
   defaultWorkspaceHarnessRegistry,
   materializeCodexAuth,
   runtimeAuthKey,
@@ -38,6 +38,7 @@ import {
 } from "@claxedo/agent-sdk-runtime/adapters"
 
 const tempDirs: string[] = []
+const testHosts: Array<ReturnType<typeof createWorkspaceHostImpl>> = []
 const runtimeConfigWorkspaceId = "ws_runtime_test"
 const runtimeConfigHostId = "host_runtime_test"
 const runtimeConfigToken = "allow-runtime-config"
@@ -95,6 +96,7 @@ function codexAccountAuth() {
 }
 
 afterEach(async () => {
+  for (const host of testHosts.splice(0)) host.dispose()
   process.env.HOME = originalHome
   process.env.WORKSPACE_RUNTIME_DATA_DIR = originalDataDir
   process.env.WORKSPACE_RUNTIME_RUNNER = originalAgentType
@@ -111,6 +113,12 @@ afterEach(async () => {
   globalThis.fetch = originalFetch
   await Promise.all(tempDirs.splice(0).map((dir) => fs.promises.rm(dir, { recursive: true, force: true })))
 })
+
+function createWorkspaceHost(...args: Parameters<typeof createWorkspaceHostImpl>) {
+  const host = createWorkspaceHostImpl(...args)
+  testHosts.push(host)
+  return host
+}
 
 const runtimeConfigManagementAuth: WorkspaceRuntimeManagementAuth = {
   authorize: async (input) =>
@@ -1391,7 +1399,9 @@ describe("workspace runtime auth helpers", () => {
 
       expect(res.status).toBe(200)
       expect(await res.json()).toEqual(recovered)
-      expect(new RuntimeStore(storeRoot).getSessionConfig("s-opencode")).toBeNull()
+      const after = new RuntimeStore(storeRoot)
+      expect(after.getSessionConfig("s-opencode")).toBeNull()
+      after.close()
       host.dispose()
     } finally {
       OpenCodeHarnessAdapter.prototype.getSession = originalGetSession
@@ -1749,7 +1759,12 @@ describe("workspace runtime auth helpers", () => {
     tempDirs.push(dir)
 
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
-    const seen: Array<{ authorization: string | null; workspaceId: string | null; forwardedBy: string | null }> = []
+    const seen: Array<{
+      authorization: string | null
+      workspaceId: string | null
+      forwardedBy: string | null
+      acceptEncoding: string | null
+    }> = []
     globalThis.fetch = fetchDouble((async (input, init) => {
       const req = input instanceof Request ? input : new Request(String(input), init)
       if (req.url === "http://opencode.test/provider?runner=opencode&view=index") {
@@ -1757,6 +1772,7 @@ describe("workspace runtime auth helpers", () => {
           authorization: req.headers.get("authorization"),
           workspaceId: req.headers.get("x-workspace-id"),
           forwardedBy: req.headers.get("x-forwarded-by"),
+          acceptEncoding: req.headers.get("accept-encoding"),
         })
         return new Response(JSON.stringify({
           all: [{ id: "opencode", name: "OpenCode", env: [], models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } } }],
@@ -1779,11 +1795,17 @@ describe("workspace runtime auth helpers", () => {
         Authorization: "Bearer relay-host-token",
         "x-workspace-id": "ws_1",
         "x-forwarded-by": "workspace-relay",
+        "accept-encoding": "gzip, deflate, br, zstd",
       },
     })
 
     expect(provider.status).toBe(200)
-    expect(seen).toEqual([{ authorization: null, workspaceId: null, forwardedBy: null }])
+    expect(seen).toEqual([{
+      authorization: null,
+      workspaceId: null,
+      forwardedBy: null,
+      acceptEncoding: null,
+    }])
   })
 
   test("opencode provider route honors runner query while active runner is ACP", async () => {

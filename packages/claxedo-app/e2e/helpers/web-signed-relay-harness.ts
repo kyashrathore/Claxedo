@@ -51,11 +51,7 @@ import * as os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
 import { SELECTORS as RAIL_SELECTORS } from "./rail-oracle"
-import {
-  claudeScriptedEnv,
-  opencodeScriptedProviderConfig,
-  type ScriptedModelServer,
-} from "./scripted-model-server"
+import { claudeScriptedEnv, opencodeScriptedProviderConfig, type ScriptedModelServer } from "./scripted-model-server"
 
 export const APP_DIR = path.resolve(import.meta.dirname, "..", "..")
 export const REPO_ROOT = path.resolve(APP_DIR, "..", "..")
@@ -90,19 +86,37 @@ export type RunningRelayFixture = {
   close(): Promise<void>
 }
 
+const childStops = new WeakMap<ChildProcess, Promise<void>>()
+
+function signalChildTree(child: ChildProcess, signal: NodeJS.Signals) {
+  if (process.platform !== "win32" && child.pid) {
+    try {
+      process.kill(-child.pid, signal)
+      return
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error
+    }
+  }
+  child.kill(signal)
+}
+
 async function stopChild(child: ChildProcess | undefined) {
   if (!child || child.exitCode !== null || child.signalCode) return
-  await new Promise<void>((resolve) => {
+  const current = childStops.get(child)
+  if (current) return current
+  const stopping = new Promise<void>((resolve) => {
     const timeout = setTimeout(() => {
-      child.kill("SIGKILL")
+      signalChildTree(child, "SIGKILL")
       resolve()
     }, 8_000)
     child.once("exit", () => {
       clearTimeout(timeout)
       resolve()
     })
-    child.kill("SIGTERM")
+    signalChildTree(child, "SIGTERM")
   })
+  childStops.set(child, stopping)
+  await stopping
 }
 
 /**
@@ -135,7 +149,14 @@ export async function startSignedRelayFixture(opts: {
   let log = ""
   const child = spawn(
     "node",
-    ["--import", "./src/text-imports.mjs", "--import", "tsx", "src/signed-browser-relay-fixture.mjs"],
+    [
+      "--conditions=development",
+      "--import",
+      "./src/text-imports.mjs",
+      "--import",
+      "tsx",
+      "src/signed-browser-relay-fixture.mjs",
+    ],
     {
       cwd: SERVER_DIR,
       env: {
@@ -148,45 +169,59 @@ export async function startSignedRelayFixture(opts: {
         ...claudeScriptedEnv(opts.scripted.url, opts.claudeConfigDir),
         ...opts.extraEnv,
       },
-      stdio: ["ignore", "pipe", "pipe"],
+      // A dedicated process group lets teardown terminate the fixture and all
+      // subprocesses it owns. The stdin pipe is also a parent-death signal:
+      // EOF reaches the fixture even when this Playwright worker is killed.
+      detached: process.platform !== "win32",
+      stdio: ["pipe", "pipe", "pipe"],
     },
   )
 
-  const info = await new Promise<RelayFixtureInfo>((resolve, reject) => {
-    let settled = false
-    let stdout = ""
-    const finish = (err: Error) => {
-      if (settled) return
-      settled = true
-      reject(err)
-    }
-    const timeout = setTimeout(() => {
-      finish(new Error(`GATING: signed relay fixture (access=${opts.access}) did not start within 120s.\n${log}`))
-    }, 120_000)
-    child.stdout?.on("data", (chunk) => {
-      const text = chunk.toString()
-      log += text
-      stdout += text
-      for (const line of stdout.split("\n")) {
-        if (settled || !line.trim()) continue
-        try {
-          const parsed = JSON.parse(line) as RelayFixtureInfo
-          if (!parsed.backendUrl || !parsed.relayUrl || !parsed.workspaceId || !parsed.controlPlaneToken) continue
-          settled = true
-          clearTimeout(timeout)
-          resolve(parsed)
-        } catch {
-          continue
-        }
+  let info: RelayFixtureInfo
+  try {
+    info = await new Promise<RelayFixtureInfo>((resolve, reject) => {
+      let settled = false
+      let stdout = ""
+      const finish = (err: Error) => {
+        if (settled) return
+        settled = true
+        reject(err)
       }
+      const timeout = setTimeout(() => {
+        finish(new Error(`GATING: signed relay fixture (access=${opts.access}) did not start within 120s.\n${log}`))
+      }, 120_000)
+      child.stdout?.on("data", (chunk) => {
+        const text = chunk.toString()
+        log += text
+        stdout += text
+        for (const line of stdout.split("\n")) {
+          if (settled || !line.trim()) continue
+          try {
+            const parsed = JSON.parse(line) as RelayFixtureInfo
+            if (!parsed.backendUrl || !parsed.relayUrl || !parsed.workspaceId || !parsed.controlPlaneToken) continue
+            settled = true
+            clearTimeout(timeout)
+            resolve(parsed)
+          } catch {
+            continue
+          }
+        }
+      })
+      child.stderr?.on("data", (chunk) => (log += chunk.toString()))
+      child.once("exit", (code, signal) => {
+        clearTimeout(timeout)
+        finish(
+          new Error(
+            `GATING: signed relay fixture (access=${opts.access}) exited before starting (${code ?? signal}).\n${log}`,
+          ),
+        )
+      })
+      child.once("error", finish)
     })
-    child.stderr?.on("data", (chunk) => (log += chunk.toString()))
-    child.once("exit", (code, signal) => {
-      clearTimeout(timeout)
-      finish(new Error(`GATING: signed relay fixture (access=${opts.access}) exited before starting (${code ?? signal}).\n${log}`))
-    })
-    child.once("error", finish)
-  })
+  } catch (error) {
+    await stopChild(child)
+    throw error
+  }
 
   // WARM-UP, ported verbatim from `live-user-hosted-relay.spec.ts`'s
   // `startFixture` — a REAL product cold-start race, not a test artifact.
@@ -236,14 +271,7 @@ export async function buildAndServeWebApp(opts: {
   await new Promise<void>((resolve, reject) => {
     const build = spawn(
       "node",
-      [
-        "./node_modules/vite/bin/vite.js",
-        "build",
-        "--config",
-        "vite.cloud.config.ts",
-        "--outDir",
-        opts.outDir,
-      ],
+      ["./node_modules/vite/bin/vite.js", "build", "--config", "vite.cloud.config.ts", "--outDir", opts.outDir],
       {
         cwd: APP_DIR,
         env: {
@@ -287,41 +315,56 @@ export async function buildAndServeWebApp(opts: {
     {
       cwd: APP_DIR,
       env: { ...process.env, VITE_CLAXEDO_SERVER_URL: opts.backendUrl, VITE_CLAXEDO_E2E: "1" },
-      stdio: ["ignore", "pipe", "pipe"],
+      detached: process.platform !== "win32",
+      stdio: ["pipe", "pipe", "pipe"],
     },
   )
-  preview.stdout?.on("data", (chunk) => (previewLog += chunk.toString()))
-  preview.stderr?.on("data", (chunk) => (previewLog += chunk.toString()))
 
   const url = `http://127.0.0.1:${opts.previewPort}`
-  const start = Date.now()
-  while (Date.now() - start < 45_000) {
-    if (preview.exitCode !== null) {
-      throw new Error(`GATING: vite preview (port=${opts.previewPort}) exited before becoming healthy.\n${previewLog}`)
-    }
-    const ok = await fetch(url, { signal: AbortSignal.timeout(3_000) }).then((r) => r.ok).catch(() => false)
-    if (ok) break
-    await new Promise((resolve) => setTimeout(resolve, 300))
+  try {
+    // URL polling alone can be answered by a stale preview that already owns
+    // the fixed lane port while THIS child is still failing asynchronously.
+    // First require the spawned child to announce its own bound listener.
+    await new Promise<void>((resolve, reject) => {
+      let settled = false
+      const finish = (error?: Error) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeout)
+        preview.off("exit", onExit)
+        preview.off("error", onError)
+        error ? reject(error) : resolve()
+      }
+      const inspect = (chunk: Buffer | string) => {
+        previewLog += chunk.toString()
+        const plain = previewLog.replace(/\u001b\[[0-9;]*m/g, "")
+        if (plain.split("\n").some((line) => line.includes("Local:") && line.includes(url))) finish()
+      }
+      const onExit = (code: number | null, signal: NodeJS.Signals | null) =>
+        finish(new Error(`GATING: vite preview (port=${opts.previewPort}) exited before binding (${code ?? signal}).\n${previewLog}`))
+      const onError = (error: Error) => finish(error)
+      const timeout = setTimeout(
+        () => finish(new Error(`GATING: vite preview (port=${opts.previewPort}) did not announce its listener.\n${previewLog}`)),
+        45_000,
+      )
+      preview.stdout?.on("data", inspect)
+      preview.stderr?.on("data", inspect)
+      preview.once("exit", onExit)
+      preview.once("error", onError)
+    })
+
+    const healthy = await fetch(url, { signal: AbortSignal.timeout(3_000) })
+      .then((r) => r.ok)
+      .catch(() => false)
+    if (!healthy) throw new Error(`GATING: child-owned vite preview at ${url} did not become healthy.\n${previewLog}`)
+  } catch (error) {
+    await stopChild(preview)
+    throw error
   }
-  const healthy = await fetch(url).then((r) => r.ok).catch(() => false)
-  if (!healthy) throw new Error(`GATING: vite preview at ${url} did not become healthy within 45s.\n${previewLog}`)
 
   return {
     url,
-    close: async () => {
-      if (preview.exitCode !== null || preview.signalCode) return
-      await new Promise<void>((resolve) => {
-        const timeout = setTimeout(() => {
-          preview.kill("SIGKILL")
-          resolve()
-        }, 8_000)
-        preview.once("exit", () => {
-          clearTimeout(timeout)
-          resolve()
-        })
-        preview.kill("SIGTERM")
-      })
-    },
+    close: () => stopChild(preview),
   }
 }
 
@@ -366,8 +409,18 @@ export async function seedWorkspace(page: Page, info: RelayFixtureInfo, kind: Si
               worktree: ref,
               sandboxes: [seed.workspaceId],
               workspaces: {
-                [ref]: { id: seed.workspaceId, kind: seed.kind, workspace_name: `Web Signed ${seed.kind}`, directory: seed.directory },
-                [seed.directory]: { id: seed.workspaceId, kind: seed.kind, workspace_name: `Web Signed ${seed.kind}`, directory: seed.directory },
+                [ref]: {
+                  id: seed.workspaceId,
+                  kind: seed.kind,
+                  workspace_name: `Web Signed ${seed.kind}`,
+                  directory: seed.directory,
+                },
+                [seed.directory]: {
+                  id: seed.workspaceId,
+                  kind: seed.kind,
+                  workspace_name: `Web Signed ${seed.kind}`,
+                  directory: seed.directory,
+                },
               },
             },
           ],
@@ -386,30 +439,32 @@ export function sessionRoute(info: RelayFixtureInfo) {
 export async function gateReachesReady(page: Page, timeoutMs = 60_000): Promise<Locator> {
   await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: timeoutMs })
   await expect(page.locator('[data-component="cloud-startup-view"]')).toHaveCount(0, { timeout: timeoutMs })
-  const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
+  const input = page
+    .getByRole("textbox", { name: /Ask anything/i })
+    .filter({ visible: true })
+    .last()
   await expect(input).toBeVisible({ timeout: timeoutMs })
   await expect(input).toHaveAttribute("contenteditable", "true")
   return input
 }
 
 export function composerInput(page: Page): Locator {
-  return page.getByRole("textbox", { name: /Ask anything/i }).last()
+  return page
+    .getByRole("textbox", { name: /Ask anything/i })
+    .filter({ visible: true })
+    .last()
 }
 
 /**
- * `.fill()` alone sometimes writes the DOM node without firing the input
- * events the composer's reactive state reads (measured independently by both
- * `real-harness-local.spec.ts`'s `composePrompt` and `desktop-unsigned-
- * embedded.spec.ts`'s `composeText`) — real keystrokes are the always-correct
- * fallback, reused verbatim here.
+ * Contenteditable DOM text is not the composer's authoritative state. A
+ * `.fill()` can make the node look correct while Solid's input owner still
+ * has an empty prompt, so the enabled-looking submit click becomes a no-op.
+ * Clear through the normal input event, then send real keystrokes every time.
  */
 export async function composeText(page: Page, input: Locator, text: string) {
   await input.click()
-  await input.fill(text)
-  if (!((await input.textContent()) ?? "").includes(text)) {
-    await page.keyboard.press(process.platform === "darwin" ? "Meta+A" : "Control+A")
-    await page.keyboard.type(text)
-  }
+  await input.fill("")
+  await input.pressSequentially(text)
   await expect(input).toContainText(text, { timeout: 10_000 })
 }
 
@@ -421,7 +476,7 @@ export async function composeText(page: Page, input: Locator, text: string) {
  * scripted server logged zero requests, so the selection is asserted directly.
  */
 export async function selectScriptedModel(page: Page) {
-  const control = page.locator('[data-action="prompt-harness-model"]').last()
+  const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
   await expect(control, "the composer's harness+model control never appeared").toBeVisible({ timeout: 30_000 })
   await control.click()
   const popover = page.locator('[data-component="harness-model-picker"]')
@@ -457,7 +512,10 @@ export async function selectScriptedModel(page: Page) {
   for (;;) {
     await page.waitForTimeout(300)
     try {
-      await page.getByText(/^Scripted Model$/i).last().click({ timeout: 5_000 })
+      await page
+        .getByText(/^Scripted Model$/i)
+        .last()
+        .click({ timeout: 5_000 })
       lastErr = undefined
       break
     } catch (err) {
@@ -474,14 +532,52 @@ export async function selectScriptedModel(page: Page) {
 }
 
 export function submitControl(page: Page): Locator {
-  return page.locator('[data-action="prompt-submit"]').last()
+  return page.locator('[data-action="prompt-submit"]:visible').last()
 }
 
-export async function submitDraft(page: Page) {
+export async function submitDraft(page: Page): Promise<string> {
   const submit = submitControl(page)
   await expect(submit, "no submit control").toBeVisible({ timeout: 10_000 })
   await expect(submit, "submit stayed disabled").toBeEnabled({ timeout: 10_000 })
+  const createdResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname.endsWith("/session") &&
+      response.status() === 201,
+    { timeout: 20_000 },
+  )
   await submit.click()
+  const response = await createdResponse.catch(async (err) => {
+    const routing = await page.evaluate(() => {
+      const scope = window as typeof window & {
+        __claxedoConnections?: { snapshot?: () => unknown }
+        __claxedoQueryClient?: {
+          getQueryCache(): {
+            getAll(): Array<{ queryKey: unknown; state: { data?: unknown } }>
+          }
+        }
+      }
+      const projectQueries = scope.__claxedoQueryClient?.getQueryCache().getAll()
+        .filter((query) => JSON.stringify(query.queryKey).toLowerCase().includes("project"))
+        .map((query) => ({ key: query.queryKey, data: query.state.data })) ?? []
+      return {
+        connections: scope.__claxedoConnections?.snapshot?.(),
+        projectQueries,
+        workspaceHeaders: [...document.querySelectorAll<HTMLElement>("[data-workspace-id]")]
+          .map((element) => element.dataset.workspaceId)
+          .filter(Boolean),
+      }
+    }).catch((diagnosticError) => ({ diagnosticError: String(diagnosticError) }))
+    throw new Error(
+      `GATING: never observed the authoritative 201 POST .../session response — ${String(err)}; ` +
+      `routing=${JSON.stringify(routing).slice(0, 8_000)}`,
+    )
+  })
+  const created = (await response.json()) as { id?: unknown }
+  if (typeof created.id !== "string" || !created.id) {
+    throw new Error(`GATING: POST .../session omitted its canonical session id: ${JSON.stringify(created)}`)
+  }
+  return created.id
 }
 
 /**
@@ -546,7 +642,9 @@ export async function waitForNewTerminalId(page: Page, before: string[], timeout
     const ids = await page
       .locator('[data-testid="rail-sidebar-terminal-row"]')
       .evaluateAll((els) => els.map((el) => el.getAttribute("data-terminal-id")))
-    const found = ids.find((id): id is string => !!id && id !== "new" && !id.startsWith("pending-") && !before.includes(id))
+    const found = ids.find(
+      (id): id is string => !!id && id !== "new" && !id.startsWith("pending-") && !before.includes(id),
+    )
     if (found) return found
     if (Date.now() > deadline) {
       throw new Error(`GATING: no new terminal row appeared within ${timeoutMs}ms. Rows seen: ${JSON.stringify(ids)}`)

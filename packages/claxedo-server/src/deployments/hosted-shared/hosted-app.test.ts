@@ -956,7 +956,7 @@ describe("hosted app", () => {
     })) as never
     const fetch = vi.fn(async (input: string | URL | Request) => {
       const url = String(input)
-      if (url === "https://relay.example.test/workspaces/ws_1/api/wr/health") {
+      if (url === "https://relay.example.test/workspaces/ws_1/global/health") {
         return Response.json({ workspaceId: "ws_1" })
       }
       if (url === "https://relay.example.test/workspaces/ws_1/session/session-1/message?snapshot=1") {

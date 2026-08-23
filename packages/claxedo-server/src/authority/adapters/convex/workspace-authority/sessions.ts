@@ -66,6 +66,7 @@ export function sessionAuthority(input: ConvexAuthorityInput, serviceArgs: Servi
         workspaceId: string
         messages: unknown[]
         intakeReady?: boolean
+        maxEventOrdinal?: number
       },
     ) {
       const body = {
@@ -73,6 +74,7 @@ export function sessionAuthority(input: ConvexAuthorityInput, serviceArgs: Servi
         workspace_id: args.workspaceId,
         messages: args.messages,
         intake_ready: args.intakeReady ?? false,
+        ...(args.maxEventOrdinal === undefined ? {} : { max_event_ordinal: args.maxEventOrdinal }),
       }
       if (isCliAccessAuth(auth)) {
         return requireExecutor(input, undefined, { allowUnsigned: true }).mutation(

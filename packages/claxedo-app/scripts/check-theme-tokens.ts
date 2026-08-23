@@ -176,7 +176,7 @@ const definedTypographyUtilities = new Set(
 const findings: Finding[] = []
 
 for (const file of listFiles([appSrc, uiSrc, sessionUiSrc])) {
-  const relative = path.relative(workspaceRoot, file)
+  const relative = path.relative(workspaceRoot, file).replaceAll("\\", "/")
   const content = await Bun.file(file).text()
   const searchable = stripComments(content)
 

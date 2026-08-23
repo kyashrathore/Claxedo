@@ -61,6 +61,7 @@ const video =
 const screenshot = process.env.PLAYWRIGHT_SCREENSHOT === "1" ? "on" : "only-on-failure"
 const workGraphReal = process.env.CLAXEDO_WORKGRAPH_REAL_E2E === "1"
 const workGraphApiPort = Number(process.env.CLAXEDO_WORKGRAPH_E2E_API_PORT ?? 4311)
+const liveBackendPort = Number(process.env.CLAXEDO_E2E_LIVE_BACKEND_PORT ?? 3001)
 // Tier R (`real-*.spec.ts`, @tier-real): real claxedo-server + real harness
 // binaries against a scripted model endpoint. Same carve-out mechanics as
 // @workgraph-real: its own CI job, its own backend port baked into the app
@@ -77,7 +78,7 @@ const webServer =
   process.env.PLAYWRIGHT_SKIP_WEBSERVER === "1"
     ? undefined
     : {
-        command: `${workGraphReal ? `bun --cwd ../workgraph run build && VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${workGraphApiPort} ` : ""}${tierReal ? `VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${tierRealBackendPort} ` : ""}${
+        command: `${workGraphReal ? `bun --cwd ../workgraph run build && VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${workGraphApiPort} ` : ""}${tierReal ? `VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${tierRealBackendPort} ` : suite === "live" ? `VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${liveBackendPort} ` : ""}${
           prebuilt
             ? // VITE_CLAXEDO_E2E=1 keeps the e2e-only harness seams (test-auth
               // bypass, /__e2e/* routes, the server-URL override) alive in the

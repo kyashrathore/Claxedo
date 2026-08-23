@@ -215,7 +215,8 @@ const panePreferences = "features/session/preferences/pane.ts"
 
 async function files(dir: string): Promise<string[]> {
   const out: string[] = []
-  for (const entry of await Array.fromAsync(new Bun.Glob("**/*.{ts,tsx}").scan({ cwd: dir }))) {
+  for (const discovered of await Array.fromAsync(new Bun.Glob("**/*.{ts,tsx}").scan({ cwd: dir }))) {
+    const entry = canonicalRelativePath(discovered)
     if (entry.endsWith(".d.ts")) continue
     // Demo-only msw fixtures moved from src/demo/ to src/app/demo/ in the
     // app/features/platform reorg; they legitimately spell route strings.
@@ -229,6 +230,10 @@ async function files(dir: string): Promise<string[]> {
     out.push(entry)
   }
   return out
+}
+
+function canonicalRelativePath(value: string): string {
+  return value.replaceAll("\\", "/")
 }
 
 // Route-literal scans must read code, not prose. Comments legitimately name
@@ -249,6 +254,11 @@ async function upstreamAppFileExists(file: string) {
 }
 
 describe("workspace runtime route audit", () => {
+  test("discovered source paths use one platform-independent allowlist shape", () => {
+    expect(canonicalRelativePath("features\\session\\data\\sync.ts")).toBe("features/session/data/sync.ts")
+    expect(canonicalRelativePath("features/session/data/sync.ts")).toBe("features/session/data/sync.ts")
+  })
+
   test("structural performance invariants are part of the package typecheck gate", async () => {
     const pkg = (await Bun.file(path.resolve(root, "..", "package.json")).json()) as {
       scripts?: Record<string, string>
@@ -918,7 +928,9 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/queryOptions\.projects\(\)/)
     expect(text).toMatch(/queryOptions\.path\(null\)/)
     expect(text).toMatch(/useDirectorySessionCacheActions/)
-    expect(text).toMatch(/directorySessionCacheActions\.ensure/)
+    expect(text).toMatch(/directorySessionCacheActions\.ensure\(\{ directory, workspace: routeWorkspaceBacking\(\) \}\)/)
+    expect(text).toMatch(/routeSessionWorkspaceBacking\(\{[\s\S]{0,180}workspaceId/)
+    expect(text).toMatch(/\?\? sessionWorkspaceRuntimeRef\(\{ directory: workspaceId \}\)/)
     expect(text).toMatch(/sessionInventoryQueryOptions/)
     expect(text).not.toMatch(/globalSync\.data\.project/)
     expect(text).not.toMatch(/globalSync\.sessionInventory\.store/)
@@ -1324,6 +1336,9 @@ describe("workspace runtime route audit", () => {
 
     expect(text).toMatch(/warmWorkspace\?:/)
     expect(routeBridge).toMatch(/warmWorkspace: \(directory\) =>/)
+    expect(routeBridge).toMatch(/const workspace = workspaceBackingForRouteDirectory\(directory\)/)
+    expect(routeBridge).toMatch(/directorySessionCacheActions\.ensure\(\{[\s\S]{0,100}\.{3}\(workspace \? \{ workspace \} : \{\}\)/)
+    expect(routeBridge).toMatch(/const workspace = workspaceBackingForRouteDirectory\(routed\)[\s\S]{0,500}sessionRefForWorkspaceSession\(\{[\s\S]{0,180}\.{3}\(workspace \? \{ workspace \} : \{\}\)/)
     expect(state).toMatch(/useDirectorySessionCacheActions/)
     expect(state).toMatch(/directorySessionCacheActions\.ensure/)
     expect(text).not.toMatch(/globalSync/)
@@ -1811,7 +1826,7 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/sessionPaneWorkspaceKey/)
     expect(text).not.toMatch(/directoryScopeWorkspaceKey/)
     expect(text).not.toMatch(/useGlobalSync/)
-    expect(text).toMatch(/workspaceScopes\?\.refreshDirectory\(directory, harnessType\)/)
+    expect(text).toMatch(/workspaceScopes\?\.refreshDirectory\(directory, harnessType, \{ \.\.\.options, workspace \}\)/)
     // Readiness is derived from scopeFor(workspaceKey()); Wave 2 hoisted it from
     // an inline JSX arrow into a named workspaceReady() const wired into the scope.
     expect(text).toMatch(
@@ -2042,6 +2057,9 @@ describe("workspace runtime route audit", () => {
     expect(await Bun.file(path.join(root, "overrides/app/providers/global-sdk/provider.tsx")).exists()).toBe(false)
     expect(globalSdk).toMatch(/sameWorkspaceDirectory/)
     expect(globalSdk).toMatch(/sessionWorkspaceRuntimeRef/)
+    expect(globalSdk).toMatch(/const placement = globalSdkClientPlacement\(workspaceId\)/)
+    expect(globalSdk).toMatch(/fetch: placement[\s\S]{0,100}createTransport\(\{[\s\S]{0,80}placement,/)
+    expect(globalSdk).not.toMatch(/transport: principalHasSignedAccess\(principal\(\)\) \|\| centralTransportForServer\(s\.http\.url\)/)
     expect(globalSdk).toMatch(/function runtimeSessionKey\(sessionID: string\)/)
     expect(globalSdk).toMatch(/return sessionID/)
     expect(globalSdk).toMatch(/const key = `\$\{input\.sessionId\}:\$\{assistantMessageId\}`/)
@@ -3472,6 +3490,8 @@ describe("workspace runtime route audit", () => {
     expect(controller).toMatch(/sessionTodoQueryOptions\(\{/)
     expect(controller).toMatch(/sessionDiffQueryOptions\(\{/)
     expect(controller).toMatch(/shellDataKeys\.sessionId\(sessionID, "todo"\)/)
+    expect(controller).toMatch(/sessionProjectionWorkspaceBacking\(\{[^\n]*workspaceKind: input\.workspaceKind\?\.\(\)/)
+    expect(controller).toMatch(/directorySessionCacheActions\.refresh\(\{[\s\S]{0,100}\.{3}\(workspace \? \{ workspace \} : \{\}\)/)
     expect(text).not.toMatch(/sync\.data\.todo\[id\]/)
     expect(text).not.toMatch(/globalSync\.data\.session_todo\[id\]/)
     expect(text).not.toMatch(/sync\.data\.session_diff\[id\]/)

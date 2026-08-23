@@ -20,20 +20,30 @@ import { fastSessionSwitchAnyNetworkQuiet, fastSessionSwitchAnyQuietDelay } from
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
-import { createControlPlaneEventFetch, type LiveSession } from "../global-sdk-event-fetch"
+import { createControlPlaneEventFetch, workspaceEventTransport, type LiveSession } from "../global-sdk-event-fetch"
 import { createGlobalSdkFetch } from "@/platform/sync/global-sdk-fetch"
 import { createEventCoalescer } from "@/platform/sync/global-sdk/event-coalescer"
 import { createHeartbeatWatchdog } from "@/platform/sync/global-sdk/heartbeat-watchdog"
 import { RECONNECT_DELAY_MS, reconnectBackoffMs } from "@/platform/sync/global-sdk/reconnect-backoff"
 import { createSubagentRegistry, type SubagentRegistry } from "@/features/session/subagents/subagent-registry"
 import { abortSubagentsForParent, applySubagentCompatLifecycleEvent, applySubagentRuntimeEventEnvelope } from "@/features/session/subagents/subagent-ingress"
+import {
+  eventDirectoryForLiveSession,
+  globalSdkClientPlacement,
+  globalSdkClientWorkspaceId,
+  liveSessionTransition,
+  liveSessionWithRelayBacking,
+  runtimeEventLiveSession,
+  USER_HOSTED_WORKSPACE_KIND,
+  type GlobalSdkClientOptions,
+} from "./live-session"
 export { abortSubagentsForParent, applySubagentCompatLifecycleEvent, applySubagentRuntimeEventEnvelope } from "@/features/session/subagents/subagent-ingress"
-export { createControlPlaneEventFetch, createGlobalSdkFetch }
+export { eventDirectoryForLiveSession, globalSdkClientPlacement, globalSdkClientWorkspaceId, liveSessionTransition, liveSessionWithRelayBacking, nextLiveSession, runtimeEventLiveSession } from "./live-session"
+export { createControlPlaneEventFetch, createGlobalSdkFetch, workspaceEventTransport }
 export type GlobalSdkEvent = OpenCodeEvent | CompatEvent
 type Event = GlobalSdkEvent
 type EventDirectory = string
 const claxedoExtensionEventTypes = new Set<string>(["message.completed", "session.agent", "session.config", "session.usage", "runtime.diagnostic"])
-const USER_HOSTED_WORKSPACE_KIND = "user-hosted"
 export function isOpenCodeSdkEvent(event: GlobalSdkEvent): event is OpenCodeEvent {
   return !claxedoExtensionEventTypes.has(event.type)
 }
@@ -41,38 +51,6 @@ export function isOpenCodeSdkEvent(event: GlobalSdkEvent): event is OpenCodeEven
 function runtimeWorkspaceKind(input: unknown) {
   if (input === "local" || input === "cloud" || input === USER_HOSTED_WORKSPACE_KIND) return input
 }
-
-
-export function nextLiveSession(
-  current: LiveSession | undefined,
-  sessionID: string,
-  opts?: { host?: "central" | "workspace"; directory?: string; workspaceId?: string; workspaceKind?: string },
-) {
-  const sameScope = !!current &&
-    (opts?.host === undefined || opts.host === current.host) &&
-    (opts?.directory === undefined || opts.directory === current.directory) &&
-    (opts?.workspaceId === undefined || opts.workspaceId === current.workspaceId)
-  return {
-    sessionID,
-    host: opts?.host ?? (sameScope ? current?.host : undefined),
-    directory: opts?.directory ?? (sameScope ? current?.directory : undefined),
-    workspaceId: opts?.workspaceId ?? (sameScope ? current?.workspaceId : undefined),
-    workspaceKind: opts?.workspaceKind ?? (sameScope ? current?.workspaceKind : undefined),
-  }
-}
-
-export function eventDirectoryForLiveSession(input: {
-  directory: string
-  liveSession?: LiveSession
-}): string {
-  if (input.directory === "global") return input.directory
-  if (input.liveSession?.workspaceId) return input.liveSession.workspaceId
-  const legacyDirectory = input.liveSession?.directory
-  const workspaceId = legacyDirectory ? sessionWorkspaceRuntimeRef({ directory: legacyDirectory })?.workspaceId : undefined
-  if (workspaceId) return workspaceId
-  return input.directory
-}
-
 function initialRouteDirectory() {
   if (typeof window === "undefined") return
   return shellRouteDirectoryFromPathname(window.location.pathname)
@@ -81,19 +59,6 @@ function initialRouteDirectory() {
 function cachedProjectInventory(baseUrl?: string) {
   return baseUrl ? queryClient.getQueryData<Project[]>(queryKeys.controlPlane.projects(baseUrl)) ?? [] : []
 }
-
-export function liveSessionWithRelayBacking(session: LiveSession, projects: readonly Project[]) {
-  if (session.workspaceId && session.workspaceKind) return session
-  if (session.workspaceId) {
-    const ref = sessionWorkspaceRuntimeRef({ directory: session.workspaceId, projects })
-    return { ...session, workspaceKind: ref?.kind ?? USER_HOSTED_WORKSPACE_KIND }
-  }
-  if (!session.directory) return session
-  const ref = sessionWorkspaceRuntimeRef({ directory: session.directory, projects })
-  if (!ref) return session
-  return { ...session, workspaceId: ref.workspaceId, workspaceKind: ref.kind }
-}
-
 function initialRouteWorkspace(baseUrl?: string) {
   const directory = initialRouteDirectory()
   if (!directory) return
@@ -348,18 +313,13 @@ const globalSDKContextInput = {
       return { sessionID: "route", directory, workspaceId: ref.workspaceId, workspaceKind: ref.kind }
     }
     const signedEventAccess = () => shouldUseSignedEventAccess({
-      // Enabling sign-in does not make a signed-out desktop principal a cloud
-      // authority. Browser deployments own their cookie/token transport;
-      // desktop crosses the signed boundary only after principal hydration.
-      hasSignedAccess: principalHasSignedAccess(principal()) || platform.platform === "web",
+      // The surface type is not authority: local/mock browser lanes are web
+      // too. The principal opens the signed boundary; shouldUseSignedEventAccess
+      // then limits it to the active route/live workspace identity.
+      hasSignedAccess: principalHasSignedAccess(principal()),
       serverUrl: server.current?.http.url,
       liveSession,
     })
-    const workspaceRuntimeOwnsLiveEvents = () => {
-      const session = eventLiveSession()
-      if (session?.host === "central") return false
-      return !!session?.workspaceId || !!session?.directory && !!sessionWorkspaceRuntimeRef({ directory: session.directory })
-    }
     const rawEventFetch = (() => {
       if (!platform.fetch || !server.current) return
       if (centralTransportForServer(server.current.http.url) !== "loopback") return platform.fetch
@@ -503,7 +463,7 @@ const globalSDKContextInput = {
               signal: runtimeAttempt.signal,
               headers,
             }
-            const session = eventLiveSession()
+            const session = runtimeEventLiveSession(liveSession, cachedProjectInventory(currentServer.http.url))
             if (!session || session.host !== "central" && !session.directory && !session.workspaceId) {
               await wait(RECONNECT_DELAY_MS)
               continue
@@ -518,9 +478,12 @@ const globalSDKContextInput = {
               placement: {
                 ...(session.workspaceId ? { workspaceId: session.workspaceId } : {}),
                 hosting: "workspace",
-                transport: session.workspaceId && centralTransportForServer(currentServer.http.url) !== "loopback"
-                  ? "workspace-relay"
-                  : "loopback",
+                transport: workspaceEventTransport({
+                  serverUrl: currentServer.http.url,
+                  signedControlPlane: signedEventAccess(),
+                  workspaceId: session.workspaceId,
+                  workspaceKind: sessionWorkspaceKind,
+                }),
               },
               serverUrl: currentServer.http.url,
               directory: session?.directory,
@@ -630,12 +593,6 @@ const globalSDKContextInput = {
           const quietDelay = fastSessionSwitchAnyQuietDelay()
           if (quietDelay > 0) {
             await wait(quietDelay)
-            continue
-          }
-          if (workspaceRuntimeOwnsLiveEvents()) {
-            markStreamReady()
-            heartbeat.touch()
-            await wait(RECONNECT_DELAY_MS)
             continue
           }
           attempt = new AbortController()
@@ -753,7 +710,11 @@ const globalSDKContextInput = {
 
     const guardedSdkFetch = createGlobalSdkFetch({
       serverUrl: currentServer.http.url,
-      projectInventory: () => cachedProjectInventory(currentServer.http.url),
+      resolveSignedWorkspace: (directory) => {
+        const projects = cachedProjectInventory(currentServer.http.url)
+        return signedWorkspaceFromProjects(projects, directory) ??
+          signedWorkspaceFromProjects(projects, sessionWorkspaceRuntimeRef({ directory, projects })?.workspaceId)
+      },
       request: platform.fetch ?? authFetch,
     })
     const guardedGlobalFetch: typeof fetch = async (requestInput, init) => {
@@ -771,15 +732,10 @@ const globalSDKContextInput = {
     })
 
     const setLiveSession = (sessionID: string, opts?: { host?: "central" | "workspace"; directory?: string; workspaceId?: string; workspaceKind?: string }) => {
-      const next = nextLiveSession(liveSession, sessionID, opts)
-      const scopeChanged =
-        (opts?.host !== undefined && opts.host !== liveSession?.host) ||
-        (opts?.directory !== undefined && opts.directory !== liveSession?.directory) ||
-        (opts?.workspaceId !== undefined && opts.workspaceId !== liveSession?.workspaceId) ||
-        (opts?.workspaceKind !== undefined && opts.workspaceKind !== liveSession?.workspaceKind)
-      liveSession = next
-      if (scopeChanged) subagents.workspaceChanged()
-      if (scopeChanged && started) {
+      const transition = liveSessionTransition(liveSession, sessionID, opts)
+      liveSession = transition.next
+      if (transition.workspaceScopeChanged) subagents.workspaceChanged()
+      if (transition.runtimeStreamChanged && started) {
         scheduleLiveSessionRestart()
       }
     }
@@ -796,23 +752,28 @@ const globalSDKContextInput = {
         getLiveSession: () => liveSession,
         subagents: { registry: subagents, abortParent: (sessionID: string) => abortSubagentsForParent(sessionID, subagents) },
       },
-      createClient(opts: Omit<Parameters<typeof createSdkForServer>[0], "server" | "fetch">) {
+      createClient(opts: GlobalSdkClientOptions) {
         const s = server.current
         if (!s) throw new Error(language.t("error.globalSDK.serverNotAvailable"))
-        const workspace = signedWorkspaceFromProjects(cachedProjectInventory(s.http.url), opts.directory)
+        const { workspaceId: explicitWorkspaceId, ...clientOptions } = opts
+        const workspaceId = globalSdkClientWorkspaceId(cachedProjectInventory(s.http.url), {
+          directory: clientOptions.directory,
+          workspaceId: explicitWorkspaceId,
+        })
+        const placement = globalSdkClientPlacement(workspaceId)
         const request = platform.fetch ?? authFetch
         return createSdkForServer({
           server: s.http,
-          fetch: workspace
+          fetch: placement
             ? createTransport({
-              placement: { workspaceId: workspace.workspaceId, hosting: "workspace", transport: centralTransportForServer(s.http.url) === "loopback" ? "loopback" : "workspace-relay" },
+              placement,
               serverUrl: s.http.url,
-              directory: opts.directory,
+              directory: clientOptions.directory,
               request,
               relayRequest: request,
             }).sdkFetch
             : platform.fetch,
-          ...opts,
+          ...clientOptions,
         })
       },
     }

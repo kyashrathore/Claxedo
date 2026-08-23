@@ -24,6 +24,7 @@ import { eventsHandler } from "@claxedo/server-core/platform/http/events"
 import { peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
 import { createConnectionsHost } from "../../connections"
 import { createConnectionTurnCredentials } from "../../connections/turn-credentials"
+import type { ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { mirrorProcessEvents } from "../../platform/runtime/lib/process-events"
 import { DocumentsRoutes } from "../../documents/routes/index"
 import { AgentConfigRoutes, sessionMetaProjectionTap } from "@claxedo/local-server/self-hosted-execution"
@@ -72,6 +73,7 @@ import {
   createControlPlaneServices,
   type ControlPlaneRelay,
   type ControlPlaneServices,
+  type WorkspaceAuthority,
 } from "../../authority/services"
 import {
   betterAuthAdapter,
@@ -221,7 +223,11 @@ export function localDocumentsBackend() {
   })
 }
 
-function workspaceRouteOptions(services: ControlPlaneServices, connections?: Pick<ReturnType<typeof createConnectionsHost>, "repositoryForAuth">) {
+function workspaceRouteOptions(
+  services: ControlPlaneServices,
+  connections?: Pick<ReturnType<typeof createConnectionsHost>, "repositoryForAuth">,
+  connectionRateLimiter?: ConnectionRateLimiter,
+) {
   return {
     ...authRouteOptions(services),
     credentials: services.credentials,
@@ -233,6 +239,7 @@ function workspaceRouteOptions(services: ControlPlaneServices, connections?: Pic
       ? { runtimeAccessTokenSigner: services.relay.runtimeAccessTokenSigner }
       : {}),
     ...(services.relay.hostTunnelTokenSigner ? { hostTunnelTokenSigner: services.relay.hostTunnelTokenSigner } : {}),
+    ...(connectionRateLimiter ? { connectionRateLimiter } : {}),
   }
 }
 
@@ -478,6 +485,8 @@ export function createSelfHostedApp(
     usageLedger?: UsageLedger
     usageOutbox?: UsageOutboxSync
     resolveUsageHostIdentity?: () => Promise<{ hostId: string }>
+    /** Composition seam for tests/load fixtures; production keeps the default limiter. */
+    connectionRateLimiter?: ConnectionRateLimiter
   } = {},
 ) {
   if (options.posture) assertSelfHostedPosture(options.posture)
@@ -804,7 +813,10 @@ export function createSelfHostedApp(
   )
   app.route("/", SessionMetaRoutes({ services, ...authRouteOptions(services) }))
   app.route("/api/claxedo/workspace", LocalWorkspaceRoutes(authRouteOptions(services)))
-  app.route("/api/workspace", WorkspaceRoutes(services, workspaceRouteOptions(services, connectionsHost)))
+  app.route("/api/workspace", WorkspaceRoutes(
+    services,
+    workspaceRouteOptions(services, connectionsHost, options.connectionRateLimiter),
+  ))
   app.route("/api/workspace", WorkspaceCheckpointRoutes(services, {
     loopbackRelayUrl: services.relay.relayUrl,
     defaultHomeRegion: services.defaultHomeRegion,
@@ -1038,7 +1050,7 @@ export function createDefaultLocalControlPlaneServices() {
   const authority = trust === "hosted"
     ? createConvexAuthority({ url: authorityUrl! })
     : createSqliteWorkspaceAuthority()
-  return createControlPlaneServices(
+  const services = createControlPlaneServices(
     {
       projectionStore: centralStore.projectionStore,
       durableSessionLog: centralStore.durableSessionLog,
@@ -1060,11 +1072,20 @@ export function createDefaultLocalControlPlaneServices() {
       defaultHomeRegion: defaultHomeRegion(process.env),
     },
   )
+  let closed = false
+  return Object.assign(services, {
+    close() {
+      if (closed) return
+      closed = true
+      if ("close" in authority && typeof authority.close === "function") authority.close()
+      ClaxedoDB.close()
+    },
+  })
 }
 
 function localRelayFromEnv(
   sandboxManager = createWorkspaceSupervisorSandboxManager(),
-  authority = createSqliteWorkspaceAuthority(),
+  authority: WorkspaceAuthority = createSqliteWorkspaceAuthority(),
 ): ControlPlaneRelay {
   const relayUrl = process.env.CLAXEDO_WORKSPACE_RELAY_URL?.trim()
   const resolverToken = process.env.CLAXEDO_RELAY_RESOLVER_TOKEN?.trim()
@@ -1827,6 +1848,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     clearInterval(workgraphReconciler)
     unsubscribeWorkGraphSessionIntake()
     if (workgraphDatabase.open) workgraphDatabase.close()
+    services.close?.()
     void drainOpenCodeEngine()
   })
 

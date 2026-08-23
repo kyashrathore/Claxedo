@@ -147,12 +147,13 @@ type SqliteStatement = {
   run(...params: unknown[]): unknown
   get(...params: unknown[]): unknown
   all(...params: unknown[]): unknown[]
+  finalize?: () => unknown
 }
 
 type SqliteDatabase = {
   exec(sql: string): unknown
   prepare(sql: string): SqliteStatement
-  close?: () => unknown
+  close?: (throwOnError?: boolean) => unknown
 }
 
 export type RuntimeStoreAppendOutput = {
@@ -191,17 +192,51 @@ export type WorkspaceWorktreeRecord = {
 
 const requireDatabase = createRequire(import.meta.url)
 
+function managedDatabase(db: SqliteDatabase): SqliteDatabase {
+  return {
+    exec: (sql) => db.exec(sql),
+    prepare(sql) {
+      const statement = db.prepare(sql)
+      const finalize = () => statement.finalize?.()
+      return {
+        run(...params) {
+          try {
+            return statement.run(...params)
+          } finally {
+            finalize()
+          }
+        },
+        get(...params) {
+          try {
+            return statement.get(...params)
+          } finally {
+            finalize()
+          }
+        },
+        all(...params) {
+          try {
+            return statement.all(...params)
+          } finally {
+            finalize()
+          }
+        },
+      }
+    },
+    close: (throwOnError) => db.close?.(throwOnError),
+  }
+}
+
 function openDatabase(file: string): SqliteDatabase {
   if (process.versions.bun) {
     const mod = requireDatabase("bun:sqlite") as { Database: new(file: string) => SqliteDatabase }
-    return new mod.Database(file)
+    return managedDatabase(new mod.Database(file))
   }
   const mod = requireDatabase("better-sqlite3") as
     | { default?: new(file: string) => SqliteDatabase }
     | (new(file: string) => SqliteDatabase)
   const BetterSqlite = typeof mod === "function" ? mod : mod.default
   if (!BetterSqlite) throw new Error("better-sqlite3 export missing")
-  return new BetterSqlite(file)
+  return managedDatabase(new BetterSqlite(file))
 }
 
 function tableColumns(db: SqliteDatabase, table: string) {
@@ -514,8 +549,13 @@ export class RuntimeStore {
 
   close() {
     if (this.closed) return
+    // Bun's SQLite binding defaults `throwOnError` to false. When SQLite
+    // refuses to close, that default silently leaves the database handle open
+    // and Windows keeps the workspace directory locked. A store close is the
+    // authoritative end of this handle's lifetime, so surface a failed close
+    // instead of reporting the store closed while retaining the resource.
+    this.db.close?.(true)
     this.closed = true
-    this.db.close?.()
   }
 
   flush() {
@@ -1612,8 +1652,7 @@ export class RuntimeStore {
       else canonical += 1
     }
     if (stale.length === 0 || canonical < provisionalPromptWidth(messageId, stale)) return
-    const statement = this.db.prepare("DELETE FROM part WHERE id = ?")
-    for (const id of stale) statement.run(id)
+    for (const id of stale) this.db.prepare("DELETE FROM part WHERE id = ?").run(id)
   }
 
   private delta(sessionId: string, messageId: string, partId: string, field: string, delta: string, ts: number) {

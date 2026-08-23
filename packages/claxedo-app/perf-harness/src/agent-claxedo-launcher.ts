@@ -1,10 +1,11 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import net from "node:net";
 import { installAgentBrowserObserver, measureSessionActivation, type PaintedMessage, type SessionReadinessTarget } from "./agent-browser-observer";
 import { processFamily, readProcessTable, sameProcessIdentity, type ProcessSnapshot } from "./agent-process-family";
 import { connectCdpPage, type BenchmarkPage } from "./agent-cdp-page";
 import { AGENT_APP_WINDOW, agentAppViewport } from "./agent-display-contract";
+import { writeJson } from "./storage";
 
 export type OwnedProcess = {
   pid: number;
@@ -156,10 +157,10 @@ async function captureStartupClock(runDirectory: string, snapshot: {
 }) {
   if (!startupClockEnabled()) return;
   const events = parseStartupClockLog(await readFile(startupClockPath(runDirectory), "utf8"));
-  await writeFile(
-    path.join(runDirectory, "startup-clock-lead.json"),
-    `${JSON.stringify({ ...startupClockLead({ events, ...snapshot }), events }, null, 2)}\n`,
-  );
+  await writeJson(path.join(runDirectory, "startup-clock-lead.json"), {
+    ...startupClockLead({ events, ...snapshot }),
+    events,
+  });
 }
 
 async function captureColdReadyDiagnostics(input: {
@@ -212,10 +213,12 @@ async function captureColdReadyDiagnostics(input: {
     input.runDirectory,
     `cold-ready-diagnostics-${String(input.serial).padStart(3, "0")}-${input.phase}.json`,
   );
-  await writeFile(
-    file,
-    `${JSON.stringify({ serial: input.serial, phase: input.phase, coldReadyMs: input.coldReadyMs, ...snapshot }, null, 2)}\n`,
-  );
+  await writeJson(file, {
+    serial: input.serial,
+    phase: input.phase,
+    coldReadyMs: input.coldReadyMs,
+    ...snapshot,
+  });
   // Best-effort and last: the renderer dump is the load-bearing artifact, and a
   // missing startup clock must not cost it.
   try {
@@ -419,9 +422,9 @@ export async function launchPackagedClaxedo(input: {
         phase: "cold-ready",
         coldReadyMs: endTimestamp - startTimestamp,
       });
-      await writeFile(
+      await writeJson(
         path.join(runDirectory, `cold-ready-diagnostics-${String(serial).padStart(3, "0")}-row-visible.json`),
-        `${JSON.stringify({ serial, rowVisibleRendererNow }, null, 2)}\n`,
+        { serial, rowVisibleRendererNow },
       );
     } catch {}
     const initialTable = await readProcessTable();

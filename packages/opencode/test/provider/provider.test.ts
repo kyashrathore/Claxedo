@@ -1825,6 +1825,56 @@ it.effect("plugin config providers persist after instance dispose", () =>
 )
 
 it.instance(
+  "a provider from a late plugin becomes usable without reloading the instance",
+  () =>
+    Effect.gen(function* () {
+      const instance = yield* TestInstance
+      const configDir = path.join(instance.directory, ".opencode")
+      const root = path.join(configDir, "plugin")
+      yield* Effect.promise(() => mkdir(root, { recursive: true }))
+      yield* Effect.promise(() => markPluginDependenciesReady(configDir))
+      yield* Effect.promise(() =>
+        Bun.write(
+          path.join(root, "late-provider.ts"),
+          [
+            "export default async () => {",
+            "  await new Promise((resolve) => setTimeout(resolve, 1500))",
+            "  return {",
+            "    async config(cfg) {",
+            "      await new Promise((resolve) => setTimeout(resolve, 1500))",
+            "      cfg.provider ??= {}",
+            "      cfg.provider.late = {",
+            '        name: "Late Provider",',
+            '        npm: "@ai-sdk/openai-compatible",',
+            '        api: "https://example.com/v1",',
+            '        models: { chat: { name: "Late Chat", limit: { context: 128000, output: 4096 } } },',
+            "      }",
+            "    },",
+            "  }",
+            "}",
+            "",
+          ].join("\n"),
+        ),
+      )
+
+      const plugin = yield* Plugin.Service
+      const provider = yield* Provider.Service
+      yield* plugin.init()
+      expect((yield* provider.list())[ProviderV2.ID.make("late")]).toBeUndefined()
+
+      const deadline = Date.now() + 10_000
+      let providers = yield* provider.list()
+      while (!providers[ProviderV2.ID.make("late")] && Date.now() < deadline) {
+        yield* Effect.promise(() => Bun.sleep(25))
+        providers = yield* provider.list()
+      }
+      expect(providers[ProviderV2.ID.make("late")]?.models[ModelV2.ID.make("chat")]).toBeDefined()
+    }),
+  { git: true },
+  20_000,
+)
+
+it.instance(
   "plugin config enabled and disabled providers are honored",
   Effect.gen(function* () {
     const instance = yield* TestInstance

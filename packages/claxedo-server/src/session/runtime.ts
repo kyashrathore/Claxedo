@@ -907,11 +907,11 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       ...(input.parentID ? { parentSessionId: input.parentID } : {}),
     })
     const tags = [
+      `harness:${input.harness ?? "pi"}`,
       ...(input.sourceChannel ? [`source-channel:${input.sourceChannel}`] : []),
       ...(input.sourceThreadKey ? [`source-thread:${input.sourceThreadKey}`] : []),
       ...(input.subagentKey ? [`subagent-key:${input.subagentKey}`] : []),
       ...(input.spawningToolCallId ? [`subagent-tool-call:${input.spawningToolCallId}`] : []),
-      ...(input.harness && input.harness !== "pi" ? [`harness:${input.harness}`] : []),
     ]
     // Persist the tools-only sandbox verbatim as a first-class field. Only
     // workspace-runtime placements need recovery; virtual is the default and

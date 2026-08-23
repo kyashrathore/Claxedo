@@ -1269,6 +1269,7 @@ export interface Interface {
 }
 
 interface State {
+  pluginCount: number
   models: Map<string, LanguageModelV3>
   providers: Record<ProviderV2.ID, Info>
   catalog: Record<ProviderV2.ID, Info>
@@ -1480,7 +1481,7 @@ const layer = Layer.effect(
         }
 
         // load plugins first so config() hook runs before reading cfg.provider
-        const plugins = yield* plugin.list()
+        const plugins = [...(yield* plugin.list())]
 
         // now read config providers - includes any modifications from plugin config() hook
         const configProviders = Object.entries(cfg.provider ?? {})
@@ -1754,6 +1755,7 @@ const layer = Layer.effect(
         }
 
         return {
+          pluginCount: plugins.length,
           models: languages,
           providers,
           catalog,
@@ -1764,12 +1766,27 @@ const layer = Layer.effect(
       }),
     )
 
-    const list = Effect.fn("Provider.list")(() => InstanceState.use(state, (s) => s.providers))
+    const current = Effect.fn("Provider.current")(function* () {
+      while (true) {
+        const value = yield* InstanceState.get(state)
+        if (value.pluginCount === (yield* plugin.list()).length) return value
+        // A constructor that missed the boot budget registered after this state was
+        // materialized. Rebuild on demand so its provider/auth loaders become usable
+        // in this live instance instead of waiting for an instance reload.
+        yield* InstanceState.invalidate(state)
+      }
+    })
+
+    const list = Effect.fn("Provider.list")(function* () {
+      return (yield* current()).providers
+    })
 
     // The immutable models.dev-derived catalog computed once at instance init.
     // Callers must treat the returned records as read-only; entries are served
     // directly (no clone) on hot paths like GET /provider.
-    const catalog = Effect.fn("Provider.catalog")(() => InstanceState.use(state, (s) => s.catalog))
+    const catalog = Effect.fn("Provider.catalog")(function* () {
+      return (yield* current()).catalog
+    })
 
     async function resolveSDK(model: Model, s: State, envs: Record<string, string | undefined>) {
       try {
@@ -1913,12 +1930,12 @@ const layer = Layer.effect(
       }
     }
 
-    const getProvider = Effect.fn("Provider.getProvider")((providerID: ProviderV2.ID) =>
-      InstanceState.use(state, (s) => s.providers[providerID]),
-    )
+    const getProvider = Effect.fn("Provider.getProvider")(function* (providerID: ProviderV2.ID) {
+      return (yield* current()).providers[providerID]
+    })
 
     const getModel = Effect.fn("Provider.getModel")(function* (providerID: ProviderV2.ID, modelID: ModelV2.ID) {
-      const s = yield* InstanceState.get(state)
+      const s = yield* current()
       const provider = s.providers[providerID]
       if (!provider) {
         const catalogProvider = s.catalog[providerID]
@@ -1942,7 +1959,7 @@ const layer = Layer.effect(
     })
 
     const getLanguage = Effect.fn("Provider.getLanguage")(function* (model: Model) {
-      const s = yield* InstanceState.get(state)
+      const s = yield* current()
       const envs = yield* env.all()
       const key = `${model.providerID}/${model.id}`
       if (s.models.has(key)) return s.models.get(key)!
@@ -1973,7 +1990,7 @@ const layer = Layer.effect(
     })
 
     const closest = Effect.fn("Provider.closest")(function* (providerID: ProviderV2.ID, query: string[]) {
-      const s = yield* InstanceState.get(state)
+      const s = yield* current()
       const provider = s.providers[providerID]
       if (!provider) return undefined
       for (const item of query) {
@@ -1994,7 +2011,7 @@ const layer = Layer.effect(
         )
       }
 
-      const s = yield* InstanceState.get(state)
+      const s = yield* current()
       const provider = s.providers[providerID]
       if (!provider) return undefined
 
@@ -2057,7 +2074,7 @@ const layer = Layer.effect(
       const cfg = yield* config.get()
       if (cfg.model) return parseModel(cfg.model)
 
-      const s = yield* InstanceState.get(state)
+      const s = yield* current()
       const recent = yield* fs.readJson(path.join(Global.Path.state, "model.json")).pipe(
         Effect.map((x): { providerID: ProviderV2.ID; modelID: ModelV2.ID }[] => {
           if (!isRecord(x) || !Array.isArray(x.recent)) return []

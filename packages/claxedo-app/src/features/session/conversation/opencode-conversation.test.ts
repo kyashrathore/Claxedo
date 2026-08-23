@@ -345,6 +345,39 @@ describe("opencode conversation chat adapter", () => {
     }])
   })
 
+  test("snapshot merge applies authoritative equal-length text changes", () => {
+    const settled = { ...message("msg_assistant"), time: { created: 2, completed: 3 } } as Message
+    const live = opencodeConversationSnapshot({
+      messages: [settled],
+      parts: { msg_assistant: [textPart("part_text", "msg_assistant", "hello")] },
+    })
+    const fetched = opencodeConversationSnapshot({
+      messages: [settled],
+      parts: { msg_assistant: [textPart("part_text", "msg_assistant", "world")] },
+    })
+
+    expect(mergeConversationSnapshot(live, fetched)[0]?.parts).toMatchObject([
+      { type: "text", content: "world" },
+    ])
+  })
+
+  test("snapshot merge confirms optimistic metadata even when content is identical", () => {
+    const persisted = message("msg_user", "user")
+    const snapshot = opencodeConversationSnapshot({
+      messages: [persisted],
+      parts: { msg_user: [textPart("part_text", "msg_user", "hello")] },
+    })
+    const optimistic = [{
+      ...snapshot[0]!,
+      metadata: { ...snapshot[0]!.metadata, optimistic: true },
+    }] as UIMessage[]
+
+    const merged = mergeConversationSnapshot(optimistic, snapshot)
+
+    expect((merged[0]?.metadata as { optimistic?: boolean } | undefined)?.optimistic).toBeUndefined()
+    expect(merged).not.toBe(optimistic)
+  })
+
   // The owner saw the full provider error render for a moment and then revert
   // to a generic card. Both write paths took the incoming message wholesale, so
   // a later, detail-poorer view of the SAME failed turn clobbered the rich one.

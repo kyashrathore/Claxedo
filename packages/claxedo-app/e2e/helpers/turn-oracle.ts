@@ -149,15 +149,31 @@ async function geometricTruth(page: Page, locator: Locator) {
   const hit = await page.evaluate(
     ([x, y, selector]) => {
       const el = document.elementFromPoint(x, y)
-      if (!el) return { found: false, tag: null as string | null }
+      if (!el) return { found: false, tag: null as string | null, path: "", timeline: null }
       const inside = el.closest(selector as string)
-      return { found: !!inside, tag: el.tagName }
+      const path = [el, el.parentElement, el.parentElement?.parentElement]
+        .filter((item): item is Element => !!item)
+        .map((item) => `${item.tagName.toLowerCase()}${item.id ? `#${item.id}` : ""}${[...item.classList].slice(0, 3).map((name) => `.${name}`).join("")}`)
+        .join(" > ")
+      const timeline = document.querySelector<HTMLElement>('[data-slot="session-timeline-scroll"]')
+      return {
+        found: !!inside,
+        tag: el.tagName,
+        path,
+        timeline: timeline
+          ? {
+              scrollTop: timeline.scrollTop,
+              scrollHeight: timeline.scrollHeight,
+              clientHeight: timeline.clientHeight,
+            }
+          : null,
+      }
     },
     [cx, cy, SELECTORS.assistantContent] as const,
   )
   expect(
     hit.found,
-    `hit-test at the assistant reply's center (${cx},${cy}) resolved to <${hit.tag}> outside the assistant-content slot — an overlay or mis-positioned element is covering the reply`,
+    `hit-test at the assistant reply's center (${cx},${cy}) resolved to ${hit.path || `<${hit.tag}>`} outside the assistant-content slot (timeline ${JSON.stringify(hit.timeline)}) — an overlay or mis-positioned element is covering the reply`,
   ).toBe(true)
 }
 

@@ -81,6 +81,9 @@ extension finishes loading, then mounts live.
 - Each extension activates in isolation: a throwing `activate` (or a missing
   `activate` export) is reported to the console, its partial view
   registrations are rolled back, and every other extension still loads.
+- Import and activation have a 10-second deadline. A timed-out extension loses
+  its registration capability, its partial views are rolled back, and loading
+  continues with the next extension.
 - Kill switch: `localStorage["claxedo.user-extensions"] = "off"` disables
   loading entirely.
 

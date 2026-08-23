@@ -2,11 +2,38 @@ import type { Session } from "@opencode-ai/sdk/v2/client"
 import { useGlobalSync } from "@/features/session/app-ports"
 import { queryClient } from "@/platform/query/query-client"
 import { directorySessionCacheQueryOptions, type DirectorySessionCacheValue } from "./queries"
+import type { WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+
+type DirectorySessionCacheDirectory = Parameters<typeof directorySessionCacheQueryOptions>[0]["directory"]
+
+export type DirectorySessionCacheRefreshOptions = {
+  quiet?: boolean
+  workspace?: WorkspaceSessionBacking
+}
+
+export type DirectorySessionLoadMeta = {
+  limit: number
+  workspace?: WorkspaceSessionBacking
+}
+
+export function sessionLoadMetaKey(directory: DirectorySessionCacheDirectory) {
+  return ["shell", "global-sync", "session-load", directory, "meta"] as const
+}
+
+export function sessionLoadMetaMatchesWorkspace(
+  meta: DirectorySessionLoadMeta | undefined,
+  workspace: WorkspaceSessionBacking | undefined,
+) {
+  if (!workspace) return !meta?.workspace
+  return meta?.workspace?.workspaceId === workspace.workspaceId &&
+    meta.workspace.kind === workspace.kind &&
+    meta.workspace.hostId === workspace.hostId
+}
 
 export type DirectorySessionCacheRefresh = (
   directory: string,
   harnessType?: string,
-  options?: { quiet?: boolean },
+  options?: DirectorySessionCacheRefreshOptions,
 ) => Promise<unknown> | unknown
 export type DirectorySessionCacheFocusSource = {
   setFocusedDirectory?: (directory: string | undefined) => void
@@ -34,8 +61,10 @@ export async function ensureDirectorySessionCache(input: {
   refresh: DirectorySessionCacheRefresh
   harnessType?: string
   quiet?: boolean
+  workspace?: WorkspaceSessionBacking
 }) {
-  if (hasDirectorySessionCache(input.directory)) return
+  const meta = queryClient.getQueryData<DirectorySessionLoadMeta>(sessionLoadMetaKey(input.directory))
+  if (hasDirectorySessionCache(input.directory) && sessionLoadMetaMatchesWorkspace(meta, input.workspace)) return
   await refreshDirectorySessionCache(input)
 }
 
@@ -44,9 +73,11 @@ export async function refreshDirectorySessionCache(input: {
   refresh: DirectorySessionCacheRefresh
   harnessType?: string
   quiet?: boolean
+  workspace?: WorkspaceSessionBacking
 }) {
   await input.refresh(input.directory, input.harnessType, {
     quiet: input.quiet,
+    ...(input.workspace ? { workspace: input.workspace } : {}),
   })
 }
 
@@ -65,6 +96,26 @@ export function directorySessions(directory: string, fallback?: Session) {
   const sessions = directorySessionCache(directory)?.session ?? []
   if (!fallback || sessions.some((session) => session.id === fallback.id)) return sessions
   return [fallback, ...sessions]
+}
+
+export async function hydrateDirectorySession(input: {
+  directory: Parameters<typeof directorySessions>[0]
+  sessionID: Session["id"]
+  getSession: (parameters: {
+    directory: Parameters<typeof directorySessions>[0]
+    sessionID: Session["id"]
+  }) => Promise<Session | undefined>
+}) {
+  const cached = directorySessions(input.directory).find((session) => session.id === input.sessionID)
+  if (cached) return cached
+
+  const canonical = await input.getSession({
+    directory: input.directory,
+    sessionID: input.sessionID,
+  })
+  if (!canonical) return undefined
+  upsertDirectorySession(input.directory, canonical)
+  return canonical
 }
 
 export function upsertDirectorySession(directory: string, session: Session) {
@@ -163,13 +214,13 @@ export function removeDirectorySessionTree(directory: string, sessionID: string)
 export function useDirectorySessionCacheActions() {
   const globalSync = useGlobalSync()
   return {
-    ensure: (input: { directory: string; harnessType?: string; quiet?: boolean }) =>
+    ensure: (input: { directory: string; harnessType?: string; quiet?: boolean; workspace?: WorkspaceSessionBacking }) =>
       ensureDirectorySessionCache({
         ...input,
         quiet: input.quiet ?? true,
         refresh: globalSync.refreshDirectory,
       }),
-    refresh: (input: { directory: string; harnessType?: string; quiet?: boolean }) =>
+    refresh: (input: { directory: string; harnessType?: string; quiet?: boolean; workspace?: WorkspaceSessionBacking }) =>
       refreshDirectorySessionCache({
         ...input,
         refresh: globalSync.refreshDirectory,

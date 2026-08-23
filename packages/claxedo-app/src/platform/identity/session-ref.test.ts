@@ -7,6 +7,7 @@ import {
   isHarnessId,
   localSessionRef,
   retargetSessionRef,
+  sameSessionRef,
   sessionKey,
   sessionHarness,
   sessionRefForWorkspaceSession,
@@ -55,6 +56,14 @@ describe("harness-id vocabulary (single source of truth)", () => {
 })
 
 describe("SessionRef", () => {
+  test("sameSessionRef includes authoritative harness identity", () => {
+    const base = centralSessionRef({ sessionId: "ses_1" })
+    const pi = centralSessionRef({ sessionId: "ses_1", harness: { id: "pi" } })
+
+    expect(sameSessionRef(base, pi)).toBe(false)
+    expect(sameSessionRef(pi, { ...pi })).toBe(true)
+  })
+
   test("loopback-local central sessions need no directory or workspace id", () => {
     const ref: SessionRef = {
       sessionId: "central-loop-1",

@@ -144,7 +144,9 @@ async function main() {
         CLAXEDO_RELAY_FIXTURE_RUNTIME_PUBLIC_KEY_JWK: JSON.stringify(await exportJwk(runtime.publicKey)),
         CLAXEDO_RELAY_FIXTURE_HOST_PRIVATE_KEY_JWK: JSON.stringify(await exportJwk(relayHost.privateKey)),
       },
-      stdio: ["ignore", "pipe", "pipe"],
+      // The relay fixture treats stdin as its owner-liveness signal. Keep the
+      // pipe open for this smoke run's lifetime so the child does not exit on EOF.
+      stdio: ["pipe", "pipe", "pipe"],
     })
     const relayReady = await waitForJsonLine<{ url: string }>({
       child: relay,

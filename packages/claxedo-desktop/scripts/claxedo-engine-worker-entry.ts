@@ -2,7 +2,11 @@ import { createServer } from "node:http"
 import { pathToFileURL } from "node:url"
 import { Readable } from "node:stream"
 import { pipeline } from "node:stream/promises"
-import { isAuthorizedEngineWorkerRequest, sessionStatusHasActiveWork } from "./claxedo-engine-worker-policy"
+import {
+  bindEngineWorkerRequestAbort,
+  isAuthorizedEngineWorkerRequest,
+  sessionStatusHasActiveWork,
+} from "./claxedo-engine-worker-policy"
 
 const embedPath = process.env.CLAXEDO_ENGINE_EMBED_PATH
 const dbPath = process.env.CLAXEDO_ENGINE_DB_PATH
@@ -36,6 +40,7 @@ const server = createServer(async (incoming, outgoing) => {
     return
   }
   activeRequests += 1
+  const requestAbort = bindEngineWorkerRequestAbort(incoming, outgoing)
   const directory = typeof incoming.headers["x-opencode-directory"] === "string"
     ? incoming.headers["x-opencode-directory"]
     : undefined
@@ -46,6 +51,7 @@ const server = createServer(async (incoming, outgoing) => {
     const response = await handler(new Request(`http://opencode.internal${incoming.url ?? "/"}`, {
       method: incoming.method,
       headers,
+      signal: requestAbort.signal,
       ...(["GET", "HEAD"].includes(incoming.method ?? "GET")
         ? {}
         : { body: Readable.toWeb(incoming) as ReadableStream, duplex: "half" as const }),
@@ -60,9 +66,10 @@ const server = createServer(async (incoming, outgoing) => {
     }
     await pipeline(Readable.fromWeb(response.body as never), outgoing)
   } catch (error) {
-    if (!outgoing.headersSent) outgoing.writeHead(500, { "content-type": "application/json" })
-    if (!outgoing.writableEnded) outgoing.end(JSON.stringify({ error: String(error) }))
+    if (!outgoing.destroyed && !outgoing.headersSent) outgoing.writeHead(500, { "content-type": "application/json" })
+    if (!outgoing.destroyed && !outgoing.writableEnded) outgoing.end(JSON.stringify({ error: String(error) }))
   } finally {
+    requestAbort.dispose()
     activeRequests -= 1
     scheduleIdleExit()
   }

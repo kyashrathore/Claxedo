@@ -98,6 +98,25 @@ describe("harness hydrator", () => {
     })
   })
 
+  test("reads central session config without inventing workspace runtime backing", async () => {
+    const subject = createSubject({
+      local: false,
+      workspaceRuntime: false,
+      sessionConfig: { harness: { type: "pi" }, model: { modelID: "default" } },
+    })
+
+    await expect(subject.hydrator.status({
+      directory: "/repo",
+      sessionId: "ses_pi",
+      sessionRef: {
+        host: "central",
+        sessionId: "ses_pi",
+        toolSandbox: { kind: "virtual" },
+        harness: { id: "pi" },
+      },
+    })).resolves.toMatchObject({ type: "pi", model: "default", ready: true })
+  })
+
   test("hydrates draft status through the local bridge and marks the scope seen", async () => {
     const subject = createSubject()
 
@@ -157,6 +176,33 @@ describe("harness hydrator", () => {
       "fallback:cursor-acp",
     ])
     expect(subject.cache.seen.get("scope")).toBe("session:ses_1")
+  })
+
+  test("rehydrates an existing session when its authoritative ref is upgraded", async () => {
+    const subject = createSubject({
+      sessionConfig: { harness: { type: "pi" }, model: { modelID: "default" } },
+    })
+
+    await subject.hydrator.hydrate("scope", { directory: "/repo", sessionId: "ses_1" })
+    await subject.hydrator.hydrate("scope", {
+      directory: "/repo",
+      sessionId: "ses_1",
+      sessionRef: {
+        host: "central",
+        sessionId: "ses_1",
+        toolSandbox: { kind: "virtual" },
+        harness: { id: "pi" },
+      },
+    })
+
+    expect(subject.calls).toEqual([
+      "seed:scope",
+      "apply:pi:default",
+      "seed:scope",
+      "apply:pi:default",
+    ])
+    expect(subject.cache.seen.get("scope")).toContain("\ncentral\n")
+    expect(subject.cache.seen.get("scope")).toEndWith("\npi\n")
   })
 
   test("dedupes concurrent hydrate calls through the injected cache", async () => {

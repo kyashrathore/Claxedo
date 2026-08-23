@@ -58,9 +58,18 @@ export function SessionPaneScope(props: ParentProps<{
     const harness = sessionHarness(ref).id
     return harness === "opencode" ? undefined : harness
   }
-  const refreshDirectory = (directory: string, harnessType?: string) =>
-    workspaceScopes?.refreshDirectory(directory, harnessType) ??
-      directorySessionCacheActions.refresh({ directory, harnessType })
+  const refreshDirectory: Parameters<typeof DirectoryScope>[0]["refreshDirectory"] = (directory, harnessType, options) => {
+    const current = connection()
+    const workspace = current.workspaceId && current.kind !== "local"
+      ? { workspaceId: current.workspaceId, kind: current.kind }
+      : undefined
+    if (!workspace) {
+      return workspaceScopes?.refreshDirectory(directory, harnessType, options) ??
+        directorySessionCacheActions.refresh({ directory, harnessType, ...options })
+    }
+    return workspaceScopes?.refreshDirectory(directory, harnessType, { ...options, workspace }) ??
+      directorySessionCacheActions.refresh({ directory, harnessType, ...options, workspace })
+  }
   // Resolve the workspace connection (id + kind) from the SINGLE authority seam.
   // Split panes for the same workspaceId acquire ONE shared connection inside
   // WorkspaceGate; local/no-backing panes resolve `local` and the gate is an

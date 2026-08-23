@@ -1,4 +1,14 @@
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
+import type { WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+
+export function sessionProjectionWorkspaceBacking(input: {
+  signedControlPlane: boolean
+  workspaceId?: string
+  workspaceKind?: WorkspaceSessionBacking["kind"]
+}): WorkspaceSessionBacking | undefined {
+  if (!input.signedControlPlane || !input.workspaceId || !input.workspaceKind) return
+  return { workspaceId: input.workspaceId, kind: input.workspaceKind }
+}
 
 export type SessionProjectionReason =
   | "session-created"
@@ -9,7 +19,7 @@ export type SessionProjectionReason =
 
 type ProjectionAction = "register" | "checkpoint" | "repair"
 
-type ProjectionInput = {
+export type ProjectionInput = {
   workspaceId?: string
   sessionId?: string
   action: ProjectionAction
@@ -31,14 +41,14 @@ type ProjectionInput = {
  * lost until reload.
  */
 const projections = new Map<string, {
-  inFlight?: Promise<void>
+  inFlight?: Promise<boolean>
   unsettled?: ProjectionInput
 }>()
 
 function projectionEntry(requestKey: string) {
   const existing = projections.get(requestKey)
   if (existing) return existing
-  const created: { inFlight?: Promise<void>; unsettled?: ProjectionInput } = {}
+  const created: { inFlight?: Promise<boolean>; unsettled?: ProjectionInput } = {}
   projections.set(requestKey, created)
   return created
 }
@@ -119,6 +129,7 @@ export function scheduleSessionProjectionPull(input: ProjectionInput) {
       // idempotency-keyed, so replaying a pull that actually succeeded on the
       // server is harmless.
       entry.unsettled = ok ? undefined : input
+      return ok
     })
     .finally(() => {
       if (entry.inFlight === next) entry.inFlight = undefined

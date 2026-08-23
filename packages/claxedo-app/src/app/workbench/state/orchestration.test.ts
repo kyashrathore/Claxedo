@@ -286,6 +286,41 @@ describe("state/orchestration", () => {
     })
   })
 
+  test("openCentralSession upgrades a central placeholder with its authoritative harness", () => {
+    const { layout, meta } = makeFixture()
+    const id = layout.openCentralSession("ses_pi", "Pi session")
+
+    layout.openCentralSession("ses_pi", "Pi session", {
+      authoritative: true,
+      sessionRef: {
+        sessionId: "ses_pi",
+        host: "central",
+        toolSandbox: { kind: "virtual" },
+        harness: { id: "pi" },
+      },
+    })
+
+    expect(meta.get(id)?.content?.sessionRef?.harness).toEqual({ id: "pi" })
+  })
+
+  test("openCentralSession does not downgrade an authoritative central harness", () => {
+    const { layout, meta } = makeFixture()
+    const id = layout.openCentralSession("ses_pi", "Pi session", {
+      authoritative: true,
+      sessionRef: {
+        sessionId: "ses_pi",
+        host: "central",
+        toolSandbox: { kind: "virtual" },
+        harness: { id: "pi" },
+      },
+    })
+
+    layout.openCentralSession("ses_pi", "Pi session updated")
+
+    expect(meta.get(id)?.content?.title).toBe("Pi session updated")
+    expect(meta.get(id)?.content?.sessionRef?.harness).toEqual({ id: "pi" })
+  })
+
   test("openSession removes stale central placeholder for the same session", () => {
     const { layout, meta, getState } = makeFixture()
     const central = layout.openCentralSession("ses_1", "Central placeholder")

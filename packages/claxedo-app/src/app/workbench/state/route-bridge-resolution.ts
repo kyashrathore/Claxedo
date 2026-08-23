@@ -86,6 +86,7 @@ export function routeBridgeSessionConfigUrl(input: {
 export type RouteSessionMeta = {
   directory?: unknown
   title?: unknown
+  tags?: unknown
   workspaceID?: unknown
   workspaceId?: unknown
   harness?: unknown

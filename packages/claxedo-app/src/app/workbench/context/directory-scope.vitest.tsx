@@ -273,6 +273,10 @@ describe("DirectoryScope bootstrap gating", () => {
       total: 1,
       session: [{ id: "ses_cached", directory: "workspace:ws_cached" }],
     })
+    state.queryData.set(JSON.stringify(["shell", "global-sync", "session-load", "workspace:ws_cached", "meta"]), {
+      limit: 5,
+      workspace: { workspaceId: "ws_cached", kind: "user-hosted" },
+    })
 
     const result = render(() => (
       <DirectoryScope {...directoryScopeProps}
@@ -306,7 +310,10 @@ describe("DirectoryScope bootstrap gating", () => {
     ))
 
     await waitFor(() => {
-      expect(state.refreshDirectory).toHaveBeenCalledWith("workspace:ws_1", "codex-acp", { quiet: undefined })
+      expect(state.refreshDirectory).toHaveBeenCalledWith("workspace:ws_1", "codex-acp", {
+        quiet: undefined,
+        workspace: { workspaceId: "ws_1", kind: "user-hosted" },
+      })
     })
     // User-hosted draft sessions can mount immediately with an empty draft cache;
     // connection/provisioning remains owned by WorkspaceGate.
@@ -355,7 +362,10 @@ describe("DirectoryScope bootstrap gating", () => {
     await waitFor(() => {
       expect(result.getByText("visible pane content")).toBeTruthy()
     })
-    expect(state.refreshDirectory).toHaveBeenCalledWith("workspace:ws_1", "codex-acp", { quiet: undefined })
+    expect(state.refreshDirectory).toHaveBeenCalledWith("workspace:ws_1", "codex-acp", {
+      quiet: undefined,
+      workspace: { workspaceId: "ws_1", kind: "cloud" },
+    })
     expect(result.queryByText("Preparing workspace")).toBeNull()
     // No provision-step UI is rendered by DirectoryScope; runtime startup stays
     // owned by WorkspaceGate.
@@ -402,7 +412,10 @@ describe("DirectoryScope bootstrap gating", () => {
     await waitFor(() => {
       expect(result.getByText("cloud terminal content")).toBeTruthy()
     })
-    expect(state.refreshDirectory).toHaveBeenCalledWith("workspace:ws_cloud", "codex-acp", { quiet: undefined })
+    expect(state.refreshDirectory).toHaveBeenCalledWith("workspace:ws_cloud", "codex-acp", {
+      quiet: undefined,
+      workspace: { workspaceId: "ws_cloud", kind: "cloud" },
+    })
     expect(result.queryByText("Preparing workspace")).toBeNull()
   })
 
@@ -412,6 +425,10 @@ describe("DirectoryScope bootstrap gating", () => {
       limit: 5,
       total: 0,
       session: [],
+    })
+    state.queryData.set(JSON.stringify(["shell", "global-sync", "session-load", "workspace:ws_1", "meta"]), {
+      limit: 5,
+      workspace: { workspaceId: "ws_1", kind: "user-hosted" },
     })
 
     const result = render(() => (
@@ -467,6 +484,10 @@ describe("DirectoryScope bootstrap gating", () => {
       total: 0,
       session: [],
     })
+    state.queryData.set(JSON.stringify(["shell", "global-sync", "session-load", "opaque-session-scope", "meta"]), {
+      limit: 5,
+      workspace: { workspaceId: "ws_ref_backing", kind: "cloud" },
+    })
 
     const result = render(() => (
       <DirectoryScope {...directoryScopeProps}
@@ -506,7 +527,10 @@ describe("DirectoryScope bootstrap gating", () => {
     ))
 
     await waitFor(() => {
-      expect(state.refreshDirectory).toHaveBeenCalledWith("workspace:ws_1", undefined, { quiet: undefined })
+      expect(state.refreshDirectory).toHaveBeenCalledWith("workspace:ws_1", undefined, {
+        quiet: undefined,
+        workspace: { workspaceId: "ws_1", kind: "user-hosted" },
+      })
     })
   })
 
@@ -600,6 +624,10 @@ describe("DirectoryScope bootstrap gating", () => {
       session: [{ id: "ses_shared", directory: "workspace:ws_1" }],
     }
     state.queryData.set(JSON.stringify(["directory-session-cache", "workspace:ws_1"]), { at: 1, limit: 5, total: 1, session: sharedStore.session })
+    state.queryData.set(JSON.stringify(["shell", "global-sync", "session-load", "workspace:ws_1", "meta"]), {
+      limit: 5,
+      workspace: { workspaceId: "ws_1", kind: "user-hosted" },
+    })
     state.queryData.set(JSON.stringify(["shell", "session", "ses_shared", "status"]), { type: "busy" })
 
     render(() => (
@@ -619,6 +647,71 @@ describe("DirectoryScope bootstrap gating", () => {
       expect(state.dataProviderProps?.data.session_diff).toEqual({})
       expect(state.dataProviderProps?.data.message).toEqual({})
       expect(state.dataProviderProps?.data.part).toEqual({})
+    })
+    expect(state.refreshDirectory).not.toHaveBeenCalled()
+  })
+
+  test("hides a local cache and refreshes once when signed workspace authority arrives", async () => {
+    const directory = "/repo/shared"
+    state.queryData.set(JSON.stringify(["directory-session-cache", directory]), {
+      at: 1,
+      limit: 5,
+      total: 1,
+      session: [{ id: "ses_local", directory }],
+    })
+    state.queryData.set(JSON.stringify(["shell", "global-sync", "session-load", directory, "meta"]), { limit: 5 })
+
+    render(() => (
+      <DirectoryScope {...directoryScopeProps}
+        directory={directory}
+        workspaceId={() => "ws_signed"}
+        workspaceKind={() => "user-hosted"}
+        harnessType={() => state.harnessType()}
+        sessionId={() => "ses_signed"}
+        surfaceId={() => state.surfaceId}
+      >
+        <div>signed pane content</div>
+      </DirectoryScope>
+    ))
+
+    await waitFor(() => {
+      expect(state.refreshDirectory).toHaveBeenCalledTimes(1)
+    })
+    expect(state.refreshDirectory).toHaveBeenCalledWith(directory, "codex-acp", {
+      quiet: undefined,
+      workspace: { workspaceId: "ws_signed", kind: "user-hosted" },
+    })
+    expect(state.dataProviderProps?.data.session).toEqual([])
+  })
+
+  test("reuses a cache loaded by the exact signed workspace authority", async () => {
+    const directory = "/repo/shared"
+    const sessions = [{ id: "ses_signed", directory }]
+    state.queryData.set(JSON.stringify(["directory-session-cache", directory]), {
+      at: 1,
+      limit: 5,
+      total: 1,
+      session: sessions,
+    })
+    state.queryData.set(JSON.stringify(["shell", "global-sync", "session-load", directory, "meta"]), {
+      limit: 5,
+      workspace: { workspaceId: "ws_signed", kind: "cloud" },
+    })
+
+    render(() => (
+      <DirectoryScope {...directoryScopeProps}
+        directory={directory}
+        workspaceId={() => "ws_signed"}
+        workspaceKind={() => "cloud"}
+        sessionId={() => "ses_signed"}
+        surfaceId={() => state.surfaceId}
+      >
+        <div>signed pane content</div>
+      </DirectoryScope>
+    ))
+
+    await waitFor(() => {
+      expect(state.dataProviderProps?.data.session).toBe(sessions)
     })
     expect(state.refreshDirectory).not.toHaveBeenCalled()
   })

@@ -36,6 +36,7 @@ import { createRequire } from "node:module"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
+import { fileURLToPath } from "node:url"
 
 import { claxedoServerExecArgv } from "../src/main/server-runtime-policy"
 import { claxedoServerStartup } from "./claxedo-server-startup"
@@ -311,7 +312,8 @@ function assertEvaluation(input: {
 
 function safeFileURLToPath(source: string): string | undefined {
   try {
-    return new URL(source).protocol === "file:" ? decodeURIComponent(new URL(source).pathname) : undefined
+    const url = new URL(source)
+    return url.protocol === "file:" ? fileURLToPath(url) : undefined
   } catch {
     return undefined
   }

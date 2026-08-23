@@ -114,4 +114,41 @@ describe("harness config runtime", () => {
     expect(harnessRuntime.useLocalHarnessConfig({ directory: "/repo/sandbox" })).toBe(true)
   })
 
+  test("classifies signed loopback filesystem workspaces when inventory is keyed by workspace id", () => {
+    const harnessRuntime = runtime({
+      projects: [{
+        worktree: "ws_cloud",
+        sandboxes: ["/repo/signed"],
+        workspaces: {
+          ws_cloud: {
+            id: "ws_cloud",
+            workspaceId: "ws_cloud",
+            kind: "cloud",
+            directory: "/repo/signed",
+          },
+        },
+      }],
+    })
+
+    expect(harnessRuntime.workspaceKind({ directory: "/repo/signed" })).toBe("cloud")
+    expect(harnessRuntime.useLocalHarnessConfig({ directory: "/repo/signed" })).toBe(false)
+  })
+
+  test("keeps ordinary local inventory on the loopback harness config API", () => {
+    const harnessRuntime = runtime({
+      projects: [{
+        worktree: "/repo/local",
+        workspaces: {
+          ws_local: {
+            id: "ws_local",
+            kind: "local",
+            directory: "/repo/local",
+          },
+        },
+      }],
+    })
+
+    expect(harnessRuntime.useLocalHarnessConfig({ directory: "/repo/local" })).toBe(true)
+  })
+
 })

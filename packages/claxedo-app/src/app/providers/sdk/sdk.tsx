@@ -6,14 +6,14 @@ import { useQuery } from "@tanstack/solid-query"
 import { type Accessor, createEffect, createMemo, onCleanup, onMount } from "solid-js"
 import { isOpenCodeSdkEvent, useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
-import { cachedSdkRuntimeRequest } from "./runtime-request"
+import { cachedSdkRuntimeRequest, sdkWorkspaceTransport } from "./runtime-request"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { signedWorkspaceFromProjects, type SignedWorkspaceInfo } from "@/platform/runtime/agent/signed-workspace"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { workspaceRuntimeFilePath, workspaceRuntimeFindFilePath } from "@/platform/runtime/agent/dialog-select-directory-routes"
-import { centralTransportForServer, createTransport } from "@/platform/runtime/transport"
+import { createTransport } from "@/platform/runtime/transport"
 
 type SDKEventMap = {
   [key in Event["type"]]: Extract<Event, { type: key }>
@@ -89,7 +89,15 @@ const sDKContextInput = {
           placement: {
             workspaceId: workspace.workspaceId,
             hosting: "workspace",
-            transport: centralTransportForServer(globalSDK.url) === "loopback" ? "loopback" : "workspace-relay",
+            transport: sdkWorkspaceTransport({
+              serverUrl: globalSDK.url,
+              workspaceId: workspace.workspaceId,
+              // workspaceForDirectory returns only signed inventory or the
+              // scope's explicit workspace identity. That canonical placement
+              // may select the relay before principal hydration; the relay
+              // endpoint still authorizes the actual request.
+              signedAccess: true,
+            }),
           },
           serverUrl: globalSDK.url,
           directory: dir,
@@ -109,6 +117,7 @@ const sDKContextInput = {
           serverUrl: globalSDK.url,
           directory: dir,
           workspaceId: workspace?.workspaceId,
+          signedAccess: !!workspace,
           workspace,
           request: platform.fetch,
           resolveWorkspaceRuntime: async ({ directory }) => {
@@ -285,7 +294,11 @@ const sDKContextInput = {
           placement: {
             workspaceId: workspace.workspaceId,
             hosting: "workspace",
-            transport: centralTransportForServer(globalSDK.url) === "loopback" ? "loopback" : "workspace-relay",
+            transport: sdkWorkspaceTransport({
+              serverUrl: globalSDK.url,
+              workspaceId: workspace.workspaceId,
+              signedAccess: true,
+            }),
           },
           serverUrl: globalSDK.url,
           directory: dir,

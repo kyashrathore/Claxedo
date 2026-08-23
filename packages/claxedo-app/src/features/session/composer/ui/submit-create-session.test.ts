@@ -288,6 +288,41 @@ describe("finalizeSubmitSessionTarget", () => {
     expect(navigations).toEqual([])
   })
 
+  test("refetches the canonical session list only after registration lands", async () => {
+    const invalidations: string[] = []
+    const registered = Promise.resolve(true)
+
+    finalizeSessionTarget({
+      target: { created: true },
+      runtimeWorkspaceRef: { workspaceId: "ws_1", kind: "cloud" },
+      scheduleProjectionPull: () => registered,
+      invalidateSessionList: async () => {
+        invalidations.push("registered")
+      },
+    })
+
+    expect(invalidations).toEqual([])
+    await registered
+    expect(invalidations).toEqual(["registered"])
+  })
+
+  test("does not refetch the session list when registration exhausts its retries", async () => {
+    const invalidations: string[] = []
+    const registered = Promise.resolve(false)
+
+    finalizeSessionTarget({
+      target: { created: true },
+      runtimeWorkspaceRef: { workspaceId: "ws_1", kind: "cloud" },
+      scheduleProjectionPull: () => registered,
+      invalidateSessionList: async () => {
+        invalidations.push("failed")
+      },
+    })
+
+    await registered
+    expect(invalidations).toEqual([])
+  })
+
   test("prefers surface session refs before matching meta and resolver fallback", () => {
     const surfaceRef = sessionRef("session-1", "ws_surface")
     const matchingRef = sessionRef("session-1", "ws_matching")

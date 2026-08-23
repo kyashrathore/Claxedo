@@ -737,6 +737,7 @@ describe("createCentralSessionRuntime", () => {
       workspaceID: "workspace_1",
       directory: null,
       title: "Hybrid",
+      tags: ["harness:pi"],
     })
   })
 
@@ -817,11 +818,12 @@ describe("createCentralSessionRuntime", () => {
       directory: null,
       toolSandbox: { kind: "workspace-runtime", workspaceId: "ws-1", directory: "sub" },
       title: "Workspace runtime",
+      tags: ["harness:pi"],
     })
     const call = (svc.projectionStore.put_session_meta as ReturnType<typeof vi.fn>).mock.calls.find(
       ([id]) => id === session.id,
     )
-    expect(call?.[1]).not.toHaveProperty("tags")
+    expect(call?.[1]).toHaveProperty("tags", ["harness:pi"])
   })
 
   test("omits the tool sandbox field for virtual and absent tool sandboxes", async () => {
@@ -836,9 +838,9 @@ describe("createCentralSessionRuntime", () => {
       host: "central",
       directory: null,
       title: "Virtual",
+      tags: ["harness:pi"],
     })
     expect(call?.[1]).not.toHaveProperty("toolSandbox")
-    expect(call?.[1]).not.toHaveProperty("tags")
   })
 
   test("reconstructs a workspace-runtime tool sandbox from meta on recovery", async () => {
@@ -927,6 +929,7 @@ describe("createCentralSessionRuntime", () => {
       directory: null,
       toolSandbox: { kind: "workspace-runtime", workspaceId: "ws_B", directory: "pkg" },
       title: "Divergent",
+      tags: ["harness:pi"],
     })
   })
 
@@ -944,6 +947,7 @@ describe("createCentralSessionRuntime", () => {
       directory: null,
       title: "Channel",
       tags: [
+        "harness:pi",
         "source-channel:telegram",
         "source-thread:telegram:bot:chat:thread",
       ],

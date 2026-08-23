@@ -67,7 +67,15 @@ const drain = async (deadline?: { timeRemaining(): number }) => {
     const budget = forced && !recentlyActive() ? 1 : preloadSliceSize
     const slice = job.list.slice(job.index, job.index + budget)
     job.index += budget
-    for (const part of slice) await preloadMarkdown(part.text, part.id, job.parser)
+    for (const part of slice) {
+      try {
+        await preloadMarkdown(part.text, part.id, job.parser)
+      } catch {
+        // Preloading is opportunistic: the mounted row can retry through the
+        // normal render path. One malformed block must not reject the idle
+        // callback and strand every later job behind `draining = true`.
+      }
+    }
     if (job.index >= job.list.length) queue.shift()
   } else if (job.collectRetries++ > 40) {
     // The conversation never materialized; stop waiting for it.

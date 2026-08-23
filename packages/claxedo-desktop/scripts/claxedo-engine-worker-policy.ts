@@ -1,4 +1,31 @@
 import { timingSafeEqual } from "node:crypto"
+import type { IncomingMessage, ServerResponse } from "node:http"
+
+export function bindEngineWorkerRequestAbort(incoming: IncomingMessage, outgoing: ServerResponse) {
+  const controller = new AbortController()
+  const abort = () => {
+    if (!controller.signal.aborted) {
+      controller.abort(new DOMException("Engine worker client disconnected", "AbortError"))
+    }
+  }
+  const incomingClose = () => {
+    if (incoming.aborted || !incoming.complete) abort()
+  }
+  const outgoingClose = () => {
+    if (!outgoing.writableEnded) abort()
+  }
+  incoming.once("aborted", abort)
+  incoming.once("close", incomingClose)
+  outgoing.once("close", outgoingClose)
+  return {
+    signal: controller.signal,
+    dispose() {
+      incoming.removeListener("aborted", abort)
+      incoming.removeListener("close", incomingClose)
+      outgoing.removeListener("close", outgoingClose)
+    },
+  }
+}
 
 export function isAuthorizedEngineWorkerRequest(header: string | string[] | undefined, token: string) {
   if (typeof header !== "string") return false

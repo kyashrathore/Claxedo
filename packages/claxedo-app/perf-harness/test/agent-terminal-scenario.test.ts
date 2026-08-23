@@ -93,18 +93,24 @@ describe("Claxedo terminal workload", () => {
       ], { stdin: "pipe", stdout: "pipe", stderr: "pipe" })
       let exited = false
       void child.exited.then(() => { exited = true })
-      await Bun.sleep(45)
-      child.stdin.write("probe-1\n")
-      await child.stdin.flush()
-
       const reader = child.stdout.getReader()
       const decoder = new TextDecoder()
       let output = ""
-      while (!output.includes("⟦t3-benchmark-complete⟧")) {
-        const next = await reader.read()
-        if (next.done) break
-        output += decoder.decode(next.value, { stream: true })
+      const readUntil = async (marker: string) => {
+        while (!output.includes(marker)) {
+          const next = await reader.read()
+          if (next.done) break
+          output += decoder.decode(next.value, { stream: true })
+        }
       }
+
+      // Synchronize on the workload's own admission marker. Sleeping for a
+      // guessed duration races cold process startup on contended Linux hosts
+      // and can send the probe before the child is ready to accept it.
+      await readUntil("⟦input-ready:probe-1⟧")
+      child.stdin.write("probe-1\n")
+      await child.stdin.flush()
+      await readUntil("⟦t3-benchmark-complete⟧")
       await Bun.sleep(20)
       expect(output).toContain("⟦input:probe-1⟧")
       expect(output).toContain("⟦t3-benchmark-complete⟧")

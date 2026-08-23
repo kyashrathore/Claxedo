@@ -1,4 +1,4 @@
-import { getClaxedoServerUrl, authFetch, normalizeUrl } from "@/platform/api/api"
+import { apiBearerToken, getClaxedoServerUrl, authFetch, normalizeUrl } from "@/platform/api/api"
 import { queryClient } from "@/platform/query/query-client"
 
 export type WorkspaceConnectionObserver = {
@@ -224,6 +224,15 @@ function connectionCacheKey(workspaceId: string, options: Options) {
   return ["shell", "workspace-connection", ...connectionCacheParts(workspaceId, options)] as const
 }
 
+async function connectionOptions(options: Options) {
+  const headers = new Headers(options.headers)
+  if (!headers.has("authorization")) {
+    const token = await apiBearerToken()
+    if (token) headers.set("Authorization", `Bearer ${token}`)
+  }
+  return { ...options, headers }
+}
+
 // Circuit-breaker cooldowns. The shell mounts one session pane per open tab,
 // and each pane independently opens a workspace connection — so a layout with
 // N stale tabs across dead/forbidden workspaces fans out into N connection
@@ -253,7 +262,8 @@ function connectionFailureCooldownMs(err: unknown, options: Options) {
 }
 
 export async function openWorkspaceConnection(workspaceId: string, options: Options = {}) {
-  const key = connectionCacheKey(workspaceId, options)
+  const resolvedOptions = await connectionOptions(options)
+  const key = connectionCacheKey(workspaceId, resolvedOptions)
   const cached = queryClient.getQueryData<Promise<WorkspaceConnectionInfo>>(key)
   if (cached) return cached
 
@@ -272,11 +282,11 @@ export async function openWorkspaceConnection(workspaceId: string, options: Opti
   }
 
   const url = workspaceConnectionUrl({ serverUrl: options.serverUrl, workspaceId })
-  const pending: Promise<WorkspaceConnectionInfo> = workspaceConnectionWithRetry(url, options, undefined, workspaceId)
+  const pending: Promise<WorkspaceConnectionInfo> = workspaceConnectionWithRetry(url, resolvedOptions, undefined, workspaceId)
     .then((connection) => {
       observer?.onConnected(connection)
-      const ttl = connection.tokenExpiresAt - (options.now ?? Date.now)()
-      evictWhenCurrent(pending, ttl - (options.refreshWindowMs ?? 60_000))
+      const ttl = connection.tokenExpiresAt - (resolvedOptions.now ?? Date.now)()
+      evictWhenCurrent(pending, ttl - (resolvedOptions.refreshWindowMs ?? 60_000))
       return connection
     })
     .catch((err) => {
@@ -284,7 +294,7 @@ export async function openWorkspaceConnection(workspaceId: string, options: Opti
       // Negative-cache the failure for a cooldown instead of evicting now, so
       // the swarm of mounted panes does not immediately re-mint a doomed
       // connection. Callers still receive the rejection and surface offline.
-      evictWhenCurrent(pending, connectionFailureCooldownMs(err, options))
+      evictWhenCurrent(pending, connectionFailureCooldownMs(err, resolvedOptions))
       throw err
     })
   // Keep an unhandled-rejection guard: the cached promise may sit unconsumed

@@ -176,11 +176,11 @@ describe("provider list body cache (unit)", () => {
     expect(await fs.readdir(cacheDir)).toEqual([])
   })
 
-  test("a corrupted key file reads as a miss and is repaired by the next derive", async () => {
+  test("a corrupted disk entry reads as a miss and is repaired by the next derive", async () => {
     const cacheDir = await tmpCacheDir()
     const inputs = makeInputs()
     const first = await providerListBody(inputs, fullList, { cacheDir, version: "9.9.9" })
-    await fs.writeFile(path.join(cacheDir, "provider-list.v1.key"), "corrupted")
+    await fs.writeFile(path.join(cacheDir, "provider-list.v1.json"), "corrupted")
 
     const before = counters()
     const second = await providerListBody(cloneInputs(inputs), fullList, { cacheDir, version: "9.9.9" })
@@ -190,6 +190,29 @@ describe("provider list body cache (unit)", () => {
     const third = await providerListBody(cloneInputs(inputs), fullList, { cacheDir, version: "9.9.9" })
     expect(delta(before).diskHits).toBe(1)
     expect(third).toEqual(first)
+  })
+
+  test("concurrent writers always publish a matching key and body", async () => {
+    const cacheDir = await tmpCacheDir()
+    const options = { cacheDir, version: "9.9.9" }
+    const anthropicOnly = makeInputs({ config: { disabled_providers: ["openai"] } })
+    const openaiOnly = makeInputs({ config: { disabled_providers: ["anthropic"] } })
+
+    const [anthropicBody, openaiBody] = await Promise.all([
+      providerListBody(anthropicOnly, fullList, options),
+      providerListBody(openaiOnly, fullList, options),
+    ])
+
+    const entry = JSON.parse(await fs.readFile(path.join(cacheDir, "provider-list.v1.json"), "utf8")) as {
+      key: string
+      body: string
+    }
+    expect(entry.body === anthropicBody || entry.body === openaiBody).toBe(true)
+
+    const matchingInputs = entry.body === anthropicBody ? cloneInputs(anthropicOnly) : cloneInputs(openaiOnly)
+    const before = counters()
+    expect(await providerListBody(matchingInputs, fullList, options)).toBe(entry.body)
+    expect(delta(before)).toEqual({ encodes: 0, diskHits: 1, diskWrites: 0 })
   })
 })
 

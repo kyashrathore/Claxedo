@@ -880,6 +880,14 @@ function opencodeProxyHeaders(headers: HeadersInit, base?: HeadersInit) {
   const next = new Headers(headers)
   next.delete("host")
   next.delete("connection")
+  // This is an in-process/internal transport boundary, not the browser's HTTP
+  // hop. Forwarding the browser's compression negotiation lets the embedded
+  // engine return compressed bytes to routes such as /provider that must read
+  // and validate the JSON before replying. A Response constructed around
+  // those bytes does not perform fetch-style decompression, so `.json()` sees
+  // gzip data and the canonical provider catalogue is reported as missing.
+  // The outer server owns response compression for the actual client hop.
+  next.delete("accept-encoding")
   next.delete("authorization")
   next.delete("Authorization")
   next.delete("x-workspace-id")
@@ -1018,13 +1026,14 @@ function providerCatalogView(input: { all?: unknown[]; connected?: unknown[]; de
   }
 }
 
-function providerUnavailable(harness: RuntimeRunner) {
+function providerUnavailable(harness: RuntimeRunner | string, message?: string) {
+  const harnessId = typeof harness === "string" ? harness : harness.id
   return {
     ok: false,
     error: {
       code: "provider_models_unavailable",
-      harness: harness.id,
-      message: `${harness.id} does not expose live provider model metadata`,
+      harness: harnessId,
+      message: message ?? `${harnessId} does not expose live provider model metadata`,
     },
   }
 }
@@ -1921,14 +1930,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         const requestedHarness = c.req.query("harness") || c.req.query("runner")
         if (runner.id !== "opencode" && requestedHarness !== "opencode") return c.json(providerUnavailable(runner), 502)
         if (hostOptions.opencodeCompat !== true) {
-          return c.json({
-            ok: false,
-            error: {
-              code: "provider_models_unavailable",
-              harness: "opencode",
-              message: "opencode provider metadata is unavailable because compatibility proxying is disabled",
-            },
-          }, 502)
+          return c.json(
+            providerUnavailable(
+              "opencode",
+              "opencode provider metadata is unavailable because compatibility proxying is disabled",
+            ),
+            502,
+          )
         }
         const adapter = runner.id === "opencode"
           ? await ensureSessionAdapter(runner)
@@ -1941,31 +1949,29 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             hostOptions.opencodeHeaders,
             detail ? undefined : { view: "index" },
           )
-          if (res?.ok) {
-            const body = await res.json().catch(() => undefined) as
-              | { all?: unknown[]; connected?: unknown[]; default?: Record<string, unknown> }
-              | undefined
-            if (providerListHasModels(body) || (!detail && Array.isArray(body?.all))) {
-              return c.json(providerCatalogView(body ?? {}, detail))
-            }
+          if (!res) {
+            return c.json(providerUnavailable("opencode", "opencode provider metadata proxy is unavailable"), 502)
           }
-          return c.json({
-            ok: false,
-            error: {
-              code: "provider_models_unavailable",
-              harness: "opencode",
-              message: "opencode provider metadata did not include live model data",
-            },
-          }, 502)
+          if (!res.ok) {
+            return c.json(
+              providerUnavailable("opencode", `opencode provider metadata request failed with status ${res.status}`),
+              502,
+            )
+          }
+          const body = (await res.json().catch(() => undefined)) as
+            { all?: unknown[]; connected?: unknown[]; default?: Record<string, unknown> } | undefined
+          if (!body) {
+            return c.json(providerUnavailable("opencode", "opencode provider metadata returned invalid JSON"), 502)
+          }
+          if (providerListHasModels(body) || (!detail && Array.isArray(body.all))) {
+            return c.json(providerCatalogView(body, detail))
+          }
+          return c.json(
+            providerUnavailable("opencode", "opencode provider metadata did not include live model data"),
+            502,
+          )
         } catch (cause) {
-          return c.json({
-            ok: false,
-            error: {
-              code: "provider_models_unavailable",
-              harness: "opencode",
-              message: errorMessage(cause),
-            },
-          }, 502)
+          return c.json(providerUnavailable("opencode", errorMessage(cause)), 502)
         }
       })
 

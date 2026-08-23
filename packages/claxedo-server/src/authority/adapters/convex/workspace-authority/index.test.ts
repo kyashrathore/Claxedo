@@ -399,6 +399,7 @@ describe("convex authority", () => {
           parts: [{ type: "text", text: "hello" }],
         },
       ],
+      maxEventOrdinal: 12,
     })
 
     expect(query).toHaveBeenNthCalledWith(1, expect.anything(), {
@@ -412,6 +413,7 @@ describe("convex authority", () => {
       workspace_id: "ws_1",
       session_id: "session-1",
       intake_ready: false,
+      max_event_ordinal: 12,
       messages: [
         {
           info: { id: "msg-1", role: "user" },

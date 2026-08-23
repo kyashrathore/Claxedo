@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { afterAll, describe, expect, test } from "bun:test"
 import { spawnSync } from "node:child_process"
 import { createRequire } from "node:module"
 import * as fs from "node:fs"
@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url"
 
 import { claxedoServerExecArgv } from "../src/main/server-runtime-policy"
 import {
+  COMPILE_CACHE_SEED_COMPLETE_NAME,
   OPENCODE_COMPILE_CACHE_MANIFEST_NAME,
   compileCacheEntryName,
   compileCacheSourceName,
@@ -225,9 +226,10 @@ test("ABLATION: the same blob under the BUILD-path key MISSES — shipping the e
     fs.rmSync(computed, { recursive: true, force: true })
     fs.mkdirSync(computed, { recursive: true })
     fs.copyFileSync(blob, path.join(computed, buildKey))
+    fs.writeFileSync(path.join(computed, COMPILE_CACHE_SEED_COMPLETE_NAME), "1\n")
 
-    // A populated directory is left alone, so this launch consumes exactly what
-    // a verbatim ship would have placed there.
+    // A completed seed is left alone, so this launch consumes exactly what a
+    // verbatim ship would have placed there.
     const verbatim = launch({ dataDir, shippedDir: shipped, enginePath })
 
     expect(verbatim.outcome).toMatchObject({ status: "already-seeded" })
@@ -264,7 +266,7 @@ test("a second launch does not re-seed and still HITS", async () => {
     const first = launch({ dataDir, shippedDir: shipped, enginePath })
     expect(first.outcome).toMatchObject({ status: "seeded", entries: 1 })
     const seededDir = first.outcome!.directory!
-    const seededFile = path.join(seededDir, fs.readdirSync(seededDir)[0]!)
+    const seededFile = path.join(seededDir, fs.readdirSync(seededDir).find((entry) => !entry.startsWith("."))!)
     const stamp = fs.statSync(seededFile).mtimeMs
 
     const second = launch({ dataDir, shippedDir: shipped, enginePath })
@@ -276,27 +278,23 @@ test("a second launch does not re-seed and still HITS", async () => {
   })
 }, 240_000)
 
-test("an unreadable shipped cache still boots", async () => {
+test("a broken shipped cache still boots", async () => {
   if (!engineIsBuilt()) return
-  if (typeof process.getuid === "function" && process.getuid() === 0) {
-    console.warn("[skip] running as root — permission bits cannot deny a read")
-    return
-  }
   await withFixture(async (root) => {
     const { enginePath } = installFixture(root)
     const shipped = await shippedCache(root, enginePath)
-    fs.chmodSync(shipped, 0o000)
-    try {
-      const run = launch({ dataDir: path.join(root, "profile"), shippedDir: shipped, enginePath })
+    // Permission bits are not a portable unreadability primitive: Windows ACLs
+    // ignore chmod(000), and uid 0 can still read it on Unix. A malformed
+    // shipped manifest exercises the same canonical parse/read failure at the
+    // real boot boundary on every platform.
+    fs.writeFileSync(path.join(shipped, OPENCODE_COMPILE_CACHE_MANIFEST_NAME), "{ not json")
+    const run = launch({ dataDir: path.join(root, "profile"), shippedDir: shipped, enginePath })
 
-      expect(run.code).toBe(0)
-      // Present but unreadable is a real failure, reported as one — and still
-      // not a boot failure.
-      expect(run.outcome?.status).toBe("failed")
-      expect(run.stderr).toContain(missLine(enginePath))
-    } finally {
-      fs.chmodSync(shipped, 0o755)
-    }
+    expect(run.code).toBe(0)
+    // Present but broken is a real failure, reported as one — and still not a
+    // boot failure.
+    expect(run.outcome?.status).toBe("failed")
+    expect(run.stderr).toContain(missLine(enginePath))
   })
 }, 180_000)
 
@@ -319,6 +317,11 @@ test("an unreadable shipped cache still boots", async () => {
 describe("the server bundle's own static closure", () => {
   /** Built once: bundling the real server is the expensive part of this file. */
   let built: { buildDir: string; entry: string; deferredEntry: string } | undefined
+  let buildRoot: string | undefined
+
+  afterAll(() => {
+    if (buildRoot) fs.rmSync(buildRoot, { recursive: true, force: true })
+  })
 
   /**
    * The bundle at its BUILD location, under the package so that
@@ -327,9 +330,10 @@ describe("the server bundle's own static closure", () => {
    */
   async function serverBundle() {
     if (built) return built
-    const buildDir = path.join(PACKAGE_DIR, ".artifacts", "compile-cache-build", "claxedo-server")
-    fs.rmSync(path.dirname(buildDir), { recursive: true, force: true })
-    fs.mkdirSync(path.dirname(buildDir), { recursive: true })
+    const artifactRoot = path.join(PACKAGE_DIR, ".artifacts", "compile-cache-build")
+    fs.mkdirSync(artifactRoot, { recursive: true })
+    buildRoot = fs.mkdtempSync(path.join(artifactRoot, "run-"))
+    const buildDir = path.join(buildRoot, "claxedo-server")
     const bundled = await bundleClaxedoServer(path.join(SCRIPT_DIR, "claxedo-server-boot.ts"), buildDir)
     built = { buildDir, entry: bundled.entry, deferredEntry: bundled.deferredEntry }
     return built
@@ -471,6 +475,7 @@ describe("the server bundle's own static closure", () => {
       fs.rmSync(computed, { recursive: true, force: true })
       fs.mkdirSync(computed, { recursive: true })
       fs.copyFileSync(blob, path.join(computed, compileCacheEntryName(compileCacheSourceName(deferredEntry, "esm"), "esm")))
+      fs.writeFileSync(path.join(computed, COMPILE_CACHE_SEED_COMPLETE_NAME), "1\n")
 
       const verbatim = launch({
         dataDir: path.join(root, "profile"),

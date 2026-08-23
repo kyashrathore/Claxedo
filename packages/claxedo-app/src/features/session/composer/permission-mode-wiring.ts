@@ -13,6 +13,7 @@ import {
   type PermissionSelection,
 } from "@/features/session/permission/modes"
 import type { SessionPermissionWriter } from "@/features/session/permission/apply"
+import type { SessionRef, WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 
 /**
  * The I/O half of the composer's permission-mode picker: fetching what the
@@ -52,8 +53,23 @@ export function createComposerPermissionModeWiring(input: {
    * ruleset path. `sdk.client.session` satisfies both.
    */
   client: SessionClient & SessionPermissionWriter["session"]
+  claxedoServerUrl: () => string
+  signedControlPlane: () => boolean
+  workspace: () => WorkspaceSessionBacking | undefined
+  sessionRef: () => SessionRef | undefined
   requestFailedTitle: () => string
 }) {
+  const transportScope = () => {
+    const workspace = input.workspace()
+    if (!input.signedControlPlane() && !workspace) return {}
+    return {
+      claxedoServerUrl: input.claxedoServerUrl(),
+      signedControlPlane: input.signedControlPlane(),
+      workspaceId: workspace?.workspaceId,
+      workspaceKind: workspace?.kind,
+      sessionRef: input.sessionRef(),
+    }
+  }
   /**
    * Two-argument `createResource` on purpose: the one-argument form runs once
    * and then never re-runs when the session id arrives, which is the
@@ -80,6 +96,7 @@ export function createComposerPermissionModeWiring(input: {
       const source = JSON.parse(sourceKey) as { sessionID: string; directory: AgentRuntimeDirectory; harness: string | null }
       return (
         await fetchSessionPermissionModesByTransport({
+          ...transportScope(),
           client: input.client,
           directory: source.directory,
           sessionID: source.sessionID,
@@ -165,6 +182,7 @@ export function createComposerPermissionModeWiring(input: {
     session: input.client,
     setPermissionMode: async (call) => {
       const result = await setSessionPermissionModeByTransport({
+        ...transportScope(),
         client: input.client,
         directory: input.directory(),
         sessionID: call.sessionID,

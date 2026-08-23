@@ -1096,19 +1096,12 @@ describe("workspace routes signed control plane authority", () => {
     expect(mocks.ensureSupervisorSandbox).not.toHaveBeenCalled()
   })
 
-  test("signed directory resolve prefers user-hosted authority over the local row", async () => {
-    mocks.resolveWorkspace.mockResolvedValueOnce({
-      id: "local_alias",
-      project_id: "project_1",
-      workspace_name: "Local Alias",
-      directory: "/tmp/local-alias",
-      kind: "local",
-      repo_name: "opencode",
-      git_branch: "dev",
-      created_at: 1,
-      updated_at: 1,
-    })
+  test("signed directory resolve prefers user-hosted authority without consulting the local store", async () => {
     const svc = services()
+    svc.authority!.listWorkspaces = vi.fn(async () => [{
+      workspace_id: "ws_shared",
+      remote_directory: "/tmp/local-alias",
+    }])
     svc.authority!.openWorkspace = vi.fn(async () => ({
       allowed: true,
       role: "editor",
@@ -1143,8 +1136,63 @@ describe("workspace routes signed control plane authority", () => {
     })
     expect(svc.authority?.openWorkspace).toHaveBeenCalledWith(
       expect.objectContaining({ mode: "signed", token: "user_2" }),
-      { workspaceId: "local_alias" },
+      { workspaceId: "ws_shared" },
     )
+    expect(mocks.resolveWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("signed directory resolve cannot create a local alias when authority has no match", async () => {
+    const svc = services()
+    svc.authority!.listWorkspaces = vi.fn(async () => [])
+    mocks.resolveWorkspace.mockResolvedValueOnce(undefined)
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://localhost/resolve?directory=%2Fworkspace%2Fmissing&create=true", {
+      headers: { Authorization: "Bearer user_1" },
+    })
+
+    expect(res.status).toBe(404)
+    await expect(res.json()).resolves.toEqual({
+      error: { code: "workspace_not_found", message: "Workspace not found" },
+    })
+    expect(mocks.resolveWorkspace).toHaveBeenCalledWith({
+      workspaceId: undefined,
+      directory: "/workspace/missing",
+      create: false,
+    })
+    expect(mocks.ensureWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("unsigned directory resolve preserves local create semantics", async () => {
+    mocks.resolveWorkspace.mockImplementationOnce(async (input: { directory?: string; create?: boolean }) =>
+      input.create
+        ? {
+            id: "ws_local_created",
+            project_id: "project_local_created",
+            workspace_name: "created",
+            directory: input.directory ?? "/workspace/created",
+            kind: "local",
+            created_at: 1,
+            updated_at: 1,
+          }
+        : undefined)
+    const app = WorkspaceRoutes(services(), {
+      authConfig: { enabled: false, mode: "local-only", reason: "local" },
+    })
+
+    const res = await app.request("http://localhost/resolve?directory=%2Fworkspace%2Fcreated&create=true")
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({
+      workspaceId: "ws_local_created",
+      directory: "/workspace/created",
+      kind: "local",
+    })
+    expect(mocks.resolveWorkspace).toHaveBeenCalledWith({
+      workspaceId: undefined,
+      directory: "/workspace/created",
+      create: true,
+    })
   })
 
   test("signed cloud resolve checks Convex workspace open authority", async () => {
@@ -1234,6 +1282,68 @@ describe("workspace routes signed control plane authority", () => {
     expect(svc.authority?.openWorkspace).toHaveBeenCalledWith(
       expect.objectContaining({ mode: "signed", token: "user_1" }),
       { workspaceId: "ws_hosted" },
+    )
+    expect(mocks.resolveWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("signed directory resolve rejects a runtime path shared by multiple workspaces", async () => {
+    const svc = services()
+    svc.authority!.listWorkspaces = vi.fn(async () => [
+      { workspace_id: "ws_cloud_a", access: "cloud", backing: "cloud-vm", remote_directory: "/workspace" },
+      { workspace_id: "ws_cloud_b", access: "cloud", backing: "cloud-vm", remote_directory: "/workspace" },
+    ])
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://localhost/resolve?directory=%2Fworkspace", {
+      headers: { Authorization: "Bearer user_1" },
+    })
+
+    expect(res.status).toBe(409)
+    await expect(res.json()).resolves.toEqual({
+      error: {
+        code: "workspace_directory_ambiguous",
+        message: "Multiple workspaces use this runtime directory; resolve with a canonical workspaceId",
+      },
+    })
+    expect(svc.authority?.openWorkspace).not.toHaveBeenCalled()
+    expect(mocks.resolveWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("signed raw workspace-id directory refs open canonical authority when the local store misses", async () => {
+    const svc = services()
+    mocks.resolveWorkspace.mockResolvedValueOnce(undefined)
+    svc.authority!.openWorkspace = vi.fn(async () => ({
+      allowed: true,
+      role: "owner",
+      workspace: {
+        workspace_id: "ws_signed",
+        project_id: "proj_signed",
+        access: "cloud",
+        backing: "cloud-vm",
+        remote_directory: "/workspace/signed",
+      },
+    }))
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://localhost/resolve?directory=ws_signed", {
+      headers: { Authorization: "Bearer user_1" },
+    })
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({
+      workspaceId: "ws_signed",
+      directory: "/workspace/signed",
+      kind: "cloud",
+    })
+    expect(svc.authority?.listWorkspaces).not.toHaveBeenCalled()
+    expect(mocks.resolveWorkspace).toHaveBeenCalledWith({
+      workspaceId: "ws_signed",
+      directory: undefined,
+      create: false,
+    })
+    expect(svc.authority?.openWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "signed", token: "user_1" }),
+      { workspaceId: "ws_signed" },
     )
   })
 

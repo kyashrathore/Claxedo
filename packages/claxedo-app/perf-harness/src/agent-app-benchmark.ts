@@ -13,6 +13,7 @@ import { IdleProcessFamilyTracker } from "./idle-process-family";
 import { loadPriorEvidence, checkExperimentProposal } from "./agent-prior-evidence";
 import { driverClock, rawMetricSample, type RawMetricSample, type ValidityCheckEvidence } from "./agent-samples";
 import { evaluateTarget, loadAgentBenchmarkTargets } from "./agent-benchmark-targets";
+import { writeJson } from "./storage";
 
 const PROFILE_SCENARIOS: Record<AgentAppProfile, AgentAppScenario[]> = {
   "workspace-core-v1": ["app-cold-ready-v1", "work-item-cold-open-v1", "work-item-warm-switch-v1"],
@@ -378,8 +379,6 @@ async function prepareOutput(directory: string) {
   const existing = await readdir(directory);
   if (existing.length) throw new Error(`output directory must be empty: ${directory}`);
 }
-async function writeJson(file: string, value: unknown) { await writeFile(file, `${JSON.stringify(value, null, 2)}\n`); }
-
 if (import.meta.main) {
   try {
     const result = await runAgentAppBenchmark(parseAgentBenchmarkOptions(process.argv.slice(2)));

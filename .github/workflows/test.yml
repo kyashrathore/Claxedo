@@ -686,6 +686,26 @@ jobs:
             bun run test:e2e:real -- --grep "${scenario}"
           done
 
+      # These specs own their real hosted-node/relay fixtures and production
+      # web builds, so the config-level webServer must stay disabled. Run them
+      # together on one worker: their fixed port blocks and output directories
+      # are distinct, but serial execution avoids concurrent Vite builds
+      # starving the 4-vCPU runner and keeps one combined Playwright report.
+      - name: Run signed web relay e2e (cloud + user-hosted)
+        working-directory: packages/claxedo-app
+        timeout-minutes: 60
+        env:
+          CLAXEDO_E2E_SUITE: core
+          CLAXEDO_TIER_REAL_E2E: "1"
+          PLAYWRIGHT_SKIP_WEBSERVER: "1"
+          PLAYWRIGHT_VIDEO: "0"
+        run: >-
+          npx playwright test
+          --config playwright.config.ts
+          e2e/playwright/web-signed-cloud.spec.ts
+          e2e/playwright/web-signed-userhosted.spec.ts
+          --workers=1
+
       - name: Upload Playwright artifacts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

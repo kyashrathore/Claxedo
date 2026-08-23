@@ -40,3 +40,26 @@ export async function retry<T>(fn: () => Promise<T>, options: RetryOptions = {})
   }
   throw lastError
 }
+
+/**
+ * Share one pending or successful asynchronous load, while allowing a later
+ * call to retry after the current load rejects.
+ *
+ * The rejection handler observes the failure and only clears the promise it
+ * belongs to. That identity check keeps an older failure from erasing a newer
+ * load if the loader is ever extended with an explicit refresh path.
+ */
+export function memoizeSuccessfulLoad<T>(load: () => Promise<T>) {
+  let pending: Promise<T> | undefined
+
+  return () => {
+    if (pending) return pending
+
+    const current = load()
+    pending = current
+    void current.then(undefined, () => {
+      if (pending === current) pending = undefined
+    })
+    return current
+  }
+}

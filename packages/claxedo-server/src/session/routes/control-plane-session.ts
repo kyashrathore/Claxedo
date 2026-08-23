@@ -349,6 +349,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
             directory: null,
             title: sessionTitle,
             ...(model ? { model } : {}),
+            tags: [`harness:${harness}`],
           })
         }
         return c.json({

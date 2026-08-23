@@ -21,6 +21,7 @@ import {
   hasBacking,
   isLocalSessionDirectory,
   localSessionRefForDirectory,
+  sameSessionRef,
   type SessionRef,
 } from "@/platform/identity/session-ref"
 import { markRouteIntentClosed } from "./route-intent"
@@ -78,31 +79,6 @@ const newId = (type: ContentType) => {
           ? "task"
           : type
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-}
-
-function sameSessionRef(a: SessionRef | undefined, b: SessionRef | undefined) {
-  if (a === b) return true
-  if (!a || !b) return false
-  if (
-    a.sessionId !== b.sessionId ||
-    a.host !== b.host ||
-    a.workspaceId !== b.workspaceId ||
-    a.cwd !== b.cwd ||
-    a.toolSandbox?.kind !== b.toolSandbox?.kind ||
-    a.harness?.id !== b.harness?.id ||
-    a.harness?.binary !== b.harness?.binary
-  ) return false
-  if (a.toolSandbox?.kind === "workspace" && b.toolSandbox?.kind === "workspace") {
-    return (
-      a.toolSandbox.workspaceId === b.toolSandbox.workspaceId &&
-      a.toolSandbox.hosting === b.toolSandbox.hosting &&
-      a.toolSandbox.hostId === b.toolSandbox.hostId
-    )
-  }
-  if (a.toolSandbox?.kind === "local" && b.toolSandbox?.kind === "local") {
-    return a.toolSandbox.cwd === b.toolSandbox.cwd
-  }
-  return true
 }
 
 export function createLayoutOrchestration(input: {
@@ -325,9 +301,10 @@ export function createLayoutOrchestration(input: {
     },
 
     openCentralSession(sessionId, title, opts) {
-      const sessionRef = opts?.sessionRef?.host === "central" && opts.sessionRef.sessionId === sessionId
+      const explicitSessionRef = opts?.sessionRef?.host === "central" && opts.sessionRef.sessionId === sessionId
         ? opts.sessionRef
-        : centralSessionRef({ sessionId })
+        : undefined
+      const sessionRef = explicitSessionRef ?? centralSessionRef({ sessionId })
       const workspaceExisting = meta.find(
         (m) =>
           m.type === "session" &&
@@ -356,7 +333,18 @@ export function createLayoutOrchestration(input: {
       const existing = meta.find(
         (m) => m.type === "session" && !m.directory && m.sessionId === sessionId,
       )
-      if (existing) patchSessionTitle(existing, undefined, sessionId, title, sessionRef)
+      // A resolver without metadata may confirm only that the route is
+      // central. It must not erase a richer ref already supplied by the
+      // authoritative session metadata producer (for example `harness:pi`).
+      if (existing) {
+        patchSessionTitle(
+          existing,
+          undefined,
+          sessionId,
+          title,
+          explicitSessionRef ?? existing.content?.sessionRef ?? sessionRef,
+        )
+      }
       const contentId = showOrCreate(
         existing,
         () => {

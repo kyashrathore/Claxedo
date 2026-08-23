@@ -217,6 +217,7 @@ CREATE TABLE IF NOT EXISTS session_history (
   title TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
+  max_event_ordinal INTEGER NOT NULL DEFAULT 0,
   deleted_at INTEGER
 );
 CREATE TABLE IF NOT EXISTS session_messages (
@@ -251,7 +252,8 @@ CREATE TABLE IF NOT EXISTS channel_identities (
 `
 
 export function openAuthorityDb(options: SqliteWorkspaceAuthorityOptions = {}) {
-  return lazy(() => {
+  let opened: SqliteAuthorityDb | undefined
+  const database = lazy(() => {
     const file = options.path ?? path.join(dataDir(), "authority.db")
     if (file !== ":memory:") fs.mkdirSync(path.dirname(file), { recursive: true })
     const db = new Database(file)
@@ -263,7 +265,19 @@ export function openAuthorityDb(options: SqliteWorkspaceAuthorityOptions = {}) {
     if (!localHostColumns.some((column) => column.name === "second_device_open_at")) {
       db.exec("ALTER TABLE local_host_links ADD COLUMN second_device_open_at INTEGER")
     }
+    const sessionHistoryColumns = db.prepare("PRAGMA table_info(session_history)").all() as Array<{ name: string }>
+    if (!sessionHistoryColumns.some((column) => column.name === "max_event_ordinal")) {
+      db.exec("ALTER TABLE session_history ADD COLUMN max_event_ordinal INTEGER NOT NULL DEFAULT 0")
+    }
+    opened = db
     return db
+  })
+  return Object.assign(database, {
+    close() {
+      opened?.close()
+      opened = undefined
+      database.reset()
+    },
   })
 }
 

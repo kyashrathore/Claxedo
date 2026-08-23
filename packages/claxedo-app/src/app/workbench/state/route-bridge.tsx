@@ -13,6 +13,7 @@ import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/
 import { wasRolledBackDraft } from "../../../features/session/submit/rolled-back-drafts"
 import { suppressedByFastSessionSwitch } from "@/platform/runtime/session-switch"
 import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
+import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import {
   directorySessionCacheQueryOptions,
   emptySessionInventory,
@@ -21,7 +22,7 @@ import {
 } from "../../../features/session/data/sync/queries"
 import { useDirectorySessionCacheActions } from "../../../features/session/data/sync/directory-session-cache"
 import { parseShellRoute, shellRouteDirectory, workspaceSessionRoute, workspaceRoute } from "@/platform/identity/route"
-import { centralSessionRef, hasBacking, sessionRefForWorkspaceSession, type HarnessRef, type SessionRef } from "@/platform/identity/session-ref"
+import { centralSessionRef, hasBacking, sameSessionRef, sessionRefForWorkspaceSession, type HarnessRef, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { usePrincipal } from "@/platform/auth/identity-provider"
 import { documentsAccess } from "@/features/documents/access"
 import { queryClient } from "@/platform/query/query-client"
@@ -213,6 +214,34 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
   const routeDirectory = createMemo(
     () => workspaceRouteIdentity(projectsQuery.data ?? [], routeWorkspaceKey())?.directory ?? routeWorkspaceKey(),
   )
+  const routeWorkspaceBacking = createMemo(() => {
+    const routeKey = routeWorkspaceKey()
+    const directory = routeDirectory()
+    if (!routeKey || !directory) return
+    const inventoryBacking = routeSessionWorkspaceBacking({
+      projects: projectsQuery.data ?? [],
+      directory,
+      workspaceId: routeKey,
+    })
+    if (inventoryBacking) return inventoryBacking
+    const routeBacking = sessionWorkspaceRuntimeRef({ directory: routeKey })
+    if (!routeBacking) return
+    // The canonical `/w/ws_…` route is workspace authority before project
+    // inventory hydrates. Use the relay-only, non-provisioning kind until the
+    // inventory above supplies the real cloud vs user-hosted kind. A legacy
+    // filesystem route cannot resolve a runtime ref and remains local.
+    return routeBacking
+  })
+  const workspaceBackingForRouteDirectory = (
+    directory: Parameters<typeof routeSessionWorkspaceBacking>[0]["directory"],
+  ): WorkspaceSessionBacking | undefined => {
+    const routed = routeDirectory()
+    if (routed && sameWorkspaceDirectory(directory, routed)) return routeWorkspaceBacking()
+    return routeSessionWorkspaceBacking({
+      projects: projectsQuery.data ?? [],
+      directory,
+    })
+  }
   const routeSessionId = createMemo(() => {
     const route = shellRoute()
     if (route.kind === "session") return route.sessionId
@@ -283,8 +312,10 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
   const route = createRouteIntentAdapter({
     state,
     warmWorkspace: (directory) => {
+      const workspace = workspaceBackingForRouteDirectory(directory)
       void directorySessionCacheActions.ensure({
         directory,
+        ...(workspace ? { workspace } : {}),
       })
     },
     inventory: () => ({
@@ -297,6 +328,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     resolveSession: async (id) => {
       const routed = routeDirectory()
       if (routed && routed !== "/workspace") {
+        const workspace = workspaceBackingForRouteDirectory(routed)
         const harness = await routeBridgeSessionConfigHarness({
           serverUrl: getClaxedoServerUrl(),
           sessionID: id,
@@ -308,6 +340,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           sessionRef: sessionRefForWorkspaceSession({
             sessionId: id,
             directory: routed,
+            ...(workspace ? { workspace } : {}),
             ...(harness ? { harness } : {}),
           }),
         }
@@ -553,6 +586,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
         [
           state.ready(),
           routeDirectory(),
+          routeWorkspaceBacking(),
           sessionId(),
           pageId(),
           terminalId(),
@@ -564,10 +598,11 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           sessionBadgeDeletions(),
           routeInventorySignature(),
         ] as const,
-      ([ready, wsId, id, pid, tid, routeKind, _pathname, title, hasBadge, additions, deletions]) => {
+      ([ready, wsId, workspaceBacking, id, pid, tid, routeKind, _pathname, title, hasBadge, additions, deletions]) => {
         route.receive({
           ready,
           workspaceId: wsId,
+          workspaceBacking,
           sessionId: id,
           marketplace: routeKind === "marketplace",
           workgraph: shellRouteKind() === "workgraph",
@@ -614,7 +649,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
             surface?.type === "session" &&
             surface.sessionId === sessionId &&
             surface.content?.type === "session" &&
-            surface.content.sessionRef?.host === "central"
+            sameSessionRef(surface.content.sessionRef, centralRef)
           ) return
           state.layout.openCentralSession(sessionId, surface?.content?.title || "Session", {
             authoritative: true,

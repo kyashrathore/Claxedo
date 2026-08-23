@@ -16,6 +16,14 @@ import { mapInventoryToSessions, signedInventoryItems, signedInventoryProjects }
 
 type ProjectDirectory = string
 type SignedWorkspaceKind = "cloud" | "user-hosted"
+type SignedRuntimeSessionsInput = {
+  serverUrl: string
+  request: typeof fetch
+  workspaceId: string
+  directory: ProjectDirectory
+  kind: SignedWorkspaceKind
+  limit: number
+}
 type SignedWorkspaceInfo = {
   workspaceId: string
   directory?: ProjectDirectory
@@ -51,6 +59,16 @@ export type InventoryGlobalSession = {
   environment?: unknown
   git?: unknown
   lastTurn?: unknown
+}
+
+export async function listSignedWorkspaceRuntimeSessions(input: SignedRuntimeSessionsInput) {
+  return (await createAgentRuntimeClient({
+    serverUrl: input.serverUrl,
+    request: input.request,
+    signedControlPlane: true,
+    workspaceId: input.workspaceId,
+    workspaceKind: input.kind,
+  }).listSessions({ directory: input.directory, roots: true, limit: input.limit })).sessions ?? []
 }
 
 const CONTROL_SESSIONS_DEDUPE_MS = 3_000

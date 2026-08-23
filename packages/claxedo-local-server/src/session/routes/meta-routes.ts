@@ -26,7 +26,7 @@ import {
   sessionListStoreFilter,
   sessionListStorePageFilter,
 } from "@claxedo/server-core/session/navigation-list"
-import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
+import { getProjectWorkspace, resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 
 type Options = {
   services?: ControlPlaneServicesContract
@@ -40,11 +40,21 @@ async function workspace(c: {
     header: (k: string) => string | undefined
   }
 }) {
+  const projectId = c.req.query("projectId")
+  const directoryHeader = c.req.header("x-opencode-directory")
+  const headerWorkspaceId = directoryHeader?.startsWith("workspace:")
+    ? directoryHeader.slice("workspace:".length)
+    : undefined
   const hit = await resolveWorkspace({
-    workspaceId: c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id"),
-    directory: c.req.query("directory") || c.req.header("x-opencode-directory"),
+    workspaceId: c.req.query("workspaceId") ||
+      c.req.query("workspace") ||
+      c.req.header("x-workspace-id") ||
+      headerWorkspaceId ||
+      (projectId?.startsWith("ws_") ? projectId : undefined),
+    directory: c.req.query("directory") || (headerWorkspaceId ? undefined : directoryHeader),
   })
   if (hit) return hit
+  if (projectId) return await getProjectWorkspace(projectId)
 }
 
 async function routeAuth(request: Request, options: Options) {
@@ -118,6 +128,33 @@ async function authorizeWorkspaceRead(
   await authority.openWorkspace(auth, { workspaceId })
 }
 
+function record(input: unknown) {
+  return input && typeof input === "object" && !Array.isArray(input)
+    ? input as Record<string, unknown>
+    : undefined
+}
+
+function nonEmptyString(input: unknown) {
+  return typeof input === "string" && input.length > 0 ? input : undefined
+}
+
+async function authorizedProjectWorkspaceIds(
+  auth: SignedControlPlaneAuth,
+  options: Options,
+  projectId: string,
+) {
+  const workspaces = await requireAuthority(options.services).listWorkspaces(auth)
+  if (!Array.isArray(workspaces)) return new Set<string>()
+  return new Set(workspaces.flatMap((input) => {
+    const row = record(input)
+    if (!row) return []
+    const rowProjectId = nonEmptyString(row.project_id) ?? nonEmptyString(row.projectID) ?? nonEmptyString(row.projectId)
+    if (rowProjectId !== projectId) return []
+    const workspaceId = nonEmptyString(row.workspace_id) ?? nonEmptyString(row.workspaceID) ?? nonEmptyString(row.workspaceId)
+    return workspaceId ? [workspaceId] : []
+  }))
+}
+
 function responseMeta(input: SessionMeta | undefined, auth: SignedControlPlaneAuth | undefined, sessionId: string) {
   const fallback = { sessionID: sessionId, tags: [], attachments: [] }
   if (!input) return fallback
@@ -153,10 +190,20 @@ export function SessionMetaRoutes(options: Options = {}) {
     .get("/api/claxedo/session-list", async (c) => {
       const authResult = await signedOrError(c.req.raw, options)
       if (authResult.error) return c.json(authResult.error, authResult.status)
-      const resolved = await workspace(c).catch(() => undefined)
-      await authorizeWorkspaceRead(authResult.auth, options, resolved?.id)
       try {
         const query = parseSessionListQuery(new URL(c.req.url))
+        if (authResult.auth && query.scope === "project" && query.projectId) {
+          // Project membership is not workspace membership. Workspace shares
+          // are granted independently, so authorize from the principal's real
+          // workspace inventory and filter before pagination; authorizing one
+          // arbitrary "main" workspace would expose sibling session metadata.
+          const authorized = await authorizedProjectWorkspaceIds(authResult.auth, options, query.projectId)
+          const sessions = (await listSessionMetas(sessionListStoreFilter(query)))
+            .filter((item) => !!item.workspaceID && authorized.has(item.workspaceID))
+          return c.json(buildSessionListResponse({ query, sessions }))
+        }
+        const resolved = await workspace(c).catch(() => undefined)
+        await authorizeWorkspaceRead(authResult.auth, options, resolved?.id)
         const canUseBoundedProjection = query.groupBy === "none" &&
           query.environment.length === 0 &&
           query.git.length === 0

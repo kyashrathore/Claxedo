@@ -63,6 +63,8 @@ describe("submit.ts architecture contract", () => {
     expect(submitSource).toContain("acquireSubmitSessionTarget")
     expect(submitSource).toContain("finalizeSubmitSessionTarget")
     expect(submitSource).toContain("createSubmitTransportAdapter")
+    expect(submitSource).toContain("submitWorkspaceBacking")
+    expect(submitSource).toMatch(/refreshPromptDirectory[\s\S]{0,300}workspace: submitWorkspaceBacking\(\{[\s\S]{0,200}workspaceId: input\.workspaceId\?\.\(\)/)
     expect(submitSource).not.toContain("const createCloudWorkspace")
     expect(submitSource).not.toContain("const createLocalWorktree")
     expect(submitSource).not.toContain("const resolveCloudSessionDirectory")

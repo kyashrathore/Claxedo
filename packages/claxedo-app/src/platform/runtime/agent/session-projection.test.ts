@@ -5,6 +5,7 @@ import {
   resetSessionProjectionRetries,
   retryUnsettledSessionProjectionPulls,
   scheduleSessionProjectionPull,
+  sessionProjectionWorkspaceBacking,
 } from "./session-projection"
 
 // No real backoff in tests — the production schedule runs to 32s.
@@ -40,9 +41,26 @@ describe("session projection sync-back", () => {
     resetSessionProjectionRetries()
   })
 
+  test("carries explicit signed workspace authority into projection cache refreshes", () => {
+    expect(sessionProjectionWorkspaceBacking({
+      signedControlPlane: true,
+      workspaceId: "ws_signed",
+      workspaceKind: "user-hosted",
+    })).toEqual({ workspaceId: "ws_signed", kind: "user-hosted" })
+  })
+
+  test("does not infer workspace authority for local or incomplete projection refreshes", () => {
+    expect(sessionProjectionWorkspaceBacking({
+      signedControlPlane: false,
+      workspaceId: "ws_signed",
+      workspaceKind: "cloud",
+    })).toBeUndefined()
+    expect(sessionProjectionWorkspaceBacking({ signedControlPlane: true, workspaceId: "ws_signed" })).toBeUndefined()
+  })
+
   test("retries a failing pull across the whole backoff schedule", async () => {
     let attempts = 0
-    await scheduleSessionProjectionPull({
+    const registered = await scheduleSessionProjectionPull({
       workspaceId: "ws_1",
       sessionId: "ses_1",
       action: "register",
@@ -55,11 +73,12 @@ describe("session projection sync-back", () => {
     })
 
     expect(attempts).toBe(NO_DELAY.length)
+    expect(registered).toBe(false)
   })
 
   test("stops retrying as soon as one attempt lands", async () => {
     let attempts = 0
-    await scheduleSessionProjectionPull({
+    const registered = await scheduleSessionProjectionPull({
       workspaceId: "ws_1",
       sessionId: "ses_1",
       action: "register",
@@ -72,6 +91,7 @@ describe("session projection sync-back", () => {
     })
 
     expect(attempts).toBe(2)
+    expect(registered).toBe(true)
     expect(pendingSessionProjectionRetryCount()).toBe(0)
   })
 

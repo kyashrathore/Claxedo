@@ -287,7 +287,9 @@ type SessionVisibility = {
   updatedAt?: number
 }
 
-export function createSqliteWorkspaceAuthority(options: SqliteWorkspaceAuthorityOptions = {}): WorkspaceAuthority {
+export function createSqliteWorkspaceAuthority(
+  options: SqliteWorkspaceAuthorityOptions = {},
+): WorkspaceAuthority & { close(): void } {
   const database = openAuthorityDb(options)
 
   const user = (auth: SignedControlPlaneAuth): AuthorityUser => {
@@ -440,6 +442,9 @@ export function createSqliteWorkspaceAuthority(options: SqliteWorkspaceAuthority
   }
 
   return {
+    close() {
+      database.close()
+    },
     // --- identity (convex/users.ts, convex/orgs.ts, convex/projects.ts) ----
     async usersMe(auth: SignedControlPlaneAuth) {
       const db = database()
@@ -532,6 +537,7 @@ export function createSqliteWorkspaceAuthority(options: SqliteWorkspaceAuthority
       return rows
         .map((workspace) => ({
           workspace_id: workspace.workspace_id,
+          project_id: workspace.project_id ?? undefined,
           display_name: workspace.display_name ?? undefined,
           backing: workspace.backing,
           access: workspace.access,
@@ -1132,20 +1138,41 @@ export function createSqliteWorkspaceAuthority(options: SqliteWorkspaceAuthority
       const db = database()
       const who = user(auth)
       const workspace = requireWorkspace(db, who, args.workspaceId, "write")
-      const existing = db.prepare(`SELECT workspace_id, deleted_at FROM session_history WHERE session_id = ?`)
-        .get(args.sessionId) as { workspace_id: string; deleted_at: number | null } | undefined
-      if (existing && existing.workspace_id !== args.workspaceId) throw new Error("Session not found")
       const now = Date.now()
-      db.transaction(() => {
+      return db.transaction(() => {
+        const existing = db.prepare(`
+          SELECT workspace_id, deleted_at, max_event_ordinal FROM session_history WHERE session_id = ?
+        `).get(args.sessionId) as {
+          workspace_id: string
+          deleted_at: number | null
+          max_event_ordinal: number
+        } | undefined
+        if (existing && existing.workspace_id !== args.workspaceId) throw new Error("Session not found")
+        if (args.maxEventOrdinal !== undefined && args.maxEventOrdinal < (existing?.max_event_ordinal ?? 0)) {
+          return { ok: true, applied: false, maxEventOrdinal: existing?.max_event_ordinal ?? 0 }
+        }
+        if (args.maxEventOrdinal !== undefined && args.maxEventOrdinal === (existing?.max_event_ordinal ?? 0)) {
+          const stored = db.prepare(`
+            SELECT COUNT(*) AS count FROM session_messages WHERE session_id = ? AND workspace_id = ?
+          `).get(args.sessionId, args.workspaceId) as { count: number }
+          if (stored.count > 0 && args.messages.length <= stored.count) {
+            return { ok: true, applied: false, maxEventOrdinal: existing?.max_event_ordinal ?? 0 }
+          }
+        }
         if (existing) {
           if (existing.deleted_at) {
             db.prepare(`UPDATE session_history SET deleted_at = NULL WHERE session_id = ?`).run(args.sessionId)
           }
+          if (args.maxEventOrdinal !== undefined) {
+            db.prepare(`UPDATE session_history SET max_event_ordinal = ? WHERE session_id = ?`)
+              .run(args.maxEventOrdinal, args.sessionId)
+          }
         } else {
           db.prepare(`
-            INSERT INTO session_history (session_id, workspace_id, created_by_token_identifier, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-          `).run(args.sessionId, workspace.workspace_id, who.token_identifier, now, now)
+            INSERT INTO session_history (
+              session_id, workspace_id, created_by_token_identifier, created_at, updated_at, max_event_ordinal
+            ) VALUES (?, ?, ?, ?, ?, ?)
+          `).run(args.sessionId, workspace.workspace_id, who.token_identifier, now, now, args.maxEventOrdinal ?? 0)
         }
         // Replace-all: observable read shape (ordered `data` payloads) matches
         // the Convex per-row diffing without carrying its patch bookkeeping.
@@ -1164,8 +1191,10 @@ export function createSqliteWorkspaceAuthority(options: SqliteWorkspaceAuthority
           const role = txt(row?.role) ?? txt(info?.role) ?? null
           insert.run(args.sessionId, args.workspaceId, messageId, role, ordinal, jsonText(message), now, now)
         }
+        return args.maxEventOrdinal === undefined
+          ? { ok: true }
+          : { ok: true, applied: true, maxEventOrdinal: args.maxEventOrdinal }
       })()
-      return { ok: true }
     },
     async upsertSessionVisibility(auth: SignedControlPlaneAuth, args) {
       const db = database()

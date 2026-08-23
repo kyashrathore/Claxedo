@@ -389,6 +389,7 @@ export default defineSchema({
     directory_hint: v.optional(v.string()),
     created_at: v.number(),
     updated_at: v.number(),
+    max_event_ordinal: v.optional(v.number()),
     deleted_at: v.optional(v.number()),
   })
     .index("by_session_id", ["session_id"])

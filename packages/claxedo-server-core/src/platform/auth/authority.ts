@@ -243,6 +243,7 @@ export type WorkspaceAuthority = {
       workspaceId: string
       messages: unknown[]
       intakeReady?: boolean
+      maxEventOrdinal?: number
     },
   ) => Promise<unknown>
   upsertSessionVisibility: (

@@ -68,7 +68,6 @@ export function sameProcessIdentity(left: Pick<ProcessSnapshot, "pid" | "startTi
  * than inventing a second definition of physical footprint.
  */
 export function macMemoryHelperPath(executable: string) {
-  if (process.platform !== "darwin") return undefined;
   const marker = "/Contents/MacOS/";
   const index = executable.lastIndexOf(marker);
   if (index === -1) return undefined;

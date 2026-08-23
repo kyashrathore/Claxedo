@@ -26,7 +26,11 @@ function listSourceFiles(dir: string): string[] {
 }
 
 function relative(file: string) {
-  return path.relative(srcRoot, file)
+  return canonicalRelativePath(path.relative(srcRoot, file))
+}
+
+function canonicalRelativePath(value: string) {
+  return value.replaceAll("\\", "/")
 }
 
 function productionSourceFiles() {
@@ -125,6 +129,8 @@ describe("layout architecture guard", () => {
   })
 
   test("scanner catches fixture violations", () => {
+    expect(canonicalRelativePath("app\\entry\\runtime-providers.tsx")).toBe("app/entry/runtime-providers.tsx")
+    expect(canonicalRelativePath("app/entry/runtime-providers.tsx")).toBe("app/entry/runtime-providers.tsx")
     expect(importSpecifiers('import { Layout } from "@/app/routes/layout"')).toEqual(["@/app/routes/layout"])
     expect(importSpecifiers('import { useClaxedoLayout } from "../context/claxedo-layout"')).toEqual([
       "../context/claxedo-layout",

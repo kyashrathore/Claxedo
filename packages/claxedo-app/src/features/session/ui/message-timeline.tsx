@@ -1714,14 +1714,14 @@ export function MessageTimeline(props: {
         </div>
       </Show>
       <div
-        class="absolute left-1/2 -translate-x-1/2 bottom-6 z-[60] pointer-events-none transition-all duration-200 ease-out"
+        class="absolute left-1/2 -translate-x-1/2 bottom-6 z-[60] transition-all duration-200 ease-out"
         classList={{
-          "opacity-100 translate-y-0 scale-100": props.scroll.overflow && props.scroll.jump,
+          "opacity-100 translate-y-0 scale-100 pointer-events-auto": props.scroll.overflow && props.scroll.jump,
           "opacity-0 translate-y-2 scale-95 pointer-events-none": !props.scroll.overflow || !props.scroll.jump,
         }}
       >
         <button
-          class="pointer-events-auto flex h-8 w-8 items-center justify-center rounded-full border border-border-weaker-base bg-surface-raised-stronger-non-alpha text-text-base cursor-pointer p-0 transition-colors hover:border-border-weak-base"
+          class="flex h-8 w-8 items-center justify-center rounded-full border border-border-weaker-base bg-surface-raised-stronger-non-alpha text-text-base cursor-pointer p-0 transition-colors hover:border-border-weak-base"
           aria-label={language.t("session.timeline.scrollToBottom")}
           onClick={props.onResumeScroll}
         >

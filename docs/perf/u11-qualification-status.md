@@ -240,7 +240,7 @@ inquiry as evidence-backed non-candidates. No gate moved from fail to pass.
 `packages/workspace-runtime/src/pty/history-disk.ts` now compacts retained
 transcripts against a hard UTF-8 on-disk cap using `safeTrimStartUtf8` from
 `packages/workspace-runtime/src/pty/safe-slice.ts`, covered by
-`packages/workspace-runtime/src/pty/history-disk-compaction.test.ts`.
+`packages/workspace-runtime/src/pty/history-cleanup.test.ts`.
 
 Root cause: every 8 ms flush past the 16 MiB limit rewrote the whole retained
 transcript, roughly 1,100 or more full compactions per 220 MiB benchmark
