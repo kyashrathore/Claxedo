@@ -698,9 +698,22 @@ async function sessionSwitch(page: Page, app: BrowserTarget, fixture: ReturnType
           `[data-testid="session-page-root"][data-session-id="${target.id}"]`,
         ).count().then((count) => count > 0 ? "warm" : "cold")
       : undefined
-    const before = perSwitchCdp ? await readPerSwitchSnapshot(page, perSwitchCdp) : undefined
-    const elapsed = await measureInPageSessionFirstFoldSwitch(page, target, { renderer, renderMermaid })
-    const after = perSwitchCdp ? await readPerSwitchSnapshot(page, perSwitchCdp) : undefined
+    let before: Awaited<ReturnType<typeof readPerSwitchSnapshot>> | undefined
+    let after: Awaited<ReturnType<typeof readPerSwitchSnapshot>> | undefined
+    const elapsed = await measureInPageSessionFirstFoldSwitch(page, target, {
+      renderer,
+      renderMermaid,
+      ...(perSwitchCdp
+        ? {
+            beforeClick: async () => {
+              before = await readPerSwitchSnapshot(page, perSwitchCdp)
+            },
+            afterReady: async () => {
+              after = await readPerSwitchSnapshot(page, perSwitchCdp)
+            },
+          }
+        : {}),
+    })
     if (before && after && state) {
       const performance = performanceMetricDelta(before.performance, after.performance)
       const prefix = `switch_${String(index).padStart(2, "0")}_${state}`
@@ -2336,45 +2349,46 @@ async function clickVisibleSession(
 async function measureInPageSessionFirstFoldSwitch(
   page: Page,
   session: ReturnType<typeof fixtureFor>["sessions"][number],
-  options: { renderer?: ReturnType<typeof sessionRenderer>; renderMermaid?: boolean } = {},
+  options: {
+    renderer?: ReturnType<typeof sessionRenderer>
+    renderMermaid?: boolean
+    beforeClick?: () => Promise<void>
+    afterReady?: () => Promise<void>
+  } = {},
 ) {
-  const result = await page.evaluate(async ({ id, title, debug, renderer, renderMermaid }) => {
-    const row = document.querySelector<HTMLElement>(
-      `[data-testid="rail-sidebar-session-row"][data-session-id="${CSS.escape(id)}"]`,
-    ) ?? Array.from(document.querySelectorAll<HTMLElement>("[role='button'], button, a"))
-      .find((node) => !node.closest("[aria-hidden='true']") && (node.textContent ?? "").includes(title))
-    if (!row) return { ms: 10_000, debug: undefined }
+  const rowSelector = `[data-testid="rail-sidebar-session-row"][data-session-id="${session.id}"]`
+  const canonicalRow = page.locator(rowSelector).first()
+  const row = await canonicalRow.count()
+    ? canonicalRow
+    : page.locator("[role='button'], button, a").filter({ hasText: session.title }).first()
+  if (!await row.count()) return 10_000
+  await row.scrollIntoViewIfNeeded()
+  const canonicalActivate = row.locator('[data-slot="navigation-row-activate"]').first()
+  const activate = await canonicalActivate.count() ? canonicalActivate : row
+  const mark = `claxedo-session-switch-${session.id}-${crypto.randomUUID()}`
+  const before = await activate.evaluate((node, input) => {
+    const id = input.id
     const beforeRoot = document.querySelector<HTMLElement>(`[data-testid="session-page-root"][data-session-id="${CSS.escape(id)}"]`)
     const beforeContent = document.querySelector<HTMLElement>(`[data-testid="session-content"][data-session-id="${CSS.escape(id)}"]`)
-    row.scrollIntoView({ block: "nearest" })
-    const started = performance.now()
-    // NavigationRow's click handler lives on an absolutely-positioned CHILD
-    // (`button[data-slot="navigation-row-activate"]`) — a synthetic click on
-    // the row container never reaches it, so target the activate control.
-    const clickStarted = performance.now()
-    const activate = row.querySelector<HTMLElement>('[data-slot="navigation-row-activate"]') ?? row
-    // HTMLElement.click() skips pointer events and therefore skipped the real
-    // cold-session preparation boundary. Dispatch the same mouse sequence the
-    // production control receives before its click handler runs.
-    activate.dispatchEvent(new PointerEvent("pointerdown", {
-      bubbles: true,
-      cancelable: true,
-      composed: true,
-      pointerType: "mouse",
-      isPrimary: true,
-      button: 0,
-      buttons: 1,
-    }))
-    activate.dispatchEvent(new PointerEvent("pointerup", {
-      bubbles: true,
-      cancelable: true,
-      composed: true,
-      pointerType: "mouse",
-      isPrimary: true,
-      button: 0,
-      buttons: 0,
-    }))
-    activate.click()
+    performance.clearMarks(input.mark)
+    node.addEventListener("pointerdown", (event) => {
+      if (event.isTrusted) performance.mark(input.mark)
+    }, { once: true })
+    return {
+      hadBeforeRoot: !!beforeRoot,
+      hadBeforeContent: !!beforeContent,
+      beforeReady: beforeRoot?.dataset.sessionMessagesReady,
+      beforeCount: beforeRoot?.dataset.sessionMessageCount,
+    }
+  }, { id: session.id, mark })
+  // Use Playwright's trusted mouse input so the benchmark follows the exact
+  // browser pointer lifecycle. Hand-dispatched PointerEvents are untrusted and
+  // do not reproduce the real activation/drag boundary this benchmark measures.
+  await options.beforeClick?.()
+  await activate.click({ timeout: 5_000 })
+  const result = await page.evaluate(async ({ id, debug, renderer, renderMermaid, mark, before }) => {
+    const started = performance.getEntriesByName(mark, "mark").at(-1)?.startTime
+    if (started === undefined) throw new Error(`Trusted session switch did not emit pointerdown for ${id}`)
     const traceWindow = window as unknown as {
       __claxedoPerfTrace?: boolean
       __claxedoPerfRendererPhases?: Array<{ name: string; durationMs: number }>
@@ -2382,7 +2396,7 @@ async function measureInPageSessionFirstFoldSwitch(
     if (traceWindow.__claxedoPerfTrace) {
       traceWindow.__claxedoPerfRendererPhases?.push({
         name: "sessionSwitch.click",
-        durationMs: performance.now() - clickStarted,
+        durationMs: performance.now() - started,
       })
     }
     const ms = await new Promise<number>((resolve) => {
@@ -2443,14 +2457,11 @@ async function measureInPageSessionFirstFoldSwitch(
     })
     const afterRoot = document.querySelector<HTMLElement>(`[data-testid="session-page-root"][data-session-id="${CSS.escape(id)}"]`)
     const afterTimeline = afterRoot?.querySelector<HTMLElement>("[data-session-timeline-root]")
-    return {
+    const output = {
       ms,
       debug: debug
         ? {
-            hadBeforeRoot: !!beforeRoot,
-            hadBeforeContent: !!beforeContent,
-            beforeReady: beforeRoot?.dataset.sessionMessagesReady,
-            beforeCount: beforeRoot?.dataset.sessionMessageCount,
+            ...before,
             afterReady: afterRoot?.dataset.sessionMessagesReady,
             afterCount: afterRoot?.dataset.sessionMessageCount,
             timelineRows: afterTimeline?.dataset.sessionTimelineRowCount,
@@ -2477,13 +2488,17 @@ async function measureInPageSessionFirstFoldSwitch(
           }
         : undefined,
     }
+    performance.clearMarks(mark)
+    return output
   }, {
     id: session.id,
-    title: session.title,
     debug: Bun.env.CLAXEDO_PERF_DEBUG_SESSION_SWITCH === "1",
     renderer: options.renderer ?? "plain",
     renderMermaid: options.renderMermaid,
+    mark,
+    before,
   })
+  await options.afterReady?.()
   if (result.debug) console.log("first-fold-switch-debug", JSON.stringify(result.debug))
   if (result.ms >= 10_000) {
     await page.goto(`${new URL(page.url()).origin}${sessionPath(session, session.id)}`, {
