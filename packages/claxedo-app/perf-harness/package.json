@@ -20,6 +20,6 @@
     "typescript": "5.8.2"
   },
   "dependencies": {
-    "agent-app-benchmark": "github:kyashrathore/agent-app-benchmark#d804dbc"
+    "agent-app-benchmark": "github:kyashrathore/agent-app-benchmark#fff5e2392fe93ee8a918198f964b867b6ea8afe8"
   }
 }
