@@ -46,6 +46,19 @@ describe("Windows CI contract", () => {
     expect(prepare).toContain('throw "Windows process-tree native dependency was not installed"')
   })
 
+  test("builds the local-server distribution before packaged desktop fixtures", () => {
+    const desktopLaneStart = workflow.indexOf("  e2e-desktop:")
+    const nextLaneStart = workflow.indexOf("\n  e2e-workgraph-journey:", desktopLaneStart)
+    const desktopLane = workflow.slice(desktopLaneStart, nextLaneStart)
+    const localServerBuild = desktopLane.indexOf("bun run --cwd packages/claxedo-local-server build")
+    const desktopE2e = desktopLane.indexOf("run: bun run test:e2e:desktop")
+
+    expect(desktopLaneStart).toBeGreaterThan(-1)
+    expect(nextLaneStart).toBeGreaterThan(desktopLaneStart)
+    expect(localServerBuild).toBeGreaterThan(-1)
+    expect(desktopE2e).toBeGreaterThan(localServerBuild)
+  })
+
   test("declares the MCP SDK modules bundled by the Windows build", () => {
     expect(mcpManifest.dependencies).toMatchObject({
       ajv: "8.20.0",

@@ -797,6 +797,15 @@ jobs:
           --filter=@claxedo/workspace-relay
           --filter=@claxedo/workspace-runtime
 
+      # The signed desktop fixtures launch claxedo-server under Node. Its
+      # self-hosted composition imports @claxedo/local-server's production
+      # export, which is dist/self-hosted-execution.js (the `bun` condition
+      # points at source only for Bun-owned entrypoints). Build that canonical
+      # package artifact before Playwright starts; a fresh checkout has no
+      # ignored dist/ tree to resolve incidentally.
+      - name: Build local-server fixture export
+        run: bun run --cwd packages/claxedo-local-server build
+
       # Builds the signed-capable packaged app ONCE for the whole job; every
       # unsigned scenario in desktop-unsigned-embedded.spec.ts launches a fresh process from this
       # same binary (e2e/helpers/electron-app.ts's launchPackagedApp), not a
