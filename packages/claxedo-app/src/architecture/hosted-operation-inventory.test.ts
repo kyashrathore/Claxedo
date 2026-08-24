@@ -68,7 +68,9 @@ function sourceFiles(root: string) {
       }
       if (!/\.tsx?$/.test(file)) continue
       if (/\.(test|vitest)\.tsx?$/.test(file)) continue
-      files.push(path.relative(srcRoot, file))
+      // Forward slashes on every host — the declared inventory is keyed by
+      // forward-slash relative paths (win32).
+      files.push(path.relative(srcRoot, file).replaceAll("\\", "/"))
     }
   }
   walk(dir)

@@ -26,7 +26,9 @@ function listSourceFiles(dir: string): string[] {
 }
 
 function relative(file: string) {
-  return path.relative(srcRoot, file)
+  // Forward slashes on every host: the guard's allowlists and reported
+  // offender names are keyed by forward-slash relative paths (win32).
+  return path.relative(srcRoot, file).replaceAll("\\", "/")
 }
 
 function productionSourceFiles() {

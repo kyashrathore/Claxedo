@@ -221,7 +221,10 @@ const panePreferences = "features/session/preferences/pane.ts"
 
 async function files(dir: string): Promise<string[]> {
   const out: string[] = []
-  for (const entry of await Array.fromAsync(new Bun.Glob("**/*.{ts,tsx}").scan({ cwd: dir }))) {
+  for (const raw of await Array.fromAsync(new Bun.Glob("**/*.{ts,tsx}").scan({ cwd: dir }))) {
+    // Bun.Glob reports host separators; every allowlist and prefix check in
+    // this audit is keyed by forward-slash relative paths (win32).
+    const entry = raw.replaceAll("\\", "/")
     if (entry.endsWith(".d.ts")) continue
     // Demo-only msw fixtures moved from src/demo/ to src/app/demo/ in the
     // app/features/platform reorg; they legitimately spell route strings.
