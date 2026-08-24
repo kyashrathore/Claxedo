@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { FrameCausalMetric, FrameMetric } from "../src/frame-sampler"
 import {
   alreadyLoadedResourceRequestFailures,
+  clickWarmupResourceRequestFailures,
   isolatedInteractionEvidenceFailures,
   isolatedInteractionMetricRows,
   isolatedInteractionResourceRequests,
@@ -80,6 +81,17 @@ describe("isolated interaction shared gates", () => {
     ])
     expect(alreadyLoadedResourceRequestFailures("phase", 2)).toEqual([
       expect.stringContaining("issued 2 resource requests"),
+    ])
+  })
+
+  test("click-warmup gate allows the budgeted warm-up and fails beyond it", () => {
+    expect(clickWarmupResourceRequestFailures("phase", 0, 1)).toEqual([])
+    expect(clickWarmupResourceRequestFailures("phase", 1, 1)).toEqual([])
+    expect(clickWarmupResourceRequestFailures("phase", undefined, 1)).toEqual([
+      expect.stringContaining("unobserved"),
+    ])
+    expect(clickWarmupResourceRequestFailures("phase", 2, 1)).toEqual([
+      expect.stringContaining("expected at most 1"),
     ])
   })
 

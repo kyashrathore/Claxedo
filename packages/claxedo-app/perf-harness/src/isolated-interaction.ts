@@ -283,6 +283,25 @@ export function alreadyLoadedResourceRequestFailures(phase: string, requests: nu
     : [`${phase} issued ${requests} resource requests; expected 0 for already-loaded data`]
 }
 
+/**
+ * Request gate for a phase whose triggering click legitimately starts a data
+ * warm-up: the panel-open click prefetches the review corpus by design, and
+ * the warm-up lands inside the phase window even when the open itself is
+ * interrupted. Anything beyond the budget is a real leak.
+ */
+export function clickWarmupResourceRequestFailures(
+  phase: string,
+  requests: number | undefined,
+  warmupBudget: number,
+) {
+  if (requests === undefined) {
+    return [`${phase} resource requests were unobserved; set CLAXEDO_PERF_CAUSAL=1`]
+  }
+  return requests <= warmupBudget
+    ? []
+    : [`${phase} issued ${requests} resource requests; expected at most ${warmupBudget} (the click-time warm-up)`]
+}
+
 function round(value: number) {
   return Math.round(value * 100) / 100
 }

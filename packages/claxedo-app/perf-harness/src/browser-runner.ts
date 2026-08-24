@@ -51,6 +51,7 @@ import {
   isolatedInteractionSettleFailures,
   ISOLATED_INTERACTION_TIMEOUT_MS,
   alreadyLoadedResourceRequestFailures,
+  clickWarmupResourceRequestFailures,
   measureIsolatedInteraction,
   measurement,
   prepareTrustedInteraction,
@@ -2125,9 +2126,12 @@ async function workspaceLifecycle(page: Page, app: BrowserTarget, fixture: Retur
   )
   record("workspace_lifecycle_open_close_interrupt", openCloseInterrupt.metric, openCloseInterrupt.observation, [
     ...workspaceLifecycleInterruptionFailures("workspace_lifecycle_open_close_interrupt", openCloseInterrupt.observation),
-    ...alreadyLoadedResourceRequestFailures(
+    // The interrupted OPEN's click still starts the panel-open corpus
+    // warm-up by design; only requests beyond that budget are a leak.
+    ...clickWarmupResourceRequestFailures(
       "workspace_lifecycle_open_close_interrupt",
       isolatedInteractionResourceRequests(openCloseInterrupt.metric),
+      1,
     ),
   ])
   if (openCloseInterrupt.observation.interruptOffsetMs !== undefined) {
