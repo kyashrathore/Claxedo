@@ -72,6 +72,13 @@ export type ReviewTabProps = {
    */
   retained?: ReviewSurfaceState
   onRetainedChange?: (state: ReviewSurfaceState) => void
+  /**
+   * Bumped by the workspace when a runtime event stales this review. The
+   * workspace owns that subscription because it outlives this surface, which
+   * unmounts whenever another workspace tab is active.
+   */
+  staleDiffsVersion?: number
+  staleBranchVersion?: number
   focusedDiffPath?: string
   focusedDiffVersion?: number
   onOpenFile: (path: string) => void
@@ -421,33 +428,10 @@ export function ReviewTab(props: ReviewTabProps) {
     ),
   )
 
-  let lastSessionStatusType: string | undefined
-  const stopFileWatcher = sdk.event.listen((evt) => {
-    if (evt.details.type === "session.status") {
-      const eventProps = evt.details.properties as { sessionID?: string; status?: { type?: string } }
-      if (eventProps.sessionID !== props.sessionId) return
-      const next = eventProps.status?.type ?? "idle"
-      if (next === "idle" && lastSessionStatusType && lastSessionStatusType !== "idle") {
-        refreshVcsDiffs()
-      }
-      lastSessionStatusType = next
-      return
-    }
-    if (evt.details.type === "vcs.branch.updated") {
-      void loadVcsInfo(props.directory)
-      refreshVcsDiffs()
-      return
-    }
-    if (evt.details.type !== "file.watcher.updated") return
-    const eventProps =
-      typeof evt.details.properties === "object" && evt.details.properties
-        ? (evt.details.properties as Record<string, unknown>)
-        : undefined
-    const filePath = typeof eventProps?.file === "string" ? eventProps.file : undefined
-    if (!filePath || filePath.startsWith(".git/")) return
-    refreshVcsDiffs()
-  })
-  onCleanup(stopFileWatcher)
+  // The workspace watches the runtime and invalidates the shared review cache;
+  // this surface only has to reload when it is the one on screen.
+  createEffect(on(() => props.staleDiffsVersion, () => refreshVcsDiffs(), { defer: true }))
+  createEffect(on(() => props.staleBranchVersion, () => void loadVcsInfo(props.directory), { defer: true }))
   onCleanup(() => {
     scheduledVcsRefresh?.()
     scheduledVcsRefresh = undefined

@@ -37,6 +37,7 @@ import { reviewTabHeaderSlot } from "@/ui/controls/portal-slot"
 import { setReviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
 import { SessionParamsProvider } from "@/features/session/providers/session-params"
 import { ReviewTab } from "@/features/review/ui/review-tab"
+import { useSDK } from "@/app/providers/sdk/sdk"
 import { isMarkdownPath, TabFile } from "@/app/workbench/content/tab-file"
 import { useClaxedoState } from "@/app/workbench/state"
 import { documentsApi } from "@/features/documents/data/documents-api"
@@ -55,6 +56,7 @@ import {
 } from "@/features/review/ui/review-workspace-tabs"
 import { closeReviewWorkspaceTab } from "./review-close"
 import { reviewWorkspaceMountedTabs } from "./review-mounted-tabs"
+import { createReviewWorkspaceVcsStaleness } from "./review-workspace-vcs-staleness"
 import { createReviewScrollRestoration } from "./review-scroll-restoration"
 import { createReviewTabActivation, type PreparedReviewTabActivation } from "./review-tab-activation"
 import {
@@ -94,6 +96,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const dialog = useDialog()
   const processPane = useProcessPane()
   const claxedoState = useClaxedoState()
+  const sdk = useSDK()
   const queryOptions = useQueryOptions()
   const projects = useQuery(() => queryOptions.projects())
 
@@ -132,6 +135,12 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
 
   createEffect(() => {
     workingSet.publish(store.tabs, store.activeTabId)
+  })
+
+  const vcsStaleness = createReviewWorkspaceVcsStaleness({
+    listen: sdk.event.listen,
+    directory: () => props.directory,
+    sessionId: () => props.sessionId,
   })
 
   const tabActivation = createReviewTabActivation({
@@ -737,6 +746,8 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
                 initialFromRef={props.fromRef}
                 initialToRef={props.toRef}
                 retained={initialWorkingSet.review}
+                staleDiffsVersion={vcsStaleness.diffsVersion()}
+                staleBranchVersion={vcsStaleness.branchVersion()}
                 onRetainedChange={(surface) =>
                   workingSet.publishSurface(surface, store.tabs, store.activeTabId)
                 }
