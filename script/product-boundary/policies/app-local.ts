@@ -88,13 +88,15 @@ export const appLocal: Policy = {
   // renderer closure.
   // The idle user-extension view host is local-only and adds no Clerk/Convex
   // edge; record its reviewed source closure with no additional headroom.
-  // The session-switch performance campaign adds narrow local owners for
-  // reactive route snapshots, title projection, memory accounting, bounded
-  // prefetch scheduling, first-fold/progressive reveal, secondary status, and
-  // navigation styling. Sixteen narrow owners enter the reachable graph and
-  // removing the speculative Markdown preloader offsets one, so the reviewed
-  // branch closure grows by 15 modules (and adds no package edge).
-  ceilings: { modules: 851, packages: 41 },
+  // Five reviewed local owners entered after the user-extension baseline:
+  // live-session/project ownership, rail status, first-fold prefetch, and the
+  // deferred message navigator. The session-switch performance campaign adds
+  // another twenty-five narrow owners for reactive route snapshots, title and
+  // pane projection, memory accounting, bounded prefetch, first-fold/history
+  // hydration, progressive reveal, secondary status, files, and runtime URLs.
+  // Removing the speculative Markdown preloader offsets one, so the complete
+  // reviewed closure grows from 831 to 860 modules and adds no package edge.
+  ceilings: { modules: 860, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",
