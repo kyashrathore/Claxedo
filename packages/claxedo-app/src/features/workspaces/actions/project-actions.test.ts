@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { directorySessionCacheQueryOptions, setSessionStatusQueryData } from "../../session/data/sync/queries"
@@ -9,6 +9,17 @@ import type { ProjectActionProps } from "./project-actions"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
 
 beforeEach(() => configureAppPortsForTest())
+
+// Capture the real module through a cache-busting query so this restore can
+// never re-register a mock leaked from an earlier file, then put it back so
+// this file's shadow mock (no-op configureApiRuntime, null apiBearerToken)
+// cannot poison later suites that exercise the real runtime config — the
+// win32 unit lane hit exactly that in agent-runtime-client.test.ts, where
+// NTFS discovery order ran this file first (runs 382/383/385).
+const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?project-actions-restore`)) }
+afterAll(() => {
+  mock.module("@/platform/api/api", () => realApiModule)
+})
 
 let createProjectActions: typeof import("./project-actions").createProjectActions
 let deleteDialogProps: undefined | { onDelete: (dir: string) => Promise<void> | void }

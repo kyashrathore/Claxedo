@@ -1,7 +1,16 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test"
 
 const calls: Array<{ url: string; init?: RequestInit }> = []
 const responses: Response[] = []
+
+// Capture the real module through a cache-busting query so this restore can
+// never re-register a mock leaked from an earlier file, then put it back so
+// this file's partial mock (no configureApiRuntime/apiBearerToken semantics)
+// cannot poison later suites that exercise the real runtime config.
+const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?documents-api-restore`)) }
+afterAll(() => {
+  mock.module("@/platform/api/api", () => realApiModule)
+})
 
 mock.module("@/platform/api/api", () => ({
   authFetch: async (url: string, init?: RequestInit) => {
