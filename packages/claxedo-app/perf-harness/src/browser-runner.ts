@@ -961,6 +961,16 @@ type HeavyWorkspaceReviewResumeObservation = {
   }
 }
 
+async function readHeavyWorkspaceScrollDiagnostic(page: Page) {
+  return await page.evaluate((scrollSelector) => {
+    const scroll = document.querySelector<HTMLElement>(
+      `[data-testid='workspace-panel-shell'] [data-testid='review-pane-root'] ${scrollSelector}`,
+    )
+    const diagnostic = scroll && (scroll as unknown as Record<string, unknown>).__claxedoReviewScrollDiagnostic
+    return typeof diagnostic === "function" ? diagnostic() : undefined
+  }, HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR)
+}
+
 async function heavyWorkspaceReopen(
   page: Page,
   app: BrowserTarget,
@@ -980,6 +990,7 @@ async function heavyWorkspaceReopen(
   await waitForReviewStable(page)
   await waitForHeavyReviewCorpus(page, fixture)
   await scrollHeavyReviewWorkingSet(page, fixture)
+  const scrollAfterDeepPosition = await readHeavyWorkspaceScrollDiagnostic(page)
   const reviewBefore = await readHeavyWorkspaceReviewIdentity(page)
   if (
     reviewBefore.reviewFileCount !== fixture.changedFiles.length ||
@@ -1000,8 +1011,28 @@ async function heavyWorkspaceReopen(
     recordVisualFailure(fixture, "heavy workspace setup did not establish a deep Review scroll position")
   }
   await measureWorkspaceFiles(page, fixture, { settle: "frame" })
+  const scrollAfterNavigator = await readHeavyWorkspaceScrollDiagnostic(page)
+  if (
+    scrollAfterDeepPosition?.position?.anchorPath !== scrollAfterNavigator?.position?.anchorPath ||
+    scrollAfterDeepPosition?.position?.top !== scrollAfterNavigator?.position?.top
+  ) {
+    recordVisualFailure(
+      fixture,
+      `heavy workspace Review scroll changed while opening Files: ${JSON.stringify(scrollAfterDeepPosition)} -> ${JSON.stringify(scrollAfterNavigator)}`,
+    )
+  }
   for (const filePath of HEAVY_WORKSPACE_REOPEN_FILE_PATHS) {
     await openWorkspaceFileTab(page, fixture, filePath)
+  }
+  const scrollAfterFileTabs = await readHeavyWorkspaceScrollDiagnostic(page)
+  if (
+    scrollAfterNavigator?.position?.anchorPath !== scrollAfterFileTabs?.position?.anchorPath ||
+    scrollAfterNavigator?.position?.top !== scrollAfterFileTabs?.position?.top
+  ) {
+    recordVisualFailure(
+      fixture,
+      `heavy workspace Review scroll changed while opening file tabs: ${JSON.stringify(scrollAfterNavigator)} -> ${JSON.stringify(scrollAfterFileTabs)}`,
+    )
   }
   await waitForAnimationFrame(page, 2)
 
@@ -1170,6 +1201,10 @@ async function heavyWorkspaceReopen(
         lower("workspace_reopen_layout_ms", performance.layoutMs),
         lower("workspace_reopen_task_ms", performance.taskMs),
       ] : []),
+      lower("workspace_reopen_p95_renderer_interval_ms", headline.p95FrameMs),
+      lower("workspace_reopen_worst_renderer_interval_ms", headline.worstFrameMs),
+      lower("workspace_reopen_renderer_intervals_over_16_67_ms", headline.framesOver1667, "count"),
+      lower("workspace_reopen_renderer_interval_samples", headline.sampleCount, "count"),
       lower("workspace_reopen_attribute_mutations", dom?.attributesChanged ?? 0, "count"),
       lower("workspace_reopen_nodes_added", dom?.nodesAdded ?? 0, "count"),
       lower("workspace_reopen_nodes_removed", dom?.nodesRemoved ?? 0, "count"),
@@ -1192,6 +1227,10 @@ async function heavyWorkspaceReopen(
         lower("workspace_review_resume_layout_ms", reviewPerformance.layoutMs),
         lower("workspace_review_resume_task_ms", reviewPerformance.taskMs),
       ] : []),
+      lower("workspace_review_resume_p95_renderer_interval_ms", reviewResumeMetric.p95FrameMs),
+      lower("workspace_review_resume_worst_renderer_interval_ms", reviewResumeMetric.worstFrameMs),
+      lower("workspace_review_resume_renderer_intervals_over_16_67_ms", reviewResumeMetric.framesOver1667, "count"),
+      lower("workspace_review_resume_renderer_interval_samples", reviewResumeMetric.sampleCount, "count"),
       lower("workspace_review_resume_attribute_mutations", reviewDom?.attributesChanged ?? 0, "count"),
       lower("workspace_review_resume_nodes_added", reviewDom?.nodesAdded ?? 0, "count"),
       lower("workspace_review_resume_nodes_removed", reviewDom?.nodesRemoved ?? 0, "count"),
