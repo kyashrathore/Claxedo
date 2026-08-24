@@ -45,6 +45,15 @@ describe("review workspace vcs staleness", () => {
     })
   })
 
+  test("bumps the diffs version on a git index write", () => {
+    harness(({ emit, staleness }) => {
+      emit({ details: { type: "file.watcher.updated", properties: { file: ".git/index" } } })
+
+      expect(staleness.diffsVersion()).toBe(1)
+      expect(staleness.branchVersion()).toBe(0)
+    })
+  })
+
   test("bumps both versions on a branch update", () => {
     harness(({ emit, staleness }) => {
       emit({ details: { type: "vcs.branch.updated" } })
@@ -75,7 +84,8 @@ describe("review workspace vcs staleness", () => {
   test("ignores unrelated events and stops listening when the workspace goes away", () => {
     harness(({ emit, staleness, stopped, dispose }) => {
       emit({ details: { type: "message.updated" } })
-      emit({ details: { type: "file.watcher.updated", properties: { file: ".git/index" } } })
+      emit({ details: { type: "file.watcher.updated", properties: { file: ".git/objects/ab/cdef0123" } } })
+      emit({ details: { type: "file.watcher.updated", properties: { file: ".git/index.lock" } } })
       expect(staleness.diffsVersion()).toBe(0)
 
       expect(stopped()).toBe(false)

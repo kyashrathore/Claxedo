@@ -17,6 +17,36 @@ function record(properties: unknown) {
 }
 
 /**
+ * What one watcher path makes stale, or `undefined` when the path is
+ * droppable churn.
+ *
+ * `.git/` is mostly bookkeeping noise (object-store writes, `*.lock` files
+ * around every command), but two path families are the AUTHORITATIVE record of
+ * state the review reads and must NOT be dropped:
+ *
+ * - `.git/index` is exactly what `git add` / `git reset` write. An index-only
+ *   change moves files between the staged and unstaged sets with no worktree
+ *   event at all, and the review caches are infinite-stale, so dropping it
+ *   would leave them wrong forever.
+ * - `HEAD`, `refs/`, and `packed-refs` are what branch switches and commits
+ *   write, and this module already models branch freshness.
+ *
+ * `*.lock` churn (`.git/index.lock` bracketing every index write) stays
+ * dropped so a single `git add` does not double-fire; the caller's debounce
+ * absorbs the remaining lock-then-index pairing.
+ */
+function watcherFileInvalidation(file: unknown): ReviewVcsInvalidation | undefined {
+  if (typeof file !== "string" || file.length === 0) return undefined
+  if (!file.startsWith(".git/")) return { diffs: true, branch: false }
+  if (file.endsWith(".lock")) return undefined
+  if (file === ".git/index") return { diffs: true, branch: false }
+  if (file === ".git/HEAD" || file === ".git/packed-refs" || file.startsWith(".git/refs/")) {
+    return { diffs: true, branch: true }
+  }
+  return undefined
+}
+
+/**
  * What one runtime event makes stale for a review of `sessionId`.
  *
  * Pure, and separate from the subscription, because who owns the subscription
@@ -41,10 +71,7 @@ export function reviewVcsInvalidationFromEvent(input: {
   }
   if (event.type === "vcs.branch.updated") return { diffs: true, branch: true }
   if (event.type !== "file.watcher.updated") return NOTHING
-  const file = record(event.properties)?.file
-  // Git's own bookkeeping churns constantly and never changes the working tree.
-  if (typeof file !== "string" || file.startsWith(".git/")) return NOTHING
-  return { diffs: true, branch: false }
+  return watcherFileInvalidation(record(event.properties)?.file) ?? NOTHING
 }
 
 /**
@@ -77,7 +104,6 @@ export function createReviewVcsDirectoryClassifier() {
     }
     if (event.type === "vcs.branch.updated") return true
     if (event.type !== "file.watcher.updated") return false
-    const file = record(event.properties)?.file
-    return typeof file === "string" && !file.startsWith(".git/")
+    return watcherFileInvalidation(record(event.properties)?.file) !== undefined
   }
 }

@@ -17,8 +17,28 @@ describe("review vcs invalidation", () => {
       .toEqual({ diffs: true, branch: false })
   })
 
-  test("ignores git's own bookkeeping and malformed watcher events", () => {
+  test("stales the diffs on a git index write -- `git add` produces nothing else", () => {
     expect(classify({ type: "file.watcher.updated", properties: { file: ".git/index" } }))
+      .toEqual({ diffs: true, branch: false })
+  })
+
+  test("stales the diffs and branch when HEAD or refs move", () => {
+    expect(classify({ type: "file.watcher.updated", properties: { file: ".git/HEAD" } }))
+      .toEqual({ diffs: true, branch: true })
+    expect(classify({ type: "file.watcher.updated", properties: { file: ".git/refs/heads/main" } }))
+      .toEqual({ diffs: true, branch: true })
+    expect(classify({ type: "file.watcher.updated", properties: { file: ".git/packed-refs" } }))
+      .toEqual({ diffs: true, branch: true })
+  })
+
+  test("ignores noisy git internals and malformed watcher events", () => {
+    expect(classify({ type: "file.watcher.updated", properties: { file: ".git/objects/ab/cdef0123" } }))
+      .toEqual({ diffs: false, branch: false })
+    expect(classify({ type: "file.watcher.updated", properties: { file: ".git/index.lock" } }))
+      .toEqual({ diffs: false, branch: false })
+    expect(classify({ type: "file.watcher.updated", properties: { file: ".git/refs/heads/main.lock" } }))
+      .toEqual({ diffs: false, branch: false })
+    expect(classify({ type: "file.watcher.updated", properties: { file: ".git/FETCH_HEAD" } }))
       .toEqual({ diffs: false, branch: false })
     expect(classify({ type: "file.watcher.updated", properties: {} }))
       .toEqual({ diffs: false, branch: false })
@@ -60,11 +80,16 @@ describe("review vcs invalidation", () => {
 })
 
 describe("review vcs directory classifier", () => {
-  test("stales on working-tree and branch changes, never on git bookkeeping", () => {
+  test("stales on working-tree, index, and branch changes, never on git noise", () => {
     const stale = createReviewVcsDirectoryClassifier()
 
     expect(stale({ type: "file.watcher.updated", properties: { file: "src/app.ts" } })).toBe(true)
-    expect(stale({ type: "file.watcher.updated", properties: { file: ".git/index" } })).toBe(false)
+    // `git add` / `git reset` write ONLY the index: it must invalidate.
+    expect(stale({ type: "file.watcher.updated", properties: { file: ".git/index" } })).toBe(true)
+    expect(stale({ type: "file.watcher.updated", properties: { file: ".git/HEAD" } })).toBe(true)
+    expect(stale({ type: "file.watcher.updated", properties: { file: ".git/refs/heads/main" } })).toBe(true)
+    expect(stale({ type: "file.watcher.updated", properties: { file: ".git/objects/ab/cdef0123" } })).toBe(false)
+    expect(stale({ type: "file.watcher.updated", properties: { file: ".git/index.lock" } })).toBe(false)
     expect(stale({ type: "vcs.branch.updated" })).toBe(true)
     expect(stale({ type: "message.updated" })).toBe(false)
   })

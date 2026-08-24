@@ -203,6 +203,10 @@ vi.mock("@/features/session/providers/session-sync", () => ({
 vi.mock("@/platform/query/query-client", () => ({
   queryClient: {
     getQueryData: (key: unknown) => state.queryData.get(JSON.stringify(key)),
+    // The VCS cache-honesty owner mounted by DirectoryScope reconciles /
+    // invalidates through these on acquisition and on events.
+    removeQueries: () => {},
+    invalidateQueries: () => Promise.resolve(),
   },
 }))
 
@@ -226,8 +230,10 @@ vi.mock("./workspace-sdk-provider", () => ({
 }))
 
 import { DirectoryScope } from "./directory-scope"
+import { resetWorkspaceVcsCacheHonestyForTest } from "./workspace-vcs-cache-honesty"
 
 beforeEach(() => {
+  resetWorkspaceVcsCacheHonestyForTest()
   state.active = true
   state.directory = "workspace:ws_1"
   state.sessionId = "new"
