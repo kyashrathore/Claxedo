@@ -11,6 +11,7 @@ export type ScenarioId =
   | "session-switch"
   | "live-terminal-switch"
   | "large-diff-toggle"
+  | "heavy-workspace-reopen"
   | "workspace-switch"
 
 // We only ever measure our own app, in a real browser. Kept as single literals

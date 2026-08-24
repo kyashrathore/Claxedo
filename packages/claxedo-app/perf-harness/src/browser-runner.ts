@@ -23,6 +23,12 @@ import { applyCpuProfile, applyNetworkProfile, environmentProfile, type Environm
 import { installWebVitals, mergeWebVitals, readWebVitals, type WebVitals } from "./web-vitals"
 import { browserRecords } from "./browser-records"
 import { compareToBaseline, currentCommit, readBaselineFor, writeBaselineFor } from "./baseline-store"
+import {
+  HEAVY_WORKSPACE_CLOSE_DWELL_MS,
+  HEAVY_WORKSPACE_REOPEN_FILE_PATHS,
+  heavyWorkspaceRestorationFailures,
+  type HeavyWorkspaceSurfaceIdentity,
+} from "./heavy-workspace-reopen-contract"
 import { appendRunLog, runLogEntry } from "./run-log"
 import { summarize } from "./stats"
 import { appendTrend, appRoot, ensureBudget, harnessRoot, reportsRoot, writeBaseline, writeJson } from "./storage"
@@ -638,6 +644,7 @@ const flowDrivers: Record<ScenarioId, (page: Page, app: BrowserTarget, fixture: 
   "session-switch": sessionSwitch,
   "live-terminal-switch": liveTerminalSwitch,
   "large-diff-toggle": largeDiffToggle,
+  "heavy-workspace-reopen": heavyWorkspaceReopen,
   "workspace-switch": workspaceSwitch,
 }
 
@@ -913,6 +920,287 @@ async function openFirstReviewDiff(page: Page) {
   renderedBefore, { timeout: 2_000 })
   await waitForAnimationFrame(page, 2)
   return Math.round((performance.now() - started) * 100) / 100
+}
+
+type HeavyWorkspaceReopenObservation = {
+  completionMs: number
+  timedOut: boolean
+  blankFrames: number
+  loadingFrames: number
+  stableReadyFrames: number
+  identity: HeavyWorkspaceSurfaceIdentity
+}
+
+async function heavyWorkspaceReopen(
+  page: Page,
+  app: BrowserTarget,
+  fixture: ReturnType<typeof fixtureFor>,
+): Promise<FlowResult> {
+  const session = fixture.sessions[0]!
+  await launchTo(page, app, sessionPath(session, session.id))
+  await waitForTranscript(page, fixture, session.id, session.title)
+
+  // Build the state entirely through visible product controls: open Review,
+  // expand a real diff, switch to Files, and open three repository files. The
+  // fixture exposes 500 VCS rows and three persisted terminal identities, but
+  // injects no app events to create the state under test.
+  await openReviewSurface(page, fixture, { settle: "frame" })
+  await waitForReviewChangedFiles(page, fixture, { timeout: 2_000 })
+  await openFirstReviewDiff(page)
+  await waitForReviewStable(page)
+  await measureWorkspaceFiles(page, fixture, { settle: "frame" })
+  for (const filePath of HEAVY_WORKSPACE_REOPEN_FILE_PATHS) {
+    await openWorkspaceFileTab(page, fixture, filePath)
+  }
+  await waitForAnimationFrame(page, 2)
+
+  const before = await readHeavyWorkspaceSurfaceIdentity(page)
+  if (before.openTabIds.length < HEAVY_WORKSPACE_REOPEN_FILE_PATHS.length + 1) {
+    recordVisualFailure(
+      fixture,
+      `heavy workspace setup opened only ${before.openTabIds.length} tabs; expected Review plus ${HEAVY_WORKSPACE_REOPEN_FILE_PATHS.length} files`,
+    )
+  }
+  if (before.reviewFileCount === 0) {
+    recordVisualFailure(fixture, "heavy workspace setup had no rendered review-file corpus")
+  }
+
+  const closeCompletionMs = await closeHeavyWorkspacePanel(page)
+  if (closeCompletionMs >= 5_000) recordVisualFailure(fixture, "heavy workspace panel did not finish closing")
+  await page.waitForTimeout(HEAVY_WORKSPACE_CLOSE_DWELL_MS)
+  const closedOwnership = await page.evaluate(() => ({
+    shells: document.querySelectorAll("[data-testid='workspace-panel-shell']").length,
+    tabs: document.querySelectorAll("[data-testid='workspace-panel-shell'] [data-slot='workspace-tab']").length,
+    reviewFiles: document.querySelectorAll("[data-testid='workspace-panel-shell'] [data-review-file]").length,
+  }))
+
+  let reopened: HeavyWorkspaceReopenObservation | undefined
+  const reopenControl = await prepareHeavyWorkspaceReopen(page)
+  const headline = await measureInteraction(page, "heavy-workspace-reopen", async () => {
+    reopened = await reopenHeavyWorkspacePanel(page, before, reopenControl)
+  })
+  const observation = reopened
+  if (!observation) throw new Error("heavy workspace reopen produced no observation")
+  if (observation.timedOut) recordVisualFailure(fixture, "heavy workspace reopen did not reach two stable ready frames")
+  for (const failure of heavyWorkspaceRestorationFailures(before, observation.identity)) {
+    recordVisualFailure(fixture, failure)
+  }
+
+  const performance = headline.causal?.performance ?? {}
+  const dom = headline.causal?.dom
+  const resources = headline.causal?.resources ?? []
+  return {
+    headline,
+    debug: [
+      lower("workspace_close_completion_ms", closeCompletionMs),
+      lower("workspace_close_dwell_ms", HEAVY_WORKSPACE_CLOSE_DWELL_MS),
+      lower("workspace_closed_shells_after_dwell", closedOwnership.shells, "count"),
+      lower("workspace_closed_tabs_after_dwell", closedOwnership.tabs, "count"),
+      lower("workspace_closed_review_files_after_dwell", closedOwnership.reviewFiles, "count"),
+      lower("workspace_reopen_completion_ms", observation.completionMs),
+      lower("workspace_reopen_script_ms", performance.scriptMs ?? 0),
+      lower("workspace_reopen_style_ms", performance.recalcStyleMs ?? 0),
+      lower("workspace_reopen_layout_ms", performance.layoutMs ?? 0),
+      lower("workspace_reopen_task_ms", performance.taskMs ?? 0),
+      lower("workspace_reopen_attribute_mutations", dom?.attributesChanged ?? 0, "count"),
+      lower("workspace_reopen_nodes_added", dom?.nodesAdded ?? 0, "count"),
+      lower("workspace_reopen_nodes_removed", dom?.nodesRemoved ?? 0, "count"),
+      lower("workspace_reopen_blank_frames", observation.blankFrames, "count"),
+      lower("workspace_reopen_loading_frames", observation.loadingFrames, "count"),
+      lower("workspace_reopen_stable_ready_frames", observation.stableReadyFrames, "count"),
+      lower("workspace_reopen_resource_requests", resources.length, "count"),
+      lower("workspace_reopen_resource_duration_ms", resources.reduce((sum, resource) => sum + resource.duration, 0)),
+      lower("workspace_reopen_resource_transfer_bytes", resources.reduce((sum, resource) => sum + resource.transferSize, 0), "bytes"),
+      lower("workspace_reopen_open_tabs", observation.identity.openTabIds.length, "count"),
+      lower("workspace_reopen_review_files", observation.identity.reviewFileCount, "count"),
+    ],
+  }
+}
+
+async function openWorkspaceFileTab(
+  page: Page,
+  fixture: ReturnType<typeof fixtureFor>,
+  filePath: string,
+) {
+  const navigator = page.locator("[data-testid='workspace-files-navigator'][data-mode='files']").last()
+  const search = navigator.locator("input[placeholder='Search files...']").first()
+  if (!await search.isVisible({ timeout: 2_000 }).catch(() => false)) {
+    recordVisualFailure(fixture, `Files navigator was unavailable while opening ${filePath}`)
+    return
+  }
+  await search.fill(filePath)
+  const row = navigator.locator(`[data-file-tree-path="${filePath}"]`).first()
+  if (!await row.isVisible({ timeout: 3_000 }).catch(() => false)) {
+    recordVisualFailure(fixture, `Files navigator did not return ${filePath}`)
+    return
+  }
+  await row.click({ timeout: 2_000 })
+  const ready = await page.waitForFunction(({ filePath, filename }) => {
+    const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
+    if (!shell) return false
+    const selected = Array.from(shell.querySelectorAll<HTMLElement>("[data-slot='workspace-tab'][data-selected='true']"))
+      .find((tab) => tab.dataset.workspaceTabKind === "file" && tab.textContent?.includes(filename))
+    const selectedPath = shell.querySelector<HTMLElement>(
+      `[data-testid='workspace-files-navigator'][data-mode='files'] [data-file-tree-path="${CSS.escape(filePath)}"][aria-selected='true']`,
+    )
+    if (!selected || !selectedPath) return false
+    const visible = (element: Element) => {
+      if (element.closest("[aria-hidden='true']")) return false
+      const rect = element.getBoundingClientRect()
+      const style = getComputedStyle(element)
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
+    }
+    const deferred = Array.from(shell.querySelectorAll("[data-testid='workspace-file-tab-deferred']")).some(visible)
+    const loading = Array.from(shell.querySelectorAll<HTMLElement>("div, span"))
+      .some((node) => visible(node) && node.children.length === 0 && node.textContent?.trim() === "Loading...")
+    return !deferred && !loading
+  }, { filePath, filename: path.basename(filePath) }, { timeout: 5_000 }).then(() => true).catch(() => false)
+  if (!ready) recordVisualFailure(fixture, `Workspace file tab did not become ready: ${filePath}`)
+}
+
+async function closeHeavyWorkspacePanel(page: Page) {
+  const control = page.locator("button[aria-label='Close workspace panel']:visible").last()
+  await control.waitFor({ state: "visible", timeout: 2_000 })
+  const mark = `claxedo-heavy-workspace-close-${crypto.randomUUID()}`
+  await control.evaluate((node, mark) => {
+    performance.clearMarks(mark)
+    node.addEventListener("pointerdown", (event) => {
+      if (event.isTrusted) performance.mark(mark)
+    }, { once: true })
+  }, mark)
+  await control.click({ timeout: 2_000 })
+  return await page.evaluate(async (mark) => {
+    const started = performance.getEntriesByName(mark, "mark").at(-1)?.startTime
+    if (started === undefined) throw new Error("Trusted workspace close did not emit pointerdown")
+    const completion = await new Promise<number>((resolve) => {
+      const tick = () => {
+        const elapsed = performance.now() - started
+        const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")
+        const closed = !shell || (
+          shell.dataset.open === "false" &&
+          (shell.getAttribute("aria-hidden") === "true" || getComputedStyle(shell).display === "none")
+        )
+        if (closed || elapsed >= 5_000) return resolve(elapsed)
+        requestAnimationFrame(tick)
+      }
+      requestAnimationFrame(tick)
+    })
+    performance.clearMarks(mark)
+    return completion
+  }, mark)
+}
+
+async function reopenHeavyWorkspacePanel(
+  page: Page,
+  expected: HeavyWorkspaceSurfaceIdentity,
+  control: { mark: string; x: number; y: number },
+): Promise<HeavyWorkspaceReopenObservation> {
+  await page.mouse.click(control.x, control.y)
+  return await page.evaluate(async ({ expected, mark }) => {
+    const started = performance.getEntriesByName(mark, "mark").at(-1)?.startTime
+    if (started === undefined) throw new Error("Trusted workspace reopen did not emit pointerdown")
+    const visible = (element: Element) => {
+      if (element.closest("[aria-hidden='true']")) return false
+      const rect = element.getBoundingClientRect()
+      const style = getComputedStyle(element)
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
+    }
+    const identity = (): HeavyWorkspaceSurfaceIdentity => {
+      const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")
+      const tabs = Array.from(shell?.querySelectorAll<HTMLElement>("[data-slot='workspace-tab']") ?? [])
+      const active = tabs.find((tab) => tab.dataset.selected === "true")
+      const selectedFile = shell?.querySelector<HTMLElement>(
+        "[data-testid='workspace-files-navigator'][data-mode='files'] [data-file-tree-path][aria-selected='true']",
+      )
+      const navigator = shell?.querySelector<HTMLElement>("[data-testid='workspace-files-navigator']")
+      return {
+        openTabIds: tabs.map((tab) => tab.dataset.workspaceTabId ?? ""),
+        activeTabId: active?.dataset.workspaceTabId,
+        selectedFilePath: selectedFile?.dataset.fileTreePath,
+        navigatorMode: navigator?.dataset.mode,
+        reviewFileCount: shell?.querySelectorAll("[data-review-file]").length ?? 0,
+      }
+    }
+    const sameStrings = (left: readonly string[], right: readonly string[]) =>
+      left.length === right.length && left.every((value, index) => value === right[index])
+    const exactIdentity = (current: HeavyWorkspaceSurfaceIdentity) =>
+      sameStrings(current.openTabIds, expected.openTabIds) &&
+      current.activeTabId === expected.activeTabId &&
+      current.selectedFilePath === expected.selectedFilePath &&
+      current.navigatorMode === expected.navigatorMode &&
+      current.reviewFileCount >= expected.reviewFileCount
+    let blankFrames = 0
+    let loadingFrames = 0
+    let stableReadyFrames = 0
+    let lastSignature = ""
+    let finalIdentity = identity()
+    const completionMs = await new Promise<number>((resolve) => {
+      const tick = () => {
+        const elapsed = performance.now() - started
+        const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
+        finalIdentity = identity()
+        const panelVisible = !!shell && visible(shell) && shell.getBoundingClientRect().width > 120
+        const semanticBody = !!shell && Array.from(shell.querySelectorAll(
+          "[data-testid='review-pane-root'], [data-testid='workspace-files-navigator'], [data-testid='workspace-review-pending']",
+        )).some(visible)
+        if (panelVisible && !semanticBody) blankFrames++
+        const deferred = !!shell && Array.from(shell.querySelectorAll("[data-testid='workspace-file-tab-deferred']")).some(visible)
+        const loading = !!shell && Array.from(shell.querySelectorAll<HTMLElement>("div, span"))
+          .some((node) => visible(node) && node.children.length === 0 && node.textContent?.trim() === "Loading...")
+        if (panelVisible && (deferred || loading)) loadingFrames++
+        const ready = panelVisible && semanticBody && !deferred && !loading && exactIdentity(finalIdentity)
+        const signature = JSON.stringify(finalIdentity)
+        stableReadyFrames = ready && signature === lastSignature ? stableReadyFrames + 1 : ready ? 1 : 0
+        lastSignature = signature
+        if (stableReadyFrames >= 2 || elapsed >= 5_000) return resolve(elapsed)
+        requestAnimationFrame(tick)
+      }
+      requestAnimationFrame(tick)
+    })
+    performance.clearMarks(mark)
+    return {
+      completionMs,
+      timedOut: completionMs >= 5_000,
+      blankFrames,
+      loadingFrames,
+      stableReadyFrames,
+      identity: finalIdentity,
+    }
+  }, { expected, mark: control.mark })
+}
+
+async function prepareHeavyWorkspaceReopen(page: Page) {
+  const control = page.locator("button[aria-label='Open workspace panel']:visible").last()
+  await control.waitFor({ state: "visible", timeout: 2_000 })
+  const mark = `claxedo-heavy-workspace-reopen-${crypto.randomUUID()}`
+  await control.evaluate((node, mark) => {
+    performance.clearMarks(mark)
+    node.addEventListener("pointerdown", (event) => {
+      if (event.isTrusted) performance.mark(mark)
+    }, { once: true })
+  }, mark)
+  const box = await control.boundingBox()
+  if (!box) throw new Error("Visible workspace panel open control had no clickable bounds")
+  return { mark, x: box.x + box.width / 2, y: box.y + box.height / 2 }
+}
+
+async function readHeavyWorkspaceSurfaceIdentity(page: Page): Promise<HeavyWorkspaceSurfaceIdentity> {
+  return await page.evaluate(() => {
+    const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
+    const tabs = Array.from(shell?.querySelectorAll<HTMLElement>("[data-slot='workspace-tab']") ?? [])
+    const active = tabs.find((tab) => tab.dataset.selected === "true")
+    const selectedFile = shell?.querySelector<HTMLElement>(
+      "[data-testid='workspace-files-navigator'][data-mode='files'] [data-file-tree-path][aria-selected='true']",
+    )
+    const navigator = shell?.querySelector<HTMLElement>("[data-testid='workspace-files-navigator']")
+    return {
+      openTabIds: tabs.map((tab) => tab.dataset.workspaceTabId ?? ""),
+      activeTabId: active?.dataset.workspaceTabId,
+      selectedFilePath: selectedFile?.dataset.fileTreePath,
+      navigatorMode: navigator?.dataset.mode,
+      reviewFileCount: shell?.querySelectorAll("[data-review-file]").length ?? 0,
+    }
+  })
 }
 
 async function workspaceSwitch(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
@@ -1491,9 +1779,9 @@ export function changedFilesForVcs(url: URL, fixture: Pick<ReturnType<typeof fix
   }))
 }
 
-function fileContent(url: URL, fixture: ReturnType<typeof fixtureFor>) {
+export function fileContent(url: URL, fixture: ReturnType<typeof fixtureFor>) {
   const file = url.searchParams.get("path") ?? fixture.changedFiles[0]?.file ?? "src/generated/file-0.ts"
-  return `export const perfFile = ${JSON.stringify(file)}\n`
+  return { type: "text", content: `export const perfFile = ${JSON.stringify(file)}\n` }
 }
 
 function searchFiles(url: URL, fixture: ReturnType<typeof fixtureFor>) {
