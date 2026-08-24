@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { currentComparisons } from "../src/content/competitors"
+import { currentComparisonsFor, publicComparisons } from "../src/content/competitors"
 import { routes } from "../src/content/routes"
+
+// As of the records' own latest review, never the wall clock — see the
+// rationale in comparison-pages.test.ts (run 380's calendar-driven red).
+const asOfLatestReview = publicComparisons.map((competitor) => competitor.lastReviewed).sort().at(-1)!
+const reviewedComparisons = currentComparisonsFor(publicComparisons, asOfLatestReview)
 
 describe("discovery contract", () => {
   test("allows public search and answer-engine crawlers", async () => {
@@ -11,7 +16,7 @@ describe("discovery contract", () => {
   })
 
   test("keeps the reviewed comparison inventory bounded", () => {
-    expect(currentComparisons).toHaveLength(6)
+    expect(reviewedComparisons).toHaveLength(6)
   })
 
   test("publishes the agent runtime study to answer-engine discovery", async () => {
