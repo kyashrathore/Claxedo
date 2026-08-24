@@ -83,6 +83,45 @@ describe("review scroll restoration", () => {
     restoration.dispose()
   })
 
+  test("re-applies the semantic anchor when the viewport width changes", async () => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => setTimeout(() => callback(0), 0))
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => clearTimeout(id))
+    let resize: ((entries: Array<{ contentRect: { width: number } }>) => void) | undefined
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: (entries: Array<{ contentRect: { width: number } }>) => void) {
+          resize = callback
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    )
+    const { viewport } = fixture()
+    const restoration = createReviewScrollRestoration({ visible: () => true, canRecord: () => true })
+
+    restoration.bind(viewport)
+    viewport.addEventListener("scroll", restoration.remember)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    viewport.scrollTop = 1_000
+    viewport.dispatchEvent(new Event("scroll"))
+    restoration.capture()
+
+    // The first observation only records the width; it must not scroll.
+    resize?.([{ contentRect: { width: 800 } }])
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(viewport.scrollTop).toBe(1_000)
+
+    // A navigator squeezing the panel reflows the rows; the drifted pixel
+    // position is corrected back to the recorded semantic anchor.
+    viewport.scrollTop = 900
+    resize?.([{ contentRect: { width: 500 } }])
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(viewport.scrollTop).toBe(1_000)
+    restoration.dispose()
+  })
+
   test("does not replace the visible snapshot after the Review body is hidden", async () => {
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => setTimeout(() => callback(0), 0))
     vi.stubGlobal("cancelAnimationFrame", (id: number) => clearTimeout(id))

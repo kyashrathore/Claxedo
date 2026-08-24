@@ -145,6 +145,8 @@ export function createReviewScrollRestoration(input: {
     action = "restore-requested"
     apply()
   }
+  let resizeObserver: ResizeObserver | undefined
+  let lastViewportWidth: number | undefined
   const bind = (next: HTMLDivElement) => {
     element = next
     action = "bound"
@@ -152,6 +154,25 @@ export function createReviewScrollRestoration(input: {
       configurable: true,
       value: diagnostic,
     })
+    // A viewport width change (the files/processes navigator squeezing the
+    // panel) reflows every row, and with the windowed file list the estimated
+    // gap heights reflow with them -- the pixel scrollTop then points somewhere
+    // slightly different. The semantic anchor is the position's truth, so
+    // re-apply it: the anchor row returns to its recorded offset instead of
+    // drifting with the reflow.
+    if (typeof ResizeObserver !== "undefined") {
+      resizeObserver?.disconnect()
+      lastViewportWidth = undefined
+      resizeObserver = new ResizeObserver((entries) => {
+        const width = entries.at(-1)?.contentRect.width
+        if (width === undefined || width === lastViewportWidth) return
+        const first = lastViewportWidth === undefined
+        lastViewportWidth = width
+        if (first || !input.visible()) return
+        restore()
+      })
+      resizeObserver.observe(next)
+    }
     restore()
   }
   /**
@@ -183,6 +204,8 @@ export function createReviewScrollRestoration(input: {
     if (frame !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(frame)
     if (captureTimer) clearTimeout(captureTimer)
     stopObserver()
+    resizeObserver?.disconnect()
+    resizeObserver = undefined
     if (element) Reflect.deleteProperty(element, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY)
     if (diagnosticHost) Reflect.deleteProperty(diagnosticHost, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY)
   }
