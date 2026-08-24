@@ -38,6 +38,7 @@ export type HeavyWorkspaceReviewIdentity = {
   renderedHunks: number
   scrollTop: number
   scrollAnchorPath?: string
+  scrollAnchorOffset?: number
 }
 
 export function heavyWorkspaceRestorationFailures(
@@ -103,8 +104,17 @@ export function heavyWorkspaceReviewRestorationFailures(
       `review scroll anchor changed across close/reopen: ${String(before.scrollAnchorPath)} -> ${String(after.scrollAnchorPath)}`,
     )
   }
-  if (Math.abs(before.scrollTop - after.scrollTop) > 2) {
-    failures.push(`review scroll position changed across close/reopen: ${before.scrollTop} -> ${after.scrollTop}`)
+  if (
+    before.scrollAnchorOffset === undefined ||
+    after.scrollAnchorOffset === undefined ||
+    Math.abs(before.scrollAnchorOffset - after.scrollAnchorOffset) > 2
+  ) {
+    failures.push(
+      `review scroll anchor offset changed across close/reopen: ${String(before.scrollAnchorOffset)} -> ${String(after.scrollAnchorOffset)}`,
+    )
+  }
+  if (before.scrollTop > 0 && after.scrollTop <= 0) {
+    failures.push(`review deep scroll position was not restored: ${before.scrollTop} -> ${after.scrollTop}`)
   }
   return failures
 }

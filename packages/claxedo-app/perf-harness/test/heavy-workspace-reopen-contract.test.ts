@@ -74,6 +74,7 @@ describe("heavy workspace reopen benchmark contract", () => {
       renderedHunks: 1,
       scrollTop: 12_000,
       scrollAnchorPath: "src/generated/file-350.ts",
+      scrollAnchorOffset: 0,
     }
 
     expect(heavyWorkspaceReviewRestorationFailures(before, { ...before })).toEqual([])
@@ -86,6 +87,7 @@ describe("heavy workspace reopen benchmark contract", () => {
       renderedHunks: 0,
       scrollTop: 0,
       scrollAnchorPath: "src/generated/file-0.ts",
+      scrollAnchorOffset: 24,
     })).toEqual([
       expect.stringContaining("review diff style changed"),
       expect.stringContaining("expanded review diffs changed"),
@@ -93,7 +95,8 @@ describe("heavy workspace reopen benchmark contract", () => {
       expect.stringContaining("review corpus changed after activation"),
       expect.stringContaining("rendered review hunks regressed"),
       expect.stringContaining("review scroll anchor changed"),
-      expect.stringContaining("review scroll position changed"),
+      expect.stringContaining("review scroll anchor offset changed"),
+      expect.stringContaining("review deep scroll position was not restored"),
     ])
   })
 })

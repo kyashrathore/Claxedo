@@ -1337,9 +1337,14 @@ async function resumeHeavyWorkspaceReview(
       const root = Array.from(shell?.querySelectorAll<HTMLElement>("[data-testid='review-pane-root']") ?? [])
         .find(visible)
       const diff = root?.querySelector<HTMLElement>("[data-review-diff-style]")
-      const files = Array.from(root?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
-      const corpus = root?.querySelector<HTMLElement>("[data-review-rendered-files][data-review-total-files]")
       const scroll = root?.querySelector<HTMLElement>(scrollSelector)
+      const semanticBody = !!scroll && visible(scroll)
+      const files = semanticBody
+        ? Array.from(root?.querySelectorAll<HTMLElement>("[data-review-file]") ?? []).filter(visible)
+        : []
+      const corpus = semanticBody
+        ? root?.querySelector<HTMLElement>("[data-review-rendered-files][data-review-total-files]")
+        : undefined
       const scrollTop = scroll?.getBoundingClientRect().top
       const scrollAnchor = scrollTop === undefined
         ? undefined
@@ -1361,6 +1366,9 @@ async function resumeHeavyWorkspaceReview(
         renderedHunks: Number(diff?.dataset.reviewRenderedHunks ?? "0"),
         scrollTop: scroll?.scrollTop ?? 0,
         scrollAnchorPath: scrollAnchor?.dataset.reviewFile,
+        scrollAnchorOffset: scrollAnchor && scrollTop !== undefined
+          ? scrollAnchor.getBoundingClientRect().top - scrollTop
+          : undefined,
       }
     }
     const sameStrings = (left: readonly string[], right: readonly string[]) =>
@@ -1379,14 +1387,16 @@ async function resumeHeavyWorkspaceReview(
         )
         const root = Array.from(shell?.querySelectorAll<HTMLElement>("[data-testid='review-pane-root']") ?? [])
           .find(visible)
+        const scroll = root?.querySelector<HTMLElement>(scrollSelector)
+        const semanticBody = !!scroll && visible(scroll)
         finalIdentity = identity()
         const panelVisible = !!shell && visible(shell) && shell.getBoundingClientRect().width > 120
-        if (panelVisible && activeReview && !root) blankFrames++
-        const loading = !!root && !!root.querySelector(
+        if (panelVisible && activeReview && !semanticBody) blankFrames++
+        const loading = semanticBody && !!root?.querySelector(
           "[data-testid='review-pane-loading'], [data-testid='workspace-review-pending'], [data-slot='session-review-diff-placeholder']",
         )
         if (panelVisible && activeReview && loading) loadingFrames++
-        const ready = panelVisible && !!activeReview && !!root && !loading &&
+        const ready = panelVisible && !!activeReview && semanticBody && !loading &&
           finalIdentity.diffStyle === expected.diffStyle &&
           sameStrings(finalIdentity.expandedPaths, expected.expandedPaths) &&
           sameStrings(finalIdentity.expandedBodyPaths, expected.expandedBodyPaths) &&
@@ -1394,7 +1404,9 @@ async function resumeHeavyWorkspaceReview(
           finalIdentity.totalFileCount === expected.totalFileCount &&
           finalIdentity.renderedHunks >= expected.renderedHunks &&
           finalIdentity.scrollAnchorPath === expected.scrollAnchorPath &&
-          Math.abs(finalIdentity.scrollTop - expected.scrollTop) <= 2
+          finalIdentity.scrollAnchorOffset !== undefined && expected.scrollAnchorOffset !== undefined &&
+          Math.abs(finalIdentity.scrollAnchorOffset - expected.scrollAnchorOffset) <= 2 &&
+          finalIdentity.scrollTop > 0
         const signature = JSON.stringify(finalIdentity)
         stableReadyFrames = ready && signature === lastSignature ? stableReadyFrames + 1 : ready ? 1 : 0
         lastSignature = signature
@@ -1486,6 +1498,9 @@ async function readHeavyWorkspaceReviewIdentity(page: Page): Promise<HeavyWorksp
       renderedHunks: Number(diff?.dataset.reviewRenderedHunks ?? "0"),
       scrollTop: scroll?.scrollTop ?? 0,
       scrollAnchorPath: scrollAnchor?.dataset.reviewFile,
+      scrollAnchorOffset: scrollAnchor && scrollTop !== undefined
+        ? scrollAnchor.getBoundingClientRect().top - scrollTop
+        : undefined,
     }
   }, HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR)
 }

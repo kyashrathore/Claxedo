@@ -166,32 +166,115 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const [reviewBodyVisible, setReviewBodyVisible] = createSignal(true)
   let pendingActivationFrame: number | undefined
   let reviewScrollFrame: number | undefined
+  let reviewScrollCaptureTimer: ReturnType<typeof setTimeout> | undefined
+  let reviewScrollObserver: MutationObserver | undefined
   let reviewScrollElement: HTMLDivElement | undefined
-  let reviewScrollTop = 0
+  let restoringReviewScroll = false
+  let reviewScroll = { top: 0, anchorPath: undefined as string | undefined, anchorOffset: undefined as number | undefined }
 
   const reviewIsVisible = () => (props.active ?? true) && store.activeTabId === REVIEW_TAB_ID && reviewBodyVisible()
-  const restoreReviewScroll = () => {
-    if (!reviewScrollElement || !reviewIsVisible()) return
-    if (reviewScrollFrame !== undefined && typeof cancelAnimationFrame === "function") {
-      cancelAnimationFrame(reviewScrollFrame)
+  const nearestReviewAnchor = (element: HTMLDivElement) => {
+    const viewportTop = element.getBoundingClientRect().top
+    return Array.from(element.querySelectorAll<HTMLElement>("[data-review-file]"))
+      .filter((candidate) => {
+        const rect = candidate.getBoundingClientRect()
+        return rect.width > 0 && rect.height > 0
+      })
+      .toSorted((left, right) =>
+        Math.abs(left.getBoundingClientRect().top - viewportTop) -
+        Math.abs(right.getBoundingClientRect().top - viewportTop)
+      )[0]
+  }
+  const captureReviewScrollAnchor = () => {
+    const element = reviewScrollElement
+    if (!element) return
+    const anchor = nearestReviewAnchor(element)
+    reviewScroll = {
+      top: element.scrollTop,
+      anchorPath: anchor?.dataset.reviewFile,
+      anchorOffset: anchor
+        ? anchor.getBoundingClientRect().top - element.getBoundingClientRect().top
+        : undefined,
     }
+  }
+  const stopReviewScrollObserver = () => {
+    reviewScrollObserver?.disconnect()
+    reviewScrollObserver = undefined
+  }
+  const applyReviewScroll = (attempt = 0) => {
+    const element = reviewScrollElement
+    if (!element || !reviewIsVisible()) {
+      restoringReviewScroll = false
+      return
+    }
+    const anchor = reviewScroll.anchorPath
+      ? Array.from(element.querySelectorAll<HTMLElement>("[data-review-file]"))
+        .find((candidate) => candidate.dataset.reviewFile === reviewScroll.anchorPath)
+      : undefined
+    if (reviewScroll.anchorPath && !anchor) {
+      if (!reviewScrollObserver && typeof MutationObserver !== "undefined") {
+        reviewScrollObserver = new MutationObserver(() => applyReviewScroll())
+        reviewScrollObserver.observe(element, { childList: true, subtree: true })
+      }
+      return
+    }
+    stopReviewScrollObserver()
+    const target = anchor && reviewScroll.anchorOffset !== undefined
+      ? element.scrollTop + anchor.getBoundingClientRect().top - element.getBoundingClientRect().top - reviewScroll.anchorOffset
+      : reviewScroll.top
+    element.scrollTop = target
     if (typeof requestAnimationFrame !== "function") {
-      reviewScrollElement.scrollTop = reviewScrollTop
+      restoringReviewScroll = false
       return
     }
     reviewScrollFrame = requestAnimationFrame(() => {
       reviewScrollFrame = undefined
-      if (!reviewScrollElement || !reviewIsVisible()) return
-      reviewScrollElement.scrollTop = reviewScrollTop
+      const current = reviewScrollElement
+      if (!current || !reviewIsVisible()) {
+        restoringReviewScroll = false
+        return
+      }
+      const currentAnchor = reviewScroll.anchorPath
+        ? Array.from(current.querySelectorAll<HTMLElement>("[data-review-file]"))
+          .find((candidate) => candidate.dataset.reviewFile === reviewScroll.anchorPath)
+        : undefined
+      const offsetError = currentAnchor && reviewScroll.anchorOffset !== undefined
+        ? Math.abs(
+            currentAnchor.getBoundingClientRect().top -
+            current.getBoundingClientRect().top -
+            reviewScroll.anchorOffset,
+          )
+        : Math.abs(current.scrollTop - reviewScroll.top)
+      if (attempt < 8 && (attempt < 1 || offsetError > 0.5)) {
+        applyReviewScroll(attempt + 1)
+        return
+      }
+      restoringReviewScroll = false
     })
+  }
+  const restoreReviewScroll = () => {
+    if (!reviewScrollElement || !reviewIsVisible()) return
+    if (reviewScrollFrame !== undefined && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(reviewScrollFrame)
+      reviewScrollFrame = undefined
+    }
+    restoringReviewScroll = true
+    applyReviewScroll()
   }
   const bindReviewScroll = (element: HTMLDivElement) => {
     reviewScrollElement = element
     restoreReviewScroll()
   }
   const rememberReviewScroll: JSX.EventHandler<HTMLDivElement, Event> = (event) => {
-    if (!reviewIsVisible()) return
-    reviewScrollTop = event.currentTarget.scrollTop
+    if (!reviewIsVisible() || restoringReviewScroll) return
+    const element = event.currentTarget
+    reviewScroll.top = element.scrollTop
+    if (reviewScrollCaptureTimer) clearTimeout(reviewScrollCaptureTimer)
+    reviewScrollCaptureTimer = setTimeout(() => {
+      reviewScrollCaptureTimer = undefined
+      if (reviewScrollElement !== element || !reviewIsVisible()) return
+      captureReviewScrollAnchor()
+    }, 80)
   }
 
   const contextTab = createMemo(() =>
@@ -361,16 +444,30 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
         reviewRevealTimer = setTimeout(() => setReviewBodyVisible(true), 80)
         return
       }
+      captureReviewScrollAnchor()
       setReviewBodyVisible(false)
     },
   ))
+  createEffect(on(
+    () => props.active ?? true,
+    (active, previous) => {
+      if (previous && !active && store.activeTabId === REVIEW_TAB_ID && reviewBodyVisible()) {
+        captureReviewScrollAnchor()
+      }
+    },
+  ))
   createEffect(() => {
-    if (!reviewIsVisible()) return
+    if (!reviewIsVisible()) {
+      stopReviewScrollObserver()
+      return
+    }
     restoreReviewScroll()
   })
   onCleanup(() => {
     if (pendingActivationFrame !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(pendingActivationFrame)
     if (reviewScrollFrame !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(reviewScrollFrame)
+    if (reviewScrollCaptureTimer) clearTimeout(reviewScrollCaptureTimer)
+    stopReviewScrollObserver()
     if (reviewRevealTimer) clearTimeout(reviewRevealTimer)
   })
 
