@@ -7,15 +7,15 @@
  * (files + expansion) onto controlled `CodeViewItem`s and exposes the scroll
  * element to the caller's scroll-restoration machinery.
  *
- * Spike scope, deliberately: no line comments, no gutter, no custom header
- * chrome — Pierre's default headers render, and a transparent light-DOM strip
- * over each header carries the expand/collapse affordance plus the
- * `data-review-file` / `aria-expanded` markers the app's tooling and the
- * perf-harness identity gates read. The strip is throwaway compat scaffolding
- * for the spike, not the target header design.
+ * File headers render through Pierre's custom-header mode: the engine leaves a
+ * light-DOM slot per file and this component portals the caller's header
+ * content into it, wrapped in the accordion header structure the app's review
+ * CSS styles. Headers therefore look identical to the accordion list while
+ * the engine owns layout and virtualization.
  */
 import { CodeView, type CodeViewDiffItem, type CodeViewOptions } from "@pierre/diffs"
-import { createEffect, on, onCleanup, onMount } from "solid-js"
+import { createEffect, createSignal, For, on, onCleanup, onMount, type JSX } from "solid-js"
+import { Portal } from "solid-js/web"
 
 import { getWorkerPool } from "../pierre/worker"
 import { resolveFileDiff } from "./session-diff"
@@ -36,6 +36,16 @@ export type ReviewCodeViewProps = {
   /** Expanded file paths; every other file renders collapsed. */
   open: readonly string[]
   onToggleOpen?: (file: string) => void
+  /**
+   * Header row content for a file (the accordion trigger-content markup).
+   * Rendered in light DOM through the engine's header slot, so app CSS and
+   * context providers apply. Falls back to Pierre's default header when absent.
+   */
+  renderHeader?: (file: string) => JSX.Element
+  /** Test id for the header trigger button (defaults to a spike-local id). */
+  headerTestId?: (file: string) => string | undefined
+  /** File whose header row shows the selected highlight. */
+  focusedFile?: string
   /** Receives the live scroll element for scroll capture/restoration. */
   scrollRef?: (element: HTMLDivElement) => void
   /** Native scroll events from the scroll element. */
@@ -50,33 +60,25 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
   let view: CodeView<undefined> | undefined
   let generation = 0
   let stampFrame: number | undefined
-  const toggleButtons = new Map<string, HTMLButtonElement>()
 
   const openSet = () => new Set(props.open)
+  const expanded = (file: string) => openSet().has(file)
 
-  /**
-   * Expansion toggle, mounted through Pierre's own header-prefix slot so it
-   * lays out (and hit-tests) as part of the real header instead of floating
-   * over the shadow content.
-   */
-  const headerToggle = (file: string) => {
-    let button = toggleButtons.get(file)
-    if (!button) {
-      button = document.createElement("button")
-      button.type = "button"
-      button.dataset.testid = "review-codeview-trigger"
-      button.setAttribute("aria-label", `Toggle diff for ${file}`)
-      button.textContent = "\u203a"
-      button.style.cssText =
-        "background:transparent;border:0;padding:0 6px;margin:0;cursor:pointer;font:inherit;color:inherit;"
-      button.addEventListener("click", (event) => {
-        event.stopPropagation()
-        props.onToggleOpen?.(file)
-      })
-      toggleButtons.set(file, button)
+  // Per-file light-DOM hosts for the engine's custom-header slots. The engine
+  // asks for a host whenever it (re)renders an item's header; the host is
+  // created once and a Portal keeps the header content mounted in it across
+  // element pooling, so re-renders re-adopt the same live DOM.
+  const headerHosts = new Map<string, HTMLDivElement>()
+  const [headerFiles, setHeaderFiles] = createSignal<string[]>([])
+  const acquireHeaderHost = (file: string) => {
+    let host = headerHosts.get(file)
+    if (!host) {
+      host = document.createElement("div")
+      host.dataset.slot = "session-review-header-host"
+      headerHosts.set(file, host)
+      setHeaderFiles((files) => [...files, file])
     }
-    button.setAttribute("aria-expanded", openSet().has(file) ? "true" : "false")
-    return button
+    return host
   }
 
   const buildItems = (): CodeViewDiffItem<undefined>[] => {
@@ -94,15 +96,14 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
 
   /**
    * Light-DOM compat markers on CodeView's rendered item containers: the
-   * `data-review-file` identity the app's tooling queries, and the header
-   * strip carrying expansion state and the toggle. Shadow DOM stays Pierre's.
+   * `data-review-file` identity the app's tooling queries. Shadow DOM stays
+   * Pierre's.
    */
   const stamp = () => {
     stampFrame = undefined
     const current = view
     const host = root
     if (!current || !host) return
-    const open = openSet()
     const rendered = current.getRenderedItems()
     for (const record of rendered) {
       const element = record.element
@@ -115,9 +116,6 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
         element.style.display = "block"
         element.style.minHeight = "1px"
       }
-    }
-    for (const [file, button] of toggleButtons) {
-      button.setAttribute("aria-expanded", open.has(file) ? "true" : "false")
     }
     host.dataset.reviewRenderedFiles = String(rendered.length)
     host.dataset.reviewTotalFiles = String(props.diffs.length)
@@ -150,10 +148,13 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
     if (!host) return
     const options: CodeViewOptions<undefined> = {
       diffStyle: props.diffStyle,
+      stickyHeaders: true,
       // Spike diagnostics: let render failures throw instead of being
       // swallowed -- a blank canvas must name its cause.
       disableErrorHandling: true,
-      renderHeaderPrefix: (fileDiff) => headerToggle(fileDiff.name),
+      ...(props.renderHeader
+        ? { renderCustomHeader: (fileDiff) => acquireHeaderHost(fileDiff.name) }
+        : {}),
       onPostRender: () => {
         props.onDiffRendered?.()
         stampSoon()
@@ -219,7 +220,7 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
       scroller.removeEventListener("scroll", forwardScroll)
       if (stampFrame !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(stampFrame)
       instance.cleanUp()
-      toggleButtons.clear()
+      headerHosts.clear()
       view = undefined
     })
   })
@@ -261,6 +262,38 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
       data-slot="session-review-scroll"
       class={props.class}
       style={{ height: "100%", "min-height": "0", overflow: "auto", position: "relative" }}
-    />
+    >
+      <For each={headerFiles()}>
+        {(file) => (
+          <Portal mount={headerHosts.get(file)!}>
+            {/* The accordion structure the review header CSS is written
+                against; the engine's slot replaces the accordion's layout
+                role, this chain only carries the styling contract. */}
+            <div data-component="accordion">
+              <div
+                data-slot="session-review-accordion-item"
+                data-review-header-file={file}
+                data-selected={props.focusedFile === file ? "" : undefined}
+              >
+                <div data-slot="accordion-item" data-expanded={expanded(file) ? "" : undefined}>
+                  <div data-slot="accordion-header">
+                    <button
+                      type="button"
+                      data-slot="accordion-trigger"
+                      data-testid={props.headerTestId?.(file) ?? "review-codeview-trigger"}
+                      aria-expanded={expanded(file) ? "true" : "false"}
+                      aria-label={`Toggle diff for ${file}`}
+                      onClick={() => props.onToggleOpen?.(file)}
+                    >
+                      {props.renderHeader?.(file)}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Portal>
+        )}
+      </For>
+    </div>
   )
 }

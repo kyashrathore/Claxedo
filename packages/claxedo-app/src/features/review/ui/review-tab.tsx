@@ -33,6 +33,8 @@ import {
   type SessionReviewLineComment,
 } from "./review-session"
 import { ReviewCodeView } from "@/ui/session-kit"
+import { ReviewCodeViewFileHeader } from "./review-file-header"
+import { diffTriggerTestId } from "./review-session-logic"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { ClaxedoLogo as Mark } from "@/ui/controls/claxedo-logo"
 import type { FileContent, VcsFileDiff } from "@opencode-ai/sdk/v2"
@@ -683,10 +685,15 @@ export function ReviewTab(props: ReviewTabProps) {
             >
               {REVIEW_CODEVIEW_SPIKE ? (
                 <ReviewCodeView
-                  class="h-full"
+                  class="claxedo-workspace-review h-full"
                   diffs={diffs()}
                   diffStyle={store.diffStyle}
                   open={store.openDiffs}
+                  focusedFile={store.focusedFile}
+                  headerTestId={diffTriggerTestId}
+                  renderHeader={(file) => (
+                    <ReviewCodeViewFileHeader diffs={diffs()} file={file} onViewFile={props.onOpenFile} />
+                  )}
                   onToggleOpen={(file) =>
                     setStore(
                       "openDiffs",
