@@ -9,6 +9,13 @@ export const HEAVY_WORKSPACE_REOPEN_FILE_PATHS = [
 // layout rather than benchmarking a token one-line patch.
 export const HEAVY_WORKSPACE_EXPANDED_DIFF_LINES = 240
 export const HEAVY_WORKSPACE_FILE_LINES = 320
+export const HEAVY_WORKSPACE_FILE_MIN_CHARS = 10_000
+
+// Retained builds use the same workload as the future disposal build, but only
+// the latter is allowed to claim zero hidden workspace ownership. Keeping this
+// as an explicit run contract lets us record a valid retained baseline first
+// and then fail the candidate if any closed or inactive subtree survives.
+export const HEAVY_WORKSPACE_REQUIRE_DISPOSAL_ENV = "CLAXEDO_PERF_REQUIRE_WORKSPACE_DISPOSAL"
 
 // The shipping panel's close motion is 120ms with a 20ms exposure grace. A
 // 300ms dwell proves a future lazy-unmount implementation has crossed its
@@ -41,6 +48,54 @@ export type HeavyWorkspaceReviewIdentity = {
   scrollTop: number
   scrollAnchorPath?: string
   scrollAnchorOffset?: number
+}
+
+export type HeavyWorkspaceClosedOwnership = {
+  shells: number
+  tabs: number
+  fileRoots: number
+  navigators: number
+  reviewRoots: number
+  reviewFiles: number
+}
+
+export function heavyWorkspaceLiveFileFailures(identity: HeavyWorkspaceSurfaceIdentity) {
+  const failures: string[] = []
+  if (identity.selectedFileLines !== HEAVY_WORKSPACE_FILE_LINES) {
+    failures.push(
+      `active workspace file has ${String(identity.selectedFileLines)} lines; expected ${HEAVY_WORKSPACE_FILE_LINES}`,
+    )
+  }
+  if ((identity.selectedFileChars ?? 0) < HEAVY_WORKSPACE_FILE_MIN_CHARS) {
+    failures.push(
+      `active workspace file has ${String(identity.selectedFileChars)} chars; expected at least ${HEAVY_WORKSPACE_FILE_MIN_CHARS}`,
+    )
+  }
+  return failures
+}
+
+export function heavyWorkspaceClosedOwnershipFailures(ownership: HeavyWorkspaceClosedOwnership) {
+  return Object.entries(ownership)
+    .filter(([, count]) => count !== 0)
+    .map(([name, count]) => `closed workspace retained ${count} ${name}; expected 0`)
+}
+
+export function heavyWorkspaceInactiveReviewOwnershipFailures(ownership: {
+  roots: number
+  files: number
+  fileRoots: number
+}) {
+  const failures: string[] = []
+  if (ownership.roots !== 0) failures.push(`active file retained ${ownership.roots} inactive Review roots; expected 0`)
+  if (ownership.files !== 0) failures.push(`active file retained ${ownership.files} inactive Review files; expected 0`)
+  if (ownership.fileRoots !== 1) failures.push(`active file mounted ${ownership.fileRoots} file roots; expected exactly 1`)
+  return failures
+}
+
+export function heavyWorkspaceInactiveFileOwnershipFailures(ownership: { fileRoots: number }) {
+  return ownership.fileRoots === 0
+    ? []
+    : [`active Review retained ${ownership.fileRoots} inactive file roots; expected 0`]
 }
 
 export function heavyWorkspaceRestorationFailures(

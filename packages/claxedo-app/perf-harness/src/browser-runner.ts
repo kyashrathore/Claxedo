@@ -26,9 +26,14 @@ import { compareToBaseline, currentCommit, readBaselineFor, writeBaselineFor } f
 import {
   HEAVY_WORKSPACE_CLOSE_DWELL_MS,
   HEAVY_WORKSPACE_EXPANDED_DIFF_LINES,
+  HEAVY_WORKSPACE_REQUIRE_DISPOSAL_ENV,
   HEAVY_WORKSPACE_FILE_LINES,
   HEAVY_WORKSPACE_REOPEN_FILE_PATHS,
   HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR,
+  heavyWorkspaceClosedOwnershipFailures,
+  heavyWorkspaceInactiveFileOwnershipFailures,
+  heavyWorkspaceInactiveReviewOwnershipFailures,
+  heavyWorkspaceLiveFileFailures,
   heavyWorkspaceReviewRestorationFailures,
   heavyWorkspaceRestorationFailures,
   type HeavyWorkspaceReviewIdentity,
@@ -1001,6 +1006,7 @@ async function heavyWorkspaceReopen(
   await waitForAnimationFrame(page, 2)
 
   const before = await readHeavyWorkspaceSurfaceIdentity(page)
+  for (const failure of heavyWorkspaceLiveFileFailures(before)) recordVisualFailure(fixture, failure)
   if (before.openTabIds.length < HEAVY_WORKSPACE_REOPEN_FILE_PATHS.length + 1) {
     recordVisualFailure(
       fixture,
@@ -1021,6 +1027,12 @@ async function heavyWorkspaceReopen(
     reviewRoots: document.querySelectorAll("[data-testid='workspace-panel-shell'] [data-testid='review-pane-root']").length,
     reviewFiles: document.querySelectorAll("[data-testid='workspace-panel-shell'] [data-review-file]").length,
   }))
+  const requireDisposal = process.env[HEAVY_WORKSPACE_REQUIRE_DISPOSAL_ENV] === "1"
+  if (requireDisposal) {
+    for (const failure of heavyWorkspaceClosedOwnershipFailures(closedOwnership)) {
+      recordVisualFailure(fixture, failure)
+    }
+  }
 
   let reopened: HeavyWorkspaceReopenObservation | undefined
   const reopenControl = await prepareHeavyWorkspaceReopen(page)
@@ -1049,6 +1061,11 @@ async function heavyWorkspaceReopen(
       "[data-testid='workspace-panel-shell'][data-open='true'] [data-testid='tab-file-root']",
     ).length,
   }))
+  if (requireDisposal) {
+    for (const failure of heavyWorkspaceInactiveReviewOwnershipFailures(inactiveReviewOwnership)) {
+      recordVisualFailure(fixture, failure)
+    }
+  }
 
   let reviewResumed: HeavyWorkspaceReviewResumeObservation | undefined
   const reviewResumeControl = await prepareHeavyWorkspaceReviewResume(page)
@@ -1070,6 +1087,11 @@ async function heavyWorkspaceReopen(
       "[data-testid='workspace-panel-shell'][data-open='true'] [data-testid='tab-file-root']",
     ).length,
   }))
+  if (requireDisposal) {
+    for (const failure of heavyWorkspaceInactiveFileOwnershipFailures(inactiveFileOwnership)) {
+      recordVisualFailure(fixture, failure)
+    }
+  }
 
   for (const [phase, metric] of [
     ["close", closeMetric],
@@ -1134,6 +1156,7 @@ async function heavyWorkspaceReopen(
         lower("workspace_close_resource_transfer_bytes", closeResources.reduce((sum, resource) => sum + resource.transferSize, 0), "bytes"),
       ] : []),
       lower("workspace_close_dwell_ms", HEAVY_WORKSPACE_CLOSE_DWELL_MS),
+      lower("workspace_disposal_required", requireDisposal ? 1 : 0, "count"),
       lower("workspace_closed_shells_after_dwell", closedOwnership.shells, "count"),
       lower("workspace_closed_tabs_after_dwell", closedOwnership.tabs, "count"),
       lower("workspace_closed_file_roots_after_dwell", closedOwnership.fileRoots, "count"),

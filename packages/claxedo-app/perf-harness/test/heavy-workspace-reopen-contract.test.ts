@@ -4,9 +4,14 @@ import { fileContent, fixtureFor } from "../src/browser-runner"
 import {
   HEAVY_WORKSPACE_CLOSE_DWELL_MS,
   HEAVY_WORKSPACE_EXPANDED_DIFF_LINES,
+  HEAVY_WORKSPACE_FILE_MIN_CHARS,
   HEAVY_WORKSPACE_FILE_LINES,
   HEAVY_WORKSPACE_REOPEN_FILE_PATHS,
   HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR,
+  heavyWorkspaceClosedOwnershipFailures,
+  heavyWorkspaceInactiveFileOwnershipFailures,
+  heavyWorkspaceInactiveReviewOwnershipFailures,
+  heavyWorkspaceLiveFileFailures,
   heavyWorkspaceReviewRestorationFailures,
   heavyWorkspaceRestorationFailures,
 } from "../src/heavy-workspace-reopen-contract"
@@ -51,6 +56,15 @@ describe("heavy workspace reopen benchmark contract", () => {
     }
 
     expect(heavyWorkspaceRestorationFailures(before, { ...before })).toEqual([])
+    expect(heavyWorkspaceLiveFileFailures(before)).toEqual([])
+    expect(heavyWorkspaceLiveFileFailures({
+      ...before,
+      selectedFileChars: HEAVY_WORKSPACE_FILE_MIN_CHARS - 1,
+      selectedFileLines: HEAVY_WORKSPACE_FILE_LINES - 1,
+    })).toEqual([
+      expect.stringContaining("expected 320"),
+      expect.stringContaining(`at least ${HEAVY_WORKSPACE_FILE_MIN_CHARS}`),
+    ])
     expect(heavyWorkspaceRestorationFailures(before, {
       ...before,
       openTabIds: ["review", "file://src/b.ts", "file://src/a.ts"],
@@ -67,6 +81,32 @@ describe("heavy workspace reopen benchmark contract", () => {
       expect.stringContaining("workspace file content changed"),
       expect.stringContaining("workspace navigator changed"),
       expect.stringContaining("review workspace tab changed"),
+    ])
+  })
+
+  test("can require absolute zero ownership only for the disposal candidate", () => {
+    expect(heavyWorkspaceClosedOwnershipFailures({
+      shells: 0,
+      tabs: 0,
+      fileRoots: 0,
+      navigators: 0,
+      reviewRoots: 0,
+      reviewFiles: 0,
+    })).toEqual([])
+    expect(heavyWorkspaceClosedOwnershipFailures({
+      shells: 1,
+      tabs: 4,
+      fileRoots: 3,
+      navigators: 1,
+      reviewRoots: 1,
+      reviewFiles: 500,
+    })).toHaveLength(6)
+
+    expect(heavyWorkspaceInactiveReviewOwnershipFailures({ roots: 0, files: 0, fileRoots: 1 })).toEqual([])
+    expect(heavyWorkspaceInactiveReviewOwnershipFailures({ roots: 1, files: 500, fileRoots: 3 })).toHaveLength(3)
+    expect(heavyWorkspaceInactiveFileOwnershipFailures({ fileRoots: 0 })).toEqual([])
+    expect(heavyWorkspaceInactiveFileOwnershipFailures({ fileRoots: 3 })).toEqual([
+      expect.stringContaining("inactive file roots"),
     ])
   })
 
