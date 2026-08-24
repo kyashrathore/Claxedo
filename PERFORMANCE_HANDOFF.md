@@ -1,7 +1,7 @@
 ---
 artifact_contract: "ce-handoff/v1"
 created_at: "2026-08-24T07:16:26Z"
-updated_at: "2026-08-24T07:30:17Z"
+updated_at: "2026-08-24T07:32:17Z"
 title: "Claxedo performance architecture and release handoff"
 summary: "Continuation state for cold-session, memory, Workspace disposal/reopen, Crabbox/AWS validation, merge, and push work."
 keywords: ["claxedo", "performance", "cold-session", "workspace-reopen", "crabbox", "aws-windows", "merge-dev"]
@@ -17,6 +17,25 @@ worktree_path: "/Users/yashvardhansingh/test/opencode"
 # Performance and merge handoff
 
 This captures the implementation and benchmark state before the remaining Workspace wiring and full validation. It is status, not authorization to merge or push before the gates pass.
+
+## Cloud-agent resume entrypoint
+
+No Compound Engineering plugin, `$ce-*` command, prior chat, or local absolute path is required. From any clone of the repository:
+
+~~~sh
+git fetch origin
+git switch chore/crabbox-ci-matrix
+git pull --ff-only
+sed -n '1,380p' PERFORMANCE_HANDOFF.md
+~~~
+
+Then give the cloud agent this plain prompt:
+
+~~~text
+Read PERFORMANCE_HANDOFF.md completely and use the checked-out repository plus current remotes as authoritative. Continue the active performance objective from “Next steps in dependency order.” First wire the provider-owned Review working-set store through the disposable Workspace boundary, preserve the listed invariants, run the disposal candidate benchmark against exact retained base a03985db951d33fcbd379cf6d11aecd5bb2ad5b3, and persist the evidence before making claims. Do not touch unrelated dirty files, do not weaken benchmark gates, and do not merge or push dev until every benchmark, Crabbox CI/E2E lane, and native AWS Windows lane is green.
+~~~
+
+The `/tmp/...` artifact paths in this document are machine-local evidence locations and will not exist on a new cloud host. Their checksums and all measurements needed to identify the retained baseline are recorded below; regenerate or download artifacts when the receiving environment needs raw traces.
 
 ## User requirements
 
