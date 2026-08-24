@@ -48,6 +48,8 @@ export type FrameCausalMetric = {
     decodedBodySize: number
   }>
   performance?: Record<string, number>
+  performanceSource?: "cdp-cumulative-delta" | "trusted-window-trace"
+  performanceUnavailableReason?: string
   cpuProfile?: Array<{
     functionName: string
     url: string
@@ -596,7 +598,19 @@ export async function measureInteraction(
   // cannot be reset synchronously by a page capture listener. Publishing their
   // pre-pointer delivery gap as trusted-window data would be false precision;
   // the cropped trace below remains the exact attribution source in this mode.
-  if (causal && !trustedTraceMark) causal.performance = performanceMetricDelta(performanceBefore, performanceAfter)
+  if (causal && !trustedTraceMark) {
+    causal.performance = performanceMetricDelta(performanceBefore, performanceAfter)
+    causal.performanceSource = "cdp-cumulative-delta"
+  }
+  if (causal && trustedTraceMark) {
+    const measurement = trustedWindowRendererPerformance(measuredTraceEvents)
+    if (measurement.state === "measured") {
+      causal.performance = measurement.performance
+      causal.performanceSource = "trusted-window-trace"
+    } else {
+      causal.performanceUnavailableReason = measurement.reason
+    }
+  }
   if (causal && profile && !trustedTraceMark) causal.cpuProfile = summarizeCpuProfile(profile.profile)
   if (causal && measuredTraceEvents.length > 0) causal.traceTasks = summarizeTraceTasks(measuredTraceEvents)
   return buildFrameMetric(
@@ -629,6 +643,21 @@ export type TraceEvent = {
   }
 }
 
+export type TrustedWindowRendererPerformance = {
+  scriptMs: number
+  scriptCount: number
+  recalcStyleMs: number
+  recalcStyleCount: number
+  layoutMs: number
+  layoutCount: number
+  taskMs: number
+  taskCount: number
+}
+
+export type TrustedWindowRendererPerformanceResult =
+  | { state: "measured"; performance: TrustedWindowRendererPerformance }
+  | { state: "unavailable"; reason: string }
+
 export function traceEventsInTrustedWindow(events: TraceEvent[], mark: string, completionMs: number) {
   const marker = events.find((event) => event.name === mark || event.args?.name === mark || event.args?.data?.functionName === mark)
   if (!marker) throw new Error(`Trusted interaction trace mark was not collected: ${mark}`)
@@ -647,12 +676,36 @@ export function traceEventsInTrustedWindow(events: TraceEvent[], mark: string, c
   })
 }
 
-function rendererRunTasks(events: TraceEvent[]) {
-  const rendererThreads = new Set(
+type TraceInterval = { start: number; end: number }
+
+const SCRIPT_TRACE_EVENT_NAMES = new Set([
+  "EvaluateModule",
+  "EvaluateScript",
+  "EventDispatch",
+  "FireAnimationFrame",
+  "FunctionCall",
+  "RunMicrotasks",
+  "TimerFire",
+  "V8.Execute",
+  "v8.run",
+])
+
+const STYLE_RECALC_TRACE_EVENT_NAMES = new Set([
+  "RecalculateStyle",
+  "RecalculateStyles",
+  "UpdateLayoutTree",
+])
+
+function declaredRendererThreadKeys(events: TraceEvent[]) {
+  return new Set(
     events
       .filter((event) => event.name === "thread_name" && event.args?.name === "CrRendererMain")
       .map((event) => `${event.pid}:${event.tid}`),
   )
+}
+
+function rendererThreadKeys(events: TraceEvent[]) {
+  const rendererThreads = declaredRendererThreadKeys(events)
   const runTasks = events
     .filter((event) => event.ph === "X" && event.dur && event.name.includes("RunTask"))
   const fallbackThread = runTasks
@@ -664,9 +717,124 @@ function rendererRunTasks(events: TraceEvent[]) {
     .entries()
     .toArray()
     .toSorted((left, right) => right[1] - left[1])[0]?.[0]
-  const threads = rendererThreads.size > 0 ? rendererThreads : new Set(fallbackThread ? [fallbackThread] : [])
+  return rendererThreads.size > 0 ? rendererThreads : new Set(fallbackThread ? [fallbackThread] : [])
+}
 
-  return runTasks.filter((task) => threads.has(`${task.pid}:${task.tid}`))
+function rendererRunTasks(events: TraceEvent[]) {
+  const threads = rendererThreadKeys(events)
+  return events.filter((event) =>
+    event.ph === "X" && event.dur && event.name.includes("RunTask") && threads.has(`${event.pid}:${event.tid}`))
+}
+
+function intervalsFor(
+  events: TraceEvent[],
+  threads: Set<string>,
+  matches: (event: TraceEvent) => boolean,
+) {
+  return events.flatMap((event): TraceInterval[] =>
+    event.ph === "X" && event.dur && event.dur > 0 && threads.has(`${event.pid}:${event.tid}`) && matches(event)
+      ? [{ start: event.ts, end: event.ts + event.dur }]
+      : [])
+}
+
+function unionIntervals(intervals: TraceInterval[]) {
+  const sorted = intervals.toSorted((left, right) => left.start - right.start || left.end - right.end)
+  const result: TraceInterval[] = []
+  for (const interval of sorted) {
+    const previous = result.at(-1)
+    if (!previous || interval.start > previous.end) {
+      result.push({ ...interval })
+      continue
+    }
+    previous.end = Math.max(previous.end, interval.end)
+  }
+  return result
+}
+
+function intersectIntervals(left: TraceInterval[], right: TraceInterval[]) {
+  const intersections: TraceInterval[] = []
+  let leftIndex = 0
+  let rightIndex = 0
+  while (leftIndex < left.length && rightIndex < right.length) {
+    const a = left[leftIndex]!
+    const b = right[rightIndex]!
+    const start = Math.max(a.start, b.start)
+    const end = Math.min(a.end, b.end)
+    if (end > start) intersections.push({ start, end })
+    if (a.end <= b.end) leftIndex++
+    else rightIndex++
+  }
+  return unionIntervals(intersections)
+}
+
+function subtractIntervals(base: TraceInterval[], excluded: TraceInterval[]) {
+  if (excluded.length === 0) return base
+  return base.flatMap((interval): TraceInterval[] => {
+    const remaining: TraceInterval[] = []
+    let cursor = interval.start
+    for (const blocked of excluded) {
+      if (blocked.end <= cursor) continue
+      if (blocked.start >= interval.end) break
+      if (blocked.start > cursor) remaining.push({ start: cursor, end: Math.min(blocked.start, interval.end) })
+      cursor = Math.max(cursor, blocked.end)
+      if (cursor >= interval.end) break
+    }
+    if (cursor < interval.end) remaining.push({ start: cursor, end: interval.end })
+    return remaining
+  })
+}
+
+function intervalMetric(intervals: TraceInterval[]) {
+  return {
+    ms: round(intervals.reduce((total, interval) => total + interval.end - interval.start, 0) / 1_000),
+    count: intervals.length,
+  }
+}
+
+/**
+ * Derive renderer work from an already-cropped trusted interaction trace.
+ * Durations are unions on CrRendererMain and phase buckets are exclusive:
+ * layout owns overlaps with style, and both own overlaps with script. Counts
+ * describe the resulting disjoint work regions, not nested trace records.
+ */
+export function trustedWindowRendererPerformance(events: TraceEvent[]): TrustedWindowRendererPerformanceResult {
+  const threads = declaredRendererThreadKeys(events)
+  if (threads.size === 0) return { state: "unavailable", reason: "trusted trace had no CrRendererMain thread" }
+  const taskIntervals = unionIntervals(intervalsFor(events, threads, (event) => event.name.includes("RunTask")))
+  if (taskIntervals.length === 0) return { state: "unavailable", reason: "trusted trace had no CrRendererMain RunTask" }
+
+  const layout = intersectIntervals(
+    unionIntervals(intervalsFor(events, threads, (event) => event.name === "Layout")),
+    taskIntervals,
+  )
+  const styleIncludingLayout = intersectIntervals(
+    unionIntervals(intervalsFor(events, threads, (event) => STYLE_RECALC_TRACE_EVENT_NAMES.has(event.name))),
+    taskIntervals,
+  )
+  const style = subtractIntervals(styleIncludingLayout, layout)
+  const scriptIncludingRender = intersectIntervals(
+    unionIntervals(intervalsFor(events, threads, (event) => SCRIPT_TRACE_EVENT_NAMES.has(event.name))),
+    taskIntervals,
+  )
+  const script = subtractIntervals(scriptIncludingRender, unionIntervals([...styleIncludingLayout, ...layout]))
+  const scriptMetric = intervalMetric(script)
+  const styleMetric = intervalMetric(style)
+  const layoutMetric = intervalMetric(layout)
+  const taskMetric = intervalMetric(taskIntervals)
+
+  return {
+    state: "measured",
+    performance: {
+      scriptMs: scriptMetric.ms,
+      scriptCount: scriptMetric.count,
+      recalcStyleMs: styleMetric.ms,
+      recalcStyleCount: styleMetric.count,
+      layoutMs: layoutMetric.ms,
+      layoutCount: layoutMetric.count,
+      taskMs: taskMetric.ms,
+      taskCount: taskMetric.count,
+    },
+  }
 }
 
 function summarizeTraceTasks(events: TraceEvent[]) {
@@ -941,6 +1109,7 @@ export async function stopPageLoadRecorder(page: Page, label: string, completion
         events: [],
         resources: [],
         performance: performanceMetricDelta(trace.performanceBefore, performanceAfter),
+        performanceSource: "cdp-cumulative-delta",
         ...(profile ? { cpuProfile: summarizeCpuProfile(profile.profile) } : {}),
         traceTasks: summarizeTraceTasks(trace.events),
         rendererPhases: result.phases,
@@ -1075,6 +1244,7 @@ export function mergeFrameMetrics(label: string, metrics: FrameMetric[]): FrameM
   const longAnimationFrameMs = metrics.flatMap((metric) => metric.longAnimationFrameMs ?? [])
   const unattributedSchedulingGapsMs = metrics.flatMap((metric) => metric.unattributedSchedulingGapsMs ?? [])
   const rendererScheduling = metrics.flatMap((metric) => metric.rendererScheduling ?? [])
+  const mergedPerformance = mergePerformanceMeasurement(metrics)
   const p95FrameMs = frameIntervalsMs.length > 0
     ? percentile(frameIntervalsMs, 95)
     : Math.max(0, ...metrics.map((metric) => metric.p95FrameMs))
@@ -1120,7 +1290,7 @@ export function mergeFrameMetrics(label: string, metrics: FrameMetric[]): FrameM
             longTasks: metrics.flatMap((metric) => metric.causal?.longTasks ?? []),
             events: metrics.flatMap((metric) => metric.causal?.events ?? []),
             resources: metrics.flatMap((metric) => metric.causal?.resources ?? []),
-            performance: mergePerformanceMetrics(metrics),
+            ...mergedPerformance,
             cpuProfile: metrics.flatMap((metric) => metric.causal?.cpuProfile ?? []),
             traceTasks: metrics
               .flatMap((metric) => metric.causal?.traceTasks ?? [])
@@ -1133,14 +1303,32 @@ export function mergeFrameMetrics(label: string, metrics: FrameMetric[]): FrameM
   }
 }
 
-function mergePerformanceMetrics(metrics: FrameMetric[]) {
+function mergePerformanceMeasurement(metrics: FrameMetric[]): Pick<
+  FrameCausalMetric,
+  "performance" | "performanceSource" | "performanceUnavailableReason"
+> {
+  const causal = metrics.flatMap((metric) => metric.causal ? [metric.causal] : [])
+  if (causal.length === 0) return {}
+  const unavailable = causal.filter((metric) => !metric.performance)
+  if (unavailable.length > 0) {
+    const reasons = [...new Set(unavailable.map((metric) =>
+      metric.performanceUnavailableReason ?? "causal run had no renderer performance measurement"))]
+    return { performanceUnavailableReason: reasons.join("; ") }
+  }
+  const sources = [...new Set(causal.flatMap((metric) => metric.performanceSource ? [metric.performanceSource] : []))]
+  if (sources.length !== 1) {
+    return { performanceUnavailableReason: "causal runs did not share one renderer performance source" }
+  }
   const entries = metrics.flatMap((metric) => Object.entries(metric.causal?.performance ?? {}))
-  return Object.fromEntries(
-    [...new Set(entries.map(([name]) => name))].map((name) => [
-      name,
-      round(entries.filter(([key]) => key === name).reduce((sum, [, value]) => sum + value, 0)),
-    ]),
-  )
+  return {
+    performance: Object.fromEntries(
+      [...new Set(entries.map(([name]) => name))].map((name) => [
+        name,
+        round(entries.filter(([key]) => key === name).reduce((sum, [, value]) => sum + value, 0)),
+      ]),
+    ),
+    performanceSource: sources[0],
+  }
 }
 
 function frameRunMetric(metric: FrameMetric): FrameRunMetric {
