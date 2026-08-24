@@ -14,6 +14,7 @@ describe("heavy workspace reopen benchmark contract", () => {
     const seed = seedForScenario("heavy-workspace-reopen")
 
     expect(FLOWS.some((flow) => flow.id === "heavy-workspace-reopen")).toBe(true)
+    expect(FLOWS.some((flow) => flow.id === "heavy-workspace-review-resume")).toBe(true)
     expect(seed.changed_files).toBe(500)
     expect(seed.terminals).toBeGreaterThanOrEqual(3)
     expect(HEAVY_WORKSPACE_REOPEN_FILE_PATHS).toHaveLength(3)
@@ -57,18 +58,32 @@ describe("heavy workspace reopen benchmark contract", () => {
     const before = {
       diffStyle: "split",
       expandedPaths: ["src/generated/file-0.ts"],
-      reviewFileCount: 75,
+      expandedBodyPaths: ["src/generated/file-0.ts"],
+      reviewFileCount: 500,
+      totalFileCount: 500,
+      renderedHunks: 1,
+      scrollTop: 12_000,
+      scrollAnchorPath: "src/generated/file-350.ts",
     }
 
     expect(heavyWorkspaceReviewRestorationFailures(before, { ...before })).toEqual([])
     expect(heavyWorkspaceReviewRestorationFailures(before, {
       diffStyle: "unified",
       expandedPaths: [],
+      expandedBodyPaths: [],
       reviewFileCount: 8,
+      totalFileCount: 500,
+      renderedHunks: 0,
+      scrollTop: 0,
+      scrollAnchorPath: "src/generated/file-0.ts",
     })).toEqual([
       expect.stringContaining("review diff style changed"),
       expect.stringContaining("expanded review diffs changed"),
-      expect.stringContaining("review corpus regressed after activation"),
+      expect.stringContaining("rendered expanded review bodies changed"),
+      expect.stringContaining("review corpus changed after activation"),
+      expect.stringContaining("rendered review hunks regressed"),
+      expect.stringContaining("review scroll anchor changed"),
+      expect.stringContaining("review scroll position changed"),
     ])
   })
 })

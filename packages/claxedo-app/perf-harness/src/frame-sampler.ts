@@ -37,10 +37,11 @@ export type FrameCausalMetric = {
       sourceCharPosition: number
     }>
   }>
-  longTasks: Array<{ name: string; duration: number }>
-  events: Array<{ name: string; duration: number; interactionId: number }>
+  longTasks: Array<{ name: string; startTime: number; duration: number }>
+  events: Array<{ name: string; startTime: number; duration: number; interactionId: number }>
   resources: Array<{
     name: string
+    startTime: number
     initiatorType: string
     duration: number
     transferSize: number
@@ -140,16 +141,20 @@ export const frameSamplingLaunchArgs = [
   "--disable-backgrounding-occluded-windows",
 ]
 
-async function startRecorder(page: Page) {
-  await page.evaluate(({
-    captureCausal,
-    captureHeartbeat,
-    captureTrace,
-  }: {
-    captureCausal: boolean
-    captureHeartbeat: boolean
-    captureTrace: boolean
-  }) => {
+export async function startRecorder(
+  page: Page,
+  recorderOptions = {
+    // Per-switch mode publishes DOM deltas for each click, so it owns the
+    // causal recorder even when the broader diagnostic report is disabled.
+    captureCausal: process.env.CLAXEDO_PERF_CAUSAL === "1" || process.env.CLAXEDO_PERF_PER_SWITCH === "1",
+    // Headless Chromium can emit 17.8ms rAF intervals on about:blank even when
+    // the main thread is continuously available. Keep the low-overhead heartbeat
+    // active in every run so scheduler cadence is never blamed on application JS.
+    captureHeartbeat: true,
+    captureTrace: process.env.CLAXEDO_PERF_TRACE === "1",
+  },
+) {
+  await page.evaluate(({ captureCausal, captureHeartbeat, captureTrace }: { captureCausal: boolean; captureHeartbeat: boolean; captureTrace: boolean }) => {
     const w = window as unknown as Record<string, unknown>
     w.__claxedoPerfTrace = captureTrace
     w.__claxedoPerfRendererPhases = []
@@ -162,6 +167,7 @@ async function startRecorder(page: Page) {
     const events: FrameCausalMetric["events"] = []
     const resources: FrameCausalMetric["resources"] = []
     const eventLoop: TimedDuration[] = []
+    const mutationBatches: Array<DomMutationSnapshot & { at: number }> = []
     const composedNodeCount = () => {
       const count = (root: Document | ShadowRoot): number => {
         const elements = [...root.querySelectorAll("*")]
@@ -179,6 +185,11 @@ async function startRecorder(page: Page) {
       attributesChanged: 0,
     }
     const startedAt = performance.now()
+    // This boundary is mutable because recorder installation necessarily
+    // precedes Playwright delivering the real input. A trusted pointerdown can
+    // move it to the browser's own event timestamp, before application capture
+    // handlers run, without including transport/setup time in the sample.
+    let armedAt = startedAt
     let last = performance.now()
     let running = true
     let rafId = 0
@@ -202,7 +213,7 @@ async function startRecorder(page: Page) {
     try {
       const observer = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
-          if (entry.startTime < startedAt) continue
+          if (entry.startTime < armedAt) continue
           loaf.push({ startTime: entry.startTime, duration: entry.duration })
           if (!captureCausal) continue
           const frame = entry as PerformanceEntry & {
@@ -244,20 +255,28 @@ async function startRecorder(page: Page) {
     const observe = (type: string, read: (entry: PerformanceEntry) => void) => {
       if (!captureCausal) return
       try {
-        const observer = new PerformanceObserver((list) => list.getEntries().forEach(read))
+        const observer = new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            // Observers may deliver buffered/pending setup entries after the
+            // recorder has been armed. Entry time, not callback delivery time,
+            // decides whether an entry belongs to the interaction.
+            if (entry.startTime >= armedAt) read(entry)
+          }
+        })
         observer.observe({ type, buffered: false } as PerformanceObserverInit)
         observers.push(observer)
       } catch {}
     }
-    observe("longtask", (entry) => longTasks.push({ name: entry.name, duration: entry.duration }))
+    observe("longtask", (entry) => longTasks.push({ name: entry.name, startTime: entry.startTime, duration: entry.duration }))
     observe("event", (entry) => {
       const event = entry as PerformanceEntry & { interactionId?: number }
-      events.push({ name: event.name, duration: event.duration, interactionId: event.interactionId ?? 0 })
+      events.push({ name: event.name, startTime: event.startTime, duration: event.duration, interactionId: event.interactionId ?? 0 })
     })
     observe("resource", (entry) => {
       const resource = entry as PerformanceResourceTiming
       resources.push({
         name: resource.name,
+        startTime: resource.startTime,
         initiatorType: resource.initiatorType,
         duration: resource.duration,
         transferSize: resource.transferSize,
@@ -266,30 +285,108 @@ async function startRecorder(page: Page) {
     })
     const mutations = captureCausal
       ? new MutationObserver((records) => {
+          const batch = { at: performance.now(), nodesAdded: 0, nodesRemoved: 0, attributesChanged: 0 }
           for (const record of records) {
-            dom.nodesAdded += record.addedNodes.length
-            dom.nodesRemoved += record.removedNodes.length
-            if (record.type === "attributes") dom.attributesChanged++
+            batch.nodesAdded += record.addedNodes.length
+            batch.nodesRemoved += record.removedNodes.length
+            if (record.type === "attributes") batch.attributesChanged++
           }
+          mutationBatches.push(batch)
+          dom.nodesAdded += batch.nodesAdded
+          dom.nodesRemoved += batch.nodesRemoved
+          dom.attributesChanged += batch.attributesChanged
         })
       : undefined
     mutations?.observe(document, { attributes: true, childList: true, subtree: true })
-    const causal: FrameCausalMetric | undefined = captureCausal
-      ? { dom, longAnimationFrames, longTasks, events, resources }
-      : undefined
+    const causal: FrameCausalMetric | undefined = captureCausal ? { dom, longAnimationFrames, longTasks, events, resources } : undefined
+    let trustedPointerdownAt: number | undefined
+    let trustedPointerdownListener: ((event: PointerEvent) => void) | undefined
+    const clearTrustedPointerdownListener = () => {
+      if (!trustedPointerdownListener) return
+      window.removeEventListener("pointerdown", trustedPointerdownListener, true)
+      trustedPointerdownListener = undefined
+    }
+    const arm = (at = performance.now(), dropPendingMutations = true) => {
+      armedAt = at
+      frames.length = 0
+      loaf.length = 0
+      eventLoop.length = 0
+      longAnimationFrames.length = 0
+      longTasks.length = 0
+      events.length = 0
+      resources.length = 0
+      mutationBatches.length = 0
+      // Drop pending setup mutations before changing the baseline. Otherwise
+      // their callback can run after pointerdown and charge them to the click.
+      if (dropPendingMutations) mutations?.takeRecords()
+      dom.nodesBefore = captureCausal ? document.getElementsByTagName("*").length : 0
+      dom.nodesAfter = 0
+      dom.composedNodesBefore = captureCausal ? composedNodeCount() : 0
+      dom.composedNodesAfter = 0
+      dom.nodesAdded = 0
+      dom.nodesRemoved = 0
+      dom.attributesChanged = 0
+      w.__claxedoPerfRendererPhases = []
+      last = at
+      eventLoopLast = at
+      return at
+    }
     w.__perfFrames = {
       frames,
       loaf,
       eventLoop,
       causal,
-      arm() {
-        frames.length = 0
-        loaf.length = 0
-        eventLoop.length = 0
-        last = performance.now()
-        eventLoopLast = last
+      arm,
+      armOnNextTrustedPointerdown(mark: string) {
+        clearTrustedPointerdownListener()
+        trustedPointerdownAt = undefined
+        performance.clearMarks(mark)
+        // Clear setup mutations while arming, before the input exists. Do not
+        // clear again inside the event listener: an earlier window capture
+        // handler may already have made a click-caused DOM change in this same
+        // dispatch, and that mutation belongs to the measured interaction.
+        mutations?.takeRecords()
+        trustedPointerdownListener = (event) => {
+          if (!event.isTrusted) return
+          clearTrustedPointerdownListener()
+          // Event.timeStamp and PerformanceEntry.startTime share the page's
+          // monotonic time origin. Using it also includes capture listeners that
+          // run after this window-level listener in the measured interval.
+          trustedPointerdownAt = arm(event.timeStamp, false)
+          performance.mark(mark, { startTime: event.timeStamp })
+        }
+        window.addEventListener("pointerdown", trustedPointerdownListener, true)
       },
-      stop() {
+      trustedPointerdownAt() {
+        return trustedPointerdownAt
+      },
+      cancelTrustedPointerdownArm() {
+        clearTrustedPointerdownListener()
+      },
+      stop(completionMs?: number) {
+        clearTrustedPointerdownListener()
+        const endedAt = completionMs === undefined || trustedPointerdownAt === undefined ? undefined : trustedPointerdownAt + completionMs
+        if (endedAt !== undefined) {
+          const retain = <T extends { startTime: number }>(entries: T[]) => {
+            const retained = entries
+              .filter((entry) => entry.startTime < endedAt)
+              .map((entry) => "duration" in entry && typeof entry.duration === "number"
+                ? { ...entry, duration: Math.min(entry.duration, endedAt - entry.startTime) }
+                : entry) as T[]
+            entries.splice(0, entries.length, ...retained)
+          }
+          retain(frames)
+          retain(loaf)
+          retain(eventLoop)
+          retain(longAnimationFrames)
+          retain(longTasks)
+          retain(events)
+          retain(resources)
+          const retainedMutations = mutationBatches.filter((batch) => batch.at <= endedAt)
+          dom.nodesAdded = retainedMutations.reduce((total, batch) => total + batch.nodesAdded, 0)
+          dom.nodesRemoved = retainedMutations.reduce((total, batch) => total + batch.nodesRemoved, 0)
+          dom.attributesChanged = retainedMutations.reduce((total, batch) => total + batch.attributesChanged, 0)
+        }
         running = false
         cancelAnimationFrame(rafId)
         if (eventLoopId !== undefined) clearInterval(eventLoopId)
@@ -297,31 +394,23 @@ async function startRecorder(page: Page) {
         mutations?.disconnect()
         dom.nodesAfter = captureCausal ? document.getElementsByTagName("*").length : 0
         dom.composedNodesAfter = captureCausal ? composedNodeCount() : 0
-        if (causal) {
+        if (causal && completionMs === undefined) {
           causal.rendererPhases = (w.__claxedoPerfRendererPhases as FrameCausalMetric["rendererPhases"] | undefined) ?? []
         }
         delete w.__claxedoPerfTrace
         delete w.__claxedoPerfRendererPhases
       },
     }
-  }, {
-    // Per-switch mode publishes DOM deltas for each click, so it owns the
-    // causal recorder even when the broader diagnostic report is disabled.
-    captureCausal:
-      process.env.CLAXEDO_PERF_CAUSAL === "1" || process.env.CLAXEDO_PERF_PER_SWITCH === "1",
-    // Headless Chromium can emit 17.8ms rAF intervals on about:blank even when
-    // the main thread is continuously available. Keep the low-overhead heartbeat
-    // active in every run so scheduler cadence is never blamed on application JS.
-    captureHeartbeat: true,
-    captureTrace: process.env.CLAXEDO_PERF_TRACE === "1",
-  })
+  }, recorderOptions)
 }
 
 export async function readDomMutationSnapshot(page: Page): Promise<DomMutationSnapshot | undefined> {
   return await page.evaluate(() => {
-    const recorder = (window as unknown as Record<string, unknown>).__perfFrames as {
-      causal?: { dom?: DomMutationSnapshot }
-    } | undefined
+    const recorder = (window as unknown as Record<string, unknown>).__perfFrames as
+      | {
+          causal?: { dom?: DomMutationSnapshot }
+        }
+      | undefined
     const dom = recorder?.causal?.dom
     if (!dom) return
     return {
@@ -332,28 +421,54 @@ export async function readDomMutationSnapshot(page: Page): Promise<DomMutationSn
   })
 }
 
-async function stopRecorder(page: Page) {
+async function stopRecorder(page: Page, completionMs?: number) {
   return await page
-    .evaluate(() => {
+    .evaluate((completionMs) => {
       const w = window as unknown as Record<string, unknown>
       const rec = w.__perfFrames as {
         frames: TimedDuration[]
         loaf: TimedDuration[]
         eventLoop: TimedDuration[]
         causal?: FrameCausalMetric
-        stop: () => void
+        stop: (completionMs?: number) => void
       } | undefined
       if (!rec) return { frames: [] as TimedDuration[], loaf: [] as TimedDuration[], eventLoop: [] as TimedDuration[], causal: undefined }
-      rec.stop()
+      rec.stop(completionMs)
       return { frames: rec.frames, loaf: rec.loaf, eventLoop: rec.eventLoop, causal: rec.causal }
-    })
+    }, completionMs)
     .catch(() => ({ frames: [] as TimedDuration[], loaf: [] as TimedDuration[], eventLoop: [] as TimedDuration[], causal: undefined }))
+}
+
+export type InteractionMeasurementOptions = {
+  /**
+   * Install a capture listener before `action` and reset the recorder at the
+   * first trusted pointerdown. In this mode `action` must return the interaction
+   * completion duration measured from that pointerdown in page time.
+   */
+  armAt?: "action" | "trusted-pointerdown"
+}
+
+export type InteractionActionResult = void | number | { completionMs: number }
+
+function pageCompletionMs(result: InteractionActionResult) {
+  const duration = typeof result === "number" ? result : result?.completionMs
+  return duration !== undefined && Number.isFinite(duration) && duration >= 0 ? duration : undefined
 }
 
 // Record every frame produced while `action` runs, then summarize. The action is
 // the real user interaction (a click, a toggle, a drag) driven through Playwright.
-export async function measureInteraction(page: Page, label: string, action: () => Promise<void>): Promise<FrameMetric> {
+// Existing callers retain action-boundary timing. Timing-sensitive flows opt in
+// to a trusted page-clock boundary and return their page-clock completion.
+export async function measureInteraction(
+  page: Page,
+  label: string,
+  action: () => Promise<InteractionActionResult>,
+  options: InteractionMeasurementOptions = {},
+): Promise<FrameMetric> {
   await startRecorder(page)
+  const trustedTraceMark = options.armAt === "trusted-pointerdown"
+    ? `claxedo-perf-trusted-${crypto.randomUUID()}`
+    : undefined
   const cpuProfileEnabled = process.env.CLAXEDO_PERF_CPU_PROFILE === "1"
   const traceDetailsEnabled = process.env.CLAXEDO_PERF_TRACE === "1"
   const cdp = await page.context().newCDPSession(page)
@@ -366,12 +481,15 @@ export async function measureInteraction(page: Page, label: string, action: () =
   // element, which is heavy enough to distort the very timings it explains —
   // hence its own opt-in, and hence attribution-only: never gating evidence.
   const styleDumpPath = process.env.CLAXEDO_PERF_STYLE_DUMP
-  await cdp.send("Tracing.start", {
-    categories: styleDumpPath
+  const traceCategories = styleDumpPath
       ? "__metadata,devtools.timeline,disabled-by-default-devtools.timeline,disabled-by-default-devtools.timeline.invalidationTracking"
       : traceDetailsEnabled
       ? "__metadata,devtools.timeline,disabled-by-default-devtools.timeline,v8.execute,blink.user_timing"
-      : "__metadata,devtools.timeline,disabled-by-default-devtools.timeline",
+      : "__metadata,devtools.timeline,disabled-by-default-devtools.timeline"
+  await cdp.send("Tracing.start", {
+    categories: trustedTraceMark && !traceCategories.includes("blink.user_timing")
+      ? `${traceCategories},blink.user_timing`
+      : traceCategories,
     transferMode: "ReportEvents",
   })
   if (cpuProfileEnabled) {
@@ -379,21 +497,53 @@ export async function measureInteraction(page: Page, label: string, action: () =
     await cdp.send("Profiler.start")
   }
   const performanceBefore = await readPerformanceMetrics(cdp)
-  // Clear setup intervals immediately before the action. The first interval
-  // after this point is real evidence and must not be discarded: it often
-  // contains the click handler and the first render.
-  await page.evaluate(() => {
-    const rec = (window as unknown as Record<string, unknown>).__perfFrames as { arm?: () => void } | undefined
-    rec?.arm?.()
-  })
+  // Clear setup intervals immediately before the action, or arrange for the
+  // browser to clear them at the exact trusted pointerdown boundary. The latter
+  // excludes Playwright transport/delivery overhead from both completion time
+  // and the renderer/causal samples.
+  await page.evaluate(({ armAt, trustedTraceMark }) => {
+    const rec = (window as unknown as Record<string, unknown>).__perfFrames as {
+      arm?: () => void
+      armOnNextTrustedPointerdown?: (mark: string) => void
+    } | undefined
+    if (armAt === "trusted-pointerdown" && trustedTraceMark) rec?.armOnNextTrustedPointerdown?.(trustedTraceMark)
+    else rec?.arm?.()
+  }, { armAt: options.armAt ?? "action", trustedTraceMark })
   const started = performance.now()
-  await action()
-  const completionMs = performance.now() - started
-  // Let two more frames flush so the final paint is captured.
-  await page
-    .evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
-    .catch(() => undefined)
-  const { frames, loaf, eventLoop, causal } = await stopRecorder(page)
+  const actionResult = await action()
+  const actionBoundaryCompletionMs = performance.now() - started
+  const returnedCompletionMs = pageCompletionMs(actionResult)
+  let completionMs = actionBoundaryCompletionMs
+  if (options.armAt === "trusted-pointerdown") {
+    const trustedPointerdownAt = await page.evaluate(() => {
+      const rec = (window as unknown as Record<string, unknown>).__perfFrames as {
+        trustedPointerdownAt?: () => number | undefined
+        cancelTrustedPointerdownArm?: () => void
+      } | undefined
+      const at = rec?.trustedPointerdownAt?.()
+      rec?.cancelTrustedPointerdownArm?.()
+      return at
+    })
+    if (trustedPointerdownAt === undefined) {
+      throw new Error(`${label} did not emit a trusted pointerdown after the recorder was armed`)
+    }
+    if (returnedCompletionMs === undefined) {
+      throw new Error(`${label} must return a finite page-clock completionMs when armed at trusted pointerdown`)
+    }
+    completionMs = returnedCompletionMs
+  }
+  // Legacy action-boundary callers rely on two flush frames. A trusted action
+  // returns the stable-paint duration from the page and is sealed at that exact
+  // page-clock deadline instead of extending into Playwright delivery time.
+  if (options.armAt !== "trusted-pointerdown") {
+    await page
+      .evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+      .catch(() => undefined)
+  }
+  const { frames, loaf, eventLoop, causal } = await stopRecorder(
+    page,
+    options.armAt === "trusted-pointerdown" ? completionMs : undefined,
+  )
   const performanceAfter = await readPerformanceMetrics(cdp)
   const profile = cpuProfileEnabled
     ? await cdp.send("Profiler.stop") as {
@@ -416,6 +566,10 @@ export async function measureInteraction(page: Page, label: string, action: () =
   await cdp.send("Tracing.end")
   await complete
   await cdp.detach()
+  const measuredTraceEvents = trustedTraceMark
+    ? traceEventsInTrustedWindow(traceEvents, trustedTraceMark, completionMs)
+    : traceEvents
+  if (trustedTraceMark) await page.evaluate((mark) => performance.clearMarks(mark), trustedTraceMark).catch(() => undefined)
   // Style/layout invalidation attribution. `recalcStyleMs` says style recalc is
   // expensive; only these events say WHICH element and WHICH selector feature
   // caused it. `ScheduleStyleInvalidationTracking` names the node and the
@@ -434,13 +588,17 @@ export async function measureInteraction(page: Page, label: string, action: () =
       "LayoutInvalidationTracking",
       "InvalidateLayout",
     ])
-    const rows = (traceEvents as unknown as Array<Record<string, unknown>>)
+    const rows = (measuredTraceEvents as unknown as Array<Record<string, unknown>>)
       .filter((event) => wanted.has(event.name as string))
     await Bun.write(`${styleDumpPath}.${label}.jsonl`, rows.map((row) => JSON.stringify(row)).join("\n"))
   }
-  if (causal) causal.performance = performanceMetricDelta(performanceBefore, performanceAfter)
-  if (causal && profile) causal.cpuProfile = summarizeCpuProfile(profile.profile)
-  if (causal && traceEvents.length > 0) causal.traceTasks = summarizeTraceTasks(traceEvents)
+  // CDP Performance.getMetrics and the CPU sampler are aggregate counters and
+  // cannot be reset synchronously by a page capture listener. Publishing their
+  // pre-pointer delivery gap as trusted-window data would be false precision;
+  // the cropped trace below remains the exact attribution source in this mode.
+  if (causal && !trustedTraceMark) causal.performance = performanceMetricDelta(performanceBefore, performanceAfter)
+  if (causal && profile && !trustedTraceMark) causal.cpuProfile = summarizeCpuProfile(profile.profile)
+  if (causal && measuredTraceEvents.length > 0) causal.traceTasks = summarizeTraceTasks(measuredTraceEvents)
   return buildFrameMetric(
     label,
     frames,
@@ -448,11 +606,11 @@ export async function measureInteraction(page: Page, label: string, action: () =
     completionMs,
     causal,
     eventLoop,
-    rendererRunTasks(traceEvents).map((task) => task.dur! / 1_000),
+    rendererRunTasks(measuredTraceEvents).map((task) => task.dur! / 1_000),
   )
 }
 
-type TraceEvent = {
+export type TraceEvent = {
   name: string
   ph: string
   ts: number
@@ -469,6 +627,24 @@ type TraceEvent = {
       columnNumber?: number
     }
   }
+}
+
+export function traceEventsInTrustedWindow(events: TraceEvent[], mark: string, completionMs: number) {
+  const marker = events.find((event) => event.name === mark || event.args?.name === mark || event.args?.data?.functionName === mark)
+  if (!marker) throw new Error(`Trusted interaction trace mark was not collected: ${mark}`)
+  const startedAt = marker.ts
+  const endedAt = startedAt + completionMs * 1_000
+  return events.flatMap((event): TraceEvent[] => {
+    // Thread metadata is emitted before the interaction but is required to
+    // identify CrRendererMain when interpreting the cropped RunTask records.
+    if (event.name === "thread_name" || event.name === "process_name") return [event]
+    const eventEnd = event.ts + (event.dur ?? 0)
+    if (event.dur === undefined) return event.ts >= startedAt && event.ts <= endedAt ? [event] : []
+    const overlapStart = Math.max(event.ts, startedAt)
+    const overlapEnd = Math.min(eventEnd, endedAt)
+    if (overlapEnd <= overlapStart) return []
+    return [{ ...event, ts: overlapStart, dur: overlapEnd - overlapStart }]
+  })
 }
 
 function rendererRunTasks(events: TraceEvent[]) {

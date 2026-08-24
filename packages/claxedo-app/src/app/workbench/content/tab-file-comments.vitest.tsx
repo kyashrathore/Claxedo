@@ -121,10 +121,12 @@ describe("TabFile comments", () => {
   })
 
   test("line comments in file tabs are added to the composer context", async () => {
-    render(() => <TabFile path="/repo/src/app.ts" hideHeader />)
+    const view = render(() => <TabFile path="/repo/src/app.ts" hideHeader />)
 
     await waitFor(() => expect(h.fileRead).toHaveBeenCalledWith({ path: "/repo/src/app.ts" }))
     await waitFor(() => expect(h.fileProps?.file?.contents).toBe("one\ntwo\nthree\nfour"))
+    expect(view.getByTestId("tab-file-root")).toHaveAttribute("data-tab-file-path", "/repo/src/app.ts")
+    expect(view.getByTestId("tab-file-root")).toHaveAttribute("data-tab-file-state", "ready")
     expect(h.fileProps?.enableLineSelection).toBe(true)
     expect(h.fileProps?.enableGutterUtility).toBe(true)
 

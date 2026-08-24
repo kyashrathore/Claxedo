@@ -305,7 +305,12 @@ export function TabFile(props: TabFileProps) {
     commentsUi.renderGutterUtility(getHoveredRow) ?? null
 
   return (
-    <div class={`relative flex flex-col size-full min-h-0 overflow-hidden bg-background-base ${props.class ?? ""}`}>
+    <div
+      data-testid="tab-file-root"
+      data-tab-file-path={props.path}
+      data-tab-file-state={loading() ? "loading" : error() ? "error" : file() || imageSrc() || unpreviewableBinary() ? "ready" : "empty"}
+      class={`relative flex flex-col size-full min-h-0 overflow-hidden bg-background-base ${props.class ?? ""}`}
+    >
       <Show when={!props.hideHeader}>
         <div class="shrink-0 flex items-center gap-2 px-4 py-2 border-b border-border-weak-base bg-background-stronger">
           <FileIcon node={{ path: props.path, type: "file" }} class="shrink-0" />

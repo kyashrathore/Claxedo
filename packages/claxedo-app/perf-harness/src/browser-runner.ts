@@ -647,6 +647,7 @@ const flowDrivers: Record<ScenarioId, (page: Page, app: BrowserTarget, fixture: 
   "live-terminal-switch": liveTerminalSwitch,
   "large-diff-toggle": largeDiffToggle,
   "heavy-workspace-reopen": heavyWorkspaceReopen,
+  "heavy-workspace-review-resume": heavyWorkspaceReopen,
   "workspace-switch": workspaceSwitch,
 }
 
@@ -959,12 +960,26 @@ async function heavyWorkspaceReopen(
   await waitForReviewChangedFiles(page, fixture, { timeout: 2_000 })
   await openFirstReviewDiff(page)
   await waitForReviewStable(page)
+  await waitForHeavyReviewCorpus(page, fixture)
+  await scrollHeavyReviewWorkingSet(page, fixture)
   const reviewBefore = await readHeavyWorkspaceReviewIdentity(page)
-  if (reviewBefore.reviewFileCount === 0) {
-    recordVisualFailure(fixture, "heavy workspace setup had no rendered review-file corpus")
+  if (
+    reviewBefore.reviewFileCount !== fixture.changedFiles.length ||
+    reviewBefore.totalFileCount !== fixture.changedFiles.length
+  ) {
+    recordVisualFailure(
+      fixture,
+      `heavy workspace setup rendered ${reviewBefore.reviewFileCount}/${reviewBefore.totalFileCount} review files; expected ${fixture.changedFiles.length}`,
+    )
   }
   if (reviewBefore.expandedPaths.length === 0) {
     recordVisualFailure(fixture, "heavy workspace setup had no expanded review diff")
+  }
+  if (reviewBefore.expandedBodyPaths.length !== reviewBefore.expandedPaths.length || reviewBefore.renderedHunks === 0) {
+    recordVisualFailure(fixture, "heavy workspace setup had no fully rendered expanded review body")
+  }
+  if (!reviewBefore.scrollAnchorPath || reviewBefore.scrollTop <= 0) {
+    recordVisualFailure(fixture, "heavy workspace setup did not establish a deep Review scroll position")
   }
   await measureWorkspaceFiles(page, fixture, { settle: "frame" })
   for (const filePath of HEAVY_WORKSPACE_REOPEN_FILE_PATHS) {
@@ -992,7 +1007,8 @@ async function heavyWorkspaceReopen(
   const reopenControl = await prepareHeavyWorkspaceReopen(page)
   const headline = await measureInteraction(page, "heavy-workspace-reopen", async () => {
     reopened = await reopenHeavyWorkspacePanel(page, before, reopenControl)
-  })
+    return reopened.completionMs
+  }, { armAt: "trusted-pointerdown" })
   const observation = reopened
   if (!observation) throw new Error("heavy workspace reopen produced no observation")
   if (observation.timedOut) recordVisualFailure(fixture, "heavy workspace reopen did not reach two stable ready frames")
@@ -1016,7 +1032,8 @@ async function heavyWorkspaceReopen(
   const reviewResumeControl = await prepareHeavyWorkspaceReviewResume(page)
   const reviewResumeMetric = await measureInteraction(page, "heavy-workspace-review-resume", async () => {
     reviewResumed = await resumeHeavyWorkspaceReview(page, reviewBefore, reviewResumeControl)
-  })
+    return reviewResumed.completionMs
+  }, { armAt: "trusted-pointerdown" })
   const reviewObservation = reviewResumed
   if (!reviewObservation) throw new Error("heavy workspace Review resume produced no observation")
   if (reviewObservation.timedOut) {
@@ -1033,7 +1050,7 @@ async function heavyWorkspaceReopen(
   const reviewDom = reviewResumeMetric.causal?.dom
   const reviewResources = reviewResumeMetric.causal?.resources ?? []
   return {
-    headline,
+    headline: fixture.scenario === "heavy-workspace-review-resume" ? reviewResumeMetric : headline,
     debug: [
       lower("workspace_close_completion_ms", closeCompletionMs),
       lower("workspace_close_dwell_ms", HEAVY_WORKSPACE_CLOSE_DWELL_MS),
@@ -1072,7 +1089,11 @@ async function heavyWorkspaceReopen(
       lower("workspace_review_resume_resource_duration_ms", reviewResources.reduce((sum, resource) => sum + resource.duration, 0)),
       lower("workspace_review_resume_resource_transfer_bytes", reviewResources.reduce((sum, resource) => sum + resource.transferSize, 0), "bytes"),
       lower("workspace_review_resume_review_files", reviewObservation.identity.reviewFileCount, "count"),
+      lower("workspace_review_resume_total_files", reviewObservation.identity.totalFileCount, "count"),
+      lower("workspace_review_resume_rendered_hunks", reviewObservation.identity.renderedHunks, "count"),
       lower("workspace_review_resume_expanded_diffs", reviewObservation.identity.expandedPaths.length, "count"),
+      lower("workspace_review_resume_rendered_expanded_bodies", reviewObservation.identity.expandedBodyPaths.length, "count"),
+      lower("workspace_review_resume_scroll_top", reviewObservation.identity.scrollTop, "px"),
     ],
   }
 }
@@ -1091,7 +1112,15 @@ async function openWorkspaceFileTab(
   await search.fill(filePath)
   const row = navigator.locator(`[data-file-tree-path="${filePath}"]`).first()
   if (!await row.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    recordVisualFailure(fixture, `Files navigator did not return ${filePath}`)
+    const diagnostic = await navigator.evaluate((root) => ({
+      query: root.querySelector<HTMLInputElement>("input[placeholder='Search files...']")?.value,
+      rows: Array.from(root.querySelectorAll<HTMLElement>("[data-file-tree-path]"))
+        .slice(0, 8)
+        .map((item) => item.dataset.fileTreePath),
+      loading: !!root.querySelector("[data-file-tree-loading], [class*='animate-spin']"),
+      text: root.textContent?.replace(/\s+/g, " ").trim().slice(0, 240),
+    })).catch(() => undefined)
+    recordVisualFailure(fixture, `Files navigator did not return ${filePath}; state=${JSON.stringify(diagnostic)}`)
     return
   }
   await row.click({ timeout: 2_000 })
@@ -1103,7 +1132,10 @@ async function openWorkspaceFileTab(
     const selectedPath = shell.querySelector<HTMLElement>(
       `[data-testid='workspace-files-navigator'][data-mode='files'] [data-file-tree-path="${CSS.escape(filePath)}"][aria-selected='true']`,
     )
-    if (!selected || !selectedPath) return false
+    const activeFile = shell.querySelector<HTMLElement>(
+      `[data-testid='tab-file-root'][data-tab-file-path="${CSS.escape(filePath)}"][data-tab-file-state='ready']`,
+    )
+    if (!selected || !selectedPath || !activeFile) return false
     const visible = (element: Element) => {
       if (element.closest("[aria-hidden='true']")) return false
       const rect = element.getBoundingClientRect()
@@ -1113,7 +1145,7 @@ async function openWorkspaceFileTab(
     const deferred = Array.from(shell.querySelectorAll("[data-testid='workspace-file-tab-deferred']")).some(visible)
     const loading = Array.from(shell.querySelectorAll<HTMLElement>("div, span"))
       .some((node) => visible(node) && node.children.length === 0 && node.textContent?.trim() === "Loading...")
-    return !deferred && !loading
+    return visible(activeFile) && !deferred && !loading
   }, { filePath, filename: path.basename(filePath) }, { timeout: 5_000 }).then(() => true).catch(() => false)
   if (!ready) recordVisualFailure(fixture, `Workspace file tab did not become ready: ${filePath}`)
 }
@@ -1201,9 +1233,10 @@ async function reopenHeavyWorkspacePanel(
         const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
         finalIdentity = identity()
         const panelVisible = !!shell && visible(shell) && shell.getBoundingClientRect().width > 120
-        const semanticBody = !!shell && Array.from(shell.querySelectorAll(
-          "[data-testid='review-pane-root'], [data-testid='workspace-files-navigator'], [data-testid='workspace-review-pending']",
-        )).some(visible)
+        const activeFile = expected.selectedFilePath && shell?.querySelector<HTMLElement>(
+          `[data-testid='tab-file-root'][data-tab-file-path="${CSS.escape(expected.selectedFilePath)}"][data-tab-file-state='ready']`,
+        )
+        const semanticBody = !!activeFile && visible(activeFile)
         if (panelVisible && !semanticBody) blankFrames++
         const deferred = !!shell && Array.from(shell.querySelectorAll("[data-testid='workspace-file-tab-deferred']")).some(visible)
         const loading = !!shell && Array.from(shell.querySelectorAll<HTMLElement>("div, span"))
@@ -1268,12 +1301,29 @@ async function resumeHeavyWorkspaceReview(
         .find(visible)
       const diff = root?.querySelector<HTMLElement>("[data-review-diff-style]")
       const files = Array.from(root?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
+      const corpus = root?.querySelector<HTMLElement>("[data-review-rendered-files][data-review-total-files]")
+      const scroll = root?.querySelector<HTMLElement>("[data-slot='session-review-scroll']")
+      const scrollTop = scroll?.getBoundingClientRect().top
+      const scrollAnchor = scrollTop === undefined
+        ? undefined
+        : files.toSorted((left, right) =>
+            Math.abs(left.getBoundingClientRect().top - scrollTop) - Math.abs(right.getBoundingClientRect().top - scrollTop)
+          )[0]
+      const expanded = files.filter((item) => !!item.querySelector("[aria-expanded='true']"))
       return {
         diffStyle: diff?.dataset.reviewDiffStyle,
-        expandedPaths: files
-          .filter((item) => !!item.querySelector("[aria-expanded='true']"))
+        expandedPaths: expanded.map((item) => item.dataset.reviewFile ?? ""),
+        expandedBodyPaths: expanded
+          .filter((item) => {
+            const wrapper = item.querySelector<HTMLElement>("[data-slot='session-review-diff-wrapper']")
+            return !!wrapper && wrapper.childElementCount > 0 && !wrapper.querySelector("[data-slot='session-review-diff-placeholder']")
+          })
           .map((item) => item.dataset.reviewFile ?? ""),
         reviewFileCount: files.length,
+        totalFileCount: Number(corpus?.dataset.reviewTotalFiles ?? "0"),
+        renderedHunks: Number(diff?.dataset.reviewRenderedHunks ?? "0"),
+        scrollTop: scroll?.scrollTop ?? 0,
+        scrollAnchorPath: scrollAnchor?.dataset.reviewFile,
       }
     }
     const sameStrings = (left: readonly string[], right: readonly string[]) =>
@@ -1295,13 +1345,19 @@ async function resumeHeavyWorkspaceReview(
         finalIdentity = identity()
         const panelVisible = !!shell && visible(shell) && shell.getBoundingClientRect().width > 120
         if (panelVisible && activeReview && !root) blankFrames++
-        const loading = !!shell && Array.from(shell.querySelectorAll<HTMLElement>("div, span"))
-          .some((node) => visible(node) && node.children.length === 0 && /^(Loading|Connecting)/.test(node.textContent?.trim() ?? ""))
+        const loading = !!root && !!root.querySelector(
+          "[data-testid='review-pane-loading'], [data-testid='workspace-review-pending'], [data-slot='session-review-diff-placeholder']",
+        )
         if (panelVisible && activeReview && loading) loadingFrames++
         const ready = panelVisible && !!activeReview && !!root && !loading &&
           finalIdentity.diffStyle === expected.diffStyle &&
           sameStrings(finalIdentity.expandedPaths, expected.expandedPaths) &&
-          finalIdentity.reviewFileCount >= expected.reviewFileCount
+          sameStrings(finalIdentity.expandedBodyPaths, expected.expandedBodyPaths) &&
+          finalIdentity.reviewFileCount === expected.reviewFileCount &&
+          finalIdentity.totalFileCount === expected.totalFileCount &&
+          finalIdentity.renderedHunks >= expected.renderedHunks &&
+          finalIdentity.scrollAnchorPath === expected.scrollAnchorPath &&
+          Math.abs(finalIdentity.scrollTop - expected.scrollTop) <= 2
         const signature = JSON.stringify(finalIdentity)
         stableReadyFrames = ready && signature === lastSignature ? stableReadyFrames + 1 : ready ? 1 : 0
         lastSignature = signature
@@ -1370,12 +1426,29 @@ async function readHeavyWorkspaceReviewIdentity(page: Page): Promise<HeavyWorksp
       .find(visible)
     const diff = root?.querySelector<HTMLElement>("[data-review-diff-style]")
     const files = Array.from(root?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
+    const corpus = root?.querySelector<HTMLElement>("[data-review-rendered-files][data-review-total-files]")
+    const scroll = root?.querySelector<HTMLElement>("[data-slot='session-review-scroll']")
+    const scrollTop = scroll?.getBoundingClientRect().top
+    const scrollAnchor = scrollTop === undefined
+      ? undefined
+      : files.toSorted((left, right) =>
+          Math.abs(left.getBoundingClientRect().top - scrollTop) - Math.abs(right.getBoundingClientRect().top - scrollTop)
+        )[0]
+    const expanded = files.filter((item) => !!item.querySelector("[aria-expanded='true']"))
     return {
       diffStyle: diff?.dataset.reviewDiffStyle,
-      expandedPaths: files
-        .filter((item) => !!item.querySelector("[aria-expanded='true']"))
+      expandedPaths: expanded.map((item) => item.dataset.reviewFile ?? ""),
+      expandedBodyPaths: expanded
+        .filter((item) => {
+          const wrapper = item.querySelector<HTMLElement>("[data-slot='session-review-diff-wrapper']")
+          return !!wrapper && wrapper.childElementCount > 0 && !wrapper.querySelector("[data-slot='session-review-diff-placeholder']")
+        })
         .map((item) => item.dataset.reviewFile ?? ""),
       reviewFileCount: files.length,
+      totalFileCount: Number(corpus?.dataset.reviewTotalFiles ?? "0"),
+      renderedHunks: Number(diff?.dataset.reviewRenderedHunks ?? "0"),
+      scrollTop: scroll?.scrollTop ?? 0,
+      scrollAnchorPath: scrollAnchor?.dataset.reviewFile,
     }
   })
 }
@@ -3485,6 +3558,54 @@ async function waitForReviewStable(page: Page) {
     return !!review?.getAttribute("data-review-diff-style") && Number(review.getAttribute("data-review-rendered-hunks") ?? "0") > 0
   }, undefined, { timeout: 2_000 })
   await waitForAnimationFrame(page, 2)
+}
+
+async function waitForHeavyReviewCorpus(page: Page, fixture: ReturnType<typeof fixtureFor>) {
+  const expected = fixture.changedFiles.length
+  const complete = await page.waitForFunction((expected) => {
+    const visible = (element: Element) => {
+      if (element.closest("[aria-hidden='true']")) return false
+      const rect = element.getBoundingClientRect()
+      const style = getComputedStyle(element)
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
+    }
+    const root = Array.from(document.querySelectorAll<HTMLElement>("[data-testid='review-pane-root']")).find(visible)
+    const corpus = root?.querySelector<HTMLElement>("[data-review-rendered-files][data-review-total-files]")
+    if (!corpus) return false
+    return Number(corpus.dataset.reviewRenderedFiles ?? "0") === expected &&
+      Number(corpus.dataset.reviewTotalFiles ?? "0") === expected &&
+      root?.querySelectorAll("[data-review-file]").length === expected
+  }, expected, { timeout: 12_000 }).then(() => true).catch(() => false)
+  if (!complete) recordVisualFailure(fixture, `Review did not render its complete ${expected}-file corpus`)
+  await waitForAnimationFrame(page, 2)
+}
+
+async function scrollHeavyReviewWorkingSet(page: Page, fixture: ReturnType<typeof fixtureFor>) {
+  const targetPath = fixture.changedFiles[Math.floor(fixture.changedFiles.length * 0.7)]?.file
+  if (!targetPath) {
+    recordVisualFailure(fixture, "heavy Review fixture had no deep-scroll target")
+    return
+  }
+  const scrolled = await page.evaluate((targetPath) => {
+    const visible = (element: Element) => {
+      if (element.closest("[aria-hidden='true']")) return false
+      const rect = element.getBoundingClientRect()
+      const style = getComputedStyle(element)
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
+    }
+    const root = Array.from(document.querySelectorAll<HTMLElement>("[data-testid='review-pane-root']")).find(visible)
+    const scroll = root?.querySelector<HTMLElement>("[data-slot='session-review-scroll']")
+    const target = Array.from(root?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
+      .find((file) => file.dataset.reviewFile === targetPath)
+    if (!scroll || !target) return false
+    const scrollRect = scroll.getBoundingClientRect()
+    const targetRect = target.getBoundingClientRect()
+    scroll.scrollTop += targetRect.top - scrollRect.top
+    scroll.dispatchEvent(new Event("scroll", { bubbles: true }))
+    return scroll.scrollTop > 0
+  }, targetPath)
+  if (!scrolled) recordVisualFailure(fixture, `Review did not scroll to substantial content at ${targetPath}`)
+  await waitForAnimationFrame(page, 3)
 }
 
 async function waitForText(page: Page, text: string, timeout: number) {

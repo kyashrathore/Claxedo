@@ -21,7 +21,12 @@ export type HeavyWorkspaceSurfaceIdentity = {
 export type HeavyWorkspaceReviewIdentity = {
   diffStyle?: string
   expandedPaths: string[]
+  expandedBodyPaths: string[]
   reviewFileCount: number
+  totalFileCount: number
+  renderedHunks: number
+  scrollTop: number
+  scrollAnchorPath?: string
 }
 
 export function heavyWorkspaceRestorationFailures(
@@ -69,8 +74,26 @@ export function heavyWorkspaceReviewRestorationFailures(
       `expanded review diffs changed across close/reopen: ${JSON.stringify(before.expandedPaths)} -> ${JSON.stringify(after.expandedPaths)}`,
     )
   }
-  if (after.reviewFileCount < before.reviewFileCount) {
-    failures.push(`review corpus regressed after activation: ${before.reviewFileCount} -> ${after.reviewFileCount} rendered files`)
+  if (!sameStrings(before.expandedBodyPaths, after.expandedBodyPaths)) {
+    failures.push(
+      `rendered expanded review bodies changed across close/reopen: ${JSON.stringify(before.expandedBodyPaths)} -> ${JSON.stringify(after.expandedBodyPaths)}`,
+    )
+  }
+  if (after.reviewFileCount !== before.reviewFileCount || after.totalFileCount !== before.totalFileCount) {
+    failures.push(
+      `review corpus changed after activation: ${before.reviewFileCount}/${before.totalFileCount} -> ${after.reviewFileCount}/${after.totalFileCount} rendered/total files`,
+    )
+  }
+  if (after.renderedHunks < before.renderedHunks) {
+    failures.push(`rendered review hunks regressed after activation: ${before.renderedHunks} -> ${after.renderedHunks}`)
+  }
+  if (before.scrollAnchorPath !== after.scrollAnchorPath) {
+    failures.push(
+      `review scroll anchor changed across close/reopen: ${String(before.scrollAnchorPath)} -> ${String(after.scrollAnchorPath)}`,
+    )
+  }
+  if (Math.abs(before.scrollTop - after.scrollTop) > 2) {
+    failures.push(`review scroll position changed across close/reopen: ${before.scrollTop} -> ${after.scrollTop}`)
   }
   return failures
 }
