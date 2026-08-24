@@ -1707,7 +1707,7 @@ async function workspaceSwitch(page: Page, app: BrowserTarget, fixture: ReturnTy
   return { headline, debug: files }
 }
 
-async function launchTo(page: Page, app: BrowserTarget, pathName: string) {
+export async function launchTo(page: Page, app: BrowserTarget, pathName: string) {
   const started = performance.now()
   await page.goto(`${app.baseUrl}${pathName}`, { waitUntil: "domcontentloaded" })
   const domContentLoaded = performance.now() - started
@@ -2917,7 +2917,7 @@ function lower(metric: string, value: number, unit = "ms"): Measurement {
   return { metric, value, unit, direction: "lower", samples: [value] }
 }
 
-function monitorPage(page: Page) {
+export function monitorPage(page: Page) {
   const pageErrors: string[] = []
   const consoleErrors: string[] = []
   const failedResponses: string[] = []
@@ -3030,7 +3030,7 @@ async function waitForUsefulScreen(page: Page) {
   }, undefined, { timeout: 30_000 })
 }
 
-async function waitForTranscript(page: Page, fixture: ReturnType<typeof fixtureFor>, sessionID: string, text: string) {
+export async function waitForTranscript(page: Page, fixture: ReturnType<typeof fixtureFor>, sessionID: string, text: string) {
   fixture.requestCounts.expectedTranscripts[sessionID] = text
   const visible = await page.waitForFunction(({ id, expected }) =>
     Array.from(document.querySelectorAll<HTMLElement>("[data-testid='session-page-root']"))
@@ -3560,7 +3560,7 @@ async function waitForTerminalSurface(page: Page, fixture: ReturnType<typeof fix
   if (!visible) recordVisualFailure(fixture, "terminal surface did not visibly open")
 }
 
-async function openReviewSurface(
+export async function openReviewSurface(
   page: Page,
   fixture: ReturnType<typeof fixtureFor>,
   options: { settle?: "video" | "frame"; validateChangedFiles?: boolean } = {},
