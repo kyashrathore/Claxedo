@@ -87,6 +87,56 @@ describe("Review workspace working-set boundary", () => {
     expect(boundary.initial.review.scroll.anchorPath).toBe("src/a.ts")
   })
 
+  test("carries the review surface alongside the scroll, each owned by its own publisher", () => {
+    const changes: ReviewWorkspaceWorkingSetSnapshot[] = []
+    const boundary = createReviewWorkspaceWorkingSetBoundary({ onChange: (next) => changes.push(next) })
+    const tabs = [{ id: "review", kind: "review" } as const]
+
+    boundary.publishSurface(
+      {
+        mode: "to-from",
+        fromRef: "main",
+        toRef: "HEAD",
+        diffStyle: "split",
+        openDiffs: ["src/a.ts"],
+        focusedFile: "src/a.ts",
+        forcedDiffPaths: ["src/huge.ts"],
+      },
+      tabs,
+      "review",
+    )
+    boundary.publishScroll({ top: 900, anchorPath: "src/z.ts" }, tabs, "review")
+
+    // The scroll publisher must not drop the surface, and vice versa.
+    expect(changes[1]!.review).toEqual({
+      mode: "to-from",
+      fromRef: "main",
+      toRef: "HEAD",
+      diffStyle: "split",
+      openDiffs: ["src/a.ts"],
+      focusedFile: "src/a.ts",
+      forcedDiffPaths: ["src/huge.ts"],
+      scroll: { top: 900, anchorPath: "src/z.ts" },
+    })
+
+    boundary.publishSurface({ mode: "staged" }, tabs, "review")
+    expect(changes[2]!.review).toEqual({ mode: "staged", scroll: { top: 900, anchorPath: "src/z.ts" } })
+  })
+
+  test("isolates the published surface arrays from the caller that published them", () => {
+    const changes: ReviewWorkspaceWorkingSetSnapshot[] = []
+    const boundary = createReviewWorkspaceWorkingSetBoundary({ onChange: (next) => changes.push(next) })
+    const openDiffs = ["src/a.ts"]
+    const tabs = [{ id: "review", kind: "review" } as const]
+
+    boundary.publishSurface({ openDiffs }, tabs, "review")
+    openDiffs.push("src/b.ts")
+    boundary.publish(tabs, "review")
+
+    expect(changes[0]!.review.openDiffs).toEqual(["src/a.ts"])
+    expect(changes[1]!.review.openDiffs).toEqual(["src/a.ts"])
+  })
+
   test("publishes a cloned semantic scroll snapshot with the live tabs and active tab", () => {
     const changes: ReviewWorkspaceWorkingSetSnapshot[] = []
     const boundary = createReviewWorkspaceWorkingSetBoundary({

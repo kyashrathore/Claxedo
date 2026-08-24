@@ -69,6 +69,51 @@ describe("ClaxedoSessionReview", () => {
     expect(onDiffContentRequired).not.toHaveBeenCalled()
   })
 
+  test("honors a caller-owned forced set so a remounted review keeps its large diffs rendered", async () => {
+    const onDiffContentRequired = vi.fn()
+    render(() => (
+      <FileComponentProvider component="div">
+        <ClaxedoSessionReview
+          diffs={[{ file: "src/big.ts", additions: 501, deletions: 0, status: "modified" }]}
+          focusedFile="src/big.ts"
+          open={["src/big.ts"]}
+          forcedFiles={["src/big.ts"]}
+          onDiffContentRequired={onDiffContentRequired}
+        />
+      </FileComponentProvider>
+    ))
+
+    // Without the retained force this diff stays behind the large-diff gate
+    // (the test above); with it, content is requested on the first mount.
+    await waitFor(() => expect(onDiffContentRequired).toHaveBeenCalledWith(["src/big.ts"]))
+  })
+
+  test("reports the file a user chooses to render past the large-diff limit", async () => {
+    const onForcedFilesChange = vi.fn()
+    const view = render(() => (
+      <FileComponentProvider component="div">
+        <ClaxedoSessionReview
+          diffs={[{ file: "src/big.ts", additions: 501, deletions: 0, status: "modified" }]}
+          focusedFile="src/big.ts"
+          open={["src/big.ts"]}
+          forcedFiles={[]}
+          onForcedFilesChange={onForcedFilesChange}
+        />
+      </FileComponentProvider>
+    ))
+
+    const action = await waitFor(() => {
+      const button = view.container.querySelector<HTMLButtonElement>(
+        "[data-slot='session-review-large-diff-actions'] button",
+      )
+      expect(button).toBeTruthy()
+      return button!
+    })
+    action.click()
+
+    expect(onForcedFilesChange).toHaveBeenCalledWith(["src/big.ts"])
+  })
+
   test("mounts every changed-file header progressively and includes a focused file beyond the first batch", async () => {
     const diffs = Array.from({ length: 75 }, (_, index) => ({
       file: `src/file-${index}.ts`,

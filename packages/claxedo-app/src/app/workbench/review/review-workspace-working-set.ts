@@ -5,6 +5,10 @@ import {
   type ReviewWorkspaceTab,
 } from "@/features/review/ui/review-workspace-tabs"
 import type { ReviewMode } from "@/features/review/review-intent"
+import {
+  cloneReviewSurfaceState,
+  type ReviewSurfaceState,
+} from "@/features/review/review-surface-state"
 import type { ReviewScrollPosition } from "./review-scroll-restoration"
 
 export const MAX_REVIEW_WORKSPACE_WORKING_SETS = 32
@@ -52,12 +56,19 @@ export function reviewWorkspaceWorkingSetKey(identity: ReviewWorkspaceWorkingSet
   ].join("\n")
 }
 
+/**
+ * The Review surface's retained state plus the scroll position, which the
+ * workspace owns rather than the Review surface (it is captured before a tab
+ * insertion can clamp it — see `review-scroll-restoration`).
+ */
+export type ReviewWorkspaceReviewState = ReviewSurfaceState & {
+  scroll: ReviewScrollPosition
+}
+
 export type ReviewWorkspaceWorkingSetSnapshot = {
   tabs: ReviewWorkspaceTab[]
   activeTabId: string
-  review: {
-    scroll: ReviewScrollPosition
-  }
+  review: ReviewWorkspaceReviewState
 }
 
 function cloneTab(tab: ReviewWorkspaceTab): ReviewWorkspaceTab {
@@ -68,15 +79,17 @@ function cloneScroll(position: ReviewScrollPosition): ReviewScrollPosition {
   return { ...position }
 }
 
+function cloneReview(review: ReviewWorkspaceReviewState): ReviewWorkspaceReviewState {
+  return { ...cloneReviewSurfaceState(review), scroll: cloneScroll(review.scroll) }
+}
+
 export function cloneReviewWorkspaceWorkingSet(
   snapshot: ReviewWorkspaceWorkingSetSnapshot,
 ): ReviewWorkspaceWorkingSetSnapshot {
   return {
     tabs: snapshot.tabs.map(cloneTab),
     activeTabId: snapshot.activeTabId,
-    review: {
-      scroll: cloneScroll(snapshot.review.scroll),
-    },
+    review: cloneReview(snapshot.review),
   }
 }
 
@@ -140,13 +153,13 @@ export function createReviewWorkspaceWorkingSetBoundary(input: {
   const initial = input.initial
     ? cloneReviewWorkspaceWorkingSet(input.initial)
     : defaultWorkingSet(input.fallbackContextSessionId)
-  let scroll = cloneScroll(initial.review.scroll)
+  let review = cloneReview(initial.review)
 
   const publish = (tabs: readonly ReviewWorkspaceTab[], activeTabId: string) => {
     input.onChange?.(cloneReviewWorkspaceWorkingSet({
       tabs: tabs.map(cloneTab),
       activeTabId,
-      review: { scroll },
+      review,
     }))
   }
 
@@ -158,7 +171,19 @@ export function createReviewWorkspaceWorkingSetBoundary(input: {
       tabs: readonly ReviewWorkspaceTab[],
       activeTabId: string,
     ) {
-      scroll = cloneScroll(position)
+      review = { ...review, scroll: cloneScroll(position) }
+      publish(tabs, activeTabId)
+    },
+    /**
+     * The Review surface owns its mode, refs, diff style, expansions, and
+     * forced-large-diff paths; the scroll stays with the workspace.
+     */
+    publishSurface(
+      surface: ReviewSurfaceState,
+      tabs: readonly ReviewWorkspaceTab[],
+      activeTabId: string,
+    ) {
+      review = { ...cloneReviewSurfaceState(surface), scroll: review.scroll }
       publish(tabs, activeTabId)
     },
   }

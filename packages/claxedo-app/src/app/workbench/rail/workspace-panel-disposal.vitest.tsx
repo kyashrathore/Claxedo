@@ -170,7 +170,16 @@ const substantialWorkingSet: ReviewWorkspaceWorkingSetSnapshot = {
     { id: "file:src/generated/file-3.ts", kind: "file", tabId: "file:src/generated/file-3.ts" },
   ],
   activeTabId: "file:src/generated/file-2.ts",
-  review: { scroll: { top: 11_200, anchorPath: "src/generated/file-350.ts", anchorOffset: 0 } },
+  review: {
+    scroll: { top: 11_200, anchorPath: "src/generated/file-350.ts", anchorOffset: 0 },
+    mode: "to-from",
+    fromRef: "main",
+    toRef: "HEAD",
+    diffStyle: "unified",
+    openDiffs: ["src/generated/file-350.ts"],
+    focusedFile: "src/generated/file-350.ts",
+    forcedDiffPaths: ["src/generated/file-350.ts"],
+  },
 }
 
 function stateWithSurface(meta: ContentMeta): ClaxedoState {

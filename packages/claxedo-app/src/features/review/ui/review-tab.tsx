@@ -18,6 +18,12 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { BP_MD } from "@/ui/controls/breakpoints"
 import { selectionFromLines } from "@/platform/files/types"
 import { createPanePreferences, reviewModePreferenceScope, useFile, usePrompt, useSDK } from "@/features/review/app-ports"
+import {
+  cloneReviewSurfaceState,
+  restoredOpenDiffs,
+  type ReviewDiffStyle,
+  type ReviewSurfaceState,
+} from "@/features/review/review-surface-state"
 import { useComments } from "@/platform/comments/provider"
 import {
   ClaxedoSessionReview,
@@ -60,6 +66,12 @@ export type ReviewTabProps = {
   initialMode: ReviewMode
   initialFromRef?: string
   initialToRef?: string
+  /**
+   * Review state retained across a panel disposal. Takes precedence over the
+   * `initial*` props, which describe how a review opens for the first time.
+   */
+  retained?: ReviewSurfaceState
+  onRetainedChange?: (state: ReviewSurfaceState) => void
   focusedDiffPath?: string
   focusedDiffVersion?: number
   onOpenFile: (path: string) => void
@@ -154,13 +166,18 @@ export function ReviewTab(props: ReviewTabProps) {
     onCleanup(stop)
   })
 
-  const [activeMode, setActiveMode] = createSignal<ReviewMode>(props.initialMode)
-  const [activeFromRef, setActiveFromRef] = createSignal(props.initialFromRef ?? "HEAD~1")
-  const [activeToRef, setActiveToRef] = createSignal(props.initialToRef ?? "HEAD")
+  // Read once: this is where a reopened panel picks its review back up. Later
+  // prop changes still win through the effects below.
+  const retained = cloneReviewSurfaceState(props.retained ?? {})
+  const [activeMode, setActiveMode] = createSignal<ReviewMode>(retained.mode ?? props.initialMode)
+  const [activeFromRef, setActiveFromRef] = createSignal(retained.fromRef ?? props.initialFromRef ?? "HEAD~1")
+  const [activeToRef, setActiveToRef] = createSignal(retained.toRef ?? props.initialToRef ?? "HEAD")
 
-  createEffect(on(() => props.initialMode, (mode) => setActiveMode(mode)))
-  createEffect(on(() => props.initialFromRef, (fromRef) => { if (fromRef) setActiveFromRef(fromRef) }))
-  createEffect(on(() => props.initialToRef, (toRef) => { if (toRef) setActiveToRef(toRef) }))
+  // Deferred: the signals above already hold the initial props, and running
+  // these on mount would overwrite a retained mode with the opening one.
+  createEffect(on(() => props.initialMode, (mode) => setActiveMode(mode), { defer: true }))
+  createEffect(on(() => props.initialFromRef, (fromRef) => { if (fromRef) setActiveFromRef(fromRef) }, { defer: true }))
+  createEffect(on(() => props.initialToRef, (toRef) => { if (toRef) setActiveToRef(toRef) }, { defer: true }))
 
   const syncReviewState = (mode = activeMode()) => {
     panePreferences().set("reviewMode", reviewModeScope(), mode)
@@ -261,8 +278,9 @@ export function ReviewTab(props: ReviewTabProps) {
   const [store, setStore] = createStore({
     openDiffs: [] as string[],
     loadedDiffs: [] as string[],
-    diffStyle: initialDiffStyle() as "unified" | "split",
-    focusedFile: undefined as string | undefined,
+    diffStyle: (retained.diffStyle ?? initialDiffStyle()) as ReviewDiffStyle,
+    focusedFile: retained.focusedFile,
+    forcedDiffPaths: retained.forcedDiffPaths ?? [],
     loading: false,
     remoteDiffKey: "",
     remoteDiffs: [] as VcsFileDiff[],
@@ -474,17 +492,36 @@ export function ReviewTab(props: ReviewTabProps) {
   const diffFiles = createMemo(() => diffs().map((diff) => diff.file))
   const diffFileKey = createMemo(() => diffFiles().join("\0"))
 
+  // Consumed by the first changeset this mount loads: a retained expansion
+  // belongs to the review the user left, not to every later changeset.
+  let pendingRetainedOpenDiffs = retained.openDiffs
   createEffect(on(diffFileKey, () => {
     const files = diffFiles()
     if (files.length === 0) return
     const loaded = initialReviewOpenDiffs(files, untrack(() => props.focusedDiffPath))
     const focused = untrack(() => props.focusedDiffPath)
+    const open = restoredOpenDiffs({ files, retained: pendingRetainedOpenDiffs, focused })
+    pendingRetainedOpenDiffs = undefined
     batch(() => {
       setRenderedHunks(0)
       setStore("loadedDiffs", loaded)
-      setStore("openDiffs", focused ? [focused] : [])
+      setStore("openDiffs", open)
     })
   }))
+
+  // One publisher for every retained field, so the panel's working set always
+  // reflects the live surface. Small UI values only — see ReviewSurfaceState.
+  createEffect(() => {
+    props.onRetainedChange?.({
+      mode: activeMode(),
+      fromRef: activeFromRef(),
+      toRef: activeToRef(),
+      diffStyle: store.diffStyle,
+      openDiffs: [...store.openDiffs],
+      focusedFile: store.focusedFile,
+      forcedDiffPaths: [...store.forcedDiffPaths],
+    })
+  })
 
   const readFile = async (path: string): Promise<FileContent | undefined> => {
     await file.load(path)
@@ -631,6 +668,8 @@ export function ReviewTab(props: ReviewTabProps) {
                 onFocusedCommentChange={comments.setFocus}
                 open={store.openDiffs}
                 onOpenChange={(open) => setStore("openDiffs", open)}
+                forcedFiles={store.forcedDiffPaths}
+                onForcedFilesChange={(files) => setStore("forcedDiffPaths", files)}
                 onDiffContentRequired={loadRequiredVcsDiffContent}
                 onDiffRendered={() => setRenderedHunks((count) => count + 1)}
                 readFile={readFile}

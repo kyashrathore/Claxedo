@@ -725,6 +725,10 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
                 initialMode={props.mode}
                 initialFromRef={props.fromRef}
                 initialToRef={props.toRef}
+                retained={initialWorkingSet.review}
+                onRetainedChange={(surface) =>
+                  workingSet.publishSurface(surface, store.tabs, store.activeTabId)
+                }
                 focusedDiffPath={props.focusFileIntent === "review" ? props.focusPath : undefined}
                 focusedDiffVersion={props.focusVersion}
                 onOpenFile={openFileTab}

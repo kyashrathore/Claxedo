@@ -118,6 +118,13 @@ export interface SessionReviewProps {
   focusedFile?: string
   open?: string[]
   onOpenChange?: (open: string[]) => void
+  /**
+   * Files the user chose to render past the large-diff limit. Controlled the
+   * same way as `open`: pass it to own the set (so it survives a remount),
+   * omit it to let this component keep its own.
+   */
+  forcedFiles?: string[]
+  onForcedFilesChange?: (files: string[]) => void
   onDiffContentRequired?: (files: string[]) => void
   scrollRef?: (el: HTMLDivElement) => void
   onScroll?: JSX.EventHandlerUnion<HTMLDivElement, Event>
@@ -181,7 +188,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   const [store, setStore] = createStore({
     open: [] as string[],
     visible: {} as Record<string, boolean>,
-    force: {} as Record<string, boolean>,
+    forced: [] as string[],
     selection: null as SessionReviewSelection | null,
     commenting: null as SessionReviewSelection | null,
     opened: null as SessionReviewFocus | null,
@@ -194,6 +201,9 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   const isOpenedFile = createSelector(() => store.opened?.file)
 
   const open = () => props.open ?? store.open
+  const forcedFiles = () => props.forcedFiles ?? store.forced
+  const forcedFileSet = createMemo(() => new Set(forcedFiles()))
+  const isForcedFile = (file: string) => forcedFileSet().has(file)
   const items = createMemo<ReviewDiff[]>(() => reviewDiffList(props.diffs) as ReviewDiff[])
   const files = createMemo(() => items().map((diff) => diff.file))
   const [renderLimit, setRenderLimit] = createSignal(REVIEW_RENDER_BATCH)
@@ -244,7 +254,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
 
   const shouldRequestContent = (diff: ReviewDiff) => {
     if (hasDiffContent(diff)) return false
-    if (store.force[diff.file]) return true
+    if (isForcedFile(diff.file)) return true
     if (mediaKindFromPath(diff.file)) return true
     return diff.additions + diff.deletions <= MAX_DIFF_CHANGED_LINES
   }
@@ -314,6 +324,13 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
     props.onOpenChange?.(next)
     if (props.open === undefined) setStore("open", next)
     queue()
+  }
+
+  const handleForce = (file: string) => {
+    if (forcedFiles().includes(file)) return
+    const next = [...forcedFiles(), file]
+    props.onForcedFilesChange?.(next)
+    if (props.forcedFiles === undefined) setStore("forced", next)
   }
 
   const handleExpandOrCollapseAll = () => {
@@ -457,7 +474,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
                     const normalized = () => normalizedCache ??= { ...normalize(diff), preloaded: diff.preloaded }
 
                     const expanded = createMemo(() => open().includes(file))
-                    const force = () => !!store.force[file]
+                    const force = () => isForcedFile(file)
 
                     const comments = createMemo(() => grouped().get(file) ?? [])
                     const commentedLines = createMemo(() => comments().map((c) => c.selection))
@@ -669,7 +686,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
                                       <Button
                                         size="normal"
                                         variant="secondary"
-                                        onClick={() => setStore("force", file, true)}
+                                        onClick={() => handleForce(file)}
                                       >
                                         {i18n.t("ui.sessionReview.largeDiff.renderAnyway")}
                                       </Button>
