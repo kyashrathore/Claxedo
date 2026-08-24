@@ -45,15 +45,39 @@ export type ReviewCodeViewProps = {
   class?: string
 }
 
-const STRIP_HEIGHT_PX = 36
-
 export function ReviewCodeView(props: ReviewCodeViewProps) {
   let root: HTMLDivElement | undefined
   let view: CodeView<undefined> | undefined
   let generation = 0
   let stampFrame: number | undefined
+  const toggleButtons = new Map<string, HTMLButtonElement>()
 
   const openSet = () => new Set(props.open)
+
+  /**
+   * Expansion toggle, mounted through Pierre's own header-prefix slot so it
+   * lays out (and hit-tests) as part of the real header instead of floating
+   * over the shadow content.
+   */
+  const headerToggle = (file: string) => {
+    let button = toggleButtons.get(file)
+    if (!button) {
+      button = document.createElement("button")
+      button.type = "button"
+      button.dataset.testid = "review-codeview-trigger"
+      button.setAttribute("aria-label", `Toggle diff for ${file}`)
+      button.textContent = "\u203a"
+      button.style.cssText =
+        "background:transparent;border:0;padding:0 6px;margin:0;cursor:pointer;font:inherit;color:inherit;"
+      button.addEventListener("click", (event) => {
+        event.stopPropagation()
+        props.onToggleOpen?.(file)
+      })
+      toggleButtons.set(file, button)
+    }
+    button.setAttribute("aria-expanded", openSet().has(file) ? "true" : "false")
+    return button
+  }
 
   const buildItems = (): CodeViewDiffItem<undefined>[] => {
     const open = openSet()
@@ -89,23 +113,11 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
         // light-DOM box around shadow content -- invisible to any tooling that
         // measures the host. Give it a real block box.
         element.style.display = "block"
-        element.style.position = "relative"
         element.style.minHeight = "1px"
       }
-      let strip = element.querySelector<HTMLButtonElement>(":scope > [data-review-codeview-strip]")
-      if (!strip) {
-        strip = document.createElement("button")
-        strip.type = "button"
-        strip.dataset.reviewCodeviewStrip = ""
-        strip.dataset.testid = "review-codeview-trigger"
-        strip.setAttribute("aria-label", `Toggle diff for ${record.id}`)
-        strip.style.cssText =
-          `position:absolute;top:0;left:0;right:0;height:${STRIP_HEIGHT_PX}px;` +
-          "background:transparent;border:0;padding:0;margin:0;cursor:pointer;z-index:1;"
-        strip.addEventListener("click", () => props.onToggleOpen?.(record.id))
-        element.append(strip)
-      }
-      strip.setAttribute("aria-expanded", open.has(record.id) ? "true" : "false")
+    }
+    for (const [file, button] of toggleButtons) {
+      button.setAttribute("aria-expanded", open.has(file) ? "true" : "false")
     }
     host.dataset.reviewRenderedFiles = String(rendered.length)
     host.dataset.reviewTotalFiles = String(props.diffs.length)
@@ -138,12 +150,15 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
     if (!host) return
     const options: CodeViewOptions<undefined> = {
       diffStyle: props.diffStyle,
+      renderHeaderPrefix: (fileDiff) => headerToggle(fileDiff.name),
       onPostRender: () => {
         props.onDiffRendered?.()
         stampSoon()
       },
     }
-    const instance = new CodeView(options, getWorkerPool(props.diffStyle), true)
+    // NOT container-managed: the managed mode is the React wrapper's portal
+    // path and it disables the vanilla header-slot rendering entirely.
+    const instance = new CodeView(options, getWorkerPool(props.diffStyle))
     view = instance
     instance.setup(host)
     instance.setItems(buildItems())
@@ -161,6 +176,7 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
       scroller.removeEventListener("scroll", forwardScroll)
       if (stampFrame !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(stampFrame)
       instance.cleanUp()
+      toggleButtons.clear()
       view = undefined
     })
   })
