@@ -99,6 +99,11 @@ export function TabFile(props: TabFileProps) {
   const setSelected = (range: SelectedLineRange | null) => setManualSelected({ atNonce: props.focusNonce, range })
   let loadSeq = 0
   let copiedPathTimer: ReturnType<typeof setTimeout> | undefined
+  const contentLineCount = () => {
+    const value = content()
+    if (!value) return 0
+    return value.split("\n").length - (value.endsWith("\n") ? 1 : 0)
+  }
 
   const copyRelativePath = () => {
     const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
@@ -309,6 +314,8 @@ export function TabFile(props: TabFileProps) {
       data-testid="tab-file-root"
       data-tab-file-path={props.path}
       data-tab-file-state={loading() ? "loading" : error() ? "error" : file() || imageSrc() || unpreviewableBinary() ? "ready" : "empty"}
+      data-tab-file-content-chars={content()?.length ?? 0}
+      data-tab-file-content-lines={contentLineCount()}
       class={`relative flex flex-col size-full min-h-0 overflow-hidden bg-background-base ${props.class ?? ""}`}
     >
       <Show when={!props.hideHeader}>

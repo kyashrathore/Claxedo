@@ -13,6 +13,7 @@ export type ScenarioId =
   | "large-diff-toggle"
   | "heavy-workspace-reopen"
   | "heavy-workspace-review-resume"
+  | "heavy-workspace-close"
   | "workspace-switch"
 
 // We only ever measure our own app, in a real browser. Kept as single literals

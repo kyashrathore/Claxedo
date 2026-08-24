@@ -651,6 +651,7 @@ const flowDrivers: Record<ScenarioId, (page: Page, app: BrowserTarget, fixture: 
   "large-diff-toggle": largeDiffToggle,
   "heavy-workspace-reopen": heavyWorkspaceReopen,
   "heavy-workspace-review-resume": heavyWorkspaceReopen,
+  "heavy-workspace-close": heavyWorkspaceReopen,
   "workspace-switch": workspaceSwitch,
 }
 
@@ -997,12 +998,18 @@ async function heavyWorkspaceReopen(
       `heavy workspace setup opened only ${before.openTabIds.length} tabs; expected Review plus ${HEAVY_WORKSPACE_REOPEN_FILE_PATHS.length} files`,
     )
   }
-  const closeCompletionMs = await closeHeavyWorkspacePanel(page)
+  const closeMetric = await measureInteraction(page, "heavy-workspace-close", () => closeHeavyWorkspacePanel(page), {
+    armAt: "trusted-pointerdown",
+  })
+  const closeCompletionMs = closeMetric.completionMs
   if (closeCompletionMs >= 5_000) recordVisualFailure(fixture, "heavy workspace panel did not finish closing")
   await page.waitForTimeout(HEAVY_WORKSPACE_CLOSE_DWELL_MS)
   const closedOwnership = await page.evaluate(() => ({
     shells: document.querySelectorAll("[data-testid='workspace-panel-shell']").length,
     tabs: document.querySelectorAll("[data-testid='workspace-panel-shell'] [data-slot='workspace-tab']").length,
+    fileRoots: document.querySelectorAll("[data-testid='workspace-panel-shell'] [data-testid='tab-file-root']").length,
+    navigators: document.querySelectorAll("[data-testid='workspace-panel-shell'] [data-testid='workspace-files-navigator']").length,
+    reviewRoots: document.querySelectorAll("[data-testid='workspace-panel-shell'] [data-testid='review-pane-root']").length,
     reviewFiles: document.querySelectorAll("[data-testid='workspace-panel-shell'] [data-review-file]").length,
   }))
 
@@ -1029,6 +1036,9 @@ async function heavyWorkspaceReopen(
     files: document.querySelectorAll(
       "[data-testid='workspace-panel-shell'][data-open='true'] [data-review-file]",
     ).length,
+    fileRoots: document.querySelectorAll(
+      "[data-testid='workspace-panel-shell'][data-open='true'] [data-testid='tab-file-root']",
+    ).length,
   }))
 
   let reviewResumed: HeavyWorkspaceReviewResumeObservation | undefined
@@ -1045,58 +1055,128 @@ async function heavyWorkspaceReopen(
   for (const failure of heavyWorkspaceReviewRestorationFailures(reviewBefore, reviewObservation.identity)) {
     recordVisualFailure(fixture, failure)
   }
+  const inactiveFileOwnership = await page.evaluate(() => ({
+    fileRoots: document.querySelectorAll(
+      "[data-testid='workspace-panel-shell'][data-open='true'] [data-testid='tab-file-root']",
+    ).length,
+  }))
 
-  const performance = headline.causal?.performance ?? {}
+  for (const [phase, metric] of [
+    ["close", closeMetric],
+    ["reopen", headline],
+    ["Review resume", reviewResumeMetric],
+  ] as const) {
+    if (!metric.causal) {
+      recordVisualFailure(fixture, `heavy workspace ${phase} has no causal measurement; set CLAXEDO_PERF_CAUSAL=1`)
+      continue
+    }
+    if (metric.causal.performanceSource !== "trusted-window-trace" || !metric.causal.performance) {
+      recordVisualFailure(
+        fixture,
+        `heavy workspace ${phase} has no exact trusted-window renderer work: ${metric.causal.performanceUnavailableReason ?? "unknown reason"}`,
+      )
+    }
+    if (!metric.mainThreadTasksMs?.length) {
+      recordVisualFailure(fixture, `heavy workspace ${phase} trace contained no renderer task samples`)
+    }
+  }
+
+  const closePerformance = closeMetric.causal?.performance
+  const closeDom = closeMetric.causal?.dom
+  const closeResources = closeMetric.causal?.resources
+  const closeLoaf = closeMetric.causal?.longAnimationFrames
+  const performance = headline.causal?.performance
   const dom = headline.causal?.dom
-  const resources = headline.causal?.resources ?? []
-  const reviewPerformance = reviewResumeMetric.causal?.performance ?? {}
+  const resources = headline.causal?.resources
+  const reviewPerformance = reviewResumeMetric.causal?.performance
   const reviewDom = reviewResumeMetric.causal?.dom
-  const reviewResources = reviewResumeMetric.causal?.resources ?? []
+  const reviewResources = reviewResumeMetric.causal?.resources
   return {
-    headline: fixture.scenario === "heavy-workspace-review-resume" ? reviewResumeMetric : headline,
+    headline: fixture.scenario === "heavy-workspace-close"
+      ? closeMetric
+      : fixture.scenario === "heavy-workspace-review-resume"
+        ? reviewResumeMetric
+        : headline,
     debug: [
       lower("workspace_close_completion_ms", closeCompletionMs),
+      ...(closePerformance ? [
+        lower("workspace_close_script_ms", closePerformance.scriptMs),
+        lower("workspace_close_style_ms", closePerformance.recalcStyleMs),
+        lower("workspace_close_layout_ms", closePerformance.layoutMs),
+        lower("workspace_close_task_ms", closePerformance.taskMs),
+      ] : []),
+      lower("workspace_close_p95_renderer_interval_ms", closeMetric.p95FrameMs),
+      lower("workspace_close_worst_renderer_interval_ms", closeMetric.worstFrameMs),
+      lower("workspace_close_renderer_intervals_over_16_67_ms", closeMetric.framesOver1667, "count"),
+      lower("workspace_close_renderer_interval_samples", closeMetric.sampleCount, "count"),
+      ...(closeLoaf ? [
+        lower("workspace_close_loaf_count", closeLoaf.length, "count"),
+        lower("workspace_close_loaf_duration_ms", closeLoaf.reduce((sum, frame) => sum + frame.duration, 0)),
+        lower("workspace_close_loaf_blocking_ms", closeLoaf.reduce((sum, frame) => sum + frame.blockingDuration, 0)),
+      ] : []),
+      ...(closeDom ? [
+        lower("workspace_close_attribute_mutations", closeDom.attributesChanged, "count"),
+        lower("workspace_close_nodes_added", closeDom.nodesAdded, "count"),
+        lower("workspace_close_nodes_removed", closeDom.nodesRemoved, "count"),
+      ] : []),
+      ...(closeResources ? [
+        lower("workspace_close_resource_requests", closeResources.length, "count"),
+        lower("workspace_close_resource_transfer_bytes", closeResources.reduce((sum, resource) => sum + resource.transferSize, 0), "bytes"),
+      ] : []),
       lower("workspace_close_dwell_ms", HEAVY_WORKSPACE_CLOSE_DWELL_MS),
       lower("workspace_closed_shells_after_dwell", closedOwnership.shells, "count"),
       lower("workspace_closed_tabs_after_dwell", closedOwnership.tabs, "count"),
+      lower("workspace_closed_file_roots_after_dwell", closedOwnership.fileRoots, "count"),
+      lower("workspace_closed_navigators_after_dwell", closedOwnership.navigators, "count"),
+      lower("workspace_closed_review_roots_after_dwell", closedOwnership.reviewRoots, "count"),
       lower("workspace_closed_review_files_after_dwell", closedOwnership.reviewFiles, "count"),
       lower("workspace_reopen_completion_ms", observation.completionMs),
-      lower("workspace_reopen_script_ms", performance.scriptMs ?? 0),
-      lower("workspace_reopen_style_ms", performance.recalcStyleMs ?? 0),
-      lower("workspace_reopen_layout_ms", performance.layoutMs ?? 0),
-      lower("workspace_reopen_task_ms", performance.taskMs ?? 0),
+      ...(performance ? [
+        lower("workspace_reopen_script_ms", performance.scriptMs),
+        lower("workspace_reopen_style_ms", performance.recalcStyleMs),
+        lower("workspace_reopen_layout_ms", performance.layoutMs),
+        lower("workspace_reopen_task_ms", performance.taskMs),
+      ] : []),
       lower("workspace_reopen_attribute_mutations", dom?.attributesChanged ?? 0, "count"),
       lower("workspace_reopen_nodes_added", dom?.nodesAdded ?? 0, "count"),
       lower("workspace_reopen_nodes_removed", dom?.nodesRemoved ?? 0, "count"),
       lower("workspace_reopen_blank_frames", observation.blankFrames, "count"),
       lower("workspace_reopen_loading_frames", observation.loadingFrames, "count"),
       lower("workspace_reopen_stable_ready_frames", observation.stableReadyFrames, "count"),
-      lower("workspace_reopen_resource_requests", resources.length, "count"),
-      lower("workspace_reopen_resource_duration_ms", resources.reduce((sum, resource) => sum + resource.duration, 0)),
-      lower("workspace_reopen_resource_transfer_bytes", resources.reduce((sum, resource) => sum + resource.transferSize, 0), "bytes"),
+      ...(resources ? [
+        lower("workspace_reopen_resource_requests", resources.length, "count"),
+        lower("workspace_reopen_resource_duration_ms", resources.reduce((sum, resource) => sum + resource.duration, 0)),
+        lower("workspace_reopen_resource_transfer_bytes", resources.reduce((sum, resource) => sum + resource.transferSize, 0), "bytes"),
+      ] : []),
       lower("workspace_reopen_open_tabs", observation.identity.openTabIds.length, "count"),
       lower("workspace_reopen_inactive_review_roots", inactiveReviewOwnership.roots, "count"),
       lower("workspace_reopen_inactive_review_files", inactiveReviewOwnership.files, "count"),
+      lower("workspace_reopen_file_roots", inactiveReviewOwnership.fileRoots, "count"),
       lower("workspace_review_resume_completion_ms", reviewObservation.completionMs),
-      lower("workspace_review_resume_script_ms", reviewPerformance.scriptMs ?? 0),
-      lower("workspace_review_resume_style_ms", reviewPerformance.recalcStyleMs ?? 0),
-      lower("workspace_review_resume_layout_ms", reviewPerformance.layoutMs ?? 0),
-      lower("workspace_review_resume_task_ms", reviewPerformance.taskMs ?? 0),
+      ...(reviewPerformance ? [
+        lower("workspace_review_resume_script_ms", reviewPerformance.scriptMs),
+        lower("workspace_review_resume_style_ms", reviewPerformance.recalcStyleMs),
+        lower("workspace_review_resume_layout_ms", reviewPerformance.layoutMs),
+        lower("workspace_review_resume_task_ms", reviewPerformance.taskMs),
+      ] : []),
       lower("workspace_review_resume_attribute_mutations", reviewDom?.attributesChanged ?? 0, "count"),
       lower("workspace_review_resume_nodes_added", reviewDom?.nodesAdded ?? 0, "count"),
       lower("workspace_review_resume_nodes_removed", reviewDom?.nodesRemoved ?? 0, "count"),
       lower("workspace_review_resume_blank_frames", reviewObservation.blankFrames, "count"),
       lower("workspace_review_resume_loading_frames", reviewObservation.loadingFrames, "count"),
       lower("workspace_review_resume_stable_ready_frames", reviewObservation.stableReadyFrames, "count"),
-      lower("workspace_review_resume_resource_requests", reviewResources.length, "count"),
-      lower("workspace_review_resume_resource_duration_ms", reviewResources.reduce((sum, resource) => sum + resource.duration, 0)),
-      lower("workspace_review_resume_resource_transfer_bytes", reviewResources.reduce((sum, resource) => sum + resource.transferSize, 0), "bytes"),
+      ...(reviewResources ? [
+        lower("workspace_review_resume_resource_requests", reviewResources.length, "count"),
+        lower("workspace_review_resume_resource_duration_ms", reviewResources.reduce((sum, resource) => sum + resource.duration, 0)),
+        lower("workspace_review_resume_resource_transfer_bytes", reviewResources.reduce((sum, resource) => sum + resource.transferSize, 0), "bytes"),
+      ] : []),
       lower("workspace_review_resume_review_files", reviewObservation.identity.reviewFileCount, "count"),
       lower("workspace_review_resume_total_files", reviewObservation.identity.totalFileCount, "count"),
       lower("workspace_review_resume_rendered_hunks", reviewObservation.identity.renderedHunks, "count"),
       lower("workspace_review_resume_expanded_diffs", reviewObservation.identity.expandedPaths.length, "count"),
       lower("workspace_review_resume_rendered_expanded_bodies", reviewObservation.identity.expandedBodyPaths.length, "count"),
       lower("workspace_review_resume_scroll_top", reviewObservation.identity.scrollTop, "px"),
+      lower("workspace_review_resume_inactive_file_roots", inactiveFileOwnership.fileRoots, "count"),
     ],
   }
 }
@@ -1242,11 +1322,16 @@ async function reopenHeavyWorkspacePanel(
       const selectedFile = shell?.querySelector<HTMLElement>(
         "[data-testid='workspace-files-navigator'][data-mode='files'] [data-file-tree-path][aria-selected='true']",
       )
+      const activeFile = Array.from(shell?.querySelectorAll<HTMLElement>(
+        "[data-testid='tab-file-root'][data-tab-file-state='ready']",
+      ) ?? []).find(visible)
       const navigator = shell?.querySelector<HTMLElement>("[data-testid='workspace-files-navigator']")
       return {
         openTabIds: tabs.map((tab) => tab.dataset.workspaceTabId ?? ""),
         activeTabId: active?.dataset.workspaceTabId,
         selectedFilePath: selectedFile?.dataset.fileTreePath,
+        selectedFileChars: Number(activeFile?.dataset.tabFileContentChars ?? "0"),
+        selectedFileLines: Number(activeFile?.dataset.tabFileContentLines ?? "0"),
         navigatorMode: navigator?.dataset.mode,
         reviewTabId: review?.dataset.workspaceTabId,
       }
@@ -1257,6 +1342,8 @@ async function reopenHeavyWorkspacePanel(
       sameStrings(current.openTabIds, expected.openTabIds) &&
       current.activeTabId === expected.activeTabId &&
       current.selectedFilePath === expected.selectedFilePath &&
+      current.selectedFileChars === expected.selectedFileChars &&
+      current.selectedFileLines === expected.selectedFileLines &&
       current.navigatorMode === expected.navigatorMode &&
       current.reviewTabId === expected.reviewTabId
     let blankFrames = 0
@@ -1451,11 +1538,21 @@ async function readHeavyWorkspaceSurfaceIdentity(page: Page): Promise<HeavyWorks
     const selectedFile = shell?.querySelector<HTMLElement>(
       "[data-testid='workspace-files-navigator'][data-mode='files'] [data-file-tree-path][aria-selected='true']",
     )
+    const activeFile = Array.from(shell?.querySelectorAll<HTMLElement>(
+      "[data-testid='tab-file-root'][data-tab-file-state='ready']",
+    ) ?? []).find((element) => {
+      if (element.closest("[aria-hidden='true']")) return false
+      const rect = element.getBoundingClientRect()
+      const style = getComputedStyle(element)
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
+    })
     const navigator = shell?.querySelector<HTMLElement>("[data-testid='workspace-files-navigator']")
     return {
       openTabIds: tabs.map((tab) => tab.dataset.workspaceTabId ?? ""),
       activeTabId: active?.dataset.workspaceTabId,
       selectedFilePath: selectedFile?.dataset.fileTreePath,
+      selectedFileChars: Number(activeFile?.dataset.tabFileContentChars ?? "0"),
+      selectedFileLines: Number(activeFile?.dataset.tabFileContentLines ?? "0"),
       navigatorMode: navigator?.dataset.mode,
       reviewTabId: review?.dataset.workspaceTabId,
     }
@@ -2084,7 +2181,9 @@ export function changedFilesForVcs(url: URL, fixture: Pick<ReturnType<typeof fix
 export function fileContent(url: URL, fixture: ReturnType<typeof fixtureFor>) {
   const file = url.searchParams.get("path") ?? fixture.changedFiles[0]?.file ?? "src/generated/file-0.ts"
   const heavyWorkspace =
-    fixture.scenario === "heavy-workspace-reopen" || fixture.scenario === "heavy-workspace-review-resume"
+    fixture.scenario === "heavy-workspace-reopen" ||
+    fixture.scenario === "heavy-workspace-review-resume" ||
+    fixture.scenario === "heavy-workspace-close"
   if (heavyWorkspace && HEAVY_WORKSPACE_REOPEN_FILE_PATHS.some((path) => path === file)) {
     const content = Array.from(
       { length: HEAVY_WORKSPACE_FILE_LINES },
@@ -2341,7 +2440,11 @@ export function fixtureFor(scenario: ScenarioId, seed: SeedManifest) {
     sessions,
     changedFiles: Array.from({ length: Math.max(1, seed.changed_files) }, (_, index) => {
       const heavyExpandedDiff =
-        index === 0 && (scenario === "heavy-workspace-reopen" || scenario === "heavy-workspace-review-resume")
+        index === 0 && (
+          scenario === "heavy-workspace-reopen" ||
+          scenario === "heavy-workspace-review-resume" ||
+          scenario === "heavy-workspace-close"
+        )
       return {
         file: `src/generated/file-${index}.ts`,
         status: heavyExpandedDiff ? "modified" : index % 11 === 0 ? "added" : "modified",

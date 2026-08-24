@@ -18,6 +18,7 @@ describe("heavy workspace reopen benchmark contract", () => {
 
     expect(FLOWS.some((flow) => flow.id === "heavy-workspace-reopen")).toBe(true)
     expect(FLOWS.some((flow) => flow.id === "heavy-workspace-review-resume")).toBe(true)
+    expect(FLOWS.some((flow) => flow.id === "heavy-workspace-close")).toBe(true)
     expect(seed.changed_files).toBe(500)
     expect(seed.terminals).toBeGreaterThanOrEqual(3)
     expect(HEAVY_WORKSPACE_REOPEN_FILE_PATHS).toHaveLength(3)
@@ -43,6 +44,8 @@ describe("heavy workspace reopen benchmark contract", () => {
       openTabIds: ["review", "file://src/a.ts", "file://src/b.ts"],
       activeTabId: "file://src/b.ts",
       selectedFilePath: "src/b.ts",
+      selectedFileChars: 12_000,
+      selectedFileLines: HEAVY_WORKSPACE_FILE_LINES,
       navigatorMode: "files",
       reviewTabId: "review",
     }
@@ -53,12 +56,15 @@ describe("heavy workspace reopen benchmark contract", () => {
       openTabIds: ["review", "file://src/b.ts", "file://src/a.ts"],
       activeTabId: "file://src/a.ts",
       selectedFilePath: "src/a.ts",
+      selectedFileChars: 12,
+      selectedFileLines: 1,
       navigatorMode: "changes",
       reviewTabId: "review-v2",
     })).toEqual([
       expect.stringContaining("workspace tabs changed"),
       expect.stringContaining("active workspace tab changed"),
       expect.stringContaining("workspace file selection changed"),
+      expect.stringContaining("workspace file content changed"),
       expect.stringContaining("workspace navigator changed"),
       expect.stringContaining("review workspace tab changed"),
     ])

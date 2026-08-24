@@ -21,7 +21,7 @@ function defaultSeedForScenario(id: ScenarioId): SeedManifest {
   if (id === "session-switch") return { ...baseSeed, sessions: 2, messages: 20_000 }
   if (id === "live-terminal-switch") return { ...baseSeed, sessions: 3, terminals: 3, messages: 1_500 }
   if (id === "large-diff-toggle") return { ...baseSeed, changed_files: 500, messages: 500 }
-  if (id === "heavy-workspace-reopen" || id === "heavy-workspace-review-resume") {
+  if (id === "heavy-workspace-reopen" || id === "heavy-workspace-review-resume" || id === "heavy-workspace-close") {
     return { ...baseSeed, sessions: 3, terminals: 3, changed_files: 500, messages: 1_500 }
   }
   if (id === "workspace-switch") return { ...baseSeed, projects: 5, sessions: 10, messages: 1_000 }

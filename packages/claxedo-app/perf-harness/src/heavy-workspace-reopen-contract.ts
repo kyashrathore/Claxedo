@@ -25,6 +25,8 @@ export type HeavyWorkspaceSurfaceIdentity = {
   openTabIds: string[]
   activeTabId?: string
   selectedFilePath?: string
+  selectedFileChars?: number
+  selectedFileLines?: number
   navigatorMode?: string
   reviewTabId?: string
 }
@@ -57,6 +59,11 @@ export function heavyWorkspaceRestorationFailures(
   if (before.selectedFilePath !== after.selectedFilePath) {
     failures.push(
       `workspace file selection changed across close/reopen: ${String(before.selectedFilePath)} -> ${String(after.selectedFilePath)}`,
+    )
+  }
+  if (before.selectedFileChars !== after.selectedFileChars || before.selectedFileLines !== after.selectedFileLines) {
+    failures.push(
+      `workspace file content changed across close/reopen: ${String(before.selectedFileLines)} lines/${String(before.selectedFileChars)} chars -> ${String(after.selectedFileLines)} lines/${String(after.selectedFileChars)} chars`,
     )
   }
   if (before.navigatorMode !== after.navigatorMode) {

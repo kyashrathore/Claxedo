@@ -12,6 +12,7 @@ export const FLOWS: { id: ScenarioId; name: string }[] = [
   { id: "large-diff-toggle", name: "Toggle split/unified with a progressively rendered 500-file review" },
   { id: "heavy-workspace-reopen", name: "Reopen a heavy workspace onto its active file working set" },
   { id: "heavy-workspace-review-resume", name: "Resume a fully rendered 500-file Review working set" },
+  { id: "heavy-workspace-close", name: "Close and dispose a substantial workspace working set" },
   { id: "workspace-switch", name: "Switch across five workspaces" },
 ]
 
