@@ -33,7 +33,9 @@ The user later paused the experiment and requested this committed handoff. Creat
 - Solid 2 migration snapshot: `ff507c473fa166acfd35676277aa490ddc698582`
 - Measurement-setup snapshot: `1382cba82e133c8c5c403129dc525407f973bdcf`
 - Frozen Solid 1 control: `d631aad47c16f4d33e1dc64c3dfd3c5abbe3014b`
-- Frozen agent-app benchmark framework: `76a27191120092d3972aab08ec480d8028078de4`
+- Public agent-app benchmark repository: <https://github.com/kyashrathore/agent-app-benchmark>
+- Published benchmark `main` revision: `6fa5fbe85fe7cd94b2f35c969af4193aa63687fb`
+- Frozen execution framework HEAD: `76a27191120092d3972aab08ec480d8028078de4`
 - Canonical contract: `.context/compound-engineering/ce-optimize/solid2-beat-solid1-v3/spec.yaml`
 - Immutable wrapper: `.context/compound-engineering/ce-optimize/solid2-beat-solid1-v3/measure.ts`
 - Official migration source supplied by the user: <https://v2.solidjs.com/migration/from-solid-1>
@@ -41,6 +43,65 @@ The user later paused the experiment and requested this committed handoff. Creat
 Before this handoff was added, the experiment worktree was clean. No Solid 2 optimization hypothesis or application-source refactor has been made on top of `1382cba82`. There is no valid fresh baseline and no `experiment-log.yaml`.
 
 Do not benchmark `.worktrees/codex-solid-2-rc`; it contains unrelated and in-progress state. The branch and worktree named above are the canonical candidate.
+
+The pushed handoff commits are intentionally outside the benchmark's mutable application paths. Therefore, do not run `measure.ts` directly from the latest documentation-bearing branch tip: the scope gate would correctly report the root Markdown change. Read the handoff from that checkout, but create the measured candidate worktree from `1382cba82`; only approved application-source experiments may follow that commit.
+
+## Cloud checkout and public framework bootstrap
+
+The public repositories contain every source artifact needed to reconstruct the code, framework, Solid 1 control, and synthetic corpus. Credentials are needed only for remote compute, not for cloning or corpus generation.
+
+Use one orientation checkout and separate measured worktrees:
+
+```sh
+git clone --branch optimize/solid2-native-beat-solid1 \
+  https://github.com/kyashrathore/Claxedo.git claxedo-orientation
+
+git -C claxedo-orientation worktree add \
+  -b optimize/solid2-native-cloud-candidate \
+  ../claxedo-solid2-candidate \
+  1382cba82e133c8c5c403129dc525407f973bdcf
+
+git -C claxedo-orientation worktree add \
+  --detach \
+  ../claxedo-solid1-control \
+  d631aad47c16f4d33e1dc64c3dfd3c5abbe3014b
+```
+
+The framework is public on `main` at `6fa5fbe`. The experiment wrapper deliberately freezes framework HEAD at `76a2719`, while the two Claxedo web registrations were previously an audited overlay. Reconstruct that exact identity instead of silently changing `FRAMEWORK_COMMIT`:
+
+```sh
+git clone https://github.com/kyashrathore/agent-app-benchmark.git agent-app-benchmark
+git -C agent-app-benchmark checkout --detach \
+  76a27191120092d3972aab08ec480d8028078de4
+
+git -C agent-app-benchmark restore \
+  --source=6fa5fbe85fe7cd94b2f35c969af4193aa63687fb \
+  --staged --worktree -- \
+  registry/apps/claxedo-solid1-web.json \
+  registry/apps/claxedo-solid2-web.json \
+  tests/contracts.test.mjs
+```
+
+Then bootstrap and verify the public framework:
+
+```sh
+cd agent-app-benchmark
+npm ci
+npm test
+npm run lint
+npm run validate
+cargo test --manifest-path native/resource-monitor/Cargo.toml
+cargo build --release --manifest-path native/resource-monitor/Cargo.toml
+node bin/agent-app-benchmark.mjs corpus generate \
+  --corpus opencode-completed-sessions-v3 \
+  --output artifacts/corpora/opencode-completed-sessions-v3
+node bin/agent-app-benchmark.mjs corpus verify \
+  --input artifacts/corpora/opencode-completed-sessions-v3
+```
+
+The generated corpus is public, deterministic, synthetic, and ignored by Git because it is roughly 691 MiB. Its verified experiment digest must be `8807d1dd81afb33fc6b22b457c4353298d21697421b509f77cc28e7f353c9dfc`. Set `AGENT_APP_BENCHMARK_ROOT` to this checkout and `SOLID1_CONTROL_ROOT` to the Solid 1 worktree.
+
+The framework repository was validated before publication: 54 tests passed, one optional prebuilt-resource-monitor integration was skipped, and both lint and registry validation passed. The default `main` branch and `codex/benchmark-v1` both point to `6fa5fbe`.
 
 ## The non-negotiable win gate
 
@@ -140,6 +201,50 @@ The dependency and build setup was repaired identically for both arms without mo
 - The active Solid 1 and Solid 2 artifact sizes were `88,268,119` and `92,778,266` bytes respectively.
 - Candidate focused harness tests passed 12/12. Control focused driver/materializer tests passed 5/5. Local bundle identity checks passed for both builds.
 - When reusing these configured bundles, set `CE_OPTIMIZE_SKIP_BUILD=1`; a bare rebuild would overwrite the assigned compile-time backend URL.
+
+## Giving a cloud agent Crabbox access
+
+The Claxedo repository already contains `.crabbox.yaml`, `script/cbx`, `script/cbx-ci.ts`, and `.agents/skills/crabbox/SKILL.md`. Do not copy a local SSH key or lease directory into the repository. A cloud environment needs only the Crabbox CLI and provider credentials supplied through its secret store.
+
+Install the same Crabbox release used for this checkpoint in the cloud environment's setup step:
+
+```sh
+go install github.com/openclaw/crabbox/cmd/crabbox@v0.46.0
+export PATH="$(go env GOPATH)/bin:$PATH"
+crabbox --version
+```
+
+For the AWS benchmark host, inject these as protected environment secrets, never as committed files:
+
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `AWS_SESSION_TOKEN` when using temporary credentials
+- `AWS_REGION=eu-west-1`
+- `AWS_DEFAULT_REGION=eu-west-1`
+
+Prefer a dedicated short-lived IAM role or user scoped to Crabbox's EC2 lifecycle operations. The currently tested account can authenticate, inspect inventory, and operate the control plane. `servicequotas:GetServiceQuota` is optional for execution but required if the capacity portion of `doctor` must report a value instead of `skip`.
+
+Validate access before spending capacity:
+
+```sh
+./script/cbx doctor --provider aws --json
+./script/cbx-ci.ts list
+./script/cbx-ci.ts dry-run pr-linux-aws
+```
+
+For a fresh retained benchmark host:
+
+```sh
+CRABBOX_TYPE=m7i.2xlarge ./script/cbx warmup \
+  --provider aws \
+  --market on-demand \
+  --slug solid2-native-baseline \
+  --ttl 6h \
+  --idle-timeout 90m \
+  --keep
+```
+
+Timed benchmark lanes still run serially and exclusively even though correctness and build jobs may use Crabbox concurrency. Stop a retained lease explicitly when finished. A new cloud agent should provision a fresh lease rather than depend on this machine's local Crabbox claim metadata.
 
 ## Invalid attempts—do not reuse as samples
 
