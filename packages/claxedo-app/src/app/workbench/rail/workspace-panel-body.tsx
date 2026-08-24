@@ -308,6 +308,7 @@ export function WorkspacePanelBody(props: {
                                   focusContextVersion={focusContextVersion()}
                                   focusBrowserUrl={focusBrowserUrl()}
                                   focusBrowserVersion={focusBrowserVersion()}
+                                  active={props.active()}
                                 />
                               </Suspense>
                             </div>

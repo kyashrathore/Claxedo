@@ -1106,13 +1106,13 @@ async function openWorkspaceFileTab(
 ) {
   const navigator = page.locator("[data-testid='workspace-files-navigator'][data-mode='files']").last()
   const search = navigator.locator("input[placeholder='Search files...']").first()
-  if (!await search.isVisible({ timeout: 2_000 }).catch(() => false)) {
+  if (!await search.waitFor({ state: "visible", timeout: 2_000 }).then(() => true).catch(() => false)) {
     recordVisualFailure(fixture, `Files navigator was unavailable while opening ${filePath}`)
     return
   }
   await search.fill(filePath)
   const row = navigator.locator(`[data-file-tree-path="${filePath}"]`).first()
-  if (!await row.isVisible({ timeout: 3_000 }).catch(() => false)) {
+  if (!await row.waitFor({ state: "visible", timeout: 3_000 }).then(() => true).catch(() => false)) {
     const diagnostic = await navigator.evaluate((root, filePath) => {
       const describe = (element: Element | null) => {
         if (!element) return undefined

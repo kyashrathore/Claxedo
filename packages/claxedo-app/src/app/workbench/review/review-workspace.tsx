@@ -15,6 +15,7 @@ import {
   createSignal,
   on,
   onCleanup,
+  type JSX,
 } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Portal } from "solid-js/web"
@@ -139,6 +140,7 @@ export type ReviewWorkspaceProps = {
   leafId?: string
   surfaceId?: string
   class?: string
+  active?: boolean
 }
 
 export function ReviewWorkspace(props: ReviewWorkspaceProps) {
@@ -163,6 +165,34 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const [mountedTabIds, setMountedTabIds] = createSignal<string[]>([])
   const [reviewBodyVisible, setReviewBodyVisible] = createSignal(true)
   let pendingActivationFrame: number | undefined
+  let reviewScrollFrame: number | undefined
+  let reviewScrollElement: HTMLDivElement | undefined
+  let reviewScrollTop = 0
+
+  const reviewIsVisible = () => (props.active ?? true) && store.activeTabId === REVIEW_TAB_ID && reviewBodyVisible()
+  const restoreReviewScroll = () => {
+    if (!reviewScrollElement || !reviewIsVisible()) return
+    if (reviewScrollFrame !== undefined && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(reviewScrollFrame)
+    }
+    if (typeof requestAnimationFrame !== "function") {
+      reviewScrollElement.scrollTop = reviewScrollTop
+      return
+    }
+    reviewScrollFrame = requestAnimationFrame(() => {
+      reviewScrollFrame = undefined
+      if (!reviewScrollElement || !reviewIsVisible()) return
+      reviewScrollElement.scrollTop = reviewScrollTop
+    })
+  }
+  const bindReviewScroll = (element: HTMLDivElement) => {
+    reviewScrollElement = element
+    restoreReviewScroll()
+  }
+  const rememberReviewScroll: JSX.EventHandler<HTMLDivElement, Event> = (event) => {
+    if (!reviewIsVisible()) return
+    reviewScrollTop = event.currentTarget.scrollTop
+  }
 
   const contextTab = createMemo(() =>
     store.tabs.find((t): t is Extract<ReviewWorkspaceTab, { kind: "context" }> => t.kind === "context"),
@@ -334,8 +364,13 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       setReviewBodyVisible(false)
     },
   ))
+  createEffect(() => {
+    if (!reviewIsVisible()) return
+    restoreReviewScroll()
+  })
   onCleanup(() => {
     if (pendingActivationFrame !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(pendingActivationFrame)
+    if (reviewScrollFrame !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(reviewScrollFrame)
     if (reviewRevealTimer) clearTimeout(reviewRevealTimer)
   })
 
@@ -731,6 +766,8 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
                 focusedDiffPath={props.focusFileIntent === "review" ? props.focusPath : undefined}
                 focusedDiffVersion={props.focusVersion}
                 onOpenFile={openFileTab}
+                scrollRef={bindReviewScroll}
+                onScroll={rememberReviewScroll}
               />
             </div>
 

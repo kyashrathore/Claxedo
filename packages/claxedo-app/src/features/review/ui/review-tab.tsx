@@ -9,6 +9,7 @@ import {
   on,
   onCleanup,
   untrack,
+  type JSX,
 } from "solid-js"
 import { createStore } from "solid-js/store"
 
@@ -62,6 +63,8 @@ export type ReviewTabProps = {
   focusedDiffPath?: string
   focusedDiffVersion?: number
   onOpenFile: (path: string) => void
+  scrollRef?: (el: HTMLDivElement) => void
+  onScroll?: JSX.EventHandlerUnion<HTMLDivElement, Event>
 }
 
 function normalizeVcsStatus(status: string | undefined): VcsFileDiff["status"] {
@@ -636,6 +639,8 @@ export function ReviewTab(props: ReviewTabProps) {
                 onLineCommentDelete={handleLineCommentDelete}
                 lineCommentActions={reviewCommentActions()}
                 onViewFile={props.onOpenFile}
+                scrollRef={props.scrollRef}
+                onScroll={props.onScroll}
                 focusedFile={store.focusedFile}
                 title=""
                 classes={{
