@@ -29,6 +29,7 @@ import { getClaxedoServerUrl } from "@/platform/api/api"
 import { reviewRegionPolicy } from "../../review/review-region-policy"
 import { isWorkspaceReady, workspaceOffline } from "../../../features/workspaces/data/workspace-connection"
 import { reviewWorkspaceWorkingSetKey } from "../review/review-workspace-working-set"
+import type { ReviewVcsDirectory } from "@/features/review/ui/review-vcs-cache"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
 import { useSettings } from "@/platform/settings/provider"
@@ -68,7 +69,21 @@ function isConsumedPanelFocus(value: WorkspacePanelFocus, consumed: ConsumedPane
     consumed.target === panelFocusTarget(value)
 }
 /** The only review target this panel mounts today; see `reviewWorkspaceKey`. */
-const PANEL_REVIEW_MODE = "uncommitted" as const
+export const PANEL_REVIEW_MODE = "uncommitted" as const
+
+/**
+ * Identity of the retained working set for this panel's review target — the
+ * one key the body's load/store and the rail's click-time prefetch resolve,
+ * so a warm-up and the mounted surface can never disagree on the entry.
+ */
+export function panelReviewWorkingSetKey(input: ReviewVcsDirectory) {
+  return reviewWorkspaceWorkingSetKey({
+    serverUrl: getClaxedoServerUrl(),
+    workspaceId: sessionWorkspaceRuntimeRef({ directory: input.directory })?.workspaceId,
+    workspaceDir: input.directory,
+    mode: PANEL_REVIEW_MODE,
+  })
+}
 const ReviewWorkspace = lazy(() =>
   import("@/app/workbench/review/review-workspace").then((m) => ({ default: m.ReviewWorkspace })),
 )
@@ -243,12 +258,9 @@ export function WorkspacePanelBody(props: {
   const reviewWorkingSetKey = createMemo(() => {
     const dir = directory()
     if (!dir) return
-    return reviewWorkspaceWorkingSetKey({
-      serverUrl: getClaxedoServerUrl(),
-      workspaceId: reviewWorkspaceId(),
-      workspaceDir: dir,
-      mode: PANEL_REVIEW_MODE,
-    })
+    // reviewWorkspaceId() keeps this memo reactive to runtime signing.
+    reviewWorkspaceId()
+    return panelReviewWorkingSetKey({ directory: dir })
   })
   const reviewWorkingSet = claxedoState.workspacePanel.reviewWorkingSet
   const loadWorkingSet = () => {

@@ -1,4 +1,4 @@
-import { onCleanup, type Accessor } from "solid-js"
+import { createEffect, onCleanup, type Accessor } from "solid-js"
 
 import { WorkspacePanel } from "../../../features/workspaces/ui/panel/workspace-panel"
 import {
@@ -8,9 +8,13 @@ import {
   type WorkspacePanelPaneTarget,
 } from "../../../features/workspaces/ui/panel/workspace-panel-state"
 import { setWorkGraphPanelBodySlot, setWorkGraphPanelHeaderSlot } from "@/ui/controls/portal-slot"
+import { getClaxedoServerUrl } from "@/platform/api/api"
+import { usePlatform } from "@/platform/runtime/platform-provider"
+import { useSDK } from "@/features/review/app-ports"
+import { createReviewDiffClient, fetchReviewVcsDiffSummary } from "@/features/review/ui/review-vcs-load"
 import type { useClaxedoState } from "../state/index"
 import { WorkspacePanelChrome, WorkspacePanelHeader } from "./workbench-shell-header"
-import { WorkspacePanelBody } from "./workspace-panel-body"
+import { PANEL_REVIEW_MODE, panelReviewWorkingSetKey, WorkspacePanelBody } from "./workspace-panel-body"
 
 type RailWorkspacePanelState = ReturnType<typeof useClaxedoState>
 
@@ -34,6 +38,49 @@ export function RailWorkspacePanelShell(props: {
   workspacePanelNavigator: () => WorkspacePanelNavigator | null | undefined
 }) {
   const globalMode = () => isGlobalPanelMode(props.state.workspacePanel.state().mode as WorkspacePanelMode | undefined)
+  const platform = usePlatform()
+  // Data starts at the click: the moment the panel state opens toward a
+  // workspace surface, warm the review corpus cache the settle-deferred
+  // content will read, so the fetch overlaps the shell motion instead of
+  // starting after it. Same loader and cache key as the mounted surface, so
+  // the surface's own load dedupes against this warm-up.
+  let prefetchedDir: string | undefined
+  createEffect(() => {
+    const state = props.state.workspacePanel.state()
+    if (!state.open || !state.mode || isGlobalPanelMode(state.mode as WorkspacePanelMode | undefined)) {
+      prefetchedDir = undefined
+      return
+    }
+    const dir = state.workspaceDir
+    if (!dir || prefetchedDir === dir) return
+    prefetchedDir = dir
+    // Lazy port access: the warm-up is an optimization and must not couple
+    // the shell to review port configuration (headless shells, tests).
+    let workspace: ReturnType<NonNullable<ReturnType<typeof useSDK>["workspace"]>> | undefined
+    try {
+      workspace = useSDK().workspace?.(dir)
+    } catch {
+      workspace = undefined
+    }
+    const key = panelReviewWorkingSetKey({ directory: dir })
+    const retained = key ? props.state.workspacePanel.reviewWorkingSet.get(key)?.review : undefined
+    const mode = retained?.mode ?? PANEL_REVIEW_MODE
+    const toFrom = mode === "to-from"
+    const client = createReviewDiffClient({
+      serverUrl: getClaxedoServerUrl(),
+      directory: dir,
+      request: platform.fetch,
+      workspaceId: workspace?.workspaceId,
+      workspace,
+    })
+    void fetchReviewVcsDiffSummary({
+      client,
+      directory: dir,
+      mode,
+      fromRef: toFrom ? retained?.fromRef?.trim() || undefined : undefined,
+      toRef: toFrom ? retained?.toRef?.trim() || undefined : undefined,
+    }).catch(() => {})
+  })
   return (
     <WorkspacePanel
       state={props.state.workspacePanel.state()}

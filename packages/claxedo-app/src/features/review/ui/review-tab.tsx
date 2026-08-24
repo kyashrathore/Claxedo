@@ -40,13 +40,11 @@ import { ClaxedoLogo as Mark } from "@/ui/controls/claxedo-logo"
 import type { FileContent, VcsFileDiff } from "@opencode-ai/sdk/v2"
 import { queryClient } from "@/platform/query/query-client"
 import { workspaceVcsQuery } from "@/platform/runtime/workspace-query"
-import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
 import { getClaxedoServerUrl } from "@/platform/api/api"
-import { createWorkspaceDiffClient } from "@/platform/runtime/workspace-diff-client"
+import { createReviewDiffClient, fetchReviewVcsDiffSummary, normalizeVcsStatus, type RawVcsFileDiff } from "./review-vcs-load"
 import { type ReviewMode } from "@/features/review/review-intent"
 import { ReviewToolbar, type VcsRefs } from "./review-toolbar"
 import {
-  cachedReviewVcsDiff,
   peekReviewVcsDiff,
   cachedReviewVcsFile,
   cachedReviewVcsRefs,
@@ -57,12 +55,6 @@ import { initialReviewOpenDiffs } from "./review-open-diffs"
 import { reviewDiffsReady, reviewShouldShowLoadingPane } from "./review-loading-state"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 
-type RawVcsFileDiff = Omit<VcsFileDiff, "status" | "patch"> & {
-  before?: string
-  after?: string
-  patch?: string
-  status?: string
-}
 
 export type ReviewTabProps = {
   directory: string
@@ -90,17 +82,6 @@ export type ReviewTabProps = {
   onOpenFile: (path: string) => void
   scrollRef?: (el: HTMLDivElement) => void
   onScroll?: JSX.EventHandlerUnion<HTMLDivElement, Event>
-}
-
-function normalizeVcsStatus(status: string | undefined): VcsFileDiff["status"] {
-  if (status === "A" || status === "added") return "added"
-  if (status === "D" || status === "deleted") return "deleted"
-  if (!status) return undefined
-  return "modified"
-}
-
-function normalizeVcsDiff(diff: RawVcsFileDiff): VcsFileDiff {
-  return { ...diff, status: normalizeVcsStatus(diff.status) } as VcsFileDiff
 }
 
 function vcsDiffCacheKey(directory: string, mode: string, fromRef?: string, toRef?: string) {
@@ -223,17 +204,12 @@ export function ReviewTab(props: ReviewTabProps) {
   )
 
   const claxedoServerUrl = getClaxedoServerUrl()
-  const diffClient = createMemo(() => createWorkspaceDiffClient({
+  const diffClient = createMemo(() => createReviewDiffClient({
     serverUrl: claxedoServerUrl,
     directory: props.directory,
     request: platform.fetch,
     workspaceId: signedWorkspace()?.workspaceId,
     workspace: signedWorkspace(),
-    resolveWorkspaceRuntime: (input) => resolveWorkspaceRuntime({
-      baseUrl: claxedoServerUrl,
-      request: platform.fetch,
-      directory: input.directory,
-    }),
   }))
 
   const fetchVcsDiff = async (
@@ -243,25 +219,13 @@ export function ReviewTab(props: ReviewTabProps) {
     directory = props.directory,
     options?: { force?: boolean },
   ) => {
-    return cachedReviewVcsDiff({
+    return fetchReviewVcsDiffSummary({
+      client: diffClient(),
       directory,
       mode,
       fromRef,
       toRef,
       force: options?.force,
-      load: () => {
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("claxedo:review-vcs-load", {
-            detail: { directory, mode, from: fromRef, to: toRef, force: options?.force === true },
-          }))
-        }
-        return diffClient()
-          .vcs({ directory, mode, fromRef, toRef, content: "summary" })
-          .then((data) => {
-            const diffs = data.map((diff) => normalizeVcsDiff(diff))
-            return diffs
-          })
-      },
     })
   }
 

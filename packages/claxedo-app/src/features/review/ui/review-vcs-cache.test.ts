@@ -136,7 +136,9 @@ describe("review VCS cache", () => {
   test("ReviewTab does not own VCS payloads in private maps", async () => {
     const text = await Bun.file(path.join(root, "features/review/ui/review-tab.tsx")).text()
 
-    expect(text).toMatch(/cachedReviewVcsDiff/)
+    // The corpus summary goes through the shared loader, which is itself
+    // backed by cachedReviewVcsDiff.
+    expect(text).toMatch(/fetchReviewVcsDiffSummary/)
     expect(text).toMatch(/cachedReviewVcsFile/)
     expect(text).toMatch(/cachedReviewVcsRefs/)
     expect(text).toMatch(/cachedReviewVcsTargets/)

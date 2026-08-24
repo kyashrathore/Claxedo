@@ -61,19 +61,22 @@ function renderPanel(state: WorkspacePanelState, input?: {
 }
 
 describe("WorkspacePanel", () => {
-  test("renders the panel shell with the selected workspace tool mounted", () => {
+  test("renders the panel shell, then mounts the selected workspace tool after the shell settles", async () => {
     renderPanel(openState)
 
     expect(screen.getByRole("complementary", { name: "Workspace panel" })).toBeInTheDocument()
     expect(screen.getByTestId("workspace-panel-shell")).toHaveAttribute("data-open", "true")
-    expect(screen.getByText("workspace body")).toBeInTheDocument()
+    // Content construction is deferred behind the opening shell's paint.
+    expect(screen.queryByText("workspace body")).not.toBeInTheDocument()
+    expect(await screen.findByText("workspace body")).toBeInTheDocument()
+    expect(screen.getByTestId("workspace-panel-shell")).toHaveAttribute("data-shell-settled", "true")
   })
 
-  test("renders navigator-backed shell with the selected workspace tool mounted", () => {
+  test("renders navigator-backed shell with the selected workspace tool mounted", async () => {
     renderPanel({ ...openState, navigator: "files" })
 
     expect(screen.getByRole("complementary", { name: "Workspace panel" })).toBeInTheDocument()
-    expect(screen.getByText("workspace body")).toBeInTheDocument()
+    expect(await screen.findByText("workspace body")).toBeInTheDocument()
   })
 
   test("shows cloud lifecycle identity, checkpoint, and registered worktrees", async () => {
@@ -168,13 +171,22 @@ describe("WorkspacePanel", () => {
     expect(screen.getByTestId("workspace-files-navigator")).not.toHaveAttribute("data-file-tree-data-ready")
   })
 
-  test("keeps the selected workspace tool warm-mounted when closed", async () => {
-    const view = renderPanel({ ...openState, open: false })
+  test("does not construct the workspace tool while closed; mounts it on open after settle", async () => {
+    const [state, setState] = createSignal<WorkspacePanelState>({ ...openState, open: false })
+    render(() => (
+      <WorkspacePanel
+        state={state()}
+        renderMode={() => <div>workspace body</div>}
+      />
+    ))
 
     expect(screen.queryByRole("complementary", { name: "Workspace panel" })).not.toBeInTheDocument()
     expect(screen.queryByRole("separator", { name: "Resize workspace panel" })).not.toBeInTheDocument()
+    // A closed panel owns no content: nothing constructs until it opens.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve))))
+    expect(screen.queryByText("workspace body")).not.toBeInTheDocument()
+    setState(openState)
     expect(await screen.findByText("workspace body")).toBeInTheDocument()
-    expect(view.container.textContent).toContain("workspace body")
   })
 
   test("close and reopen do not remount the selected workspace tool", async () => {

@@ -15,6 +15,7 @@ import {
   WORKSPACE_PANEL_CLOSE_GRACE_MS,
   WORKSPACE_PANEL_MOTION_MS,
 } from "./workspace-panel-lifecycle"
+import { createShellSettle } from "./workspace-panel-shell-settle"
 
 const SHELL_MOTION_TRANSITION = `transform ${WORKSPACE_PANEL_MOTION_MS}ms cubic-bezier(0.2, 0, 0, 1)`
 
@@ -65,36 +66,45 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
       targetPaneId: props.state.targetPaneId,
       workspaceDir: props.state.workspaceDir,
     }))
+  let asideRef: HTMLElement | undefined
+  const shellSettle = createShellSettle({
+    open,
+    element: () => asideRef,
+    motionMs: WORKSPACE_PANEL_MOTION_MS,
+  })
   const [renderedMode, setRenderedMode] = createSignal<JSX.Element>()
   const owner = getOwner()
   let renderedKey = ""
   let disposeRenderedMode: VoidFunction | undefined
   createEffect(() => {
     const nextKey = contentKey()
+    const settled = shellSettle.settled()
     if (nextKey === renderedKey && (renderedMode() !== undefined || !props.state.mode)) return
-    renderedKey = nextKey
-    const hadRenderedMode = renderedMode() !== undefined
-    disposeRenderedMode?.()
-    disposeRenderedMode = undefined
     const mode = props.state.mode
+    const hadRenderedMode = renderedMode() !== undefined
     if (!mode) {
+      renderedKey = nextKey
+      disposeRenderedMode?.()
+      disposeRenderedMode = undefined
       setRenderedMode(undefined)
       return
     }
+    // Fresh content (nothing rendered yet) waits for the shell's opening
+    // motion to settle: the toggle interaction owns its frames, the skeleton
+    // holds the box, and construction lands after the shell has painted. A
+    // mode/identity switch while content is already showing swaps immediately
+    // because the shell is not moving.
+    if (!hadRenderedMode && !settled) return
+    renderedKey = nextKey
+    disposeRenderedMode?.()
+    disposeRenderedMode = undefined
     setRenderedMode(undefined)
-    const renderBody = () => {
-      runWithOwner(owner, () => {
-        createRoot((dispose) => {
-          disposeRenderedMode = dispose
-          setRenderedMode(() => untrack(() => props.renderMode(mode, props.state)))
-        })
+    runWithOwner(owner, () => {
+      createRoot((dispose) => {
+        disposeRenderedMode = dispose
+        setRenderedMode(() => untrack(() => props.renderMode(mode, props.state)))
       })
-    }
-    if (hadRenderedMode && stateOpen()) {
-      renderBody()
-      return
-    }
-    renderBody()
+    })
   })
   onCleanup(() => {
     disposeRenderedMode?.()
@@ -117,7 +127,6 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
   onCleanup(() => {
     if (exposeTimer) clearTimeout(exposeTimer)
   })
-  let asideRef: HTMLElement | undefined
   const restingPanelWidth = () => {
     if (isMobile()) return availableWidth()
     if (props.fullWidth?.()) return availableWidth()
@@ -125,7 +134,33 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
   }
   const panelStyleWidth = () => isMobile() ? "100%" : `${restingPanelWidth()}px`
   const pendingMode = () => {
-    if (props.state.navigator !== "files" && props.state.navigator !== "changes") return undefined
+    if (props.state.navigator !== "files" && props.state.navigator !== "changes") {
+      if (!props.state.mode) return undefined
+      // Review-shaped placeholder for the settle window between the toggle
+      // click and deferred content construction: a toolbar strip and file
+      // rows, so the opening shell paints a plausible surface, not a void.
+      return (
+        <div
+          data-testid="workspace-review-pending"
+          data-review-shell-pending="true"
+          class="flex size-full min-h-0 flex-col"
+        >
+          <div class="flex h-10 shrink-0 items-center gap-2 border-b border-border-weak-base px-3">
+            <div class="h-5 w-32 rounded bg-surface-base" />
+            <div class="ml-auto h-5 w-20 rounded bg-surface-base" />
+          </div>
+          <div class="min-h-0 flex-1 overflow-hidden p-2">
+            <div class="flex flex-col gap-1" aria-label="Loading review">
+              <div class="h-7 w-[88%] rounded-md bg-surface-base" />
+              <div class="h-7 w-[81%] rounded-md bg-surface-base" />
+              <div class="h-7 w-[74%] rounded-md bg-surface-base" />
+              <div class="h-7 w-[67%] rounded-md bg-surface-base" />
+              <div class="h-7 w-[59%] rounded-md bg-surface-base" />
+            </div>
+          </div>
+        </div>
+      )
+    }
     const mode = props.state.navigator === "changes" ? "changes" : "files"
     return (
       <div
@@ -260,6 +295,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
       role={panelExposed() ? "complementary" : undefined}
       data-testid="workspace-panel-shell"
       data-open={open() ? "true" : "false"}
+      data-shell-settled={shellSettle.settled() ? "true" : "false"}
       data-state-open={props.state.open ? "true" : "false"}
       data-state-mode={props.state.mode ?? ""}
       data-state-workspace-dir={props.state.workspaceDir ?? ""}
