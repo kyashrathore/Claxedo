@@ -18,6 +18,7 @@ import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { LocalProvider } from "@/features/session/providers/session-selection"
 import { TerminalProvider } from "@/features/terminal/providers/provider"
 import { FileProvider } from "@/app/providers/file"
+import { WorkspaceVcsCacheHonesty } from "./workspace-vcs-cache-honesty"
 import { PromptProvider } from "@/features/session/providers/prompt"
 import { CommentScopeProvider, CommentsProvider } from "@/platform/comments/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -337,6 +338,7 @@ export function DirectoryScope(props: ParentProps<{
           onSyncSession={props.onSyncSession}
         >
           <TerminalProvider>
+            <WorkspaceVcsCacheHonesty directory={props.directory} />
             <FileProvider>
               <PromptProvider directory={props.directory} sessionId={props.sessionId} draftId={props.surfaceId}>
                 <CommentScopeProvider

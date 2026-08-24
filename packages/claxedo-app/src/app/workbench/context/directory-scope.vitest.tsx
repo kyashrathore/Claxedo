@@ -67,6 +67,7 @@ vi.mock("@/app/providers/sdk/sdk", () => ({
     createClient: () => ({}),
     workspace: () => state.workspace,
     request: state.runtimeRequest,
+    event: { listen: () => () => {} },
   }),
 }))
 

@@ -138,19 +138,6 @@ export function WorkspaceFilesNavigator(props: {
     onCleanup(stop)
   })
 
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const stop = sdk.event.listen((event) => {
-    if (event.details.type !== "file.watcher.updated") return
-    if (timer) clearTimeout(timer)
-    timer = setTimeout(() => {
-      if (!props.active) return
-      if (refresh() === undefined) {
-        setRefresh(1)
-        return
-      }
-      void statusQuery.refetch()
-    }, 250)
-  })
 
   // Reveal the active file (opened from a link / focus): expand its ancestor
   // directories and scroll its row into view. Expanding a directory kicks off
@@ -180,11 +167,6 @@ export function WorkspaceFilesNavigator(props: {
     })
     observer.observe(treeScrollRef, { childList: true, subtree: true })
     onCleanup(() => observer.disconnect())
-  })
-
-  onCleanup(() => {
-    if (timer) clearTimeout(timer)
-    stop()
   })
 
   const allowedList = createMemo(() => {

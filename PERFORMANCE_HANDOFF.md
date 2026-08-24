@@ -280,6 +280,38 @@ This container's Playwright pin (1.61.1) expects Chromium revision 1228 while
 1228 layout onto the 1194 binaries. Recreate it or run on a machine with the
 right revision before trusting timings.
 
+### Step-8 slice: event-owned VCS cache freshness (2026-08-24, later)
+
+The reopen-window resource request was NOT the session meta triple: an
+instrumented run showed it is `/file/status`, refetched because the canonical
+file-status query had TanStack's default `staleTime: 0`, so the files
+navigator's remounting observer refetched data nothing had changed. The
+closed-panel staleness gap had the same shape: freshness owned by disposable
+DOM.
+
+One owner now: `WorkspaceVcsCacheHonesty`, mounted in DirectoryScope (which
+outlives the panel whenever any surface of the workspace is open), classifies
+runtime events via `createReviewVcsDirectoryClassifier` -- watcher changes,
+branch updates, and ANY session's settled turn -- and on staleness removes the
+review query entries (one-shot fetchQuery consumers) and invalidates the
+file-status entry (live-observer consumer), debounced 250 ms. The canonical
+`workspaceFileStatusQueryOptions` is `staleTime: Infinity`; the files
+navigator's private watcher listener is removed; the workspace-level
+`createReviewWorkspaceVcsStaleness` now only bumps reload versions for a
+mounted Review surface. This closes both documented gaps: a reopened panel
+serves the cache with zero requests, and a change landing while the panel is
+closed still drops the caches so the next mount refetches.
+
+Still open: a workspace with NO mounted surface at all has no event stream,
+so its caches can go stale until any surface mounts and events resume.
+
+Verified: workbench+review+platform/files bun suites 553 pass; honesty vitest
+2/2; directory-scope vitest 22/22 (harness mock gained `event.listen`);
+files-navigator vitest 7/7; test:performance 37/37; architecture 261/261
+(ReviewVcsDirectory export keeps the directoryStringParams ratchet flat);
+heavy-workspace contract tests 8/8; app typecheck pass. The confirming
+disposal smoke is running; its numbers land in the next handoff update.
+
 ## Next steps in dependency order
 
 1. Instantiate the working-set store outside disposable DOM. Key by normalized server/runtime identity + workspace + review, not session ID. Wire initialWorkingSet/onWorkingSetChange through RailWorkspacePanelShell and WorkspacePanelBody. Do not put scroll into global reactive WorkspacePanelState.

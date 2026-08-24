@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test"
 
-import { reviewVcsInvalidationFromEvent } from "./review-vcs-invalidation"
+import {
+  createReviewVcsDirectoryClassifier,
+  reviewVcsInvalidationFromEvent,
+} from "./review-vcs-invalidation"
 
 const sessionId = "ses_review"
 
@@ -53,5 +56,36 @@ describe("review vcs invalidation", () => {
       "busy",
     )).toEqual({ diffs: false, branch: false })
     expect(classify({ type: "message.updated" })).toEqual({ diffs: false, branch: false })
+  })
+})
+
+describe("review vcs directory classifier", () => {
+  test("stales on working-tree and branch changes, never on git bookkeeping", () => {
+    const stale = createReviewVcsDirectoryClassifier()
+
+    expect(stale({ type: "file.watcher.updated", properties: { file: "src/app.ts" } })).toBe(true)
+    expect(stale({ type: "file.watcher.updated", properties: { file: ".git/index" } })).toBe(false)
+    expect(stale({ type: "vcs.branch.updated" })).toBe(true)
+    expect(stale({ type: "message.updated" })).toBe(false)
+  })
+
+  test("stales when ANY session on the stream settles a turn", () => {
+    const stale = createReviewVcsDirectoryClassifier()
+    const status = (sessionID: string, type: string) => ({
+      type: "session.status",
+      properties: { sessionID, status: { type } },
+    })
+
+    // First observation of a session is not a completed turn.
+    expect(stale(status("ses_a", "idle"))).toBe(false)
+    expect(stale(status("ses_a", "busy"))).toBe(false)
+    // A DIFFERENT session settling also means the worktree may have changed.
+    expect(stale(status("ses_b", "busy"))).toBe(false)
+    expect(stale(status("ses_b", "idle"))).toBe(true)
+    expect(stale(status("ses_a", "idle"))).toBe(true)
+    // Idle to idle is not a settle.
+    expect(stale(status("ses_a", "idle"))).toBe(false)
+    // A status event with no session id cannot be classified.
+    expect(stale({ type: "session.status", properties: { status: { type: "idle" } } })).toBe(false)
   })
 })

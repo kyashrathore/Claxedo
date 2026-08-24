@@ -46,3 +46,38 @@ export function reviewVcsInvalidationFromEvent(input: {
   if (typeof file !== "string" || file.startsWith(".git/")) return NOTHING
   return { diffs: true, branch: false }
 }
+
+/**
+ * Directory-level staleness: does this runtime event mean the workspace's
+ * review data is out of date, whichever session caused it?
+ *
+ * Unlike `reviewVcsInvalidationFromEvent` this tracks every session on the
+ * stream, because the stream is already directory-scoped and ANY session's
+ * settled turn may have edited the worktree the review describes.
+ */
+export function createReviewVcsDirectoryClassifier() {
+  const statusBySession = new Map<string, string>()
+  return (event: ReviewVcsEvent): boolean => {
+    if (event.type === "session.status") {
+      const properties = record(event.properties) as
+        | { sessionID?: string; status?: { type?: string } }
+        | undefined
+      const sessionID = properties?.sessionID
+      if (!sessionID) return false
+      const next = properties.status?.type ?? "idle"
+      const previous = statusBySession.get(sessionID)
+      statusBySession.delete(sessionID)
+      statusBySession.set(sessionID, next)
+      while (statusBySession.size > 128) {
+        const oldest = statusBySession.keys().next().value
+        if (oldest === undefined) break
+        statusBySession.delete(oldest)
+      }
+      return next === "idle" && previous !== undefined && previous !== "idle"
+    }
+    if (event.type === "vcs.branch.updated") return true
+    if (event.type !== "file.watcher.updated") return false
+    const file = record(event.properties)?.file
+    return typeof file === "string" && !file.startsWith(".git/")
+  }
+}

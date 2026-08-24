@@ -3,7 +3,7 @@ import type { VcsRefs } from "./review-toolbar"
 import { queryClient } from "@/platform/query/query-client"
 
 /** One workspace worktree, as every review read and invalidation names it. */
-type ReviewVcsDirectory = {
+export type ReviewVcsDirectory = {
   directory: string
 }
 

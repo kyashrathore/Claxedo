@@ -139,7 +139,6 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
 
   const vcsStaleness = createReviewWorkspaceVcsStaleness({
     listen: sdk.event.listen,
-    directory: () => props.directory,
     sessionId: () => props.sessionId,
   })
 
