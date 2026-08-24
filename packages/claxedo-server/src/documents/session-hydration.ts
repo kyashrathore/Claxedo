@@ -452,8 +452,29 @@ async function writeManifest(manifestPath: string, manifest: Manifest) {
   await handle.writeFile(JSON.stringify(manifest))
   await handle.sync()
   await handle.close()
-  await fs.rename(temp, manifestPath)
+  await renameReplacingManifest(temp, manifestPath)
   await syncDirectory(path.dirname(manifestPath))
+}
+
+async function renameReplacingManifest(temp: string, manifestPath: string) {
+  // Windows refuses a replacing rename with EPERM/EACCES while any reader
+  // holds the target open (fs.readFile opens without FILE_SHARE_DELETE), and
+  // the manifest is read by pollers outside withManifestMutation. Reader
+  // handles are short-lived, so a bounded retry absorbs the window; POSIX
+  // never takes this branch.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fs.rename(temp, manifestPath)
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (attempt >= 9 || (code !== "EPERM" && code !== "EACCES")) {
+        await fs.rm(temp, { force: true }).catch(() => undefined)
+        throw error
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+  }
 }
 
 function close(document?: HydratedDocument) {
