@@ -28,8 +28,9 @@ import { loadTerminalSessionPreview } from "../../../features/terminal/lib/termi
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { reviewRegionPolicy } from "../../review/review-region-policy"
 import { isWorkspaceReady, workspaceOffline } from "../../../features/workspaces/data/workspace-connection"
-import { reviewWorkspaceWorkingSetKey } from "../review/review-workspace-working-set"
+import { reviewWorkspaceWorkingSetKey, type ReviewWorkspaceWorkingSetSnapshot } from "../review/review-workspace-working-set"
 import type { ReviewVcsDirectory } from "@/features/review/ui/review-vcs-cache"
+import { createPathHelpers } from "@/platform/files/path"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
 import { useSettings } from "@/platform/settings/provider"
@@ -83,6 +84,22 @@ export function panelReviewWorkingSetKey(input: ReviewVcsDirectory) {
     workspaceDir: input.directory,
     mode: PANEL_REVIEW_MODE,
   })
+}
+
+/**
+ * The file path the working set's active tab points at, if the active tab is
+ * a file tab. The files navigator restores its selection from this on reopen:
+ * a consumed focus request is no longer replayed (it used to double as the
+ * selection source), so the retained working set is the selection's owner.
+ */
+export function workingSetActiveFilePath(
+  snapshot: ReviewWorkspaceWorkingSetSnapshot | undefined,
+  pathFromTab: (tabId: string) => string | undefined,
+) {
+  if (!snapshot) return undefined
+  const active = snapshot.tabs.find((tab) => tab.id === snapshot.activeTabId)
+  if (!active || active.kind !== "file") return undefined
+  return pathFromTab(active.tabId) ?? active.tabId
 }
 const ReviewWorkspace = lazy(() =>
   import("@/app/workbench/review/review-workspace").then((m) => ({ default: m.ReviewWorkspace })),
@@ -267,9 +284,14 @@ export function WorkspacePanelBody(props: {
     const key = reviewWorkingSetKey()
     return key ? reviewWorkingSet.get(key) : undefined
   }
+  const pathHelpers = createMemo(() => createPathHelpers(() => directory() ?? ""))
+  const [activeWorkingFilePath, setActiveWorkingFilePath] = createSignal(
+    workingSetActiveFilePath(loadWorkingSet(), (tabId) => pathHelpers().pathFromTab(tabId)),
+  )
   const storeWorkingSet = (snapshot: Parameters<typeof reviewWorkingSet.set>[1]) => {
     const key = reviewWorkingSetKey()
     if (key) reviewWorkingSet.set(key, snapshot)
+    setActiveWorkingFilePath(workingSetActiveFilePath(snapshot, (tabId) => pathHelpers().pathFromTab(tabId)))
   }
   const [reviewWorkspaceMountedKey, setReviewWorkspaceMountedKey] = createSignal<string | undefined>(
     filesNavigatorSelected() ? undefined : reviewWorkspaceKey(),
@@ -366,7 +388,7 @@ export function WorkspacePanelBody(props: {
                                 <WorkspaceFilesNavigator
                                   mode={filesNavigatorMode()}
                                   active={filesNavigatorActive()}
-                                  activePath={focusPath()}
+                                  activePath={focusPath() ?? activeWorkingFilePath()}
                                   onFileClick={(path, intent) =>
                                     claxedoState.workspacePanel.retarget({
                                       workspaceDir: dir,
