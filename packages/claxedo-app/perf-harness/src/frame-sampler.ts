@@ -612,6 +612,15 @@ export async function measureInteraction(
     }
   }
   if (causal && profile && !trustedTraceMark) causal.cpuProfile = summarizeCpuProfile(profile.profile)
+  // Opt-in raw-profile persistence for offline flamegraph analysis. The
+  // summarized attribution above is dropped for trusted-mark interactions, so
+  // this is the only way to see WHERE script time goes in those windows;
+  // resolve the frames against the build's sourcemaps.
+  if (profile && process.env.CLAXEDO_PERF_PROFILE_DIR) {
+    const dir = process.env.CLAXEDO_PERF_PROFILE_DIR
+    const file = `${dir}/${label.replaceAll(/[^a-z0-9-]/gi, "_")}-${Date.now()}.cpuprofile`
+    await Bun.write(file, JSON.stringify(profile.profile))
+  }
   if (causal && measuredTraceEvents.length > 0) causal.traceTasks = summarizeTraceTasks(measuredTraceEvents)
   return buildFrameMetric(
     label,
