@@ -1,3 +1,8 @@
+import {
+  REVIEW_ESTIMATED_ROW_HEIGHT,
+  reviewWindowRowBudget,
+} from "../../src/features/review/ui/review-window"
+
 export const HEAVY_WORKSPACE_REOPEN_FILE_PATHS = [
   "src/generated/file-7.ts",
   "src/generated/file-113.ts",
@@ -23,10 +28,25 @@ export const HEAVY_WORKSPACE_REQUIRE_DISPOSAL_ENV = "CLAXEDO_PERF_REQUIRE_WORKSP
 // of the close animation.
 export const HEAVY_WORKSPACE_CLOSE_DWELL_MS = 300
 
-// The Review file list is windowed: at most this many viewport rows own DOM at
-// once (required rows -- the scroll anchor, a focused file -- ride on top).
-// Mirrors REVIEW_MAX_WINDOW_ROWS in the app's review-window.ts.
-export const HEAVY_WORKSPACE_REVIEW_WINDOW_MAX_ROWS = 20
+// The benchmark browser window height (the runner's viewport is 1440x960; a
+// contract test pins the two against each other). The Review scroll viewport
+// is strictly shorter than the window, so deriving the row budget from the
+// full 960px is a sound upper bound on what the app may materialize.
+export const HEAVY_WORKSPACE_VIEWPORT_HEIGHT = 960
+
+// Mirrors REVIEW_MOUNT_MARGIN in review-session.tsx -- the overscan the app
+// passes into the window.
+export const HEAVY_WORKSPACE_REVIEW_OVERSCAN = 80
+
+// The Review file list is windowed: at most this many viewport rows own DOM
+// at once (required rows -- the scroll anchor, a focused file -- ride on
+// top). The budget RULE is owned by the app's reviewWindowRowBudget
+// (review-window.ts); the harness only supplies its benchmark geometry.
+export const HEAVY_WORKSPACE_REVIEW_WINDOW_MAX_ROWS = reviewWindowRowBudget({
+  viewportHeight: HEAVY_WORKSPACE_VIEWPORT_HEIGHT,
+  overscan: HEAVY_WORKSPACE_REVIEW_OVERSCAN,
+  estimatedRowHeight: REVIEW_ESTIMATED_ROW_HEIGHT,
+})
 
 // Required rows the window can add beyond the viewport cap (anchor + focus).
 export const HEAVY_WORKSPACE_REVIEW_WINDOW_SLACK = 4
@@ -266,6 +286,30 @@ export function heavyWorkspaceReviewRestorationFailures(
     failures.push(`review deep scroll position was not restored: ${before.scrollTop} -> ${after.scrollTop}`)
   }
   return failures
+}
+
+/**
+ * Expansion is semantic state, but the windowed list only shows it through
+ * materialized rows: after the deep scroll the expanded row is unmounted, so
+ * the before/after identities compared on resume both hold empty expansion
+ * arrays and prove nothing. This gate takes the expansion captured while the
+ * expanded rows were still mounted (before the deep scroll) and the expansion
+ * re-read after resume with those rows scrolled back into the window. An empty
+ * setup set is itself a failure, so the check can never pass vacuously.
+ */
+export function heavyWorkspaceExpansionRetentionFailures(input: {
+  expandedAtSetup: readonly string[]
+  expandedAfterResume: readonly string[]
+}) {
+  if (input.expandedAtSetup.length === 0) {
+    return ["heavy workspace setup recorded no expanded review diff, so expansion restoration was never exercised"]
+  }
+  if (!sameStrings(input.expandedAtSetup, input.expandedAfterResume)) {
+    return [
+      `expanded review diffs were lost across close/reopen: ${JSON.stringify(input.expandedAtSetup)} -> ${JSON.stringify(input.expandedAfterResume)}`,
+    ]
+  }
+  return []
 }
 
 function sameStrings(left: readonly string[], right: readonly string[]) {

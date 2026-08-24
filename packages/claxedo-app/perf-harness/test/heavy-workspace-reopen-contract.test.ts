@@ -1,14 +1,23 @@
 import { describe, expect, test } from "bun:test"
 import { FLOWS } from "../src/flows"
-import { fileContent, fixtureFor } from "../src/browser-runner"
+import { benchmarkViewport, fileContent, fixtureFor } from "../src/browser-runner"
+import {
+  REVIEW_ESTIMATED_ROW_HEIGHT,
+  reviewWindowRowBudget,
+} from "../../src/features/review/ui/review-window"
 import {
   HEAVY_WORKSPACE_CLOSE_DWELL_MS,
   HEAVY_WORKSPACE_EXPANDED_DIFF_LINES,
   HEAVY_WORKSPACE_FILE_MIN_CHARS,
   HEAVY_WORKSPACE_FILE_LINES,
   HEAVY_WORKSPACE_REOPEN_FILE_PATHS,
+  HEAVY_WORKSPACE_REVIEW_OVERSCAN,
   HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR,
+  HEAVY_WORKSPACE_REVIEW_WINDOW_MAX_ROWS,
+  HEAVY_WORKSPACE_REVIEW_WINDOW_SLACK,
+  HEAVY_WORKSPACE_VIEWPORT_HEIGHT,
   heavyWorkspaceClosedOwnershipFailures,
+  heavyWorkspaceExpansionRetentionFailures,
   heavyWorkspaceInactiveFileOwnershipFailures,
   heavyWorkspaceInactiveReviewOwnershipFailures,
   heavyWorkspaceWindowedCorpusFailures,
@@ -112,12 +121,48 @@ describe("heavy workspace reopen benchmark contract", () => {
     expect(heavyWorkspaceWindowedCorpusFailures({ reviewFileCount: 0, totalFileCount: 500, expectedTotal: 500 }))
       .toEqual(["review window materialized no file rows"])
     expect(heavyWorkspaceWindowedCorpusFailures({ reviewFileCount: 500, totalFileCount: 500, expectedTotal: 500 }))
-      .toEqual(["review window materialized 500 file rows; expected at most 24"])
+      .toEqual(["review window materialized 500 file rows; expected at most 34"])
     expect(heavyWorkspaceWindowedCorpusFailures({ reviewFileCount: 18, totalFileCount: 262, expectedTotal: 500 }))
       .toEqual(["review model held 262 files; expected 500"])
     expect(heavyWorkspaceInactiveFileOwnershipFailures({ fileRoots: 3 })).toEqual([
       expect.stringContaining("inactive file roots"),
     ])
+  })
+
+  test("derives the review window cap from the app's budget rule and the real benchmark viewport", () => {
+    // The runner's browser window is the geometry the contract reasons from.
+    expect(HEAVY_WORKSPACE_VIEWPORT_HEIGHT).toBe(benchmarkViewport.height)
+    // One owner of the budget rule: the contract cap IS the app's derivation
+    // for the benchmark viewport — pinned here to the concrete value so an
+    // accidental formula change fails loudly instead of drifting the gate.
+    expect(HEAVY_WORKSPACE_REVIEW_WINDOW_MAX_ROWS).toBe(reviewWindowRowBudget({
+      viewportHeight: benchmarkViewport.height,
+      overscan: HEAVY_WORKSPACE_REVIEW_OVERSCAN,
+      estimatedRowHeight: REVIEW_ESTIMATED_ROW_HEIGHT,
+    }))
+    expect(HEAVY_WORKSPACE_REVIEW_WINDOW_MAX_ROWS).toBe(30)
+    expect(HEAVY_WORKSPACE_REVIEW_WINDOW_MAX_ROWS + HEAVY_WORKSPACE_REVIEW_WINDOW_SLACK).toBe(34)
+  })
+
+  test("fails when the expanded diff recorded before the deep scroll does not survive resume", () => {
+    const expandedAtSetup = ["src/generated/file-0.ts"]
+
+    // Retained: the row scrolled back into the window is still expanded.
+    expect(heavyWorkspaceExpansionRetentionFailures({
+      expandedAtSetup,
+      expandedAfterResume: expandedAtSetup,
+    })).toEqual([])
+    // Lost: a resume that dropped the expansion must fail even though both
+    // deep-window identity snapshots hold empty expansion arrays.
+    expect(heavyWorkspaceExpansionRetentionFailures({
+      expandedAtSetup,
+      expandedAfterResume: [],
+    })).toEqual([expect.stringContaining("expanded review diffs were lost across close/reopen")])
+    // Vacuous pass is impossible: empty-vs-empty is itself a failure.
+    expect(heavyWorkspaceExpansionRetentionFailures({
+      expandedAtSetup: [],
+      expandedAfterResume: [],
+    })).toEqual([expect.stringContaining("no expanded review diff")])
   })
 
   test("checks rich review state only when the review tab is activated", () => {

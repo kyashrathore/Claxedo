@@ -13,11 +13,40 @@
  * decides which header rows exist at all.
  */
 
-/** Hard cap on viewport-window rows. Required rows (anchor, focus) add to it. */
+/**
+ * Minimum viewport-window row budget, and the window size when the viewport
+ * cannot be measured yet. Required rows (anchor, focus) add to the budget.
+ */
 export const REVIEW_MAX_WINDOW_ROWS = 20
 
 /** Fallback row height until a real row has been measured. */
 export const REVIEW_ESTIMATED_ROW_HEIGHT = 40
+
+/**
+ * Hard ceiling on the derived row budget: even a very tall viewport with a
+ * small measured row height never materializes more header rows than this.
+ */
+export const REVIEW_WINDOW_MAX_ROW_BUDGET = 64
+
+/**
+ * The one owner of the row-budget rule: enough rows to tile the overscanned
+ * viewport with zero gap segments inside it, bounded on both sides. A span of
+ * length L intersects at most ceil(L / h) + 1 rows of height h (partial rows
+ * at both edges); one more row absorbs measured rows slightly under the
+ * estimate. A fixed budget smaller than this leaves blank gap DOM visible in
+ * tall viewports — twenty 40px rows cover only 800px.
+ */
+export function reviewWindowRowBudget(input: {
+  viewportHeight: number
+  overscan: number
+  estimatedRowHeight: number
+}) {
+  if (input.viewportHeight <= 0) return REVIEW_MAX_WINDOW_ROWS
+  const estimate = input.estimatedRowHeight > 0 ? input.estimatedRowHeight : REVIEW_ESTIMATED_ROW_HEIGHT
+  const span = input.viewportHeight + 2 * Math.max(0, input.overscan)
+  const covering = Math.ceil(span / estimate) + 2
+  return Math.min(REVIEW_WINDOW_MAX_ROW_BUDGET, Math.max(REVIEW_MAX_WINDOW_ROWS, covering))
+}
 
 export type ReviewWindowSegment<T> =
   | { kind: "row"; item: T; index: number }
@@ -33,9 +62,10 @@ export function reviewWindowSegments<T>(input: {
   measuredHeight: (item: T, index: number) => number | undefined
   /** Rows that must exist regardless of the window (scroll anchor, focus). */
   required: (item: T, index: number) => boolean
+  /** Overrides the geometry-derived budget (reviewWindowRowBudget). */
   maxRows?: number
 }): ReviewWindowSegment<T>[] {
-  const maxRows = Math.max(1, input.maxRows ?? REVIEW_MAX_WINDOW_ROWS)
+  const maxRows = Math.max(1, input.maxRows ?? reviewWindowRowBudget(input))
   const estimate = input.estimatedRowHeight > 0 ? input.estimatedRowHeight : REVIEW_ESTIMATED_ROW_HEIGHT
   // No measurable viewport yet (first render, or a non-laying-out test DOM):
   // materialize the first window's worth so the surface is never empty.

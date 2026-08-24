@@ -36,6 +36,7 @@ import {
   heavyWorkspaceWindowedCorpusFailures,
   HEAVY_WORKSPACE_REVIEW_WINDOW_MAX_ROWS,
   HEAVY_WORKSPACE_REVIEW_WINDOW_SLACK,
+  heavyWorkspaceExpansionRetentionFailures,
   heavyWorkspaceLiveFileFailures,
   heavyWorkspaceReviewRestorationFailures,
   heavyWorkspaceRestorationFailures,
@@ -86,7 +87,9 @@ type SessionRequestCountsForValidation = {
   }
 }
 
-const viewport = { width: 1440, height: 960 }
+// Exported so the heavy-workspace contract test can pin its
+// HEAVY_WORKSPACE_VIEWPORT_HEIGHT against the real benchmark window.
+export const benchmarkViewport = { width: 1440, height: 960 }
 export const diagnosticsPairModeOrder = [
   { label: "disabled control A", enabled: false },
   { label: "diagnostics enabled A", enabled: true },
@@ -479,10 +482,10 @@ async function executeBrowserScenario(
   const fixture = fixtureFor(scenario, seed)
   // Video is always on — one .webm per flow run.
   const context = await browser.newContext({
-    viewport,
+    viewport: benchmarkViewport,
     permissions: ["clipboard-read", "clipboard-write"],
     ...(process.env.CLAXEDO_PERF_RECORD_VIDEO === "1"
-      ? { recordVideo: { dir: path.join(reportsRoot, "videos", "raw"), size: viewport } }
+      ? { recordVideo: { dir: path.join(reportsRoot, "videos", "raw"), size: benchmarkViewport } }
       : {}),
   })
   // A throttled profile makes every wait legitimately longer; without this a
@@ -1121,6 +1124,17 @@ async function heavyWorkspaceReopen(
   for (const failure of heavyWorkspaceReviewRestorationFailures(reviewBefore, reviewObservation.identity)) {
     recordVisualFailure(fixture, failure)
   }
+  // The expanded diff's evidence lives in reviewAtTop, captured before the
+  // deep scroll unmounted its row; reviewBefore and the resumed identity both
+  // describe the deep window where no expanded row exists, so comparing them
+  // can never detect a lost expansion. With every scroll-restoration assertion
+  // already recorded, scroll the restored surface back to the top so the
+  // expanded rows rematerialize, and require the setup expansion to survive.
+  const expandedAfterResume = await readHeavyWorkspaceExpansionAtTop(page, reviewAtTop.expandedPaths)
+  for (const failure of heavyWorkspaceExpansionRetentionFailures({
+    expandedAtSetup: reviewAtTop.expandedPaths,
+    expandedAfterResume,
+  })) recordVisualFailure(fixture, failure)
   const inactiveFileOwnership = await page.evaluate(() => ({
     fileRoots: document.querySelectorAll(
       "[data-testid='workspace-panel-shell'][data-open='true'] [data-testid='tab-file-root']",
@@ -1255,6 +1269,7 @@ async function heavyWorkspaceReopen(
       lower("workspace_review_resume_rendered_hunks", reviewObservation.identity.renderedHunks, "count"),
       lower("workspace_review_resume_expanded_diffs", reviewObservation.identity.expandedPaths.length, "count"),
       lower("workspace_review_resume_rendered_expanded_bodies", reviewObservation.identity.expandedBodyPaths.length, "count"),
+      lower("workspace_review_resume_retained_expanded_diffs", expandedAfterResume.length, "count"),
       lower("workspace_review_resume_scroll_top", reviewObservation.identity.scrollTop, "px"),
       lower("workspace_review_resume_inactive_file_roots", inactiveFileOwnership.fileRoots, "count"),
     ],
@@ -1689,6 +1704,41 @@ async function readHeavyWorkspaceReviewIdentity(page: Page): Promise<HeavyWorksp
         : undefined,
     }
   }, HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR)
+}
+
+// Scrolls the restored Review back to the top so rows the deep window had
+// unmounted rematerialize, then reads which files are expanded. Only runs
+// after every scroll-restoration assertion has been captured, so moving the
+// scroll here cannot disturb the measured evidence. Waits (bounded) until the
+// window has re-rendered the expected expanded rows, since the windowing memo
+// reacts to the scroll event asynchronously.
+async function readHeavyWorkspaceExpansionAtTop(
+  page: Page,
+  expectedExpandedPaths: readonly string[],
+): Promise<string[]> {
+  return await page.evaluate(async ({ expectedExpandedPaths, scrollSelector }) => {
+    const visible = (element: Element) => {
+      if (element.closest("[aria-hidden='true']")) return false
+      const rect = element.getBoundingClientRect()
+      const style = getComputedStyle(element)
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
+    }
+    const root = Array.from(document.querySelectorAll<HTMLElement>("[data-testid='review-pane-root']")).find(visible)
+    const scroll = root?.querySelector<HTMLElement>(scrollSelector)
+    if (!root || !scroll) return []
+    const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    scroll.scrollTop = 0
+    scroll.dispatchEvent(new Event("scroll", { bubbles: true }))
+    const expandedPaths = () => Array.from(root.querySelectorAll<HTMLElement>("[data-review-file]"))
+      .filter((item) => !!item.querySelector("[aria-expanded='true']"))
+      .map((item) => item.dataset.reviewFile ?? "")
+    for (let attempt = 0; attempt < 60; attempt++) {
+      await frame()
+      const expanded = expandedPaths()
+      if (expectedExpandedPaths.every((path) => expanded.includes(path))) return expanded
+    }
+    return expandedPaths()
+  }, { expectedExpandedPaths, scrollSelector: HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR })
 }
 
 async function workspaceSwitch(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {

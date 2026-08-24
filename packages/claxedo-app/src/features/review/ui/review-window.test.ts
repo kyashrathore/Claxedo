@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test"
 
 import {
+  REVIEW_ESTIMATED_ROW_HEIGHT,
   REVIEW_MAX_WINDOW_ROWS,
+  REVIEW_WINDOW_MAX_ROW_BUDGET,
+  reviewWindowRowBudget,
   reviewWindowRowCount,
   reviewWindowSegments,
 } from "./review-window"
@@ -27,6 +30,25 @@ function segmentsAt(input: {
 
 function rowIndexes(segments: ReturnType<typeof segmentsAt>) {
   return segments.flatMap((segment) => segment.kind === "row" ? [segment.index] : [])
+}
+
+/** Gap segments whose [offset, offset+height) span overlaps [top, bottom). */
+function gapsIntersecting(
+  segments: ReturnType<typeof segmentsAt>,
+  top: number,
+  bottom: number,
+  rowHeight = 40,
+) {
+  const intersecting: Array<{ offset: number; height: number }> = []
+  let offset = 0
+  for (const segment of segments) {
+    const height = segment.kind === "gap" ? segment.height : rowHeight
+    if (segment.kind === "gap" && offset + height > top && offset < bottom) {
+      intersecting.push({ offset, height })
+    }
+    offset += height
+  }
+  return intersecting
 }
 
 describe("review window segments", () => {
@@ -90,6 +112,51 @@ describe("review window segments", () => {
     expect(rows[0]).toBe(0)
     expect(rows.length).toBe(REVIEW_MAX_WINDOW_ROWS)
     expect(reviewWindowRowCount(segments)).toBe(REVIEW_MAX_WINDOW_ROWS)
+  })
+
+  test("derives the row budget from viewport geometry with bounded floor and ceiling", () => {
+    // Exact rule: ceil((viewport + 2*overscan) / estimate) + 2, clamped.
+    expect(reviewWindowRowBudget({ viewportHeight: 1200, overscan: 80, estimatedRowHeight: 40 })).toBe(36)
+    expect(reviewWindowRowBudget({ viewportHeight: 960, overscan: 80, estimatedRowHeight: 40 })).toBe(30)
+    expect(reviewWindowRowBudget({ viewportHeight: 1600, overscan: 80, estimatedRowHeight: 40 })).toBe(46)
+    // Short viewports keep the historical minimum window.
+    expect(reviewWindowRowBudget({ viewportHeight: 400, overscan: 80, estimatedRowHeight: 40 }))
+      .toBe(REVIEW_MAX_WINDOW_ROWS)
+    // Unmeasured viewports fall back to the degenerate first window.
+    expect(reviewWindowRowBudget({ viewportHeight: 0, overscan: 80, estimatedRowHeight: 40 }))
+      .toBe(REVIEW_MAX_WINDOW_ROWS)
+    // The ceiling bounds tall viewports and tiny estimates.
+    expect(reviewWindowRowBudget({ viewportHeight: 4000, overscan: 80, estimatedRowHeight: 10 }))
+      .toBe(REVIEW_WINDOW_MAX_ROW_BUDGET)
+    // A zero estimate falls back to the default row height instead of dividing by zero.
+    expect(reviewWindowRowBudget({ viewportHeight: 1200, overscan: 80, estimatedRowHeight: 0 }))
+      .toBe(reviewWindowRowBudget({ viewportHeight: 1200, overscan: 80, estimatedRowHeight: REVIEW_ESTIMATED_ROW_HEIGHT }))
+  })
+
+  test("leaves no gap segment inside tall viewports at the top or after a deep scroll", () => {
+    for (const viewportHeight of [960, 1200, 1600]) {
+      for (const scrollTop of [0, 350 * 40]) {
+        const segments = segmentsAt({ scrollTop, viewportHeight })
+        expect(gapsIntersecting(segments, scrollTop, scrollTop + viewportHeight)).toEqual([])
+        // Geometry stays exact: rows plus gaps still describe the whole corpus.
+        const total = segments.reduce(
+          (sum, segment) => sum + (segment.kind === "gap" ? segment.height : 40),
+          0,
+        )
+        expect(total).toBe(500 * 40)
+      }
+    }
+  })
+
+  test("required rows ride on top of the derived budget in tall viewports", () => {
+    const segments = segmentsAt({
+      scrollTop: 0,
+      viewportHeight: 1200,
+      required: (item) => item === "src/file-350.ts",
+    })
+    const rows = rowIndexes(segments)
+    expect(rows).toContain(350)
+    expect(gapsIntersecting(segments, 0, 1200)).toEqual([])
   })
 
   test("materializes everything when the corpus fits the window", () => {
