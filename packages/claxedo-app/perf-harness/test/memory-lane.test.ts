@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { closeMemoryBrowser } from "../src/memory-lane"
+import { EventEmitter } from "node:events"
+import {
+  assertMemoryBrowserProcessExit,
+  closeMemoryBrowser,
+  type MemoryBrowserProcessHandle,
+  type MemoryBrowserServerHandle,
+} from "../src/memory-lane"
 import {
   memoryRecords,
   memoryComparisonPublishable,
@@ -20,75 +26,177 @@ import {
 const MB = 1024 * 1024
 
 function browser(input: {
-  close: () => Promise<void>
   connected: () => boolean
   contexts?: () => unknown[]
 }) {
   return {
-    close: input.close,
     isConnected: input.connected,
     contexts: input.contexts ?? (() => []),
   }
 }
 
+class FakeBrowserProcess extends EventEmitter {
+  readonly pid = 42
+  exitCode: number | null = null
+  signalCode: NodeJS.Signals | null = null
+  rawKillReturns = true
+  rawKillExits = true
+  killCalls: Array<NodeJS.Signals | number> = []
+
+  exit(code: number | null, signal: NodeJS.Signals | null) {
+    if (this.exitCode !== null || this.signalCode !== null) return
+    this.exitCode = code
+    this.signalCode = signal
+    this.emit("exit", code, signal)
+  }
+
+  kill(signal: NodeJS.Signals | number = "SIGTERM") {
+    this.killCalls.push(signal)
+    if (this.rawKillReturns && this.rawKillExits) {
+      this.exit(null, typeof signal === "string" ? signal : "SIGKILL")
+    }
+    return this.rawKillReturns
+  }
+
+  handle() {
+    return this as unknown as MemoryBrowserProcessHandle
+  }
+}
+
+function server(
+  process: FakeBrowserProcess,
+  input: {
+    close: () => Promise<void>
+    kill?: () => Promise<void>
+  },
+): MemoryBrowserServerHandle {
+  return {
+    close: input.close,
+    kill: input.kill ?? (async () => process.exit(null, "SIGKILL")),
+    process: () => process.handle(),
+  }
+}
+
 describe("browser teardown", () => {
-  test("records a successful and verified close", async () => {
+  test("records a graceful server close and verifies the owned process exit", async () => {
     let connected = true
-    const result = await closeMemoryBrowser(browser({
-      close: async () => { connected = false },
-      connected: () => connected,
-    }), 50)
+    const process = new FakeBrowserProcess()
+    const contexts: unknown[] = [{}]
+    const result = await closeMemoryBrowser({
+      browser: browser({ connected: () => connected, contexts: () => contexts }),
+      server: server(process, {
+        close: async () => {
+          connected = false
+          contexts.length = 0
+          process.exit(0, null)
+        },
+      }),
+    }, 50)
 
     expect(result).toMatchObject({
-      status: "closed",
-      before: { connected: true, contexts: 0 },
-      after: { connected: false, contexts: 0 },
-      verifiedClosed: true,
+      status: "normal",
+      before: {
+        browser: { connected: true, contexts: 1 },
+        process: { pid: 42, exited: false },
+      },
+      after: {
+        browser: { connected: false, contexts: 0 },
+        process: { pid: 42, exitCode: 0, signalCode: null, exited: true },
+      },
+      normalClose: { status: "completed" },
+      forcedServerKill: { status: "not-needed" },
+      forcedProcessKill: { status: "not-needed" },
+      verifiedProcessExit: true,
     })
   })
 
-  test("records rejection while accepting independently verified closure", async () => {
-    const result = await closeMemoryBrowser(browser({
-      close: async () => { throw new Error("transport closed first") },
-      connected: () => false,
-    }), 50)
+  test("records a graceful-close rejection while accepting independently verified process exit", async () => {
+    const process = new FakeBrowserProcess()
+    const result = await closeMemoryBrowser({
+      browser: browser({ connected: () => false }),
+      server: server(process, {
+        close: async () => {
+          process.exit(0, null)
+          throw new Error("transport closed first")
+        },
+      }),
+    }, 50)
 
     expect(result).toMatchObject({
-      status: "rejected",
-      error: "transport closed first",
-      after: { connected: false, contexts: 0 },
-      verifiedClosed: true,
+      status: "normal",
+      normalClose: { status: "rejected", error: "transport closed first" },
+      after: { process: { exited: true } },
+      verifiedProcessExit: true,
     })
   })
 
-  test("bounds a hung close and rejects unverified process or context cleanup", async () => {
+  test("bounds a hung graceful close and verifies server kill even when browser state is stale", async () => {
     const never = new Promise<void>(() => undefined)
-    const result = await closeMemoryBrowser(browser({
-      close: () => never,
-      connected: () => true,
-      contexts: () => [{}],
-    }), 1)
+    const process = new FakeBrowserProcess()
+    const result = await closeMemoryBrowser({
+      browser: browser({ connected: () => true, contexts: () => [{}] }),
+      server: server(process, { close: () => never }),
+    }, 1)
 
     expect(result).toMatchObject({
-      status: "timed-out",
+      status: "forced",
       timeoutMs: 1,
-      after: { connected: true, contexts: 1 },
-      verifiedClosed: false,
+      normalClose: { status: "timed-out" },
+      forcedServerKill: { status: "completed" },
+      forcedProcessKill: { status: "not-needed" },
+      after: {
+        browser: { connected: true, contexts: 1 },
+        process: { signalCode: "SIGKILL", exited: true },
+      },
+      verifiedProcessExit: true,
     })
   })
 
-  test("bounds a hung close but records already-disconnected closure", async () => {
+  test("falls back to direct SIGKILL when both Playwright server operations hang", async () => {
     const never = new Promise<void>(() => undefined)
-    const result = await closeMemoryBrowser(browser({
-      close: () => never,
-      connected: () => false,
-    }), 1)
+    const process = new FakeBrowserProcess()
+    const result = await closeMemoryBrowser({
+      server: server(process, { close: () => never, kill: () => never }),
+    }, 1)
 
     expect(result).toMatchObject({
-      status: "timed-out",
-      after: { connected: false, contexts: 0 },
-      verifiedClosed: true,
+      status: "forced",
+      normalClose: { status: "timed-out" },
+      forcedServerKill: { status: "timed-out" },
+      forcedProcessKill: { status: "completed" },
+      before: { browser: { connected: undefined, contexts: undefined } },
+      after: { process: { signalCode: "SIGKILL", exited: true } },
+      verifiedProcessExit: true,
     })
+    expect(process.killCalls).toEqual(["SIGKILL"])
+  })
+
+  test("refuses fresh-browser isolation and aborts before report publication when process exit is unverified", async () => {
+    const never = new Promise<void>(() => undefined)
+    const process = new FakeBrowserProcess()
+    process.rawKillReturns = false
+    process.rawKillExits = false
+    const result = await closeMemoryBrowser({
+      browser: browser({ connected: () => false }),
+      server: server(process, { close: () => never, kill: () => never }),
+    }, 1)
+
+    expect(result).toMatchObject({
+      status: "unverified",
+      normalClose: { status: "timed-out" },
+      forcedServerKill: { status: "timed-out" },
+      forcedProcessKill: {
+        status: "rejected",
+        error: "ChildProcess.kill(SIGKILL) returned false",
+      },
+      after: { process: { exitCode: null, signalCode: null, exited: false } },
+      verifiedProcessExit: false,
+    })
+    expect(process.killCalls).toEqual(["SIGKILL"])
+    expect(() => assertMemoryBrowserProcessExit(result, 3)).toThrow(
+      "Memory repetition 3 browser process exit could not be verified",
+    )
+    expect(() => assertMemoryBrowserProcessExit(result, 3)).toThrow('"verifiedProcessExit":false')
   })
 })
 

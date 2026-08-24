@@ -1,4 +1,5 @@
-import { chromium } from "playwright-core"
+import { chromium, type Browser } from "playwright-core"
+import type { ChildProcess } from "node:child_process"
 import { startApp, stopApp } from "./browser-runner"
 import { environmentProfile } from "./environment-profile"
 import {
@@ -29,19 +30,47 @@ type BrowserClosureState = {
   contexts: number | undefined
 }
 
-type MemoryBrowserHandle = {
-  close: () => Promise<void>
+export type MemoryBrowserHandle = {
   contexts: () => readonly unknown[]
   isConnected: () => boolean
 }
 
+export type MemoryBrowserProcessHandle = Pick<ChildProcess, "pid" | "exitCode" | "signalCode" | "kill" | "once" | "off">
+
+export type MemoryBrowserServerHandle = {
+  close: () => Promise<void>
+  kill: () => Promise<void>
+  process: () => MemoryBrowserProcessHandle
+}
+
+type BrowserProcessState = {
+  pid: number | undefined
+  exitCode: number | null
+  signalCode: NodeJS.Signals | null
+  exited: boolean
+}
+
+type MemoryBrowserOwnershipState = {
+  browser: BrowserClosureState
+  process: BrowserProcessState
+}
+
+type TeardownOperation =
+  | { status: "completed" }
+  | { status: "rejected"; error: string }
+  | { status: "timed-out" }
+  | { status: "not-needed" }
+
 export type MemoryBrowserTeardown = {
-  status: "closed" | "rejected" | "timed-out"
+  /** Whether graceful ownership cleanup worked or a kill path was required. */
+  status: "normal" | "forced" | "unverified"
   timeoutMs: number
-  before: BrowserClosureState
-  after: BrowserClosureState
-  verifiedClosed: boolean
-  error?: string
+  before: MemoryBrowserOwnershipState
+  after: MemoryBrowserOwnershipState
+  normalClose: TeardownOperation
+  forcedServerKill: TeardownOperation
+  forcedProcessKill: TeardownOperation
+  verifiedProcessExit: boolean
 }
 
 function browserClosureState(browser: Pick<MemoryBrowserHandle, "contexts" | "isConnected">): BrowserClosureState {
@@ -60,43 +89,131 @@ function browserClosureState(browser: Pick<MemoryBrowserHandle, "contexts" | "is
   return { connected, contexts }
 }
 
-/**
- * Bound Playwright teardown without weakening fresh-browser isolation.
- *
- * Chromium can exit while Playwright's `browser.close()` promise never
- * settles. The next repetition must not wait forever, but a failed close is
- * only safe when the public connection and context state both prove that the
- * browser is already gone.
- */
-export async function closeMemoryBrowser(
-  browser: MemoryBrowserHandle,
-  timeoutMs = MEMORY_BROWSER_CLOSE_TIMEOUT_MS,
-): Promise<MemoryBrowserTeardown> {
-  const before = browserClosureState(browser)
-  const close = Promise.resolve()
-    .then(() => browser.close())
+function processExited(process: MemoryBrowserProcessHandle) {
+  return process.exitCode !== null || process.signalCode !== null
+}
+
+function browserProcessState(process: MemoryBrowserProcessHandle): BrowserProcessState {
+  return {
+    pid: process.pid,
+    exitCode: process.exitCode,
+    signalCode: process.signalCode,
+    exited: processExited(process),
+  }
+}
+
+function browserOwnershipState(
+  browser: MemoryBrowserHandle | undefined,
+  process: MemoryBrowserProcessHandle,
+): MemoryBrowserOwnershipState {
+  return {
+    browser: browser ? browserClosureState(browser) : { connected: undefined, contexts: undefined },
+    process: browserProcessState(process),
+  }
+}
+
+async function boundedTeardownOperation(
+  operation: () => Promise<void>,
+  timeoutMs: number,
+): Promise<Exclude<TeardownOperation, { status: "not-needed" }>> {
+  const result = Promise.resolve()
+    .then(operation)
     .then(
-      () => ({ status: "closed" as const }),
+      () => ({ status: "completed" as const }),
       (error) => ({
         status: "rejected" as const,
         error: error instanceof Error ? error.message : String(error),
       }),
     )
-  const settled = await new Promise<Awaited<typeof close> | { status: "timed-out" }>((resolve) => {
+  return await new Promise<Awaited<typeof result> | { status: "timed-out" }>((resolve) => {
     const timer = setTimeout(() => resolve({ status: "timed-out" }), timeoutMs)
-    void close.then((result) => {
+    void result.then((value) => {
       clearTimeout(timer)
-      resolve(result)
+      resolve(value)
     })
   })
-  const after = browserClosureState(browser)
+}
+
+async function waitForProcessExit(process: MemoryBrowserProcessHandle, timeoutMs: number) {
+  if (processExited(process)) return true
+  return await new Promise<boolean>((resolve) => {
+    const onExit = () => finish(true)
+    const timer = setTimeout(() => finish(processExited(process)), timeoutMs)
+    const finish = (exited: boolean) => {
+      clearTimeout(timer)
+      process.off("exit", onExit)
+      resolve(exited)
+    }
+    process.once("exit", onExit)
+    // Close the race between the first state check and event registration.
+    if (processExited(process)) finish(true)
+  })
+}
+
+/**
+ * Bound Playwright teardown without weakening fresh-browser isolation.
+ *
+ * A connected `Browser` owns only a Playwright transport. `BrowserServer` owns
+ * the Chromium child process, so fresh-browser isolation is proven by that
+ * exact child exiting rather than inferred from transport/context state.
+ */
+export async function closeMemoryBrowser(
+  input: { browser?: MemoryBrowserHandle; server: MemoryBrowserServerHandle },
+  timeoutMs = MEMORY_BROWSER_CLOSE_TIMEOUT_MS,
+): Promise<MemoryBrowserTeardown> {
+  const process = input.server.process()
+  const before = browserOwnershipState(input.browser, process)
+  const normalClose = await boundedTeardownOperation(() => input.server.close(), timeoutMs)
+  if (normalClose.status === "completed" && !processExited(process)) {
+    await waitForProcessExit(process, timeoutMs)
+  }
+
+  let forcedServerKill: TeardownOperation = { status: "not-needed" }
+  if (!processExited(process)) {
+    forcedServerKill = await boundedTeardownOperation(() => input.server.kill(), timeoutMs)
+    if (forcedServerKill.status === "completed" && !processExited(process)) {
+      await waitForProcessExit(process, timeoutMs)
+    }
+  }
+
+  let forcedProcessKill: TeardownOperation = { status: "not-needed" }
+  if (!processExited(process)) {
+    try {
+      const signaled = process.kill("SIGKILL")
+      forcedProcessKill = signaled
+        ? { status: "completed" }
+        : { status: "rejected", error: "ChildProcess.kill(SIGKILL) returned false" }
+    } catch (error) {
+      forcedProcessKill = {
+        status: "rejected",
+        error: error instanceof Error ? error.message : String(error),
+      }
+    }
+    if (!await waitForProcessExit(process, timeoutMs) && forcedProcessKill.status === "completed") {
+      forcedProcessKill = { status: "timed-out" }
+    }
+  }
+
+  const after = browserOwnershipState(input.browser, process)
+  const forced = forcedServerKill.status !== "not-needed" || forcedProcessKill.status !== "not-needed"
+  const verifiedProcessExit = after.process.exited
   return {
-    ...settled,
+    status: verifiedProcessExit ? (forced ? "forced" : "normal") : "unverified",
     timeoutMs,
     before,
     after,
-    verifiedClosed: after.connected === false && after.contexts === 0,
+    normalClose,
+    forcedServerKill,
+    forcedProcessKill,
+    verifiedProcessExit,
   }
+}
+
+export function assertMemoryBrowserProcessExit(teardown: MemoryBrowserTeardown, iteration: number) {
+  if (teardown.verifiedProcessExit) return
+  throw new Error(
+    `Memory repetition ${iteration} browser process exit could not be verified: ${JSON.stringify(teardown)}`,
+  )
 }
 
 /**
@@ -170,13 +287,15 @@ export async function runMemoryLane(options: {
     let startProvenance: Awaited<ReturnType<typeof captureMemoryProvenance>> | undefined
     let browserVersion = "unknown"
     for (let index = 0; index < iterations; index++) {
-      const browser = await chromium.launch({
+      const server = await chromium.launchServer({
         headless: options.headless,
         timeout: 30_000,
         args: ["--js-flags=--expose-gc"],
       })
-      browserVersion = browser.version()
+      let browser: Browser | undefined
       try {
+        browser = await chromium.connect(server.wsEndpoint(), { timeout: 30_000 })
+        browserVersion = browser.version()
         startProvenance ??= await captureMemoryProvenance({ browserVersion, appCommand: app.command })
         sweeps.push(await runMemorySweep({
           browser,
@@ -193,18 +312,20 @@ export async function runMemoryLane(options: {
           snapshotPath: index === iterations - 1 ? snapshotPath : undefined,
         }))
       } finally {
-        const teardown = await closeMemoryBrowser(browser)
+        const teardown = await closeMemoryBrowser({ browser, server })
         browserTeardowns.push({ iteration: index + 1, ...teardown })
-        if (teardown.status !== "closed" || !teardown.verifiedClosed) {
+        if (teardown.status !== "normal") {
           console.warn(
             `[perf] browser teardown ${teardown.status} after repetition ${index + 1}; ` +
-            `verifiedClosed=${teardown.verifiedClosed}` +
-            (teardown.error ? `; ${teardown.error}` : ""),
+            `verifiedProcessExit=${teardown.verifiedProcessExit}; ` +
+            `normalClose=${teardown.normalClose.status}; ` +
+            `serverKill=${teardown.forcedServerKill.status}; ` +
+            `processKill=${teardown.forcedProcessKill.status}`,
           )
         }
-        if (!teardown.verifiedClosed) {
-          throw new Error(`Memory repetition ${index + 1} browser cleanup could not be verified`)
-        }
+        // This assertion precedes summary/report publication: an unverified
+        // process exit aborts rather than emitting a partial measurement.
+        assertMemoryBrowserProcessExit(teardown, index + 1)
       }
     }
     const summary = summarizeMemorySweeps(sweeps)
@@ -224,7 +345,7 @@ export async function runMemoryLane(options: {
       sourceStable: provenance.sourceStable,
       snapshotAvailable,
     })
-    const browserCleanupVerified = browserTeardowns.every((item) => item.verifiedClosed)
+    const browserCleanupVerified = browserTeardowns.every((item) => item.verifiedProcessExit)
     const validity = browserCleanupVerified
       ? measuredValidity
       : {
@@ -241,7 +362,7 @@ export async function runMemoryLane(options: {
     // last thing printed, so it is exactly what gets lost to a truncated
     // terminal — and re-running to see it costs another full sweep.
     await writeJson(path.join(reportsRoot, "memory-sweep.json"), {
-      schemaVersion: 2,
+      schemaVersion: 3,
       flow: summary.flow,
       mode: summary.mode,
       stack: options.stack,
@@ -360,8 +481,8 @@ export async function runMemoryLane(options: {
       !summary.allSettled ? "> Final forced-GC samples did not stabilize." : "",
       !summary.cacheCeilingSatisfied ? `> Product cache ceiling failed: final cachedSessions exceeded ${PRODUCT_SESSION_CACHE_LIMIT}.` : "",
       !browserCleanupVerified ? "> At least one browser teardown could not be verified; this run is not comparable." : "",
-      browserTeardowns.some((item) => item.status !== "closed") && browserCleanupVerified
-        ? "> Playwright teardown reported an anomaly, but the browser connection and all contexts were verified closed."
+      browserTeardowns.some((item) => item.status === "forced") && browserCleanupVerified
+        ? "> At least one Playwright graceful close needed a bounded kill fallback; the owned Chromium child process exit was verified."
         : "",
       snapshotPath && snapshot?.status !== "captured" ? "> Requested V8 heap snapshot could not be analyzed." : "",
       "",
