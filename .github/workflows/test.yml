@@ -69,6 +69,10 @@ jobs:
         working-directory: packages/claxedo-app
         run: bun run test:diagnostics-release
 
+      - name: Install performance harness dependencies
+        working-directory: packages/claxedo-app/perf-harness
+        run: bun install --frozen-lockfile
+
       - name: Run diagnostics performance gates
         working-directory: packages/claxedo-app/perf-harness
         run: bun test
