@@ -11,9 +11,12 @@ import {
 } from "@/platform/runtime/agent/workspace-control-routes"
 import { Button } from "@opencode-ai/ui/button"
 import { showToast } from "@opencode-ai/ui/toast"
+import {
+  WORKSPACE_PANEL_CLOSE_GRACE_MS,
+  WORKSPACE_PANEL_MOTION_MS,
+} from "./workspace-panel-lifecycle"
 
-const SHELL_MOTION_MS = 120
-const SHELL_MOTION_TRANSITION = `transform ${SHELL_MOTION_MS}ms cubic-bezier(0.2, 0, 0, 1)`
+const SHELL_MOTION_TRANSITION = `transform ${WORKSPACE_PANEL_MOTION_MS}ms cubic-bezier(0.2, 0, 0, 1)`
 
 export type WorkspacePanelProps = {
   state: WorkspacePanelState
@@ -109,7 +112,7 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
     exposeTimer = setTimeout(() => {
       setPanelExposed(false)
       exposeTimer = undefined
-    }, SHELL_MOTION_MS + 20)
+    }, WORKSPACE_PANEL_CLOSE_GRACE_MS)
   })
   onCleanup(() => {
     if (exposeTimer) clearTimeout(exposeTimer)

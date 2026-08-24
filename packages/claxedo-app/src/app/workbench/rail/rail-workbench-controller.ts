@@ -107,6 +107,7 @@ export function useRailWorkbenchController(input: {
     workspacePanelBridgeChromeVisible: panelVisual.workspacePanelBridgeChromeVisible,
     workspacePanelForFocusedTarget: panelVisual.workspacePanelForFocusedTarget,
     workspacePanelMode: panelVisual.workspacePanelMode,
+    workspacePanelMounted: panelVisual.workspacePanelMounted,
     workspacePanelNavigator: panelVisual.workspacePanelNavigator,
     workspacePanelVisualOpen: panelVisual.workspacePanelVisualOpen,
   }

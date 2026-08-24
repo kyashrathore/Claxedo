@@ -49,6 +49,7 @@ export type RailWorkbenchShellProps = {
   workspacePanelForFocusedTarget: () => boolean
   workspacePanelFullWidth: Accessor<boolean>
   workspacePanelMode: () => string | undefined
+  workspacePanelMounted: Accessor<boolean>
   workspacePanelNavigator: () => WorkspacePanelNavigator | null | undefined
   workspacePanelVisualOpen: Accessor<boolean>
   workspacePanelWidth: Accessor<number>
@@ -114,7 +115,7 @@ export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
           onNewProject={props.onNewProject}
         />
       </div>
-      <Show when={props.mountWorkspacePanel !== false}>
+      <Show when={props.mountWorkspacePanel !== false && props.workspacePanelMounted()}>
         <RailWorkspacePanelShell
           state={props.state}
           focusedPanelTarget={props.focusedPanelTarget}

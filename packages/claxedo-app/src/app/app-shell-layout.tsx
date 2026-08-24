@@ -507,6 +507,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           workspacePanelForFocusedTarget={workbenchController.workspacePanelForFocusedTarget}
           workspacePanelFullWidth={workspacePanelFullWidth}
           workspacePanelMode={workbenchController.workspacePanelMode}
+          workspacePanelMounted={workbenchController.workspacePanelMounted}
           workspacePanelNavigator={workbenchController.workspacePanelNavigator}
           workspacePanelVisualOpen={workspacePanelOpen}
           workspacePanelWidth={workspacePanelWidth}

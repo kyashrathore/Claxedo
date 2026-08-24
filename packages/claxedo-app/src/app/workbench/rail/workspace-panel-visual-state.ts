@@ -225,6 +225,7 @@ export function useWorkspacePanelVisualState(input: {
     workspacePanelForFocusedTarget,
     workspacePanelMode,
     workspacePanelNavigator,
+    workspacePanelMounted: motion.shellMounted,
     workspacePanelOpen,
     workspacePanelVisualOpen: motion.visualOpen,
   }

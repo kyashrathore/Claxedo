@@ -3225,6 +3225,9 @@ describe("workspace runtime route audit", () => {
     expect(keyboardController).not.toMatch(/state\.rail\.toggle/)
     expect(workbenchShell).toMatch(/<RailWorkbenchCanvas/)
     expect(workbenchShell).toMatch(/<RailWorkspacePanelShell/)
+    expect(workbenchShell).toMatch(
+      /<Show when=\{props\.mountWorkspacePanel !== false && props\.workspacePanelMounted\(\)\}>/,
+    )
     expect(workbenchShell).toMatch(/<div class="hidden">\{props\.children\}<\/div>/)
     expect(header).toMatch(/data-testid="workspace-panel-floating-chrome"[\s\S]{0,220}absolute inset-y-0 right-1/)
     expect(floatingChromeMarkup).toContain("<WorkspacePanelChrome")
