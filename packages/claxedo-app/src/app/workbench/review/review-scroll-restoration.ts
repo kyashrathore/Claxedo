@@ -23,9 +23,20 @@ export function createReviewScrollRestoration(input: {
   canRecord: () => boolean
   initial?: ReviewScrollPosition
   onChange?: (position: ReviewScrollPosition) => void
+  /**
+   * Whether `path` exists in the canonical review corpus. The windowed file
+   * list only mounts rows near the scroll position, so an absent row proves
+   * nothing — only this predicate can prove the anchor file was deleted or
+   * renamed while Review was closed. Return `false` for a known-absent path:
+   * restoration then settles on the clamped pixel top instead of waiting for
+   * a row that can never mount. Return `true` — or `undefined` while the
+   * corpus has not resolved yet — to keep waiting. Omitting the predicate
+   * preserves the wait-for-anchor behavior.
+   */
+  anchorExists?: (path: string) => boolean | undefined
 }) {
   let frame: number | undefined
-  let captureTimer: ReturnType<typeof setTimeout> | undefined
+  let captureFrame: number | undefined
   let observer: MutationObserver | undefined
   let element: HTMLDivElement | undefined
   let restoring = false
@@ -64,7 +75,15 @@ export function createReviewScrollRestoration(input: {
     position = next
     input.onChange?.(next)
   }
+  const cancelPendingCapture = () => {
+    if (captureFrame === undefined) return
+    if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(captureFrame)
+    captureFrame = undefined
+  }
   const capture = () => {
+    // Every capture supersedes a pending next-frame capture from `remember`:
+    // cancel it so the anchor is recorded exactly once per settled position.
+    cancelPendingCapture()
     // A hidden Review body can have its native scrollTop clamped to zero and
     // every child rectangle collapsed. That is not a new user position. Never
     // let a post-activation effect replace the last visible semantic snapshot
@@ -96,6 +115,18 @@ export function createReviewScrollRestoration(input: {
     }
     const anchor = anchorFor(position.anchorPath)
     if (position.anchorPath && !anchor) {
+      if (input.anchorExists?.(position.anchorPath) === false) {
+        // The anchor file is gone from the corpus itself (deleted or renamed
+        // while Review was closed), so no amount of waiting materializes its
+        // row. Settle on the retained pixel top, clamped to the current
+        // extent, and end the restoring state so scroll ownership returns to
+        // the user immediately.
+        stopObserver()
+        element.scrollTop = Math.max(0, Math.min(position.top, element.scrollHeight - element.clientHeight))
+        restoring = false
+        action = "anchor-missing-settled"
+        return
+      }
       // The anchor row may not exist yet: the windowed file list materializes
       // rows around the scroll position, so land on the recorded pixel top
       // first -- that scroll is what makes the anchor's neighborhood (and the
@@ -193,16 +224,29 @@ export function createReviewScrollRestoration(input: {
     if (!input.canRecord() || restoring) return
     const target = event.currentTarget
     publish({ ...position, top: target.scrollTop })
-    if (captureTimer) clearTimeout(captureTimer)
-    captureTimer = setTimeout(() => {
-      captureTimer = undefined
+    // Capture the semantic anchor on the next frame, once layout has settled
+    // for this scroll position. The window is one frame (not a timer) and the
+    // capture is cancellable: `dispose` flushes it synchronously, so a tab
+    // switch that unmounts the surface immediately after a scroll still
+    // records the anchor instead of leaving a pixel-only position behind.
+    cancelPendingCapture()
+    if (typeof requestAnimationFrame !== "function") {
+      capture()
+      return
+    }
+    captureFrame = requestAnimationFrame(() => {
+      captureFrame = undefined
       if (element !== target || !input.canRecord()) return
       capture()
-    }, 80)
+    })
   }
   const dispose = () => {
     if (frame !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(frame)
-    if (captureTimer) clearTimeout(captureTimer)
+    // An unmount inside the one-frame capture window must not lose the
+    // anchor: flush the pending capture synchronously while the element still
+    // holds its final geometry. `capture` cancels the frame itself, so
+    // nothing runs after this cleanup.
+    if (captureFrame !== undefined) capture()
     stopObserver()
     resizeObserver?.disconnect()
     resizeObserver = undefined

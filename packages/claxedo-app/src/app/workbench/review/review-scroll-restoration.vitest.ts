@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 
-import { createReviewScrollRestoration, type ReviewScrollPosition } from "./review-scroll-restoration"
+import {
+  createReviewScrollRestoration,
+  REVIEW_SCROLL_DIAGNOSTIC_PROPERTY,
+  type ReviewScrollDiagnostic,
+  type ReviewScrollPosition,
+} from "./review-scroll-restoration"
 
 function rect(top: number, height = 24): DOMRect {
   return { x: 0, y: top, top, left: 0, right: 300, bottom: top + height, width: 300, height, toJSON: () => ({}) }
@@ -80,6 +85,79 @@ describe("review scroll restoration", () => {
     // Once the anchor exists, the precise anchor-offset correction wins over
     // the approximate pixel top.
     expect(viewport.scrollTop).toBe(1_000)
+    restoration.dispose()
+  })
+
+  test("flushes a pending anchor capture synchronously on dispose", async () => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => setTimeout(() => callback(0), 0))
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => clearTimeout(id))
+    const { viewport } = fixture()
+    const changes: ReviewScrollPosition[] = []
+    const restoration = createReviewScrollRestoration({
+      visible: () => true,
+      canRecord: () => true,
+      onChange: (position) => changes.push(position),
+    })
+
+    restoration.bind(viewport)
+    viewport.addEventListener("scroll", restoration.remember)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    viewport.scrollTop = 1_000
+    viewport.dispatchEvent(new Event("scroll"))
+    // The scroll handler published the pixel top and scheduled the anchor
+    // capture for the next frame. An immediate tab switch disposes before
+    // that frame runs; the dispose flush must still record the anchor.
+    expect(changes).toEqual([{ top: 1_000 }])
+    restoration.dispose()
+    expect(changes.at(-1)).toEqual({
+      top: 1_000,
+      anchorPath: "src/generated/file-350.ts",
+      anchorOffset: 0,
+    })
+
+    // The flushed frame is cancelled: nothing fires after cleanup and the
+    // anchor is captured exactly once.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(changes).toHaveLength(2)
+  })
+
+  test("settles on the clamped pixel top when the anchor left the corpus", async () => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => setTimeout(() => callback(0), 0))
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => clearTimeout(id))
+    const { viewport } = fixture()
+    Object.defineProperty(viewport, "scrollHeight", { value: 1_500 })
+    Object.defineProperty(viewport, "clientHeight", { value: 500 })
+    const changes: ReviewScrollPosition[] = []
+    const restoration = createReviewScrollRestoration({
+      visible: () => true,
+      canRecord: () => true,
+      initial: { top: 2_000, anchorPath: "src/deleted.ts", anchorOffset: 0 },
+      anchorExists: (path) => path !== "src/deleted.ts",
+      onChange: (position) => changes.push(position),
+    })
+
+    restoration.bind(viewport)
+    viewport.addEventListener("scroll", restoration.remember)
+    // The retained anchor was deleted while Review was closed: instead of
+    // parking and waiting forever for a row that can never mount, restoration
+    // settles on the retained pixel top clamped to the current extent.
+    expect(viewport.scrollTop).toBe(1_000)
+    const diagnostic = (
+      viewport as HTMLDivElement & { [REVIEW_SCROLL_DIAGNOSTIC_PROPERTY]: () => ReviewScrollDiagnostic }
+    )[REVIEW_SCROLL_DIAGNOSTIC_PROPERTY]
+    expect(diagnostic().restoring).toBe(false)
+    expect(diagnostic().action).toBe("anchor-missing-settled")
+
+    // Scroll ownership is back with the user: the next scroll records
+    // normally and the capture replaces the dead anchor with a live one.
+    viewport.scrollTop = 300
+    viewport.dispatchEvent(new Event("scroll"))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(changes.at(-1)).toEqual({
+      top: 300,
+      anchorPath: "src/generated/file-350.ts",
+      anchorOffset: 700,
+    })
     restoration.dispose()
   })
 
