@@ -26,6 +26,7 @@ import { compareToBaseline, currentCommit, readBaselineFor, writeBaselineFor } f
 import {
   HEAVY_WORKSPACE_CLOSE_DWELL_MS,
   HEAVY_WORKSPACE_REOPEN_FILE_PATHS,
+  HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR,
   heavyWorkspaceReviewRestorationFailures,
   heavyWorkspaceRestorationFailures,
   type HeavyWorkspaceReviewIdentity,
@@ -1112,14 +1113,48 @@ async function openWorkspaceFileTab(
   await search.fill(filePath)
   const row = navigator.locator(`[data-file-tree-path="${filePath}"]`).first()
   if (!await row.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    const diagnostic = await navigator.evaluate((root) => ({
-      query: root.querySelector<HTMLInputElement>("input[placeholder='Search files...']")?.value,
-      rows: Array.from(root.querySelectorAll<HTMLElement>("[data-file-tree-path]"))
-        .slice(0, 8)
-        .map((item) => item.dataset.fileTreePath),
-      loading: !!root.querySelector("[data-file-tree-loading], [class*='animate-spin']"),
-      text: root.textContent?.replace(/\s+/g, " ").trim().slice(0, 240),
-    })).catch(() => undefined)
+    const diagnostic = await navigator.evaluate((root, filePath) => {
+      const describe = (element: Element | null) => {
+        if (!element) return undefined
+        const rect = element.getBoundingClientRect()
+        const style = getComputedStyle(element)
+        const data = (element as HTMLElement | SVGElement).dataset
+        return {
+          tag: element.tagName.toLowerCase(),
+          testId: data.testid,
+          slot: data.slot,
+          state: data.state,
+          ariaHidden: element.getAttribute("aria-hidden"),
+          hidden: element instanceof HTMLElement && element.hidden,
+          rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+          display: style.display,
+          visibility: style.visibility,
+          contentVisibility: style.contentVisibility,
+          opacity: style.opacity,
+          overflow: style.overflow,
+        }
+      }
+      const exact = root.querySelector<HTMLElement>(`[data-file-tree-path="${CSS.escape(filePath)}"]`)
+      const ancestors: ReturnType<typeof describe>[] = []
+      for (let current = exact?.parentElement; current && current !== root; current = current.parentElement) {
+        const detail = describe(current)
+        if (detail?.hidden || detail?.ariaHidden === "true" || detail?.display === "none" || detail?.rect.width === 0 || detail?.rect.height === 0) {
+          ancestors.push(detail)
+        }
+      }
+      return {
+        query: root.querySelector<HTMLInputElement>("input[placeholder='Search files...']")?.value,
+        navigatorCount: document.querySelectorAll("[data-testid='workspace-files-navigator'][data-mode='files']").length,
+        navigator: describe(root),
+        row: describe(exact),
+        hiddenOrZeroAncestors: ancestors.slice(0, 8),
+        rows: Array.from(root.querySelectorAll<HTMLElement>("[data-file-tree-path]"))
+          .slice(0, 8)
+          .map((item) => item.dataset.fileTreePath),
+        loading: !!root.querySelector("[data-file-tree-loading], [class*='animate-spin']"),
+        text: root.textContent?.replace(/\s+/g, " ").trim().slice(0, 240),
+      }
+    }, filePath).catch(() => undefined)
     recordVisualFailure(fixture, `Files navigator did not return ${filePath}; state=${JSON.stringify(diagnostic)}`)
     return
   }
@@ -1286,7 +1321,7 @@ async function resumeHeavyWorkspaceReview(
   control: { mark: string; x: number; y: number },
 ): Promise<HeavyWorkspaceReviewResumeObservation> {
   await page.mouse.click(control.x, control.y)
-  return await page.evaluate(async ({ expected, mark }) => {
+  return await page.evaluate(async ({ expected, mark, scrollSelector }) => {
     const started = performance.getEntriesByName(mark, "mark").at(-1)?.startTime
     if (started === undefined) throw new Error("Trusted Review workspace-tab click did not emit pointerdown")
     const visible = (element: Element) => {
@@ -1302,7 +1337,7 @@ async function resumeHeavyWorkspaceReview(
       const diff = root?.querySelector<HTMLElement>("[data-review-diff-style]")
       const files = Array.from(root?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
       const corpus = root?.querySelector<HTMLElement>("[data-review-rendered-files][data-review-total-files]")
-      const scroll = root?.querySelector<HTMLElement>("[data-slot='session-review-scroll']")
+      const scroll = root?.querySelector<HTMLElement>(scrollSelector)
       const scrollTop = scroll?.getBoundingClientRect().top
       const scrollAnchor = scrollTop === undefined
         ? undefined
@@ -1375,7 +1410,7 @@ async function resumeHeavyWorkspaceReview(
       stableReadyFrames,
       identity: finalIdentity,
     }
-  }, { expected, mark: control.mark })
+  }, { expected, mark: control.mark, scrollSelector: HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR })
 }
 
 async function prepareHeavyWorkspaceReopen(page: Page) {
@@ -1414,7 +1449,7 @@ async function readHeavyWorkspaceSurfaceIdentity(page: Page): Promise<HeavyWorks
 }
 
 async function readHeavyWorkspaceReviewIdentity(page: Page): Promise<HeavyWorkspaceReviewIdentity> {
-  return await page.evaluate(() => {
+  return await page.evaluate((scrollSelector) => {
     const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
     const visible = (element: Element) => {
       if (element.closest("[aria-hidden='true']")) return false
@@ -1427,7 +1462,7 @@ async function readHeavyWorkspaceReviewIdentity(page: Page): Promise<HeavyWorksp
     const diff = root?.querySelector<HTMLElement>("[data-review-diff-style]")
     const files = Array.from(root?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
     const corpus = root?.querySelector<HTMLElement>("[data-review-rendered-files][data-review-total-files]")
-    const scroll = root?.querySelector<HTMLElement>("[data-slot='session-review-scroll']")
+    const scroll = root?.querySelector<HTMLElement>(scrollSelector)
     const scrollTop = scroll?.getBoundingClientRect().top
     const scrollAnchor = scrollTop === undefined
       ? undefined
@@ -1450,7 +1485,7 @@ async function readHeavyWorkspaceReviewIdentity(page: Page): Promise<HeavyWorksp
       scrollTop: scroll?.scrollTop ?? 0,
       scrollAnchorPath: scrollAnchor?.dataset.reviewFile,
     }
-  })
+  }, HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR)
 }
 
 async function workspaceSwitch(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
@@ -3586,7 +3621,7 @@ async function scrollHeavyReviewWorkingSet(page: Page, fixture: ReturnType<typeo
     recordVisualFailure(fixture, "heavy Review fixture had no deep-scroll target")
     return
   }
-  const scrolled = await page.evaluate((targetPath) => {
+  const scrolled = await page.evaluate(({ targetPath, scrollSelector }) => {
     const visible = (element: Element) => {
       if (element.closest("[aria-hidden='true']")) return false
       const rect = element.getBoundingClientRect()
@@ -3594,7 +3629,7 @@ async function scrollHeavyReviewWorkingSet(page: Page, fixture: ReturnType<typeo
       return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
     }
     const root = Array.from(document.querySelectorAll<HTMLElement>("[data-testid='review-pane-root']")).find(visible)
-    const scroll = root?.querySelector<HTMLElement>("[data-slot='session-review-scroll']")
+    const scroll = root?.querySelector<HTMLElement>(scrollSelector)
     const target = Array.from(root?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
       .find((file) => file.dataset.reviewFile === targetPath)
     if (!scroll || !target) return false
@@ -3603,7 +3638,7 @@ async function scrollHeavyReviewWorkingSet(page: Page, fixture: ReturnType<typeo
     scroll.scrollTop += targetRect.top - scrollRect.top
     scroll.dispatchEvent(new Event("scroll", { bubbles: true }))
     return scroll.scrollTop > 0
-  }, targetPath)
+  }, { targetPath, scrollSelector: HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR })
   if (!scrolled) recordVisualFailure(fixture, `Review did not scroll to substantial content at ${targetPath}`)
   await waitForAnimationFrame(page, 3)
 }

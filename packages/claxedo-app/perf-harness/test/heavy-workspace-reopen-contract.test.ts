@@ -4,6 +4,7 @@ import { fileContent, fixtureFor } from "../src/browser-runner"
 import {
   HEAVY_WORKSPACE_CLOSE_DWELL_MS,
   HEAVY_WORKSPACE_REOPEN_FILE_PATHS,
+  HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR,
   heavyWorkspaceReviewRestorationFailures,
   heavyWorkspaceRestorationFailures,
 } from "../src/heavy-workspace-reopen-contract"
@@ -20,6 +21,7 @@ describe("heavy workspace reopen benchmark contract", () => {
     expect(HEAVY_WORKSPACE_REOPEN_FILE_PATHS).toHaveLength(3)
     expect(new Set(HEAVY_WORKSPACE_REOPEN_FILE_PATHS).size).toBe(3)
     expect(HEAVY_WORKSPACE_CLOSE_DWELL_MS).toBeGreaterThan(140)
+    expect(HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR).toContain("[data-scrollable]")
 
     const fixture = fixtureFor("heavy-workspace-reopen", seed)
     expect(fileContent(new URL("http://perf/file/content?path=src/generated/file-113.ts"), fixture)).toEqual({

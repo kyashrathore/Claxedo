@@ -10,6 +10,11 @@ export const HEAVY_WORKSPACE_REOPEN_FILE_PATHS = [
 // of the close animation.
 export const HEAVY_WORKSPACE_CLOSE_DWELL_MS = 300
 
+// ScrollView applies consumer attributes to its outer root; the element that
+// owns scrollTop is the nested viewport marked data-scrollable.
+export const HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR =
+  "[data-slot='session-review-scroll'] [data-scrollable]"
+
 export type HeavyWorkspaceSurfaceIdentity = {
   openTabIds: string[]
   activeTabId?: string
