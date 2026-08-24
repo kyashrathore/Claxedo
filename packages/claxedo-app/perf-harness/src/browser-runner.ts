@@ -1077,9 +1077,13 @@ async function heavyWorkspaceReopen(
   // A file tab is active here. These counts intentionally remain diagnostic:
   // the baseline retains its inactive Review DOM, while the target architecture
   // should report zero and reconstruct it only after the next explicit click.
+  // `review-pane-root` is ReviewWorkspace's shell -- it owns the tab header and
+  // the active file tab, so it is mounted whatever tab is active and counting it
+  // here could never reach zero. The Review SURFACE is `workspace-review-body`,
+  // which is what "no inactive Review DOM" actually means.
   const inactiveReviewOwnership = await page.evaluate(() => ({
     roots: document.querySelectorAll(
-      "[data-testid='workspace-panel-shell'][data-open='true'] [data-testid='review-pane-root']",
+      "[data-testid='workspace-panel-shell'][data-open='true'] [data-testid='workspace-review-body']",
     ).length,
     files: document.querySelectorAll(
       "[data-testid='workspace-panel-shell'][data-open='true'] [data-review-file]",

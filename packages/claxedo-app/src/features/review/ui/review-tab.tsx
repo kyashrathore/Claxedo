@@ -574,10 +574,18 @@ export function ReviewTab(props: ReviewTabProps) {
     node.scrollIntoView({ behavior: "auto", block: "start" })
   }
 
+  // The focus this mount resumed on. Review now unmounts while another
+  // workspace tab is active, so this effect runs again on every remount with
+  // the same focus prop the user already acted on -- and scrolling to that file
+  // would throw away the position the workspace just restored. A focus that
+  // differs from the retained one is a real request and still applies.
+  let resumedFocusPath = retained.focusedFile === props.focusedDiffPath ? retained.focusedFile : undefined
   createEffect(on(
     () => [props.focusedDiffVersion, props.focusedDiffPath] as const,
     ([, path]) => {
-      if (!path) return
+      const resumed = resumedFocusPath
+      resumedFocusPath = undefined
+      if (!path || path === resumed) return
       batch(() => {
         setStore("focusedFile", path)
         if (!store.openDiffs.includes(path)) setStore("openDiffs", [...store.openDiffs, path])

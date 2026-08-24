@@ -38,7 +38,6 @@ import { setReviewWorkspaceActiveTab } from "@/features/review/ui/review-workspa
 import { SessionParamsProvider } from "@/features/session/providers/session-params"
 import { ReviewTab } from "@/features/review/ui/review-tab"
 import { isMarkdownPath, TabFile } from "@/app/workbench/content/tab-file"
-import { retainMountedTabsPolicy } from "@/ui/controls/retain-mounted-tabs-policy"
 import { useClaxedoState } from "@/app/workbench/state"
 import { documentsApi } from "@/features/documents/data/documents-api"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
@@ -55,6 +54,7 @@ import {
   type ReviewWorkspaceTab,
 } from "@/features/review/ui/review-workspace-tabs"
 import { closeReviewWorkspaceTab } from "./review-close"
+import { reviewWorkspaceMountedTabs } from "./review-mounted-tabs"
 import { createReviewScrollRestoration } from "./review-scroll-restoration"
 import { createReviewTabActivation, type PreparedReviewTabActivation } from "./review-tab-activation"
 import {
@@ -113,7 +113,11 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       .filter((tab) => tab.kind === "file" && tab.id === initialWorkingSet.activeTabId)
       .map((tab) => tab.id),
   ))
-  const [mountedTabIds, setMountedTabIds] = createSignal<string[]>([])
+  // A tab whose activation is prepared but not yet committed. It mounts for
+  // that one frame so its content is laid out before it becomes active — the
+  // ordering `createReviewTabActivation` relies on to capture Review scroll
+  // before an insertion can clamp it.
+  const [pendingMountTabId, setPendingMountTabId] = createSignal<string>()
   const [reviewBodyVisible, setReviewBodyVisible] = createSignal(initialWorkingSet.activeTabId === REVIEW_TAB_ID)
   let pendingActivationFrame: number | undefined
 
@@ -152,9 +156,11 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       tabActivation.commit(activation)
       return
     }
+    setPendingMountTabId(activation.id)
     pendingActivationFrame = requestAnimationFrame(() => {
       pendingActivationFrame = undefined
       tabActivation.commit(activation)
+      setPendingMountTabId(undefined)
     })
   }
 
@@ -188,11 +194,9 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       const activation = tabActivation.prepare(id)
       setStore("tabs", next.tabs)
       activatePreparedTabAfterMount(activation, true)
-      scheduleFileTabContent(id, path)
       return
     }
     activateTab(id)
-    if (!readyFileTabs().has(id)) scheduleFileTabContent(id, path)
   }
 
   const scheduleFileTabContent = (id: string, path: string) => {
@@ -278,20 +282,22 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   }
 
   const setActiveTab = activateTab
-  const mountedTabs = createMemo(() => {
-    const ids = new Set(mountedTabIds())
-    return store.tabs.filter((tab) => tab.kind !== "review" && ids.has(tab.id))
-  })
+  const activeMountedTabId = () => (store.activeTabId === REVIEW_TAB_ID ? undefined : store.activeTabId)
+  const mountedTabs = createMemo(() => reviewWorkspaceMountedTabs({
+    tabs: store.tabs,
+    activeTabId: store.activeTabId,
+    reviewTabId: REVIEW_TAB_ID,
+    pendingTabId: pendingMountTabId(),
+  }))
 
+  // One place that readies a file tab's body, for a tab the user just opened
+  // and for one restored into this mount from the working set.
   createEffect(() => {
-    const liveIds = new Set(store.tabs.filter((tab) => tab.kind !== "review").map((tab) => tab.id))
-    const activeId = store.activeTabId === REVIEW_TAB_ID ? undefined : store.activeTabId
-    setMountedTabIds((mounted) => retainMountedTabsPolicy({
-      mounted,
-      activeId,
-      liveIds,
-      limit: 5,
-    }))
+    const id = activeMountedTabId()
+    if (!id || readyFileTabs().has(id)) return
+    const tab = store.tabs.find((candidate) => candidate.id === id)
+    if (tab?.kind !== "file") return
+    scheduleFileTabContent(id, file.pathFromTab(tab.tabId) ?? tab.tabId)
   })
 
   let reviewRevealTimer: ReturnType<typeof setTimeout> | undefined
@@ -710,14 +716,19 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
           </Show>
 
           <div class="relative min-h-0 flex-1 overflow-hidden contain-strict">
+            {/* Review is 500-plus rows of DOM for a substantial workspace. It
+              mounts only while its own tab is active; the retained working set
+              and the semantic scroll anchor bring it back. */}
+            <Show when={store.activeTabId === REVIEW_TAB_ID}>
             <div
+              data-testid="workspace-review-body"
               class="absolute inset-0 h-full flex-col overflow-hidden"
               classList={{
                 flex: reviewBodyVisible(),
                 hidden: !reviewBodyVisible(),
-                "pointer-events-none": store.activeTabId !== REVIEW_TAB_ID || !reviewBodyVisible(),
+                "pointer-events-none": !reviewBodyVisible(),
               }}
-              aria-hidden={store.activeTabId === REVIEW_TAB_ID && reviewBodyVisible() ? undefined : "true"}
+              aria-hidden={reviewBodyVisible() ? undefined : "true"}
             >
               <ReviewTab
                 directory={props.directory}
@@ -736,6 +747,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
                 onScroll={reviewScroll.remember}
               />
             </div>
+            </Show>
 
             <For each={mountedTabs()}>
               {(tab) => (
