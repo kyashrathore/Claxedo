@@ -252,6 +252,10 @@ export function createReviewScrollRestoration(input: {
     resizeObserver = undefined
     if (element) Reflect.deleteProperty(element, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY)
     if (diagnosticHost) Reflect.deleteProperty(diagnosticHost, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY)
+    // Release the viewport: a deactivated tab's detached subtree must not stay
+    // pinned by this closure between dispose and the next bind.
+    element = undefined
+    frame = undefined
   }
 
   return {

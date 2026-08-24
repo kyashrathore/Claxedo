@@ -20,6 +20,7 @@ import { useProcessPane } from "../context/process-pane"
 import { WorkspaceFilesNavigator } from "../workspace-panel/files-navigator"
 import { WorkspaceProcessesNavigator } from "@/features/processes/ui"
 import type {
+  WorkspacePanelFocus,
   WorkspacePanelMode,
   WorkspacePanelState,
 } from "../../../features/workspaces/ui/panel/workspace-panel-state"
@@ -33,6 +34,39 @@ import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-re
 import { useSettings } from "@/platform/settings/provider"
 
 const PANEL_NAVIGATOR_TRANSITION = "transform 120ms cubic-bezier(0.2, 0, 0, 1), width 120ms cubic-bezier(0.2, 0, 0, 1)"
+
+/**
+ * The last focus request ReviewWorkspace acted on, keyed by the live panel
+ * state (one per provider, so parallel providers and tests never share
+ * consumption). It lives at module scope because the panel body is disposed to
+ * zero on close while the slice keeps `focus`; without this record, a reopen
+ * would replay the old focus request and override the active tab the working
+ * set just restored. The full request (version + kind + target) is recorded —
+ * not a bare version high-water mark — because the slice's version counter
+ * restarts once focus is cleared, so only an exact match proves a replay.
+ */
+type ConsumedPanelFocus = { version: number; kind: WorkspacePanelFocus["kind"]; target: string }
+const consumedPanelFocus = new WeakMap<WorkspacePanelState, ConsumedPanelFocus>()
+
+function panelFocusTarget(value: WorkspacePanelFocus) {
+  switch (value.kind) {
+    case "file":
+      return value.path
+    case "browser":
+      return value.url
+    case "process":
+      return value.processId
+    case "context":
+      return value.sessionId
+  }
+}
+
+function isConsumedPanelFocus(value: WorkspacePanelFocus, consumed: ConsumedPanelFocus | undefined) {
+  return !!consumed &&
+    consumed.version === value.version &&
+    consumed.kind === value.kind &&
+    consumed.target === panelFocusTarget(value)
+}
 /** The only review target this panel mounts today; see `reviewWorkspaceKey`. */
 const PANEL_REVIEW_MODE = "uncommitted" as const
 const ReviewWorkspace = lazy(() =>
@@ -75,7 +109,27 @@ export function WorkspacePanelBody(props: {
     if (!workspaceId) return true
     return isWorkspaceReady(workspaceId)
   }
-  const focus = () => panelState().focus
+  // Only a NEW focus request may steer the panel: a replayed unchanged one
+  // (kept by the slice across close) must not override the active tab restored
+  // from the working set. The stale request is fixed at mount so consumption
+  // during THIS mount never retracts a focus the lazily loaded ReviewWorkspace
+  // has yet to read.
+  const staleFocus = consumedPanelFocus.get(panelState())
+  const focus = () => {
+    const value = panelState().focus
+    if (!value || isConsumedPanelFocus(value, staleFocus)) return undefined
+    return value
+  }
+  const consumeFocus = () => {
+    const panel = panelState()
+    const value = panel.focus
+    if (!value) return
+    consumedPanelFocus.set(panel, {
+      version: value.version,
+      kind: value.kind,
+      target: panelFocusTarget(value),
+    })
+  }
   const focusPath = () => {
     const value = focus()
     return value?.kind === "file" ? value.path : undefined
@@ -335,6 +389,7 @@ export function WorkspacePanelBody(props: {
                                   focusContextVersion={focusContextVersion()}
                                   focusBrowserUrl={focusBrowserUrl()}
                                   focusBrowserVersion={focusBrowserVersion()}
+                                  onFocusConsumed={consumeFocus}
                                   active={props.active()}
                                 />
                               </Suspense>

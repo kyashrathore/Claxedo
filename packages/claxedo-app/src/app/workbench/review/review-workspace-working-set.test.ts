@@ -123,6 +123,38 @@ describe("Review workspace working-set boundary", () => {
     expect(changes[2]!.review).toEqual({ mode: "staged", scroll: { top: 900, anchorPath: "src/z.ts" } })
   })
 
+  test("exposes the latest retained review state, not the panel-open snapshot", () => {
+    const boundary = createReviewWorkspaceWorkingSetBoundary({ initial: snapshot() })
+    const tabs = [{ id: "review", kind: "review" } as const]
+
+    // Panel-open state first: `current` starts equal to `initial`.
+    expect(boundary.current()).toEqual(snapshot().review)
+
+    boundary.publishSurface({ mode: "staged", openDiffs: ["src/b.ts"] }, tabs, "review")
+    boundary.publishScroll({ top: 640, anchorPath: "src/b.ts" }, tabs, "review")
+
+    // A Review remount inside the same panel mount restores from here, so it
+    // must reflect the latest published surface AND scroll — while `initial`
+    // stays the panel-open snapshot.
+    expect(boundary.current()).toEqual({
+      mode: "staged",
+      openDiffs: ["src/b.ts"],
+      scroll: { top: 640, anchorPath: "src/b.ts" },
+    })
+    expect(boundary.initial.review).toEqual(snapshot().review)
+  })
+
+  test("isolates the current retained state from caller mutation", () => {
+    const boundary = createReviewWorkspaceWorkingSetBoundary({})
+    boundary.publishSurface({ openDiffs: ["src/a.ts"] }, [{ id: "review", kind: "review" }], "review")
+
+    const current = boundary.current()
+    current.openDiffs?.push("src/mutated.ts")
+    current.scroll.top = 999
+
+    expect(boundary.current()).toEqual({ openDiffs: ["src/a.ts"], scroll: { top: 0 } })
+  })
+
   test("isolates the published surface arrays from the caller that published them", () => {
     const changes: ReviewWorkspaceWorkingSetSnapshot[] = []
     const boundary = createReviewWorkspaceWorkingSetBoundary({ onChange: (next) => changes.push(next) })

@@ -30,6 +30,10 @@ import { SessionTitleProjectionProvider } from "@/features/session/providers/ses
 type ReviewMount = {
   initialWorkingSet?: ReviewWorkspaceWorkingSetSnapshot
   publish: (snapshot: ReviewWorkspaceWorkingSetSnapshot) => void
+  focusPath: () => string | undefined
+  focusVersion: () => number | undefined
+  /** Acts as the real ReviewWorkspace focus effect acting on the request. */
+  consumeFocus: () => void
 }
 
 const reviewMounts = vi.hoisted(() => ({ list: [] as unknown[] }))
@@ -59,10 +63,16 @@ vi.mock("@/app/workbench/review/review-workspace", () => ({
   ReviewWorkspace: (props: {
     initialWorkingSet?: ReviewWorkspaceWorkingSetSnapshot
     onWorkingSetChange?: (snapshot: ReviewWorkspaceWorkingSetSnapshot) => void
+    focusPath?: string
+    focusVersion?: number
+    onFocusConsumed?: () => void
   }) => {
     reviewMounts.list.push({
       initialWorkingSet: props.initialWorkingSet,
       publish: (snapshot: ReviewWorkspaceWorkingSetSnapshot) => props.onWorkingSetChange?.(snapshot),
+      focusPath: () => props.focusPath,
+      focusVersion: () => props.focusVersion,
+      consumeFocus: () => props.onFocusConsumed?.(),
     })
     return <div data-testid="review-workspace" />
   },
@@ -305,6 +315,70 @@ describe("closed workspace disposal and reconstruction", () => {
     expect(screen.getAllByTestId("workgraph-panel-header-slot")).toHaveLength(1)
     expect(workGraphPanelBodySlot()).toBe(screen.getByTestId("workgraph-panel-body-slot"))
     expect(workGraphPanelHeaderSlot()).toBe(screen.getByTestId("workgraph-panel-header-slot"))
+  })
+
+  test("does not replay a consumed focus request over the restored active tab on reopen", async () => {
+    const { state } = renderRail()
+    await openPanel()
+
+    // The user opens a file from the navigator; the panel delivers the focus
+    // request and ReviewWorkspace acts on it.
+    state().workspacePanel.retarget({
+      workspaceDir: project.worktree,
+      targetPaneId: "pane-1",
+      focus: { kind: "file", path: "src/a.ts", intent: "tab" },
+    })
+    await waitFor(() => expect(mounts()[0]!.focusPath()).toBe("src/a.ts"))
+    mounts()[0]!.consumeFocus()
+    mounts()[0]!.publish(substantialWorkingSet)
+
+    closePanel()
+    await waitFor(() => expect(screen.queryByTestId("review-workspace")).toBeNull(), { timeout: 10_000 })
+    await openPanel()
+
+    // The slice still carries the old focus across the close, but the new
+    // mount restores its active tab from the working set — the stale request
+    // must not be delivered again and override it.
+    expect(mounts()).toHaveLength(2)
+    expect(mounts()[1]!.initialWorkingSet?.activeTabId).toBe(substantialWorkingSet.activeTabId)
+    expect(mounts()[1]!.focusPath()).toBeUndefined()
+    expect(mounts()[1]!.focusVersion()).toBe(0)
+
+    // The slice's focus version counter restarts once focus is cleared. A
+    // brand-new request that happens to reuse the consumed request's version
+    // number is NOT a replay and must still be delivered.
+    state().workspacePanel.retarget({
+      workspaceDir: project.worktree,
+      targetPaneId: "pane-1",
+      focus: null,
+    })
+    state().workspacePanel.retarget({
+      workspaceDir: project.worktree,
+      targetPaneId: "pane-1",
+      focus: { kind: "file", path: "src/b.ts", intent: "tab" },
+    })
+    await waitFor(() => expect(mounts()[1]!.focusPath()).toBe("src/b.ts"))
+  })
+
+  test("still delivers a focus request the previous mount never consumed", async () => {
+    const { state } = renderRail()
+    await openPanel()
+
+    state().workspacePanel.retarget({
+      workspaceDir: project.worktree,
+      targetPaneId: "pane-1",
+      focus: { kind: "file", path: "src/pending.ts", intent: "tab" },
+    })
+    await waitFor(() => expect(mounts()[0]!.focusPath()).toBe("src/pending.ts"))
+    // No consumeFocus(): the request was issued but never acted on (e.g. the
+    // lazy Review chunk had not loaded before the user closed the panel).
+
+    closePanel()
+    await waitFor(() => expect(screen.queryByTestId("review-workspace")).toBeNull(), { timeout: 10_000 })
+    await openPanel()
+
+    expect(mounts()).toHaveLength(2)
+    expect(mounts()[1]!.focusPath()).toBe("src/pending.ts")
   })
 
   test("keeps the panel body mounted through a reopen inside the close grace", async () => {

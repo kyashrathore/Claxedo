@@ -165,6 +165,15 @@ export function createReviewWorkspaceWorkingSetBoundary(input: {
 
   return {
     initial,
+    /**
+     * The live retained Review state: the latest published surface plus the
+     * latest scroll. An inner-tab remount of the Review surface must restore
+     * from this — `initial` is the panel-open snapshot, and restoring from it
+     * would roll Review → file tab → Review back to panel-open state.
+     */
+    current(): ReviewWorkspaceReviewState {
+      return cloneReview(review)
+    },
     publish,
     publishScroll(
       position: ReviewScrollPosition,

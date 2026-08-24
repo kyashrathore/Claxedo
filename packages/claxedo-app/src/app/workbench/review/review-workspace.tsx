@@ -23,7 +23,7 @@ import { useQuery } from "@tanstack/solid-query"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useFile } from "@/app/providers/file"
 import { PromptProvider } from "@/features/session/providers/prompt"
-import { ClaxedoIcon as Icon, type ClaxedoIconName } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -37,6 +37,7 @@ import { reviewTabHeaderSlot } from "@/ui/controls/portal-slot"
 import { setReviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
 import { SessionParamsProvider } from "@/features/session/providers/session-params"
 import { ReviewTab } from "@/features/review/ui/review-tab"
+import { peekReviewVcsDiff } from "@/features/review/ui/review-vcs-cache"
 import { useSDK } from "@/app/providers/sdk/sdk"
 import { isMarkdownPath, TabFile } from "@/app/workbench/content/tab-file"
 import { useClaxedoState } from "@/app/workbench/state"
@@ -55,7 +56,8 @@ import {
   type ReviewWorkspaceTab,
 } from "@/features/review/ui/review-workspace-tabs"
 import { closeReviewWorkspaceTab } from "./review-close"
-import { reviewWorkspaceMountedTabs } from "./review-mounted-tabs"
+import { createReviewTabActivationTransition, reviewWorkspaceMountedTabs } from "./review-mounted-tabs"
+import { createReviewWorkspaceTabPresentation } from "./review-workspace-tab-presentation"
 import { createReviewWorkspaceVcsStaleness } from "./review-workspace-vcs-staleness"
 import { createReviewScrollRestoration } from "./review-scroll-restoration"
 import { createReviewTabActivation, type PreparedReviewTabActivation } from "./review-tab-activation"
@@ -88,6 +90,12 @@ export type ReviewWorkspaceProps = {
   active?: boolean
   initialWorkingSet?: ReviewWorkspaceWorkingSetSnapshot
   onWorkingSetChange?: (snapshot: ReviewWorkspaceWorkingSetSnapshot) => void
+  /**
+   * Called when a focus request (focusPath / focusProcessId / …) is acted on.
+   * The panel uses it to mark that request consumed, so a remount restored
+   * from the working set does not replay it over the restored active tab.
+   */
+  onFocusConsumed?: () => void
 }
 
 export function ReviewWorkspace(props: ReviewWorkspaceProps) {
@@ -122,7 +130,6 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   // before an insertion can clamp it.
   const [pendingMountTabId, setPendingMountTabId] = createSignal<string>()
   const [reviewBodyVisible, setReviewBodyVisible] = createSignal(initialWorkingSet.activeTabId === REVIEW_TAB_ID)
-  let pendingActivationFrame: number | undefined
 
   const reviewTabIsVisible = () => store.activeTabId === REVIEW_TAB_ID && reviewBodyVisible()
   const reviewCanRecordScroll = () => (props.active ?? true) && reviewTabIsVisible()
@@ -131,6 +138,21 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     canRecord: reviewCanRecordScroll,
     initial: initialWorkingSet.review.scroll,
     onChange: (position) => workingSet.publishScroll(position, store.tabs, store.activeTabId),
+    // The canonical corpus decides anchor absence: a deleted or renamed anchor
+    // settles restoration at the clamped pixel top instead of waiting forever.
+    // Undecidable (corpus not fetched yet) keeps the anchor wait alive.
+    anchorExists: (path) => {
+      const review = workingSet.current()
+      if (!review.mode) return undefined
+      const diffs = peekReviewVcsDiff({
+        directory: props.directory,
+        mode: review.mode,
+        fromRef: review.mode === "to-from" ? review.fromRef?.trim() || undefined : undefined,
+        toRef: review.mode === "to-from" ? review.toRef?.trim() || undefined : undefined,
+      })
+      if (!diffs) return undefined
+      return diffs.some((diff) => diff.file === path)
+    },
   })
 
   createEffect(() => {
@@ -148,32 +170,20 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     captureReview: reviewScroll.capture,
     commit: (id) => setStore("activeTabId", id),
   })
-  const activateTab = tabActivation.activate
+  // Every activation — a direct tab click, an inserted tab's deferred
+  // activation, a replayed focus — commits through this one transition, so the
+  // latest interaction always cancels a pending deferred one.
+  const activationTransition = createReviewTabActivationTransition<PreparedReviewTabActivation>({
+    commit: tabActivation.commit,
+    setPendingTabId: setPendingMountTabId,
+  })
+  const activateTab = (id: string) => activationTransition.commit(tabActivation.prepare(id))
+  const activatePreparedTabAfterMount = activationTransition.commit
 
   const contextTab = createMemo(() =>
     store.tabs.find((t): t is Extract<ReviewWorkspaceTab, { kind: "context" }> => t.kind === "context"),
   )
   const contextSectionSessionId = createMemo(() => contextTab()?.sessionId ?? props.sessionId)
-
-  const activatePreparedTabAfterMount = (activation: PreparedReviewTabActivation, defer = false) => {
-    if (pendingActivationFrame !== undefined && typeof cancelAnimationFrame === "function") {
-      cancelAnimationFrame(pendingActivationFrame)
-      pendingActivationFrame = undefined
-    }
-    if (!defer || typeof requestAnimationFrame !== "function") {
-      // Also clears a pending mount whose deferred activation this supersedes;
-      // leaving it set would keep that never-activated tab mounted forever.
-      setPendingMountTabId(undefined)
-      tabActivation.commit(activation)
-      return
-    }
-    setPendingMountTabId(activation.id)
-    pendingActivationFrame = requestAnimationFrame(() => {
-      pendingActivationFrame = undefined
-      tabActivation.commit(activation)
-      setPendingMountTabId(undefined)
-    })
-  }
 
   const openContextTab = (sessionId: string) => {
     const next = openContextWorkspaceTab({ tabs: store.tabs, sessionId })
@@ -350,7 +360,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   // Not strictly needed for correctness on unmount, but keeps the invariant
   // simple: no frame pending, no pending mount id.
   onCleanup(() => {
-    if (pendingActivationFrame !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(pendingActivationFrame)
+    activationTransition.cancel()
     reviewScroll.dispose()
     if (reviewRevealTimer) clearTimeout(reviewRevealTimer)
   })
@@ -359,8 +369,9 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     () => [props.focusVersion, props.focusPath] as const,
     ([, path]) => {
       if (!path) return
+      props.onFocusConsumed?.()
       if (props.focusFileIntent === "review") {
-        setStore("activeTabId", REVIEW_TAB_ID)
+        activateTab(REVIEW_TAB_ID)
         return
       }
       openFileTab(path, props.focusLine)
@@ -371,6 +382,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     () => [props.focusProcessVersion, props.focusProcessId] as const,
     ([, id]) => {
       if (!id) return
+      props.onFocusConsumed?.()
       openProcessTab(id)
     },
   ))
@@ -379,6 +391,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     () => [props.focusContextVersion, props.focusContextSessionId] as const,
     ([, sessionId]) => {
       if (!sessionId) return
+      props.onFocusConsumed?.()
       openContextTab(sessionId)
     },
   ))
@@ -387,6 +400,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     () => [props.focusBrowserVersion, props.focusBrowserUrl] as const,
     ([, url]) => {
       if (!url) return
+      props.onFocusConsumed?.()
       openBrowserTab(url, props.focusBrowserVersion)
     },
   ))
@@ -475,67 +489,12 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     />
   )
 
-  const tabLabel = (tab: ReviewWorkspaceTab) => {
-    switch (tab.kind) {
-      case "review":
-        return language.t("session.tab.review")
-      case "context":
-        return language.t("session.tab.context")
-      case "file":
-        return file.pathFromTab(tab.tabId)?.split("/").at(-1) ?? tab.tabId
-      case "browser":
-        return "Browser"
-      case "process":
-        return processPane.configs().find((item) => item.id === tab.processId)?.name ?? "Process"
-    }
-  }
-
-  const tabIcon = (tab: ReviewWorkspaceTab): ClaxedoIconName => {
-    switch (tab.kind) {
-      case "review":
-        return "review"
-      case "context":
-        return "circle-half"
-      case "file":
-        return "file-text"
-      case "browser":
-        return "globe"
-      case "process":
-        return "console"
-    }
-  }
-
-  // Optical sizing: every icon shares the same 16px slot, but a filled square
-  // (review) reads larger than an inscribed circle (context/browser) at the
-  // same box, so boxy glyphs render a hair smaller and round glyphs a hair
-  // larger to equalise perceived size next to the 13px label.
-  const tabIconPx = (tab: ReviewWorkspaceTab): number => {
-    switch (tab.kind) {
-      case "review":
-        return 13
-      case "file":
-      case "process":
-        return 14
-      case "context":
-      case "browser":
-        return 15
-    }
-  }
-
-  const closeLabel = (tab: ReviewWorkspaceTab): string => {
-    switch (tab.kind) {
-      case "context":
-        return "Close context"
-      case "file":
-        return `Close ${tabLabel(tab)} tab`
-      case "browser":
-        return "Close browser"
-      case "process":
-        return "Close process section"
-      case "review":
-        return "Close review"
-    }
-  }
+  const { tabLabel, tabIcon, tabIconPx, closeLabel } = createReviewWorkspaceTabPresentation({
+    reviewLabel: () => language.t("session.tab.review"),
+    contextLabel: () => language.t("session.tab.context"),
+    filePathFromTab: (tabId) => file.pathFromTab(tabId),
+    processName: (processId) => processPane.configs().find((item) => item.id === processId)?.name,
+  })
 
   const renderTabButton = (tab: ReviewWorkspaceTab) => {
     const selected = () => store.activeTabId === tab.id
@@ -648,6 +607,56 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     }
   }
 
+  // The workspace root outlives the Review body; the retained scroll
+  // diagnostic is re-hosted here whenever the body's own element goes away.
+  let diagnosticHost: HTMLElement | undefined
+
+  // The Review surface mounts only while its tab is active. Each mount
+  // restores from the boundary's CURRENT retained state (not the panel-open
+  // snapshot), and each unmount explicitly releases the scroll binding — the
+  // viewport element and its observers must not outlive the surface's DOM.
+  const ReviewSurfaceBody = () => {
+    const retained = workingSet.current()
+    onCleanup(() => {
+      reviewScroll.dispose()
+      // `dispose` also dropped the workspace-root diagnostic; the retained
+      // semantic position must stay readable there while other tabs are active.
+      if (diagnosticHost) reviewScroll.bindDiagnosticHost(diagnosticHost)
+    })
+    return (
+      <div
+        data-testid="workspace-review-body"
+        class="absolute inset-0 h-full flex-col overflow-hidden"
+        classList={{
+          flex: reviewBodyVisible(),
+          hidden: !reviewBodyVisible(),
+          "pointer-events-none": !reviewBodyVisible(),
+        }}
+        aria-hidden={reviewBodyVisible() ? undefined : "true"}
+      >
+        <ReviewTab
+          directory={props.directory}
+          sessionId={props.sessionId}
+          initialMode={props.mode}
+          initialFromRef={props.fromRef}
+          initialToRef={props.toRef}
+          retained={retained}
+          scrollAnchorPath={reviewScroll.anchorPath()}
+          staleDiffsVersion={vcsStaleness.diffsVersion()}
+          staleBranchVersion={vcsStaleness.branchVersion()}
+          onRetainedChange={(surface) =>
+            workingSet.publishSurface(surface, store.tabs, store.activeTabId)
+          }
+          focusedDiffPath={props.focusFileIntent === "review" ? props.focusPath : undefined}
+          focusedDiffVersion={props.focusVersion}
+          onOpenFile={openFileTab}
+          scrollRef={reviewScroll.bind}
+          onScroll={reviewScroll.remember}
+        />
+      </div>
+    )
+  }
+
   const renderTabHeader = () => (
     <div
       data-testid="workspace-tab-header"
@@ -709,7 +718,10 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
 
   return (
     <div
-      ref={reviewScroll.bindDiagnosticHost}
+      ref={(host) => {
+        diagnosticHost = host
+        reviewScroll.bindDiagnosticHost(host)
+      }}
       data-testid="review-pane-root"
       data-review-mode={props.mode}
       data-review-surface="workspace-review"
@@ -734,36 +746,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
               mounts only while its own tab is active; the retained working set
               and the semantic scroll anchor bring it back. */}
             <Show when={store.activeTabId === REVIEW_TAB_ID}>
-            <div
-              data-testid="workspace-review-body"
-              class="absolute inset-0 h-full flex-col overflow-hidden"
-              classList={{
-                flex: reviewBodyVisible(),
-                hidden: !reviewBodyVisible(),
-                "pointer-events-none": !reviewBodyVisible(),
-              }}
-              aria-hidden={reviewBodyVisible() ? undefined : "true"}
-            >
-              <ReviewTab
-                directory={props.directory}
-                sessionId={props.sessionId}
-                initialMode={props.mode}
-                initialFromRef={props.fromRef}
-                initialToRef={props.toRef}
-                retained={initialWorkingSet.review}
-                scrollAnchorPath={reviewScroll.anchorPath()}
-                staleDiffsVersion={vcsStaleness.diffsVersion()}
-                staleBranchVersion={vcsStaleness.branchVersion()}
-                onRetainedChange={(surface) =>
-                  workingSet.publishSurface(surface, store.tabs, store.activeTabId)
-                }
-                focusedDiffPath={props.focusFileIntent === "review" ? props.focusPath : undefined}
-                focusedDiffVersion={props.focusVersion}
-                onOpenFile={openFileTab}
-                scrollRef={reviewScroll.bind}
-                onScroll={reviewScroll.remember}
-              />
-            </div>
+              <ReviewSurfaceBody />
             </Show>
 
             <For each={mountedTabs()}>
