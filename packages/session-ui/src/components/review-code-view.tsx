@@ -85,7 +85,12 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
       if (element.dataset.reviewFile !== record.id) {
         element.dataset.reviewFile = record.id
         element.dataset.slot = "session-review-diff-wrapper"
+        // A custom element defaults to display:inline, which computes a zero
+        // light-DOM box around shadow content -- invisible to any tooling that
+        // measures the host. Give it a real block box.
+        element.style.display = "block"
         element.style.position = "relative"
+        element.style.minHeight = "1px"
       }
       let strip = element.querySelector<HTMLButtonElement>(":scope > [data-review-codeview-strip]")
       if (!strip) {
