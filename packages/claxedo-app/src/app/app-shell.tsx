@@ -19,6 +19,7 @@ import { isDemoMode } from "@/platform/api/api"
 import { PromptHarnessControllersProvider } from "../features/session/composer/ui/harness-controller"
 import { WorkspaceScopeHost } from "../features/workspaces/data/workspace-scope"
 import { ClaxedoRouteStateBridge } from "./workbench/state/route-bridge"
+import { routeSuppressesEmptyDraftSession } from "./workbench/state/provider"
 import { useClaxedoAppShellCommands } from "./app-shell-commands"
 import { useAppShellRouteSync } from "./app-shell-route-sync"
 import { useAppShellState } from "./app-shell-state"
@@ -135,7 +136,7 @@ function ClaxedoAppShellContent(props: ParentProps) {
         activeSessionId={shell.activeSessionId()}
         globalChatEnabled={shell.globalChat()}
         homedir={shell.pathQuery.data?.home}
-        suppressEmptyDraftSession={shell.shellRouteKind() === "session" || shell.shellRouteKind() === "workspace" || !!params.id}
+        suppressEmptyDraftSession={routeSuppressesEmptyDraftSession(location.pathname)}
         onWorkspaceSelect={handleWorkspaceSelect}
         onSessionSelect={handleSessionSelect}
         onNewProject={handleNewProject}

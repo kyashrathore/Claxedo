@@ -823,7 +823,13 @@ export function Markdown(
       return
     }
 
-    const result = html.latest ?? html()
+    // `html()` suspends while the asynchronous parser is pending. This rich
+    // upgrade runs after the complete plain-text body has already painted, so
+    // suspending here bubbles to the pane boundary and disconnects the entire
+    // session surface (header, timeline, and composer) for a non-critical
+    // enhancement. `latest` is reactive without throwing the pending promise;
+    // keep the canonical plain body in place until rich HTML is ready.
+    const result = html.latest
     // A native parser may be asynchronous. Keep the complete plain surface in
     // place until rich HTML is actually ready rather than blanking the response.
     if (!result) return

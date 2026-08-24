@@ -1938,7 +1938,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
             <div
               data-timeline-row="bottom-spacer"
               aria-hidden="true"
-              class="h-16 absolute top-0 left-0 w-full"
+              class="pointer-events-none h-16 absolute top-0 left-0 w-full"
               style={{ transform: `translateY(${virtualizer.getTotalSize() - 64}px)` }}
             />
           </Show>

@@ -1,6 +1,7 @@
 import { cleanup, render } from "@solidjs/testing-library"
 import { MarkedProvider } from "@opencode-ai/ui/context/marked"
 import { Markdown } from "@opencode-ai/session-ui/markdown"
+import { Suspense } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
 
 type RendererTrace = { name: string; durationMs: number }
@@ -24,13 +25,15 @@ function mountMarkdown(input: {
   richAfterMs?: number
 }) {
   return render(() => (
-    <MarkedProvider nativeParser={input.parse}>
-      <Markdown
-        text={input.text}
-        cacheKey={`stage-${crypto.randomUUID()}`}
-        richAfterMs={input.richAfterMs ?? 80}
-      />
-    </MarkedProvider>
+    <Suspense fallback={<div data-testid="markdown-suspense-fallback">Loading rich Markdown</div>}>
+      <MarkedProvider nativeParser={input.parse}>
+        <Markdown
+          text={input.text}
+          cacheKey={`stage-${crypto.randomUUID()}`}
+          richAfterMs={input.richAfterMs ?? 80}
+        />
+      </MarkedProvider>
+    </Suspense>
   ))
 }
 
@@ -90,6 +93,9 @@ describe("Markdown completed-body first paint", () => {
     await wait(100)
     expect(root?.dataset.markdownStage).toBe("plain")
     expect(root?.textContent).toBe(source)
+    expect(root?.isConnected).toBe(true)
+    expect(view.container.querySelector('[data-component="markdown"]')).toBe(root)
+    expect(view.queryByTestId("markdown-suspense-fallback")).toBeNull()
 
     resolve("<p>Complete response</p>")
     await until(() => !!root?.querySelector("p"))
