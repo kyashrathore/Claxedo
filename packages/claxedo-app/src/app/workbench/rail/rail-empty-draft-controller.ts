@@ -59,6 +59,21 @@ export function useRailEmptyDraftController(input: {
     return !focusedSurface()
   })
   let didRequestEmptyDraftSession = false
+
+  // Bootstrap the canonical Workbench draft before the shell renders its
+  // provisional empty fallback. The local new-session action opens the draft
+  // synchronously, so doing this during controller construction means the
+  // first SessionContent node is also the node promoted by first-submit; a
+  // later effect would briefly mount EmptyDraftSessionComposer and then detach
+  // its complete timeline/header subtree when the real Workbench pane arrived.
+  // Keep later re-open requests queued below: closing the last tab and applying
+  // blockNextAutoOpen happen in the same user-action turn, and that cancellation
+  // window must remain observable before a replacement draft is opened.
+  if (shouldOpenEmptyDraftSession()) {
+    didRequestEmptyDraftSession = true
+    input.onNewSession?.(emptyDraftDirectory())
+  }
+
   createEffect(
     on(shouldOpenEmptyDraftSession, (shouldOpen) => {
       if (!shouldOpen) {
