@@ -3,7 +3,10 @@ import { createRoot } from "solid-js"
 
 import type { ContentMeta } from "../state/types"
 import { useRailWorkspacePanelTarget } from "./rail-workspace-panel-target"
-import { workspacePanelMatchesFocusedPane } from "./workspace-panel-visual-state"
+import {
+  workspacePanelMatchesFocusedPane,
+  workspacePanelTopLevelOpenTarget,
+} from "./workspace-panel-visual-state"
 
 describe("workspacePanelMatchesFocusedPane", () => {
   test("treats directory aliases in the same pane as one UI target", () => {
@@ -32,6 +35,22 @@ describe("workspacePanelMatchesFocusedPane", () => {
       panel: { targetPaneId: "pane-2" },
       target: { workspaceDir: "/repo/main", targetPaneId: "pane-1" },
     })).toBe(false)
+  })
+})
+
+describe("workspacePanelTopLevelOpenTarget", () => {
+  test("reopens the same workspace without explicitly clearing its working set", () => {
+    expect(workspacePanelTopLevelOpenTarget(
+      { workspaceDir: "/repo/main", targetPaneId: "pane-original" },
+      { workspaceDir: "/repo/main", targetPaneId: "pane-focused" },
+    )).toEqual({ workspaceDir: "/repo/main", targetPaneId: "pane-original" })
+  })
+
+  test("retargets a different workspace without duplicating state clearing policy", () => {
+    expect(workspacePanelTopLevelOpenTarget(
+      { workspaceDir: "/repo/old", targetPaneId: "pane-old" },
+      { workspaceDir: "/repo/new", targetPaneId: "pane-new" },
+    )).toEqual({ workspaceDir: "/repo/new", targetPaneId: "pane-new" })
   })
 })
 

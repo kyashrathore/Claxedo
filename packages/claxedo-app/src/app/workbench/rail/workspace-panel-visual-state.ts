@@ -26,6 +26,18 @@ export function workspacePanelMatchesFocusedPane(input: {
   return input.panel.targetPaneId === input.target?.targetPaneId
 }
 
+export function workspacePanelTopLevelOpenTarget(
+  panel: { workspaceDir?: string; targetPaneId?: string },
+  target: WorkspacePanelPaneTarget,
+) {
+  return {
+    workspaceDir: target.workspaceDir,
+    targetPaneId: panel.workspaceDir === target.workspaceDir
+      ? panel.targetPaneId ?? target.targetPaneId
+      : target.targetPaneId,
+  }
+}
+
 export function useWorkspacePanelVisualState(input: {
   claxedoState: ReturnType<typeof useClaxedoState>
   focusedPanelTarget: () => WorkspacePanelPaneTarget | undefined
@@ -195,20 +207,10 @@ export function useWorkspacePanelVisualState(input: {
     const workspaceDir = target?.workspaceDir
     if (!workspaceDir) return
     motion.setVisualPhase(true, button)
-    const reopenSameTarget = panel.workspaceDir === workspaceDir
-    input.claxedoState.workspacePanel.open("review", reopenSameTarget
-      ? {
-        workspaceDir,
-        targetPaneId: panel.targetPaneId ?? target?.targetPaneId,
-        navigator: null,
-        focus: null,
-      }
-      : {
-        workspaceDir,
-        targetPaneId: target?.targetPaneId,
-        navigator: null,
-        focus: null,
-      })
+    // The panel state is authoritative for preserving same-workspace context
+    // and clearing it on a workspace change. Omitting navigator/focus here is
+    // what lets a close/reopen resume the active working set.
+    input.claxedoState.workspacePanel.open("review", workspacePanelTopLevelOpenTarget(panel, target))
   }
 
   return {
