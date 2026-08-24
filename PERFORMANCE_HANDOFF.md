@@ -309,8 +309,22 @@ Verified: workbench+review+platform/files bun suites 553 pass; honesty vitest
 2/2; directory-scope vitest 22/22 (harness mock gained `event.listen`);
 files-navigator vitest 7/7; test:performance 37/37; architecture 261/261
 (ReviewVcsDirectory export keeps the directoryStringParams ratchet flat);
-heavy-workspace contract tests 8/8; app typecheck pass. The confirming
-disposal smoke is running; its numbers land in the next handoff update.
+heavy-workspace contract tests 8/8; app typecheck pass.
+
+The first confirming smoke surfaced one follow-up: with the windowed list,
+opening the Files navigator reflows the estimate-backed gaps and drifted the
+semantic anchor 6px past the 2px contract tolerance. Fixed by re-applying the
+anchor on a real viewport width change in review-scroll-restoration (the
+anchor, not the pixel, is the position's truth); covered by a new restoration
+vitest case.
+
+Final smoke (one ABBA iteration, same shared container, functional evidence
+only): exit 0, status WARN (absolute debt only), zero validation failures,
+and ZERO resource requests in every phase -- close 151.7 ms, reopen 481.0 ms,
+Review resume 771.3 ms with exactly 20 materialized rows and zero
+blank/loading frames; every closed/inactive ownership gate 0 with exactly 1
+reopen file root. Both baseline deltas the earlier smokes carried (the reopen
+request, the closed-panel staleness) are closed.
 
 ## Next steps in dependency order
 
