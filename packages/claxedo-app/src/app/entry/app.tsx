@@ -83,7 +83,6 @@ const File: Component<any> = (props) => (
   </Suspense>
 )
 
-const [claxedoAppShellPainted, setClaxedoAppShellPainted] = createSignal(false)
 const RuntimeProviders = lazy(() =>
   import("./runtime-providers").then((module) => ({ default: module.RuntimeProviders })),
 )
@@ -453,7 +452,7 @@ function AuthenticatedLayout(
       <RoutedClaxedoEventsProvider>
         <AuthenticatedProviders>
           <ConnectionGate>
-            <RuntimeProviders onPainted={() => setClaxedoAppShellPainted(true)}>{props.children}</RuntimeProviders>
+            <RuntimeProviders>{props.children}</RuntimeProviders>
           </ConnectionGate>
         </AuthenticatedProviders>
       </RoutedClaxedoEventsProvider>

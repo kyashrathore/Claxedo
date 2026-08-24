@@ -1,8 +1,7 @@
 // Row time labels and the session-status batch bookkeeping, split from
 // rail-sidebar.tsx: standalone helpers with no component state, extracted to
 // keep the sidebar under its size-budget ceiling.
-import { queryClient } from "@/platform/query/query-client"
-import { shellDataKeys } from "@/platform/sync/keys"
+import { railSessionStatusBatchKey, type RailSessionStatusTargetGroup } from "./rail-session-status-target"
 
 export const SIDEBAR_SESSION_STATUS_FRESH_MS = 10_000
 
@@ -70,16 +69,27 @@ export function pruneSidebarSessionStatusBatches(now = Date.now()) {
   }
 }
 
+/**
+ * An opaque-id activity notification cannot identify which workspace emitted
+ * it. Invalidate every currently visible placement group containing that id;
+ * each group is then refetched through its own placement-aware client.
+ */
+export function invalidateSidebarSessionStatusGroupsForSession(
+  groups: readonly RailSessionStatusTargetGroup[],
+  sessionID: string,
+) {
+  let invalidated = 0
+  for (const group of groups) {
+    if (!group.targets.some((target) => target.sessionID === sessionID)) continue
+    const batchKey = railSessionStatusBatchKey(group)
+    sidebarSessionStatusBatches.get(batchKey)?.controller?.abort()
+    sidebarSessionStatusBatches.delete(batchKey)
+    invalidated += 1
+  }
+  return invalidated
+}
+
 export function sameRequestIds(previous: { id: string }[] | undefined, next: { id: string }[]) {
   if (!previous || previous.length !== next.length) return false
   return previous.every((item, index) => item.id === next[index]?.id)
-}
-
-export function sidebarStatusTargetFresh(sessionID: string, now = Date.now()) {
-  const status = queryClient.getQueryState(shellDataKeys.sessionId(sessionID, "status"))
-  const requests = queryClient.getQueryState(shellDataKeys.sessionId(sessionID, "requests"))
-  return status?.data !== undefined &&
-    requests?.data !== undefined &&
-    now - status.dataUpdatedAt < SIDEBAR_SESSION_STATUS_FRESH_MS &&
-    now - requests.dataUpdatedAt < SIDEBAR_SESSION_STATUS_FRESH_MS
 }

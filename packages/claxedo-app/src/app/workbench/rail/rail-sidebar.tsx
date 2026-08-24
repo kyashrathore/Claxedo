@@ -1,12 +1,12 @@
 import {
   SIDEBAR_SESSION_STATUS_FRESH_MS,
   abortSidebarSessionStatusBatches,
+  invalidateSidebarSessionStatusGroupsForSession,
   relativeTime,
   sameRequestIds,
   pruneSidebarSessionStatusBatches,
   sidebarRequestDebug,
   sidebarSessionStatusBatches,
-  sidebarStatusTargetFresh,
 } from "./rail-sidebar-status"
 import { markRendererPhase, measureRendererPhase } from "@/platform/performance/renderer-trace"
 
@@ -37,7 +37,7 @@ let groupsMarked = false
 
 import { For, Show, Switch, Match, createMemo, createSelector, createSignal, onCleanup, onMount, createEffect, on, type JSX } from "solid-js"
 import { GlobalNavigation } from "./global-navigation"
-import { useQueries, useQuery } from "@tanstack/solid-query"
+import { useQuery } from "@tanstack/solid-query"
 import { useClaxedoState, type ContentMeta } from "../state/index"
 import { NEW_TERMINAL_ID } from "@/features/terminal/core/terminal-surface-id"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
@@ -71,24 +71,25 @@ import { queryClient } from "@/platform/query/query-client"
 import {
   emptySessionInventory,
   sessionInventoryQueryOptions,
-  sessionRequestsQueryOptions,
-  sessionStatusQueryOptions,
 } from "../../../features/session/data/sync/queries"
-import { dispatchSessionRequestsEvent, dispatchSessionStatusEvent } from "../../../features/session/store/session-status-dispatcher"
 import { createSidebarStatusPoll } from "./rail-sidebar-status-poll"
 import {
+  activeRailSessionStatusTarget,
+  boundRailSessionStatusTargets,
   groupRailSessionStatusTargets,
+  pruneRailSessionActivityMap,
   railSessionStatusBatchKey,
   railSessionStatusTarget,
 } from "./rail-session-status-target"
-import { shellDataKeys } from "@/platform/sync/keys"
+import { subscribeSessionActivity } from "@/features/session/store/session-status-dispatcher"
+import { workspaceKey } from "@/platform/identity/session-ref"
 import { localWorkspaceShareTarget, registerUserHostedWorkspace, workspaceShareUrl } from "@/features/workspaces/data/share-workspace"
 import { Can, can } from "@/platform/auth/role"
 import { isWorkspaceReady, workspacePlacement } from "../../../features/workspaces/data/workspace-connection"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL, type SessionPrefetchDirectory } from "@/platform/sync/session-prefetch"
 import { centralSessionRef, sessionRefForWorkspaceSession, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { USER_HOSTED_WORKSPACE_KIND } from "@/platform/runtime/agent/workspace-kind"
-import type { PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2/client"
 import {
   nextUnseenDone,
   sessionSurfaceActive as sessionRowActive,
@@ -782,20 +783,29 @@ export function RailSidebar(props: RailSidebarProps) {
   const visibleSessionRows = createMemo(() => Object.values(visibleSessionRowsBySection()).flat())
 
   const sessionStatusTargets = createMemo(() => {
-    const seen = new Set<string>()
-    return visibleSessionRows().flatMap((session) => {
+    const targets = visibleSessionRows().map((session) => {
       const directory = session.directory ?? session.project.worktree
       const key = sessionNavigationRefForRow(session)
-      if (seen.has(key)) return []
-      seen.add(key)
-      return [railSessionStatusTarget({
+      return railSessionStatusTarget({
         key,
         directory,
         sessionID: session.id,
         sessionRef: key,
         workspaceId: session.workspaceId ?? workspaceSessionBacking(session, directory)?.workspaceId,
-      })]
+      })
     })
+    const focusedContentId = claxedoState.wb.selectors.focusedContent()
+    const focusedContent = focusedContentId ? claxedoState.meta.get(focusedContentId) : undefined
+    const activeSessionRef = focusedContent?.type === "session" ? focusedContent.content?.sessionRef : undefined
+    const activePlacementWorkspaceId = activeSessionRef ? workspaceKey(activeSessionRef) : undefined
+    const active = activeRailSessionStatusTarget({
+      targets,
+      sessionID: props.activeSessionId,
+      directory: props.activeDirectory,
+      host: activeSessionRef?.host,
+      workspaceId: activePlacementWorkspaceId,
+    })
+    return boundRailSessionStatusTargets(targets, undefined, active?.key)
   })
   const sessionStatusTargetGroups = createMemo(() => groupRailSessionStatusTargets(sessionStatusTargets()))
   const sessionStatusTargetSignature = createMemo(() =>
@@ -803,59 +813,26 @@ export function RailSidebar(props: RailSidebarProps) {
       .map((group) => railSessionStatusBatchKey(group))
       .join("\n"),
   )
-  const sidebarSessionStatusQueries = useQueries(() => ({
-    queries: sessionStatusTargets().map((target) => ({
-      ...sessionStatusQueryOptions({
-        sessionId: target.sessionID,
-        client: globalSDK.client,
-      }),
-      enabled: false,
-    })),
-  }))
-  const sidebarSessionRequestQueries = useQueries(() => ({
-    queries: sessionStatusTargets().map((target) => ({
-      ...sessionRequestsQueryOptions({
-        sessionId: target.sessionID,
-        client: globalSDK.client,
-      }),
-      enabled: false,
-    })),
-  }))
   const sidebarSessionStatusInputs = createMemo(() => {
     const statuses = sessionStatuses()
     const requests = sessionRequests()
-    return new Map(sessionStatusTargets().map((target, index) => [
+    return new Map(sessionStatusTargets().map((target) => [
       target.key,
       {
         directory: target.directory,
-        statusType: sidebarSessionStatusQueries[index]?.data?.type ?? statuses[target.key],
-        requests: sidebarSessionRequestQueries[index]?.data ?? requests[target.key],
+        statusType: statuses[target.key],
+        requests: requests[target.key],
       },
     ] as const))
   })
   const primeSidebarStatusTargets = (directory: string) => {
-    const now = Date.now()
-    const nextStatuses: Record<string, string | undefined> = {}
-    const nextRequests: Record<string, { permissions: PermissionRequest[]; questions: QuestionRequest[] }> = {}
     for (const group of sessionStatusTargetGroups()) {
       if (group.directory !== directory) continue
-      sidebarSessionStatusBatches.set(
-        railSessionStatusBatchKey(group),
-        { updatedAt: now },
-      )
-      for (const target of group.targets) {
-        nextStatuses[target.key] = "idle"
-        nextRequests[target.key] = { permissions: [], questions: [] }
-        if (!queryClient.getQueryData(shellDataKeys.sessionId(target.sessionID, "status"))) {
-          dispatchSessionStatusEvent({ event: { type: "session.status", source: "server", sessionID: target.sessionID, status: { type: "idle" } } })
-        }
-        if (!queryClient.getQueryData(shellDataKeys.sessionId(target.sessionID, "requests"))) {
-          dispatchSessionRequestsEvent({ event: { type: "session.requests", source: "server", sessionID: target.sessionID, requests: nextRequests[target.key]! } })
-        }
-      }
+      const batchKey = railSessionStatusBatchKey(group)
+      sidebarSessionStatusBatches.get(batchKey)?.controller?.abort()
+      sidebarSessionStatusBatches.delete(batchKey)
     }
-    setSessionStatuses((current) => ({ ...current, ...nextStatuses }))
-    setSessionRequests((current) => ({ ...current, ...nextRequests }))
+    refreshSidebarStatusTargets()
   }
   let sidebarStatusPrimeTimer: ReturnType<typeof setTimeout> | undefined
   const scheduleSidebarStatusPrime = (directory: string) => {
@@ -869,12 +846,29 @@ export function RailSidebar(props: RailSidebarProps) {
     if (sidebarStatusPrimeTimer) clearTimeout(sidebarStatusPrimeTimer)
   })
 
+  let refreshSidebarStatusTargets: VoidFunction = () => undefined
+  let sidebarActivityRefreshQueued = false
+  const scheduleSidebarActivityRefresh = () => {
+    if (sidebarActivityRefreshQueued) return
+    sidebarActivityRefreshQueued = true
+    queueMicrotask(() => {
+      sidebarActivityRefreshQueued = false
+      refreshSidebarStatusTargets()
+    })
+  }
   let lastSessionStatusTargetSignature = ""
   createEffect(
     on(sessionStatusTargetSignature, (signature) => {
       if (signature === lastSessionStatusTargetSignature) return
       lastSessionStatusTargetSignature = signature
       const groups = sessionStatusTargetGroups()
+      const sessionIDs = new Set(groups.flatMap((group) => group.targets.map((target) => target.sessionID)))
+      const releases = [...sessionIDs].map((sessionID) => subscribeSessionActivity(sessionID, () => {
+        // The event carries only an opaque id, so it cannot identify which of
+        // several workspace placements changed. Never copy its id-keyed cache
+        // value into placement-local rows; ask each placement authority.
+        if (invalidateSidebarSessionStatusGroupsForSession(groups, sessionID) > 0) scheduleSidebarActivityRefresh()
+      }))
       sidebarRequestDebug("target-groups", groups.map((group) => ({
         directory: group.directory,
         sessions: group.targets.map((target) => target.sessionID),
@@ -893,10 +887,7 @@ export function RailSidebar(props: RailSidebarProps) {
             sidebarRequestDebug("skip-in-flight", group.directory, group.targets.length)
             continue
           }
-          if (
-            now - (cached?.updatedAt ?? 0) < SIDEBAR_SESSION_STATUS_FRESH_MS &&
-            group.targets.every((target) => sidebarStatusTargetFresh(target.sessionID, now))
-          ) {
+          if (now - (cached?.updatedAt ?? 0) < SIDEBAR_SESSION_STATUS_FRESH_MS) {
             sidebarRequestDebug("skip-fresh", group.directory, group.targets.length)
             continue
           }
@@ -917,18 +908,18 @@ export function RailSidebar(props: RailSidebarProps) {
               const nextStatuses: Record<string, string | undefined> = {}
               const nextRequests: Record<string, { permissions: PermissionRequest[]; questions: QuestionRequest[] }> = {}
               for (const target of group.targets) {
-                const status = statuses[target.sessionID] ?? { type: "idle" as const }
+                // Absence is not an idle assertion. Preserve this placement's
+                // previous value rather than consulting the ambiguous id key.
+                const status = statuses[target.sessionID]
                 const requests = {
                   permissions: permissions.filter((item) => item.sessionID === target.sessionID),
                   questions: questions.filter((item) => item.sessionID === target.sessionID),
                 }
-                nextStatuses[target.key] = status.type
+                if (status) nextStatuses[target.key] = status.type
                 nextRequests[target.key] = requests
-                dispatchSessionStatusEvent({ event: { type: "session.status", source: "server", sessionID: target.sessionID, status } })
-                dispatchSessionRequestsEvent({ event: { type: "session.requests", source: "server", sessionID: target.sessionID, requests } })
               }
               setSessionStatuses((current) => {
-                const changed = group.targets.some((target) => current[target.key] !== nextStatuses[target.key])
+                const changed = Object.entries(nextStatuses).some(([key, value]) => current[key] !== value)
                 if (!changed) return current
                 return { ...current, ...nextStatuses }
               })
@@ -973,8 +964,13 @@ export function RailSidebar(props: RailSidebarProps) {
           fastSessionSwitchAnyQuietDelay() <= 0 &&
           (typeof document === "undefined" || document.visibilityState !== "hidden"),
       })
+      refreshSidebarStatusTargets = run
       poll.start()
-      onCleanup(() => poll.stop())
+      onCleanup(() => {
+        for (const release of releases) release()
+        if (refreshSidebarStatusTargets === run) refreshSidebarStatusTargets = () => undefined
+        poll.stop()
+      })
     }),
   )
 
@@ -996,6 +992,8 @@ export function RailSidebar(props: RailSidebarProps) {
     const activity = sidebarSessionActivity()
     const targets = sessionStatusTargets()
     const targetKeys = new Set(targets.map((target) => target.key))
+    setSessionStatuses((current) => pruneRailSessionActivityMap(current, targets))
+    setSessionRequests((current) => pruneRailSessionActivityMap(current, targets))
     const focusedContentId = claxedoState.wb.selectors.focusedContent()
     const focusedContent = focusedContentId ? claxedoState.meta.get(focusedContentId) : undefined
     const focusedKeys = new Set(targets.flatMap((target) => {
@@ -1700,6 +1698,7 @@ export function RailSidebar(props: RailSidebarProps) {
   }
 
   const GlobalBlock = (section: GlobalSection) => {
+    const [open, setOpen] = createSignal(true)
     const globalSessionListQuery = createMemo<SessionListQuery>(() => ({
       scope: "global",
       groupBy: "none",
@@ -1748,11 +1747,10 @@ export function RailSidebar(props: RailSidebarProps) {
     })
     let visibleRows = sectionRows()
     createEffect(() => {
-      visibleRows = sectionRows()
+      visibleRows = open() ? sectionRows() : []
       registerVisibleSessionRows("global", visibleRows)
     })
     onCleanup(() => clearVisibleSessionRows("global", visibleRows))
-    const [open, setOpen] = createSignal(true)
     const more = createMemo(() => sessionListLoaded()
       ? !!sessionListNextCursor()
       : false)
@@ -1966,7 +1964,7 @@ export function RailSidebar(props: RailSidebarProps) {
     const visibleRowsKey = `workspace:${section.workspaceDir}`
     let visibleRows = sectionRows()
     createEffect(() => {
-      visibleRows = sectionRows()
+      visibleRows = open() ? sectionRows() : []
       registerVisibleSessionRows(visibleRowsKey, visibleRows)
     })
     onCleanup(() => clearVisibleSessionRows(visibleRowsKey, visibleRows))
@@ -2243,7 +2241,7 @@ export function RailSidebar(props: RailSidebarProps) {
     const visibleRowsKey = `project:${section.project.id}`
     let visibleRows = sectionRows()
     createEffect(() => {
-      visibleRows = sectionRows()
+      visibleRows = open() ? sectionRows() : []
       registerVisibleSessionRows(visibleRowsKey, visibleRows)
     })
     onCleanup(() => clearVisibleSessionRows(visibleRowsKey, visibleRows))

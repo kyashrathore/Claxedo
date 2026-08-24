@@ -11,6 +11,58 @@ export type RailSessionStatusTargetGroup = {
   targets: RailSessionStatusTarget[]
 }
 
+// The rail may have an arbitrary number of disclosed workspace sections. Its
+// status projection is useful lightweight metadata, but it must not create an
+// observer/request pair for every session ever paged into a long-lived rail.
+export const MAX_RAIL_SESSION_STATUS_TARGETS = 50
+
+export function pruneRailSessionActivityMap<T>(
+  current: Record<string, T | undefined>,
+  targets: readonly Pick<RailSessionStatusTarget, "key">[],
+) {
+  const targetKeys = new Set(targets.map((target) => target.key))
+  const stale = Object.keys(current).filter((key) => !targetKeys.has(key))
+  if (stale.length === 0) return current
+  const next = { ...current }
+  for (const key of stale) delete next[key]
+  return next
+}
+
+export function boundRailSessionStatusTargets(
+  targets: readonly RailSessionStatusTarget[],
+  limit = MAX_RAIL_SESSION_STATUS_TARGETS,
+  priorityKey?: string,
+) {
+  const seen = new Set<string>()
+  const bounded: RailSessionStatusTarget[] = []
+  const priority = priorityKey ? targets.find((target) => target.key === priorityKey) : undefined
+  const ordered = priority ? [priority, ...targets] : targets
+  for (const target of ordered) {
+    if (seen.has(target.key)) continue
+    seen.add(target.key)
+    bounded.push(target)
+    if (bounded.length >= limit) break
+  }
+  return bounded
+}
+
+export function activeRailSessionStatusTarget(input: {
+  targets: readonly RailSessionStatusTarget[]
+  sessionID?: string
+  directory?: string
+  host?: "central" | "workspace"
+  workspaceId?: string
+}) {
+  return input.targets.find((target) =>
+    target.sessionID === input.sessionID &&
+    target.directory === input.directory &&
+    (input.host === "central"
+      ? target.key.startsWith("central:")
+      : input.workspaceId
+        ? target.workspaceId === input.workspaceId
+        : true))
+}
+
 export function railSessionStatusTarget(input: {
   key: string
   directory: string

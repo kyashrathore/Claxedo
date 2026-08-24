@@ -47,7 +47,7 @@ export function preloadRuntimeProviders() {
   return claxedoAppShellLoad
 }
 
-export function RuntimeProviders(props: ParentProps & { onPainted: () => void }) {
+export function RuntimeProviders(props: ParentProps) {
   const started = performance.now()
   const AppShell = claxedoAppShell()
   let didSignalPaint = false
@@ -57,7 +57,6 @@ export function RuntimeProviders(props: ParentProps & { onPainted: () => void })
     didSignalPaint = true
     requestAnimationFrame(() => {
       trace("runtime.firstPaint", performance.now() - started)
-      props.onPainted()
     })
   })
 

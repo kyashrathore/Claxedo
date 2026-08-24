@@ -7,11 +7,14 @@ import { ClaxedoStateProvider } from "../state/index"
 import { emptyClaxedoState } from "../state/persistence"
 import { RailSidebar, SessionListNotice, type ProjectItem } from "./rail-sidebar"
 import { SessionTitleProjectionProvider } from "@/features/session/providers/session-title-projection-provider"
+import { dispatchSessionStatusEvent } from "@/features/session/store/session-status-dispatcher"
+import type { SessionNavigationRow } from "@/features/session/ui/navigation/session-navigation"
 
 const inventoryMocks = vi.hoisted(() => ({
   reloadWorkspace: vi.fn(),
 }))
 const sessionListMocks = vi.hoisted(() => ({
+  items: [] as SessionNavigationRow[],
   request: vi.fn(async (query: { scope: string; groupBy?: string; limit?: number }) => ({
     view: {
       scope: query.scope,
@@ -19,7 +22,19 @@ const sessionListMocks = vi.hoisted(() => ({
       sort: "updated_desc",
       limit: query.limit ?? 50,
     },
-    items: [],
+    items: sessionListMocks.items,
+  })),
+}))
+const railRuntimeMocks = vi.hoisted(() => ({
+  statusByDirectory: {} as Record<string, Record<string, { type: "idle" | "busy" }>>,
+  failingDirectories: new Set<string>(),
+  createClient: vi.fn((input: { directory: string }) => ({
+    session: { status: vi.fn(async () => {
+      if (railRuntimeMocks.failingDirectories.has(input.directory)) throw new Error("status unavailable")
+      return { data: railRuntimeMocks.statusByDirectory[input.directory] ?? {} }
+    }) },
+    permission: { list: vi.fn(async () => ({ data: [] })) },
+    question: { list: vi.fn(async () => ({ data: [] })) },
   })),
 }))
 
@@ -48,6 +63,7 @@ vi.mock("@/platform/account/account-provider", () => ({
 vi.mock("@/app/providers/global-sdk/provider", () => ({
   useGlobalSDK: () => ({
     url: "http://localhost:4096",
+    createClient: railRuntimeMocks.createClient,
     client: {
       session: { status: vi.fn(), requests: vi.fn() },
       permission: { list: vi.fn() },
@@ -64,11 +80,22 @@ vi.mock("@/features/session/providers/permission", () => ({
   usePermission: () => ({ autoResponds: () => false }),
 }))
 
+vi.mock("@/features/session/ui/navigation/session-navigation-list", () => ({
+  SessionNavigation: (props: { rows: Array<{ source: { sessionId: string }; status: string }> }) => (
+    <div
+      data-testid="mock-session-navigation"
+      data-session-count={props.rows.length}
+      data-session-statuses={props.rows.map((row) => `${row.source.sessionId}:${row.status}`).join(",")}
+    />
+  ),
+}))
+
 vi.mock("@opencode-ai/ui/context/dialog", () => ({
   useDialog: () => ({ show: vi.fn(), close: vi.fn() }),
 }))
 
 vi.mock("../../../features/workspaces/data/workspace-connection", () => ({
+  isWorkspaceReady: () => true,
   workspacePlacement: () => undefined,
 }))
 
@@ -98,6 +125,10 @@ afterEach(() => {
   localStorage.clear()
   inventoryMocks.reloadWorkspace.mockClear()
   sessionListMocks.request.mockClear()
+  sessionListMocks.items = []
+  railRuntimeMocks.createClient.mockClear()
+  railRuntimeMocks.statusByDirectory = {}
+  railRuntimeMocks.failingDirectories.clear()
 })
 
 const project = {
@@ -354,6 +385,94 @@ describe("RailSidebar disclosure controls", () => {
 
     expect(screen.getByRole("button", { name: "Collapse workspace" })).toHaveAttribute("aria-expanded", "true")
     expect(onWorkspaceSelect).not.toHaveBeenCalled()
+  })
+
+  test("activity refetches every open placement group and collapsed sections unregister it", async () => {
+    sessionListMocks.items = [{
+      type: "session",
+      sessionRef: "local:/repo/main:session:shared",
+      sessionId: "shared",
+      title: "Shared session",
+      directory: "/repo/main",
+      projectId: "project-1",
+      createdAt: 1,
+      updatedAt: 2,
+      tags: [],
+      attachments: [],
+    }]
+    renderSidebar({ group: "project" })
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand project" }))
+    await waitFor(() => expect(railRuntimeMocks.createClient).toHaveBeenCalledTimes(1))
+
+    dispatchSessionStatusEvent({
+      event: { type: "session.status", source: "server", sessionID: "shared", status: { type: "busy" } },
+    })
+    await waitFor(() => expect(railRuntimeMocks.createClient).toHaveBeenCalledTimes(2))
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse project" }))
+    const callsAfterCollapse = railRuntimeMocks.createClient.mock.calls.length
+    dispatchSessionStatusEvent({
+      event: { type: "session.status", source: "server", sessionID: "shared", status: { type: "idle" } },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(railRuntimeMocks.createClient).toHaveBeenCalledTimes(callsAfterCollapse)
+  })
+
+  test("an ambiguous id event never projects one placement into another when a refetch fails", async () => {
+    sessionListMocks.items = [
+      {
+        type: "session",
+        sessionRef: "local:/repo/main:session:duplicate",
+        sessionId: "duplicate",
+        title: "Main shared session",
+        directory: "/repo/main",
+        projectId: "project-1",
+        createdAt: 1,
+        updatedAt: 3,
+        tags: [],
+        attachments: [],
+      },
+      {
+        type: "session",
+        sessionRef: "local:/repo/secondary:session:duplicate",
+        sessionId: "duplicate",
+        title: "Secondary shared session",
+        directory: "/repo/secondary",
+        projectId: "project-1",
+        createdAt: 1,
+        updatedAt: 2,
+        tags: [],
+        attachments: [],
+      },
+    ]
+    railRuntimeMocks.statusByDirectory = {
+      "/repo/main": { duplicate: { type: "busy" } },
+      "/repo/secondary": { duplicate: { type: "busy" } },
+    }
+
+    renderSidebar({ group: "project" })
+    fireEvent.click(screen.getByRole("button", { name: "Expand project" }))
+
+    const navigation = await screen.findByTestId("mock-session-navigation")
+    await waitFor(() => expect(navigation).toHaveAttribute(
+      "data-session-statuses",
+      "duplicate:working,duplicate:working",
+    ))
+
+    railRuntimeMocks.failingDirectories.add("/repo/secondary")
+    const callsBeforeEvent = railRuntimeMocks.createClient.mock.calls.length
+
+    dispatchSessionStatusEvent({
+      event: { type: "session.status", source: "server", sessionID: "duplicate", status: { type: "idle" } },
+    })
+    await waitFor(() => expect(railRuntimeMocks.createClient.mock.calls.length).toBe(callsBeforeEvent + 2))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    // The successful placement remains busy and the failed placement retains
+    // its last authoritative local value. Neither consumes the ambiguous id.
+    expect(navigation).toHaveAttribute("data-session-statuses", "duplicate:working,duplicate:working")
   })
 })
 
