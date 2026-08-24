@@ -1,6 +1,7 @@
 ---
 artifact_contract: "ce-handoff/v1"
 created_at: "2026-08-24T07:16:26Z"
+updated_at: "2026-08-24T07:30:17Z"
 title: "Claxedo performance architecture and release handoff"
 summary: "Continuation state for cold-session, memory, Workspace disposal/reopen, Crabbox/AWS validation, merge, and push work."
 keywords: ["claxedo", "performance", "cold-session", "workspace-reopen", "crabbox", "aws-windows", "merge-dev"]
@@ -9,7 +10,7 @@ resume_focus: "Finish zero-CPU Workspace disposal without worsening substantial-
 repository: "kyashrathore/Claxedo"
 repo_root_sha: "728cedf2a29e2f9da901c8c36620ce5efc09e6b2"
 branch: "chore/crabbox-ci-matrix"
-head: "693c9258831087352ae7314dcb78c793856e3eb7"
+head: "ec7ee91ddfeebd2001b76f94d2f42c8643bf5370"
 worktree_path: "/Users/yashvardhansingh/test/opencode"
 ---
 
@@ -35,11 +36,11 @@ This captures the implementation and benchmark state before the remaining Worksp
 
 Three bases matter:
 
-1. Local Git base: local dev and this branch merge at 94c110381a7ec6896a5fff2284d4949b0bd0284c. There are 35 task commits above it.
+1. Local Git base: local dev and this branch merge at 94c110381a7ec6896a5fff2284d4949b0bd0284c. There are 36 implementation commits plus the initial handoff commit above it through ec7ee91dd.
 2. Remote integration base: captured origin/dev is cf6bea4a8628532729028ec15651f6f2f5cf38c1. It merges with this branch at c97fe215f24112202e1378795f1962485a22d2ce. This branch is 108 ahead/55 behind origin/dev. Local dev is 73 ahead/55 behind its remote. Do not push local dev directly.
 3. Retained Workspace benchmark base: exact commit a03985db951d33fcbd379cf6d11aecd5bb2ad5b3, tree 39bdbf87d8d17d55086d32754f0294cd9088c3d3. It is the last build before Workspace disposal.
 
-Captured implementation HEAD before this document: 693c9258831087352ae7314dcb78c793856e3eb7. The feature branch has no upstream and was not pushed at capture time.
+Captured implementation HEAD: ec7ee91ddfeebd2001b76f94d2f42c8643bf5370. The feature branch tracks origin/chore/crabbox-ci-matrix and was pushed successfully after its pre-push hook passed in a clean detached worktree. Dev was not changed or pushed.
 
 ## Completed work and measured gains
 
@@ -104,29 +105,39 @@ Machine-local prior artifact:
 - ae3086a88: Workspace opens/mounts synchronously; close retains nodes through 140 ms; rapid reopen cancels disposal; RailWorkbenchShell then unmounts the whole panel.
 - 651e3725a: TabFile uses the canonical runtime request cache; watcher events force invalidation; tested remount reads once.
 - 693c92588: 32-entry non-reactive provider-instance Review working-set LRU with clone isolation. Snapshot currently holds tab DTOs/order, active tab, and semantic scroll. ReviewWorkspace restores these and stays within its 800-line limit.
+- ec7ee91dd: Removed the consumer-less type-only props module, returned ReviewWorkspaceProps to its owning component, and extracted the live process-tab section so ReviewWorkspace remains 755 lines without an import-graph exemption.
 
 These are foundations only: the store is not wired through WorkspacePanelBody, and Review mode/refs/diff style/open diffs/forced paths are not externalized.
 
-## Retained benchmark in progress
+## Retained benchmark complete
 
-Crabbox lease tidal-prawn is exact-clean a03985db9. Do not sync the candidate until retained reports are preserved.
+Crabbox lease tidal-prawn is exact-clean a03985db9. The one-iteration smoke and all three five-iteration arms ran sequentially, exited 0, and reported no correctness or validation failures. WARN status is only the absolute 60 Hz renderer-task debt. Provenance-after remained clean.
 
-Remote roots:
+Five-iteration retained headlines:
 
-- /tmp/heavy-workspace-a03985db9-causal-unthrottled/
-- /tmp/heavy-workspace-a03985db9-retained-baseline/
+- Close enabled/control completion means 189.74/188.58 ms; enabled/control p95 task intervals 4.16/4.73 ms; worst 63.35/62.35 ms.
+- Reopen enabled/control completion means 168.54/160.11 ms; p95 task intervals 41.88/41.11 ms; worst 143.03/127.63 ms.
+- Review resume enabled/control completion means 591.86/577.79 ms; p95 task intervals 285.24/282.83 ms; worst 331.84/306.60 ms.
+- Review-resume causal p50/p95: completion 586/632.90 ms; script 25.54/32.12; style 417.30/457.94; layout 35.67/40.09; task 585.93/632.82.
+- Every sample restored four tabs, two stable frames, zero blank/loading frames, three file roots, all 500 Review files, one expanded diff body, exact scroll 11,200, and zero resource requests.
+- Retained ownership intentionally includes one inactive Review root/500 files after reopen and three inactive file roots during Review resume. The disposal candidate must remove these while preserving restoration.
 
-At capture, five-iteration heavy-workspace-close was running without correctness errors; reopen and Review-resume were queued sequentially. Do not parallelize benchmark arms.
+Downloaded, gzip/tar-verified evidence:
+
+- /tmp/claxedo-heavy-workspace-e353ef7ab.y6PebE/artifacts/a03985db9/heavy-workspace-a03985db9-smoke-artifacts.tar.gz — SHA-256 8b7c814da31155ec4d5c4c71167e268f185a0730db71ff69b2d70970cc6cf7e7.
+- /tmp/claxedo-heavy-workspace-e353ef7ab.y6PebE/artifacts/a03985db9/heavy-workspace-a03985db9-retained-5x-artifacts.tar.gz — SHA-256 70fafb1406c5e42783b95bda5c0eba9aff3b7a4147f05fc827378031657c3f38.
+
+Remote roots remain /tmp/heavy-workspace-a03985db9-causal-unthrottled/ and /tmp/heavy-workspace-a03985db9-retained-baseline/. The Crabbox lease is held idle; preserve or upload evidence before releasing it. Do not parallelize candidate benchmark arms.
 
 ## Absolute debt versus architecture verdict
 
 Noninferiority must not be described as “fast.”
 
-Retained Review-resume has real long tasks:
+Retained Review-resume has real long tasks in the completed five-iteration baseline:
 
-- control p95 about 276 ms, worst 306 ms, 6/30 >16.67 ms;
-- enabled p95 about 279 ms, worst 295 ms, 6/25 >16.67 ms;
-- earlier phase attribution: completion 598–616 ms, style 423–448 ms, script 29–34 ms, layout 34–37 ms.
+- control p95 282.83 ms, worst 306.60 ms, 30/142 >16.67 ms;
+- enabled p95 285.24 ms, worst 331.84 ms, 30/135 >16.67 ms;
+- causal p95 attribution: completion 632.90 ms, style 457.94 ms, script 32.12 ms, layout 40.09 ms.
 
 These are exact CrRendererMain RunTask intervals, not cumulative clicks. Keep two verdicts:
 
@@ -195,6 +206,7 @@ Persist accepted results into the experiment ledger before making final claims.
 - App typecheck after latest slices: pass.
 - Layout architecture 4/4; exact workspace chrome audit 1/1.
 - Full route-audit currently has unrelated failures from concurrent uncommitted session/runtime changes.
+- Clean detached pre-push validation at ec7ee91dd: `bun turbo typecheck` passed 37/37 tasks; app architecture 261/261; focused performance Bun 19/19; performance Vitest 37/37.
 
 ## Shared dirty worktree warning
 
@@ -228,7 +240,7 @@ Use ./script/cbx-ci.ts retry for failed lanes. Focused Windows jobs are diagnost
 
 ## Push and merge
 
-No feature upstream exists yet. Push only after candidate implementation and validation:
+The feature upstream exists and currently contains ec7ee91dd. Push later continuation commits with:
 
 ~~~sh
 git push -u origin chore/crabbox-ci-matrix
@@ -250,7 +262,7 @@ git -C ../opencode-perf-dev-integration push origin HEAD:dev
 
 Never force-push dev or reset this shared worktree.
 
-## All 35 task commits over captured local dev
+## All 37 commits through captured implementation HEAD over local dev
 
 ~~~text
 77fb92d14 perf(harness): attribute cold session CPU costs
@@ -288,6 +300,8 @@ a03985db9 test(perf): accept semantic scroll enrichment
 ae3086a88 fix(app): dispose workspace panel after close motion
 651e3725a perf(app): reuse file reads across tab remounts
 693c92588 perf(app): externalize review working set
+878f13d7a docs(perf): add implementation and release handoff
+ec7ee91dd refactor(app): keep review workspace contract reachable
 ~~~
 
 Use git log --stat 94c110381..HEAD and git diff --stat 94c110381..HEAD for the authoritative file-level delta. Review the full diff against fresh origin/dev before landing.
