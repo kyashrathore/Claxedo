@@ -3,6 +3,7 @@ import { FLOWS } from "../src/flows"
 import { fileContent, fixtureFor } from "../src/browser-runner"
 import {
   HEAVY_WORKSPACE_CLOSE_DWELL_MS,
+  HEAVY_WORKSPACE_EXPANDED_DIFF_LINES,
   HEAVY_WORKSPACE_REOPEN_FILE_PATHS,
   HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR,
   heavyWorkspaceReviewRestorationFailures,
@@ -22,6 +23,12 @@ describe("heavy workspace reopen benchmark contract", () => {
     expect(new Set(HEAVY_WORKSPACE_REOPEN_FILE_PATHS).size).toBe(3)
     expect(HEAVY_WORKSPACE_CLOSE_DWELL_MS).toBeGreaterThan(140)
     expect(HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR).toContain("[data-scrollable]")
+
+    const expanded = fixtureFor("heavy-workspace-reopen", seed).changedFiles[0]!
+    expect(expanded.additions).toBe(HEAVY_WORKSPACE_EXPANDED_DIFF_LINES)
+    expect(expanded.deletions).toBe(HEAVY_WORKSPACE_EXPANDED_DIFF_LINES)
+    expect(expanded.patch.split("\n")).toHaveLength(HEAVY_WORKSPACE_EXPANDED_DIFF_LINES * 2 + 1)
+    expect(expanded.patch.length).toBeGreaterThan(10_000)
 
     const fixture = fixtureFor("heavy-workspace-reopen", seed)
     expect(fileContent(new URL("http://perf/file/content?path=src/generated/file-113.ts"), fixture)).toEqual({

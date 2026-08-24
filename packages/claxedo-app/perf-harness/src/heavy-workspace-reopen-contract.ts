@@ -4,6 +4,11 @@ export const HEAVY_WORKSPACE_REOPEN_FILE_PATHS = [
   "src/generated/file-419.ts",
 ] as const
 
+// The first Review row is expanded before close. Make that body expensive
+// enough to exercise diff parsing, row construction, syntax decoration, and
+// layout rather than benchmarking a token one-line patch.
+export const HEAVY_WORKSPACE_EXPANDED_DIFF_LINES = 240
+
 // The shipping panel's close motion is 120ms with a 20ms exposure grace. A
 // 300ms dwell proves a future lazy-unmount implementation has crossed its
 // disposal boundary before the reopen click, rather than measuring a reversal

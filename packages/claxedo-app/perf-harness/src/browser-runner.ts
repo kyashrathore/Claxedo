@@ -25,6 +25,7 @@ import { browserRecords } from "./browser-records"
 import { compareToBaseline, currentCommit, readBaselineFor, writeBaselineFor } from "./baseline-store"
 import {
   HEAVY_WORKSPACE_CLOSE_DWELL_MS,
+  HEAVY_WORKSPACE_EXPANDED_DIFF_LINES,
   HEAVY_WORKSPACE_REOPEN_FILE_PATHS,
   HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR,
   heavyWorkspaceReviewRestorationFailures,
@@ -2313,13 +2314,19 @@ export function fixtureFor(scenario: ScenarioId, seed: SeedManifest) {
       default: { [providerID]: modelID },
     },
     sessions,
-    changedFiles: Array.from({ length: Math.max(1, seed.changed_files) }, (_, index) => ({
-      file: `src/generated/file-${index}.ts`,
-      status: index % 11 === 0 ? "added" : "modified",
-      additions: (index % 9) + 1,
-      deletions: index % 3,
-      patch: `@@ -1 +1 @@\n-export const value = ${index}\n+export const value = ${index + 1}`,
-    })),
+    changedFiles: Array.from({ length: Math.max(1, seed.changed_files) }, (_, index) => {
+      const heavyExpandedDiff =
+        index === 0 && (scenario === "heavy-workspace-reopen" || scenario === "heavy-workspace-review-resume")
+      return {
+        file: `src/generated/file-${index}.ts`,
+        status: heavyExpandedDiff ? "modified" : index % 11 === 0 ? "added" : "modified",
+        additions: heavyExpandedDiff ? HEAVY_WORKSPACE_EXPANDED_DIFF_LINES : (index % 9) + 1,
+        deletions: heavyExpandedDiff ? HEAVY_WORKSPACE_EXPANDED_DIFF_LINES : index % 3,
+        patch: heavyExpandedDiff
+          ? heavyWorkspaceExpandedPatch(HEAVY_WORKSPACE_EXPANDED_DIFF_LINES)
+          : `@@ -1 +1 @@\n-export const value = ${index}\n+export const value = ${index + 1}`,
+      }
+    }),
     terminals: Array.from({ length: Math.max(1, seed.terminals || 1) }, (_, index) => ({
       id: `pty_perf_${scenario.replace(/-/g, "_")}_${index}`,
       title: `Terminal ${index + 1}`,
@@ -2334,6 +2341,12 @@ export function fixtureFor(scenario: ScenarioId, seed: SeedManifest) {
     },
     visualFailures: [] as string[],
   }
+}
+
+function heavyWorkspaceExpandedPatch(lines: number) {
+  const before = Array.from({ length: lines }, (_, index) => `-export const oldValue${index} = ${index}`)
+  const after = Array.from({ length: lines }, (_, index) => `+export const newValue${index} = ${index + 1}`)
+  return [`@@ -1,${lines} +1,${lines} @@`, ...before, ...after].join("\n")
 }
 
 function pageMessages(sessionID: string, limit: number, before: string | undefined, fixture: ReturnType<typeof fixtureFor>) {
