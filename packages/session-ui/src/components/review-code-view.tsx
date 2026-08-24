@@ -150,6 +150,9 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
     if (!host) return
     const options: CodeViewOptions<undefined> = {
       diffStyle: props.diffStyle,
+      // Spike diagnostics: let render failures throw instead of being
+      // swallowed -- a blank canvas must name its cause.
+      disableErrorHandling: true,
       renderHeaderPrefix: (fileDiff) => headerToggle(fileDiff.name),
       onPostRender: () => {
         props.onDiffRendered?.()
@@ -160,8 +163,46 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
     // path and it disables the vanilla header-slot rendering entirely.
     const instance = new CodeView(options, getWorkerPool(props.diffStyle))
     view = instance
+    // Spike diagnostics only: reachable state for the DOM probe.
+    ;(window as unknown as Record<string, unknown>).__reviewCodeView = instance
     instance.setup(host)
     instance.setItems(buildItems())
+    // setItems reconciles and measures; the content render pass is a separate
+    // explicit kick (Pierre's own React wrapper does the same after seeding).
+    instance.render(true)
+
+    // CodeView's first render passes can no-op while its async dependencies
+    // (highlighter/theme init) come up, and nothing re-renders when they
+    // arrive -- interactive consumers get re-kicked by app state churn this
+    // surface deliberately does not have. Re-kick with decaying retries until
+    // the first item actually holds content, and again on root resizes (the
+    // panel animates open and can present a zero-size root at mount).
+    const hasRenderedContent = () => {
+      const first = instance.getRenderedItems()[0]
+      return !!first && (first.element.shadowRoot?.childElementCount ?? 0) > 1
+    }
+    let kickTimer: ReturnType<typeof setTimeout> | undefined
+    const kickUntilContent = (attempt = 0) => {
+      if (hasRenderedContent() || attempt > 8) return
+      instance.render(true)
+      stampSoon()
+      kickTimer = setTimeout(() => kickUntilContent(attempt + 1), 50 * (attempt + 1))
+    }
+    let lastKickHeight = -1
+    let resizeObserver: ResizeObserver | undefined
+    if (typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver((entries) => {
+        const height = entries.at(-1)?.contentRect.height ?? 0
+        if (height === lastKickHeight) return
+        lastKickHeight = height
+        if (height > 0) {
+          instance.render(true)
+          stampSoon()
+        }
+      })
+      resizeObserver.observe(host)
+    }
+    kickUntilContent()
 
     const scroller = findScroller(host)
     scroller.dataset.scrollable = "true"
@@ -172,6 +213,8 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
     stampSoon()
 
     onCleanup(() => {
+      if (kickTimer) clearTimeout(kickTimer)
+      resizeObserver?.disconnect()
       unsubscribe()
       scroller.removeEventListener("scroll", forwardScroll)
       if (stampFrame !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(stampFrame)
@@ -187,6 +230,7 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
       if (previous === undefined) return
       generation += 1
       view?.setItems(buildItems())
+      view?.render()
       stampSoon()
     },
   ))
@@ -196,6 +240,7 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
     (_next, previous) => {
       if (previous === undefined) return
       view?.setItems(buildItems())
+      view?.render()
       stampSoon()
     },
   ))
