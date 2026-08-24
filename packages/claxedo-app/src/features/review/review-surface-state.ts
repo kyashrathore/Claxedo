@@ -21,13 +21,6 @@ export type ReviewSurfaceState = {
   focusedFile?: string
   /** Paths the user chose to render past the large-diff limit. */
   forcedDiffPaths?: string[]
-  /**
-   * How many file rows the progressive renderer had admitted. A number, not
-   * DOM: restoring it lets a remounted review rebuild the corpus the user had
-   * on screen in one pass instead of re-admitting rows two per idle callback,
-   * which cannot reach a deep scroll anchor within any reasonable budget.
-   */
-  renderedFileLimit?: number
 }
 
 export function cloneReviewSurfaceState(state: ReviewSurfaceState): ReviewSurfaceState {

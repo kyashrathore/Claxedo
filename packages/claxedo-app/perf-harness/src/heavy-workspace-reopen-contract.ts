@@ -23,6 +23,14 @@ export const HEAVY_WORKSPACE_REQUIRE_DISPOSAL_ENV = "CLAXEDO_PERF_REQUIRE_WORKSP
 // of the close animation.
 export const HEAVY_WORKSPACE_CLOSE_DWELL_MS = 300
 
+// The Review file list is windowed: at most this many viewport rows own DOM at
+// once (required rows -- the scroll anchor, a focused file -- ride on top).
+// Mirrors REVIEW_MAX_WINDOW_ROWS in the app's review-window.ts.
+export const HEAVY_WORKSPACE_REVIEW_WINDOW_MAX_ROWS = 20
+
+// Required rows the window can add beyond the viewport cap (anchor + focus).
+export const HEAVY_WORKSPACE_REVIEW_WINDOW_SLACK = 4
+
 // ScrollView applies consumer attributes to its outer root; the element that
 // owns scrollTop is the nested viewport marked data-scrollable.
 export const HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR =
@@ -131,6 +139,31 @@ export function heavyWorkspaceClosedOwnershipFailures(ownership: HeavyWorkspaceC
     .map(([name, count]) => `closed workspace retained ${count} ${name}; expected 0`)
 }
 
+/**
+ * The windowed corpus contract: the model must hold every changed file while
+ * the DOM holds only a window's worth of header rows -- but never zero.
+ */
+export function heavyWorkspaceWindowedCorpusFailures(input: {
+  reviewFileCount: number
+  totalFileCount: number
+  expectedTotal: number
+}) {
+  const failures: string[] = []
+  if (input.totalFileCount !== input.expectedTotal) {
+    failures.push(`review model held ${input.totalFileCount} files; expected ${input.expectedTotal}`)
+  }
+  if (input.reviewFileCount === 0) {
+    failures.push("review window materialized no file rows")
+  }
+  const cap = HEAVY_WORKSPACE_REVIEW_WINDOW_MAX_ROWS + HEAVY_WORKSPACE_REVIEW_WINDOW_SLACK
+  if (input.reviewFileCount > cap) {
+    failures.push(
+      `review window materialized ${input.reviewFileCount} file rows; expected at most ${cap}`,
+    )
+  }
+  return failures
+}
+
 export function heavyWorkspaceInactiveReviewOwnershipFailures(ownership: {
   roots: number
   files: number
@@ -209,7 +242,10 @@ export function heavyWorkspaceReviewRestorationFailures(
       `review corpus changed after activation: ${before.reviewFileCount}/${before.totalFileCount} -> ${after.reviewFileCount}/${after.totalFileCount} rendered/total files`,
     )
   }
-  if (after.renderedHunks < before.renderedHunks) {
+  // Hunk counters are only comparable when an expanded body is inside the
+  // restored window; a windowed review scrolled away from its expanded rows
+  // legitimately renders zero hunks on a fresh mount.
+  if (before.expandedBodyPaths.length > 0 && after.renderedHunks < before.renderedHunks) {
     failures.push(`rendered review hunks regressed after activation: ${before.renderedHunks} -> ${after.renderedHunks}`)
   }
   if (before.scrollAnchorPath !== after.scrollAnchorPath) {

@@ -73,6 +73,8 @@ export type ReviewTabProps = {
    */
   retained?: ReviewSurfaceState
   onRetainedChange?: (state: ReviewSurfaceState) => void
+  /** Semantic scroll anchor the workspace's restoration will target. */
+  scrollAnchorPath?: string
   /**
    * Bumped by the workspace when a runtime event stales this review. The
    * workspace owns that subscription because it outlives this surface, which
@@ -283,7 +285,6 @@ export function ReviewTab(props: ReviewTabProps) {
     onCleanup(stop)
   })
 
-  const [renderedFileLimit, setRenderedFileLimit] = createSignal(retained.renderedFileLimit)
   // Seed the first render from the shared cache: a review remounting after a
   // panel disposal (or a tab switch) paints its corpus in the mount pass
   // instead of sitting empty until the deferred load runs. The deferred load
@@ -526,7 +527,6 @@ export function ReviewTab(props: ReviewTabProps) {
       openDiffs: [...store.openDiffs],
       focusedFile: store.focusedFile,
       forcedDiffPaths: [...store.forcedDiffPaths],
-      renderedFileLimit: renderedFileLimit(),
     })
   })
 
@@ -685,8 +685,7 @@ export function ReviewTab(props: ReviewTabProps) {
                 onOpenChange={(open) => setStore("openDiffs", open)}
                 forcedFiles={store.forcedDiffPaths}
                 onForcedFilesChange={(files) => setStore("forcedDiffPaths", files)}
-                initialRenderLimit={retained.renderedFileLimit}
-                onRenderLimitChange={setRenderedFileLimit}
+                anchorFile={props.scrollAnchorPath}
                 onDiffContentRequired={loadRequiredVcsDiffContent}
                 onDiffRendered={() => setRenderedHunks((count) => count + 1)}
                 readFile={readFile}

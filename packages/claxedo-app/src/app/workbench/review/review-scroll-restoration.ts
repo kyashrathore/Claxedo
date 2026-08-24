@@ -96,6 +96,12 @@ export function createReviewScrollRestoration(input: {
     }
     const anchor = anchorFor(position.anchorPath)
     if (position.anchorPath && !anchor) {
+      // The anchor row may not exist yet: the windowed file list materializes
+      // rows around the scroll position, so land on the recorded pixel top
+      // first -- that scroll is what makes the anchor's neighborhood (and the
+      // anchor row itself, which the window treats as required) mount. The
+      // observer then re-runs this for the precise anchor-offset correction.
+      if (Math.abs(element.scrollTop - position.top) > 0.5) element.scrollTop = position.top
       action = "waiting-for-anchor"
       if (!observer && typeof MutationObserver !== "undefined") {
         observer = new MutationObserver(() => apply())
@@ -181,5 +187,14 @@ export function createReviewScrollRestoration(input: {
     if (diagnosticHost) Reflect.deleteProperty(diagnosticHost, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY)
   }
 
-  return { bind, bindDiagnosticHost, capture, dispose, remember, restore }
+  return {
+    bind,
+    bindDiagnosticHost,
+    capture,
+    dispose,
+    remember,
+    restore,
+    /** The anchor of the position the next restore will target, if any. */
+    anchorPath: () => position.anchorPath,
+  }
 }

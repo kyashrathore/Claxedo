@@ -11,6 +11,7 @@ import {
   heavyWorkspaceClosedOwnershipFailures,
   heavyWorkspaceInactiveFileOwnershipFailures,
   heavyWorkspaceInactiveReviewOwnershipFailures,
+  heavyWorkspaceWindowedCorpusFailures,
   heavyWorkspaceLiveFileFailures,
   heavyWorkspaceReviewRestorationFailures,
   heavyWorkspaceRestorationFailures,
@@ -106,6 +107,14 @@ describe("heavy workspace reopen benchmark contract", () => {
     expect(heavyWorkspaceInactiveReviewOwnershipFailures({ roots: 0, files: 0, fileRoots: 1 })).toEqual([])
     expect(heavyWorkspaceInactiveReviewOwnershipFailures({ roots: 1, files: 500, fileRoots: 3 })).toHaveLength(3)
     expect(heavyWorkspaceInactiveFileOwnershipFailures({ fileRoots: 0 })).toEqual([])
+    expect(heavyWorkspaceWindowedCorpusFailures({ reviewFileCount: 18, totalFileCount: 500, expectedTotal: 500 }))
+      .toEqual([])
+    expect(heavyWorkspaceWindowedCorpusFailures({ reviewFileCount: 0, totalFileCount: 500, expectedTotal: 500 }))
+      .toEqual(["review window materialized no file rows"])
+    expect(heavyWorkspaceWindowedCorpusFailures({ reviewFileCount: 500, totalFileCount: 500, expectedTotal: 500 }))
+      .toEqual(["review window materialized 500 file rows; expected at most 24"])
+    expect(heavyWorkspaceWindowedCorpusFailures({ reviewFileCount: 18, totalFileCount: 262, expectedTotal: 500 }))
+      .toEqual(["review model held 262 files; expected 500"])
     expect(heavyWorkspaceInactiveFileOwnershipFailures({ fileRoots: 3 })).toEqual([
       expect.stringContaining("inactive file roots"),
     ])

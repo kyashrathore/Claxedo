@@ -114,7 +114,7 @@ describe("ClaxedoSessionReview", () => {
     expect(onForcedFilesChange).toHaveBeenCalledWith(["src/big.ts"])
   })
 
-  test("mounts every changed-file header progressively and includes a focused file beyond the first batch", async () => {
+  test("materializes only a window of header rows and keeps required rows mounted", async () => {
     const diffs = Array.from({ length: 75 }, (_, index) => ({
       file: `src/file-${index}.ts`,
       additions: 1,
@@ -127,16 +127,32 @@ describe("ClaxedoSessionReview", () => {
       </FileComponentProvider>
     ))
 
-    expect(initial.container.querySelectorAll("[data-review-file]")).toHaveLength(8)
+    // 75 files in the model, at most a window's worth of rows in the DOM; the
+    // rest is height-preserving gap.
+    const rows = initial.container.querySelectorAll("[data-review-file]")
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows.length).toBeLessThanOrEqual(20)
     expect(initial.container.querySelector("[data-review-rendered-files]")?.getAttribute("data-review-total-files")).toBe("75")
-    await waitFor(() => expect(initial.container.querySelectorAll("[data-review-file]")).toHaveLength(75))
+    expect(initial.container.querySelector("[data-slot='session-review-window-gap']")).toBeTruthy()
     initial.unmount()
 
+    // A focused file far outside the window is required and mounts anyway,
+    // without materializing the corpus between.
     const focused = render(() => (
       <FileComponentProvider component="div">
         <ClaxedoSessionReview diffs={diffs} focusedFile="src/file-74.ts" />
       </FileComponentProvider>
     ))
-    expect(focused.container.querySelectorAll("[data-review-file]")).toHaveLength(75)
+    expect(focused.container.querySelector("[data-review-file='src/file-74.ts']")).toBeTruthy()
+    expect(focused.container.querySelectorAll("[data-review-file]").length).toBeLessThanOrEqual(21)
+
+    // The anchor a scroll restoration targets is required the same way.
+    const anchored = render(() => (
+      <FileComponentProvider component="div">
+        <ClaxedoSessionReview diffs={diffs} anchorFile="src/file-50.ts" />
+      </FileComponentProvider>
+    ))
+    expect(anchored.container.querySelector("[data-review-file='src/file-50.ts']")).toBeTruthy()
+    expect(anchored.container.querySelectorAll("[data-review-file]").length).toBeLessThanOrEqual(21)
   })
 })

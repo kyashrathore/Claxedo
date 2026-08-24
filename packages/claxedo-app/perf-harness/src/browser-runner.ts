@@ -33,6 +33,9 @@ import {
   heavyWorkspaceClosedOwnershipFailures,
   heavyWorkspaceInactiveFileOwnershipFailures,
   heavyWorkspaceInactiveReviewOwnershipFailures,
+  heavyWorkspaceWindowedCorpusFailures,
+  HEAVY_WORKSPACE_REVIEW_WINDOW_MAX_ROWS,
+  HEAVY_WORKSPACE_REVIEW_WINDOW_SLACK,
   heavyWorkspaceLiveFileFailures,
   heavyWorkspaceReviewRestorationFailures,
   heavyWorkspaceRestorationFailures,
@@ -995,25 +998,25 @@ async function heavyWorkspaceReopen(
   await openFirstReviewDiff(page)
   await waitForReviewStable(page)
   await waitForHeavyReviewCorpus(page, fixture)
+  // The expanded diff lives at the top of the list. With the windowed file
+  // list it leaves the DOM once the deep scroll moves the window away, so its
+  // evidence must be read here, not from the post-scroll identity.
+  const reviewAtTop = await readHeavyWorkspaceReviewIdentity(page)
+  if (reviewAtTop.expandedPaths.length === 0) {
+    recordVisualFailure(fixture, "heavy workspace setup had no expanded review diff")
+  }
+  if (reviewAtTop.expandedBodyPaths.length !== reviewAtTop.expandedPaths.length || reviewAtTop.renderedHunks === 0) {
+    recordVisualFailure(fixture, "heavy workspace setup had no fully rendered expanded review body")
+  }
   const deepReviewPath = fixture.changedFiles[Math.floor(fixture.changedFiles.length * 0.7)]?.file ?? ""
   await scrollHeavyReviewWorkingSet(page, fixture)
   const scrollAfterDeepPosition = await readHeavyWorkspaceScrollDiagnostic(page)
   const reviewBefore = await readHeavyWorkspaceReviewIdentity(page)
-  if (
-    reviewBefore.reviewFileCount !== fixture.changedFiles.length ||
-    reviewBefore.totalFileCount !== fixture.changedFiles.length
-  ) {
-    recordVisualFailure(
-      fixture,
-      `heavy workspace setup rendered ${reviewBefore.reviewFileCount}/${reviewBefore.totalFileCount} review files; expected ${fixture.changedFiles.length}`,
-    )
-  }
-  if (reviewBefore.expandedPaths.length === 0) {
-    recordVisualFailure(fixture, "heavy workspace setup had no expanded review diff")
-  }
-  if (reviewBefore.expandedBodyPaths.length !== reviewBefore.expandedPaths.length || reviewBefore.renderedHunks === 0) {
-    recordVisualFailure(fixture, "heavy workspace setup had no fully rendered expanded review body")
-  }
+  for (const failure of heavyWorkspaceWindowedCorpusFailures({
+    reviewFileCount: reviewBefore.reviewFileCount,
+    totalFileCount: reviewBefore.totalFileCount,
+    expectedTotal: fixture.changedFiles.length,
+  })) recordVisualFailure(fixture, `heavy workspace setup: ${failure}`)
   if (!reviewBefore.scrollAnchorPath || reviewBefore.scrollTop <= 0) {
     recordVisualFailure(fixture, "heavy workspace setup did not establish a deep Review scroll position")
   }
@@ -1571,7 +1574,10 @@ async function resumeHeavyWorkspaceReview(
           sameStrings(finalIdentity.expandedBodyPaths, expected.expandedBodyPaths) &&
           finalIdentity.reviewFileCount === expected.reviewFileCount &&
           finalIdentity.totalFileCount === expected.totalFileCount &&
-          finalIdentity.renderedHunks >= expected.renderedHunks &&
+          // A windowed review scrolled away from its expanded rows renders no
+          // hunks on a fresh mount; the counters only compare when an expanded
+          // body is expected inside the restored window.
+          (expected.expandedBodyPaths.length === 0 || finalIdentity.renderedHunks >= expected.renderedHunks) &&
           finalIdentity.scrollAnchorPath === expected.scrollAnchorPath &&
           finalIdentity.scrollAnchorOffset !== undefined && expected.scrollAnchorOffset !== undefined &&
           Math.abs(finalIdentity.scrollAnchorOffset - expected.scrollAnchorOffset) <= 2 &&
@@ -3821,7 +3827,11 @@ async function waitForReviewStable(page: Page) {
 
 async function waitForHeavyReviewCorpus(page: Page, fixture: ReturnType<typeof fixtureFor>) {
   const expected = fixture.changedFiles.length
-  const complete = await page.waitForFunction((expected) => {
+  const cap = HEAVY_WORKSPACE_REVIEW_WINDOW_MAX_ROWS + HEAVY_WORKSPACE_REVIEW_WINDOW_SLACK
+  // The file list is windowed: the MODEL must hold every changed file while
+  // the DOM holds only a window's worth of rows -- and the two counters must
+  // agree with the actual mounted rows.
+  const complete = await page.waitForFunction(({ expected, cap }) => {
     const visible = (element: Element) => {
       if (element.closest("[aria-hidden='true']")) return false
       const rect = element.getBoundingClientRect()
@@ -3831,11 +3841,12 @@ async function waitForHeavyReviewCorpus(page: Page, fixture: ReturnType<typeof f
     const root = Array.from(document.querySelectorAll<HTMLElement>("[data-testid='review-pane-root']")).find(visible)
     const corpus = root?.querySelector<HTMLElement>("[data-review-rendered-files][data-review-total-files]")
     if (!corpus) return false
-    return Number(corpus.dataset.reviewRenderedFiles ?? "0") === expected &&
-      Number(corpus.dataset.reviewTotalFiles ?? "0") === expected &&
-      root?.querySelectorAll("[data-review-file]").length === expected
-  }, expected, { timeout: 12_000 }).then(() => true).catch(() => false)
-  if (!complete) recordVisualFailure(fixture, `Review did not render its complete ${expected}-file corpus`)
+    const rendered = Number(corpus.dataset.reviewRenderedFiles ?? "0")
+    return Number(corpus.dataset.reviewTotalFiles ?? "0") === expected &&
+      rendered > 0 && rendered <= cap &&
+      root?.querySelectorAll("[data-review-file]").length === rendered
+  }, { expected, cap }, { timeout: 12_000 }).then(() => true).catch(() => false)
+  if (!complete) recordVisualFailure(fixture, `Review did not hold its ${expected}-file model behind a bounded row window`)
   await waitForAnimationFrame(page, 2)
 }
 
@@ -3845,7 +3856,7 @@ async function scrollHeavyReviewWorkingSet(page: Page, fixture: ReturnType<typeo
     recordVisualFailure(fixture, "heavy Review fixture had no deep-scroll target")
     return
   }
-  const scrolled = await page.evaluate(({ targetPath, scrollSelector }) => {
+  const scrolled = await page.evaluate(async ({ targetPath, targetIndex, totalFiles, scrollSelector }) => {
     const visible = (element: Element) => {
       if (element.closest("[aria-hidden='true']")) return false
       const rect = element.getBoundingClientRect()
@@ -3854,15 +3865,36 @@ async function scrollHeavyReviewWorkingSet(page: Page, fixture: ReturnType<typeo
     }
     const root = Array.from(document.querySelectorAll<HTMLElement>("[data-testid='review-pane-root']")).find(visible)
     const scroll = root?.querySelector<HTMLElement>(scrollSelector)
-    const target = Array.from(root?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
+    if (!scroll) return false
+    const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    const findTarget = () => Array.from(root?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
       .find((file) => file.dataset.reviewFile === targetPath)
-    if (!scroll || !target) return false
-    const scrollRect = scroll.getBoundingClientRect()
-    const targetRect = target.getBoundingClientRect()
-    scroll.scrollTop += targetRect.top - scrollRect.top
-    scroll.dispatchEvent(new Event("scroll", { bubbles: true }))
-    return scroll.scrollTop > 0
-  }, { targetPath, scrollSelector: HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR })
+    // The windowed list only materializes rows near the scroll position, so a
+    // deep row cannot be scrolled to directly. Jump to its proportional offset
+    // first -- the gap spacers keep total scroll height honest -- then align
+    // exactly once the row exists. The same two-step motion a user's scrollbar
+    // drag performs.
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const target = findTarget()
+      if (target) {
+        const scrollRect = scroll.getBoundingClientRect()
+        const targetRect = target.getBoundingClientRect()
+        if (Math.abs(targetRect.top - scrollRect.top) <= 1) break
+        scroll.scrollTop += targetRect.top - scrollRect.top
+      } else {
+        scroll.scrollTop = (scroll.scrollHeight - scroll.clientHeight) * (targetIndex / Math.max(1, totalFiles - 1))
+      }
+      scroll.dispatchEvent(new Event("scroll", { bubbles: true }))
+      await frame()
+      await frame()
+    }
+    return scroll.scrollTop > 0 && !!findTarget()
+  }, {
+    targetPath,
+    targetIndex: fixture.changedFiles.findIndex((file) => file.file === targetPath),
+    totalFiles: fixture.changedFiles.length,
+    scrollSelector: HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR,
+  })
   if (!scrolled) recordVisualFailure(fixture, `Review did not scroll to substantial content at ${targetPath}`)
   await waitForAnimationFrame(page, 3)
 }

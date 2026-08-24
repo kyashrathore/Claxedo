@@ -68,10 +68,17 @@ describe("review scroll restoration", () => {
     viewport.scrollTop = 0
     restoration.restore()
     await new Promise((resolve) => setTimeout(resolve, 5))
-    expect(viewport.scrollTop).toBe(0)
+    // The anchor row is not in the DOM yet (the windowed file list only
+    // materializes rows near the scroll position), so restoration parks on the
+    // recorded pixel top immediately -- that is the scroll that makes the
+    // anchor's neighborhood mount -- and keeps waiting for the anchor.
+    expect(viewport.scrollTop).toBe(1_000)
 
+    viewport.scrollTop = 700
     viewport.append(anchor)
     await new Promise((resolve) => setTimeout(resolve, 20))
+    // Once the anchor exists, the precise anchor-offset correction wins over
+    // the approximate pixel top.
     expect(viewport.scrollTop).toBe(1_000)
     restoration.dispose()
   })

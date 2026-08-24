@@ -1,8 +1,9 @@
-// The file *list* renders every changed file's (lightweight) header row. Diff
-// *content* is mounted lazily per row (gated by expansion + on-screen fetch) and
-// the visible lines are windowed by the Pierre virtualizer (@pierre/diffs). So
-// listing all files is cheap: no diff body is fetched or rendered until a row is
-// expanded and scrolled into view.
+// The file *list* holds every changed file in the MODEL, while the DOM only
+// materializes a viewport window of header rows (review-window.ts). Diff
+// *content* is a further layer down: mounted lazily per row (gated by
+// expansion + on-screen fetch) with visible lines windowed by the Pierre
+// virtualizer (@pierre/diffs). So seeding the full file set here is cheap --
+// it sizes the model, not the DOM.
 //
 // This seeds the full changed-file set into the open list. (A previous version
 // seeded only the first few files and grew the set on scroll, but a handful of

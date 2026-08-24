@@ -752,6 +752,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
                 initialFromRef={props.fromRef}
                 initialToRef={props.toRef}
                 retained={initialWorkingSet.review}
+                scrollAnchorPath={reviewScroll.anchorPath()}
                 staleDiffsVersion={vcsStaleness.diffsVersion()}
                 staleBranchVersion={vcsStaleness.branchVersion()}
                 onRetainedChange={(surface) =>

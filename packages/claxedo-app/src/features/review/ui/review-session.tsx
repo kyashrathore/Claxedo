@@ -23,6 +23,11 @@ import {
   hasDiffContent,
   reviewDiffList,
 } from "./review-session-logic"
+import {
+  REVIEW_ESTIMATED_ROW_HEIGHT,
+  reviewWindowRowCount,
+  reviewWindowSegments,
+} from "./review-window"
 import { createComputed, createEffect, createMemo, createSelector, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
@@ -39,8 +44,6 @@ import {
 } from "@/ui/session-kit"
 
 const REVIEW_MOUNT_MARGIN = 80
-const REVIEW_RENDER_BATCH = 8
-const REVIEW_IDLE_BATCH = 2
 
 export type SessionReviewDiffStyle = "unified" | "split"
 
@@ -126,12 +129,11 @@ export interface SessionReviewProps {
   forcedFiles?: string[]
   onForcedFilesChange?: (files: string[]) => void
   /**
-   * Progressive-render admission carried across a remount: how many file rows
-   * to admit immediately for the first changeset this mount renders. Later
-   * changesets reset to the small first batch as before.
+   * The semantic scroll anchor a restoration is heading for. Materialized
+   * regardless of the window so an anchor-based scroll restore can land before
+   * the window has scrolled anywhere near it.
    */
-  initialRenderLimit?: number
-  onRenderLimitChange?: (limit: number) => void
+  anchorFile?: string
   onDiffContentRequired?: (files: string[]) => void
   scrollRef?: (el: HTMLDivElement) => void
   onScroll?: JSX.EventHandlerUnion<HTMLDivElement, Event>
@@ -186,8 +188,6 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   let scroll: HTMLDivElement | undefined
   let focusToken = 0
   let frame: number | undefined
-  let renderTask: number | undefined
-  let renderTaskIsIdle = false
   const i18n = useI18n()
   const fileComponent = useFileComponent()
   const anchors = new Map<string, HTMLElement>()
@@ -213,14 +213,54 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   const isForcedFile = (file: string) => forcedFileSet().has(file)
   const items = createMemo<ReviewDiff[]>(() => reviewDiffList(props.diffs) as ReviewDiff[])
   const files = createMemo(() => items().map((diff) => diff.file))
-  const [renderLimit, setRenderLimit] = createSignal(
-    Math.max(REVIEW_RENDER_BATCH, props.initialRenderLimit ?? 0),
-  )
-  const renderedItems = createMemo(() => {
-    const required = props.focusedFile ?? props.focusedComment?.file
-    const requiredIndex = required ? items().findIndex((diff) => diff.file === required) + 1 : 0
-    return items().slice(0, Math.max(renderLimit(), requiredIndex))
+  // Windowed materialization: only a viewport's worth of header rows exists in
+  // the DOM (plus required rows); gaps preserve the corpus's scroll geometry.
+  const [windowScrollTop, setWindowScrollTop] = createSignal(0)
+  const [windowViewportHeight, setWindowViewportHeight] = createSignal(0)
+  const [estimatedRowHeight, setEstimatedRowHeight] = createSignal(REVIEW_ESTIMATED_ROW_HEIGHT)
+  const [rowHeightsVersion, setRowHeightsVersion] = createSignal(0)
+  const rowHeights = new Map<string, number>()
+  const itemElements = new Map<string, HTMLElement>()
+  const requiredFiles = createMemo(() => {
+    const required = new Set<string>()
+    if (props.focusedFile) required.add(props.focusedFile)
+    if (props.focusedComment?.file) required.add(props.focusedComment.file)
+    if (props.anchorFile) required.add(props.anchorFile)
+    return required
   })
+  const windowSegments = createMemo(() => {
+    rowHeightsVersion()
+    return reviewWindowSegments({
+      items: items(),
+      scrollTop: windowScrollTop(),
+      viewportHeight: windowViewportHeight(),
+      overscan: REVIEW_MOUNT_MARGIN,
+      estimatedRowHeight: estimatedRowHeight(),
+      measuredHeight: (diff) => rowHeights.get(diff.file),
+      required: (diff) => requiredFiles().has(diff.file),
+    })
+  })
+  const materializedRowCount = createMemo(() => reviewWindowRowCount(windowSegments()))
+  const syncWindowGeometry = () => {
+    if (!scroll) return
+    setWindowScrollTop(scroll.scrollTop)
+    setWindowViewportHeight(scroll.clientHeight)
+    let changed = false
+    let collapsedSample: number | undefined
+    for (const [file, element] of itemElements) {
+      const height = element.offsetHeight
+      if (height <= 0) continue
+      if (Math.abs((rowHeights.get(file) ?? 0) - height) > 0.5) {
+        rowHeights.set(file, height)
+        changed = true
+      }
+      if (collapsedSample === undefined && !open().includes(file)) collapsedSample = height
+    }
+    if (collapsedSample !== undefined && Math.abs(collapsedSample - estimatedRowHeight()) > 0.5) {
+      setEstimatedRowHeight(collapsedSample)
+    }
+    if (changed) setRowHeightsVersion((version) => version + 1)
+  }
   const grouped = createMemo(() => groupCommentsByFile(props.comments))
   const diffStyle = () => props.diffStyle ?? (props.split ? "split" : "unified")
   const hasDiffs = () => files().length > 0
@@ -228,6 +268,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
   const syncVisible = () => {
     frame = undefined
     if (!scroll) return
+    syncWindowGeometry()
 
     const root = scroll.getBoundingClientRect()
     const top = root.top - REVIEW_MOUNT_MARGIN
@@ -279,9 +320,6 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
 
   const handleScroll: JSX.EventHandler<HTMLDivElement, Event> = (event) => {
     queue()
-    if (scroll && scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - REVIEW_MOUNT_MARGIN) {
-      setRenderLimit((limit) => Math.min(items().length, limit + REVIEW_RENDER_BATCH))
-    }
     const next = props.onScroll
     if (!next) return
     if (Array.isArray(next)) {
@@ -294,52 +332,12 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
 
   onCleanup(() => {
     if (frame !== undefined) cancelAnimationFrame(frame)
-    if (renderTask !== undefined) {
-      if (renderTaskIsIdle && typeof window.cancelIdleCallback === "function") window.cancelIdleCallback(renderTask)
-      else window.clearTimeout(renderTask)
-    }
   })
 
   createEffect(() => {
     props.open
     files()
     queue()
-  })
-
-  // The retained admission applies to the first real changeset this mount
-  // renders; every later changeset starts from the small first batch as before.
-  let pendingInitialRenderLimit = props.initialRenderLimit
-  createEffect(on(() => files().join("\0"), (key, prev) => {
-    if (key === "") return
-    const initial = pendingInitialRenderLimit
-    pendingInitialRenderLimit = undefined
-    if (initial !== undefined) {
-      setRenderLimit(Math.max(REVIEW_RENDER_BATCH, initial))
-      return
-    }
-    if (prev !== undefined) setRenderLimit(REVIEW_RENDER_BATCH)
-  }))
-  createEffect(() => props.onRenderLimitChange?.(renderLimit()))
-
-  // Keep first paint small, then admit every file header during browser idle
-  // time. This preserves keyboard search, browser find, and programmatic
-  // navigation without competing with review interactions for a frame; the
-  // expensive diff bodies remain viewport-gated by `visible`.
-  createEffect(() => {
-    const total = items().length
-    const current = renderLimit()
-    if (current >= total || renderTask !== undefined) return
-    const render = () => {
-      renderTask = undefined
-      setRenderLimit((limit) => Math.min(total, limit + REVIEW_IDLE_BATCH))
-    }
-    if (typeof window.requestIdleCallback === "function") {
-      renderTaskIsIdle = true
-      renderTask = window.requestIdleCallback(render, { timeout: 2_000 })
-      return
-    }
-    renderTaskIsIdle = false
-    renderTask = window.setTimeout(render, 0)
   })
 
   const handleChange = (next: string[]) => {
@@ -484,12 +482,22 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
           <Show when={hasDiffs()} fallback={props.empty}>
             <div
               class="pb-6"
-              data-review-rendered-files={renderedItems().length}
+              data-review-rendered-files={materializedRowCount()}
               data-review-total-files={items().length}
             >
               <Accordion multiple value={open()} onChange={handleChange}>
-                <For each={renderedItems()}>
-                  {(diff) => {
+                <For each={windowSegments()}>
+                  {(segment) => {
+                    if (segment.kind === "gap") {
+                      return (
+                        <div
+                          data-slot="session-review-window-gap"
+                          data-review-window-gap-files={segment.count}
+                          style={{ height: `${segment.height}px` }}
+                        />
+                      )
+                    }
+                    const diff = segment.item
                     let wrapper: HTMLDivElement | undefined
                     const file = diff.file
                     let normalizedCache: Item | undefined
@@ -583,6 +591,7 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
                     onCleanup(() => {
                       anchors.delete(file)
                       nodes.delete(file)
+                      itemElements.delete(file)
                       queue()
                     })
 
@@ -598,6 +607,10 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
 
                     return (
                       <Accordion.Item
+                        ref={(element: HTMLElement) => {
+                          itemElements.set(file, element)
+                          queue()
+                        }}
                         value={file}
                         id={diffId(file)}
                         data-file={file}
