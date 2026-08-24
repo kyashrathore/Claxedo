@@ -50,6 +50,57 @@ export type HeavyWorkspaceReviewIdentity = {
   scrollAnchorOffset?: number
 }
 
+export type HeavyWorkspaceScrollDiagnostic = {
+  position: {
+    top: number
+    anchorPath?: string
+    anchorOffset?: number
+  }
+}
+
+/**
+ * Opening a navigator or tab may give the restoration owner enough rendered
+ * geometry to enrich a top-only observation with its semantic anchor. That is
+ * not movement. Reject actual position loss while allowing only this one-way
+ * enrichment to the expected deep anchor.
+ */
+export function heavyWorkspaceSetupScrollFailures(input: {
+  before?: HeavyWorkspaceScrollDiagnostic
+  after?: HeavyWorkspaceScrollDiagnostic
+  expectedAnchorPath: string
+  stage: string
+}) {
+  const { before, after, expectedAnchorPath, stage } = input
+  if (!before || !after) return [`heavy workspace Review scroll diagnostic was unavailable ${stage}`]
+
+  const failures: string[] = []
+  if (Math.abs(before.position.top - after.position.top) > 0.5) {
+    failures.push(
+      `heavy workspace Review scroll moved ${stage}: ${before.position.top} -> ${after.position.top}`,
+    )
+  }
+  if (before.position.anchorPath && before.position.anchorPath !== after.position.anchorPath) {
+    failures.push(
+      `heavy workspace Review scroll anchor changed ${stage}: ${before.position.anchorPath} -> ${String(after.position.anchorPath)}`,
+    )
+  }
+  if (after.position.anchorPath !== expectedAnchorPath) {
+    failures.push(
+      `heavy workspace Review scroll anchor was ${String(after.position.anchorPath)} ${stage}; expected ${expectedAnchorPath}`,
+    )
+  }
+  if (
+    before.position.anchorOffset !== undefined &&
+    (after.position.anchorOffset === undefined ||
+      Math.abs(before.position.anchorOffset - after.position.anchorOffset) > 2)
+  ) {
+    failures.push(
+      `heavy workspace Review scroll anchor offset changed ${stage}: ${before.position.anchorOffset} -> ${String(after.position.anchorOffset)}`,
+    )
+  }
+  return failures
+}
+
 export type HeavyWorkspaceClosedOwnership = {
   shells: number
   tabs: number

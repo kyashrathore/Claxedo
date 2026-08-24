@@ -36,6 +36,7 @@ import {
   heavyWorkspaceLiveFileFailures,
   heavyWorkspaceReviewRestorationFailures,
   heavyWorkspaceRestorationFailures,
+  heavyWorkspaceSetupScrollFailures,
   type HeavyWorkspaceReviewIdentity,
   type HeavyWorkspaceSurfaceIdentity,
 } from "./heavy-workspace-reopen-contract"
@@ -989,6 +990,7 @@ async function heavyWorkspaceReopen(
   await openFirstReviewDiff(page)
   await waitForReviewStable(page)
   await waitForHeavyReviewCorpus(page, fixture)
+  const deepReviewPath = fixture.changedFiles[Math.floor(fixture.changedFiles.length * 0.7)]?.file ?? ""
   await scrollHeavyReviewWorkingSet(page, fixture)
   const scrollAfterDeepPosition = await readHeavyWorkspaceScrollDiagnostic(page)
   const reviewBefore = await readHeavyWorkspaceReviewIdentity(page)
@@ -1012,28 +1014,22 @@ async function heavyWorkspaceReopen(
   }
   await measureWorkspaceFiles(page, fixture, { settle: "frame" })
   const scrollAfterNavigator = await readHeavyWorkspaceScrollDiagnostic(page)
-  if (
-    scrollAfterDeepPosition?.position?.anchorPath !== scrollAfterNavigator?.position?.anchorPath ||
-    scrollAfterDeepPosition?.position?.top !== scrollAfterNavigator?.position?.top
-  ) {
-    recordVisualFailure(
-      fixture,
-      `heavy workspace Review scroll changed while opening Files: ${JSON.stringify(scrollAfterDeepPosition)} -> ${JSON.stringify(scrollAfterNavigator)}`,
-    )
-  }
+  for (const failure of heavyWorkspaceSetupScrollFailures({
+    before: scrollAfterDeepPosition,
+    after: scrollAfterNavigator,
+    expectedAnchorPath: deepReviewPath,
+    stage: "while opening Files",
+  })) recordVisualFailure(fixture, failure)
   for (const filePath of HEAVY_WORKSPACE_REOPEN_FILE_PATHS) {
     await openWorkspaceFileTab(page, fixture, filePath)
   }
   const scrollAfterFileTabs = await readHeavyWorkspaceScrollDiagnostic(page)
-  if (
-    scrollAfterNavigator?.position?.anchorPath !== scrollAfterFileTabs?.position?.anchorPath ||
-    scrollAfterNavigator?.position?.top !== scrollAfterFileTabs?.position?.top
-  ) {
-    recordVisualFailure(
-      fixture,
-      `heavy workspace Review scroll changed while opening file tabs: ${JSON.stringify(scrollAfterNavigator)} -> ${JSON.stringify(scrollAfterFileTabs)}`,
-    )
-  }
+  for (const failure of heavyWorkspaceSetupScrollFailures({
+    before: scrollAfterNavigator,
+    after: scrollAfterFileTabs,
+    expectedAnchorPath: deepReviewPath,
+    stage: "while opening file tabs",
+  })) recordVisualFailure(fixture, failure)
   await waitForAnimationFrame(page, 2)
 
   const before = await readHeavyWorkspaceSurfaceIdentity(page)

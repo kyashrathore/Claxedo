@@ -14,6 +14,7 @@ import {
   heavyWorkspaceLiveFileFailures,
   heavyWorkspaceReviewRestorationFailures,
   heavyWorkspaceRestorationFailures,
+  heavyWorkspaceSetupScrollFailures,
 } from "../src/heavy-workspace-reopen-contract"
 import { seedForScenario } from "../src/seed"
 
@@ -144,5 +145,39 @@ describe("heavy workspace reopen benchmark contract", () => {
       expect.stringContaining("review scroll anchor offset changed"),
       expect.stringContaining("review deep scroll position was not restored"),
     ])
+  })
+
+  test("allows semantic anchor enrichment without allowing setup scroll movement", () => {
+    const topOnly = { position: { top: 16_960 } }
+    const anchored = {
+      position: {
+        top: 16_960,
+        anchorPath: "src/generated/file-350.ts",
+        anchorOffset: 0,
+      },
+    }
+
+    expect(heavyWorkspaceSetupScrollFailures({
+      before: topOnly,
+      after: anchored,
+      expectedAnchorPath: "src/generated/file-350.ts",
+      stage: "while opening Files",
+    })).toEqual([])
+    expect(heavyWorkspaceSetupScrollFailures({
+      before: anchored,
+      after: { position: { top: 0, anchorPath: "src/generated/file-0.ts", anchorOffset: 0 } },
+      expectedAnchorPath: "src/generated/file-350.ts",
+      stage: "while opening file tabs",
+    })).toEqual([
+      expect.stringContaining("scroll moved"),
+      expect.stringContaining("anchor changed"),
+      expect.stringContaining("expected src/generated/file-350.ts"),
+    ])
+    expect(heavyWorkspaceSetupScrollFailures({
+      before: undefined,
+      after: anchored,
+      expectedAnchorPath: "src/generated/file-350.ts",
+      stage: "while opening Files",
+    })).toEqual([expect.stringContaining("diagnostic was unavailable")])
   })
 })
