@@ -70,6 +70,10 @@ export function createReviewScrollRestoration(input: {
     // let a post-activation effect replace the last visible semantic snapshot
     // with hidden geometry.
     if (!element || !input.visible()) return
+    // `remember` publishes every observed scrollTop immediately. If layout has
+    // changed the native value without delivering a scroll event, the DOM is
+    // not authoritative yet (a tab insertion can transiently clamp it to 0).
+    if (Math.abs(element.scrollTop - position.top) > 0.5) return
     const anchor = nearestAnchor()
     if (!anchor) return
     publish({

@@ -33,7 +33,10 @@ describe("review scroll restoration", () => {
     })
 
     restoration.bind(viewport)
+    viewport.addEventListener("scroll", restoration.remember)
+    await new Promise((resolve) => setTimeout(resolve, 20))
     viewport.scrollTop = 1_000
+    viewport.dispatchEvent(new Event("scroll"))
     restoration.capture()
     expect(changes.at(-1)).toEqual({
       top: 1_000,
@@ -56,7 +59,10 @@ describe("review scroll restoration", () => {
     const restoration = createReviewScrollRestoration({ visible: () => true, canRecord: () => true })
 
     restoration.bind(viewport)
+    viewport.addEventListener("scroll", restoration.remember)
+    await new Promise((resolve) => setTimeout(resolve, 20))
     viewport.scrollTop = 1_000
+    viewport.dispatchEvent(new Event("scroll"))
     restoration.capture()
     anchor.remove()
     viewport.scrollTop = 0
@@ -83,23 +89,61 @@ describe("review scroll restoration", () => {
     })
 
     restoration.bind(viewport)
+    viewport.addEventListener("scroll", restoration.remember)
+    await new Promise((resolve) => setTimeout(resolve, 20))
     viewport.scrollTop = 1_000
+    viewport.dispatchEvent(new Event("scroll"))
     restoration.capture()
 
     visible = false
     viewport.scrollTop = 0
     restoration.capture()
 
-    expect(changes).toEqual([{
-      top: 1_000,
-      anchorPath: "src/generated/file-350.ts",
-      anchorOffset: 0,
-    }])
+    expect(changes).toEqual([
+      { top: 1_000 },
+      {
+        top: 1_000,
+        anchorPath: "src/generated/file-350.ts",
+        anchorOffset: 0,
+      },
+    ])
 
     visible = true
     restoration.restore()
     await new Promise((resolve) => setTimeout(resolve, 20))
 
+    expect(viewport.scrollTop).toBe(1_000)
+    restoration.dispose()
+  })
+
+  test("does not capture an unobserved layout clamp while Review is still visible", async () => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => setTimeout(() => callback(0), 0))
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => clearTimeout(id))
+    const { viewport } = fixture()
+    const changes: ReviewScrollPosition[] = []
+    const restoration = createReviewScrollRestoration({
+      visible: () => true,
+      canRecord: () => true,
+      onChange: (position) => changes.push(position),
+    })
+
+    restoration.bind(viewport)
+    viewport.addEventListener("scroll", restoration.remember)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    viewport.scrollTop = 1_000
+    viewport.dispatchEvent(new Event("scroll"))
+    restoration.capture()
+    viewport.scrollTop = 0
+    restoration.capture()
+
+    expect(changes.at(-1)).toEqual({
+      top: 1_000,
+      anchorPath: "src/generated/file-350.ts",
+      anchorOffset: 0,
+    })
+
+    restoration.restore()
+    await new Promise((resolve) => setTimeout(resolve, 20))
     expect(viewport.scrollTop).toBe(1_000)
     restoration.dispose()
   })
