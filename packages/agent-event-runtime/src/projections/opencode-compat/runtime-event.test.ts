@@ -9,11 +9,19 @@ import {
   runtimeOwnsOpencodeCompatProjection,
 } from "./index"
 
-function walk(dir: string): string[] {
+function walkSource(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(dir, entry.name)
-    if (entry.isDirectory()) return entry.name === "node_modules" ? [] : walk(full)
-    return full
+    if (entry.isDirectory()) return walkSource(full)
+    return entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts") ? [full] : []
+  })
+}
+
+function productionPackageSources(packagesDirectory: string) {
+  return fs.readdirSync(packagesDirectory, { withFileTypes: true }).flatMap((entry) => {
+    if (!entry.isDirectory()) return []
+    const source = path.join(packagesDirectory, entry.name, "src")
+    return fs.existsSync(source) ? walkSource(source) : []
   })
 }
 
@@ -44,9 +52,7 @@ describe("OpenCode compatibility ownership", () => {
 
   test("keeps legacy compat-to-runtime conversion fenced to the declared production owner", () => {
     const repo = path.resolve(import.meta.dirname, "../../../../..")
-    const hits = walk(path.join(repo, "packages"))
-      .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))
-      .filter((file) => file.includes(`${path.sep}src${path.sep}`))
+    const hits = productionPackageSources(path.join(repo, "packages"))
       .filter((file) => fs.readFileSync(file, "utf-8").includes("legacyRuntimeEventFromOpencodeCompat"))
       .map((file) => path.relative(repo, file).split(path.sep).join("/"))
       .sort()
