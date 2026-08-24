@@ -6,7 +6,7 @@ title: "Claxedo performance architecture and release handoff"
 summary: "Continuation state for cold-session, memory, Workspace disposal/reopen, Crabbox/AWS validation, merge, and push work."
 keywords: ["claxedo", "performance", "cold-session", "workspace-reopen", "crabbox", "aws-windows", "merge-dev"]
 cwd: "/Users/yashvardhansingh/test/opencode"
-resume_focus: "Disposal steps 1-6 are implemented on claude/zen-faraday-v692mo with a green in-container smoke; next: five-iteration disposal benchmark vs a03985db9 on an idle machine, Review virtualization, then Crabbox/AWS validation and the dev merge."
+resume_focus: "Disposal steps 1-6 plus the step-7 windowed Review file list are implemented on claude/zen-faraday-v692mo; next: validate the windowed smoke, run the five-iteration disposal benchmark vs a03985db9 on an idle machine, then Crabbox/AWS validation and the dev merge."
 repository: "kyashrathore/Claxedo"
 repo_root_sha: "728cedf2a29e2f9da901c8c36620ce5efc09e6b2"
 branch: "chore/crabbox-ci-matrix"
@@ -188,10 +188,11 @@ and pushed there; nothing was merged and dev was not touched.
    reopen inactive Review roots/files = 0 with exactly 1 file root, resume
    inactive file roots = 0, all 500 Review files, expanded body, semantic
    anchor and scroll restored. Two resume fixes were required and landed:
-   - `renderedFileLimit` retained in the surface state: progressive admission
-     (8 rows, then 2 per idle callback) could never rebuild a 500-row corpus
-     or reach the deep anchor inside the resume budget; a remount now admits
-     what the user had.
+   - Progressive admission (8 rows, then 2 per idle callback) could never
+     rebuild a 500-row corpus or reach the deep anchor inside the resume
+     budget. The interim fix retained the admitted-row count
+     (`renderedFileLimit`); it is SUPERSEDED by the step-7 windowing below,
+     which removed that field again.
    - ReviewTab seeds `remoteDiffs` synchronously from the shared cache
      (`peekReviewVcsDiff`), so a resumed Review paints in the mount pass
      instead of blanking until the deferred load runs.
@@ -209,6 +210,51 @@ and pushed there; nothing was merged and dev was not touched.
    rebuilding 500 header rows in the mount pass — the cost step 7's
    virtualization exists to remove — and is not comparable to the retained
    591 ms from the idle Crabbox machine.
+
+### Step 7: windowed Review file list
+
+The 500-row header list was the remaining corpus-proportional cost: every
+admitted file was a live accordion row (the retained baseline's 222-313 ms
+tasks and 417-458 ms style work), re-paid on every resume once disposal
+landed. Diff content was already lazy -- bodies mount per expanded row and
+@pierre/diffs windows the visible lines -- but the header rows were not.
+
+`features/review/ui/review-window.ts` now materializes at most
+`REVIEW_MAX_WINDOW_ROWS` (20) viewport rows plus required rows (the semantic
+scroll anchor, the focused file), with height-preserving gap divs keeping
+scroll geometry honest; measured row heights refine the estimates as rows
+visit the window. Scroll restoration parks on the recorded pixel top while
+waiting for its anchor (that scroll is what mounts the anchor's
+neighborhood), and the anchor path is threaded to the window as a required
+row so the precise offset correction lands immediately. `renderedFileLimit`
+and the progressive/idle admission are removed with their tests
+(effectStateWrites baseline 100 -> 98).
+
+The harness contract changed in the same slice, because it literally
+demanded 500 mounted rows: `heavyWorkspaceWindowedCorpusFailures` pins
+model = 500 with 0 < rows <= 24; the corpus waiter and setup gates match;
+expansion evidence is read before the deep scroll (the expanded row leaves
+the DOM once the window moves away); the deep scroll hops toward the target
+from the nearest materialized row (a plain proportional jump lands a window
+short when an expanded row above distorts the estimate) and then aligns; and
+hunk counters compare only when an expanded body is inside the restored
+window.
+
+Verified: review-window unit tests 6/6; workbench+review bun suites 531
+pass; review + disposal + restoration vitest 13/13; test:performance 37/37;
+architecture 261/261; heavy-workspace contract tests 8/8; app typecheck
+pass.
+
+Windowed smoke (one ABBA iteration, same shared container as the earlier
+smokes, functional evidence only): exit 0, status WARN, zero validation
+failures. Close 174.6 ms; reopen 698.8 ms (this container fluctuates;
+pre-windowing runs measured 444-487 ms on the same phase); Review resume
+990.5 ms with exactly 20 materialized rows, zero blank/loading frames, zero
+requests, anchor and scroll restored -- versus 2,784.7 ms for the same phase
+when resume rebuilt all 500 rows. All closed/inactive ownership gates remain
+0 with exactly 1 reopen file root. The idle-machine five-iteration ABBA
+comparison against a03985db9 remains the acceptance gate for any timing
+claim.
 
 ### Known deltas and gaps (in noninferiority terms)
 

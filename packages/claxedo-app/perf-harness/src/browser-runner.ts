@@ -3856,7 +3856,7 @@ async function scrollHeavyReviewWorkingSet(page: Page, fixture: ReturnType<typeo
     recordVisualFailure(fixture, "heavy Review fixture had no deep-scroll target")
     return
   }
-  const scrolled = await page.evaluate(async ({ targetPath, targetIndex, totalFiles, scrollSelector }) => {
+  const scrolled = await page.evaluate(async ({ targetPath, fileOrder, scrollSelector }) => {
     const visible = (element: Element) => {
       if (element.closest("[aria-hidden='true']")) return false
       const rect = element.getBoundingClientRect()
@@ -3866,23 +3866,44 @@ async function scrollHeavyReviewWorkingSet(page: Page, fixture: ReturnType<typeo
     const root = Array.from(document.querySelectorAll<HTMLElement>("[data-testid='review-pane-root']")).find(visible)
     const scroll = root?.querySelector<HTMLElement>(scrollSelector)
     if (!scroll) return false
+    const fileIndex = new Map(fileOrder.map((file, index) => [file, index]))
+    const targetIndex = fileIndex.get(targetPath)
+    if (targetIndex === undefined) return false
     const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-    const findTarget = () => Array.from(root?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
-      .find((file) => file.dataset.reviewFile === targetPath)
+    const materialized = () => Array.from(root?.querySelectorAll<HTMLElement>("[data-review-file]") ?? [])
+      .filter((row) => fileIndex.has(row.dataset.reviewFile ?? ""))
+    const findTarget = () => materialized().find((row) => row.dataset.reviewFile === targetPath)
     // The windowed list only materializes rows near the scroll position, so a
-    // deep row cannot be scrolled to directly. Jump to its proportional offset
-    // first -- the gap spacers keep total scroll height honest -- then align
-    // exactly once the row exists. The same two-step motion a user's scrollbar
-    // drag performs.
-    for (let attempt = 0; attempt < 8; attempt++) {
+    // deep row cannot be scrolled to directly. Hop toward it from the nearest
+    // materialized row -- each hop lands within the previous height-estimate
+    // error, so a few hops converge even when an expanded row above has made
+    // proportional guesses land a window short -- then align exactly once the
+    // row exists. The same motion as a user's scrollbar drag plus settle.
+    for (let attempt = 0; attempt < 12; attempt++) {
       const target = findTarget()
+      const scrollRect = scroll.getBoundingClientRect()
       if (target) {
-        const scrollRect = scroll.getBoundingClientRect()
         const targetRect = target.getBoundingClientRect()
         if (Math.abs(targetRect.top - scrollRect.top) <= 1) break
         scroll.scrollTop += targetRect.top - scrollRect.top
       } else {
-        scroll.scrollTop = (scroll.scrollHeight - scroll.clientHeight) * (targetIndex / Math.max(1, totalFiles - 1))
+        const rows = materialized()
+        const nearest = rows.reduce<HTMLElement | undefined>((best, row) => {
+          const index = fileIndex.get(row.dataset.reviewFile ?? "")!
+          const bestIndex = best ? fileIndex.get(best.dataset.reviewFile ?? "")! : undefined
+          return bestIndex === undefined || Math.abs(index - targetIndex) < Math.abs(bestIndex - targetIndex)
+            ? row
+            : best
+        }, undefined)
+        if (nearest) {
+          const nearestIndex = fileIndex.get(nearest.dataset.reviewFile ?? "")!
+          const rowHeight = nearest.offsetHeight || 40
+          const nearestRect = nearest.getBoundingClientRect()
+          scroll.scrollTop += (nearestRect.top - scrollRect.top) + (targetIndex - nearestIndex) * rowHeight
+        } else {
+          scroll.scrollTop = (scroll.scrollHeight - scroll.clientHeight) *
+            (targetIndex / Math.max(1, fileOrder.length - 1))
+        }
       }
       scroll.dispatchEvent(new Event("scroll", { bubbles: true }))
       await frame()
@@ -3891,8 +3912,7 @@ async function scrollHeavyReviewWorkingSet(page: Page, fixture: ReturnType<typeo
     return scroll.scrollTop > 0 && !!findTarget()
   }, {
     targetPath,
-    targetIndex: fixture.changedFiles.findIndex((file) => file.file === targetPath),
-    totalFiles: fixture.changedFiles.length,
+    fileOrder: fixture.changedFiles.map((file) => file.file),
     scrollSelector: HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR,
   })
   if (!scrolled) recordVisualFailure(fixture, `Review did not scroll to substantial content at ${targetPath}`)
