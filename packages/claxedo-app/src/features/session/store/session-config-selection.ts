@@ -1,16 +1,26 @@
 import { shellDataKeys } from "@/platform/sync/keys"
 import type { LocalSelectionState } from "./local-selection-handoff"
+import {
+  sessionResourceAuthorityKey,
+  type SessionResourceAuthorityScope,
+} from "./session-resource-authority"
 
 const sessionConfigSelectionPart = "config-selection"
 const sessionConfigRawPart = "config-raw"
 const sessionConfigSelectionSyncPart = "config-selection-sync"
 
-export function sessionConfigSelectionQueryKey(sessionID: string) {
-  return shellDataKeys.sessionId(sessionID, sessionConfigSelectionPart)
+export type SessionConfigQueryScope = SessionResourceAuthorityScope
+
+function sessionConfigQueryKey(scope: SessionConfigQueryScope, part: string) {
+  return shellDataKeys.sessionId(scope.sessionID, part, sessionResourceAuthorityKey(scope))
 }
 
-export function sessionConfigRawQueryKey(sessionID: string) {
-  return shellDataKeys.sessionId(sessionID, sessionConfigRawPart)
+export function sessionConfigSelectionQueryKey(scope: SessionConfigQueryScope) {
+  return sessionConfigQueryKey(scope, sessionConfigSelectionPart)
+}
+
+export function sessionConfigRawQueryKey(scope: SessionConfigQueryScope) {
+  return sessionConfigQueryKey(scope, sessionConfigRawPart)
 }
 
 export function sessionConfigSelectionSyncQueryKey(sessionID: string) {

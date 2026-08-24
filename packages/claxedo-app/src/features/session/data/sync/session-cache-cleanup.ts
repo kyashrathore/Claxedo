@@ -54,6 +54,39 @@ function removeSessionShellQueries(sessionID: string) {
   queryClient.removeQueries({ queryKey: shellDataKeys.sessionId(sessionID) })
 }
 
+const LIGHTWEIGHT_SESSION_METADATA = ["status", "requests"] as const
+
+/**
+ * A session surface is cache state materialised by opening/rendering a session.
+ * Status and request rows are lightweight active-pane metadata and do not make
+ * a session count as a retained render surface. The rail owns its bounded,
+ * placement-aware inventory projection separately.
+ */
+export function isSessionSurfaceQueryKey(key: readonly unknown[]) {
+  if (key[0] !== "shell" || key[1] !== "session") return false
+  if (typeof key[2] !== "string" || !key[2] || key[2] === "new") return false
+  return typeof key[3] === "string" && !LIGHTWEIGHT_SESSION_METADATA.includes(key[3] as "status" | "requests")
+}
+
+/**
+ * Read-only benchmark/debug authority. The memory harness must ask the product
+ * which query keys constitute a retained session surface; duplicating that
+ * policy in an injected probe made lightweight rail metadata fail the heavy
+ * surface ceiling and produced an asymmetric baseline/candidate comparison.
+ */
+if (typeof window !== "undefined") {
+  ;(window as typeof window & {
+    __claxedoSessionCachePolicy?: { isSurfaceQueryKey: typeof isSessionSurfaceQueryKey }
+  }).__claxedoSessionCachePolicy = { isSurfaceQueryKey: isSessionSurfaceQueryKey }
+}
+
+function removeSessionSurfaceQueries(sessionID: string) {
+  queryClient.removeQueries({
+    queryKey: shellDataKeys.sessionId(sessionID),
+    predicate: (query) => isSessionSurfaceQueryKey(query.queryKey),
+  })
+}
+
 export function droppedSessionIDs(previous: Session[], next: Session[]) {
   const keep = new Set(next.map((item) => item.id))
   return previous.map((item) => item.id).filter((sessionId) => !keep.has(sessionId))
@@ -92,11 +125,11 @@ export function cleanupSessionCaches(sessionId: string) {
  * parallel bookkeeping that can drift out of sync with the thing it describes
  * — and it keeps this module free of mutable module state.
  */
-function liveSessionsColdestFirst(): string[] {
+export function liveSessionSurfacesColdestFirst(): string[] {
   const newest = new Map<string, number>()
   for (const query of queryClient.getQueryCache().getAll()) {
     const key = query.queryKey
-    if (!Array.isArray(key) || key[0] !== "shell" || key[1] !== "session") continue
+    if (!Array.isArray(key) || !isSessionSurfaceQueryKey(key)) continue
     const sessionId = key[2]
     if (typeof sessionId !== "string" || !sessionId) continue
     const at = query.state.dataUpdatedAt ?? 0
@@ -194,7 +227,7 @@ export function scheduleSessionCacheCeiling(sessionId: string) {
 
 export function enforceSessionCacheCeiling(sessionId: string) {
   if (!sessionId || sessionId === "new") return []
-  const coldestFirst = liveSessionsColdestFirst().filter((id) => id !== sessionId)
+  const coldestFirst = liveSessionSurfacesColdestFirst().filter((id) => id !== sessionId)
   const pinned = (id: string) => {
     if (hasOpenSession(id)) return true
     const status = shellSessionStatus(id)
@@ -217,6 +250,12 @@ export function enforceSessionCacheCeiling(sessionId: string) {
     bytesFor,
   })
   for (const id of evicted) {
+    // Rail inventory status is placement-local and independently bounded. Once
+    // a cold session surface is selected for eviction, retaining its old
+    // session-ID-only status/request rows has no owner and grows by two entries
+    // per visited session until the global 30-minute GC. Open and busy sessions
+    // are pinned above, so removing the complete shell scope cannot blank a
+    // mounted pane or strand a live turn.
     removeSessionShellQueries(id)
     clearPromptSessionStatus(id)
   }

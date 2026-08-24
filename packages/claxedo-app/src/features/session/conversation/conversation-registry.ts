@@ -33,6 +33,12 @@ import { estimateConversationMemory } from "./conversation-memory"
  * session A's consumers (entry creation is the rare, app-wide event).
  */
 const entries = new Map<string, ConversationChatEntry>()
+// ChatClient normalizes manually supplied UIMessage metadata once its lazy
+// runtime has loaded, so the top-level `optimistic` marker is not durable
+// enough to own rollback. Keep dispatch ownership process-local and scoped by
+// directory/session/message; server events and snapshots explicitly confirm
+// and release that ownership.
+const optimisticMessageKeys = new Set<string>()
 const [topology, bumpTopology] = createSignal(0, { equals: false })
 const markTopologyChanged = () => bumpTopology((value) => value + 1)
 type ConversationProjection = ReturnType<typeof opencodeConversationProjection>
@@ -96,7 +102,12 @@ export function applyRegisteredConversationEvent(input: { directory: Conversatio
   // cached snapshot) so the global SSE firehose does not spawn clients for
   // background sessions the user never opened.
   if (!entries.get(conversationScopeKey(scope)) && !readConversationSnapshot(scope)) return false
-  return applyOpencodeConversationEvent(ensureEntry(scope).handle, event)
+  const applied = applyOpencodeConversationEvent(ensureEntry(scope).handle, event)
+  if (applied && (event.type === "message.updated" || event.type === "message.removed")) {
+    const messageID = messageIdFromEvent(event)
+    if (messageID) optimisticMessageKeys.delete(optimisticMessageKey({ ...scope, messageID }))
+  }
+  return applied
 }
 
 export function hydrateRegisteredConversationSnapshot(input: {
@@ -108,6 +119,12 @@ export function hydrateRegisteredConversationSnapshot(input: {
   canonicalMessageIDs?: ReadonlySet<string>
   canonicalPartMessageIDs?: ReadonlySet<string>
 }) {
+  // The hydrator passes its merged working set here, so `input.messages` can
+  // include client-only optimistic rows. Only ids explicitly identified as
+  // canonical producer rows confirm dispatch ownership.
+  for (const messageID of input.canonicalMessageIDs ?? []) {
+    optimisticMessageKeys.delete(optimisticMessageKey({ ...input, messageID }))
+  }
   const entry = ensureEntry(input)
   const snapshot = opencodeConversationSnapshot({
     messages: input.messages,
@@ -131,6 +148,7 @@ export function addRegisteredConversationMessage(input: {
   message: Message
   parts: Part[]
 }) {
+  optimisticMessageKeys.add(optimisticMessageKey({ ...input, messageID: input.message.id }))
   const entry = ensureEntry(input)
   const snapshot = opencodeConversationSnapshot({
     messages: [input.message],
@@ -150,10 +168,12 @@ export function removeRegisteredConversationMessage(input: {
   const current = entry.handle.messages()
   const target = current.find((message) => message.id === input.messageID)
   // Only roll back a message that is still optimistic. Once the server echoes
-  // the same id (via applyOpencodeConversationEvent / hydrate), the message is
-  // re-projected without the optimistic flag, so a late dispatch failure can no
-  // longer delete a server-confirmed message (and orphan its assistant turn).
-  if (!target || !isOptimistic(target)) return false
+  // the same id, the registry releases its process-local dispatch ownership,
+  // so a late dispatch failure can no longer delete a server-confirmed message
+  // (and orphan its assistant turn). The UI metadata marker is intentionally
+  // not authoritative because ChatClient normalizes it after lazy activation.
+  const owned = optimisticMessageKeys.delete(optimisticMessageKey(input))
+  if (!owned || !target) return false
   const next = current.filter((message) => message.id !== input.messageID)
   if (next.length === current.length) return false
   entry.handle.setMessages(next)
@@ -165,10 +185,6 @@ type OptimisticUIMessage = UIMessage & { metadata?: { optimistic?: boolean; [key
 function markOptimistic(message: UIMessage): UIMessage {
   const current = (message as OptimisticUIMessage).metadata
   return { ...message, metadata: { ...current, optimistic: true } } as UIMessage
-}
-
-function isOptimistic(message: UIMessage) {
-  return (message as OptimisticUIMessage).metadata?.optimistic === true
 }
 
 export function registeredConversationHasUserMessage(directory: ConversationDirectory, sessionID: string | undefined) {
@@ -234,6 +250,7 @@ export function warmConversationMemorySnapshot() {
 
 export function clearConversationChatRegistryForTest() {
   entries.clear()
+  optimisticMessageKeys.clear()
   queryClient.removeQueries({ queryKey: ["shell", "session"] })
   markTopologyChanged()
 }
@@ -274,6 +291,15 @@ function sessionIdFromEvent(event: Event) {
     text(props?.sessionId) ??
     text(record(props?.info)?.sessionID) ??
     text(record(props?.part)?.sessionID)
+}
+
+function messageIdFromEvent(event: Event) {
+  const props = record(event.properties)
+  return text(props?.messageID) ?? text(record(props?.info)?.id)
+}
+
+function optimisticMessageKey(input: { directory: ConversationDirectory; sessionID: string; messageID: string }) {
+  return `${conversationScopeKey(input)}\0${input.messageID}`
 }
 
 function record(input: unknown): Record<string, unknown> | undefined {

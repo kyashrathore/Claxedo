@@ -149,7 +149,7 @@ export function createHarnessConfigStore() {
     refresh: statusActions.refresh,
     workspaceRuntime: (input) => !!harnessWorkspaceRuntimeRef(input),
     runtime: harnessRuntime,
-    cache: createHarnessHydratorQueryCache(),
+    cache: createHarnessHydratorQueryCache(base),
   })
 
   const modelWriter = createHarnessModelWriter<ScopeInput>({

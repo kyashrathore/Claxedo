@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { skipToken } from "@tanstack/solid-query"
 import { shellDataKeys } from "@/platform/sync/keys"
 import {
   dbReadyQuery,
@@ -6,12 +7,15 @@ import {
   sessionDiffQueryOptions,
   sessionQueryOptions,
   sessionRequestsQueryOptions,
+  sessionRequestsCacheQueryOptions,
   sessionStatusQueryOptions,
+  sessionStatusCacheQueryOptions,
   setSessionDiffQueryData,
   setSessionRequestsQueryData,
   setSessionStatusQueryData,
   setSessionTodoQueryData,
   sessionTodoQueryOptions,
+  sessionTodoCacheQueryOptions,
   workspaceQueryOptions,
 } from "./queries"
 import type { SessionRef } from "@/platform/identity/session-ref"
@@ -93,6 +97,22 @@ describe("shell data query factories", () => {
 
     expect(query.queryKey).toEqual(["shell", "session", "ses_shell", "status"])
     expect(await query.queryFn()).toEqual({ type: "idle" })
+  })
+
+  test("push-owned session cache readers install no transport queryFn", () => {
+    const readers = [
+      sessionStatusCacheQueryOptions({ sessionId: "ses_shell" }),
+      sessionRequestsCacheQueryOptions({ sessionId: "ses_shell" }),
+      sessionTodoCacheQueryOptions({ sessionId: "ses_shell" }),
+    ]
+
+    expect(readers.map((query) => query.queryKey)).toEqual([
+      ["shell", "session", "ses_shell", "status"],
+      ["shell", "session", "ses_shell", "requests"],
+      ["shell", "session", "ses_shell", "todo"],
+    ])
+    expect(readers.every((query) => query.queryFn === skipToken)).toBe(true)
+    expect(readers.every((query) => query.enabled === false)).toBe(true)
   })
 
   test("setSessionStatusQueryData writes through the session-scoped status key", () => {

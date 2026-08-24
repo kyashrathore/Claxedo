@@ -1,5 +1,4 @@
 import { createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js"
-import { useQuery } from "@tanstack/solid-query"
 import type { Message, PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { useGlobalSDK, useSDK } from "@/features/session/app-ports"
 import { diffs as list } from "@/lib/diffs"
@@ -7,7 +6,7 @@ import { idleSessionStatus, isSessionTurnActive, mergeBusySessionStatus, pickSes
 import { dispatchSessionRequestsEvent, dispatchSessionStatusEvent, dispatchSessionTodoEvent } from "./session-status-dispatcher"
 import { hydrateConversationPage, resolveStoredMessages, resolveStoredParts } from "../conversation/conversation-hydrator"
 import { createActiveConversationSnapshot, registeredConversationSnapshot } from "../conversation/conversation-registry"
-import { observeSessionStatusPoll, sessionStatusPollingRemovalGate, waitForActiveStatusPollDelay } from "./session-status-telemetry"
+import { observeSessionStatusPoll } from "./session-status-telemetry"
 import {
   acceptedPromptRefreshRequest,
   claimAcceptedPromptRefresh,
@@ -19,7 +18,6 @@ import {
 } from "./accepted-prompt-refresh"
 import {
   DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES,
-  fetchSessionCapabilitiesByTransport,
   fetchSessionByTransport,
   fetchSessionMessagesByTransport,
   fetchSessionTodoByTransport,
@@ -51,8 +49,18 @@ import { createLatestTurnCompletion, firstFoldSessionPrefetch, joinFirstFoldSess
 import { hydrateFirstFoldSessionPrefetch } from "./first-fold-hydration"
 import { conversationHasAssistantMessage } from "./assistant-turn-evidence"
 import { createActivePaneProjection } from "./active-pane-projection"
-import { parkedPaneQueryOptions } from "./pane-query-observer"
 import { createSessionPaneQueries, sessionCapabilitiesKey } from "./session-pane-queries"
+import {
+  ACTIVE_SESSION_STATUS_POLL_DELAY_MS,
+  ACTIVE_SESSION_STATUS_POLL_INTERVAL_MS,
+  activeSessionStatusPollingDecision,
+  createActiveSessionStatusPoll,
+  shouldStartActiveSessionStatusPolling,
+  waitForFirstActiveSessionStatusPoll,
+} from "./active-session-status-poll"
+import { syncSessionCapabilitiesData } from "./session-capabilities-query"
+import { leasedQueryRequest } from "./leased-query-request"
+import { setDirectorySessionMetaQueryData } from "../data/sync/writers"
 import {
   createActivationSessionReadEpoch,
   firstFoldSessionHydrateDelay,
@@ -93,38 +101,13 @@ type MetaPayload = {
   questions?: QuestionRequest[]
 }
 const HYDRATE_FRESH_MS = 15_000
-export const ACTIVE_SESSION_STATUS_POLL_DELAY_MS = 60_000
-export const ACTIVE_SESSION_STATUS_POLL_INTERVAL_MS = 5_000
 const ACCEPTED_PROMPT_REFRESH_ATTEMPT_DELAYS_MS = [0, 600, 1_200, 2_400, 4_000, 8_000, 12_000] as const
-type ActiveSessionStatusPollStartedKeys = Pick<Set<string>, "has" | "add">
-
-export async function waitForFirstActiveSessionStatusPoll(input: {
-  key: string
-  startedKeys: ActiveSessionStatusPollStartedKeys
-  wait?: (delay: number, signal?: AbortSignal) => Promise<void>
-  signal?: AbortSignal
-}) {
-  if (input.startedKeys.has(input.key)) return
-  input.startedKeys.add(input.key)
-  await (input.wait ?? waitForActiveStatusPollDelay)(ACTIVE_SESSION_STATUS_POLL_DELAY_MS, input.signal)
-}
-
-export function shouldStartActiveSessionStatusPolling(input: {
-  directory?: string
-  sessionID: string
-}) {
-  return activeSessionStatusPollingDecision(input).shouldStart
-}
-
-export function activeSessionStatusPollingDecision(input: {
-  directory?: string
-  sessionID: string
-}) {
-  const gate = sessionStatusPollingRemovalGate(input)
-  return {
-    shouldStart: !gate.canDisablePolling,
-    ...gate,
-  }
+export {
+  ACTIVE_SESSION_STATUS_POLL_DELAY_MS,
+  ACTIVE_SESSION_STATUS_POLL_INTERVAL_MS,
+  activeSessionStatusPollingDecision,
+  shouldStartActiveSessionStatusPolling,
+  waitForFirstActiveSessionStatusPoll,
 }
 
 function metaKey(directory: string, includeRequests?: boolean) {
@@ -248,30 +231,41 @@ export async function syncSessionMeta(input: {
   includeRequests?: boolean
   force?: boolean
   instrumentPoll?: boolean
+  signal?: AbortSignal
   sdk: {
     session: {
-      status: () => Promise<{ data?: Record<string, SessionStatus> }>
+      status: (input?: undefined, options?: { signal?: AbortSignal }) => Promise<{ data?: Record<string, SessionStatus> }>
     }
     permission: {
-      list: () => Promise<{ data?: PermissionRequest[] }>
+      list: (input?: undefined, options?: { signal?: AbortSignal }) => Promise<{ data?: PermissionRequest[] }>
     }
     question: {
-      list: () => Promise<{ data?: QuestionRequest[] }>
+      list: (input?: undefined, options?: { signal?: AbortSignal }) => Promise<{ data?: QuestionRequest[] }>
     }
   }
 }) {
-  const { status, permissions, questions } = input.directory
-    ? await loadSessionMeta({
-        directory: input.directory,
-        includeRequests: input.includeRequests,
-        force: input.force,
-        sdk: input.sdk,
-      })
-    : await fetchSessionMeta({
-        includeRequests: input.includeRequests,
-        sdk: input.sdk,
-      })
+  let payload: MetaPayload
+  try {
+    payload = input.directory
+      ? await loadSessionMeta({
+          directory: input.directory,
+          includeRequests: input.includeRequests,
+          force: input.force,
+          signal: input.signal,
+          sdk: input.sdk,
+        })
+      : await fetchSessionMeta({
+          includeRequests: input.includeRequests,
+          signal: input.signal,
+          sdk: input.sdk,
+        })
+  } catch (error) {
+    if (input.signal?.aborted) return false
+    throw error
+  }
+  const { status, permissions, questions } = payload
 
+  if (input.signal?.aborted) return false
   if (!shouldAcceptSessionTransportResult({
     expectedSessionID: input.sessionID,
     currentSessionID: input.currentSessionID(),
@@ -322,26 +316,34 @@ export async function syncSessionMeta(input: {
 
 async function fetchSessionMeta(input: {
   includeRequests?: boolean
+  signal?: AbortSignal
   sdk: {
     session: {
-      status: () => Promise<{ data?: Record<string, SessionStatus> }>
+      status: (input?: undefined, options?: { signal?: AbortSignal }) => Promise<{ data?: Record<string, SessionStatus> }>
     }
     permission: {
-      list: () => Promise<{ data?: PermissionRequest[] }>
+      list: (input?: undefined, options?: { signal?: AbortSignal }) => Promise<{ data?: PermissionRequest[] }>
     }
     question: {
-      list: () => Promise<{ data?: QuestionRequest[] }>
+      list: (input?: undefined, options?: { signal?: AbortSignal }) => Promise<{ data?: QuestionRequest[] }>
     }
   }
 }): Promise<MetaPayload> {
+  const fallbackUnlessAborted = <T,>(fallback: T) => (error: unknown) => {
+    if (input.signal?.aborted) throw error
+    return fallback
+  }
   const [status, permissions, questions] = await Promise.all([
-    input.sdk.session.status().then((x) => x.data ?? {}).catch((): Record<string, SessionStatus> => ({})),
+    input.sdk.session.status(undefined, { signal: input.signal }).then((x) => x.data ?? {})
+      .catch(fallbackUnlessAborted<Record<string, SessionStatus>>({})),
     input.includeRequests === false
       ? Promise.resolve(undefined)
-      : input.sdk.permission.list().then((x) => x.data ?? []).catch((): PermissionRequest[] => []),
+      : input.sdk.permission.list(undefined, { signal: input.signal }).then((x) => x.data ?? [])
+        .catch(fallbackUnlessAborted<PermissionRequest[]>([])),
     input.includeRequests === false
       ? Promise.resolve(undefined)
-      : input.sdk.question.list().then((x) => x.data ?? []).catch((): QuestionRequest[] => []),
+      : input.sdk.question.list(undefined, { signal: input.signal }).then((x) => x.data ?? [])
+        .catch(fallbackUnlessAborted<QuestionRequest[]>([])),
   ])
   return { status, permissions, questions }
 }
@@ -351,10 +353,14 @@ function loadSessionMeta(input: Parameters<typeof fetchSessionMeta>[0] & { direc
   const cached = queryClient.getQueryData<MetaPayload>(key)
   const updatedAt = queryClient.getQueryState<MetaPayload>(key)?.dataUpdatedAt ?? 0
   if (!input.force && cached && Date.now() - updatedAt < HYDRATE_FRESH_MS) return Promise.resolve(cached)
-  return queryClient.fetchQuery({
-    queryKey: key,
-    queryFn: () => fetchSessionMeta(input),
-    staleTime: input.force ? 0 : HYDRATE_FRESH_MS,
+  return leasedQueryRequest({
+    scopeKey: ["runtime", "directory-session-meta-request", input.directory, input.includeRequests === false ? "status" : "requests"],
+    authority: input.sdk,
+    signal: input.signal,
+    queryFn: (signal) => fetchSessionMeta({ ...input, signal }),
+  }).then((value) => {
+    setDirectorySessionMetaQueryData({ queryClient, queryKey: key, value })
+    return value
   })
 }
 
@@ -381,7 +387,16 @@ export function createSessionController(input: {
   const [missingSessions, setMissingSessions] = createSignal<Record<string, boolean | undefined>>({})
   let sessionActivationEpoch = 0
   const { statusQuery, requestQuery, todoQuery, diffQuery, capabilitiesQuery, directorySessionCacheQuery } =
-    createSessionPaneQueries({ active: paneActive, sessionID: input.sessionID, directory: input.directory, workspaceId: input.workspaceId })
+    createSessionPaneQueries({
+      active: paneActive,
+      sessionID: input.sessionID,
+      directory: input.directory,
+      serverUrl: () => globalSDK.url,
+      signedControlPlane: input.signedControlPlane,
+      workspaceId: input.workspaceId,
+      workspaceKind: input.workspaceKind,
+      sessionRef: input.sessionRef,
+    })
 
   const sourceInfo = createMemo(() => {
     const sessionID = input.sessionID()
@@ -788,35 +803,46 @@ export function createSessionController(input: {
     })
   }
 
-  const syncSessionCapabilities = async (sessionID: string, opts?: { force?: boolean }) => {
+  const syncSessionCapabilities = async (sessionID: string, opts?: { force?: boolean; signal?: AbortSignal }) => {
     if (suppressedByFastSessionSwitch(sessionID)) return false
     const directory = input.directory()
-    const key = sessionCapabilitiesKey(sessionID)
+    const signedControlPlane = input.signedControlPlane?.() ?? false
+    const workspaceId = signedControlPlane ? input.workspaceId?.() : undefined
+    const workspaceKind = signedControlPlane ? input.workspaceKind?.() : undefined
+    const sessionRef = input.sessionRef?.()
+    const key = sessionCapabilitiesKey({
+      sessionID,
+      directory,
+      serverUrl: globalSDK.url,
+      signedControlPlane,
+      workspaceId,
+      workspaceKind,
+      sessionRef,
+    })
     if (queryClient.getQueryData<SessionTransportCapabilities>(key) && !opts?.force) return true
-    return queryClient.fetchQuery({
-      queryKey: key,
-      queryFn: () => fetchSessionCapabilitiesByTransport({
+    return syncSessionCapabilitiesData({
+      request: {
         client: sdk.client.session,
         directory,
         sessionID,
         claxedoServerUrl: globalSDK.url,
-        signedControlPlane: input.signedControlPlane?.() ?? false,
-        workspaceId: input.signedControlPlane?.() ? input.workspaceId?.() : undefined,
-        workspaceKind: input.signedControlPlane?.() ? input.workspaceKind?.() : undefined,
-        sessionRef: input.sessionRef?.(),
-      }),
-    }).then(() => {
-      if (!shouldAcceptSessionTransportResult({
-        expectedSessionID: sessionID,
-        currentSessionID: input.sessionID(),
-        expectedDirectory: directory,
-        currentDirectory: input.directory(),
-      })) return false
-      return true
+        signedControlPlane,
+        workspaceId,
+        workspaceKind,
+        sessionRef,
+      },
+      currentSessionID: input.sessionID,
+      currentDirectory: input.directory,
+      signal: opts?.signal,
     })
   }
 
-  const refreshMeta = async (sessionID = input.sessionID(), opts?: { force?: boolean; includeRequests?: boolean; instrumentPoll?: boolean }) => {
+  const refreshMeta = async (sessionID = input.sessionID(), opts?: {
+    force?: boolean
+    includeRequests?: boolean
+    instrumentPoll?: boolean
+    signal?: AbortSignal
+  }) => {
     if (!sessionID || sessionID === "new") return false
     if (input.signedControlPlane?.()) return input.sessionID() === sessionID
     const cached =
@@ -832,40 +858,30 @@ export function createSessionController(input: {
       includeRequests: opts?.includeRequests,
       force: opts?.force,
       instrumentPoll: opts?.instrumentPoll,
+      signal: opts?.signal,
       sdk: sdk.client,
     })
   }
 
-  const activeStatusPollStarted = new Set<string>()
-  useQuery(() => {
-    if (!paneActive()) return parkedPaneQueryOptions<boolean>("active-status-poll", "inactive")
-    const directory = input.directory()
-    const sessionID = input.sessionID()
-    if (!sessionID || sessionID === "new") return parkedPaneQueryOptions<boolean>("active-status-poll", "no-session")
-    const active = activeTurn()
-    const healthy = input.serverHealthy()
-    const workspaceId = input.workspaceId?.()
-    const workspaceReady = workspaceId === undefined || isWorkspaceReady(workspaceId)
-    const enabled = active &&
-      healthy === true &&
-      workspaceReady &&
-      shouldStartActiveSessionStatusPolling({ directory, sessionID })
-    const pollKey = sessionHistoryKey({ directory, sessionID })
-
-    return {
-      queryKey: shellDataKeys.sessionId(sessionID, "active-status-poll", directory),
-      queryFn: async ({ signal }: { signal?: AbortSignal }) => {
-        await waitForFirstActiveSessionStatusPoll({
-          key: pollKey,
-          startedKeys: activeStatusPollStarted,
-          signal,
-        })
-        return refreshMeta(sessionID, { force: true, includeRequests: false, instrumentPoll: true })
-      },
-      enabled,
-      refetchInterval: ACTIVE_SESSION_STATUS_POLL_INTERVAL_MS,
-      refetchIntervalInBackground: true,
-    }
+  createActiveSessionStatusPoll({
+    active: paneActive,
+    directory: input.directory,
+    sessionID: input.sessionID,
+    enabled: () => {
+      const sessionID = input.sessionID()
+      if (!sessionID || sessionID === "new") return false
+      const workspaceId = input.workspaceId?.()
+      return activeTurn() &&
+        input.serverHealthy() === true &&
+        (workspaceId === undefined || isWorkspaceReady(workspaceId)) &&
+        shouldStartActiveSessionStatusPolling({ directory: input.directory(), sessionID })
+    },
+    refresh: (sessionID, signal) => refreshMeta(sessionID, {
+      force: true,
+      includeRequests: false,
+      instrumentPoll: true,
+      signal,
+    }),
   })
 
   createEffect(
@@ -990,7 +1006,7 @@ export function createSessionController(input: {
           requestedDelay: hydrateDelay,
           active: () => readEpoch.active() && input.directory() === directory && input.sessionID() === id && input.active?.() !== false,
           run: () => {
-            void syncSessionCapabilities(id)
+            void syncSessionCapabilities(id, { signal: readEpoch.signal })
             void syncSessionTodo(id)
           },
         })

@@ -881,6 +881,32 @@ describe("session controller helpers", () => {
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "requests"))).toBeUndefined()
   })
 
+  test("syncSessionMeta does not dispatch a late result from an abort-ignoring transport", async () => {
+    const activation = new AbortController()
+    let resolveStatus!: (value: { data: Record<string, SessionStatus> }) => void
+    const pendingStatus = new Promise<{ data: Record<string, SessionStatus> }>((resolve) => {
+      resolveStatus = resolve
+    })
+    const result = syncSessionMeta({
+      sessionID: "ses_1",
+      currentSessionID: () => "ses_1",
+      signal: activation.signal,
+      sdk: {
+        session: { status: async () => await pendingStatus },
+        permission: { list: async () => ({ data: [] }) },
+        question: { list: async () => ({ data: [] }) },
+      },
+    })
+
+    await Promise.resolve()
+    activation.abort()
+    resolveStatus({ data: { ses_1: busy } })
+
+    await expect(result).resolves.toBe(false)
+    expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "status"))).toBeUndefined()
+    expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "requests"))).toBeUndefined()
+  })
+
   test("syncSessionMeta tolerates unavailable permission metadata", async () => {
     const ok = await syncSessionMeta({
       sessionID: "ses_1",
@@ -961,6 +987,68 @@ describe("session controller helpers", () => {
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_2", "requests"))).toEqual({
       permissions: [permission("p2", "ses_2")],
       questions: [question("q2", "ses_2")],
+    })
+  })
+
+  test("syncSessionMeta keeps a shared directory request alive when one consumer aborts", async () => {
+    const firstActivation = new AbortController()
+    const secondActivation = new AbortController()
+    let resolveStatus!: (value: { data: Record<string, SessionStatus> }) => void
+    let sharedSignal: AbortSignal | undefined
+    const calls = { status: 0, permission: 0, question: 0 }
+    const pendingStatus = new Promise<{ data: Record<string, SessionStatus> }>((resolve) => {
+      resolveStatus = resolve
+    })
+    const sdk = {
+      session: {
+        status: async (_input?: undefined, options?: { signal?: AbortSignal }) => {
+          calls.status += 1
+          sharedSignal = options?.signal
+          return await pendingStatus
+        },
+      },
+      permission: {
+        list: async () => {
+          calls.permission += 1
+          return { data: [] }
+        },
+      },
+      question: {
+        list: async () => {
+          calls.question += 1
+          return { data: [] }
+        },
+      },
+    }
+
+    const first = syncSessionMeta({
+      directory: "/repo/shared-abort",
+      sessionID: "ses_1",
+      currentSessionID: () => "ses_1",
+      signal: firstActivation.signal,
+      sdk,
+    })
+    const second = syncSessionMeta({
+      directory: "/repo/shared-abort",
+      sessionID: "ses_2",
+      currentSessionID: () => "ses_2",
+      signal: secondActivation.signal,
+      sdk,
+    })
+
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(calls).toEqual({ status: 1, permission: 1, question: 1 })
+    firstActivation.abort()
+    await expect(first).resolves.toBe(false)
+    expect(sharedSignal?.aborted).toBe(false)
+
+    resolveStatus({ data: { ses_1: idle, ses_2: idle } })
+    await expect(second).resolves.toBe(true)
+    expect(queryClient.getQueryData(["shell", "directory", "/repo/shared-abort", "session-meta", "requests"])).toEqual({
+      status: { ses_1: idle, ses_2: idle },
+      permissions: [],
+      questions: [],
     })
   })
 

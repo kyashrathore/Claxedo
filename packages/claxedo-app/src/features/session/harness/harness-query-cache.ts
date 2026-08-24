@@ -83,7 +83,9 @@ export function clearHarnessOptionsTries(scope: string) {
   removeExactQuery(harnessOptionsTriesKey(scope))
 }
 
-export function createHarnessHydratorQueryCache<ScopeInput extends HarnessScopeInput>(): HarnessHydratorCache<ScopeInput> {
+export function createHarnessHydratorQueryCache<ScopeInput extends HarnessScopeInput>(
+  serverUrl: string,
+): HarnessHydratorCache<ScopeInput> {
   return {
     getSeen: (scope) => queryClient.getQueryData<string>(harnessHydrateSeenKey(scope)),
     setSeen: (scope, key) => queryClient.setQueryData(harnessHydrateSeenKey(scope), key),
@@ -96,7 +98,12 @@ export function createHarnessHydratorQueryCache<ScopeInput extends HarnessScopeI
       }
     },
     fetchSessionConfig: async (input, run) => await queryClient.fetchQuery({
-      queryKey: sessionConfigRawQueryKey(input.sessionId),
+      queryKey: sessionConfigRawQueryKey({
+        sessionID: input.sessionId!,
+        directory: input.directory,
+        sessionRef: input.sessionRef,
+        serverUrl,
+      }),
       staleTime: 30 * 1000,
       queryFn: run,
     }),

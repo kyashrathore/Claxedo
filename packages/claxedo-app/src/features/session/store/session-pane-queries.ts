@@ -1,6 +1,6 @@
-import { useQuery } from "@tanstack/solid-query"
+import { skipToken, useQuery } from "@tanstack/solid-query"
 import type { Accessor } from "solid-js"
-import { useSDK, useWorkspaceQuery } from "@/features/session/app-ports"
+import { useWorkspaceQuery } from "@/features/session/app-ports"
 import { shellDataKeys } from "@/platform/sync/keys"
 import {
   directorySessionCacheQueryOptions,
@@ -9,28 +9,36 @@ import {
   type SessionStatus,
   type SnapshotFileDiff,
   type Todo,
-  sessionDiffQueryOptions,
-  sessionRequestsQueryOptions,
-  sessionStatusQueryOptions,
-  sessionTodoQueryOptions,
 } from "../data/sync/queries"
-import {
-  DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES,
-  type SessionTransportCapabilities,
-} from "./session-transport"
+import type { SessionTransportCapabilities } from "./session-transport"
+import type { SessionRef } from "@/platform/identity/session-ref"
+import type { AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runtime-client"
 import { paneQueryOptions, parkedPaneQueryOptions } from "./pane-query-observer"
+import {
+  sessionResourceAuthorityKey,
+  type SessionResourceAuthorityScope,
+} from "./session-resource-authority"
 
-export function sessionCapabilitiesKey(sessionID: string) {
-  return shellDataKeys.sessionId(sessionID, "transport-capabilities")
+export type SessionCapabilitiesScope = SessionResourceAuthorityScope
+
+export function sessionCapabilitiesKey(scope: SessionCapabilitiesScope) {
+  return shellDataKeys.sessionId(
+    scope.sessionID,
+    "transport-capabilities",
+    sessionResourceAuthorityKey(scope),
+  )
 }
 
 export function createSessionPaneQueries(input: {
   active: Accessor<boolean>
   sessionID: Accessor<string | undefined>
   directory: Accessor<string>
+  serverUrl?: Accessor<string | undefined>
+  signedControlPlane?: Accessor<boolean | undefined>
   workspaceId?: Accessor<string | undefined>
+  workspaceKind?: Accessor<"cloud" | "user-hosted" | undefined>
+  sessionRef?: Accessor<SessionRef | undefined>
 }) {
-  const sdk = useSDK()
   const session = <T>(resource: string, options: (sessionID: string) => ReturnType<typeof paneQueryOptions<T>>) => {
     if (!input.active()) return parkedPaneQueryOptions<T>(resource, "inactive")
     const sessionID = input.sessionID()
@@ -38,19 +46,45 @@ export function createSessionPaneQueries(input: {
     return options(sessionID)
   }
   const statusQuery = useQuery<SessionStatus>(() => session("session-status", (sessionID) =>
-    paneQueryOptions<SessionStatus>({ ...sessionStatusQueryOptions({ sessionId: sessionID, client: sdk.client }), enabled: false })))
-  const requestQuery = useQuery<SessionRequestsQueryData>(() => session("session-requests", (sessionID) =>
-    paneQueryOptions<SessionRequestsQueryData>({ ...sessionRequestsQueryOptions({ sessionId: sessionID, client: sdk.client }), enabled: false })))
-  const todoQuery = useQuery<Todo[]>(() => session("session-todo", (sessionID) =>
-    paneQueryOptions<Todo[]>({ ...sessionTodoQueryOptions({ sessionId: sessionID, client: sdk.client }), enabled: false })))
-  const diffQuery = useQuery<SnapshotFileDiff[]>(() => session("session-diff", (sessionID) =>
-    paneQueryOptions<SnapshotFileDiff[]>({ ...sessionDiffQueryOptions({ sessionId: sessionID, client: sdk.client }), enabled: false })))
-  const capabilitiesQuery = useQuery<SessionTransportCapabilities>(() => session("session-capabilities", (sessionID) =>
-    paneQueryOptions<SessionTransportCapabilities>({
-      queryKey: sessionCapabilitiesKey(sessionID),
-      queryFn: async () => DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES,
+    paneQueryOptions<SessionStatus>({
+      queryKey: shellDataKeys.sessionId(sessionID, "status"),
+      queryFn: skipToken,
       enabled: false,
     })))
+  const requestQuery = useQuery<SessionRequestsQueryData>(() => session("session-requests", (sessionID) =>
+    paneQueryOptions<SessionRequestsQueryData>({
+      queryKey: shellDataKeys.sessionId(sessionID, "requests"),
+      queryFn: skipToken,
+      enabled: false,
+    })))
+  const todoQuery = useQuery<Todo[]>(() => session("session-todo", (sessionID) =>
+    paneQueryOptions<Todo[]>({
+      queryKey: shellDataKeys.sessionId(sessionID, "todo"),
+      queryFn: skipToken,
+      enabled: false,
+    })))
+  const diffQuery = useQuery<SnapshotFileDiff[]>(() => session("session-diff", (sessionID) =>
+    paneQueryOptions<SnapshotFileDiff[]>({
+      queryKey: shellDataKeys.sessionId(sessionID, "diff"),
+      queryFn: skipToken,
+      enabled: false,
+    })))
+  const capabilitiesQuery = useQuery<SessionTransportCapabilities>(() => session("session-capabilities", (sessionID) => {
+    const signedControlPlane = input.signedControlPlane?.() ?? false
+    return paneQueryOptions<SessionTransportCapabilities>({
+      queryKey: sessionCapabilitiesKey({
+        sessionID,
+        directory: input.directory(),
+        serverUrl: input.serverUrl?.(),
+        signedControlPlane,
+        workspaceId: signedControlPlane ? input.workspaceId?.() : undefined,
+        workspaceKind: signedControlPlane ? input.workspaceKind?.() : undefined,
+        sessionRef: input.sessionRef?.(),
+      }),
+      queryFn: skipToken,
+      enabled: false,
+    })
+  }))
   const directorySessionCacheQuery = useWorkspaceQuery(() => {
     if (!input.active()) return {
       ...parkedPaneQueryOptions<DirectorySessionCacheValue>("directory-session", "inactive"),

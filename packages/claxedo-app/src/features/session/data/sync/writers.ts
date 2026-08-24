@@ -8,6 +8,27 @@ export type ShellQueryDataWriter = {
   ): unknown
 }
 
+function setShellQueryData<T>(input: {
+  queryClient: ShellQueryDataWriter
+  queryKey: readonly unknown[]
+  value: T | undefined | ((previous: T | undefined) => T | undefined)
+}) {
+  input.queryClient.setQueryData<T>(input.queryKey, input.value)
+}
+
+function setSessionQueryData<T>(input: {
+  queryClient: ShellQueryDataWriter
+  sessionId: string
+  resource: string
+  value: T | undefined | ((previous: T | undefined) => T | undefined)
+}) {
+  setShellQueryData({
+    queryClient: input.queryClient,
+    queryKey: shellDataKeys.sessionId(input.sessionId, input.resource),
+    value: input.value,
+  })
+}
+
 export function setSessionStatusQueryData(input: {
   queryClient: ShellQueryDataWriter
   sessionId: string
@@ -23,7 +44,23 @@ export function setSessionRequestsQueryData(input: {
   sessionId: string
   requests: SessionRequestsQueryData | ((previous: SessionRequestsQueryData | undefined) => SessionRequestsQueryData)
 }) {
-  input.queryClient.setQueryData(shellDataKeys.sessionId(input.sessionId, "requests"), input.requests)
+  setSessionQueryData({ ...input, resource: "requests", value: input.requests })
+}
+
+export function setSessionCapabilitiesQueryData<T>(input: {
+  queryClient: ShellQueryDataWriter
+  queryKey: readonly unknown[]
+  capabilities: T
+}) {
+  setShellQueryData({ ...input, value: input.capabilities })
+}
+
+export function setDirectorySessionMetaQueryData<T>(input: {
+  queryClient: ShellQueryDataWriter
+  queryKey: readonly unknown[]
+  value: T
+}) {
+  setShellQueryData(input)
 }
 
 export function setSessionTodoQueryData(input: {

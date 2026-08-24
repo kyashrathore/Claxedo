@@ -499,12 +499,12 @@ export function createAgentRuntimeClient(options: {
       })
       return { data: await readJson<RuntimeSession>(res) }
     },
-    async getSessionConfig(input: { directory: AgentRuntimeDirectory; sessionID: string }) {
+    async getSessionConfig(input: { directory: AgentRuntimeDirectory; sessionID: string; signal?: AbortSignal }) {
       const res = await fetchRuntimeSession({
         sessionID: input.sessionID,
         directory: input.directory,
         suffix: "/config",
-        init: { headers: { Accept: "application/json" } },
+        init: { headers: { Accept: "application/json" }, signal: input.signal },
       })
       return await readJson<unknown>(res)
     },
@@ -517,14 +517,14 @@ export function createAgentRuntimeClient(options: {
       })
       return await readJson<unknown>(res)
     },
-    async getCapabilities(input: { directory: AgentRuntimeDirectory; sessionID?: string }) {
+    async getCapabilities(input: { directory: AgentRuntimeDirectory; sessionID?: string; signal?: AbortSignal }) {
       if (!shouldUseRuntimeSessionTransport(input)) return DEFAULT_AGENT_RUNTIME_CAPABILITIES
       if (!input.sessionID) return DEFAULT_AGENT_RUNTIME_CAPABILITIES
       const res = await fetchRuntimeSession({
         sessionID: input.sessionID,
         directory: input.directory,
         suffix: "/capabilities",
-        init: { headers: { Accept: "application/json" } },
+        init: { headers: { Accept: "application/json" }, signal: input.signal },
       })
       return await readJson<SessionTransportCapabilities>(res)
     },

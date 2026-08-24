@@ -7,6 +7,8 @@ import {
   SESSION_CACHE_BYTE_BUDGET,
   SESSION_CACHE_LIMIT,
   enforceSessionCacheCeiling,
+  isSessionSurfaceQueryKey,
+  liveSessionSurfacesColdestFirst,
   scheduleSessionCacheCeiling,
 } from "./session-cache-cleanup"
 
@@ -21,7 +23,7 @@ const seed = (sessionId: string, status: { type: string } = { type: "idle" }) =>
   queryClient.setQueryData(shellDataKeys.sessionId(sessionId, "todo"), [{ id: `${sessionId}-todo` }])
 }
 const cached = (sessionId: string) =>
-  queryClient.getQueryData(shellDataKeys.sessionId(sessionId, "status")) !== undefined
+  queryClient.getQueryData(shellDataKeys.sessionId(sessionId, "todo")) !== undefined
 
 /**
  * Seed a session whose transcript weighs roughly `mb` megabytes by the app's own
@@ -56,6 +58,33 @@ describe("session cache ceiling", () => {
     // flush: a user cycling sessions must keep the ones they just looked at.
     expect(cached(`ses_${total - 1}`)).toBe(true)
     expect(cached("ses_0")).toBe(false)
+  })
+
+  test("counts and evicts session surfaces separately from lightweight rail metadata", () => {
+    for (let i = 0; i < SESSION_CACHE_LIMIT + 20; i++) {
+      const id = `ses_meta_${i}`
+      queryClient.setQueryData(shellDataKeys.sessionId(id, "status"), { type: "idle" })
+      queryClient.setQueryData(shellDataKeys.sessionId(id, "requests"), { permissions: [], questions: [] })
+    }
+
+    expect(liveSessionSurfacesColdestFirst()).toEqual([])
+    expect(isSessionSurfaceQueryKey(shellDataKeys.sessionId("ses_1", "status"))).toBe(false)
+    expect(isSessionSurfaceQueryKey(shellDataKeys.sessionId("ses_1", "requests"))).toBe(false)
+    expect(isSessionSurfaceQueryKey(shellDataKeys.sessionId("ses_1", "conversation", "/repo"))).toBe(true)
+
+    for (let i = 0; i < SESSION_CACHE_LIMIT + 20; i++) {
+      const id = `ses_meta_${i}`
+      queryClient.setQueryData(shellDataKeys.sessionId(id, "todo"), [])
+      enforceSessionCacheCeiling(id)
+    }
+
+    expect(liveSessionSurfacesColdestFirst()).toHaveLength(SESSION_CACHE_LIMIT)
+    // The rail owns placement-local metadata separately. Once a cold session
+    // surface is evicted, its legacy session-ID-only status/request rows have
+    // no owner and must not grow until the global query GC.
+    expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_meta_0", "status"))).toBeUndefined()
+    expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_meta_0", "requests"))).toBeUndefined()
+    expect(cached("ses_meta_0")).toBe(false)
   })
 
   test("never evicts an OPEN session, however cold", () => {

@@ -320,6 +320,29 @@ describe("conversation chat registry", () => {
     expect(registeredConversationSnapshot("ses_1").messages.map((m) => m.id)).toEqual(["msg_user"])
   })
 
+  test("a merged hydrate row does not confirm an optimistic message without canonical producer membership", () => {
+    registerSessionConversationChat("ses_1")
+    addRegisteredConversationMessage({
+      sessionID: "ses_1",
+      message: userMessage("msg_user", "ses_1"),
+      parts: [textPart("part_1", "ses_1", "msg_user", "hello")],
+    })
+
+    // Conversation hydration carries the merged working set, including local
+    // optimistic rows. The producer membership set is what distinguishes a
+    // server-confirmed row from that client overlay.
+    hydrateRegisteredConversationSnapshot({
+      sessionID: "ses_1",
+      messages: [userMessage("msg_user", "ses_1")],
+      parts: { msg_user: [textPart("part_1", "ses_1", "msg_user", "hello")] },
+      resolvedMembership: true,
+      canonicalMessageIDs: new Set(),
+    })
+
+    expect(removeRegisteredConversationMessage({ sessionID: "ses_1", messageID: "msg_user" })).toBe(true)
+    expect(registeredConversationSnapshot("ses_1").messages).toEqual([])
+  })
+
   test("caps in-memory entries (LRU) and never evicts a mounted session", () => {
     // ses_keep is created first (would be the LRU victim) but stays mounted.
     const release = registerSessionConversationChat("ses_keep")

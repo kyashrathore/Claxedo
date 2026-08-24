@@ -195,6 +195,7 @@ export async function fetchSessionCapabilitiesByTransport(input: {
   workspaceId?: string
   workspaceKind?: "cloud" | "user-hosted"
   sessionRef?: SessionRef
+  signal?: AbortSignal
 }) {
   return await createHttpSessionBackend({
     client: input.client,

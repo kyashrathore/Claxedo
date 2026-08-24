@@ -1,12 +1,20 @@
 import { cleanup, render, waitFor } from "@solidjs/testing-library"
-import { QueryClientProvider, useQuery } from "@tanstack/solid-query"
+import { QueryClientProvider, skipToken, useQuery } from "@tanstack/solid-query"
+import { createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { queryClient } from "@/platform/query/query-client"
+import { localSelectionHandoffQueryKey } from "@/features/session/store/local-selection-handoff"
+import {
+  sessionConfigRawQueryKey,
+  sessionConfigSelectionQueryKey,
+} from "@/features/session/store/session-config-selection"
 
 const harness = vi.hoisted(() => ({
   configRequests: 0,
   quietDelayMs: 0,
+  deferConfig: false,
+  configSignals: [] as AbortSignal[],
 }))
 
 vi.mock("@/platform/runtime/session-switch", () => ({
@@ -20,8 +28,14 @@ vi.mock("@/platform/runtime/platform-provider", () => ({
 
 vi.mock("@/platform/runtime/agent/agent-runtime-client", () => ({
   createAgentRuntimeClient: () => ({
-    getSessionConfig: async () => {
+    getSessionConfig: async (input: { signal?: AbortSignal }) => {
       harness.configRequests++
+      if (input.signal) harness.configSignals.push(input.signal)
+      if (harness.deferConfig) {
+        await new Promise<void>((_resolve, reject) => {
+          input.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true })
+        })
+      }
       return {
         harness: { id: "opencode", access: "native" },
         agent: "build",
@@ -98,6 +112,8 @@ afterEach(() => {
   vi.useRealTimers()
   harness.configRequests = 0
   harness.quietDelayMs = 0
+  harness.deferConfig = false
+  harness.configSignals.length = 0
   queryClient.clear()
 })
 
@@ -129,6 +145,15 @@ describe("session selection hydration scheduling", () => {
     expect(harness.configRequests).toBe(0)
     expect(view.getByTestId("selection")).toHaveAttribute("data-pending", "true")
     expect(view.getByTestId("selection")).toHaveAttribute("data-model", "")
+    expect(queryClient.getQueryCache().find({
+      queryKey: ["shell", "pane-observer", { state: "parked", reason: "no-session" }, "session-config-raw"],
+    })?.options.queryFn).toBe(skipToken)
+    expect(queryClient.getQueryCache().find({
+      queryKey: ["shell", "pane-observer", { state: "parked", reason: "no-session" }, "session-config-selection"],
+    })?.options.queryFn).toBe(skipToken)
+    expect(queryClient.getQueryCache().find({
+      queryKey: localSelectionHandoffQueryKey("ses_existing"),
+    })?.options.queryFn).toBe(skipToken)
 
     await vi.advanceTimersByTimeAsync(1)
     await waitFor(() => {
@@ -136,5 +161,36 @@ describe("session selection hydration scheduling", () => {
       expect(view.getByTestId("selection")).toHaveAttribute("data-pending", "false")
       expect(view.getByTestId("selection")).toHaveAttribute("data-model", "model-restored")
     })
+  })
+
+  test("aborts an active config read when its session owner becomes inactive", async () => {
+    vi.useFakeTimers()
+    harness.deferConfig = true
+    const [sessionID, setSessionID] = createSignal<string | undefined>("ses_a")
+
+    render(() => (
+      <QueryClientProvider client={queryClient}>
+        <LocalProvider sessionId={sessionID}>
+          <div />
+        </LocalProvider>
+      </QueryClientProvider>
+    ))
+
+    await vi.advanceTimersByTimeAsync(250)
+    expect(harness.configRequests).toBe(1)
+    expect(harness.configSignals[0]?.aborted).toBe(false)
+
+    setSessionID(undefined)
+    await waitFor(() => expect(harness.configSignals[0]?.aborted).toBe(true))
+    const scope = {
+      sessionID: "ses_a",
+      directory: "/repo",
+      serverUrl: "http://opencode.test",
+    }
+    expect(queryClient.getQueryData(sessionConfigRawQueryKey(scope))).toBeUndefined()
+    expect(queryClient.getQueryData(sessionConfigSelectionQueryKey(scope))).toBeUndefined()
+    expect(queryClient.getQueryCache().find({
+      queryKey: sessionConfigRawQueryKey(scope),
+    })?.options.queryFn).toBeTypeOf("function")
   })
 })

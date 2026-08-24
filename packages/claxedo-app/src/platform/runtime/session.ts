@@ -50,6 +50,7 @@ export type SessionBackend = {
     directory: string
     sessionID?: string
     sessionRef?: SessionRef
+    signal?: AbortSignal
   }) => Promise<SessionTransportCapabilities>
   listMessages: (input: {
     directory: string

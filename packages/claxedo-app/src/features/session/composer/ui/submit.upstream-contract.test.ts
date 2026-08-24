@@ -160,7 +160,11 @@ describe("upstream contract", () => {
     state.harnessMode = false
     state.localCurrentModel = { id: "big-pickle", provider: { id: "opencode" } }
     state.localCurrentAgent = { name: "stale-agent" }
-    queryClient.setQueryData(sessionConfigRawQueryKey("session-1"), {
+    queryClient.setQueryData(sessionConfigRawQueryKey({
+      sessionID: "session-1",
+      directory: "ws_1",
+      serverUrl: "http://localhost:3001",
+    }), {
       harness: { type: "codex-acp" },
       agent: "build",
       model: { providerID: "codex-acp", modelID: "gpt-5.5" },
