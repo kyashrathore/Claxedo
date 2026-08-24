@@ -9,7 +9,7 @@ resume_focus: "Establish the five-sample paired baseline, obtain explicit approv
 repository: "Claxedo"
 repo_root_sha: "728cedf2a29e2f9da901c8c36620ce5efc09e6b2"
 branch: "optimize/solid2-native-beat-solid1"
-head: "1382cba82e133c8c5c403129dc525407f973bdcf"
+benchmark_base_ref: "refs/tags/solid2-native-benchmark-v3-base"
 worktree_path: "/Users/yashvardhansingh/test/opencode/.worktrees/solid2-native-beat-solid1"
 ---
 
@@ -24,31 +24,36 @@ This is an experimental branch. The user requires all of the following:
 3. Improve code quality and measured performance together.
 4. Upgrade only if Solid 2 strictly beats the frozen Solid 1 control under the agreed benchmark contract. If it does not, reject the upgrade.
 
-The user later paused the experiment and requested this committed handoff. Creating and pushing this file is the only work resumed after that pause. Do not restart measurements or source refactors until the current user explicitly resumes the experiment.
+The user later paused the experiment and requested this committed handoff. Only handoff portability work—the public framework publication and committed measurement contract—resumed after that pause. No measurement or application-source refactor resumed. Do not restart either until the current user explicitly resumes the experiment.
 
 ## Authoritative experiment state
 
 - Experiment worktree: `.worktrees/solid2-native-beat-solid1`
 - Branch: `optimize/solid2-native-beat-solid1`
 - Solid 2 migration snapshot: `ff507c473fa166acfd35676277aa490ddc698582`
-- Measurement-setup snapshot: `1382cba82e133c8c5c403129dc525407f973bdcf`
+- Historical measurement-setup snapshot: `1382cba82e133c8c5c403129dc525407f973bdcf`
+- Portable candidate base: pushed tag `solid2-native-benchmark-v3-base`
 - Frozen Solid 1 control: `d631aad47c16f4d33e1dc64c3dfd3c5abbe3014b`
 - Public agent-app benchmark repository: <https://github.com/kyashrathore/agent-app-benchmark>
 - Published benchmark `main` revision: `6fa5fbe85fe7cd94b2f35c969af4193aa63687fb`
-- Frozen execution framework HEAD: `76a27191120092d3972aab08ec480d8028078de4`
+- Frozen execution framework HEAD: `6fa5fbe85fe7cd94b2f35c969af4193aa63687fb`
 - Canonical contract: `.context/compound-engineering/ce-optimize/solid2-beat-solid1-v3/spec.yaml`
 - Immutable wrapper: `.context/compound-engineering/ce-optimize/solid2-beat-solid1-v3/measure.ts`
 - Official migration source supplied by the user: <https://v2.solidjs.com/migration/from-solid-1>
 
-Before this handoff was added, the experiment worktree was clean. No Solid 2 optimization hypothesis or application-source refactor has been made on top of `1382cba82`. There is no valid fresh baseline and no `experiment-log.yaml`.
+Before this handoff was added, the experiment worktree was clean. No Solid 2 optimization hypothesis or application-source refactor has been made on top of `1382cba82`. The portable base tag adds only the handoff and committed measurement contract; it adds no application source. There is no valid fresh baseline and no `experiment-log.yaml`.
+
+Unlike the original local-only checkpoint, `spec.yaml` and `measure.ts` are committed on this branch at the paths above. The tag is the wrapper's authoritative candidate-diff base, so setup documentation and contract files do not weaken or fail the application-scope gate.
 
 Do not benchmark `.worktrees/codex-solid-2-rc`; it contains unrelated and in-progress state. The branch and worktree named above are the canonical candidate.
 
-The pushed handoff commits are intentionally outside the benchmark's mutable application paths. Therefore, do not run `measure.ts` directly from the latest documentation-bearing branch tip: the scope gate would correctly report the root Markdown change. Read the handoff from that checkout, but create the measured candidate worktree from `1382cba82`; only approved application-source experiments may follow that commit.
+Create the measured candidate worktree from `solid2-native-benchmark-v3-base`; only approved application-source experiments may follow that tag. The wrapper resolves the pushed tag, proves it is an ancestor of `HEAD`, and rejects changed files outside the declared mutable paths.
 
-## Cloud checkout and public framework bootstrap
+## Portable checkout and public framework bootstrap
 
 The public repositories contain every source artifact needed to reconstruct the code, framework, Solid 1 control, and synthetic corpus. Credentials are needed only for remote compute, not for cloning or corpus generation.
+
+The agent's orchestration host is only the Crabbox control plane. Its local CPU, RAM, Node, and Bun identities are irrelevant to accepted samples because `measure.ts` must execute on the fresh dedicated Crabbox host after that host is configured with the frozen identities below. Never run a timed wrapper on a shared orchestration host.
 
 Use one orientation checkout and separate measured worktrees:
 
@@ -59,7 +64,7 @@ git clone --branch optimize/solid2-native-beat-solid1 \
 git -C claxedo-orientation worktree add \
   -b optimize/solid2-native-cloud-candidate \
   ../claxedo-solid2-candidate \
-  1382cba82e133c8c5c403129dc525407f973bdcf
+  solid2-native-benchmark-v3-base
 
 git -C claxedo-orientation worktree add \
   --detach \
@@ -67,19 +72,12 @@ git -C claxedo-orientation worktree add \
   d631aad47c16f4d33e1dc64c3dfd3c5abbe3014b
 ```
 
-The framework is public on `main` at `6fa5fbe`. The experiment wrapper deliberately freezes framework HEAD at `76a2719`, while the two Claxedo web registrations were previously an audited overlay. Reconstruct that exact identity instead of silently changing `FRAMEWORK_COMMIT`:
+The framework is public on `main` and frozen by the wrapper at `6fa5fbe`. This commit is the previous audited `76a2719` framework plus the two Claxedo web registrations and their contract expectation. Use it as a clean checkout—no local overlay is required:
 
 ```sh
 git clone https://github.com/kyashrathore/agent-app-benchmark.git agent-app-benchmark
 git -C agent-app-benchmark checkout --detach \
-  76a27191120092d3972aab08ec480d8028078de4
-
-git -C agent-app-benchmark restore \
-  --source=6fa5fbe85fe7cd94b2f35c969af4193aa63687fb \
-  --staged --worktree -- \
-  registry/apps/claxedo-solid1-web.json \
-  registry/apps/claxedo-solid2-web.json \
-  tests/contracts.test.mjs
+  6fa5fbe85fe7cd94b2f35c969af4193aa63687fb
 ```
 
 Then bootstrap and verify the public framework:
@@ -172,7 +170,7 @@ High-value code locations to inspect after CP1 approval:
 
 This infrastructure is volatile and must be re-inspected before reuse. No credential or private-key path belongs in the repository.
 
-At `2026-08-24T07:18:46Z`, Crabbox lease `cbx_9e6f32932efd` (`solid2-native-baseline`) was `ready`. It is an on-demand AWS `m7i.2xlarge` in `eu-west-1`, with eight vCPUs and 32 GiB RAM, and was scheduled to expire at `2026-08-24T08:38:26Z`.
+At `2026-08-24T07:18:46Z`, Crabbox lease `cbx_9e6f32932efd` (`solid2-native-baseline`) was `ready`. It was an on-demand AWS `m7i.2xlarge` in `eu-west-1`, with eight vCPUs and 32 GiB RAM, and was scheduled to expire at `2026-08-24T08:38:26Z`. Treat it as gone: do not try to recover or reuse it.
 
 Remote roots:
 
@@ -202,11 +200,11 @@ The dependency and build setup was repaired identically for both arms without mo
 - Candidate focused harness tests passed 12/12. Control focused driver/materializer tests passed 5/5. Local bundle identity checks passed for both builds.
 - When reusing these configured bundles, set `CE_OPTIMIZE_SKIP_BUILD=1`; a bare rebuild would overwrite the assigned compile-time backend URL.
 
-## Giving a cloud agent Crabbox access
+## Giving the next agent Crabbox access
 
-The Claxedo repository already contains `.crabbox.yaml`, `script/cbx`, `script/cbx-ci.ts`, and `.agents/skills/crabbox/SKILL.md`. Do not copy a local SSH key or lease directory into the repository. A cloud environment needs only the Crabbox CLI and provider credentials supplied through its secret store.
+The Claxedo repository already contains `.crabbox.yaml`, `script/cbx`, `script/cbx-ci.ts`, and `.agents/skills/crabbox/SKILL.md`. Do not copy a local SSH key or lease directory into the repository. The agent environment needs the Crabbox CLI plus provider credentials.
 
-Install the same Crabbox release used for this checkpoint in the cloud environment's setup step:
+Install the same Crabbox release used for this checkpoint:
 
 ```sh
 go install github.com/openclaw/crabbox/cmd/crabbox@v0.46.0
@@ -214,7 +212,7 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 crabbox --version
 ```
 
-For the AWS benchmark host, inject these as protected environment secrets, never as committed files:
+Supply a dedicated set of short-lived, least-privilege AWS credentials to the agent process as environment variables, never as committed files:
 
 - `AWS_ACCESS_KEY_ID`
 - `AWS_SECRET_ACCESS_KEY`
@@ -223,6 +221,8 @@ For the AWS benchmark host, inject these as protected environment secrets, never
 - `AWS_DEFAULT_REGION=eu-west-1`
 
 Prefer a dedicated short-lived IAM role or user scoped to Crabbox's EC2 lifecycle operations. The currently tested account can authenticate, inspect inventory, and operate the control plane. `servicequotas:GetServiceQuota` is optional for execution but required if the capacity portion of `doctor` must report a value instead of `skip`.
+
+The agent needs outbound access to GitHub and the required AWS endpoints. Rotate or revoke the temporary AWS credentials immediately after the retained lease is stopped.
 
 Validate access before spending capacity:
 
@@ -244,7 +244,7 @@ CRABBOX_TYPE=m7i.2xlarge ./script/cbx warmup \
   --keep
 ```
 
-Timed benchmark lanes still run serially and exclusively even though correctness and build jobs may use Crabbox concurrency. Stop a retained lease explicitly when finished. A new cloud agent should provision a fresh lease rather than depend on this machine's local Crabbox claim metadata.
+Timed benchmark lanes still run serially and exclusively even though correctness and build jobs may use Crabbox concurrency. Stop a retained lease explicitly when finished. The next agent should provision a fresh lease rather than depend on this machine's local Crabbox claim metadata.
 
 ## Invalid attempts—do not reuse as samples
 
