@@ -360,6 +360,64 @@ blank/loading frames; every closed/inactive ownership gate 0 with exactly 1
 reopen file root. Both baseline deltas the earlier smokes carried (the reopen
 request, the closed-panel staleness) are closed.
 
+### Continuation (2026-08-24, latest): findings sweep, toggle split, benchmark families
+
+State of the branch at `2befef2` (all on origin/claude/zen-faraday-v692mo, all
+architecture guards pinned, full typecheck green on every push):
+
+- **External review findings #1–#14: 13 resolved.** Cancellable next-frame
+  anchor capture flushed on dispose (#2); missing-anchor restoration settles
+  at the clamped pixel top, wired to corpus membership via `anchorExists`
+  (#9); one last-interaction-wins activation transition (#3); deactivated
+  Review tabs release their viewport and observers (#4); inner-tab return
+  restores the boundary's *current* snapshot (#5); consumed focus requests are
+  never replayed (#7) — with the follow-up that the files-navigator selection
+  now restores from the working set's active file tab (it had only survived
+  reopen via the stale replay); `.git/index` classified as VCS-authoritative
+  while lock/object churn stays dropped (#11); one ref-counted freshness owner
+  per server/workspace/directory (#12) that reconciles the infinite-stale
+  caches once when returning from an ownerless gap (#14); the review window
+  row budget derives from viewport geometry, floor 20 ceiling 64 (#13); the
+  benchmark preserves semantic expansion evidence across the deep scroll so
+  the restoration assertion can no longer pass vacuously (#1). Open: #8
+  (per-tab file/browser ephemeral state) needs `WorkspaceBrowserPanel` to
+  forward `onNavigationChange` into the tab DTO and `TabFile` to accept
+  retained selection/scroll props; #6 (reopen construction) is the toggle
+  split plus the chunking work below.
+- **Toggle/content split (perf(workspace-panel), b0253c7).** The panel toggle
+  owns its frames: shell + mode-shaped skeleton paint immediately;
+  `createShellSettle` (two painted frames plus any transform transition)
+  gates body construction; a closed panel constructs nothing, so an
+  interrupted open never pays for content. The rail shell prefetches the
+  review corpus at the opening click through the same loader/cache key as the
+  mounted surface (`review-vcs-load.ts`); measured click→fetch-start is
+  ~21 ms. The aside exposes `data-shell-settled`.
+- **Split-head numbers (same-container, single-iteration, gates green except
+  the environmental base-60Hz gate):** close 153–160 ms; reopen 483–530 ms
+  with 0 control blank frames and zero requests in every phase; resume
+  942–973 ms. Resume regressed ~240 ms versus the 20-row window because the
+  viewport-derived budget correctly materializes 35 rows — recover it via the
+  profiler fix list (seed the window at retained scroll, drop per-row
+  ResizeObservers, suppress the solid-presence animation probe (~64 ms at
+  reopen), defer the navigator's synchronous scrollIntoView (~60 ms)).
+- **Benchmark families (test(perf), 2befef2).** Shared per-interaction
+  harness (`isolated-interaction.ts`, trusted clocks, mutation-quiet settle
+  gates, no cumulative spans) plus three scenarios: `workspace-lifecycle`
+  (phases incl. mid-motion interruptions and fetch sub-clocks;
+  smoke-verified green), `workspace-interactions` (15 isolated interactions,
+  zero-request-gated where data is loaded), `session-switch-workspace`
+  (12-cell matrix, hard same-workspace stability gates, workspace-open
+  penalty as a derived metric). The heavy-workspace window cap derives from
+  the measured ~30 px benchmark row height.
+- **CodeView spike (VITE_REVIEW_CODEVIEW=1).** Headers now render through
+  Pierre's custom-header mode portaling the shared accordion header markup
+  (`review-file-header.tsx`) — visually at parity. Blockers to a valid spike
+  benchmark: wire `onContentRequired` lazy content so expanded bodies render;
+  route deep scroll/restoration through `codeView.scrollTo()`; fix the
+  remount render race (profiling shows the 5 s blank resume is ~95% idle —
+  the engine parses and stops; nothing re-kicks `render()` after async
+  highlighter init outlives the bounded retries).
+
 ## Next steps in dependency order
 
 1. Instantiate the working-set store outside disposable DOM. Key by normalized server/runtime identity + workspace + review, not session ID. Wire initialWorkingSet/onWorkingSetChange through RailWorkspacePanelShell and WorkspacePanelBody. Do not put scroll into global reactive WorkspacePanelState.
