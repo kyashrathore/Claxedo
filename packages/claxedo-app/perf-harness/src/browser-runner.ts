@@ -945,6 +945,15 @@ type HeavyWorkspaceReviewResumeObservation = {
   loadingFrames: number
   stableReadyFrames: number
   identity: HeavyWorkspaceReviewIdentity
+  scrollDiagnostic?: {
+    action: string
+    attempt: number
+    canRecord: boolean
+    currentTop?: number
+    position: { top: number; anchorPath?: string; anchorOffset?: number }
+    restoring: boolean
+    visible: boolean
+  }
 }
 
 async function heavyWorkspaceReopen(
@@ -1051,6 +1060,7 @@ async function heavyWorkspaceReopen(
   if (!reviewObservation) throw new Error("heavy workspace Review resume produced no observation")
   if (reviewObservation.timedOut) {
     recordVisualFailure(fixture, "heavy workspace Review did not restore to two stable ready frames")
+    recordVisualFailure(fixture, `heavy workspace Review scroll diagnostic: ${JSON.stringify(reviewObservation.scrollDiagnostic)}`)
   }
   for (const failure of heavyWorkspaceReviewRestorationFailures(reviewBefore, reviewObservation.identity)) {
     recordVisualFailure(fixture, failure)
@@ -1465,6 +1475,7 @@ async function resumeHeavyWorkspaceReview(
     let stableReadyFrames = 0
     let lastSignature = ""
     let finalIdentity = identity()
+    let scrollDiagnostic: HeavyWorkspaceReviewResumeObservation["scrollDiagnostic"]
     const completionMs = await new Promise<number>((resolve) => {
       const tick = () => {
         const elapsed = performance.now() - started
@@ -1477,6 +1488,10 @@ async function resumeHeavyWorkspaceReview(
         const scroll = root?.querySelector<HTMLElement>(scrollSelector)
         const semanticBody = !!scroll && visible(scroll)
         finalIdentity = identity()
+        const diagnostic = scroll && (scroll as unknown as Record<string, unknown>).__claxedoReviewScrollDiagnostic
+        scrollDiagnostic = typeof diagnostic === "function"
+          ? (diagnostic as () => HeavyWorkspaceReviewResumeObservation["scrollDiagnostic"])()
+          : undefined
         const panelVisible = !!shell && visible(shell) && shell.getBoundingClientRect().width > 120
         if (panelVisible && activeReview && !semanticBody) blankFrames++
         const loading = semanticBody && !!root?.querySelector(
@@ -1510,6 +1525,7 @@ async function resumeHeavyWorkspaceReview(
       loadingFrames,
       stableReadyFrames,
       identity: finalIdentity,
+      scrollDiagnostic,
     }
   }, { expected, mark: control.mark, scrollSelector: HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR })
 }

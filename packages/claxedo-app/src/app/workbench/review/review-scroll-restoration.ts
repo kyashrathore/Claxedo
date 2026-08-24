@@ -6,6 +6,18 @@ export type ReviewScrollPosition = {
   anchorOffset?: number
 }
 
+export const REVIEW_SCROLL_DIAGNOSTIC_PROPERTY = "__claxedoReviewScrollDiagnostic"
+
+export type ReviewScrollDiagnostic = {
+  action: string
+  attempt: number
+  canRecord: boolean
+  currentTop?: number
+  position: ReviewScrollPosition
+  restoring: boolean
+  visible: boolean
+}
+
 export function createReviewScrollRestoration(input: {
   visible: () => boolean
   canRecord: () => boolean
@@ -18,6 +30,18 @@ export function createReviewScrollRestoration(input: {
   let element: HTMLDivElement | undefined
   let restoring = false
   let position: ReviewScrollPosition = input.initial ?? { top: 0 }
+  let action = "created"
+  let lastAttempt = 0
+
+  const diagnostic = (): ReviewScrollDiagnostic => ({
+    action,
+    attempt: lastAttempt,
+    canRecord: input.canRecord(),
+    currentTop: element?.scrollTop,
+    position: { ...position },
+    restoring,
+    visible: input.visible(),
+  })
 
   const anchorFor = (path: string | undefined) => path && element
     ? Array.from(element.querySelectorAll<HTMLElement>("[data-review-file]"))
@@ -50,18 +74,22 @@ export function createReviewScrollRestoration(input: {
         ? anchor.getBoundingClientRect().top - element.getBoundingClientRect().top
         : undefined,
     })
+    action = "captured"
   }
   const stopObserver = () => {
     observer?.disconnect()
     observer = undefined
   }
   const apply = (attempt = 0) => {
+    lastAttempt = attempt
     if (!element || !input.visible()) {
+      action = "apply-hidden"
       restoring = false
       return
     }
     const anchor = anchorFor(position.anchorPath)
     if (position.anchorPath && !anchor) {
+      action = "waiting-for-anchor"
       if (!observer && typeof MutationObserver !== "undefined") {
         observer = new MutationObserver(() => apply())
         observer.observe(element, { childList: true, subtree: true })
@@ -72,8 +100,10 @@ export function createReviewScrollRestoration(input: {
     element.scrollTop = anchor && position.anchorOffset !== undefined
       ? element.scrollTop + anchor.getBoundingClientRect().top - element.getBoundingClientRect().top - position.anchorOffset
       : position.top
+    action = "applied"
     if (typeof requestAnimationFrame !== "function") {
       restoring = false
+      action = "settled"
       return
     }
     frame = requestAnimationFrame(() => {
@@ -91,6 +121,7 @@ export function createReviewScrollRestoration(input: {
         return
       }
       restoring = false
+      action = "settled"
     })
   }
   const restore = () => {
@@ -98,10 +129,16 @@ export function createReviewScrollRestoration(input: {
     if (frame !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(frame)
     frame = undefined
     restoring = true
+    action = "restore-requested"
     apply()
   }
   const bind = (next: HTMLDivElement) => {
     element = next
+    action = "bound"
+    Object.defineProperty(next, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY, {
+      configurable: true,
+      value: diagnostic,
+    })
     restore()
   }
   const remember: JSX.EventHandler<HTMLDivElement, Event> = (event) => {
@@ -119,6 +156,7 @@ export function createReviewScrollRestoration(input: {
     if (frame !== undefined && typeof cancelAnimationFrame === "function") cancelAnimationFrame(frame)
     if (captureTimer) clearTimeout(captureTimer)
     stopObserver()
+    if (element) delete (element as unknown as Record<string, unknown>)[REVIEW_SCROLL_DIAGNOSTIC_PROPERTY]
   }
 
   return { bind, capture, dispose, remember, restore }
